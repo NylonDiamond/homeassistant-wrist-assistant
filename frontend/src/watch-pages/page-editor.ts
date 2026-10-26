@@ -259,11 +259,12 @@ import {
   phonePagesScreen,
 } from "../phone-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
+import { inspectorColumnCount, splitColumns } from "./inspector-columns.js";
 import {
   forgetTileSettingsNotes,
   renderTileHead,
   renderTileSettings,
-  tileInspectorColumns,
+  tileInspectorColumnRuns,
   tileInspectorSections,
   tileSettingsFoldIds,
   tileSettingsStyles,
@@ -864,6 +865,11 @@ export class WaPageEditor extends LitElement {
    * and the settings stack. Zero before the first measurement. */
   @state() private hostWidth = 0;
   private sizeObserver?: ResizeObserver;
+  /** How many columns of cards the inspector stands, by its measured width
+   * (`inspectorColumnCount`): one until it is first measured. */
+  @state() private inspectorCols = 1;
+  private inspectorObserver?: ResizeObserver;
+  private observedInspector?: HTMLElement;
   /** The sticky block at the top (the bar and a note under it) the observer
    * measures, and its height: written to `--pe-top-h` on the host for the
    * sticky columns under it, and kept here for the drag's auto-scroll. */
@@ -1006,6 +1012,8 @@ export class WaPageEditor extends LitElement {
     this.headBar.clear();
     this.sizeObserver?.disconnect();
     this.observedTop = undefined;
+    this.inspectorObserver?.disconnect();
+    this.observedInspector = undefined;
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.cancelGestures();
@@ -1146,6 +1154,7 @@ export class WaPageEditor extends LitElement {
       this.renderRoot.querySelector<HTMLElement>(selector)?.focus();
     }
     this.observeTop();
+    this.observeInspector();
     if (this.revealTile) {
       this.revealTile = false;
       const tile = this.selectedTileId === undefined ? undefined : this.tileButton(this.selectedTileId);
@@ -3315,6 +3324,25 @@ export class WaPageEditor extends LitElement {
     if (top !== undefined) observer.observe(top);
   }
 
+  /** Watch the inspector's width, which sets how many columns its cards
+   * stand in. Its width does not follow what it shows (a tile or the page),
+   * so the count is known before a tile is picked and the cards never
+   * reflow on a pick. Runs after every draw; a no-op on the same column. */
+  private observeInspector(): void {
+    if (typeof ResizeObserver === "undefined") return;
+    const column = this.renderRoot?.querySelector<HTMLElement>(".pe-layout > .column.inspector") ?? undefined;
+    if (column === this.observedInspector) return;
+    this.inspectorObserver ??= new ResizeObserver((entries) => {
+      const box = entries[entries.length - 1]?.contentRect;
+      if (box === undefined) return;
+      const cols = inspectorColumnCount(box.width);
+      if (cols !== this.inspectorCols) this.inspectorCols = cols;
+    });
+    if (this.observedInspector !== undefined) this.inspectorObserver.unobserve(this.observedInspector);
+    this.observedInspector = column;
+    if (column !== undefined) this.inspectorObserver.observe(column);
+  }
+
   /** The top block's whole height, edge to edge, onto the host: no draw
    * follows, the sticky columns read it straight from CSS. */
   private measureTop(top: HTMLElement): void {
@@ -3353,11 +3381,9 @@ export class WaPageEditor extends LitElement {
     // two columns: the canvas card and the inspector. The editor is one
     // screen tall and each column scrolls in its own box. Every page is
     // reached from the picker and every tile on the stage: there is no
-    // list beside them.
-    // One tile's settings take a wider inspector, so its two columns fit.
-    const tileInspector = page !== undefined && tile !== undefined && !(this.multiPicked && this.pickedIds(page).length >= 2);
+    // list beside them. The inspector keeps one width whatever it shows.
     return html`${page ? this.renderPageHead(page, pages, owner) : nothing}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}${tileInspector ? " pe-tile-on" : ""}">
+    <div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}">
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, watches, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
@@ -4353,12 +4379,21 @@ export class WaPageEditor extends LitElement {
    */
   private renderPageCards(page: WatchPage, host: WatchPagesEditorHost | undefined): TemplateResult {
     const id = watchPageId(page);
+    // The cards in the inspector's columns as a tile's are, in order, each
+    // with about how tall it stands open; the line on reaching a tile and
+    // Delete page under them, across.
+    const cards: { card: TemplateResult | typeof nothing; weight: number }[] = [
+      { card: this.renderDevicesCard(), weight: 2 },
+      { card: this.renderRulesCard(page), weight: 6 },
+      { card: host === undefined ? nothing : renderPageLookCard(host), weight: 6 },
+      { card: this.renderOnWatchCard(page, host), weight: 1 },
+      { card: host === undefined ? nothing : this.renderSwitcherCard(host), weight: 4 },
+    ];
+    const runs = splitColumns(cards.filter((c) => c.card !== nothing), (c) => c.weight, this.inspectorCols);
     return html`<div class="pe-page-insp">
-      ${this.renderDevicesCard()}
-      ${this.renderRulesCard(page)}
-      ${host === undefined ? nothing : renderPageLookCard(host)}
-      ${this.renderOnWatchCard(page, host)}
-      ${host === undefined ? nothing : this.renderSwitcherCard(host)}
+      <div class="pe-insp-cols" style=${`--pe-cols:${runs.length}`}>
+        ${runs.map((run) => html`<div class="pe-insp-col">${run.map((c) => c.card)}</div>`)}
+      </div>
       ${this.renderNoTileCard(page)}
       <div class="pe-page-acts">
         <button type="button" class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page</span></button>
@@ -4580,7 +4615,7 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    const columns = host === undefined ? undefined : tileInspectorColumns(tileInspectorSections(host));
+    const runs = host === undefined ? undefined : tileInspectorColumnRuns(tileInspectorSections(host), this.inspectorCols);
     return html`<div class="pe-tile-insp">
       ${host === undefined ? nothing : renderTileHead(host, {
         picture: this.renderTileHeadPicture(page, tile),
@@ -4588,9 +4623,8 @@ export class WaPageEditor extends LitElement {
         setPreviewAs: (as) => { this.tilePreviewAs = as; },
       })}
       ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
-      ${host === undefined || columns === undefined ? nothing : html`<div class="pe-insp-cols">
-        <div class="pe-insp-col" data-col="left">${renderTileSettings(host, { sections: columns.left, size })}</div>
-        <div class="pe-insp-col" data-col="right">${renderTileSettings(host, { sections: columns.right, size })}</div>
+      ${host === undefined || runs === undefined ? nothing : html`<div class="pe-insp-cols" style=${`--pe-cols:${runs.length}`}>
+        ${runs.map((sections, i) => html`<div class="pe-insp-col" data-col=${String(i + 1)}>${renderTileSettings(host, { sections, size })}</div>`)}
       </div>`}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button></div>
@@ -4832,18 +4866,15 @@ export class WaPageEditor extends LitElement {
        the editor is one viewport tall and never scrolls as a whole. Each
        column scrolls in its own box, so every card stays on screen (Jesse,
        2026-10-23: two scroll bars, one inside the other, read as broken).
-       No gutter: neither column is dragged wider. */
+       No gutter: neither column is dragged wider. The inspector takes up to
+       62% of the editor (at most 1500px) while the stage keeps at least
+       640px, and keeps that width whether it shows a tile or the page, so
+       picking a tile never moves the stage; its cards stand in as many
+       columns as that width holds (\`inspectorColumnCount\`). */
     .layout.pe-layout { padding: 0; align-items: stretch; }
     .layout.pe-layout.pe-wide {
-      grid-template-columns: minmax(0, 1fr) clamp(340px, 38%, 640px); column-gap: 8px;
+      grid-template-columns: minmax(0, 1fr) clamp(340px, max(38%, min(62%, 100% - 640px)), 1500px); column-gap: 8px;
       flex: 1 1 0; min-height: 0; overflow: hidden;
-    }
-    /* With one tile selected the inspector grows to 55% of the editor, at
-       most 1100px, so its settings stand in two columns on a large screen,
-       while the stage keeps at least 640px (never less than the 38% it has
-       anyway). */
-    .layout.pe-layout.pe-wide.pe-tile-on {
-      grid-template-columns: minmax(0, 1fr) clamp(340px, max(38%, min(55%, 100% - 640px)), 1100px);
     }
     .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
     .pe-layout.pe-wide > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
@@ -5211,16 +5242,13 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:focus:not(:disabled) { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-direction: column; }
-    /* The tile inspector: the head card over the settings in two columns
-       (left how the tile looks and when it shows, right where it sits and
-       what it does), one column on an inspector narrower than 760px. The
-       container also lays out the head (\`tileSettingsStyles\`). */
+    /* The inspector's cards in columns, one to three as its measured width
+       holds (\`--pe-cols\`, set where they are drawn): a tile's under its head
+       card, the page's above the line and Delete page. The container also
+       lays out a tile's head (\`tileSettingsStyles\`). */
     .pe-tile-insp { container: pe-tile / inline-size; display: flex; flex-direction: column; min-width: 0; }
-    .pe-insp-cols { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 0 14px; }
+    .pe-insp-cols { display: grid; grid-template-columns: repeat(var(--pe-cols, 1), minmax(0, 1fr)); align-items: start; gap: 0 14px; }
     .pe-insp-col { display: flex; flex-direction: column; min-width: 0; }
-    @container pe-tile (min-width: 760px) {
-      .pe-insp-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
     .pe-head-tile { position: relative; display: block; flex: none; pointer-events: none; }
     /* The line under the presets that opens the four boxes: where the tile
        is, behind a chevron that turns, so it reads as a disclosure. The

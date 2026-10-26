@@ -327,6 +327,7 @@ import {
   oneLookStateRowOff,
   oneLookValueStylesOff,
 } from "./one-look-settings.js";
+import { splitColumns } from "./inspector-columns.js";
 
 /** Every `uiState` key of this module starts with this. */
 const KEY = "tile-settings";
@@ -863,6 +864,27 @@ export function tileInspectorColumns(sections: readonly WatchTileSettingsSection
   const left = sections.filter((s) => LEFT_SECTIONS.includes(s)).sort((a, b) => rank(LEFT_SECTIONS, a) - rank(LEFT_SECTIONS, b));
   const right = sections.filter((s) => !LEFT_SECTIONS.includes(s)).sort((a, b) => rank(RIGHT_SECTIONS, a) - rank(RIGHT_SECTIONS, b));
   return { left, right };
+}
+
+/** About how tall each section's card stands, open, in tenths of a tall
+ * screen: what `tileInspectorColumnRuns` balances three columns by. */
+const SECTION_WEIGHT: Partial<Record<WatchTileSettingsSection, number>> = {
+  icon: 9, text: 4, background: 4, visibility: 2, header: 3, phoneTile: 3, phone: 3, phoneExtras: 3, removed: 1,
+  size: 2, arrange: 2, state: 6, border: 5, action: 4, opens: 3, target: 3, request: 4, special: 4,
+};
+
+/**
+ * The inspector's sections in `count` columns (1 to 3), each a list in
+ * reading order. One column is the left column's sections over the right's;
+ * two are those columns (`tileInspectorColumns`); three split that same
+ * order into three runs of about one height (`splitColumns`), so how the
+ * tile looks still comes first and what it does last.
+ */
+export function tileInspectorColumnRuns(sections: readonly WatchTileSettingsSection[], count: number): WatchTileSettingsSection[][] {
+  const { left, right } = tileInspectorColumns(sections);
+  if (count <= 1) return [[...left, ...right]];
+  if (count === 2) return [left, right].filter((run) => run.length > 0);
+  return splitColumns([...left, ...right], (s) => SECTION_WEIGHT[s] ?? 3, count);
 }
 
 /** The look keys Reset tile removes beside the styling tasks' own resets:

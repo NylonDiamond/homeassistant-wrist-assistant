@@ -151,6 +151,7 @@ type Editor = Record<string, unknown> & {
   currentPage(): WatchPage | undefined;
   refuseGesture(reason: string): void;
   selectedTileId?: string;
+  inspectorCols: number;
 };
 
 let watchSeq = 0;
@@ -323,11 +324,13 @@ describe("Collapse all", () => {
 
 describe("the tile's cards", () => {
   it("start with the head card, then the cards in two columns: the look on the left, place, state, border and tap on the right", () => {
-    const text = flat(inspector(editor(hallPage(), DIMMER)));
+    const el = editor(hallPage(), DIMMER);
+    el.inspectorCols = 2;
+    const text = flat(inspector(el));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
     // The head: the live tile, Name, Entity, Preview as and Reset tile,
     // before any card.
-    const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf(`<div class="pe-insp-cols">`));
+    const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf(`<div class="pe-insp-cols"`));
     expect(body.indexOf(`<section class="ts-head`)).toBeLessThan(body.indexOf("<h4>"));
     expect(head).toContain(`<div class="ts-head-pic"><span class="pe-head-tile"`);
     expect(head).toContain(`aria-label="Name"`);
@@ -340,8 +343,8 @@ describe("the tile's cards", () => {
     expect(body.match(/aria-label="Name"/g)?.length).toBe(1);
     expect(card(body, "Text")).not.toContain(`aria-label="Label"`);
     // The columns.
-    const left = body.slice(body.indexOf(`data-col="left"`), body.indexOf(`data-col="right"`));
-    const right = body.slice(body.indexOf(`data-col="right"`));
+    const left = body.slice(body.indexOf(`data-col=1`), body.indexOf(`data-col=2`));
+    const right = body.slice(body.indexOf(`data-col=2`));
     const titles = (part: string) => [...part.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
     expect(titles(left)).toEqual(["Icon and color", "Text", "Background", "Visibility"]);
     expect(titles(right)).toEqual(["Size", "Arrangement", "State", "Border", "Action"]);
@@ -356,14 +359,26 @@ describe("the tile's cards", () => {
     expect(body).toContain("Delete tile");
   });
 
-  it("stand in two columns from 760px of inspector, one under it, and widen the inspector for a tile", () => {
+  it("stand in as many columns as the inspector's measured width holds, and the inspector keeps one width with or without a tile", () => {
     const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
     const css = sheet((customElements.get("wa-page-editor") as unknown as { styles: unknown }).styles);
-    expect(flat(inspector(editor(hallPage(), DIMMER)))).toContain(`<div class="pe-insp-cols">`);
-    expect(css).toMatch(/\.pe-tile-insp \{ container: pe-tile \/ inline-size;/);
-    expect(css).toMatch(/\.pe-insp-cols \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/);
-    expect(css).toMatch(/@container pe-tile \(min-width: 760px\) \{\s*\.pe-insp-cols \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
-    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide\.pe-tile-on \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(55%, 100% - 640px\)\), 1100px\);/);
+    const titles = (part: string) => [...part.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
+    const cols = (n: number): (string | undefined)[][] => {
+      const el = editor(hallPage(), DIMMER);
+      el.inspectorCols = n;
+      const text = flat(inspector(el));
+      expect(text).toContain(`<div class="pe-insp-cols" style=--pe-cols:${n}>`);
+      return Array.from({ length: n }, (_, i) => {
+        const from = text.indexOf(`data-col=${i + 1}`);
+        const to = i + 1 < n ? text.indexOf(`data-col=${i + 2}`) : text.indexOf("Delete tile");
+        return titles(text.slice(from, to));
+      });
+    };
+    expect(cols(1)).toEqual([["Icon and color", "Text", "Background", "Visibility", "Size", "Arrangement", "State", "Border", "Action"]]);
+    expect(cols(3)).toEqual([["Icon and color", "Text"], ["Background", "Visibility", "Size", "Arrangement"], ["State", "Border", "Action"]]);
+    expect(css).toMatch(/\.pe-insp-cols \{ display: grid; grid-template-columns: repeat\(var\(--pe-cols, 1\), minmax\(0, 1fr\)\);/);
+    expect(css).not.toContain("pe-tile-on");
+    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 1500px\);/);
   });
 
   it("switch the head's live tile with Preview as, and leave the stage and the draft alone", () => {
@@ -469,13 +484,15 @@ describe("the tile's cards", () => {
   });
 
   it("give a spacer no Name and no Preview as in its head: it has no label and no entity", () => {
-    const text = flat(inspector(editor(hallPage(), SPACER)));
+    const spacer = editor(hallPage(), SPACER);
+    spacer.inspectorCols = 2;
+    const text = flat(inspector(spacer));
     expect(text).not.toContain("name-sec");
     expect(text).not.toContain(`aria-label="Name"`);
     expect(text).not.toContain("Preview as");
     expect(text).toContain(`<span class="ts-head-none">None</span>`);
-    const left = text.slice(text.indexOf(`data-col="left"`), text.indexOf(`data-col="right"`));
-    const right = text.slice(text.indexOf(`data-col="right"`));
+    const left = text.slice(text.indexOf(`data-col=1`), text.indexOf(`data-col=2`));
+    const right = text.slice(text.indexOf(`data-col=2`));
     expect([...left.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Background"]);
     expect([...right.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Size", "Border"]);
   });
@@ -495,6 +512,16 @@ describe("the inspector with no tile", () => {
     expect(body).not.toContain("above the watch");
     // No duplicate page action exists, so none is offered.
     expect(body).not.toContain("Duplicate page");
+  });
+
+  it("stands the page's cards in the inspector's columns, the line and Delete page under them", () => {
+    const el = editor(hallPage());
+    el.inspectorCols = 2;
+    const body = flat(inspector(el));
+    expect(body).toContain(`<div class="pe-insp-cols" style=--pe-cols:2>`);
+    const cols = body.slice(body.indexOf(`<div class="pe-insp-cols"`), body.indexOf("Click a tile on the watch to edit it."));
+    const runs = cols.split(`<div class="pe-insp-col">`).slice(1).map((run) => [...run.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]));
+    expect(runs).toEqual([["On each device", "Look"], ["On the watch", "In the page switcher"]]);
   });
 
   it("says to add a tile on a page with none", () => {
