@@ -3442,9 +3442,12 @@ export const tileSettingsStyles = css`
   /* The inspector's head (\`renderTileHead\`): one strip across the
      inspector, wrapping on a narrow one. The path and the live tiles at its
      start, Name and Shows in the middle (labels over their boxes), the
-     actions and Find a setting at its end. */
+     actions and Find a setting at its end. A row, said outright: the head
+     also wears .ts-root, which stands its children in a column, and in a
+     column the parts' flex bases (280px, 300px) became heights, so the head
+     stood 800px tall with each part on its own line. */
   .ts-head {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px;
+    display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 16px 28px;
     margin: 0; padding: 16px 20px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card);
   }
   .ts-head-lead { display: flex; flex-direction: column; gap: 10px; flex: 0 1 auto; min-width: 0; }
