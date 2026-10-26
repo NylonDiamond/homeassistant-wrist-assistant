@@ -266,6 +266,7 @@ import {
   TILE_DESIGN_SCREEN_WIDTH,
   designForEdit,
   dragLayerFrame,
+  isGlowId,
   layerDraggable,
   readTileDesign,
   syncTileDesigns,
@@ -2803,7 +2804,7 @@ export class WaPageEditor extends LitElement {
    * the tile drawn with it there. */
   private trackLayerGesture(g: LayerGesture): void {
     if (!(g.fitPx.width > 0) || !(g.fitPx.height > 0)) return;
-    const frame = dragLayerFrame(g.startFrame, g.mode, (g.clientX - g.startX) / g.fitPx.width, (g.clientY - g.startY) / g.fitPx.height);
+    const frame = dragLayerFrame(g.startFrame, g.mode, (g.clientX - g.startX) / g.fitPx.width, (g.clientY - g.startY) / g.fitPx.height, isGlowId(g.layerId));
     if (g.frame !== undefined && sameLayerFrame(g.frame, frame)) return;
     g.frame = frame;
     const page = this.currentPage();
@@ -3776,6 +3777,11 @@ export class WaPageEditor extends LitElement {
       const anchor = stored!.anchors[role];
       if (anchor === undefined) delete out[role];
       else out[role] = anchor;
+    }
+    // The glow goes with the glyph slot (section 14.6).
+    if (stored !== undefined && (stored.owned.includes("icon") || stored.owned.includes("photo"))) {
+      if (stored.anchors.glow === undefined) delete out.glow;
+      else out.glow = stored.anchors.glow;
     }
     return out;
   }

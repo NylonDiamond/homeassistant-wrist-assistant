@@ -54,6 +54,82 @@
       "slotIndex": 0,
       "elements": [
         {
+          "kind": "shape",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000006",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [
+              {
+                "id": "BA5E0006-0001-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0006-0001-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0006-0001-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.bed",
+                              "displayName": "Bed Light",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setOpacity",
+                        "number": 1
+                      }
+                    ]
+                  }
+                ],
+                "otherwise": [
+                  {
+                    "kind": "setOpacity",
+                    "number": 0
+                  }
+                ]
+              }
+            ],
+            "frame": {
+              "x": 0.1434,
+              "y": -0.0885,
+              "width": 0.7132,
+              "height": 1.086,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "opacity": 0.32,
+            "kind": "circle",
+            "cornerRadius": 0,
+            "borderWidth": 0,
+            "fill": {
+              "kind": "radial",
+              "stops": [
+                {
+                  "at": 0,
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "at": 1,
+                  "colorHex": "#FFFFFF00"
+                }
+              ]
+            },
+            "name": "Glow"
+          }
+        },
+        {
           "kind": "icon",
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
@@ -536,6 +612,15 @@
           "textSize": 12.6,
           "unitSize": 9,
           "tailSize": 11
+        },
+        "glow": {
+          "rect": {
+            "x": 26.3574,
+            "y": 6.1074,
+            "width": 47.7852,
+            "height": 47.7852
+          },
+          "size": 47.7852
         }
       }
     },
@@ -584,6 +669,15 @@
           "textSize": 21,
           "unitSize": 13.86,
           "tailSize": 15
+        },
+        "glow": {
+          "rect": {
+            "x": 51.2442,
+            "y": 15.4109,
+            "width": 76.5116,
+            "height": 76.5116
+          },
+          "size": 76.5116
         }
       }
     }
@@ -667,5 +761,34 @@
         }
       }
     ]
+  },
+  "halo": {
+    "setting": {
+      "mode": "auto",
+      "size": 150,
+      "brightness": 100,
+      "color": "white"
+    },
+    "palette": {
+      "surface": "coloured",
+      "isLit": true,
+      "hue": "#F2AE4E"
+    },
+    "glyph": {
+      "picture": false,
+      "hasIcon": true,
+      "photo": false,
+      "drawsDisc": false,
+      "glyphSize": 47.7852,
+      "center": {
+        "x": 50.25,
+        "y": 30
+      }
+    },
+    "drawn": {
+      "opacity": 0.32,
+      "diameter": 71.6778,
+      "colorHex": "#FFFFFF"
+    }
   }
 }

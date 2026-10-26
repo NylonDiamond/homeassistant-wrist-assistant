@@ -35,6 +35,76 @@
       "slotIndex": 0,
       "elements": [
         {
+          "kind": "shape",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000006",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [
+              {
+                "id": "BA5E0006-0001-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0006-0001-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0006-0001-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "sensor.living_temperature",
+                              "displayName": "Living room",
+                              "domain": "sensor"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isUnavailable"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setOpacity",
+                        "number": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "frame": {
+              "x": 0.3243,
+              "y": -0.0885,
+              "width": 0.3514,
+              "height": 1.086,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "opacity": 0.14,
+            "kind": "circle",
+            "cornerRadius": 0,
+            "borderWidth": 0,
+            "fill": {
+              "kind": "radial",
+              "stops": [
+                {
+                  "at": 0,
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "at": 1,
+                  "colorHex": "#FFFFFF00"
+                }
+              ]
+            },
+            "name": "Glow"
+          }
+        },
+        {
           "kind": "icon",
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
@@ -211,5 +281,34 @@
   },
   "expected": [],
   "devices": null,
-  "placed": null
+  "placed": null,
+  "halo": {
+    "setting": {
+      "mode": "auto",
+      "size": 150,
+      "brightness": 100,
+      "color": "white"
+    },
+    "palette": {
+      "surface": "coloured",
+      "isLit": false,
+      "hue": "#FF9500"
+    },
+    "glyph": {
+      "picture": false,
+      "hasIcon": true,
+      "photo": false,
+      "drawsDisc": false,
+      "glyphSize": 47.7852,
+      "center": {
+        "x": 102,
+        "y": 30
+      }
+    },
+    "drawn": {
+      "opacity": 0.14,
+      "diameter": 71.6778,
+      "colorHex": "#FFFFFF"
+    }
+  }
 }

@@ -35,6 +35,7 @@ import {
   type TileDesign,
   type TileZoneAction,
   type TileZonePreset,
+  BASE_GLOW_ID,
   BASE_LAYER_IDS,
   BASE_LAYER_PARTS,
   BASE_LAYER_ROLES,
@@ -49,6 +50,9 @@ import {
   drawnDesignDoc,
   encodeAnchors,
   encodeZoneAction,
+  glyphOwned,
+  glyphSlotRole,
+  isGlowId,
   normalizeDesignDoc,
   ownedAnchors,
   ownedString,
@@ -94,7 +98,7 @@ export function layerStatus(design: TileDesign | undefined, elementId: string): 
   if (el?.kind === "tap") return "zone";
   const role = baseRoleOf(id);
   if (role === undefined) return "added";
-  return design !== undefined && design.owned.includes(role) ? "changed" : "follows";
+  return design !== undefined && roleOwned(design, role) ? "changed" : "follows";
 }
 
 /** The counts a tile row and its Layers section show. A tile with no design
@@ -130,7 +134,10 @@ function normalDesign(design: TileDesign): TileDesign {
     return true;
   });
   const owned = sortRoles(design.owned);
-  const out: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned, anchors: ownedAnchors(design.anchors, owned), zones };
+  const anchors = ownedAnchors(design.anchors, owned);
+  // The glow's anchor is kept only beside a Glow layer it can place.
+  if (anchors.glow !== undefined && !doc.elements.some((el) => isGlowId(el.payload.id))) delete anchors.glow;
+  const out: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned, anchors, zones };
   const template = designTemplate(doc, owned);
   if (template !== undefined) out.template = template;
   return out;
@@ -284,6 +291,13 @@ function designWithoutState(tile: WatchPageTile, existing: TileDesign, ctx: Base
     anchors[role] = anchor;
     paired = true;
   }
+  // The glow's anchor pairs the same way, while the glyph slot follows.
+  const storedGlow = stored.get(BASE_GLOW_ID);
+  const freshGlow = fresh.get(BASE_GLOW_ID);
+  if (!glyphOwned(existing.owned) && freshAnchors.glow !== undefined && storedGlow !== undefined && freshGlow !== undefined && layerGeometry(storedGlow) === layerGeometry(freshGlow)) {
+    anchors.glow = freshAnchors.glow;
+    paired = true;
+  }
   return paired ? { ...existing, anchors } : existing;
 }
 
@@ -299,14 +313,22 @@ function layerGeometry(el: Element): string {
 }
 
 /** The anchors a design is edited with: the fresh ones, with each owned
- * role's stored one in its place where it has one. */
+ * role's stored one in its place where it has one, and the glow's while the
+ * glyph slot is owned. */
 function editAnchors(existing: TileDesign, fresh: TileAnchors): TileAnchors {
   const out: TileAnchors = { ...fresh };
   for (const role of existing.owned) {
     const stored = existing.anchors[role];
     if (stored !== undefined) out[role] = stored;
   }
+  if (glyphOwned(existing.owned) && existing.anchors.glow !== undefined) out.glow = existing.anchors.glow;
   return out;
+}
+
+/** The role owning the glow owns: the glyph slot of the document after the
+ * edit, or before it when the edit took the slot's layers away. */
+function slotRoleOf(...docs: CustomComplicationConfig[]): BaseLayerRole {
+  return docs.some((doc) => glyphSlotRole(doc) === "photo") ? "photo" : "icon";
 }
 
 /** `after` with every base role owned whose layer differs from `before`'s
@@ -318,7 +340,9 @@ export function ownChangedBaseLayers(before: TileDesign, after: TileDesign): Til
   for (const { id, role } of BASE_LAYER_PARTS) {
     const a = was.get(id);
     const b = now.get(id);
-    if (a !== b && (a !== undefined || b !== undefined)) owned.add(role);
+    if (a === b || (a === undefined && b === undefined)) continue;
+    if (id !== BASE_GLOW_ID) owned.add(role);
+    else if (!glyphOwned([...owned])) owned.add(slotRoleOf(after.doc, before.doc));
   }
   return { ...after, owned: sortRoles([...owned]) };
 }
@@ -331,14 +355,14 @@ export function writeDesignDoc(tile: WatchPageTile, before: TileDesign, nextDoc:
 
 // ── rebuilding the base layers ───────────────────────────────────────────
 
-/** Where a base layer sits in the draw order, by its id: the glyph at the
- * bottom, then the state's pill, the state, then the name. */
+/** Where a base layer sits in the draw order, by its id: the glow at the
+ * bottom, the glyph, then the state's pill, the state, then the name. */
 function baseRank(elementId: string): number | undefined {
   const id = elementId.toUpperCase();
   const at = BASE_LAYER_PARTS.findIndex((part) => part.id === id);
   if (at < 0) return undefined;
-  // The icon and the photo share the bottom.
-  return Math.max(0, at - 1);
+  // The icon and the photo share one rank, just above the glow.
+  return id === BASE_LAYER_IDS.icon || at < 1 ? at : at - 1;
 }
 
 function roleOwned(design: TileDesign, role: BaseLayerRole): boolean {
@@ -374,6 +398,8 @@ export function rebuildBaseLayers(tile: WatchPageTile, design: TileDesign, ctx: 
   const fresh = baseLayersById(tile, ctx);
   const doc = normalizeDesignDoc(design.doc);
   const elements = [...doc.elements];
+  // The glow is never put in over the layer cap: the native glow draws then.
+  const full = doc.elements.filter((el) => !isTap(el)).length >= TILE_DESIGN_MAX_LAYERS;
   for (const { id, role } of BASE_LAYER_PARTS) {
     if (roleOwned(design, role)) continue;
     const at = elements.findIndex((el) => el.payload.id.toUpperCase() === id);
@@ -381,7 +407,7 @@ export function rebuildBaseLayers(tile: WatchPageTile, design: TileDesign, ctx: 
     if (at >= 0) {
       if (next !== undefined) elements[at] = next;
       else elements.splice(at, 1);
-    } else if (next !== undefined) {
+    } else if (next !== undefined && !(id === BASE_GLOW_ID && full)) {
       insertAtRank(elements, next);
     }
   }
@@ -390,7 +416,8 @@ export function rebuildBaseLayers(tile: WatchPageTile, design: TileDesign, ctx: 
 
 /** The tile with one base layer given back to the simple settings: no
  * longer owned, built again. The glyph is one slot, so resetting the icon or
- * the photo resets both. A tile with no design is returned as it is. */
+ * the photo resets both and the glow with them. A tile with no design is
+ * returned as it is. */
 export function resetBaseLayer(tile: WatchPageTile, role: BaseLayerRole, ctx: BaseLayerContext): WatchPageTile {
   const design = readTileDesign(tile);
   if (design === undefined) return tile;
@@ -528,16 +555,18 @@ export function addLayer(design: TileDesign, kind: Element["kind"]): { design: T
 }
 
 /** The design without one layer: a base layer goes and is owned (a rebuild
- * does not bring it back; Reset does), the State layer with its pill, an
- * added layer goes, a tap zone goes with its entry. */
+ * does not bring it back; Reset does), the State layer with its pill, the
+ * icon or the photo with the glow, an added layer goes, a tap zone goes with
+ * its entry. Deleting the glow owns the glyph slot. */
 export function removeLayer(design: TileDesign, elementId: string): TileDesign {
   const id = elementId.toUpperCase();
   const el = design.doc.elements.find((e) => e.payload.id.toUpperCase() === id);
   if (el === undefined) return design;
-  const withPill = id === BASE_LAYER_IDS.state;
-  const elements = design.doc.elements.filter((e) => e !== el && !(withPill && e.payload.id.toUpperCase() === BASE_STATE_PILL_ID));
-  const role = baseRoleOf(id);
-  const owned = role === undefined ? design.owned : sortRoles([...design.owned, role]);
+  const companion = id === BASE_LAYER_IDS.state ? BASE_STATE_PILL_ID
+    : id === BASE_LAYER_IDS.icon || id === BASE_LAYER_IDS.photo ? BASE_GLOW_ID : undefined;
+  const elements = design.doc.elements.filter((e) => e !== el && !(companion !== undefined && e.payload.id.toUpperCase() === companion));
+  const role = isGlowId(id) ? slotRoleOf(design.doc) : baseRoleOf(id);
+  const owned = role === undefined || (isGlowId(id) && glyphOwned(design.owned)) ? design.owned : sortRoles([...design.owned, role]);
   let zones = design.zones;
   if (isTap(el)) {
     zones = { ...design.zones };
@@ -560,9 +589,16 @@ export function moveLayer(design: TileDesign, elementId: string, dir: -1 | 1): T
   const target = elements[to];
   if (target === undefined || isTap(target) !== isTap(elements[at]!)) return design;
   [elements[at], elements[to]] = [elements[to]!, elements[at]!];
+  return { ...design, doc: { ...design.doc, elements }, owned: owningWith(design, id) };
+}
+
+/** The design's `owned` with the role of a changed element added: its base
+ * role, or for the glow the glyph slot (unless the slot is owned already). */
+function owningWith(design: TileDesign, id: string): BaseLayerRole[] {
   const role = baseRoleOf(id);
-  const owned = role === undefined || design.owned.includes(role) ? design.owned : sortRoles([...design.owned, role]);
-  return { ...design, doc: { ...design.doc, elements }, owned };
+  if (role === undefined) return design.owned;
+  if (isGlowId(id)) return glyphOwned(design.owned) ? design.owned : sortRoles([...design.owned, slotRoleOf(design.doc)]);
+  return design.owned.includes(role) ? design.owned : sortRoles([...design.owned, role]);
 }
 
 // ── dragging a layer on the stage ────────────────────────────────────────
@@ -584,22 +620,27 @@ const clamp01 = (v: number, lo: number, hi: number): number => Math.min(hi, Math
  * the whole frame and stops at the tile's edges; a corner pulls that corner,
  * the opposite one staying put, down to `LAYER_MIN_FRACTION` and out to the
  * edges. A frame larger than the tile stays at the tile's top left. Rounded
- * to 4 places, as base layers are written; the rotation is kept.
+ * to 4 places, as base layers are written; the rotation is kept. `free`
+ * (the glyph's glow, which may be larger than the tile and reach past it)
+ * drops the tile's edges: a move is a plain translation and a corner stops
+ * only at the smallest size.
  */
-export function dragLayerFrame(frame: NormalizedFrame, mode: LayerDragMode, dx: number, dy: number): NormalizedFrame {
+export function dragLayerFrame(frame: NormalizedFrame, mode: LayerDragMode, dx: number, dy: number, free = false): NormalizedFrame {
+  const lo = free ? -Infinity : 0;
+  const hi = free ? Infinity : 1;
   if (mode === "move") {
-    const x = clamp01(frame.x + dx, 0, Math.max(0, 1 - frame.width));
-    const y = clamp01(frame.y + dy, 0, Math.max(0, 1 - frame.height));
+    const x = free ? frame.x + dx : clamp01(frame.x + dx, 0, Math.max(0, 1 - frame.width));
+    const y = free ? frame.y + dy : clamp01(frame.y + dy, 0, Math.max(0, 1 - frame.height));
     return { ...frame, x: round4(x), y: round4(y) };
   }
   let left = frame.x;
   let top = frame.y;
   let right = frame.x + frame.width;
   let bottom = frame.y + frame.height;
-  if (mode === "nw" || mode === "sw") left = clamp01(left + dx, 0, right - LAYER_MIN_FRACTION);
-  else right = clamp01(right + dx, left + LAYER_MIN_FRACTION, 1);
-  if (mode === "nw" || mode === "ne") top = clamp01(top + dy, 0, bottom - LAYER_MIN_FRACTION);
-  else bottom = clamp01(bottom + dy, top + LAYER_MIN_FRACTION, 1);
+  if (mode === "nw" || mode === "sw") left = clamp01(left + dx, lo, right - LAYER_MIN_FRACTION);
+  else right = clamp01(right + dx, left + LAYER_MIN_FRACTION, hi);
+  if (mode === "nw" || mode === "ne") top = clamp01(top + dy, lo, bottom - LAYER_MIN_FRACTION);
+  else bottom = clamp01(bottom + dy, top + LAYER_MIN_FRACTION, hi);
   return { ...frame, x: round4(left), y: round4(top), width: round4(right - left), height: round4(bottom - top) };
 }
 
@@ -610,8 +651,12 @@ const sameFrameish = (a: NormalizedFrame, b: NormalizedFrame): boolean =>
  * The design with one layer's frame set, as a drag on the stage sets it. A
  * base layer moved is owned, as by any change. The State layer takes its
  * pill along: a pill that matched its frame matches the new one, any other
- * moves by as much as the State layer's corner did. A layer the design does
- * not have, or a frame that did not change, gives the design back as it is.
+ * moves by as much as the State layer's corner did. The icon or the photo
+ * takes the glow along by the change of its frame's centre, its size kept
+ * and not held to the tile (a glow may be larger than it). The glow moved
+ * alone owns the glyph slot and leaves the icon where it is. A layer the
+ * design does not have, or a frame that did not change, gives the design
+ * back as it is.
  */
 export function setLayerFrame(design: TileDesign, elementId: string, frame: NormalizedFrame): TileDesign {
   const id = elementId.toUpperCase();
@@ -628,11 +673,15 @@ export function setLayerFrame(design: TileDesign, elementId: string, frame: Norm
         : dragLayerFrame(pill, "move", frame.x - before.x, frame.y - before.y);
       return { ...e, payload: { ...e.payload, frame: next } } as Element;
     }
+    if ((id === BASE_LAYER_IDS.icon || id === BASE_LAYER_IDS.photo) && isGlowId(e.payload.id)) {
+      const g = e.payload.frame;
+      const dx = frame.x + frame.width / 2 - (before.x + before.width / 2);
+      const dy = frame.y + frame.height / 2 - (before.y + before.height / 2);
+      return { ...e, payload: { ...e.payload, frame: { ...g, x: round4(g.x + dx), y: round4(g.y + dy) } } } as Element;
+    }
     return e;
   });
-  const role = baseRoleOf(id);
-  const owned = role === undefined || design.owned.includes(role) ? design.owned : sortRoles([...design.owned, role]);
-  return { ...design, doc: { ...design.doc, elements }, owned };
+  return { ...design, doc: { ...design.doc, elements }, owned: owningWith(design, id) };
 }
 
 /** The tile with one layer at a new frame, as a drag on the stage leaves
@@ -773,6 +822,7 @@ export function tileZoneHit(design: TileDesign, box: { width: number; height: nu
  * they stay live through `tileName` and `tileState`. */
 export const SIMPLE_KEY_ROLES: Readonly<Record<string, BaseLayerRole>> = Object.freeze({
   icon: "icon",
+  iconGlow: "icon",
   usesStateIcons: "icon",
   stateIcons: "icon",
   iconSizeOverride: "icon",

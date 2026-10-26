@@ -41,7 +41,16 @@ import type { IconProvider } from "../renderer.js";
 import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry, tileKind } from "./model.js";
 import { type WatchPagePreviewInput, filledSymbol, knownSymbol, watchPreviewTileLabel, watchSpecialTileLook, watchSyncedTile } from "./preview.js";
 import { type OneLookPreviewModel, oneLookPreviewModel } from "./one-look/render.js";
-import { type OneLookInk, ONE_LOOK_PILL_OPACITY, ONE_LOOK_UNIT_OPACITY, oneLookGlyphInk, oneLookHex } from "./one-look/colour.js";
+import {
+  type OneLookGlyphHalo,
+  type OneLookInk,
+  ONE_LOOK_PILL_OPACITY,
+  ONE_LOOK_UNIT_OPACITY,
+  oneLookGlyphGlowOf,
+  oneLookGlyphHalo,
+  oneLookGlyphInk,
+  oneLookHex,
+} from "./one-look/colour.js";
 import { type OneLookStateLine, oneLookStateFor } from "./one-look/state.js";
 import { type OneLookDevice, oneLookCellSize, oneLookCentredGlyph, oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
 import { type OneLookRect, ONE_LOOK_GLYPH_INK_SHARE, ONE_LOOK_GLYPH_STATE_GAP, ONE_LOOK_PILL_PAD_H, oneLookLayoutMetrics } from "./one-look/layout.js";
@@ -52,6 +61,8 @@ import { type TileNativeFrames, anchorOf, tileNativeFrames } from "./tile-anchor
 import {
   type BaseLayerRole,
   type TileAnchors,
+  BASE_GLOW_ID,
+  BASE_GLOW_NAME,
   BASE_LAYER_IDS,
   BASE_LAYER_NAMES,
   BASE_STATE_PART_IDS,
@@ -158,6 +169,13 @@ function faceOf(stored: WatchPageTile, ctx: BaseLayerContext, states = ctx.state
     width: box.width, height: box.height, cell, unit, box: "", s: 1, measurer,
   });
   return model === undefined ? undefined : { model, box, input, tile, measurer, phoneMeasurer: phoneMeasurer(ctx) };
+}
+
+/** The One Look model of the reference watch face the base layers are built
+ * from (the tile at its design box on the 46 mm watch), or undefined when
+ * One Look draws none. For the fixtures' `halo`. */
+export function baseLayerFaceModel(tile: WatchPageTile, ctx: BaseLayerContext): OneLookPreviewModel | undefined {
+  return faceOf(tile, ctx)?.model;
 }
 
 /** The tile's entity's state with its word replaced, its attributes kept. */
@@ -272,8 +290,8 @@ const GLYPH_SHADOW = Object.freeze({ colorHex: "#00000080", radius: 2, dx: 0, dy
 /** Fixed ids for the rules a base layer carries, so a rebuild writes the
  * same document: the role, the rule, the case and the part (1 the rule, 2
  * the case, 3 its test). */
-function baseRuleId(role: BaseLayerRole, rule: number, caseIndex: number, part: 1 | 2 | 3): string {
-  const r = { icon: 1, photo: 2, name: 3, state: 4 }[role];
+function baseRuleId(role: BaseLayerRole | "glow", rule: number, caseIndex: number, part: 1 | 2 | 3): string {
+  const r = { icon: 1, photo: 2, name: 3, state: 4, glow: 6 }[role];
   const hex = (n: number, width: number) => n.toString(16).toUpperCase().padStart(width, "0");
   return `BA5E000${r}-${hex(rule, 4)}-4${hex(caseIndex, 3)}-8${hex(part, 3)}-000000000000`;
 }
@@ -465,8 +483,136 @@ function symbolRule(tile: WatchPageTile, ctx: BaseLayerContext, face: Face, tile
   return cases.length === 0 ? { symbol } : { symbol, rule: { id: baseRuleId("icon", 3, 0, 1), cases } };
 }
 
+/** The glow One Look draws behind the glyph in a face, with the tile's glow
+ * setting, or undefined when it draws none then. */
+function haloOf(face: Face | undefined): OneLookGlyphHalo | undefined {
+  if (face === undefined) return undefined;
+  const m = face.model;
+  return oneLookGlyphHalo(m.palette, {
+    centred: oneLookCentredGlyph("watch"),
+    picture: m.picture !== "none",
+    hasIcon: m.baseIcon !== "",
+    photo: m.photo !== undefined,
+  }, m.style.glow);
+}
+
+/** A glow's opacity in a face, 0 when it draws none. */
+function glowOpacityOf(face: Face | undefined): number {
+  return haloOf(face)?.opacity ?? 0;
+}
+
+/** The glyph box in a face, a square of side `glyphSize` on the glyph's
+ * centre, or undefined with no bare glyph. */
+function glyphBoxOf(face: Face): OneLookRect | undefined {
+  const layout = face.model.layout;
+  const disc = layout.discRect;
+  const g = layout.glyphSize;
+  if (!(disc.width > 0) || !(g > 0) || layout.drawsDisc) return undefined;
+  const cx = disc.x + disc.width / 2;
+  const cy = disc.y + disc.height / 2;
+  return { x: cx - g / 2, y: cy - g / 2, width: g, height: g };
+}
+
+/** The glow's brightness from the tile's faces, as the icon's rules read
+ * them (section 14.4): for a kind lit when on its on and off faces, else the
+ * face now, and the unavailable face. `M` is the brightest, which the layer
+ * is built at; `giver` the face that has it. */
+function glowFaces(tile: WatchPageTile, face: Face, tileAt: FacesAt): { M: number; aOn: number; aOff: number; u: number; onOff: boolean; giver: Face | undefined } {
+  const onOffKind = LIT_ON_KINDS.has(tileKind(tileEntityId(tile)));
+  const u = glowOpacityOf(tileAt("unavailable"));
+  if (!onOffKind) {
+    const now = glowOpacityOf(face);
+    return { M: now, aOn: now, aOff: now, u, onOff: false, giver: face };
+  }
+  const on = tileAt("on");
+  const off = tileAt("off");
+  const aOn = glowOpacityOf(on);
+  const aOff = glowOpacityOf(off);
+  return { M: Math.max(aOn, aOff), aOn, aOff, u, onOff: aOn !== aOff, giver: aOn >= aOff ? on : off };
+}
+
+/**
+ * The glyph's glow (tile layers round three, section 14.4): a circle shape
+ * on the glow One Look draws behind a bare glyph, a radial fill from the
+ * glow's colour to clear, as wide as the glow, at the brightest opacity any
+ * face of the tile draws it, with one rule that dims it to the face the
+ * entity is in (on, off, unavailable) as the native glow does. Undefined
+ * with no bare glyph or no face that draws a glow.
+ */
+function glowLayer(tile: WatchPageTile, face: Face, tileAt: FacesAt, ctx: BaseLayerContext): Element | undefined {
+  const glyph = glyphBoxOf(face);
+  if (glyph === undefined) return undefined;
+  const { M, aOn, aOff, u, onOff, giver } = glowFaces(tile, face, tileAt);
+  const halo = haloOf(giver);
+  if (!(M > 0) || halo === undefined) return undefined;
+  const hex = oneLookHex(halo.rgb);
+  const d = glyph.width * (face.model.style.glow.size / 100);
+  const cx = glyph.x + glyph.width / 2;
+  const cy = glyph.y + glyph.height / 2;
+  const r = (a: number) => round(a / M, 4);
+  const rest = onOff ? r(aOff) : 1;
+  const value = entityValue(tile, ctx.states);
+  const cases: RuleCase[] = [];
+  const addCase = (comparison: Comparison, opacity: number) => {
+    const at = cases.length + 1;
+    cases.push({
+      id: baseRuleId("glow", 1, at, 2),
+      when: { join: "all", tests: [{ id: baseRuleId("glow", 1, at, 3), value, comparison }] },
+      then: [{ kind: "setOpacity", number: opacity }],
+    });
+  };
+  if (r(u) !== rest) addCase({ kind: "isUnavailable" }, r(u));
+  if (onOff) addCase({ kind: "isOn" }, r(aOn));
+  const rules: Rule[] = cases.length === 0 ? [] : [{
+    id: baseRuleId("glow", 1, 0, 1),
+    cases,
+    ...(onOff ? { otherwise: [{ kind: "setOpacity" as const, number: r(aOff) }] } : {}),
+  }];
+  const payload: ShapeElement = {
+    id: BASE_GLOW_ID,
+    name: BASE_GLOW_NAME,
+    colorSlot: { baseColorHex: hex },
+    rules,
+    frame: frameOf({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, face.box),
+    isHidden: false,
+    kind: "circle",
+    cornerRadius: 0,
+    thickness: 1,
+    borderWidth: 0,
+    fill: { kind: "radial", stops: [{ at: 0, colorHex: hex }, { at: 1, colorHex: `${hex}00` }] },
+  };
+  const opacity = round(M, 4);
+  if (opacity < 1) payload.opacity = opacity;
+  return { kind: "shape", payload };
+}
+
+/**
+ * What the Glow layer's own editor measures against (section 14.8): the
+ * glyph box as fractions of the design box, the brightest opacity this tile
+ * would draw its glow at with the brightness at 100 (with the mode on in
+ * place of auto or off when those draw none), and the tile's colour as a hex
+ * (white with none). Undefined with no face or no bare glyph.
+ */
+export function glowReference(tile: WatchPageTile, ctx: BaseLayerContext): { box: NormalizedFrame; opacity: number; tileHex: string } | undefined {
+  if (!tileHasLayers(tile)) return undefined;
+  const face = faceOf(tile, ctx);
+  if (face === undefined) return undefined;
+  const glyph = glyphBoxOf(face);
+  if (glyph === undefined) return undefined;
+  const stored = oneLookGlyphGlowOf(tile.iconGlow);
+  const at100 = (mode: typeof stored.mode) => {
+    const probe: WatchPageTile = { ...tile, iconGlow: { mode, brightness: 100 } };
+    const pf = faceOf(probe, ctx);
+    return pf === undefined ? 0 : glowFaces(pf.tile, pf, facesAt(probe, ctx)).M;
+  };
+  let opacity = at100(stored.mode === "off" ? "on" : stored.mode);
+  if (!(opacity > 0) && stored.mode !== "on") opacity = at100("on");
+  const hue = face.model.palette.hue;
+  return { box: frameOf(glyph, face.box), opacity: round(opacity, 4), tileHex: hue === undefined ? "#FFFFFF" : oneLookHex(hue) };
+}
+
 /** The glyph layer: the person's photo, or the symbol. */
-function glyphLayer(tile: WatchPageTile, ctx: BaseLayerContext, face: Face): Element | undefined {
+function glyphLayer(tile: WatchPageTile, ctx: BaseLayerContext, face: Face, faces?: FacesAt): Element | undefined {
   const { model, box } = face;
   const layout = model.layout;
   if (!(layout.discRect.width > 0)) return undefined;
@@ -497,7 +643,7 @@ function glyphLayer(tile: WatchPageTile, ctx: BaseLayerContext, face: Face): Ele
   const iconRule = stateIconRule(tile, ctx);
   // The symbol shown when no per state icon matches, filled or not as One
   // Look fills it, with the rule that swaps it as the state changes.
-  const tileAt = facesAt(tile, ctx);
+  const tileAt = faces ?? facesAt(tile, ctx);
   const { symbol, rule: fillRule } = symbolRule(tile, ctx, face, tileAt);
   let colorHex = inkHex(oneLookGlyphInk(model.palette, layout.drawsDisc, oneLookCentredGlyph("watch")));
   let colorRule: Rule | undefined;
@@ -725,7 +871,8 @@ export function baseLayers(tile: WatchPageTile, ctx: BaseLayerContext): Element[
   if (!tileHasLayers(tile)) return [];
   const face = faceOf(tile, ctx);
   if (face === undefined) return [];
-  const built = [glyphLayer(face.tile, ctx, face), statePillLayer(face), stateLayer(face, ctx), nameLayer(face)].filter((el): el is Element => el !== undefined);
+  const tileAt = facesAt(face.tile, ctx);
+  const built = [glowLayer(face.tile, face, tileAt, ctx), glyphLayer(face.tile, ctx, face, tileAt), statePillLayer(face), stateLayer(face, ctx), nameLayer(face)].filter((el): el is Element => el !== undefined);
   const cfg = newConfig("", 0, TILE_DESIGN_FAMILY);
   cfg.elements = built;
   return parseConfig(encodeConfig(cfg)).elements;
@@ -767,6 +914,9 @@ export function baseAnchors(tile: WatchPageTile, ctx: BaseLayerContext): TileAnc
   } else if (model.baseIcon !== "" && native.icon !== undefined) {
     out.icon = anchorOf(native.icon, box);
   }
+  // The glow's anchor goes with the glyph's (section 14.6); a write keeps it
+  // only while the design holds a Glow layer.
+  if ((out.photo !== undefined || out.icon !== undefined) && native.glow !== undefined) out.glow = anchorOf(native.glow, box);
   if (model.name !== "" && native.name !== undefined) out.name = anchorOf(native.name, box);
   if (native.state !== undefined) out.state = anchorOf(native.state, box);
   return out;

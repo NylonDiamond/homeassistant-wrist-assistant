@@ -14,7 +14,7 @@
 //
 // Each file is `NN-name.json`, two space indent and a closing newline, keys in
 // the contract's order: description, tile, states, edit, design, template,
-// templateKey, resolve, expected, devices, placed.
+// templateKey, resolve, expected, devices, placed, halo.
 //
 // - `design`: `baseLayersDocument(tile)` with the estimate measurer, the
 //   file's states and symbols that draw every filled variant (so an icon
@@ -31,10 +31,13 @@
 //     (`applyZonePreset`), its zones given these ids in order.
 //   - `zoneAction` `{id, action}`: one zone's action (`setZoneAction`).
 //   - `dragLayer` `{id, dx, dy}`: the layer dragged on the stage by that much
-//     of the design box (`dragLayerFrame` then `setLayerFrame`), so a base
-//     layer is owned and the State layer takes its pill along.
+//     of the design box (`dragLayerFrame`, free of the tile's edges for the
+//     glow, then `setLayerFrame`), so a base layer is owned, the State layer
+//     takes its pill along and the icon or photo its glow.
 //   - `own` `{role}` (an `owned` string): the role owned with its base layers
-//     exactly as built, unmoved, its anchor kept.
+//     exactly as built, unmoved, its anchor kept. Owning `base.icon` (or
+//     `base.photo`) owns the glyph's Glow layer and its `base.glow` anchor
+//     with it, as the slot's companions.
 // - The design starts with every role's anchor (`baseAnchors`), as
 //   `designForEdit` holds them; only the owned roles' are written.
 // - `template`: compiled from the layers the design draws only (owned base
@@ -48,7 +51,8 @@
 //   base layers, added layers, tap zones) in draw order, resolved by the
 //   panel's resolver: `id`, `kind`, then `text` for a text layer, `symbol`
 //   and `colorHex` for an icon, `value` (the gauge's fill fraction, 0 to 1,
-//   to 4 places) for a gauge, and `hidden`. A text layer that draws parts
+//   to 4 places) for a gauge, `opacity` for a shape whose resolved opacity
+//   (its own times its rules') is not 1, to 4 places, and `hidden`. A text layer that draws parts
 //   also lists them (`parts`: `text`, `fontSize`, `fontWeight`, `fontDesign`,
 //   `colorHex`), resolved in the unplaced document. A design that owns
 //   nothing and adds nothing draws nothing of its own: the native tile draws
@@ -60,6 +64,12 @@
 // - `placed`: null without `devices`, else per device the drawn document's
 //   elements the anchor map places (`placeDesignDoc`), in draw order: `id`,
 //   `frame`, then the sizes the map scales, as written, to 4 places.
+// - `halo` (round three, section 14.10): the native glow of the reference
+//   watch face, null when the face has no glyph: the setting read
+//   (`oneLookGlyphGlowOf`, all four keys), the palette's surface, lit flag and
+//   hue, the glyph's picture, icon, photo and disc flags with its size and
+//   centre, and what is drawn (`oneLookGlyphHalo`: opacity, diameter and
+//   colour, null when none is or the face draws a disc).
 
 import { describe, expect, it } from "vitest";
 import { html } from "lit";
@@ -78,6 +88,7 @@ import {
   type TileDesign,
   type TileZoneAction,
   type TileZonePreset,
+  BASE_GLOW_ID,
   BASE_LAYER_IDS,
   BASE_STATE_PILL_ID,
   TILE_DESIGN_VERSION,
@@ -93,7 +104,9 @@ import {
   tileTemplateKey,
   zonesOf,
 } from "../src/watch-pages/tile-design.js";
-import { TILE_NATIVE_SCREENS, baseAnchors, baseLayersDocument, tileNativeFramesOn, tileValuesFor } from "../src/watch-pages/tile-base-layers.js";
+import { TILE_NATIVE_SCREENS, baseAnchors, baseLayerFaceModel, baseLayersDocument, tileNativeFramesOn, tileValuesFor } from "../src/watch-pages/tile-base-layers.js";
+import { oneLookGlyphGlowOf, oneLookGlyphHalo, oneLookHex } from "../src/watch-pages/one-look/colour.js";
+import { oneLookCentredGlyph } from "../src/watch-pages/one-look/metrics.js";
 import { type TileNativeFrames, type TilePartFrame, placeDesignDoc } from "../src/watch-pages/tile-anchors.js";
 import { roleOfOwnedString, tileDesignBox } from "../src/watch-pages/tile-design.js";
 
@@ -247,6 +260,41 @@ const CASES: Case[] = [
     states: { "switch.kettle": entity("switch.kettle", "off", { friendly_name: "Kettle" }) },
     edit: [{ op: "own", role: "base.state" }],
   },
+  {
+    file: "13-light-glow-setting.json",
+    description: "The Bed Light at 6x4, on at 50%, its glow set on, 180% across, 150% bright, in the tile's colour, nothing owned: the Glow layer follows the setting, dimmed by rule while the light is off.",
+    tile: { id: "A1B2C3D4-0013-4000-8000-000000000013", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", iconGlow: { mode: "on", size: 180, brightness: 150, color: "tile" } },
+    states: BED,
+    edit: null,
+  },
+  {
+    file: "14-light-owned-icon-glow.json",
+    description: "The Bed Light with its icon dragged a little right: the glyph slot is owned, so the Glow layer is drawn from the document under the icon, moved with it, each placed by its own anchor.",
+    tile: { id: "A1B2C3D4-0014-4000-8000-000000000014", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E" },
+    states: BED,
+    edit: [{ op: "dragLayer", id: BASE_LAYER_IDS.icon, dx: 0.05, dy: 0 }],
+  },
+  {
+    file: "15-light-glow-moved.json",
+    description: "The Bed Light with only its Glow layer dragged down: the glyph slot is owned, the icon drawn from the document exactly on the native glyph, the glow off the native one.",
+    tile: { id: "A1B2C3D4-0015-4000-8000-000000000015", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E" },
+    states: BED,
+    edit: [{ op: "dragLayer", id: BASE_GLOW_ID, dx: 0, dy: 0.05 }],
+  },
+  {
+    file: "16-light-glow-off.json",
+    description: "The Bed Light with its glow turned off and its icon owned unmoved: no Glow layer and no glow anchor, the icon alone drawn from the document.",
+    tile: { id: "A1B2C3D4-0016-4000-8000-000000000016", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", iconGlow: { mode: "off" } },
+    states: BED,
+    edit: [{ op: "own", role: "base.icon" }],
+  },
+  {
+    file: "17-light-off-glow-on.json",
+    description: "The Bed Light off with its glow set on and its icon owned unmoved: the gray off tile glows at the resting opacity, the Glow layer dimmed to it by rule.",
+    tile: { id: "A1B2C3D4-0017-4000-8000-000000000017", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", iconGlow: { mode: "on" } },
+    states: { "light.bed": entity("light.bed", "off", { friendly_name: "Bed Light" }) },
+    edit: [{ op: "own", role: "base.icon" }],
+  },
 ];
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
@@ -302,7 +350,7 @@ function runEdit(tile: WatchPageTile, design: TileDesign, op: Op): TileDesign {
     case "dragLayer": {
       const el = design.doc.elements.find((e) => e.payload.id === op.id);
       if (el === undefined) throw new Error(`no layer ${op.id}`);
-      return setLayerFrame(design, op.id, dragLayerFrame(el.payload.frame, "move", op.dx, op.dy));
+      return setLayerFrame(design, op.id, dragLayerFrame(el.payload.frame, "move", op.dx, op.dy, op.id === BASE_GLOW_ID));
     }
     case "own": {
       const role = roleOfOwnedString(op.role);
@@ -328,7 +376,7 @@ function partJson(part: TilePartFrame): Record<string, unknown> {
 
 function nativeJson(native: TileNativeFrames): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const role of ["icon", "photo", "name", "state"] as const) {
+  for (const role of ["icon", "photo", "name", "state", "glow"] as const) {
     const part = native[role];
     if (part !== undefined) out[role] = partJson(part);
   }
@@ -411,6 +459,7 @@ function build(c: Case): Record<string, unknown> {
       out.colorHex = r.colorHex;
     }
     if (r?.kind === "gauge") out.value = Math.round(r.fraction * 10000) / 10000;
+    if (r?.kind === "shape" && r4(r.opacity) !== 1) out.opacity = r4(r.opacity);
     out.hidden = r === undefined ? true : r.isHidden;
     return out;
   });
@@ -444,6 +493,29 @@ function build(c: Case): Record<string, unknown> {
     expected,
     devices,
     placed,
+    halo: haloJson(c.tile, ctx),
+  };
+}
+
+/** The native glow of the reference watch face (section 14.10). */
+function haloJson(tile: WatchPageTile, ctx: BaseLayerContext): Record<string, unknown> | null {
+  const model = baseLayerFaceModel(tile, ctx);
+  if (model === undefined || !(model.layout.discRect.width > 0)) return null;
+  const glow = oneLookGlyphGlowOf(tile.iconGlow);
+  const { layout, palette } = model;
+  const glyph = { picture: model.picture !== "none", hasIcon: model.baseIcon !== "", photo: model.photo !== undefined };
+  const halo = oneLookGlyphHalo(palette, { centred: oneLookCentredGlyph("watch"), ...glyph }, glow);
+  const disc = layout.discRect;
+  return {
+    setting: {
+      mode: glow.mode,
+      size: glow.size,
+      brightness: glow.brightness,
+      color: glow.colour.kind === "custom" ? oneLookHex(glow.colour.rgb) : glow.colour.kind,
+    },
+    palette: { surface: palette.surface, isLit: palette.isLit, hue: palette.hue === undefined ? null : oneLookHex(palette.hue) },
+    glyph: { ...glyph, drawsDisc: layout.drawsDisc, glyphSize: r4(layout.glyphSize), center: { x: r4(disc.x + disc.width / 2), y: r4(disc.y + disc.height / 2) } },
+    drawn: halo === undefined || layout.drawsDisc ? null : { opacity: r4(halo.opacity), diameter: r4(r4(layout.glyphSize) * halo.share), colorHex: oneLookHex(halo.rgb) },
   };
 }
 
@@ -471,8 +543,9 @@ describe("tile layer fixtures", () => {
       const doc = parseConfig(fixture.design.doc);
       const fresh = baseLayersDocument(c.tile, { states: c.states, measurer, icons });
       for (const el of fresh.elements) {
-        const role = el.payload.id === BASE_STATE_PILL_ID ? "state" : Object.entries(BASE_LAYER_IDS).find(([, id]) => id === el.payload.id)![0];
-        if (fixture.design.owned.includes(`base.${role}`)) continue;
+        const role = el.payload.id === BASE_STATE_PILL_ID ? "state" : el.payload.id === BASE_GLOW_ID ? "glow" : Object.entries(BASE_LAYER_IDS).find(([, id]) => id === el.payload.id)![0];
+        const owned = (r: string) => fixture.design.owned.includes(`base.${r}`);
+        if (role === "glow" ? owned("icon") || owned("photo") : owned(role)) continue;
         expect(doc.elements.find((e) => e.payload.id === el.payload.id), `${c.file} ${role}`).toEqual(el);
       }
     }
@@ -506,10 +579,11 @@ describe("tile layer fixtures", () => {
     // the name left to the native tile.
     const pill = by("09-light-pill-owned-icon-state.json");
     expect(pill.design.owned).toEqual(["base.icon", "base.state"]);
-    expect(pill.expected.map((e) => e.id)).toEqual([BASE_LAYER_IDS.icon, BASE_STATE_PILL_ID, BASE_LAYER_IDS.state]);
-    expect(pill.expected[0]).toMatchObject({ kind: "icon", symbol: "lightbulb.fill" });
-    expect(pill.expected[1]).toMatchObject({ kind: "shape", hidden: false });
-    expect(pill.expected[2]).toMatchObject({ kind: "text", text: "100%" });
+    expect(pill.expected.map((e) => e.id)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_STATE_PILL_ID, BASE_LAYER_IDS.state]);
+    expect(pill.expected[0]).toMatchObject({ kind: "shape", hidden: false });
+    expect(pill.expected[1]).toMatchObject({ kind: "icon", symbol: "lightbulb.fill" });
+    expect(pill.expected[2]).toMatchObject({ kind: "shape", hidden: false });
+    expect(pill.expected[3]).toMatchObject({ kind: "text", text: "100%" });
     expect(pill.template).toBeNull();
   });
 
@@ -541,7 +615,7 @@ describe("tile layer fixtures", () => {
       expect(by(file).placed, file).toBeNull();
     }
     expect(Object.keys(by("05-light-owned-name.json").design.anchors ?? {})).toEqual(["base.name"]);
-    expect(Object.keys(by("09-light-pill-owned-icon-state.json").design.anchors ?? {})).toEqual(["base.icon", "base.state"]);
+    expect(Object.keys(by("09-light-pill-owned-icon-state.json").design.anchors ?? {})).toEqual(["base.glow", "base.icon", "base.state"]);
 
     // 10: the state unmoved lands exactly on the native state box; the icon
     // moved down 0.08 of the box lands that far below the native glyph,
@@ -583,5 +657,85 @@ describe("tile layer fixtures", () => {
     const word = twelve.expected.find((e) => e.id === BASE_LAYER_IDS.state)!.parts!;
     expect(word.map((p) => p.text)).toEqual(["", "", "", "Off"]);
     expect(word[3]).toMatchObject({ fontWeight: "regular", fontDesign: "default" });
+  });
+  it("draws the glyph's glow by the setting and owns it with the glyph (round three)", () => {
+    type Rect = { x: number; y: number; width: number; height: number };
+    interface Shape { id: string; frame: Rect; opacity?: number; colorSlot: { baseColorHex: string }; rules: { cases: { when: { tests: { comparison: { kind: string } }[] }; then: { number: number }[] }[]; otherwise?: { number: number }[] }[]; fill: { stops: { colorHex: string }[] } }
+    interface Round3 {
+      design: { owned: string[]; anchors?: Record<string, Rect & { size: number }>; doc: { elements: { kind: string; payload: Shape }[] } };
+      expected: { id: string; kind: string; opacity?: number }[];
+      devices: Record<string, { drawnSize: { width: number; height: number }; native: Record<string, { rect: Rect; size: number }> }> | null;
+      placed: Record<string, { id: string; frame: Rect }[]> | null;
+      halo: { glyph: { glyphSize: number }; drawn: { opacity: number; diameter: number; colorHex: string } | null } | null;
+    }
+    const by = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8")) as Round3;
+    const glowOf = (c: Round3) => c.design.doc.elements.find((e) => e.payload.id === BASE_GLOW_ID)?.payload;
+    const drawnRect = (c: Round3, device: string, frame: Rect): Rect => {
+      const box = tileDesignBox(6, 4);
+      const slot = c.devices![device]!.drawnSize;
+      const f = Math.min(slot.width / box.width, slot.height / box.height);
+      const ox = (slot.width - box.width * f) / 2;
+      const oy = (slot.height - box.height * f) / 2;
+      return { x: ox + frame.x * box.width * f, y: oy + frame.y * box.height * f, width: frame.width * box.width * f, height: frame.height * box.height * f };
+    };
+    const centre = (r: Rect) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+
+    // 13: the setting followed, nothing owned.
+    const thirteen = by("13-light-glow-setting.json");
+    const g13 = glowOf(thirteen)!;
+    expect(thirteen.design.owned).toEqual([]);
+    expect(thirteen.expected).toEqual([]);
+    expect(g13.fill.stops.map((s) => s.colorHex)).toEqual(["#F2AE4E", "#F2AE4E00"]);
+    expect(g13.opacity).toBe(0.48);
+    expect(g13.rules[0]!.cases.map((c) => c.when.tests[0]!.comparison.kind)).toEqual(["isOn"]);
+    expect(g13.rules[0]!.cases[0]!.then[0]!.number).toBe(1);
+    expect(g13.rules[0]!.otherwise![0]!.number).toBe(0.4375);
+    expect(thirteen.halo!.drawn).toMatchObject({ opacity: 0.48, colorHex: "#F2AE4E" });
+    expect(thirteen.halo!.drawn!.diameter).toBeCloseTo(1.8 * thirteen.halo!.glyph.glyphSize, 3);
+
+    // 14: the icon dragged takes the glow along; both drawn, each by its own anchor.
+    const fourteen = by("14-light-owned-icon-glow.json");
+    expect(fourteen.design.owned).toEqual(["base.icon"]);
+    expect(Object.keys(fourteen.design.anchors!)).toEqual(["base.glow", "base.icon"]);
+    expect(fourteen.expected.map((e) => [e.id, e.kind, e.opacity])).toEqual([[BASE_GLOW_ID, "shape", 0.32], [BASE_LAYER_IDS.icon, "icon", undefined]]);
+    for (const device of ["watch", "phone"]) {
+      const native = fourteen.devices![device]!.native.glow!;
+      const kPos = native.size / fourteen.design.anchors!["base.glow"]!.size;
+      const at = drawnRect(fourteen, device, fourteen.placed![device]!.find((p) => p.id === BASE_GLOW_ID)!.frame);
+      expect(at.width).toBeCloseTo(native.size * 1.5, 1);
+      expect(centre(at).x - centre(native.rect).x).toBeCloseTo(0.05 * 100.5 * kPos, 1);
+      expect(centre(at).y - centre(native.rect).y).toBeCloseTo(0, 1);
+    }
+    // The iPhone's unmoved glow is the native 1.5 x 76.51.
+    expect(fourteen.devices!.phone!.native.glow!.size * 1.5).toBeCloseTo(114.77, 1);
+
+    // 15: the glow alone dragged; the icon exactly on the native glyph.
+    const fifteen = by("15-light-glow-moved.json");
+    expect(fifteen.design.owned).toEqual(["base.icon"]);
+    for (const device of ["watch", "phone"]) {
+      const native = fifteen.devices![device]!.native;
+      const icon = drawnRect(fifteen, device, fifteen.placed![device]!.find((p) => p.id === BASE_LAYER_IDS.icon)!.frame);
+      for (const k of ["x", "y", "width", "height"] as const) expect(Math.abs(icon[k] - native.icon!.rect[k]), `${device} icon ${k}`).toBeLessThan(0.02);
+      const kPos = native.glow!.size / fifteen.design.anchors!["base.glow"]!.size;
+      const at = drawnRect(fifteen, device, fifteen.placed![device]!.find((p) => p.id === BASE_GLOW_ID)!.frame);
+      expect(centre(at).y - centre(native.glow!.rect).y).toBeCloseTo(0.05 * 66 * kPos, 1);
+      expect(centre(at).x - centre(native.glow!.rect).x).toBeCloseTo(0, 1);
+    }
+
+    // 16: the glow off: no layer, no anchor, the icon alone.
+    const sixteen = by("16-light-glow-off.json");
+    expect(glowOf(sixteen)).toBeUndefined();
+    expect(Object.keys(sixteen.design.anchors!)).toEqual(["base.icon"]);
+    expect(sixteen.expected.map((e) => e.id)).toEqual([BASE_LAYER_IDS.icon]);
+    expect(sixteen.halo!.drawn).toBeNull();
+
+    // 17: an off light glowing with the mode on.
+    const seventeen = by("17-light-off-glow-on.json");
+    const g17 = glowOf(seventeen)!;
+    expect(g17.opacity).toBe(0.32);
+    expect(g17.rules[0]!.cases.map((c) => c.when.tests[0]!.comparison.kind)).toEqual(["isOn"]);
+    expect(g17.rules[0]!.otherwise![0]!.number).toBe(0.4375);
+    expect(seventeen.expected.map((e) => [e.id, e.opacity])).toEqual([[BASE_GLOW_ID, 0.14], [BASE_LAYER_IDS.icon, undefined]]);
+    expect(seventeen.halo!.drawn).toMatchObject({ opacity: 0.14, colorHex: "#FFFFFF" });
   });
 });

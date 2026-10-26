@@ -26,7 +26,7 @@ import {
 import { fitBox } from "../renderer.js";
 import type { OneLookDevice } from "./one-look/metrics.js";
 import { type OneLookLayout, type OneLookRect, ONE_LOOK_GLYPH_INK_SHARE, oneLookLayoutMetrics } from "./one-look/layout.js";
-import { type BaseLayerRole, type TileAnchor, type TileAnchors, TILE_DESIGN_FAMILY, baseRoleOf } from "./tile-design-core.js";
+import { type TileAnchor, type TileAnchorKey, type TileAnchors, TILE_DESIGN_FAMILY, anchorKeyOf } from "./tile-design-core.js";
 
 /** A native part of a laid out tile: its rect in the drawn tile, in points,
  * and its size (what `TileAnchor.size` records for that role). */
@@ -47,6 +47,9 @@ export interface TileNativeFrames {
   photo?: TilePartFrame;
   name?: TilePartFrame;
   state?: TilePartFrame;
+  /** The glyph box the glow is drawn on (section 14.6): a square of side
+   * `glyphSize` on the glyph's centre, whether or not a disc is drawn. */
+  glow?: TilePartFrame;
 }
 
 const hasArea = (r: OneLookRect): boolean => r.width > 0 && r.height > 0;
@@ -67,6 +70,12 @@ export function tileNativeFrames(layout: OneLookLayout, device: OneLookDevice): 
     if (hasArea(rect)) {
       out.icon = { rect, size: (layout.glyphSize * ONE_LOOK_GLYPH_INK_SHARE) / Math.max(0.5, layout.glyphExtent) };
       out.photo = { rect, size: layout.glyphSize };
+    }
+    const g = layout.glyphSize;
+    if (g > 0) {
+      const cx = disc.x + disc.width / 2;
+      const cy = disc.y + disc.height / 2;
+      out.glow = { rect: { x: cx - g / 2, y: cy - g / 2, width: g, height: g }, size: g };
     }
   }
   const lines = layout.name.lines.length;
@@ -130,7 +139,7 @@ interface Factors {
 
 /** The factors for a role with this anchor on this native part, or
  * undefined when the role falls back to the box fit (a size not above 0). */
-function factorsFor(role: BaseLayerRole, a: TileAnchor, n: TilePartFrame): Factors | undefined {
+function factorsFor(role: TileAnchorKey, a: TileAnchor, n: TilePartFrame): Factors | undefined {
   if (!positive(a.size) || !positive(n.size)) return undefined;
   const pos = n.size / a.size;
   if (role !== "state") return { pos, text: pos, unit: pos, tail: pos };
@@ -214,7 +223,7 @@ export function layerPlacementMap(
   slot: { width: number; height: number },
   box: { width: number; height: number },
 ): TileLayerPlacementMap {
-  const role = baseRoleOf(elementId);
+  const role = anchorKeyOf(elementId);
   if (role === undefined) return BOX_FIT;
   const a = anchors[role];
   const n = native[role];
@@ -227,7 +236,7 @@ export function layerPlacementMap(
 
 /** One element of a mapped role, placed: its frame mapped from the anchor to
  * the native part, its sizes scaled so they draw at the native ones. */
-function placed(el: Element, role: BaseLayerRole, a: TileAnchor, n: TilePartFrame, k: Factors, fit: { scale: number; x: number; y: number }, box: { width: number; height: number }): Element {
+function placed(el: Element, role: TileAnchorKey, a: TileAnchor, n: TilePartFrame, k: Factors, fit: { scale: number; x: number; y: number }, box: { width: number; height: number }): Element {
   const f = fit.scale;
   const out = structuredClone(el);
   out.payload.frame = placedFrame(el.payload.frame, a, n, k.pos, fit, box);
@@ -290,7 +299,7 @@ export function placeDesignDoc(
   let changed = false;
   const elements = doc.elements.map((el) => {
     if (el.kind === "tap") return el;
-    const role = baseRoleOf(el.payload.id);
+    const role = anchorKeyOf(el.payload.id);
     if (role === undefined) return el;
     const a = anchors[role];
     const n = native[role];

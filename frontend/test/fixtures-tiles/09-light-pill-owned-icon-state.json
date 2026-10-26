@@ -43,6 +43,13 @@
       "base.state"
     ],
     "anchors": {
+      "base.glow": {
+        "x": 0.38,
+        "y": 0.2719,
+        "width": 0.2399,
+        "height": 0.3654,
+        "size": 24.11
+      },
       "base.icon": {
         "x": 0.4133,
         "y": 0.3226,
@@ -69,6 +76,82 @@
       "values": [],
       "slotIndex": 0,
       "elements": [
+        {
+          "kind": "shape",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000006",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [
+              {
+                "id": "BA5E0006-0001-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0006-0001-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0006-0001-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setOpacity",
+                        "number": 1
+                      }
+                    ]
+                  }
+                ],
+                "otherwise": [
+                  {
+                    "kind": "setOpacity",
+                    "number": 0
+                  }
+                ]
+              }
+            ],
+            "frame": {
+              "x": 0.37,
+              "y": 0.1805,
+              "width": 0.3599,
+              "height": 0.548,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "opacity": 0.32,
+            "kind": "circle",
+            "cornerRadius": 0,
+            "borderWidth": 0,
+            "fill": {
+              "kind": "radial",
+              "stops": [
+                {
+                  "at": 0,
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "at": 1,
+                  "colorHex": "#FFFFFF00"
+                }
+              ]
+            },
+            "name": "Glow"
+          }
+        },
         {
           "kind": "icon",
           "payload": {
@@ -465,6 +548,12 @@
   },
   "expected": [
     {
+      "id": "BA5E0000-0000-4000-8000-000000000006",
+      "kind": "shape",
+      "opacity": 0.32,
+      "hidden": false
+    },
+    {
       "id": "BA5E0000-0000-4000-8000-000000000001",
       "kind": "icon",
       "symbol": "lightbulb.fill",
@@ -559,6 +648,15 @@
           "textSize": 14,
           "unitSize": 10,
           "tailSize": 11
+        },
+        "glow": {
+          "rect": {
+            "x": 38.193,
+            "y": 17.943,
+            "width": 24.1141,
+            "height": 24.1141
+          },
+          "size": 24.1141
         }
       }
     },
@@ -607,12 +705,33 @@
           "textSize": 17.85,
           "unitSize": 11.781,
           "tailSize": 15
+        },
+        "glow": {
+          "rect": {
+            "x": 51.2442,
+            "y": 15.4109,
+            "width": 76.5116,
+            "height": 76.5116
+          },
+          "size": 76.5116
         }
       }
     }
   },
   "placed": {
     "watch": [
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000006",
+        "frame": {
+          "x": 0.37,
+          "y": 0.1804,
+          "width": 0.36,
+          "height": 0.548
+        },
+        "cornerRadius": 0,
+        "borderWidth": 0,
+        "thickness": 1.0002
+      },
       {
         "id": "BA5E0000-0000-4000-8000-000000000001",
         "frame": {
@@ -663,6 +782,18 @@
     ],
     "phone": [
       {
+        "id": "BA5E0000-0000-4000-8000-000000000006",
+        "frame": {
+          "x": 0.264,
+          "y": -0.0324,
+          "width": 0.6536,
+          "height": 0.995
+        },
+        "cornerRadius": 0,
+        "borderWidth": 0,
+        "thickness": 1.816
+      },
+      {
         "id": "BA5E0000-0000-4000-8000-000000000001",
         "frame": {
           "x": 0.4334,
@@ -710,5 +841,34 @@
         }
       }
     ]
+  },
+  "halo": {
+    "setting": {
+      "mode": "auto",
+      "size": 150,
+      "brightness": 100,
+      "color": "white"
+    },
+    "palette": {
+      "surface": "coloured",
+      "isLit": true,
+      "hue": "#F2AE4E"
+    },
+    "glyph": {
+      "picture": false,
+      "hasIcon": true,
+      "photo": false,
+      "drawsDisc": false,
+      "glyphSize": 24.1141,
+      "center": {
+        "x": 50.25,
+        "y": 30
+      }
+    },
+    "drawn": {
+      "opacity": 0.32,
+      "diameter": 36.1712,
+      "colorHex": "#FFFFFF"
+    }
   }
 }

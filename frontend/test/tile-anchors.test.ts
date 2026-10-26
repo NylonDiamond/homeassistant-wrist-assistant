@@ -109,7 +109,7 @@ describe("the native frames", () => {
 describe("anchors", () => {
   it("equal the unmoved base layers' frames and sizes", () => {
     const anchors = baseAnchors(PILL_TILE, CTX);
-    expect(Object.keys(anchors).sort()).toEqual(["icon", "name", "state"]);
+    expect(Object.keys(anchors).sort()).toEqual(["glow", "icon", "name", "state"]);
     const layers = baseLayers(PILL_TILE, CTX);
     const frame = (id: string) => layers.find((e) => e.payload.id === id)!.payload.frame;
     for (const [role, id] of [["icon", BASE_LAYER_IDS.icon], ["name", BASE_LAYER_IDS.name], ["state", BASE_STATE_PILL_ID]] as const) {
@@ -160,12 +160,15 @@ describe("the anchor lifecycle", () => {
 
   it("a fresh design holds every role's anchor, and the write that owns a role keeps only that one", () => {
     const fresh = designForEdit(BED_TILE, CTX);
-    expect(Object.keys(fresh.anchors).sort()).toEqual(["icon", "name", "state"]);
+    expect(Object.keys(fresh.anchors).sort()).toEqual(["glow", "icon", "name", "state"]);
     const tile = movedIcon();
     const raw = tile.design as { anchors: Record<string, unknown> };
     expect(Object.keys(raw)).toEqual(["v", "owned", "anchors", "zones", "doc"]);
-    expect(raw.anchors).toEqual({ "base.icon": encodeAnchors(fresh.anchors, ["icon"])!["base.icon"] });
-    expect(readTileDesign(tile)!.anchors).toEqual({ icon: fresh.anchors.icon });
+    // The glow goes with the icon, its anchor first.
+    const encoded = encodeAnchors(fresh.anchors, ["icon"])!;
+    expect(Object.keys(raw.anchors)).toEqual(["base.glow", "base.icon"]);
+    expect(raw.anchors).toEqual({ "base.glow": encoded["base.glow"], "base.icon": encoded["base.icon"] });
+    expect(readTileDesign(tile)!.anchors).toEqual({ icon: fresh.anchors.icon, glow: fresh.anchors.glow });
   });
 
   it("an owned role's anchor stays frozen through a simple edit and a resize", () => {
@@ -208,7 +211,7 @@ describe("the anchor lifecycle", () => {
     expect(before.anchors.icon).toEqual(baseAnchors(BED_TILE, CTX).icon);
     const next = structuredClone(before.doc);
     (elementOf(next, BASE_LAYER_IDS.name).payload as TextElement).fontSize = 13;
-    expect(Object.keys(readTileDesign(writeDesignDoc(old, before, next, CTX))!.anchors)).toEqual(["icon", "name"]);
+    expect(Object.keys(readTileDesign(writeDesignDoc(old, before, next, CTX))!.anchors).sort()).toEqual(["glow", "icon", "name"]);
   });
 });
 

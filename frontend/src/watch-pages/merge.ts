@@ -18,7 +18,7 @@
 
 import pageKeys from "./page-keys.json";
 import { type JsonObject, type WatchPagesDocument, isJsonObject } from "./model.js";
-import { tileDesignProblems } from "./tile-design-core.js";
+import { tileDesignProblems, tileGlowProblems } from "./tile-design-core.js";
 
 /** The key of the page list at the top of the document. */
 const PAGES_KEY = "pages";
@@ -912,7 +912,8 @@ function tileLabel(index: number, tile: JsonObject): string {
  * Rules card cannot show says how to get rid of it. Keys it does not
  * know, and `null`, are left alone, as the phone leaves them. A tile's layers
  * (`design`) are checked against their caps (`tileDesignProblems`), which the
- * apps never check. Run over the whole document before a save, after
+ * apps never check, and its icon glow (`iconGlow`) by its shape
+ * (`tileGlowProblems`). Run over the whole document before a save, after
  * `checkWatchPages`.
  *
  * The document is the same for every device that picks a page, so an
@@ -937,6 +938,7 @@ export function checkWatchPagesValues(document: unknown): string[] {
       const where = `${label}, ${tileLabel(tileIndex, tile)}`;
       checkObjectValues("tile", tile, where, problems);
       for (const problem of tileDesignProblems(tile)) problems.push(`${where}: ${problem}`);
+      for (const problem of tileGlowProblems(tile)) problems.push(`${where}: ${problem}`);
     });
   });
   return problems;

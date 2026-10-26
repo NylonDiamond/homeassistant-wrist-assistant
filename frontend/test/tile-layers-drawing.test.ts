@@ -13,6 +13,7 @@ import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import {
   type BaseLayerContext,
   type TileDesign,
+  BASE_GLOW_ID,
   BASE_LAYER_IDS,
   BASE_STATE_PILL_ID,
   LAYER_MIN_FRACTION,
@@ -60,18 +61,19 @@ describe("which parts a design draws", () => {
     const moved = readTileDesign(withLayerFrame(LIGHT, BASE_LAYER_IDS.icon, { x: 0.5, y: 0.2, width: 0.3, height: 0.5, rotationDegrees: 0 }, CTX))!;
     expect(moved.owned).toEqual(["icon"]);
     expect(designHiddenParts(moved)).toEqual({ glyph: true, name: false, state: false });
-    expect(ids(drawnDesignDoc(moved.doc, moved.owned).elements)).toEqual([BASE_LAYER_IDS.icon]);
+    // The glow goes with the icon.
+    expect(ids(drawnDesignDoc(moved.doc, moved.owned).elements)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon]);
     // The untouched State and Name layers stay in the document for the
     // layer list, but are never drawn from it.
-    expect(ids(moved.doc.elements)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
+    expect(ids(moved.doc.elements)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
     const added = newElement("text");
     expect(designDrawsElement([], added)).toBe(true);
-    expect(designDrawsElement([], moved.doc.elements[1]!)).toBe(false);
+    expect(designDrawsElement([], moved.doc.elements[2]!)).toBe(false);
   });
 
   it("treats the icon and the photo as one glyph slot", () => {
     expect(designHiddenParts({ owned: ["photo"] }).glyph).toBe(true);
-    const icon = designForEdit(LIGHT, CTX).doc.elements[0]!;
+    const icon = designForEdit(LIGHT, CTX).doc.elements.find((el) => el.payload.id === BASE_LAYER_IDS.icon)!;
     expect(designDrawsElement(["photo"], icon)).toBe(true);
   });
 
@@ -169,14 +171,14 @@ describe("the state's pill", () => {
     const owned = readTileDesign(withLayerFrame(LIGHT, BASE_LAYER_IDS.name, { x: 0.1, y: 0.6, width: 0.8, height: 0.2, rotationDegrees: 0 }, CTX))!;
     expect(ids(owned.doc.elements)).not.toContain(BASE_STATE_PILL_ID);
     const pilled = rebuildBaseLayers(PILL_LIGHT, owned, CTX);
-    expect(ids(pilled.doc.elements)).toEqual([BASE_LAYER_IDS.icon, BASE_STATE_PILL_ID, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
+    expect(ids(pilled.doc.elements)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_STATE_PILL_ID, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
     expect(ids(rebuildBaseLayers(LIGHT, pilled, CTX).doc.elements)).not.toContain(BASE_STATE_PILL_ID);
   });
 
   it("goes with the State layer when it is deleted, and comes back with Reset", () => {
     const before = designForEdit(PILL_LIGHT, CTX);
     const gone = removeLayer(before, BASE_LAYER_IDS.state);
-    expect(ids(gone.doc.elements)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.name]);
+    expect(ids(gone.doc.elements)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_LAYER_IDS.name]);
     const tile = withDesign(PILL_LIGHT, gone, CTX);
     const reset = resetBaseLayer(tile, "state", CTX);
     // Back to the plain tile: nothing owned and nothing added.

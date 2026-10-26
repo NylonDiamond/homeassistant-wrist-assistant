@@ -15,6 +15,7 @@ import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import {
   type BaseLayerContext,
   type TileDesign,
+  BASE_GLOW_ID,
   BASE_LAYER_IDS,
   DELTA_MAX_TEMPLATES,
   TILE_DESIGN_FAMILY,
@@ -142,7 +143,7 @@ describe("reading and writing the key", () => {
     const fresh = designForEdit(LIGHT, CTX);
     expect(fresh.owned).toEqual([]);
     expect(fresh.zones).toEqual({});
-    expect(fresh.doc.elements.map((e) => e.payload.id)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
+    expect(fresh.doc.elements.map((e) => e.payload.id)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
   });
 
   it("drops a design that is only the base layers as built now", () => {
@@ -331,8 +332,8 @@ describe("owned base layers", () => {
     const zoned = applyZonePreset(LIGHT, design, "leftRight");
     expect(layerStatus(zoned, zonesOf(zoned)[0]!.id)).toBe("zone");
     expect(layerStatus(undefined, BASE_LAYER_IDS.icon)).toBe("follows");
-    expect(designSummary(zoned, tile)).toEqual({ layers: 4, changed: 1, added: 1, zones: 2 });
-    expect(designSummary(undefined, LIGHT, CTX)).toEqual({ layers: 3, changed: 0, added: 0, zones: 0 });
+    expect(designSummary(zoned, tile)).toEqual({ layers: 5, changed: 1, added: 1, zones: 2 });
+    expect(designSummary(undefined, LIGHT, CTX)).toEqual({ layers: 4, changed: 0, added: 0, zones: 0 });
   });
 
   it("settingOwnerRole points a simple key at its owned layer", () => {
@@ -385,9 +386,9 @@ describe("adding, removing and moving layers", () => {
     const base = designForEdit(LIGHT, CTX);
     const zoned = addLayer(base, "tap").design;
     const up = moveLayer(zoned, BASE_LAYER_IDS.state, 1);
-    expect(up.doc.elements.map((e) => e.payload.id).slice(0, 3)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.name, BASE_LAYER_IDS.state]);
+    expect(up.doc.elements.map((e) => e.payload.id).slice(0, 4)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_LAYER_IDS.name, BASE_LAYER_IDS.state]);
     expect(moveLayer(up, BASE_LAYER_IDS.state, 1)).toBe(up);
-    expect(moveLayer(zoned, BASE_LAYER_IDS.icon, -1)).toBe(zoned);
+    expect(moveLayer(zoned, BASE_GLOW_ID, -1)).toBe(zoned);
   });
 
   it("owns a base layer it moves, and Reset puts it back at its place", () => {
@@ -531,7 +532,7 @@ describe("problems", () => {
     for (let i = 0; i < 5; i++) doc.elements.push(newElement("tap"));
     doc.elements.push(newElement("chart"));
     expect(tileDesignProblems({ ...tile, design: { ...raw, doc: encodeConfig(doc) } })).toEqual([
-      "design has 10 layers; the limit is 8.",
+      "design has 11 layers; the limit is 8.",
       "design has 5 tap zones; the limit is 4.",
       "design has a chart layer, which a tile cannot draw.",
     ]);

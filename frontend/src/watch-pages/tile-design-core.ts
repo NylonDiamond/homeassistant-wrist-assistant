@@ -123,9 +123,20 @@ export const BASE_STATE_PART_IDS: Readonly<Record<TileStatePart, string>> = Obje
   word: "BA5E0004-0000-4000-8000-0000000000F4",
 });
 
+/** The soft glow One Look draws behind a bare glyph (tile layers round
+ * three, section 14.4): a circle shape under the icon or the photo, part of
+ * the glyph slot. It is never written in `owned`: it is owned, drawn and
+ * reset with the glyph, and placed by its own anchor, `base.glow`. */
+export const BASE_GLOW_ID = "BA5E0000-0000-4000-8000-000000000006";
+/** The glow's row name in the Layers list. */
+export const BASE_GLOW_NAME = "Glow";
+
 /** Every base layer's id with its role, in draw order bottom to top: the
- * glyph (icon or photo), the state's pill, the state, the name. */
+ * glyph's glow, the glyph (icon or photo), the state's pill, the state, the
+ * name. The glow's role reads "icon" here; a place that owns something for
+ * it owns the document's glyph slot (`glyphSlotRole`). */
 export const BASE_LAYER_PARTS: readonly { id: string; role: BaseLayerRole }[] = Object.freeze([
+  { id: BASE_GLOW_ID, role: "icon" },
   { id: BASE_LAYER_IDS.icon, role: "icon" },
   { id: BASE_LAYER_IDS.photo, role: "photo" },
   { id: BASE_STATE_PILL_ID, role: "state" },
@@ -133,8 +144,9 @@ export const BASE_LAYER_PARTS: readonly { id: string; role: BaseLayerRole }[] = 
   { id: BASE_LAYER_IDS.name, role: "name" },
 ]);
 
-/** The base role an element id is (the state's pill is the state's), or
- * undefined for an added layer or a tap zone. Any case. */
+/** The base role an element id is (the state's pill is the state's, the
+ * glow the glyph's, read as "icon"), or undefined for an added layer or a
+ * tap zone. Any case. */
 export function baseRoleOf(elementId: string): BaseLayerRole | undefined {
   const id = elementId.toUpperCase();
   return BASE_LAYER_PARTS.find((part) => part.id === id)?.role;
@@ -144,8 +156,28 @@ export function baseRoleOf(elementId: string): BaseLayerRole | undefined {
 export function baseLayerName(elementId: string): string | undefined {
   const id = elementId.toUpperCase();
   if (id === BASE_STATE_PILL_ID) return BASE_STATE_PILL_NAME;
+  if (id === BASE_GLOW_ID) return BASE_GLOW_NAME;
   const role = baseRoleOf(id);
   return role === undefined ? undefined : BASE_LAYER_NAMES[role];
+}
+
+/** Whether an element id is the glyph's glow. Any case. */
+export function isGlowId(elementId: string): boolean {
+  return elementId.toUpperCase() === BASE_GLOW_ID;
+}
+
+/** The glyph slot's role in a document (section 14.5): the photo when it
+ * holds the photo layer and no icon layer, else the icon. What owning the
+ * glow owns. */
+export function glyphSlotRole(doc: Pick<CustomComplicationConfig, "elements">): "icon" | "photo" {
+  const ids = new Set(doc.elements.map((el) => el.payload.id.toUpperCase()));
+  return ids.has(BASE_LAYER_IDS.photo) && !ids.has(BASE_LAYER_IDS.icon) ? "photo" : "icon";
+}
+
+/** The key an element's anchor is read under: "glow" for the glyph's glow,
+ * else its base role; undefined for an added layer or a tap zone. */
+export function anchorKeyOf(elementId: string): TileAnchorKey | undefined {
+  return isGlowId(elementId) ? "glow" : baseRoleOf(elementId);
 }
 
 // ── what a design tile draws ─────────────────────────────────────────────
@@ -162,8 +194,9 @@ export interface TileHiddenParts {
   state: boolean;
 }
 
-/** Whether the glyph slot is owned: the icon and the photo are one slot. */
-function glyphOwned(owned: readonly BaseLayerRole[]): boolean {
+/** Whether the glyph slot is owned: the icon and the photo are one slot,
+ * and the glow goes with it. */
+export function glyphOwned(owned: readonly BaseLayerRole[]): boolean {
   return owned.includes("icon") || owned.includes("photo");
 }
 
@@ -293,8 +326,8 @@ export interface TileAnchor {
   y: number;
   width: number;
   height: number;
-  /** The glyph's point size (icon), the glyph box's side (photo), the fitted
-   * name size (name), or the design figure size (state). */
+  /** The glyph's point size (icon), the glyph box's side (photo and glow),
+   * the fitted name size (name), or the design figure size (state). */
   size: number;
   /** The state only: the fitted size of the line shown, the unit's and the
    * tail's. */
@@ -303,7 +336,16 @@ export interface TileAnchor {
   tailSize?: number;
 }
 
-export type TileAnchors = Partial<Record<BaseLayerRole, TileAnchor>>;
+/** What an anchor is kept for: each base role, and the glyph's glow (section
+ * 14.6), written `base.glow` while the glyph slot is owned. */
+export type TileAnchorKey = BaseLayerRole | "glow";
+
+export type TileAnchors = Partial<Record<TileAnchorKey, TileAnchor>>;
+
+/** An anchor key as `design.anchors` writes it ("base.glow"). */
+function anchorString(key: TileAnchorKey): string {
+  return `base.${key}`;
+}
 
 const positiveNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const finiteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -311,7 +353,7 @@ const finiteNumber = (v: unknown): v is number => typeof v === "number" && Numbe
 /** One anchor entry as stored, or undefined when it is not usable: finite
  * `x`, `y`, a positive `width`, `height` and `size`, and for the state a
  * positive `textSize`, `unitSize` and `tailSize`. Unknown keys are dropped. */
-function parseAnchor(role: BaseLayerRole, raw: unknown): TileAnchor | undefined {
+function parseAnchor(role: TileAnchorKey, raw: unknown): TileAnchor | undefined {
   if (!isJsonObject(raw)) return undefined;
   if (!finiteNumber(raw.x) || !finiteNumber(raw.y) || !positiveNumber(raw.width) || !positiveNumber(raw.height) || !positiveNumber(raw.size)) return undefined;
   const out: TileAnchor = { x: raw.x, y: raw.y, width: raw.width, height: raw.height, size: raw.size };
@@ -331,7 +373,7 @@ export function parseAnchors(raw: unknown): TileAnchors {
   const out: TileAnchors = {};
   if (!isJsonObject(raw)) return out;
   for (const [key, entry] of Object.entries(raw)) {
-    const role = roleOfOwnedString(key);
+    const role: TileAnchorKey | undefined = key === "base.glow" ? "glow" : roleOfOwnedString(key);
     if (role === undefined) continue;
     const anchor = parseAnchor(role, entry);
     if (anchor !== undefined) out[role] = anchor;
@@ -340,12 +382,14 @@ export function parseAnchors(raw: unknown): TileAnchors {
 }
 
 /** The anchors of the owned roles, as `design.anchors` writes them: keyed by
- * `owned` string in `owned` order, keys `x, y, width, height, size` then for
- * the state `textSize, unitSize, tailSize`. Undefined when no owned role has
- * one, so the key is left out. */
+ * `owned` string, sorted by key (`base.glow` first, while the glyph slot is
+ * owned), keys `x, y, width, height, size` then for the state `textSize,
+ * unitSize, tailSize`. Undefined when no owned role has one, so the key is
+ * left out. */
 export function encodeAnchors(anchors: TileAnchors, owned: readonly BaseLayerRole[]): JsonObject | undefined {
   const out: JsonObject = {};
-  for (const role of sortRoles(owned)) {
+  const keys: TileAnchorKey[] = [...(glyphOwned(owned) ? ["glow" as const] : []), ...sortRoles(owned)];
+  for (const role of keys) {
     const a = anchors[role];
     if (a === undefined) continue;
     const entry: JsonObject = { x: a.x, y: a.y, width: a.width, height: a.height, size: a.size };
@@ -355,15 +399,17 @@ export function encodeAnchors(anchors: TileAnchors, owned: readonly BaseLayerRol
       entry.unitSize = a.unitSize;
       entry.tailSize = a.tailSize;
     }
-    out[ownedString(role)] = entry;
+    out[anchorString(role)] = entry;
   }
   return Object.keys(out).length === 0 ? undefined : out;
 }
 
-/** The anchors of the owned roles only. */
+/** The anchors of the owned roles only, the glow's while the glyph slot is
+ * owned. */
 export function ownedAnchors(anchors: TileAnchors, owned: readonly BaseLayerRole[]): TileAnchors {
   const out: TileAnchors = {};
   for (const role of owned) if (anchors[role] !== undefined) out[role] = anchors[role];
+  if (glyphOwned(owned) && anchors.glow !== undefined) out.glow = anchors.glow;
   return out;
 }
 
@@ -577,5 +623,25 @@ export function tileDesignProblems(tile: WatchPageTile): string[] {
     const chars = codePoints(design.template);
     if (chars > TILE_TEMPLATE_MAX_CHARS) problems.push(`design's values need ${chars} of ${TILE_TEMPLATE_MAX_CHARS} characters.`);
   }
+  return problems;
+}
+
+/**
+ * What would make a save of this tile's `iconGlow` wrong (section 14.9), as
+ * sentences that start with the key, or an empty list; the integration's
+ * `_check_icon_glow` refuses the same. Absent or null is no setting. Ranges
+ * and colour forms are not checked: the readers clamp and fall back.
+ */
+export function tileGlowProblems(tile: WatchPageTile): string[] {
+  const raw = tile.iconGlow;
+  if (raw === undefined || raw === null) return [];
+  if (!isJsonObject(raw)) return ["iconGlow must be an object."];
+  const problems: string[] = [];
+  if (raw.mode !== undefined && raw.mode !== "auto" && raw.mode !== "on" && raw.mode !== "off") problems.push('iconGlow.mode must be "auto", "on" or "off".');
+  for (const key of ["size", "brightness"] as const) {
+    const v = raw[key];
+    if (v !== undefined && !(typeof v === "number" && Number.isFinite(v))) problems.push(`iconGlow.${key} must be a number.`);
+  }
+  if (raw.color !== undefined && typeof raw.color !== "string") problems.push("iconGlow.color must be a string.");
   return problems;
 }

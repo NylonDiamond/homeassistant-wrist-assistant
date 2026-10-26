@@ -150,7 +150,7 @@ describe("the rows under a tile", () => {
     const { host } = draftHost();
     const design = tileLayerHost(host, () => undefined).config;
     const rows = tileLayerRows(host.tile, undefined, { v: 1, doc: design, owned: [], anchors: {}, zones: {} });
-    expect(rows.layers.map((r) => r.title)).toEqual(["Name", "State", "Icon"]);
+    expect(rows.layers.map((r) => r.title)).toEqual(["Name", "State", "Icon", "Glow"]);
     expect(rows.layers.every((r) => r.status === "follows")).toBe(true);
     expect(rows.layers[0]).toMatchObject({ up: false, down: true });
     expect(rows.zones).toEqual([]);
@@ -268,7 +268,8 @@ describe("the layer host", () => {
   it("refuses a layer over the cap", () => {
     const { host, tile } = draftHost();
     const edits = tileLayerEdits(host);
-    for (let i = 0; i < 5; i++) expect(edits.add("text")).not.toBe("");
+    // The light's four base layers (the glow among them) leave room for four.
+    for (let i = 0; i < 4; i++) expect(edits.add("text")).not.toBe("");
     expect(edits.add("text")).toBe("");
     const choices = addLayerChoices(tile(), readTileDesign(tile())!);
     expect(choices.find((c) => c.kind === "text")?.reason).toBe("A tile holds 8 layers at most.");
@@ -380,9 +381,9 @@ describe("the Layers card", () => {
     const { host } = draftHost();
     host.uiState.set("tile-layers:open:layers", true);
     const text = flat(renderTileLayersCard(view(host), { pickers: [{ name: "Chen Watch", version: "3.1.0" }], page: host.page }));
-    expect(text).toContain("3 layers: 0 changed, 0 added, 0 tap zones");
+    expect(text).toContain("4 layers: 0 changed, 0 added, 0 tap zones");
     for (const kind of ["Text", "Icon", "Gauge", "Shape", "Picture", "Tap zone"]) expect(text).toContain(`<span>${kind}</span>`);
-    expect(text).toContain("3 of 8");
+    expect(text).toContain("4 of 8");
     expect(text).toContain("0 of 100");
     expect(text).toContain("Chen Watch shows the plain tile until it updates to Wrist Assistant 3.2.");
     expect(text).toContain("Back to the plain tile.");

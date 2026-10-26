@@ -33,6 +33,76 @@
       "slotIndex": 0,
       "elements": [
         {
+          "kind": "shape",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000006",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [
+              {
+                "id": "BA5E0006-0001-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0006-0001-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0006-0001-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "switch.kettle",
+                              "displayName": "Kettle",
+                              "domain": "switch"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isUnavailable"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setOpacity",
+                        "number": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "frame": {
+              "x": 0.0359,
+              "y": 0.0359,
+              "width": 0.5227,
+              "height": 0.5227,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "opacity": 0.14,
+            "kind": "circle",
+            "cornerRadius": 0,
+            "borderWidth": 0,
+            "fill": {
+              "kind": "radial",
+              "stops": [
+                {
+                  "at": 0,
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "at": 1,
+                  "colorHex": "#FFFFFF00"
+                }
+              ]
+            },
+            "name": "Glow"
+          }
+        },
+        {
           "kind": "icon",
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
@@ -164,5 +234,34 @@
   },
   "expected": [],
   "devices": null,
-  "placed": null
+  "placed": null,
+  "halo": {
+    "setting": {
+      "mode": "auto",
+      "size": 150,
+      "brightness": 100,
+      "color": "white"
+    },
+    "palette": {
+      "surface": "coloured",
+      "isLit": false,
+      "hue": "#34C759"
+    },
+    "glyph": {
+      "picture": false,
+      "hasIcon": true,
+      "photo": false,
+      "drawsDisc": false,
+      "glyphSize": 16.9894,
+      "center": {
+        "x": 14.4938,
+        "y": 14.4938
+      }
+    },
+    "drawn": {
+      "opacity": 0.14,
+      "diameter": 25.4841,
+      "colorHex": "#FFFFFF"
+    }
+  }
 }

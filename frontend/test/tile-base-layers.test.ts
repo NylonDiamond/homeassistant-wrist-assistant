@@ -20,7 +20,7 @@ import {
   oneLookStateLineText,
   tileValuesFor,
 } from "../src/watch-pages/tile-base-layers.js";
-import { BASE_LAYER_IDS, BASE_LAYER_NAMES, BASE_STATE_PART_IDS, BASE_STATE_PILL_ID } from "../src/watch-pages/tile-design.js";
+import { BASE_GLOW_ID, BASE_LAYER_IDS, BASE_LAYER_NAMES, BASE_STATE_PART_IDS, BASE_STATE_PILL_ID } from "../src/watch-pages/tile-design.js";
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
 
@@ -132,8 +132,8 @@ describe("tileValuesFor", () => {
 describe("baseLayers", () => {
   it("builds the glyph, the state and the name, bottom to top, with fixed ids and names", () => {
     const layers = baseLayers(LIGHT, ctxFor(OFFICE));
-    expect(layers.map((el) => el.payload.id)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
-    expect(layers.map((el) => el.payload.name)).toEqual([BASE_LAYER_NAMES.icon, BASE_LAYER_NAMES.state, BASE_LAYER_NAMES.name]);
+    expect(layers.map((el) => el.payload.id)).toEqual([BASE_GLOW_ID, BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
+    expect(layers.map((el) => el.payload.name)).toEqual(["Glow", BASE_LAYER_NAMES.icon, BASE_LAYER_NAMES.state, BASE_LAYER_NAMES.name]);
     expect(text(layers, "name").value).toEqual({ kind: { kind: "tileName" } });
     // Rich text: the value is the parts' fallback, the figure's.
     expect(text(layers, "state").value).toEqual({ kind: { kind: "tileState", part: "figure" } });
@@ -144,11 +144,15 @@ describe("baseLayers", () => {
     expect(baseLayers({ id: "X", entityId: "page.ABC", colSpan: 6, rowSpan: 4 }, {})).toEqual([]);
   });
 
-  it("puts every frame inside the design box, as fractions rounded to 4 places", () => {
+  it("puts every frame inside the design box, as fractions rounded to 4 places (the glow may reach past it)", () => {
     for (const [tile, e] of [[LIGHT, OFFICE], [PERSON, CHEN], [SENSOR, TEMP]] as const) {
       for (const el of baseLayers(tile, ctxFor(e))) {
         const f = el.payload.frame;
         expect(f.rotationDegrees).toBe(0);
+        if (el.payload.id === BASE_GLOW_ID) {
+          for (const v of [f.x, f.y, f.width, f.height]) expect(Math.round(v * 10000) / 10000).toBe(v);
+          continue;
+        }
         for (const v of [f.x, f.y, f.width, f.height]) {
           expect(v).toBeGreaterThanOrEqual(0);
           expect(v).toBeLessThanOrEqual(1.0001);
