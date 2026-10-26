@@ -1,0 +1,104 @@
+{
+  "name": "spots-middle-row",
+  "about": "The middle row of spots on a switch, 6 by 5 on the watch: the icon middle right, the name middle left (leading text), the state in the middle.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000002",
+    "entityId": "switch.coffee",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 5,
+    "customLabel": "Coffee",
+    "color": "#F2AE4E"
+  },
+  "states": {
+    "switch.coffee": {
+      "state": "on",
+      "attributes": {}
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 84.25
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 83.25
+  },
+  "applies": true,
+  "content": {
+    "x": 7,
+    "y": 7,
+    "width": 86.5,
+    "height": 69.25
+  },
+  "native": {
+    "icon": {
+      "x": 24.0872,
+      "y": 11.4622,
+      "width": 52.3256,
+      "height": 52.3256
+    },
+    "name": {
+      "x": 3,
+      "y": 64.45,
+      "width": 94.5,
+      "height": 11.8
+    },
+    "state": {
+      "x": 7,
+      "y": 7,
+      "width": 12.1,
+      "height": 13.2
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "mr"
+      },
+      "name": {
+        "spot": "ml"
+      },
+      "state": {
+        "spot": "mc"
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 41.1744,
+        "y": 15.4622,
+        "width": 52.3256,
+        "height": 52.3256
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 7,
+        "y": 35.725,
+        "width": 94.5,
+        "height": 11.8
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "leading"
+    },
+    "state": {
+      "rect": {
+        "x": 44.2,
+        "y": 35.025,
+        "width": 12.1,
+        "height": 13.2
+      },
+      "scale": 1,
+      "hidden": false
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "ignored-strip",
+  "about": "A tile that cannot use Free: under 4 rows a tile is laid out as a strip, not centred, so the arrange key stored on it is ignored and every part is drawn as Default.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000009",
+    "entityId": "light.desk",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 12,
+    "rowSpan": 3,
+    "customLabel": "Desk",
+    "color": "#8F7BEA"
+  },
+  "states": {
+    "light.desk": {
+      "state": "on",
+      "attributes": {
+        "brightness": 200
+      }
+    }
+  },
+  "cell": {
+    "width": 205,
+    "height": 49.75
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 204,
+    "height": 48.75
+  },
+  "applies": false,
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "br",
+        "scale": 1.5
+      }
+    }
+  }
+}

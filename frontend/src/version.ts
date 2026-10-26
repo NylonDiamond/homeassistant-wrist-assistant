@@ -75,6 +75,33 @@ export function oneLookAtVersion(appVersion: string | null | undefined, minimum:
   return compareVersions(have, need) >= 0;
 }
 
+/** First app version, on either device, that draws a tile's Arrangement
+ * (`arrange`). Not a gate: an older app ignores the key and draws the tile's
+ * Default arrangement, so the card stays usable and only carries a note.
+ * Confirmed at release time: bump it if the release that ships Arrangement
+ * is not 3.2.0. */
+export const MIN_VERSION_FOR_ARRANGEMENT = "3.2.0";
+
+/** Whether an app at this version draws a tile's Arrangement. Not yet
+ * reported reads as new enough, as `deviceSupportsControls` does. */
+export function arrangementFor(appVersion: string | null | undefined): boolean {
+  const have = parseVersion(appVersion);
+  if (!have) return true;
+  return compareVersions(have, parseVersion(MIN_VERSION_FOR_ARRANGEMENT)!) >= 0;
+}
+
+/** The note the Arrangement card shows when devices on the page are too
+ * old to draw it, naming them: "Needs Wrist Assistant 3.2 on Chen Watch.
+ * Until then it draws the Default arrangement." (two: "on A and B ... they
+ * draw"; more: "on A, B and C"). Undefined for an empty list. */
+export function arrangementUpdateNote(deviceNames: readonly string[]): string | undefined {
+  const names = deviceNames.filter((n) => n.trim() !== "");
+  if (names.length === 0) return undefined;
+  const version = versionForCopy(MIN_VERSION_FOR_ARRANGEMENT);
+  const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the Default arrangement.`;
+}
+
 /** Whether every one of these devices draws One Look, from the versions they
  * reported: what a setting shared by all of them can be written for. No
  * device at all (a page on none yet) reads as an unreported one. */

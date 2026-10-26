@@ -1,0 +1,105 @@
+{
+  "name": "drag-offset",
+  "about": "A drag: the icon moved from its native place by 20% of the tile's width right and 10% of its height up, and the name moved from the bottom left spot by 5% of the width right. The state stays native (not listed).",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000004",
+    "entityId": "light.hall",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "customLabel": "Hall",
+    "color": "#8F7BEA"
+  },
+  "states": {
+    "light.hall": {
+      "state": "on",
+      "attributes": {
+        "brightness": 128
+      }
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 67
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 66
+  },
+  "applies": true,
+  "content": {
+    "x": 5.94,
+    "y": 5.94,
+    "width": 88.62,
+    "height": 54.12
+  },
+  "native": {
+    "icon": {
+      "x": 26.3574,
+      "y": 6.1074,
+      "width": 47.7852,
+      "height": 47.7852
+    },
+    "name": {
+      "x": 3,
+      "y": 48.26,
+      "width": 94.5,
+      "height": 11.8
+    },
+    "state": {
+      "x": 5.94,
+      "y": 9.5,
+      "width": 20.9,
+      "height": 14
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "dx": 0.2,
+        "dy": -0.1
+      },
+      "name": {
+        "spot": "bl",
+        "dx": 0.05
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 46.4574,
+        "y": -0.4926,
+        "width": 47.7852,
+        "height": 47.7852
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 10.965,
+        "y": 48.26,
+        "width": 94.5,
+        "height": 11.8
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "leading"
+    },
+    "state": {
+      "rect": {
+        "x": 5.94,
+        "y": 9.5,
+        "width": 20.9,
+        "height": 14
+      },
+      "scale": 1,
+      "hidden": false
+    }
+  }
+}

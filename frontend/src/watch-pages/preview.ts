@@ -111,7 +111,7 @@ import {
   oneLookMetrics,
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
-import { renderOneLookTile } from "./one-look/render.js";
+import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -3018,6 +3018,36 @@ export function renderWatchTileFace(
   unit: number,
 ): TemplateResult {
   return tileFace(tile, size.width, size.height, "fill", input, unit, input.scale ?? 1.5, false);
+}
+
+/**
+ * The One Look model `renderWatchTileFace` draws a tile from, read the same
+ * way (the watch's pull colour, the seeded state, the kind's special look),
+ * or undefined where the picture does not draw it in One Look: the old look,
+ * a header, a spacer, a template, a kind only the iPhone draws. For what a
+ * setting needs to know about the drawn tile, such as whether it is laid
+ * out centred (the Arrangement card).
+ */
+export function watchTileOneLookModel(
+  stored: WatchPageTile,
+  size: { width: number; height: number },
+  given: WatchPagePreviewInput,
+  unit: number,
+): OneLookPreviewModel | undefined {
+  const oneLook = previewOneLook(given);
+  if (oneLook === undefined) return undefined;
+  const inset = previewTileCellInset(given, stored, size.width, size.height);
+  const tile = watchSyncedTile(stored, given.page);
+  const { input, stub } = withStub(tile, withStateMode(tile, given));
+  const entityId = tileEntityId(tile);
+  const cls = tileClass(entityId, input.states);
+  if (cls === "divider" || cls === "spacer" || tileKind(entityId) === "template" || !tileDrawsOn(tile, "watch")) return undefined;
+  const look = cls === "unknown" ? undefined : watchSpecialTileLook(tile, input);
+  return oneLookPreviewModel({
+    tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
+    width: size.width - inset * 2, height: size.height - inset * 2, cell: { width: size.width, height: size.height },
+    unit, box: "", s: given.scale ?? 1.5,
+  });
 }
 
 /** The state the watch seeds for an entity Home Assistant has not reported

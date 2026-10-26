@@ -1,0 +1,105 @@
+{
+  "name": "hidden-parts",
+  "about": "Hidden parts: the name and the state hidden, the icon at 120% in the middle spot. Hidden parts keep their rects (nothing else moves); they are only not drawn.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000006",
+    "entityId": "lock.front_door",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "customLabel": "Front door",
+    "color": "#5AC8A8"
+  },
+  "states": {
+    "lock.front_door": {
+      "state": "locked",
+      "attributes": {}
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 67
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 66
+  },
+  "applies": true,
+  "content": {
+    "x": 5.94,
+    "y": 5.94,
+    "width": 88.62,
+    "height": 54.12
+  },
+  "native": {
+    "icon": {
+      "x": 36.6011,
+      "y": 16.3511,
+      "width": 27.2979,
+      "height": 27.2979
+    },
+    "name": {
+      "x": 3,
+      "y": 48.26,
+      "width": 94.5,
+      "height": 11.8
+    },
+    "state": {
+      "x": 5.94,
+      "y": 5.94,
+      "width": 36.3,
+      "height": 13.2
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "mc",
+        "scale": 1.2
+      },
+      "name": {
+        "hidden": true
+      },
+      "state": {
+        "hidden": true
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 33.8713,
+        "y": 16.6213,
+        "width": 32.7575,
+        "height": 32.7575
+      },
+      "scale": 1.2,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 3,
+        "y": 48.26,
+        "width": 94.5,
+        "height": 11.8
+      },
+      "scale": 1,
+      "hidden": true,
+      "align": "center"
+    },
+    "state": {
+      "rect": {
+        "x": 5.94,
+        "y": 5.94,
+        "width": 36.3,
+        "height": 13.2
+      },
+      "scale": 1,
+      "hidden": true
+    }
+  }
+}

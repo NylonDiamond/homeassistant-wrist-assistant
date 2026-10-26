@@ -1,0 +1,107 @@
+{
+  "name": "scale-up-down-iphone",
+  "about": "Sizes on the iPhone, 6 by 5: the icon at 150% about its native centre, the name at 120% (its box keeps its native width, only the height grows), the state at 80% in the top right spot.",
+  "device": "iphone",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000005",
+    "entityId": "light.lounge",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 5,
+    "customLabel": "Lounge",
+    "color": "#F2AE4E"
+  },
+  "states": {
+    "light.lounge": {
+      "state": "on",
+      "attributes": {
+        "brightness": 230
+      }
+    }
+  },
+  "cell": {
+    "width": 189,
+    "height": 157.1667
+  },
+  "unit": 29.8333,
+  "size": {
+    "width": 179,
+    "height": 147.1667
+  },
+  "applies": true,
+  "content": {
+    "x": 14,
+    "y": 14,
+    "width": 151,
+    "height": 119.1667
+  },
+  "native": {
+    "icon": {
+      "x": 46.1376,
+      "y": 26.2209,
+      "width": 86.7248,
+      "height": 86.7248
+    },
+    "name": {
+      "x": 8,
+      "y": 115.4667,
+      "width": 163,
+      "height": 17.7
+    },
+    "state": {
+      "x": 14,
+      "y": 17,
+      "width": 30.723,
+      "height": 23.1
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "scale": 1.5
+      },
+      "name": {
+        "scale": 1.2
+      },
+      "state": {
+        "spot": "tr",
+        "scale": 0.8
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 24.4564,
+        "y": 4.5397,
+        "width": 130.0872,
+        "height": 130.0872
+      },
+      "scale": 1.5,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 8,
+        "y": 113.6967,
+        "width": 163,
+        "height": 21.24
+      },
+      "scale": 1.2,
+      "hidden": false,
+      "align": "center"
+    },
+    "state": {
+      "rect": {
+        "x": 140.4216,
+        "y": 14,
+        "width": 24.5784,
+        "height": 18.48
+      },
+      "scale": 0.8,
+      "hidden": false
+    }
+  }
+}

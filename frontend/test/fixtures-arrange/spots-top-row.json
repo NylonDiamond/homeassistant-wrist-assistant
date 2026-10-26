@@ -1,0 +1,106 @@
+{
+  "name": "spots-top-row",
+  "about": "The top row of spots on a lit light, 6 by 4 on the watch: the icon top left, the name top centre (centred text), the state top right.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000001",
+    "entityId": "light.kitchen",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "customLabel": "Kitchen",
+    "color": "#8F7BEA"
+  },
+  "states": {
+    "light.kitchen": {
+      "state": "on",
+      "attributes": {
+        "brightness": 189
+      }
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 67
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 66
+  },
+  "applies": true,
+  "content": {
+    "x": 5.94,
+    "y": 5.94,
+    "width": 88.62,
+    "height": 54.12
+  },
+  "native": {
+    "icon": {
+      "x": 26.3574,
+      "y": 6.1074,
+      "width": 47.7852,
+      "height": 47.7852
+    },
+    "name": {
+      "x": 3,
+      "y": 48.26,
+      "width": 94.5,
+      "height": 11.8
+    },
+    "state": {
+      "x": 5.94,
+      "y": 9.5,
+      "width": 20.9,
+      "height": 14
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "tl"
+      },
+      "name": {
+        "spot": "tc"
+      },
+      "state": {
+        "spot": "tr"
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 5.94,
+        "y": 5.94,
+        "width": 47.7852,
+        "height": 47.7852
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 3,
+        "y": 5.94,
+        "width": 94.5,
+        "height": 11.8
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "center"
+    },
+    "state": {
+      "rect": {
+        "x": 73.66,
+        "y": 5.94,
+        "width": 20.9,
+        "height": 14
+      },
+      "scale": 1,
+      "hidden": false
+    }
+  }
+}

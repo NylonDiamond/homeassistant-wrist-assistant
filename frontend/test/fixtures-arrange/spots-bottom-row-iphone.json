@@ -1,0 +1,107 @@
+{
+  "name": "spots-bottom-row-iphone",
+  "about": "The bottom row of spots on a temperature sensor, 6 by 4 on the iPhone (iPhone look): the icon bottom centre, the name bottom right (trailing text), the state bottom left.",
+  "device": "iphone",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000003",
+    "entityId": "sensor.office_temperature",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "customLabel": "Office",
+    "color": "#4E9BF2"
+  },
+  "states": {
+    "sensor.office_temperature": {
+      "state": "21.5",
+      "attributes": {
+        "unit_of_measurement": "°C",
+        "device_class": "temperature"
+      }
+    }
+  },
+  "cell": {
+    "width": 189,
+    "height": 125.3333
+  },
+  "unit": 29.8333,
+  "size": {
+    "width": 179,
+    "height": 115.3333
+  },
+  "applies": true,
+  "content": {
+    "x": 12.6867,
+    "y": 12.6867,
+    "width": 153.6267,
+    "height": 89.96
+  },
+  "native": {
+    "icon": {
+      "x": 51.2442,
+      "y": 15.4109,
+      "width": 76.5116,
+      "height": 76.5116
+    },
+    "name": {
+      "x": 8,
+      "y": 84.9467,
+      "width": 163,
+      "height": 17.7
+    },
+    "state": {
+      "x": 12.6867,
+      "y": 12.6867,
+      "width": 46.0845,
+      "height": 23.1
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "bc"
+      },
+      "name": {
+        "spot": "br"
+      },
+      "state": {
+        "spot": "bl"
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 51.2443,
+        "y": 26.1351,
+        "width": 76.5116,
+        "height": 76.5116
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 3.3134,
+        "y": 84.9467,
+        "width": 163,
+        "height": 17.7
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "trailing"
+    },
+    "state": {
+      "rect": {
+        "x": 12.6867,
+        "y": 79.5467,
+        "width": 46.0845,
+        "height": 23.1
+      },
+      "scale": 1,
+      "hidden": false
+    }
+  }
+}

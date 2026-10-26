@@ -92,6 +92,7 @@ import {
   resolveOneLookLayout,
 } from "./layout.js";
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
+import { type OneLookArranged, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
 import { type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
 
 /** Which of a tile's own parts are left undrawn: the glyph (its icon or a
@@ -174,6 +175,10 @@ export interface OneLookPreviewModel {
   rowSpan: number;
   layout: OneLookLayout;
   palette: OneLookPalette;
+  /** The tile's Arrangement (`arrange`) placed over the centred layout:
+   * where its listed parts are drawn, at what size, and which are hidden.
+   * Undefined for Default, and in every other layout, which ignores it. */
+  arrange?: OneLookArranged;
 }
 
 /** A tile's Bar settings as One Look reads them (`OneLookBar`). */
@@ -527,6 +532,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     ...(fillLevel === undefined ? {} : { fillLevel }),
   });
   const barValue = oneLookBarValue(ks);
+  const arrange = oneLookArrangeLayout(layout, normalizeTileArrange(tile.arrange));
   return {
     device, pageLook, kind: ks, icon, baseIcon: base,
     ...(photo === undefined ? {} : { photo }),
@@ -535,6 +541,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     style, bar, ...(barValue === undefined ? {} : { barValue }),
     decorated: !ks.placeholder && picture !== "camera",
     colSpan, rowSpan, layout, palette,
+    ...(arrange === undefined ? {} : { arrange }),
   };
 }
 
@@ -608,18 +615,23 @@ function stateLine(state: StateFit, palette: OneLookPalette, device: OneLookDevi
     ? html`<span class="ol-amber" style=${`background:${oneLookHex(ONE_LOOK_AMBER_DOT)}`}></span>` : nothing}${p.word}</span>`;
 }
 
-function nameFont(model: OneLookPreviewModel, centred: boolean, s: number): string {
+function nameFont(model: OneLookPreviewModel, centred: boolean, s: number, scale = 1): string {
   const layout = model.layout;
   const weight = model.style.nameWeight ?? (centred ? "medium" : "semibold");
   const family = ONE_LOOK_FONT_FAMILIES[model.device][model.style.nameDesign];
   const colour = model.picture === "none" && model.style.nameColour !== undefined ? model.style.nameColour : oneLookInkCss(model.palette.ink);
-  return `font:${oneLookCssWeight(weight)} ${r2(layout.name.size * s)}px/${r2(layout.nameLineHeight * s)}px ${family};color:${colour}`;
+  return `font:${oneLookCssWeight(weight)} ${r2(layout.name.size * scale * s)}px/${r2(layout.nameLineHeight * scale * s)}px ${family};color:${colour}`;
 }
 
+/** How the centred name's lines sit across its box for an arranged
+ * alignment (the box's own rule centres them). */
+const NAME_ALIGN_CSS = { leading: ";align-items:flex-start;text-align:left", center: "", trailing: ";align-items:flex-end;text-align:right" } as const;
+
 /** The name and the state: in the centred layout the state alone in its
- * box top left and the name lines centred at the bottom; in every other
- * layout the name lines then the state, top left at the text's origin. A
- * hidden part keeps its room, so the other stays where it was. */
+ * box top left and the name lines centred at the bottom, each where the
+ * tile's Arrangement puts it (`model.arrange`); in every other layout the
+ * name lines then the state, top left at the text's origin. A hidden part
+ * keeps its room, so the other stays where it was. */
 function textLayer(model: OneLookPreviewModel, s: number, hidden?: TileHiddenParts): TemplateResult | typeof nothing {
   const { layout, palette, device, kind } = model;
   const shadows = palette.textShadow && device === "phone";
@@ -627,12 +639,19 @@ function textLayer(model: OneLookPreviewModel, s: number, hidden?: TileHiddenPar
   const stateShadow = textShadow(shadows && model.style.stateShadow, s);
   const lines = layout.name.lines;
   if (layout.mode === "centred") {
-    const rect = layout.stateRect;
-    const state = layout.state !== undefined && rect !== undefined && !kind.stateHidden && hidden?.state !== true
-      ? html`<span class="ol-state ${model.style.statePill ? "pill" : ""}" style=${`${rectCss(rect, s)}${model.style.statePill ? `;background:rgba(0, 0, 0, ${ONE_LOOK_PILL_OPACITY})` : ""}${stateShadow}`}>${stateLine(layout.state, palette, device, s)}</span>`
+    const arranged = model.arrange;
+    const placedState = arranged?.state;
+    const rect = placedState?.rect ?? layout.stateRect;
+    const stateScale = placedState?.scale ?? 1;
+    const state = layout.state !== undefined && rect !== undefined && !kind.stateHidden && hidden?.state !== true && placedState?.hidden !== true
+      ? html`<span class="ol-state ${model.style.statePill ? "pill" : ""}" style=${`${rectCss(rect, s)}${model.style.statePill ? `;background:rgba(0, 0, 0, ${ONE_LOOK_PILL_OPACITY})` : ""}${stateShadow}`}>${stateLine(layout.state, palette, device, s * stateScale)}</span>`
       : nothing;
-    const name = lines.length === 0 || hidden?.name === true ? nothing : html`<span class="ol-text centred" style=${`${rectCss({ x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: layout.textHeight }, s)}`}>
-      ${lines.map((line) => html`<span class="ol-name" style=${`height:${r2(layout.nameLineHeight * s)}px;${nameFont(model, true, s)}${nameShadow}`}>${line}</span>`)}
+    const placedName = arranged?.name;
+    const nameRect = placedName?.rect ?? { x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: layout.textHeight };
+    const nameScale = placedName?.scale ?? 1;
+    const align = placedName === undefined ? "" : NAME_ALIGN_CSS[placedName.align];
+    const name = lines.length === 0 || hidden?.name === true || placedName?.hidden === true ? nothing : html`<span class="ol-text centred" style=${`${rectCss(nameRect, s)}${align}`}>
+      ${lines.map((line) => html`<span class="ol-name" style=${`height:${r2(layout.nameLineHeight * nameScale * s)}px;${nameFont(model, true, s, nameScale)}${nameShadow}`}>${line}</span>`)}
     </span>`;
     return html`${state}${name}`;
   }
@@ -677,9 +696,13 @@ function barLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeo
 
 /** The glyph's place: a disc behind it in the disc layouts, the soft halo
  * behind a bare glyph on a coloured tile, then the glyph or a person's
- * photo. */
+ * photo. Where the tile's Arrangement puts the icon, all three go together,
+ * at its size. */
 function discLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: number): TemplateResult | typeof nothing {
-  const { layout, palette, device } = model;
+  const { palette, device } = model;
+  const placed = model.arrange?.icon;
+  if (placed?.hidden === true) return nothing;
+  const layout = placed === undefined ? model.layout : { ...model.layout, discRect: placed.rect, glyphSize: model.layout.glyphSize * placed.scale };
   const rect = layout.discRect;
   if (!(rect.width > 0)) return nothing;
   const cx = rect.x + rect.width / 2;

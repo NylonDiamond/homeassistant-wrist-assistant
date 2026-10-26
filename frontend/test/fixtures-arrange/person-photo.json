@@ -1,0 +1,106 @@
+{
+  "name": "person-photo",
+  "about": "A person's photo is the icon part: it moves to the top right spot at 80% with a small nudge left and down, and its glow (if any) goes with it. The name sits bottom left.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000007",
+    "entityId": "person.jesse",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 5,
+    "customLabel": "Jesse",
+    "color": "#4E9BF2"
+  },
+  "states": {
+    "person.jesse": {
+      "state": "home",
+      "attributes": {
+        "entity_picture": "/api/image/serve/jesse/512x512"
+      }
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 84.25
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 83.25
+  },
+  "applies": true,
+  "content": {
+    "x": 7,
+    "y": 7,
+    "width": 86.5,
+    "height": 69.25
+  },
+  "native": {
+    "icon": {
+      "x": 32.2,
+      "y": 19.575,
+      "width": 36.1,
+      "height": 36.1
+    },
+    "name": {
+      "x": 3,
+      "y": 64.45,
+      "width": 94.5,
+      "height": 11.8
+    },
+    "state": {
+      "x": 7,
+      "y": 7,
+      "width": 24.2,
+      "height": 13.2
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "tr",
+        "scale": 0.8,
+        "dx": -0.02,
+        "dy": 0.03
+      },
+      "name": {
+        "spot": "bl"
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 62.61,
+        "y": 9.4975,
+        "width": 28.88,
+        "height": 28.88
+      },
+      "scale": 0.8,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 7,
+        "y": 64.45,
+        "width": 94.5,
+        "height": 11.8
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "leading"
+    },
+    "state": {
+      "rect": {
+        "x": 7,
+        "y": 7,
+        "width": 24.2,
+        "height": 13.2
+      },
+      "scale": 1,
+      "hidden": false
+    }
+  }
+}

@@ -62,6 +62,10 @@ export interface WatchPageTile {
   color?: unknown;
   customLabel?: unknown;
   showLabel?: unknown;
+  /** The tile's Arrangement: where its icon, name and state sit, at what
+   * size, and which are hidden. Absent is Default. Read only through
+   * `normalizeTileArrange` (`one-look/arrange.ts`). */
+  arrange?: unknown;
   [key: string]: unknown;
 }
 
