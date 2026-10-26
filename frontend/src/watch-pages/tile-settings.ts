@@ -3360,7 +3360,7 @@ export const tileSettingsStyles = css`
   /* The Custom swatch, last in the row (\`color-picker.ts\`): a color wheel,
      with the custom color in its middle while one is picked. The Custom row
      under the swatches shows only then, or once the swatch is pressed. */
-  .ts-swatch.ts-swatch-custom { background: var(--sw-in, transparent), conic-gradient(#ff453a, #ffd60a, #30d158, #64d2ff, #0a84ff, #bf5af2, #ff453a); }
+  .ts-swatch.ts-swatch-custom { background: var(--sw-in, none), conic-gradient(#ff453a, #ffd60a, #30d158, #64d2ff, #0a84ff, #bf5af2, #ff453a); }
   .ts-custom[hidden] { display: none; }
   /* One large picture of the tile, over a row that changes it (Glow). */
   .ts-big-pic {
