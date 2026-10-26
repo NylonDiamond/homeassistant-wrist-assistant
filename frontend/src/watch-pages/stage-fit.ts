@@ -16,6 +16,17 @@
 // Jesse, 2026-10-26): the drawing's height is measured after each draw, per
 // unit of zoom, and Fit fits all of it, down to `STAGE_FILL_FLOOR`. The
 // other editors pass no `fill` and fit as before.
+//
+// Measuring what was drawn feeds back into the next draw, and that once
+// froze the browser (Jesse, 2026-10-26: dragging the settings gutter all the
+// way left, or dragging a tile): the parts of the drawing that do not grow
+// with the zoom made each draw's height per unit differ from the last by a
+// pixel or two, every draw asked for another, and Lit's updates ran on
+// without ever letting the page paint. So a new height counts only past
+// `DRAWN_SLACK` of the old one; the box's room is its layout size, which a
+// scrollbar coming or going does not change; no more than `CHAIN_MAX` draws
+// in a row are asked for by measuring alone; and while `held` says so (a
+// tile being dragged) the fit holds where it was.
 
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 
@@ -34,6 +45,13 @@ export const STAGE_FILL_MAX = 3;
 
 /** The least a filled stage fits a long page at: past it the stage scrolls. */
 export const STAGE_FILL_FLOOR = 0.5;
+
+/** How much the drawing's height per unit of zoom must move, as a share of
+ * it, to be measured again: less is the fixed parts' rounding. */
+const DRAWN_SLACK = 0.02;
+
+/** The most draws in a row a measurement alone asks for. */
+const CHAIN_MAX = 3;
 
 /** What a stage that fills its box needs to know of its drawing, in CSS
  * pixels: the part that grows with the zoom, at zoom 1, the room around it
@@ -72,6 +90,11 @@ export class StageFitWatch implements ReactiveController {
    * drawn, past its fixed room; a page longer than the screen makes it more
    * than the device alone. Zero until measured. */
   private drawn = 0;
+  /** The last fit given, which a held fit keeps. */
+  private last?: number;
+  /** Draws in a row asked for by measuring alone, reset once a draw
+   * measures nothing new. */
+  private chained = 0;
 
   /** `selector` finds the stage's box in the host's shadow root, and
    * `scaleNow` is the scale the host drew at. `fill`, when given, sizes the
@@ -83,6 +106,7 @@ export class StageFitWatch implements ReactiveController {
     private readonly selector: string,
     private readonly scaleNow: () => number,
     private readonly fill?: () => StageFillDrawing | undefined,
+    private readonly held: () => boolean = () => false,
   ) {
     host.addController(this);
   }
@@ -90,9 +114,18 @@ export class StageFitWatch implements ReactiveController {
   /** `base`, raised on a roomy stage, then held to the stage's width; or,
    * filling, the zoom that fills the box. */
   fit(base: number): number {
+    if (this.last !== undefined && this.held()) return this.last;
     const filled = this.filled();
-    if (filled !== undefined) return filled;
-    return Math.min(this.roomy() ? Math.max(base, STAGE_ROOMY_ZOOM) : base, this.cap);
+    this.last = filled ?? Math.min(this.roomy() ? Math.max(base, STAGE_ROOMY_ZOOM) : base, this.cap);
+    return this.last;
+  }
+
+  /** Ask the host to draw again for a measurement, unless measuring alone
+   * has asked `CHAIN_MAX` times in a row. */
+  private again(): void {
+    if (this.chained >= CHAIN_MAX) return;
+    this.chained += 1;
+    this.host.requestUpdate();
   }
 
   /** The filling zoom, or undefined when this stage does not fill (no
@@ -113,7 +146,7 @@ export class StageFitWatch implements ReactiveController {
     const scale = this.scaleNow();
     if (drawing === undefined || typeof child?.offsetHeight !== "number" || scale <= 0) return false;
     const unit = Math.max(0, (child.offsetHeight - drawing.fixedHeight) / scale);
-    if (Math.abs(unit - this.drawn) * scale <= 1) return false;
+    if (Math.abs(unit - this.drawn) <= Math.max(1 / scale, this.drawn * DRAWN_SLACK)) return false;
     this.drawn = unit;
     return true;
   }
@@ -127,8 +160,10 @@ export class StageFitWatch implements ReactiveController {
     if (box !== undefined) {
       const pad = typeof getComputedStyle === "function" ? getComputedStyle(box) : undefined;
       const px = (v: string | undefined) => parseFloat(v ?? "") || 0;
-      width = box.clientWidth - px(pad?.paddingLeft) - px(pad?.paddingRight);
-      height = box.clientHeight - px(pad?.paddingTop) - px(pad?.paddingBottom);
+      // The layout size, scrollbars and all: one coming or going never
+      // changes the room, so it cannot start a loop.
+      width = (box.offsetWidth ?? box.clientWidth) - px(pad?.paddingLeft) - px(pad?.paddingRight) - px(pad?.borderLeftWidth) - px(pad?.borderRightWidth);
+      height = (box.offsetHeight ?? box.clientHeight) - px(pad?.paddingTop) - px(pad?.paddingBottom) - px(pad?.borderTopWidth) - px(pad?.borderBottomWidth);
     }
     if (Math.abs(width - this.room.width) < 1 && Math.abs(height - this.room.height) < 1) return false;
     this.room = { width, height };
@@ -160,10 +195,14 @@ export class StageFitWatch implements ReactiveController {
         return;
       }
     }
+    // A held fit measures nothing: a tile dragged across the page must not
+    // move the zoom under the pointer.
+    if (this.held()) return;
     if (this.fill !== undefined && this.measureDrawn()) {
-      this.host.requestUpdate();
+      this.again();
       return;
     }
+    this.chained = 0;
     this.measure();
   }
 

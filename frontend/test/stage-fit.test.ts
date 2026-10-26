@@ -125,6 +125,36 @@ describe("the page editor's Fit, filling the stage", () => {
     expect(asked).toBe(2);
   });
 
+  it("never asks to draw again and again when each draw measures a little differently, and holds while held", () => {
+    // A drawing with a part that does not grow with the zoom (120 px more than
+    // the label it counts out) and that wobbles by a pixel per draw, as
+    // rounding did when the browser froze.
+    let scale = 1.5;
+    let wobble = 0;
+    const child = { get offsetHeight() { wobble ^= 1; return 30 + 120 + 600 * scale + wobble; } };
+    const box = { clientWidth: 420, clientHeight: 800, offsetWidth: 420, offsetHeight: 800, scrollWidth: 420, firstElementChild: child };
+    let asked = 0;
+    let held = false;
+    const host = { renderRoot: { querySelector: () => box }, addController: () => {}, requestUpdate: () => { asked += 1; } };
+    const fit = new StageFitWatch(host as never, ".stage", () => scale, () => WATCH, () => held);
+    // Draw as Lit would: each ask is one more draw at the fit it gives.
+    for (let i = 0; i < 50; i++) {
+      const before = asked;
+      scale = fit.fit(1.5);
+      fit.hostUpdated();
+      if (asked === before) break;
+    }
+    expect(asked).toBeLessThanOrEqual(5);
+    // Held (a tile dragged), the fit stays where it was and nothing measures.
+    const kept = fit.fit(1.5);
+    held = true;
+    scale = 3;
+    const before = asked;
+    fit.hostUpdated();
+    expect(asked).toBe(before);
+    expect(fit.fit(1.5)).toBe(kept);
+  });
+
   it("fits the width alone, as before, when the host says no (a stacked editor)", () => {
     const { fit, asked } = filling(300, 2000, undefined);
     // The first pass measures the box and asks to draw again; the draw after

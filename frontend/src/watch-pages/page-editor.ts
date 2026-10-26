@@ -864,8 +864,8 @@ export class WaPageEditor extends LitElement {
    * `stage.ts`), and a step holds only while it is open. */
   @state() private zoom: number | undefined = undefined;
   /** Fit, filling the stage's width and height both (`stage-fit.ts`, the
-   * device's size from `stageDrawing`). */
-  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale, () => this.stageDrawing());
+   * device's size from `stageDrawing`), held while a tile is dragged. */
+  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale, () => this.stageDrawing(), () => this.gesture !== undefined);
   /** The scale the stage was last drawn at, so a draw at a new one (a Fit
    * after a resize, a zoom step) turns the tile faces' fades off for that
    * draw: a glow growing with the zoom should not trail the window's edge. */
