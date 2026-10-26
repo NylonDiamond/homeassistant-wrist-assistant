@@ -219,7 +219,7 @@ import {
   tryMenuField,
   weightSample,
 } from "./picture-choice.js";
-import { renderArrangement } from "./arrange-card.js";
+import { renderArrangeHead, renderArrangement } from "./arrange-card.js";
 import { arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
@@ -975,7 +975,8 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
   }
   const resettable = watchTileResettable(host);
   // One column: the live tile, then Name, the entity beside Reset tile on one
-  // small line, and Preview as.
+  // small line, Preview as, and Arrange with the Part it places (the parts
+  // are dragged on the live tile).
   return html`<section class="ts-head ts-root" aria-label="Tile">
     <div class="ts-head-pic">${parts.picture}</div>
     <div class="ts-head-fields">
@@ -990,6 +991,7 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
       ${hasEntity ? html`<div class="ts-head-f ts-head-as">${segField<WatchTilePreviewAs>("Preview as", parts.previewAs, PREVIEW_AS, (v) => parts.setPreviewAs(v), {
         titles: { on: "The tile as it draws on", off: "The tile as it draws off", unavailable: "The tile while Home Assistant cannot reach it" },
       })}</div>` : nothing}
+      ${tileInspectorSections(host).includes("arrange") ? html`<div class="ts-head-f ts-head-arr">${renderArrangeHead(host)}</div>` : nothing}
     </div>
   </section>`;
 }
@@ -2747,23 +2749,10 @@ export const tileSettingsStyles = css`
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
 
-  /* The Arrangement card (\`arrange-card.ts\`). The picture box is the card's
-     PIC_W by PIC_H. */
+  /* The Arrangement card (\`arrange-card.ts\`). */
   .ts-arr { display: flex; flex-direction: column; gap: 6px; }
-  .ts-arr-picks { display: flex; flex-wrap: wrap; gap: 10px; }
-  .ts-arr-pick {
-    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; min-width: 104px;
-    border: 1px solid var(--wa-line-strong); border-radius: 10px; background: transparent; color: var(--wa-ink); cursor: pointer;
-  }
-  .ts-arr-pick:hover:not(:disabled) { background: var(--wa-panel); }
-  .ts-arr-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ts-arr-pick.on { border-color: var(--wa-sel-ring); background: var(--wa-sel-bg); }
-  .ts-arr-pick:disabled { opacity: .5; cursor: default; }
-  .ts-arr-pic { display: grid; place-items: center; width: 92px; height: 64px; border-radius: 8px; background: #000; }
-  .ts-arr-tile { position: relative; display: block; }
-  .ts-arr-label { font-size: 12px; font-weight: 600; }
   .ts-body .hint.ts-arr-why { margin: 0; }
-  .ts-arr-free { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--wa-line); }
+  .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
   .ts-arr-spot-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .ts-arr-spots {
     display: grid; grid-template-columns: repeat(3, 26px); gap: 3px; padding: 3px;
@@ -2792,6 +2781,7 @@ export const tileSettingsStyles = css`
     width: 100%; min-width: 0; height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
+  .ts-head-arr { display: flex; flex-direction: column; gap: 6px; }
   .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
   .ts-head-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-left: calc(var(--wa-lab) + 8px); }
   .ts-head-entity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--wa-muted); }

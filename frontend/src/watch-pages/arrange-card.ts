@@ -1,6 +1,7 @@
-// The Arrangement card of the tile settings: where a tile's own parts sit.
-// Default and Free as two small tile pictures; in Free the part being placed
-// (Icon, Name, State), its Spot on a 3 by 3 grid of the tile's content box
+// Where a tile's own parts sit. Arrange (Default or Free) and, in Free, the
+// Part being placed stand in the tile's head card under its live tile
+// (`renderArrangeHead`), where the part is dragged too. The Arrangement card
+// holds the picked part's Spot on a 3 by 3 grid of the tile's content box
 // (or its native place), its Size, Shown or Hidden, a small move across and
 // down, and "Put every part back". Every edit is one commit of the tile key
 // `arrange` (`setWatchTileArrange`), so it goes through the draft and undo
@@ -24,12 +25,8 @@ import { numberField, segField } from "../editors.js";
 import type { HassEntityState } from "../ha-api.js";
 import { arrangementFor, arrangementUpdateNote } from "../version.js";
 import { type TileSettingsHost, hostDevice } from "./editor-host.js";
-import type { WatchPageTile } from "./model.js";
-import { renderWatchTileFace } from "./preview.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
 import {
-  ARRANGE_SAMPLE,
-  type ArrangeFrame,
   type ArrangeFrameSource,
   arrangeFrame,
   arrangeFreeBlock,
@@ -115,69 +112,41 @@ const SPOT_WORDS: Readonly<Record<ArrangeSpot, string>> = {
 };
 const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state" };
 
-/** The largest a picture of the tile is drawn, in pixels. */
-const PIC_W = 92;
-const PIC_H = 64;
-
-/** A small picture of `tile` at its cell, fitted into the picture box. */
-function tilePicture(frame: ArrangeFrame, tile: WatchPageTile): TemplateResult {
-  const s = Math.min(PIC_W / frame.cell.width, PIC_H / frame.cell.height);
-  const w = Math.round(frame.cell.width * s);
-  const h = Math.round(frame.cell.height * s);
-  return html`<span class="ts-arr-tile" style=${`width:${w}px;height:${h}px`}>${renderWatchTileFace(tile, frame.cell, { ...frame.input, scale: s }, frame.unit)}</span>`;
-}
-
-function pickButton(label: string, on: boolean, picture: TemplateResult | typeof nothing, pick: () => void, disabled: boolean, title?: string): TemplateResult {
-  return html`<button type="button" class="ts-arr-pick ${on ? "on" : ""}" role="radio" aria-checked=${on ? "true" : "false"}
-    ?disabled=${disabled} title=${title ?? nothing} @click=${() => { if (!on) pick(); }}>
-    <span class="ts-arr-pic" aria-hidden="true">${picture}</span>
-    <span class="ts-arr-label">${label}</span>
-  </button>`;
-}
-
 /** The names of the devices on the page whose app draws Default whatever is
  * stored. */
 function tooOld(host: TileSettingsHost): string[] {
   return (host.pickers ?? []).filter((p) => !arrangementFor(p.version ?? null)).map((p) => p.name);
 }
 
-/** The card's body. */
-export function renderArrangement(host: TileSettingsHost): TemplateResult {
+/** What the head and the card read: the stored arrangement, the tile's One
+ * Look model, why Free cannot place it (undefined when it can), and whether
+ * Free shows. */
+function arrangeNow(host: TileSettingsHost): { stored: TileArrange | undefined; model: OneLookPreviewModel | undefined; block: string | undefined; free: boolean } {
   const tile = host.tile;
-  const stored = watchTileArrange(tile);
   const source: ArrangeFrameSource = {
     page: host.page, pages: [host.page, ...host.otherPages], device: hostDevice(host),
     states: host.hass.states as Record<string, HassEntityState>, icons: host.icons, behavior: host.behavior,
     ...(host.catalog === undefined ? {} : { catalog: host.catalog }),
   };
-  const frame = arrangeFrame(source, tile);
-  const block = arrangeFreeBlock(frame?.model);
-  const free = block === undefined && arrangeFreeShown(host);
-  const bare: WatchPageTile = { ...tile };
-  delete bare.arrange;
-  const pictures: { def: TemplateResult; free: TemplateResult | typeof nothing } | undefined = frame === undefined ? undefined : {
-    def: tilePicture(frame, bare),
-    free: block === undefined ? tilePicture(frame, { ...bare, arrange: stored ?? ARRANGE_SAMPLE }) : nothing,
-  };
-  const old = arrangementUpdateNote(tooOld(host));
-  const head = html`<div class="ts-arr-picks" role="radiogroup" aria-label="Arrangement">
-      ${pickButton("Default", !free, pictures?.def ?? nothing, () => pickArrangeDefault(host), false, "Every part where the tile's layout puts it")}
-      ${pickButton("Free", free, pictures?.free ?? nothing, () => pickArrangeFree(host), block !== undefined, block ?? "Move, size or hide the icon, the name and the state")}
-    </div>
-    ${block !== undefined
-      ? html`<div class="hint keep ts-arr-why">${block}${stored === undefined ? nothing : " The arrangement stored on it is kept but not drawn."}</div>`
-      : free ? nothing : html`<div class="hint ts-arr-why">Every part sits where the tile's layout puts it.</div>`}
-    ${old === undefined ? nothing : html`<div class="hint warn ts-arr-why" role="status">${old}</div>`}`;
-  if (!free) {
-    return html`<div class="ts-arr">${head}${block !== undefined && stored !== undefined
-      ? html`<div class="ts-arr-foot">${resetButton("Put every part back", "Clear the stored arrangement", () => putEveryPartBack(host))}</div>`
-      : nothing}</div>`;
-  }
-  return html`<div class="ts-arr">${head}${renderFreeRows(host, stored, frame?.model)}</div>`;
+  const model = arrangeFrame(source, tile)?.model;
+  const block = arrangeFreeBlock(model);
+  return { stored: watchTileArrange(tile), model, block, free: block === undefined && arrangeFreeShown(host) };
 }
 
-/** The rows under Free, for the part picked. */
-function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
+/**
+ * The head's rows under the live tile: Arrange (Default or Free, Free
+ * greyed with the reason on a tile that cannot use it) and, with Free, the
+ * Part being placed. The parts are dragged on the live tile itself; the
+ * Arrangement card holds the exact spot, size, show and move.
+ */
+export function renderArrangeHead(host: TileSettingsHost): TemplateResult {
+  const { stored, block, free } = arrangeNow(host);
+  const pick = (v: "default" | "free") => (v === "free" ? pickArrangeFree(host) : pickArrangeDefault(host));
+  const arrange = segField<"default" | "free">("Arrange", free ? "free" : "default", [["default", "Default"], ["free", "Free"]], pick, {
+    titles: { default: "Every part where the tile's layout puts it", free: block ?? "Move, size or hide the icon, the name and the state" },
+    disabled: { free: block !== undefined },
+  });
+  if (!free) return arrange;
   const picked = arrangeSelectedPart(host);
   const moved = (p: ArrangePart) => stored?.parts[p] !== undefined;
   const pickPart = (p: ArrangePart | "none") => {
@@ -185,13 +154,34 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
     host.endCoalesce();
     host.requestUpdate();
   };
-  const partRow = segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
+  return html`${arrange}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
     titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
-  });
+  })}`;
+}
+
+/** The card's body: why Free cannot place the tile, or with Default a line
+ * pointing at Arrange over the tile, or with Free the picked part's rows. */
+export function renderArrangement(host: TileSettingsHost): TemplateResult {
+  const { stored, model, block, free } = arrangeNow(host);
+  const old = arrangementUpdateNote(tooOld(host));
+  const head = html`${block !== undefined
+      ? html`<div class="hint keep ts-arr-why">${block}${stored === undefined ? nothing : " The arrangement stored on it is kept but not drawn."}</div>`
+      : free ? nothing : html`<div class="hint keep ts-arr-why">Every part sits where the tile's layout puts it. Pick Free under the tile at the top to move them.</div>`}
+    ${old === undefined ? nothing : html`<div class="hint warn ts-arr-why" role="status">${old}</div>`}`;
+  if (!free) {
+    return html`<div class="ts-arr">${head}${block !== undefined && stored !== undefined
+      ? html`<div class="ts-arr-foot">${resetButton("Put every part back", "Clear the stored arrangement", () => putEveryPartBack(host))}</div>`
+      : nothing}</div>`;
+  }
+  return html`<div class="ts-arr">${head}${renderFreeRows(host, stored, model)}</div>`;
+}
+
+/** The rows under Free, for the part picked. */
+function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
+  const picked = arrangeSelectedPart(host);
   if (picked === undefined) {
     return html`<div class="ts-arr-free">
-      ${partRow}
-      <div class="hint ts-under">Pick a part here or click it on the tile, then drag it there or use the arrow keys.</div>
+      <div class="hint keep">Pick a part under the tile at the top, or click it on the tile, then drag it there or use the arrow keys.</div>
       <div class="ts-arr-foot">${resetButton("Put every part back", "Every part back where the tile's layout puts it", () => putEveryPartBack(host))}</div>
     </div>`;
   }
@@ -219,7 +209,7 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
     }), Math.round((entry[axis] ?? 0) * 1000) / 10);
   };
   return html`<div class="ts-arr-free">
-    ${partRow}
+    <div class="hint keep ts-arr-now">Placing the ${PART_WORDS[part]}. Drag it on the tile at the top, or set it here.</div>
     ${drawn ? nothing : html`<div class="hint keep ts-under">This tile draws no ${PART_WORDS[part]} now; its arrangement is kept for when it does.</div>`}
     <div class="field ts-arr-spot-row"><span>Spot</span>
       <div class="ts-arr-spot-ctl">

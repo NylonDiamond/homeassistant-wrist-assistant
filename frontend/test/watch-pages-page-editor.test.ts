@@ -1251,7 +1251,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
       made.call("onPartPointerDown", {
         button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, ...mods, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
         currentTarget: null, stopPropagation: () => { stopped = true; },
-      }, tileId, part);
+      }, tileId, part, el.stageArrange);
       return stopped;
     };
     const pressTile = (tileId = selected) => made.call("onTilePointerDown", {
@@ -1318,6 +1318,28 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(draft().canUndo).toBe(false);
   });
 
+  it("draws the parts on the inspector head's larger tile too, and drags them by shares of that tile", () => {
+    const { el, body, move, up, tileOf } = stage("T-BIG");
+    body();
+    // The inspector is stubbed here: the head's live tile is drawn on its own.
+    const page = (el.currentPage as () => WatchPage).call(el);
+    const headTile = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")));
+    expect(headTile).toContain(`class="pe-head-tile arr"`);
+    expect(headTile).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
+    const head = el.headArrange as { scale: number; stage: { size: { width: number; height: number } } };
+    const onStage = el.stageArrange as { scale: number };
+    expect(head.scale).toBeGreaterThan(onStage.scale);
+    (el.onPartPointerDown as (...a: unknown[]) => void).call(el, {
+      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
+      currentTarget: null, stopPropagation: () => undefined,
+    }, "T-BIG", "icon", head);
+    const g = el.gesture as PartMove;
+    expect(g.width).toBeCloseTo(head.stage.size.width * head.scale, 5);
+    move(20, 0);
+    up();
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: Math.round((20 / g.width!) * 1000) / 1000 } } });
+  });
+
   it("keeps a part's spot when it is dragged, and a press with no travel writes nothing", () => {
     const made = editor("T-BIG", {
       ...ROOM,
@@ -1328,11 +1350,11 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     setArrangePickedPart(made.el.uiState as Map<string, unknown>, "T-BIG", "name");
     made.body();
     const ev = { button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerId: 7, clientX: 50, clientY: 50, currentTarget: null, stopPropagation: () => undefined };
-    made.call("onPartPointerDown", ev, "T-BIG", "name");
+    made.call("onPartPointerDown", ev, "T-BIG", "name", made.el.stageArrange);
     const before = made.draft().document;
     made.call("onPointerUp", { pointerId: 7 });
     expect(made.draft().document).toBe(before);
-    made.call("onPartPointerDown", ev, "T-BIG", "name");
+    made.call("onPartPointerDown", ev, "T-BIG", "name", made.el.stageArrange);
     made.call("onPointerMove", { pointerId: 7, clientX: 50, clientY: 90, preventDefault: () => undefined });
     made.call("onPointerUp", { pointerId: 7 });
     const arrange = ((made.draft().document.pages as { items: WatchPageTile[] }[])[0]!.items.find((t) => t.id === "T-BIG")!.arrange as Arr)!;

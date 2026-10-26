@@ -342,7 +342,7 @@ describe("the tile's cards", () => {
     const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf("<h4>"));
     expect(body.indexOf(`data-col=1`)).toBeLessThan(body.indexOf(`<section class="ts-head`));
     expect(body.indexOf(`<section class="ts-head`)).toBeLessThan(body.indexOf("<h4>"));
-    expect(head).toContain(`<div class="ts-head-pic"><span class="pe-head-tile"`);
+    expect(head).toContain(`<div class="ts-head-pic"><span class="pe-head-tile `);
     expect(head).toContain(`aria-label="Name"`);
     expect(head).toContain(`<code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code>`);
     expect(head).toContain(`aria-label=Preview as`);

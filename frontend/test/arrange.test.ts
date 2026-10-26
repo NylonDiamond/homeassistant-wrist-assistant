@@ -34,6 +34,7 @@ import {
   setArrangePickedPart,
 } from "../src/watch-pages/arrange-model.js";
 import { setWatchTileArrange } from "../src/watch-pages/tile-settings-model.js";
+import { renderArrangeHead } from "../src/watch-pages/arrange-card.js";
 import { renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
 
 (globalThis as { document?: unknown }).document ??= { activeElement: null };
@@ -333,6 +334,8 @@ function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers
   return { host, draft };
 }
 const card = (host: TileSettingsHost) => renderTileSettings(host, { sections: ["arrange"] });
+/** The head's Arrange and Part rows, under the live tile. */
+const head = (host: TileSettingsHost) => renderArrangeHead(host);
 const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel: "Kitchen", color: "#8F7BEA" };
 const stored = (host: TileSettingsHost) => host.tile.arrange;
 
@@ -346,32 +349,35 @@ describe("the Arrangement card", () => {
     expect(arrangeOffered({ id: "x", entityId: "camera.porch" })).toBe(true);
   });
 
-  it("starts on Default with both pictures, and Free shows the rows without writing", () => {
+  it("starts on Default, and Free picked over the tile shows the rows without writing", () => {
     const { host, draft } = tileHost(KITCHEN);
     const before = text(card(host));
     expect(before).toContain(`<h4>Arrangement</h4>`);
-    expect(before).toContain("Every part sits where the tile's layout puts it.");
-    expect(before.match(/class="ts-arr-tile"/g)?.length).toBe(2);
+    expect(before).toContain("Every part sits where the tile's layout puts it. Pick Free under the tile at the top to move them.");
     expect(before).not.toContain("Native place");
+    expect(text(head(host))).toMatch(/aria-label=Arrange>/);
+    expect(text(head(host))).not.toContain("aria-label=Part");
     const doc = draft.document;
-    click(card(host), `"ts-arr-label">Free<`);
+    click(head(host), ">Free</button>");
     expect(draft.document).toBe(doc);
     const free = text(card(host));
     expect(free).toContain("Native place");
     expect(free).toContain("Put every part back");
+    expect(free).toContain("Placing the icon.");
+    expect(text(head(host))).toContain("aria-label=Part");
   });
 
   it("writes a spot, a size and hidden for the part picked, each one undo step", () => {
     const { host, draft } = tileHost(KITCHEN);
-    click(card(host), `"ts-arr-label">Free<`);
+    click(head(host), ">Free</button>");
     click(card(host), "aria-label=Top right");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
     click(card(host), ">150%</button>");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
-    click(card(host), ">State</button>");
+    click(head(host), ">State</button>");
     click(card(host), ">Hidden</button>");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 }, state: { hidden: true } } });
-    expect(text(card(host))).toContain("Icon •");
+    expect(text(head(host))).toContain("Icon •");
     draft.undo();
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
   });
@@ -397,7 +403,7 @@ describe("the Arrangement card", () => {
   it("goes back to Default by removing the key, which undo brings back", () => {
     const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
     expect(text(card(host))).toContain("Native place");
-    click(card(host), `"ts-arr-label">Default<`);
+    click(head(host), ">Default</button>");
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
     expect(text(card(host))).not.toContain("Native place");
     draft.undo();
@@ -414,8 +420,9 @@ describe("the Arrangement card", () => {
   it("greys Free with the reason on a tile that cannot use it", () => {
     const { host } = tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3, arrange: { v: 1, parts: { icon: { spot: "tl" } } } });
     const markup = text(card(host));
-    expect(markup).toMatch(/<button type="button" class="ts-arr-pick on" role="radio" aria-checked=true\s+\?disabled=false/);
-    expect(markup).toContain("?disabled=true");
+    const rows = text(head(host));
+    expect(rows).toMatch(/aria-checked=true\s+class=on title=Every part where the tile's layout puts it \?disabled=false/);
+    expect(rows).toMatch(/title=A tile under 4 rows[^?]*\?disabled=true/);
     expect(markup).toContain("A tile under 4 rows lays its parts out in a row.");
     expect(markup).toContain("The arrangement stored on it is kept but not drawn.");
     expect(markup).not.toContain("Native place");
@@ -430,27 +437,27 @@ describe("the Arrangement card", () => {
 
   it("shares the part picked with the stage through the editor's view state", () => {
     const { host } = tileHost(KITCHEN);
-    click(card(host), `"ts-arr-label">Free<`);
+    click(head(host), ">Free</button>");
     // Icon until another is picked.
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
-    click(card(host), ">Name</button>");
+    click(head(host), ">Name</button>");
     expect(arrangePickedPart(host.uiState, TILE_ID.toLowerCase())).toBe("name");
     // A part picked on the stage is the card's.
     setArrangePickedPart(host.uiState, TILE_ID, "state");
-    expect(text(card(host))).toMatch(/aria-checked=true\s+class=on title=The state line/);
+    expect(text(head(host))).toMatch(/aria-checked=true\s+class=on title=The state line/);
     // Let go on the stage (Escape): no part on, and no rows to set one.
     setArrangePickedPart(host.uiState, TILE_ID, undefined);
     const none = text(card(host));
-    expect(none).not.toMatch(/aria-checked=true\s+class=on title=The (icon|tile's name|state line)/);
-    expect(none).toContain("Pick a part here or click it on the tile");
+    expect(text(head(host))).not.toMatch(/aria-checked=true\s+class=on title=The (icon|tile's name|state line)/);
+    expect(none).toContain("Pick a part under the tile at the top, or click it on the tile");
     expect(none).not.toContain("Native place");
     expect(none).toContain("Put every part back");
-    click(card(host), ">Icon</button>");
+    click(head(host), ">Icon</button>");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
     // Free picked again after Default brings a let go pick back as Icon.
     setArrangePickedPart(host.uiState, TILE_ID, undefined);
-    click(card(host), `"ts-arr-label">Default<`);
-    click(card(host), `"ts-arr-label">Free<`);
+    click(head(host), ">Default</button>");
+    click(head(host), ">Free</button>");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
   });
 });

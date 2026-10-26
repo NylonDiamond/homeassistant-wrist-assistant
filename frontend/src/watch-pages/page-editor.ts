@@ -942,6 +942,8 @@ export class WaPageEditor extends LitElement {
    * arrow key on the stage reads to grab, pick or nudge a part. Drawn
    * afresh with every stage. */
   private stageArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
+  /** The same for the inspector head's live tile, while it draws its parts. */
+  private headArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
   /** A press landed on a part of the selected Free tile: the click it ends
    * with picks that part in the Arrangement card, unless it became a drag. */
   private pressedPart?: { tileId: string; part: ArrangePart };
@@ -2777,18 +2779,17 @@ export class WaPageEditor extends LitElement {
   /** A press on a part of the selected Free tile. On the picked part it
    * starts a drag of that part; on another part it is the tile's press (a
    * drag moves the tile), and the click it ends with picks the part. */
-  private onPartPointerDown(e: PointerEvent, tileId: string, part: ArrangePart): void {
+  private onPartPointerDown(e: PointerEvent, tileId: string, part: ArrangePart, at: { stage: ArrangeStageParts; scale: number } | undefined): void {
     if (e.button !== 0 || !e.isPrimary || e.metaKey || e.ctrlKey || e.shiftKey) return;
     this.pressedPart = { tileId, part };
-    if (part !== this.stagePart()?.part) return;
+    if (at === undefined || this.multiPicked || !sameWatchId(this.selectedTileId, tileId) || part !== arrangePickedPart(this.uiState, tileId)) return;
     // The tile's own press must not start a move as well.
     e.stopPropagation();
     if (this.gesture || this.saving || this.editingOff()) return;
     const draft = this.draft;
     const page = this.currentPage();
     const tile = page === undefined ? undefined : this.tileOn(page, tileId);
-    const at = this.stageArrange;
-    if (draft === undefined || page === undefined || tile === undefined || at === undefined) return;
+    if (draft === undefined || page === undefined || tile === undefined) return;
     const from = watchTileArrange(tile);
     this.gesture = {
       kind: "part",
@@ -2817,7 +2818,8 @@ export class WaPageEditor extends LitElement {
     const pressed = this.pressedPart;
     this.pressedPart = undefined;
     if (pressed === undefined || e.shiftKey || e.metaKey || e.ctrlKey || !sameWatchId(pressed.tileId, tileId)) return false;
-    if (!sameWatchId(this.stageArrange?.tileId, tileId) || this.multiPicked) return false;
+    const drawn = (at: { tileId: string } | undefined) => sameWatchId(at?.tileId, tileId);
+    if (!(drawn(this.stageArrange) || drawn(this.headArrange)) || this.multiPicked) return false;
     this.pickStagePart(tileId, pressed.part);
     return true;
   }
@@ -3813,6 +3815,7 @@ export class WaPageEditor extends LitElement {
     this.stageScreen = screen;
     // Set again by the selected tile, if the edit screen draws one Free.
     this.stageArrange = undefined;
+    this.headArrange = undefined;
     this.stageSideInset = this.gridSideInset;
     this.stageTopInset = watchPreviewTopInset(input);
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
@@ -4293,6 +4296,14 @@ export class WaPageEditor extends LitElement {
     const stage = arrangeStageParts(tile, cell, input, unit);
     if (stage === undefined) return nothing;
     this.stageArrange = { tileId: id, stage, scale: s };
+    return this.renderPartBoxes(id, stage, s);
+  }
+
+  /** A box over each part `stage` holds, drawn at scale `s`: the picked one
+   * outlined and dragged, a click on another picks it. The stage's tile and
+   * the inspector head's live tile both draw them. */
+  private renderPartBoxes(id: string, stage: ArrangeStageParts, s: number): TemplateResult {
+    const g = this.gesture;
     const picked = arrangePickedPart(this.uiState, id);
     const px = (v: number) => Math.round(v * s * 100) / 100;
     return html`${ARRANGE_PARTS.map((part) => {
@@ -4303,7 +4314,7 @@ export class WaPageEditor extends LitElement {
       return html`<span class="pe-part ${on ? "on" : ""} ${on && g?.kind === "part" && g.started ? "dragging" : ""}" data-part=${part} aria-hidden="true"
         title=${on ? `Drag to move the ${word}. Arrow keys nudge it, Escape lets it go.` : `Click to pick the ${word}`}
         style=${`left:${px(stage.inset + r.x)}px;top:${px(stage.inset + r.y)}px;width:${px(r.width)}px;height:${px(r.height)}px`}
-        @pointerdown=${(e: PointerEvent) => this.onPartPointerDown(e, id, part)}
+        @pointerdown=${(e: PointerEvent) => this.onPartPointerDown(e, id, part, { stage, scale: s })}
         @click=${(e: MouseEvent) => {
           // The picked part's own click; another part's click is the tile's
           // (its press captured the pointer on the tile).
@@ -4675,7 +4686,11 @@ export class WaPageEditor extends LitElement {
     const id = tileIdOf(tile);
     const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
     if (placed === undefined || !(placed.width > 0 && placed.height > 0)) return nothing;
-    const drawn = watchTriedTile(this.uiState, id) ?? tile;
+    // A part drag draws the tile with the arrangement the pointer asks for,
+    // here as on the stage.
+    const g = this.gesture;
+    const dragged = g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(tile, g.arrange) : tile;
+    const drawn = watchTriedTile(this.uiState, id) ?? dragged;
     const s = Math.min(HEAD_TILE_W / placed.width, HEAD_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
     const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
     // Drawn as Preview as says, whatever the Live switch or a state tried
@@ -4683,8 +4698,15 @@ export class WaPageEditor extends LitElement {
     const { testedIds: _tested, ...base } = this.previewInput(page, pages, screen, s);
     const states = watchTileStatesAs(drawn, this.hass?.states, this.tilePreviewAs);
     const input: WatchPagePreviewInput = { ...base, stateMode: "live", ...(states === undefined ? {} : { states }) };
-    return html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
-      renderWatchTileFace(drawn, { width: placed.width, height: placed.height }, input, layout.unit)}</span>`;
+    // With Free on, the parts are boxes to pick and drag, as on the stage,
+    // only larger.
+    const cell = { width: placed.width, height: placed.height };
+    const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page) && arrangeFreeOn(this.uiState, tile)
+      && !(g?.started === true && g.kind !== "part");
+    const stage = free ? arrangeStageParts(drawn, cell, input, layout.unit) : undefined;
+    this.headArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s };
+    return html`<span class="pe-head-tile ${stage === undefined ? "" : "arr"}" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
+      renderWatchTileFace(drawn, cell, input, layout.unit)}${stage === undefined ? nothing : this.renderPartBoxes(id, stage, s)}</span>`;
   }
 
   /** The tile settings' host for the selected tile, or undefined with no
@@ -5279,6 +5301,9 @@ export class WaPageEditor extends LitElement {
     .pe-insp-cols { display: grid; grid-template-columns: repeat(var(--pe-cols, 1), minmax(0, 1fr)); align-items: start; gap: 0 14px; }
     .pe-insp-col { display: flex; flex-direction: column; min-width: 0; }
     .pe-head-tile { position: relative; display: block; flex: none; pointer-events: none; }
+    /* With Free on, the head's live tile takes presses on its parts only. */
+    .pe-head-tile.arr { --pe-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); }
+    .pe-head-tile.arr > .pe-part { pointer-events: auto; }
     /* The line under the presets that opens the four boxes: where the tile
        is, behind a chevron that turns, so it reads as a disclosure. The
        text arrow it had read as a list bullet. */
