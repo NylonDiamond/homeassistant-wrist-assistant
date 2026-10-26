@@ -203,7 +203,86 @@
             "colorSlot": {
               "baseColorHex": "#FFFFFF"
             },
-            "rules": [],
+            "rules": [
+              {
+                "id": "BA5E0004-0003-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0004-0003-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0004-0003-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setColor",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "#FFFFFF"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "partId": "BA5E0004-0000-4000-8000-0000000000F3"
+              },
+              {
+                "id": "BA5E0004-0004-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0004-0004-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0004-0004-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setColor",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "#FFFFFF"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "partId": "BA5E0004-0000-4000-8000-0000000000F4"
+              }
+            ],
             "frame": {
               "x": 0.0591,
               "y": 0.1439,
@@ -260,7 +339,7 @@
                     "part": "tail"
                   }
                 },
-                "colorHex": "#FFFFFF",
+                "colorHex": "#FFFFFF99",
                 "fontWeight": "regular",
                 "fontSize": 11,
                 "fontDesign": "default"
@@ -273,7 +352,7 @@
                     "part": "word"
                   }
                 },
-                "colorHex": "#FFFFFF",
+                "colorHex": "#FFFFFF99",
                 "fontWeight": "regular",
                 "fontDesign": "default"
               }

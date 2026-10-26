@@ -603,7 +603,7 @@ function statePillLayer(face: Face): Element | undefined {
  * size, and the word regular in the second ink. The pieces a line does not
  * have are empty and draw nothing, so it turns from a number into a word
  * live, with no rule. */
-function stateLayer(face: Face): Element | undefined {
+function stateLayer(face: Face, ctx?: BaseLayerContext): Element | undefined {
   const { model, box } = face;
   const layout = model.layout;
   const state = layout.state;
@@ -629,7 +629,38 @@ function stateLayer(face: Face): Element | undefined {
   // with a little slack for the apps' own font metrics, never under half.
   const drawn = model.kind.stateHidden ? 0 : Math.max(oneLookStateWidth(state, m, face.measurer), oneLookStateWidth(state, m, face.phoneMeasurer));
   const fits = drawn > 0 ? Math.floor(((room * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
-  const ink2 = inkHex(model.palette.ink2);
+  // The inks follow on and off as the glyph's do: for a kind lit when on,
+  // the off face's inks, with a rule per ink that takes the on face's while
+  // the entity is on (the layer's ink reaches the figure, the unit, tail and
+  // word have their own), so "Off" turns the second ink as the line does.
+  const inks = (f: Face | undefined) => f === undefined ? undefined : {
+    ink: inkHex(f.model.palette.ink),
+    unit: inkHex({ rgb: f.model.palette.ink.rgb, opacity: f.model.palette.ink.opacity * ONE_LOOK_UNIT_OPACITY }),
+    ink2: inkHex(f.model.palette.ink2),
+  };
+  let base = inks(face)!;
+  let lit: typeof base | undefined;
+  if (ctx !== undefined && LIT_ON_KINDS.has(tileKind(tileEntityId(face.tile)))) {
+    const at = facesAt(face.tile, ctx);
+    const on = inks(at("on"));
+    const off = inks(at("off"));
+    if (on !== undefined && off !== undefined) {
+      base = off;
+      lit = on;
+    }
+  }
+  const litRule = (rule: number, key: keyof typeof base, partId?: string): Rule | undefined => {
+    if (lit === undefined || ctx === undefined || lit[key] === base[key]) return undefined;
+    return {
+      id: baseRuleId("state", rule, 0, 1),
+      ...(partId === undefined ? {} : { partId }),
+      cases: [{
+        id: baseRuleId("state", rule, 1, 2),
+        when: { join: "all", tests: [{ id: baseRuleId("state", rule, 1, 3), value: entityValue(face.tile, ctx.states), comparison: { kind: "isOn" } }] },
+        then: [{ kind: "setColor", value: literal(lit[key]) }],
+      }],
+    };
+  };
   const part = (piece: TileStatePart, look: Omit<TextPart, "id" | "value"> = {}): TextPart => ({
     id: BASE_STATE_PART_IDS[piece],
     value: { kind: { kind: "tileState", part: piece } },
@@ -641,17 +672,23 @@ function stateLayer(face: Face): Element | undefined {
       case "unit": return part(piece, {
         fontSize: round(state.unitSize, 2),
         fontWeight: "semibold",
-        colorHex: inkHex({ rgb: model.palette.ink.rgb, opacity: model.palette.ink.opacity * ONE_LOOK_UNIT_OPACITY }),
+        colorHex: base.unit,
       });
-      case "tail": return part(piece, { fontSize: round(state.tailSize, 2), fontWeight: "regular", fontDesign: "default", colorHex: ink2 });
-      case "word": return part(piece, { fontWeight: "regular", fontDesign: "default", colorHex: ink2 });
+      case "tail": return part(piece, { fontSize: round(state.tailSize, 2), fontWeight: "regular", fontDesign: "default", colorHex: base.ink2 });
+      case "word": return part(piece, { fontWeight: "regular", fontDesign: "default", colorHex: base.ink2 });
     }
   });
+  const rules = [
+    litRule(1, "ink"),
+    litRule(2, "unit", BASE_STATE_PART_IDS.unit),
+    litRule(3, "ink2", BASE_STATE_PART_IDS.tail),
+    litRule(4, "ink2", BASE_STATE_PART_IDS.word),
+  ].filter((r): r is Rule => r !== undefined);
   const payload: TextElement = {
     id: BASE_LAYER_IDS.state,
     name: BASE_LAYER_NAMES.state,
-    colorSlot: { baseColorHex: inkHex(model.palette.ink) },
-    rules: [],
+    colorSlot: { baseColorHex: base.ink },
+    rules,
     frame: frameOf({ x: line.x, y: line.y, width, height: line.height }, box),
     isHidden: false,
     value: richTextFallback(parts),
@@ -681,7 +718,7 @@ export function baseLayers(tile: WatchPageTile, ctx: BaseLayerContext): Element[
   if (!tileHasLayers(tile)) return [];
   const face = faceOf(tile, ctx);
   if (face === undefined) return [];
-  const built = [glyphLayer(face.tile, ctx, face), statePillLayer(face), stateLayer(face), nameLayer(face)].filter((el): el is Element => el !== undefined);
+  const built = [glyphLayer(face.tile, ctx, face), statePillLayer(face), stateLayer(face, ctx), nameLayer(face)].filter((el): el is Element => el !== undefined);
   const cfg = newConfig("", 0, TILE_DESIGN_FAMILY);
   cfg.elements = built;
   return parseConfig(encodeConfig(cfg)).elements;
