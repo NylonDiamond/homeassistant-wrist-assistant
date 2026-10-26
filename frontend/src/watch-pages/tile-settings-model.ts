@@ -34,6 +34,14 @@ import {
   tileTarget,
 } from "./model.js";
 import { type WatchShowWhen, type WatchShowWhenOperator, isWatchShowWhenOperator, watchTileShowWhen } from "./show-when.js";
+import {
+  type OneLookGlyphGlow,
+  ONE_LOOK_GLOW_BRIGHTNESS_RANGE,
+  ONE_LOOK_GLOW_SIZE_RANGE,
+  ONE_LOOK_NATIVE_GLOW,
+  encodeOneLookGlyphGlow,
+  oneLookGlyphGlowOf,
+} from "./one-look/colour.js";
 
 // ── the table ────────────────────────────────────────────────────────────
 
@@ -548,6 +556,32 @@ export function setWatchTileIconShadow(
   on: boolean,
 ): WatchPagesDocument {
   return isBool(on) ? setKey(document, pageId, tileId, "iconShadow", () => on) : document;
+}
+
+/** The icon's glow (`iconGlow`, tile layers round three), read as One Look
+ * reads it: One Look's own glow while the key is absent or does not read. */
+export function watchTileIconGlow(tile: WatchPageTile): OneLookGlyphGlow {
+  return oneLookGlyphGlowOf(tile.iconGlow);
+}
+
+/** The icon's glow written as the panel writes it (`encodeOneLookGlyphGlow`:
+ * only the keys away from their defaults, whole sizes and brightness), the
+ * key removed when every value is One Look's own. */
+export function setWatchTileIconGlow(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  next: OneLookGlyphGlow,
+): WatchPagesDocument {
+  const clamp = (v: number, range: readonly [number, number], fallback: number) =>
+    Number.isFinite(v) ? Math.min(range[1], Math.max(range[0], Math.round(v))) : fallback;
+  const glow: OneLookGlyphGlow = {
+    ...next,
+    size: clamp(next.size, ONE_LOOK_GLOW_SIZE_RANGE, ONE_LOOK_NATIVE_GLOW.size),
+    brightness: clamp(next.brightness, ONE_LOOK_GLOW_BRIGHTNESS_RANGE, ONE_LOOK_NATIVE_GLOW.brightness),
+  };
+  const encoded = encodeOneLookGlyphGlow(glow);
+  return setKey(document, pageId, tileId, "iconGlow", () => encoded ?? REMOVE);
 }
 
 /** Dim When Off: on removes the key (dimmed is the default), off writes

@@ -80,7 +80,17 @@ import { colorPickerView } from "./color-picker.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
-import { type BaseLayerRole, type TileDesign, BASE_LAYER_NAMES, SIMPLE_KEY_ROLES, settingOwnerRole } from "./tile-design.js";
+import { type BaseLayerRole, type TileDesign, BASE_GLOW_ID, BASE_GLOW_NAME, BASE_LAYER_NAMES, SIMPLE_KEY_ROLES, settingOwnerRole } from "./tile-design.js";
+import {
+  type OneLookGlowMode,
+  type OneLookGlyphGlow,
+  ONE_LOOK_GLOW_BRIGHTNESS_RANGE,
+  ONE_LOOK_GLOW_SIZE_RANGE,
+  ONE_LOOK_NATIVE_GLOW,
+  encodeOneLookGlyphGlow,
+  oneLookHex,
+  oneLookParseHex,
+} from "./one-look/colour.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { renderInboxLine, renderPhoneTileTask } from "./app-settings.js";
 import { watchPhoneTileChanged, watchPhoneTileKindOf, watchPhoneTileSummary, watchPhoneTileTitle } from "./phone-tiles-model.js";
@@ -172,6 +182,7 @@ import {
   setWatchTileHoldSlideTargetMode,
   setWatchTileIcon,
   setWatchTileIconDefault,
+  setWatchTileIconGlow,
   setWatchTileIconShadow,
   setWatchTileIconSize,
   setWatchTileLabel,
@@ -189,6 +200,7 @@ import {
   watchSingleTapSettings,
   watchStorageIconName,
   watchTileActionSettings,
+  watchTileIconGlow,
   watchTileIconSettings,
   watchTileTextSettings,
 } from "./tile-settings-model.js";
@@ -583,6 +595,8 @@ export interface TileLayerLinks {
   readonly zones: number;
   /** Pick the layer of a role in the Tiles list. */
   pickLayer(role: BaseLayerRole): void;
+  /** Pick a layer by its element id (the glyph's Glow layer). */
+  pickLayerId(id: string): void;
   /** Give a role's layer back to the simple settings. */
   reset(role: BaseLayerRole): void;
   /** Pick the first tap zone. */
@@ -601,15 +615,22 @@ export function ownedSetting(host: TileSettingsHost, key: string): BaseLayerRole
 }
 
 /** "Changed in the Name layer · Reset", in place of the rows a role's layer
- * took over. The layer's name picks the layer. */
-export function renderChangedInLayer(host: TileSettingsHost, role: BaseLayerRole, label?: string): TemplateResult {
+ * took over. The layer's name picks the layer. `layer` names and picks
+ * another layer of the role (the glyph's Glow layer), whose Reset gives both
+ * back. */
+export function renderChangedInLayer(host: TileSettingsHost, role: BaseLayerRole, label?: string, layer?: { name: string; id: string }): TemplateResult {
   const links = layerLinks(host);
-  const name = BASE_LAYER_NAMES[role];
+  const roleName = BASE_LAYER_NAMES[role];
+  const name = layer?.name ?? roleName;
+  const pick = () => (layer === undefined ? links?.pickLayer(role) : links?.pickLayerId(layer.id));
+  const resetTitle = layer === undefined || layer.name === roleName
+    ? `Give the ${roleName} layer back to these settings`
+    : `Give the ${roleName} and ${layer.name} layers back to these settings`;
   return html`<div class="field ts-taken-row">${label === undefined ? nothing : html`<span>${label}</span>`}
     <div class="ts-taken" data-taken=${role}>
       <span class="ts-taken-dot" aria-hidden="true"></span>
-      <span class="ts-taken-words">Changed in the <button type="button" class="link" title=${`Edit the ${name} layer`} @click=${() => links?.pickLayer(role)}>${name}</button> layer</span>
-      <button type="button" class="link" title=${`Give the ${name} layer back to these settings`} ?disabled=${host.busy} @click=${() => links?.reset(role)}>Reset</button>
+      <span class="ts-taken-words">Changed in the <button type="button" class="link" title=${`Edit the ${name} layer`} @click=${pick}>${name}</button> layer</span>
+      <button type="button" class="link" title=${resetTitle} ?disabled=${host.busy} @click=${() => links?.reset(role)}>Reset</button>
     </div></div>`;
 }
 
@@ -757,7 +778,7 @@ const SECTION_KEYS: Readonly<Partial<Record<WatchTileSettingsSection, readonly s
     "httpTileValueColorHex",
   ],
   // The icon and the color are compared to the kind's defaults instead.
-  icon: ["iconSizeOverride", "iconShadow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors"],
+  icon: ["iconSizeOverride", "iconShadow", "iconGlow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors"],
   // The label is the Name card's, not this one's.
   text: ["showLabel", "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex"],
   action: [
@@ -791,7 +812,7 @@ const SECTION_READS: Readonly<Partial<Record<WatchTileSettingsSection, (tile: Wa
   icon: (t) => {
     const s = watchTileIconSettings(t);
     const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
-    return [s.iconSize, s.iconShadow, s.dimWhenOff.value, s.activeAnimation.value, s.tapAnimation, map(t.stateIcons), map(t.stateColors)];
+    return [s.iconSize, s.iconShadow, encodeOneLookGlyphGlow(watchTileIconGlow(t)), s.dimWhenOff.value, s.activeAnimation.value, s.tapAnimation, map(t.stateIcons), map(t.stateColors)];
   },
   text: (t) => {
     const { label: _label, ...rest } = watchTileTextSettings(t);
@@ -1407,6 +1428,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     ${glyphOwner !== undefined || host.domainStyle === true ? nothing : renderStateIcons(host)}
     ${glyphOwner !== undefined ? nothing : html`${renderIconSize(host)}
     ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`}
+    ${oneLook(host) && host.domainStyle !== true && s.icon !== "" ? renderIconGlow(host) : nothing}
     ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
     ${!s.activeAnimation.shown ? nothing
       // One Look never moves the icon for being on: the switch is greyed.
@@ -1417,6 +1439,71 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
       ? nothing
       : html` Stored as "${unknownAnimation}", which the ${hostDeviceNoun(host)} plays as Bounce; it stays until another is picked.`}</div>`;
+}
+
+/** The glow modes, as the Glow switch names them. */
+const GLOW_MODES: [OneLookGlowMode, string][] = [["auto", "Auto"], ["on", "On"], ["off", "Off"]];
+
+/**
+ * The icon's glow under One Look (tile layers round three, section 14.8): a
+ * "Glow" group with Auto, On and Off, and while it draws its size, its
+ * brightness and its color (white, the tile's color, the theme's swatches or
+ * a custom one). While the glyph slot is owned the glow is the Glow layer's:
+ * one "Changed in the Glow layer" row.
+ */
+function renderIconGlow(host: TileSettingsHost): TemplateResult {
+  const owner = ownedSetting(host, "iconGlow");
+  if (owner !== undefined) {
+    const design = layerLinks(host)?.design;
+    const hasGlow = design?.doc.elements.some((el) => el.payload.id.toUpperCase() === BASE_GLOW_ID) === true;
+    return renderChangedInLayer(host, owner, "Glow", hasGlow ? { name: BASE_GLOW_NAME, id: BASE_GLOW_ID } : undefined);
+  }
+  const glow = watchTileIconGlow(host.tile);
+  const now = () => watchTileIconGlow(host.tile);
+  const write = (setting: string, next: (g: OneLookGlyphGlow) => OneLookGlyphGlow, typing = false) =>
+    commit(host, setting, (d) => setWatchTileIconGlow(d, host.pageId, host.tileId, next(now())), { typing });
+  const theme = watchAddThemeOf(host.page);
+  const colourValue = glow.colour.kind === "custom" ? oneLookHex(glow.colour.rgb) : undefined;
+  const tileOn = glow.colour.kind === "tile";
+  const custom = (value: string | undefined) => {
+    const reason = watchColorRefusal(value, hostDevice(host));
+    const rgb = value === undefined ? undefined : oneLookParseHex(value);
+    if (reason !== undefined || rgb === undefined) return commit(host, "glowColor", (d) => d, { reason: reason ?? "Pick a color." });
+    write("glowColor", (g) => ({ ...g, colour: { kind: "custom", rgb } }), true);
+  };
+  const pickHex = (value: string) => {
+    const rgb = oneLookParseHex(value);
+    if (rgb !== undefined) write("glowColor", (g) => ({ ...g, colour: { kind: "custom", rgb } }));
+  };
+  return html`${segField<OneLookGlowMode>("Glow", glow.mode, GLOW_MODES, (v) => write("glowMode", (g) => ({ ...g, mode: v })), { def: "auto" })}
+    <div class="hint ts-under">Auto glows behind the icon on a colored tile, brighter while it is on. On glows on gray and off tiles too. Never over a picture.</div>
+    ${glow.mode === "off" ? nothing : html`
+      ${typingField(host, "glowSize", sliderField("Size", glow.size, (v) => write("glowSize", (g) => ({ ...g, size: v }), true), {
+        min: ONE_LOOK_GLOW_SIZE_RANGE[0], max: ONE_LOOK_GLOW_SIZE_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.size, unit: "%",
+      }), glow.size)}
+      ${typingField(host, "glowBrightness", sliderField("Brightness", glow.brightness, (v) => write("glowBrightness", (g) => ({ ...g, brightness: v }), true), {
+        min: ONE_LOOK_GLOW_BRIGHTNESS_RANGE[0], max: ONE_LOOK_GLOW_BRIGHTNESS_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.brightness, unit: "%",
+      }), glow.brightness)}
+      <div class="hint ts-under">100% is the tile's own glow. Off and on keep their difference.</div>
+      ${colorPickerView({
+        label: "Glow color",
+        color: colourValue,
+        swatches: watchThemeSwatches(theme, false),
+        swatchesLabel: `Glow color: ${watchThemeDisplayName(theme)} colors`,
+        pickSwatch: pickHex,
+        default: {
+          title: "White, the tile's own glow",
+          on: glow.colour.kind === "white",
+          pick: () => { if (now().colour.kind !== "white") write("glowColor", (g) => ({ ...g, colour: { kind: "white" } })); },
+        },
+        tile: {
+          title: "The tile's own color",
+          on: tileOn,
+          pick: () => { if (now().colour.kind !== "tile") write("glowColor", (g) => ({ ...g, colour: { kind: "tile" } })); },
+        },
+        custom: { shown: typed(host, "glowColor") ?? colourValue, pick: custom },
+        wrap: (body) => typingField(host, "glowColor", body),
+      })}`}`;
 }
 
 /** Dim when off, for a kind whose table entry has it. One Look dims only a

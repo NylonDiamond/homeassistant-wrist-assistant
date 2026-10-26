@@ -69,6 +69,9 @@ export interface ColorPickerView {
    * it is `pickSwatch(COLOR_RAINBOW)`. `note` says what it does, under the
    * swatches while it is picked. */
   rainbow?: { note?: string };
+  /** The Tile color chip after Default, where the value can follow the
+   * tile's own color (the icon's glow). `title` says what it draws. */
+  tile?: { title: string; on: boolean; pick(): void };
   /** The custom box: the solid color it shows and its edit. */
   custom: { shown: string | undefined; pick(value: string | undefined): void };
   /** The caller's typing field around the custom box, which keeps what is
@@ -116,6 +119,15 @@ function defaultChip(d: NonNullable<ColorPickerView["default"]>, label: string |
     title=${d.title} @click=${d.pick}>${COLOR_DEFAULT_LABEL}</button>`;
 }
 
+/** The Tile color chip's words. */
+export const COLOR_TILE_LABEL = "Tile color";
+
+/** The Tile color chip, after Default. */
+function tileChip(t: NonNullable<ColorPickerView["tile"]>): TemplateResult {
+  return html`<button type="button" class="pe-chip ts-color-tile ${t.on ? "on" : ""}" aria-pressed=${t.on ? "true" : "false"}
+    title=${t.title} @click=${t.pick}>${COLOR_TILE_LABEL}</button>`;
+}
+
 /** The picker: heading, Form, Default with the swatches and Rainbow, Custom. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
   const form = v.form === undefined || v.form.forms.length < 2 ? undefined : v.form;
@@ -133,7 +145,7 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
       : segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
           if (f === "solid" || f === "gradient") form.pick(f);
         })}
-    <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, v.swatches, v.color, v.pickSwatch, v.default === undefined ? nothing : defaultChip(v.default, v.label ?? form?.title), rainbow)}</div>
+    <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, v.swatches, v.color, v.pickSwatch, html`${v.default === undefined ? nothing : defaultChip(v.default, v.label ?? form?.title)}${v.tile === undefined ? nothing : tileChip(v.tile)}`, rainbow)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
     ${v.wrap(html`<div class="ts-no-alpha">${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
 }

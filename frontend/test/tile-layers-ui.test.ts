@@ -294,6 +294,7 @@ describe("the simple settings", () => {
       pickLayer: (role) => picked.push(role),
       reset: () => undefined,
       pickZones: () => undefined,
+      pickLayerId: () => undefined,
     };
     const withLinks = extendHost(host, { tileLayers: () => links });
     vi.stubGlobal("document", { activeElement: null });
@@ -308,7 +309,7 @@ describe("the simple settings", () => {
 
   it("show the split into tap zones in place of the single tap", () => {
     const { host } = draftHost(SWITCH);
-    const links: TileLayerLinks = { design: undefined, zones: 2, pickLayer: () => undefined, reset: () => undefined, pickZones: () => undefined };
+    const links: TileLayerLinks = { design: undefined, zones: 2, pickLayer: () => undefined, pickLayerId: () => undefined, reset: () => undefined, pickZones: () => undefined };
     const withLinks = extendHost(host, { tileLayers: () => links });
     vi.stubGlobal("document", { activeElement: null });
     vi.stubGlobal("HTMLElement", class {});
@@ -473,5 +474,92 @@ describe("the context", () => {
     expect(ctx.states).toBe(STATES);
     expect(ctx.page).toBe(host.page);
     expect(ctx.pages).toHaveLength(1);
+  });
+});
+
+describe("the icon's glow in the editor (round three)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const GLOW = "BA5E0000-0000-4000-8000-000000000006";
+  function settingsText(host: TileSettingsHost, links: TileLayerLinks): string {
+    const withLinks = extendHost(host, { tileLayers: () => links, oneLook: () => true });
+    vi.stubGlobal("document", { activeElement: null });
+    vi.stubGlobal("HTMLElement", class {});
+    withLinks.uiState.set("tile-settings:open:icon", true);
+    return flat(renderTileSettings(withLinks, { sections: ["icon"] }));
+  }
+  const linksFor = (host: TileSettingsHost, picked: string[] = [], reset: string[] = []): TileLayerLinks => ({
+    get design() { return readTileDesign(host.tile); },
+    zones: 0,
+    pickLayer: (role) => picked.push(role),
+    pickLayerId: (id) => picked.push(id),
+    reset: (role) => reset.push(role),
+    pickZones: () => undefined,
+  });
+
+  it("shows the Glow group under One Look, and writes the setting through the model", async () => {
+    const { host, tile } = draftHost();
+    const text = settingsText(host, linksFor(host));
+    expect(text).toContain("Auto glows behind the icon on a colored tile");
+    expect(text).toContain("Glow color");
+    expect(text).toContain("Tile color");
+    const { setWatchTileIconGlow, watchTileIconGlow } = await import("../src/watch-pages/tile-settings-model.js");
+    host.apply(setWatchTileIconGlow(host.document, PAGE_ID, LIGHT, { mode: "on", size: 182.4, brightness: 150, colour: { kind: "tile" } }));
+    // Whole numbers, keys in order, only those away from their defaults.
+    expect(tile().iconGlow).toEqual({ mode: "on", size: 182, brightness: 150, color: "tile" });
+    expect(Object.keys(tile().iconGlow as object)).toEqual(["mode", "size", "brightness", "color"]);
+    expect(watchTileIconGlow(tile()).size).toBe(182);
+    host.apply(setWatchTileIconGlow(host.document, PAGE_ID, LIGHT, { mode: "auto", size: 150, brightness: 100, colour: { kind: "white" } }));
+    expect(Object.hasOwn(tile(), "iconGlow")).toBe(false);
+    // Off hides the size, brightness and color.
+    host.apply(setWatchTileIconGlow(host.document, PAGE_ID, LIGHT, { mode: "off", size: 150, brightness: 100, colour: { kind: "white" } }));
+    expect(settingsText(host, linksFor(host))).not.toContain("Glow color");
+  });
+
+  it("leaves the Glow group out without One Look and with No icon", () => {
+    const { host, draft } = draftHost();
+    vi.stubGlobal("document", { activeElement: null });
+    vi.stubGlobal("HTMLElement", class {});
+    host.uiState.set("tile-settings:open:icon", true);
+    expect(flat(renderTileSettings(extendHost(host, { tileLayers: () => linksFor(host) }), { sections: ["icon"] }))).not.toContain("Glow color");
+    draft.apply(editTile(host.document, PAGE_ID, LIGHT, (t) => ({ ...t, icon: "" })));
+    expect(settingsText(host, linksFor(host))).not.toContain("Glow color");
+  });
+
+  it("shows Changed in the Glow layer while the glyph slot is owned, picking the Glow layer, its Reset giving the icon back", () => {
+    const { host } = draftHost();
+    tileLayerEdits(host).doc((c) => {
+      const glow = c.elements.find((e) => e.payload.id === GLOW)!;
+      glow.payload.frame = { ...glow.payload.frame, y: glow.payload.frame.y + 0.05 };
+    });
+    expect(readTileDesign(host.tile)!.owned).toEqual(["icon"]);
+    const text = settingsText(host, linksFor(host));
+    expect(text).toContain(">Glow</button> layer");
+    expect(text).toContain("Give the Icon and Glow layers back to these settings");
+    expect(text).not.toContain("Glow color");
+  });
+
+  it("puts a Glow card above the Glow layer's shape editor whose size and brightness round trip", async () => {
+    const { glowCardReference, glowCardValues, glowFrameAtSize, glowOpacityAt } = await import("../src/watch-pages/tile-layers-ui.js");
+    const { host } = draftHost();
+    const glow = tileDesignNow(host).doc.elements.find((e) => e.payload.id === GLOW)!;
+    if (glow.kind !== "shape") throw new Error("not a shape");
+    const ref = glowCardReference(host)!;
+    expect(ref.opacity).toBe(0.32);
+    expect(ref.tileHex).toBe("#F2AE4E");
+    expect(glowCardValues(glow.payload, ref)).toEqual({ size: 150, brightness: 100 });
+    const bigger = glowFrameAtSize(glow.payload.frame, ref.box, 200);
+    expect(glowCardValues({ frame: bigger, opacity: glowOpacityAt(ref.opacity, 150) }, ref)).toEqual({ size: 200, brightness: 150 });
+    // The centre stays.
+    expect(bigger.x + bigger.width / 2).toBeCloseTo(glow.payload.frame.x + glow.payload.frame.width / 2, 3);
+    expect(glowOpacityAt(0.32, 400)).toBe(1);
+    const card = flat(renderTileLayerInspector(view(host, GLOW), 208)!);
+    expect(card).toContain("Show glow");
+    expect(card.indexOf("Show glow")).toBeLessThan(card.indexOf("tl-editor"));
+    // Its first edit owns the glyph slot.
+    tileLayerEdits(host).doc((c) => {
+      const el = c.elements.find((e) => e.payload.id === GLOW)!;
+      if (el.kind === "shape") el.payload.opacity = glowOpacityAt(ref.opacity, 150);
+    });
+    expect(readTileDesign(host.tile)!.owned).toEqual(["icon"]);
   });
 });

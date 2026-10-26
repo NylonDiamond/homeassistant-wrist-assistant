@@ -17,10 +17,10 @@
 // the design mock "Layers in the current editor".
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { type DescribeContext, checkField, describeValue, entityField, layerEditor, layerTitle } from "../editors.js";
+import { type DescribeContext, checkField, describeValue, entityField, layerEditor, layerTitle, sliderField } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
 import { KIND_COLOR, KIND_LABEL, SECTION_COLOR } from "../kinds.js";
-import type { Element, EntityRef } from "../model.js";
+import type { Element, EntityRef, NormalizedFrame, ShapeElement } from "../model.js";
 import { compile } from "../compiler.js";
 import { CASES } from "../renderer.js";
 import type { ResolvedLayout } from "../resolver.js";
@@ -30,6 +30,11 @@ import type { TileSettingsHost } from "./editor-host.js";
 import { sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { type WatchPage, type WatchPageTile, tileGeometry, tileKind } from "./model.js";
 import { menuField } from "./tile-settings.js";
+import { colorPickerView } from "./color-picker.js";
+import { watchAddThemeOf, watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
+import { watchColorRefusal } from "./tile-settings-options.js";
+import { ONE_LOOK_GLOW_BRIGHTNESS_RANGE, ONE_LOOK_GLOW_SIZE_RANGE, oneLookHex, oneLookParseHex } from "./one-look/colour.js";
+import { glowReference } from "./tile-base-layers.js";
 import {
   WATCH_TRIGGER_TARGET_DOMAINS,
   isWatchTriggerTarget,
@@ -47,6 +52,7 @@ import {
   type TileZoneAction,
   type TileZonePreset,
   baseLayerName,
+  BASE_GLOW_ID,
   DELTA_MAX_TEMPLATES,
   TILE_DESIGN_MAX_LAYERS,
   TILE_DESIGN_SCREEN_WIDTH,
@@ -413,7 +419,8 @@ export function renderTileLayerInspector(view: TileLayersView, watchWidth: numbe
         ${view.off ? nothing : html`<button type="button" class="link" @click=${() => { if (edits.remove(el.payload.id)) view.pick(undefined); }}>Delete</button>`}</div>`;
   const lh = tileLayerHost(host, (id) => view.pick(id.toUpperCase()));
   const current = lh.config.elements.find((e) => e.payload.id.toUpperCase() === el.payload.id.toUpperCase()) ?? el;
-  return html`${line}
+  const glow = current.kind === "shape" && current.payload.id.toUpperCase() === BASE_GLOW_ID ? renderGlowCard(view, current.payload) : nothing;
+  return html`${line}${glow}
     <fieldset class="tl-editor ts-plain" ?disabled=${view.off} aria-label=${layerKindWords(el.kind)}>
       ${layerEditor(lh, current, "rectangular", { placement: true, tap: false })}
     </fieldset>`;
@@ -524,6 +531,104 @@ function renderZoneCard(view: TileLayersView, zoneId: string, watchWidth: number
     <div class="hint ts-under">A tap here runs this zone's action instead of the tile's single tap. Hold and slide stay the whole tile's.</div>
     <div class="hint ts-under">A zone keeps its place in the Split: it does not drag on the page. Pick another Split to change it.</div>
   </fieldset>`);
+}
+
+// ── the Glow layer's card ────────────────────────────────────────────────
+
+const round4 = (v: number): number => Math.round(v * 10000) / 10000;
+
+/** What the Glow layer's card measures against (section 14.8): the glyph
+ * box, the stored `base.glow` anchor's while the design has one, else the
+ * one built now; the opacity the tile's glow has at 100%; the tile's colour.
+ * Undefined while the tile has no state to build from. */
+export function glowCardReference(host: TileSettingsHost): { box: { x: number; y: number; width: number; height: number }; opacity: number; tileHex: string } | undefined {
+  const ref = glowReference(host.tile, tileLayerContext(host));
+  if (ref === undefined) return undefined;
+  const anchor = readTileDesign(host.tile)?.anchors.glow;
+  return { box: anchor ?? ref.box, opacity: ref.opacity, tileHex: ref.tileHex };
+}
+
+/** The Glow card's values read off the layer: its size as a percent of the
+ * glyph box and its brightness as a percent of the tile's own glow, both
+ * whole numbers. */
+export function glowCardValues(glow: Pick<ShapeElement, "frame" | "opacity">, ref: { box: { width: number }; opacity: number }): { size: number; brightness: number } {
+  const size = ref.box.width > 0 ? Math.round((glow.frame.width / ref.box.width) * 100) : 100;
+  const brightness = ref.opacity > 0 ? Math.round(((glow.opacity ?? 1) / ref.opacity) * 100) : 100;
+  return { size, brightness };
+}
+
+/** The glow's frame at a size, a percent of the glyph box, its centre kept. */
+export function glowFrameAtSize(frame: NormalizedFrame, box: { width: number; height: number }, size: number): NormalizedFrame {
+  const w = (box.width * size) / 100;
+  const h = (box.height * size) / 100;
+  const cx = frame.x + frame.width / 2;
+  const cy = frame.y + frame.height / 2;
+  return { ...frame, x: round4(cx - w / 2), y: round4(cy - h / 2), width: round4(w), height: round4(h) };
+}
+
+/** The glow's own opacity at a brightness, a percent of the tile's own glow;
+ * at most 1. Its rule's numbers are ratios and stay. */
+export function glowOpacityAt(refOpacity: number, brightness: number): number {
+  return round4(Math.min(1, (refOpacity * brightness) / 100));
+}
+
+/**
+ * The friendly card at the top of the Glow layer's editor: Show glow, its
+ * size and brightness against the tile's own glow, and its colour (white,
+ * the tile's colour, the theme's swatches, a custom one), each written into
+ * the layer, so a change owns the glyph slot like any edit of the layer. The
+ * shape editor below keeps everything else. Left out while the tile has no
+ * state to measure against.
+ */
+function renderGlowCard(view: TileLayersView, glow: ShapeElement): TemplateResult | typeof nothing {
+  const host = view.host;
+  const ref = glowCardReference(host);
+  if (ref === undefined) return nothing;
+  const lh = tileLayerHost(host, (id) => view.pick(id.toUpperCase()));
+  const write = (change: (p: ShapeElement) => void) => lh.update((cfg) => {
+    const el = cfg.elements.find((e) => e.payload.id.toUpperCase() === BASE_GLOW_ID);
+    if (el?.kind === "shape") change(el.payload);
+  });
+  const values = glowCardValues(glow, ref);
+  const hex = glow.colorSlot.baseColorHex.slice(0, 7).toUpperCase();
+  const setHex = (value: string) => {
+    const rgb = oneLookParseHex(value);
+    if (rgb === undefined) return;
+    const next = oneLookHex(rgb);
+    write((p) => {
+      p.colorSlot = { ...p.colorSlot, baseColorHex: next };
+      p.fill = { kind: "radial", stops: [{ at: 0, colorHex: next }, { at: 1, colorHex: `${next}00` }] };
+    });
+  };
+  const theme = watchAddThemeOf(host.page);
+  const tileOn = hex === ref.tileHex && hex !== "#FFFFFF";
+  return html`<fieldset class="tl-glow ts-plain" ?disabled=${view.off} aria-label="Glow">
+    <div class="ts-sub-h"><span>Glow</span></div>
+    ${checkField("Show glow", glow.isHidden !== true, (on) => write((p) => { p.isHidden = !on; }))}
+    ${sliderField("Size", values.size, (v) => write((p) => { p.frame = glowFrameAtSize(p.frame, ref.box, v); }), {
+      min: ONE_LOOK_GLOW_SIZE_RANGE[0], max: ONE_LOOK_GLOW_SIZE_RANGE[1], step: 5, def: 150, unit: "%",
+    })}
+    ${sliderField("Brightness", values.brightness, (v) => write((p) => {
+      const opacity = glowOpacityAt(ref.opacity, v);
+      if (opacity >= 1) delete p.opacity;
+      else p.opacity = opacity;
+    }), { min: ONE_LOOK_GLOW_BRIGHTNESS_RANGE[0], max: ONE_LOOK_GLOW_BRIGHTNESS_RANGE[1], step: 5, def: 100, unit: "%" })}
+    <div class="hint ts-under">100% is the tile's own glow. The glow still dims as the tile turns off.</div>
+    ${colorPickerView({
+      label: "Color",
+      color: hex === "#FFFFFF" ? undefined : hex,
+      swatches: watchThemeSwatches(theme, false),
+      swatchesLabel: `Glow color: ${watchThemeDisplayName(theme)} colors`,
+      pickSwatch: setHex,
+      default: { title: "White, the tile's own glow", on: hex === "#FFFFFF", pick: () => setHex("#FFFFFF") },
+      tile: { title: `The tile's color, ${ref.tileHex}`, on: tileOn, pick: () => setHex(ref.tileHex) },
+      custom: {
+        shown: hex,
+        pick: (value) => { if (value !== undefined && watchColorRefusal(value) === undefined) setHex(value); },
+      },
+      wrap: (body) => body,
+    })}
+  </fieldset>`;
 }
 
 // ── the Layers card ──────────────────────────────────────────────────────

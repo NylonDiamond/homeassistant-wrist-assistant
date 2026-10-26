@@ -4801,6 +4801,7 @@ export class WaPageEditor extends LitElement {
         design,
         zones: zones.length,
         pickLayer: (role) => select(BASE_LAYER_IDS[role]),
+        pickLayerId: (id) => select(id),
         reset: (role) => { tileLayerEdits(tileHost).reset(role); },
         pickZones: () => { if (zones[0] !== undefined) select(zones[0].id); },
       };
