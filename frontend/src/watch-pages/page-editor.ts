@@ -88,7 +88,6 @@ import {
   summaryRevision,
 } from "../library/item-mode.js";
 import { followDeliveries, onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
-import { type ItemFilter, itemListStyles, itemWhereText, listedItems, renderItemFilter, renderNoneLeft } from "../library/item-list.js";
 import { changeDevicePicks } from "./all-pages-picks.js";
 import { picksIO } from "./all-pages-io.js";
 import { deviceDifferenceText } from "./device-differences.js";
@@ -110,7 +109,6 @@ import {
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
-import { type ColumnStorage, type ColumnWidths, beginColumnDrag, browserStorage, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -164,8 +162,11 @@ import {
   deleteWatchTile,
   dropWatchTile,
   findWatchPage,
+  giveWatchTileId,
   listedWatchPages,
   moveWatchTilesBy,
+  newWatchPage,
+  newWatchPageName,
   nudgeWatchTile,
   previewWatchTileResize,
   randomWatchId,
@@ -228,7 +229,9 @@ import {
   previewScreenLayers,
   previewTileCornerRadius,
   renderPreviewPageTitle,
+  watchEntityActive,
   watchScreenColor,
+  watchTileHidden,
   watchTileSymbol,
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
@@ -329,92 +332,85 @@ const SCRUB_HELD_KEYS: ReadonlySet<string> = new Set(["Escape", "Delete", "Backs
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
-/** The page list and the cards column, each widened by dragging the gutter
- * beside it, as the complication editor's columns are. */
-const PE_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const PE_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 320 };
-const PE_COLUMNS_KEY = "wrist-assistant-panel.pages.columns.v1";
-
-/** The page list's height beside the watch, set by dragging the bar between
- * the Pages and Tiles cards (a preference, saved). Undefined is the CSS
- * default, `min(40dvh, 360px)`. A list shorter than the height just ends. */
-export const PAGE_LIST_HEIGHT = { min: 96, max: 1600, step: 24 } as const;
-// v2: the Pages card's height, no longer the list's inside it.
-const PAGE_LIST_HEIGHT_KEY = "wrist-assistant-panel.pages.page-list-height.v2";
-
-/** A page list height kept within its limits, in whole pixels. */
-export function clampPageListHeight(n: number): number {
-  return Math.max(PAGE_LIST_HEIGHT.min, Math.min(PAGE_LIST_HEIGHT.max, Math.round(n)));
-}
-
-/** The height saved under the key, or undefined when none was or it does not read. */
-export function loadPageListHeight(storage: ColumnStorage | undefined = browserStorage()): number | undefined {
-  try {
-    const n = Number(storage?.getItem(PAGE_LIST_HEIGHT_KEY) ?? NaN);
-    return Number.isFinite(n) && n > 0 ? clampPageListHeight(n) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function savePageListHeight(height: number | undefined, storage: ColumnStorage | undefined = browserStorage()): void {
-  try {
-    // An empty value reads back as none (`loadPageListHeight`).
-    storage?.setItem(PAGE_LIST_HEIGHT_KEY, height === undefined ? "" : String(height));
-  } catch {
-    /* Storage off: the height still holds for this visit. */
-  }
-}
-/** The grid's own cost beside its three columns, CSS px: two 8px gutters and
- * the complication editor's 2px gap on each side of each. The host's padding
- * is outside the width measured. */
-const PE_GRID_CHROME = 2 * 8 + 4 * 2;
-/** At or below this content width the columns stack and the top bar takes
- * two rows (the `@container` rules on `.layout.pe-layout` say the same). */
+/** At or below this content width the stage and the settings stack and the
+ * top bar takes two rows (the `@container` rules on `.layout.pe-layout` say
+ * the same). */
 const PE_STACK_WIDTH = 820;
 
-/** The row thumbnails' box, CSS px: the complication editor's layer thumbs. */
+/** The picked tiles' row thumbnails' box, CSS px: the complication editor's
+ * layer thumbs. */
 const THUMB_W = 44;
 const THUMB_H = 22;
-/** A page row's picture: one whole watch screen, this wide in CSS pixels,
- * as tall as the watch's screen is at that width. */
-const PAGE_THUMB_W = 56;
-/** A tile row's picture: the tile's own face, as large as fits this box,
+/** A picked tile's picture: the tile's own face, as large as fits this box,
  * with no well around it. */
 const TILE_THUMB_H = 30;
+/** The page picker's pictures of a page, CSS px wide: the one on its button
+ * and each page card's in its popover. */
+const PICKER_THUMB_W = 46;
+const CARD_THUMB_W = 76;
+/** A page's picture is at most this many times as tall as it is wide: an
+ * iPhone's tall pages area shows its top. */
+const PAGE_THUMB_MAX_RATIO = 1.4;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
 const OWN_ID_KINDS: ReadonlySet<string> = new Set(["spacer", "template", "music_hub", "point_control", "multicam"]);
 
-/** Whether a tile draws other icons or colors in some states (`stateIcons`,
- * `stateColors`): the row's "rules" badge. */
-function tileHasStateRules(tile: WatchPageTile): boolean {
-  const any = (v: unknown) => isJsonObject(v) && Object.keys(v).length > 0;
-  return any(tile.stateIcons) || any(tile.stateColors);
+/** Why the watch leaves a tile out right now, for the stage's tag: "off" for
+ * a tile set to hide while its own entity is off, "rule" for a Show tile
+ * condition or template; undefined while it shows. */
+export type StageHiddenReason = "off" | "rule";
+
+/**
+ * Why `watchTileHidden` leaves the tile out under `states` and `templates`,
+ * or undefined when it shows. Hide when off counts as "off" only when that
+ * is what hides it; a tile its Only when or template hides too still says
+ * the rule hides it once its entity is on again.
+ */
+export function stageHiddenReason(
+  tile: WatchPageTile,
+  states: Readonly<Record<string, HassEntityState>>,
+  templates?: ReadonlyMap<string, WatchTemplateRender>,
+): StageHiddenReason | undefined {
+  if (!watchTileHidden(tile, states, templates)) return undefined;
+  const entityId = tileEntityId(tile);
+  return tile.hideWhenInactive === true && entityId !== "" && !watchEntityActive(entityId, states) ? "off" : "rule";
 }
 
-/** Whether a tile's single tap was set rather than left to its kind: the
- * row's "action" badge. */
-function tileHasTapAction(tile: WatchPageTile): boolean {
-  return typeof tile.singleTapAction === "string" && tile.singleTapAction !== "";
+/** The stage's tag on a hidden tile. */
+export function stageHiddenText(reason: StageHiddenReason): string {
+  return reason === "off" ? "Hidden while off" : "Hidden by a rule";
 }
 
-/** Whether a click on a list row came from one of the row's own controls (a
- * button, a field, its open menu) rather than the row itself. Only what lies
- * between the press and the row counts, read from the event's path, so a
- * button or menu somewhere around the list never swallows the row's click,
- * and no `instanceof` check can fail on an element from another realm. */
-function pressedRowControl(e: Event): boolean {
-  const path = e.composedPath();
-  const row = path.indexOf(e.currentTarget as EventTarget);
-  for (const node of row < 0 ? [] : path.slice(0, row)) {
-    const el = node as Partial<Element>;
-    const tag = typeof el.tagName === "string" ? el.tagName.toUpperCase() : "";
-    if (tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return true;
-    if (el.classList?.contains("pe-menu") === true || el.classList?.contains("pe-dev-menu") === true) return true;
-  }
-  return false;
+/** A copy of a tile with ids of its own: a new id, and a new own id in its
+ * entity id for the kinds that carry one. */
+function withNewIds(tile: WatchPageTile): WatchPageTile {
+  const copy = structuredClone(tile) as WatchPageTile;
+  copy.id = randomWatchId().toUpperCase();
+  const entityId = tileEntityId(tile);
+  const kind = tileKind(entityId);
+  if (OWN_ID_KINDS.has(kind) && entityId.includes(".")) copy.entityId = `${kind}.${randomWatchId().toUpperCase()}`;
+  return copy;
+}
+
+/** A copy of a page for the library, as Duplicate in the page picker makes
+ * it: `id` and `name` its own, and every tile with ids of its own
+ * (`withNewIds`), keeping its groups. */
+export function watchPageCopy(page: WatchPage, id: string, name: string): WatchPage {
+  const copy = structuredClone(page) as WatchPage;
+  copy.id = id.toUpperCase();
+  copy.name = name;
+  if (Array.isArray(copy.items)) copy.items = copy.items.map((t) => (isJsonObject(t) ? withNewIds(t as WatchPageTile) : t));
+  return copy;
+}
+
+/** The names of the devices a page is on, for the page picker: "On no
+ * device yet", "On Jesse's Watch", "On Jesse's Watch and Kitchen", "On 3
+ * devices". */
+export function pageDevicesText(names: readonly string[]): string {
+  if (names.length === 0) return "On no device yet";
+  if (names.length <= 2) return `On ${names.join(" and ")}`;
+  return `On ${names.length} devices`;
 }
 
 /** The page's tiles in reading order: by row, then by column. */
@@ -429,12 +425,8 @@ function tilesInReadingOrder(page: WatchPage): WatchPageTile[] {
  * a new own id in its entity id for the kinds that carry one. Placed by the
  * add (`addWatchTile`). */
 function duplicateOf(tile: WatchPageTile): WatchPageTile {
-  const copy = structuredClone(tile) as WatchPageTile;
-  copy.id = randomWatchId().toUpperCase();
+  const copy = withNewIds(tile);
   delete copy.groupId;
-  const entityId = tileEntityId(tile);
-  const kind = tileKind(entityId);
-  if (OWN_ID_KINDS.has(kind) && entityId.includes(".")) copy.entityId = `${kind}.${randomWatchId().toUpperCase()}`;
   return copy;
 }
 
@@ -652,7 +644,7 @@ export class WaPageEditor extends LitElement {
    * status pages and pages; the draft is kept under `libraryDraftKey`, and
    * nothing of a device's own (order, Hide here, history) is shown. */
   @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
-  /** Library mode: open another page of the library, from the Pages card. */
+  /** Library mode: open another page of the library, from the page picker. */
   @property({ attribute: false }) onOpenItem?: (id: string) => void;
   /** Library mode: open a device's board focused on it, where its order is
    * changed (the On each device card). */
@@ -666,8 +658,6 @@ export class WaPageEditor extends LitElement {
   /** Library mode's Side by side: the other kind is drawn beside the edited
    * preview, from the reference of that kind's first device. */
   @state() private sideBySide = false;
-  /** Library mode's Pages card: every page, or only those on no device. */
-  @state() private listFilter: ItemFilter = "all";
   /** Library mode: an On each device Hide here write is running. */
   @state() private hideBusy = false;
   /** Library mode: the delivery numbers of every device's records, for the
@@ -762,18 +752,19 @@ export class WaPageEditor extends LitElement {
    * `selectedTileId` among them as the primary (the last one clicked, and the
    * anchor of a Shift range). Empty for a single selection or none. */
   @state() private multi: ReadonlySet<string> = new Set();
-  /** The tile whose Tiles row is under the pointer: the stage tints it, as
-   * the complication editor tints a layer whose row is pointed at. */
-  @state() private rowHoverTileId?: string;
-  /** The tile under the pointer on the stage: its Tiles row wears the accent
-   * outline (`.layer.peek`), so the list says which tile the pointer is on. */
+  /** The tile under the pointer on the stage, which the stage tints. */
   @state() private stageHoverTileId?: string;
   /** The selected rule of a smart page (`WatchPagesEditorHost.smartRuleId`). */
   @state() private selectedSmartRuleId?: string;
+  /** The page's name being typed in the page picker's Rename field. */
   @state() private renaming?: { pageId: string; value: string };
   /** Not a reactive state: a keystroke needs no draw, the field shows it. */
   private typing?: Typing;
-  @state() private menuPageId?: string;
+  /** The page picker's popover is open, and what its find field holds. */
+  @state() private pickerOpen = false;
+  @state() private pickerFind = "";
+  /** The page picker's New page or Duplicate is making a page. */
+  @state() private pickerBusy = false;
   /** The save question (part 3f batch 2): Speak or Assist tiles that will
    * fall back to the default speakers. Worked out again at each draw from
    * the draft, so an edit made meanwhile is shown. */
@@ -812,12 +803,8 @@ export class WaPageEditor extends LitElement {
   /** The Add tile dialog is open, over the selected page. */
   @state() private addTileOpen = false;
 
-  /** The side columns' widths as dragged (a preference, saved), and the
-   * host's measured content width, which fits them. Zero before the first
-   * measurement. */
-  @state() private columns: ColumnWidths = { ...PE_COLUMNS_DEFAULT };
-  /** The Pages card's dragged height beside the watch; undefined for the default. */
-  @state() private pageListHeight?: number;
+  /** The host's measured content width, which decides whether the stage
+   * and the settings stack. Zero before the first measurement. */
   @state() private hostWidth = 0;
   private sizeObserver?: ResizeObserver;
   /** The sticky block at the top (the bar and a note under it) the observer
@@ -853,15 +840,15 @@ export class WaPageEditor extends LitElement {
   private followedSave?: Promise<unknown>;
   /** Things to do once the next draw is on screen. */
   private focusRename = false;
-  private focusPageRow?: string;
-  private focusMenu = false;
+  /** A control to focus once drawn, by selector: the page picker's find
+   * field when it opens, its button when it shuts, its Rename button after
+   * a rename. */
+  private focusAfter?: string;
   private revealTile = false;
   /** A pick of several was just dragged: the click the browser sends after
    * the pointer up is no plain click, and must not collapse the pick. Cleared
    * by that click, the next press, or the next task. */
   private swallowTileClick = false;
-  /** A tile was picked from the Tiles list: the inspector starts at its top. */
-  private inspectorToTop = false;
   /** The grid's side room in points, as last drawn: the watch's side safe
    * area, none on an iPhone. */
   private stageSideInset = WATCH_GRID_SIDE_INSET;
@@ -936,8 +923,6 @@ export class WaPageEditor extends LitElement {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
-    this.columns = loadColumnWidths(PE_COLUMNS_KEY, PE_COLUMNS_DEFAULT, PE_COLUMNS);
-    this.pageListHeight = loadPageListHeight();
     this.watchSize();
     this.listenForReconnect();
     // Back in the tree after a visit elsewhere: the record may have moved.
@@ -1090,30 +1075,16 @@ export class WaPageEditor extends LitElement {
       input?.focus();
       input?.select();
     }
-    if (this.focusPageRow !== undefined) {
-      const id = this.focusPageRow;
-      this.focusPageRow = undefined;
-      this.pageButton(id)?.focus();
-    }
-    if (this.focusMenu) {
-      this.focusMenu = false;
-      this.renderRoot.querySelector<HTMLElement>(".pe-menu button:not(:disabled)")?.focus();
-      // The page list scrolls on its own: bring the whole menu into it, not
-      // only its first button.
-      this.renderRoot.querySelector<HTMLElement>(".pe-menu")?.scrollIntoView({ block: "nearest" });
+    if (this.focusAfter !== undefined) {
+      const selector = this.focusAfter;
+      this.focusAfter = undefined;
+      this.renderRoot.querySelector<HTMLElement>(selector)?.focus();
     }
     this.observeTop();
     if (this.revealTile) {
       this.revealTile = false;
       const tile = this.selectedTileId === undefined ? undefined : this.tileButton(this.selectedTileId);
       tile?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-    if (this.inspectorToTop) {
-      this.inspectorToTop = false;
-      // The column scrolls on its own beside the stage; stacked it does not,
-      // and this changes nothing.
-      const inspector = this.renderRoot.querySelector<HTMLElement>(".column.inspector");
-      if (inspector !== null) inspector.scrollTop = 0;
     }
   }
 
@@ -1138,10 +1109,7 @@ export class WaPageEditor extends LitElement {
       this.selectedTileId = undefined;
     }
     this.reconcilePick(page);
-    // A row that goes away (a delete, an undo) takes its pointerleave with it.
-    if (this.rowHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.rowHoverTileId) === undefined)) {
-      this.rowHoverTileId = undefined;
-    }
+    // A tile that goes away (a delete, an undo) takes its pointerleave with it.
     if (this.stageHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.stageHoverTileId) === undefined)) {
       this.stageHoverTileId = undefined;
     }
@@ -1226,7 +1194,7 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * A click on a tile, on the stage or its Tiles row, as the complication
+   * A click on a tile on the stage, as the complication
    * editor's `clickRow`. Shift picks every tile in reading order from the
    * selected one (the anchor, which stays the anchor) to this one. Cmd or
    * Ctrl adds this tile to the pick or takes it out. A plain click selects
@@ -1280,27 +1248,8 @@ export class WaPageEditor extends LitElement {
     return watchPageTiles(page).find((t) => sameWatchId(t.id, tileId));
   }
 
-  private selectPage(pageId: string): void {
-    if (sameWatchId(pageId, this.selectedPageId)) return;
-    this.leaveTile();
-    this.selectedPageId = pageId;
-    this.selectedTileId = undefined;
-    if (this.multi.size > 0) this.multi = new Set();
-    this.rowHoverTileId = undefined;
-    this.stageHoverTileId = undefined;
-    this.fieldNote = undefined;
-  }
-
-  /** The stage's tint on a tile while its Tiles row is pointed at
-   * (`rowHoverTileId`). Another row's leave does not take it away. */
-  private peekTile(id: string, on: boolean): void {
-    if (id === "") return;
-    if (on) this.rowHoverTileId = id;
-    else if (sameWatchId(id, this.rowHoverTileId)) this.rowHoverTileId = undefined;
-  }
-
-  /** The Tiles row's outline while its tile is pointed at on the stage
-   * (`stageHoverTileId`), the other way round from `peekTile`. */
+  /** The stage's tint on the tile under the pointer (`stageHoverTileId`).
+   * Another tile's leave does not take it away. */
   private peekStageTile(id: string, on: boolean): void {
     if (id === "") return;
     if (on) this.stageHoverTileId = id;
@@ -1331,11 +1280,6 @@ export class WaPageEditor extends LitElement {
     if (focused instanceof HTMLElement && focused.closest(".ts-root, .pe-page-insp") !== null) focused.blur();
     forgetTileSettingsNotes(this.uiState);
     this.endScrub();
-  }
-
-  /** A page's row in the Pages card, which is what takes focus. */
-  private pageButton(pageId: string): HTMLElement | null {
-    return this.renderRoot.querySelector<HTMLElement>(`.pe-page-row[data-page="${CSS.escape(pageId)}"]`);
   }
 
   private tileButton(tileId: string): HTMLElement | null {
@@ -1456,7 +1400,8 @@ export class WaPageEditor extends LitElement {
       this.selectedTileId = selection.tileId;
       this.multi = new Set();
       this.renaming = undefined;
-      this.menuPageId = undefined;
+      this.pickerOpen = false;
+      this.pickerFind = "";
       this.closeAsk();
       this.fieldNote = undefined;
       this.endScrub();
@@ -1929,8 +1874,9 @@ export class WaPageEditor extends LitElement {
   }
 
   private openAddTile(): void {
-    if (this.busy || this.editingOff()) return;
-    this.menuPageId = undefined;
+    const page = this.currentPage();
+    if (this.busy || this.editingOff() || page === undefined || isSmartWatchPage(page)) return;
+    this.pickerOpen = false;
     this.addTileOpen = true;
   }
 
@@ -2006,7 +1952,6 @@ export class WaPageEditor extends LitElement {
   private startRename(pageId: string): void {
     const page = this.draft === undefined ? undefined : findWatchPage(this.draft.document, pageId);
     if (page === undefined) return;
-    this.menuPageId = undefined;
     this.renaming = { pageId, value: typeof page.name === "string" ? page.name : "" };
     this.focusRename = true;
   }
@@ -2019,16 +1964,154 @@ export class WaPageEditor extends LitElement {
     if (document !== undefined) this.edit(setWatchPageName(document, renaming.pageId, renaming.value));
   }
 
+  /** Escape in the Rename field: the name stays, and focus goes back to the
+   * page picker's Rename button. */
   private cancelRename(): void {
     const renaming = this.renaming;
     this.renaming = undefined;
-    if (renaming) this.focusPageRow = renaming.pageId;
+    if (renaming) this.focusAfter = ".pe-pp-rename";
+  }
+
+  // ── the page picker ────────────────────────────────────────────────────
+
+  /** Open the page picker's popover with its find field empty and focused,
+   * or shut it. */
+  private togglePicker(): void {
+    if (this.pickerOpen) {
+      this.closePicker(true);
+      return;
+    }
+    this.topMenuOpen = false;
+    this.pickerOpen = true;
+    this.pickerFind = "";
+    this.focusAfter = ".pe-pp-find";
+  }
+
+  /** Shut the popover; a name being typed in it is kept. `refocus` puts
+   * focus back on the picker's button (Escape, a second click), where a
+   * press outside leaves it be. */
+  private closePicker(refocus: boolean): void {
+    if (!this.pickerOpen) return;
+    if (this.renaming) this.commitRename();
+    this.pickerOpen = false;
+    if (refocus) this.focusAfter = ".pe-pp";
+  }
+
+  /** Open another page of the library in this editor. The open page's
+   * edits stay in its kept draft until it is opened again. The open page
+   * itself just shuts the popover. */
+  private openPickedPage(id: string): void {
+    this.closePicker(false);
+    if (this.libraryItem !== undefined && sameId(id, this.libraryItem.id)) {
+      this.focusAfter = ".pe-pp";
+      return;
+    }
+    this.onOpenItem?.(id);
+  }
+
+  /** Why New page and Duplicate cannot make a page now, or undefined when
+   * they can: a page the library makes is on no device, an
+   * administrator's, as on the Pages board. */
+  private pickerMakeRefusal(): string | undefined {
+    if (this.lib.store === undefined) return "The library is not read yet.";
+    if (this.hass?.user?.is_admin !== true) return "Only an administrator can make a page.";
+    if (this.pickerBusy) return "Making the page…";
+    return undefined;
+  }
+
+  /** The picker's New page: an empty page in the library, named as the app
+   * names the next page (`newWatchPageName` over the library's pages), on
+   * no device yet, then open here. */
+  private async newPickedPage(): Promise<void> {
+    const store = this.lib.store;
+    if (store === undefined || this.pickerMakeRefusal() !== undefined) return;
+    const lib = this.lib.library;
+    const name = newWatchPageName({ schemaVersion: 1, pages: lib === undefined ? [] : libraryItems(lib, "pages").map((e) => e.item) });
+    await this.makeLibraryPage(store, newWatchPage(randomWatchId().toUpperCase(), name), "Not made");
+  }
+
+  /** The picker's Duplicate: the open page as it stands here, unsaved edits
+   * and all, as a new page in the library named "<name> copy", on no device
+   * yet (`watchPageCopy`), then open here. */
+  private async duplicatePage(): Promise<void> {
+    const store = this.lib.store;
+    const page = this.currentPage();
+    if (store === undefined || page === undefined || this.pickerMakeRefusal() !== undefined) return;
+    if (this.renaming) this.commitRename();
+    const now = this.currentPage() ?? page;
+    await this.makeLibraryPage(store, watchPageCopy(now, randomWatchId(), `${watchPageName(now)} copy`), "Not copied");
+  }
+
+  private async makeLibraryPage(store: NonNullable<LibraryController["store"]>, page: WatchPage, failed: string): Promise<void> {
+    this.pickerBusy = true;
+    const made = await store.createItem("pages", { schemaVersion: 1, pages: [page] });
+    this.pickerBusy = false;
+    if (!made.ok) {
+      this.note = { kind: "err", text: `${failed}. ${made.text}` };
+      return;
+    }
+    this.pickerOpen = false;
+    this.onOpenItem?.(made.reply.id);
+  }
+
+  /** The popover's page cards, New page last, in the order they are drawn. */
+  private pickerCards(): HTMLElement[] {
+    return Array.from(this.renderRoot.querySelectorAll<HTMLElement>(".pe-pp-grid .pe-pp-card"));
+  }
+
+  /** Arrow keys among the popover's page cards, as they sit in its grid:
+   * left and right one card, up and down one row, Up from the first row
+   * back to the find field. Enter and Space are the cards' own (buttons). */
+  private onPickerGridKey(e: KeyboardEvent): void {
+    const keys: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -2, ArrowDown: 2 };
+    const step = keys[e.key];
+    if (step === undefined || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    const grid = e.currentTarget as HTMLElement;
+    const cards = this.pickerCards();
+    const at = cards.findIndex((c) => c === (this.renderRoot as ShadowRoot).activeElement);
+    if (at < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const across = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").filter((t) => t !== "").length);
+    const to = Math.abs(step) === 1 ? at + step : at + Math.sign(step) * across;
+    if (to < 0 && step === -2) {
+      this.renderRoot.querySelector<HTMLElement>(".pe-pp-find")?.focus();
+      return;
+    }
+    cards[Math.max(0, Math.min(cards.length - 1, to))]!.focus();
+  }
+
+  /** The find field's keys: Down goes to the first card, Enter opens the
+   * first page that matches. */
+  private onPickerFindKey(e: KeyboardEvent): void {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      this.pickerCards()[0]?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const first = this.renderRoot.querySelector<HTMLElement>(".pe-pp-grid .pe-pp-card[data-pick-page]");
+      first?.click();
+    }
+  }
+
+  // ── a tile with no id ──────────────────────────────────────────────────
+
+  /** A click on a tile stored with no id: it gets one of its own
+   * (`giveWatchTileId`, one undo step), so an edit can name it, and is
+   * picked alone. */
+  private pickTileWithNoId(tile: WatchPageTile): void {
+    const document = this.draft?.document;
+    const page = this.currentPage();
+    if (document === undefined || page === undefined || this.busy || this.editingOff(page)) return;
+    const given = giveWatchTileId(document, watchPageId(page), tile);
+    if (given.id === undefined || !this.edit(given.document)) return;
+    this.selectTile(given.id);
   }
 
   /** Delete is always out of the library: no device's menus, complications
    * or rooms are read for it. */
   private askDelete(pageId: string): void {
-    this.menuPageId = undefined;
+    this.pickerOpen = false;
     this.closeAsk();
     this.libraryDeleteAsk = pageId;
   }
@@ -2125,8 +2208,8 @@ export class WaPageEditor extends LitElement {
     return moveWatchTilesBy(document, pageId, ids, dcols, drows);
   }
 
-  /** Delete the one tile a Tiles row names, or else every picked tile, in
-   * one edit (one undo step). */
+  /** Delete the one tile named, or else every picked tile, in one edit (one
+   * undo step). */
   private deleteTile(tileId?: string): void {
     const document = this.draft?.document;
     const pageId = this.selectedPageId;
@@ -2314,8 +2397,8 @@ export class WaPageEditor extends LitElement {
    * click beside the editor does not switch Save off. The keys that act on
    * the selected tile (arrows, Delete, Backspace, Escape) work only from the
    * stage itself (a tile, a handle, the screen) or with nothing focused: on a
-   * watch tab, a toolbar button, a page row or a link they keep their own
-   * meaning. */
+   * watch tab, a toolbar button, the page picker or a link they keep their
+   * own meaning. Tab picks the next tile from the stage (`stepPick`). */
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const path = e.composedPath();
@@ -2342,12 +2425,10 @@ export class WaPageEditor extends LitElement {
       this.cancelGestures();
       return;
     }
-    if (e.key === "Escape" && this.menuPageId !== undefined) {
+    if (e.key === "Escape" && this.pickerOpen) {
+      // From its find field too; its Rename field keeps its own Escape.
       e.preventDefault();
-      const id = this.menuPageId;
-      this.menuPageId = undefined;
-      // Back to the row: its ··· button hides again once the menu is shut.
-      this.focusPageRow = id;
+      this.closePicker(true);
       return;
     }
     if (e.key === "Escape" && this.topMenuOpen) {
@@ -2383,6 +2464,15 @@ export class WaPageEditor extends LitElement {
     if (mod || e.altKey || dragging) return;
     const onStage = path.some((n) => n instanceof HTMLElement && n.classList.contains("pe-screen"));
     if (!onStage && !nothingFocused()) return;
+    if (e.key === "Tab") {
+      // Tab and Shift-Tab pick the next or the last tile in reading order (the
+      // arrow keys move the picked tile). Past either end the key is the
+      // browser's again, so focus can leave the stage; and with nothing
+      // focused and no tile picked it never was the stage's.
+      if (this.editingOff() || (!onStage && this.selectedTileId === undefined)) return;
+      if (this.stepPick(e.shiftKey ? -1 : 1)) e.preventDefault();
+      return;
+    }
     if (this.selectedTileId === undefined || this.editingOff()) return;
     const arrows: Record<string, WatchNudgeDirection> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
     const direction = arrows[e.key];
@@ -2400,27 +2490,34 @@ export class WaPageEditor extends LitElement {
     }
   };
 
-  private onRowKeyDown(e: KeyboardEvent, pageId: string): void {
-    // Keys typed in the row's rename field or on its buttons are theirs.
-    if (e.target !== e.currentTarget) return;
-    if ((e.key === "Enter" || e.key === " ") && !e.altKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault();
-      this.selectPage(pageId);
-      return;
-    }
-    if (e.key === "F2") {
-      e.preventDefault();
-      this.startRename(pageId);
-    }
+  /**
+   * Tab on the stage: pick the tile `step` places on in reading order from
+   * the selected one (from the start, or the end going back, with none),
+   * alone, and focus it. False, picking nothing, past either end, on a page
+   * with no tiles or a smart page. A tile with no id has no place in the
+   * order: a click picks it (`pickTileWithNoId`).
+   */
+  private stepPick(step: 1 | -1): boolean {
+    const page = this.currentPage();
+    if (page === undefined || isSmartWatchPage(page)) return false;
+    const order = this.readingIds(page);
+    const at = this.selectedTileId === undefined ? -1 : order.findIndex((id) => sameWatchId(id, this.selectedTileId));
+    const next = at < 0 ? (step === 1 ? 0 : order.length - 1) : at + step;
+    const id = order[next];
+    if (id === undefined) return false;
+    this.selectTile(id);
+    this.revealTile = true;
+    void this.updateComplete.then(() => this.tileButton(id)?.focus());
+    return true;
   }
 
-  /** A press anywhere outside an open menu (a page row's, or the top bar's
-   * ···) closes it. */
+  /** A press anywhere outside an open menu (the page picker's popover, or
+   * the top bar's ···) closes it. */
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (this.menuPageId === undefined && !this.topMenuOpen) return;
+    if (!this.pickerOpen && !this.topMenuOpen) return;
     const path = e.composedPath();
     const within = (...names: string[]) => path.some((n) => n instanceof HTMLElement && names.some((c) => n.classList.contains(c)));
-    if (this.menuPageId !== undefined && !within("pe-menu", "pe-more")) this.menuPageId = undefined;
+    if (this.pickerOpen && !within("pe-pp-wrap")) this.closePicker(false);
     if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
   };
 
@@ -2596,7 +2693,7 @@ export class WaPageEditor extends LitElement {
       if (!g.started) {
         if (!pastDragThreshold(e.clientX - g.startX, e.clientY - g.startY)) return;
         g.started = true;
-        this.menuPageId = undefined;
+        this.closePicker(false);
         this.startAutoScroll();
       }
       e.preventDefault();
@@ -2956,18 +3053,25 @@ export class WaPageEditor extends LitElement {
     return this.narrow || (this.hostWidth > 0 && this.hostWidth <= PE_STACK_WIDTH);
   }
 
-  /** The top bar: back to the Pages tab, the Library tag, then the ···
-   * menu and Save. No Add page, no delivery and no way to Menus: a save
-   * reaches every device that has the page, each on its own. The devices
-   * stand over the stage, and Preview on in the strip over it. Undo and
-   * Redo are in the canvas head, beside the page's name. Drawn in every
-   * state, so a page still loading can still be left. */
+  /** Whether the page's head (`renderPageHead`) is drawn, with its way back
+   * to the Pages board: a page is open and read. */
+  private get headDrawn(): boolean {
+    return !this.loading && this.loadError === undefined && this.record !== undefined && this.draft !== undefined && this.currentPage() !== undefined;
+  }
+
+  /** The top bar: the Library tag, then the ··· menu and Save. No Add page,
+   * no delivery and no way to Menus: a save reaches every device that has
+   * the page, each on its own. The way back, the page picker and the
+   * devices are the page's head under it, Preview on is in the strip over
+   * the stage, and Undo and Redo are in the canvas head. Drawn in every
+   * state, so a page still loading can still be left: until the head is
+   * drawn, the bar keeps a way back of its own. */
   private renderTopBar(draft: WatchPagesDraft | undefined): TemplateResult {
     const dirty = draft?.dirty ?? false;
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Page in the library">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to the Pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Pages</span></button>
+      ${this.headDrawn ? nothing : html`<button class="tb-btn tb-back" title="Back to the Pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Pages</span></button>`}
       ${renderLibraryTag()}
       <span class="spacer"></span>
       ${this.renderTopMenu(draft)}
@@ -3005,7 +3109,7 @@ export class WaPageEditor extends LitElement {
 
   /** Measure the host, not the window: the Home Assistant sidebar changes
    * the editor's width without changing the window's. Its height caps the
-   * page list and the cards, which scroll on their own past it. */
+   * stage and the cards, which scroll on their own past it. */
   private watchSize(): void {
     if (typeof ResizeObserver === "undefined") return;
     this.sizeObserver ??= new ResizeObserver((entries) => {
@@ -3044,80 +3148,6 @@ export class WaPageEditor extends LitElement {
     this.style.setProperty("--pe-top-h", `${height}px`);
   }
 
-  /** The side widths the grid can afford right now. */
-  private fittedColumns(): ColumnWidths {
-    if (this.hostWidth > 0 && this.hostWidth <= PE_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - PE_GRID_CHROME, this.columns, PE_COLUMNS);
-  }
-
-  private renderGutter(side: "left" | "right"): TemplateResult {
-    return html`<div class="gutter ${side}" role="separator" aria-orientation="vertical"
-      aria-label=${side === "left" ? "Resize the pages and tiles column" : "Resize the settings column"}
-      title="Drag to resize. Double-click to reset."
-      @pointerdown=${(e: PointerEvent) => {
-        // Drag from the width on screen, not the stored preference.
-        const shown = this.fittedColumns();
-        beginColumnDrag(e, {
-          side,
-          base: side === "left" ? shown.left : shown.right,
-          limits: PE_COLUMNS,
-          onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
-          onEnd: () => saveColumnWidths(PE_COLUMNS_KEY, this.columns),
-        });
-      }}
-      @dblclick=${() => {
-        this.columns = { ...this.columns, [side]: PE_COLUMNS_DEFAULT[side] };
-        saveColumnWidths(PE_COLUMNS_KEY, this.columns);
-      }}></div>`;
-  }
-
-  /** The bar between the Pages and Tiles cards beside the watch: drag it to
-   * make the page list taller or shorter, the arrow keys move it a step,
-   * double-click puts it back. Hidden when stacked, where the page scrolls
-   * as one and the list has no height of its own. */
-  private renderListSplit(): TemplateResult {
-    const shownHeight = (): number => {
-      const card = this.renderRoot.querySelector<HTMLElement>(".pe-pages-card");
-      return card?.offsetHeight ?? this.pageListHeight ?? 360;
-    };
-    const set = (height: number | undefined): void => {
-      this.pageListHeight = height === undefined ? undefined : clampPageListHeight(height);
-      savePageListHeight(this.pageListHeight);
-    };
-    return html`<div class="pe-list-split" role="separator" aria-orientation="horizontal" tabindex="0"
-      aria-label="Resize the page list" title="Drag to resize. Double-click to reset."
-      @pointerdown=${(start: PointerEvent) => {
-        if (start.button !== 0) return;
-        start.preventDefault();
-        const bar = start.currentTarget as HTMLElement;
-        // From the height on screen, so the bar never jumps away from the pointer.
-        const base = shownHeight();
-        bar.setPointerCapture(start.pointerId);
-        bar.classList.add("dragging");
-        const move = (ev: PointerEvent) => {
-          if (ev.pointerId === start.pointerId) this.pageListHeight = clampPageListHeight(base + ev.clientY - start.clientY);
-        };
-        const finish = (ev: PointerEvent) => {
-          if (ev.pointerId !== start.pointerId) return;
-          bar.classList.remove("dragging");
-          bar.removeEventListener("pointermove", move);
-          bar.removeEventListener("pointerup", finish);
-          bar.removeEventListener("pointercancel", finish);
-          savePageListHeight(this.pageListHeight);
-        };
-        bar.addEventListener("pointermove", move);
-        bar.addEventListener("pointerup", finish);
-        bar.addEventListener("pointercancel", finish);
-      }}
-      @keydown=${(e: KeyboardEvent) => {
-        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-        e.preventDefault();
-        e.stopPropagation();
-        set(shownHeight() + (e.key === "ArrowDown" ? PAGE_LIST_HEIGHT.step : -PAGE_LIST_HEIGHT.step));
-      }}
-      @dblclick=${() => set(undefined)}></div>`;
-  }
-
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
     if (this.loadError !== undefined) {
@@ -3143,28 +3173,145 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     const owner = watches.find((w) => w.owner_watch_id === this.watchId);
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
-    const fit = this.fittedColumns();
-    // The complication editor's three columns (`editor-chrome.ts`): the
-    // Pages and Tiles cards, the canvas card, and the inspector, with a
-    // drag gutter between each pair. The editor is one screen tall and each
-    // part scrolls in its own box. The Pages card is as tall as its bar was
-    // dragged, else at most half the column.
-    const listH = this.pageListHeight !== undefined ? `--pe-list-h:${this.pageListHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}${listH === "" ? "" : " list-set"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${listH}`}>
-      <div class="column left">
-        ${this.renderPageList(listed, pages, owner)}
-        ${this.renderListSplit()}
-        ${this.renderTileList(page, pages, owner)}
-      </div>
-      ${this.renderGutter("left")}
+    // The page's head (the way back, the page picker, the devices), then
+    // two columns: the canvas card and the inspector. The editor is one
+    // screen tall and each column scrolls in its own box. Every page is
+    // reached from the picker and every tile on the stage: there is no
+    // list beside them.
+    return html`${page ? this.renderPageHead(page, pages, owner) : nothing}
+    <div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}">
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, watches, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
           </div>`}
       </div>
-      ${this.renderGutter("right")}
       <div class="column inspector card">
         ${page ? this.renderInspector(page, tile, pages) : nothing}
+      </div>
+    </div>`;
+  }
+
+  // ── the page's head ────────────────────────────────────────────────────
+
+  /**
+   * The page's head over the stage and the inspector: All pages (back to the
+   * Pages board), the page picker (`renderPagePicker`), and at the right the
+   * devices the page is on (`renderPageTicks`).
+   */
+  private renderPageHead(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
+    const ticks = this.renderPageTicks(page);
+    return html`<div class="pe-head" role="group" aria-label="Page">
+      <button type="button" class="pe-btn pe-head-back" title="Back to the Pages board" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>All pages</span></button>
+      ${this.renderPagePicker(page, pages, owner)}
+      ${ticks === nothing ? nothing : html`<div class="pe-head-ticks">${ticks}</div>`}
+    </div>`;
+  }
+
+  /** The devices the library says have the page, by name. */
+  private pageDeviceNames(pageId: string): string[] {
+    const lib = this.lib.library;
+    return lib === undefined ? [] : devicesFor(lib, "pages", pageId).map((o) => this.deviceName(o));
+  }
+
+  /**
+   * The page picker: one large button with the page's picture, "Editing
+   * page", its name, its tile count and the devices it is on, and Switch
+   * page. It opens a popover (`renderPickerPopover`) of every page in the
+   * library as a card with its picture, to open another in this editor.
+   */
+  private renderPagePicker(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
+    const id = watchPageId(page);
+    const name = watchPageName(page);
+    const tiles = watchPageTiles(page).length;
+    const what = isSmartWatchPage(page) ? "Smart page" : plural(tiles, "tile", "tiles");
+    const where = pageDevicesText(this.pageDeviceNames(id));
+    const open = this.pickerOpen;
+    return html`<div class="pe-pp-wrap">
+      <button type="button" class="pe-pp" aria-haspopup="dialog" aria-expanded=${open ? "true" : "false"}
+        title="Switch to another page, or make one" @click=${() => this.togglePicker()}>
+        ${this.renderPageThumb(page, pages, this.screenOf(owner), PICKER_THUMB_W)}
+        <span class="pe-pp-text">
+          <span class="pe-pp-label">Editing page</span>
+          <span class="pe-pp-name" title=${name}>${name}</span>
+          <span class="pe-pp-sub">${what} · ${where}</span>
+        </span>
+        <span class="pe-pp-switch">Switch page<span class="pe-pp-chev" aria-hidden="true">${uiIcon("chevron")}</span></span>
+      </button>
+      ${open ? this.renderPickerPopover(page, pages, owner) : nothing}
+    </div>`;
+  }
+
+  /**
+   * The page picker's popover: "Pick a page to edit" with the page count and
+   * a find field (by name), the library's pages as cards in its order, each
+   * with a watch-shaped picture, its name and the devices it is on, the open
+   * one tagged Editing, then New page; under them Rename and Duplicate for
+   * the open page and Open the Pages board.
+   */
+  private renderPickerPopover(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
+    const ref = this.libraryItem;
+    const openId = ref?.id ?? watchPageId(page);
+    const lib = this.lib.library;
+    const items = lib === undefined ? [] : libraryItems(lib, "pages");
+    // The open page from the draft, so its card shows the edits; in its own
+    // place, or first when the library does not list it yet (a page just made).
+    type Card = { id: string; page: WatchPage; name: string; sub: string };
+    const own: Card = {
+      id: openId, page, name: watchPageName(page),
+      sub: pageDevicesText(this.pageDeviceNames(openId)),
+    };
+    const cards: Card[] = items.map((entry) => (sameId(entry.id, openId) ? own : {
+      id: entry.id, page: entry.item as WatchPage, name: entry.name,
+      sub: pageDevicesText(entry.owners.map((o) => this.deviceName(o))),
+    }));
+    if (!cards.includes(own)) cards.unshift(own);
+    const find = this.pickerFind.trim().toLowerCase();
+    const shown = find === "" ? cards : cards.filter((c) => c.name.toLowerCase().includes(find));
+    const screen = this.screenOf(owner);
+    const makeRefusal = this.pickerMakeRefusal();
+    const renaming = this.renaming !== undefined && sameWatchId(this.renaming.pageId, watchPageId(page)) ? this.renaming : undefined;
+    const editingOff = this.saving;
+    return html`<div class="pe-pp-pop" role="dialog" aria-label="Switch page">
+      <div class="pe-pp-top">
+        <strong>Pick a page to edit</strong>
+        <span class="pe-pp-count">${plural(cards.length, "page", "pages")}</span>
+        <input type="search" class="pe-pp-find" placeholder="Find a page" aria-label="Find a page" .value=${live(this.pickerFind)}
+          @input=${(e: Event) => { this.pickerFind = (e.target as HTMLInputElement).value; }}
+          @keydown=${(e: KeyboardEvent) => this.onPickerFindKey(e)} />
+      </div>
+      <div class="pe-pp-grid" role="group" aria-label="Pages" @keydown=${(e: KeyboardEvent) => this.onPickerGridKey(e)}>
+        ${repeat(shown, (c) => c.id.toUpperCase(), (c) => {
+          const current = sameId(c.id, openId);
+          return html`<button type="button" class="pe-pp-card ${current ? "on" : ""}" data-pick-page=${c.id}
+            aria-current=${current ? "true" : "false"} title=${current ? `Editing ${c.name}` : `Open ${c.name}`}
+            @click=${() => this.openPickedPage(c.id)}>
+            ${this.renderPageThumb(c.page, pages, screen, CARD_THUMB_W)}
+            <span class="pe-pp-card-name">${c.name}</span>
+            <span class="pe-pp-card-sub">${c.sub}</span>
+            ${current ? html`<span class="pe-pp-tag">Editing</span>` : nothing}
+          </button>`;
+        })}
+        <button type="button" class="pe-pp-card pe-pp-new" ?disabled=${makeRefusal !== undefined}
+          title=${makeRefusal ?? "An empty page in the library, on no device yet"} @click=${() => void this.newPickedPage()}>
+          <span class="pe-pp-plus" aria-hidden="true">${uiIcon("plus")}</span><span class="pe-pp-card-name">New page</span>
+        </button>
+      </div>
+      ${shown.length === 0 ? html`<p class="pe-pp-none">No page's name has "${this.pickerFind.trim()}" in it.</p>` : nothing}
+      <div class="pe-pp-foot">
+        ${renaming
+          ? html`<input class="pe-rename" aria-label="Page name" .value=${renaming.value}
+              @input=${(e: InputEvent) => { renaming.value = (e.target as HTMLInputElement).value; }}
+              @keydown=${(e: KeyboardEvent) => {
+                if (e.key === "Enter") { e.preventDefault(); this.commitRename(); this.focusAfter = ".pe-pp-rename"; }
+                else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.cancelRename(); }
+              }}
+              @blur=${() => this.commitRename()} />`
+          : html`<button type="button" class="pe-btn pe-pp-rename" ?disabled=${editingOff} title=${editingOff ? SAVING_TEXT : "Rename this page"}
+              @click=${() => this.startRename(watchPageId(page))}>Rename this page</button>`}
+        <button type="button" class="pe-btn pe-pp-dup" ?disabled=${makeRefusal !== undefined}
+          title=${makeRefusal ?? "A copy of this page as it is now, in the library, on no device yet"}
+          @click=${() => void this.duplicatePage()}>${uiIcon("duplicate")}<span>Duplicate</span></button>
+        <button type="button" class="pe-link pe-pp-board" @click=${() => { this.closePicker(false); this.onBack?.(); }}>Open the Pages board</button>
       </div>
     </div>`;
   }
@@ -3184,15 +3331,25 @@ export class WaPageEditor extends LitElement {
     </div>`;
   }
 
-  /** An empty page's Add a tile, next to the watch and in the inspector:
-   * on a phone the Tiles card and its own Add are far down the page. */
+  /** An empty page's Add a tile in the inspector, beside the line saying
+   * the page has none. */
   private renderAddFirstTile(page: WatchPage): TemplateResult {
     const off = this.busy || this.editingOff(page);
     return html`<button type="button" class="pe-btn pe-add-first" aria-haspopup="dialog" ?disabled=${off}
       title=${this.saving ? SAVING_TEXT : "Add a tile to this page"} @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add a tile</span></button>`;
   }
 
-  // ── the page list ──────────────────────────────────────────────────────
+  /** "+ Add tile" under the watch on the stage, which opens the Add tile
+   * dialog. None on a smart page, which fills itself. */
+  private renderStageAddTile(page: WatchPage): TemplateResult | typeof nothing {
+    if (isSmartWatchPage(page)) return nothing;
+    const off = this.busy || this.editingOff(page);
+    const title = this.saving ? SAVING_TEXT : this.editingOff(page) ? `Turn off ${this.viewName} to add a tile.` : "Add a tile to this page";
+    return html`<button type="button" class="pe-stage-add" aria-haspopup="dialog" ?disabled=${off} title=${title}
+      @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add tile</span></button>`;
+  }
+
+  // ── sizes and pictures ─────────────────────────────────────────────────
 
   /** The page code's screen in points: the watch's case, else the
    * reference case; on an iPhone its pages screen's pages area. */
@@ -3246,244 +3403,28 @@ export class WaPageEditor extends LitElement {
     };
   }
 
-  /** The Pages card, the complication editor's left card: a tinted header
-   * with the filter, then a row per page with a small picture of its top
-   * (`renderLibraryPageRows`). */
-  private renderPageList(listed: readonly WatchPage[], pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
-    const screen = this.screenOf(owner);
-    const pageThumbH = Math.round(screen.height * PAGE_THUMB_W / screen.width);
-    return html`<section class="card lc pe-pages-card ${this.saving ? "saving" : ""}" aria-label="Pages"
-      style=${`--c: var(--wa-lc-pages, #26a69a); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px; --page-thumb-w: ${PAGE_THUMB_W}px; --page-thumb-h: ${pageThumbH}px`}>
-      <div class="lc-head">
-        <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span>
-        <span class="spacer"></span>
-        ${renderItemFilter(this.listFilter, (f) => { this.listFilter = f; }, "page")}
-      </div>
-      <div class="layers pe-page-list" role="list">
-        ${this.renderLibraryPageRows(listed, pages, screen)}
-      </div>
-    </section>`;
-  }
-
-  /**
-   * The Pages card's rows: every page of the library, in its order, the
-   * open one as an editor row (rename, delete) drawn from the draft, every
-   * other a row that opens it. "On no device" keeps only the pages no
-   * device has, and the open one.
-   */
-  private renderLibraryPageRows(listed: readonly WatchPage[], pages: readonly WatchPage[], screen: { width: number; height: number }): TemplateResult {
-    const ref = this.libraryItem!;
-    const lib = this.lib.library;
-    const open = listed[0];
-    const items = lib === undefined ? [] : libraryItems(lib, "pages");
-    const shown = listedItems(items, ref.id, this.listFilter);
-    // The open page, before the library lists it (a page just made).
-    const rows = shown.some((entry) => sameId(entry.id, ref.id)) || open === undefined ? shown : [undefined, ...shown];
-    return html`${repeat(rows, (entry) => entry?.id ?? ref.id, (entry) => {
-      if (entry === undefined || sameId(entry.id, ref.id)) return open === undefined ? nothing : this.renderPageRow(open, pages, screen);
-      const page = entry.item as WatchPage;
-      return html`<button type="button" class="layer pe-page-row lib-other-row ${entry.owners.length === 0 ? "nowhere" : ""}" role="listitem"
-        data-lib-page=${entry.id} title=${`Open ${entry.name}`} @click=${() => this.onOpenItem?.(entry.id)}>
-        <span class="grip" aria-hidden="true"></span>
-        ${this.renderPageThumb(page, pages, screen)}
-        <span class="name"><b><span class="nm-t">${entry.name}</span></b><small>${entry.detail} · ${itemWhereText(entry)}</small></span>
-      </button>`;
-    })}
-    ${renderNoneLeft(this.listFilter, rows.length, "page")}`;
-  }
-
-  /** A page as one watch screen, small: its background and the tiles that
-   * reach onto the screen, at the scale that fits the screen's width. A
-   * smart page, which fills itself, shows its glyph instead. */
-  private renderPageThumb(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }): TemplateResult {
+  /** A page as one screen of the device it is drawn on, `width` CSS pixels
+   * wide and as tall as the screen at that width (an iPhone's tall pages
+   * area only its top, `PAGE_THUMB_MAX_RATIO`): its background and the tiles
+   * that reach onto it. A smart page, which fills itself, shows its glyph
+   * instead. */
+  private renderPageThumb(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, width: number): TemplateResult {
+    const s = width / screen.width;
+    const height = Math.round(Math.min(screen.height * s, width * PAGE_THUMB_MAX_RATIO));
+    const box = `width:${width}px;height:${height}px;border-radius:${Math.round(width * 0.16)}px;`;
     if (isSmartWatchPage(page)) {
-      return html`<span class="thumb pe-thumb pe-thumb-smart" style=${`background:${watchScreenColor(page)}`} aria-hidden="true">${uiIcon("states")}</span>`;
+      return html`<span class="pe-pic pe-pic-smart" style=${`${box}background:${watchScreenColor(page)}`} aria-hidden="true">${uiIcon("states")}</span>`;
     }
-    const s = PAGE_THUMB_W / screen.width;
     const input = this.previewInput(page, pages, screen, s);
     const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
-    // Only what reaches onto the screen: a long page costs no more than a short one.
-    const shown = layout.tiles.filter((t) => layout.topInset + t.y < screen.height);
+    // Only what reaches onto the picture: a long page costs no more than a short one.
+    const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < height);
     const back = previewScreenLayers(input, page, s, screen, this.photoUrl);
-    return html`<span class="thumb pe-thumb" style=${`background:${back.background}`} aria-hidden="true">
+    return html`<span class="pe-pic" style=${`${box}background:${back.background}`} aria-hidden="true">
       ${back.layers}
       ${shown.map((t) => html`<span class="pe-thumb-tile"
         style=${`left:${t.x * s}px;top:${(layout.topInset + t.y) * s}px;width:${t.width * s}px;height:${t.height * s}px`}>${renderWatchTileFace(t.tile, { width: t.width, height: t.height }, input, layout.unit)}</span>`)}
     </span>`;
-  }
-
-  /** The open page as a row of the complication editor's lists: the
-   * picture, the name over its tile count, the smart and hidden badges, and
-   * on hover the ··· menu (Rename, Delete). The page stands alone: no
-   * order, no Hide here, and no badge naming the preview device's
-   * sharers. */
-  private renderPageRow(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }): TemplateResult {
-    const id = watchPageId(page);
-    const on = sameWatchId(id, this.selectedPageId);
-    const smart = isSmartWatchPage(page);
-    const hidden = isHiddenWatchPage(page);
-    const tiles = watchPageTiles(page).length;
-    const name = watchPageName(page);
-    const renaming = this.renaming !== undefined && sameWatchId(this.renaming.pageId, id) ? this.renaming : undefined;
-    const menu = this.menuPageId !== undefined && sameWatchId(this.menuPageId, id);
-    const own = pressedRowControl;
-    const detail = smart ? "Smart page" : `${plural(tiles, "tile", "tiles")} · ${plural(watchPageExtent(page), "row", "rows")}`;
-    return html`<div class="layer pe-page-row ${on ? "hl" : ""} ${hidden ? "dim" : ""} ${menu ? "menu-open" : ""}"
-      data-page=${id} role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
-      title=${this.saving ? `${SAVING_TEXT} Double click to rename.` : "Double click to rename."}
-      @click=${(e: Event) => { if (own(e)) return; if (on) this.selectTile(undefined); else this.selectPage(id); }}
-      @dblclick=${(e: Event) => { if (!own(e)) this.startRename(id); }}
-      @keydown=${(e: KeyboardEvent) => this.onRowKeyDown(e, id)}>
-      <span class="grip" aria-hidden="true"></span>
-      ${this.renderPageThumb(page, pages, screen)}
-      <span class="name">
-        ${renaming
-          ? html`<input class="pe-rename" aria-label="Page name" .value=${renaming.value}
-              @input=${(e: InputEvent) => { renaming.value = (e.target as HTMLInputElement).value; }}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key === "Enter") { e.preventDefault(); this.commitRename(); this.focusPageRow = id; }
-                else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.cancelRename(); }
-              }}
-              @blur=${() => this.commitRename()} />`
-          : html`<b><span class="nm-t">${name}</span></b>`}
-        <small>${detail}</small>
-      </span>
-      <span class="right">
-        <span class="badges">
-          ${smart ? html`<span class="badge pe-smart">smart</span>` : nothing}
-          ${hidden ? html`<span class="badge">hidden</span>` : nothing}
-        </span>
-        <span class="acts">
-          <button type="button" class="icon pe-more" title="More" aria-label=${`More for ${name}`}
-            aria-haspopup="menu" aria-expanded=${menu ? "true" : "false"}
-            @click=${() => {
-              this.menuPageId = menu ? undefined : id;
-              this.focusMenu = !menu;
-            }}>${uiIcon("more")}</button>
-        </span>
-      </span>
-      ${menu ? html`<div class="pop-menu pe-menu" role="menu" aria-label=${name}>
-          <button class="row" role="menuitem" @click=${() => this.startRename(id)}>Rename</button>
-          <button class="row pe-danger" role="menuitem" @click=${() => this.askDelete(id)}>Delete</button>
-        </div>` : nothing}
-    </div>`;
-  }
-
-  /** The Tiles card, the complication editor's Layers card: the shown page's
-   * tiles in reading order (by row, then column), each with its face, its
-   * label over its kind and size, and badges for a tap of its own and
-   * state rules. A row selects its tile; on hover it copies or
-   * deletes it, and the stage tints the tile while the pointer is on its
-   * row. */
-  private renderTileList(page: WatchPage | undefined, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
-    const smart = page !== undefined && isSmartWatchPage(page);
-    const off = page === undefined || this.saving || this.editingOff(page);
-    const addOff = off || smart;
-    const tiles = page === undefined || smart ? [] : tilesInReadingOrder(page);
-    let body: TemplateResult;
-    if (page === undefined) body = html`<div class="lc-note">Pick a page to see its tiles.</div>`;
-    else if (smart) body = html`<div class="lc-note">A smart page fills itself.</div>`;
-    else if (tiles.length === 0) body = html`<div class="lc-note">No tiles yet. Add one to start.</div>`;
-    else {
-      const screen = this.screenOf(owner);
-      const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
-      // By the tile itself, else by its id: the layout hands back the page's
-      // own tile objects, but a copy would still find its size.
-      const sizes = new Map<unknown, PlacedWatchTile>();
-      for (const t of layout.tiles) {
-        sizes.set(t.tile, t);
-        const key = tileIdOf(t.tile).toUpperCase();
-        if (key !== "" && !sizes.has(key)) sizes.set(key, t);
-      }
-      const sizeOfTile = (t: WatchPageTile) => sizes.get(t) ?? sizes.get(tileIdOf(t).toUpperCase() || undefined);
-      // Unique keys, as the stage's: a repeated or missing id keys by place.
-      const seen = new Set<string>();
-      const keyOf = (t: WatchPageTile, i: number): string => {
-        const key = tileIdOf(t).toUpperCase();
-        const unique = key === "" || seen.has(key) ? `#${i}` : key;
-        seen.add(unique);
-        return unique;
-      };
-      body = html`<div class="layers pe-tile-list" role="list">
-        ${repeat(tiles, keyOf, (t) => this.renderTileRow(page, t, pages, screen, sizeOfTile(t), layout.unit, off))}
-      </div>`;
-    }
-    return html`<section class="card lc pe-tiles-card" aria-label="Tiles"
-      style=${`--c: var(--wa-lc-layers, #4a7fe8); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>
-      <div class="lc-head">
-        <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Tiles</span>
-        <span class="lc-sub">top to bottom</span>
-        <span class="spacer"></span>
-        <button class="lc-btn pri pe-add-tile" aria-haspopup="dialog" ?disabled=${addOff}
-          title=${this.saving ? SAVING_TEXT : smart ? "A smart page fills itself." : page !== undefined && this.editingOff(page) ? `Turn off ${this.viewName} to add a tile.` : "Add a tile to this page"}
-          @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add</span></button>
-      </div>
-      ${body}
-    </section>`;
-  }
-
-  private renderTileRow(
-    page: WatchPage,
-    tile: WatchPageTile,
-    pages: readonly WatchPage[],
-    screen: { width: number; height: number },
-    placed: PlacedWatchTile | undefined,
-    unit: number,
-    off: boolean,
-  ): TemplateResult {
-    const id = tileIdOf(tile);
-    const entityId = tileEntityId(tile);
-    const kindLabel = tileKindLabel(tileKind(entityId));
-    const label = watchPreviewTileLabel(tile, { states: this.previewStates(), pages, catalog: this.pickerCatalog }) || kindLabel;
-    const rect = watchTileRect(tile);
-    // Lit while picked, alone or with others; `aria-current` is the primary's.
-    const picked = this.isPicked(id);
-    const primary = id !== "" && sameWatchId(id, this.selectedTileId);
-    const inMulti = picked && this.multiPicked;
-    // The row of the tile under the pointer on the stage: the chrome's accent
-    // outline, apart from the selection's fill.
-    const peek = id !== "" && sameWatchId(id, this.stageHoverTileId);
-    const rules = tileHasStateRules(tile);
-    const tap = tileHasTapAction(tile);
-    const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
-    const pick = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
-      if (id === "") return;
-      this.clickTile(id, e);
-      this.revealTile = true;
-      this.inspectorToTop = true;
-    };
-    const dupRefusal = id === "" ? "This tile cannot be copied." : this.duplicateRefusal(page, tile);
-    return html`<div class="layer pe-tile-row ${picked ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""} ${inMulti ? "multi" : ""}" data-row-tile=${id}
-      style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${primary ? "true" : "false"}
-      aria-label=${label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}
-      title=${[label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
-      @click=${(e: MouseEvent) => { if (!pressedRowControl(e)) pick(e); }}
-      @keydown=${(e: KeyboardEvent) => {
-        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-        e.preventDefault();
-        pick(e);
-      }}
-      @pointerenter=${() => this.peekTile(id, true)}
-      @pointerleave=${() => this.peekTile(id, false)}>
-      <span class="grip" aria-hidden="true"></span>
-      ${this.renderTileThumb(page, tile, pages, screen, placed, unit)}
-      <span class="name">
-        <b><span class="nm-t">${label}</span></b>
-        <small><span class="kind">${kindLabel}</span> · ${rect.colSpan}×${rect.rowSpan}</small>
-      </span>
-      <span class="right">
-        <span class="badges">
-          ${rules ? html`<span class="badge states" title="Other icons or colors in some states">rules</span>` : nothing}
-          ${tap ? html`<span class="badge tap" title="A tap of its own">action</span>` : nothing}
-        </span>
-        ${id === "" ? nothing : html`<span class="acts">
-          <button type="button" class="icon" ?disabled=${dupRefusal !== undefined} title=${dupRefusal ?? "Duplicate"} aria-label=${`Duplicate ${label}`}
-            @click=${() => this.duplicateTile(id)}>${uiIcon("duplicate")}</button>
-          <button type="button" class="icon danger" ?disabled=${off} title=${this.saving ? SAVING_TEXT : "Delete"} aria-label=${`Delete ${label}`}
-            @click=${() => this.deleteTile(id)}>${uiIcon("delete")}</button>
-        </span>`}
-      </span>
-    </div>`;
   }
 
   /** A tile's face in a 44 by 30 box, at the largest scale that fits,
@@ -3577,10 +3518,11 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The canvas card, the complication editor's: the head (the page's name,
-   * the preview device, the page's facts, then Undo, Redo, Duplicate and
-   * Delete for the selected tile), the devices' ticks, the dotted stage with the floating tool strip over the watch, the hint under
-   * it, and the Live strip at its foot.
+   * The canvas card, the complication editor's: the head (the preview
+   * device, the page's facts, then Undo, Redo, Duplicate and Delete for the
+   * selected tile), the dotted stage with the floating tool strip over the
+   * watch and + Add tile under it, the hint under that, and the Live strip
+   * at its foot. The page's name and devices are the page's head, over it.
    */
   private renderStage(
     page: WatchPage,
@@ -3647,19 +3589,17 @@ export class WaPageEditor extends LitElement {
     const hint = smart ? undefined
       : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
-      : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
+      : "Click a tile to change it, Shift or Cmd-click to pick several. Drag a tile to move it, or onto another tile to swap the two; drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile, Tab picks the next one. Hidden tiles and spacers show with a dashed edge.";
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       ${this.renderCanvasHead(page, watches, facts, phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
-      ${this.renderPageTicks(page)}
       <div class="stage-area pe-stage-area">
         ${this.renderStageTools(page, headers, smart, phone)}
         <div class="pe-stage-body">
-          ${this.renderLibraryStage(page, pages, input, smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
+          ${this.renderLibraryStage(page, pages, input, smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input), this.renderStageAddTile(page))}
         </div>
         ${scrolls || hint !== undefined ? html`<div class="under">
           ${scrolls ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
           ${hint !== undefined ? html`<span class="tail ${tiles > 0 && !asOnWatch ? "pe-hint" : ""}">${hint}</span>` : nothing}
-          ${empty ? this.renderAddFirstTile(page) : nothing}
         </div>` : nothing}
       </div>
       ${this.renderLiveStrip(page, tile)}
@@ -3679,23 +3619,31 @@ export class WaPageEditor extends LitElement {
    * its kind that have the page and with the line of what that kind does
    * otherwise; with Side by side, the other kind's preview beside it the
    * same way. The other one is a picture only: a click on it edits on that
-   * kind instead. Watch first, iPhone second, whichever is edited.
+   * kind instead. Watch first, iPhone second, whichever is edited. `add`
+   * (+ Add tile) goes under the edited one.
    */
-  private renderLibraryStage(page: WatchPage, pages: readonly WatchPage[], input: WatchPagePreviewInput, edited: TemplateResult): TemplateResult {
+  private renderLibraryStage(
+    page: WatchPage,
+    pages: readonly WatchPage[],
+    input: WatchPagePreviewInput,
+    edited: TemplateResult,
+    add: TemplateResult | typeof nothing = nothing,
+  ): TemplateResult {
     const kind = this.previewKind;
-    const side = (k: PreviewKind, body: TemplateResult, tag: string) => {
+    const side = (k: PreviewKind, body: TemplateResult, tag: string, under: TemplateResult | typeof nothing = nothing) => {
       const diff = deviceDifferenceText(page, k);
       return html`<div class="lib-duo-side ${k}">
         <span class="lib-duo-l" title=${previewLabel(k, this.libraryNamesOf(k))}>${previewLabel(k, this.libraryNamesOf(k))}<span class="lib-duo-tag">${tag}</span></span>
         ${body}
+        ${under}
         ${diff === "" ? nothing : html`<span class="lib-diff">${diff}</span>`}
       </div>`;
     };
-    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
+    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "", add)}</div>`;
     const other = otherPreviewKind(kind);
     const word = other === "watch" ? "watch" : "iPhone";
     return html`<div class="lib-duo">
-      ${side(kind, edited, "editing")}
+      ${side(kind, edited, "editing", add)}
       ${side(other, html`<button type="button" class="lib-duo-other" title=${`Click to edit on the ${word}`} aria-label=${`Edit on the ${word}`}
         @click=${() => this.pickPreview(other, true)}>${renderWatchPagePreview(this.companionInput(page, pages, input, other))}</button>`, "preview")}
     </div>`;
@@ -3729,10 +3677,9 @@ export class WaPageEditor extends LitElement {
     return { ...rest, page, pages, behavior: undefined, screen, scale: this.stageScale };
   }
 
-  /** The canvas head: the page's name, typed over where it stands (the
-   * same rename as the page row's), the preview device's name, the page's
-   * facts, and at the right the edit actions. It reads
-   * "Hall / Sim / 6 tiles · 16 rows · 46 mm". */
+  /** The canvas head: the preview device's name, the page's facts, and at
+   * the right the edit actions. It reads "Sim / 6 tiles · 16 rows · 46 mm".
+   * The page's name is the page picker's, over it, and renamed there. */
   private renderCanvasHead(
     page: WatchPage,
     watches: readonly OwnerSummary[],
@@ -3740,8 +3687,6 @@ export class WaPageEditor extends LitElement {
     factsTitle: string | undefined,
     tile: WatchPageTile | undefined,
   ): TemplateResult {
-    const id = watchPageId(page);
-    const stored = watchPageName(page);
     const draft = this.draft;
     const off = this.busy || this.editingOff(page);
     // With several picked, both act on all of them and say how many.
@@ -3753,26 +3698,10 @@ export class WaPageEditor extends LitElement {
     const dupLabel = many !== undefined ? `Duplicate ${many}` : "Duplicate the selected tile";
     const delLabel = many !== undefined ? `Delete ${many}` : "Delete the selected tile";
     const current = watches.find((w) => w.owner_watch_id === this.watchId);
-    const commit = (input: HTMLInputElement): void => {
-      const document = this.draft?.document;
-      if (document === undefined) return;
-      // A blank name or the same one changes nothing; the stored one shows.
-      if (!this.edit(setWatchPageName(document, id, input.value))) input.value = watchPageName(this.currentPage() ?? page);
-    };
     return html`<div class="cv-head">
-      <label class="tb-name" title="Click the name to rename the page">
-        <input type="text" class="tb-name-input" aria-label="Page name" placeholder="Untitled" .value=${stored}
-          @change=${(e: Event) => commit(e.target as HTMLInputElement)}
-          @keydown=${(e: KeyboardEvent) => {
-            const input = e.target as HTMLInputElement;
-            if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); input.value = stored; input.blur(); }
-          }} />
-        <span class="tb-pen" aria-hidden="true">✎</span>
-      </label>
-      ${current ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
+      ${current ? html`<span class="cv-part cv-where">
         <span class="cv-shape pe-watch-crumb">${watchName(current, watches)}</span></span>` : nothing}
-      <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
+      <span class="cv-part cv-what">${current ? html`<span class="cv-slash" aria-hidden="true">/</span>` : nothing}
         <span class="cv-shape" title=${factsTitle ?? facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
       <span class="cv-acts">
         <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
@@ -4046,9 +3975,9 @@ export class WaPageEditor extends LitElement {
     // `multi`.
     const selected = this.isPicked(id);
     const inMulti = selected && this.multiPicked;
-    // Tinted while its row, or the tile itself, is under the pointer; not
-    // while a tile is being dragged, when the ghosts say what will happen.
-    const hovered = id !== "" && move === undefined && (sameWatchId(id, this.rowHoverTileId) || sameWatchId(id, this.stageHoverTileId));
+    // Tinted while it is under the pointer; not while a tile is being
+    // dragged, when the ghosts say what will happen.
+    const hovered = id !== "" && move === undefined && sameWatchId(id, this.stageHoverTileId);
     const grabbed = move !== undefined && sameWatchId(id, move.tileId);
     // A pick of several follows the pointer together: each picked tile
     // shifts as far as the grabbed one has from its own place.
@@ -4067,13 +3996,29 @@ export class WaPageEditor extends LitElement {
     // (`previewTileCornerRadius`).
     const radius = previewTileCornerRadius(input, width / s, height / s) * s;
     const box = `left:${left}px;top:${top}px;width:${width}px;height:${height}px;border-radius:${radius}px;${shift}`;
-    // A tile with no id cannot be named by an edit; it is drawn and left be.
-    if (id === "") return html`<div class="pe-tile fixed ${tileKind(tileEntityId(tile)) === "spacer" ? "spacer" : ""}" style=${box} aria-hidden="true">${face}</div>`;
     const spacer = tileKind(tileEntityId(tile)) === "spacer";
-    return html`<button type="button" class="pe-tile ${spacer ? "spacer" : ""} ${selected ? "sel" : ""} ${hovered ? "hov" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""} ${inMulti ? "multi" : ""}"
+    // A tile the watch leaves out now, as Live preview draws the states: faded
+    // with a dashed edge and a tag saying why, still there to be picked. Off
+    // Live preview every tile is drawn on, so none is.
+    const hiddenBy = input.stateMode === "live" && input.states !== undefined ? stageHiddenReason(tile, input.states, input.templates) : undefined;
+    const tag = hiddenBy === undefined ? nothing : html`<span class="pe-hid-tag">${stageHiddenText(hiddenBy)}</span>`;
+    // A spacer draws next to nothing on the watch: a dashed outline and its
+    // word show where it is.
+    const word = spacer ? html`<span class="pe-spacer-word" aria-hidden="true">Spacer</span>` : nothing;
+    const names = [label, kindLabel, tileEntityId(tile), hiddenBy === undefined ? "" : stageHiddenText(hiddenBy)];
+    const looks = `${spacer ? "spacer" : ""} ${hiddenBy === undefined ? "" : "faded"}`;
+    if (id === "") {
+      // A tile stored with no id: no edit can name it until it has one, which
+      // a click gives it (`pickTileWithNoId`). It never drags.
+      return html`<button type="button" class="pe-tile noid ${looks}" style=${box}
+        aria-label=${`${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}, with no id`}
+        title=${[...names, "This tile has no id yet. Click it to give it one and edit it."].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
+        @click=${(e: MouseEvent) => { e.stopPropagation(); this.pickTileWithNoId(tile); }}>${face}${word}${tag}</button>`;
+    }
+    return html`<button type="button" class="pe-tile ${looks} ${selected ? "sel" : ""} ${hovered ? "hov" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""} ${inMulti ? "multi" : ""}"
       data-tile=${id} style=${box}
       aria-label=${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel} aria-pressed=${selected ? "true" : "false"}
-      title=${[label, kindLabel, tileEntityId(tile), this.saving ? SAVING_TEXT : ""].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
+      title=${[...names, this.saving ? SAVING_TEXT : ""].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
       @pointerdown=${(e: PointerEvent) => this.onTilePointerDown(e, id)}
       @pointerenter=${() => this.peekStageTile(id, true)}
       @pointerleave=${() => this.peekStageTile(id, false)}
@@ -4084,7 +4029,7 @@ export class WaPageEditor extends LitElement {
           return;
         }
         this.clickTile(id, e);
-      }}>${face}</button>`;
+      }}>${face}${word}${tag}</button>`;
   }
 
   /** Where a drop would put the tile: the target place, green for a move,
@@ -4611,119 +4556,134 @@ export class WaPageEditor extends LitElement {
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
 
-    /* The complication editor's three columns (editor-chrome.ts): the editor
-       is one viewport tall and never scrolls as a whole. Each part scrolls in
-       its own box: the page list, the tile list, the stage and the
-       inspector, so every card stays on screen (Jesse, 2026-10-23: two
-       scroll bars, one inside the other, read as broken). The side widths
-       come in as custom properties already fitted to the measured host
-       width (fitColumnWidths). */
+    /* Two columns, the canvas card and the inspector, under the page's head:
+       the editor is one viewport tall and never scrolls as a whole. Each
+       column scrolls in its own box, so every card stays on screen (Jesse,
+       2026-10-23: two scroll bars, one inside the other, read as broken).
+       No gutter: neither column is dragged wider. */
     .layout.pe-layout { padding: 0; align-items: stretch; }
-    .layout.pe-layout.cols-3 { flex: 1 1 0; min-height: 0; overflow: hidden; }
-    .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
-    .pe-layout > .column.left {
-      display: flex; flex-direction: column; gap: 6px; overflow: hidden; scrollbar-gutter: auto;
+    .layout.pe-layout.pe-wide {
+      grid-template-columns: minmax(0, 1fr) clamp(340px, 38%, 640px); column-gap: 8px;
+      flex: 1 1 0; min-height: 0; overflow: hidden;
     }
-    /* The Pages card takes the height the bar between the cards sets (or
-       its rows' height, if less); the Tiles card takes the rest. Each list
-       scrolls inside its card. */
-    .pe-layout.cols-3 > .column.left > .pe-pages-card { flex: 0 1 auto; min-height: 120px; display: flex; flex-direction: column; }
-    .pe-layout.cols-3 > .column.left > .pe-tiles-card { flex: 1 1 0; min-height: 140px; display: flex; flex-direction: column; }
-    .pe-layout.cols-3 > .column.left > .card > :not(.layers) { flex: none; }
-    .pe-layout.cols-3 > .column.left > .card > .layers { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-    .pe-layout.cols-3 > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
-    /* The canvas card fills its column: its head, the devices and the tool
-       strip stay put, and only the watch scrolls between them, with a thin
-       bar of its own, so a long page can still be dragged down its length.
-       The column itself scrolls only on a screen too short for the card. */
-    .pe-layout.cols-3 > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
-    .pe-layout.cols-3 > .column.canvas > .card.canvas-card.pe-canvas { flex: 1 1 auto; min-height: 420px; }
-    .pe-layout.cols-3 .pe-canvas > :not(.pe-stage-area) { flex: none; }
-    .pe-layout.cols-3 .pe-stage-area { flex: 1 1 auto; min-height: 0; }
-    .pe-layout.cols-3 .pe-stage-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
-    .pe-layout.cols-3 .pe-stage-area > :not(.pe-stage-body) { flex: none; }
-    /* One column under 820px, the complication editor's order: the page and
-       its tiles, the settings, then the lists. Nothing sticks there: a sticky
-       inspector slid over the Tiles card under it and took its clicks. The
-       selectors are as strong as the sticky rule's, so they win; .cols-1 is
-       the same width as the element measures it. */
+    .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
+    .pe-layout.pe-wide > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
+    /* The canvas card fills its column: its head and the tool strip stay put,
+       and only the watch scrolls between them, with a thin bar of its own,
+       so a long page can still be dragged down its length. The column itself
+       scrolls only on a screen too short for the card. */
+    .pe-layout.pe-wide > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.pe-wide > .column.canvas > .card.canvas-card.pe-canvas { flex: 1 1 auto; min-height: 420px; }
+    .pe-layout.pe-wide .pe-canvas > :not(.pe-stage-area) { flex: none; }
+    .pe-layout.pe-wide .pe-stage-area { flex: 1 1 auto; min-height: 0; }
+    .pe-layout.pe-wide .pe-stage-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.pe-wide .pe-stage-area > :not(.pe-stage-body) { flex: none; }
+    /* One column under 820px: the page and its tiles, then the settings.
+       Nothing sticks there: a sticky inspector slid over what was under it
+       and took its clicks. The selectors are as strong as the wide rules, so
+       they win; .cols-1 is the same width as the element measures it. */
     @container (max-width: 820px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
-      .pe-layout > .gutter { display: none; }
-      .pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector {
+      .pe-layout > .column.canvas, .pe-layout > .column.inspector {
         grid-column: auto; position: static; max-height: none; overflow: visible;
       }
       .pe-layout > .column.canvas { order: 1; }
       .pe-layout > .column.inspector { order: 2; }
-      .pe-layout > .column.left { order: 3; }
     }
     .layout.pe-layout.cols-1 { grid-template-columns: minmax(0, 1fr); }
-    .layout.pe-layout.cols-1 > .gutter { display: none; }
-    .layout.pe-layout.cols-1 > .column.left, .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector {
+    .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector {
       grid-column: auto; position: static; max-height: none; overflow: visible;
     }
 
-    /* The Pages and Tiles cards: the complication editor's Pages and Layers
-       cards, their rows its layer rows. */
-    .pe-pages-card > .layers, .pe-tiles-card > .layers { padding: 6px 8px 8px; overflow: visible; }
-    .pe-pages-card > .lc-note, .pe-tiles-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
-    /* Beside the watch, a long page list scrolls in its own box, so the
-       Tiles card under it stays in sight. Stacked, the page scrolls as one. */
-    .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list { position: relative; }
-    /* Half the column, or what the bar between the cards was dragged to. */
-    .layout.pe-layout.cols-3 .pe-pages-card { max-height: 50%; }
-    .layout.pe-layout.cols-3.list-set .pe-pages-card { max-height: calc(100% - 200px); height: var(--pe-list-h); flex: none; }
-    /* The bar between the Pages and Tiles cards: the gutters' look, turned
-       on its side. It sits in the column's gap, so it adds no room. */
-    .pe-list-split {
-      flex: none; height: 10px; margin: -3px 0; cursor: row-resize; position: relative;
-      touch-action: none; border-radius: 4px; outline: none;
+    /* The page's head over both columns: All pages, the page picker, and the
+       devices at the right. It wraps on a narrow editor, the devices going
+       under the picker. Above the columns, so the picker's popover lies over
+       the stage and the inspector. */
+    .pe-head {
+      flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px;
+      margin: 0 0 10px; position: relative; z-index: 6;
     }
-    .pe-list-split::after {
-      content: ""; position: absolute; inset: 3px 24px; border-radius: 2px;
-      background: var(--wa-line); opacity: 0; transition: opacity .12s ease-out;
+    .pe-btn.pe-head-back { min-height: 40px; padding: 0 14px 0 10px; font-weight: 600; }
+    .pe-head-ticks { display: flex; flex: 0 1 auto; min-width: 0; margin-left: auto; }
+    .pe-head-ticks > .lib-on.over-stage { margin: 0; flex: 0 1 auto; }
+
+    /* The page picker: one large button, the page's picture, its name big
+       enough to read across the room on a 4K screen at 100%, and the blue
+       Switch page at its end. */
+    .pe-pp-wrap { position: relative; flex: 0 1 560px; min-width: 0; }
+    .pe-pp {
+      display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px; margin: 0;
+      padding: 7px 9px 7px 7px; border: 1.5px solid var(--wa-line-strong); border-radius: 14px;
+      background: var(--wa-card); color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer;
     }
-    .pe-list-split:hover::after, .pe-list-split.dragging::after, .pe-list-split:focus-visible::after {
-      background: var(--wa-accent); opacity: 1;
+    .pe-pp:hover, .pe-pp[aria-expanded="true"] { border-color: var(--wa-accent); }
+    .pe-pp:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-pp-text { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1 1 auto; min-width: 0; }
+    .pe-pp-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .pe-pp-name, .pe-pp-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pe-pp-name { font-size: 18px; font-weight: 700; line-height: 1.15; }
+    .pe-pp-sub { font-size: 12.5px; color: var(--wa-muted); }
+    .pe-pp-switch {
+      display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; padding: 8px 10px 8px 13px;
+      border-radius: 9px; background: var(--wa-primary-bg); color: var(--wa-primary-ink); font-size: 13px; font-weight: 600; white-space: nowrap;
     }
-    .layout.pe-layout.cols-1 .pe-list-split { display: none; }
-    @container (max-width: 820px) {
-      .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list { max-height: none; overflow: visible; }
-      .pe-list-split { display: none; }
+    .pe-pp-chev { display: inline-flex; }
+    .pe-pp-chev svg.ui-icon { width: 14px; height: 14px; transition: transform .15s ease-out; }
+    .pe-pp[aria-expanded="true"] .pe-pp-chev svg.ui-icon { transform: rotate(180deg); }
+    /* The popover: under the button, as wide as four cards, never past the
+       editor's edge. */
+    .pe-pp-pop {
+      position: absolute; top: calc(100% + 8px); left: 0; z-index: 40;
+      width: min(720px, calc(100cqw - 2 * var(--cf-pad, 16px))); max-height: min(72vh, 680px); overflow-y: auto;
+      display: flex; flex-direction: column; gap: 14px; padding: 16px;
+      border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-lg, 16px);
+      background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
     }
-    /* A page row keeps the grip's column, empty, so its grid stays the
-       complication editor's. */
-    .pe-page-row { grid-template-columns: 14px var(--page-thumb-w) minmax(0, 1fr) auto; padding-block: 5px; }
-    /* A page row's picture is a watch screen, with the screen's corners. */
-    .pe-page-row .thumb.pe-thumb {
-      width: var(--page-thumb-w); height: var(--page-thumb-h); border-radius: calc(var(--page-thumb-w) * .145);
+    .pe-pp-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+    .pe-pp-top > strong { font-size: 15px; }
+    .pe-pp-count { font-size: 12.5px; color: var(--wa-muted); }
+    .pe-pp-find {
+      margin-left: auto; width: 220px; max-width: 100%; min-height: 34px; padding: 0 10px;
+      border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-sm, 8px);
+      background: var(--wa-input, var(--wa-card)); color: var(--wa-ink); font: inherit; font-size: 13.5px;
+    }
+    .pe-pp-find:focus { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
+    .pe-pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .pe-pp-card {
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; margin: 0;
+      padding: 14px 8px 10px; border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-panel); color: var(--wa-ink); font: inherit; cursor: pointer;
+    }
+    .pe-pp-card:hover:not(:disabled) { border-color: var(--wa-accent); }
+    .pe-pp-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-pp-card.on { border-color: var(--wa-sel-ring); background: var(--wa-sel-bg); }
+    .pe-pp-card:disabled { opacity: .55; cursor: default; }
+    .pe-pp-card-name, .pe-pp-card-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pe-pp-card-name { font-size: 13.5px; font-weight: 600; }
+    .pe-pp-card-sub { font-size: 11.5px; color: var(--wa-muted); }
+    .pe-pp-tag {
+      position: absolute; top: 7px; right: 7px; padding: 2px 7px; border-radius: 999px;
+      background: var(--wa-primary-bg); color: var(--wa-primary-ink); font-size: 10.5px; font-weight: 600;
+    }
+    .pe-pp-card.pe-pp-new { justify-content: center; min-height: 150px; border-style: dashed; background: transparent; color: var(--wa-muted); }
+    .pe-pp-card.pe-pp-new:hover:not(:disabled) { color: var(--wa-ink); }
+    .pe-pp-plus svg.ui-icon { width: 22px; height: 22px; }
+    .pe-pp-none { font-size: 13px; color: var(--wa-muted); }
+    .pe-pp-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
+    .pe-pp-foot > .pe-rename { flex: 0 1 260px; width: auto; min-height: 32px; }
+    .pe-pp-board { margin-left: auto; }
+
+    /* A page's picture: one screen of the device, in its corners. */
+    .pe-pic {
+      position: relative; display: block; flex: none; overflow: hidden;
       box-shadow: 0 0 0 1px var(--wa-line-strong);
     }
-    .pe-page-row .grip {
-      visibility: visible; width: 14px; display: flex; align-items: center; justify-content: center; align-self: stretch;
-      color: var(--wa-muted); cursor: grab; touch-action: none; opacity: .5;
-    }
-    .pe-page-row:hover .grip, .pe-page-row.hl .grip { opacity: 1; }
-    /* No grip is drawn: no row drags. */
-    .pe-page-row .grip:empty { cursor: default; }
-    .pe-pages-card.saving .pe-page-row, .pe-pages-card.saving .pe-page-row .grip { cursor: progress; }
-    /* The row with its menu open keeps its buttons, not its badges, after
-       the pointer leaves it. */
-    .layer.menu-open .acts { display: inline-flex; }
-    .layer.menu-open .badges { display: none; }
-    .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
-    .layer .acts button.icon.off { color: var(--wa-amber); }
-    .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
-    /* Smart is a plain grey tag with a hairline: a solid fill, so the picked
-       row's blue never shows through it. */
-    .badge.pe-smart { color: var(--wa-label); background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
-    /* The thumbs: a page's top, or a tile's face, drawn small. */
-    .layer .thumb.pe-thumb { position: relative; }
+    .pe-pic.pe-pic-smart { display: grid; place-items: center; color: rgba(255, 255, 255, .7); }
+    .pe-pic-smart svg.ui-icon { width: 16px; height: 16px; }
     .pe-thumb-tile { position: absolute; overflow: hidden; pointer-events: none; }
-    /* A tile's thumb is the tile alone, in its own shape and corners. */
+    /* A picked tile's thumb is the tile alone, in its own shape and corners. */
+    .layer .thumb.pe-thumb { position: relative; }
     .layer .thumb.pe-tile-thumb:not(.empty) { background: none; border-radius: 0; overflow: visible; }
-    .layer .thumb.pe-thumb-smart { display: grid; place-items: center; color: rgba(255, 255, 255, .7); }
-    .pe-thumb-smart svg.ui-icon { width: 12px; height: 12px; }
     .pe-rename {
       width: 100%; min-width: 0; margin: 0; padding: 2px 6px; border: 1px solid var(--wa-sel-ring); border-radius: 6px;
       background: var(--wa-input, var(--wa-card)); color: var(--wa-ink); font: inherit; font-weight: 600;
@@ -4737,18 +4697,6 @@ export class WaPageEditor extends LitElement {
     .pe-icon-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pe-icon-btn.off { color: var(--wa-amber); }
     .pe-icon-btn svg.ui-icon { width: 16px; height: 16px; }
-    /* A page row's ··· menu, the panel's pop menu, hung under the row's
-       right end. */
-    .layer > .pop-menu.pe-menu { top: calc(100% - 4px); right: 6px; z-index: 30; min-width: 150px; cursor: default; }
-    .pe-menu .row:disabled { opacity: .5; cursor: default; }
-    .pe-menu .row:disabled:hover { background: transparent; }
-    .pe-menu .row.pe-danger { color: var(--wa-need); }
-
-    .pe-badge {
-      display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
-      color: var(--wa-muted); background: var(--wa-field); white-space: nowrap;
-    }
-    .pe-badge.smart { color: var(--wa-label); background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
 
     /* The canvas card: the complication editor's head, dotted stage, tool
        strip and values bar. Its stage is not the fitted box of a face but
@@ -4871,17 +4819,40 @@ export class WaPageEditor extends LitElement {
       color: inherit; font: inherit; text-align: left; cursor: grab;
       touch-action: manipulation;
     }
-    .pe-tile.fixed { pointer-events: none; }
     .pe-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
     .pe-tile.sel { touch-action: none; box-shadow: 0 0 0 2px var(--pe-mark); z-index: 2; }
     .pe-tile.sel:focus-visible { box-shadow: 0 0 0 2px var(--pe-mark), 0 0 0 4px #000, 0 0 0 6px var(--pe-mark); }
-    /* A Tiles row in a pick of several: lit exactly like the selected row,
-       the complication editor's .layer.multi, so every picked row reads as
-       selected. */
-    .pe-tile-row.multi {
-      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
-      box-shadow: inset 0 0 0 2px var(--wa-accent);
+    /* Quiet but there to pick: a spacer, which draws next to nothing, and a
+       tile the watch hides now, faded, both inside a dashed edge. A tile
+       with no id is picked with a click, which gives it one, and never drags. */
+    .pe-screen { --pe-dash: rgba(255, 255, 255, .4); }
+    .wa-phone.ios.ink .pe-screen { --pe-dash: color-mix(in srgb, var(--wa-phone-ink, #14161a) 40%, transparent); }
+    .pe-tile.spacer::before, .pe-tile.faded::before {
+      content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
+      border: 1.5px dashed var(--pe-dash);
     }
+    .pe-tile.faded > :not(.pe-hid-tag):not(.pe-spacer-word) { opacity: .38; }
+    .pe-tile.noid { cursor: pointer; }
+    .pe-spacer-word {
+      position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; pointer-events: none;
+      font-size: 10.5px; font-weight: 500; color: var(--pe-dash); white-space: nowrap;
+    }
+    .pe-hid-tag {
+      position: absolute; left: 50%; bottom: 4px; z-index: 1; transform: translateX(-50%);
+      max-width: calc(100% - 6px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
+      padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .22);
+      background: rgba(0, 0, 0, .78); color: #fff; font-size: 10px; font-weight: 600; line-height: 14px;
+    }
+    /* + Add tile, under the watch: as wide as a watch, dashed, plain. */
+    .pe-stage-add {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: min(100%, 260px); min-height: 42px;
+      margin: 2px 0 0; padding: 0 14px; border: 1.5px dashed var(--wa-line-strong); border-radius: 14px;
+      background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    }
+    .pe-stage-add:hover:not(:disabled) { border-color: var(--wa-accent); background: var(--wa-panel); }
+    .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-stage-add:disabled { opacity: .5; cursor: default; }
+    .pe-stage-add svg.ui-icon { width: 15px; height: 15px; }
     /* The inspector's card for a pick of several: the picked tiles as rows
        (no buttons of their own), then Duplicate and Delete for all. */
     .pe-picked-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
@@ -4893,9 +4864,9 @@ export class WaPageEditor extends LitElement {
     .pe-group-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--wa-panel); font-size: 12px; color: var(--wa-muted); }
     .pe-group-words { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; }
     .pe-group-words .ui-icon { width: 14px; height: 14px; }
-    /* The tile whose Tiles row is pointed at: a solid tint and a thin ring,
-       the complication editor's hover on a layer, so it never reads as the
-       selection's ring when the pointer rests on the selected tile's row. */
+    /* The tile under the pointer: a solid tint and a thin ring, the
+       complication editor's hover on a layer, so it never reads as the
+       selection's ring. */
     .pe-tile.hov::after {
       content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
       background: color-mix(in srgb, var(--pe-mark) 22%, transparent);
@@ -4977,7 +4948,6 @@ export class WaPageEditor extends LitElement {
     .pe-no-tile-ic { display: grid; place-items: center; flex: none; color: var(--wa-muted); }
     .pe-no-tile-ic svg { width: 16px; height: 16px; }
     .pe-add-first { flex: none; }
-    .under > .pe-add-first { margin-left: 8px; }
     .pe-page-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 0; }
     .pe-page-acts > .pe-btn { flex: 1 1 0; min-width: 0; min-height: 30px; font-size: 12.5px; white-space: normal; overflow-wrap: anywhere; }
     .pe-page-acts > .pe-btn.pe-danger { align-self: auto; border-color: color-mix(in srgb, var(--wa-need) 55%, var(--wa-line-strong)); background: transparent; }
@@ -5055,7 +5025,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, itemListStyles, headBarStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

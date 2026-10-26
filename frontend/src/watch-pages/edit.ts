@@ -1609,3 +1609,29 @@ export function deleteWatchTile(
   repairGroups(work, groupKeysOf(removed), options);
   return withPage(document, slot, closeWork(work));
 }
+
+// ── a tile with no id ────────────────────────────────────────────────────
+
+/**
+ * Give a tile stored with no id one of its own (upper case), so an edit can
+ * name it: `tile` is the page's own tile object, as a layout of the page
+ * hands it back. The document comes back as it was, with no id, when the
+ * page is not one whose tiles may be edited, the tile is not on it, or it
+ * has an id already.
+ */
+export function giveWatchTileId(
+  document: WatchPagesDocument,
+  pageId: string,
+  tile: WatchPageTile,
+  options?: WatchEditOptions,
+): { document: WatchPagesDocument; id?: string } {
+  const slot = tileSlot(document, pageId);
+  const items = slot?.page.items;
+  if (slot === undefined || !Array.isArray(items) || idKey(tile.id) !== undefined) return { document };
+  const index = items.indexOf(tile);
+  if (index < 0) return { document };
+  const id = newIdFrom(options);
+  const next = items.slice();
+  next[index] = { ...tile, id };
+  return { document: withPage(document, slot, { ...slot.page, items: next }), id };
+}

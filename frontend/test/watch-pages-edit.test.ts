@@ -20,6 +20,7 @@ import {
   dropWatchTile,
   findWatchPage,
   firstFreeWatchCell,
+  giveWatchTileId,
   listedWatchPages,
   moveWatchPage,
   moveWatchTilesBy,
@@ -759,6 +760,34 @@ describe("delete tile and groups", () => {
     const swapped = dropWatchTile(d, P1, "T1", { row: 0, col: 4 }, "T3");
     expect(layout(swapped, P1)).toEqual(["T1 4,0 2x2", "T2 2,0 2x2", "T3 0,0 2x2"]);
     expect(pageOf(swapped, P1).groups).toBe(pageOf(d, P1).groups);
+  });
+});
+
+// ── a tile with no id ────────────────────────────────────────────────────
+
+describe("a tile with no id", () => {
+  const lost = (): JsonObject => ({ entityId: "light.lost", gridCol: 4, gridRow: 0, colSpan: 4, rowSpan: 2, aLast: "kept" });
+
+  it("gets an id of its own, upper case, and nothing else changes", () => {
+    const d = doc(page(P1, [tile("A", 0, 0, 4, 2), lost()]), page(P2, []));
+    const target = watchPageTiles(pageOf(d, P1))[1]!;
+    const given = giveWatchTileId(d, P1, target, { newId: counter() });
+    expect(given.id).toBe("NEW-0001");
+    const after = given.document;
+    expect(layout(after, P1)).toEqual(["A 0,0 4x2", "NEW-0001 4,0 4x2"]);
+    expect(Object.keys(watchPageTiles(pageOf(after, P1))[1]!)).toEqual([...Object.keys(target), "id"]);
+    // The other tile and the other page are the very objects they were.
+    expect(watchPageTiles(pageOf(after, P1))[0]).toBe(watchPageTiles(pageOf(d, P1))[0]);
+    expect(pageOf(after, P2)).toBe(pageOf(d, P2));
+    expect(target.id).toBeUndefined();
+  });
+
+  it("leaves a tile with an id, a tile not on the page, and a smart page's tile alone", () => {
+    const d = doc(page(P1, [tile("A", 0, 0, 4, 2), lost()]), page(SMART, [lost()], { dynamicConfig: { rules: [] } }));
+    const withId = watchPageTiles(pageOf(d, P1))[0]!;
+    expect(giveWatchTileId(d, P1, withId)).toEqual({ document: d });
+    expect(giveWatchTileId(d, P1, lost() as WatchPageTile)).toEqual({ document: d });
+    expect(giveWatchTileId(d, SMART, watchPageTiles(pageOf(d, SMART))[0]!)).toEqual({ document: d });
   });
 });
 

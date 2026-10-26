@@ -1,21 +1,25 @@
 // The page editor element itself, where it can be read without a page: the
 // keys it leaves to a focused field, and the stage's tiles, which stand on
 // the page's own background rather than on a patch of its color. Then the
-// complication editor's chrome it wears: the Tiles card, the canvas head,
-// the Live strip and the zoom. The editor is stood up in library mode, its
-// only mode, on one library page.
+// page's head with its page picker, the stage that stands in for the old
+// Pages and Tiles lists (hidden tiles, spacers, a tile with no id, Tab, Add
+// tile), the canvas head, the Live strip and the zoom. The editor is stood
+// up in library mode, its only mode, on one library page.
 
 import { html } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
+import type { LibrarySummary } from "../src/library/client.js";
 import { libraryDraftKey } from "../src/library/item-mode.js";
+import { libraryOf } from "../src/library/model.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
+import { giveWatchTileId } from "../src/watch-pages/edit.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
-import type { WatchPagesDocument } from "../src/watch-pages/model.js";
-import { PAGE_LIST_HEIGHT, clampPageListHeight, loadPageListHeight } from "../src/watch-pages/page-editor.js";
+import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { pageDevicesText, stageHiddenReason, stageHiddenText, watchPageCopy } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
   loadStageZoom,
@@ -105,27 +109,29 @@ const WATCHES = [
 
 let editors = 0;
 
-/** The editor with HALL open in the library, previewed on the first watch,
- * an administrator's hass, and a button for the bar's right end handed in.
- * The draft also holds Yard, an empty page, for the tests that need one. */
-function editor(selectedTileId?: string) {
+/** The editor with `document` (HALL unless given) open in the library as
+ * its first page, previewed on the first watch, an administrator's hass,
+ * and a button for the bar's right end handed in. HALL's draft also holds
+ * Yard, an empty page, for the tests that need one. */
+function editor(selectedTileId?: string, document: WatchPagesDocument = HALL, states: Record<string, unknown> = {}) {
   const watchId = `${WATCHES[0]!.owner_watch_id}-${++editors}`;
   const owners = [{ ...WATCHES[0]!, owner_watch_id: watchId }, WATCHES[1]!] as OwnerSummary[];
   const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
   const el = new Ctor();
   el.hass = {
     user: { is_admin: true },
-    states: { "light.right": { entity_id: "light.right", state: "on", attributes: { friendly_name: "Right lamp" } } },
+    states: { "light.right": { entity_id: "light.right", state: "on", attributes: { friendly_name: "Right lamp" } }, ...states },
   } as unknown as HassLike;
   el.owners = owners;
-  const ref = { kind: "pages", id: "P-HALL" };
+  const pageId = ((document.pages as { id: string }[])[0]!).id;
+  const ref = { kind: "pages", id: pageId };
   el.libraryItem = ref;
   // As `followLibraryItem` leaves it once it opened the item.
   el.openedItem = ref;
   el.watchId = watchId;
   el.record = {
     kind: "pages", revision: 4, hash: null, updated_at: new Date(Date.now() - 2 * 60_000).toISOString(), updated_by: "panel",
-    delivered_revision: 4, delivered_at: null, document: HALL,
+    delivered_revision: 4, delivered_at: null, document,
   } as unknown as WatchConfigRecord;
   el.barActions = html`<button class="tb-btn tb-watch">Watch settings</button>`;
   // The inspector's own markup is not what these tests read, and its field
@@ -133,159 +139,487 @@ function editor(selectedTileId?: string) {
   el.renderInspector = () => html`<div class="insp-stub"></div>`;
   const key = libraryDraftKey(ref as { kind: "pages"; id: string });
   forgetWatchPagesDraft(key);
-  takeWatchPagesRecord(key, HALL, 4);
-  el.selectedPageId = "P-HALL";
+  takeWatchPagesRecord(key, document, 4);
+  el.selectedPageId = pageId;
   el.selectedTileId = selectedTileId;
   return {
     el,
     owners,
     whole: () => flat((el.render as () => unknown).call(el)),
     body: () => flat((el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, owners)),
+    draft: () => (el as unknown as { draft: { document: WatchPagesDocument; canUndo: boolean; undo(): boolean } }).draft,
+    call: (name: string, ...args: unknown[]) => (el[name] as (...a: unknown[]) => unknown).call(el, ...args),
   };
 }
 
-/** The markup of the Tiles row for one tile. */
-function tileRow(text: string, id: string): string {
-  const at = text.search(new RegExp(`data-row-tile=${id}\\s`));
+/** Stand-ins for what a key, a press and a selection reach for in a
+ * browser: the window's listeners, the element classes, the focused element
+ * and the render root. Undone after each test that uses them. */
+function stubBrowser(el: Record<string, unknown>): { Element: new () => object } {
+  vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+  const Element = ((globalThis as { HTMLElement?: unknown }).HTMLElement ?? class {}) as new () => object;
+  vi.stubGlobal("HTMLElement", Element);
+  vi.stubGlobal("HTMLInputElement", (globalThis as { HTMLInputElement?: unknown }).HTMLInputElement ?? class extends Element {});
+  vi.stubGlobal("document", { activeElement: null });
+  el.leaveTile = () => undefined;
+  el.renderRoot = { activeElement: null, querySelector: () => null, querySelectorAll: () => [] };
+  // Node has no CSS.escape to look a tile's button up by.
+  el.tileButton = () => null;
+  return { Element };
+}
+
+/** An element of the stub's class that has `classes`. */
+function nodeOf(Element: new () => object, ...classes: string[]): object {
+  return Object.assign(new Element(), { tagName: "DIV", classList: { contains: (c: string) => classes.includes(c) } });
+}
+
+/** A key as the window's listener hears it, its path from `from` up through
+ * the editor. */
+function keyEvent(el: object, key: string, from: object, mods: Record<string, boolean> = {}) {
+  let prevented = false;
+  return {
+    event: { key, defaultPrevented: false, altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, ...mods,
+      composedPath: () => [from, el], preventDefault: () => { prevented = true; }, stopPropagation: () => undefined },
+    prevented: () => prevented,
+  };
+}
+
+/** The stage's button for one tile, up to its face. */
+function stageTile(text: string, id: string): string {
+  const at = text.search(new RegExp(`data-tile=${id}\\s`));
   if (at < 0) return "";
-  const start = text.lastIndexOf(`<div class="layer pe-tile-row`, at);
-  const next = text.indexOf(`<div class="layer pe-tile-row`, at);
-  return text.slice(start, next < 0 ? undefined : next);
+  return text.slice(text.lastIndexOf(`<button type="button" class="pe-tile`, at), text.indexOf("</button>", at));
 }
 
-/** Where each tile's row is in the markup, in the order asked. */
-function rowPlaces(text: string, ids: readonly string[]): number[] {
-  return ids.map((id) => text.search(new RegExp(`data-row-tile=${id}\\s`)));
+/** A library of three pages: Hall on the first watch, Yard on no device,
+ * Porch on both watches. */
+function library(owners: readonly OwnerSummary[]) {
+  const [w1, w2] = owners.map((o) => o.owner_watch_id) as [string, string];
+  const summary = {
+    pages: {
+      "P-HALL": { item: (HALL.pages as WatchPage[])[0], owners: [w1] },
+      "P-YARD": { item: (HALL.pages as WatchPage[])[1], owners: [] },
+      "P-PORCH": { item: { id: "P-PORCH", name: "Porch", items: [] }, owners: [w1, w2] },
+    },
+    status_pages: {}, menus: {}, picks: {},
+  } as unknown as LibrarySummary;
+  return libraryOf(summary);
 }
 
-describe("the Tiles card", () => {
-  it("lists the page's tiles in reading order, row then column, with their badges", () => {
-    const text = editor().body();
-    const card = text.slice(text.indexOf(`class="card lc pe-tiles-card"`));
-    expect(card).toContain(`<span class="lc-title">Tiles</span>`);
-    const places = rowPlaces(card, ["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"]);
-    expect(places.every((p) => p > -1)).toBe(true);
-    expect([...places].sort((a, b) => a - b)).toEqual(places);
-    expect(tileRow(card, "T-LEFT")).toContain(">rules</span>");
-    expect(tileRow(card, "T-LEFT")).toContain(`<span class="kind">Switch</span> · 6×3</small>`);
-    expect(tileRow(card, "T-RIGHT")).toContain(">action</span>");
-    expect(tileRow(card, "T-BOTTOM")).not.toContain("badge states");
-    expect(tileRow(card, "T-BOTTOM")).not.toContain("badge tap");
-    expect(tileRow(card, "T-BOTTOM")).toContain(" · 4×3</small>");
-    // Each row has its face in the thumb, and on hover Duplicate and Delete.
-    expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb pe-tile-thumb"`);
-    expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Duplicate Bottom`);
-    expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Delete Bottom`);
+/** The editor with `library` read, and a store that makes every page it is
+ * asked to (each create kept in `made`) and opens nothing. */
+function withLibrary(made: unknown[] = [], opened: string[] = []) {
+  const e = editor();
+  const lib = library(e.owners);
+  e.el.lib = {
+    library: lib,
+    store: {
+      library: lib, pending: new Map(), noteFor: () => undefined, savedStamp: () => undefined,
+      createItem: async (_kind: string, document: unknown) => {
+        made.push(document);
+        return { ok: true, reply: { id: `MADE-${made.length}`, revision: 1 } };
+      },
+    },
+  };
+  e.el.onOpenItem = (id: string) => { opened.push(id); };
+  return { ...e, made, opened };
+}
+
+describe("the page's head", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("lights the selected tile's row and no other", () => {
-    const text = editor("T-RIGHT").body();
-    expect(tileRow(text, "T-RIGHT")).toMatch(/^<div class="layer pe-tile-row hl /);
-    expect(tileRow(text, "T-LEFT")).toMatch(/^<div class="layer pe-tile-row  /);
-  });
-
-  it("tints the tile on the stage while its row is pointed at, as the complication editor's layers do", () => {
-    const { el, body } = editor();
-    const row = tileRow(body(), "T-RIGHT");
-    expect(row).toContain("@pointerenter=");
-    expect(row).toContain("@pointerleave=");
-    const peek = el.peekTile as (id: string, on: boolean) => void;
-    peek.call(el, "T-RIGHT", true);
-    expect(el.rowHoverTileId).toBe("T-RIGHT");
+  it("puts All pages, the page picker and the devices over the stage and the inspector, with no list beside them", () => {
+    const { body } = editor();
     const text = body();
-    expect(text).toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-RIGHT/);
-    expect(text).not.toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-LEFT/);
-    // Another row's leave does not take the tint away; its own does.
-    peek.call(el, "T-LEFT", false);
-    expect(el.rowHoverTileId).toBe("T-RIGHT");
-    peek.call(el, "T-RIGHT", false);
-    expect(el.rowHoverTileId).toBeUndefined();
-    expect(body()).not.toMatch(/\bhov\b/);
-    // The tint is a solid fill and a thin ring, apart from the selection's ring.
-    const css = rule(sheet(), ".pe-tile.hov::after");
-    expect(css).toContain("inset: 0");
-    expect(css).toContain("22%");
-    expect(css).toContain("inset 0 0 0 1px");
+    const head = text.slice(text.indexOf(`<div class="pe-head"`), text.indexOf(`<div class="layout pe-layout`));
+    expect(head).toContain(`class="pe-btn pe-head-back" title="Back to the Pages board"`);
+    expect(head).toContain("<span>All pages</span>");
+    expect(text.indexOf(`<div class="pe-head"`)).toBeLessThan(text.indexOf(`<div class="column canvas">`));
+    expect(text).toContain(`<div class="layout pe-layout pe-wide">`);
+    for (const gone of ["pe-pages-card", "pe-tiles-card", "pe-list-split", "pe-tile-row", "pe-page-row", `class="gutter`, "column left", "--wa-left"]) {
+      expect(text, gone).not.toContain(gone);
+    }
   });
 
-  it("outlines the row of the tile under the pointer on the stage, and tints that tile", () => {
-    const { el, body } = editor();
-    const stageTile = (text: string, id: string) => {
-      const at = text.search(new RegExp(`data-tile=${id}\\s`));
-      return text.slice(text.lastIndexOf(`<button type="button" class="pe-tile`, at), text.indexOf("</button>", at));
+  it("draws the page picker as one large button: picture, Editing page, name, tiles and devices, Switch page", () => {
+    const { body } = editor();
+    const text = body();
+    const button = text.slice(text.indexOf(`<button type="button" class="pe-pp"`), text.indexOf("</button>", text.indexOf(`class="pe-pp-switch"`)));
+    expect(button).toContain(`aria-haspopup="dialog" aria-expanded=false`);
+    expect(button).toMatch(/<span class="pe-pic" style=width:46px;height:\d+px;/);
+    expect(button).toContain(`<span class="pe-pp-label">Editing page</span>`);
+    expect(button).toContain(`>Hall</span>`);
+    expect(button).toContain(`<span class="pe-pp-sub">4 tiles · On no device yet</span>`);
+    expect(button).toContain(`<span class="pe-pp-switch">Switch page`);
+    expect(text).not.toContain("pe-pp-pop");
+  });
+
+  it("moves the devices to the head's right, and the bar's own way back only while there is no head", () => {
+    const { el, body, owners } = withLibrary();
+    const text = body();
+    const head = text.slice(text.indexOf(`<div class="pe-head"`), text.indexOf(`<div class="layout pe-layout`));
+    expect(head).toContain(`<div class="pe-head-ticks"><div class="lib-on over-stage`);
+    expect(head).toContain(`4 tiles · On ${owners[0]!.device_name}`);
+    // Not between the canvas head and the stage any more.
+    const canvas = text.slice(text.indexOf(`<div class="card canvas-card`));
+    expect(canvas).not.toContain("lib-on");
+    expect(rule(sheet(), ".pe-head-ticks")).toContain("margin-left: auto");
+    const bar = () => flat((el.renderTopBar as (d: unknown) => unknown).call(el, (el as unknown as { draft: unknown }).draft));
+    expect(bar()).not.toContain("tb-back");
+    el.loading = true;
+    expect(bar()).toContain(`class="tb-btn tb-back"`);
+  });
+
+  it("says where a page is in a few words", () => {
+    expect(pageDevicesText([])).toBe("On no device yet");
+    expect(pageDevicesText(["Jesse's Watch"])).toBe("On Jesse's Watch");
+    expect(pageDevicesText(["Jesse's Watch", "Kitchen"])).toBe("On Jesse's Watch and Kitchen");
+    expect(pageDevicesText(["a", "b", "c"])).toBe("On 3 devices");
+  });
+});
+
+describe("the page picker", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const cards = (text: string) => [...text.matchAll(/class="pe-pp-card[^"]*" data-pick-page=([^\s]+)/g)].map((m) => m[1]);
+
+  it("opens a popover of every page in the library as a card with its picture, the open one tagged Editing, then New page", () => {
+    const { el, body, call } = withLibrary();
+    call("togglePicker");
+    expect(el.pickerOpen).toBe(true);
+    // The find field takes focus once drawn.
+    expect(el.focusAfter).toBe(".pe-pp-find");
+    const text = body();
+    const pop = text.slice(text.indexOf(`<div class="pe-pp-pop"`));
+    expect(pop).toContain(`role="dialog" aria-label="Switch page"`);
+    expect(pop).toContain("<strong>Pick a page to edit</strong>");
+    expect(pop).toContain(`<span class="pe-pp-count">3 pages</span>`);
+    expect(pop).toContain(`placeholder="Find a page"`);
+    expect(cards(pop)).toEqual(["P-HALL", "P-YARD", "P-PORCH"]);
+    expect(pop.match(/<span class="pe-pic"/g)).toHaveLength(3);
+    expect(pop).toMatch(/class="pe-pp-card on" data-pick-page=P-HALL[\s\S]*?<span class="pe-pp-tag">Editing<\/span>/);
+    expect(pop.match(/pe-pp-tag/g)).toHaveLength(1);
+    // Porch is on both watches.
+    expect(pop).toContain(`<span class="pe-pp-card-sub">On Jesse's Watch and Chen's Watch</span>`);
+    expect(pop).toMatch(/class="pe-pp-card pe-pp-new" \?disabled=false[\s\S]*New page/);
+    expect(pop).toContain(`class="pe-btn pe-pp-rename"`);
+    expect(pop).toContain(`class="pe-btn pe-pp-dup"`);
+    expect(pop).toContain(">Open the Pages board</button>");
+    // A second press of the button shuts it, focus back on the button.
+    call("togglePicker");
+    expect(el.pickerOpen).toBe(false);
+    expect(el.focusAfter).toBe(".pe-pp");
+    expect(body()).not.toContain("pe-pp-pop");
+  });
+
+  it("filters the cards by name as the find field is typed in", () => {
+    const { el, body, call } = withLibrary();
+    call("togglePicker");
+    el.pickerFind = "YA";
+    expect(cards(body())).toEqual(["P-YARD"]);
+    // New page stays, whatever is typed.
+    expect(body()).toContain("pe-pp-new");
+    el.pickerFind = "o";
+    expect(cards(body())).toEqual(["P-PORCH"]);
+    el.pickerFind = "zzz";
+    expect(cards(body())).toEqual([]);
+    expect(body()).toContain(`No page's name has "zzz" in it.`);
+    // Opening it again starts with every page.
+    call("togglePicker");
+    call("togglePicker");
+    expect(el.pickerFind).toBe("");
+  });
+
+  it("switches page: a card opens that page in this editor and shuts the popover, the open page's card only shuts it", () => {
+    const { el, call, opened, whole } = withLibrary();
+    stubBrowser(el);
+    call("togglePicker");
+    const drawn = (el.render as () => unknown).call(el);
+    const card = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-pp-card`) && t.values.includes("P-YARD"));
+    expect(card).toBeDefined();
+    listener(card!, "click")({} as Event);
+    expect(opened).toEqual(["P-YARD"]);
+    expect(el.pickerOpen).toBe(false);
+    call("togglePicker");
+    call("openPickedPage", "p-hall");
+    expect(opened).toEqual(["P-YARD"]);
+    expect(el.pickerOpen).toBe(false);
+    expect(whole()).not.toContain("pe-pp-pop");
+  });
+
+  it("shuts on Escape, from its find field too, and on a press outside it, not inside", () => {
+    const { el, call } = withLibrary();
+    const { Element } = stubBrowser(el);
+    call("togglePicker");
+    const find = Object.assign(new Element(), { tagName: "INPUT", type: "search", classList: { contains: () => false } });
+    const esc = keyEvent(el, "Escape", find);
+    call("onKeyDown", esc.event);
+    expect(esc.prevented()).toBe(true);
+    expect(el.pickerOpen).toBe(false);
+    expect(el.focusAfter).toBe(".pe-pp");
+    call("togglePicker");
+    call("onWindowPointerDown", { composedPath: () => [nodeOf(Element, "pe-pp-card"), nodeOf(Element, "pe-pp-wrap")] });
+    expect(el.pickerOpen).toBe(true);
+    call("onWindowPointerDown", { composedPath: () => [nodeOf(Element, "pe-screen")] });
+    expect(el.pickerOpen).toBe(false);
+  });
+
+  it("renames the open page in its foot, Enter keeping the name and Escape dropping it", () => {
+    const { el, body, call, draft } = withLibrary();
+    stubBrowser(el);
+    call("togglePicker");
+    call("startRename", "P-HALL");
+    expect(body()).toMatch(/<div class="pe-pp-foot">\s*<input class="pe-rename" aria-label="Page name" \.value=Hall/);
+    (el.renaming as { value: string }).value = "Hallway";
+    call("commitRename");
+    expect(((draft().document.pages as WatchPage[])[0]!).name).toBe("Hallway");
+    expect(draft().canUndo).toBe(true);
+    call("startRename", "P-HALL");
+    (el.renaming as { value: string }).value = "Nope";
+    call("cancelRename");
+    expect(((draft().document.pages as WatchPage[])[0]!).name).toBe("Hallway");
+    expect(el.focusAfter).toBe(".pe-pp-rename");
+  });
+
+  it("makes a New page and a Duplicate in the library and opens them; only for an administrator", async () => {
+    const { el, call, made, opened } = withLibrary();
+    stubBrowser(el);
+    call("togglePicker");
+    await call("newPickedPage");
+    const fresh = ((made[0] as WatchPagesDocument).pages as WatchPage[])[0]!;
+    expect(fresh.name).toBe("New Page 1");
+    expect(fresh.items).toEqual([]);
+    expect(opened).toEqual(["MADE-1"]);
+    expect(el.pickerOpen).toBe(false);
+    await call("duplicatePage");
+    const copy = ((made[1] as WatchPagesDocument).pages as WatchPage[])[0]!;
+    expect(copy.name).toBe("Hall copy");
+    expect(copy.id).not.toBe("P-HALL");
+    expect(opened).toEqual(["MADE-1", "MADE-2"]);
+    // Not an administrator: neither makes a page, and both say why.
+    el.hass = { ...(el.hass as object), user: { is_admin: false } };
+    expect(call("pickerMakeRefusal")).toBe("Only an administrator can make a page.");
+    call("togglePicker");
+    expect(flat((el.renderBody as (w: unknown) => unknown).call(el, el.owners))).toMatch(/class="pe-pp-card pe-pp-new" \?disabled=true\s+title=Only an administrator can make a page\./);
+    await call("duplicatePage");
+    expect(made).toHaveLength(2);
+  });
+
+  it("copies a page with new ids for every tile and a spacer's own id, keeping its groups", () => {
+    const hall = { ...(HALL.pages as WatchPage[])[0]!, groups: [{ id: "G1" }] } as WatchPage;
+    (hall.items as WatchPageTile[])[1] = { ...(hall.items as WatchPageTile[])[1]!, groupId: "G1" };
+    const copy = watchPageCopy(hall, "p-new", "Hall copy");
+    expect(copy.id).toBe("P-NEW");
+    expect(copy.name).toBe("Hall copy");
+    const before = hall.items as WatchPageTile[];
+    const after = copy.items as WatchPageTile[];
+    expect(after).toHaveLength(before.length);
+    for (let i = 0; i < after.length; i++) expect(after[i]!.id).not.toBe(before[i]!.id);
+    expect(after[0]!.entityId).toMatch(/^spacer\./);
+    expect(after[0]!.entityId).not.toBe(before[0]!.entityId);
+    expect(after[1]!.entityId).toBe("light.bottom");
+    expect(after[1]!.groupId).toBe("G1");
+    expect(copy.groups).toEqual([{ id: "G1" }]);
+    // The page it was made from is untouched.
+    expect(before[0]!.id).toBe("T-GAP");
+  });
+
+  it("reads clearly at 4K and 100%: a big name, the popover on the editor's tokens", () => {
+    const css = sheet();
+    expect(rule(css, ".pe-pp-name")).toContain("font-size: 18px");
+    expect(rule(css, ".pe-pp-switch")).toContain("var(--wa-primary-bg)");
+    expect(rule(css, ".pe-pp-pop")).toContain("var(--wa-shadow-pop)");
+    expect(rule(css, ".pe-pp-card.on")).toContain("var(--wa-sel-ring)");
+  });
+});
+
+// ── the stage, where the lists were ─────────────────────────────────────
+
+describe("the stage's quiet tiles", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** HALL with Left hidden while its switch is off, and Right shown only
+   * while the sun is up. */
+  const RULED = {
+    ...HALL,
+    pages: [{
+      ...(HALL.pages as WatchPage[])[0]!,
+      items: (HALL.pages as { items: WatchPageTile[] }[])[0]!.items.map((t) =>
+        t.id === "T-LEFT" ? { ...t, hideWhenInactive: true }
+        : t.id === "T-RIGHT" ? { ...t, showWhen: { entityId: "sun.sun", comparisonOperator: "eq", state: "above_horizon" } }
+        : t),
+    }],
+  } as unknown as WatchPagesDocument;
+  const STATES = {
+    "switch.left": { entity_id: "switch.left", state: "off", attributes: {} },
+    "sun.sun": { entity_id: "sun.sun", state: "below_horizon", attributes: {} },
+  };
+
+  it("fades a tile its Show tile rule hides, with a dashed edge and a tag saying why, and keeps it a button to pick", () => {
+    const { el, body } = editor(undefined, RULED, STATES);
+    el.liveStates = true;
+    const text = body();
+    const left = stageTile(text, "T-LEFT");
+    expect(left).toMatch(/^<button type="button" class="pe-tile  faded /);
+    expect(left).toContain(`<span class="pe-hid-tag">Hidden while off</span>`);
+    expect(left).toContain("@click=");
+    const right = stageTile(text, "T-RIGHT");
+    expect(right).toMatch(/class="pe-tile  faded /);
+    expect(right).toContain(`<span class="pe-hid-tag">Hidden by a rule</span>`);
+    expect(right).toContain("Hidden by a rule");
+    expect(stageTile(text, "T-BOTTOM")).not.toContain("faded");
+    // Off Live preview every tile is drawn on: none is hidden.
+    el.liveStates = false;
+    expect(body()).not.toContain("pe-hid-tag");
+    // Faded with a dashed edge, the tag at full strength.
+    const css = sheet();
+    expect(rule(css, ".pe-tile.spacer::before, .pe-tile.faded::before")).toContain("dashed");
+    expect(rule(css, ".pe-tile.faded > :not(.pe-hid-tag):not(.pe-spacer-word)")).toContain("opacity: .38");
+  });
+
+  it("says why a tile is hidden: its own state off, or a rule", () => {
+    const tile = (t: Record<string, unknown>) => ({ id: "T", entityId: "light.a", ...t }) as WatchPageTile;
+    const states = { "light.a": { state: "off" }, "sun.sun": { state: "below_horizon" } } as never;
+    expect(stageHiddenReason(tile({}), states)).toBeUndefined();
+    expect(stageHiddenReason(tile({ hideWhenInactive: true }), states)).toBe("off");
+    expect(stageHiddenReason(tile({ hideWhenInactive: true }), { "light.a": { state: "on" } } as never)).toBeUndefined();
+    expect(stageHiddenReason(tile({ showWhen: { entityId: "sun.sun", comparisonOperator: "eq", state: "above_horizon" } }), states)).toBe("rule");
+    // On again, but its condition still hides it.
+    expect(stageHiddenReason(tile({ hideWhenInactive: true, showWhen: { entityId: "sun.sun", comparisonOperator: "eq", state: "above_horizon" } }),
+      { "light.a": { state: "on" }, "sun.sun": { state: "below_horizon" } } as never)).toBe("rule");
+    expect(stageHiddenText("off")).toBe("Hidden while off");
+    expect(stageHiddenText("rule")).toBe("Hidden by a rule");
+  });
+
+  it("outlines a spacer with a dashed edge and its word, so it can be picked", () => {
+    const text = editor().body();
+    const gap = stageTile(text, "T-GAP");
+    expect(gap).toMatch(/^<button type="button" class="pe-tile spacer /);
+    expect(gap).toContain(`<span class="pe-spacer-word" aria-hidden="true">Spacer</span>`);
+    expect(stageTile(text, "T-LEFT")).not.toContain("pe-spacer-word");
+  });
+
+  it("picks a tile stored with no id with a click, which gives it an id in one undo step", () => {
+    const NOID = {
+      schemaVersion: 1,
+      pages: [{ id: "P-OLD", name: "Old", items: [
+        { id: "T-ONE", entityId: "light.right", gridRow: 0, gridCol: 0, colSpan: 6, rowSpan: 3 },
+        { entityId: "switch.lost", customLabel: "Lost", gridRow: 0, gridCol: 6, colSpan: 6, rowSpan: 3 },
+      ] }],
+    } as unknown as WatchPagesDocument;
+    const { el, body, draft } = editor(undefined, NOID);
+    stubBrowser(el);
+    const text = body();
+    expect(text).toMatch(/<button type="button" class="pe-tile noid [^"]*"[^>]*aria-label=Lost, Switch, with no id/);
+    const drawn = (el.renderBody as (w: unknown) => unknown).call(el, el.owners);
+    const lost = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-tile noid`));
+    expect(lost).toBeDefined();
+    listener(lost!, "click")({ stopPropagation: () => undefined } as unknown as Event);
+    const items = (draft().document.pages as { items: WatchPageTile[] }[])[0]!.items;
+    const id = items[1]!.id as string;
+    expect(id).toMatch(/^[0-9A-F-]{36}$/);
+    expect(el.selectedTileId).toBe(id);
+    expect(draft().canUndo).toBe(true);
+    expect(body()).toMatch(new RegExp(`class="pe-tile [^"]*\\bsel\\b[^"]*"\\s+data-tile=${id}`));
+    draft().undo();
+    expect((draft().document.pages as { items: WatchPageTile[] }[])[0]!.items[1]!.id).toBeUndefined();
+    // A tile with an id, or one not on the page, is left as it is.
+    const doc = draft().document;
+    expect(giveWatchTileId(doc, "P-OLD", items[0]!).document).toBe(doc);
+    expect(giveWatchTileId(doc, "P-OLD", { entityId: "x.y" } as WatchPageTile).id).toBeUndefined();
+  });
+
+  it("puts + Add tile under the watch, opening the Add tile dialog; under the edited one side by side; none on a smart page", () => {
+    const { el, body, owners } = editor();
+    stubBrowser(el);
+    const text = body();
+    const side = text.slice(text.indexOf(`<div class="lib-duo-side`));
+    expect(side.indexOf(`class="pe-stage-add"`)).toBeGreaterThan(side.indexOf("</div>", side.indexOf(`class="wp-screen pe-screen`)));
+    expect(text.match(/class="pe-stage-add"/g)).toHaveLength(1);
+    const drawn = (el.renderBody as (w: unknown) => unknown).call(el, owners);
+    const add = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-stage-add"`));
+    listener(add!, "click")({} as Event);
+    expect(el.addTileOpen).toBe(true);
+    el.addTileOpen = false;
+    // Side by side: under the edited preview, not the other.
+    el.phones = true;
+    el.sideBySide = true;
+    const both = body();
+    expect(both.match(/class="pe-stage-add"/g)).toHaveLength(1);
+    expect(both.indexOf(`class="pe-stage-add"`)).toBeLessThan(both.indexOf(`class="lib-duo-other"`));
+    // A smart page fills itself.
+    const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
+    expect(smart.body()).not.toContain("pe-stage-add");
+  });
+
+  it("picks the next tile in reading order with Tab and the one before with Shift-Tab, letting go past either end", () => {
+    const { el, call, draft } = editor("T-LEFT");
+    const { Element } = stubBrowser(el);
+    const screen = nodeOf(Element, "pe-screen");
+    const tab = (shiftKey = false) => {
+      const k = keyEvent(el, "Tab", screen, { shiftKey });
+      call("onKeyDown", k.event);
+      return k.prevented();
     };
+    expect(tab()).toBe(true);
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    expect(tab()).toBe(true);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    expect(tab(true)).toBe(true);
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    el.selectedTileId = "T-GAP";
+    expect(tab()).toBe(false);
+    expect(el.selectedTileId).toBe("T-GAP");
+    el.selectedTileId = "T-LEFT";
+    expect(tab(true)).toBe(false);
+    // From nothing picked on the stage, the first tile; with nothing picked
+    // and nothing focused, Tab stays the browser's.
+    el.selectedTileId = undefined;
+    expect(tab()).toBe(true);
+    expect(el.selectedTileId).toBe("T-LEFT");
+    el.selectedTileId = undefined;
+    const loose = keyEvent(el, "Tab", el);
+    call("onKeyDown", loose.event);
+    expect(loose.prevented()).toBe(false);
+    expect(el.selectedTileId).toBeUndefined();
+    // The arrow keys still move the picked tile (down past the spacer under
+    // it, which swaps up), not the pick.
+    el.selectedTileId = "T-BOTTOM";
+    const arrow = keyEvent(el, "ArrowDown", screen);
+    call("onKeyDown", arrow.event);
+    expect(arrow.prevented()).toBe(true);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    const rows = (draft().document.pages as { items: { id: string; gridRow: number }[] }[])[0]!.items;
+    expect(rows.find((t) => t.id === "T-BOTTOM")!.gridRow).toBeGreaterThan(3);
+  });
+
+  it("tints the tile under the pointer, and lets the tint go with its own leave", () => {
+    const { el, body } = editor();
     expect(stageTile(body(), "T-RIGHT")).toContain("@pointerenter=");
     expect(stageTile(body(), "T-RIGHT")).toContain("@pointerleave=");
     const peek = el.peekStageTile as (id: string, on: boolean) => void;
     peek.call(el, "T-RIGHT", true);
     const text = body();
-    expect(tileRow(text, "T-RIGHT")).toMatch(/^<div class="layer pe-tile-row  peek /);
-    expect(tileRow(text, "T-LEFT")).not.toContain("peek");
     expect(text).toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-RIGHT/);
+    expect(text).not.toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-LEFT/);
     peek.call(el, "T-LEFT", false);
     expect(el.stageHoverTileId).toBe("T-RIGHT");
     peek.call(el, "T-RIGHT", false);
     expect(el.stageHoverTileId).toBeUndefined();
-    expect(body()).not.toContain("peek");
-  });
-
-  it("says a smart page fills itself instead of listing tiles", () => {
-    const { el, body } = editor();
-    const smart = { ...HALL, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument;
-    const ref = { kind: "pages" as const, id: "P-SMART" };
-    forgetWatchPagesDraft(libraryDraftKey(ref));
-    takeWatchPagesRecord(libraryDraftKey(ref), smart, 1);
-    el.libraryItem = ref;
-    el.selectedPageId = "P-SMART";
-    const text = body();
-    const card = text.slice(text.indexOf(`class="card lc pe-tiles-card"`));
-    expect(card).toContain("A smart page fills itself.");
-    expect(card).not.toContain("pe-tile-row");
-  });
-
-  it("lists the open page in the Pages card, lit", () => {
-    const text = editor().body();
-    const card = text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
-    expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
-  });
-
-  it("puts a drag bar between the Pages and Tiles cards that sets the Pages card's height", () => {
-    const e = editor();
-    const text = e.body();
-    const pagesAt = text.indexOf(`class="card lc pe-pages-card`);
-    const barAt = text.indexOf(`class="pe-list-split"`);
-    const tilesAt = text.indexOf(`class="card lc pe-tiles-card"`);
-    expect(pagesAt).toBeLessThan(barAt);
-    expect(barAt).toBeLessThan(tilesAt);
-    expect(text).toMatch(/class="pe-list-split" role="separator" aria-orientation="horizontal"/);
-    // No height of its own until dragged: the CSS default.
-    expect(text).not.toContain("--pe-list-h");
-    expect(text).not.toContain("list-set");
-    e.el.pageListHeight = 500;
-    expect(e.body()).toContain("--pe-list-h:500px;");
-    expect(e.body()).toMatch(/class="layout pe-layout cols-3 list-set"/);
-    // Half the column by default; the dragged height once there is one,
-    // always leaving the Tiles card room.
-    expect(rule(sheet(), ".layout.pe-layout.cols-3 .pe-pages-card")).toContain("max-height: 50%");
-    expect(rule(sheet(), ".layout.pe-layout.cols-3.list-set .pe-pages-card")).toMatch(/height:\s*var\(--pe-list-h\)/);
-    // The list scrolls inside its card, the Tiles list inside its own.
-    expect(rule(sheet(), ".pe-layout.cols-3 > .column.left > .card > .layers")).toMatch(/overflow-y:\s*auto/);
-    expect(rule(sheet(), ".layout.pe-layout.cols-1 .pe-list-split")).toContain("display: none");
-  });
-
-  it("keeps the page list height within its limits and reads back only a saved number", () => {
-    expect(clampPageListHeight(10)).toBe(PAGE_LIST_HEIGHT.min);
-    expect(clampPageListHeight(99_999)).toBe(PAGE_LIST_HEIGHT.max);
-    expect(clampPageListHeight(300.6)).toBe(301);
-    const stored = (value: string | null) => ({ getItem: () => value, setItem: () => {} });
-    expect(loadPageListHeight(stored("420"))).toBe(420);
-    expect(loadPageListHeight(stored("5"))).toBe(PAGE_LIST_HEIGHT.min);
-    for (const value of [null, "", "0", "-3", "junk"]) expect(loadPageListHeight(stored(value))).toBeUndefined();
-    expect(loadPageListHeight(undefined)).toBeUndefined();
+    expect(body()).not.toMatch(/\bhov\b/);
+    const css = rule(sheet(), ".pe-tile.hov::after");
+    expect(css).toContain("inset: 0");
+    expect(css).toContain("22%");
   });
 });
 
-// ── clicks on the rows ──────────────────────────────────────────────────
+// ── templates and their listeners ───────────────────────────────────────
 
 interface Tpl { strings: readonly string[]; values: unknown[] }
 
@@ -320,74 +654,6 @@ function listener(t: Tpl, event: string): (e: Event) => void {
   return t.values[at] as (e: Event) => void;
 }
 
-/** A node of the composed path, as the row's listener reads it. */
-const node = (tagName: string, ...classes: string[]) => ({ tagName, classList: { contains: (c: string) => classes.includes(c) } });
-
-/** A click as the browser hands it to the row: its path runs from what was
- * pressed up through the row to the list. */
-function clickOn(row: object, inside: object[]): Event {
-  const path = [...inside, row, node("DIV", "layers"), node("SECTION", "card")];
-  return { type: "click", target: path[0], currentTarget: row, composedPath: () => path } as unknown as Event;
-}
-
-describe("a click on a row", () => {
-  /** The drawn row for one tile, or one page, and its click listener. */
-  function rowOf(el: Record<string, unknown>, owners: readonly OwnerSummary[], kind: "tile" | "page", id: string) {
-    const drawn = (el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, owners);
-    const lead = kind === "tile" ? `<div class="layer pe-tile-row` : `<div class="layer pe-page-row`;
-    const attr = kind === "tile" ? "data-row-tile=" : "data-page=";
-    const t = findTemplate(drawn, (c) => c.strings[0]!.includes(lead) && c.values[c.strings.findIndex((s) => s.trimEnd().endsWith(attr))] === id);
-    expect(t, `${kind} row ${id}`).toBeDefined();
-    return listener(t!, "click");
-  }
-
-  it("on a Tiles row's name selects that tile", () => {
-    const { el, owners } = editor();
-    // Not in a document: there is no focused field to let go of.
-    el.leaveTile = () => undefined;
-    expect(el.selectedTileId).toBeUndefined();
-    const row = node("DIV", "layer", "pe-tile-row");
-    rowOf(el, owners, "tile", "T-RIGHT")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
-    expect(el.selectedTileId).toBe("T-RIGHT");
-    // The thumb and the kind line select too.
-    rowOf(el, owners, "tile", "T-LEFT")(clickOn(row, [node("SPAN", "thumb", "pe-thumb")]));
-    expect(el.selectedTileId).toBe("T-LEFT");
-    rowOf(el, owners, "tile", "T-BOTTOM")(clickOn(row, [node("SPAN", "kind"), node("SMALL"), node("SPAN", "name")]));
-    expect(el.selectedTileId).toBe("T-BOTTOM");
-  });
-
-  it("on a Tiles row's own Duplicate or Delete does not select it", () => {
-    const { el, owners } = editor("T-LEFT");
-    el.leaveTile = () => undefined;
-    const row = node("DIV", "layer", "pe-tile-row");
-    rowOf(el, owners, "tile", "T-RIGHT")(clickOn(row, [node("svg", "ui-icon"), node("BUTTON", "icon"), node("SPAN", "acts"), node("SPAN", "right")]));
-    expect(el.selectedTileId).toBe("T-LEFT");
-  });
-
-  it("is the row's even inside a button around the list", () => {
-    // Only what lies between the press and the row counts: a button outside
-    // the row never swallows its click.
-    const { el, owners } = editor();
-    el.leaveTile = () => undefined;
-    const row = node("DIV", "layer", "pe-tile-row");
-    const e = clickOn(row, [node("B"), node("SPAN", "name")]);
-    const path = [...e.composedPath(), node("BUTTON", "outer")];
-    rowOf(el, owners, "tile", "T-GAP")({ ...e, composedPath: () => path } as unknown as Event);
-    expect(el.selectedTileId).toBe("T-GAP");
-  });
-
-  it("on the open page's own row lets the tile go, so the page's cards show, and not from its buttons", () => {
-    const { el, owners } = editor("T-LEFT");
-    el.leaveTile = () => undefined;
-    const row = node("DIV", "layer", "pe-page-row", "hl");
-    rowOf(el, owners, "page", "P-HALL")(clickOn(row, [node("BUTTON", "icon", "pe-more"), node("SPAN", "acts")]));
-    expect(el.selectedTileId).toBe("T-LEFT");
-    rowOf(el, owners, "page", "P-HALL")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
-    expect(el.selectedPageId).toBe("P-HALL");
-    expect(el.selectedTileId).toBeUndefined();
-  });
-});
-
 // ── picking several tiles ───────────────────────────────────────────────
 
 describe("picking several tiles", () => {
@@ -402,17 +668,9 @@ describe("picking several tiles", () => {
    * root, and its clicks and keys. A selection that goes ends a drag on a
    * number at the window, and a key asks whether it was typed in a field. */
   function picker(selectedTileId?: string) {
-    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
-    const Element = ((globalThis as { HTMLElement?: unknown }).HTMLElement ?? class {}) as new () => object;
-    vi.stubGlobal("HTMLElement", Element);
-    vi.stubGlobal("HTMLInputElement", (globalThis as { HTMLInputElement?: unknown }).HTMLInputElement ?? class extends Element {});
-    vi.stubGlobal("document", { activeElement: null });
     const made = editor(selectedTileId);
     const { el } = made;
-    el.leaveTile = () => undefined;
-    el.renderRoot = { activeElement: null, querySelector: () => null };
-    // Node has no CSS.escape to look a tile's button up by.
-    el.tileButton = () => null;
+    stubBrowser(el);
     return {
       ...made,
       click: (id: string, mods: Mods = {}) =>
@@ -423,12 +681,6 @@ describe("picking several tiles", () => {
       call: (name: string, ...args: unknown[]) => (el[name] as (...a: unknown[]) => unknown).call(el, ...args),
     };
   }
-
-  /** The stage's button for one tile, up to its face. */
-  const stageTile = (text: string, id: string) => {
-    const at = text.search(new RegExp(`data-tile=${id}\\s`));
-    return text.slice(text.lastIndexOf(`<button type="button" class="pe-tile`, at), text.indexOf("</button>", at));
-  };
 
   it("adds a tile with Cmd or Ctrl-click, takes it out again, and collapses to one", () => {
     const { el, click, picked } = picker("T-LEFT");
@@ -506,24 +758,19 @@ describe("picking several tiles", () => {
     expect(el.selectedTileId).toBeUndefined();
   });
 
-  it("lights every picked row and rings every picked tile, with no resize handles", () => {
+  it("rings every picked tile on the stage, with no resize handles", () => {
     const { el, body, click } = picker("T-RIGHT");
     expect(body()).toContain(`<div class="pe-sel `);
     click("T-BOTTOM", { metaKey: true });
     const text = body();
     for (const id of ["T-RIGHT", "T-BOTTOM"]) {
-      expect(tileRow(text, id), id).toMatch(/^<div class="layer pe-tile-row hl [^"]*\bmulti"/);
       expect(stageTile(text, id), id).toMatch(/class="pe-tile [^"]*\bsel\b[^"]*\bmulti"/);
       expect(stageTile(text, id), id).toContain("aria-pressed=true");
     }
     for (const id of ["T-LEFT", "T-GAP"]) {
-      expect(tileRow(text, id), id).toMatch(/^<div class="layer pe-tile-row  /);
-      expect(tileRow(text, id), id).not.toMatch(/^<div class="[^"]*\bmulti\b/);
       expect(stageTile(text, id), id).not.toMatch(/\bsel\b/);
+      expect(stageTile(text, id), id).toContain("aria-pressed=false");
     }
-    // Only the primary is the current row.
-    expect(tileRow(text, "T-BOTTOM")).toContain("aria-current=true");
-    expect(tileRow(text, "T-RIGHT")).toContain("aria-current=false");
     expect(text).not.toContain(`<div class="pe-sel `);
     // The canvas head's buttons and the Live strip speak of both.
     expect(text).toContain("aria-label=Duplicate 2 tiles");
@@ -533,9 +780,6 @@ describe("picking several tiles", () => {
     el.selectedTileId = "T-BOTTOM";
     (el.selectTile as (id: string | undefined) => void).call(el, undefined);
     expect((el.multi as ReadonlySet<string>).size).toBe(0);
-    // The picked row's lit look is the complication editor's.
-    const css = rule(sheet(), ".pe-tile-row.multi");
-    expect(css).toContain("box-shadow: inset 0 0 0 2px var(--wa-accent)");
   });
 
   it("deletes every picked tile in one undo step", () => {
@@ -717,7 +961,7 @@ describe("picking several tiles", () => {
     expect(whole()).toMatch(/<button class="row pe-select-all" role="menuitem" \?disabled=true/);
   });
 
-  it("drops a picked tile that went away, and lets the pick go with another page", () => {
+  it("drops a picked tile that went away", () => {
     const { el, click, call, picked } = picker("T-LEFT");
     click("T-BOTTOM", { metaKey: true });
     click("T-GAP", { metaKey: true });
@@ -725,27 +969,26 @@ describe("picking several tiles", () => {
     call("reconcileSelection");
     expect(picked()).toEqual(["T-LEFT", "T-BOTTOM"]);
     expect(el.selectedTileId).toBe("T-BOTTOM");
-    call("selectPage", "P-YARD");
-    expect(picked()).toEqual([]);
-    expect(el.selectedTileId).toBeUndefined();
   });
 });
 
 describe("the stacked layout", () => {
-  it("sticks no column, so the inspector never slides over the Tiles card", () => {
+  it("sticks no column, so the inspector never slides over the stage", () => {
     const css = sheet();
-    const stacked = rule(css, ".layout.pe-layout.cols-1 > .column.left, .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector");
+    const stacked = rule(css, ".layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector");
     expect(stacked).toMatch(/position:\s*static/);
     expect(stacked).toMatch(/max-height:\s*none/);
     // Beside the watch nothing sticks either: each part scrolls in its own box.
     // (Its edge fades, ::before and ::after, still stick inside its box.)
-    expect(css).not.toMatch(/\.column\.(left|inspector)\s*\{[^}]*position:\s*sticky/);
-    expect(editor().body()).toContain(`<div class="layout pe-layout cols-3"`);
+    expect(css).not.toMatch(/\.column\.inspector\s*\{[^}]*position:\s*sticky/);
+    expect(editor().body()).toContain(`<div class="layout pe-layout pe-wide"`);
+    // Wide, two columns with no gutter to drag.
+    expect(rule(css, ".layout.pe-layout.pe-wide")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) clamp\(/);
   });
 });
 
 describe("the canvas head", () => {
-  it("reads page / watch / facts: the page's name to type over, the open watch's name as words, no watch chips", () => {
+  it("reads watch / facts: the open watch's name as words, no watch chips, the page's name in the picker over it", () => {
     const { body } = editor();
     const text = body();
     // The head ends where the stage starts: no page strip between them.
@@ -753,13 +996,12 @@ describe("the canvas head", () => {
     expect(stage).toBeGreaterThan(text.indexOf(`<div class="cv-head">`));
     expect(text).not.toContain("pe-pstrip");
     const head = text.slice(text.indexOf(`<div class="cv-head">`), stage);
-    expect(head).toContain(`class="tb-name-input"`);
-    expect(head).toContain(`.value=Hall`);
+    expect(head).not.toContain("tb-name-input");
     expect(head).not.toContain("doc-chip");
     expect(head).toContain(`<span class="cv-shape pe-watch-crumb">Jesse's Watch</span>`);
     expect(head).not.toContain("Chen's Watch");
     expect(head).toContain(`4 tiles · 8 rows · ${REFERENCE_CASE.label}`);
-    const parts = [".value=Hall", "pe-watch-crumb", "4 tiles · 8 rows"].map((p) => head.indexOf(p));
+    const parts = ["pe-watch-crumb", "4 tiles · 8 rows"].map((p) => head.indexOf(p));
     expect([...parts].sort((a, b) => a - b)).toEqual(parts);
     expect(head).toContain(`aria-label="Undo"`);
     expect(head).toContain(`aria-label="Redo"`);
