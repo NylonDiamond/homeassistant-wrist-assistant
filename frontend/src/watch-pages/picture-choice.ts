@@ -60,9 +60,9 @@ export interface PictureOption<T extends string> {
 }
 
 /** How big each option is drawn: a tile picture, two of them side by side,
- * a neutral sample (`valueSample`, `barSample`, `borderSample`), a small
+ * one large tile picture, a neutral sample (`valueSample`, `barSample`, `borderSample`), a small
  * chip (a sample line, "Aa"), a pattern swatch, or a page strip. */
-export type PictureChoiceSize = "tile" | "pair" | "mini" | "small" | "swatch" | "strip";
+export type PictureChoiceSize = "tile" | "pair" | "large" | "mini" | "small" | "swatch" | "strip";
 
 /** Trying a choice before it is picked (`tryTileEdit`): what pointing at a
  * choice or focusing it does, and what leaving the row does. */
@@ -500,6 +500,7 @@ export const pictureChoiceStyles = css`
   /* A real tile, smaller, on the watch's black: only Glow and When it is off. */
   .pc-size-tile .pc-pic, .pc-size-pair .pc-pic { width: 58px; height: 40px; background: #000; }
   .pc-size-pair .pc-pic { width: 92px; gap: 4px; }
+  .pc-size-large .pc-pic { width: 136px; height: 90px; background: #000; }
   .pc-label { font-size: 11px; font-weight: 500; line-height: 1.2; text-align: center; }
   /* A neutral sample: a plain dark tile with only what the choice changes. */
   .pc-size-mini .pc-pic { width: 46px; height: 32px; }

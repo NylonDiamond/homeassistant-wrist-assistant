@@ -239,7 +239,7 @@ describe("the breadcrumb", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     // No breadcrumb head over a tile: the strip holds the path.
     expect(text).not.toContain(`<div class="insp-head">`);
-    const strip = text.slice(text.indexOf(`<div class="pe-strip">`), text.indexOf(`<div class="insp-body`));
+    const strip = text.slice(text.indexOf(`<div class="pe-strip">`), text.indexOf(`<section class="ts-grp"`));
     expect(strip).toMatch(/<nav class="pe-path" aria-label="Where you are">\s*<button type="button" class="pe-path-back" title="Back to the page's settings"[^>]*>Page<\/button>/);
     expect(strip).toContain(`<span class="pe-path-nm" title=Smart Plug Dimmer (Light)>Smart Plug Dimmer</span>`);
     expect(strip).not.toContain("Show the page");
@@ -321,13 +321,15 @@ describe("Collapse all", () => {
 // ── the cards ────────────────────────────────────────────────────────────
 
 describe("the tile's cards", () => {
-  it("start with the head strip, then four groups: Look, Text, Tap and Layout, each with its sections", () => {
+  it("start with the head over Look in the first column, then four groups: Look, Text, Tap and Layout, each with its sections", () => {
     const el = editor(hallPage(), DIMMER);
     const text = flat(inspector(el));
-    // The head strip over the groups: the path and the live tile, Name and
-    // Shows, then the actions.
-    expect(text.indexOf(`<div class="pe-strip">`)).toBeLessThan(text.indexOf(`<div class="insp-body`));
-    const head = text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<div class="insp-body`));
+    // The head at the top of the first column, over Look: the path and the
+    // live tile, Name and Shows, then the actions. Text, Tap and Layout
+    // start at the top beside it.
+    expect(text).toContain(`<div class="ts-root ts-groups">\n    <div class="ts-g1"><div class="pe-strip">`);
+    expect(text.indexOf(`<div class="pe-strip">`)).toBeLessThan(text.indexOf(`data-group=look`));
+    const head = text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<section class="ts-grp"`));
     expect(head).not.toContain("<h4>");
     const lead = head.slice(head.indexOf(`<div class="ts-head-lead">`), head.indexOf(`<div class="ts-head-mid">`));
     expect(lead.indexOf("pe-path")).toBeLessThan(lead.indexOf("pe-head-pic"));
@@ -345,7 +347,7 @@ describe("the tile's cards", () => {
     expect(text).not.toContain("Find a setting");
     expect(text).not.toContain("Preview as");
     expect(text).not.toContain("Delete tile");
-    const body = text.slice(text.indexOf(`<div class="insp-body`));
+    const body = text.slice(text.indexOf(`<section class="ts-grp"`));
     // No Name card any more, and the name's box is the head's alone.
     expect(body).not.toContain("name-sec");
     expect(body).not.toContain(`aria-label="Name"`);
@@ -375,6 +377,7 @@ describe("the tile's cards", () => {
     // Text and the third wrapper nest so that one markup makes every count.
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const groups = text.slice(text.indexOf(`<div class="ts-root ts-groups">`));
+    expect(groups.indexOf(`data-group=look`)).toBeGreaterThan(groups.indexOf(`<div class="ts-g1">`));
     expect(groups.indexOf(`<div class="ts-g2">`)).toBeGreaterThan(groups.indexOf(`data-group=look`));
     expect(groups.indexOf(`data-group=text`)).toBeGreaterThan(groups.indexOf(`<div class="ts-g2">`));
     expect(groups.indexOf(`<div class="ts-g3">`)).toBeGreaterThan(groups.indexOf(`data-group=text`));
@@ -386,9 +389,10 @@ describe("the tile's cards", () => {
     expect(css).toContain("@container insp (min-width: 1080px) { .ts-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ts-g2 { display: contents; } .ts-g3 { display: flex; } }");
     expect(css).toContain("@container insp (min-width: 1560px) { .ts-groups { grid-template-columns: repeat(4, minmax(0, 1fr)); } .ts-g3 { display: contents; } }");
     expect(css).not.toContain("pe-tile-on");
-    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 2200px\);/);
-    // The head strip stays at the top only where it is one row tall enough.
-    expect(css).toContain("@container insp (min-width: 1080px) { .pe-strip { position: sticky; top: 0; outline: 8px solid var(--wa-bg); } }");
+    // Until the gutter is dragged (--pe-insp-col), one width with or without a tile.
+    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) 8px var\(--pe-insp-col, clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 2200px\)\);/);
+    // The head is the first column's, and scrolls with the groups.
+    expect(css).not.toMatch(/\.pe-strip \{[^}]*sticky/);
   });
 
   it("draw the tile once in the head, large and on, never pinning a state", () => {

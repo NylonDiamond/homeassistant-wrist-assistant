@@ -673,6 +673,9 @@ export interface TileSettingsExtras {
   sections?: readonly WatchTileSettingsSection[];
   size?: { summary: () => string; body: () => TemplateResult; changed?: () => boolean };
   arrangePicture?: () => TemplateResult | typeof nothing;
+  /** The tile's head (`renderTileHead`), at the top of the first column,
+   * over Look, so Text, Tap and Layout start at the top beside it. */
+  head?: TemplateResult;
 }
 
 /** The sections a page's selected tile gets in the inspector: its place and
@@ -1255,7 +1258,9 @@ function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: bo
  * 760 (Text, Tap and Layout down the second), else one. The nesting is what
  * lets one markup make all four: `.ts-g2` holds Text and `.ts-g3`, which
  * holds Tap and Layout, and each wrapper turns to `display: contents` where
- * its children take columns of their own.
+ * its children take columns of their own. `.ts-g1` holds the head
+ * (`extras.head`) over Look, so the head takes one column's width and the
+ * other groups start at the top beside it.
  */
 export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
@@ -1265,7 +1270,7 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     .map((g) => ({ ...g, parts: g.parts.filter((p) => p !== "size" || extras.size !== undefined) }))
     .filter((g) => g.parts.length > 0 || hidden.has(g.group));
   for (const id of hidden.keys()) if (!groups.some((g) => g.group === id)) groups.push({ group: id, parts: [] });
-  if (groups.length === 0) return nothing;
+  if (groups.length === 0) return extras.head ?? nothing;
   dropStaleTyping(host);
   const group = (id: TileInspectorGroup): TemplateResult | typeof nothing => {
     const g = groups.find((x) => x.group === id);
@@ -1287,7 +1292,7 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     </section>`;
   };
   return html`<div class="ts-root ts-groups">
-    ${group("look")}
+    <div class="ts-g1">${extras.head ?? nothing}${group("look")}</div>
     <div class="ts-g2">${group("text")}<div class="ts-g3">${group("tap")}${group("layout")}</div></div>
   </div>`;
 }
@@ -1991,14 +1996,17 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     <div class="ts-group">${whenOffShown(host) ? renderWhenOff(host) : nothing}${renderTapAnimation(host)}</div>`;
 }
 
-/** The glow modes, as the Glow switch names them. */
-const GLOW_MODES: [OneLookGlowMode, string][] = [["auto", "When on"], ["on", "Always"], ["off", "Off"]];
+/** The Glow switch's words. */
+export const GLOW_SWITCH_LABEL = "Glow icon when on";
 
 /**
- * The icon's glow under One Look: a "Glow" group with When on (stored as
- * `auto`), Always (`on`) and Off, and
- * while it draws its size, its brightness and its color (white, the tile's
- * color, the theme's swatches or a custom one).
+ * The icon's glow under One Look: one large picture of the tile on, its
+ * glow as stored, then one switch, Glow icon when on (stored as `auto`, off
+ * as `off`), and while it glows its size, its brightness and its color
+ * (white, the tile's color, the theme's swatches or a custom one). Jesse
+ * swapped the three small When on / Always / Off pictures for the switch on
+ * 2026-10-26; a tile stored as Always (`on`) reads as on and keeps it until
+ * the switch is pressed.
  */
 function renderIconGlow(host: TileSettingsHost): TemplateResult {
   const glow = watchTileIconGlow(host.tile);
@@ -2030,19 +2038,15 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
   const pickHex = (value: string) => {
     if (oneLookParseHex(value) !== undefined) commit(host, "glowColor", customEdit(value));
   };
-  // Each choice as the tile on, then off: When on and Always differ only off.
-  const pics = tilePictures(host);
-  const withMode = (mode: OneLookGlowMode) => (d: WatchPagesDocument) => setWatchTileIconGlow(d, host.pageId, host.tileId, { ...glow, mode });
-  const options = GLOW_MODES.map(([mode, label]) => ({
-    value: mode,
-    label,
-    picture: () => html`${pics.tile(`glow:${mode}`, withMode(mode), "on", 40, 32)}${pics.tile(`glow:${mode}`, withMode(mode), "off", 40, 32)}`,
-  }));
+  // The tile on, as stored: the switch and the rows under it change it.
+  const picture = tilePictures(host).tile("glow", (d) => d, "on", 150, 96);
   const modeEdit = (mode: OneLookGlowMode) => glowEdit((g) => ({ ...g, mode }));
-  return html`${pictureChoice<OneLookGlowMode>("Glow", glow.mode, options, (v) => commit(host, "glowMode", modeEdit(v)), {
-    def: "auto", size: "pair", mixed: mixed((g) => g.mode), trial: tileTrial(host, "Glow", modeEdit),
-  })}
-    <div class="hint">Each picture shows the tile on, then off. When on glows behind the icon while the tile has its color, brighter while it is on. Always glows on gray and off tiles too. Never over a picture.</div>
+  const glows = (g: OneLookGlyphGlow) => g.mode !== "off";
+  return html`${picture === nothing ? nothing : html`<div class="ts-big-pic" aria-hidden="true">${picture}</div>`}
+    ${checkRow(GLOW_SWITCH_LABEL, glows(glow), mixed(glows), (on) => commit(host, "glowMode", modeEdit(on ? "auto" : "off")))}
+    <div class="hint ts-under">${glow.mode === "on"
+      ? "This tile glows while it is off too. Switch off and on again to glow only while on."
+      : "The icon glows while the tile is on. Never over a picture."}</div>
     ${everyPicked(host, () => now().mode === "off") ? nothing : html`
       ${mixedRow(mixed((g) => g.size), typingField(host, "glowSize", sliderField("Size", glow.size, (v) => write("glowSize", (g) => ({ ...g, size: v }), true), {
         min: ONE_LOOK_GLOW_SIZE_RANGE[0], max: ONE_LOOK_GLOW_SIZE_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.size, unit: "%",
@@ -2083,10 +2087,10 @@ function renderDimWhenOff(host: TileSettingsHost, value: boolean): TemplateResul
   const pics = tilePictures(host);
   const edit = (dim: boolean) => (d: WatchPagesDocument) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, dim);
   const row = pictureChoice<"dim" | "keep">("When it is off", value ? "dim" : "keep", [
-    { value: "dim", label: "Dim", picture: () => pics.tile("dim:on", edit(true), "off", 54, 36) },
-    { value: "keep", label: "Keep color", picture: () => pics.tile("dim:off", edit(false), "off", 54, 36) },
+    { value: "dim", label: "Dim", picture: () => pics.tile("dim:on", edit(true), "off", 120, 76) },
+    { value: "keep", label: "Keep color", picture: () => pics.tile("dim:off", edit(false), "off", 120, 76) },
   ], (v) => commit(host, "dimWhenOff", edit(v === "dim")), {
-    def: "dim",
+    def: "dim", size: "large",
     mixed: pickedMixed(host, (t) => watchTileIconSettings(t).dimWhenOff.value),
     trial: tileTrial<"dim" | "keep">(host, "When it is off", (v) => edit(v === "dim")),
   });
@@ -3346,7 +3350,6 @@ export const tileSettingsStyles = css`
   /* A color picker's Default chip leads its swatches (\`color-picker.ts\`),
      a little shorter than a chip alone so the row keeps the swatches' height. */
   .ts-swatches > .ts-color-default { min-height: 24px; margin-right: 2px; }
-  /* More and Less after the first ten swatches: a pill like Default. */
   .ts-swatch {
     width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);
@@ -3354,6 +3357,16 @@ export const tileSettingsStyles = css`
   .ts-swatch:hover:not(:disabled) { transform: scale(1.12); }
   .ts-swatch.on { box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 4px var(--wa-accent); }
   .ts-swatch:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 4px var(--wa-accent), var(--wa-ring); }
+  /* The Custom swatch, last in the row (\`color-picker.ts\`): a color wheel,
+     with the custom color in its middle while one is picked. The Custom row
+     under the swatches shows only then, or once the swatch is pressed. */
+  .ts-swatch.ts-swatch-custom { background: var(--sw-in, transparent), conic-gradient(#ff453a, #ffd60a, #30d158, #64d2ff, #0a84ff, #bf5af2, #ff453a); }
+  .ts-custom[hidden] { display: none; }
+  /* One large picture of the tile, over a row that changes it (Glow). */
+  .ts-big-pic {
+    display: flex; align-items: center; justify-content: center; width: 168px; height: 108px; margin: 2px 0 8px calc(var(--wa-lab) + var(--ts-gap, 8px));
+    border-radius: 12px; background: #000;
+  }
   /* The watch has no opacity, so the panel's color box shows none. */
   .ts-no-alpha .color-box .alpha { display: none; }
   .ts-no-alpha .color-box { padding-right: 6px; }
@@ -3470,6 +3483,11 @@ export const tileSettingsStyles = css`
   .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 30px; padding: 0 10px; font-size: 13px; }
   .ts-head-acts > button svg.ui-icon { width: 15px; height: 15px; }
   button.ghost.ts-reset-btn:disabled { opacity: .45; }
+  /* In the first column (\`.ts-g1\`), the head stands its parts one under
+     the other: the tile, Name and Shows, then the actions. */
+  .ts-g1 .ts-head { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px 18px; }
+  .ts-g1 .ts-head-mid, .ts-g1 .ts-head-side { flex: none; min-width: 0; max-width: none; }
+  .ts-g1 .ts-head-acts { justify-content: flex-start; }
 
   ${pictureChoiceStyles}
 
@@ -3493,7 +3511,7 @@ export const tileSettingsStyles = css`
     display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 14px;
     --ts-gap: 12px; --ts-blue: var(--wa-hue-blue, #4c8dff);
   }
-  .ts-g2, .ts-g3 { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .ts-g1, .ts-g2, .ts-g3 { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   @container insp (min-width: 760px) {
     .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ts-g3 { display: contents; }

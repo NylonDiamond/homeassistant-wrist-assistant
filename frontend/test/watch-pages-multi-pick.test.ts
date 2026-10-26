@@ -220,9 +220,8 @@ describe("the inspector over several tiles", () => {
   it("shows Mixed where the tiles differ, the shared value where they agree, and marks no choice of a Mixed one", () => {
     const { host } = pickHost(items(), [A, B]);
     const text = flat(renderTileInspector(host));
-    const glow = field(text, "Glow");
-    expect(glow).toContain(`<span>Glow <em class="pc-mixed">Mixed</em></span>`);
-    expect(glow).not.toContain(`class="pc-opt on"`);
+    // One glows, one does not: the switch says Mixed.
+    expect(text).toContain(`<span>Glow icon when on <em class="pc-mixed">Mixed</em></span>`);
     // Both draw a line border: Style shows it, with no Mixed.
     const style = field(text, "Style");
     expect(style).toContain(`class="pc-opt on" aria-checked=true\n          data-value=line`);
@@ -234,7 +233,7 @@ describe("the inspector over several tiles", () => {
   it("writes a pick to every picked tile in one undo step, each keeping the rest of its own", () => {
     const { host, draft } = pickHost(items(), [A, B]);
     const before = draft.document;
-    fire(renderTileInspector(host), `data-value=auto `);
+    handler(renderTileInspector(host), "Glow icon when on", "@change=")({ target: { checked: true } });
     for (const id of [A, B]) expect(watchTileIconGlow(tileIn(draft.document, id)).mode).toBe("auto");
     // Each tile's own glow size stays.
     expect(watchTileIconGlow(tileIn(draft.document, A)).size).toBe(140);
@@ -288,15 +287,15 @@ describe("pointing at a choice", () => {
     const { host, draft, updates } = pickHost(items(), [A, B]);
     const before = draft.document;
     const drawn = renderTileInspector(host);
-    fire(drawn, `data-value=on `, "@pointerenter=");
-    expect(watchTileIconGlow(watchTriedTile(host.uiState, A)!).mode).toBe("on");
-    expect(watchTileIconGlow(watchTriedTile(host.uiState, B)!).mode).toBe("on");
-    expect(watchTryLabel(host.uiState)).toBe("Glow: Always");
+    fire(drawn, `data-value=keep `, "@pointerenter=");
+    expect(watchTileIconSettings(watchTriedTile(host.uiState, A)!).dimWhenOff.value).toBe(false);
+    expect(watchTileIconSettings(watchTriedTile(host.uiState, B)!).dimWhenOff.value).toBe(false);
+    expect(watchTryLabel(host.uiState)).toBe("When it is off: Keep color");
     expect(draft.document).toBe(before);
     expect(draft.canUndo).toBe(false);
     expect(updates()).toBeGreaterThan(0);
     // Leaving the row draws what is stored.
-    fire(drawn, `role="radiogroup" aria-label=Glow`, "@pointerleave=");
+    fire(drawn, `role="radiogroup" aria-label=When it is off`, "@pointerleave=");
     expect(watchTriedTile(host.uiState, A)).toBeUndefined();
     expect(watchTryLabel(host.uiState)).toBeUndefined();
   });
@@ -320,7 +319,7 @@ describe("pointing at a choice", () => {
 
   it("is stale once the draft moves on", () => {
     const { host, draft } = pickHost(items(), [A, B]);
-    fire(renderTileInspector(host), `data-value=off `, "@pointerenter=");
+    fire(renderTileInspector(host), `data-value=keep `, "@pointerenter=");
     expect(watchTriedTile(host.uiState, A, draft.document)).toBeDefined();
     draft.apply(setWatchTileColor(draft.document, PAGE_ID, B, "#FF0000"));
     expect(watchTriedTile(host.uiState, A, draft.document)).toBeUndefined();

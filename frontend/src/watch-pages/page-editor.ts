@@ -65,6 +65,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { watchCameraLiveEntity, watchCameraRows, watchEditorLiveCameras } from "./camera-live.js";
+import { beginColumnDrag } from "../column-split.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
 import { oneLookForEvery } from "../version.js";
@@ -314,11 +315,15 @@ import {
   cellDelta,
   cellRectPx,
   draggedCorner,
+  loadPageInspectorWidth,
   loadStageLive,
   nearestCell,
+  PAGE_INSPECTOR_MIN,
+  PAGE_STAGE_MIN,
   pastDragThreshold,
   PAGE_ZOOM_STEPS,
   rowsOnScreen,
+  savePageInspectorWidth,
   saveStageLive,
   stageFitZoom,
   stageGrid,
@@ -838,6 +843,9 @@ export class WaPageEditor extends LitElement {
   /** Draw the tiles in Home Assistant's real states (the Live switch);
    * off, every tile is drawn lit. Remembered between visits. */
   @state() private liveStates = loadStageLive();
+  /** The settings column's width as dragged by the gutter beside it, CSS
+   * px, or undefined for the default. Remembered between visits. */
+  @state() private inspectorWidth = loadPageInspectorWidth();
   /** Test states typed or picked in the Live strip, entity id to state: the
    * previews draw as if Home Assistant said so, Live or all on. Never saved,
    * not part of undo, dropped with another page. */
@@ -3385,13 +3393,17 @@ export class WaPageEditor extends LitElement {
     // devices): the canvas card and the inspector. The editor is one screen
     // tall and each column scrolls in its own box. Every page is reached
     // from the picker and every tile on the stage: there is no list beside
-    // them. The inspector keeps one width whatever it shows.
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}">
+    // them. The inspector keeps one width whatever it shows, until the
+    // gutter between the two is dragged.
+    const width = this.inspectorWidth;
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}"
+      style=${width === undefined ? "" : `--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, ${width}px, calc(100% - ${PAGE_STAGE_MIN + 8}px))`}>
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
           </div>`}
       </div>
+      ${this.renderGutter()}
       <div class="column inspector card">
         ${page ? this.renderInspector(page, tile, pages) : nothing}
       </div>
@@ -3642,6 +3654,32 @@ export class WaPageEditor extends LitElement {
     </span>`;
   }
 
+  /** The gutter between the stage and the settings: dragged, it sets the
+   * settings column's width (the stage refits to what is left); a double
+   * click goes back to the default width. Hidden on a stacked editor. */
+  private renderGutter(): TemplateResult {
+    return html`<div class="gutter right pe-gutter" role="separator" aria-orientation="vertical"
+      aria-label="Resize the settings column" title="Drag to resize. Double-click to reset."
+      @pointerdown=${(e: PointerEvent) => {
+        const bar = e.currentTarget as HTMLElement;
+        const layout = bar.parentElement;
+        const column = bar.nextElementSibling;
+        if (layout === null || !(column instanceof HTMLElement)) return;
+        // From the width on screen, not the stored one.
+        beginColumnDrag(e, {
+          side: "right",
+          base: column.getBoundingClientRect().width,
+          limits: { min: PAGE_INSPECTOR_MIN, max: Math.max(PAGE_INSPECTOR_MIN, layout.clientWidth - 8 - PAGE_STAGE_MIN) },
+          onWidth: (w) => { this.inspectorWidth = w; },
+          onEnd: () => savePageInspectorWidth(this.inspectorWidth),
+        });
+      }}
+      @dblclick=${() => {
+        this.inspectorWidth = undefined;
+        savePageInspectorWidth(undefined);
+      }}></div>`;
+  }
+
   // ── the stage ──────────────────────────────────────────────────────────
 
   /** The stage's scale now: as stepped, else the fit, which fills the
@@ -3672,8 +3710,8 @@ export class WaPageEditor extends LitElement {
    * iPhone's whole phone at its half zoom, and with Side by side both, one
    * beside the other. Each frame grows evenly with the zoom (its bezel, rim
    * and crown are shares of the screen's width, `watch-frame.ts` and
-   * `phone-frame.ts`); a page that runs on below the screen does not count,
-   * since it scrolls. The label over each device and the line under it of
+   * `phone-frame.ts`); a page that runs on below the screen draws the device
+   * taller, which `StageFitWatch` measures and fits too. The label over each device and the line under it of
    * what that kind does otherwise are room that does not grow. A watch is
    * drawn at most at 300% of its points, an iPhone alone at 300% of its own.
    * Undefined on a stacked editor, whose stage grows with what it holds:
@@ -4412,8 +4450,7 @@ export class WaPageEditor extends LitElement {
     }
     if (tile !== undefined) {
       return html`
-        ${this.renderTileStrip(page, tile, pages)}
-        <div class="insp-body pe-tile-body" data-help=${this.helpOn ? "on" : "off"}>${this.renderTileCard(page, tile)}</div>`;
+        <div class="insp-body pe-tile-body" data-help=${this.helpOn ? "on" : "off"}>${this.renderTileCard(page, tile, this.renderTileStrip(page, tile, pages))}</div>`;
     }
     const host = this.editorHost(page);
     const crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
@@ -4687,23 +4724,22 @@ export class WaPageEditor extends LitElement {
    * presets and the typed place on 2026-10-26, since dragging a tile or its
    * corner on the stage moves and sizes it, and the arrow keys still do.
    */
-  private renderTileCard(page: WatchPage, tile: WatchPageTile): TemplateResult {
+  private renderTileCard(page: WatchPage, tile: WatchPageTile, head: TemplateResult): TemplateResult {
     const host = this.tileSettingsHost(page, tile);
     // The four groups (Look, Text, Tap, Layout) lay themselves out by the
-    // inspector's width.
+    // inspector's width, the head over Look in the first column.
     return html`<div class="pe-tile-insp">
-      ${host === undefined ? nothing : renderTileInspector(host, { arrangePicture: () => this.renderArrangePicture(page, tile) })}
+      ${host === undefined ? head : renderTileInspector(host, { arrangePicture: () => this.renderArrangePicture(page, tile), head })}
     </div>`;
   }
 
   /**
-   * The selected tile's head strip, across the top of the inspector (the
-   * mock's head): the path, Page (back to the page's own settings) then the
-   * tile's name, and under it the tile, large (`renderHeadTile`);
-   * Name and Shows, with the group line while the tile is in a group;
-   * Duplicate, Hide, Reset and Delete, then Find a setting. Wide, it stays
-   * at the top while the groups scroll under it. With no host (no draft
-   * yet), the path and the tiles alone.
+   * The selected tile's head: the path, Page (back to the page's own
+   * settings) then the tile's name, and under it the tile, large
+   * (`renderHeadTile`); Name and Shows, with the group line while the tile
+   * is in a group; Duplicate, Hide, Reset and Delete. It stands over Look in
+   * the first column (`renderTileCard`), so the other groups start at the
+   * top beside it. With no host (no draft yet), the path and the tile alone.
    */
   private renderTileStrip(page: WatchPage, tile: WatchPageTile, pages: readonly WatchPage[]): TemplateResult {
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
@@ -4824,8 +4860,8 @@ export class WaPageEditor extends LitElement {
 
   /**
    * Go to the section Hide or Change name: the
-   * section scrolled into view inside the inspector's own scroll, clear of
-   * the head strip while it stays at the top, washed blue for a moment (not
+   * section scrolled into view inside the inspector's own scroll, washed
+   * blue for a moment (not
    * with reduced motion), and the section's first control focused.
    */
   private goToSetting(part: string): void {
@@ -4833,10 +4869,6 @@ export class WaPageEditor extends LitElement {
     const section = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${part}"]`) ?? null;
     if (groups === null || section === null) return;
     const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // The strip sticks over the groups on a wide inspector: land under it.
-    const strip = this.renderRoot.querySelector<HTMLElement>(".pe-strip");
-    const sticks = strip !== null && getComputedStyle(strip).position === "sticky";
-    groups.style.setProperty("--pe-strip-top", `${sticks ? strip.offsetHeight : 0}px`);
     section.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
     if (this.findFlash !== undefined) {
       clearTimeout(this.findFlash.timer);
@@ -5122,7 +5154,7 @@ export class WaPageEditor extends LitElement {
        device to its height, keeps about 1500px. */
     .layout.pe-layout { padding: 0; align-items: stretch; }
     .layout.pe-layout.pe-wide {
-      grid-template-columns: minmax(0, 1fr) clamp(340px, max(38%, min(62%, 100% - 640px)), 2200px); column-gap: 8px;
+      grid-template-columns: minmax(0, 1fr) 8px var(--pe-insp-col, clamp(340px, max(38%, min(62%, 100% - 640px)), 2200px)); column-gap: 0;
       flex: 1 1 0; min-height: 0; overflow: hidden;
     }
     .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
@@ -5150,6 +5182,7 @@ export class WaPageEditor extends LitElement {
       }
       .pe-layout > .column.canvas { order: 1; }
       .pe-layout > .column.inspector { order: 2; }
+      .pe-layout > .gutter { display: none; }
     }
     .layout.pe-layout.cols-1 { grid-template-columns: minmax(0, 1fr); }
     .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector {
@@ -5534,15 +5567,10 @@ export class WaPageEditor extends LitElement {
     .pe-picked-head .hint { margin: 0; }
     .pe-picked-name input[readonly] { color: var(--wa-muted); cursor: default; }
     .pe-picked-insp > .sec.pe-picked { margin-top: 12px; }
-    .pe-strip { position: relative; z-index: 5; }
-    /* Wide, the strip stays at the top of the inspector's scroll while the
-       groups pass under it, with the page's ground around it as the
-       breadcrumb head has; narrow, where it wraps tall, it scrolls away. */
-    @container insp (min-width: 1080px) {
-      .pe-strip { position: sticky; top: 0; outline: 8px solid var(--wa-bg); }
-    }
-    /* A section Find goes to lands under the strip, not behind it. */
-    .ts-groups .ts-sec { scroll-margin-top: calc(var(--pe-strip-top, 0px) + 12px); }
+    /* The strip is the first column's head, over Look (\`renderTileCard\`):
+       it scrolls with the groups. */
+    .pe-strip { position: relative; min-width: 0; }
+    .ts-groups .ts-sec { scroll-margin-top: 12px; }
     /* The path over the live tiles: Page, back to the page's settings, then
        the tile's name. */
     .pe-path { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12.5px; color: var(--wa-muted); }

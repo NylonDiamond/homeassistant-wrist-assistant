@@ -204,6 +204,18 @@ describe("colorPickerView", () => {
     wrap: (body: unknown) => body as never,
   };
 
+  it("ends the swatches with the Custom swatch, on and the Custom row shown only while the color is none of the others", () => {
+    // A swatch's color: the Custom swatch is off and the row hidden.
+    const named = flat(colorPickerView(base));
+    expect(named).toContain(`class="ts-swatch-custom ts-swatch " aria-pressed=false`);
+    expect(named).toContain(`class="ts-no-alpha ts-custom" ?hidden=true`);
+    // A color of its own: the Custom swatch is on, with the color in its middle, and the row shows.
+    const own = flat(colorPickerView({ ...base, color: "#123456", custom: { shown: "#123456", pick: () => undefined } }));
+    expect(own).toContain(`class="ts-swatch-custom ts-swatch on" aria-pressed=true`);
+    expect(own).toContain("--sw-in:radial-gradient(circle, #123456 0 45%");
+    expect(own).toContain(`class="ts-no-alpha ts-custom" ?hidden=false`);
+  });
+
   it("draws the heading, Form, Default leading the swatches, then Custom", () => {
     const text = flat(colorPickerView({
       ...base,
@@ -252,9 +264,10 @@ describe("colorPickerView", () => {
     it("is the last of the Gradient swatches, not among the solid ones", () => {
       expect(flat(withForm("#FF0000", "solid"))).not.toContain("aria-label=Rainbow");
       const text = flat(withForm(gradients[0]!, "gradient"));
-      const swatchRow = text.slice(text.indexOf(`<div class="ts-swatches"`), text.indexOf("Custom"));
+      const swatchRow = text.slice(text.indexOf(`<div class="ts-swatches"`), text.indexOf(`ts-custom"`));
       const names = [...swatchRow.matchAll(/aria-label=([^\s>]+(?: [^\s>=]+)*)\s/g)].map((m) => m[1]);
-      expect(names.at(-1)).toBe("Rainbow");
+      // Rainbow, then the Custom swatch last.
+      expect(names.slice(-2)).toEqual(["Rainbow", "Custom color"]);
       expect(text).toContain("title=Rainbow aria-label=Rainbow");
       expect(text).toContain("--sw:linear-gradient(135deg, #FF453A");
       expectSameShape(pickers(text), false);
@@ -273,7 +286,7 @@ describe("colorPickerView", () => {
       expect(text).toContain(`class="ts-swatch on" aria-pressed=true\n    title=Rainbow`);
       const note = text.indexOf("cycles the tile through every color");
       expect(note).toBeGreaterThan(text.indexOf("aria-label=Rainbow"));
-      expect(note).toBeLessThan(text.indexOf("Custom"));
+      expect(note).toBeLessThan(text.indexOf(`ts-custom"`));
     });
 
     it("keeps its note hidden while another color is picked", () => {

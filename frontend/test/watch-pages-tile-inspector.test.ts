@@ -256,7 +256,7 @@ describe("rows that cannot do anything", () => {
     expect(watchTileDrawsNoIcon(stateIcon)).toBe(false);
     const text = flat(renderTileInspector(tileHost(stateIcon).host));
     expect(part(text, "icon")).toContain("Icon size");
-    expect(part(text, "glow")).toContain(`role="radiogroup" aria-label=Glow`);
+    expect(part(text, "glow")).toContain("Glow icon when on");
   });
 
   it("Show label off hides the label's size, weight, design, shadow and color, with one line", () => {
@@ -303,9 +303,11 @@ describe("the pictures of a choice that is not about color", () => {
     expect(text).not.toContain("#FF0000");
   });
 
-  it("keep the real tile, smaller, for Glow and When it is off", () => {
+  it("keep the real tile, large, for Glow (one, on) and When it is off (two, off)", () => {
     const text = flat(renderTileInspector(tileHost(tile("light.desk")).host));
-    expect(part(text, "glow").match(/<span class="pc-tile"/g)?.length).toBe(6);
+    expect(part(text, "glow").match(/<span class="pc-tile"/g)?.length).toBe(1);
+    expect(part(text, "glow")).toContain(`<div class="ts-big-pic" aria-hidden="true">`);
+    expect(part(text, "whenOff")).toContain(`class="field pc-field pc-size-large"`);
     expect(part(text, "whenOff").match(/<span class="pc-tile"/g)?.length).toBe(2);
   });
 });

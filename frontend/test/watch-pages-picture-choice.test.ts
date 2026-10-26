@@ -137,10 +137,6 @@ type Setter = (d: WatchPagesDocument, pageId: string, tileId: string, value: nev
 
 describe("picture choices", () => {
   const cases: { name: string; tile: WatchPageTile; value: string; expect: (d: WatchPagesDocument, t: WatchPageTile) => WatchPagesDocument }[] = [
-    { name: "Glow On", tile: tile("light.desk"), value: "on",
-      expect: (d, t) => setWatchTileIconGlow(d, PAGE_ID, TILE_ID, { ...watchTileIconGlow(t), mode: "on" }) },
-    { name: "Glow Off", tile: tile("light.desk"), value: "off",
-      expect: (d, t) => setWatchTileIconGlow(d, PAGE_ID, TILE_ID, { ...watchTileIconGlow(t), mode: "off" }) },
     { name: "When it is off: Keep color", tile: tile("light.desk"), value: "keep",
       expect: (d) => setWatchTileDimWhenOff(d, PAGE_ID, TILE_ID, false) },
     { name: "When it is off: Dim", tile: tile("light.desk", { dimWhenOff: false }), value: "dim",
@@ -177,15 +173,25 @@ describe("picture choices", () => {
     });
   }
 
-  it("draws Glow as the tile on, then off, and When it is off as the tile off", () => {
+  it("draws Glow as one large tile on over its switch, and When it is off as the tile off, large", () => {
     const text = flat(renderTileSettings(tileHost(tile("light.desk")).host));
-    const glow = text.slice(text.indexOf(`aria-label=Glow`), text.indexOf("Each picture shows the tile on, then off."));
-    // Three choices, two tile pictures each.
-    expect(glow.match(/data-value=/g)?.length).toBe(3);
-    expect(glow.match(/<span class="pc-tile"/g)?.length).toBe(6);
+    const glow = text.slice(text.indexOf(`<div class="ts-big-pic"`), text.indexOf("Glow icon when on"));
+    expect(glow.match(/<span class="pc-tile"/g)?.length).toBe(1);
+    expect(text).not.toMatch(/role="radiogroup" aria-label=Glow\s/);
+    expect(text).toContain(`class="field pc-field pc-size-large"`);
     const off = text.slice(text.indexOf(`aria-label=When it is off`));
     expect(off.slice(0, off.indexOf("</div>\n  </div>")).match(/<span class="pc-tile"/g)?.length).toBe(2);
     expect(text).not.toContain(">Dim when off<");
+  });
+
+  it("Glow icon when on: off writes Off, and on again writes When on", () => {
+    const { host, draft } = tileHost(tile("light.desk"));
+    const before = draft.document;
+    const glow = watchTileIconGlow(host.tile);
+    handler(renderTileSettings(host), "Glow icon when on", "@change=")({ target: { checked: false } });
+    expect(draft.document).toEqual(setWatchTileIconGlow(before, PAGE_ID, TILE_ID, { ...glow, mode: "off" }));
+    handler(renderTileSettings(host), "Glow icon when on", "@change=")({ target: { checked: true } });
+    expect(draft.document).toEqual(setWatchTileIconGlow(before, PAGE_ID, TILE_ID, { ...glow, mode: "auto" }));
   });
 
   it("draws the pattern gallery as swatches, weight and design as Aa, thickness and line style as lines", () => {

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  STAGE_FILL_FLOOR,
   STAGE_FILL_MAX,
   STAGE_FIT_FLOOR,
   STAGE_ROOMY_TALL,
@@ -96,7 +97,7 @@ describe("the page editor's Fit, filling the stage", () => {
     return { fit, asked: () => asked };
   }
 
-  it("fills the box it measured, and asks to draw again once it has, never held by what it drew", () => {
+  it("fills the box it measured, and asks to draw again once it has, never held by how wide it drew", () => {
     const { fit, asked } = filling(1000, 800, WATCH);
     // Before the box is measured, the base as before.
     expect(fit.fit(1.5)).toBe(1.5);
@@ -106,6 +107,22 @@ describe("the page editor's Fit, filling the stage", () => {
     // A drawing wider than the box (a long page, a step past Fit) never caps it.
     fit.hostUpdated();
     expect(fit.fit(1.5)).toBe(stageFillZoom({ width: 1000, height: 800 }, WATCH));
+  });
+
+  it("fits all of a page longer than the device's screen, by the drawing's height per unit of zoom", () => {
+    // Drawn at 1.5: 600 per unit of zoom past the label, more than the watch alone.
+    const box = { clientWidth: 1000, clientHeight: 800, scrollWidth: 1000, firstElementChild: { offsetHeight: 30 + 600 * 1.5 } };
+    let asked = 0;
+    const host = { renderRoot: { querySelector: () => box }, addController: () => {}, requestUpdate: () => { asked += 1; } };
+    const fit = new StageFitWatch(host as never, ".stage", () => 1.5, () => WATCH);
+    fit.hostUpdated();
+    fit.hostUpdated();
+    expect(asked).toBe(2);
+    expect(fit.fit(1.5)).toBe(stageFillZoom({ width: 1000, height: 800 }, { ...WATCH, height: 600 }, STAGE_FILL_FLOOR));
+    expect(fit.fit(1.5)).toBeLessThan(stageFillZoom({ width: 1000, height: 800 }, WATCH));
+    // The same height again draws nothing more.
+    fit.hostUpdated();
+    expect(asked).toBe(2);
   });
 
   it("fits the width alone, as before, when the host says no (a stacked editor)", () => {

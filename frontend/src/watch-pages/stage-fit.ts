@@ -11,9 +11,11 @@
 // `STAGE_FILL_MAX` (Jesse, 2026-10-26: on a 4K screen at 100% the watch at
 // 200% stood small in a mostly empty stage). That is worked out from the
 // box's size and the drawing's own size per unit of zoom
-// (`stageFillZoom`), never by measuring the drawing: a page longer than the
-// screen runs on below it, and fitting what was drawn would shrink every long
-// page. The other editors pass no `fill` and fit as before.
+// (`stageFillZoom`). A page longer than the device's screen draws the device
+// taller, and Fit once left that run below the stage ("Fit doesn't fit",
+// Jesse, 2026-10-26): the drawing's height is measured after each draw, per
+// unit of zoom, and Fit fits all of it, down to `STAGE_FILL_FLOOR`. The
+// other editors pass no `fill` and fit as before.
 
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 
@@ -29,6 +31,9 @@ export const STAGE_ROOMY_ZOOM = 2;
 
 /** The most a filled stage (`fill`) draws a watch at: 300% of its points. */
 export const STAGE_FILL_MAX = 3;
+
+/** The least a filled stage fits a long page at: past it the stage scrolls. */
+export const STAGE_FILL_FLOOR = 0.5;
 
 /** What a stage that fills its box needs to know of its drawing, in CSS
  * pixels: the part that grows with the zoom, at zoom 1, the room around it
@@ -63,6 +68,10 @@ export class StageFitWatch implements ReactiveController {
   private width = 0;
   /** The box's room inside its padding, for `fill`: zero until measured. */
   private room = { width: 0, height: 0 };
+  /** For `fill`: how tall the drawing stood per unit of zoom when last
+   * drawn, past its fixed room; a page longer than the screen makes it more
+   * than the device alone. Zero until measured. */
+  private drawn = 0;
 
   /** `selector` finds the stage's box in the host's shadow root, and
    * `scaleNow` is the scale the host drew at. `fill`, when given, sizes the
@@ -91,7 +100,22 @@ export class StageFitWatch implements ReactiveController {
   private filled(): number | undefined {
     if (this.fill === undefined || this.room.width <= 0 || this.room.height <= 0) return undefined;
     const drawing = this.fill();
-    return drawing === undefined ? undefined : stageFillZoom(this.room, drawing);
+    if (drawing === undefined) return undefined;
+    return stageFillZoom(this.room, { ...drawing, height: Math.max(drawing.height, this.drawn) }, STAGE_FILL_FLOOR);
+  }
+
+  /** How tall the drawing (the box's first child) stood per unit of zoom,
+   * kept when it moved by more than a pixel, which draws again. Its layout
+   * height, so a scroll or a transform never counts. */
+  private measureDrawn(): boolean {
+    const drawing = this.fill?.();
+    const child = this.box?.firstElementChild as HTMLElement | null | undefined;
+    const scale = this.scaleNow();
+    if (drawing === undefined || typeof child?.offsetHeight !== "number" || scale <= 0) return false;
+    const unit = Math.max(0, (child.offsetHeight - drawing.fixedHeight) / scale);
+    if (Math.abs(unit - this.drawn) * scale <= 1) return false;
+    this.drawn = unit;
+    return true;
   }
 
   /** The box's content size, inside its padding (the lit stage keeps room
@@ -135,6 +159,10 @@ export class StageFitWatch implements ReactiveController {
         this.host.requestUpdate();
         return;
       }
+    }
+    if (this.fill !== undefined && this.measureDrawn()) {
+      this.host.requestUpdate();
+      return;
     }
     this.measure();
   }

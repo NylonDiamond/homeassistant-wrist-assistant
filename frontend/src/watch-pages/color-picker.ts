@@ -5,9 +5,13 @@
 //
 //   heading
 //   Form       Solid | Gradient              (only where the value has forms)
-//   [Default] ● ● ● ● ● ● ● ◉                (Default only where it means something)
-//   Custom     ■ #RRGGBB
+//   [Default] ● ● ● ● ● ● ● ◉ ✣              (Default only where it means something)
+//   Custom     ■ #RRGGBB                     (only while custom, or ✣ pressed)
 //
+// The last swatch (✣, a color wheel) is Custom: it is on while the color is
+// none of the others, and a press shows the Custom row and opens the
+// system's color picker (Jesse, 2026-10-26: the Custom row always in view
+// looked busy).
 // Every color of the theme shows, the theme's own kind colors first and the
 // shades after them. A More pill once folded all but ten; Jesse asked for
 // every color in view on 2026-10-26, so there is no pill.
@@ -154,6 +158,36 @@ function rainbowSwatch(on: boolean, pick: () => void, trial: ColorTrial | undefi
     @click=${() => { pick(); trial?.end(); }}></button>`;
 }
 
+/** The Custom swatch's words. */
+export const COLOR_CUSTOM_SWATCH_LABEL = "Custom color";
+
+/** The Custom swatch, last in the row: on while the color is a custom one,
+ * which it shows in its middle. A press shows the Custom row under the
+ * swatches (the next sibling of the row that holds a `.ts-custom`) and opens
+ * the system's color picker in it; picking there stores the color. */
+function customSwatch(on: boolean, shown: string | undefined, trial: ColorTrial | undefined): TemplateResult {
+  const open = (e: Event) => {
+    trial?.end();
+    let next = (e.currentTarget as HTMLElement | null)?.closest(".ts-swatch-row")?.nextElementSibling ?? null;
+    let box: HTMLElement | null = null;
+    while (next !== null && box === null) {
+      box = next.matches(".ts-custom") ? (next as HTMLElement) : next.querySelector<HTMLElement>(".ts-custom");
+      next = next.nextElementSibling;
+    }
+    if (box === null) return;
+    box.hidden = false;
+    const input = box.querySelector<HTMLInputElement>("input[type=color]");
+    try {
+      input?.showPicker();
+    } catch {
+      input?.focus();
+    }
+  };
+  const inner = on && shown !== undefined ? `--sw-in:radial-gradient(circle, ${shown} 0 45%, transparent 48%)` : "";
+  return html`<button type="button" class="ts-swatch-custom ts-swatch ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+    title=${COLOR_CUSTOM_SWATCH_LABEL} aria-label=${COLOR_CUSTOM_SWATCH_LABEL} style=${inner} @click=${open}></button>`;
+}
+
 /** The Default chip, at the head of the swatch row. */
 function defaultChip(d: NonNullable<ColorPickerView["default"]>, label: string | undefined, trial: ColorTrial | undefined): TemplateResult {
   const tryIt = trial?.default === undefined ? nothing : () => trial.default!();
@@ -174,7 +208,8 @@ function tileChip(t: NonNullable<ColorPickerView["tile"]>, trial: ColorTrial | u
     title=${t.title} @click=${() => { t.pick(); trial?.end(); }}>${COLOR_TILE_LABEL}</button>`;
 }
 
-/** The picker: heading, Form, Default with the swatches and Rainbow, Custom. */
+/** The picker: heading, Form, Default with the swatches, Rainbow and the
+ * Custom swatch, then the Custom row while it is in use. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
   const mixed = v.mixed === true;
   // Mixed marks nothing: no color matches this.
@@ -190,7 +225,10 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
     : nothing;
   const note = rainbowOn ? v.rainbow?.note : undefined;
   const swatches = v.swatches;
-  const tail = rainbow;
+  // Custom is on while the color is none of the swatches and chips.
+  const named = rainbowOn || swatches.some((x) => sameWatchColor(color, x)) || v.default?.on === true || v.tile?.on === true;
+  const customOn = !mixed && v.custom.shown !== undefined && v.custom.shown !== "" && !named;
+  const tail = html`${rainbow}${customSwatch(customOn, v.custom.shown, v.trial)}`;
   const word = html`<em class="pc-mixed">${MIXED_WORD}</em>`;
   const chips = html`${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? form?.title, v.trial)}${
     v.tile === undefined ? nothing : tileChip(mixed ? { ...v.tile, on: false } : v.tile, v.trial)}`;
@@ -203,5 +241,5 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
         })}
     <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, color, v.pickSwatch, chips, tail, v.trial)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
-    ${v.wrap(html`<div class="ts-no-alpha">${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
+    ${v.wrap(html`<div class="ts-no-alpha ts-custom" ?hidden=${!customOn}>${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
 }

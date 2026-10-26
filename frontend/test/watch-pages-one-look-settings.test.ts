@@ -115,11 +115,11 @@ describe("the old look stays as it was", () => {
 });
 
 describe("Icon and color in One Look", () => {
-  it("names the glow When on, Always and Off, in a group of its own", () => {
+  it("names the glow by one switch, Glow icon when on, in a group of its own", () => {
     const view = drawn(tile("light.desk", { color: "#FF9500" }), true);
     const labels = [...view.matchAll(/<span class="pc-label">([^<]+)<\/span>/g)].map((m) => m[1]);
-    expect(labels).toEqual(expect.arrayContaining(["When on", "Always", "Off"]));
-    expect(labels).not.toContain("Auto");
+    expect(view).toContain("Glow icon when on");
+    for (const gone of ["When on", "Always", "Auto"]) expect(labels).not.toContain(gone);
     expect(view.match(/<div class="ts-group">/g)?.length).toBeGreaterThanOrEqual(5);
   });
 

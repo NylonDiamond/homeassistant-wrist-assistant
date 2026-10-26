@@ -248,8 +248,10 @@ describe("the editor bar", () => {
     for (const gone of [`class="pe-head"`, `class="cv-head"`, "lib-mode-tag", "Editing page", "Switch page</span>", "lib-on over-stage"]) {
       expect(text, gone).not.toContain(gone);
     }
-    expect(text).toContain(`<div class="layout pe-layout pe-wide">`);
-    for (const gone of ["pe-pages-card", "pe-tiles-card", "pe-list-split", "pe-tile-row", "pe-page-row", `class="gutter`, "column left", "--wa-left"]) {
+    expect(text).toContain(`<div class="layout pe-layout pe-wide"`);
+    // One gutter, between the stage and the settings; no side lists.
+    expect(text.split(`class="gutter`).length - 1).toBe(1);
+    for (const gone of ["pe-pages-card", "pe-tiles-card", "pe-list-split", "pe-tile-row", "pe-page-row", "column left", "--wa-left"]) {
       expect(text, gone).not.toContain(gone);
     }
   });
@@ -1063,8 +1065,9 @@ describe("the stacked layout", () => {
     // (Its edge fades, ::before and ::after, still stick inside its box.)
     expect(css).not.toMatch(/\.column\.inspector\s*\{[^}]*position:\s*sticky/);
     expect(editor().body()).toContain(`<div class="layout pe-layout pe-wide"`);
-    // Wide, two columns with no gutter to drag.
-    expect(rule(css, ".layout.pe-layout.pe-wide")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) clamp\(/);
+    // Wide, the stage and the settings with a gutter to drag between them;
+    // the settings at their default width until it is dragged.
+    expect(rule(css, ".layout.pe-layout.pe-wide")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 8px var\(--pe-insp-col, clamp\(/);
   });
 });
 

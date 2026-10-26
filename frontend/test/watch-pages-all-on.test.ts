@@ -15,7 +15,7 @@ import {
   watchTileStyleActive,
   setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
-import { STAGE_LIVE_KEY, loadStageLive, saveStageLive } from "../src/watch-pages/stage.js";
+import { PAGE_INSPECTOR_MIN, PAGE_INSPECTOR_WIDTH_KEY, STAGE_LIVE_KEY, loadPageInspectorWidth, loadStageLive, savePageInspectorWidth, saveStageLive } from "../src/watch-pages/stage.js";
 
 // These pin the old tile look, which a device below One Look's version
 // still draws; One Look's own are in one-look-render.test.ts.
@@ -187,5 +187,33 @@ describe("the Live switch's memory", () => {
     expect(loadStageLive(broken)).toBe(false);
     expect(() => saveStageLive(true, broken)).not.toThrow();
     expect(loadStageLive(undefined)).toBe(false);
+  });
+});
+
+describe("the settings column's dragged width", () => {
+  const memory = () => {
+    const kept = new Map<string, string>();
+    return { kept, getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
+  };
+
+  it("is the default until dragged, remembers the width in whole pixels, and goes back to the default on a reset", () => {
+    const store = memory();
+    expect(loadPageInspectorWidth(store)).toBeUndefined();
+    savePageInspectorWidth(911.6, store);
+    expect(store.kept.get(PAGE_INSPECTOR_WIDTH_KEY)).toBe("912");
+    expect(loadPageInspectorWidth(store)).toBe(912);
+    savePageInspectorWidth(undefined, store);
+    expect(loadPageInspectorWidth(store)).toBeUndefined();
+    // Nothing under the narrowest, and nothing that is no number.
+    store.kept.set(PAGE_INSPECTOR_WIDTH_KEY, String(PAGE_INSPECTOR_MIN - 1));
+    expect(loadPageInspectorWidth(store)).toBeUndefined();
+    store.kept.set(PAGE_INSPECTOR_WIDTH_KEY, "wide");
+    expect(loadPageInspectorWidth(store)).toBeUndefined();
+  });
+
+  it("never throws where the browser keeps nothing", () => {
+    const broken = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+    expect(loadPageInspectorWidth(broken)).toBeUndefined();
+    expect(() => savePageInspectorWidth(600, broken)).not.toThrow();
   });
 });

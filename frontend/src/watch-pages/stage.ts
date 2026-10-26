@@ -187,6 +187,36 @@ export function saveStageLive(on: boolean, storage: ColumnStorage | undefined = 
   }
 }
 
+/** Where the page editor's settings column width is remembered, CSS px,
+ * as last dragged; empty for the default width. */
+export const PAGE_INSPECTOR_WIDTH_KEY = "wrist-assistant-panel.pages.inspector-width.v1";
+
+/** The narrowest the settings column is dragged to, and the least the
+ * stage keeps beside it, CSS px. */
+export const PAGE_INSPECTOR_MIN = 340;
+export const PAGE_STAGE_MIN = 420;
+
+/** The settings column's width as last dragged, or undefined for the
+ * default (never dragged, reset, or a browser that keeps nothing). */
+export function loadPageInspectorWidth(storage: ColumnStorage | undefined = browserStorage()): number | undefined {
+  try {
+    const n = Number(storage?.getItem(PAGE_INSPECTOR_WIDTH_KEY) ?? "");
+    return Number.isFinite(n) && n >= PAGE_INSPECTOR_MIN ? Math.round(n) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Remember the settings column's width; undefined goes back to the
+ * default. */
+export function savePageInspectorWidth(width: number | undefined, storage: ColumnStorage | undefined = browserStorage()): void {
+  try {
+    storage?.setItem(PAGE_INSPECTOR_WIDTH_KEY, width === undefined ? "" : String(Math.round(width)));
+  } catch {
+    // Private windows and full storage keep the width for this visit only.
+  }
+}
+
 /** The scales the zoom buttons step through, pixels per point. The tool
  * strip shows each as a percent of the watch's own points: 100% to 200%.
  * The status page and menu editors step through these, and read their own
