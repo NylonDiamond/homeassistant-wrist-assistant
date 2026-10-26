@@ -334,7 +334,7 @@ describe("Reset all layers below Expert (round four, section 15.5)", () => {
       const text = drawn(host);
       expect(text).toContain("data-custom-layers");
       expect(text).toContain(CUSTOM_LAYERS_LINE_TEXT);
-      expect(text).toContain(">Reset all</button>");
+      expect(text).toContain(">Reset all layers</button>");
       expect(text).toContain(">Edit in Expert</button>");
       // First in the settings, above every card.
       expect(text.indexOf("data-custom-layers")).toBeLessThan(text.indexOf("<section"));

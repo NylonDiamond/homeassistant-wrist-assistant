@@ -706,7 +706,7 @@ function renderAdvancedLine(host: TileSettingsHost): TemplateResult {
  * (round four, section 15.5). */
 export const CUSTOM_LAYERS_LINE_TEXT = "This tile has custom layers";
 
-/** "This tile has custom layers · Reset all · Edit in Expert", at the top of
+/** "This tile has custom layers" with Reset all layers and Edit in Expert, at the top of
  * the settings of a tile with layers of its own while the level hides the
  * Layers card: Reset all gives every layer back to the simple settings (one
  * undo step), Edit in Expert switches the level. Nothing at Expert, where
@@ -714,10 +714,16 @@ export const CUSTOM_LAYERS_LINE_TEXT = "This tile has custom layers";
 function renderCustomLayersLine(host: TileSettingsHost): TemplateResult | typeof nothing {
   const links = layerLinks(host);
   if (links === undefined || !links.custom || levelOf(host) === "expert") return nothing;
-  return html`<div class="ts-advanced ts-custom-layers" data-custom-layers>
-    <span class="ts-advanced-words">${CUSTOM_LAYERS_LINE_TEXT}</span><span aria-hidden="true">·</span>
-    <button type="button" class="link" title="Give every layer back to these settings. Undo brings them back." ?disabled=${host.busy} @click=${() => links.resetAll()}>Reset all</button><span aria-hidden="true">·</span>
-    <button type="button" class="link" title="Show this tile's layers" @click=${() => levelLink(host)?.show("expert")}>Edit in Expert</button>
+  return html`<div class="ts-custom-layers" data-custom-layers role="note">
+    <span class="ts-custom-icon" aria-hidden="true">${uiIcon("layers")}</span>
+    <div class="ts-custom-body">
+      <strong>${CUSTOM_LAYERS_LINE_TEXT}</strong>
+      <span class="ts-custom-sub">Some parts are drawn by its own layers, so a setting here may not change them.</span>
+      <div class="ts-custom-acts">
+        <button type="button" class="pe-btn pe-primary" title="Give every layer back to these settings. Undo brings them back." ?disabled=${host.busy} @click=${() => links.resetAll()}>Reset all layers</button>
+        <button type="button" class="pe-btn" title="Show this tile's layers" @click=${() => levelLink(host)?.show("expert")}>Edit in Expert</button>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -2747,8 +2753,19 @@ export const tileSettingsStyles = css`
   }
   .ts-advanced-words { min-width: 0; }
   .ts-advanced .link { font-weight: 600; white-space: nowrap; }
-  /* The custom layers line is longer: its links wrap whole, never "Reset" over "all". */
-  .ts-custom-layers { flex-wrap: wrap; row-gap: 0; }
+  /* A custom tile below Expert: a card that is hard to miss, since its layers
+     can make a setting here look like it does nothing. */
+  .ts-custom-layers {
+    display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 8px; padding: 10px 12px; box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, var(--wa-accent) 55%, transparent); border-left-width: 4px; border-radius: 8px;
+    background: color-mix(in srgb, var(--wa-accent) 12%, var(--wa-card)); font-size: 13px; color: var(--wa-ink);
+  }
+  .ts-custom-icon { flex: none; display: flex; color: var(--wa-accent); padding-top: 1px; }
+  .ts-custom-icon svg { width: 18px; height: 18px; }
+  .ts-custom-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ts-custom-sub { color: var(--wa-muted); font-size: 12px; line-height: 1.35; }
+  .ts-custom-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .ts-custom-acts .pe-btn { min-height: 28px; font-size: 12.5px; }
   /* Simple's last card: what Advanced and Expert add. */
   .ts-want-more .sec-b > .hint.keep { margin: 0 0 8px; }
   .ts-want-acts { display: flex; }
