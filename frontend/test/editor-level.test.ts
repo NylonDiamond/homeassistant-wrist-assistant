@@ -24,8 +24,10 @@ import {
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { BASE_LAYER_IDS, readTileDesign, syncTileDesigns } from "../src/watch-pages/tile-design.js";
 import { tileLayerEdits } from "../src/watch-pages/tile-layer-host.js";
+import { tileHasCustomLayers } from "../src/watch-pages/tile-layers-ui.js";
 import {
   ADVANCED_LINE_TEXT,
+  CUSTOM_LAYERS_LINE_TEXT,
   type TileLayerLinks,
   WANT_MORE_TEXT,
   levelSections,
@@ -138,6 +140,8 @@ function levelHost(level: EditorLevel | undefined, extra: Record<string, unknown
     pickLayerId: (id) => picked.push(id),
     reset: () => undefined,
     pickZones: () => undefined,
+    get custom() { return tileHasCustomLayers(readTileDesign(base.tile), base.tile); },
+    resetAll: () => { tileLayerEdits(base).resetAll(); },
   };
   const link: EditorLevelLink | undefined = level === undefined ? undefined : { level, show: (next) => shown.push(next) };
   const host = extendHost(base, {
@@ -288,3 +292,70 @@ function findClick(v: unknown, words: string): () => void {
   if (found === undefined) throw new Error(`no ${words} button`);
   return found;
 }
+
+/** The first template in a drawn tree whose text holds `marker`, and its
+ * function values (its event handlers), in order. */
+function handlersIn(v: unknown, marker: string): ((...args: unknown[]) => unknown)[] {
+  let found: { strings: readonly string[]; values: unknown[] } | undefined;
+  const walk = (x: unknown): void => {
+    if (found !== undefined || x === null || typeof x !== "object") return;
+    if (Array.isArray(x)) return x.forEach(walk);
+    if ("strings" in x && "values" in x) {
+      const t = x as { strings: readonly string[]; values: unknown[] };
+      if (t.strings.join("").includes(marker)) {
+        found = t;
+        return;
+      }
+      t.values.forEach(walk);
+    }
+  };
+  walk(v);
+  if (found === undefined) throw new Error(`nothing drawn with ${marker}`);
+  return found.values.filter((x): x is (...args: unknown[]) => unknown => typeof x === "function");
+}
+
+describe("Reset all layers below Expert (round four, section 15.5)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A level host whose tile has a custom layer: its name made bigger. */
+  function customHost(level: EditorLevel) {
+    const made = levelHost(level);
+    tileLayerEdits(made.host).doc((c) => {
+      const name = c.elements.find((e) => e.payload.id === BASE_LAYER_IDS.name)!;
+      if (name.kind === "text") name.payload.fontSize = 13;
+    });
+    expect(readTileDesign(made.host.tile)).toBeDefined();
+    return made;
+  }
+
+  for (const level of ["simple", "advanced"] as const) {
+    it(`shows the line on a custom tile at ${level}, its Reset all one undo step and its Edit in Expert the level switch`, () => {
+      const { host, draft, shown } = customHost(level);
+      const text = drawn(host);
+      expect(text).toContain("data-custom-layers");
+      expect(text).toContain(CUSTOM_LAYERS_LINE_TEXT);
+      expect(text).toContain(">Reset all</button>");
+      expect(text).toContain(">Edit in Expert</button>");
+      // First in the settings, above every card.
+      expect(text.indexOf("data-custom-layers")).toBeLessThan(text.indexOf("<section"));
+      vi.stubGlobal("document", { activeElement: null });
+      vi.stubGlobal("HTMLElement", class {});
+      const tree = () => renderTileSettings(host, { sections: [...SECTIONS], size: { summary: () => "6×4", body: () => html`SIZE-ROWS` } });
+      const [reset, expert] = handlersIn(tree(), "data-custom-layers");
+      expert!();
+      expect(shown).toEqual(["expert"]);
+      reset!();
+      expect(Object.hasOwn(host.tile, "design")).toBe(false);
+      expect(drawn(host)).not.toContain("data-custom-layers");
+      // One undo brings the layers back.
+      expect(draft.undo()).toBe(true);
+      expect(readTileDesign(host.tile)!.owned).toEqual(["name"]);
+    });
+  }
+
+  it("leaves the line out at Expert, where the Layers card has Reset all layers, and on a plain tile", () => {
+    expect(drawn(customHost("expert").host)).not.toContain("data-custom-layers");
+    expect(drawn(levelHost("simple").host)).not.toContain("data-custom-layers");
+    expect(drawn(levelHost("advanced").host)).not.toContain("data-custom-layers");
+  });
+});

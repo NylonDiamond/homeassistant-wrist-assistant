@@ -300,6 +300,8 @@ describe("the simple settings", () => {
       reset: () => undefined,
       pickZones: () => undefined,
       pickLayerId: () => undefined,
+      custom: false,
+      resetAll: () => undefined,
     };
     const withLinks = extendHost(host, { tileLayers: () => links });
     vi.stubGlobal("document", { activeElement: null });
@@ -314,7 +316,7 @@ describe("the simple settings", () => {
 
   it("show the split into tap zones in place of the single tap", () => {
     const { host } = draftHost(SWITCH);
-    const links: TileLayerLinks = { design: undefined, zones: 2, pickLayer: () => undefined, pickLayerId: () => undefined, reset: () => undefined, pickZones: () => undefined };
+    const links: TileLayerLinks = { design: undefined, zones: 2, pickLayer: () => undefined, pickLayerId: () => undefined, reset: () => undefined, pickZones: () => undefined, custom: false, resetAll: () => undefined };
     const withLinks = extendHost(host, { tileLayers: () => links });
     vi.stubGlobal("document", { activeElement: null });
     vi.stubGlobal("HTMLElement", class {});
@@ -499,6 +501,8 @@ describe("the icon's glow in the editor (round three)", () => {
     pickLayerId: (id) => picked.push(id),
     reset: (role) => reset.push(role),
     pickZones: () => undefined,
+    custom: false,
+    resetAll: () => undefined,
   });
 
   it("shows the Glow group under One Look, and writes the setting through the model", async () => {

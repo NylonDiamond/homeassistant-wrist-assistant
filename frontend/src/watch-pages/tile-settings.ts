@@ -608,6 +608,13 @@ export interface TileLayerLinks {
   reset(role: BaseLayerRole): void;
   /** Pick the first tap zone. */
   pickZones(): void;
+  /** Whether the tile holds layers of its own (`tileHasCustomLayers`: a base
+   * layer changed, a layer added or a tap zone), as its Tiles row's "Custom
+   * layers" tag says below Expert. */
+  readonly custom: boolean;
+  /** Back to the plain tile, as the Layers card's Reset all layers does: one
+   * undo step. */
+  resetAll(): void;
 }
 
 /** The host's layer links, when the page editor handed some. */
@@ -692,6 +699,25 @@ function renderAdvancedLine(host: TileSettingsHost): TemplateResult {
   return html`<div class="ts-advanced" data-advanced>
     <span class="ts-advanced-words">${ADVANCED_LINE_TEXT}</span><span aria-hidden="true">·</span>
     <button type="button" class="link" title="Show every setting of this tile" @click=${() => levelLink(host)?.show("advanced")}>Show</button>
+  </div>`;
+}
+
+/** What the line at the top of a custom tile's settings says below Expert
+ * (round four, section 15.5). */
+export const CUSTOM_LAYERS_LINE_TEXT = "This tile has custom layers";
+
+/** "This tile has custom layers · Reset all · Edit in Expert", at the top of
+ * the settings of a tile with layers of its own while the level hides the
+ * Layers card: Reset all gives every layer back to the simple settings (one
+ * undo step), Edit in Expert switches the level. Nothing at Expert, where
+ * the Layers card has its own Reset all layers, nor for a plain tile. */
+function renderCustomLayersLine(host: TileSettingsHost): TemplateResult | typeof nothing {
+  const links = layerLinks(host);
+  if (links === undefined || !links.custom || levelOf(host) === "expert") return nothing;
+  return html`<div class="ts-advanced ts-custom-layers" data-custom-layers>
+    <span class="ts-advanced-words">${CUSTOM_LAYERS_LINE_TEXT}</span><span aria-hidden="true">·</span>
+    <button type="button" class="link" title="Give every layer back to these settings. Undo brings them back." ?disabled=${host.busy} @click=${() => links.resetAll()}>Reset all</button><span aria-hidden="true">·</span>
+    <button type="button" class="link" title="Show this tile's layers" @click=${() => levelLink(host)?.show("expert")}>Edit in Expert</button>
   </div>`;
 }
 
@@ -875,6 +901,7 @@ export function renderTileSettings(watchHost: TileSettingsHost, extras: TileSett
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
   return html`<div class="ts-root">
+    ${renderCustomLayersLine(host)}
     ${sections.map((section) => renderSection(host, section, extras))}
     ${simple(host) ? renderWantMore(host) : nothing}
   </div>`;

@@ -4877,6 +4877,8 @@ export class WaPageEditor extends LitElement {
         pickLayerId: (id) => select(id),
         reset: (role) => { tileLayerEdits(tileHost).reset(role); },
         pickZones: () => { if (zones[0] !== undefined) select(zones[0].id); },
+        custom: tileHasCustomLayers(design, tileHost.tile),
+        resetAll: () => { tileLayerEdits(tileHost).resetAll(); },
       };
     };
     // The level the settings are drawn at, and the way their "Show" lines
