@@ -1021,7 +1021,8 @@ describe("the level switch", () => {
   it("sits in the canvas head beside Undo, with Simple, Advanced and Expert, each saying what it shows only as a hover hint", () => {
     const { el, body } = leveled("simple");
     let h = head(body());
-    expect(h).toContain(`aria-label="Editor level"`);
+    expect(h).toContain(`aria-label="Edit level"`);
+    expect(h).toContain(`>Edit level</span>`);
     expect(h.match(/role="radio"/g)).toHaveLength(3);
     for (const word of ["Simple", "Advanced", "Expert"]) expect(h).toContain(`>${word}</button>`);
     // No line of its own: each hint is its button's data-tip, shown on hover.
@@ -1037,6 +1038,36 @@ describe("the level switch", () => {
     el.level = "expert";
     h = head(body());
     expect(h).toMatch(/class=on\s+aria-checked=true data-tip=Every setting, plus layers/);
+  });
+
+  it("shows a toast on a change that names the level, and with no tile picked says where to look", () => {
+    vi.useFakeTimers();
+    try {
+      const { el, call } = leveled("simple");
+      const toast = () => flat(call("renderLevelToast"));
+      expect(toast()).not.toContain("pe-level-toast");
+      call("setLevel", "advanced");
+      let text = toast();
+      expect(text).toContain(`class="pe-level-toast" role="status"`);
+      expect(text).toContain("Edit level: ");
+      expect(text).toContain(EDITOR_LEVEL_HINTS.advanced);
+      expect(text).toContain("Pick a tile to see its settings.");
+      // It goes by itself.
+      vi.advanceTimersByTime(3600);
+      expect(el.levelToast).toBeUndefined();
+      // With a tile picked, no word on where to look.
+      const picked = leveled("simple", "T-RIGHT");
+      picked.call("setLevel", "expert");
+      text = flat(picked.call("renderLevelToast"));
+      expect(text).toContain(EDITOR_LEVEL_HINTS.expert);
+      expect(text).not.toContain("Pick a tile to see its settings.");
+      // Picking the level already shown changes nothing and shows nothing.
+      picked.el.levelToast = undefined;
+      picked.call("setLevel", "expert");
+      expect(picked.el.levelToast).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is remembered in this browser, and falls back to Simple without storage", () => {

@@ -367,6 +367,8 @@ const SCRUB_HELD_KEYS: ReadonlySet<string> = new Set(["Escape", "Delete", "Backs
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
+/** How long a level change's toast stays up. */
+const LEVEL_TOAST_MS = 3500;
 
 /** The page list and the cards column, each widened by dragging the gutter
  * beside it, as the complication editor's columns are. */
@@ -828,6 +830,10 @@ export class WaPageEditor extends LitElement {
   /** How much of a tile the editor shows (`editor-level.ts`), this
    * browser's choice. Below Expert no layer is listed, picked or dragged. */
   @state() private level: EditorLevel = loadEditorLevel();
+  /** The toast a level change shows for a moment, so a change with no tile
+   * picked, which redraws nothing in sight, still says what happened. */
+  @state() private levelToast?: { level: EditorLevel; noTile: boolean };
+  private levelToastTimer?: ReturnType<typeof setTimeout>;
   /** The tiles picked together (Cmd or Ctrl-click, Shift-click, Select all),
    * the complication editor's `multi`: two or more ids on the shown page, with
    * `selectedTileId` among them as the primary (the last one clicked, and the
@@ -1038,6 +1044,8 @@ export class WaPageEditor extends LitElement {
     this.stopDeliveries?.();
     this.stopDeliveries = undefined;
     this.stopTemplates();
+    clearTimeout(this.levelToastTimer);
+    this.levelToast = undefined;
     this.loadSeq++;
     this.catalogSeq++;
     this.statusPagesSeq++;
@@ -3111,7 +3119,20 @@ export class WaPageEditor extends LitElement {
       ${this.libraryDeleteAsk !== undefined && draft ? this.renderLibraryDeleteAsk(this.libraryDeleteAsk, draft.document) : nothing}
       ${this.saveAsk && draft ? this.renderSaveAsk(draft.document, draft.base) : nothing}
       ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
+      ${this.renderLevelToast()}
     `;
+  }
+
+  /** The level change's toast at the foot of the editor: the level's name,
+   * what it shows, and with no tile picked a word on where to look. */
+  private renderLevelToast(): TemplateResult | typeof nothing {
+    const toast = this.levelToast;
+    if (toast === undefined) return nothing;
+    const name = EDITOR_LEVELS.find(([level]) => level === toast.level)?.[1] ?? toast.level;
+    return html`<div class="pe-level-toast" role="status">
+      <strong>Edit level: ${name}</strong><span>${EDITOR_LEVEL_HINTS[toast.level]}</span>
+      ${toast.noTile ? html`<span class="pe-level-toast-tip">Pick a tile to see its settings.</span>` : nothing}
+    </div>`;
   }
 
   /** Whether the editor is one column: the measured width, or Home
@@ -3683,6 +3704,9 @@ export class WaPageEditor extends LitElement {
     if (level === this.level) return;
     this.level = level;
     saveEditorLevel(level);
+    this.levelToast = { level, noTile: this.selectedTileId === undefined };
+    clearTimeout(this.levelToastTimer);
+    this.levelToastTimer = setTimeout(() => { this.levelToast = undefined; }, LEVEL_TOAST_MS);
     if (!levelShowsLayers(level)) {
       this.layerPick = undefined;
       if (this.gesture?.kind === "layer") this.cancelGestures();
@@ -3694,8 +3718,8 @@ export class WaPageEditor extends LitElement {
    * shows is an instant hint under its button while the pointer is on it,
    * never a line of its own. */
   private renderLevelSwitch(): TemplateResult {
-    return html`<span class="pe-level-wrap"><span class="pe-level-label" aria-hidden="true">Level</span>
-      <span class="seg pe-level" role="radiogroup" aria-label="Editor level">
+    return html`<span class="pe-level-wrap"><span class="pe-level-label" aria-hidden="true">Edit level</span>
+      <span class="seg pe-level" role="radiogroup" aria-label="Edit level">
       ${EDITOR_LEVELS.map(([level, text]) => html`<button type="button" role="radio" class=${level === this.level ? "on" : ""}
         aria-checked=${level === this.level ? "true" : "false"} data-tip=${EDITOR_LEVEL_HINTS[level]}
         aria-description=${EDITOR_LEVEL_HINTS[level]} @click=${() => this.setLevel(level)}>${text}</button>`)}
@@ -5229,6 +5253,16 @@ export class WaPageEditor extends LitElement {
     /* Under the pointer, or reached by keyboard. Not after a click: the
        button keeps focus then, and the hint would stay up. */
     .seg.pe-level button:hover::after, .seg.pe-level button:focus-visible::after { opacity: 1; visibility: visible; }
+    /* A level change's toast, at the foot of the editor for a moment. */
+    .pe-level-toast {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 40;
+      display: flex; flex-direction: column; gap: 3px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 16px;
+      border-radius: 10px; background: var(--wa-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-pop);
+      font-size: 13px; line-height: 1.35; color: var(--wa-ink); animation: pe-level-toast-in .16s ease-out;
+    }
+    .pe-level-toast strong { font-weight: 600; color: var(--wa-accent); }
+    .pe-level-toast-tip { color: var(--wa-muted); }
+    @keyframes pe-level-toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
     /* A Tiles row's tag below Expert: the tile has layers of its own. */
     .pe-custom-tag { flex: none; margin-left: 6px; padding: 1px 5px; border-radius: 4px; font-size: 10px; font-weight: 600;
       color: var(--wa-hue-blue, #2f6ccc); background: color-mix(in srgb, var(--wa-hue-blue, #2f6ccc) 14%, transparent); }
