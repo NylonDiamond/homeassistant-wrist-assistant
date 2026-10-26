@@ -219,8 +219,8 @@ export interface Fit {
 /**
  * Uniform fit of the family's design box into a real slot, centred. Mirrors
  * `CustomComplication.DesignBox.fit` in Swift; the two must agree to the point.
- * `box` stands in for the family's box: a page tile's layers are drawn in the
- * tile's own design box (`tileDesignBox`, watch-pages/tile-design.ts).
+ * `box` stands in for the family's box when the layers were authored in a
+ * box of their own.
  */
 export function fitBox(slot: CanvasSize, family: DrawableFamily, box?: CanvasSize): Fit {
   const ref = box ?? CANVAS[family];
@@ -347,9 +347,8 @@ export interface RenderOptions {
    * exactly as the watch does.
    */
   slot?: CanvasSize;
-  /** The box the layers were authored in, in place of the family's: a page
-   * tile's design box (`tileDesignBox`), which is the tile's drawn size on
-   * the 46 mm watch. Absent: the family's own box. */
+  /** The box the layers were authored in, in place of the family's. Absent:
+   * the family's own box. */
   designBox?: CanvasSize;
   /** Editor affordance: the snap grid's step as a fraction of the face. Draws
    * faint lines over the layers, with the middle lines in the accent color. */

@@ -18,7 +18,6 @@
 
 import pageKeys from "./page-keys.json";
 import { type JsonObject, type WatchPagesDocument, isJsonObject } from "./model.js";
-import { tileDesignProblems } from "./tile-design-core.js";
 import { tileGlowProblems } from "./tile-glow.js";
 
 /** The key of the page list at the top of the document. */
@@ -831,7 +830,7 @@ function valueProblem(type: string, spec: ValueSpec, value: unknown, where: stri
       if (spec.ref !== undefined) checkObjectValues(spec.ref, value, where, problems, true);
       return undefined;
     // Any JSON at all: the apps decode it on their own and ignore it when
-    // they cannot (a tile's `design`, whose own checks follow the tile's).
+    // they cannot (a tile's `iconGlow`, whose own check follows the tile's).
     case "json":
       return undefined;
     default:
@@ -911,10 +910,8 @@ function tileLabel(index: number, tile: JsonObject): string {
  * `dynamicConfig` must hold all eight of its keys, and its rules, their
  * `tileStyle` included, are checked key by key like a tile; a rule the
  * Rules card cannot show says how to get rid of it. Keys it does not
- * know, and `null`, are left alone, as the phone leaves them. A tile's layers
- * (`design`) are checked against their caps (`tileDesignProblems`), which the
- * apps never check, and its icon glow (`iconGlow`) by its shape
- * (`tileGlowProblems`). Run over the whole document before a save, after
+ * know, and `null`, are left alone, as the phone leaves them. A tile's icon
+ * glow (`iconGlow`) is checked by its shape (`tileGlowProblems`). Run over the whole document before a save, after
  * `checkWatchPages`.
  *
  * The document is the same for every device that picks a page, so an
@@ -938,7 +935,6 @@ export function checkWatchPagesValues(document: unknown): string[] {
       if (!isJsonObject(tile)) return;
       const where = `${label}, ${tileLabel(tileIndex, tile)}`;
       checkObjectValues("tile", tile, where, problems);
-      for (const problem of tileDesignProblems(tile)) problems.push(`${where}: ${problem}`);
       for (const problem of tileGlowProblems(tile)) problems.push(`${where}: ${problem}`);
     });
   });

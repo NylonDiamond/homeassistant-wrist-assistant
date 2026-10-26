@@ -80,7 +80,6 @@ import { colorPickerView } from "./color-picker.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
-import { type BaseLayerRole, type TileDesign, BASE_GLOW_ID, BASE_GLOW_NAME, BASE_LAYER_NAMES, SIMPLE_KEY_ROLES, settingOwnerRole } from "./tile-design.js";
 import {
   type OneLookGlowMode,
   type OneLookGlyphGlow,
@@ -572,80 +571,6 @@ export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPage
     color !== undefined
       ? setWatchTileColor(d, host.pageId, host.tileId, color)
       : setWatchTileIconDefault(d, host.pageId, host.tileId, { icon: watchTileIconSettings(host.tile).icon ?? null, color: null });
-}
-
-// ── a tile's layers ──────────────────────────────────────────────────────
-
-/** What the page editor hands the tile settings about the tile's layers
- * (`design`), on the host as `tileLayers` (`extendHost`): a simple setting
- * whose layer was changed directly shows "Changed in the X layer" with a
- * link to that layer and a Reset, and a tile split into tap zones shows that
- * in place of its single tap. App repo docs/tile_layers_contract_2026-10.md,
- * section 3. */
-export interface TileLayerLinks {
-  /** The tile's design as stored, undefined while it has none. */
-  readonly design: TileDesign | undefined;
-  /** Its tap zones, 0 for none. */
-  readonly zones: number;
-  /** Pick the layer of a role in the Tiles list. */
-  pickLayer(role: BaseLayerRole): void;
-  /** Pick a layer by its element id (the glyph's Glow layer). */
-  pickLayerId(id: string): void;
-  /** Give a role's layer back to the simple settings. */
-  reset(role: BaseLayerRole): void;
-  /** Pick the first tap zone. */
-  pickZones(): void;
-  /** Whether the tile holds layers of its own (`tileHasCustomLayers`: a base
-   * layer changed, a layer added or a tap zone). */
-  readonly custom: boolean;
-  /** Back to the plain tile, as the Layers card's Reset all layers does: one
-   * undo step. */
-  resetAll(): void;
-}
-
-/** The host's layer links, when the page editor handed some. */
-function layerLinks(host: TileSettingsHost): TileLayerLinks | undefined {
-  return (host as TileSettingsHost & { readonly tileLayers?: TileLayerLinks }).tileLayers;
-}
-
-/** The role whose layer took this simple key away from the simple settings,
- * or undefined while the key is the simple settings' own. */
-export function ownedSetting(host: TileSettingsHost, key: string): BaseLayerRole | undefined {
-  return settingOwnerRole(layerLinks(host)?.design, key);
-}
-
-/** "Changed in the Name layer · Reset", in place of the rows a role's layer
- * took over. The layer's name picks the layer. `layer` names and picks
- * another layer of the role (the glyph's Glow layer), whose Reset gives both
- * back. */
-export function renderChangedInLayer(host: TileSettingsHost, role: BaseLayerRole, label?: string, layer?: { name: string; id: string }): TemplateResult {
-  const links = layerLinks(host);
-  const roleName = BASE_LAYER_NAMES[role];
-  const name = layer?.name ?? roleName;
-  const pick = () => (layer === undefined ? links?.pickLayer(role) : links?.pickLayerId(layer.id));
-  const resetTitle = layer === undefined || layer.name === roleName
-    ? `Give the ${roleName} layer back to these settings`
-    : `Give the ${roleName} and ${layer.name} layers back to these settings`;
-  return html`<div class="field ts-taken-row">${label === undefined ? nothing : html`<span>${label}</span>`}
-    <div class="ts-taken" data-taken=${role}>
-      <span class="ts-taken-dot" aria-hidden="true"></span>
-      <span class="ts-taken-words">Changed in the <button type="button" class="link" title=${`Edit the ${name} layer`} @click=${pick}>${name}</button> layer</span>
-      <button type="button" class="link" title=${resetTitle} ?disabled=${host.busy} @click=${() => links?.reset(role)}>Reset</button>
-    </div></div>`;
-}
-
-/** The simple keys each role takes over, from `SIMPLE_KEY_ROLES`. */
-function keysOf(role: BaseLayerRole): string[] {
-  return Object.entries(SIMPLE_KEY_ROLES).filter(([, r]) => r === role).map(([k]) => k);
-}
-
-/** The role that owns any of these keys, or undefined. */
-function ownerOfAny(host: TileSettingsHost, keys: readonly string[]): BaseLayerRole | undefined {
-  for (const key of keys) {
-    const role = ownedSetting(host, key);
-    if (role !== undefined) return role;
-  }
-  return undefined;
 }
 
 /** Whether the tile's color is its kind's default, what Default writes. A
@@ -1404,10 +1329,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
 
   const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
   const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
-  // The icon, its states' icons, its size and shadow, once the tile's Icon
-  // or Photo layer was changed directly: that layer holds them now.
-  const glyphOwner = ownerOfAny(host, keysOf("icon"));
-  const glyph = glyphOwner !== undefined ? renderChangedInLayer(host, glyphOwner, "Icon") : html`
+  const glyph = html`
     ${symbolField(
       { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
       s.icon ?? "",
@@ -1431,9 +1353,9 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
   return html`
     ${glyph}
     ${renderTileColor(host, defaults.color)}
-    ${glyphOwner !== undefined || host.domainStyle === true ? nothing : renderStateIcons(host)}
-    ${glyphOwner !== undefined ? nothing : html`${renderIconSize(host)}
-    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`}
+    ${host.domainStyle === true ? nothing : renderStateIcons(host)}
+    ${renderIconSize(host)}
+    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
     ${oneLook(host) && host.domainStyle !== true && s.icon !== "" ? renderIconGlow(host) : nothing}
     ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
     ${!s.activeAnimation.shown ? nothing
@@ -1451,19 +1373,11 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
 const GLOW_MODES: [OneLookGlowMode, string][] = [["auto", "Auto"], ["on", "On"], ["off", "Off"]];
 
 /**
- * The icon's glow under One Look (tile layers round three, section 14.8): a
- * "Glow" group with Auto, On and Off, and while it draws its size, its
- * brightness and its color (white, the tile's color, the theme's swatches or
- * a custom one). While the glyph slot is owned the glow is the Glow layer's:
- * one "Changed in the Glow layer" row.
+ * The icon's glow under One Look: a "Glow" group with Auto, On and Off, and
+ * while it draws its size, its brightness and its color (white, the tile's
+ * color, the theme's swatches or a custom one).
  */
 function renderIconGlow(host: TileSettingsHost): TemplateResult {
-  const owner = ownedSetting(host, "iconGlow");
-  if (owner !== undefined) {
-    const design = layerLinks(host)?.design;
-    const hasGlow = design?.doc.elements.some((el) => el.payload.id.toUpperCase() === BASE_GLOW_ID) === true;
-    return renderChangedInLayer(host, owner, "Glow", hasGlow ? { name: BASE_GLOW_NAME, id: BASE_GLOW_ID } : undefined);
-  }
   const glow = watchTileIconGlow(host.tile);
   const now = () => watchTileIconGlow(host.tile);
   const write = (setting: string, next: (g: OneLookGlyphGlow) => OneLookGlyphGlow, typing = false) =>
@@ -1565,7 +1479,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   // heading of its own.
   // One Look fills the tile with its color, and a still rainbow; a tile
   // with none draws its kind's color on the watch, graphite on the iPhone.
-  const lookNote = layerLinks(host)?.design !== undefined ? "Color fills the tile." : oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
+  const lookNote = oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
   return html`${colorPickerView({
     color,
     swatches,
@@ -1621,9 +1535,6 @@ function renderText(host: TileSettingsHost): TemplateResult {
     // switch goes back to what is stored.
     host.requestUpdate();
   };
-  // Every row here is the Name layer's once that layer was changed directly.
-  const nameOwner = ownerOfAny(host, keysOf("name"));
-  if (nameOwner !== undefined) return renderChangedInLayer(host, nameOwner, "Label");
   // The label itself is the Name card's (`renderTileName`); a rule's tiles
   // each carry their entity's own name and have none.
   return html`
@@ -1669,13 +1580,8 @@ function renderAction(host: TileSettingsHost): TemplateResult {
   if (host.domainStyle === true) return ask;
   const tap = watchSingleTapMenu(tile);
   const slides = watchHoldSlideMenus(tile, host.catalog, hostDevice(host));
-  const zones = layerLinks(host)?.zones ?? 0;
   const single = tap === undefined
     ? nothing
-    : zones > 0
-    ? html`<div class="field ts-taken-row"><span>Single tap</span><div class="ts-taken ts-zones" data-taken="zones">
-        <span class="ts-taken-words">Split into ${zones} tap ${zones === 1 ? "zone" : "zones"}</span>
-        <button type="button" class="link" title="Edit the tap zones" @click=${() => layerLinks(host)?.pickZones()}>Edit</button></div></div>`
     : menuField("Single tap", tap, (v) =>
         commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)));
   return html`
@@ -2274,17 +2180,9 @@ function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false)
   }
 }
 
-/** A State card's rows, each one a layer took over drawn once as "Changed
- * in the State layer" where the first of them stood. */
+/** A State card's rows. */
 function stateRows(host: TileSettingsHost, rows: readonly WatchStateRow[]): (TemplateResult | typeof nothing)[] {
-  let shown = false;
-  return rows.map((row) => {
-    const role = ownedSetting(host, row.key);
-    if (role === undefined) return renderStateRow(host, row);
-    if (shown) return nothing;
-    shown = true;
-    return renderChangedInLayer(host, role, "State text");
-  });
+  return rows.map((row) => renderStateRow(host, row));
 }
 
 /** The State rows a rule's style cannot hold: the phone fixes both on for
@@ -2523,15 +2421,6 @@ function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBack
 /** This module's rules, in the page editor's sheet after the shared form
  * rules and the editor's own. Prefix classes with `ts-`. */
 export const tileSettingsStyles = css`
-  /* "Changed in the X layer": the row's control, given over to the layer. */
-  .ts-taken {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 8px; box-sizing: border-box;
-    border: 1px dashed color-mix(in srgb, var(--wa-accent) 55%, transparent); border-radius: 6px;
-    background: color-mix(in srgb, var(--wa-accent) 10%, transparent); font-size: 12px;
-  }
-  .ts-taken-words { flex: 1; min-width: 0; }
-  .ts-taken .link { font-weight: 600; }
-  .ts-taken-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--wa-accent); flex: none; }
   /* The section cards are the shared inspector's (\`.sec\`, editor-chrome.ts);
      this only stacks them. */
   .ts-root { display: flex; flex-direction: column; }

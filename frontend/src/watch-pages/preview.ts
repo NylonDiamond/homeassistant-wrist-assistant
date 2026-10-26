@@ -111,11 +111,7 @@ import {
   oneLookMetrics,
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
-import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
-import { renderTileDesignContent, renderTileLayerOutline, tileBoxOf, tileDesignHiddenParts } from "./tile-design-face.js";
-import { tileInksOf } from "./tile-base-layers.js";
-import { type TileNativeFrames, layerPlacementMap, tileNativeFrames } from "./tile-anchors.js";
-import type { TileAnchors } from "./tile-design-core.js";
+import { renderOneLookTile } from "./one-look/render.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -174,14 +170,6 @@ export interface WatchPagePreviewInput {
   /** Draws One Look (true) or the old tile look (false) whatever the
    * version says. Absent: the version decides. */
   oneLook?: boolean;
-  /** The page editor's picked tile layer, outlined on its tile: the tile's
-   * id, and the layer or tap zone picked in its Layers rows. With
-   * `outline`, the frame to outline over the native tile, for a picked base
-   * layer the design does not draw itself (it follows the simple settings,
-   * or the tile has no layers saved yet), placed by `anchors` (the tile's
-   * anchors as drawn) on the native part of the layout the tile is drawn by,
-   * as the design's own layers are. */
-  designFocus?: { tileId: string; layerId?: string; zoneId?: string; outline?: { x: number; y: number; width: number; height: number }; anchors?: TileAnchors };
 }
 
 /** The device a picture draws One Look's tiles for, or undefined while the
@@ -3250,40 +3238,6 @@ function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: 
   }
 }
 
-/**
- * The native parts of a tile as `tileFace` lays it out in its grid cell,
- * `cellWidth` by `cellHeight` points, on the frame `given` draws: the size
- * the tile is drawn at (its cell less the cell inset a side) and the parts
- * of the One Look layout it is drawn by, the ones its owned layers are
- * placed on. Undefined for a tile One Look does not draw there (a divider,
- * a spacer, a template, a tile only the iPhone draws on a watch, the old
- * look).
- */
-export function previewTileNativeFrames(
-  stored: WatchPageTile,
-  cellWidth: number,
-  cellHeight: number,
-  given: WatchPagePreviewInput,
-  unit: number,
-): { width: number; height: number; native: TileNativeFrames } | undefined {
-  const oneLook = previewOneLook(given);
-  if (oneLook === undefined) return undefined;
-  const inset = previewTileCellInset(given, stored, cellWidth, cellHeight);
-  const width = cellWidth - inset * 2;
-  const height = cellHeight - inset * 2;
-  const tile = watchSyncedTile(stored, given.page);
-  const { input, stub } = withStub(tile, withStateMode(tile, given));
-  const entityId = tileEntityId(tile);
-  const cls = tileClass(entityId, input.states);
-  if (cls === "divider" || cls === "spacer" || tileKind(entityId) === "template" || !tileDrawsOn(tile, "watch")) return undefined;
-  const look = cls === "unknown" ? undefined : watchSpecialTileLook(tile, input);
-  const model = oneLookPreviewModel({
-    tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
-    width, height, cell: { width: cellWidth, height: cellHeight }, unit, box: "", s: input.scale ?? 1.5,
-  });
-  return model === undefined ? undefined : { width, height, native: tileNativeFrames(model.layout, model.device) };
-}
-
 /** Where a tile face goes: its cell's top left in pixels, or "fill" for the
  * whole of a positioned box the caller puts it in. */
 type TileFaceBox = { left: number; top: number } | "fill";
@@ -3354,44 +3308,9 @@ function tileFace(
   // (`applyDefaultTileColors`), so an iPhone tile with none is graphite.
   const oneLook = previewOneLook(given);
   if (oneLook !== undefined && kind !== "template") {
-    // A design tile is the native tile less the parts its layers own, with
-    // those layers and its added ones drawn over the rest; a tile with no
-    // design draws as it always has. A picked layer the native tile draws
-    // (one that follows the simple settings) is outlined at its frame.
-    const focus = given.designFocus !== undefined && typeof stored.id === "string" && stored.id.toUpperCase() === given.designFocus.tileId.toUpperCase()
-      ? given.designFocus : undefined;
-    // The layers are drawn from the model this very tile is laid out by, so
-    // an owned base layer lands on the native part of this frame's own
-    // layout (the watch's at its size, or the iPhone's).
-    const hidden = tileDesignHiddenParts(stored);
-    const inputs = {
-      ...(input.states === undefined ? {} : { states: input.states }),
-      page: input.page, pages: input.pages,
-      ...(input.icons === undefined ? {} : { icons: input.icons }),
-      ...(input.templates === undefined ? {} : { templates: input.templates }),
-    };
-    const outline = focus?.outline;
-    const overlayFor = outline === undefined ? undefined : (model: OneLookPreviewModel) => {
-      const box = tileBoxOf(stored);
-      const map = layerPlacementMap(focus?.layerId ?? "", focus?.anchors ?? {}, tileNativeFrames(model.layout, model.device), { width, height }, box);
-      return renderTileLayerOutline(map.frame(outline), box, width, height, s);
-    };
     return renderOneLookTile({
       tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
       width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
-      ...(hidden === undefined ? {} : {
-        hidden,
-        // Two passes (round four, section 15.1): a first Glow under the
-        // native foreground, the rest over it. Each frame resolves the
-        // layers' tile inks from its own face (section 15.3).
-        layersFor: (model: OneLookPreviewModel) => {
-          const d = renderTileDesignContent(stored, width, height, s, {
-            ...inputs, device: model.device, inks: tileInksOf(model.palette, model.layout.drawsDisc, model.device),
-          }, focus, tileNativeFrames(model.layout, model.device));
-          return d === undefined ? undefined : { ...(d.under === undefined ? {} : { under: d.under }), ...(d.content === undefined ? {} : { over: d.content }) };
-        },
-      }),
-      ...(overlayFor === undefined ? {} : { overlayFor }),
     });
   }
   if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined, cell);
@@ -4086,8 +4005,6 @@ export const watchPagePreviewStyles = css`
   .ol-edge { position: absolute; top: 0; bottom: 0; pointer-events: none; }
   .ol-chart { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
   .ol-content { position: absolute; inset: 0; pointer-events: none; }
-  .ol-design > svg { display: block; overflow: visible; }
-  .ol-design-outline { pointer-events: none; border: 1px solid #fff; border-radius: 2px; box-sizing: border-box; box-shadow: 0 0 0 1px #3b74e0; }
   .ol-bar { position: absolute; display: block; overflow: hidden; border-radius: 999px; }
   .ol-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
   .ol-disc, .ol-halo, .ol-acc { position: absolute; display: block; border-radius: 50%; }

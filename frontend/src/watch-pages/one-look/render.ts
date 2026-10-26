@@ -93,7 +93,14 @@ import {
 } from "./layout.js";
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
 import { type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
-import type { TileHiddenParts } from "../tile-design-core.js";
+
+/** Which of a tile's own parts are left undrawn: the glyph (its icon or a
+ * person's photo, and the glow with it), the name, and the state line. */
+export interface TileHiddenParts {
+  glyph: boolean;
+  name: boolean;
+  state: boolean;
+}
 
 /** What a page picture has for one tile when it hands it to One Look. */
 export interface OneLookTileFaceInput {
@@ -122,38 +129,14 @@ export interface OneLookTileFaceInput {
   /** The tooltip, when the picture names its tiles. */
   hint?: string;
   /** Measures the text and glyphs; absent, the device's own measurer with
-   * the picture's symbols. A tile's base layers pass the estimate measurer
-   * for stable fixtures (`tile-base-layers.ts`). */
+   * the picture's symbols. */
   measurer?: TextMeasurer;
-  /** The parts of the tile a design took over (its owned roles), which are
-   * left undrawn: the layout is the same as with them, so nothing else
-   * moves. The glyph takes its disc or halo with it; the state its pill,
-   * unit, tail and amber dot, the big value that stands in for it, and the
-   * accessory beside it (as the apps hide it, touch area and all). The bar
-   * and the chart are never hidden. */
+  /** The parts of the tile left undrawn: the layout is the same as with
+   * them, so nothing else moves. The glyph takes its disc or halo with it;
+   * the state its pill, unit, tail and amber dot, the big value that stands
+   * in for it, and the accessory beside it (as the apps hide it, touch area
+   * and all). The bar and the chart are never hidden. */
   hidden?: TileHiddenParts;
-  /** A tile's layers (`design`) that it draws itself (its owned base layers
-   * and added layers), over One Look's own content and under the rim,
-   * dimmed with it (app repo docs/tile_layers_contract_2026-10.md). */
-  content?: TemplateResult;
-  /** The design's layers drawn from the model this tile is laid out by, so
-   * its owned base layers can be placed on the native parts of this very
-   * layout (round two: app repo docs/tile_layers_contract_2026-10.md,
-   * section 13.2). Drawn where `content` is, and wins over it. */
-  contentFor?: (model: OneLookPreviewModel) => TemplateResult | undefined;
-  /** The design's layers drawn from the model this tile is laid out by, in
-   * two passes (round four, section 15.1): `under` right after the bar,
-   * where the native halo draws, under the glyph, accessory, state, pill,
-   * name and big value; `over` over all of them, where `content` draws.
-   * Called once per draw; wins over `contentFor` and `content`. */
-  layersFor?: (model: OneLookPreviewModel) => { under?: TemplateResult; over?: TemplateResult } | undefined;
-  /** Drawn over the tile's content, under the rim: the page editor's outline
-   * of a picked layer on a tile that has no layers saved yet. */
-  overlay?: TemplateResult;
-  /** `overlay` drawn from the model this tile is laid out by, so the outline
-   * of a picked base layer sits on the native part of this very layout, as
-   * `contentFor` places the layers. Wins over `overlay`. */
-  overlayFor?: (model: OneLookPreviewModel) => TemplateResult | undefined;
 }
 
 /** The iPhone's Page look a tile's old sizes are read in; the watch is
@@ -845,8 +828,8 @@ function borderLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, active
  * A tile drawn in One Look at its place, or undefined for a kind that keeps
  * its own face. Under the clip: the fill, the pattern and effect, the
  * picture, the chart, then the content at the palette's content opacity
- * (the bar, the design's under layer, the glyph, the button, the text, less
- * the parts a design hides, then the design's other layers), the rim and the
+ * (the bar, the glyph, the button and the text, less the parts `hidden`
+ * names), the rim and the
  * user's border. Outside it, on the iPhone, the under-glow of a lit coloured
  * tile.
  */
@@ -861,8 +844,6 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const active = watchTilePreviewActive(f.tile, input.states);
   const fade = f.stub ? 0.7 : 1;
   const rim = oneLookMetrics(device).rim;
-  const passes = f.layersFor?.(model);
-  const over = f.layersFor !== undefined ? passes?.over : f.contentFor !== undefined ? f.contentFor(model) : f.content;
   return html`<div class="wp-tile ol-tile" data-ol-mode=${layout.mode}
     style=${`${f.box}border-radius:${r2(radius * s)}px;background:${ground}${glow === undefined ? "" : `;box-shadow:${glow}`}${fade < 1 ? `;opacity:${fade}` : ""}`}
     title=${f.hint ?? nothing}>
@@ -872,11 +853,8 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
     ${chartLayer(model, s)}
     <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>
       ${barLayer(model, s)}
-      ${passes?.under ?? nothing}
       ${f.hidden?.glyph === true ? nothing : discLayer(model, input, s)}${f.hidden?.state === true ? nothing : accessoryLayer(model, input, s)}${textLayer(model, s, f.hidden)}${f.hidden?.state === true ? nothing : bigValueLayer(model, s)}
-      ${over ?? nothing}
     </span>
-    ${f.overlayFor !== undefined ? (f.overlayFor(model) ?? nothing) : (f.overlay ?? nothing)}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>
     ${borderLayer(model, f, active, radius)}
   </div>`;

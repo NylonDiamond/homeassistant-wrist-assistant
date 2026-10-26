@@ -96,9 +96,6 @@ import {
   TIMELINE_MIN_LABEL_SIZE,
   TIMELINE_MAX_LABEL_SIZE,
   type Fill,
-  type ColorSlot,
-  type TileInkName,
-  type TileInks,
   GAUGE_DEFAULT_LABEL_HEX,
   GAUGE_DEFAULT_LABEL_SIZE,
   GAUGE_DEFAULT_TICK_HEX,
@@ -207,23 +204,6 @@ export interface ResolveContext {
    * so the preview does not tick every second. The panel moves it on save and
    * on a demo tap. Undefined reads the clock, as the gallery picture does. */
   pictureTimeMs?: number;
-  /** A page tile's own words, for the `tileState` and `tileName` value kinds
-   * its layers read (`tileValuesFor` in watch-pages/tile-base-layers.ts).
-   * Undefined outside a tile, where both kinds resolve to nothing. A
-   * `tileState` with a `part` reads `stateParts` (round two, section 13.4).
-   * `inks` are the tile's live palette inks a colour that names one reads
-   * (round four, section 15.3); without them the hex beside it stands. */
-  tileValues?: { state?: string; name?: string; stateParts?: TileStateParts; inks?: TileInks };
-}
-
-/** A tile's state line in its four pieces, each "" when the line has none
- * (`oneLookStateLineParts` in watch-pages/tile-base-layers.ts). A number's
- * `figure + unit + tail`, or the `word`, is always the whole line. */
-export interface TileStateParts {
-  figure: string;
-  unit: string;
-  tail: string;
-  word: string;
 }
 
 export interface ResolvedBase {
@@ -2013,14 +1993,6 @@ export class Resolver {
       case "dataAge":
         raw = this.ctx.dataAgeSeconds === undefined ? undefined : String(Math.trunc(this.ctx.dataAgeSeconds));
         break;
-      // Local: the tile the layer sits in hands over its words. Outside a tile,
-      // nothing, which draws the way an unresolved value always does.
-      case "tileState":
-        raw = deref.kind.part === undefined ? this.ctx.tileValues?.state : this.ctx.tileValues?.stateParts?.[deref.kind.part];
-        break;
-      case "tileName":
-        raw = this.ctx.tileValues?.name;
-        break;
       case "chartStat": {
         // The chart has already decided its series and its scale; this only
         // reads the number back and prints it with the chart's own decimals,
@@ -2277,26 +2249,6 @@ export class Resolver {
     return out;
   }
 
-  /** A tile ink's hex from the context, or undefined outside a tile or for
-   * a name the context does not have. */
-  private tileInk(name: TileInkName | undefined): string | undefined {
-    if (name === undefined) return undefined;
-    const inks = this.ctx.tileValues?.inks;
-    return inks === undefined ? undefined : inks[name];
-  }
-  /** A colour slot's base colour: the tile ink it names, resolved from the
-   * tile's live palette, else its hex (round four, section 15.3). */
-  private slotHex(slot: ColorSlot): string {
-    return this.tileInk(slot.tileInk) ?? slot.baseColorHex;
-  }
-  /** A fill with every stop that names a tile ink in that ink's hex; the same
-   * fill when none does or the context has no inks. */
-  private inkFill(fill: Fill): Fill;
-  private inkFill(fill: Fill | undefined): Fill | undefined;
-  private inkFill(fill: Fill | undefined): Fill | undefined {
-    if (fill === undefined || this.ctx.tileValues?.inks === undefined || !fill.stops.some((s) => s.tileInk !== undefined)) return fill;
-    return { ...fill, stops: fill.stops.map((s) => ({ at: s.at, colorHex: this.tileInk(s.tileInk) ?? s.colorHex })) };
-  }
   private styleColor(style: Map<StyleProperty, StyleChange>, prop: StyleProperty): string | undefined {
     const change = style.get(prop);
     if (!change) return undefined;
@@ -2365,7 +2317,7 @@ export class Resolver {
         fontDesign: style.get("fontDesign")?.design ?? part.fontDesign ?? layer.fontDesign,
         fontWidth: style.get("fontWidth")?.width ?? part.fontWidth ?? layer.fontWidth,
         italic: style.get("italic")?.italic ?? part.italic ?? layer.italic,
-        colorHex: this.styleColor(style, "color") ?? this.tileInk(part.tileInk) ?? part.colorHex ?? layer.colorHex,
+        colorHex: this.styleColor(style, "color") ?? part.colorHex ?? layer.colorHex,
       };
       // An icon part keeps its tracking too, as the app resolves it; neither
       // renderer spaces a symbol, so it only keeps the two models alike.
@@ -2413,7 +2365,7 @@ export class Resolver {
           text: rich ? "" : this.styleText(style, "text") ?? fallback ?? this.resolve(el.payload.value) ?? "--",
           fontSize: this.styleNumber(style, "fontSize") ?? el.payload.fontSize,
           fontWeight: style.get("fontWeight")?.weight ?? el.payload.fontWeight,
-          colorHex: this.styleColor(style, "color") ?? this.slotHex(el.payload.colorSlot),
+          colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
           monospacedDigits: el.payload.monospacedDigits === true,
           lineLimit: Math.min(TEXT_MAX_LINES, Math.max(1, Math.round(el.payload.lineLimit ?? 1))),
           fontDesign: style.get("fontDesign")?.design ?? el.payload.fontDesign ?? "default",
@@ -2461,7 +2413,7 @@ export class Resolver {
           ...base,
           symbol,
           size: this.styleNumber(style, "fontSize") ?? el.payload.size,
-          colorHex: this.styleColor(style, "color") ?? this.slotHex(el.payload.colorSlot),
+          colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
         };
         if (path !== undefined) out.path = path;
         // The box goes with the layer's own path: a layer drawing an SF Symbol
@@ -2490,7 +2442,7 @@ export class Resolver {
         // gauge: the rule says the layer is in an unusual state, the table says
         // where this reading sits, and the table is the more specific statement.
         const ruledColor = this.styleColor(style, "color");
-        let colorHex = ruledColor ?? this.slotHex(g.colorSlot);
+        let colorHex = ruledColor ?? g.colorSlot.baseColorHex;
         const banded = g.coloring === "bands" && g.bands.length > 0 && reading !== undefined;
         if (banded) {
           colorHex = chartBandColor(reading!, chartSortedBands(g), g.bandAboveColorHex);
@@ -2498,7 +2450,7 @@ export class Resolver {
         // A gradient says how the track looks, not what the reading is, so a
         // band's color or a rule's color is the more specific statement and
         // drops it. Mirrors `resolveGauge` in the app repo.
-        const fill = banded || ruledColor !== undefined ? undefined : this.inkFill(g.fill);
+        const fill = banded || ruledColor !== undefined ? undefined : g.fill;
 
         // How many dots, and how many filled. M is `total` when it resolves to a
         // number, else the range itself; both are rounded, clamped and capped.
@@ -2545,7 +2497,7 @@ export class Resolver {
         const values = readings.values;
         const holes = readings.holes;
         const domain = { min: readings.domainMin, max: readings.domainMax };
-        const baseColorHex = this.styleColor(style, "color") ?? this.slotHex(c.colorSlot);
+        const baseColorHex = this.styleColor(style, "color") ?? c.colorSlot.baseColorHex;
         const sortedBands = chartSortedBands(c);
         const pointColorHexes = chartUsesBands(c)
           ? values.map((v) => chartBandColor(v, sortedBands, c.bandAboveColorHex))
@@ -2578,7 +2530,7 @@ export class Resolver {
           ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
           // Carried as authored: a chart's own color rules recolor the line,
           // not the area under it, so nothing here drops the gradient.
-          ...(c.areaFill !== undefined && c.style !== "bars" ? { areaFill: this.inkFill(c.areaFill) } : {}),
+          ...(c.areaFill !== undefined && c.style !== "bars" ? { areaFill: c.areaFill } : {}),
           barRadius: chartBarRadius(c.barRadius),
           barCorners: chartBarCorners(c.barCorners),
           barBorderWidth: chartBarBorderWidth(c),
@@ -2657,12 +2609,12 @@ export class Resolver {
           shapeKind: el.payload.kind,
           cornerRadius: el.payload.cornerRadius,
           thickness: el.payload.thickness,
-          fillColorHex: ruledColor ?? this.slotHex(el.payload.colorSlot),
+          fillColorHex: ruledColor ?? el.payload.colorSlot.baseColorHex,
           borderWidth: this.styleNumber(style, "borderWidth") ?? el.payload.borderWidth,
         };
         // A rule that recolored the shape drops the gradient; otherwise the
         // rule would look like it did nothing. Mirrors `resolveShape` in Swift.
-        if (ruledColor === undefined && el.payload.fill !== undefined) out.fill = this.inkFill(el.payload.fill);
+        if (ruledColor === undefined && el.payload.fill !== undefined) out.fill = el.payload.fill;
         const border = this.styleColor(style, "borderColor") ?? el.payload.borderColorHex;
         if (border !== undefined) out.borderColorHex = border;
         // A line has no body to fill: it is the whole of what the layer draws,

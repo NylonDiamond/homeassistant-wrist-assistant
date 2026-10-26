@@ -42,8 +42,6 @@ import {
 } from "./model.js";
 import { watchCapitalized } from "./tile-new.js";
 import { WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS, watchShowWhenTemplateShows, watchTileShowWhenTemplate } from "./show-when.js";
-import { TILE_DESIGN_KEY, TILE_TEMPLATE_MAX_CHARS, tileHasLayers, tileTemplateKey } from "./tile-design-core.js";
-import { codePoints } from "./tile-glow.js";
 
 // ── the home ─────────────────────────────────────────────────────────────
 
@@ -128,15 +126,11 @@ export function watchShowWhenTemplateKey(tileId: string): string {
  * without asking), and each Show tile template under its tile's
  * `watchShowWhenTemplateKey`, one the watch would send (no longer than
  * `WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS`). A tile listed twice under one id
- * is asked once, its first text. A tile's layers (`design`) that compute
- * anything are asked under their `tile_` key (`tileTemplateKey`), as the app
- * keys them, so tiles with the same values share one render.
+ * is asked once, its first text.
  */
 export function watchTemplateRequests(page: WatchPage | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const tile of watchPageTiles(page)) {
-    const design = watchTileDesignTemplate(tile);
-    if (design !== undefined) out[tileTemplateKey(design)] ??= design;
     if (typeof tile.id !== "string" || tile.id === "") continue;
     const show = watchTileShowWhenTemplate(tile);
     const showKey = watchShowWhenTemplateKey(tile.id);
@@ -147,25 +141,6 @@ export function watchTemplateRequests(page: WatchPage | undefined): Record<strin
     out[tile.id] = text;
   }
   return out;
-}
-
-/** A tile's layers' compiled values as stored (`design.template`), when the
- * tile's kind has layers and the text is one the app would send: not blank,
- * at most `TILE_TEMPLATE_MAX_CHARS` code points. */
-export function watchTileDesignTemplate(tile: WatchPageTile): string | undefined {
-  const design = tile[TILE_DESIGN_KEY];
-  if (!isJsonObject(design) || !tileHasLayers(tile)) return undefined;
-  const text = design.template;
-  return typeof text === "string" && text.trim() !== "" && codePoints(text) <= TILE_TEMPLATE_MAX_CHARS ? text : undefined;
-}
-
-/** The last render of a tile layers' template, for that text: the value
- * document Home Assistant rendered, or undefined while there is none, the
- * last answer was for another text, or it failed. */
-export function watchTileDesignRender(renders: ReadonlyMap<string, WatchTemplateRender> | undefined, template: string): string | undefined {
-  const held = renders?.get(tileTemplateKey(template));
-  if (held === undefined || held.text !== template || held.result.ok !== true) return undefined;
-  return held.result.value;
 }
 
 /** One string for a set of requests: equal exactly when the same tiles ask

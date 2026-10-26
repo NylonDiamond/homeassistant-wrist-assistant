@@ -136,8 +136,6 @@ function editor(selectedTileId?: string) {
   takeWatchPagesRecord(key, HALL, 4);
   el.selectedPageId = "P-HALL";
   el.selectedTileId = selectedTileId;
-  // Every row and layer, as the editor drew them before its level switch.
-  el.level = "expert";
   return {
     el,
     owners,
@@ -178,16 +176,6 @@ describe("the Tiles card", () => {
     expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb pe-tile-thumb"`);
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Duplicate Bottom`);
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Delete Bottom`);
-  });
-
-  it("gives a row an arrow when its tile is made of layers, and opens the selected one to list them", () => {
-    const text = editor("T-RIGHT").body();
-    expect(tileRow(text, "T-LEFT")).toContain(`<span class="pe-caret " aria-hidden="true">`);
-    expect(tileRow(text, "T-GAP")).toContain(`<span class="pe-caret none" aria-hidden="true">`);
-    expect(text).toContain(`<div class="tl-group" data-layers-of=T-RIGHT>`);
-    expect(tileRow(text, "T-RIGHT")).toContain(`<span class="pe-caret open" aria-hidden="true">`);
-    expect(text).toMatch(/data-layer-row=BA5E0000-0000-4000-8000-000000000003/);
-    expect(text).not.toContain("data-layers-of=T-LEFT");
   });
 
   it("lights the selected tile's row and no other", () => {

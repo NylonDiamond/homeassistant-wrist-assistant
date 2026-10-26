@@ -587,17 +587,8 @@ export interface EditorHost {
   /** Enter the mode for one list, or leave it with undefined. */
   setRowEdit(listId: string | undefined): void;
   /** The box the layers are authored in, in points, in place of the shape's
-   * own (`DESIGN_BOX`): a page tile's design box (`tileDesignBox`,
-   * watch-pages/tile-design.ts), when the page editor edits a tile's layers.
-   * Absent: the shape's box. */
+   * own (`DESIGN_BOX`). Absent: the shape's box. */
   designBox?: { width: number; height: number };
-  /** The layers are a page tile's: the value picker offers Tile state and
-   * Tile name, which mean nothing outside a tile, and a picture takes only
-   * the tile's own entity's picture or an upload. */
-  tileValueKinds?: boolean;
-  /** The page tile's own entity, when the layers are a tile's: the only
-   * entity a picture layer there may show the picture of. */
-  tileEntity?: EntityRef;
 }
 
 /** The box a host's layers are authored in on a shape: the host's own
@@ -2494,7 +2485,6 @@ const VALUE_KIND_GROUPS: { label: string; kinds: ValueKind["kind"][] }[] = [
   { label: "From an entity", kinds: ["entityState", "entityAttribute", "entityAge", "aggregate"] },
   { label: "Time", kinds: ["time", "dataAge"] },
   { label: "From this complication", kinds: ["chartStat", "listStat", "item", "imageTime", "named"] },
-  { label: "From this tile", kinds: ["tileState", "tileName"] },
 ];
 
 /** `valueKindsFor`, under its group headings. A source in no group (there
@@ -2526,8 +2516,6 @@ const VALUE_KIND_HINTS: Partial<Record<ValueKind["kind"], string>> = {
   aggregate: "Count several entities, or take the sum, average, lowest or highest of their states.",
   time: "The time or date, read each time the complication refreshes.",
   dataAge: "Seconds since the watch last fetched values.",
-  tileState: "What the tile shows for its state, like 82% or Away, set by its simple settings.",
-  tileName: "The tile's name: its label, else the entity's name.",
 };
 
 const CHART_CURVE_OPTIONS: [ChartCurve, string][] = [
@@ -3186,8 +3174,6 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
     case "item": return { kind, field: current.kind === "item" ? current.field : "" };
     case "listStat": return { kind, layer: "", stat: "count" };
     case "imageTime": return { kind, layer: "" };
-    case "tileState": return { kind };
-    case "tileName": return { kind };
   }
 }
 
@@ -3473,16 +3459,11 @@ export function placePopover(anchor: AnchorBox, size: { width: number; height: n
  * the others (Jesse, 2026-09-23). It stays listed only on a value that holds it.
  */
 export function valueKindsFor(host: EditorHost, kind: ValueKind, opts: ValueEditorOptions): [ValueKind["kind"], string][] {
-  // A tile draws no chart, so it has no chart number to read.
-  const out = VALUE_KINDS.filter(([k]) => (opts.allowNamed !== false || k !== "named")
-    && (k !== "chartStat" || host.tileValueKinds !== true || kind.kind === "chartStat"));
+  const out = VALUE_KINDS.filter(([k]) => opts.allowNamed !== false || k !== "named");
   if (host.rowEditListId !== undefined || kind.kind === "item") out.push(["item", "Item field"]);
   const lists = host.config.elements.some((e) => e.kind === "list");
   if (lists || kind.kind === "listStat") out.push(["listStat", "List count"]);
   if (kind.kind === "imageTime") out.push(["imageTime", "Picture time"]);
-  if (host.tileValueKinds === true || kind.kind === "tileState" || kind.kind === "tileName") {
-    out.push(["tileState", "Tile state"], ["tileName", "Tile name"]);
-  }
   return out;
 }
 
@@ -3905,10 +3886,6 @@ export function formatFits(kind: ValueKind | undefined): FormatFits {
     // read as an age prints 9999d.
     case "imageTime":
       return { numbers: false, textCase: false, unit: false, seconds: false };
-    // The tile's own words, already formatted the way the tile draws them.
-    case "tileState":
-    case "tileName":
-      return { numbers: false, textCase: true, unit: false, seconds: false };
   }
 }
 
@@ -6238,11 +6215,6 @@ function deviceClassOf(host: EditorHost, entityId: string): string | undefined {
  */
 function layerEntityField(host: EditorHost, el: CElement, key: string): TemplateResult {
   const id = el.payload.id;
-  // A tile's picture is its own entity's, so there is nothing to pick.
-  if (el.kind === "image" && host.tileEntity !== undefined) {
-    const own = host.tileEntity;
-    return html`<div class="hint">The picture of the tile's own entity, ${own.displayName.trim() || own.entityId || "which it has none of"}.</div>`;
-  }
   const uses = layerEntityUses(host.config, id);
   const ref = uses[0]?.ref ?? { entityId: "", displayName: "", domain: "" };
   // A camera layer keeps the camera-only picker it has always had. An entity
@@ -8962,14 +8934,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (v === "svg" && icon?.kind === "icon") setIconDrawing(icon.payload, "svg");
             }, "icon-drawing"), { titles: MARKER_DRAWING_TITLES, def: "symbol" })
           : nothing}
-        ${segField("Source", img.source, host.tileValueKinds === true && img.source !== "camera"
-            ? [["entityPicture", "Entity picture"], ["inline", "Custom image"]]
-            : [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => host.update((c) => {
             const target = c.elements.find((e) => e.payload.id === img.id);
             if (target?.kind !== "image") return;
             setImageSource(target.payload, v);
-            if (v === "entityPicture" && host.tileEntity !== undefined) target.payload.entity = { ...host.tileEntity };
             // A timestamp over an uploaded picture has no fetched-at time to
             // print, so it would sit there drawing nothing. Its text and the
             // capsule behind it go with the switch, in the same undo step.
@@ -9263,7 +9232,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (chart) restoreKeys(chart.payload, base, CHART_EXTRAS_KEYS);
             }) }
           : {}) }) : nothing}
-    ${el.kind === "timeline" || (el.kind === "image" && el.payload.source !== "inline" && host.tileValueKinds !== true) ? ownedExtrasCard(host, el) : nothing}
+    ${el.kind === "timeline" || (el.kind === "image" && el.payload.source !== "inline") ? ownedExtrasCard(host, el) : nothing}
     ${el.kind === "list"
       ? card(host, "row", "Row", listRowCard(host, el, (m, k) => upd((e) => m((e as typeof el).payload), k)),
           { color: SECTION_COLOR.numbers, icon: "content",
@@ -10732,14 +10701,6 @@ export function describeValue(v: Value, ctx?: DescribeContext): string {
   return `${describeValueBody(v, ctx)}${describeFormat(v.format)}`;
 }
 
-/** How a `tileState` value with a part reads in a layer's summary. */
-const TILE_STATE_PART_WORDS: Readonly<Record<"figure" | "unit" | "tail" | "word", string>> = {
-  figure: "Tile state number",
-  unit: "Tile state unit",
-  tail: "Tile state tail",
-  word: "Tile state word",
-};
-
 function describeValueBody(v: Value, ctx?: DescribeContext): string {
   const k = v.kind;
   switch (k.kind) {
@@ -10750,8 +10711,6 @@ function describeValueBody(v: Value, ctx?: DescribeContext): string {
     case "aggregate": return describeAggregate(k.aggregate);
     case "time": return TIME_FIELD_WORDS[k.timeField];
     case "dataAge": return "data age";
-    case "tileState": return k.part === undefined ? "Tile state" : TILE_STATE_PART_WORDS[k.part];
-    case "tileName": return "Tile name";
     case "item": return k.field ? `item ${k.field}` : "item field";
     case "listStat": return k.stat === "total" ? "items in total" : "items shown";
     case "imageTime": {
