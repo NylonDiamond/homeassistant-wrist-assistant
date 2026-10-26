@@ -1907,6 +1907,7 @@ export class WaPageEditor extends LitElement {
       cloudTTS: () => this.homeData.cloudTTS,
       templateRenders: () => this.templateRenders,
       oneLook: () => this.oneLookOn(pageId),
+      pickers: () => this.pagePickers(pageId),
       smartRuleId: () => {
         const id = this.selectedSmartRuleId;
         const rules = readSmartConfig(pageNow())?.rules ?? [];

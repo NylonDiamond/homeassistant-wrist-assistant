@@ -199,10 +199,13 @@ import {
   watchSingleTapSettings,
   watchStorageIconName,
   watchTileActionSettings,
+  watchTileArrange,
   watchTileIconGlow,
   watchTileIconSettings,
   watchTileTextSettings,
 } from "./tile-settings-model.js";
+import { renderArrangement } from "./arrange-card.js";
+import { arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
   type WatchMenu,
@@ -594,7 +597,10 @@ export interface TileSettingsExtras {
  * size first, as the page editor hands those rows in, then the tile's own on
  * the device showing the page (`watchTileSectionsFor`). */
 export function tileInspectorSections(host: TileSettingsHost): WatchTileSettingsSection[] {
-  return ["size", ...tileSections(host)];
+  // Arrangement right after Size, for a tile One Look draws with its own
+  // icon, name and state.
+  const arrange = oneLook(host) && host.domainStyle !== true && arrangeOffered(host.tile);
+  return ["size", ...(arrange ? (["arrange"] as const) : []), ...tileSections(host)];
 }
 
 /** The tile's own sections on the device showing the page
@@ -809,6 +815,8 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
       return watchPhoneKeysOf(tile, host.hass.states).some((key) => watchPhoneKeyChanged(tile, key));
     case "phoneTile":
       return watchPhoneTileChanged(tile);
+    case "arrange":
+      return watchTileArrange(tile) !== undefined;
     case "opens":
     case "target":
     case "special":
@@ -909,6 +917,12 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       return WATCH_PHONE_EXTRAS_HINT;
     case "phoneTile":
       return watchPhoneTileSummary(tile);
+    case "arrange": {
+      const a = watchTileArrange(tile);
+      if (a === undefined) return "Default";
+      const moved = (["icon", "name", "state"] as const).filter((p) => a.parts[p] !== undefined).map((p) => p === "icon" ? "Icon" : p === "name" ? "Name" : "State");
+      return `Free: ${moved.join(", ")}`;
+    }
     case "size":
     case "removed":
       return "";
@@ -967,6 +981,8 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderPhoneKeys(host, true);
     case "phoneTile":
       return renderPhoneTileTask(host);
+    case "arrange":
+      return renderArrangement(host);
     case "size":
     case "removed":
       return html``;
@@ -2527,4 +2543,34 @@ export const tileSettingsStyles = css`
   .ts-state-reset { width: 26px; height: 26px; }
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
+
+  /* The Arrangement card (\`arrange-card.ts\`). The picture box is the card's
+     PIC_W by PIC_H. */
+  .ts-arr { display: flex; flex-direction: column; gap: 6px; }
+  .ts-arr-picks { display: flex; flex-wrap: wrap; gap: 10px; }
+  .ts-arr-pick {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; min-width: 104px;
+    border: 1px solid var(--wa-line-strong); border-radius: 10px; background: transparent; color: var(--wa-ink); cursor: pointer;
+  }
+  .ts-arr-pick:hover:not(:disabled) { background: var(--wa-panel); }
+  .ts-arr-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ts-arr-pick.on { border-color: var(--wa-sel-ring); background: var(--wa-sel-bg); }
+  .ts-arr-pick:disabled { opacity: .5; cursor: default; }
+  .ts-arr-pic { display: grid; place-items: center; width: 92px; height: 64px; border-radius: 8px; background: #000; }
+  .ts-arr-tile { position: relative; display: block; }
+  .ts-arr-label { font-size: 12px; font-weight: 600; }
+  .ts-body .hint.ts-arr-why { margin: 0; }
+  .ts-arr-free { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--wa-line); }
+  .ts-arr-spot-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ts-arr-spots {
+    display: grid; grid-template-columns: repeat(3, 26px); gap: 3px; padding: 3px;
+    border: 1px solid var(--wa-line-strong); border-radius: 9px;
+  }
+  .ts-arr-spot { display: grid; place-items: center; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+  .ts-arr-spot > span { width: 8px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--wa-ink) 30%, transparent); }
+  .ts-arr-spot:hover > span { background: color-mix(in srgb, var(--wa-ink) 60%, transparent); }
+  .ts-arr-spot.on { background: var(--wa-sel-bg); }
+  .ts-arr-spot.on > span { background: var(--wa-accent); }
+  .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
 `;

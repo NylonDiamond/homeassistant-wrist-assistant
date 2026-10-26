@@ -1,5 +1,6 @@
 // A tile's Arrangement (`arrange`): reading and writing the key, the
-// placement math, and the One Look drawing that applies it. The shared fixtures have their own test
+// placement math, the One Look drawing that applies it, the version note,
+// and the Arrangement card. The shared fixtures have their own test
 // (`arrange-fixtures.test.ts`). Plan: app repo
 // docs/page_editor_calm_plan_2026-10.md, "The Arrangement key", steps 5 and 6.
 
@@ -9,6 +10,10 @@ import { describe, expect, it } from "vitest";
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
 import { phonePagesLayout, phonePagesScreen } from "../src/phone-frame.js";
+import { SymbolBrowser } from "../src/symbols.js";
+import { MIN_VERSION_FOR_ARRANGEMENT, arrangementFor, arrangementUpdateNote } from "../src/version.js";
+import { WatchPagesDraft } from "../src/watch-pages/draft.js";
+import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type WatchPagePreviewInput, renderWatchTileFace, watchTileOneLookModel } from "../src/watch-pages/preview.js";
 import {
@@ -18,8 +23,9 @@ import {
   normalizeTileArrange,
   withArrangePart,
 } from "../src/watch-pages/one-look/arrange.js";
-import { arrangeFreeBlock } from "../src/watch-pages/arrange-model.js";
+import { arrangeFreeBlock, arrangeOffered } from "../src/watch-pages/arrange-model.js";
 import { setWatchTileArrange } from "../src/watch-pages/tile-settings-model.js";
+import { renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
 
 (globalThis as { document?: unknown }).document ??= { activeElement: null };
 (globalThis as { HTMLElement?: unknown }).HTMLElement ??= class {};
@@ -222,5 +228,172 @@ describe("One Look draws the arrangement", () => {
     const r = model.arrange!.icon!.rect;
     expect(r.x + r.width).toBeCloseTo(model.layout.size.width - model.layout.insetH, 5);
     expect(r.y + r.height).toBeCloseTo(model.layout.size.height - model.layout.insetV, 5);
+  });
+});
+
+// ── the version note ─────────────────────────────────────────────────────
+
+describe("the version note", () => {
+  it("needs 3.2, and an unreported version reads as new enough", () => {
+    expect(MIN_VERSION_FOR_ARRANGEMENT).toBe("3.2.0");
+    expect(arrangementFor("3.2.0")).toBe(true);
+    expect(arrangementFor("3.10.0")).toBe(true);
+    expect(arrangementFor("3.1.9")).toBe(false);
+    expect(arrangementFor(null)).toBe(true);
+    expect(arrangementFor(undefined)).toBe(true);
+  });
+
+  it("names the devices that draw Default", () => {
+    expect(arrangementUpdateNote([])).toBeUndefined();
+    expect(arrangementUpdateNote(["Chen Watch"])).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Default arrangement.");
+    expect(arrangementUpdateNote(["A", "B", "C"])).toBe("Needs Wrist Assistant 3.2 on A, B and C. Until then they draw the Default arrangement.");
+  });
+});
+
+// ── the card ─────────────────────────────────────────────────────────────
+
+interface Tpl { strings: readonly string[]; values: unknown[] }
+const isTpl = (n: unknown): n is Tpl => typeof n === "object" && n !== null && "strings" in n && "values" in n;
+function templates(node: unknown, out: Tpl[] = []): Tpl[] {
+  if (Array.isArray(node)) for (const n of node) templates(n, out);
+  else if (isTpl(node)) {
+    out.push(node);
+    for (const v of node.values) templates(v, out);
+  }
+  return out;
+}
+/** Press the smallest @click button whose markup holds `marker`. */
+function click(root: unknown, marker: string): void {
+  const found = templates(root)
+    .map((t) => {
+      let markup = "";
+      let fn: unknown;
+      t.strings.forEach((s, i) => {
+        markup += s;
+        if (i >= t.values.length) return;
+        const v = t.values[i];
+        if (typeof v === "function" && s.trimEnd().endsWith("@click=")) fn ??= v;
+        markup += text(v);
+      });
+      return { markup, fn };
+    })
+    .filter((c) => c.markup.includes(marker) && c.fn !== undefined)
+    .sort((a, b) => a.markup.length - b.markup.length);
+  if (found.length === 0) throw new Error(`no @click near ${marker}`);
+  (found[0]!.fn as (e: unknown) => void)({ currentTarget: null, stopPropagation() {} });
+}
+
+const PAGE_ID = "C3A0E000-0000-4000-8000-0000000000AA";
+const TILE_ID = "C3A0E000-0000-4000-8000-000000000001";
+
+function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers?: { name: string; version: string | null }[] } = {}) {
+  const draft = new WatchPagesDraft({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Living", items: [{ id: TILE_ID, gridCol: 0, gridRow: 0, ...t }] }] }, 1);
+  const pageNow = () => (draft.document.pages as WatchPage[])[0]!;
+  const host = {
+    hass: { states: lit("light.kitchen") },
+    icons: NO_ICONS,
+    symbols: new SymbolBrowser(() => undefined),
+    get document() { return draft.document; },
+    pageId: PAGE_ID,
+    get page() { return pageNow(); },
+    otherPages: [],
+    catalog: undefined,
+    cameraRefreshDefaults: { on: true, debounce: "5" },
+    behavior: undefined,
+    musicAssistant: undefined,
+    cloudTTS: undefined,
+    templateRenders: new Map(),
+    deviceSiblings: () => ({ selects: [], switches: [], sensors: [], all: [] }),
+    smartRuleId: undefined,
+    busy: false,
+    uiState: new Map<string, unknown>(),
+    apply: (next: WatchPagesDocument, o?: { coalesce?: string }) => draft.apply(next, o),
+    endCoalesce: () => draft.endCoalesce(),
+    selectTile: () => undefined,
+    requestUpdate: () => undefined,
+    tileId: TILE_ID,
+    get tile() { return ((pageNow().items as WatchPageTile[] | undefined) ?? []).find((x) => x.id === TILE_ID) ?? ({} as WatchPageTile); },
+    oneLook: opts.oneLook ?? true,
+    ...(opts.pickers === undefined ? {} : { pickers: opts.pickers }),
+  } as unknown as TileSettingsHost;
+  return { host, draft };
+}
+const card = (host: TileSettingsHost) => renderTileSettings(host, { sections: ["arrange"] });
+const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel: "Kitchen", color: "#8F7BEA" };
+const stored = (host: TileSettingsHost) => host.tile.arrange;
+
+describe("the Arrangement card", () => {
+  it("comes right after Size under One Look, for tiles with their own parts", () => {
+    expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 3)).toEqual(["size", "arrange", "icon"]);
+    expect(tileInspectorSections(tileHost(KITCHEN, { oneLook: false }).host)).not.toContain("arrange");
+    for (const entityId of ["spacer.x", "divider.line.light", "template.x", "map.x", "macro.x"]) {
+      expect(arrangeOffered({ id: "x", entityId }), entityId).toBe(false);
+    }
+    expect(arrangeOffered({ id: "x", entityId: "camera.porch" })).toBe(true);
+  });
+
+  it("starts on Default with both pictures, and Free shows the rows without writing", () => {
+    const { host, draft } = tileHost(KITCHEN);
+    const before = text(card(host));
+    expect(before).toContain(`<h4>Arrangement</h4>`);
+    expect(before).toContain("Every part sits where the tile's layout puts it.");
+    expect(before.match(/class="ts-arr-tile"/g)?.length).toBe(2);
+    expect(before).not.toContain("Native place");
+    const doc = draft.document;
+    click(card(host), `"ts-arr-label">Free<`);
+    expect(draft.document).toBe(doc);
+    const free = text(card(host));
+    expect(free).toContain("Native place");
+    expect(free).toContain("Put every part back");
+  });
+
+  it("writes a spot, a size and hidden for the part picked, each one undo step", () => {
+    const { host, draft } = tileHost(KITCHEN);
+    click(card(host), `"ts-arr-label">Free<`);
+    click(card(host), "aria-label=Top right");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
+    click(card(host), ">150%</button>");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
+    click(card(host), ">State</button>");
+    click(card(host), ">Hidden</button>");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 }, state: { hidden: true } } });
+    expect(text(card(host))).toContain("Icon •");
+    draft.undo();
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
+  });
+
+  it("goes back to Default by removing the key, which undo brings back", () => {
+    const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
+    expect(text(card(host))).toContain("Native place");
+    click(card(host), `"ts-arr-label">Default<`);
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
+    expect(text(card(host))).not.toContain("Native place");
+    draft.undo();
+    expect(stored(host)).toEqual({ v: 1, parts: { name: { spot: "bl" } } });
+  });
+
+  it("puts every part back and stays on Free", () => {
+    const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { spot: "tl" }, state: { hidden: true } } } });
+    click(card(host), ">Put every part back<");
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
+    expect(text(card(host))).toContain("Native place");
+  });
+
+  it("greys Free with the reason on a tile that cannot use it", () => {
+    const { host } = tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3, arrange: { v: 1, parts: { icon: { spot: "tl" } } } });
+    const markup = text(card(host));
+    expect(markup).toMatch(/<button type="button" class="ts-arr-pick on" role="radio" aria-checked=true\s+\?disabled=false/);
+    expect(markup).toContain("?disabled=true");
+    expect(markup).toContain("A tile under 4 rows lays its parts out in a row.");
+    expect(markup).toContain("The arrangement stored on it is kept but not drawn.");
+    expect(markup).not.toContain("Native place");
+    click(card(host), ">Put every part back<");
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
+  });
+
+  it("notes the devices too old to draw it", () => {
+    const old = text(card(tileHost(KITCHEN, { pickers: [{ name: "Chen Watch", version: "3.1.4" }, { name: "Jesse iPhone", version: "3.2.0" }] }).host));
+    expect(old).toContain("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Default arrangement.");
+    expect(text(card(tileHost(KITCHEN, { pickers: [{ name: "Jesse iPhone", version: null }] }).host))).not.toContain("Needs Wrist Assistant");
   });
 });
