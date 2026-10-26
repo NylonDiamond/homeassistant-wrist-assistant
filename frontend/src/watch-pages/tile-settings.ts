@@ -1482,30 +1482,37 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
         title=${host.domainStyle === true ? `No icon of its own: the ${hostDeviceNoun(host)} draws its default` : defaults.icon === undefined ? `The ${hostDeviceNoun(host)} picks the icon` : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
     </div>`;
+  // The card in groups, a hairline between each: the icon, its color, the
+  // state icons, the icon's size and shadow, the glow, then how it moves.
   return html`
-    ${glyph}
-    ${renderTileColor(host, defaults.color)}
-    ${host.domainStyle === true ? nothing : renderStateIcons(host)}
-    ${renderIconSize(host)}
-    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
-    ${oneLook(host) && host.domainStyle !== true && s.icon !== "" ? renderIconGlow(host) : nothing}
-    ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
-    ${!s.activeAnimation.shown ? nothing
-      // One Look never moves the icon for being on: the switch is greyed.
-      : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
-      : renderActiveAnimation(host, s.activeAnimation.stored)}
-    ${menuField("Tap animation", animation, (v) =>
-      commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
-    <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
-      ? nothing
-      : html` Stored as "${unknownAnimation}", which the ${hostDeviceNoun(host)} plays as Bounce; it stays until another is picked.`}</div>`;
+    <div class="ts-group">${glyph}</div>
+    <div class="ts-group">${renderTileColor(host, defaults.color)}</div>
+    ${host.domainStyle === true ? nothing : html`<div class="ts-group">${renderStateIcons(host)}</div>`}
+    <div class="ts-group">
+      ${renderIconSize(host)}
+      ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
+    </div>
+    ${oneLook(host) && host.domainStyle !== true && s.icon !== "" ? html`<div class="ts-group">${renderIconGlow(host)}</div>` : nothing}
+    <div class="ts-group">
+      ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
+      ${!s.activeAnimation.shown ? nothing
+        // One Look never moves the icon for being on: the switch is greyed.
+        : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
+        : renderActiveAnimation(host, s.activeAnimation.stored)}
+      ${menuField("Tap animation", animation, (v) =>
+        commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
+      <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
+        ? nothing
+        : html` Stored as "${unknownAnimation}", which the ${hostDeviceNoun(host)} plays as Bounce; it stays until another is picked.`}</div>
+    </div>`;
 }
 
 /** The glow modes, as the Glow switch names them. */
-const GLOW_MODES: [OneLookGlowMode, string][] = [["auto", "Auto"], ["on", "On"], ["off", "Off"]];
+const GLOW_MODES: [OneLookGlowMode, string][] = [["auto", "When on"], ["on", "Always"], ["off", "Off"]];
 
 /**
- * The icon's glow under One Look: a "Glow" group with Auto, On and Off, and
+ * The icon's glow under One Look: a "Glow" group with When on (stored as
+ * `auto`), Always (`on`) and Off, and
  * while it draws its size, its brightness and its color (white, the tile's
  * color, the theme's swatches or a custom one).
  */
@@ -1527,7 +1534,7 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
     const rgb = oneLookParseHex(value);
     if (rgb !== undefined) write("glowColor", (g) => ({ ...g, colour: { kind: "custom", rgb } }));
   };
-  // Each choice as the tile on, then off: Auto and On differ only off.
+  // Each choice as the tile on, then off: When on and Always differ only off.
   const pics = tilePictures(host);
   const withMode = (mode: OneLookGlowMode) => (d: WatchPagesDocument) => setWatchTileIconGlow(d, host.pageId, host.tileId, { ...glow, mode });
   const options = GLOW_MODES.map(([mode, label]) => ({
@@ -1536,7 +1543,7 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
     picture: () => html`${pics.tile(`glow:${mode}`, withMode(mode), "on", 54, 44)}${pics.tile(`glow:${mode}`, withMode(mode), "off", 54, 44)}`,
   }));
   return html`${pictureChoice<OneLookGlowMode>("Glow", glow.mode, options, (v) => write("glowMode", (g) => ({ ...g, mode: v })), { def: "auto", size: "pair" })}
-    <div class="hint">Each picture shows the tile on, then off. Auto glows behind the icon on a colored tile, brighter while it is on. On glows on gray and off tiles too. Never over a picture.</div>
+    <div class="hint">Each picture shows the tile on, then off. When on glows behind the icon while the tile has its color, brighter while it is on. Always glows on gray and off tiles too. Never over a picture.</div>
     ${glow.mode === "off" ? nothing : html`
       ${typingField(host, "glowSize", sliderField("Size", glow.size, (v) => write("glowSize", (g) => ({ ...g, size: v }), true), {
         min: ONE_LOOK_GLOW_SIZE_RANGE[0], max: ONE_LOOK_GLOW_SIZE_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.size, unit: "%",
@@ -2405,11 +2412,11 @@ function renderState(host: TileSettingsHost): TemplateResult {
   return html`
     ${cards.map((card) => {
       const subtitle = (look ? oneLookCardSubtitle(card.id, kind) : undefined) ?? card.subtitle;
-      return html`
+      return html`<div class="ts-group">
       <div class="ts-sub-h"><span>${card.title}</span></div>
       ${subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${subtitle}.</div>`}
       ${stateRows(host, card.rows)}
-      ${look ? stateCardNote(host, card.id) : nothing}`;
+      ${look ? stateCardNote(host, card.id) : nothing}</div>`;
     })}
     ${resetRow(host, "state", "State")}`;
 }
@@ -2694,6 +2701,12 @@ export const tileSettingsStyles = css`
   button.ghost.ts-reset-btn:hover:not(:disabled) { color: var(--wa-ink); }
 
   .ts-sub { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
+  /* A card's groups (the Icon card's icon, color, glow; the State card's
+     parts), a hairline between each. An empty group draws no line. */
+  .ts-group { display: flex; flex-direction: column; gap: 2px; }
+  .ts-group:empty { display: none; }
+  .ts-group + .ts-group:not(:empty) { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+  .ts-group > .ts-sub:first-child, .ts-group > .ts-sub-h:first-child { margin-top: 0; }
   .ts-streams { margin: 0 0 6px; }
   .ts-streams b { font-weight: 600; }
   .ts-play { align-items: center; }

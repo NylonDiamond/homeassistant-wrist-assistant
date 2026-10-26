@@ -115,6 +115,14 @@ describe("the old look stays as it was", () => {
 });
 
 describe("Icon and color in One Look", () => {
+  it("names the glow When on, Always and Off, in a group of its own", () => {
+    const view = drawn(tile("light.desk", { color: "#FF9500" }), true);
+    const labels = [...view.matchAll(/<span class="pc-label">([^<]+)<\/span>/g)].map((m) => m[1]);
+    expect(labels).toEqual(expect.arrayContaining(["When on", "Always", "Off"]));
+    expect(labels).not.toContain("Auto");
+    expect(view.match(/<div class="ts-group">/g)?.length).toBeGreaterThanOrEqual(5);
+  });
+
   it("says the tile fills with its color, and a rainbow that does not cycle", () => {
     expect(drawn(tile("light.desk", { color: "#RAINBOW" }), true)).toContain(ONE_LOOK_RAINBOW_NOTE);
     expect(drawn(tile("light.desk", { color: "#RAINBOW" }), true)).not.toContain("cycles");
