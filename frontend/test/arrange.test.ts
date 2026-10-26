@@ -376,6 +376,24 @@ describe("the Arrangement card", () => {
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
   });
 
+  it("puts a dragged part exactly at a spot or its native place, keeping its size and Show", () => {
+    const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { dx: 0.038, dy: 0.29, scale: 1.2 } } } });
+    // Moved by a drag: Native place is not lit, though no spot is stored.
+    expect(text(card(host))).toMatch(/class="pe-chip " aria-pressed=false/);
+    click(card(host), ">Native place<");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { scale: 1.2 } } });
+    expect(text(card(host))).toMatch(/class="pe-chip on" aria-pressed=true/);
+    host.endCoalesce();
+    click(card(host), "aria-label=Top right");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.2 } } });
+  });
+
+  it("drops a moved spot's offset when the same spot is clicked again", () => {
+    const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { spot: "tr", dy: 0.358 } } } });
+    click(card(host), "aria-label=Top right");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
+  });
+
   it("goes back to Default by removing the key, which undo brings back", () => {
     const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
     expect(text(card(host))).toContain("Native place");

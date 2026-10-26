@@ -537,14 +537,14 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
   return html`
     ${photos === undefined || photos.listState === "none" ? html`<p class="hint warn">Photos need a newer version of the integration. A photo set before still shows here.</p>` : nothing}
     ${photos?.listState === "failed" ? html`<p class="hint warn">Home Assistant did not list its photos. ${linkButton("Try again", "Read the photo list again", () => void photos.refreshList())}</p>` : nothing}
-    ${photos?.listState === "loading" ? html`<p class="hint">Loading photos...</p>` : nothing}
+    ${photos?.listState === "loading" ? html`<p class="hint keep">Loading photos...</p>` : nothing}
     ${photos !== undefined && list !== undefined ? html`
       <div class="ts-sub-h"><span>Built-in</span></div>
       <div class="ps-photos" role="radiogroup" aria-label="Built-in photos">
         ${list.presets.map((p) => photoButton(sh, photos, p.id, p.name, p.name, false))}
       </div>
       <div class="ts-sub-h"><span>Your photos</span></div>
-      ${list.images.length === 0 ? html`<div class="hint ts-under">None yet.</div>` : html`
+      ${list.images.length === 0 ? html`<div class="hint keep ts-under">None yet.</div>` : html`
         <div class="ps-photos" role="radiogroup" aria-label="Your photos">
           ${list.images.map((image) => photoButton(sh, photos, image.id, "Photo", addedWords(image.added_at),
             image.used_by.length === 0 && !inUse.has(image.id.toUpperCase())))}
@@ -564,7 +564,7 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
         </label>
       </div>` : nothing}
     ${photos?.error !== undefined ? html`<p class="hint warn">${photos.error}</p>` : nothing}
-    ${s.imageId === undefined ? (list !== undefined ? html`<div class="hint ts-under">No photo yet: pick one.</div>` : nothing) : html`
+    ${s.imageId === undefined ? (list !== undefined ? html`<div class="hint keep ts-under">No photo yet: pick one.</div>` : nothing) : html`
       ${missing ? html`<p class="hint warn">Photo missing. Home Assistant does not have it, so the ${hostDeviceNoun(sh)} shows none. Pick another or remove it.</p>` : nothing}
       ${pageSlider(sh, "imageOpacity", "Opacity", "backgroundImageOpacity", s.imageOpacity, setWatchPageImageOpacity, 1, true)}
       ${pageSlider(sh, "imageBlur", "Blur", "backgroundImageBlur", s.imageBlur, setWatchPageImageBlur, 0, blurText)}

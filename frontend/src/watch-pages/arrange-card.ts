@@ -165,7 +165,7 @@ export function renderArrangement(host: TileSettingsHost): TemplateResult {
       ${pickButton("Free", free, pictures?.free ?? nothing, () => pickArrangeFree(host), block !== undefined, block ?? "Move, size or hide the icon, the name and the state")}
     </div>
     ${block !== undefined
-      ? html`<div class="hint ts-arr-why">${block}${stored === undefined ? nothing : " The arrangement stored on it is kept but not drawn."}</div>`
+      ? html`<div class="hint keep ts-arr-why">${block}${stored === undefined ? nothing : " The arrangement stored on it is kept but not drawn."}</div>`
       : free ? nothing : html`<div class="hint ts-arr-why">Every part sits where the tile's layout puts it.</div>`}
     ${old === undefined ? nothing : html`<div class="hint warn ts-arr-why" role="status">${old}</div>`}`;
   if (!free) {
@@ -201,6 +201,14 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
     : part === "icon" ? model.layout.discRect.width > 0
     : part === "name" ? model.layout.name.lines.length > 0
     : model.layout.stateRect !== undefined;
+  // A spot or Native place puts the part exactly there: the move across and
+  // down (what a drag on the stage writes) goes with it. Size and Show stay.
+  const placeAt = (spot: ArrangeSpot | undefined) => writePart(host, "spot", (e) => {
+    const { spot: _s, dx: _x, dy: _y, ...rest } = e;
+    return spot === undefined ? rest : { ...rest, spot };
+  });
+  const nudged = (entry.dx ?? 0) !== 0 || (entry.dy ?? 0) !== 0;
+  const native = entry.spot === undefined && !nudged;
   const scale = String(entry.scale ?? 1);
   const offset = (axis: "dx" | "dy") => {
     const label = axis === "dx" ? "Across" : "Down";
@@ -212,20 +220,21 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
   };
   return html`<div class="ts-arr-free">
     ${partRow}
-    ${drawn ? nothing : html`<div class="hint ts-under">This tile draws no ${PART_WORDS[part]} now; its arrangement is kept for when it does.</div>`}
+    ${drawn ? nothing : html`<div class="hint keep ts-under">This tile draws no ${PART_WORDS[part]} now; its arrangement is kept for when it does.</div>`}
     <div class="field ts-arr-spot-row"><span>Spot</span>
       <div class="ts-arr-spot-ctl">
         <div class="ts-arr-spots" role="radiogroup" aria-label=${`Spot of the ${PART_WORDS[part]}`}>
           ${ARRANGE_SPOTS.map((spot) => {
             const on = entry.spot === spot;
+            const exact = on && !nudged;
             return html`<button type="button" class="ts-arr-spot ${on ? "on" : ""}" role="radio" aria-checked=${on ? "true" : "false"}
               title=${SPOT_WORDS[spot]} aria-label=${SPOT_WORDS[spot]}
-              @click=${() => { if (!on) writePart(host, "spot", (e) => ({ ...e, spot })); }}><span></span></button>`;
+              @click=${() => { if (!exact) placeAt(spot); }}><span></span></button>`;
           })}
         </div>
-        <button type="button" class="pe-chip ${entry.spot === undefined ? "on" : ""}" aria-pressed=${entry.spot === undefined ? "true" : "false"}
-          title=${`Where the tile's layout puts the ${PART_WORDS[part]}`}
-          @click=${() => { if (entry.spot !== undefined) writePart(host, "spot", (e) => { const { spot: _, ...rest } = e; return rest; }); }}>Native place</button>
+        <button type="button" class="pe-chip ${native ? "on" : ""}" aria-pressed=${native ? "true" : "false"}
+          title=${`Back where the tile's layout puts the ${PART_WORDS[part]}`}
+          @click=${() => { if (!native) placeAt(undefined); }}>Native place</button>
       </div>
     </div>
     ${segField("Size", scale, SCALES, (v) => writePart(host, "scale", (e) => ({ ...e, scale: Number(v) })), { def: "1" })}

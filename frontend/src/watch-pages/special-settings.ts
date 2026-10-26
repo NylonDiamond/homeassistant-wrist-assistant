@@ -638,7 +638,7 @@ function renderGroupWith(host: TileSettingsHost): TemplateResult {
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>Group with other cameras</span></div>
     ${others.length === 0
-      ? html`<div class="hint">Add another camera to this page to show several in one tile.</div>`
+      ? html`<div class="hint keep">Add another camera to this page to show several in one tile.</div>`
       : html`${others.map((t) => {
           const id = String(t.id).toUpperCase();
           const entityId = tileEntityId(t);

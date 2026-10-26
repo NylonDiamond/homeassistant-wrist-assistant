@@ -230,9 +230,9 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
   let result: TemplateResult;
   // The rich text as the tile draws it (symbols, their colors, the tile's
   // color, centered for one line), never the markup.
-  if (text.trim() === "") result = html`<div class="hint">Empty: the tile shows its symbol.</div>`;
+  if (text.trim() === "") result = html`<div class="hint keep">Empty: the tile shows its symbol.</div>`;
   else if (look.kind === "error") result = html`<div class="hint warn" role="status">${look.error}</div>`;
-  else if (look.kind !== "text" || look.pending) result = html`<div class="hint">Rendering in Home Assistant…</div>`;
+  else if (look.kind !== "text" || look.pending) result = html`<div class="hint keep">Rendering in Home Assistant…</div>`;
   else {
     result = html`<div class="ap-render" role="img" aria-label=${`Rendered: ${look.text}`}
       style=${`color:${look.ink};text-align:${look.multiLine ? "left" : "center"}`}>${watchTemplateRichText(look.text, look.ink, 14, host.icons)}</div>`;
@@ -333,7 +333,7 @@ function speakerChecklist(host: TileSettingsHost, label: string, key: WatchSpeak
   const others = all.filter((c) => !announcing.some((a) => a.entityId === c.entityId));
   return html`<div class="ts-sub-h"><span>${label}</span></div>
     <div class="ap-list" role="group" aria-label=${label}>
-      ${all.length === 0 ? html`<div class="hint">No media players in Home Assistant.</div>` : nothing}
+      ${all.length === 0 ? html`<div class="hint keep">No media players in Home Assistant.</div>` : nothing}
       ${announcing.length > 0 ? html`<div class="ap-group">Speakers</div>${announcing.map(row)}` : nothing}
       ${others.length > 0 ? html`${announcing.length > 0 ? html`<div class="ap-group">Other media players</div>` : nothing}${others.map(row)}` : nothing}
     </div>`;
@@ -414,7 +414,7 @@ function listenRow(host: TileSettingsHost, on: boolean, set: (on: boolean) => vo
 }
 
 function voiceDefaultsLine(host: TileSettingsHost): TemplateResult | typeof nothing {
-  return voiceOf(host) === undefined ? html`<div class="hint">${WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT}.</div>` : nothing;
+  return voiceOf(host) === undefined ? html`<div class="hint keep">${WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT}.</div>` : nothing;
 }
 
 function renderAssist(host: TileSettingsHost): TemplateResult {
@@ -523,7 +523,7 @@ function entityList(
       ${unavailable(host, id) ? html`<span class="sp-faint">Not in Home Assistant</span>` : nothing}
       <button type="button" class="sp-icon-btn" aria-label="Remove ${nameOf(host, id)}" title="Remove"
         @click=${() => remove(id)}>${uiIcon("delete")}</button></div></div>`)}
-    ${add === undefined ? html`<div class="hint">${full}</div>` : html`<div class="ts-stack">${add}</div>`}
+    ${add === undefined ? html`<div class="hint keep">${full}</div>` : html`<div class="ts-stack">${add}</div>`}
     ${fieldNote(host, setting)}`;
 }
 

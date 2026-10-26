@@ -701,8 +701,8 @@ function renderEntityPick(host: WatchPagesEditorHost, rh: TileSettingsHost, rule
     <div class="ap-list sm-pick" role="group" aria-label=${selectedWord(picked.length)}>
       ${picked.map((id) => row(id, true))}
       ${rest.slice(0, PICK_LIMIT).map((id) => row(id, false))}
-      ${ids.length === 0 && picked.length === 0 ? html`<div class="hint">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " of these types" : ""}.</div>` : nothing}
-      ${rest.length > PICK_LIMIT ? html`<div class="hint">${rest.length - PICK_LIMIT} more. Search to narrow the list.</div>` : nothing}
+      ${ids.length === 0 && picked.length === 0 ? html`<div class="hint keep">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " of these types" : ""}.</div>` : nothing}
+      ${rest.length > PICK_LIMIT ? html`<div class="hint keep">${rest.length - PICK_LIMIT} more. Search to narrow the list.</div>` : nothing}
     </div>`;
 }
 

@@ -635,7 +635,7 @@ function oneLook(host: TileSettingsHost): boolean {
  * is, with the reason under it. The disabled fieldset of hold and slide,
  * laid out as if it were not there. */
 function greyed(reason: string, body: TemplateResult | typeof nothing): TemplateResult {
-  return html`<fieldset class="ts-plain ts-off" disabled>${body}</fieldset><div class="hint ts-under">${reason}</div>`;
+  return html`<fieldset class="ts-plain ts-off" disabled>${body}</fieldset><div class="hint keep ts-under">${reason}</div>`;
 }
 
 /** Whether the section is one line rather than a card: the webhook inbox's,
@@ -647,7 +647,7 @@ function inboxLine(host: TileSettingsHost, section: WatchTileSettingsSection): b
 /** The one line a tile of a removed kind (a macro) gets in place of its
  * tasks. The tile stays as stored; it can still be moved or deleted. */
 function renderRemovedLine(): TemplateResult {
-  return html`<p class="hint ts-removed">${WATCH_REMOVED_TILE_TEXT}</p>`;
+  return html`<p class="hint keep ts-removed">${WATCH_REMOVED_TILE_TEXT}</p>`;
 }
 
 /** The folds the inspector's Collapse all turns: each of the sections that is
@@ -1062,7 +1062,7 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
 function sectionBodyFor(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
   const off = oneLook(host) ? oneLookSectionOff(host.tile, section) : undefined;
   if (off === undefined) return sectionBody(host, section);
-  return html`<div class="hint">${off}</div><fieldset class="ts-plain ts-off" disabled>${sectionBody(host, section)}</fieldset>`;
+  return html`<div class="hint keep">${off}</div><fieldset class="ts-plain ts-off" disabled>${sectionBody(host, section)}</fieldset>`;
 }
 
 function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
@@ -1237,7 +1237,7 @@ function renderOpens(host: TileSettingsHost): TemplateResult {
   };
   return html`
     ${targets.length === 0 && menu.options.length === 0
-      ? html`<p class="hint">There is no other page this tile can open. Add a page first.</p>`
+      ? html`<p class="hint keep">There is no other page this tile can open. Add a page first.</p>`
       : menuField(link.kind === "page" ? "Goes to" : "Peeks at", menu, pick)}
     <div class="hint ts-under">${link.kind === "page"
       ? "A tap goes to that page. A label that is the page's name follows it."
@@ -1290,7 +1290,7 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
     const label = watchTileTextSettings(host.tile).label;
     const shown = label !== undefined && label.trim() !== "" ? label : (watchLibraryTileFallbackName(tileEntityId(host.tile), undefined) ?? words.one);
     return html`<div class="ts-target-now">${shown}</div>
-      <div class="hint ts-under">${WATCH_NO_CATALOG_TEXT}</div>`;
+      <div class="hint keep ts-under">${WATCH_NO_CATALOG_TEXT}</div>`;
   }
   const menu = watchLibraryTargetMenu(host.tile, catalog, hostDevice(host));
   if (menu === undefined) return html``;
@@ -1315,7 +1315,7 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
   const screenHelps = http && (current === undefined ? catalog.httpLibrary === "held" || onlyMissing : current.source === "home" && current.needsSetup);
   return html`
     ${menu.options.length === 0
-      ? html`<p class="hint">${http ? WATCH_NO_HTTP_ACTIONS_TEXT
+      ? html`<p class="hint keep">${http ? WATCH_NO_HTTP_ACTIONS_TEXT
         : watchLibraryLister(catalog, target.kind) === "The iPhone" ? `The iPhone's list has no ${words.many}.` : `This ${hostDeviceNoun(host)} has no ${words.many} yet.`}</p>`
       : menuField(words.one, menu, pick)}
     ${warning === undefined ? nothing : html`<div class="hint warn ts-under">${warning}.</div>`}
@@ -1844,7 +1844,7 @@ function renderShowWhenTemplate(host: TileSettingsHost, pendingKey: string): Tem
   };
   let now: TemplateResult;
   if (text === undefined) {
-    now = html`<div class="hint ts-under">Type a template, for example <code>{{ is_state('person.alex', 'home') }}</code>. Until then the ${noun} always shows the tile.</div>`;
+    now = html`<div class="hint keep ts-under">Type a template, for example <code>{{ is_state('person.alex', 'home') }}</code>. Until then the ${noun} always shows the tile.</div>`;
   } else if (text.length > WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS) {
     now = html`<div class="hint warn ts-under">Longer than ${WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS} characters, so the ${noun} never asks Home Assistant about it and always shows the tile.</div>`;
   } else if (render === undefined) {
@@ -1921,7 +1921,7 @@ function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateRes
             commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, false)))}</div>`
       : nothing}
     ${c === undefined
-      ? html`<div class="hint ts-under">Pick an entity, for example yourself to show a door lock only while you are home.${alsoWhileOn ? " Until then the tile still hides while it is off." : ""}</div>`
+      ? html`<div class="hint keep ts-under">Pick an entity, for example yourself to show a door lock only while you are home.${alsoWhileOn ? " Until then the tile still hides while it is off." : ""}</div>`
       : html`
         <div class="ts-stack">${segField<WatchShowWhenOperator>("State", c.comparisonOperator, WATCH_SHOW_WHEN_OPERATORS as [WatchShowWhenOperator, string][], (v) =>
           commit(host, "showWhenOperator", (d) => setWatchTileShowWhenOperator(d, host.pageId, host.tileId, v)))}</div>
@@ -2401,7 +2401,7 @@ function renderState(host: TileSettingsHost): TemplateResult {
   const cards = watchTileStateCards(host.tile, { oneLook: look })
     .map((card) => (domain ? { ...card, rows: card.rows.filter((row) => !NO_DOMAIN_STATE_ROWS.has(row.key)) } : card))
     .filter((card) => !domain || card.rows.length > 0);
-  if (cards.length === 0) return html`<p class="hint">${watchStateEmptyText()}</p>`;
+  if (cards.length === 0) return html`<p class="hint keep">${watchStateEmptyText()}</p>`;
   return html`
     ${cards.map((card) => {
       const subtitle = (look ? oneLookCardSubtitle(card.id, kind) : undefined) ?? card.subtitle;
@@ -2580,7 +2580,7 @@ function oneLookThickness(host: TileSettingsHost, thickness: string): TemplateRe
     disabled: { extraThin: true },
     titles: { extraThin: ONE_LOOK_EXTRA_THIN_REASON },
   });
-  return oneLookDrawsThickness(thickness) ? row : html`${row}<div class="hint ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`;
+  return oneLookDrawsThickness(thickness) ? row : html`${row}<div class="hint keep ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`;
 }
 
 // ── styling: Background ──────────────────────────────────────────────────

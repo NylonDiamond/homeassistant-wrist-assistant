@@ -662,6 +662,27 @@ function loadImageNaturalSize(url: string): Promise<{ width: number; height: num
   });
 }
 
+const INSPECTOR_HELP_KEY = "wa-page-editor-help";
+
+/** Whether the inspector shows its help. Off by default. Kept in this
+ * browser only. */
+function inspectorHelpOn(): boolean {
+  try {
+    return globalThis.localStorage.getItem(INSPECTOR_HELP_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setInspectorHelpOn(on: boolean): void {
+  try {
+    if (on) globalThis.localStorage.setItem(INSPECTOR_HELP_KEY, "1");
+    else globalThis.localStorage.removeItem(INSPECTOR_HELP_KEY);
+  } catch {
+    // A browser without storage keeps help off on the next visit.
+  }
+}
+
 export class WaPageEditor extends LitElement {
   @property({ attribute: false }) hass?: HassLike;
   /** The home's devices, as the panel holds them. */
@@ -714,6 +735,9 @@ export class WaPageEditor extends LitElement {
   @state() private sideBySide = false;
   /** Library mode: an On each device Hide here write is running. */
   @state() private hideBusy = false;
+  /** The inspector's Help: plain hints under the rows show only while it is
+   * on. Off by default, kept in this browser. */
+  @state() private helpOn = inspectorHelpOn();
   /** Library mode: the delivery numbers of every device's records, for the
    * On each device card's sync words; read on open, after each write and
    * on each delivery of pages (`followDeliveries`). */
@@ -4359,13 +4383,16 @@ export class WaPageEditor extends LitElement {
       ? (host === undefined ? [] : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
       : (tileHost === undefined ? [] : tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)));
     const anyOpen = anySectionOpen(this.uiState, folds);
+    const helpLabel = this.helpOn ? "Hide the help under the settings" : "Show the help under the settings";
     return html`
       <div class="insp-head">
         ${tile === undefined ? nothing : back}
         ${crumbs}
+        <button type="button" class="expand pe-help ${this.helpOn ? "on" : ""}" aria-pressed=${this.helpOn ? "true" : "false"} title=${helpLabel}
+          @click=${() => { this.helpOn = !this.helpOn; setInspectorHelpOn(this.helpOn); }}>Help</button>
         ${folds.length === 0 ? nothing : html`<button class="expand" @click=${() => { setSectionsOpen(this.uiState, folds, !anyOpen); this.requestUpdate(); }}>${anyOpen ? "Collapse all" : "Expand all"}</button>`}
       </div>
-      <div class="insp-body">
+      <div class="insp-body" data-help=${this.helpOn ? "on" : "off"}>
         ${tile === undefined ? this.renderPageCards(page, host) : this.renderTileCard(page, tile)}
       </div>`;
   }
@@ -5289,6 +5316,14 @@ export class WaPageEditor extends LitElement {
     }
     .insp-head button.pe-back:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .insp-head button.pe-back:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* Help, beside Collapse all: Help takes the auto margin, so the two
+       sit together at the far end. */
+    .insp-head .expand.pe-help + .expand { margin-left: 0; }
+    .insp-head .expand.pe-help.on { color: var(--wa-ink); background: var(--wa-raise); }
+    /* With Help off, a plain hint is hidden. A warning, an error, a status, or
+       a hint marked keep (an empty list, why a setting is greyed) still shows,
+       as the complication editor's "?" does. */
+    .insp-body[data-help="off"] .hint:not(.warn):not(.err):not(.keep):not([role="status"]):not(.value-pop .hint) { display: none; }
     .insp-head button.pe-back svg.ui-icon { width: 13px; height: 13px; }
     /* The On the watch card's rows: the name over a line saying what it does,
        the switch at the row's end. */

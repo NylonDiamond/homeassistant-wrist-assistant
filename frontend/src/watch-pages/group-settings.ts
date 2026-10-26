@@ -175,7 +175,7 @@ export function renderPickedGroupCard(host: TileSettingsHost, ids: readonly stri
           @click=${() => commit(host, "group:make", (d) => makeWatchTileGroup(d, host.pageId, ids).document)}>
           ${uiIcon("folder")}<span>${WATCH_GROUP_TEXT.make}</span></button>
       </div>
-      ${adjacent ? nothing : html`<p class="hint">${WATCH_GROUP_TEXT.notAdjacent}</p>`}
+      ${adjacent ? nothing : html`<p class="hint keep">${WATCH_GROUP_TEXT.notAdjacent}</p>`}
     </div>
   </section>`;
 }

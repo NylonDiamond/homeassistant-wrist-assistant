@@ -203,7 +203,7 @@ describe("State in One Look", () => {
     const fan = drawn(tile("fan.ceiling"), true);
     const reason = "No status icon on a fan tile. Its speed is the state.";
     expect(fan.split(reason).length - 1).toBeGreaterThanOrEqual(2);
-    expect(greyedBefore(fan, `<div class="hint ts-under">${reason}`)).toContain("Show status badge");
+    expect(greyedBefore(fan, `<div class="hint keep ts-under">${reason}`)).toContain("Show status badge");
     const climate = drawn(tile("climate.hall"), true);
     expect(greyedBefore(climate, oneLookStateRowOff("climate", "showActivityStatus")!)).toContain("Show status badge");
     expect(climate).toContain("The size of the fan button in the top right, on a thermostat with fan modes.");
@@ -230,10 +230,10 @@ describe("State in One Look", () => {
 describe("Border in One Look", () => {
   it("greys Extra Thin, and says why a tile holding it draws no border", () => {
     const thin = drawn(tile("light.desk", { borderStyle: "line", borderThickness: "extraThin" }), true);
-    expect(thin).toContain(`<div class="hint ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`);
+    expect(thin).toContain(`<div class="hint keep ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`);
     expect(thin).toMatch(/title=Too thin to draw\. Pick Thin or more\.\s*\?disabled=true[^]*?>Extra Thin</);
     const medium = drawn(tile("light.desk", { borderStyle: "line", borderThickness: "medium" }), true);
-    expect(medium).not.toContain(`<div class="hint ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`);
+    expect(medium).not.toContain(`<div class="hint keep ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`);
     expect(medium).toContain("Extra Thin");
   });
 });
@@ -252,7 +252,7 @@ describe("a camera showing its picture", () => {
     const view = drawn(preview, true);
     for (const section of ["icon", "text", "border", "background"]) {
       const reason = oneLookSectionOff(preview, section)!;
-      expect(view, section).toContain(`<div class="hint">${reason}</div><fieldset class="ts-plain ts-off" disabled>`);
+      expect(view, section).toContain(`<div class="hint keep">${reason}</div><fieldset class="ts-plain ts-off" disabled>`);
     }
     expect(view).toContain(ONE_LOOK_CAMERA_PREVIEW_HINT);
     expect(drawn(preview)).not.toContain("ts-off");

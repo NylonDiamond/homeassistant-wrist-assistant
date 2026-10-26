@@ -223,12 +223,21 @@ afterEach(() => {
 describe("the breadcrumb", () => {
   it("reads Page to go back, the tile's kind in its color, and the tile's name", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
-    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
+    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body"`));
     expect(head).toMatch(/<button type="button" class="pe-back" title="Back to the page's settings"[^>]*>.*<span>Page<\/span><\/button>\s*<div class="crumbs"><span class="kchip"/s);
     expect(head).not.toContain(`class="root"`);
     expect(head).toContain(`<span class="kchip" style=--k:${watchTileKindColor("light")}>Light</span>`);
     expect(head).toContain(`<span class="nm" title=Smart Plug Dimmer>Smart Plug Dimmer</span>`);
     expect(head).not.toContain("Show the page");
+  });
+
+  it("hides plain help until Help is on, and keeps the switch in this browser", () => {
+    const el = editor(hallPage(), DIMMER);
+    expect(flat(inspector(el))).toContain(`<div class="insp-body" data-help=off>`);
+    click(inspector(el), `class="expand pe-help `);
+    expect(flat(inspector(el))).toContain(`<div class="insp-body" data-help=on>`);
+    expect(storage.data["wa-page-editor-help"]).toBe("1");
+    expect(flat(inspector(editor(hallPage(), DIMMER)))).toContain(`data-help=on`);
   });
 
   it("goes back to the page's own cards from Page", () => {
@@ -327,7 +336,7 @@ describe("the tile's cards", () => {
     const el = editor(hallPage(), DIMMER);
     el.inspectorCols = 2;
     const text = flat(inspector(el));
-    const body = text.slice(text.indexOf(`<div class="insp-body">`));
+    const body = text.slice(text.indexOf(`<div class="insp-body"`));
     // The head: the live tile, Name, Entity, Preview as and Reset tile,
     // before any card.
     const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf(`<div class="pe-insp-cols"`));
@@ -509,7 +518,7 @@ describe("the tile's cards", () => {
 describe("the inspector with no tile", () => {
   it("holds the page's settings: On each device, Look, On the watch, In the page switcher, the line, then Delete page", () => {
     const text = flat(inspector(editor(hallPage())));
-    const body = text.slice(text.indexOf(`<div class="insp-body">`));
+    const body = text.slice(text.indexOf(`<div class="insp-body"`));
     expect([...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["On each device", "Look", "On the watch", "In the page switcher"]);
     expect(card(body, "Look")).toContain(`--c:${SECTION_COLOR.look}`);
     expect(card(body, "Look")).toContain(swatch("look"));
@@ -586,7 +595,7 @@ describe("the inspector with several tiles picked", () => {
     const el = pickedHall();
     expect([...(el.multi as ReadonlySet<string>)]).toEqual([DIMMER, SPACER]);
     const text = flat(inspector(el));
-    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
+    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body"`));
     expect(head).toContain(`class="pe-back"`);
     expect(head).toMatch(/<span class="kchip"[^>]*>2 tiles<\/span><span class="nm">Hall<\/span>/);
     expect(head).not.toContain("Collapse all");
@@ -661,7 +670,7 @@ describe("the inspector with several tiles picked", () => {
       composedPath: () => [el], preventDefault() {} });
     const group = card(flat(inspector(el)), "Group");
     expect(group).toMatch(/class="pe-btn pe-group-make" \?disabled=true title=Tiles must touch to make a group\./);
-    expect(group).toContain(`<p class="hint">Tiles must touch to make a group.</p>`);
+    expect(group).toContain(`<p class="hint keep">Tiles must touch to make a group.</p>`);
   });
 
   it("says under a grouped tile's name that it is in a group, with Edit group and Leave group", () => {
