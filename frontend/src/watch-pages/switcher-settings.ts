@@ -18,7 +18,7 @@ import { checkField, segField, symbolField, textField } from "../editors.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import type { SettingDevice } from "../watch-settings.js";
-import { colorMore, colorPickerView } from "./color-picker.js";
+import { colorPickerView } from "./color-picker.js";
 import { hostDevice, hostDeviceNoun } from "./editor-host.js";
 import type { WatchPage, WatchPagesDocument } from "./model.js";
 import {
@@ -225,7 +225,6 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
       pickSwatch: (v) => setColor(v),
       default: { title: `The ${device} picks a color for each page`, on: s.switcherColor === undefined, pick: () => setColor(undefined) },
       custom: { shown: typed(host, "switcherColor") ?? watchCustomBoxColor(s.switcherColor), pick: (v) => { if (v !== undefined) setColor(v, true); } },
-      more: colorMore(host.uiState, "switcher-settings:switcherColor", () => host.requestUpdate()),
       wrap: (body) => typingRow(host, "switcherColor", body),
     })}
     <div class="hint ts-under">Left empty, the ${device} shows the page's name and picks the icon and color itself.</div>`;

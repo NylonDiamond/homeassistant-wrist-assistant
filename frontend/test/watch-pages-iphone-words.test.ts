@@ -224,7 +224,7 @@ describe("the kinds only the iPhone draws", () => {
     for (const kind of ["map", "chart", "text_field", "web"]) {
       for (const device of ["iphone", undefined] as const) {
         const host = tileHost([tile(`${kind}.C3A0E000-0000-4000-8000-0000000000B7`, { color: "#RAINBOW" })], device);
-        const drawn = text(renderTileHead(host, { lead: html``, actions: html``, remove: html``, find: html`` })) + text(renderTileSettings(host));
+        const drawn = text(renderTileHead(host, { lead: html``, actions: html``, remove: html`` })) + text(renderTileSettings(host));
         expect(drawn, kind).toContain("The iPhone cycles the tile through every color.");
         expect(drawn.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], `${kind} on ${device ?? "watch"}`).toEqual([]);
       }

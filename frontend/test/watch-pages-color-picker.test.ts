@@ -13,7 +13,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { SymbolBrowser } from "../src/symbols.js";
-import { COLOR_DEFAULT_LABEL, COLOR_RAINBOW, COLOR_SWATCHES_SHOWN, colorMore, colorPickerView } from "../src/watch-pages/color-picker.js";
+import { COLOR_DEFAULT_LABEL, COLOR_RAINBOW, colorPickerView } from "../src/watch-pages/color-picker.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
 import { findWatchPage } from "../src/watch-pages/edit.js";
@@ -293,45 +293,24 @@ describe("colorPickerView", () => {
     expect(on).toContain(`class="pe-chip ts-color-default on" aria-pressed=true`);
   });
 
-  describe("More", () => {
+  describe("every color", () => {
     const many = Array.from({ length: 27 }, (_, i) => `#${(0x100000 + i * 0x050505).toString(16).toUpperCase().padStart(6, "0")}`);
     const swatchTitles = (text: string) => [...text.matchAll(/class="ts-swatch[^"]*"[^>]*\n\s+title=(#[0-9A-F]{6})/g)].map((m) => m[1]);
-    const ui = new Map<string, unknown>();
-    let updates = 0;
-    const more = () => colorMore(ui, "test", () => { updates += 1; });
-    const draw = (color: string, rainbow = false) => colorPickerView({ ...base, color, swatches: many, more: more(), ...(rainbow ? { rainbow: {} } : {}), default: { title: "x", on: false, pick: () => undefined } });
+    const draw = (color: string, rainbow = false) => colorPickerView({ ...base, color, swatches: many, ...(rainbow ? { rainbow: {} } : {}), default: { title: "x", on: false, pick: () => undefined } });
 
-    it("shows the theme's first ten colors and a More pill that lays out the rest in the same row, and Less to fold them", () => {
-      ui.clear();
-      let text = flat(draw(many[0]!, true));
-      expect(swatchTitles(text)).toEqual(many.slice(0, COLOR_SWATCHES_SHOWN));
-      expect(COLOR_SWATCHES_SHOWN).toBe(10);
-      // Default first, Rainbow after the swatches, then More, all in one row.
+    it("shows every color of the theme in one row, Default first and Rainbow last, with no More pill", () => {
+      const text = flat(draw(many[0]!, true));
+      expect(swatchTitles(text)).toEqual(many);
       const row = text.slice(text.indexOf(`<div class="ts-swatches"`), text.indexOf("Custom"));
       expect(row.indexOf(">Default</button>")).toBeLessThan(row.indexOf("title=#"));
-      expect(row.indexOf("aria-label=Rainbow")).toBeLessThan(row.indexOf(">More</button>"));
-      expect(row).toMatch(/class="pe-chip ts-color-more" aria-expanded=false[^>]*>More<\/button>/);
-      click(draw(many[0]!), ">More</button>");
-      expect(updates).toBeGreaterThan(0);
-      text = flat(draw(many[0]!));
-      expect(swatchTitles(text)).toEqual(many);
-      expect(text).toMatch(/aria-expanded=true[^>]*>Less<\/button>/);
-      click(draw(many[0]!), ">Less</button>");
-      expect(swatchTitles(flat(draw(many[0]!)))).toEqual(many.slice(0, 10));
+      expect(row.lastIndexOf("title=#")).toBeLessThan(row.indexOf("aria-label=Rainbow"));
+      expect(text).not.toContain(">More</button>");
+      expect(text).not.toContain(">Less</button>");
     });
 
-    it("shows a stored color past the first ten as picked, after them", () => {
-      ui.clear();
+    it("marks a stored color anywhere in the row as picked", () => {
       const text = flat(draw(many[20]!));
-      expect(swatchTitles(text)).toEqual([...many.slice(0, 10), many[20]]);
       expect(text).toMatch(new RegExp(`class="ts-swatch on" aria-pressed=true\\s+title=${many[20]}`));
-    });
-
-    it("draws no pill where there are few colors, or where the card keeps none", () => {
-      expect(flat(colorPickerView({ ...base, more: more() }))).not.toContain("ts-color-more");
-      const all = flat(colorPickerView({ ...base, swatches: many }));
-      expect(swatchTitles(all)).toEqual(many);
-      expect(all).not.toContain("ts-color-more");
     });
   });
 });

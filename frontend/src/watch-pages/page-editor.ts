@@ -164,7 +164,6 @@ import {
   type WatchResizeHandle,
   type WatchResizePreview,
   WATCH_EDITOR_MAX_ROWS,
-  WATCH_TILE_SIZE_PRESETS,
   canMoveWatchTilesBy,
   deleteWatchTile,
   dropWatchTile,
@@ -269,16 +268,7 @@ import {
   tileInspectorParts,
   tileSettingsStyles,
 } from "./tile-settings.js";
-import {
-  type SettingFindEntry,
-  findSettings,
-  readSettingFindSections,
-  settingFindIndex,
-  settingFindRows,
-  settingFindWhere,
-} from "./setting-find.js";
-import { watchShowWhenStateChoices } from "./show-when.js";
-import { forgetTileTry, pictureChoice, sizeStrip, watchTriedTile, watchTryLabel } from "./picture-choice.js";
+import { forgetTileTry, watchTriedTile, watchTryLabel } from "./picture-choice.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
   PAGE_DEVICES_FOLD,
@@ -381,11 +371,11 @@ const CARD_THUMB_W = 76;
 /** A page's picture is at most this many times as tall as it is wide: an
  * iPhone's tall pages area shows its top. */
 const PAGE_THUMB_MAX_RATIO = 1.4;
-/** Each live tile in the inspector head (the tile on, off and unavailable)
- * is drawn as large as fits this box, CSS px, and never past this scale, so
- * a small tile does not read as a big one. */
-const STATE_TILE_W = 132;
-const STATE_TILE_H = 88;
+/** The inspector head's live tile is drawn as large as fits this box, CSS
+ * px, and never past this scale, so a small tile does not read as a big
+ * one. A wide tile (12 by 4) comes out about 320 by 110. */
+const HEAD_TILE_W = 320;
+const HEAD_TILE_H = 160;
 const HEAD_TILE_MAX_SCALE = 3;
 /** The Arrangement section's live tile, which the parts are dragged on, is
  * larger: as large as fits this box. */
@@ -422,13 +412,6 @@ export function stageHiddenReason(
 /** The stage's tag on a hidden tile. */
 export function stageHiddenText(reason: StageHiddenReason): string {
   return reason === "off" ? "Hidden while off" : "Hidden by a rule";
-}
-
-/** A state Home Assistant's words do not name, as plain words: "armed_home"
- * reads "Armed home". */
-function stateWords(state: string): string {
-  const words = state.replace(/_/g, " ").trim();
-  return words === "" ? state : words[0]!.toUpperCase() + words.slice(1);
 }
 
 /** A copy of a tile with ids of its own: a new id, and a new own id in its
@@ -480,17 +463,6 @@ function duplicateOf(tile: WatchPageTile): WatchPageTile {
 }
 
 type Note = WatchPagesNote;
-
-/** Text typed into a field and not committed yet. Home Assistant hands the
- * panel a new `hass` several times a second, and every draw would write the
- * stored value back over a half typed one; so while a field is being typed
- * in, it draws what was typed. */
-interface Typing {
-  /** Which field: its kind and the page or tile it belongs to. */
-  key: string;
-  value: string;
-  commit: (text: string) => void;
-}
 
 /** A press on a tile or a resize handle, from pointer down to up. It counts as
  * a drag once it has travelled `STAGE_DRAG_THRESHOLD`. */
@@ -639,12 +611,6 @@ function drawnRect(rect: WatchRect): WatchRect {
   if (rect.row + rect.rowSpan <= WATCH_EDITOR_MAX_ROWS) return rect;
   const rowSpan = Math.min(WATCH_EDITOR_MAX_ROWS, rect.rowSpan);
   return { ...rect, rowSpan, row: Math.max(0, Math.min(rect.row, WATCH_EDITOR_MAX_ROWS - rowSpan)) };
-}
-
-/** A field's text as a whole number for the tile card, NaN when it is not
- * one (an empty field, or text a number field could not read). */
-function typedNumber(text: string): number {
-  return text.trim() === "" ? Number.NaN : Number(text);
 }
 
 const PAGE_END_TEXT = `The page ends at row ${WATCH_EDITOR_MAX_ROWS}.`;
@@ -857,8 +823,6 @@ export class WaPageEditor extends LitElement {
   @state() private selectedSmartRuleId?: string;
   /** The page's name being typed in the page picker's Rename field. */
   @state() private renaming?: { pageId: string; value: string };
-  /** Not a reactive state: a keystroke needs no draw, the field shows it. */
-  private typing?: Typing;
   /** The page picker's popover is open, and what its find field holds. */
   @state() private pickerOpen = false;
   @state() private pickerFind = "";
@@ -882,13 +846,8 @@ export class WaPageEditor extends LitElement {
    * strip: the previews draw its entity in that state, over any pinned test
    * state, until the pointer leaves. */
   @state() private hoverState?: { entityId: string; state: string };
-  /** Find a setting in the inspector head: what is typed, whether its list
-   * is open, and the entry the arrow keys rest on. */
-  @state() private findQuery = "";
-  @state() private findOpen = false;
-  @state() private findAt = 0;
-  /** The section a Find took the inspector to, washed blue for a moment,
-   * and the timer that lets it go. */
+  /** The section Hide or Change took the inspector to, washed blue for a
+   * moment, and the timer that lets it go. */
   private findFlash?: { el: HTMLElement; timer: ReturnType<typeof setTimeout> };
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
@@ -905,14 +864,9 @@ export class WaPageEditor extends LitElement {
   private drawnScale?: number;
   /** The top bar's ··· menu is open. */
   @state() private topMenuOpen = false;
-  /** Why the last value typed in the tile card was refused. */
-  @state() private fieldNote?: string;
   /** The note a refused drag or resize on the stage put in the line under
    * the bar, so the next edit can take it away again. */
   private stageRefusal?: Note;
-  /** The Size card's Column, Row, Width and Height boxes, folded under the
-   * size presets until asked for (or while a typed number was refused). */
-  @state() private sizeFieldsOpen = false;
   /** The Add tile dialog is open, over the selected page. */
   @state() private addTileOpen = false;
 
@@ -1179,9 +1133,6 @@ export class WaPageEditor extends LitElement {
 
   protected override updated(): void {
     this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft));
-    // A field removed while typed in (an undo took its tile away) never sent
-    // a blur: what was typed there is dropped, not shown in another field.
-    if (this.typing !== undefined && (this.renderRoot as ShadowRoot).activeElement === null) this.typing = undefined;
     // The dragged number's field was drawn away (an undo, a merge, a folded
     // section): its drag can send no end any more.
     if (this.scrub.active && this.scrubHandle?.isConnected !== true) this.endScrub();
@@ -1318,7 +1269,6 @@ export class WaPageEditor extends LitElement {
     else forgetTileTry(this.uiState);
     this.selectedTileId = primary !== undefined && ids.some((id) => sameWatchId(id, primary)) ? primary : ids[ids.length - 1];
     this.multi = new Set(ids);
-    this.fieldNote = undefined;
   }
 
   /**
@@ -1391,7 +1341,6 @@ export class WaPageEditor extends LitElement {
     if (tileId === this.selectedTileId && !wasMulti) return;
     this.leaveTile();
     this.selectedTileId = tileId;
-    this.fieldNote = undefined;
   }
 
   /**
@@ -1522,7 +1471,6 @@ export class WaPageEditor extends LitElement {
     if (key === undefined) return;
     if (!quiet) {
       this.reloadPending = false;
-      this.typing = undefined;
       this.cancelGestures();
       this.note = undefined;
       const selection = keptWatchPagesSelection(key);
@@ -1533,7 +1481,6 @@ export class WaPageEditor extends LitElement {
       this.pickerOpen = false;
       this.pickerFind = "";
       this.closeAsk();
-      this.fieldNote = undefined;
       this.endScrub();
       this.uiState.clear();
       this.stopTemplates();
@@ -1880,7 +1827,6 @@ export class WaPageEditor extends LitElement {
     if (!draft) return false;
     const changed = draft.apply(next, options);
     if (changed) {
-      this.fieldNote = undefined;
       if (this.stageRefusal !== undefined && this.note === this.stageRefusal) this.note = undefined;
       this.stageRefusal = undefined;
       this.requestUpdate();
@@ -2038,7 +1984,6 @@ export class WaPageEditor extends LitElement {
     const item = this.libraryItem;
     // A name or number still being typed is part of what gets saved.
     if (this.renaming) this.commitRename();
-    this.commitTyping();
     const draft = this.draft;
     if (!hass || key === undefined || item === undefined || !draft || !draft.dirty || draft.saving || this.gesture) return;
     if (anyway) this.closeAsk();
@@ -2418,106 +2363,12 @@ export class WaPageEditor extends LitElement {
     this.revealTile = true;
   }
 
-  // ── fields being typed in ──────────────────────────────────────────────
-
-  /** What a field shows: the text being typed in it, else the stored value. */
-  private fieldValue(key: string, stored: string): string {
-    return this.typing?.key === key ? this.typing.value : stored;
-  }
-
-  private onFieldInput(e: Event, key: string, commit: (text: string) => void): void {
-    this.typing = { key, value: (e.target as HTMLInputElement).value, commit };
-  }
-
-  /** Commit the field being typed in, if any: on change, Enter, blur, a save
-   * and Cmd or Ctrl+S. */
-  private commitTyping(key?: string): void {
-    const typing = this.typing;
-    if (typing === undefined || (key !== undefined && typing.key !== key)) return;
-    this.typing = undefined;
-    typing.commit(typing.value);
-    this.requestUpdate();
-  }
-
-  /** Enter commits, Escape puts the stored value back. */
-  private onFieldKeyDown(e: KeyboardEvent, key: string, stored: string): void {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      this.commitTyping(key);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      if (this.typing?.key === key) this.typing = undefined;
-      (e.target as HTMLInputElement).value = stored;
-      this.requestUpdate();
-    }
-  }
-
-  /** Refuse a typed value: it snaps back on the next draw (the fields are
-   * bound with `live`), with the reason under the fields. */
-  private refuse(reason: string): void {
-    this.fieldNote = reason;
-    this.requestUpdate();
-  }
-
   /** Refuse a drag or resize on the stage: the tile snaps back, with the
-   * reason in the line under the bar, which shows whatever card is open
-   * (the Size card's note shows only while that card's boxes are open). */
+   * reason in the line under the bar, which shows whatever card is open. */
   private refuseGesture(reason: string): void {
     const note: Note = { kind: "warn", text: reason };
     this.stageRefusal = note;
     this.note = note;
-  }
-
-  /** Column or Row typed in the tile card, 1-based. A drop there, without the
-   * swap a drag can make: a typed place that another tile holds is refused. */
-  private placeTile(col: number, row: number): void {
-    const document = this.draft?.document;
-    const page = this.currentPage();
-    const tileId = this.selectedTileId;
-    if (document === undefined || page === undefined || tileId === undefined) return;
-    const tile = this.tileOn(page, tileId);
-    if (tile === undefined) return;
-    const rect = watchTileRect(tile);
-    if (!Number.isInteger(col) || !Number.isInteger(row)) return this.refuse("Use a whole number.");
-    const lastCol = WATCH_GRID_COLUMNS - rect.colSpan + 1;
-    if (col < 1 || col > lastCol) {
-      return this.refuse(lastCol === 1 ? "A tile this wide starts in column 1." : `A tile this wide starts in a column from 1 to ${lastCol}.`);
-    }
-    if (row < 1) return this.refuse("Rows start at 1.");
-    if (row - 1 + rect.rowSpan > WATCH_EDITOR_MAX_ROWS) {
-      const last = WATCH_EDITOR_MAX_ROWS - rect.rowSpan + 1;
-      return this.refuse(last >= 1 ? `${PAGE_END_TEXT} A tile this high starts in a row from 1 to ${last}.` : `${PAGE_END_TEXT} Make the tile lower first.`);
-    }
-    const cell = { col: col - 1, row: row - 1 };
-    const outcome = watchDropOutcome(page, tileId, cell);
-    if (outcome.kind === "same") return this.requestUpdate();
-    if (outcome.kind !== "move") return this.refuse("Another tile is in the way there.");
-    this.edit(dropWatchTile(document, watchPageId(page), tileId, cell));
-    this.revealTile = true;
-  }
-
-  /** Width or Height typed in the tile card, or a size preset: a resize from
-   * the tile's own corner, pushing the tiles below down. */
-  private sizeTile(colSpan: number, rowSpan: number): void {
-    const document = this.draft?.document;
-    const page = this.currentPage();
-    const tileId = this.selectedTileId;
-    if (document === undefined || page === undefined || tileId === undefined) return;
-    const tile = this.tileOn(page, tileId);
-    if (tile === undefined) return;
-    if (!Number.isInteger(colSpan) || !Number.isInteger(rowSpan)) return this.refuse("Use a whole number.");
-    if (colSpan < 1 || colSpan > WATCH_GRID_COLUMNS) return this.refuse(`A tile is 1 to ${WATCH_GRID_COLUMNS} columns wide.`);
-    if (rowSpan < 1) return this.refuse("A tile is at least 1 row high.");
-    const rect = { ...watchTileRect(tile), colSpan, rowSpan };
-    if (rect.row + rowSpan > WATCH_EDITOR_MAX_ROWS) {
-      const most = WATCH_EDITOR_MAX_ROWS - rect.row;
-      return this.refuse(most >= 1 ? `${PAGE_END_TEXT} From this row a tile is at most ${plural(most, "row", "rows")} high.` : `${PAGE_END_TEXT} Move the tile up first.`);
-    }
-    const preview = previewWatchTileResize(page, tileId, rect, page);
-    if (preview.refused === "end") return this.refuse(`${PAGE_END_TEXT} That size would push a tile below it past the end.`);
-    if (preview.overlaps) return this.refuse("That size would cover a tile above or beside it.");
-    this.edit(resizeWatchTile(document, watchPageId(page), tileId, rect, { baseline: page }));
   }
 
   // ── keyboard ───────────────────────────────────────────────────────────
@@ -2569,13 +2420,6 @@ export class WaPageEditor extends LitElement {
     }
     if (isTextField(path[0])) return;
     const dragging = this.gesture !== undefined;
-    // "/" goes to Find a setting from anywhere in the editor but a text
-    // field, while a tile's head draws it. Not Cmd or Ctrl+K: that is Home
-    // Assistant's own quick search, which works on every page.
-    if (e.key === "/" && !mod && !e.altKey && !dragging && this.openFind()) {
-      e.preventDefault();
-      return;
-    }
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
       if (dragging) return;
@@ -4838,73 +4682,24 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The selected tile's settings under its head strip: the tile settings'
-   * four groups, with its place and size as Layout's Size and the large
-   * live tile of its Arrangement handed in (so they look as the other
-   * sections do).
+   * four groups, with the large live tile of Layout's Arrangement handed in
+   * (so it looks as the other sections do). No Size section: Jesse cut the
+   * presets and the typed place on 2026-10-26, since dragging a tile or its
+   * corner on the stage moves and sizes it, and the arrow keys still do.
    */
   private renderTileCard(page: WatchPage, tile: WatchPageTile): TemplateResult {
-    const rect = watchTileRect(tile);
-    const off = this.editingOff(page);
-    const id = tileIdOf(tile);
-    const field = (name: string, value: number, min: number, max: number | undefined, commit: (v: number) => void) => {
-      const key = `${name}:${id.toUpperCase()}`;
-      const stored = String(value);
-      const take = (text: string): void => commit(typedNumber(text));
-      return html`<label class="pe-field"><span>${name}</span>
-        <input type="number" inputmode="numeric" step="1" min=${min} max=${max !== undefined && max >= min ? max : nothing} ?disabled=${off}
-          .value=${live(this.fieldValue(key, stored))}
-          @input=${(e: Event) => this.onFieldInput(e, key, take)}
-          @keydown=${(e: KeyboardEvent) => this.onFieldKeyDown(e, key, stored)}
-          @change=${() => this.commitTyping(key)}
-          @blur=${() => this.commitTyping(key)} /></label>`;
-    };
-    // The presets first; the four boxes fold under them, opened by the
-    // line that names where the tile is, and on their own while a typed
-    // number was refused, so the note is never about boxes that are hidden.
-    const fieldsOpen = this.sizeFieldsOpen || this.fieldNote !== undefined;
-    // The presets as pictures: a strip as wide as the page's grid with the
-    // tile's block on it.
-    const preset = WATCH_TILE_SIZE_PRESETS.find((p) => rect.colSpan === p.colSpan && rect.rowSpan === p.rowSpan);
-    const size = {
-      summary: () => `${rect.colSpan}×${rect.rowSpan}`,
-      body: () => html`
-        <div class="pe-presets">${pictureChoice("Preset", preset?.name, WATCH_TILE_SIZE_PRESETS.map((p) => ({
-          value: p.name,
-          label: p.name,
-          title: `${p.colSpan} columns by ${p.rowSpan} rows`,
-          disabled: off,
-          picture: () => sizeStrip(p.colSpan, p.rowSpan, WATCH_GRID_COLUMNS),
-        })), (name) => {
-          const p = WATCH_TILE_SIZE_PRESETS.find((q) => q.name === name);
-          if (p !== undefined) this.sizeTile(p.colSpan, p.rowSpan);
-        }, { size: "strip" })}</div>
-        <div class="hint">The strip is the page's width. Drag the tile's corner on the ${deviceWord(this.linkKind)} for any other size.</div>
-        ${html`<button type="button" class="pe-size-more" aria-expanded=${fieldsOpen ? "true" : "false"} aria-controls="pe-size-fields"
-          title=${fieldsOpen ? "Hide the column, row, width and height boxes" : "Type the column, row, width and height"}
-          @click=${() => { this.sizeFieldsOpen = !fieldsOpen; }}>
-          <span class="pe-size-chev" aria-hidden="true">${uiIcon("chevron")}</span>
-          <span>Column ${rect.col + 1}, row ${rect.row + 1} · ${rect.colSpan}×${rect.rowSpan}</span>
-        </button>`}
-        ${fieldsOpen ? html`<div class="pe-fields" id="pe-size-fields">
-          ${field("Column", rect.col + 1, 1, WATCH_GRID_COLUMNS - rect.colSpan + 1, (v) => this.placeTile(v, rect.row + 1))}
-          ${field("Row", rect.row + 1, 1, WATCH_EDITOR_MAX_ROWS - rect.rowSpan + 1, (v) => this.placeTile(rect.col + 1, v))}
-          ${field("Width", rect.colSpan, 1, WATCH_GRID_COLUMNS, (v) => this.sizeTile(v, rect.rowSpan))}
-          ${field("Height", rect.rowSpan, 1, WATCH_EDITOR_MAX_ROWS - rect.row, (v) => this.sizeTile(rect.colSpan, v))}
-        </div>` : nothing}
-        ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
-    };
     const host = this.tileSettingsHost(page, tile);
     // The four groups (Look, Text, Tap, Layout) lay themselves out by the
     // inspector's width.
     return html`<div class="pe-tile-insp">
-      ${host === undefined ? nothing : renderTileInspector(host, { size, arrangePicture: () => this.renderArrangePicture(page, tile) })}
+      ${host === undefined ? nothing : renderTileInspector(host, { arrangePicture: () => this.renderArrangePicture(page, tile) })}
     </div>`;
   }
 
   /**
    * The selected tile's head strip, across the top of the inspector (the
    * mock's head): the path, Page (back to the page's own settings) then the
-   * tile's name, and under it the tile in its states (`renderStateTiles`);
+   * tile's name, and under it the tile, large (`renderHeadTile`);
    * Name and Shows, with the group line while the tile is in a group;
    * Duplicate, Hide, Reset and Delete, then Find a setting. Wide, it stays
    * at the top while the groups scroll under it. With no host (no draft
@@ -4918,7 +4713,7 @@ export class WaPageEditor extends LitElement {
         <span class="pe-path-sep" aria-hidden="true">${uiIcon("right")}</span>
         <span class="pe-path-nm" title=${label === kindLabel ? label : `${label} (${kindLabel})`}>${label}</span>
       </nav>
-      ${this.renderStateTiles(page, tile)}`;
+      ${this.renderHeadTile(page, tile)}`;
     const host = this.tileSettingsHost(page, tile);
     if (host === undefined) return html`<div class="pe-strip"><section class="ts-head" aria-label="Tile"><div class="ts-head-lead">${lead}</div></section></div>`;
     const parts = tileInspectorParts(host).flatMap((g) => g.parts);
@@ -4929,71 +4724,38 @@ export class WaPageEditor extends LitElement {
       <button type="button" class="ghost pe-strip-dup" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? "Duplicate the tile"}
         @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>
       ${parts.includes("visibility") ? html`<button type="button" class="ghost pe-strip-hide" title="Hide the tile while it is off, or when another entity says so: Show tile, under Tap"
-        @click=${() => this.goToSetting({ part: "visibility", row: -1 })}>${uiIcon("hide")}<span>Hide</span></button>` : nothing}`;
+        @click=${() => this.goToSetting("visibility")}>${uiIcon("hide")}<span>Hide</span></button>` : nothing}`;
     const remove = html`<button type="button" class="ghost pe-strip-del" ?disabled=${acts.delRefusal !== undefined}
       title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile()}>${uiIcon("delete")}<span>Delete</span></button>`;
     return html`<div class="pe-strip">${renderTileHead(host, {
       lead,
       actions,
       remove,
-      find: this.renderFindField(),
       below: this.editingOff(page) ? nothing : renderTileGroupLine(host, this.groupActions),
       // A library tile says what it shows by its Target, under Tap.
-      ...(parts.includes("target") ? { change: { title: "Pick what the tile shows: Target, under Tap", go: () => this.goToSetting({ part: "target", row: -1 }) } } : {}),
+      ...(parts.includes("target") ? { change: { title: "Pick what the tile shows: Target, under Tap", go: () => this.goToSetting("target") } } : {}),
     })}</div>`;
   }
 
   /**
-   * The head's live tiles: the selected tile drawn by the stage's renderer
-   * (`renderTileHeadPicture`) in each state its entity can be in, side by
-   * side, named in the entity's own words (On and Off, Home and Away,
-   * Locked and Unlocked), then Unavailable. A kind with no on or off state
-   * (a sensor) shows its state now and Unavailable; a tile with no entity (a
-   * spacer, a header, the app's own kinds) one tile with no name. A click
-   * pins that state on the stage (`setTestValue`), as the Live strip's chips
-   * do, and a click on the pinned one, or on Now, lets it go. The pinned one
-   * is marked, and a dot marks the state Home Assistant reports now.
+   * The head's live tile: the selected tile drawn large by the stage's
+   * renderer (`renderTileHeadPicture`), on where its entity has an on state
+   * (a light, a switch), else as Home Assistant has it now. Jesse cut the
+   * Off and Unavailable tiles beside it on 2026-10-26: three small tiles
+   * read oddly, and one large one shows the look; the Live strip over the
+   * stage's dock still pins any state on the stage.
    */
-  private renderStateTiles(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
-    if (!tileHeadHasEntity(tile)) {
-      const one = this.renderTileHeadPicture(page, tile, undefined);
-      return one === nothing ? nothing : html`<div class="pe-states"><span class="pe-st-one">${one}</span></div>`;
-    }
-    const entityId = tileEntityId(tile);
+  private renderHeadTile(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
     const real = this.hass?.states;
-    const live = real?.[entityId]?.state;
-    const pinned = this.testStates.get(entityId);
-    const choices = real === undefined ? [] : watchShowWhenStateChoices(entityId, real);
-    const word = (state: string): string => choices.find((c) => c.value === state)?.label ?? stateWords(state);
-    const shown: { as: WatchTilePreviewAs | undefined; state: string | undefined; label: string }[] = [];
-    for (const as of ["on", "off"] as const) {
-      const states = watchTileStatesAs(tile, real, as);
-      const state = states === real ? undefined : states?.[entityId]?.state;
-      if (state !== undefined && !shown.some((o) => o.state === state)) shown.push({ as, state, label: word(state) });
-    }
-    if (shown.length === 0) shown.push({ as: undefined, state: undefined, label: "Now" });
-    shown.push({ as: "unavailable", state: "unavailable", label: "Unavailable" });
-    return html`<div class="pe-states" role="group" aria-label="The tile in each state">${shown.map((o) => {
-      const on = o.state !== undefined && o.state === pinned;
-      const now = o.state === undefined ? live !== undefined : o.state === live;
-      const title = o.state === undefined ? `Home Assistant's state now${live === undefined ? "" : `: ${live}`}. Click to draw the stage with it.`
-        : on ? "Kept on the stage. Click to go back to Home Assistant's state."
-        : `Click to keep the tile ${o.label.toLowerCase()} on the stage`;
-      const pick = (): void => {
-        this.hoverState = undefined;
-        this.setTestValue(entityId, o.state === undefined || on ? undefined : o.state);
-      };
-      return html`<button type="button" class="pe-st ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} title=${title} @click=${pick}>
-        <span class="pe-st-pic">${this.renderTileHeadPicture(page, tile, o.as)}</span>
-        <span class="pe-st-label">${o.label}${now ? html`<i class="pe-state-live" aria-hidden="true"></i>` : nothing}</span>
-      </button>`;
-    })}</div>`;
+    const hasOn = tileHeadHasEntity(tile) && watchTileStatesAs(tile, real, "on") !== real;
+    const one = this.renderTileHeadPicture(page, tile, hasOn ? "on" : undefined);
+    return one === nothing ? nothing : html`<div class="pe-head-pic">${one}</div>`;
   }
 
   /**
-   * One of the head's live tiles: the selected tile at its own shape as the
-   * stage lays it out on the preview device, at the largest scale that fits
-   * `STATE_TILE_W` by `STATE_TILE_H`, its entity drawn in the state `as`
+   * The head's live tile: the selected tile at its own shape as the stage
+   * lays it out on the preview device, at the largest scale that fits
+   * `HEAD_TILE_W` by `HEAD_TILE_H`, its entity drawn in the state `as`
    * says (on, off or unavailable, as `watchTileStatesAs` makes it; its real
    * state with none), whatever the Live switch or a state tried does to the
    * stage, and the choice being pointed at in an Effect or Animation menu
@@ -5012,7 +4774,7 @@ export class WaPageEditor extends LitElement {
     const g = this.gesture;
     const dragged = g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(tile, g.arrange) : tile;
     const drawn = watchTriedTile(this.uiState, id) ?? dragged;
-    const s = Math.min(STATE_TILE_W / placed.width, STATE_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
+    const s = Math.min(HEAD_TILE_W / placed.width, HEAD_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
     const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
     const { testedIds: _tested, ...base } = this.previewInput(page, pages, screen, s);
     const states = as === undefined ? this.hass?.states : watchTileStatesAs(drawn, this.hass?.states, as);
@@ -5053,101 +4815,28 @@ export class WaPageEditor extends LitElement {
       renderWatchTileFace(drawn, cell, input, layout.unit)}${stage === undefined ? nothing : this.renderPartBoxes(id, stage, s)}</span>`;
   }
 
-  // ── find a setting ─────────────────────────────────────────────────────
+  // ── going to a section ─────────────────────────────────────────────────
 
   /** The tile inspector's groups as drawn now, or null. */
   private inspectorGroupsEl(): HTMLElement | null {
     return this.renderRoot?.querySelector<HTMLElement>(".pe-tile-insp .ts-groups") ?? null;
   }
 
-  /** What Find a setting lists for what is typed, read afresh from the
-   * groups as drawn, so a row hidden for this tile is never offered. */
-  private findMatches(): SettingFindEntry[] {
-    const groups = this.inspectorGroupsEl();
-    if (groups === null || this.findQuery.trim() === "") return [];
-    return findSettings(settingFindIndex(readSettingFindSections(groups)), this.findQuery);
-  }
-
   /**
-   * The Find a setting field at the head strip's end, with its key ("/":
-   * Home Assistant's own quick search has Cmd or Ctrl+K). Typing lists the
-   * matching settings under it, each with its group and section in grey;
-   * the arrow keys move, Enter or a click goes there (`goToSetting`), and
-   * Escape closes the list, then leaves the field.
-   */
-  private renderFindField(): TemplateResult {
-    const matches = this.findOpen ? this.findMatches() : [];
-    const at = Math.min(this.findAt, Math.max(0, matches.length - 1));
-    const open = this.findOpen && this.findQuery.trim() !== "";
-    const go = (entry: SettingFindEntry | undefined): void => {
-      if (entry === undefined) return;
-      this.findOpen = false;
-      this.findQuery = "";
-      this.goToSetting(entry);
-    };
-    const keys = (e: KeyboardEvent): void => {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        if (matches.length > 0) this.findAt = (at + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        go(matches[at]);
-      } else if (e.key === "Escape") {
-        // The editor's own Escape (let the tile go) waits: this one is the field's.
-        e.preventDefault();
-        e.stopPropagation();
-        if (open) { this.findOpen = false; this.findQuery = ""; } else (e.target as HTMLInputElement).blur();
-      }
-    };
-    return html`<div class="pe-find">
-      <label class="pe-find-box">
-        <span class="pe-find-ic" aria-hidden="true">${uiIcon("search")}</span>
-        <input type="search" class="pe-find-input" placeholder="Find a setting" autocomplete="off" spellcheck="false"
-          role="combobox" aria-label="Find a setting" aria-autocomplete="list" aria-expanded=${open ? "true" : "false"} aria-controls="pe-finds"
-          aria-activedescendant=${open && matches.length > 0 ? `pe-find-${at}` : nothing}
-          .value=${live(this.findQuery)}
-          @input=${(e: Event) => { this.findQuery = (e.target as HTMLInputElement).value; this.findAt = 0; this.findOpen = true; }}
-          @focus=${() => { this.findOpen = true; }}
-          @blur=${() => { this.findOpen = false; }}
-          @keydown=${keys} />
-        <kbd class="pe-kbd" title="Press / to find a setting">/</kbd>
-      </label>
-      ${open ? html`<div class="pe-finds" id="pe-finds" role="listbox" aria-label="Settings found">
-        ${matches.length === 0 ? html`<p class="pe-finds-none">No setting matches "${this.findQuery.trim()}".</p>` : matches.map((m, i) => html`
-          <button type="button" class="pe-finds-opt ${i === at ? "on" : ""}" role="option" id=${`pe-find-${i}`} aria-selected=${i === at ? "true" : "false"} tabindex="-1"
-            @pointerdown=${(e: PointerEvent) => e.preventDefault()} @pointerenter=${() => { this.findAt = i; }}
-            @click=${() => go(m)}>${m.label}<span>${settingFindWhere(m)}</span></button>`)}
-      </div>` : nothing}
-    </div>`;
-  }
-
-  /** "/" from the stage, the inspector or nowhere: Find a setting, while a
-   * tile's head draws it. True when it took the key. */
-  private openFind(): boolean {
-    const input = this.renderRoot?.querySelector<HTMLInputElement>(".pe-find-input") ?? null;
-    if (input === null || input.getClientRects().length === 0) return false;
-    input.focus();
-    input.select();
-    return true;
-  }
-
-  /**
-   * Go to a setting Find listed (or the section Hide or Change name): the
+   * Go to the section Hide or Change name: the
    * section scrolled into view inside the inspector's own scroll, clear of
    * the head strip while it stays at the top, washed blue for a moment (not
-   * with reduced motion), and the first control of the row, or of the
-   * section, focused.
+   * with reduced motion), and the section's first control focused.
    */
-  private goToSetting(entry: Pick<SettingFindEntry, "part" | "row">): void {
+  private goToSetting(part: string): void {
     const groups = this.inspectorGroupsEl();
-    const section = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${entry.part}"]`) ?? null;
+    const section = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${part}"]`) ?? null;
     if (groups === null || section === null) return;
-    const row = entry.row < 0 ? undefined : (settingFindRows(section)[entry.row] as HTMLElement | undefined);
     const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     // The strip sticks over the groups on a wide inspector: land under it.
     const strip = this.renderRoot.querySelector<HTMLElement>(".pe-strip");
     const sticks = strip !== null && getComputedStyle(strip).position === "sticky";
-    groups.style.setProperty("--pe-find-top", `${sticks ? strip.offsetHeight : 0}px`);
+    groups.style.setProperty("--pe-strip-top", `${sticks ? strip.offsetHeight : 0}px`);
     section.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
     if (this.findFlash !== undefined) {
       clearTimeout(this.findFlash.timer);
@@ -5159,7 +4848,7 @@ export class WaPageEditor extends LitElement {
       section.classList.add("pe-found");
       this.findFlash = { el: section, timer: setTimeout(() => { section.classList.remove("pe-found"); this.findFlash = undefined; }, FIND_FLASH_MS) };
     }
-    const control = (row ?? section).querySelector<HTMLElement>(
+    const control = section.querySelector<HTMLElement>(
       "input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled):not(.ts-sec-reset), [tabindex]:not([tabindex='-1'])",
     );
     control?.focus({ preventScroll: true });
@@ -5853,7 +5542,7 @@ export class WaPageEditor extends LitElement {
       .pe-strip { position: sticky; top: 0; outline: 8px solid var(--wa-bg); }
     }
     /* A section Find goes to lands under the strip, not behind it. */
-    .ts-groups .ts-sec { scroll-margin-top: calc(var(--pe-find-top, 0px) + 12px); }
+    .ts-groups .ts-sec { scroll-margin-top: calc(var(--pe-strip-top, 0px) + 12px); }
     /* The path over the live tiles: Page, back to the page's settings, then
        the tile's name. */
     .pe-path { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12.5px; color: var(--wa-muted); }
@@ -5866,51 +5555,9 @@ export class WaPageEditor extends LitElement {
     .pe-path-sep { display: inline-flex; flex: none; opacity: .7; }
     .pe-path-sep svg.ui-icon { width: 12px; height: 12px; }
     .pe-path-nm { min-width: 0; font-weight: 500; color: var(--wa-ink); overflow-wrap: anywhere; }
-    /* The live tiles, side by side, each over its state's name. The pinned
-       one has the accent ring. */
-    .pe-states { display: flex; flex-wrap: wrap; gap: 12px; }
-    .pe-st, .pe-st-one { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-    .pe-st {
-      padding: 6px; border: 1px solid transparent; border-radius: 12px; background: none;
-      font: inherit; font-size: 12px; color: var(--wa-muted); cursor: pointer;
-    }
-    .pe-st:hover { background: var(--wa-hover); color: var(--wa-ink); }
-    .pe-st:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pe-st.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
-    .pe-st-pic { display: grid; place-items: center; min-width: ${STATE_TILE_W}px; min-height: ${STATE_TILE_H}px; }
-    .pe-st-label { display: inline-flex; align-items: center; gap: 5px; }
-    /* Find a setting: a field with its key, and the list under it, over
-       the groups. */
-    .pe-find { position: relative; }
-    .pe-find-box {
-      display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px;
-      border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-field); color: var(--wa-muted); cursor: text;
-    }
-    .pe-find-box:focus-within { border-color: var(--wa-sel-ring, var(--wa-accent)); box-shadow: var(--wa-ring); }
-    .pe-find-ic { display: inline-flex; flex: none; }
-    .pe-find-ic svg.ui-icon { width: 15px; height: 15px; }
-    .pe-find-box > input.pe-find-input {
-      flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0; border: 0; outline: none; box-shadow: none;
-      background: transparent; color: var(--wa-ink); font: inherit; font-size: 13px;
-    }
-    .pe-find-box > input.pe-find-input::-webkit-search-cancel-button { display: none; }
-    .pe-kbd {
-      flex: none; min-width: 20px; padding: 1px 6px; border: 1px solid var(--wa-line-strong); border-radius: 5px;
-      font: inherit; font-size: 11px; text-align: center; color: var(--wa-muted);
-    }
-    .pe-finds {
-      position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; width: min(380px, 100%); min-width: 260px;
-      display: flex; flex-direction: column; padding: 6px;
-      border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-card); box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
-    }
-    .pe-finds-opt {
-      display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px;
-      border: 0; border-radius: 8px; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--wa-ink); cursor: pointer;
-    }
-    .pe-finds-opt > span { flex: none; font-size: 11.5px; color: var(--wa-muted); }
-    .pe-finds-opt.on { background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
-    .pe-finds-none { margin: 0; padding: 9px 10px; font-size: 12.5px; color: var(--wa-muted); }
-    /* The section Find went to: a soft blue wash that fades. None with
+    /* The live tile, large, under the path. */
+    .pe-head-pic { display: grid; place-items: center start; min-height: ${HEAD_TILE_H}px; }
+    /* The section Hide or Change went to: a soft blue wash that fades. None with
        reduced motion (the script does not add it then either). */
     .ts-groups .ts-sec.pe-found { animation: pe-found ${FIND_FLASH_MS}ms ease-out; }
     @keyframes pe-found {

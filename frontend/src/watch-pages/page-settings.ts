@@ -60,7 +60,7 @@ import {
 } from "./page-settings-model.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
-import { colorMoreOf, commit, dropStaleTyping, linkButton, resetButton, stylingEnumField, typed, typingField } from "./tile-settings.js";
+import { commit, dropStaleTyping, linkButton, resetButton, stylingEnumField, typed, typingField } from "./tile-settings.js";
 import { colorPickerView } from "./color-picker.js";
 import {
   sameWatchColor,
@@ -388,7 +388,6 @@ function pagePalette(sh: TileSettingsHost, setting: string, opts: PagePaletteSou
     form: { shown: act.shown(), forms: ["solid", "gradient"], pick: act.pickMode },
     ...(opts.rainbow === true ? { rainbow: {} } : {}),
     custom: { shown: typed(sh, setting) ?? watchCustomBoxColor(color), pick: act.custom },
-    more: colorMoreOf(sh, setting),
     wrap: (body) => typingField(sh, setting, body),
   });
 }

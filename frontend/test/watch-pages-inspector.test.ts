@@ -324,14 +324,14 @@ describe("the tile's cards", () => {
   it("start with the head strip, then four groups: Look, Text, Tap and Layout, each with its sections", () => {
     const el = editor(hallPage(), DIMMER);
     const text = flat(inspector(el));
-    // The head strip over the groups: the path and the live tiles, Name and
-    // Shows, then the actions and Find a setting.
+    // The head strip over the groups: the path and the live tile, Name and
+    // Shows, then the actions.
     expect(text.indexOf(`<div class="pe-strip">`)).toBeLessThan(text.indexOf(`<div class="insp-body`));
     const head = text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<div class="insp-body`));
     expect(head).not.toContain("<h4>");
     const lead = head.slice(head.indexOf(`<div class="ts-head-lead">`), head.indexOf(`<div class="ts-head-mid">`));
-    expect(lead.indexOf("pe-path")).toBeLessThan(lead.indexOf("pe-states"));
-    expect(lead).toContain(`<span class="pe-st-pic"><span class="pe-head-tile" `);
+    expect(lead.indexOf("pe-path")).toBeLessThan(lead.indexOf("pe-head-pic"));
+    expect(lead).toContain(`<div class="pe-head-pic"><span class="pe-head-tile" `);
     const mid = head.slice(head.indexOf(`<div class="ts-head-mid">`), head.indexOf(`<div class="ts-head-side">`));
     expect(mid).toContain(`<span class="ts-head-lab">Name</span>`);
     expect(mid).toContain(`aria-label="Name"`);
@@ -341,9 +341,8 @@ describe("the tile's cards", () => {
     const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
     const acts = [...side.matchAll(/<span>(Duplicate|Hide|Reset|Delete)<\/span>/g)].map((m) => m[1]);
     expect(acts).toEqual(["Duplicate", "Hide", "Reset", "Delete"]);
-    expect(side.indexOf("ts-head-acts")).toBeLessThan(side.indexOf(`class="pe-find"`));
-    expect(side).toContain(`placeholder="Find a setting"`);
-    expect(side).toContain(`<kbd class="pe-kbd" title="Press / to find a setting">/</kbd>`);
+    // No Find a setting: Jesse took it out on 2026-10-26.
+    expect(text).not.toContain("Find a setting");
     expect(text).not.toContain("Preview as");
     expect(text).not.toContain("Delete tile");
     const body = text.slice(text.indexOf(`<div class="insp-body`));
@@ -359,20 +358,15 @@ describe("the tile's cards", () => {
     expect(titles(group(body, "look"))).toEqual(["Color", "Icon", "Glow", "When it is off", "Background", "Border"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
     expect(titles(group(body, "tap"))).toEqual(["Action", "Tap animation", "Show tile"]);
-    expect(titles(group(body, "layout"))).toEqual(["Size", "Arrangement"]);
-    expect(group(body, "layout")).toContain(`<span class="ts-grp-d">Size, arrangement</span>`);
+    // No Size: dragging the tile or its corner on the stage moves and sizes it.
+    expect(titles(group(body, "layout"))).toEqual(["Arrangement"]);
+    expect(group(body, "layout")).toContain(`<span class="ts-grp-d">Arrangement</span>`);
     // The Arrangement: Default or Free, with no large tile until Free.
     const arrangement = card(body, "Arrangement");
     expect(arrangement).toMatch(/aria-label=Arrange>/);
     expect(arrangement).not.toContain("ts-arr-pic");
-    // The Size section: the presets as page strips, then the boxes folded
-    // under a line that says where the tile is.
-    const size = card(body, "Size");
-    expect(size).toContain(`class="pe-presets"`);
-    expect(size).toContain(`class="pc-strip"`);
-    expect(size).toContain(`class="pe-size-more" aria-expanded=false`);
-    expect(size).not.toContain(`class="pe-fields"`);
-    expect(size.indexOf("pe-presets")).toBeLessThan(size.indexOf("pe-size-more"));
+    expect(text).not.toContain("pe-presets");
+    expect(text).not.toContain("pe-size-more");
   });
 
   it("stand the groups in one to four columns by the inspector's own width, in CSS alone, and the inspector keeps one width with or without a tile", () => {
@@ -397,47 +391,26 @@ describe("the tile's cards", () => {
     expect(css).toContain("@container insp (min-width: 1080px) { .pe-strip { position: sticky; top: 0; outline: 8px solid var(--wa-bg); } }");
   });
 
-  it("draw the tile on, off and unavailable in the head, and pin the one clicked on the stage, never in the draft", () => {
+  it("draw the tile once in the head, large and on, never pinning a state", () => {
     const el = editor(hallPage(), DIMMER);
-    const states = () => {
-      const text = flat(inspector(el));
-      return text.slice(text.indexOf(`<div class="pe-states"`), text.indexOf(`<div class="ts-head-mid">`));
-    };
-    const document = () => (el.draft as { document: unknown }).document;
-    const before = document();
-    const drawn = states();
-    expect([...drawn.matchAll(/<span class="pe-st-label">([^<]+)/g)].map((m) => m[1])).toEqual(["On", "Off", "Unavailable"]);
-    // Each is its own picture, and Home Assistant says the light is on.
-    const pics = drawn.split(`<span class="pe-st-pic">`).slice(1);
-    expect(new Set(pics).size).toBe(3);
-    expect(drawn).toMatch(/On<i class="pe-state-live"/);
-    expect(drawn).not.toContain(`class="pe-st on"`);
-    click(inspector(el), `<span class="pe-st-label">Off<`);
-    expect([...(el.testStates as Map<string, string>)]).toEqual([["light.smart_plug_dimmer", "off"]]);
-    expect(states()).toMatch(/<button type="button" class="pe-st on" aria-pressed=true[^>]*>\s*<span class="pe-st-pic">.*?<span class="pe-st-label">Off</s);
-    click(inspector(el), `<span class="pe-st-label">Unavailable<`);
-    expect((el.testStates as Map<string, string>).get("light.smart_plug_dimmer")).toBe("unavailable");
-    // A click on the pinned one lets it go.
-    click(inspector(el), `<span class="pe-st-label">Unavailable<`);
+    const text = flat(inspector(el));
+    const lead = text.slice(text.indexOf(`<div class="ts-head-lead">`), text.indexOf(`<div class="ts-head-mid">`));
+    expect(lead.match(/class="pe-head-tile"/g)?.length).toBe(1);
+    expect(lead).not.toContain("Unavailable");
+    expect(lead).not.toContain(`class="pe-st`);
     expect((el.testStates as Map<string, string>).size).toBe(0);
-    expect(document()).toBe(before);
   });
 
-  it("name the states in the entity's own words, offer Now for a kind with no on or off, and one tile with no entity", () => {
+  it("draw one head tile for a person, a sensor and a spacer too", () => {
     const person = { ...DIMMER_TILE, id: "C3A0E000-0000-4000-8000-0000000000C3", entityId: "person.anna" };
     const sensor = { ...DIMMER_TILE, id: "C3A0E000-0000-4000-8000-0000000000C4", entityId: "sensor.hall_temp", gridRow: 4 };
     const el = editor(hallPage({ items: [person, sensor, SPACER_TILE] }), person.id);
-    const labels = () => {
-      const text = flat(inspector(el));
-      return [...text.matchAll(/<span class="pe-st-label">([^<]+)/g)].map((m) => m[1]);
-    };
-    expect(labels()).toEqual(["Home", "Away", "Unavailable"]);
+    const tiles = () => flat(inspector(el)).match(/<div class="pe-head-pic"><span class="pe-head-tile" /g)?.length ?? 0;
+    expect(tiles()).toBe(1);
     el.selectedTileId = sensor.id;
-    expect(labels()).toEqual(["Now", "Unavailable"]);
+    expect(tiles()).toBe(1);
     el.selectedTileId = SPACER;
-    const text = flat(inspector(el));
-    expect(labels()).toEqual([]);
-    expect(text).toContain(`<div class="pe-states"><span class="pe-st-one"><span class="pe-head-tile" `);
+    expect(tiles()).toBe(1);
   });
 
   it("put the tile's look back in one step with Reset tile, keeping its name and size", () => {
@@ -463,35 +436,16 @@ describe("the tile's cards", () => {
     expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=true/);
   });
 
-  it("opens the Size card's boxes on the line under the presets, and on their own while a typed number was refused", () => {
-    const el = editor(hallPage(), DIMMER);
-    el.sizeFieldsOpen = true;
-    let size = card(flat(inspector(el)), "Size");
-    expect(size).toContain(`class="pe-size-more" aria-expanded=true`);
-    expect(size).toContain(`class="pe-fields" id="pe-size-fields"`);
-    for (const name of ["Column", "Row", "Width", "Height"]) expect(size).toContain(`<span>${name}</span>`);
-    expect(size.indexOf("pe-size-more")).toBeLessThan(size.indexOf("pe-fields"));
-    el.sizeFieldsOpen = false;
-    el.fieldNote = "That does not fit.";
-    size = card(flat(inspector(el)), "Size");
-    expect(size).toContain(`class="pe-fields" id="pe-size-fields"`);
-    expect(size).toContain("That does not fit.");
-    expect(size.indexOf("pe-fields")).toBeLessThan(size.indexOf("pe-warn"));
-  });
-
-  it("says why a drag on the stage was refused in the line under the bar, not in the folded Size card", () => {
+  it("says why a drag on the stage was refused in the line under the bar", () => {
     const el = editor(hallPage(), DIMMER);
     el.refuseGesture("That size would cover a tile above or beside it, so the tile kept its size.");
-    expect(el.fieldNote).toBeUndefined();
     expect(el.note).toEqual({ kind: "warn", text: "That size would cover a tile above or beside it, so the tile kept its size." });
-    const size = card(flat(inspector(el)), "Size");
-    expect(size).not.toContain(`class="pe-fields"`);
   });
 
   it("head every section the same calm way: its title in sentence case, no badge, no fold", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const body = text.slice(text.indexOf(`<div class="ts-root ts-groups">`));
-    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Action", "Tap animation", "Show tile", "Size"]) {
+    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Action", "Tap animation", "Show tile", "Arrangement"]) {
       const c = card(body, title);
       expect(c, title).toMatch(new RegExp(`^<section class="ts-sec" data-part=\\w+ aria-label=${title}>\\s*<div class="ts-sec-h"><h4>${title}</h4>`));
       expect(c, title).not.toContain(`class="swatch"`);
@@ -517,16 +471,16 @@ describe("the tile's cards", () => {
     expect(Object.keys(WATCH_TILE_SECTION_BADGES).sort()).toEqual(Object.keys(WATCH_TILE_SETTINGS_SECTION_TITLES).sort());
   });
 
-  it("give a spacer no Name and no states in its head: it has no label and no entity", () => {
+  it("give a spacer no Name in its head: it has no label and no entity", () => {
     const text = flat(inspector(editor(hallPage(), SPACER)));
     expect(text).not.toContain("name-sec");
     expect(text).not.toContain(`aria-label="Name"`);
     expect(text).not.toContain(`class="pe-st `);
     expect(text).toContain(`<span class="ts-head-none">No entity</span>`);
-    // Look and Layout only: a group with nothing in it is not drawn.
-    expect(groupTitles(text)).toEqual(["Look", "Layout"]);
+    // Look only: a group with nothing in it is not drawn, and a spacer has
+    // no Arrangement (it has no parts) and no Size (the stage sizes it).
+    expect(groupTitles(text)).toEqual(["Look"]);
     expect(titles(group(text, "look"))).toEqual(["Background", "Border"]);
-    expect(titles(group(text, "layout"))).toEqual(["Size"]);
   });
 });
 

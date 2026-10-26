@@ -330,7 +330,7 @@ describe("the inspector's groups", () => {
     const text = flat(renderTileInspector(host));
     expect([...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "Text", "Tap", "Layout"]);
     expect(text).toContain(`<span class="ts-grp-d">What it does, when it shows</span>`);
-    expect(text).toContain(`<h3 class="ts-grp-t">Layout</h3><span class="ts-grp-d">Size, arrangement</span>`);
+    expect(text).toContain(`<h3 class="ts-grp-t">Layout</h3><span class="ts-grp-d">Arrangement</span>`);
     expect(text).not.toContain("data-part=size");
     expect(text).toContain("<h4>Arrangement</h4>");
   });

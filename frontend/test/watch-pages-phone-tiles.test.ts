@@ -584,7 +584,7 @@ describe("the settings of an iPhone only tile on a watch's editor", () => {
   it("name the iPhone, the one device that shows the tile, as an iPhone's editor does", () => {
     for (const kind of WATCH_PHONE_TILE_KINDS) {
       const { host } = tileHost(`${kind}.${UUID}`, { color: "#RAINBOW", hideWhenInactive: true }, "watch");
-      const text = flatten(renderTileHead(host, { lead: html``, actions: html``, remove: html``, find: html`` })) + flatten(draw(host));
+      const text = flatten(renderTileHead(host, { lead: html``, actions: html``, remove: html`` })) + flatten(draw(host));
       expect(text.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], kind).toEqual([]);
       for (const line of ["The iPhone picks the icon", "The iPhone cycles the tile through every color.", "The iPhone leaves the tile out while it is off."]) {
         expect(text, `${kind}: ${line}`).toContain(line);

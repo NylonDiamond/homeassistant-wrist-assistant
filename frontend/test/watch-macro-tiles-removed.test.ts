@@ -140,7 +140,7 @@ describe("a stored macro tile's settings", () => {
     expect(drawn).toContain(WATCH_REMOVED_TILE_TEXT);
     expect(WATCH_REMOVED_TILE_TEXT).toBe("Macros were removed. Use a Home Assistant script instead.");
     for (const gone of ["Run silently", "When it finishes", "Target", "<input", "<select"]) expect(drawn, gone).not.toContain(gone);
-    const head: TileHeadParts = { lead: nothing, actions: nothing, remove: nothing, find: nothing };
+    const head: TileHeadParts = { lead: nothing, actions: nothing, remove: nothing };
     expect(text(renderTileHead(h, head))).not.toContain(`aria-label="Name"`);
   });
 });

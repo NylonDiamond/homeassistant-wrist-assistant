@@ -5,14 +5,12 @@
 //
 //   heading
 //   Form       Solid | Gradient              (only where the value has forms)
-//   [Default] ● ● ● ● ● ● ● ◉ (More)         (Default only where it means something)
+//   [Default] ● ● ● ● ● ● ● ◉                (Default only where it means something)
 //   Custom     ■ #RRGGBB
 //
-// A theme holds some thirty colors, three rows of dots that all read alike.
-// The row shows the first ten, which are the theme's own kind colors (the
-// shades come after them), and a More pill lays the rest out in the same
-// row; Less folds them back. A stored color past the ten still shows as
-// picked: it stands after them on its own.
+// Every color of the theme shows, the theme's own kind colors first and the
+// shades after them. A More pill once folded all but ten; Jesse asked for
+// every color in view on 2026-10-26, so there is no pill.
 //
 // The Default chip is always called "Default"; what it means (the watch's
 // own gray, the tile's color, white) is its tooltip. Rainbow (◉) is no form
@@ -47,51 +45,6 @@ export const COLOR_FORM_WORDS: Readonly<Record<"solid" | "gradient", string>> = 
 /** What the Rainbow swatch stores and what it is called. */
 export const COLOR_RAINBOW = "#RAINBOW";
 export const COLOR_RAINBOW_LABEL = "Rainbow";
-
-/** How many swatches the row shows before More: the theme's kind colors. */
-export const COLOR_SWATCHES_SHOWN = 10;
-
-/** The More pill's words, and Less once the rest show. */
-export const COLOR_MORE_LABEL = "More";
-export const COLOR_LESS_LABEL = "Less";
-
-/** The More pill's state, kept in the caller's `uiState` between draws: the
- * view itself keeps nothing. */
-export interface ColorMore {
-  open: boolean;
-  toggle(): void;
-}
-
-/** The More pill of one picker, open or folded under `key` in `uiState`
- * (per setting, not per tile, so a person who opened the glow's colors keeps
- * them open from tile to tile). */
-export function colorMore(uiState: Map<string, unknown>, key: string, requestUpdate: () => void): ColorMore {
-  const at = `color-picker:more:${key}`;
-  return {
-    open: uiState.get(at) === true,
-    toggle: () => {
-      if (uiState.get(at) === true) uiState.delete(at);
-      else uiState.set(at, true);
-      requestUpdate();
-    },
-  };
-}
-
-/**
- * The swatches the row draws: all of them while More is open or where there
- * is no More, else the first `COLOR_SWATCHES_SHOWN`, with the stored color
- * after them when it is one of the rest. `hidden` is how many wait behind
- * More (none: no pill).
- */
-export function colorSwatchesShown(swatches: readonly string[], color: unknown, more: ColorMore | undefined): { shown: string[]; hidden: number } {
-  // One more than the ten is not worth a pill.
-  if (more === undefined || swatches.length <= COLOR_SWATCHES_SHOWN + 1) return { shown: [...swatches], hidden: 0 };
-  const rest = swatches.length - COLOR_SWATCHES_SHOWN;
-  if (more.open) return { shown: [...swatches], hidden: rest };
-  const first = swatches.slice(0, COLOR_SWATCHES_SHOWN);
-  const picked = swatches.slice(COLOR_SWATCHES_SHOWN).find((s) => sameWatchColor(color, s));
-  return { shown: picked === undefined ? first : [...first, picked], hidden: rest };
-}
 
 /** The Rainbow swatch's paint: the watch's rainbow (`RainbowHelper.colors`),
  * across the swatch as the gradients run. */
@@ -128,9 +81,6 @@ export interface ColorPickerView {
   /** The Tile color chip after Default, where the value can follow the
    * tile's own color (the icon's glow). `title` says what it draws. */
   tile?: { title: string; on: boolean; pick(): void };
-  /** The More pill after the first ten swatches (`colorMore`). Absent:
-   * every swatch shows, with no pill. */
-  more?: ColorMore;
   /** The custom box: the solid color it shows and its edit. */
   custom: { shown: string | undefined; pick(value: string | undefined): void };
   /** The picked tiles differ here: no swatch, chip or form is on, and the
@@ -224,14 +174,7 @@ function tileChip(t: NonNullable<ColorPickerView["tile"]>, trial: ColorTrial | u
     title=${t.title} @click=${() => { t.pick(); trial?.end(); }}>${COLOR_TILE_LABEL}</button>`;
 }
 
-/** The More or Less pill, after the swatches and Rainbow. */
-function morePill(more: ColorMore): TemplateResult {
-  return html`<button type="button" class="pe-chip ts-color-more" aria-expanded=${more.open ? "true" : "false"}
-    title=${more.open ? "Show only the theme's main colors" : "Show all the theme's colors"}
-    @click=${more.toggle}>${more.open ? COLOR_LESS_LABEL : COLOR_MORE_LABEL}</button>`;
-}
-
-/** The picker: heading, Form, Default with the swatches, Rainbow and More, Custom. */
+/** The picker: heading, Form, Default with the swatches and Rainbow, Custom. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
   const mixed = v.mixed === true;
   // Mixed marks nothing: no color matches this.
@@ -246,8 +189,8 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
     ? rainbowSwatch(rainbowOn, () => v.pickSwatch(COLOR_RAINBOW), v.trial)
     : nothing;
   const note = rainbowOn ? v.rainbow?.note : undefined;
-  const { shown: swatches, hidden } = colorSwatchesShown(v.swatches, color, v.more);
-  const tail = html`${rainbow}${hidden > 0 && v.more !== undefined ? morePill(v.more) : nothing}`;
+  const swatches = v.swatches;
+  const tail = rainbow;
   const word = html`<em class="pc-mixed">${MIXED_WORD}</em>`;
   const chips = html`${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? form?.title, v.trial)}${
     v.tile === undefined ? nothing : tileChip(mixed ? { ...v.tile, on: false } : v.tile, v.trial)}`;

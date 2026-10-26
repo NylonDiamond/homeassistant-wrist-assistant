@@ -78,7 +78,7 @@ import {
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
-import { type ColorMore, type ColorTrial, colorMore, colorPickerView } from "./color-picker.js";
+import { type ColorTrial, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
@@ -569,11 +569,6 @@ export function linkButton(text: string, title: string, action: () => void): Tem
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
 }
 
-/** A color picker's More pill, kept per setting in `uiState`. */
-export function colorMoreOf(host: Pick<TileSettingsHost, "uiState" | "requestUpdate">, setting: string): ColorMore {
-  return colorMore(host.uiState, `${KEY}:${setting}`, () => host.requestUpdate());
-}
-
 // ── several tiles picked ─────────────────────────────────────────────────
 
 /** A menu's value while the picked tiles differ: a stored choice, so a pick
@@ -974,6 +969,13 @@ export const TILE_INSPECTOR_GROUP_WORDS: Readonly<Record<TileInspectorGroup, { t
   layout: { title: "Layout", description: "Size, arrangement" },
 };
 
+/** Layout's grey line for the parts it holds: "Size, arrangement",
+ * "Arrangement" or "Size". */
+function layoutWords(parts: readonly string[]): string {
+  const words = [parts.includes("size") ? "size" : "", parts.includes("arrange") ? "arrangement" : ""].filter((w) => w !== "").join(", ");
+  return words === "" ? TILE_INSPECTOR_GROUP_WORDS.layout.description : words[0]!.toUpperCase() + words.slice(1);
+}
+
 /** The heading of each part that is not titled by its kind. */
 const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
   color: "Color",
@@ -1272,9 +1274,12 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     const changed = g.parts.map((p) => somePicked(host, () => watchTileInspectorPartChanged(host, p, p === "size" && extras.size?.changed?.() === true)));
     const n = changed.filter(Boolean).length;
     const words = TILE_INSPECTOR_GROUP_WORDS[id];
+    // Layout's line names what it holds: a page tile's Size went on
+    // 2026-10-26 (the stage drags and sizes it), a smart rule keeps its own.
+    const description = id === "layout" ? layoutWords(g.parts) : words.description;
     const left = hidden.get(id);
     return html`<section class="ts-grp" data-group=${id} aria-label=${words.title}>
-      <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${words.description}</span>${n === 0
+      <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${description}</span>${n === 0
         ? nothing
         : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`}</div>
       ${g.parts.map((p, i) => renderPart(host, p, changed[i]!, extras))}
@@ -1342,8 +1347,6 @@ export interface TileHeadParts {
   actions: TemplateResult | typeof nothing;
   /** The action after Reset (Delete). */
   remove: TemplateResult | typeof nothing;
-  /** The Find a setting field. */
-  find: TemplateResult | typeof nothing;
   /** Under Shows: the group line, while the tile is in a group. */
   below?: TemplateResult | typeof nothing;
   /** Change beside what the tile shows, where the tile has another way to
@@ -1397,7 +1400,6 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
           @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>${uiIcon("undo")}<span>Reset</span></button>
         ${parts.remove}
       </div>
-      ${parts.find}
     </div>
   </section>`;
 }
@@ -2068,7 +2070,6 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
         custom: { shown: typed(host, "glowColor") ?? (colourMixed ? undefined : colourValue), pick: custom },
         mixed: colourMixed,
         trial: colorTrial(host, "Glow color", { swatch: customEdit, default: colourEdit("white"), tile: colourEdit("tile") }),
-        more: colorMoreOf(host, "glowColor"),
         wrap: (body) => typingField(host, "glowColor", body),
       })}`}`;
 }
@@ -2161,7 +2162,6 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
     rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
     custom: { shown: typed(host, "color") ?? (differ ? undefined : watchCustomBoxColor(color)), pick: custom },
-    more: colorMoreOf(host, "color"),
     wrap: (body) => typingField(host, "color", body),
   })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;
 }
@@ -2240,7 +2240,6 @@ function renderText(host: TileSettingsHost): TemplateResult {
       custom: { shown: labelColor, pick: setLabelColor },
       mixed: colorMixed,
       trial: colorTrial(host, "Label color", { swatch: labelColorEdit, default: labelColorEdit(null) }),
-      more: colorMoreOf(host, "labelColor"),
       wrap: (body) => typingField(host, "labelColor", body),
     })}`;
 }
@@ -2629,7 +2628,6 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
         ? {}
         : { default: { title: `The header's own color, ${defaultColor}`, on: atDefault, pick: () => writeColor(defaultColor) } }),
       custom: { shown: typed(host, "headerColor") ?? watchCustomBoxColor(h.color), pick: custom },
-      more: colorMoreOf(host, "headerColor"),
       wrap: (body) => typingField(host, "headerColor", body),
     })}`;
 }
@@ -2942,7 +2940,6 @@ export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPic
       : { form: { shown: mode === "none" || mode === "rainbow" ? (gradient ? "gradient" : "solid") : mode, forms: ["solid", "gradient"], pick: act.pickMode } }),
     ...(o.rainbow === true ? { rainbow: {} } : {}),
     custom: { shown: typed(host, setting) ?? (differ ? undefined : watchCustomBoxColor(color)), pick: custom },
-    more: colorMoreOf(host, setting),
     wrap: (body) => typingField(host, setting, body),
   });
 }
@@ -3173,7 +3170,6 @@ function renderStateColorPicker(host: TileSettingsHost, state: string, color: st
       default: { title: "The tile's color", on: color === undefined, pick: () => write(null) },
       custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
       trial: colorTrial(host, "State color", { swatch: (v) => (d) => setWatchTileStateColor(d, host.pageId, host.tileId, state, v), default: (d) => setWatchTileStateColor(d, host.pageId, host.tileId, state, null) }),
-      more: colorMoreOf(host, "stateColor"),
       wrap: (body) => typingField(host, setting, body),
     })}
   </div>`;
@@ -3351,7 +3347,6 @@ export const tileSettingsStyles = css`
      a little shorter than a chip alone so the row keeps the swatches' height. */
   .ts-swatches > .ts-color-default { min-height: 24px; margin-right: 2px; }
   /* More and Less after the first ten swatches: a pill like Default. */
-  .ts-swatches > .ts-color-more { min-height: 24px; margin-left: 2px; }
   .ts-swatch {
     width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);
