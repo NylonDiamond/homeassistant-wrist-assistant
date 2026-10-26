@@ -466,9 +466,11 @@ describe("the sticky top block", () => {
   it("keeps every editor one screen tall beside the lists, each part scrolling in its own box", () => {
     for (const tag of ["wa-page-editor", "wa-status-pages-editor", "wa-menu-editor"] as const) {
       const css = styles(tag);
-      expect(rule(css, ".layout.pe-layout.cols-3"), tag).toMatch(/flex:\s*1 1 0;\s*min-height:\s*0;\s*overflow:\s*hidden/);
-      expect(rule(css, ".pe-layout.cols-3 > .column.inspector"), tag).toMatch(/overflow-y:\s*auto/);
-      expect(rule(css, ".pe-layout.cols-3 > .column.canvas"), tag).toMatch(/overflow-y:\s*auto/);
+      // The page editor has no lists beside its stage: two columns, `pe-wide`.
+      const wide = tag === "wa-page-editor" ? "pe-wide" : "cols-3";
+      expect(rule(css, `.layout.pe-layout.${wide}`), tag).toMatch(/flex:\s*1 1 0;\s*min-height:\s*0;\s*overflow:\s*hidden/);
+      expect(rule(css, `.pe-layout.${wide} > .column.inspector`), tag).toMatch(/overflow-y:\s*auto/);
+      expect(rule(css, `.pe-layout.${wide} > .column.canvas`), tag).toMatch(/overflow-y:\s*auto/);
       // No column sticks under the top block any more: none needs to.
       expect(css, tag).not.toContain("--pe-under-top");
       // Stacked, the editor scrolls as one page again.
