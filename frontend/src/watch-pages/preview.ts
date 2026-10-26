@@ -3380,7 +3380,7 @@ function tileFace(
       width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
       ...(hidden === undefined ? {} : {
         hidden,
-        contentFor: (model: OneLookPreviewModel) => renderTileDesignContent(stored, width, height, s, inputs, focus, tileNativeFrames(model.layout, model.device))?.content,
+        contentFor: (model: OneLookPreviewModel) => renderTileDesignContent(stored, width, height, s, { ...inputs, device: model.device }, focus, tileNativeFrames(model.layout, model.device))?.content,
       }),
       ...(overlayFor === undefined ? {} : { overlayFor }),
     });

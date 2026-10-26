@@ -179,13 +179,12 @@ function withEntityState(
 /**
  * A One Look state line as plain text, as a tile's `tileState` value reads
  * it: a number with its unit (after a space when spaced) and its tail when
- * the watch shows one (the line keeps it, or the tile is 8 columns or
- * wider); a word in full; nothing for none.
+ * the device shows one (`showsTail`); a word in full; nothing for none.
  */
-export function oneLookStateLineText(line: OneLookStateLine, colSpan: number): string {
+export function oneLookStateLineText(line: OneLookStateLine, colSpan: number, device: OneLookDevice = "watch"): string {
   if (line.kind === "none") return "";
   if (line.kind === "word") return line.word;
-  const tail = line.tail !== undefined && (line.keepTail === true || colSpan >= ONE_LOOK_WATCH_TAIL_COLUMNS) ? ` ${line.tail}` : "";
+  const tail = line.tail !== undefined && showsTail(line, colSpan, device) ? ` ${line.tail}` : "";
   return line.figure + (line.unitSpaced === true ? " " : "") + (line.unit ?? "") + tail;
 }
 
@@ -197,12 +196,19 @@ export function oneLookStateLineText(line: OneLookStateLine, colSpan: number): s
  * The pieces a line does not have are "". A number's `figure + unit + tail`,
  * or the `word`, is the whole line (`oneLookStateLineText`).
  */
-export function oneLookStateLineParts(line: OneLookStateLine, colSpan: number): TileStateParts {
+export function oneLookStateLineParts(line: OneLookStateLine, colSpan: number, device: OneLookDevice = "watch"): TileStateParts {
   if (line.kind === "none") return { ...NO_STATE_PARTS };
   if (line.kind === "word") return { ...NO_STATE_PARTS, word: line.word };
-  const tail = line.tail !== undefined && (line.keepTail === true || colSpan >= ONE_LOOK_WATCH_TAIL_COLUMNS) ? ` ${line.tail}` : "";
+  const tail = line.tail !== undefined && showsTail(line, colSpan, device) ? ` ${line.tail}` : "";
   const unit = line.unit === undefined ? "" : (line.unitSpaced === true ? " " : "") + line.unit;
   return { figure: line.figure, unit, tail, word: "" };
+}
+
+/** Whether a number's tail shows, by the native fitter's rule: the iPhone
+ * always keeps it; the watch drops it under 8 columns unless the line keeps
+ * it (contract section 5.1, the apps' `OneLookTextFitter.dropsTail`). */
+function showsTail(line: OneLookStateLine & { kind: "number" }, colSpan: number, device: OneLookDevice): boolean {
+  return device !== "watch" || line.keepTail === true || colSpan >= ONE_LOOK_WATCH_TAIL_COLUMNS;
 }
 
 const NO_STATE_PARTS: Readonly<TileStateParts> = Object.freeze({ figure: "", unit: "", tail: "", word: "" });
@@ -210,15 +216,16 @@ const NO_STATE_PARTS: Readonly<TileStateParts> = Object.freeze({ figure: "", uni
 /** A tile's own words for `ResolveContext.tileValues`: its state line as
  * text ("" while its entity has not loaded), the same line in its four
  * pieces, and its name (its label, else the friendly name, else the entity
- * id), whether or not the label shows. */
-export function tileValuesFor(tile: WatchPageTile, ctx: BaseLayerContext): { state: string; name: string; stateParts: TileStateParts } {
+ * id), whether or not the label shows. `device` is the frame the words
+ * draw in, for the tail rule (the watch unless the iPhone frame says so). */
+export function tileValuesFor(tile: WatchPageTile, ctx: BaseLayerContext, device: OneLookDevice = "watch"): { state: string; name: string; stateParts: TileStateParts } {
   const face = faceOf(tile, ctx);
   const name = watchPreviewTileLabel(face?.tile ?? tile, face?.input ?? previewInput(tile, ctx, ctx.states));
   if (face === undefined) return { state: "", name, stateParts: { ...NO_STATE_PARTS } };
   const ks = face.model.kind;
   if (ks.stateHidden) return { state: "", name, stateParts: { ...NO_STATE_PARTS } };
   const line = oneLookStateFor(ks, false);
-  return { state: oneLookStateLineText(line, face.model.colSpan), name, stateParts: oneLookStateLineParts(line, face.model.colSpan) };
+  return { state: oneLookStateLineText(line, face.model.colSpan, device), name, stateParts: oneLookStateLineParts(line, face.model.colSpan, device) };
 }
 
 // ── building the layers ──────────────────────────────────────────────────

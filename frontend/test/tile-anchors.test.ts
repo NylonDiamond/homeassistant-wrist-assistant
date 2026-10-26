@@ -14,7 +14,7 @@ import type { TemplateResult } from "lit";
 import { previewTileNativeFrames, renderWatchTileFace } from "../src/watch-pages/preview.js";
 import { phonePagesLayout } from "../src/phone-frame.js";
 import { oneLookCellSize, oneLookGridUnit } from "../src/watch-pages/one-look/metrics.js";
-import { baseAnchors, baseLayers, oneLookStateLineParts, tileNativeFramesOn } from "../src/watch-pages/tile-base-layers.js";
+import { baseAnchors, baseLayers, oneLookStateLineParts, oneLookStateLineText, tileNativeFramesOn } from "../src/watch-pages/tile-base-layers.js";
 import {
   type BaseLayerContext,
   type TileAnchor,
@@ -331,6 +331,12 @@ describe("the state line's parts", () => {
     expect(oneLookStateLineParts({ kind: "number", figure: "21.5", unit: "°C", tail: "Heating" }, 6)).toMatchObject({ tail: "" });
     expect(oneLookStateLineParts({ kind: "number", figure: "21", tail: "Heating", keepTail: true }, 4)).toEqual({ figure: "21", unit: "", tail: " Heating", word: "" });
     expect(oneLookStateLineParts({ kind: "word", word: "Off" }, 6)).toEqual({ figure: "", unit: "", tail: "", word: "Off" });
+    // The iPhone keeps a tail the watch drops under 8 columns (section 5.1).
+    const climate = { kind: "number", figure: "21.5", unit: "°", tail: "to 22°" } as const;
+    expect(oneLookStateLineParts(climate, 6, "phone")).toEqual({ figure: "21.5", unit: "°", tail: " to 22°", word: "" });
+    expect(oneLookStateLineParts(climate, 6, "watch").tail).toBe("");
+    expect(oneLookStateLineText(climate, 6, "phone")).toBe("21.5° to 22°");
+    expect(oneLookStateLineText(climate, 6)).toBe("21.5°");
     expect(oneLookStateLineParts({ kind: "none" }, 6)).toEqual({ figure: "", unit: "", tail: "", word: "" });
   });
 

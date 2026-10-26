@@ -24,6 +24,7 @@ import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry } from "
 import { type WatchTemplateRender, watchTileDesignRender } from "./app-model.js";
 import { tileValuesFor } from "./tile-base-layers.js";
 import { type TileNativeFrames, placeDesignDoc } from "./tile-anchors.js";
+import type { OneLookDevice } from "./one-look/metrics.js";
 import {
   type TileDesign,
   type TileHiddenParts,
@@ -49,6 +50,9 @@ export interface TileDesignInputs {
   /** The page's template renders (`watchTemplateRequests`), which hold each
    * design's values under its `tile_` key. */
   templates?: ReadonlyMap<string, WatchTemplateRender>;
+  /** The frame the tile draws in, for the state line's tail rule. Absent:
+   * the watch. */
+  device?: OneLookDevice;
 }
 
 /** A design read and compiled, kept by the stored object: a draw reads the
@@ -145,7 +149,7 @@ export function tileDesignResolveContext(tile: WatchPageTile, design: TileDesign
       ...(inputs.page === undefined ? {} : { page: inputs.page }),
       ...(inputs.pages === undefined ? {} : { pages: inputs.pages }),
       ...(inputs.icons === undefined ? {} : { icons: inputs.icons }),
-    }),
+    }, inputs.device),
   };
 }
 
