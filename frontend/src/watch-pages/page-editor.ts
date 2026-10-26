@@ -264,6 +264,7 @@ import {
   forgetTileSettingsNotes,
   renderTileHead,
   renderTileSettings,
+  TILE_HEAD_WEIGHT,
   tileInspectorColumnRuns,
   tileInspectorSections,
   tileSettingsFoldIds,
@@ -4642,16 +4643,17 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    const runs = host === undefined ? undefined : tileInspectorColumnRuns(tileInspectorSections(host), this.inspectorCols);
-    return html`<div class="pe-tile-insp">
-      ${host === undefined ? nothing : renderTileHead(host, {
+    const runs = host === undefined ? undefined : tileInspectorColumnRuns(tileInspectorSections(host), this.inspectorCols, TILE_HEAD_WEIGHT);
+    // The head card and the group line open the first column, so the other
+    // columns' cards start at the top.
+    const head = host === undefined ? nothing : html`${renderTileHead(host, {
         picture: this.renderTileHeadPicture(page, tile),
         previewAs: this.tilePreviewAs,
         setPreviewAs: (as) => { this.tilePreviewAs = as; },
-      })}
-      ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
-      ${host === undefined || runs === undefined ? nothing : html`<div class="pe-insp-cols" style=${`--pe-cols:${runs.length}`}>
-        ${runs.map((sections, i) => html`<div class="pe-insp-col" data-col=${String(i + 1)}>${renderTileSettings(host, { sections, size })}</div>`)}
+      })}${off ? nothing : renderTileGroupLine(host, this.groupActions)}`;
+    return html`<div class="pe-tile-insp">
+      ${host === undefined || runs === undefined ? head : html`<div class="pe-insp-cols" style=${`--pe-cols:${runs.length}`}>
+        ${runs.map((sections, i) => html`<div class="pe-insp-col" data-col=${String(i + 1)}>${i === 0 ? head : nothing}${renderTileSettings(host, { sections, size })}</div>`)}
       </div>`}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button></div>

@@ -880,14 +880,23 @@ const SECTION_WEIGHT: Partial<Record<WatchTileSettingsSection, number>> = {
  * reading order. One column is the left column's sections over the right's;
  * two are those columns (`tileInspectorColumns`); three split that same
  * order into three runs of about one height (`splitColumns`), so how the
- * tile looks still comes first and what it does last.
+ * tile looks still comes first and what it does last. `lead` is the weight
+ * of what stands over the first column's cards (the tile's head card), so
+ * the three runs balance with it in.
  */
-export function tileInspectorColumnRuns(sections: readonly WatchTileSettingsSection[], count: number): WatchTileSettingsSection[][] {
+export function tileInspectorColumnRuns(sections: readonly WatchTileSettingsSection[], count: number, lead = 0): WatchTileSettingsSection[][] {
   const { left, right } = tileInspectorColumns(sections);
   if (count <= 1) return [[...left, ...right]];
   if (count === 2) return [left, right].filter((run) => run.length > 0);
-  return splitColumns([...left, ...right], (s) => SECTION_WEIGHT[s] ?? 3, count);
+  if (lead <= 0) return splitColumns([...left, ...right], (s) => SECTION_WEIGHT[s] ?? 3, count);
+  // The head as the first item, so it always opens the first run.
+  const runs = splitColumns<WatchTileSettingsSection | "head">(["head", ...left, ...right], (s) => (s === "head" ? lead : SECTION_WEIGHT[s] ?? 3), count);
+  return runs.map((run) => run.filter((s): s is WatchTileSettingsSection => s !== "head"));
 }
+
+/** About how tall the tile's head card stands, on the scale of
+ * `SECTION_WEIGHT`: the live tile over Name, the entity and Preview as. */
+export const TILE_HEAD_WEIGHT = 4;
 
 /** The look keys Reset tile removes beside the styling tasks' own resets:
  * the icon's size, shadow, glow, dimming, animations and per state icons
@@ -962,25 +971,25 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
     const set = (v: string) =>
       commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });
     name = html`<div class="field ts-head-f ts-head-name"><span>Name</span>${typingField(host, "label", html`<input type="text" aria-label="Name" .value=${label}
-      placeholder=${fallback} ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`)}
-      <span class="hint ts-head-note">${watchLabelNote(tile, hostDevice(host))}</span></div>`;
+      placeholder=${fallback} title=${watchLabelNote(tile, hostDevice(host))} ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`)}</div>`;
   }
   const resettable = watchTileResettable(host);
+  // One column: the live tile, then Name, the entity beside Reset tile on one
+  // small line, and Preview as.
   return html`<section class="ts-head ts-root" aria-label="Tile">
     <div class="ts-head-pic">${parts.picture}</div>
     <div class="ts-head-fields">
       ${name}
-      <div class="field ts-head-f"><span>Entity</span>${hasEntity
+      <div class="ts-head-line">${hasEntity
         ? html`<code class="ts-head-entity" title=${entityId}>${entityId}</code>`
-        : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "None" : tileKindLabel(kind)}</span>`}</div>
-      ${hasEntity ? html`<div class="ts-head-f ts-head-as">${segField<WatchTilePreviewAs>("Preview as", parts.previewAs, PREVIEW_AS, (v) => parts.setPreviewAs(v), {
-        titles: { on: "The tile as it draws on", off: "The tile as it draws off", unavailable: "The tile while Home Assistant cannot reach it" },
-      })}</div>` : nothing}
-      <div class="ts-head-acts">
+        : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "No entity" : tileKindLabel(kind)}</span>`}
         <button type="button" class="ghost ts-reset-btn" ?disabled=${!resettable || host.busy}
           title=${resettable ? "Put the icon, color, text, state, border, background and arrangement back to their defaults. The name, size, tap and Show tile stay." : "The tile's look is at its defaults"}
           @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>${uiIcon("undo")}Reset tile</button>
       </div>
+      ${hasEntity ? html`<div class="ts-head-f ts-head-as">${segField<WatchTilePreviewAs>("Preview as", parts.previewAs, PREVIEW_AS, (v) => parts.setPreviewAs(v), {
+        titles: { on: "The tile as it draws on", off: "The tile as it draws off", unavailable: "The tile while Home Assistant cannot reach it" },
+      })}</div>` : nothing}
     </div>
   </section>`;
 }
@@ -2768,37 +2777,27 @@ export const tileSettingsStyles = css`
   .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
 
-  /* The inspector's head card (\`renderTileHead\`): the live tile on a black
-     well, and beside it Name, Entity, Preview as and Reset tile, each title
-     over its control: two by two on an inspector of 760px or more (the page
-     editor's \`pe-tile\` container), one under another below that, and
-     under the tile below 560px. */
+  /* The inspector's head card (\`renderTileHead\`), the top of the first
+     column: the live tile on a black well as wide as the column, then Name
+     and Preview as as rows like a card's, and between them one small line
+     with the entity and Reset tile. */
   .ts-head {
-    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px 18px;
-    margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-card);
+    display: flex; flex-direction: column; gap: 8px; --wa-lab: 72px;
+    margin: 0 0 10px; padding: 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-card);
   }
-  .ts-head-pic { display: grid; place-items: center; width: 220px; height: 150px; border-radius: 10px; background: #000; overflow: hidden; }
-  .ts-head-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 10px 16px; min-width: 0; }
-  @container pe-tile (min-width: 760px) {
-    .ts-head-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  .ts-head .field.ts-head-f, .ts-head .ts-head-f > .field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-height: 0; }
+  .ts-head-pic { display: grid; place-items: center; width: 100%; height: 150px; border-radius: 8px; background: #000; overflow: hidden; }
+  .ts-head-fields { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .ts-head .field.ts-head-f, .ts-head .ts-head-f > .field { margin: 0; min-height: 0; }
   .ts-head .ts-head-f input[type=text] {
-    width: 100%; min-width: 0; height: 30px; min-height: 30px; padding: 0 9px; font-size: 13px; border-radius: 6px;
+    width: 100%; min-width: 0; height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
-  .ts-head .field > span { font-size: 11.5px; }
-  .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; min-width: 0; }
-  .ts-head-entity { display: block; min-width: 0; padding: 6px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ink); }
-  .ts-head-none { padding: 6px 0; font-size: 12.5px; color: var(--wa-muted); }
-  .ts-head-acts { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
-  .ts-head .field > span.ts-head-note { margin: 0; font-size: 11px; color: var(--wa-muted); }
-  .ts-head-acts > button { flex: none; white-space: nowrap; }
+  .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  .ts-head-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-left: calc(var(--wa-lab) + 8px); }
+  .ts-head-entity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--wa-muted); }
+  .ts-head-none { font-size: 11.5px; color: var(--wa-muted); }
+  .ts-head-line > button.ts-reset-btn { flex: none; white-space: nowrap; min-height: 22px; padding: 0 7px; font-size: 11.5px; }
   button.ghost.ts-reset-btn:disabled { opacity: .45; }
-  @container pe-tile (max-width: 560px) {
-    .ts-head { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
-    .ts-head-pic { width: 100%; }
-  }
 
   ${pictureChoiceStyles}
 `;

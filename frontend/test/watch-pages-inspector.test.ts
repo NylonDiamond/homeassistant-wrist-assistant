@@ -337,9 +337,10 @@ describe("the tile's cards", () => {
     el.inspectorCols = 2;
     const text = flat(inspector(el));
     const body = text.slice(text.indexOf(`<div class="insp-body"`));
-    // The head: the live tile, Name, Entity, Preview as and Reset tile,
-    // before any card.
-    const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf(`<div class="pe-insp-cols"`));
+    // The head: the live tile, Name, the entity, Reset tile and Preview as,
+    // at the top of the first column, before any card.
+    const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf("<h4>"));
+    expect(body.indexOf(`data-col=1`)).toBeLessThan(body.indexOf(`<section class="ts-head`));
     expect(body.indexOf(`<section class="ts-head`)).toBeLessThan(body.indexOf("<h4>"));
     expect(head).toContain(`<div class="ts-head-pic"><span class="pe-head-tile"`);
     expect(head).toContain(`aria-label="Name"`);
@@ -385,6 +386,12 @@ describe("the tile's cards", () => {
     };
     expect(cols(1)).toEqual([["Icon and color", "Text", "Background", "Visibility", "Size", "Arrangement", "State", "Border", "Action"]]);
     expect(cols(3)).toEqual([["Icon and color"], ["Text", "Background", "Visibility", "Size", "Arrangement"], ["State", "Border", "Action"]]);
+    // The head card opens the first column, not a row across all three.
+    const three = editor(hallPage(), DIMMER);
+    three.inspectorCols = 3;
+    const t3 = flat(inspector(three));
+    expect(t3.indexOf(`data-col=1`)).toBeLessThan(t3.indexOf(`<section class="ts-head`));
+    expect(t3.indexOf(`<section class="ts-head`)).toBeLessThan(t3.indexOf(`data-col=2`));
     expect(css).toMatch(/\.pe-insp-cols \{ display: grid; grid-template-columns: repeat\(var\(--pe-cols, 1\), minmax\(0, 1fr\)\);/);
     expect(css).not.toContain("pe-tile-on");
     expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 1500px\);/);
@@ -507,7 +514,7 @@ describe("the tile's cards", () => {
     expect(text).not.toContain("name-sec");
     expect(text).not.toContain(`aria-label="Name"`);
     expect(text).not.toContain("Preview as");
-    expect(text).toContain(`<span class="ts-head-none">None</span>`);
+    expect(text).toContain(`<span class="ts-head-none">No entity</span>`);
     const left = text.slice(text.indexOf(`data-col=1`), text.indexOf(`data-col=2`));
     const right = text.slice(text.indexOf(`data-col=2`));
     expect([...left.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Background"]);
