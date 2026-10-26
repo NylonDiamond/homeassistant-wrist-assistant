@@ -140,9 +140,13 @@ describe("the stage on an iPhone", () => {
     const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [tile(1, "light.a")] }] };
     const { el, whole } = phoneEditor(mine);
     el.selectedPageId = U(90);
+    // The model and the frame's words are the facts at the top of the
+    // editor bar's ··· menu.
+    el.topMenuOpen = true;
     const text = whole();
     expect(text).toContain("iPhone 17 Pro");
     expect(text).toContain(PHONE_FRAME_TEXT);
+    el.topMenuOpen = false;
     // In the iPhone look, the default while the phone's settings say nothing.
     expect(text).toContain('class="wa-phone ios"');
     // The one-screen app's top row: no tab bar, no large title. "Mine" sets
@@ -156,7 +160,8 @@ describe("the stage on an iPhone", () => {
     expect(text).not.toContain('class="wa-watch"');
     expect(text).not.toContain("watch frame");
     expect(text).toContain("iPhone showing Mine");
-    // The tool strip's zoom is the phone's own: half the watch's 150%.
+    // The dock's zoom is the phone's own: half the watch's 150% (Fit with no
+    // stage measured to fill).
     expect(text).toContain(">75%<");
   });
 

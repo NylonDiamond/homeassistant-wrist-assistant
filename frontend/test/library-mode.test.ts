@@ -215,23 +215,25 @@ describe("the page editor in library mode", () => {
     expect(e.ha.of("library/item")).toEqual([{ type: "wrist_assistant/library/item", kind: "pages", item_id: SHED }]);
     expect((e.draft().document.pages as JsonObject[]).map((p) => p.id)).toEqual([SHED]);
     const bar = flat(e.call("renderTopBar", e.draft()));
-    expect(bar).toContain("Back to the Pages tab");
-    for (const gone of ["Add page", "tb-menus", "tb-sync", "pe-watch-picker", "Preview as"]) expect(bar).not.toContain(gone);
-    // The devices stand in the strip under the canvas head, as on a device:
-    // the question, a tick per device, then the count. Not in the bar, and
-    // not in the inspector.
-    expect(bar).not.toContain("lib-on");
-    const ticks = flat(e.call("renderPageTicks", e.page()));
-    expect(ticks).toMatch(/lib-on over-stage none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet/);
+    expect(bar).toContain("Back to the Pages board");
+    for (const gone of ["Add page", "tb-menus", "tb-sync", "pe-watch-picker", "Preview as", "lib-on"]) expect(bar).not.toContain(gone);
+    // The devices stand in the editor bar after the page picker: "On no
+    // device yet" while it is on none, then the fold with every device.
+    // Not over the stage any more, and not in the inspector.
+    const ticks = flat(e.call("renderBarTicks", e.page()));
+    expect(ticks).toMatch(/class="pe-bar-on none"[^>]*aria-label=Which devices do you want this on\?[\s\S]*On no device yet[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone/);
     expect(ticks).not.toContain("On this watch.");
-    expect(flat(e.call("renderPageCards", e.page(), undefined))).not.toContain("lib-on");
+    expect(flat(e.call("renderPageCards", e.page(), undefined))).not.toContain("pe-bar-on");
     const body = e.body();
-    // Preview on sits in the strip over the stage, beside the size and the
-    // zoom: the watch and iPhone thumbnails.
+    expect(body).not.toContain("pe-bar-on");
+    // Preview on is its own control centred at the top of the stage: Watch,
+    // iPhone and Both. The dock at the foot has the zoom, and no size label.
+    const preview = flat(e.call("renderPreviewOn"));
+    expect(preview).toMatch(/aria-label="Preview on"[\s\S]*class="pe-seg-btn on"[^>]*>Watch<[\s\S]*class="pe-seg-btn "[^>]*>iPhone</);
     const tools = flat(e.call("renderStageTools", e.page(), false, false));
-    expect(tools).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on[\s\S]*lib-preview-thumb iphone [\s\S]*tint-dot[\s\S]*Zoom/);
-    // The size label is gone from the strip: the head over the stage says it.
+    expect(tools).toMatch(/class="stage-tools pe-dock"[\s\S]*aria-label="Zoom"[\s\S]*>Fit</);
     expect(tools).not.toContain("46 mm");
+    expect(tools).not.toContain("Preview on");
     // The iPhone thumbnail draws the page on the home's iPhone; with the
     // watch thumbnail it is the watch again.
     e.call("pickPreview", "iphone");

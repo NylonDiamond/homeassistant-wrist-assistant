@@ -1,10 +1,11 @@
 // The page editor element itself, where it can be read without a page: the
 // keys it leaves to a focused field, and the stage's tiles, which stand on
 // the page's own background rather than on a patch of its color. Then the
-// page's head with its page picker, the stage that stands in for the old
-// Pages and Tiles lists (hidden tiles, spacers, a tile with no id, Tab, Add
-// tile), the canvas head, the Live strip and the zoom. The editor is stood
-// up in library mode, its only mode, on one library page.
+// editor bar with its page picker and devices, the stage that stands in for
+// the old Pages and Tiles lists (hidden tiles, spacers, a tile with no id,
+// Tab, Add tile, the help, the fades), the ··· menu, the Live strip and the
+// zoom. The editor is stood up in library mode, its only mode, on one
+// library page.
 
 import { html } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,9 +23,8 @@ import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { pageDevicesText, stageHiddenReason, stageHiddenText, watchPageCopy } from "../src/watch-pages/page-editor.js";
 import {
+  PAGE_ZOOM_STEPS,
   STAGE_ZOOM_KEY,
-  loadStageZoom,
-  saveStageZoom,
   stageFitZoom,
   stageZoomIn,
   stageZoomLabel,
@@ -226,51 +226,87 @@ function withLibrary(made: unknown[] = [], opened: string[] = []) {
   return { ...e, made, opened };
 }
 
-describe("the page's head", () => {
+describe("the editor bar", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("puts All pages, the page picker and the devices over the stage and the inspector, with no list beside them", () => {
-    const { body } = editor();
-    const text = body();
-    const head = text.slice(text.indexOf(`<div class="pe-head"`), text.indexOf(`<div class="layout pe-layout`));
-    expect(head).toContain(`class="pe-btn pe-head-back" title="Back to the Pages board"`);
-    expect(head).toContain("<span>All pages</span>");
-    expect(text.indexOf(`<div class="pe-head"`)).toBeLessThan(text.indexOf(`<div class="column canvas">`));
+  /** The bar, from its start to the end of the sticky top block. */
+  const barOf = (text: string): string => text.slice(text.indexOf(`<div class="wa-bar pe-bar"`), text.indexOf(`<div class="layout pe-layout`));
+
+  it("is one row over both columns: All pages, the picker, the devices, then Undo, Redo, the save status, ··· and Help", () => {
+    const { whole } = withLibrary();
+    const text = whole();
+    const bar = barOf(text);
+    expect(bar).toContain(`class="tb-btn tb-back pe-bar-back" title="Back to the Pages board"`);
+    expect(bar).toContain("<span>All pages</span>");
+    const order = [`pe-bar-back"`, `class="pe-pp"`, `class="pe-bar-on`, `class="spacer"`, `aria-label="Undo"`, `aria-label="Redo"`, `class="pe-saved"`, `class="tb-btn tb-more"`, `pe-bar-help`]
+      .map((p) => bar.indexOf(p));
+    expect(order.every((i) => i > -1), String(order)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // No second or third row: no page head, no canvas head, no Shared tag.
+    for (const gone of [`class="pe-head"`, `class="cv-head"`, "lib-mode-tag", "Editing page", "Switch page</span>", "lib-on over-stage"]) {
+      expect(text, gone).not.toContain(gone);
+    }
     expect(text).toContain(`<div class="layout pe-layout pe-wide">`);
     for (const gone of ["pe-pages-card", "pe-tiles-card", "pe-list-split", "pe-tile-row", "pe-page-row", `class="gutter`, "column left", "--wa-left"]) {
       expect(text, gone).not.toContain(gone);
     }
   });
 
-  it("draws the page picker as one large button: picture, Editing page, name, tiles and devices, Switch page", () => {
-    const { body } = editor();
-    const text = body();
-    const button = text.slice(text.indexOf(`<button type="button" class="pe-pp"`), text.indexOf("</button>", text.indexOf(`class="pe-pp-switch"`)));
+  it("draws the page picker slim: picture, name, tile count and Shared, a chevron", () => {
+    const { whole } = editor();
+    const text = whole();
+    const button = text.slice(text.indexOf(`<button type="button" class="pe-pp"`), text.indexOf("</button>", text.indexOf(`class="pe-pp-chev"`)));
     expect(button).toContain(`aria-haspopup="dialog" aria-expanded=false`);
-    expect(button).toMatch(/<span class="pe-pic" style=width:46px;height:\d+px;/);
-    expect(button).toContain(`<span class="pe-pp-label">Editing page</span>`);
+    expect(button).toContain("aria-label=Switch page. Editing Hall");
+    expect(button).toMatch(/<span class="pe-pic" style=width:28px;height:\d+px;/);
     expect(button).toContain(`>Hall</span>`);
-    expect(button).toContain(`<span class="pe-pp-sub">4 tiles · On no device yet</span>`);
-    expect(button).toContain(`<span class="pe-pp-switch">Switch page`);
+    expect(button).toMatch(/<span class="pe-pp-sub">4 tiles · <span title=[^>]*>Shared<\/span><\/span>/);
     expect(text).not.toContain("pe-pp-pop");
   });
 
-  it("moves the devices to the head's right, and the bar's own way back only while there is no head", () => {
-    const { el, body, owners } = withLibrary();
-    const text = body();
-    const head = text.slice(text.indexOf(`<div class="pe-head"`), text.indexOf(`<div class="layout pe-layout`));
-    expect(head).toContain(`<div class="pe-head-ticks"><div class="lib-on over-stage`);
-    expect(head).toContain(`4 tiles · On ${owners[0]!.device_name}`);
-    // Not between the canvas head and the stage any more.
-    const canvas = text.slice(text.indexOf(`<div class="card canvas-card`));
-    expect(canvas).not.toContain("lib-on");
-    expect(rule(sheet(), ".pe-head-ticks")).toContain("margin-left: auto");
-    const bar = () => flat((el.renderTopBar as (d: unknown) => unknown).call(el, (el as unknown as { draft: unknown }).draft));
-    expect(bar()).not.toContain("tb-back");
+  it("puts the devices right after the picker, ticked ones inline and the rest always folded", () => {
+    const { whole, owners } = withLibrary();
+    const bar = barOf(whole());
+    expect(bar).toMatch(/<div class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>\s*<span class="pe-bar-on-l">On<\/span>/);
+    expect(bar).toContain(owners[0]!.device_name);
+    expect(bar).toContain("+ Add to a device");
+    const css = sheet();
+    expect(rule(css, ".pe-bar-on wa-chip-row > .lt-chip.off:not(.add)")).toContain("display: none");
+    expect(rule(css, ".pe-bar-on wa-chip-row > .lt-fold")).toContain("display: inline-flex");
+  });
+
+  it("keeps the manual save: Saved with nothing to save, Unsaved changes and Save with edits", () => {
+    const { el, whole, draft } = editor();
+    // Not in a document: there is no focused field to let go of.
+    el.leaveTile = () => undefined;
+    const bar = () => barOf(whole());
+    expect(bar()).toMatch(/<span class="pe-saved" role="status"[^>]*><svg[\s\S]*<span>Saved<\/span>/);
+    expect(bar()).not.toContain(`class="primary save`);
+    (el.duplicateTile as (id?: string) => void).call(el, "T-GAP");
+    expect(draft().canUndo).toBe(true);
+    const dirty = bar();
+    expect(dirty).not.toContain(`class="pe-saved"`);
+    expect(dirty).toContain("<span>Unsaved changes</span>");
+    expect(dirty).toMatch(/class="primary save dirty pe-save" \?disabled=false[^>]*>Save<\/button>/);
+    expect(rule(sheet(), ".wa-bar.pe-bar button.primary.save.pe-save")).toContain("var(--wa-hue-blue)");
+  });
+
+  it("toggles Help, the same switch as the inspector's, kept in this browser", () => {
+    const { el, whole } = editor();
+    el.helpOn = false;
+    expect(barOf(whole())).toMatch(/class="tb-btn pe-bar-help " aria-pressed=false/);
+    el.helpOn = true;
+    expect(barOf(whole())).toMatch(/class="tb-btn pe-bar-help on" aria-pressed=true/);
+  });
+
+  it("keeps a way back while the page is still loading", () => {
+    const { el } = editor();
     el.loading = true;
-    expect(bar()).toContain(`class="tb-btn tb-back"`);
+    const bar = flat((el.renderTopBar as (d: unknown) => unknown).call(el, (el as unknown as { draft: unknown }).draft));
+    expect(bar).toContain(`class="tb-btn tb-back pe-bar-back"`);
+    expect(bar).not.toContain("pe-pp");
   });
 
   it("says where a page is in a few words", () => {
@@ -289,7 +325,7 @@ describe("the page picker", () => {
   const cards = (text: string) => [...text.matchAll(/class="pe-pp-card[^"]*" data-pick-page=([^\s]+)/g)].map((m) => m[1]);
 
   it("opens a popover of every page in the library as a card with its picture, the open one tagged Editing, then New page", () => {
-    const { el, body, call } = withLibrary();
+    const { el, whole: body, call } = withLibrary();
     call("togglePicker");
     expect(el.pickerOpen).toBe(true);
     // The find field takes focus once drawn.
@@ -318,7 +354,7 @@ describe("the page picker", () => {
   });
 
   it("filters the cards by name as the find field is typed in", () => {
-    const { el, body, call } = withLibrary();
+    const { el, whole: body, call } = withLibrary();
     call("togglePicker");
     el.pickerFind = "YA";
     expect(cards(body())).toEqual(["P-YARD"]);
@@ -370,7 +406,7 @@ describe("the page picker", () => {
   });
 
   it("renames the open page in its foot, Enter keeping the name and Escape dropping it", () => {
-    const { el, body, call, draft } = withLibrary();
+    const { el, whole: body, call, draft } = withLibrary();
     stubBrowser(el);
     call("togglePicker");
     call("startRename", "P-HALL");
@@ -405,7 +441,7 @@ describe("the page picker", () => {
     el.hass = { ...(el.hass as object), user: { is_admin: false } };
     expect(call("pickerMakeRefusal")).toBe("Only an administrator can make a page.");
     call("togglePicker");
-    expect(flat((el.renderBody as (w: unknown) => unknown).call(el, el.owners))).toMatch(/class="pe-pp-card pe-pp-new" \?disabled=true\s+title=Only an administrator can make a page\./);
+    expect(flat((el.render as () => unknown).call(el))).toMatch(/class="pe-pp-card pe-pp-new" \?disabled=true\s+title=Only an administrator can make a page\./);
     await call("duplicatePage");
     expect(made).toHaveLength(2);
   });
@@ -429,10 +465,9 @@ describe("the page picker", () => {
     expect(before[0]!.id).toBe("T-GAP");
   });
 
-  it("reads clearly at 4K and 100%: a big name, the popover on the editor's tokens", () => {
+  it("reads clearly at 4K and 100%: a name a size up from the bar's words, the popover on the editor's tokens", () => {
     const css = sheet();
-    expect(rule(css, ".pe-pp-name")).toContain("font-size: 18px");
-    expect(rule(css, ".pe-pp-switch")).toContain("var(--wa-primary-bg)");
+    expect(rule(css, ".pe-pp-name")).toContain("font-size: 15px");
     expect(rule(css, ".pe-pp-pop")).toContain("var(--wa-shadow-pop)");
     expect(rule(css, ".pe-pp-card.on")).toContain("var(--wa-sel-ring)");
   });
@@ -536,27 +571,68 @@ describe("the stage's quiet tiles", () => {
     expect(giveWatchTileId(doc, "P-OLD", { entityId: "x.y" } as WatchPageTile).id).toBeUndefined();
   });
 
-  it("puts + Add tile under the watch, opening the Add tile dialog; under the edited one side by side; none on a smart page", () => {
+  it("puts + Add tile first in the stage's dock, opening the Add tile dialog; once side by side; none on a smart page", () => {
     const { el, body, owners } = editor();
     stubBrowser(el);
     const text = body();
-    const side = text.slice(text.indexOf(`<div class="lib-duo-side`));
-    expect(side.indexOf(`class="pe-stage-add"`)).toBeGreaterThan(side.indexOf("</div>", side.indexOf(`class="wp-screen pe-screen`)));
+    const dock = text.slice(text.indexOf(`<div class="stage-tools pe-dock"`));
+    expect(dock.indexOf(`class="pe-stage-add"`)).toBeGreaterThan(-1);
+    expect(dock.indexOf(`class="pe-stage-add"`)).toBeLessThan(dock.indexOf(`aria-label="Zoom"`));
+    // Not under the device any more.
+    expect(text.slice(text.indexOf(`<div class="lib-duo`), text.indexOf(`<div class="pe-dock-area">`))).not.toContain("pe-stage-add");
     expect(text.match(/class="pe-stage-add"/g)).toHaveLength(1);
     const drawn = (el.renderBody as (w: unknown) => unknown).call(el, owners);
     const add = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-stage-add"`));
     listener(add!, "click")({} as Event);
     expect(el.addTileOpen).toBe(true);
     el.addTileOpen = false;
-    // Side by side: under the edited preview, not the other.
+    // Side by side: still one, in the dock under both.
     el.phones = true;
     el.sideBySide = true;
     const both = body();
     expect(both.match(/class="pe-stage-add"/g)).toHaveLength(1);
-    expect(both.indexOf(`class="pe-stage-add"`)).toBeLessThan(both.indexOf(`class="lib-duo-other"`));
+    expect(both.indexOf(`class="pe-stage-add"`)).toBeGreaterThan(both.indexOf(`class="lib-duo-other"`));
     // A smart page fills itself.
     const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
     expect(smart.body()).not.toContain("pe-stage-add");
+  });
+
+  it("shows how to use the stage only while Help is on; an empty page and Watch view say so whatever Help says", () => {
+    const { el, body } = editor();
+    const how = "Click a tile to change it, Shift or Cmd-click to pick several.";
+    el.helpOn = false;
+    expect(body()).not.toContain(how);
+    el.helpOn = true;
+    const text = body();
+    expect(text).toContain(how);
+    // At the top, under Preview on, so it never pushes the dock.
+    expect(text.indexOf(how)).toBeGreaterThan(text.indexOf(`<div class="pe-stage-top">`));
+    expect(text.indexOf(how)).toBeLessThan(text.indexOf(`<div class="pe-stage-body">`));
+    el.helpOn = false;
+    const empty = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-NONE", name: "None", items: [] }] } as unknown as WatchPagesDocument);
+    empty.el.helpOn = false;
+    expect(empty.body()).toContain("No tiles yet.");
+  });
+
+  it("fades a tile's look from one to the next, but not while dragging, on a new scale, or for less motion", () => {
+    const { el, body } = editor();
+    const screen = (text: string) => text.slice(text.indexOf(`<div class="wp-screen pe-screen`), text.indexOf(`tabindex="-1"`, text.indexOf(`<div class="wp-screen pe-screen`)));
+    // The first draw at a scale sets it; the next one, at the same scale, fades.
+    body();
+    expect(screen(body())).toContain("pe-fades");
+    // A step to another scale draws once without.
+    (el.setZoom as (scale: number) => void).call(el, 2);
+    expect(screen(body())).not.toContain("pe-fades");
+    expect(screen(body())).toContain("pe-fades");
+    // A drag under way: none.
+    el.gesture = { kind: "move", started: true, tileId: "T-LEFT", rect: { col: 0, row: 0, colSpan: 6, rowSpan: 3 }, left: 0, top: 0 };
+    expect(screen(body())).not.toContain("pe-fades");
+    el.gesture = undefined;
+    const css = sheet();
+    const fades = css.slice(css.indexOf("@media (prefers-reduced-motion: no-preference)"));
+    expect(fades).toMatch(/^@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.pe-screen\.pe-fades \.pe-tile > :not\(\.pe-part\)/);
+    const rules = fades.slice(0, fades.indexOf("}"));
+    for (const prop of ["background-color .25s", "filter .25s", "opacity .25s", "box-shadow .25s", "transform .25s"]) expect(rules, prop).toContain(prop);
   });
 
   it("picks the next tile in reading order with Tab and the one before with Shift-Tab, letting go past either end", () => {
@@ -760,7 +836,7 @@ describe("picking several tiles", () => {
   });
 
   it("rings every picked tile on the stage, with no resize handles", () => {
-    const { el, body, click } = picker("T-RIGHT");
+    const { el, body, whole, click } = picker("T-RIGHT");
     expect(body()).toContain(`<div class="pe-sel `);
     click("T-BOTTOM", { metaKey: true });
     const text = body();
@@ -773,10 +849,14 @@ describe("picking several tiles", () => {
       expect(stageTile(text, id), id).toContain("aria-pressed=false");
     }
     expect(text).not.toContain(`<div class="pe-sel `);
-    // The canvas head's buttons and the Live strip speak of both.
-    expect(text).toContain("aria-label=Duplicate 2 tiles");
-    expect(text).toContain("title=Delete 2 tiles (Delete or Backspace)");
-    expect(text).toContain(`<span class="vb-empty">2 tiles picked. Pick one to try its states.</span>`);
+    // The ··· menu's Duplicate and Delete speak of both; the states to try
+    // are one tile's, so none stand over the dock.
+    el.topMenuOpen = true;
+    const all = whole();
+    el.topMenuOpen = false;
+    expect(all).toMatch(/class="row pe-menu-dup"[^>]*>Duplicate 2 tiles</);
+    expect(all).toContain("title=Delete 2 tiles (Delete or Backspace)");
+    expect(text).not.toContain(`class="pe-try"`);
     // A press on the screen lets them all go.
     el.selectedTileId = "T-BOTTOM";
     (el.selectTile as (id: string | undefined) => void).call(el, undefined);
@@ -988,39 +1068,43 @@ describe("the stacked layout", () => {
   });
 });
 
-describe("the canvas head", () => {
-  it("reads watch / facts: the open watch's name as words, no watch chips, the page's name in the picker over it", () => {
-    const { body } = editor();
-    const text = body();
-    // The head ends where the stage starts: no page strip between them.
-    const stage = text.indexOf(`<div class="stage-area`);
-    expect(stage).toBeGreaterThan(text.indexOf(`<div class="cv-head">`));
-    expect(text).not.toContain("pe-pstrip");
-    const head = text.slice(text.indexOf(`<div class="cv-head">`), stage);
-    expect(head).not.toContain("tb-name-input");
-    expect(head).not.toContain("doc-chip");
-    expect(head).toContain(`<span class="cv-shape pe-watch-crumb">Jesse's Watch</span>`);
-    expect(head).not.toContain("Chen's Watch");
-    expect(head).toContain(`4 tiles · 8 rows · ${REFERENCE_CASE.label}`);
-    const parts = ["pe-watch-crumb", "4 tiles · 8 rows"].map((p) => head.indexOf(p));
-    expect([...parts].sort((a, b) => a - b)).toEqual(parts);
-    expect(head).toContain(`aria-label="Undo"`);
-    expect(head).toContain(`aria-label="Redo"`);
+describe("the ··· menu", () => {
+  /** The open menu, as the bar draws it. */
+  const menuOf = (text: string): string => text.slice(text.indexOf(`<div class="pop-menu side-pop pe-menu"`), text.indexOf("pe-bar-help"));
+
+  it("starts with the preview device and the page's facts, as the canvas head read them", () => {
+    const { el, whole } = editor();
+    el.topMenuOpen = true;
+    const text = whole();
+    // No canvas head over the stage any more.
+    expect(text).not.toContain(`<div class="cv-head">`);
+    const menu = menuOf(text);
+    expect(menu).toMatch(/<div class="pe-menu-facts"[^>]*>\s*<b class="pe-watch-crumb">Jesse's Watch<\/b>/);
+    expect(menu).not.toContain("Chen's Watch");
+    expect(menu).toContain(`4 tiles · 8 rows · ${REFERENCE_CASE.label}`);
+    // Undo and Redo are the bar's own.
+    const bar = text.slice(0, text.indexOf(`<div class="layout pe-layout`));
+    expect(bar).toContain(`aria-label="Undo"`);
+    expect(bar).toContain(`aria-label="Redo"`);
   });
 
   it("offers Duplicate and Delete for the selected tile only, and Duplicate only where the copy may go", () => {
-    const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
-    const none = head(editor().body());
+    const menu = (id?: string) => {
+      const { el, whole } = editor(id);
+      el.topMenuOpen = true;
+      return menuOf(whole());
+    };
+    const none = menu();
     expect(none).toContain(`?disabled=true title=Select a tile to duplicate it.`);
-    expect(none).toMatch(/<button class="cv-act icon danger" \?disabled=true/);
+    expect(none).toMatch(/<button class="row pe-menu-del" role="menuitem" \?disabled=true/);
     // A spacer may repeat on a page: it copies.
-    const gap = head(editor("T-GAP").body());
-    expect(gap).toContain(`?disabled=false title=Duplicate the selected tile`);
-    expect(gap).toMatch(/<button class="cv-act icon danger" \?disabled=false/);
+    const gap = menu("T-GAP");
+    expect(gap).toContain(`?disabled=false title=Duplicate tile`);
+    expect(gap).toMatch(/<button class="row pe-menu-del" role="menuitem" \?disabled=false/);
     // A page holds one tile per light: a second one has nowhere to go.
-    const light = head(editor("T-BOTTOM").body());
+    const light = menu("T-BOTTOM");
     expect(light).toContain(`?disabled=true title=This page already has a tile for that entity.`);
-    expect(light).toContain(`title=Delete the selected tile (Delete or Backspace)`);
+    expect(light).toContain(`title=Delete tile (Delete or Backspace)`);
   });
 
   it("copies a spacer onto the page and selects the copy", () => {
@@ -1046,11 +1130,17 @@ function stateChips(strip: string): { word: string; on: boolean }[] {
 }
 
 describe("the Live strip", () => {
-  const stripOf = (text: string): string => text.slice(text.indexOf(`<div class="values-foot">`));
+  const stripOf = (text: string): string => {
+    const at = text.indexOf(`<div class="pe-try"`);
+    return at < 0 ? "" : text.slice(at, text.indexOf(`<div class="stage-tools pe-dock"`));
+  };
 
-  it("names the selected tile and lays out its entity's states, or asks for a tile", () => {
-    expect(editor().body()).toContain("Select a tile to try its states here.");
-    const strip = stripOf(editor("T-RIGHT").body());
+  it("names the selected tile and lays out its entity's states over the dock, and stands there only with one tile to try", () => {
+    expect(editor().body()).not.toContain(`class="pe-try"`);
+    const text = editor("T-RIGHT").body();
+    // Just over the dock, inside its area.
+    expect(text.indexOf(`<div class="pe-try"`)).toBeGreaterThan(text.indexOf(`<div class="pe-dock-area">`));
+    const strip = stripOf(text);
     expect(strip).toContain(`<div class="vchip vpill`);
     expect(strip).toContain(`<b>Right</b>`);
     // A light's states, every one a chip in a row, none kept.
@@ -1062,7 +1152,9 @@ describe("the Live strip", () => {
     // No Live, All on or Testing word, and no button to switch them.
     for (const gone of ["vb-live", "vb-head", "All on", "Show live", "Show all on", "Back to live", "Testing"]) expect(strip, gone).not.toContain(gone);
     // A spacer has no entity to try a state on.
-    expect(stripOf(editor("T-GAP").body())).toContain(`<span class="val">No entity</span>`);
+    expect(editor("T-GAP").body()).not.toContain(`class="pe-try"`);
+    // It floats over the stage's foot, never pushing the device up.
+    expect(rule(sheet(), ".pe-dock-area > .pe-try")).toContain("position: absolute");
   });
 
   it("previews a hovered state, keeps a clicked one, never in Home Assistant's states, and leaves Live preview alone", () => {
@@ -1112,9 +1204,9 @@ describe("the Live strip", () => {
 });
 
 describe("the Live preview switch", () => {
-  const tools = (text: string): string => text.slice(text.indexOf(`<div class="stage-tools"`), text.indexOf(`<div class="pe-stage-body">`));
+  const tools = (text: string): string => text.slice(text.indexOf(`<div class="stage-tools pe-dock"`));
 
-  it("is a switch over the stage with an instant hint, off by default, saying what off draws", () => {
+  it("is a switch in the stage's dock with an instant hint, off by default, saying what off draws", () => {
     const { el, body } = editor();
     el.liveStates = false;
     const off = tools(body());
@@ -1128,55 +1220,65 @@ describe("the Live preview switch", () => {
     expect(tools(body())).toMatch(/data-tip=Live preview: on\. The tiles are drawn with Home Assistant's real states/);
   });
 
-  it("lets its hint hang below the tool strip", () => {
+  it("lets its hint hang out of the dock", () => {
     const css = sheet();
-    expect(rule(css, ".pe-stage-area > .stage-tools")).toContain("overflow: visible");
+    expect(rule(css, ".pe-dock-area > .stage-tools.pe-dock")).toContain("overflow: visible");
     expect(css).toMatch(/\.pe-state-chips\s*\{[^}]*flex-wrap: wrap/);
     expect(css).toMatch(/button\.pe-state-chip\.on\s*\{[^}]*var\(--wa-testing\) 18%/);
   });
 });
 
 describe("the zoom", () => {
-  it("steps through 100% to 200%, fits at 150% or 125% narrow, and is remembered", () => {
-    expect(STAGE_ZOOM_KEY).toBe("wrist-assistant-panel.pages.zoom.v1");
+  it("steps through 75% to 300% on the page editor, 100% to 200% elsewhere, and fits at 150% or 125% narrow before the stage is measured", () => {
     expect(stageFitZoom(false)).toBe(1.5);
     expect(stageFitZoom(true)).toBe(1.25);
+    // The status page and menu editors' steps are as they were.
     expect(stageZoomIn(1.5)).toBe(2);
     expect(stageZoomIn(2)).toBe(2);
     expect(stageZoomOut(1.5)).toBe(1.25);
     expect(stageZoomOut(1)).toBe(1);
     expect(stageZoomIn(1.3)).toBe(1.5);
-    expect([1, 1.25, 1.5, 2].map(stageZoomLabel)).toEqual(["100%", "125%", "150%", "200%"]);
-    const store = new Map<string, string>();
-    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
-    expect(loadStageZoom(storage)).toBeUndefined();
-    saveStageZoom(2, storage);
-    expect(store.get(STAGE_ZOOM_KEY)).toBe("2");
-    expect(loadStageZoom(storage)).toBe(2);
-    saveStageZoom(undefined, storage);
-    expect(loadStageZoom(storage)).toBeUndefined();
-    store.set(STAGE_ZOOM_KEY, "3");
-    expect(loadStageZoom(storage)).toBeUndefined();
+    // The page editor's go further both ways, and a fitted scale between
+    // two steps goes to the next one.
+    expect(PAGE_ZOOM_STEPS).toEqual([0.75, 1, 1.25, 1.5, 2, 2.5, 3]);
+    expect(stageZoomIn(2, PAGE_ZOOM_STEPS)).toBe(2.5);
+    expect(stageZoomIn(3, PAGE_ZOOM_STEPS)).toBe(3);
+    expect(stageZoomIn(2.37, PAGE_ZOOM_STEPS)).toBe(2.5);
+    expect(stageZoomOut(2.37, PAGE_ZOOM_STEPS)).toBe(2);
+    expect(stageZoomOut(0.75, PAGE_ZOOM_STEPS)).toBe(0.75);
+    expect([1, 1.25, 1.5, 2, 3].map(stageZoomLabel)).toEqual(["100%", "125%", "150%", "200%", "300%"]);
   });
 
-  it("changes the stage's scale from the strip's buttons, and Fit goes back", () => {
+  it("opens on Fit, whatever an old visit kept, and keeps a step only while it is open", () => {
+    // The old key is never read: a fresh editor fits.
+    expect(STAGE_ZOOM_KEY).toBe("wrist-assistant-panel.pages.zoom.v1");
+    const { el } = editor();
+    expect(el.zoom).toBeUndefined();
+    (el.setZoom as (scale: number | undefined) => void).call(el, 2);
+    expect(el.zoom).toBe(2);
+    expect(editor().el.zoom).toBeUndefined();
+  });
+
+  it("changes the stage's scale from the dock's buttons, and Fit goes back", () => {
     const { el, body } = editor();
     const width = (scale: number) => `width:${REFERENCE_CASE.screen.width * scale}px;`;
     let text = body();
-    expect(text).toContain(`aria-label=Zoom 150%. Back to fit`);
-    expect(text).toContain(">150%</button>");
+    expect(text).toContain(">150%</span>");
+    expect(text).toMatch(/<button class="tb pe-fit lit" aria-pressed=true/);
     expect(text).toContain(width(1.5));
     const setZoom = el.setZoom as (scale: number | undefined) => void;
-    setZoom.call(el, stageZoomIn(1.5));
+    setZoom.call(el, stageZoomIn(1.5, PAGE_ZOOM_STEPS));
     expect(el.zoom).toBe(2);
     text = body();
-    expect(text).toContain(">200%</button>");
+    expect(text).toContain(">200%</span>");
     expect(text).toContain(width(2));
-    expect(text).toContain(`<button class="tb icon pe-zoom-in" ?disabled=true`);
-    expect(text).toContain(`<button class="tb icon pe-zoom-out" ?disabled=false`);
+    expect(text).toMatch(/<button class="tb pe-fit " aria-pressed=false/);
+    expect(text).toContain(`<button class="tb icon pe-zoom-in" ?disabled=false`);
+    setZoom.call(el, 3);
+    expect(body()).toContain(`<button class="tb icon pe-zoom-in" ?disabled=true`);
     setZoom.call(el, undefined);
     expect(el.zoom).toBeUndefined();
-    expect(body()).toContain(">150%</button>");
+    expect(body()).toContain(">150%</span>");
   });
 });
 

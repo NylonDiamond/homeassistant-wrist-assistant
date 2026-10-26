@@ -139,8 +139,8 @@ describe("the server's library/item replies in the editors", () => {
     expect(draft.revision).toBe(reply.revision);
     expect(draft.document).toEqual(reply.document);
     const page = (reply.document.pages as JsonObject[])[0]!;
-    // The ticks stand in the strip under the canvas head, in library mode too.
-    expect(flat(e.call("renderPageTicks", page))).toContain("Jesse's Watch");
+    // The ticks stand in the editor bar, after the page picker.
+    expect(flat(e.call("renderBarTicks", page))).toContain("Jesse's Watch");
     draft.apply({ ...draft.document, pages: [{ ...page, name: "Renamed" }] } as WatchPagesDocument);
     await e.call<Promise<unknown>>("save");
     await settle();

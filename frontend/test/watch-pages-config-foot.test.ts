@@ -291,12 +291,12 @@ describe("the page editor", () => {
     const inspector = text.indexOf(`<div class="column inspector card">`);
     expect(canvas).toBeGreaterThan(-1);
     expect(inspector).toBeGreaterThan(canvas);
-    // In the canvas card: the head, then the stage, with no page strip.
+    // In the canvas card: the stage alone, with no head (the editor bar over
+    // both columns holds the page's name, devices and edit buttons) and no
+    // page strip.
     const card = text.slice(canvas, inspector);
-    const head = card.indexOf(`<div class="cv-head">`);
-    const stage = card.indexOf(`<div class="stage-area pe-stage-area">`);
-    expect(head).toBeGreaterThan(-1);
-    expect(stage).toBeGreaterThan(head);
+    expect(card).not.toContain(`<div class="cv-head">`);
+    expect(card).toContain(`<div class="stage-area pe-stage-area">`);
     expect(card).not.toContain("pe-pstrip");
     expect(card).not.toContain(`class="sec name-sec"`);
     const side = text.slice(inspector);

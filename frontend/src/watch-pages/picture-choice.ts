@@ -4,11 +4,18 @@
 // style, Size, Pattern), and the small ones (a border's thickness and line
 // style as sample lines, a label's weight and design as "Aa").
 //
-// A tile picture is the real tile renderer (`renderWatchTileFace`) drawing
-// a copy of the selected tile with that option applied to a copy of the
-// document, through the same setter the control writes with, so a picture
-// never shows what a pick would not store. Pictures are small, draw no live
-// camera or chart subscription, and are kept per tile revision.
+// Only a choice about the tile's own color and glow (Glow, When it is off)
+// is drawn as the tile: the real tile renderer (`renderWatchTileFace`)
+// drawing a copy of the selected tile with that option applied to a copy of
+// the document, through the same setter the control writes with. Every
+// other choice is a small sample on one neutral dark ground (a value in
+// plain text or on a pill, a bar alone, a plain tile with its line, a
+// pattern on gray), so each picture shows only what differs between the
+// choices, not a row of full tiles that all look alike. Those samples are
+// drawn from the value the setter stores, read back from the tile it leaves
+// (`tile-settings.ts`), so no picture shows what a pick would not store.
+// Pictures are small, draw no live camera or chart subscription, and are
+// kept per tile revision.
 //
 // The tried tile: pointing at a choice of a menu whose choices move (Effect,
 // a border's Animation) draws it on the inspector head's preview tile only.
@@ -45,8 +52,9 @@ export interface PictureOption<T extends string> {
 }
 
 /** How big each option is drawn: a tile picture, two of them side by side,
- * a small chip (a sample line, "Aa"), a pattern swatch, or a page strip. */
-export type PictureChoiceSize = "tile" | "pair" | "small" | "swatch" | "strip";
+ * a neutral sample (`valueSample`, `barSample`, `borderSample`), a small
+ * chip (a sample line, "Aa"), a pattern swatch, or a page strip. */
+export type PictureChoiceSize = "tile" | "pair" | "mini" | "small" | "swatch" | "strip";
 
 export interface PictureChoiceOptions<T extends string> {
   /** The choice the title's reset dot goes back to. */
@@ -300,13 +308,42 @@ export function designSample(design: string): TemplateResult {
   return html`<span class="pc-aa" style=${`font-family:${family}`}>Aa</span>`;
 }
 
-/** The size of a pattern swatch, in CSS pixels. */
-const SWATCH_W = 52;
-const SWATCH_H = 34;
+// ── the neutral samples ──────────────────────────────────────────────────
 
-/** A pattern on a swatch of the tile's color, as the tile draws it
- * (`watchPatternLayers`), its marks white so a small swatch still reads.
- * None is the bare color. */
+/** A state value as it reads on the tile: "80%" in plain text, the same on a
+ * pill, or nothing for Off. */
+export function valueSample(style: string | undefined): TemplateResult {
+  if (style === "Off") return html`<span class="pc-mini"></span>`;
+  return html`<span class="pc-mini"><span class="pc-val ${style === "Pill" ? "pill" : ""}">80%</span></span>`;
+}
+
+/** A state bar alone: a thin bar along the top, or a fill from the left. */
+export function barSample(style: string | undefined): TemplateResult {
+  return html`<span class="pc-mini"><span class="pc-bar ${style === "Fill" ? "fill" : "top"}"></span></span>`;
+}
+
+/** A border's style on a plain tile: none, a line in its thickness and line
+ * style, or Animate's line with a light moving round it. */
+export function borderSample(b: { style: string; thickness?: string; lineStyle?: string }): TemplateResult {
+  if (b.style === "line") {
+    const px = Math.max(1, THICKNESS_PX[b.thickness ?? "thin"] ?? 1.5);
+    const line = b.lineStyle === "dashed" ? "dashed" : b.lineStyle === "dotted" ? "dotted" : "solid";
+    return html`<span class="pc-mini" style=${`outline:${px}px ${line} rgba(255, 255, 255, .85);outline-offset:-${px}px`}></span>`;
+  }
+  return html`<span class="pc-mini ${b.style === "animate" ? "pc-anim" : ""}"></span>`;
+}
+
+/** The size of a pattern swatch, in CSS pixels. */
+const SWATCH_W = 40;
+const SWATCH_H = 26;
+
+/** The neutral gray every pattern swatch is drawn on, so the gallery shows
+ * the patterns and not the tile's color thirty times. */
+export const PATTERN_GROUND = "#3a3d42";
+
+/** A pattern on a swatch (on `PATTERN_GROUND` in the tile settings), as the
+ * tile draws it (`watchPatternLayers`), its marks white so a small swatch
+ * still reads. None is the bare ground. */
 export function patternSwatch(pattern: string, background: string): TemplateResult {
   const layers = pattern === "none" ? [] : watchPatternLayers(pattern, "#FFFFFF", 1, 0.6, { width: SWATCH_W, height: SWATCH_H });
   return html`<span class="pc-swatch" style=${`background:${[...layers, background].join(", ")}`}></span>`;
@@ -336,29 +373,43 @@ export function sizeStrip(colSpan: number, rowSpan: number, columns: number): Te
 export const pictureChoiceStyles = css`
   .field.pc-field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 4px 0; }
   .field.pc-field.pc-size-small { display: grid; align-items: center; }
-  .pc-group { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+  .pc-group { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  /* Light options: a hairline, small words, the picture doing the talking. */
   .pc-opt {
-    display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 5px;
-    border: 1px solid var(--wa-line); border-radius: 10px; background: transparent; color: var(--wa-ink);
+    display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 4px 5px 5px;
+    border: 1px solid color-mix(in srgb, var(--wa-line) 75%, transparent); border-radius: 9px; background: transparent; color: var(--wa-muted);
     font: inherit; cursor: pointer;
   }
+  .pc-opt:hover:not(:disabled) { color: var(--wa-ink); }
+  .pc-opt.on { color: var(--wa-ink); }
   .pc-opt:hover:not(:disabled) { background: var(--wa-hover, var(--wa-panel)); }
   .pc-opt:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .pc-opt.on { border-color: var(--wa-sel-ring, var(--wa-accent)); background: var(--wa-sel-bg, var(--wa-panel)); }
   .pc-opt:disabled { opacity: .45; cursor: default; }
   .pc-pic { display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: 8px; }
-  .pc-size-tile .pc-pic, .pc-size-pair .pc-pic { width: 76px; height: 54px; background: #000; }
-  .pc-size-pair .pc-pic { width: 118px; }
-  .pc-label { font-size: 11.5px; font-weight: 600; line-height: 1.2; text-align: center; }
+  /* A real tile, smaller, on the watch's black: only Glow and When it is off. */
+  .pc-size-tile .pc-pic, .pc-size-pair .pc-pic { width: 58px; height: 40px; background: #000; }
+  .pc-size-pair .pc-pic { width: 92px; gap: 4px; }
+  .pc-label { font-size: 11px; font-weight: 500; line-height: 1.2; text-align: center; }
+  /* A neutral sample: a plain dark tile with only what the choice changes. */
+  .pc-size-mini .pc-pic { width: 46px; height: 32px; }
+  .pc-mini { position: relative; display: grid; place-items: center; width: 42px; height: 30px; border-radius: 8px; overflow: hidden; background: #2a2d32; }
+  .pc-val { font-size: 10.5px; font-weight: 700; line-height: 1; color: #e8eaed; }
+  .pc-val.pill { padding: 2px 5px; border-radius: 7px; background: #e8eaed; color: #1a1d21; font-size: 9.5px; }
+  .pc-bar { position: absolute; left: 0; top: 0; }
+  .pc-bar.top { left: 5px; right: 12px; top: 4px; height: 3px; border-radius: 2px; background: #e8eaed; }
+  .pc-bar.fill { bottom: 0; width: 62%; background: rgba(232, 234, 237, .4); }
+  .pc-mini.pc-anim { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .35), inset 0 0 0 3px var(--wa-hue-blue, #8c9bef); }
   .pc-tile { position: relative; display: block; flex: none; }
   .pc-size-small .pc-opt { flex-direction: row; gap: 7px; min-height: 30px; padding: 3px 9px; }
   .pc-size-small .pc-label { font-weight: 500; }
   .pc-line { display: block; width: 22px; height: 0; }
   .pc-aa { font-size: 15px; line-height: 1; }
-  .pc-size-swatch .pc-group { gap: 6px; }
-  .pc-size-swatch .pc-opt { gap: 3px; padding: 3px; }
-  .pc-size-swatch .pc-label { font-weight: 500; font-size: 10.5px; }
-  .pc-swatch { display: block; width: 52px; height: 34px; border-radius: 7px; }
+  .pc-size-swatch .pc-group { gap: 4px; }
+  .pc-size-swatch .pc-opt { gap: 3px; padding: 3px; border-color: transparent; }
+  .pc-size-swatch .pc-opt.on { border-color: var(--wa-sel-ring, var(--wa-accent)); }
+  .pc-size-swatch .pc-label { font-size: 10px; }
+  .pc-swatch { display: block; width: 40px; height: 26px; border-radius: 6px; }
   .pc-size-strip .pc-pic { padding: 4px; }
   .pc-strip { --pc-lane: color-mix(in srgb, var(--wa-ink) 14%, transparent); position: relative; display: block; border-radius: 5px; }
   .pc-block { position: absolute; left: 0; top: 0; border-radius: 4px; background: var(--wa-accent); }

@@ -1,7 +1,9 @@
-// The selected tile's settings, as the inspector's section cards under its
-// pinned Name card (`sectionCard`, editor-chrome.ts, the complication
-// editor's look): place and size (rows the page editor hands in), icon and
-// color, text, action, a header's look and a
+// The selected tile's settings. The page editor's inspector stands them in
+// four group panels under its head card, Look, Text, Tap and Layout, each
+// section under a calm heading (`renderTileInspector`); a smart page rule's
+// style draws them as folding section cards (`renderTileSettings`,
+// `sectionCard`, editor-chrome.ts). Place and size (rows the page editor
+// hands in), icon and color, text, action, a header's look and a
 // page link's target (part 3c); styling (3d); and for an HTTP action or
 // status page tile its target and the Request task, with Run HTTP Action in
 // hold and slide, from the iPhone's catalog on the host (3e,
@@ -76,7 +78,7 @@ import {
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
-import { colorPickerView } from "./color-picker.js";
+import { type ColorMore, colorMore, colorPickerView } from "./color-picker.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
@@ -108,7 +110,7 @@ import {
 import { watchShowWhenTemplateRender } from "./app-model.js";
 import { setWatchEditorLiveCameras, watchCameraRows, watchCameraStreamsFrom, watchEditorLiveCameras } from "./camera-live.js";
 import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, isVirtualTileKind, tileEntityId, tileKind, tileKindLabel, watchPageId, watchPageName, watchPagesOf } from "./model.js";
-import type { WatchTilePreviewAs } from "./preview.js";
+import { type WatchTilePreviewAs, watchValueLabelStyle } from "./preview.js";
 import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
@@ -209,6 +211,9 @@ import {
 } from "./tile-settings-model.js";
 import {
   type PictureChoiceSize,
+  PATTERN_GROUND,
+  barSample,
+  borderSample,
   designSample,
   lineStyleLine,
   patternSwatch,
@@ -217,6 +222,8 @@ import {
   thicknessLine,
   tilePictures,
   tryMenuField,
+  valueSample,
+  watchTileIn,
   weightSample,
 } from "./picture-choice.js";
 import { renderArrangeHead } from "./arrange-card.js";
@@ -327,7 +334,6 @@ import {
   oneLookStateRowOff,
   oneLookValueStylesOff,
 } from "./one-look-settings.js";
-import { splitColumns } from "./inspector-columns.js";
 import { requiredTileKeyDefault } from "./merge.js";
 
 /** Every `uiState` key of this module starts with this. */
@@ -550,6 +556,11 @@ export function menuField(label: string, menu: WatchMenu, pick: (value: string) 
 /** A small text button beside a row, for a way back to a default. */
 export function linkButton(text: string, title: string, action: () => void): TemplateResult {
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
+}
+
+/** A color picker's More pill, kept per setting in `uiState`. */
+export function colorMoreOf(host: Pick<TileSettingsHost, "uiState" | "requestUpdate">, setting: string): ColorMore {
+  return colorMore(host.uiState, `${KEY}:${setting}`, () => host.requestUpdate());
 }
 
 /** A section's Reset: a quiet button with the undo glyph, not a link, so it
@@ -843,65 +854,300 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
   }
 }
 
-// ── the inspector's head and columns ─────────────────────────────────────
+// ── the tile inspector's groups ──────────────────────────────────────────
 
-/** The sections of the tile inspector's left column, in order: how the
- * tile looks and when it shows, then a kind's own look (a header, the
- * iPhone's keys). */
-const LEFT_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "background", "visibility", "header", "phoneTile", "phone", "phoneExtras", "removed"];
+/** The four groups the tile inspector stands its settings in, always in
+ * this order. */
+export type TileInspectorGroup = "look" | "text" | "tap" | "layout";
 
-/** The right column's, in order: where the tile sits and how big, how its
- * state and border draw, what a tap does, then what the tile is about (a
- * page link's target, a request, a kind's own task). A section in neither
- * list goes at the right column's end. */
-const RIGHT_SECTIONS: readonly WatchTileSettingsSection[] = ["size", "state", "border", "action", "opens", "target", "request", "special"];
+/**
+ * One section of the tile inspector, under one heading. Most are a settings
+ * section as it is; the Icon and color section is split into its parts so
+ * each stands under its own heading and its Tap animation goes to Tap:
+ * `color`, `icon` (the symbol, the state icons, the icon's size and shadow),
+ * `glow`, `whenOff` (Dim when off, Animate while on) and `tapAnimation`.
+ */
+export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation";
 
-/** The inspector's sections split into its two columns (one, stacked left
- * over right, on a narrow inspector), each in its column's order. */
-export function tileInspectorColumns(sections: readonly WatchTileSettingsSection[]): { left: WatchTileSettingsSection[]; right: WatchTileSettingsSection[] } {
-  const rank = (list: readonly WatchTileSettingsSection[], s: WatchTileSettingsSection) => {
-    const i = list.indexOf(s);
-    return i < 0 ? list.length : i;
+/**
+ * Where each part goes, as one table, in reading order. What a kind's own
+ * task makes the tile show (a header's look, an iPhone tile's task, a
+ * special task, an iPhone key) leads Look, before the color; a removed
+ * kind's one line leads it too, standing for everything else. The iPhone
+ * extras of a watch's editor close Look, as the aside they are. What a tap
+ * does is Tap: a link's page, an HTTP action or status page and the reply
+ * of its request, then the action, the tap's animation and Show tile.
+ */
+export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
+  ["removed", "look"],
+  ["header", "look"],
+  ["phoneTile", "look"],
+  ["special", "look"],
+  ["phone", "look"],
+  ["color", "look"],
+  ["icon", "look"],
+  ["glow", "look"],
+  ["whenOff", "look"],
+  ["background", "look"],
+  ["border", "look"],
+  ["phoneExtras", "look"],
+  ["text", "text"],
+  ["state", "text"],
+  ["opens", "tap"],
+  ["target", "tap"],
+  ["request", "tap"],
+  ["action", "tap"],
+  ["tapAnimation", "tap"],
+  ["visibility", "tap"],
+  ["size", "layout"],
+];
+
+/** Each group's title and its one grey line. */
+export const TILE_INSPECTOR_GROUP_WORDS: Readonly<Record<TileInspectorGroup, { title: string; description: string }>> = {
+  look: { title: "Look", description: "Color, icon, glow, background, border" },
+  text: { title: "Text", description: "Name, state, state bar" },
+  tap: { title: "Tap", description: "What it does, when it shows" },
+  // The arrangement sits under the live tile in the head.
+  layout: { title: "Layout", description: "Size and place" },
+};
+
+/** The heading of each part that is not titled by its kind. */
+const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
+  color: "Color",
+  icon: "Icon",
+  glow: "Glow",
+  whenOff: "When it is off",
+  tapAnimation: "Tap animation",
+  text: "Name",
+  visibility: "Show tile",
+};
+
+/** The groups of the tile on `host`, each with its parts in reading order;
+ * a group with no part is left out. Size is the page editor's, so it is in
+ * only where the caller hands its rows in (`renderTileInspector`). */
+export function tileInspectorParts(host: TileSettingsHost): { group: TileInspectorGroup; parts: TileInspectorPart[] }[] {
+  const sections = tileInspectorSections(host);
+  const has = (part: TileInspectorPart): boolean => {
+    switch (part) {
+      case "color":
+      case "icon":
+      case "tapAnimation":
+        return sections.includes("icon");
+      case "glow":
+        return sections.includes("icon") && glowOffered(host);
+      case "whenOff":
+        return sections.includes("icon") && whenOffShown(host);
+      default:
+        return sections.includes(part);
+    }
   };
-  const left = sections.filter((s) => LEFT_SECTIONS.includes(s)).sort((a, b) => rank(LEFT_SECTIONS, a) - rank(LEFT_SECTIONS, b));
-  const right = sections.filter((s) => !LEFT_SECTIONS.includes(s)).sort((a, b) => rank(RIGHT_SECTIONS, a) - rank(RIGHT_SECTIONS, b));
-  return { left, right };
+  const groups: TileInspectorGroup[] = ["look", "text", "tap", "layout"];
+  return groups
+    .map((group) => ({ group, parts: TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && has(p)).map(([p]) => p) }))
+    .filter((g) => g.parts.length > 0);
 }
 
-/** About how tall each section's card stands open, Icon and color (the
- * tallest) being 9, as measured on a light tile on 2026-10-26: what
- * `tileInspectorColumnRuns` balances three columns by. */
-const SECTION_WEIGHT: Partial<Record<WatchTileSettingsSection, number>> = {
-  icon: 9, text: 4, background: 3, visibility: 1, header: 3, phoneTile: 3, phone: 3, phoneExtras: 3, removed: 1,
-  size: 1.5, state: 6, border: 2, action: 2.5, opens: 3, target: 3, request: 4, special: 4,
+/** The tile keys each split part of Icon and color edits, beside the icon
+ * and color themselves, and what its rows read of them. */
+const PART_KEYS: Readonly<Partial<Record<TileInspectorPart, readonly string[]>>> = {
+  icon: ["iconSizeOverride", "iconShadow", "stateIcons", "stateColors"],
+  glow: ["iconGlow"],
+  whenOff: ["dimWhenOff", "activeIconAnimationEnabled"],
+  tapAnimation: ["iconTapAnimation"],
+};
+
+const PART_READS: Readonly<Partial<Record<TileInspectorPart, (tile: WatchPageTile) => unknown>>> = {
+  icon: (t) => {
+    const s = watchTileIconSettings(t);
+    const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
+    return [s.iconSize, s.iconShadow, map(t.stateIcons), map(t.stateColors)];
+  },
+  glow: (t) => encodeOneLookGlyphGlow(watchTileIconGlow(t)),
+  whenOff: (t) => {
+    const s = watchTileIconSettings(t);
+    return [s.dimWhenOff.value, s.activeAnimation.value];
+  },
+  tapAnimation: (t) => watchTileIconSettings(t).tapAnimation,
 };
 
 /**
- * The inspector's sections in `count` columns (1 to 3), each a list in
- * reading order. One column is the left column's sections over the right's;
- * two are those columns (`tileInspectorColumns`); three split that same
- * order into three runs of about one height (`splitColumns`), so how the
- * tile looks still comes first and what it does last. `lead` is the weight
- * of what stands over the first column's cards (the tile's head card), so
- * the three runs balance with it in.
+ * Whether a part of the tile inspector holds a value other than its
+ * default, which its heading marks with the blue dot and its group counts.
+ * A whole section reads as its card's changed dot does
+ * (`watchTileSectionChanged`); Size as the page editor says (`sizeChanged`).
+ * Of Icon and color's parts, Color counts only away from the kind's color
+ * (what Default writes), Icon for an icon away from the kind's or a size,
+ * shadow, state icon or state color of its own, and Glow, When it is off and
+ * Tap animation for a stored key that reads other than its absence.
  */
-export function tileInspectorColumnRuns(sections: readonly WatchTileSettingsSection[], count: number, lead = 0): WatchTileSettingsSection[][] {
-  const { left, right } = tileInspectorColumns(sections);
-  if (count <= 1) return [[...left, ...right]];
-  if (count === 2) return [left, right].filter((run) => run.length > 0);
-  if (lead <= 0) return splitColumns([...left, ...right], (s) => SECTION_WEIGHT[s] ?? 3, count);
-  // The head as the first item, so it always opens the first run.
-  const runs = splitColumns<WatchTileSettingsSection | "head">(["head", ...left, ...right], (s) => (s === "head" ? lead : SECTION_WEIGHT[s] ?? 3), count);
-  return runs.map((run) => run.filter((s): s is WatchTileSettingsSection => s !== "head"));
+export function watchTileInspectorPartChanged(host: TileSettingsHost, part: TileInspectorPart, sizeChanged = false): boolean {
+  const tile = host.tile;
+  switch (part) {
+    case "size":
+      return sizeChanged;
+    case "color": {
+      const color = watchTileIconSettings(tile).color;
+      return !colorAtDefault(host, color, host.domainStyle === true ? undefined : kindDefaults(host).color);
+    }
+    case "icon": {
+      const icon = watchTileIconSettings(tile).icon;
+      const defaultIcon = host.domainStyle === true ? undefined : kindDefaults(host).icon;
+      const ownIcon = icon !== undefined && (defaultIcon === undefined || icon !== defaultIcon);
+      return ownIcon || readsOtherThanDefault(tile, PART_KEYS.icon!, PART_READS.icon!);
+    }
+    case "glow":
+    case "whenOff":
+    case "tapAnimation":
+      return readsOtherThanDefault(tile, PART_KEYS[part]!, PART_READS[part]!);
+    default:
+      return watchTileSectionChanged(host, part);
+  }
 }
 
-/** About how tall the tile's head card stands, on the scale of
- * `SECTION_WEIGHT`: the live tile over Name, the entity and Preview as, then
- * Arrange, which with Free open holds the part's rows too. */
-export function tileHeadWeight(host: TileSettingsHost): number {
-  if (!tileArrangeShown(host)) return 4;
-  return arrangeFreeOn(host.uiState, host.tile) ? 8 : 4.5;
+/** An edit that puts `keys` of the tile back: removed, or for a key the phone
+ * and the watch require (`iconShadow`, `labelShadow`, `iconTapAnimation`)
+ * set to its default, never removed, since a tile without it makes both
+ * refuse the whole page. */
+function keysAtDefault(host: TileSettingsHost, keys: readonly string[]): (d: WatchPagesDocument) => WatchPagesDocument {
+  const { pageId, tileId } = host;
+  return (d) => editTile(d, pageId, tileId, (tile) => keys.reduce((t, key) => {
+    const start = requiredTileKeyDefault(key);
+    return start === undefined ? withoutKey(t, key) : { ...t, [key]: structuredClone(start) };
+  }, tile));
 }
+
+/**
+ * The Reset beside a changed part's heading: an edit that puts that part,
+ * and only it, back to its defaults, or undefined where a part has no way
+ * back (a header's look, an iPhone key, Size, which is a place). State,
+ * Border and Background reset as their own Reset does (a rule's style
+ * drops their keys instead); Color and Icon write the kind's defaults as
+ * their Default chips do; Show tile goes back to Always; the rest remove
+ * their keys.
+ */
+export function watchTileInspectorPartReset(host: TileSettingsHost, part: TileInspectorPart): ((d: WatchPagesDocument) => WatchPagesDocument) | undefined {
+  const { pageId, tileId } = host;
+  switch (part) {
+    case "color":
+      return watchTileDefaultColorEdit(host);
+    case "icon": {
+      const icon = watchTileDefaultIconEdit(host);
+      const rest = keysAtDefault(host, PART_KEYS.icon!);
+      return (d) => rest(icon(d));
+    }
+    case "glow":
+    case "whenOff":
+    case "tapAnimation":
+      return keysAtDefault(host, PART_KEYS[part]!);
+    case "text":
+    case "action":
+    case "request":
+      return keysAtDefault(host, SECTION_KEYS[part]!);
+    case "visibility":
+      return (d) => setWatchTileShowAlways(d, pageId, tileId);
+    case "state":
+    case "border":
+    case "background":
+      return (d) => (host.domainStyle === true ? clearWatchTileTask : resetWatchTileTask)(d, pageId, tileId, part);
+    default:
+      return undefined;
+  }
+}
+
+/** A part's heading words. */
+function partTitle(host: TileSettingsHost, part: TileInspectorPart): string {
+  if (part === "special") return watchSpecialSectionTitle(host);
+  if (part === "phone") {
+    const key = watchPhoneKeysOf(host.tile, host.hass.states)[0];
+    if (key !== undefined) return WATCH_PHONE_KEY_WORDS[key].title;
+  }
+  if (part === "phoneTile") {
+    const kind = watchPhoneTileKindOf(host.tile);
+    if (kind !== undefined) return watchPhoneTileTitle(kind);
+  }
+  return PART_TITLES[part] ?? WATCH_TILE_SETTINGS_SECTION_TITLES[part as WatchTileSettingsSection];
+}
+
+/** A part's rows. */
+function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileSettingsExtras): TemplateResult | typeof nothing {
+  switch (part) {
+    case "color":
+      return renderTileColor(host, kindDefaults(host).color);
+    case "icon":
+      return html`${renderIconGlyph(host)}${host.domainStyle === true ? nothing : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+    case "glow":
+      return renderGlowPart(host);
+    case "whenOff":
+      return renderWhenOff(host);
+    case "tapAnimation":
+      return renderTapAnimation(host);
+    case "size":
+      return extras.size?.body() ?? nothing;
+    default:
+      return sectionBodyFor(host, part);
+  }
+}
+
+/** One part: its heading in sentence case, the blue dot and Reset while it
+ * holds a value of its own, then its rows, always open. */
+function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: boolean, extras: TileSettingsExtras): TemplateResult {
+  // A webhook inbox and a removed kind are one line, with no heading.
+  if (part === "removed") return renderRemovedLine();
+  if (part === "special" && inboxLine(host, part)) return renderInboxLine(host);
+  const title = partTitle(host, part);
+  const reset = changed ? watchTileInspectorPartReset(host, part) : undefined;
+  const phone = part === "phone" || part === "phoneExtras" || part === "phoneTile";
+  return html`<section class="ts-sec" data-part=${part} aria-label=${title}>
+    <div class="ts-sec-h"><h4>${title}</h4>${phone ? phoneTag() : nothing}${changed ? html`<span class="ts-dot" title="Not the default"></span>` : nothing}${reset === undefined
+      ? nothing
+      : html`<button type="button" class="ts-sec-reset" title=${`Put ${title.toLowerCase()} back to its defaults`} ?disabled=${host.busy}
+          @click=${() => { host.endCoalesce(); commit(host, `reset:${part}`, reset); }}>Reset</button>`}</div>
+    <div class="sec-b ts-sec-b"><fieldset class="ts-body" id=${`ts-body-${part}`} ?disabled=${host.busy} aria-label=${title}>
+      ${part === "phoneExtras" ? html`<p class="hint">${WATCH_PHONE_EXTRAS_HINT}</p>` : nothing}
+      ${partBody(host, part, extras)}
+    </fieldset></div>
+  </section>`;
+}
+
+/**
+ * The selected tile's settings as the page editor's inspector stands them:
+ * four group panels, Look, Text, Tap and Layout, each with its title, its
+ * grey line and how many of its parts hold a value of their own, then its
+ * parts under calm headings, always open. The columns are pure CSS by the
+ * inspector's own width (`@container insp`): four at 1560 px and up (Look,
+ * Text, Tap, Layout), three at 1080 (Tap over Layout in the third), two at
+ * 760 (Text, Tap and Layout down the second), else one. The nesting is what
+ * lets one markup make all four: `.ts-g2` holds Text and `.ts-g3`, which
+ * holds Tap and Layout, and each wrapper turns to `display: contents` where
+ * its children take columns of their own.
+ */
+export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
+  const host = tileWordsHost(watchHost);
+  const groups = tileInspectorParts(host)
+    .map((g) => ({ ...g, parts: g.parts.filter((p) => p !== "size" || extras.size !== undefined) }))
+    .filter((g) => g.parts.length > 0);
+  if (groups.length === 0) return nothing;
+  dropStaleTyping(host);
+  const group = (id: TileInspectorGroup): TemplateResult | typeof nothing => {
+    const g = groups.find((x) => x.group === id);
+    if (g === undefined) return nothing;
+    const changed = g.parts.map((p) => watchTileInspectorPartChanged(host, p, p === "size" && extras.size?.changed?.() === true));
+    const n = changed.filter(Boolean).length;
+    const words = TILE_INSPECTOR_GROUP_WORDS[id];
+    return html`<section class="ts-grp" data-group=${id} aria-label=${words.title}>
+      <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${words.description}</span>${n === 0
+        ? nothing
+        : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`}</div>
+      ${g.parts.map((p, i) => renderPart(host, p, changed[i]!, extras))}
+    </section>`;
+  };
+  return html`<div class="ts-root ts-groups">
+    ${group("look")}
+    <div class="ts-g2">${group("text")}<div class="ts-g3">${group("tap")}${group("layout")}</div></div>
+  </div>`;
+}
+
+// ── the inspector's head ─────────────────────────────────────────────────
 
 /** The look keys Reset tile removes beside the styling tasks' own resets:
  * the icon's size, shadow, glow, dimming, animations and per state icons
@@ -924,16 +1170,11 @@ const RESET_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "st
 export function watchTileResetEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
   const defaults = host.domainStyle === true ? { icon: undefined, color: undefined } : kindDefaults(host);
   const { pageId, tileId } = host;
+  const look = keysAtDefault(host, RESET_LOOK_KEYS);
   return (d) => {
     let next = setWatchTileIconDefault(d, pageId, tileId, { icon: defaults.icon ?? null, color: defaults.color ?? null });
     for (const task of ["state", "border", "background"] as const) next = resetWatchTileTask(next, pageId, tileId, task);
-    // A key the phone and the watch require (`iconShadow`, `labelShadow`,
-    // `iconTapAnimation`) goes back to its default, never away: a tile
-    // without it makes both refuse the whole page.
-    return editTile(next, pageId, tileId, (tile) => RESET_LOOK_KEYS.reduce((t, key) => {
-      const start = requiredTileKeyDefault(key);
-      return start === undefined ? withoutKey(t, key) : { ...t, [key]: structuredClone(start) };
-    }, tile));
+    return look(next);
   };
 }
 
@@ -1449,9 +1690,9 @@ function stripFillWhenListed(host: TileSettingsHost): void {
     commit(host, "icon", (d) => (watchTileIconSettings(host.tile).icon === pending ? setWatchTileIcon(d, host.pageId, host.tileId, stripped) : d), { typing: true }));
 }
 
-function renderIcon(host: TileSettingsHost): TemplateResult {
-  const tile = host.tile;
-  const s = watchTileIconSettings(tile);
+/** The icon itself: the symbol box, with No icon and Default under it. */
+function renderIconGlyph(host: TileSettingsHost): TemplateResult {
+  const s = watchTileIconSettings(host.tile);
   const defaults = kindDefaults(host);
   stripFillWhenListed(host);
   // A rule's style is at its default only with no icon of its own.
@@ -1467,10 +1708,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
   };
   const noIcon = () => commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, ""));
   const defaultIcon = () => commit(host, "icon", watchTileDefaultIconEdit(host));
-
-  const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
-  const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
-  const glyph = html`
+  return html`
     ${symbolField(
       { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
       s.icon ?? "",
@@ -1491,29 +1729,90 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
         title=${host.domainStyle === true ? `No icon of its own: the ${hostDeviceNoun(host)} draws its default` : defaults.icon === undefined ? `The ${hostDeviceNoun(host)} picks the icon` : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
     </div>`;
-  // The card in groups, a hairline between each: the icon, its color, the
-  // state icons, the icon's size and shadow, the glow, then how it moves.
+}
+
+/**
+ * Whether the tile draws no icon in any state: No icon picked and no state
+ * with an icon of its own. The renderer draws a state's own icon before it
+ * looks at the tile's (`one-look/render.ts`), so a state icon still gives a
+ * No icon tile a glyph to size, shadow and glow; only with neither do those
+ * rows do nothing.
+ */
+export function watchTileDrawsNoIcon(tile: WatchPageTile): boolean {
+  if (watchTileIconSettings(tile).icon !== "") return false;
+  const own = tile.stateIcons;
+  return !(typeof own === "object" && own !== null && Object.values(own).some((v) => typeof v === "string" && v !== ""));
+}
+
+/** The one line that stands where the icon's own rows were. */
+export const NO_ICON_NOTE = "No icon, so its size, shadow and animation do nothing.";
+
+/** The one line that stands where the Glow rows were. */
+export const NO_ICON_GLOW_NOTE = "No icon, so there is nothing to glow.";
+
+/** The icon's size and shadow, or the line that says why they are gone. */
+function renderIconLook(host: TileSettingsHost): TemplateResult {
+  if (watchTileDrawsNoIcon(host.tile)) return html`<div class="hint keep ts-gone">${NO_ICON_NOTE}</div>`;
+  const s = watchTileIconSettings(host.tile);
   return html`
-    <div class="ts-group">${glyph}</div>
-    <div class="ts-group">${renderTileColor(host, defaults.color)}</div>
-    ${host.domainStyle === true ? nothing : html`<div class="ts-group">${renderStateIcons(host)}</div>`}
-    <div class="ts-group">
-      ${renderIconSize(host)}
-      ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
-    </div>
-    ${oneLook(host) && host.domainStyle !== true && s.icon !== "" ? html`<div class="ts-group">${renderIconGlow(host)}</div>` : nothing}
-    <div class="ts-group">
-      ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
-      ${!s.activeAnimation.shown ? nothing
-        // One Look never moves the icon for being on: the switch is greyed.
-        : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
-        : renderActiveAnimation(host, s.activeAnimation.stored)}
-      ${menuField("Tap animation", animation, (v) =>
-        commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
-      <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
-        ? nothing
-        : html` Stored as "${unknownAnimation}", which the ${hostDeviceNoun(host)} plays as Bounce; it stays until another is picked.`}</div>
-    </div>`;
+    ${renderIconSize(host)}
+    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`;
+}
+
+/** Whether the Glow rows are offered: One Look draws the glow, and a rule's
+ * style holds none. */
+function glowOffered(host: TileSettingsHost): boolean {
+  return oneLook(host) && host.domainStyle !== true;
+}
+
+/** The glow, or the line that says why it is gone. */
+function renderGlowPart(host: TileSettingsHost): TemplateResult {
+  return watchTileDrawsNoIcon(host.tile) ? html`<div class="hint keep ts-gone">${NO_ICON_GLOW_NOTE}</div>` : renderIconGlow(host);
+}
+
+/** Whether When it is off has a row: Dim when off for a kind that dims, or
+ * Animate while on for a kind that animates and an icon to move. */
+function whenOffShown(host: TileSettingsHost): boolean {
+  const s = watchTileIconSettings(host.tile);
+  return (s.dimWhenOff.applies && host.domainStyle !== true) || (s.activeAnimation.shown && !watchTileDrawsNoIcon(host.tile));
+}
+
+/** When it is off: Dim or Keep color, then Animate while on. */
+function renderWhenOff(host: TileSettingsHost): TemplateResult {
+  const s = watchTileIconSettings(host.tile);
+  return html`
+    ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
+    ${!s.activeAnimation.shown || watchTileDrawsNoIcon(host.tile) ? nothing
+      // One Look never moves the icon for being on: the switch is greyed.
+      : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
+      : renderActiveAnimation(host, s.activeAnimation.stored)}`;
+}
+
+/** Tap animation: how the icon moves when the tile is tapped. */
+function renderTapAnimation(host: TileSettingsHost): TemplateResult {
+  const s = watchTileIconSettings(host.tile);
+  const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
+  const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
+  return html`
+    ${menuField("Tap animation", animation, (v) =>
+      commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
+    <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
+      ? nothing
+      : html` Stored as "${unknownAnimation}", which the ${hostDeviceNoun(host)} plays as Bounce; it stays until another is picked.`}</div>`;
+}
+
+/** The Icon and color card of a smart rule's style: its parts in groups, a
+ * hairline between each (the tile inspector stands each part under its own
+ * heading instead, `renderTileInspector`). */
+function renderIcon(host: TileSettingsHost): TemplateResult {
+  const domain = host.domainStyle === true;
+  return html`
+    <div class="ts-group">${renderIconGlyph(host)}</div>
+    <div class="ts-group">${renderTileColor(host, kindDefaults(host).color)}</div>
+    ${domain ? nothing : html`<div class="ts-group">${renderStateIcons(host)}</div>`}
+    <div class="ts-group">${renderIconLook(host)}</div>
+    ${glowOffered(host) ? html`<div class="ts-group">${renderGlowPart(host)}</div>` : nothing}
+    <div class="ts-group">${whenOffShown(host) ? renderWhenOff(host) : nothing}${renderTapAnimation(host)}</div>`;
 }
 
 /** The glow modes, as the Glow switch names them. */
@@ -1549,7 +1848,7 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
   const options = GLOW_MODES.map(([mode, label]) => ({
     value: mode,
     label,
-    picture: () => html`${pics.tile(`glow:${mode}`, withMode(mode), "on", 54, 44)}${pics.tile(`glow:${mode}`, withMode(mode), "off", 54, 44)}`,
+    picture: () => html`${pics.tile(`glow:${mode}`, withMode(mode), "on", 40, 32)}${pics.tile(`glow:${mode}`, withMode(mode), "off", 40, 32)}`,
   }));
   return html`${pictureChoice<OneLookGlowMode>("Glow", glow.mode, options, (v) => write("glowMode", (g) => ({ ...g, mode: v })), { def: "auto", size: "pair" })}
     <div class="hint">Each picture shows the tile on, then off. When on glows behind the icon while the tile has its color, brighter while it is on. Always glows on gray and off tiles too. Never over a picture.</div>
@@ -1578,6 +1877,7 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
           pick: () => { if (now().colour.kind !== "tile") write("glowColor", (g) => ({ ...g, colour: { kind: "tile" } })); },
         },
         custom: { shown: typed(host, "glowColor") ?? colourValue, pick: custom },
+        more: colorMoreOf(host, "glowColor"),
         wrap: (body) => typingField(host, "glowColor", body),
       })}`}`;
 }
@@ -1591,8 +1891,8 @@ function renderDimWhenOff(host: TileSettingsHost, value: boolean): TemplateResul
   const pics = tilePictures(host);
   const edit = (dim: boolean) => (d: WatchPagesDocument) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, dim);
   const row = pictureChoice<"dim" | "keep">("When it is off", value ? "dim" : "keep", [
-    { value: "dim", label: "Dim", picture: () => pics.tile("dim:on", edit(true), "off", 64, 46) },
-    { value: "keep", label: "Keep color", picture: () => pics.tile("dim:off", edit(false), "off", 64, 46) },
+    { value: "dim", label: "Dim", picture: () => pics.tile("dim:on", edit(true), "off", 54, 36) },
+    { value: "keep", label: "Keep color", picture: () => pics.tile("dim:off", edit(false), "off", 54, 36) },
   ], (v) => commit(host, "dimWhenOff", edit(v === "dim")), { def: "dim" });
   if (!oneLook(host)) return html`${row}<div class="hint">The tile dims while it is off, or keeps its color.</div>`;
   return oneLookDims(host.tile) ? html`${row}<div class="hint">${ONE_LOOK_DIM_LIGHT_NOTE}</div>` : greyed(ONE_LOOK_DIM_OFF_REASON, row);
@@ -1656,6 +1956,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
     rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
     custom: { shown: typed(host, "color") ?? watchCustomBoxColor(color), pick: custom },
+    more: colorMoreOf(host, "color"),
     wrap: (body) => typingField(host, "color", body),
   })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;
 }
@@ -1698,10 +1999,12 @@ function renderText(host: TileSettingsHost): TemplateResult {
     // switch goes back to what is stored.
     host.requestUpdate();
   };
-  // The label itself is the Name card's (`renderTileName`); a rule's tiles
-  // each carry their entity's own name and have none.
+  // The label itself is the head's Name; a rule's tiles each carry their
+  // entity's own name and have none.
+  const show = checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)));
+  if (!watchTileLabelDrawn(tile)) return html`${show}<div class="hint keep ts-gone">${LABEL_HIDDEN_NOTE}</div>`;
   return html`
-    ${checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)))}
+    ${show}
     ${typingField(host, "fontSize", html`<div class="ts-with-link">
       ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${t.fontSize === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the label to the tile`, () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
@@ -1722,8 +2025,23 @@ function renderText(host: TileSettingsHost): TemplateResult {
       pickSwatch: (c) => setLabelColor(c),
       default: { title: "The theme's label color", on: t.labelColor === undefined, pick: () => setLabelColor(undefined) },
       custom: { shown: labelColor, pick: setLabelColor },
+      more: colorMoreOf(host, "labelColor"),
       wrap: (body) => typingField(host, "labelColor", body),
     })}`;
+}
+
+/** The one line that stands where the label's own rows were. */
+export const LABEL_HIDDEN_NOTE = "The label is hidden, so its size, weight, design, shadow and color do nothing.";
+
+/**
+ * Whether the tile draws its label, so the label's size, weight, design,
+ * shadow and color do something: Show label on, or an HTTP action showing
+ * its reply on the tile, which names itself by its own Show Name instead
+ * (`one-look/render.ts`).
+ */
+export function watchTileLabelDrawn(tile: WatchPageTile): boolean {
+  if (tileKind(tileEntityId(tile)) === "http_action" && tile.httpResponseDisplay === "tileValue") return true;
+  return watchTileTextSettings(tile).showLabel;
 }
 
 /** A label's Weight or Design as "Aa" chips, each in its own weight or
@@ -2085,6 +2403,7 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
         ? {}
         : { default: { title: `The header's own color, ${defaultColor}`, on: atDefault, pick: () => writeColor(defaultColor) } }),
       custom: { shown: typed(host, "headerColor") ?? watchCustomBoxColor(h.color), pick: custom },
+      more: colorMoreOf(host, "headerColor"),
       wrap: (body) => typingField(host, "headerColor", body),
     })}`;
 }
@@ -2149,20 +2468,29 @@ function tryEnumRow(host: TileSettingsHost, setting: string, label: string, enum
     (v) => (d) => set(d, host.pageId, host.tileId, v));
 }
 
-/** What a pattern swatch is drawn on: the tile's color (or its kind's),
- * as a gradient where it is one, else a dark gray. */
-function tileGround(host: TileSettingsHost): string {
-  const ends = watchColorEnds(watchTileIconSettings(host.tile).color ?? kindDefaults(host).color);
-  if (ends === undefined) return "#2C2C2E";
-  return ends.from === ends.to ? ends.from : `linear-gradient(135deg, ${ends.from}, ${ends.to})`;
+/**
+ * The picture of each value of a styling enum that is not about the tile's
+ * color (a state value, a state bar, a border's style): the value as `set`
+ * stores it, read back from the tile it leaves, so a picture never shows
+ * what a pick would not store, drawn by `draw` as a small sample on a
+ * neutral ground that shows only what the choice changes.
+ */
+function neutralPicture(host: TileSettingsHost, set: Edit<string>, draw: (tile: WatchPageTile) => TemplateResult): (value: string) => TemplateResult | typeof nothing {
+  return (value) => {
+    const tile = watchTileIn(set(host.document, host.pageId, host.tileId, value), host.pageId, host.tileId);
+    return tile === undefined ? nothing : draw(tile);
+  };
 }
 
-/** The picture of each value of a styling enum: the tile on, as `set` with
- * that value would leave it. */
-function tilePicture(host: TileSettingsHost, setting: string, set: Edit<string>): (value: string) => TemplateResult | typeof nothing {
-  const pics = tilePictures(host);
-  return (value) => pics.tile(`${setting}:${value}`, (d) => set(d, host.pageId, host.tileId, value), "on", 64, 46);
+/** A State row's value as the State task reads it, on a tile. */
+function stateRowOf(tile: WatchPageTile, key: string): WatchStateRow["value"] {
+  return watchTileStateCards(tile).flatMap((c) => c.rows).find((r) => r.key === key)?.value;
 }
+
+/** The neutral pictures of a state value, a state bar and a border style. */
+const VALUE_PICTURE = (t: WatchPageTile) => valueSample(watchValueLabelStyle(t));
+const BAR_PICTURE = (t: WatchPageTile) => barSample(String(stateRowOf(t, "stateBarStyle") ?? ""));
+const BORDER_PICTURE = (t: WatchPageTile) => borderSample(watchTileBorderSettings(t));
 
 function boolRow(host: TileSettingsHost, setting: string, label: string, value: boolean, set: Edit<boolean>): TemplateResult {
   return checkField(label, value, (on) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, on)));
@@ -2211,11 +2539,27 @@ function resetValue(task: WatchTileStylingTask, key: string): unknown {
   return watchStylingReset(task)[key];
 }
 
-/** Whether a task's Reset is offered and its section reads "Changed": on a
- * tile while the reset would change it, on a rule's style while the style
- * holds one of the task's keys. */
+/** What a styling task's rows read of a tile. */
+const TASK_READS: Readonly<Record<WatchTileStylingTask, (tile: WatchPageTile) => unknown>> = {
+  state: (t) => watchTileStateCards(t).map((c) => c.rows),
+  border: (t) => watchTileBorderSettings(t),
+  background: (t) => watchTileBackgroundSettings(t),
+};
+
+/**
+ * Whether a task's Reset is offered and its section reads "Changed": on a
+ * tile while the reset would change what its rows read, on a rule's style
+ * while the style holds one of the task's keys. A key the reset would only
+ * write out at the value its absence reads already (a State value of Plain
+ * on a tile that stores none) is no change: the rows show the same either
+ * way.
+ */
 function taskModified(host: TileSettingsHost, task: WatchTileStylingTask): boolean {
-  return host.domainStyle === true ? watchTileTaskHeld(host.tile, task) : watchTileTaskModified(host.tile, task);
+  if (host.domainStyle === true) return watchTileTaskHeld(host.tile, task);
+  if (!watchTileTaskModified(host.tile, task)) return false;
+  const reset = watchTileIn(resetWatchTileTask(host.document, host.pageId, host.tileId, task), host.pageId, host.tileId);
+  const read = TASK_READS[task];
+  return reset === undefined || JSON.stringify(read(host.tile)) !== JSON.stringify(read(reset));
 }
 
 /** A task's Reset, shown while `taskModified`. On a tile it writes the
@@ -2333,6 +2677,7 @@ export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPic
       : { form: { shown: mode === "none" || mode === "rainbow" ? (gradient ? "gradient" : "solid") : mode, forms: ["solid", "gradient"], pick: act.pickMode } }),
     ...(o.rainbow === true ? { rainbow: {} } : {}),
     custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
+    more: colorMoreOf(host, setting),
     wrap: (body) => typingField(host, setting, body),
   });
 }
@@ -2379,10 +2724,10 @@ function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false)
       // button's tooltip.
       const off = oneLookOn ? oneLookValueStylesOff(tileKind(tileEntityId(host.tile))) : {};
       const disabled = Object.fromEntries(Object.keys(off).map((v) => [v, true]));
-      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { disabled, titles: off, picture: tilePicture(host, row.key, set as Edit<string>) });
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { disabled, titles: off, picture: neutralPicture(host, set as Edit<string>, VALUE_PICTURE), size: "mini" });
     }
     case "stateBarStyle":
-      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { picture: tilePicture(host, row.key, set as Edit<string>) });
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { picture: neutralPicture(host, set as Edit<string>, BAR_PICTURE), size: "mini" });
     case "stateBarColorStyle":
       return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>);
     case "decimalPlaces": {
@@ -2538,6 +2883,7 @@ function renderStateColorPicker(host: TileSettingsHost, state: string, color: st
       pickSwatch: (v) => write(v),
       default: { title: "The tile's color", on: color === undefined, pick: () => write(null) },
       custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
+      more: colorMoreOf(host, "stateColor"),
       wrap: (body) => typingField(host, setting, body),
     })}
   </div>`;
@@ -2563,7 +2909,7 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
       ${resetRow(host, "border", "Border")}`;
   }
   return html`
-    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle, { picture: tilePicture(host, "borderStyle", setWatchTileBorderStyle) })}
+    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle, { picture: neutralPicture(host, setWatchTileBorderStyle, BORDER_PICTURE), size: "mini" })}
     ${b.style === "line" ? html`
       ${oneLook(host) ? oneLookThickness(host, b.thickness) : enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, SMALL_THICKNESS)}
       ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle, { picture: lineStyleLine, size: "small" })}
@@ -2606,7 +2952,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
   const reset = (key: string) => resetValue("background", key);
   return html`
     <div class="ts-sub-h"><span>Pattern</span></div>
-    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern, { picture: (v) => patternSwatch(v, tileGround(host)), size: "swatch" })}
+    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern, { picture: (v) => patternSwatch(v, PATTERN_GROUND), size: "swatch" })}
     ${g.pattern === "none" ? nothing : html`
       ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
       ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
@@ -2658,9 +3004,11 @@ export const tileSettingsStyles = css`
   fieldset.ts-plain.ts-off { display: contents; }
   fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 112px; }
   .ts-body .hint { margin: 0 0 4px; }
-  .ts-body .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin-top: -2px; }
-  .ts-nested .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); }
-  .ts-note { padding-left: calc(var(--wa-lab) + 8px); }
+  /* Where a row's control starts: the title column and the gap after it
+     (\`--ts-gap\`, 8px in a card, 12px in the tile inspector's groups). */
+  .ts-body .hint.ts-under { padding-left: calc(var(--wa-lab) + var(--ts-gap, 8px)); margin-top: -2px; }
+  .ts-nested .hint.ts-under { padding-left: calc(var(--wa-lab) + var(--ts-gap, 8px)); }
+  .ts-note { padding-left: calc(var(--wa-lab) + var(--ts-gap, 8px)); }
   .ts-faint { color: var(--wa-muted); font-weight: 400; }
   /* The iPhone tag on a card or group only the iPhone reads. */
   .ts-dev-tag {
@@ -2674,13 +3022,15 @@ export const tileSettingsStyles = css`
   .ts-glyph-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
   .ts-target-now { padding: 4px 0 2px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
   .ts-chips, .ts-after { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
-  .ts-after { padding-left: calc(var(--wa-lab) + 8px); }
+  .ts-after { padding-left: calc(var(--wa-lab) + var(--ts-gap, 8px)); }
 
-  .ts-swatch-row { padding: 2px 0 4px calc(var(--wa-lab) + 8px); }
+  .ts-swatch-row { padding: 2px 0 4px calc(var(--wa-lab) + var(--ts-gap, 8px)); }
   .ts-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   /* A color picker's Default chip leads its swatches (\`color-picker.ts\`),
      a little shorter than a chip alone so the row keeps the swatches' height. */
   .ts-swatches > .ts-color-default { min-height: 24px; margin-right: 2px; }
+  /* More and Less after the first ten swatches: a pill like Default. */
+  .ts-swatches > .ts-color-more { min-height: 24px; margin-left: 2px; }
   .ts-swatch {
     width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);
@@ -2788,4 +3138,69 @@ export const tileSettingsStyles = css`
   button.ghost.ts-reset-btn:disabled { opacity: .45; }
 
   ${pictureChoiceStyles}
+
+  /* The tile inspector's groups (\`renderTileInspector\`): Look, Text, Tap
+     and Layout in one to four columns by the inspector's own width, pure
+     CSS. \`.ts-g2\` holds Text and \`.ts-g3\`, which holds Tap and Layout;
+     a wrapper turns to display: contents where its children take columns
+     of their own. The inspector body is the one scroll. */
+  .ts-groups {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 14px;
+    --ts-gap: 12px; --ts-blue: var(--wa-hue-blue, #4c8dff);
+  }
+  .ts-g2, .ts-g3 { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  @container insp (min-width: 760px) {
+    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ts-g3 { display: contents; }
+  }
+  @container insp (min-width: 1080px) {
+    .ts-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ts-g2 { display: contents; }
+    .ts-g3 { display: flex; }
+  }
+  @container insp (min-width: 1560px) {
+    .ts-groups { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .ts-g3 { display: contents; }
+  }
+  .ts-grp { min-width: 0; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card); }
+  .ts-grp-h { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid var(--wa-line); }
+  .ts-grp-t { margin: 0; flex: none; font-size: 15px; font-weight: 600; color: var(--wa-ink); }
+  .ts-grp-d { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ts-grp-n { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ts-blue); white-space: nowrap; }
+  .ts-grp-n > i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--ts-blue); }
+  /* A removed kind's or an inbox's one line, where a group's sections would be. */
+  .ts-grp > :not(.ts-grp-h):not(.ts-sec) { margin: 12px 18px; }
+
+  /* One heading style for every section: sentence case, 13px semibold, no
+     badge and no fold, the blue dot and Reset while it holds a value of its
+     own. */
+  .ts-sec { min-width: 0; padding: 14px 18px 16px; border-bottom: 1px solid var(--wa-line); }
+  .ts-sec:last-child { border-bottom: 0; }
+  .ts-sec-h { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-bottom: 8px; }
+  .ts-sec-h h4 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--wa-ink); }
+  .ts-sec-h > .ts-dev-tag { margin-left: 0; }
+  .ts-dot { display: block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ts-blue); }
+  button.ts-sec-reset {
+    margin-left: auto; padding: 2px 4px; border: 0; border-radius: 6px; background: none; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 500; color: var(--ts-blue);
+  }
+  button.ts-sec-reset:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+  button.ts-sec-reset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.ts-sec-reset:disabled { opacity: .45; cursor: default; }
+  .ts-sec-b { padding: 0; }
+  /* One title column in every section: 100px, the control 12px after it,
+     rows at least 32px. A row whose control needs the width (pictures, the
+     pattern gallery, a choice of four) keeps its title in that column too. */
+  .ts-groups fieldset.ts-body { --wa-lab: 100px; gap: 4px; padding: 0; }
+  .ts-groups .field { column-gap: var(--ts-gap); min-height: 32px; }
+  .ts-groups .field.pc-field { display: grid; grid-template-columns: var(--wa-lab) minmax(0, 1fr); align-items: start; column-gap: var(--ts-gap); }
+  .ts-groups .field.pc-field > span:first-child { padding-top: 8px; }
+  .ts-groups .ts-stack .field { grid-template-columns: var(--wa-lab) minmax(0, 1fr); column-gap: var(--ts-gap); }
+  .ts-groups .ts-stack .field.entity-field > :not(:first-child) { grid-column: 2; }
+  .ts-groups .seg.wide { height: auto; min-height: 28px; flex-wrap: wrap; }
+  /* A styling section's own Reset at the foot of its rows is the heading's
+     Reset in the groups, so it is not drawn twice. */
+  .ts-groups .ts-reset { display: none; }
+  /* The line that stands where rows that do nothing were. */
+  .ts-body .hint.ts-gone { margin: 2px 0 0; color: var(--wa-muted); font-style: normal; }
 `;

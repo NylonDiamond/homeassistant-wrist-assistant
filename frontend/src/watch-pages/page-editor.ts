@@ -85,10 +85,10 @@ import {
   otherPreviewKind,
   type PreviewKind,
   previewLabel,
+  onDevicesQuestion,
   previewOwner,
-  renderBarDevices,
-  renderLibraryTag,
-  renderPreviewPicker,
+  rememberPreview,
+  renderStripSaved,
   sameLibraryItem,
   startPreviewKind,
   startSideBySide,
@@ -246,8 +246,10 @@ import {
 import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
 import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
-import { watchFrameStyles } from "../watch-frame.js";
+import { WATCH_BEZEL_RATIO, WATCH_CROWN_RATIO, WATCH_RIM_RATIO, watchFrameStyles } from "../watch-frame.js";
 import {
+  PHONE_BEZEL_RATIO,
+  PHONE_RIM_RATIO,
   PHONE_SIZE_TEXT,
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
@@ -259,15 +261,11 @@ import {
   phonePagesScreen,
 } from "../phone-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
-import { inspectorColumnCount, splitColumns } from "./inspector-columns.js";
+import { inspectorColumnCount } from "./inspector-columns.js";
 import {
   forgetTileSettingsNotes,
   renderTileHead,
-  renderTileSettings,
-  tileHeadWeight,
-  tileInspectorColumnRuns,
-  tileInspectorSections,
-  tileSettingsFoldIds,
+  renderTileInspector,
   tileSettingsStyles,
 } from "./tile-settings.js";
 import { pictureChoice, sizeStrip, watchTriedTile } from "./picture-choice.js";
@@ -319,10 +317,9 @@ import {
   loadStageLive,
   nearestCell,
   pastDragThreshold,
-  loadStageZoom,
+  PAGE_ZOOM_STEPS,
   rowsOnScreen,
   saveStageLive,
-  saveStageZoom,
   stageFitZoom,
   stageGrid,
   stageRows,
@@ -330,7 +327,7 @@ import {
   stageZoomLabel,
   stageZoomOut,
 } from "./stage.js";
-import { StageFitWatch } from "./stage-fit.js";
+import { STAGE_FILL_MAX, type StageFillDrawing, StageFitWatch } from "./stage-fit.js";
 
 // The entry file asks whether a page draft holds edits before it lets the
 // person leave; it cannot import this chunk to find out, so the chunk tells it.
@@ -369,7 +366,7 @@ const THUMB_H = 22;
 const TILE_THUMB_H = 30;
 /** The page picker's pictures of a page, CSS px wide: the one on its button
  * and each page card's in its popover. */
-const PICKER_THUMB_W = 46;
+const PICKER_THUMB_W = 28;
 const CARD_THUMB_W = 76;
 /** A page's picture is at most this many times as tall as it is wide: an
  * iPhone's tall pages area shows its top. */
@@ -869,10 +866,16 @@ export class WaPageEditor extends LitElement {
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
-   * fits (`stageFitZoom`). Remembered between visits. */
-  @state() private zoom = loadStageZoom();
-  /** Fit held to the stage's width (`stage-fit.ts`). */
-  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale);
+   * fits. Never remembered between visits: the editor opens on Fit (see
+   * `stage.ts`), and a step holds only while it is open. */
+  @state() private zoom: number | undefined = undefined;
+  /** Fit, filling the stage's width and height both (`stage-fit.ts`, the
+   * device's size from `stageDrawing`). */
+  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale, () => this.stageDrawing());
+  /** The scale the stage was last drawn at, so a draw at a new one (a Fit
+   * after a resize, a zoom step) turns the tile faces' fades off for that
+   * draw: a glow growing with the zoom should not trail the window's edge. */
+  private drawnScale?: number;
   /** The top bar's ··· menu is open. */
   @state() private topMenuOpen = false;
   /** Why the last value typed in the tile card was refused. */
@@ -3167,19 +3170,27 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The page's tick row, under the canvas head over the stage: a chip per
-   * device, ticked where the page is. Ticking puts the page, as saved, on
-   * that device (`library/pick`); unticking takes it off there. Unsaved
-   * edits here reach it with the next save, since it is one page. Nothing
-   * for a system page, with no device, or before the library is read; a
-   * page the library does not list yet says to save first.
+   * The page's devices in the editor bar, right after the page picker: a
+   * small "On", then a chip per device the page is on, each in its device's
+   * color, then the dashed "+ Add to a device" holding the others (and the
+   * ticked ones again, to take one off). Ticking puts the page, as saved, on
+   * that device (`library/pick`) at once; unticking takes it off there.
+   * Unsaved edits here reach it with the next save, since it is one page.
+   * The ticks are the tick row's own (`renderTicks`): the bar only always
+   * folds the unticked chips, where the device strip folded them only when
+   * they did not fit, so every ticked device's color stays in view however
+   * many there are (Jesse, 2026-10-26: no "On 3 devices" picker and no count
+   * rule). Nothing for a system page, with no device, or before the library
+   * is read; a page the library does not list yet says to save first.
    */
-  private renderPageTicks(page: WatchPage): TemplateResult | typeof nothing {
+  private renderBarTicks(page: WatchPage): TemplateResult | typeof nothing {
     const body = this.pageTicksBody(page);
     if (body === undefined) return nothing;
     const lib = this.lib.library;
     const count = lib === undefined ? 0 : (libraryItem(lib, "pages", watchPageId(page))?.owners.length ?? 0);
-    return renderBarDevices("pages", count, body, this.lib.store?.savedStamp("pages", watchPageId(page)));
+    return html`<div class="pe-bar-on ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion("pages")}>
+      <span class="pe-bar-on-l">${count === 0 ? "On no device yet" : "On"}</span>${body}${renderStripSaved(this.lib.store?.savedStamp("pages", watchPageId(page)))}
+    </div>`;
   }
 
   /** The ticks themselves, or the save-first line; undefined when there is
@@ -3271,30 +3282,78 @@ export class WaPageEditor extends LitElement {
     return !this.loading && this.loadError === undefined && this.record !== undefined && this.draft !== undefined && this.currentPage() !== undefined;
   }
 
-  /** The top bar: the Library tag, then the ··· menu and Save. No Add page,
-   * no delivery and no way to Menus: a save reaches every device that has
-   * the page, each on its own. The way back, the page picker and the
-   * devices are the page's head under it, Preview on is in the strip over
-   * the stage, and Undo and Redo are in the canvas head. Drawn in every
-   * state, so a page still loading can still be left: until the head is
-   * drawn, the bar keeps a way back of its own. */
+  /**
+   * The editor bar, the one row over the stage and the inspector (Jesse,
+   * 2026-10-26: it stands in for three, the panel's head with Shared, ···
+   * and Save, the page's head with All pages, the picker and the devices,
+   * and the canvas head with the preview device, the page's facts and the
+   * edit buttons). Left to right: All pages, the page picker (its picture,
+   * name, tile count and Shared, opening the picker's popover), the devices
+   * the page is on (`renderBarTicks`), then at the right Undo and Redo, the
+   * save status with Save, the ··· menu and Help.
+   *
+   * Saving stays manual: nothing is written until Save, which reaches every
+   * device that has the page. With nothing to save the bar says "Saved"
+   * quietly; with edits it says "Unsaved changes" beside the blue Save. The
+   * preview device and the page's facts (rows, the device's model), the old
+   * canvas head's Duplicate and Delete for the picked tile, Select all and
+   * Discard edits are in the ··· menu; Rename, Duplicate page and the Pages
+   * board in the picker's popover. Drawn in every state, so a page still
+   * loading can still be left by All pages.
+   */
   private renderTopBar(draft: WatchPagesDraft | undefined): TemplateResult {
-    const dirty = draft?.dirty ?? false;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Page in the library">
+    const page = this.headDrawn ? this.currentPage() : undefined;
+    const document = draft?.document;
+    const pages = document === undefined ? [] : watchPagesOf(this.contextPages(document));
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const helpLabel = this.helpOn ? "Hide the help on the stage and under the settings" : "Show the help on the stage and under the settings";
+    return html`<div class="wa-bar pe-bar" role="group" aria-label="Page editor">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      ${this.headDrawn ? nothing : html`<button class="tb-btn tb-back" title="Back to the Pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Pages</span></button>`}
-      ${renderLibraryTag()}
+      <button type="button" class="tb-btn tb-back pe-bar-back" title="Back to the Pages board" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>All pages</span></button>
+      ${page === undefined ? nothing : html`<span class="pe-bar-div" aria-hidden="true"></span>
+        ${this.renderPagePicker(page, pages, owner)}
+        ${this.renderBarTicks(page)}`}
       <span class="spacer"></span>
+      ${draft === undefined ? nothing : html`<span class="pe-bar-undo">
+        <button type="button" class="tb-btn icon pe-bar-icon" ?disabled=${!draft.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
+          @click=${() => this.undo()}>${uiIcon("undo")}</button>
+        <button type="button" class="tb-btn icon pe-bar-icon" ?disabled=${!draft.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
+          @click=${() => this.redo()}>${uiIcon("redo")}</button>
+      </span>`}
+      ${this.renderSaveStatus(draft)}
       ${this.renderTopMenu(draft)}
-      ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches every device that has this page.` : `Nothing to save (${MOD}S)`}
-          @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>` : nothing}
+      <button type="button" class="tb-btn pe-bar-help ${this.helpOn ? "on" : ""}" aria-pressed=${this.helpOn ? "true" : "false"} title=${helpLabel}
+        @click=${() => { this.helpOn = !this.helpOn; setInspectorHelpOn(this.helpOn); }}>Help</button>
       ${this.barActions}
     </div>`;
   }
 
-  /** The ··· menu: Select all tiles and Discard edits. */
+  /**
+   * Where the draft stands, beside the ··· menu. Nothing to save: a quiet
+   * "Saved" with a check, and no button. Edits: "Unsaved changes" and the
+   * blue Save (⌘S does the same). While a save runs: Save reads "Saving…"
+   * and waits, as it always has; a refusal or a warning comes back in the
+   * note under the bar, and the Choose Speakers question still asks first.
+   */
+  private renderSaveStatus(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
+    if (draft === undefined) return nothing;
+    const saving = this.saving;
+    if (!draft.dirty && !saving) {
+      return html`<span class="pe-saved" role="status" title="Everything here is saved. A save reaches every device that has this page.">${uiIcon("check")}<span>Saved</span></span>`;
+    }
+    return html`${saving ? nothing : html`<span class="pe-unsaved" role="status" title="Not saved yet"><i class="pe-unsaved-dot" aria-hidden="true"></i><span>Unsaved changes</span></span>`}
+      <button type="button" class="primary save dirty pe-save" ?disabled=${saving}
+        title=${`Save (${MOD}S). A save reaches every device that has this page.`}
+        @click=${() => void this.save()}>${saving ? "Saving…" : "Save"}</button>`;
+  }
+
+  /**
+   * The ··· menu: what the preview is drawn on and the page's facts, as a
+   * line at its top ("Jesse's Watch · 4 tiles · 8 rows · 46 mm"), then
+   * Select all tiles, Duplicate and Delete for the picked tile (or every
+   * picked tile), and Discard edits.
+   */
   private renderTopMenu(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
     if (draft === undefined) return nothing;
     const open = this.topMenuOpen;
@@ -3303,18 +3362,74 @@ export class WaPageEditor extends LitElement {
     // to edit.
     const page = open ? this.currentPage() : undefined;
     const selectable = page === undefined || isSmartWatchPage(page) || this.editingOff(page) ? 0 : this.readingIds(page).length;
+    const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const facts = page === undefined ? undefined : this.pageFacts(page, owner);
+    const acts = page === undefined ? undefined : this.tileActs(page, tile);
     return html`<span class="side-menu pe-top-menu">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
-      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
+      ${open ? html`<div class="pop-menu side-pop pe-menu" role="menu" aria-label="More actions">
+        ${facts === undefined ? nothing : html`<div class="pe-menu-facts" title=${facts.title}>
+          ${facts.device === undefined ? nothing : html`<b class="pe-watch-crumb">${facts.device}</b>`}
+          <span>${facts.facts.join(" · ")}</span>
+        </div>`}
         <button class="row pe-select-all" role="menuitem" ?disabled=${selectable < 2}
           title=${`Pick every tile on this page (${MOD}A)`}
           @click=${run(() => this.selectAll())}>Select all tiles</button>
+        ${acts === undefined ? nothing : html`
+          <button class="row pe-menu-dup" role="menuitem" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? acts.dupLabel}
+            @click=${run(() => this.duplicateTile())}>${acts.dupLabel}</button>
+          <button class="row pe-menu-del" role="menuitem" ?disabled=${acts.delRefusal !== undefined}
+            title=${acts.delRefusal ?? `${acts.delLabel} (Delete or Backspace)`}
+            @click=${run(() => this.deleteTile())}>${acts.delLabel}</button>`}
         <button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>
       </div>` : nothing}
     </span>`;
+  }
+
+  /**
+   * What the preview is drawn on and the page's facts, for the ··· menu's
+   * top line: the preview device's name, then "6 tiles · 16 rows · 46 mm"
+   * (a smart page names itself as the watch does, from its fill), and the
+   * longer words for its tooltip where the size needs saying.
+   */
+  private pageFacts(page: WatchPage, owner: OwnerSummary | undefined): { device?: string; facts: string[]; title: string } {
+    const phoneLayout = this.phoneLayoutOf(owner);
+    const phone = phoneLayout !== undefined;
+    const found = phone ? undefined : caseForScreenSize(owner?.screen_size);
+    const watchCase = found ?? REFERENCE_CASE;
+    const facts = smartStageFacts(page, this.previewStates())
+      ?? [plural(watchPageTiles(page).length, "tile", "tiles"), plural(watchPageExtent(page), "row", "rows")];
+    facts.push(phoneLayout === undefined ? watchCase.label : phoneLayout.model.label);
+    if (isHiddenWatchPage(page)) facts.push(phone ? "hidden on the iPhone" : "hidden on the watch");
+    const title = phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ");
+    return { ...(owner === undefined ? {} : { device: watchName(owner, this.watches) }), facts, title };
+  }
+
+  /**
+   * Duplicate and Delete for the picked tile, or for every picked tile with
+   * several, with the reason each is refused: what the canvas head's two
+   * buttons offered, now in the ··· menu.
+   */
+  private tileActs(page: WatchPage, tile: WatchPageTile | undefined): { dupLabel: string; dupRefusal?: string; delLabel: string; delRefusal?: string } {
+    const picked = this.multiPicked ? this.pickedIds(page) : [];
+    const many = picked.length >= 2 ? `${picked.length} tiles` : undefined;
+    const dupRefusal = many !== undefined
+      ? (this.copyableCount(page, picked) > 0 ? undefined : "None of these tiles can be copied here.")
+      : tile === undefined ? "Select a tile to duplicate it." : this.duplicateRefusal(page, tile);
+    const delRefusal = tile === undefined ? "Select a tile to delete it."
+      : this.saving ? SAVING_TEXT
+      : this.busy || this.editingOff(page) ? `Turn off ${this.viewName} to delete a tile.`
+      : undefined;
+    return {
+      dupLabel: many !== undefined ? `Duplicate ${many}` : "Duplicate tile",
+      ...(dupRefusal === undefined ? {} : { dupRefusal }),
+      delLabel: many !== undefined ? `Delete ${many}` : "Delete tile",
+      ...(delRefusal === undefined ? {} : { delRefusal }),
+    };
   }
 
   // ── the columns ────────────────────────────────────────────────────────
@@ -3404,15 +3519,14 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     const owner = watches.find((w) => w.owner_watch_id === this.watchId);
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
-    // The page's head (the way back, the page picker, the devices), then
-    // two columns: the canvas card and the inspector. The editor is one
-    // screen tall and each column scrolls in its own box. Every page is
-    // reached from the picker and every tile on the stage: there is no
-    // list beside them. The inspector keeps one width whatever it shows.
-    return html`${page ? this.renderPageHead(page, pages, owner) : nothing}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}">
+    // Two columns under the editor bar (the way back, the page picker, the
+    // devices): the canvas card and the inspector. The editor is one screen
+    // tall and each column scrolls in its own box. Every page is reached
+    // from the picker and every tile on the stage: there is no list beside
+    // them. The inspector keeps one width whatever it shows.
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}">
       <div class="column canvas">
-        ${page ? this.renderStage(page, pages, owner, watches, tile) : html`<div class="card canvas-card pe-no-page">
+        ${page ? this.renderStage(page, pages, owner, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
           </div>`}
       </div>
@@ -3422,21 +3536,7 @@ export class WaPageEditor extends LitElement {
     </div>`;
   }
 
-  // ── the page's head ────────────────────────────────────────────────────
-
-  /**
-   * The page's head over the stage and the inspector: All pages (back to the
-   * Pages board), the page picker (`renderPagePicker`), and at the right the
-   * devices the page is on (`renderPageTicks`).
-   */
-  private renderPageHead(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
-    const ticks = this.renderPageTicks(page);
-    return html`<div class="pe-head" role="group" aria-label="Page">
-      <button type="button" class="pe-btn pe-head-back" title="Back to the Pages board" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>All pages</span></button>
-      ${this.renderPagePicker(page, pages, owner)}
-      ${ticks === nothing ? nothing : html`<div class="pe-head-ticks">${ticks}</div>`}
-    </div>`;
-  }
+  // ── the page picker ────────────────────────────────────────────────────
 
   /** The devices the library says have the page, by name. */
   private pageDeviceNames(pageId: string): string[] {
@@ -3445,28 +3545,27 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The page picker: one large button with the page's picture, "Editing
-   * page", its name, its tile count and the devices it is on, and Switch
-   * page. It opens a popover (`renderPickerPopover`) of every page in the
-   * library as a card with its picture, to open another in this editor.
+   * The page picker in the editor bar: the page's picture, its name, and
+   * under it its tile count and "Shared" (one page for every device that
+   * has it; which ones is the chips beside it), then a chevron. It opens a
+   * popover (`renderPickerPopover`) of every page in the library as a card
+   * with its picture, to open another in this editor, rename this one or
+   * copy it.
    */
   private renderPagePicker(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
-    const id = watchPageId(page);
     const name = watchPageName(page);
     const tiles = watchPageTiles(page).length;
     const what = isSmartWatchPage(page) ? "Smart page" : plural(tiles, "tile", "tiles");
-    const where = pageDevicesText(this.pageDeviceNames(id));
     const open = this.pickerOpen;
     return html`<div class="pe-pp-wrap">
       <button type="button" class="pe-pp" aria-haspopup="dialog" aria-expanded=${open ? "true" : "false"}
-        title="Switch to another page, or make one" @click=${() => this.togglePicker()}>
+        aria-label=${`Switch page. Editing ${name}`} title="Switch to another page, or make one" @click=${() => this.togglePicker()}>
         ${this.renderPageThumb(page, pages, this.screenOf(owner), PICKER_THUMB_W)}
         <span class="pe-pp-text">
-          <span class="pe-pp-label">Editing page</span>
           <span class="pe-pp-name" title=${name}>${name}</span>
-          <span class="pe-pp-sub">${what} · ${where}</span>
+          <span class="pe-pp-sub">${what} · <span title="One page for every device that has it. A save reaches all of them.">Shared</span></span>
         </span>
-        <span class="pe-pp-switch">Switch page<span class="pe-pp-chev" aria-hidden="true">${uiIcon("chevron")}</span></span>
+        <span class="pe-pp-chev" aria-hidden="true">${uiIcon("chevron")}</span>
       </button>
       ${open ? this.renderPickerPopover(page, pages, owner) : nothing}
     </div>`;
@@ -3570,7 +3669,7 @@ export class WaPageEditor extends LitElement {
       title=${this.saving ? SAVING_TEXT : "Add a tile to this page"} @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add a tile</span></button>`;
   }
 
-  /** "+ Add tile" under the watch on the stage, which opens the Add tile
+  /** "+ Add tile" first in the stage's dock, which opens the Add tile
    * dialog. None on a smart page, which fills itself. */
   private renderStageAddTile(page: WatchPage): TemplateResult | typeof nothing {
     if (isSmartWatchPage(page)) return nothing;
@@ -3683,15 +3782,70 @@ export class WaPageEditor extends LitElement {
 
   // ── the stage ──────────────────────────────────────────────────────────
 
-  /** The stage's scale now: as stepped, else the fit for the width. */
+  /** The stage's scale now: as stepped, else the fit, which fills the
+   * stage (`stageDrawing`). */
   private get stageScale(): number {
     return this.zoom ?? this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
   }
 
+  /** A zoom step, or undefined for Fit. Kept while the editor is open only. */
   private setZoom(scale: number | undefined): void {
     this.zoom = scale;
-    saveStageZoom(scale);
     this.cancelGestures();
+  }
+
+  /** The device of `kind` drawn on the stage: the preview device for the
+   * edited kind, else (Side by side's other preview) the first device of
+   * that kind that has the page, else the home's first of the kind. */
+  private stageOwnerOf(kind: PreviewKind): OwnerSummary | undefined {
+    if (kind === this.previewKind) return this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const ref = this.libraryItem;
+    const id = previewOwner(this.watches, kind, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
+    return this.watches.find((w) => w.owner_watch_id === id);
+  }
+
+  /**
+   * How big the stage's drawing is at zoom 1, for Fit to fill the stage's
+   * width and height with it (`stageFillZoom`): the watch's case, or the
+   * iPhone's whole phone at its half zoom, and with Side by side both, one
+   * beside the other. Each frame grows evenly with the zoom (its bezel, rim
+   * and crown are shares of the screen's width, `watch-frame.ts` and
+   * `phone-frame.ts`); a page that runs on below the screen does not count,
+   * since it scrolls. The label over each device and the line under it of
+   * what that kind does otherwise are room that does not grow. A watch is
+   * drawn at most at 300% of its points, an iPhone alone at 300% of its own.
+   * Undefined on a stacked editor, whose stage grows with what it holds:
+   * there Fit takes the width alone, as before.
+   */
+  private stageDrawing(): StageFillDrawing | undefined {
+    if (this.stacked) return undefined;
+    const page = this.currentPage();
+    if (page === undefined) return undefined;
+    const kinds: PreviewKind[] = this.sideBySide ? [this.previewKind, otherPreviewKind(this.previewKind)] : [this.previewKind];
+    let width = 0;
+    let height = 0;
+    let fixedWidth = 16 + (kinds.length - 1) * 28;
+    let diffs = false;
+    for (const kind of kinds) {
+      const owner = this.stageOwnerOf(kind);
+      if (kind === "iphone") {
+        const model = phoneModelForScreenSize(owner?.screen_size);
+        const grow = 1 + 2 * (PHONE_BEZEL_RATIO + PHONE_RIM_RATIO);
+        width += model.screen.width * grow * PHONE_STAGE_ZOOM;
+        height = Math.max(height, model.screen.height * grow * PHONE_STAGE_ZOOM);
+        fixedWidth += 6;
+      } else {
+        const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+        width += screen.width * (1 + 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO) + WATCH_CROWN_RATIO);
+        height = Math.max(height, screen.height + screen.width * 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO));
+      }
+      if (deviceDifferenceText(page, kind) !== "") diffs = true;
+    }
+    // The label over each device (one line and its gap), and the
+    // differences line under it, two lines at most, when either has one.
+    const fixedHeight = 30 + (diffs ? 44 : 0);
+    const max = kinds.includes("watch") ? STAGE_FILL_MAX : STAGE_FILL_MAX / PHONE_STAGE_ZOOM;
+    return { width, height, fixedWidth, fixedHeight, max };
   }
 
   /** The Live preview switch: Home Assistant's real states, or every tile
@@ -3749,17 +3903,19 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The canvas card, the complication editor's: the head (the preview
-   * device, the page's facts, then Undo, Redo, Duplicate and Delete for the
-   * selected tile), the dotted stage with the floating tool strip over the
-   * watch and + Add tile under it, the hint under that, and the Live strip
-   * at its foot. The page's name and devices are the page's head, over it.
+   * The canvas card: the stage alone, with no head (the editor bar over it
+   * holds the page's name, devices, Undo and Redo, and its ··· menu the
+   * page's facts and the tile's Duplicate and Delete). At its top Preview
+   * on, centred (`renderPreviewOn`), and under it the help while Help is on;
+   * in the middle the device, as large as the stage holds (`stageDrawing`);
+   * at its foot the dock (`renderStageTools`: Add tile, the zoom, Fit, Live
+   * preview) with the picked tile's states to try over it
+   * (`renderLiveStrip`).
    */
   private renderStage(
     page: WatchPage,
     pages: readonly WatchPage[],
     owner: OwnerSummary | undefined,
-    watches: readonly OwnerSummary[],
     tile: WatchPageTile | undefined,
   ): TemplateResult {
     // An iPhone is drawn as an iPhone, its page laid out in the pages screen's
@@ -3767,19 +3923,11 @@ export class WaPageEditor extends LitElement {
     // phone fits the same stage.
     const phoneLayout = this.phoneLayoutOf(owner);
     const phone = phoneLayout !== undefined;
-    const found = phone ? undefined : caseForScreenSize(owner?.screen_size);
-    const watchCase = found ?? REFERENCE_CASE;
-    const screen = phoneLayout === undefined ? watchCase.screen : phonePagesScreen(phoneLayout);
-    const frame = phoneLayout === undefined ? watchCase.label : phoneLayout.model.label;
+    const screen = phoneLayout === undefined ? (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen : phonePagesScreen(phoneLayout);
     const smart = isSmartWatchPage(page);
     const tiles = watchPageTiles(page).length;
-    const rows = watchPageExtent(page);
     const config = readSmartConfig(page);
-    // A smart page names itself as the watch does, from its fill.
     const states = this.previewStates();
-    const facts = smartStageFacts(page, states) ?? [plural(tiles, "tile", "tiles"), plural(rows, "row", "rows")];
-    facts.push(phoneLayout === undefined ? watchCase.label : phoneLayout.model.label);
-    if (isHiddenWatchPage(page)) facts.push(phone ? "hidden on the iPhone" : "hidden on the watch");
     const headers = !smart && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
     const scale = phone ? this.stageScale * PHONE_STAGE_ZOOM : this.stageScale;
@@ -3820,23 +3968,54 @@ export class WaPageEditor extends LitElement {
     this.stageTopInset = watchPreviewTopInset(input);
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
     const empty = !smart && !asOnWatch && tiles === 0;
-    const hint = smart ? undefined
+    // Watch view and an empty page are statuses, said whatever Help says;
+    // how to use the stage and where the screen ends are help, said only
+    // while Help is on (the inspector's switch, `helpOn`).
+    const status = smart ? undefined
       : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
+      : undefined;
+    const help = !this.helpOn || smart || asOnWatch || empty ? undefined
       : "Click a tile to change it, Shift or Cmd-click to pick several. Drag a tile to move it, or onto another tile to swap the two; drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile, Tab picks the next one. Hidden tiles and spacers show with a dashed edge.";
+    const fold = scrolls && this.helpOn;
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
-      ${this.renderCanvasHead(page, watches, facts, phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
       <div class="stage-area pe-stage-area">
-        ${this.renderStageTools(page, headers, smart, phone)}
-        <div class="pe-stage-body">
-          ${this.renderLibraryStage(page, pages, input, smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input), this.renderStageAddTile(page))}
-        </div>
-        ${scrolls || hint !== undefined ? html`<div class="under">
-          ${scrolls ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
-          ${hint !== undefined ? html`<span class="tail ${tiles > 0 && !asOnWatch ? "pe-hint" : ""}">${hint}</span>` : nothing}
+        <div class="pe-stage-top">${this.renderPreviewOn()}</div>
+        ${status !== undefined || help !== undefined || fold ? html`<div class="under pe-under">
+          ${status !== undefined ? html`<span class="tail">${status}</span>` : nothing}
+          ${help !== undefined ? html`<span class="tail pe-hint">${help}</span>` : nothing}
+          ${fold ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
         </div>` : nothing}
+        <div class="pe-stage-body">
+          ${this.renderLibraryStage(page, pages, input, smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
+        </div>
+        <div class="pe-dock-area">
+          ${this.renderLiveStrip(page, tile)}
+          ${this.renderStageTools(page, headers, smart, phone)}
+        </div>
       </div>
-      ${this.renderLiveStrip(page, tile)}
+    </div>`;
+  }
+
+  /**
+   * Preview on, centred at the top of the stage: Watch, iPhone and, on a
+   * home that keeps iPhone pages, Both (Side by side: the other kind drawn
+   * beside the edited one, a click on it edits there). A pick changes what
+   * the page is drawn on and nothing else.
+   */
+  private renderPreviewOn(): TemplateResult {
+    const duo = this.sideBySide;
+    const kind = (k: PreviewKind, label: string) => {
+      const on = this.previewKind === k && !duo;
+      return html`<button type="button" class="pe-seg-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+        title=${k === "watch" ? "Preview on a watch" : "Preview on an iPhone"}
+        @click=${() => { if (!on) { rememberPreview(k); this.pickPreview(k); } }}>${label}</button>`;
+    };
+    return html`<div class="pe-seg" role="group" aria-label="Preview on" title="What the page is drawn on. Nothing is changed on any device.">
+      ${kind("watch", "Watch")}
+      ${kind("iphone", "iPhone")}
+      ${this.phones ? html`<button type="button" class="pe-seg-btn ${duo ? "on" : ""}" aria-pressed=${duo ? "true" : "false"}
+        title="Side by side: a watch and an iPhone" @click=${() => { if (!duo) this.sideBySide = true; }}>Both</button>` : nothing}
     </div>`;
   }
 
@@ -3853,31 +4032,28 @@ export class WaPageEditor extends LitElement {
    * its kind that have the page and with the line of what that kind does
    * otherwise; with Side by side, the other kind's preview beside it the
    * same way. The other one is a picture only: a click on it edits on that
-   * kind instead. Watch first, iPhone second, whichever is edited. `add`
-   * (+ Add tile) goes under the edited one.
+   * kind instead. Watch first, iPhone second, whichever is edited.
    */
   private renderLibraryStage(
     page: WatchPage,
     pages: readonly WatchPage[],
     input: WatchPagePreviewInput,
     edited: TemplateResult,
-    add: TemplateResult | typeof nothing = nothing,
   ): TemplateResult {
     const kind = this.previewKind;
-    const side = (k: PreviewKind, body: TemplateResult, tag: string, under: TemplateResult | typeof nothing = nothing) => {
+    const side = (k: PreviewKind, body: TemplateResult, tag: string) => {
       const diff = deviceDifferenceText(page, k);
       return html`<div class="lib-duo-side ${k}">
         <span class="lib-duo-l" title=${previewLabel(k, this.libraryNamesOf(k))}>${previewLabel(k, this.libraryNamesOf(k))}<span class="lib-duo-tag">${tag}</span></span>
         ${body}
-        ${under}
         ${diff === "" ? nothing : html`<span class="lib-diff">${diff}</span>`}
       </div>`;
     };
-    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "", add)}</div>`;
+    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
     const other = otherPreviewKind(kind);
     const word = other === "watch" ? "watch" : "iPhone";
     return html`<div class="lib-duo">
-      ${side(kind, edited, "editing", add)}
+      ${side(kind, edited, "editing")}
       ${side(other, html`<button type="button" class="lib-duo-other" title=${`Click to edit on the ${word}`} aria-label=${`Edit on the ${word}`}
         @click=${() => this.pickPreview(other, true)}>${renderWatchPagePreview(this.companionInput(page, pages, input, other))}</button>`, "preview")}
     </div>`;
@@ -3892,9 +4068,7 @@ export class WaPageEditor extends LitElement {
    * defaults, as the phone does before its settings load.
    */
   private companionInput(page: WatchPage, pages: readonly WatchPage[], input: WatchPagePreviewInput, kind: PreviewKind): WatchPagePreviewInput {
-    const ref = this.libraryItem;
-    const id = previewOwner(this.watches, kind, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
-    const owner = this.watches.find((w) => w.owner_watch_id === id);
+    const owner = this.stageOwnerOf(kind);
     // The edited stage's own: its phone frame, its live cameras and its
     // smart rule pick.
     const rest: WatchPagePreviewInput = { ...input };
@@ -3911,135 +4085,90 @@ export class WaPageEditor extends LitElement {
     return { ...rest, page, pages, behavior: undefined, screen, scale: this.stageScale };
   }
 
-  /** The canvas head: the preview device's name, the page's facts, and at
-   * the right the edit actions. It reads "Sim / 6 tiles · 16 rows · 46 mm".
-   * The page's name is the page picker's, over it, and renamed there. */
-  private renderCanvasHead(
-    page: WatchPage,
-    watches: readonly OwnerSummary[],
-    facts: readonly string[],
-    factsTitle: string | undefined,
-    tile: WatchPageTile | undefined,
-  ): TemplateResult {
-    const draft = this.draft;
-    const off = this.busy || this.editingOff(page);
-    // With several picked, both act on all of them and say how many.
-    const picked = this.multiPicked ? this.pickedIds(page) : [];
-    const many = picked.length >= 2 ? `${picked.length} tiles` : undefined;
-    const dupRefusal = many !== undefined
-      ? (this.copyableCount(page, picked) > 0 ? undefined : "None of these tiles can be copied here.")
-      : tile === undefined ? "Select a tile to duplicate it." : this.duplicateRefusal(page, tile);
-    const dupLabel = many !== undefined ? `Duplicate ${many}` : "Duplicate the selected tile";
-    const delLabel = many !== undefined ? `Delete ${many}` : "Delete the selected tile";
-    const current = watches.find((w) => w.owner_watch_id === this.watchId);
-    return html`<div class="cv-head">
-      ${current ? html`<span class="cv-part cv-where">
-        <span class="cv-shape pe-watch-crumb">${watchName(current, watches)}</span></span>` : nothing}
-      <span class="cv-part cv-what">${current ? html`<span class="cv-slash" aria-hidden="true">/</span>` : nothing}
-        <span class="cv-shape" title=${factsTitle ?? facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
-      <span class="cv-acts">
-        <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
-          @click=${() => this.undo()}>${uiIcon("undo")}</button>
-        <button class="cv-act icon undo" ?disabled=${!draft?.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
-          @click=${() => this.redo()}>${uiIcon("redo")}</button>
-        <span class="cv-div" aria-hidden="true"></span>
-        <button class="cv-act icon" ?disabled=${dupRefusal !== undefined} title=${dupRefusal ?? dupLabel} aria-label=${dupLabel}
-          @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}</button>
-        <button class="cv-act icon danger" ?disabled=${tile === undefined || off}
-          title=${tile === undefined ? "Select a tile to delete it." : `${delLabel} (Delete or Backspace)`} aria-label=${delLabel}
-          @click=${() => this.deleteTile()}>${uiIcon("delete")}</button>
-      </span>
-    </div>`;
-  }
-
-  /** The floating tool strip over the stage, the complication editor's:
-   * the Live preview switch (with an instant hint saying what off and on
-   * draw), Preview on, the page's screen color (read only), Watch view on a
-   * page with headers, and the zoom. */
+  /**
+   * The stage's dock, one floating pill centred at its foot: + Add tile (in
+   * the accent, the stage's one loud button), the zoom (out, the percent,
+   * in, and Fit), Watch view on a page with headers, and the Live preview
+   * switch (with an instant hint saying what off and on draw). Fit is the
+   * default and fills the stage (`stageDrawing`); a step holds until Fit or
+   * the editor closes.
+   */
   private renderStageTools(page: WatchPage, headers: boolean, smart: boolean, phone = false): TemplateResult {
     const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
     const scale = this.stageScale;
+    const fitting = this.zoom === undefined;
     const fit = this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
     // The percent is of the device's own points: an iPhone is drawn at
     // `PHONE_STAGE_ZOOM` of the watch's zoom.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
-    return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
-      ${smart ? nothing : html`<label class="pe-switch pe-live pe-tip"
+    const device = phone ? "iPhone" : "watch";
+    const add = this.renderStageAddTile(page);
+    return html`<div class="stage-tools pe-dock" role="toolbar" aria-label="Stage tools">
+      ${add === nothing ? nothing : html`${add}${sep}`}
+      <span class="tb-zoom" role="group" aria-label="Zoom">
+        <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale, PAGE_ZOOM_STEPS)} aria-label="Zoom out" title="Zoom out"
+          @click=${() => this.setZoom(stageZoomOut(scale, PAGE_ZOOM_STEPS))}>−</button>
+        <span class="pe-zoom-pct" role="status" title=${`The ${device} at ${shownAs(scale)} of its own points`}>${shownAs(scale)}</span>
+        <button class="tb icon pe-zoom-in" ?disabled=${scale >= stageZoomIn(scale, PAGE_ZOOM_STEPS)} aria-label="Zoom in" title="Zoom in"
+          @click=${() => this.setZoom(stageZoomIn(scale, PAGE_ZOOM_STEPS))}>+</button>
+        <button class="tb pe-fit ${fitting ? "lit" : ""}" aria-pressed=${fitting ? "true" : "false"}
+          title=${fitting ? `Fitting the ${device} to the stage (${shownAs(fit)})` : `Fit the ${device} to the stage again (${shownAs(fit)})`}
+          @click=${() => this.setZoom(undefined)}>Fit</button>
+      </span>
+      ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
+          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
+          @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word keep">${this.viewName}</span></button>` : nothing}
+      ${smart ? nothing : html`${sep}<label class="pe-switch pe-live pe-tip"
           data-tip=${this.liveStates
             ? "Live preview: on. The tiles are drawn with Home Assistant's real states. Turn it off to draw every tile on."
             : "Live preview: off. Every tile is drawn on, as the page looks with everything active. Turn it on to draw the tiles with Home Assistant's real states."}>
           <input type="checkbox" role="switch" .checked=${live(this.liveStates)}
             @change=${(e: Event) => this.setLive((e.target as HTMLInputElement).checked)} />
           <span class="word keep">Live preview</span>
-        </label>
-        ${sep}`}
-      ${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind),
-        this.phones ? { on: this.sideBySide, pick: () => { this.sideBySide = true; } } : undefined)}${sep}
-      <button class="tb pe-case" aria-disabled="true" tabindex="-1" aria-label="Page background"
-        title=${`The page's background color, which the ${phone ? "iPhone" : "watch"} paints behind the tiles.`}>
-        <i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
-      ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
-          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
-          @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word">${this.viewName}</span></button>` : nothing}
-      ${sep}
-      <span class="tb-zoom" role="group" aria-label="Zoom">
-        <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
-          @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
-        <button class="tb pct" aria-label=${`Zoom ${shownAs(scale)}. Back to fit`}
-          title=${`The ${phone ? "iPhone" : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
-          @click=${() => this.setZoom(undefined)}>${shownAs(scale)}</button>
-        <button class="tb icon pe-zoom-in" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
-          @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
-      </span>
+        </label>`}
     </div>`;
   }
 
-  /** The Live strip under the stage, the complication editor's values bar,
-   * for trying the selected tile's states: its name, then each state its
-   * entity can take as a chip (a slider or a typed reading for a number or
-   * free text), then a reset while one is kept. The chip under the pointer
-   * shows in the previews (the stage, the tile pictures and the rows) as if
-   * Home Assistant said so; a click keeps it there until clicked again.
-   * Nothing is saved. */
-  private renderLiveStrip(page: WatchPage, tile: WatchPageTile | undefined): TemplateResult {
-    let body: TemplateResult;
-    const picked = this.multiPicked ? this.pickedIds(page).length : 0;
-    if (picked >= 2) body = html`<span class="vb-empty">${picked} tiles picked. Pick one to try its states.</span>`;
-    else if (tile === undefined) body = html`<span class="vb-empty">Select a tile to try its states here.</span>`;
-    else {
-      const entityId = tileEntityId(tile);
-      const real = entityId === "" ? undefined : this.hass?.states?.[entityId];
-      const states = this.previewStates();
-      const entity = entityId === "" ? undefined : states?.[entityId];
-      const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
-      const symbol = watchTileSymbol(tile, entity);
-      const glyph = symbol === undefined ? undefined : this.memoIcons().render(symbol, 13, color);
-      const label = watchPreviewTileLabel(tile, { states, pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.pickerCatalog })
-        || tileKindLabel(tileKind(entityId));
-      const unit = typeof real?.attributes?.unit_of_measurement === "string" ? ` ${real.attributes.unit_of_measurement}` : "";
-      const icon = html`<span class="vp-icon">${glyph ?? uiIcon("states")}</span><b>${label}</b>`;
-      if (entityId === "" || isVirtualTileKind(tileKind(entityId))) {
-        body = html`<div class="vb-pills"><div class="vchip vpill" style=${`--k:${color}`} title=${entityId}>
-          ${icon}<span class="val">No entity</span>
-        </div></div>`;
-      } else {
-        const live = real !== undefined ? `${real.state}${unit}` : "Not in Home Assistant";
-        const override = this.testStates.get(entityId);
-        const control = testControlFor(entityId, real, override);
-        body = html`<div class="vb-pills"><div class="vchip vpill ctl ${control.kind === "choice" ? "pe-states" : ""} ${override !== undefined ? "testing" : ""}"
-          style=${`--k:${color}`} title=${override !== undefined ? `Home Assistant's state now: ${live}` : entityId}>
-          ${icon}
-          ${control.kind === "choice"
-            ? this.renderStateChips(entityId, label, control.options, real?.state, override)
-            : this.renderTestControl(entityId, label, real, override, unit, live, control)}
-          ${override !== undefined
-            ? html`<button type="button" class="live-reset" title="Back to Home Assistant's state" aria-label=${`Back to Home Assistant's state for ${label}`}
-                @click=${() => { this.editingValue = undefined; this.setTestValue(entityId, undefined); }}>${uiIcon("reset")}</button>`
-            : html`<span class="live-reset-slot" aria-hidden="true"></span>`}
-        </div></div>`;
-      }
-    }
-    return html`<div class="values-foot"><div class="values-bar" role="group" aria-label="Try the tile's states">${body}</div></div>`;
+  /**
+   * The picked tile's states to try, a slim row floating just over the
+   * stage's dock (it was a bar of its own under the stage): its name, then
+   * each state its entity can take as a chip (every word a light, a lock or
+   * a select can say, unknown and unavailable too), or for a number a slider
+   * and its reading, for free text a reading to type, then a reset while one
+   * is kept. The chip under the pointer shows in the previews (the stage, the
+   * tile pictures and the rows) as if Home Assistant said so; a click keeps
+   * it there until clicked again (`setTestValue`, which the inspector head's
+   * state tiles can call to pin one too). Nothing is saved. Nothing at all
+   * with no tile picked, several picked, or a tile with no entity: the row
+   * only stands over the stage while it has something to try.
+   */
+  private renderLiveStrip(page: WatchPage, tile: WatchPageTile | undefined): TemplateResult | typeof nothing {
+    if (tile === undefined || this.multiPicked) return nothing;
+    const entityId = tileEntityId(tile);
+    if (entityId === "" || isVirtualTileKind(tileKind(entityId))) return nothing;
+    const real = this.hass?.states?.[entityId];
+    const states = this.previewStates();
+    const entity = states?.[entityId];
+    const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
+    const symbol = watchTileSymbol(tile, entity);
+    const glyph = symbol === undefined ? undefined : this.memoIcons().render(symbol, 13, color);
+    const label = watchPreviewTileLabel(tile, { states, pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.pickerCatalog })
+      || tileKindLabel(tileKind(entityId));
+    const unit = typeof real?.attributes?.unit_of_measurement === "string" ? ` ${real.attributes.unit_of_measurement}` : "";
+    const live = real !== undefined ? `${real.state}${unit}` : "Not in Home Assistant";
+    const override = this.testStates.get(entityId);
+    const control = testControlFor(entityId, real, override);
+    return html`<div class="pe-try" role="group" aria-label="Try the tile's states"><div class="vchip vpill ctl ${control.kind === "choice" ? "pe-states" : ""} ${override !== undefined ? "testing" : ""}"
+      style=${`--k:${color}`} title=${override !== undefined ? `Home Assistant's state now: ${live}` : entityId}>
+      <span class="vp-icon">${glyph ?? uiIcon("states")}</span><b>${label}</b>
+      ${control.kind === "choice"
+        ? this.renderStateChips(entityId, label, control.options, real?.state, override)
+        : this.renderTestControl(entityId, label, real, override, unit, live, control)}
+      ${override !== undefined
+        ? html`<button type="button" class="live-reset" title="Back to Home Assistant's state" aria-label=${`Back to Home Assistant's state for ${label}`}
+            @click=${() => { this.editingValue = undefined; this.setTestValue(entityId, undefined); }}>${uiIcon("reset")}</button>`
+        : html`<span class="live-reset-slot" aria-hidden="true"></span>`}
+    </div></div>`;
   }
 
   /** Every state an entity with a known set of words can take, as a row of
@@ -4163,8 +4292,15 @@ export class WaPageEditor extends LitElement {
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
     const back = previewFramedScreenLayers(input, shown, s, screen, this.photoUrl);
+    // The tile faces fade from one look to the next (a color, a glow, a
+    // state tried), but not while anything is dragged, a tile, an edge, a
+    // part or a number, where the fade would trail the pointer; nor on the
+    // draw that changes the scale (a Fit after a resize, a zoom step), where
+    // every glow and shadow grows at once.
+    const still = this.gesture?.started !== true && !this.scrub.active && this.drawnScale === s;
+    this.drawnScale = s;
     // The grid's cells show only while a tile is moved or resized.
-    return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
+    return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""} ${still ? "pe-fades" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}
       @click=${() => this.selectTile(undefined)}>
       ${back.layers}
@@ -4361,9 +4497,9 @@ export class WaPageEditor extends LitElement {
    * The inspector column, the complication editor's: a sticky head with the
    * breadcrumb (the page's kind chip and name; with a tile selected, Page,
    * the way back to the page's own cards, then the tile's kind chip and
-   * name) and Collapse all, then the cards. With a tile selected
-   * they are the tile's (`renderTileCard`); with none, the page's own
-   * (`renderPageCards`).
+   * name) and, for the page's cards, Collapse all, then the body. With a
+   * tile selected it is the tile's head and groups (`renderTileCard`), which
+   * never fold; with none, the page's own cards (`renderPageCards`).
    */
   private renderInspector(page: WatchPage, tile: WatchPageTile | undefined, pages: readonly WatchPage[]): TemplateResult {
     const name = watchPageName(page);
@@ -4379,7 +4515,6 @@ export class WaPageEditor extends LitElement {
         <div class="insp-body">${this.renderPickedCard(page, picked, pages)}</div>`;
     }
     const host = this.editorHost(page);
-    const tileHost = tile === undefined ? undefined : this.tileSettingsHost(page, tile);
     let crumbs: TemplateResult;
     if (tile === undefined) {
       crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
@@ -4390,10 +4525,11 @@ export class WaPageEditor extends LitElement {
       crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${watchTileKindColor(kind)}`}>${kindLabel}</span><span class="nm" title=${label}>${label}</span></div>`;
     }
     // Every card drawn now that folds, for Collapse all: it folds them all
-    // while one is open, else opens them all, through the fold memory.
-    const folds: FoldId[] = tile === undefined
-      ? (host === undefined ? [] : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
-      : (tileHost === undefined ? [] : tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)));
+    // while one is open, else opens them all, through the fold memory. A
+    // tile's sections never fold (`renderTileInspector`), so a tile has none.
+    const folds: FoldId[] = tile === undefined && host !== undefined
+      ? [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD]
+      : [];
     const anyOpen = anySectionOpen(this.uiState, folds);
     const helpLabel = this.helpOn ? "Hide the help under the settings" : "Show the help under the settings";
     return html`
@@ -4418,20 +4554,16 @@ export class WaPageEditor extends LitElement {
    */
   private renderPageCards(page: WatchPage, host: WatchPagesEditorHost | undefined): TemplateResult {
     const id = watchPageId(page);
-    // The cards in the inspector's columns as a tile's are, in order, each
-    // with about how tall it stands open; the line on reaching a tile and
-    // Delete page under them, across.
-    const cards: { card: TemplateResult | typeof nothing; weight: number }[] = [
-      { card: this.renderDevicesCard(), weight: 2 },
-      { card: this.renderRulesCard(page), weight: 6 },
-      { card: host === undefined ? nothing : renderPageLookCard(host), weight: 6 },
-      { card: this.renderOnWatchCard(page, host), weight: 1 },
-      { card: host === undefined ? nothing : this.renderSwitcherCard(host), weight: 4 },
-    ];
-    const runs = splitColumns(cards.filter((c) => c.card !== nothing), (c) => c.weight, this.inspectorCols);
+    // The cards in order, in as many columns as the inspector's width holds
+    // (`.pe-insp-cols`, pure CSS); the line on reaching a tile and Delete
+    // page under them, across.
     return html`<div class="pe-page-insp">
-      <div class="pe-insp-cols" style=${`--pe-cols:${runs.length}`}>
-        ${runs.map((run) => html`<div class="pe-insp-col">${run.map((c) => c.card)}</div>`)}
+      <div class="pe-insp-cols">
+        ${this.renderDevicesCard()}
+        ${this.renderRulesCard(page)}
+        ${host === undefined ? nothing : renderPageLookCard(host)}
+        ${this.renderOnWatchCard(page, host)}
+        ${host === undefined ? nothing : this.renderSwitcherCard(host)}
       </div>
       ${this.renderNoTileCard(page)}
       <div class="pe-page-acts">
@@ -4597,10 +4729,10 @@ export class WaPageEditor extends LitElement {
   };
 
   /**
-   * The selected tile's cards: its pinned Name, its place and size as the
-   * Size card (handed to the tile settings so it folds and looks as the
-   * others do), then the tile settings' own cards, and Delete tile under the
-   * last.
+   * The selected tile's settings: the head card (the live tile, Name,
+   * Preview as, Arrange), then the tile settings' four groups with its place
+   * and size as Layout's Size (handed in, so it looks as the other sections
+   * do), and Delete tile under them.
    */
   private renderTileCard(page: WatchPage, tile: WatchPageTile): TemplateResult {
     const rect = watchTileRect(tile);
@@ -4654,18 +4786,16 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    const runs = host === undefined ? undefined : tileInspectorColumnRuns(tileInspectorSections(host), this.inspectorCols, tileHeadWeight(host));
-    // The head card and the group line open the first column, so the other
-    // columns' cards start at the top.
-    const head = host === undefined ? nothing : html`${renderTileHead(host, {
+    // The head card and the group line stand over the four groups (Look,
+    // Text, Tap, Layout), which lay themselves out by the inspector's width.
+    const head = host === undefined ? nothing : html`<div class="pe-tile-head">${renderTileHead(host, {
         picture: this.renderTileHeadPicture(page, tile),
         previewAs: this.tilePreviewAs,
         setPreviewAs: (as) => { this.tilePreviewAs = as; },
-      })}${off ? nothing : renderTileGroupLine(host, this.groupActions)}`;
+      })}${off ? nothing : renderTileGroupLine(host, this.groupActions)}</div>`;
     return html`<div class="pe-tile-insp">
-      ${host === undefined || runs === undefined ? head : html`<div class="pe-insp-cols" style=${`--pe-cols:${runs.length}`}>
-        ${runs.map((sections, i) => html`<div class="pe-insp-col" data-col=${String(i + 1)}>${i === 0 ? head : nothing}${renderTileSettings(host, { sections, size })}</div>`)}
-      </div>`}
+      ${head}
+      ${host === undefined ? nothing : renderTileInspector(host, { size })}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button></div>
     </div>`;
@@ -4886,15 +5016,65 @@ export class WaPageEditor extends LitElement {
     .pe-muted { color: var(--wa-muted); font-size: 13px; }
     .pe-warn { color: var(--wa-amber); font-size: 13px; font-weight: 600; }
 
-    /* The bar's buttons with a glyph and words (the way back) on one line,
-       as the panel's own bar draws them. */
-    .wa-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-    .wa-bar button.tb-btn svg.ui-icon { width: 14px; height: 14px; }
-    /* Stacked, the way back stays first on the first line, not under it. */
-    .wa-bar.stacked > button.tb-btn.tb-back { order: 0; }
-    .wa-bar button.tb-btn:disabled, .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
-    .wa-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
-    .wa-bar .pop-menu .row:disabled:hover { background: transparent; }
+    /* The editor bar (renderTopBar): one row the mock's 58px tall, All
+       pages and the page picker at the left, the devices after them, and
+       Undo, Redo, the save status, ··· and Help at the right. It wraps on a
+       narrow editor, the right-hand group keeping together. */
+    .wa-bar.pe-bar { gap: 6px 10px; min-height: 58px; padding: 6px 16px; margin-bottom: 0; }
+    .pe-bar button.tb-btn { height: 32px; border-radius: 8px; }
+    .pe-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
+    .pe-bar button.tb-btn svg.ui-icon { width: 14px; height: 14px; }
+    /* All pages, Undo and Redo are quiet: no outline until the pointer is on them. */
+    .pe-bar button.tb-btn.pe-bar-back, .pe-bar button.tb-btn.icon { border-color: transparent; background: transparent; color: var(--wa-label, var(--wa-ink)); }
+    .pe-bar button.tb-btn.pe-bar-back:hover, .pe-bar button.tb-btn.icon:hover:not(:disabled) { background: var(--wa-hover); color: var(--wa-ink); }
+    .pe-bar button.tb-btn.icon { width: 34px; padding: 0; display: inline-grid; place-items: center; }
+    .pe-bar button.tb-btn.icon svg.ui-icon { width: 17px; height: 17px; }
+    .pe-bar-div { flex: none; width: 1px; height: 24px; background: var(--wa-line-strong); }
+    .pe-bar-undo { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+    .pe-bar button.tb-btn:disabled { opacity: .4; cursor: default; }
+    .pe-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
+    .pe-bar .pop-menu .row:disabled:hover { background: transparent; }
+    /* The ··· menu hangs from its own button, not the bar's right edge. */
+    .pe-top-menu { position: relative; display: inline-flex; flex: none; }
+    .pe-menu { min-width: 240px; }
+    .pe-menu-facts {
+      display: flex; flex-direction: column; gap: 2px; max-width: 320px; padding: 7px 10px 8px; margin-bottom: 3px;
+      border-bottom: 1px solid var(--wa-line); font-size: 12px; line-height: 1.35; color: var(--wa-muted); white-space: normal;
+    }
+    .pe-menu-facts > b { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); }
+    .pe-bar button.tb-btn.pe-bar-help.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); color: var(--wa-ink); }
+    /* Saved: quiet, in green with a check. Unsaved: the words in orange
+       with a dot, and Save in blue, the bar's one loud button. */
+    .pe-saved { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 0 4px; font-size: 12.5px; color: var(--wa-green); white-space: nowrap; }
+    .pe-saved svg.ui-icon { width: 14px; height: 14px; }
+    .pe-unsaved { display: inline-flex; align-items: center; gap: 7px; flex: none; font-size: 12.5px; font-weight: 500; color: var(--wa-hue-orange); white-space: nowrap; }
+    .pe-unsaved-dot { display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .wa-bar.pe-bar button.primary.save.pe-save {
+      height: 32px; min-height: 32px; padding: 0 16px; border-radius: 9px; border: 0; box-shadow: none;
+      background: var(--wa-hue-blue); color: #fff; font-size: 13px; font-weight: 600; opacity: 1;
+    }
+    .wa-bar.pe-bar button.primary.save.pe-save:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 86%, #fff); }
+    .wa-bar.pe-bar button.primary.save.pe-save:focus-visible { box-shadow: var(--wa-ring); }
+    .wa-bar.pe-bar button.primary.save.pe-save:disabled { opacity: .7; cursor: progress; }
+    /* The devices after the picker (renderBarTicks): "On", the ticked chips
+       a size up from the cards', and the dashed fold with the rest. The
+       fold is always shown here, whatever the width: the chip row only
+       folds itself inside the old device strip. */
+    .pe-bar-on { position: relative; display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; }
+    .pe-bar-on-l { flex: none; font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
+    .pe-bar-on.none .pe-bar-on-l { color: var(--wa-amber); font-weight: 600; }
+    .pe-bar-on .lt-ticks { flex-direction: row; align-items: center; min-width: 0; }
+    .pe-bar-on .lt-chips { gap: 6px; }
+    .pe-bar-on .lt-chip { height: 28px; padding: 0 11px 0 9px; font-size: 12.5px; border-color: color-mix(in srgb, var(--dc, var(--wa-muted)) 55%, transparent); }
+    .pe-bar-on .lt-chip.add { border-color: var(--wa-line-strong); }
+    .pe-bar-on .lt-box { width: 12px; height: 12px; }
+    .pe-bar-on wa-chip-row > .lt-chip.off:not(.add) { display: none; }
+    .pe-bar-on wa-chip-row > .lt-fold { display: inline-flex; }
+    .pe-bar-on .lt-fold-pop .lt-chip { height: 26px; }
+    /* An untick's question and a refusal hang under the bar, over the stage. */
+    .pe-bar-on :is(.lt-ask, .lt-note) { position: absolute; top: calc(100% + 10px); left: 0; z-index: 45; width: max-content; max-width: min(460px, 80vw); }
+    .pe-bar-on .lt-note { padding: 7px 10px; border-radius: 8px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop); }
+    .pe-bar-on .pe-lib-hint { max-width: 280px; font-size: 12px; line-height: 1.3; color: var(--wa-muted); }
     .pe-top > .pe-note { margin: 10px var(--cf-pad, 16px) 0; }
 
     .pe-note {
@@ -4929,15 +5109,17 @@ export class WaPageEditor extends LitElement {
     }
     .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
     .pe-layout.pe-wide > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
-    /* The canvas card fills its column: its head and the tool strip stay put,
-       and only the watch scrolls between them, with a thin bar of its own,
+    /* The canvas card fills its column: Preview on and the dock stay put,
+       and only the device scrolls between them, with a thin bar of its own,
        so a long page can still be dragged down its length. The column itself
-       scrolls only on a screen too short for the card. */
+       scrolls only on a screen too short for the card. The stage's body is
+       as tall as the column leaves it whatever it holds (a basis of 0), so
+       Fit can fill it without the drawing ever growing the box it fits. */
     .pe-layout.pe-wide > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
-    .pe-layout.pe-wide > .column.canvas > .card.canvas-card.pe-canvas { flex: 1 1 auto; min-height: 420px; }
+    .pe-layout.pe-wide > .column.canvas > .card.canvas-card.pe-canvas { flex: 1 1 0; min-height: 420px; }
     .pe-layout.pe-wide .pe-canvas > :not(.pe-stage-area) { flex: none; }
-    .pe-layout.pe-wide .pe-stage-area { flex: 1 1 auto; min-height: 0; }
-    .pe-layout.pe-wide .pe-stage-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.pe-wide .pe-stage-area { flex: 1 1 0; min-height: 0; }
+    .pe-layout.pe-wide .pe-stage-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
     .pe-layout.pe-wide .pe-stage-area > :not(.pe-stage-body) { flex: none; }
     /* One column under 820px: the page and its tiles, then the settings.
        Nothing sticks there: a sticky inspector slid over what was under it
@@ -4956,39 +5138,21 @@ export class WaPageEditor extends LitElement {
       grid-column: auto; position: static; max-height: none; overflow: visible;
     }
 
-    /* The page's head over both columns: All pages, the page picker, and the
-       devices at the right. It wraps on a narrow editor, the devices going
-       under the picker. Above the columns, so the picker's popover lies over
-       the stage and the inspector. */
-    .pe-head {
-      flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px;
-      margin: 0 0 10px; position: relative; z-index: 6;
-    }
-    .pe-btn.pe-head-back { min-height: 40px; padding: 0 14px 0 10px; font-weight: 600; }
-    .pe-head-ticks { display: flex; flex: 0 1 auto; min-width: 0; margin-left: auto; }
-    .pe-head-ticks > .lib-on.over-stage { margin: 0; flex: 0 1 auto; }
-
-    /* The page picker: one large button, the page's picture, its name big
-       enough to read across the room on a 4K screen at 100%, and the blue
-       Switch page at its end. */
-    .pe-pp-wrap { position: relative; flex: 0 1 560px; min-width: 0; }
+    /* The page picker in the bar: the page's picture, its name and its
+       count under it, and a chevron, quiet until the pointer is on it. */
+    .pe-pp-wrap { position: relative; flex: 0 1 auto; min-width: 0; max-width: 360px; }
     .pe-pp {
-      display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px; margin: 0;
-      padding: 7px 9px 7px 7px; border: 1.5px solid var(--wa-line-strong); border-radius: 14px;
-      background: var(--wa-card); color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer;
+      display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; margin: 0;
+      padding: 4px 10px 4px 5px; border: 1px solid transparent; border-radius: 10px;
+      background: none; color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer;
     }
-    .pe-pp:hover, .pe-pp[aria-expanded="true"] { border-color: var(--wa-accent); }
+    .pe-pp:hover, .pe-pp[aria-expanded="true"] { background: var(--wa-hover); border-color: var(--wa-line-strong); }
     .pe-pp:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pe-pp-text { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1 1 auto; min-width: 0; }
-    .pe-pp-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .pe-pp-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; flex: 0 1 auto; min-width: 0; }
     .pe-pp-name, .pe-pp-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pe-pp-name { font-size: 18px; font-weight: 700; line-height: 1.15; }
-    .pe-pp-sub { font-size: 12.5px; color: var(--wa-muted); }
-    .pe-pp-switch {
-      display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; padding: 8px 10px 8px 13px;
-      border-radius: 9px; background: var(--wa-primary-bg); color: var(--wa-primary-ink); font-size: 13px; font-weight: 600; white-space: nowrap;
-    }
-    .pe-pp-chev { display: inline-flex; }
+    .pe-pp-name { font-size: 15px; font-weight: 650; line-height: 1.2; }
+    .pe-pp-sub { font-size: 12px; color: var(--wa-muted); }
+    .pe-pp-chev { display: inline-flex; flex: none; color: var(--wa-muted); }
     .pe-pp-chev svg.ui-icon { width: 14px; height: 14px; transition: transform .15s ease-out; }
     .pe-pp[aria-expanded="true"] .pe-pp-chev svg.ui-icon { transform: rotate(180deg); }
     /* The popover: under the button, as wide as four cards, never past the
@@ -5081,32 +5245,57 @@ export class WaPageEditor extends LitElement {
     /* Under the pointer, or reached by keyboard. Not after a click: the
        switch keeps focus then, and the hint stayed up until a click away. */
     .pe-tip:hover::after, .pe-tip:has(:focus-visible)::after { opacity: 1; visibility: visible; }
-    /* The preview device in the canvas head: plain words, as the shape's. */
-    .cv-shape.pe-watch-crumb { color: var(--wa-ink); font-weight: 500; }
-    /* The tool strip rides in the flow at the top, so the area needs no head
-       room above it; the 64px it once kept left a band of empty canvas
-       between the page bar and the strip. */
-    .pe-stage-area { position: relative; padding: 12px 12px 12px; gap: 10px; }
+    /* The stage, top to bottom: Preview on centred, the help while Help is
+       on, the device in the middle at the size Fit gives it (filling the
+       box, stage-fit.ts), and the dock at the foot with the picked tile's
+       states floating over it. */
+    .canvas-card.lit .stage-area.pe-stage-area { position: relative; padding: 14px 12px 14px; gap: 8px; }
     /* A phone: the watch at its fit size needs every pixel of the width. */
     @container (max-width: 460px) {
-      .pe-stage-area { padding-inline: 4px; }
+      .canvas-card.lit .stage-area.pe-stage-area { padding-inline: 4px; }
     }
-    /* The picture keeps its size and the stage scrolls sideways under it on
-       a screen narrower than the watch drawn at this scale. */
-    /* "safe": a watch wider than the stage starts at its left edge, so all
-       of it can be scrolled to, instead of hanging off both sides. */
-    .pe-stage-body { display: flex; justify-content: safe center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
-    .pe-stage-area > .under {
-      flex-direction: column; gap: 4px; align-self: center; max-width: 460px;
-      font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));
+    .pe-stage-top { display: flex; justify-content: center; flex: none; }
+    .pe-seg {
+      display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px;
+      background: var(--wa-field, var(--wa-panel)); border: 1px solid var(--wa-line);
     }
-    /* The watch's size and color are facts, not a menu. */
-    .stage-tools button.tb.pe-case { cursor: default; }
-    .stage-tools button.tb.pe-case:hover { background: transparent; }
-    .stage-tools button.tb.pe-case > svg.ui-icon { width: 14px; height: 14px; }
-    /* The tool strip lets the Live preview switch's hint hang below it, over
-       the stage and its tiles. */
-    .pe-stage-area > .stage-tools { overflow: visible; z-index: 8; }
+    .pe-seg-btn {
+      margin: 0; padding: 5px 14px; border: 0; border-radius: 7px; background: none; color: var(--wa-muted);
+      font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer;
+    }
+    .pe-seg-btn:hover { color: var(--wa-ink); }
+    .pe-seg-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-seg-btn.on { background: var(--wa-seg-on, var(--wa-card)); color: var(--wa-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .35); cursor: default; }
+    /* The picture keeps its size and the stage scrolls under it when it is
+       bigger than the stage (a step past Fit, or a long page). "safe": a
+       watch wider or taller than the stage starts at its top left edge, so
+       all of it can be scrolled to, instead of hanging off both sides. The
+       foot's padding is room for the watch's reflection and for the tile's
+       states, which float over it; Fit counts it out (stage-fit.ts). */
+    .pe-stage-body {
+      display: flex; justify-content: safe center; align-items: safe center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden;
+    }
+    .canvas-card.lit .stage-area > .pe-stage-body { padding-bottom: 56px; margin-bottom: 0; }
+    .pe-stage-area > .under.pe-under {
+      display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; align-self: center; max-width: 520px;
+      font-size: 12px; font-weight: 400; line-height: 16px; text-align: center; color: var(--wa-hint, var(--wa-muted));
+    }
+    /* The dock: one floating pill centred at the stage's foot, in the flow
+       so it never covers the device, with the states to try floating just
+       over it. */
+    .pe-dock-area { position: relative; display: flex; justify-content: center; flex: none; min-width: 0; }
+    .pe-dock-area > .stage-tools.pe-dock {
+      position: relative; top: auto; z-index: 8; margin: 0; height: auto; min-height: 46px; width: max-content; max-width: calc(100% - 8px);
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; padding: 6px; overflow: visible;
+      border-radius: 14px; background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+      box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+    }
+    .pe-dock .pe-zoom-pct { min-width: 50px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--wa-ink); }
+    .pe-dock-area > .pe-try {
+      position: absolute; left: 50%; bottom: calc(100% + 10px); z-index: 9; transform: translateX(-50%);
+      width: max-content; max-width: calc(100% - 16px);
+    }
+    .pe-try > .vchip.vpill { background: var(--wa-card); box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop)); }
     /* The Live preview switch, sized as the strip's button words. */
     .stage-tools .pe-switch.pe-live { gap: 7px; height: 26px; padding: 0 8px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
     /* In the lit stage's pill: a 30px control with its own outline, a small
@@ -5193,6 +5382,20 @@ export class WaPageEditor extends LitElement {
       border: 1.5px dashed var(--pe-dash);
     }
     .pe-tile.faded > :not(.pe-hid-tag):not(.pe-spacer-word) { opacity: .38; }
+    /* A stage tile's look fades from one to the next (its color, glow,
+       state, edge, pattern, a state being tried) over a quarter second
+       rather than jumping. Only on its face, never on the tile's own box,
+       whose ring and drag shift answer the pointer at once; and only while
+       the screen says so (pe-fades: nothing dragged, the scale unchanged).
+       Not at all for a reader who asks the system for less motion. A part
+       of the face drawn new (another kind of look) still appears at once. */
+    @media (prefers-reduced-motion: no-preference) {
+      .pe-screen.pe-fades .pe-tile > :not(.pe-part),
+      .pe-screen.pe-fades .pe-tile > :not(.pe-part) * {
+        transition: background-color .25s ease, color .25s ease, border-color .25s ease, fill .25s ease, stroke .25s ease,
+          opacity .25s ease, filter .25s ease, box-shadow .25s ease, text-shadow .25s ease, transform .25s ease;
+      }
+    }
     /* The parts of the selected tile while its Arrangement is Free: a box
        over each, the picked one outlined thinly and dragged, the others
        picked with a click. */
@@ -5211,13 +5414,13 @@ export class WaPageEditor extends LitElement {
       padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .22);
       background: rgba(0, 0, 0, .78); color: #fff; font-size: 10px; font-weight: 600; line-height: 14px;
     }
-    /* + Add tile, under the watch: as wide as a watch, dashed, plain. */
+    /* + Add tile, first in the dock: the stage's one loud button, in blue. */
     .pe-stage-add {
-      display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: min(100%, 260px); min-height: 42px;
-      margin: 2px 0 0; padding: 0 14px; border: 1.5px dashed var(--wa-line-strong); border-radius: 14px;
-      background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 32px;
+      margin: 0; padding: 0 14px 0 11px; border: 0; border-radius: 9px;
+      background: var(--wa-hue-blue); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
     }
-    .pe-stage-add:hover:not(:disabled) { border-color: var(--wa-accent); background: var(--wa-panel); }
+    .pe-stage-add:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 86%, #fff); }
     .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pe-stage-add:disabled { opacity: .5; cursor: default; }
     .pe-stage-add svg.ui-icon { width: 15px; height: 15px; }
@@ -5293,13 +5496,24 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:focus:not(:disabled) { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-direction: column; }
-    /* The inspector's cards in columns, one to three as its measured width
-       holds (\`--pe-cols\`, set where they are drawn): a tile's under its head
-       card, the page's above the line and Delete page. The container also
-       lays out a tile's head (\`tileSettingsStyles\`). */
+    /* A tile's inspector: the head card, then the four groups, which lay
+       themselves out by the inspector's width (\`tileSettingsStyles\`). The
+       head keeps a card's width on a wide screen rather than a stretched
+       well. The container also lays out the head. */
     .pe-tile-insp { container: pe-tile / inline-size; display: flex; flex-direction: column; min-width: 0; }
-    .pe-insp-cols { display: grid; grid-template-columns: repeat(var(--pe-cols, 1), minmax(0, 1fr)); align-items: start; gap: 0 14px; }
-    .pe-insp-col { display: flex; flex-direction: column; min-width: 0; }
+    .pe-tile-head { max-width: 460px; }
+    /* The page's own cards in one to three columns by the inspector's own
+       width, pure CSS: a column balances by height and keeps the cards in
+       reading order, top to bottom then across, and never splits a card. */
+    .pe-insp-cols { column-count: 1; column-gap: 14px; }
+    .pe-insp-cols > * { break-inside: avoid; }
+    @container insp (min-width: 760px) { .pe-insp-cols { column-count: 2; } }
+    @container insp (min-width: 1080px) { .pe-insp-cols { column-count: 3; } }
+    /* The page's card headings read as a tile's sections do: sentence case,
+       13px semibold, no colored badge. They still fold, so they keep the
+       chevron. */
+    .pe-page-insp .sec-h h4 { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+    .pe-page-insp .sec-h .swatch { display: none; }
     .pe-head-tile { position: relative; display: block; flex: none; pointer-events: none; }
     /* With Free on, the head's live tile takes presses on its parts only. */
     .pe-head-tile.arr { --pe-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); }

@@ -74,15 +74,15 @@ async function editor(options: { complications?: Record<string, JsonObject[]> } 
   const page = () => (draft().document.pages as JsonObject[])[0]!;
   return {
     el, ha, watch, phone, owners, call, draft, page,
-    ticks: () => flat(call("renderPageTicks", page())),
+    ticks: () => flat(call("renderBarTicks", page())),
   };
 }
 
 describe("the page editor's devices, from the library", () => {
-  it("draws a tick per device over the stage, with no device locked as this one", async () => {
+  it("draws a tick per device in the editor bar, after a small On, with no device locked as this one", async () => {
     const { ticks } = await editor();
     const hall = ticks();
-    expect(hall).toMatch(/lib-on over-stage[\s\S]*Which devices do you want this on\?/);
+    expect(hall).toMatch(/class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>\s*<span class="pe-bar-on-l">On<\/span>/);
     expect(hall).toContain("Jesse's Watch");
     expect(hall).toContain("Jesse's iPhone");
     expect(hall).not.toContain("On this watch. Delete takes the page off it.");
@@ -99,14 +99,14 @@ describe("the page editor's devices, from the library", () => {
     const strip = ticks();
     expect(strip).toContain(`Jesse's Watch</span><em class="lt-skips" title=Jesse's Watch skips Map: only an iPhone shows it.>skips 1</em></button>`);
     expect(strip).not.toMatch(/Jesse's iPhone<\/span><em class="lt-skips"/);
-    // One strip, still: the count is inside the chip the row measures.
-    expect(strip.match(/lib-on over-stage/g)).toHaveLength(1);
+    // One row, still: the count is inside the chip.
+    expect(strip.match(/class="pe-bar-on[ "]/g)).toHaveLength(1);
     expect(strip.match(/<wa-chip-row/g)).toHaveLength(1);
   });
 
   it("says to save first for a page the library does not list yet", async () => {
     const { call } = await editor();
-    const text = flat(call("renderPageTicks", { id: U(999), name: "New", items: [] }));
+    const text = flat(call("renderBarTicks", { id: U(999), name: "New", items: [] }));
     expect(text).toContain("Save first, then tick a device to put the page there too.");
   });
 

@@ -187,13 +187,17 @@ export function saveStageLive(on: boolean, storage: ColumnStorage | undefined = 
   }
 }
 
-/** Where the stage's zoom is remembered: the scale the person stepped to, as
- * a number, or nothing while it fits. */
-export const STAGE_ZOOM_KEY = "wrist-assistant-panel.pages.zoom.v1";
-
 /** The scales the zoom buttons step through, pixels per point. The tool
- * strip shows each as a percent of the watch's own points: 100% to 200%. */
+ * strip shows each as a percent of the watch's own points: 100% to 200%.
+ * The status page and menu editors step through these, and read their own
+ * remembered zoom against them. */
 export const STAGE_ZOOM_STEPS: readonly number[] = [1, 1.25, 1.5, 2];
+
+/** The page editor's steps: further both ways, since its Fit fills the
+ * stage's height as well as its width (`stageFillZoom`), which on a 4K
+ * screen draws the watch near 300% and beside an iPhone on a laptop under
+ * 100%. A step from a fitted scale between two of these goes to the next. */
+export const PAGE_ZOOM_STEPS: readonly number[] = [0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
 /** The scale that fits: 150%, or 125% on a narrow screen. */
 export function stageFitZoom(narrow: boolean): number {
@@ -207,37 +211,24 @@ export function stageZoomLabel(scale: number): string {
 
 /** One step in from `scale`, or `scale` when it is the largest already. A
  * scale between two steps goes to the next one up. */
-export function stageZoomIn(scale: number): number {
-  return STAGE_ZOOM_STEPS.find((step) => step > scale + 1e-9) ?? scale;
+export function stageZoomIn(scale: number, steps: readonly number[] = STAGE_ZOOM_STEPS): number {
+  return steps.find((step) => step > scale + 1e-9) ?? scale;
 }
 
 /** One step out from `scale`, or `scale` when it is the smallest already. */
-export function stageZoomOut(scale: number): number {
-  return [...STAGE_ZOOM_STEPS].reverse().find((step) => step < scale - 1e-9) ?? scale;
+export function stageZoomOut(scale: number, steps: readonly number[] = STAGE_ZOOM_STEPS): number {
+  return [...steps].reverse().find((step) => step < scale - 1e-9) ?? scale;
 }
 
-/** The zoom the person stepped to last time, or undefined (fit) when there
- * is none, it is not one of the steps, or the browser keeps nothing. */
-export function loadStageZoom(storage: ColumnStorage | undefined = browserStorage()): number | undefined {
-  try {
-    const raw = storage?.getItem(STAGE_ZOOM_KEY);
-    if (raw === null || raw === undefined || raw === "") return undefined;
-    const scale = Number(raw);
-    return STAGE_ZOOM_STEPS.includes(scale) ? scale : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Remember the zoom; undefined (fit) is kept as an empty value, so the next
- * visit fits whatever width it opens at. */
-export function saveStageZoom(scale: number | undefined, storage: ColumnStorage | undefined = browserStorage()): void {
-  try {
-    storage?.setItem(STAGE_ZOOM_KEY, scale === undefined ? "" : String(scale));
-  } catch {
-    // Private windows and full storage keep the zoom for this visit only.
-  }
-}
+/**
+ * Where the page editor once remembered its zoom. It is no longer read or
+ * written: the editor opens on Fit every time, and a step holds only while
+ * it is open. A kept 150% (its old Fit, written by a click on a step) drew a
+ * small watch in a big stage on every visit until % was clicked, long after
+ * Fit had learned to fill a 4K stage. The other editors keep zooms under
+ * keys of their own, never this one.
+ */
+export const STAGE_ZOOM_KEY = "wrist-assistant-panel.pages.zoom.v1";
 
 /** The index a row dragged from `from` takes in the list without itself,
  * for a drop at `drop` (as `listDropIndex` gives it). */
