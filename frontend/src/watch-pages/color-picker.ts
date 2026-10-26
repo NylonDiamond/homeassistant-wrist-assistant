@@ -18,12 +18,17 @@
 // own gray, the tile's color, white) is its tooltip. Rainbow (◉) is no form
 // of its own: where the device cycles the key through every color it is the
 // last swatch, with the gradients where the key has a Gradient form, else
-// after the solid colors. This module only draws:
+// after the solid colors.
+//
+// Pointing at a swatch or a chip, or moving the focus to it, can try it on
+// the tile before it is picked (`trial`), and a picker over several picked
+// tiles that differ marks no swatch and says Mixed (`mixed`). This module only draws:
 // each caller keeps its own edits and its own typing bookkeeping (`wrap`),
 // so the page switcher, which never imports the tile settings, draws it too.
 
 import { type TemplateResult, html, nothing } from "lit";
 import { colorField, segField } from "../editors.js";
+import { MIXED_WORD } from "./multi-pick.js";
 import { type WatchColorModeChoice, sameWatchColor, watchColorEnds } from "./tile-settings-options.js";
 
 /** The Default chip's words, the same on every card. */
@@ -128,12 +133,32 @@ export interface ColorPickerView {
   more?: ColorMore;
   /** The custom box: the solid color it shows and its edit. */
   custom: { shown: string | undefined; pick(value: string | undefined): void };
+  /** The picked tiles differ here: no swatch, chip or form is on, and the
+   * heading (or the row, with none) says Mixed in grey. */
+  mixed?: boolean;
+  /** Pointing at a swatch or a chip tries it on the tile. */
+  trial?: ColorTrial;
   /** The caller's typing field around the custom box, which keeps what is
    * typed while it has focus and makes the run one undo step. */
   wrap(body: TemplateResult): TemplateResult;
 }
 
-/** A row of small round color buttons, `lead` (the Default chip) first. */
+/** Trying a color before it is picked: what pointing at a swatch or a chip,
+ * or focusing it, does (the edit its press makes, on a copy), and what
+ * leaving the row or a press does. */
+export interface ColorTrial {
+  /** Try the swatch `value` (Rainbow too), which the stage's pill calls
+   * `name`. */
+  swatch(value: string, name: string): void;
+  /** Try the Default chip, and the Tile color chip. */
+  default?(): void;
+  tile?(): void;
+  end(): void;
+}
+
+/** A row of small round color buttons, `lead` (the Default chip) first.
+ * With a `trial`, pointing at a swatch tries it and leaving the row ends
+ * the try; a press picks and ends it. */
 export function swatchRow(
   label: string,
   swatches: readonly string[],
@@ -141,45 +166,62 @@ export function swatchRow(
   pick: (color: string) => void,
   lead: TemplateResult | typeof nothing = nothing,
   tail: TemplateResult | typeof nothing = nothing,
+  trial?: ColorTrial,
 ): TemplateResult {
-  return html`<div class="ts-swatches" role="group" aria-label=${label}>
+  const leave = (e: Event) => {
+    if (trial === undefined) return;
+    // A focus move inside the row is not a leave.
+    const to = (e as FocusEvent).relatedTarget;
+    if (e.type === "focusout" && typeof Node !== "undefined" && to instanceof Node && (e.currentTarget as HTMLElement | null)?.contains(to)) return;
+    trial.end();
+  };
+  return html`<div class="ts-swatches" role="group" aria-label=${label}
+    @pointerleave=${trial === undefined ? nothing : leave} @focusout=${trial === undefined ? nothing : leave}>
     ${lead}
     ${swatches.map((value) => {
       const ends = watchColorEnds(value);
       if (ends === undefined) return nothing;
       const on = sameWatchColor(current, value);
       const name = ends.from === ends.to ? ends.from : `Gradient from ${ends.from} to ${ends.to}`;
+      const tryIt = trial === undefined ? nothing : () => trial.swatch(value, name);
       return html`<button type="button" class="ts-swatch ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         title=${name} aria-label=${name}
         style=${`--sw:linear-gradient(135deg, ${ends.from}, ${ends.to})`}
-        @click=${() => pick(value)}></button>`;
+        @pointerenter=${tryIt} @focus=${tryIt}
+        @click=${() => { pick(value); trial?.end(); }}></button>`;
     })}
     ${tail}
   </div>`;
 }
 
 /** The Rainbow swatch, drawn as the other swatches are. */
-function rainbowSwatch(on: boolean, pick: () => void): TemplateResult {
+function rainbowSwatch(on: boolean, pick: () => void, trial: ColorTrial | undefined): TemplateResult {
+  const tryIt = trial === undefined ? nothing : () => trial.swatch(COLOR_RAINBOW, COLOR_RAINBOW_LABEL);
   return html`<button type="button" class="ts-swatch ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
     title=${COLOR_RAINBOW_LABEL} aria-label=${COLOR_RAINBOW_LABEL}
     style=${`--sw:${RAINBOW_PAINT}`}
-    @click=${pick}></button>`;
+    @pointerenter=${tryIt} @focus=${tryIt}
+    @click=${() => { pick(); trial?.end(); }}></button>`;
 }
 
 /** The Default chip, at the head of the swatch row. */
-function defaultChip(d: NonNullable<ColorPickerView["default"]>, label: string | undefined): TemplateResult {
+function defaultChip(d: NonNullable<ColorPickerView["default"]>, label: string | undefined, trial: ColorTrial | undefined): TemplateResult {
+  const tryIt = trial?.default === undefined ? nothing : () => trial.default!();
   return html`<button type="button" class="pe-chip ts-color-default ${d.on ? "on" : ""}" aria-pressed=${d.on ? "true" : "false"}
     aria-label=${label === undefined ? COLOR_DEFAULT_LABEL : `${COLOR_DEFAULT_LABEL} ${label.toLowerCase()}`}
-    title=${d.title} @click=${d.pick}>${COLOR_DEFAULT_LABEL}</button>`;
+    @pointerenter=${tryIt} @focus=${tryIt}
+    title=${d.title} @click=${() => { d.pick(); trial?.end(); }}>${COLOR_DEFAULT_LABEL}</button>`;
 }
 
 /** The Tile color chip's words. */
 export const COLOR_TILE_LABEL = "Tile color";
 
 /** The Tile color chip, after Default. */
-function tileChip(t: NonNullable<ColorPickerView["tile"]>): TemplateResult {
+function tileChip(t: NonNullable<ColorPickerView["tile"]>, trial: ColorTrial | undefined): TemplateResult {
+  const tryIt = trial?.tile === undefined ? nothing : () => trial.tile!();
   return html`<button type="button" class="pe-chip ts-color-tile ${t.on ? "on" : ""}" aria-pressed=${t.on ? "true" : "false"}
-    title=${t.title} @click=${t.pick}>${COLOR_TILE_LABEL}</button>`;
+    @pointerenter=${tryIt} @focus=${tryIt}
+    title=${t.title} @click=${() => { t.pick(); trial?.end(); }}>${COLOR_TILE_LABEL}</button>`;
 }
 
 /** The More or Less pill, after the swatches and Rainbow. */
@@ -191,24 +233,32 @@ function morePill(more: ColorMore): TemplateResult {
 
 /** The picker: heading, Form, Default with the swatches, Rainbow and More, Custom. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
+  const mixed = v.mixed === true;
+  // Mixed marks nothing: no color matches this.
+  const color = mixed ? undefined : v.color;
   const form = v.form === undefined || v.form.forms.length < 2 ? undefined : v.form;
-  // A rainbow is one of the gradients.
-  const shown: WatchColorModeChoice = form?.shown === "rainbow" ? "gradient" : (form?.shown ?? "none");
-  const rainbowOn = sameWatchColor(v.color, COLOR_RAINBOW);
-  const rainbow = v.rainbow !== undefined && (form === undefined || !form.forms.includes("gradient") || shown === "gradient")
-    ? rainbowSwatch(rainbowOn, () => v.pickSwatch(COLOR_RAINBOW))
+  // A rainbow is one of the gradients. The swatches stay in the form the
+  // caller drew them in; only the switch shows no form while Mixed.
+  const drawn: WatchColorModeChoice = form?.shown === "rainbow" ? "gradient" : (form?.shown ?? "none");
+  const shown: WatchColorModeChoice = mixed ? "none" : drawn;
+  const rainbowOn = sameWatchColor(color, COLOR_RAINBOW);
+  const rainbow = v.rainbow !== undefined && (form === undefined || !form.forms.includes("gradient") || drawn === "gradient")
+    ? rainbowSwatch(rainbowOn, () => v.pickSwatch(COLOR_RAINBOW), v.trial)
     : nothing;
   const note = rainbowOn ? v.rainbow?.note : undefined;
-  const { shown: swatches, hidden } = colorSwatchesShown(v.swatches, v.color, v.more);
+  const { shown: swatches, hidden } = colorSwatchesShown(v.swatches, color, v.more);
   const tail = html`${rainbow}${hidden > 0 && v.more !== undefined ? morePill(v.more) : nothing}`;
+  const word = html`<em class="pc-mixed">${MIXED_WORD}</em>`;
+  const chips = html`${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? form?.title, v.trial)}${
+    v.tile === undefined ? nothing : tileChip(mixed ? { ...v.tile, on: false } : v.tile, v.trial)}`;
   return html`
-    ${v.label === undefined ? nothing : html`<div class="ts-sub-h"><span>${v.label}</span></div>`}
+    ${v.label === undefined ? nothing : html`<div class="ts-sub-h"><span>${v.label}</span>${mixed ? word : nothing}</div>`}
     ${form === undefined
       ? nothing
       : segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
           if (f === "solid" || f === "gradient") form.pick(f);
         })}
-    <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, v.color, v.pickSwatch, html`${v.default === undefined ? nothing : defaultChip(v.default, v.label ?? form?.title)}${v.tile === undefined ? nothing : tileChip(v.tile)}`, tail)}</div>
+    <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, color, v.pickSwatch, chips, tail, v.trial)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
     ${v.wrap(html`<div class="ts-no-alpha">${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
 }

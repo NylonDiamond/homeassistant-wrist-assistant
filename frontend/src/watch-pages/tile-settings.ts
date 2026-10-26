@@ -1,5 +1,5 @@
 // The selected tile's settings. The page editor's inspector stands them in
-// four group panels under its head card, Look, Text, Tap and Layout, each
+// four group panels under its head strip, Look, Text, Tap and Layout, each
 // section under a calm heading (`renderTileInspector`); a smart page rule's
 // style draws them as folding section cards (`renderTileSettings`,
 // `sectionCard`, editor-chrome.ts). Place and size (rows the page editor
@@ -78,7 +78,8 @@ import {
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
-import { type ColorMore, colorMore, colorPickerView } from "./color-picker.js";
+import { type ColorMore, type ColorTrial, colorMore, colorPickerView } from "./color-picker.js";
+import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
@@ -110,7 +111,7 @@ import {
 import { watchShowWhenTemplateRender } from "./app-model.js";
 import { setWatchEditorLiveCameras, watchCameraRows, watchCameraStreamsFrom, watchEditorLiveCameras } from "./camera-live.js";
 import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, isVirtualTileKind, tileEntityId, tileKind, tileKindLabel, watchPageId, watchPageName, watchPagesOf } from "./model.js";
-import { type WatchTilePreviewAs, watchValueLabelStyle } from "./preview.js";
+import { watchValueLabelStyle } from "./preview.js";
 import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
@@ -210,23 +211,28 @@ import {
   watchTileTextSettings,
 } from "./tile-settings-model.js";
 import {
+  type ChoiceTrial,
   type PictureChoiceSize,
   PATTERN_GROUND,
   barSample,
   borderSample,
   designSample,
+  endTileTry,
   lineStyleLine,
+  mixedWord,
   patternSwatch,
   pictureChoice,
   pictureChoiceStyles,
   thicknessLine,
   tilePictures,
+  tileTrial,
   tryMenuField,
+  tryTileEdit,
   valueSample,
   watchTileIn,
   weightSample,
 } from "./picture-choice.js";
-import { renderArrangeHead } from "./arrange-card.js";
+import { arrangeResetEdit, renderArrangeSection } from "./arrange-card.js";
 import { arrangeFreeOn, arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
@@ -400,7 +406,10 @@ export function dropStaleTyping(host: TileSettingsHost): void {
 /**
  * One edit. `reason` refuses it before it is tried, with the reason shown
  * by the field; a setter that returns the document it was given changes
- * nothing. `typing` makes a run of edits from one field one undo step.
+ * nothing. `typing` makes a run of edits from one field one undo step. With
+ * several tiles picked, `make` runs once per picked tile with the host
+ * pointed at it, so it must read the tile, its id and its values from the
+ * host when it runs, never from the draw.
  */
 export function commit(
   host: TileSettingsHost,
@@ -420,7 +429,9 @@ export function commit(
   }
   const had = host.uiState.delete(note);
   const typing = options.typing === true && !fromDot;
-  const next = make(host.document);
+  // With several tiles picked, the edit is made on each of them, as one
+  // step (`acrossPicked`).
+  const next = acrossPicked(host, make)(host.document);
   if (next === host.document) {
     if (had) host.requestUpdate();
     return;
@@ -563,6 +574,52 @@ export function colorMoreOf(host: Pick<TileSettingsHost, "uiState" | "requestUpd
   return colorMore(host.uiState, `${KEY}:${setting}`, () => host.requestUpdate());
 }
 
+// ── several tiles picked ─────────────────────────────────────────────────
+
+/** A menu's value while the picked tiles differ: a stored choice, so a pick
+ * of it is never written (`isWatchStoredChoice`). */
+const MIXED_CHOICE = "stored:mixed";
+
+/** The menu with Mixed first and on, while the picked tiles differ. */
+function mixedMenu(menu: WatchMenu, mixed: boolean): WatchMenu {
+  return mixed ? { ...menu, selected: MIXED_CHOICE, options: [{ value: MIXED_CHOICE, label: MIXED_WORD, disabled: true }, ...menu.options] } : menu;
+}
+
+/** A row whose picked tiles differ: its title says Mixed in grey, and the
+ * number it shows is the primary tile's, so it is drawn faint (CSS,
+ * `.ts-mixed-f`). */
+function mixedRow(mixed: boolean, body: TemplateResult): TemplateResult {
+  return mixed ? html`<div class="ts-mixed-f">${body}</div>` : body;
+}
+
+/** A switch, or while the picked tiles differ an indeterminate one with
+ * Mixed in its title; a press sets every tile on. */
+function checkRow(label: string, value: boolean, mixed: boolean, set: (on: boolean) => void): TemplateResult {
+  if (!mixed) return checkField(label, value, set);
+  return html`<label class="field check"><span>${label} ${mixedWord()}</span><input type="checkbox" .checked=${false} .indeterminate=${true}
+    @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} /></label>`;
+}
+
+/** The trial of a color picker: each swatch and chip tried through the edit
+ * its press makes (`tryTileEdit`), the pill reading "`name`: color". */
+function colorTrial(
+  host: TileSettingsHost,
+  name: string,
+  edits: {
+    swatch: (value: string) => (d: WatchPagesDocument) => WatchPagesDocument;
+    default?: (d: WatchPagesDocument) => WatchPagesDocument;
+    tile?: (d: WatchPagesDocument) => WatchPagesDocument;
+  },
+): ColorTrial {
+  const { default: def, tile } = edits;
+  return {
+    swatch: (value, label) => tryTileEdit(host, edits.swatch(value), `${name}: ${label}`),
+    ...(def === undefined ? {} : { default: () => tryTileEdit(host, def, `${name}: Default`) }),
+    ...(tile === undefined ? {} : { tile: () => tryTileEdit(host, tile, `${name}: Tile color`) }),
+    end: () => endTileTry(host),
+  };
+}
+
 /** A section's Reset: a quiet button with the undo glyph, not a link, so it
  * reads as something to press rather than a line of text. */
 export function resetButton(text: string, title: string, action: () => void): TemplateResult {
@@ -614,10 +671,13 @@ function colorAtDefault(host: TileSettingsHost, color: string | undefined, defau
 /** What a caller hands `renderTileSettings` beyond its host: the sections to
  * draw instead of the tile's own (a smart page rule's style, or a page's tile
  * with its Size first), and the Size section's rows, which only such a caller
- * has, with whether they hold a value of their own (its changed dot). */
+ * has, with whether they hold a value of their own (its changed dot), and
+ * the large live tile the Arrangement section's parts are dragged on in
+ * Free, which only the page editor draws. */
 export interface TileSettingsExtras {
   sections?: readonly WatchTileSettingsSection[];
   size?: { summary: () => string; body: () => TemplateResult; changed?: () => boolean };
+  arrangePicture?: () => TemplateResult | typeof nothing;
 }
 
 /** The sections a page's selected tile gets in the inspector: its place and
@@ -627,8 +687,8 @@ export function tileInspectorSections(host: TileSettingsHost): WatchTileSettings
   return ["size", ...tileSections(host)];
 }
 
-/** Whether the head card offers Arrange: a tile One Look draws with its own
- * icon, name and state. */
+/** Whether Layout offers the Arrangement section: a tile One Look draws
+ * with its own icon, name and state. */
 export function tileArrangeShown(host: TileSettingsHost): boolean {
   return oneLook(host) && host.domainStyle !== true && arrangeOffered(host.tile);
 }
@@ -866,8 +926,10 @@ export type TileInspectorGroup = "look" | "text" | "tap" | "layout";
  * each stands under its own heading and its Tap animation goes to Tap:
  * `color`, `icon` (the symbol, the state icons, the icon's size and shadow),
  * `glow`, `whenOff` (Dim when off, Animate while on) and `tapAnimation`.
+ * One is no settings section: `arrange`, the tile's Arrangement
+ * (`arrange-card.ts`), in Layout after Size.
  */
-export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation";
+export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation" | "arrange";
 
 /**
  * Where each part goes, as one table, in reading order. What a kind's own
@@ -877,6 +939,7 @@ export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "col
  * extras of a watch's editor close Look, as the aside they are. What a tap
  * does is Tap: a link's page, an HTTP action or status page and the reply
  * of its request, then the action, the tap's animation and Show tile.
+ * Layout is the tile's size and place, then where its parts sit in it.
  */
 export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
   ["removed", "look"],
@@ -900,6 +963,7 @@ export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileIn
   ["tapAnimation", "tap"],
   ["visibility", "tap"],
   ["size", "layout"],
+  ["arrange", "layout"],
 ];
 
 /** Each group's title and its one grey line. */
@@ -907,8 +971,7 @@ export const TILE_INSPECTOR_GROUP_WORDS: Readonly<Record<TileInspectorGroup, { t
   look: { title: "Look", description: "Color, icon, glow, background, border" },
   text: { title: "Text", description: "Name, state, state bar" },
   tap: { title: "Tap", description: "What it does, when it shows" },
-  // The arrangement sits under the live tile in the head.
-  layout: { title: "Layout", description: "Size and place" },
+  layout: { title: "Layout", description: "Size, arrangement" },
 };
 
 /** The heading of each part that is not titled by its kind. */
@@ -920,6 +983,7 @@ const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
   tapAnimation: "Tap animation",
   text: "Name",
   visibility: "Show tile",
+  arrange: "Arrangement",
 };
 
 /** The groups of the tile on `host`, each with its parts in reading order;
@@ -937,6 +1001,8 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
         return sections.includes("icon") && glowOffered(host);
       case "whenOff":
         return sections.includes("icon") && whenOffShown(host);
+      case "arrange":
+        return tileArrangeShown(host);
       default:
         return sections.includes(part);
     }
@@ -945,6 +1011,66 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
   return groups
     .map((group) => ({ group, parts: TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && has(p)).map(([p]) => p) }))
     .filter((g) => g.parts.length > 0);
+}
+
+/** The parts several picked tiles are edited in together: those whose rows
+ * each write one value of the tile's own look, the same on any kind. The
+ * rest (what a kind's own task shows, the entity, the tap's action, Show
+ * tile, the size and the arrangement) are one tile's. */
+const PICKED_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>([
+  "color", "icon", "glow", "whenOff", "background", "border", "text", "state", "tapAnimation",
+]);
+
+/** The parts the Icon and color section is split into. */
+const ICON_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>(["color", "icon", "glow", "whenOff", "tapAnimation"]);
+
+/** The grey line a group carries for its parts left out while several tiles
+ * are picked. */
+export const PICKED_HIDDEN_NOTE = "Shown when one tile is picked";
+
+/**
+ * The groups and parts of the inspector while several tiles are picked: a
+ * part only when every picked tile has it (`tileInspectorParts` of each) and
+ * it is one several tiles share (`PICKED_PARTS`); State only for tiles of
+ * one kind, whose rows are the same. `hidden` names, per group, the parts
+ * some picked tile has that are left out, for the group's grey line. With one
+ * tile, its own groups and nothing hidden.
+ */
+export function pickedInspectorParts(host: TileSettingsHost): {
+  groups: { group: TileInspectorGroup; parts: TileInspectorPart[] }[];
+  hidden: Map<TileInspectorGroup, TileInspectorPart[]>;
+} {
+  const pick = host.picked;
+  if (pick === undefined) return { groups: tileInspectorParts(host), hidden: new Map() };
+  const each = pick.ids.map((id) => pick.as(id, () => ({
+    parts: tileInspectorParts(host).flatMap((g) => g.parts),
+    // A part One Look does not draw on this tile (a camera showing its
+    // picture): left out, rather than greyed for some tiles only.
+    off: (part: TileInspectorPart) => oneLook(host) && oneLookSectionOff(host.tile, ICON_PARTS.has(part) ? "icon" : part) !== undefined,
+  })));
+  const kinds = new Set(pick.tiles.map((t) => tileKind(tileEntityId(t))));
+  const shared = (part: TileInspectorPart): boolean =>
+    PICKED_PARTS.has(part) && (part !== "state" || kinds.size === 1)
+    && each.every((t) => t.parts.includes(part) && !t.off(part));
+  const groups: { group: TileInspectorGroup; parts: TileInspectorPart[] }[] = [];
+  const hidden = new Map<TileInspectorGroup, TileInspectorPart[]>();
+  for (const group of ["look", "text", "tap", "layout"] as const) {
+    const any = TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && each.some((t) => t.parts.includes(p))).map(([p]) => p);
+    const parts = any.filter(shared);
+    if (parts.length > 0) groups.push({ group, parts });
+    const left = any.filter((p) => !parts.includes(p) && p !== "removed");
+    if (left.length > 0) hidden.set(group, left);
+  }
+  return { groups, hidden };
+}
+
+/** A part's Reset while several tiles are picked: made per tile when it
+ * runs, so each goes back to its own defaults (its kind's color and icon),
+ * or undefined when no picked tile has one. With one tile, its own. */
+function partResetEdit(host: TileSettingsHost, part: TileInspectorPart): ((d: WatchPagesDocument) => WatchPagesDocument) | undefined {
+  if (host.picked === undefined) return watchTileInspectorPartReset(host, part);
+  if (!somePicked(host, () => watchTileInspectorPartReset(host, part) !== undefined)) return undefined;
+  return (d) => watchTileInspectorPartReset(host, part)?.(d) ?? d;
 }
 
 /** The tile keys each split part of Icon and color edits, beside the icon
@@ -978,13 +1104,16 @@ const PART_READS: Readonly<Partial<Record<TileInspectorPart, (tile: WatchPageTil
  * Of Icon and color's parts, Color counts only away from the kind's color
  * (what Default writes), Icon for an icon away from the kind's or a size,
  * shadow, state icon or state color of its own, and Glow, When it is off and
- * Tap animation for a stored key that reads other than its absence.
+ * Tap animation for a stored key that reads other than its absence. The
+ * Arrangement counts while one is stored.
  */
 export function watchTileInspectorPartChanged(host: TileSettingsHost, part: TileInspectorPart, sizeChanged = false): boolean {
   const tile = host.tile;
   switch (part) {
     case "size":
       return sizeChanged;
+    case "arrange":
+      return watchTileArrange(tile) !== undefined;
     case "color": {
       const color = watchTileIconSettings(tile).color;
       return !colorAtDefault(host, color, host.domainStyle === true ? undefined : kindDefaults(host).color);
@@ -1022,14 +1151,16 @@ function keysAtDefault(host: TileSettingsHost, keys: readonly string[]): (d: Wat
  * back (a header's look, an iPhone key, Size, which is a place). State,
  * Border and Background reset as their own Reset does (a rule's style
  * drops their keys instead); Color and Icon write the kind's defaults as
- * their Default chips do; Show tile goes back to Always; the rest remove
- * their keys.
+ * their Default chips do; Show tile goes back to Always; the Arrangement to
+ * Default; the rest remove their keys.
  */
 export function watchTileInspectorPartReset(host: TileSettingsHost, part: TileInspectorPart): ((d: WatchPagesDocument) => WatchPagesDocument) | undefined {
   const { pageId, tileId } = host;
   switch (part) {
     case "color":
       return watchTileDefaultColorEdit(host);
+    case "arrange":
+      return arrangeResetEdit(host);
     case "icon": {
       const icon = watchTileDefaultIconEdit(host);
       const rest = keysAtDefault(host, PART_KEYS.icon!);
@@ -1074,7 +1205,8 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
     case "color":
       return renderTileColor(host, kindDefaults(host).color);
     case "icon":
-      return html`${renderIconGlyph(host)}${host.domainStyle === true ? nothing : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+      // State icons and colors are per state of one entity: one tile's.
+      return html`${renderIconGlyph(host)}${host.domainStyle === true ? nothing : host.picked !== undefined ? renderStateIconsOff(host) : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
     case "glow":
       return renderGlowPart(host);
     case "whenOff":
@@ -1083,6 +1215,8 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
       return renderTapAnimation(host);
     case "size":
       return extras.size?.body() ?? nothing;
+    case "arrange":
+      return renderArrangeSection(host, extras.arrangePicture);
     default:
       return sectionBodyFor(host, part);
   }
@@ -1095,7 +1229,7 @@ function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: bo
   if (part === "removed") return renderRemovedLine();
   if (part === "special" && inboxLine(host, part)) return renderInboxLine(host);
   const title = partTitle(host, part);
-  const reset = changed ? watchTileInspectorPartReset(host, part) : undefined;
+  const reset = changed ? partResetEdit(host, part) : undefined;
   const phone = part === "phone" || part === "phoneExtras" || part === "phoneTile";
   return html`<section class="ts-sec" data-part=${part} aria-label=${title}>
     <div class="ts-sec-h"><h4>${title}</h4>${phone ? phoneTag() : nothing}${changed ? html`<span class="ts-dot" title="Not the default"></span>` : nothing}${reset === undefined
@@ -1123,22 +1257,28 @@ function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: bo
  */
 export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
-  const groups = tileInspectorParts(host)
+  // With several tiles picked, only the parts they share (`pickedInspectorParts`).
+  const { groups: all, hidden } = pickedInspectorParts(host);
+  const groups = all
     .map((g) => ({ ...g, parts: g.parts.filter((p) => p !== "size" || extras.size !== undefined) }))
-    .filter((g) => g.parts.length > 0);
+    .filter((g) => g.parts.length > 0 || hidden.has(g.group));
+  for (const id of hidden.keys()) if (!groups.some((g) => g.group === id)) groups.push({ group: id, parts: [] });
   if (groups.length === 0) return nothing;
   dropStaleTyping(host);
   const group = (id: TileInspectorGroup): TemplateResult | typeof nothing => {
     const g = groups.find((x) => x.group === id);
     if (g === undefined) return nothing;
-    const changed = g.parts.map((p) => watchTileInspectorPartChanged(host, p, p === "size" && extras.size?.changed?.() === true));
+    // A part reads as changed while any picked tile holds a value there.
+    const changed = g.parts.map((p) => somePicked(host, () => watchTileInspectorPartChanged(host, p, p === "size" && extras.size?.changed?.() === true)));
     const n = changed.filter(Boolean).length;
     const words = TILE_INSPECTOR_GROUP_WORDS[id];
+    const left = hidden.get(id);
     return html`<section class="ts-grp" data-group=${id} aria-label=${words.title}>
       <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${words.description}</span>${n === 0
         ? nothing
         : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`}</div>
       ${g.parts.map((p, i) => renderPart(host, p, changed[i]!, extras))}
+      ${left === undefined ? nothing : html`<p class="hint keep ts-picked-off">${PICKED_HIDDEN_NOTE}: ${left.map((p) => partTitle(host, p)).join(", ")}.</p>`}
     </section>`;
   };
   return html`<div class="ts-root ts-groups">
@@ -1179,29 +1319,45 @@ export function watchTileResetEdit(host: TileSettingsHost): (d: WatchPagesDocume
 }
 
 /** Whether Reset tile would change how the tile looks: one of its sections
- * reads as changed, or the head's Arrange holds an arrangement. */
+ * reads as changed, or the Arrangement holds an arrangement. */
 export function watchTileResettable(host: TileSettingsHost): boolean {
   const sections = tileInspectorSections(host);
   if (tileArrangeShown(host) && watchTileArrange(host.tile) !== undefined) return true;
   return RESET_SECTIONS.some((s) => sections.includes(s) && watchTileSectionChanged(host, s));
 }
 
-/** What the page editor hands the head: the live tile it drew, and the
- * state the tile is previewed in. */
-export interface TileHeadParts {
-  picture: TemplateResult | typeof nothing;
-  previewAs: WatchTilePreviewAs;
-  setPreviewAs: (as: WatchTilePreviewAs) => void;
+/** Whether the tile shows an entity of Home Assistant's: not a spacer, a
+ * divider or one of the app's own kinds, and not empty. */
+export function tileHeadHasEntity(tile: WatchPageTile): boolean {
+  const entityId = tileEntityId(tile);
+  const kind = tileKind(entityId);
+  return entityId.includes(".") && kind !== "spacer" && kind !== "divider" && !isVirtualTileKind(kind);
 }
 
-const PREVIEW_AS: [WatchTilePreviewAs, string][] = [["on", "On"], ["off", "Off"], ["unavailable", "Unavailable"]];
+/** What the page editor hands the head: what only it draws or does. */
+export interface TileHeadParts {
+  /** The strip's start: the path back to the page and the live tiles. */
+  lead: TemplateResult | typeof nothing;
+  /** The actions before Reset (Duplicate, Hide). */
+  actions: TemplateResult | typeof nothing;
+  /** The action after Reset (Delete). */
+  remove: TemplateResult | typeof nothing;
+  /** The Find a setting field. */
+  find: TemplateResult | typeof nothing;
+  /** Under Shows: the group line, while the tile is in a group. */
+  below?: TemplateResult | typeof nothing;
+  /** Change beside what the tile shows, where the tile has another way to
+   * say it (a library tile's Target). */
+  change?: { title: string; go: () => void };
+}
 
 /**
- * The tile inspector's head card: the live tile at its own shape, and
- * beside it the tile's Name (for a tile with a Text section; empty shows
- * the name the watch falls back to and stores no label), its entity,
- * Preview as (On, Off, Unavailable: the picture only, never Home Assistant)
- * for a tile with an entity, and Reset tile. Inside a `.ts-root`, so the
+ * The tile inspector's head, one strip across the inspector that wraps on a
+ * narrow one: at its start what the page editor draws (the path and the
+ * live tiles), in the middle the tile's Name (for a tile with a Text
+ * section; empty shows the name the watch falls back to and stores no
+ * label) and Shows, its entity, then at its end the actions with Reset
+ * among them and the Find a setting field. Inside a `.ts-root`, so the
  * editor lets the name's box go when the selection moves.
  */
 export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts): TemplateResult {
@@ -1209,7 +1365,7 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
   const tile = host.tile;
   const entityId = tileEntityId(tile);
   const kind = tileKind(entityId);
-  const hasEntity = entityId.includes(".") && kind !== "spacer" && kind !== "divider" && !isVirtualTileKind(kind);
+  const hasEntity = tileHeadHasEntity(tile);
   const named = host.domainStyle !== true && watchTileSettingsSections(tile, host.hass.states).includes("text");
   let name: TemplateResult | typeof nothing = nothing;
   if (named) {
@@ -1217,28 +1373,31 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
     const label = typed(host, "label") ?? watchTileTextSettings(tile).label ?? "";
     const set = (v: string) =>
       commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });
-    name = html`<div class="field ts-head-f ts-head-name"><span>Name</span>${typingField(host, "label", html`<input type="text" aria-label="Name" .value=${label}
+    name = html`<div class="ts-head-f ts-head-name"><span class="ts-head-lab">Name</span>${typingField(host, "label", html`<input type="text" aria-label="Name" .value=${label}
       placeholder=${fallback} title=${watchLabelNote(tile, hostDevice(host))} ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`)}</div>`;
   }
+  const shown = hasEntity
+    ? html`<code class="ts-head-entity" title=${entityId}>${entityId}</code>`
+    : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "No entity" : tileKindLabel(kind)}</span>`;
+  const change = parts.change === undefined ? nothing
+    : html`<button type="button" class="link ts-head-change" title=${parts.change.title} @click=${parts.change.go}>Change</button>`;
   const resettable = watchTileResettable(host);
-  // One column: the live tile, then Name, the entity beside Reset tile on one
-  // small line, Preview as, and Arrange with the Part it places (the parts
-  // are dragged on the live tile).
   return html`<section class="ts-head ts-root" aria-label="Tile">
-    <div class="ts-head-pic">${parts.picture}</div>
-    <div class="ts-head-fields">
+    <div class="ts-head-lead">${parts.lead}</div>
+    <div class="ts-head-mid">
       ${name}
-      <div class="ts-head-line">${hasEntity
-        ? html`<code class="ts-head-entity" title=${entityId}>${entityId}</code>`
-        : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "No entity" : tileKindLabel(kind)}</span>`}
+      <div class="ts-head-f ts-head-shows"><span class="ts-head-lab">Shows</span><div class="ts-head-ent">${shown}${change}</div></div>
+      ${parts.below ?? nothing}
+    </div>
+    <div class="ts-head-side">
+      <div class="ts-head-acts" role="group" aria-label="Tile actions">
+        ${parts.actions}
         <button type="button" class="ghost ts-reset-btn" ?disabled=${!resettable || host.busy}
-          title=${resettable ? "Put the icon, color, text, state, border, background and arrangement back to their defaults. The name, size, tap and Show tile stay." : "The tile's look is at its defaults"}
-          @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>${uiIcon("undo")}Reset tile</button>
+          title=${resettable ? "Put the icon, color, text, state, border, background and arrangement back to their defaults. The name, size, tap and Show tile stay. Undo brings them back." : "The tile's look is at its defaults"}
+          @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>${uiIcon("undo")}<span>Reset</span></button>
+        ${parts.remove}
       </div>
-      ${hasEntity ? html`<div class="ts-head-f ts-head-as">${segField<WatchTilePreviewAs>("Preview as", parts.previewAs, PREVIEW_AS, (v) => parts.setPreviewAs(v), {
-        titles: { on: "The tile as it draws on", off: "The tile as it draws off", unavailable: "The tile while Home Assistant cannot reach it" },
-      })}</div>` : nothing}
-      ${tileArrangeShown(host) ? html`<div class="ts-head-f ts-head-arr">${renderArrangeHead(host)}</div>` : nothing}
+      ${parts.find}
     </div>
   </section>`;
 }
@@ -1694,24 +1853,35 @@ function stripFillWhenListed(host: TileSettingsHost): void {
 function renderIconGlyph(host: TileSettingsHost): TemplateResult {
   const s = watchTileIconSettings(host.tile);
   const defaults = kindDefaults(host);
-  stripFillWhenListed(host);
-  // A rule's style is at its default only with no icon of its own.
-  const atDefaultIcon = s.icon === undefined || (host.domainStyle !== true && defaults.icon !== undefined && s.icon === defaults.icon);
+  const many = host.picked !== undefined;
+  // The typed-fill bookkeeping is one tile's.
+  if (!many) stripFillWhenListed(host);
+  // A rule's style is at its default only with no icon of its own. With
+  // several tiles picked, a chip is on when it is on for every one of them.
+  const atDefault = (): boolean => {
+    const icon = watchTileIconSettings(host.tile).icon;
+    const def = kindDefaults(host).icon;
+    return icon === undefined || (host.domainStyle !== true && def !== undefined && icon === def);
+  };
+  const noIconOn = everyPicked(host, () => watchTileIconSettings(host.tile).icon === "");
+  const defaultOn = !noIconOn && everyPicked(host, () => atDefault() && watchTileIconSettings(host.tile).icon !== "");
+  const mixed = pickedMixed(host, (t) => watchTileIconSettings(t).icon);
 
   // Every icon comes from the list now, picked or typed into its search, so
   // each one is a step of its own.
   const setIcon = (name: string) => {
     const value = storedSymbol(host, name);
-    if (knownSymbols(host) === undefined && value.includes(".fill")) host.uiState.set(`${KEY}:fill:${host.tileId.toUpperCase()}`, value);
+    if (!many && knownSymbols(host) === undefined && value.includes(".fill")) host.uiState.set(`${KEY}:fill:${host.tileId.toUpperCase()}`, value);
     host.endCoalesce();
     commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, value));
   };
   const noIcon = () => commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, ""));
-  const defaultIcon = () => commit(host, "icon", watchTileDefaultIconEdit(host));
+  // Made when it runs, so each picked tile gets its own kind's icon.
+  const defaultIcon = () => commit(host, "icon", (d) => watchTileDefaultIconEdit(host)(d));
   return html`
     ${symbolField(
       { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
-      s.icon ?? "",
+      mixed ? "" : (s.icon ?? ""),
       setIcon,
       `pe:ts:symbol`,
       // The chips under the box are the way back to none and to the default,
@@ -1719,13 +1889,13 @@ function renderIconGlyph(host: TileSettingsHost): TemplateResult {
       {
         clearable: false,
         tint: watchColorEnds(s.color ?? defaults.color)?.from,
-        emptyText: s.icon === "" ? "No icon" : defaults.icon === undefined ? "Default" : `Default (${defaults.icon})`,
-        ...(s.icon === undefined && defaults.icon !== undefined ? { emptyGlyph: defaults.icon } : {}),
+        emptyText: mixed ? MIXED_WORD : s.icon === "" ? "No icon" : defaults.icon === undefined ? "Default" : `Default (${defaults.icon})`,
+        ...(!mixed && s.icon === undefined && defaults.icon !== undefined ? { emptyGlyph: defaults.icon } : {}),
       },
     )}
     <div class="ts-after" role="group" aria-label="Icon">
-      <button type="button" class="pe-chip ${s.icon === "" ? "on" : ""}" aria-pressed=${s.icon === "" ? "true" : "false"} @click=${noIcon}>No icon</button>
-      <button type="button" class="pe-chip ${atDefaultIcon && s.icon !== "" ? "on" : ""}" aria-pressed=${atDefaultIcon && s.icon !== "" ? "true" : "false"}
+      <button type="button" class="pe-chip ${noIconOn ? "on" : ""}" aria-pressed=${noIconOn ? "true" : "false"} @click=${noIcon}>No icon</button>
+      <button type="button" class="pe-chip ${defaultOn ? "on" : ""}" aria-pressed=${defaultOn ? "true" : "false"}
         title=${host.domainStyle === true ? `No icon of its own: the ${hostDeviceNoun(host)} draws its default` : defaults.icon === undefined ? `The ${hostDeviceNoun(host)} picks the icon` : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
     </div>`;
@@ -1752,11 +1922,12 @@ export const NO_ICON_GLOW_NOTE = "No icon, so there is nothing to glow.";
 
 /** The icon's size and shadow, or the line that says why they are gone. */
 function renderIconLook(host: TileSettingsHost): TemplateResult {
-  if (watchTileDrawsNoIcon(host.tile)) return html`<div class="hint keep ts-gone">${NO_ICON_NOTE}</div>`;
+  if (everyPicked(host, () => watchTileDrawsNoIcon(host.tile))) return html`<div class="hint keep ts-gone">${NO_ICON_NOTE}</div>`;
   const s = watchTileIconSettings(host.tile);
   return html`
     ${renderIconSize(host)}
-    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`;
+    ${checkRow("Icon shadow", s.iconShadow, pickedMixed(host, (t) => watchTileIconSettings(t).iconShadow),
+      (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`;
 }
 
 /** Whether the Glow rows are offered: One Look draws the glow, and a rule's
@@ -1767,7 +1938,7 @@ function glowOffered(host: TileSettingsHost): boolean {
 
 /** The glow, or the line that says why it is gone. */
 function renderGlowPart(host: TileSettingsHost): TemplateResult {
-  return watchTileDrawsNoIcon(host.tile) ? html`<div class="hint keep ts-gone">${NO_ICON_GLOW_NOTE}</div>` : renderIconGlow(host);
+  return everyPicked(host, () => watchTileDrawsNoIcon(host.tile)) ? html`<div class="hint keep ts-gone">${NO_ICON_GLOW_NOTE}</div>` : renderIconGlow(host);
 }
 
 /** Whether When it is off has a row: Dim when off for a kind that dims, or
@@ -1780,9 +1951,12 @@ function whenOffShown(host: TileSettingsHost): boolean {
 /** When it is off: Dim or Keep color, then Animate while on. */
 function renderWhenOff(host: TileSettingsHost): TemplateResult {
   const s = watchTileIconSettings(host.tile);
+  // With several tiles picked, a row only where every one of them has it.
+  const dims = everyPicked(host, () => watchTileIconSettings(host.tile).dimWhenOff.applies);
+  const animates = everyPicked(host, () => watchTileIconSettings(host.tile).activeAnimation.shown && !watchTileDrawsNoIcon(host.tile));
   return html`
-    ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
-    ${!s.activeAnimation.shown || watchTileDrawsNoIcon(host.tile) ? nothing
+    ${dims && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
+    ${!animates ? nothing
       // One Look never moves the icon for being on: the switch is greyed.
       : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
       : renderActiveAnimation(host, s.activeAnimation.stored)}`;
@@ -1794,7 +1968,7 @@ function renderTapAnimation(host: TileSettingsHost): TemplateResult {
   const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
   const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
   return html`
-    ${menuField("Tap animation", animation, (v) =>
+    ${menuField("Tap animation", mixedMenu(animation, pickedMixed(host, (t) => watchTileIconSettings(t).tapAnimation)), (v) =>
       commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
     <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
       ? nothing
@@ -1827,8 +2001,21 @@ const GLOW_MODES: [OneLookGlowMode, string][] = [["auto", "When on"], ["on", "Al
 function renderIconGlow(host: TileSettingsHost): TemplateResult {
   const glow = watchTileIconGlow(host.tile);
   const now = () => watchTileIconGlow(host.tile);
+  // Each edit reads the glow when it runs, so with several tiles picked each
+  // keeps its own glow but for what is changed.
+  const glowEdit = (next: (g: OneLookGlyphGlow) => OneLookGlyphGlow) => (d: WatchPagesDocument) =>
+    setWatchTileIconGlow(d, host.pageId, host.tileId, next(now()));
   const write = (setting: string, next: (g: OneLookGlyphGlow) => OneLookGlyphGlow, typing = false) =>
-    commit(host, setting, (d) => setWatchTileIconGlow(d, host.pageId, host.tileId, next(now())), { typing });
+    commit(host, setting, glowEdit(next), { typing });
+  const mixed = (read: (g: OneLookGlyphGlow) => unknown) => pickedMixed(host, (t) => read(watchTileIconGlow(t)));
+  const colourMixed = mixed((g) => g.colour);
+  // A color edit that leaves a tile already in that color as it is.
+  const colourEdit = (kind: "white" | "tile") => (d: WatchPagesDocument) =>
+    (now().colour.kind === kind ? d : glowEdit((g) => ({ ...g, colour: { kind } }))(d));
+  const customEdit = (value: string) => {
+    const rgb = oneLookParseHex(value);
+    return rgb === undefined ? (d: WatchPagesDocument) => d : glowEdit((g) => ({ ...g, colour: { kind: "custom", rgb } }));
+  };
   const theme = watchAddThemeOf(host.page);
   const colourValue = glow.colour.kind === "custom" ? oneLookHex(glow.colour.rgb) : undefined;
   const tileOn = glow.colour.kind === "tile";
@@ -1839,8 +2026,7 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
     write("glowColor", (g) => ({ ...g, colour: { kind: "custom", rgb } }), true);
   };
   const pickHex = (value: string) => {
-    const rgb = oneLookParseHex(value);
-    if (rgb !== undefined) write("glowColor", (g) => ({ ...g, colour: { kind: "custom", rgb } }));
+    if (oneLookParseHex(value) !== undefined) commit(host, "glowColor", customEdit(value));
   };
   // Each choice as the tile on, then off: When on and Always differ only off.
   const pics = tilePictures(host);
@@ -1850,15 +2036,18 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
     label,
     picture: () => html`${pics.tile(`glow:${mode}`, withMode(mode), "on", 40, 32)}${pics.tile(`glow:${mode}`, withMode(mode), "off", 40, 32)}`,
   }));
-  return html`${pictureChoice<OneLookGlowMode>("Glow", glow.mode, options, (v) => write("glowMode", (g) => ({ ...g, mode: v })), { def: "auto", size: "pair" })}
+  const modeEdit = (mode: OneLookGlowMode) => glowEdit((g) => ({ ...g, mode }));
+  return html`${pictureChoice<OneLookGlowMode>("Glow", glow.mode, options, (v) => commit(host, "glowMode", modeEdit(v)), {
+    def: "auto", size: "pair", mixed: mixed((g) => g.mode), trial: tileTrial(host, "Glow", modeEdit),
+  })}
     <div class="hint">Each picture shows the tile on, then off. When on glows behind the icon while the tile has its color, brighter while it is on. Always glows on gray and off tiles too. Never over a picture.</div>
-    ${glow.mode === "off" ? nothing : html`
-      ${typingField(host, "glowSize", sliderField("Size", glow.size, (v) => write("glowSize", (g) => ({ ...g, size: v }), true), {
+    ${everyPicked(host, () => now().mode === "off") ? nothing : html`
+      ${mixedRow(mixed((g) => g.size), typingField(host, "glowSize", sliderField("Size", glow.size, (v) => write("glowSize", (g) => ({ ...g, size: v }), true), {
         min: ONE_LOOK_GLOW_SIZE_RANGE[0], max: ONE_LOOK_GLOW_SIZE_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.size, unit: "%",
-      }), glow.size)}
-      ${typingField(host, "glowBrightness", sliderField("Brightness", glow.brightness, (v) => write("glowBrightness", (g) => ({ ...g, brightness: v }), true), {
+      }), glow.size))}
+      ${mixedRow(mixed((g) => g.brightness), typingField(host, "glowBrightness", sliderField("Brightness", glow.brightness, (v) => write("glowBrightness", (g) => ({ ...g, brightness: v }), true), {
         min: ONE_LOOK_GLOW_BRIGHTNESS_RANGE[0], max: ONE_LOOK_GLOW_BRIGHTNESS_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.brightness, unit: "%",
-      }), glow.brightness)}
+      }), glow.brightness))}
       <div class="hint ts-under">100% is the tile's own glow. Off and on keep their difference.</div>
       ${colorPickerView({
         label: "Glow color",
@@ -1869,14 +2058,16 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
         default: {
           title: "White, the tile's own glow",
           on: glow.colour.kind === "white",
-          pick: () => { if (now().colour.kind !== "white") write("glowColor", (g) => ({ ...g, colour: { kind: "white" } })); },
+          pick: () => commit(host, "glowColor", colourEdit("white")),
         },
         tile: {
           title: "The tile's own color",
           on: tileOn,
-          pick: () => { if (now().colour.kind !== "tile") write("glowColor", (g) => ({ ...g, colour: { kind: "tile" } })); },
+          pick: () => commit(host, "glowColor", colourEdit("tile")),
         },
-        custom: { shown: typed(host, "glowColor") ?? colourValue, pick: custom },
+        custom: { shown: typed(host, "glowColor") ?? (colourMixed ? undefined : colourValue), pick: custom },
+        mixed: colourMixed,
+        trial: colorTrial(host, "Glow color", { swatch: customEdit, default: colourEdit("white"), tile: colourEdit("tile") }),
         more: colorMoreOf(host, "glowColor"),
         wrap: (body) => typingField(host, "glowColor", body),
       })}`}`;
@@ -1893,7 +2084,11 @@ function renderDimWhenOff(host: TileSettingsHost, value: boolean): TemplateResul
   const row = pictureChoice<"dim" | "keep">("When it is off", value ? "dim" : "keep", [
     { value: "dim", label: "Dim", picture: () => pics.tile("dim:on", edit(true), "off", 54, 36) },
     { value: "keep", label: "Keep color", picture: () => pics.tile("dim:off", edit(false), "off", 54, 36) },
-  ], (v) => commit(host, "dimWhenOff", edit(v === "dim")), { def: "dim" });
+  ], (v) => commit(host, "dimWhenOff", edit(v === "dim")), {
+    def: "dim",
+    mixed: pickedMixed(host, (t) => watchTileIconSettings(t).dimWhenOff.value),
+    trial: tileTrial<"dim" | "keep">(host, "When it is off", (v) => edit(v === "dim")),
+  });
   if (!oneLook(host)) return html`${row}<div class="hint">The tile dims while it is off, or keeps its color.</div>`;
   return oneLookDims(host.tile) ? html`${row}<div class="hint">${ONE_LOOK_DIM_LIGHT_NOTE}</div>` : greyed(ONE_LOOK_DIM_OFF_REASON, row);
 }
@@ -1903,9 +2098,10 @@ function renderDimWhenOff(host: TileSettingsHost, value: boolean): TemplateResul
 function renderActiveAnimation(host: TileSettingsHost, stored: boolean | undefined): TemplateResult {
   const set = (value: boolean | null) =>
     commit(host, "activeAnimation", (d) => setWatchTileActiveIconAnimation(d, host.pageId, host.tileId, value));
-  return html`${checkField("Animate while on", watchTileIconSettings(host.tile).activeAnimation.value, (on) => set(on))}
+  const own = stored !== undefined || somePicked(host, () => watchTileIconSettings(host.tile).activeAnimation.stored !== undefined);
+  return html`${checkRow("Animate while on", watchTileIconSettings(host.tile).activeAnimation.value, pickedMixed(host, (t) => watchTileIconSettings(t).activeAnimation.value), (on) => set(on))}
     <div class="hint ts-under">${watchActiveAnimationNote(host.tile)}
-      ${stored === undefined ? nothing : linkButton("Use the default", "Remove this tile's own setting", () => set(null))}</div>`;
+      ${!own ? nothing : linkButton("Use the default", "Remove this tile's own setting", () => set(null))}</div>`;
 }
 
 /** The tile's color. */
@@ -1918,14 +2114,16 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   const fallback = defaultColor ?? swatches[0];
   /** The tile's color when the edit is made, not when it was drawn. */
   const colorNow = () => watchTileIconSettings(host.tile).color;
-  const write = (value: string, typing = false) =>
-    commit(host, "color", (d) => setWatchTileColor(d, host.pageId, host.tileId, value), { typing });
-  const pickMode = (next: "solid" | "gradient") => {
-    // The rainbow is one of the gradients already.
-    if (next === "gradient" && watchColorModeChoice(colorNow()) === "rainbow") return;
-    const value = watchColorForMode(colorNow(), next, fallback, watchGradientOf);
-    if (value !== undefined) write(value);
-  };
+  const colorEdit = (value: string) => (d: WatchPagesDocument) => setWatchTileColor(d, host.pageId, host.tileId, value);
+  const write = (value: string, typing = false) => commit(host, "color", colorEdit(value), { typing });
+  // Each tile's own color in the form picked: with several tiles picked,
+  // each keeps its color. The rainbow is one of the gradients already.
+  const pickMode = (next: "solid" | "gradient") => commit(host, "color", (d) => {
+    const now = colorNow();
+    if (next === "gradient" && watchColorModeChoice(now) === "rainbow") return d;
+    const value = watchColorForMode(now, next, fallback, watchGradientOf);
+    return value === undefined ? d : colorEdit(value)(d);
+  });
   const custom = (value: string | undefined) => {
     const reason = watchColorRefusal(value, hostDevice(host));
     if (reason !== undefined || value === undefined) return commit(host, "color", (d) => d, { reason: reason ?? "Pick a color." });
@@ -1935,19 +2133,26 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     write(now === "gradient" || now === "rainbow" ? watchGradientOf(value) : value, true);
   };
   // No color stored draws the theme's color for the kind, which is what
-  // Default writes out.
-  const atDefault = colorAtDefault(host, color, defaultColor);
-  const resetColor = () => commit(host, "color", watchTileDefaultColorEdit(host));
+  // Default writes out. With several tiles picked Default is on when every
+  // one has its kind's color, and the picker is Mixed when they differ
+  // otherwise.
+  const atDefault = everyPicked(host, () => colorAtDefault(host, colorNow(), host.domainStyle === true ? undefined : kindDefaults(host).color));
+  const differ = pickedMixed(host, (t) => watchTileIconSettings(t).color);
+  // Made when it runs, so each picked tile gets its own kind's color.
+  const defaultEdit = (d: WatchPagesDocument) => watchTileDefaultColorEdit(host)(d);
+  const resetColor = () => commit(host, "color", defaultEdit);
   // The Form switch is this picker's heading: the Icon card has no Color
   // heading of its own.
   // One Look fills the tile with its color, and a still rainbow; a tile
   // with none draws its kind's color on the watch, graphite on the iPhone.
   const lookNote = oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
   return html`${colorPickerView({
-    color,
+    color: differ ? undefined : color,
     swatches,
     swatchesLabel: `${watchThemeDisplayName(theme)} colors`,
     pickSwatch: (v) => write(v),
+    mixed: differ && !atDefault,
+    trial: colorTrial(host, "Color", { swatch: colorEdit, default: defaultEdit }),
     default: {
       title: defaultColor === undefined || host.domainStyle === true ? `The ${hostDeviceNoun(host)} picks one` : `The theme's color for this kind of tile, ${defaultColor}`,
       on: atDefault,
@@ -1955,7 +2160,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     },
     form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
     rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
-    custom: { shown: typed(host, "color") ?? watchCustomBoxColor(color), pick: custom },
+    custom: { shown: typed(host, "color") ?? (differ ? undefined : watchCustomBoxColor(color)), pick: custom },
     more: colorMoreOf(host, "color"),
     wrap: (body) => typingField(host, "color", body),
   })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;
@@ -1966,15 +2171,17 @@ function renderIconSize(host: TileSettingsHost): TemplateResult {
   // The next whole number above a largest size with a fraction stands for
   // that size (`watchTileIconSizeValue`), so the box and a drag reach it.
   const top = watchTileIconSizeTop(s.iconSizeMax);
-  const shown = typedNumber(typed(host, "iconSize"), s.iconSize);
+  const mixed = pickedMixed(host, (t) => watchTileIconSettings(t).iconSize);
+  const shown = typedNumber(typed(host, "iconSize"), mixed ? undefined : s.iconSize);
   const set = (v: number | undefined) => {
     if (v === undefined) return commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null), { typing: true });
-    const max = watchTileIconSettings(host.tile).iconSizeMax;
-    commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, v), { typing: true, ...reasonOf(watchIconSizeRefusal(v, max)) });
+    // Each picked tile has its own largest size: the first that refuses says why.
+    const reason = firstPicked(host, () => watchIconSizeRefusal(v, watchTileIconSettings(host.tile).iconSizeMax));
+    commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, v), { typing: true, ...reasonOf(reason) });
   };
   return html`${typingField(host, "iconSize", html`<div class="ts-with-link">
-      ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
-      ${s.iconSize === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the icon to the tile`, () => commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null)))}
+      ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: mixed ? MIXED_WORD : "Auto", unit: "pt", rawTyping: true })}
+      ${!somePicked(host, () => watchTileIconSettings(host.tile).iconSize !== undefined) ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the icon to the tile`, () => commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null)))}
     </div>`, s.iconSize)}
     <div class="hint ts-under">${oneLook(host) ? oneLookIconSizeHint(top) : watchIconSizeHint(s.iconSizeMax)}</div>`;
 }
@@ -1988,10 +2195,14 @@ export function reasonOf(reason: string | undefined): { reason?: string } {
 function renderText(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const t = watchTileTextSettings(tile);
-  const fontSize = typedNumber(typed(host, "fontSize"), t.fontSize);
+  const mixed = (read: (s: ReturnType<typeof watchTileTextSettings>) => unknown) => pickedMixed(host, (x) => read(watchTileTextSettings(x)));
+  const sizeMixed = mixed((s) => s.fontSize);
+  const colorMixed = mixed((s) => s.labelColor);
+  const fontSize = typedNumber(typed(host, "fontSize"), sizeMixed ? undefined : t.fontSize);
   const setFontSize = (v: number | undefined) =>
     commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, v ?? null), { typing: true, ...(v === undefined ? {} : reasonOf(watchFontSizeRefusal(v))) });
-  const labelColor = typed(host, "labelColor") ?? watchCustomBoxColor(t.labelColor);
+  const labelColor = typed(host, "labelColor") ?? (colorMixed ? undefined : watchCustomBoxColor(t.labelColor));
+  const labelColorEdit = (v: string | null) => (d: WatchPagesDocument) => setWatchTileLabelColor(d, host.pageId, host.tileId, v);
   const setLabelColor = (v: string | undefined) => {
     if (v === undefined) commit(host, "labelColor", (d) => setWatchTileLabelColor(d, host.pageId, host.tileId, null));
     else commit(host, "labelColor", (d) => setWatchTileLabelColor(d, host.pageId, host.tileId, v), { typing: true, ...reasonOf(watchColorRefusal(v, hostDevice(host))) });
@@ -2001,21 +2212,23 @@ function renderText(host: TileSettingsHost): TemplateResult {
   };
   // The label itself is the head's Name; a rule's tiles each carry their
   // entity's own name and have none.
-  const show = checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)));
-  if (!watchTileLabelDrawn(tile)) return html`${show}<div class="hint keep ts-gone">${LABEL_HIDDEN_NOTE}</div>`;
+  const show = checkRow("Show label", t.showLabel, mixed((s) => s.showLabel), (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)));
+  if (everyPicked(host, () => !watchTileLabelDrawn(host.tile))) return html`${show}<div class="hint keep ts-gone">${LABEL_HIDDEN_NOTE}</div>`;
   return html`
     ${show}
     ${typingField(host, "fontSize", html`<div class="ts-with-link">
-      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
-      ${t.fontSize === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the label to the tile`, () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
+      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: sizeMixed ? MIXED_WORD : "Auto", unit: "pt", rawTyping: true })}
+      ${!somePicked(host, () => watchTileTextSettings(host.tile).fontSize !== undefined) ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the label to the tile`, () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
     </div>`, t.fontSize)}
     <div class="hint ts-under">${oneLook(host)
       ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
       : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>
-    ${aaField("Weight", watchFontWeightMenu(t.fontWeight), weightSample, (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
+    ${aaField(host, "Weight", watchFontWeightMenu(t.fontWeight), weightSample, mixed((s) => s.fontWeight),
+      (v) => (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v), "fontWeight")}
     ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_WEIGHT_NOTE}</div>` : nothing}
-    ${aaField("Design", watchFontDesignMenu(t.fontDesign), designSample, (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
-    ${checkField("Text shadow", t.textShadow, (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
+    ${aaField(host, "Design", watchFontDesignMenu(t.fontDesign), designSample, mixed((s) => s.fontDesign),
+      (v) => (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v), "fontDesign")}
+    ${checkRow("Text shadow", t.textShadow, mixed((s) => s.textShadow), (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
     ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}
     ${colorPickerView({
       label: "Label color",
@@ -2023,8 +2236,10 @@ function renderText(host: TileSettingsHost): TemplateResult {
       swatches: watchStylingTheme(watchPageSwatchTheme(host.page))?.pageTitleSwatches ?? watchTitleSwatches(),
       swatchesLabel: "Label color",
       pickSwatch: (c) => setLabelColor(c),
-      default: { title: "The theme's label color", on: t.labelColor === undefined, pick: () => setLabelColor(undefined) },
+      default: { title: "The theme's label color", on: everyPicked(host, () => watchTileTextSettings(host.tile).labelColor === undefined), pick: () => setLabelColor(undefined) },
       custom: { shown: labelColor, pick: setLabelColor },
+      mixed: colorMixed,
+      trial: colorTrial(host, "Label color", { swatch: labelColorEdit, default: labelColorEdit(null) }),
       more: colorMoreOf(host, "labelColor"),
       wrap: (body) => typingField(host, "labelColor", body),
     })}`;
@@ -2047,9 +2262,20 @@ export function watchTileLabelDrawn(tile: WatchPageTile): boolean {
 /** A label's Weight or Design as "Aa" chips, each in its own weight or
  * design; a stored value the panel does not offer keeps the menu, which
  * shows it. */
-function aaField(label: string, menu: WatchMenu, sample: (value: string) => TemplateResult, pick: (value: string) => void): TemplateResult {
-  if (menu.note !== undefined) return menuField(label, menu, pick);
-  return pictureChoice(label, menu.selected, menu.options.map((o) => ({ value: o.value, label: o.label, picture: () => sample(o.value) })), pick, { size: "small" });
+function aaField(
+  host: TileSettingsHost,
+  label: string,
+  menu: WatchMenu,
+  sample: (value: string) => TemplateResult,
+  mixed: boolean,
+  edit: (value: string) => (d: WatchPagesDocument) => WatchPagesDocument,
+  setting: string,
+): TemplateResult {
+  const pick = (v: string) => commit(host, setting, edit(v));
+  if (menu.note !== undefined) return menuField(label, mixedMenu(menu, mixed), pick);
+  return pictureChoice(label, menu.selected, menu.options.map((o) => ({ value: o.value, label: o.label, picture: () => sample(o.value) })), pick, {
+    size: "small", mixed, trial: tileTrial(host, `Label ${label.toLowerCase()}`, edit),
+  });
 }
 
 // ── action ───────────────────────────────────────────────────────────────
@@ -2419,6 +2645,7 @@ type Edit<V> = (document: WatchPagesDocument, pageId: string, tileId: string, va
 export function stylingEnumField(label: string, enumName: string, value: string, pick: (v: string) => void, opts: StylingEnumOptions = {}): TemplateResult {
   const choices = watchStylingChoices(enumName);
   const offered = choices.some((c) => c.value === value);
+  const mixed = opts.mixed === true;
   if (opts.picture !== undefined && offered) {
     const picture = opts.picture;
     return pictureChoice(label, value, choices.map((c) => ({
@@ -2427,13 +2654,14 @@ export function stylingEnumField(label: string, enumName: string, value: string,
       picture: () => picture(c.value),
       ...(opts.disabled?.[c.value] === true ? { disabled: true } : {}),
       ...(opts.titles?.[c.value] === undefined ? {} : { title: opts.titles[c.value]! }),
-    })), pick, { size: opts.size ?? "tile" });
+    })), pick, { size: opts.size ?? "tile", mixed, ...(opts.trial === undefined ? {} : { trial: opts.trial }) });
   }
   if (choices.length <= 4 && offered) {
-    return segField(label, value, choices.map((c) => [c.value, c.label] as [string, string]), (v) => pick(v), opts);
+    // Mixed lights no button.
+    return mixedRow(mixed, segField(label, mixed ? "" : value, choices.map((c) => [c.value, c.label] as [string, string]), (v) => pick(v), opts));
   }
   const menu = watchChoiceMenu(choices, value);
-  return menuField(label, { ...menu, options: menu.options.map((o) => (opts.disabled?.[o.value] === true ? { ...o, disabled: true } : o)) }, pick);
+  return menuField(label, mixedMenu({ ...menu, options: menu.options.map((o) => (opts.disabled?.[o.value] === true ? { ...o, disabled: true } : o)) }, mixed), pick);
 }
 
 /** Choices of a styling enum that are drawn but cannot be picked, with the
@@ -2444,10 +2672,30 @@ export interface StylingEnumOptions {
   titles?: Readonly<Record<string, string>>;
   picture?: (value: string) => TemplateResult | typeof nothing;
   size?: PictureChoiceSize;
+  /** The picked tiles differ: no choice is on, and the title says Mixed. */
+  mixed?: boolean;
+  /** Pointing at a picture tries it on the tile (`pictureChoice`). */
+  trial?: ChoiceTrial<string>;
 }
 
-function enumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>, opts: StylingEnumOptions = {}): TemplateResult {
-  return stylingEnumField(label, enumName, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)), opts);
+/** What an enum row of the tile settings adds: what the row reads of a tile,
+ * to show Mixed when the picked tiles differ, and what the stage's pill
+ * calls it while a picture is tried, where the row's label says too little
+ * ("Style" is "Border style"). */
+interface EnumRowOptions extends StylingEnumOptions {
+  read?: (tile: WatchPageTile) => unknown;
+  tryName?: string;
+}
+
+function enumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>, opts: EnumRowOptions = {}): TemplateResult {
+  const { read, tryName, ...rest } = opts;
+  const edit = (v: string) => (d: WatchPagesDocument) => set(d, host.pageId, host.tileId, v);
+  return stylingEnumField(label, enumName, value, (v) => commit(host, setting, edit(v)), {
+    ...rest,
+    mixed: read !== undefined && pickedMixed(host, read),
+    // A picture of each choice: pointing at one tries it on the tile.
+    ...(rest.picture === undefined ? {} : { trial: tileTrial(host, tryName ?? label, edit) }),
+  });
 }
 
 /** A border's Thickness as sample lines. */
@@ -2460,12 +2708,13 @@ const SMALL_THICKNESS: StylingEnumOptions = { picture: thicknessLine, size: "sma
  * A stored value the table does not offer keeps the plain menu, which
  * shows it.
  */
-function tryEnumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>): TemplateResult {
+function tryEnumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>, read: (tile: WatchPageTile) => unknown, name: string): TemplateResult {
   const choices = watchStylingChoices(enumName);
-  if (!choices.some((c) => c.value === value)) return enumRow(host, setting, label, enumName, value, set);
+  if (!choices.some((c) => c.value === value)) return enumRow(host, setting, label, enumName, value, set, { read });
   return tryMenuField(host, setting, label, choices, value,
     (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)),
-    (v) => (d) => set(d, host.pageId, host.tileId, v));
+    (v) => (d) => set(d, host.pageId, host.tileId, v),
+    { name, mixed: pickedMixed(host, read) });
 }
 
 /**
@@ -2492,8 +2741,8 @@ const VALUE_PICTURE = (t: WatchPageTile) => valueSample(watchValueLabelStyle(t))
 const BAR_PICTURE = (t: WatchPageTile) => barSample(String(stateRowOf(t, "stateBarStyle") ?? ""));
 const BORDER_PICTURE = (t: WatchPageTile) => borderSample(watchTileBorderSettings(t));
 
-function boolRow(host: TileSettingsHost, setting: string, label: string, value: boolean, set: Edit<boolean>): TemplateResult {
-  return checkField(label, value, (on) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, on)));
+function boolRow(host: TileSettingsHost, setting: string, label: string, value: boolean, set: Edit<boolean>, read?: (tile: WatchPageTile) => unknown): TemplateResult {
+  return checkRow(label, value, read !== undefined && pickedMixed(host, read), (on) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, on)));
 }
 
 /** A slider from the table, its edits one undo step per drag or run of
@@ -2505,24 +2754,26 @@ function sliderRow(
   sliderName: string,
   value: number,
   set: Edit<number>,
-  options: { reset?: unknown; percent?: boolean } = {},
+  options: { reset?: unknown; percent?: boolean; read?: (tile: WatchPageTile) => unknown } = {},
 ): TemplateResult {
   const spec = watchStylingSlider(sliderName);
   const def = typeof options.reset === "number" ? options.reset : (spec.auto ?? spec.min);
   const format = options.percent ? (v: number) => `${Math.round(v * 100)}%` : undefined;
-  return typingField(host, setting, sliderField(label, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v), { typing: true }), {
+  return mixedRow(options.read !== undefined && pickedMixed(host, options.read), typingField(host, setting, sliderField(label, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v), { typing: true }), {
     min: spec.min,
     max: spec.max,
     step: spec.step,
     def,
     ...(format === undefined ? {} : { format }),
-  }), value);
+  }), value));
 }
 
 /** A whole number slider with an Auto button (`null` removes the key). */
-function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sliderName: string, value: number | undefined, set: Edit<number | null>, placeholder?: string): TemplateResult {
+function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sliderName: string, value: number | undefined, set: Edit<number | null>, placeholder?: string, read?: (tile: WatchPageTile) => unknown): TemplateResult {
   const spec = watchStylingSlider(sliderName);
-  const shown = typedNumber(typed(host, setting), value);
+  const mixed = read !== undefined && pickedMixed(host, read);
+  if (mixed) placeholder = MIXED_WORD;
+  const shown = typedNumber(typed(host, setting), mixed ? undefined : value);
   const write = (v: number | undefined) =>
     commit(host, setting, (d) => set(d, host.pageId, host.tileId, v ?? null), {
       typing: true,
@@ -2530,7 +2781,7 @@ function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sli
     });
   return html`${typingField(host, setting, html`<div class="ts-with-link">
       ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: placeholder ?? `Auto (${spec.auto ?? ""})`, unit: "pt", rawTyping: true })}
-      ${value === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size it`, () => commit(host, setting, (d) => set(d, host.pageId, host.tileId, null)))}
+      ${value === undefined && !mixed ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size it`, () => commit(host, setting, (d) => set(d, host.pageId, host.tileId, null)))}
     </div>`, value)}`;
 }
 
@@ -2566,7 +2817,7 @@ function taskModified(host: TileSettingsHost, task: WatchTileStylingTask): boole
  * phone's reset values; on a rule's style it removes the task's keys, so
  * each reads as the watch's own default. */
 function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: string): TemplateResult | typeof nothing {
-  if (!taskModified(host, task)) return nothing;
+  if (!somePicked(host, () => taskModified(host, task))) return nothing;
   const domain = host.domainStyle === true;
   return html`<div class="ts-after ts-reset">${resetButton(`Reset ${words.toLowerCase()}`,
     domain ? `Remove every ${words.toLowerCase()} setting from the rule, so the ${hostDeviceNoun(host)} draws its own` : `Put every ${words.toLowerCase()} setting back to its default`, () =>
@@ -2597,17 +2848,23 @@ export function stylingPaletteActions(host: TileSettingsHost, setting: string, s
   };
   const write = (value: string | null, typing = false) => commit(host, setting, (d) => source.write(d, value), { typing });
   const pickMode = (next: "solid" | "gradient"): void => {
-    const now = source.color();
-    const mode = watchColorModeChoice(now);
-    if (mode === "rainbow" && next === "gradient") return;
+    const mode = watchColorModeChoice(source.color());
+    if (mode === "rainbow" && next === "gradient" && host.picked === undefined) return;
     if (mode === "none") {
       host.uiState.set(formKey, next);
       host.requestUpdate();
-      return;
+      if (host.picked === undefined) return;
     }
-    const fallback = mode === "rainbow" ? (kindDefaults(host).color ?? watchThemeSwatches(watchPageSwatchTheme(host.page), false)[0]) : undefined;
-    const value = watchColorForMode(now, next, fallback, watchGradientOf);
-    if (value !== undefined) write(value);
+    // Each tile's own color in the form picked, read when the edit runs: with
+    // several tiles picked, each keeps its color, and one with none is left.
+    commit(host, setting, (d) => {
+      const now = source.color();
+      const own = watchColorModeChoice(now);
+      if (own === "none" || (own === "rainbow" && next === "gradient")) return d;
+      const fallback = own === "rainbow" ? (kindDefaults(host).color ?? watchThemeSwatches(watchPageSwatchTheme(host.page), false)[0]) : undefined;
+      const value = watchColorForMode(now, next, fallback, watchGradientOf);
+      return value === undefined ? d : source.write(d, value);
+    });
   };
   const custom = (value: string | undefined): void => {
     const reason = watchColorRefusal(value, hostDevice(host));
@@ -2662,13 +2919,21 @@ export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPic
     if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
     write(value.toUpperCase(), true);
   });
-  const atDefault = color === undefined || (defaultValue !== null && sameWatchColor(color, defaultValue));
+  // With several tiles picked, at the default only when every one is.
+  const atDefault = everyPicked(host, () => {
+    const c = o.color();
+    return c === undefined || (defaultValue !== null && sameWatchColor(c, defaultValue));
+  });
+  const differ = host.picked !== undefined && pickedValueDiffers(host, o.color);
+  const edit = (value: string | null) => (d: WatchPagesDocument) => o.write(d, value);
   return colorPickerView({
     label: o.label,
-    color,
+    color: differ ? undefined : color,
     swatches,
     swatchesLabel: o.swatchesLabel ?? `${o.label}: ${watchThemeDisplayName(theme)} colors`,
     pickSwatch: (v) => write(v),
+    mixed: differ && !atDefault,
+    trial: colorTrial(host, o.label, { swatch: edit, ...(o.defaultTitle === undefined ? {} : { default: edit(defaultValue) }) }),
     ...(o.defaultTitle === undefined
       ? {}
       : { default: { title: o.defaultTitle, on: atDefault, pick: () => { if (!atDefault) write(defaultValue); } } }),
@@ -2676,9 +2941,21 @@ export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPic
       ? {}
       : { form: { shown: mode === "none" || mode === "rainbow" ? (gradient ? "gradient" : "solid") : mode, forms: ["solid", "gradient"], pick: act.pickMode } }),
     ...(o.rainbow === true ? { rainbow: {} } : {}),
-    custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
+    custom: { shown: typed(host, setting) ?? (differ ? undefined : watchCustomBoxColor(color)), pick: custom },
     more: colorMoreOf(host, setting),
     wrap: (body) => typingField(host, setting, body),
+  });
+}
+
+/** Whether a color read through the host (`ColorPickerSource.color`) differs
+ * between the picked tiles. */
+function pickedValueDiffers(host: TileSettingsHost, color: () => string | undefined): boolean {
+  const pick = host.picked;
+  if (pick === undefined || pick.ids.length < 2) return false;
+  const first = pick.as(pick.ids[0]!, color);
+  return pick.ids.slice(1).some((id) => {
+    const c = pick.as(id, color);
+    return !(c === first || (c !== undefined && first !== undefined && sameWatchColor(c, first)));
   });
 }
 
@@ -2717,6 +2994,8 @@ function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false)
   const setters = WATCH_STATE_ROW_SETTERS as Record<string, Edit<never>>;
   const set = setters[row.key];
   if (set === undefined) return nothing;
+  // What the row reads of each picked tile, for Mixed.
+  const read = (t: WatchPageTile) => stateRowOf(t, row.key);
   switch (row.key) {
     case "stateValueLabelStyle": {
       // One Look draws no number for some kinds' values (a media player's
@@ -2724,25 +3003,28 @@ function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false)
       // button's tooltip.
       const off = oneLookOn ? oneLookValueStylesOff(tileKind(tileEntityId(host.tile))) : {};
       const disabled = Object.fromEntries(Object.keys(off).map((v) => [v, true]));
-      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { disabled, titles: off, picture: neutralPicture(host, set as Edit<string>, VALUE_PICTURE), size: "mini" });
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, {
+        disabled, titles: off, picture: neutralPicture(host, set as Edit<string>, VALUE_PICTURE), size: "mini", read, tryName: "State value",
+      });
     }
     case "stateBarStyle":
-      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { picture: neutralPicture(host, set as Edit<string>, BAR_PICTURE), size: "mini" });
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { picture: neutralPicture(host, set as Edit<string>, BAR_PICTURE), size: "mini", read, tryName: "State bar" });
     case "stateBarColorStyle":
-      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>);
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { read });
     case "decimalPlaces": {
       const { options } = watchDecimalOptions();
-      return segField(label, String(row.value), options.map((n) => [String(n), String(n)] as [string, string]), (v) =>
-        commit(host, row.key, (d) => (set as Edit<number>)(d, host.pageId, host.tileId, Number(v))));
+      const mixed = pickedMixed(host, read);
+      return mixedRow(mixed, segField(label, mixed ? "" : String(row.value), options.map((n) => [String(n), String(n)] as [string, string]), (v) =>
+        commit(host, row.key, (d) => (set as Edit<number>)(d, host.pageId, host.tileId, Number(v)))));
     }
     case "badgeFontSizeOverride":
     case "statusIconSizeOverride":
       // One Look's state size is a share of the tile's own, not a fixed
       // point size, so its Auto names no number.
       return autoSizeRow(host, row.key, label, row.key, typeof row.value === "number" ? row.value : undefined, set as Edit<number | null>,
-        oneLookOn && row.key === "badgeFontSizeOverride" ? "Auto" : undefined);
+        oneLookOn && row.key === "badgeFontSizeOverride" ? "Auto" : undefined, read);
     default:
-      return boolRow(host, row.key, label, row.value === true, set as Edit<boolean>);
+      return boolRow(host, row.key, label, row.value === true, set as Edit<boolean>, read);
   }
 }
 
@@ -2849,6 +3131,13 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
   </div>`;
 }
 
+/** Where State icons and colors would be with several tiles picked: one
+ * grey line, when a picked tile has the card. */
+function renderStateIconsOff(host: TileSettingsHost): TemplateResult | typeof nothing {
+  const has = somePicked(host, () => (watchTileStateIcons(host.tile, host.hass.states[tileEntityId(host.tile)]?.attributes)?.rows.length ?? 0) > 0);
+  return has ? html`<p class="hint keep ts-picked-off">State icons and colors: ${PICKED_HIDDEN_NOTE.toLowerCase()}.</p>` : nothing;
+}
+
 function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined, tint: string | undefined): TemplateResult {
   const setting = `stateIcon:${state}`;
   // Starts open: a click on the state's Icon button is what asked for it.
@@ -2883,6 +3172,7 @@ function renderStateColorPicker(host: TileSettingsHost, state: string, color: st
       pickSwatch: (v) => write(v),
       default: { title: "The tile's color", on: color === undefined, pick: () => write(null) },
       custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
+      trial: colorTrial(host, "State color", { swatch: (v) => (d) => setWatchTileStateColor(d, host.pageId, host.tileId, state, v), default: (d) => setWatchTileStateColor(d, host.pageId, host.tileId, state, null) }),
       more: colorMoreOf(host, "stateColor"),
       wrap: (body) => typingField(host, setting, body),
     })}
@@ -2899,29 +3189,44 @@ function renderStateColorPicker(host: TileSettingsHost, state: string, color: st
 // Background key at all, so a header has neither section
 // (`watchTileSettingsSections`).
 
+/** What each Border row reads of a tile, for Mixed. */
+const BORDER_READ = {
+  style: (t: WatchPageTile) => watchTileBorderSettings(t).style,
+  thickness: (t: WatchPageTile) => watchTileBorderSettings(t).thickness,
+  lineStyle: (t: WatchPageTile) => watchTileBorderSettings(t).lineStyle,
+  glow: (t: WatchPageTile) => watchTileBorderSettings(t).glow,
+  animation: (t: WatchPageTile) => watchTileBorderSettings(t).animation,
+  speed: (t: WatchPageTile) => watchTileBorderSettings(t).speed,
+  intensity: (t: WatchPageTile) => watchTileBorderSettings(t).intensity,
+  size: (t: WatchPageTile) => watchTileBorderSettings(t).size,
+  activeOnly: (t: WatchPageTile) => watchTileBorderSettings(t).activeOnly,
+};
+
 function renderBorder(host: TileSettingsHost): TemplateResult {
   const b = watchTileBorderSettings(host.tile);
   const reset = (key: string) => resetValue("border", key);
   if (tileKind(tileEntityId(host.tile)) === "spacer") {
     return html`
-      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, SMALL_THICKNESS)}
+      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, { ...SMALL_THICKNESS, read: BORDER_READ.thickness, tryName: "Border thickness" })}
       <div class="hint ts-under">A spacer draws a plain line in its own color at this thickness. The other border settings do nothing on it.</div>
       ${resetRow(host, "border", "Border")}`;
   }
   return html`
-    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle, { picture: neutralPicture(host, setWatchTileBorderStyle, BORDER_PICTURE), size: "mini" })}
+    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle, {
+      picture: neutralPicture(host, setWatchTileBorderStyle, BORDER_PICTURE), size: "mini", read: BORDER_READ.style, tryName: "Border style",
+    })}
     ${b.style === "line" ? html`
-      ${oneLook(host) ? oneLookThickness(host, b.thickness) : enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, SMALL_THICKNESS)}
-      ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle, { picture: lineStyleLine, size: "small" })}
-      ${sliderRow(host, "borderGlow", "Glow", "borderGlow", b.glow, setWatchTileBorderGlow, { reset: reset("borderGlow"), percent: true })}` : nothing}
+      ${oneLook(host) ? oneLookThickness(host, b.thickness) : enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, { ...SMALL_THICKNESS, read: BORDER_READ.thickness, tryName: "Border thickness" })}
+      ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle, { picture: lineStyleLine, size: "small", read: BORDER_READ.lineStyle, tryName: "Border line style" })}
+      ${sliderRow(host, "borderGlow", "Glow", "borderGlow", b.glow, setWatchTileBorderGlow, { reset: reset("borderGlow"), percent: true, read: BORDER_READ.glow })}` : nothing}
     ${b.style === "animate" ? html`
-      ${tryEnumRow(host, "borderAnimation", "Animation", "borderAnimation", b.animation, setWatchTileBorderAnimation)}
+      ${tryEnumRow(host, "borderAnimation", "Animation", "borderAnimation", b.animation, setWatchTileBorderAnimation, BORDER_READ.animation, "Border animation")}
       ${b.animation === "none" ? nothing : html`
-        ${sliderRow(host, "borderSpeed", "Speed", "borderAnimationSpeed", b.speed, setWatchTileBorderSpeed, { reset: reset("borderAnimationSpeed") })}
-        ${sliderRow(host, "borderIntensity", "Intensity", "borderAnimationIntensity", b.intensity, setWatchTileBorderIntensity, { reset: reset("borderAnimationIntensity") })}
-        ${sliderRow(host, "borderSize", "Size", "borderAnimationSize", b.size, setWatchTileBorderSize, { reset: reset("borderAnimationSize") })}`}` : nothing}
+        ${sliderRow(host, "borderSpeed", "Speed", "borderAnimationSpeed", b.speed, setWatchTileBorderSpeed, { reset: reset("borderAnimationSpeed"), read: BORDER_READ.speed })}
+        ${sliderRow(host, "borderIntensity", "Intensity", "borderAnimationIntensity", b.intensity, setWatchTileBorderIntensity, { reset: reset("borderAnimationIntensity"), read: BORDER_READ.intensity })}
+        ${sliderRow(host, "borderSize", "Size", "borderAnimationSize", b.size, setWatchTileBorderSize, { reset: reset("borderAnimationSize"), read: BORDER_READ.size })}`}` : nothing}
     ${b.style === "none" ? nothing : html`
-      ${boolRow(host, "borderActiveOnly", "Only when on", b.activeOnly, setWatchTileBorderActiveOnly)}
+      ${boolRow(host, "borderActiveOnly", "Only when on", b.activeOnly, setWatchTileBorderActiveOnly, BORDER_READ.activeOnly)}
       ${colorPicker(host, "borderColor", {
         label: "Border color",
         color: () => watchTileBorderSettings(host.tile).color,
@@ -2939,6 +3244,8 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
 function oneLookThickness(host: TileSettingsHost, thickness: string): TemplateResult {
   const row = enumRow(host, "borderThickness", "Thickness", "borderThickness", thickness, setWatchTileBorderThickness, {
     ...SMALL_THICKNESS,
+    read: BORDER_READ.thickness,
+    tryName: "Border thickness",
     disabled: { extraThin: true },
     titles: { extraThin: ONE_LOOK_EXTRA_THIN_REASON },
   });
@@ -2947,15 +3254,29 @@ function oneLookThickness(host: TileSettingsHost, thickness: string): TemplateRe
 
 // ── styling: Background ──────────────────────────────────────────────────
 
+/** What each Background row reads of a tile, for Mixed. */
+const BACKGROUND_READ = {
+  pattern: (t: WatchPageTile) => watchTileBackgroundSettings(t).pattern,
+  patternOpacity: (t: WatchPageTile) => watchTileBackgroundSettings(t).patternOpacity,
+  patternScale: (t: WatchPageTile) => watchTileBackgroundSettings(t).patternScale,
+  effect: (t: WatchPageTile) => watchTileBackgroundSettings(t).effect,
+  effectActiveOnly: (t: WatchPageTile) => watchTileBackgroundSettings(t).effectActiveOnly,
+  speed: (t: WatchPageTile) => watchTileBackgroundSettings(t).speed,
+  intensity: (t: WatchPageTile) => watchTileBackgroundSettings(t).intensity,
+  size: (t: WatchPageTile) => watchTileBackgroundSettings(t).size,
+};
+
 function renderBackground(host: TileSettingsHost): TemplateResult {
   const g = watchTileBackgroundSettings(host.tile);
   const reset = (key: string) => resetValue("background", key);
   return html`
     <div class="ts-sub-h"><span>Pattern</span></div>
-    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern, { picture: (v) => patternSwatch(v, PATTERN_GROUND), size: "swatch" })}
+    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern, {
+      picture: (v) => patternSwatch(v, PATTERN_GROUND), size: "swatch", read: BACKGROUND_READ.pattern, tryName: "Pattern",
+    })}
     ${g.pattern === "none" ? nothing : html`
-      ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
-      ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
+      ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true, read: BACKGROUND_READ.patternOpacity })}
+      ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale, { read: BACKGROUND_READ.patternScale })}
       ${colorPicker(host, "patternColor", {
         label: "Pattern color",
         color: () => watchTileBackgroundSettings(host.tile).patternColor,
@@ -2969,9 +3290,9 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
 function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBackgroundSettings>, reset: (key: string) => unknown): TemplateResult {
   return html`
     <div class="ts-sub-h"><span>Effect</span></div>
-    ${tryEnumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect)}
+    ${tryEnumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect, BACKGROUND_READ.effect, "Effect")}
     ${g.effect === "none" ? nothing : html`
-      ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly)}
+      ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly, BACKGROUND_READ.effectActiveOnly)}
       ${colorPicker(host, "effectColor", {
         label: "Effect color",
         color: () => watchTileBackgroundSettings(host.tile).effectColor,
@@ -2980,9 +3301,9 @@ function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBack
         defaultTitle: "The tile's color",
         write: (d, v) => setWatchTileEffectColor(d, host.pageId, host.tileId, v),
       })}
-      ${sliderRow(host, "effectSpeed", "Speed", "animationSpeed", g.speed, setWatchTileEffectSpeed, { reset: reset("animationSpeed") })}
-      ${sliderRow(host, "effectIntensity", "Intensity", "animationIntensity", g.intensity, setWatchTileEffectIntensity, { reset: reset("animationIntensity") })}
-      ${sliderRow(host, "effectSize", "Size", "animationSize", g.size, setWatchTileEffectSize, { reset: reset("animationSize") })}`}
+      ${sliderRow(host, "effectSpeed", "Speed", "animationSpeed", g.speed, setWatchTileEffectSpeed, { reset: reset("animationSpeed"), read: BACKGROUND_READ.speed })}
+      ${sliderRow(host, "effectIntensity", "Intensity", "animationIntensity", g.intensity, setWatchTileEffectIntensity, { reset: reset("animationIntensity"), read: BACKGROUND_READ.intensity })}
+      ${sliderRow(host, "effectSize", "Size", "animationSize", g.size, setWatchTileEffectSize, { reset: reset("animationSize"), read: BACKGROUND_READ.size })}`}
     ${resetRow(host, "background", "Background")}`;
 }
 
@@ -3097,9 +3418,13 @@ export const tileSettingsStyles = css`
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
 
-  /* Arrange in the head card (\`arrange-card.ts\`). */
+  /* The Arrangement section (\`arrange-card.ts\`): in Free, the large live
+     tile on a black well as wide as the section, then the rows. */
   .ts-arr { display: flex; flex-direction: column; gap: 4px; }
-  .ts-head .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin: -2px 0 0; }
+  .ts-arr-pic {
+    display: grid; place-items: center; width: 100%; min-height: 150px; margin: 6px 0; padding: 14px;
+    border-radius: 10px; background: #000; overflow: hidden;
+  }
   .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
   .ts-arr-spot-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .ts-arr-spots {
@@ -3114,30 +3439,52 @@ export const tileSettingsStyles = css`
   .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
 
-  /* The inspector's head card (\`renderTileHead\`), the top of the first
-     column: the live tile on a black well as wide as the column, then Name
-     and Preview as as rows like a card's, and between them one small line
-     with the entity and Reset tile. */
+  /* The inspector's head (\`renderTileHead\`): one strip across the
+     inspector, wrapping on a narrow one. The path and the live tiles at its
+     start, Name and Shows in the middle (labels over their boxes), the
+     actions and Find a setting at its end. */
   .ts-head {
-    display: flex; flex-direction: column; gap: 8px; --wa-lab: 72px;
-    margin: 0 0 10px; padding: 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-card);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px;
+    margin: 0; padding: 16px 20px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card);
   }
-  .ts-head-pic { display: grid; place-items: center; width: 100%; height: 150px; border-radius: 8px; background: #000; overflow: hidden; }
-  .ts-head-fields { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .ts-head .field.ts-head-f, .ts-head .ts-head-f > .field { margin: 0; min-height: 0; }
+  .ts-head-lead { display: flex; flex-direction: column; gap: 10px; flex: 0 1 auto; min-width: 0; }
+  .ts-head-mid { display: flex; flex-direction: column; gap: 8px; flex: 1 1 280px; min-width: 240px; max-width: 440px; }
+  .ts-head-side {
+    display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
+    flex: 1 1 300px; min-width: 260px; align-self: stretch;
+  }
+  .ts-head-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .ts-head-lab { font-size: 12.5px; color: var(--wa-muted); }
+  .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
   .ts-head .ts-head-f input[type=text] {
-    width: 100%; min-width: 0; height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
+    width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px; font-size: 14px; font-weight: 500; border-radius: 8px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
-  .ts-head-arr { display: flex; flex-direction: column; gap: 6px; }
-  .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
-  .ts-head-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-left: calc(var(--wa-lab) + 8px); }
-  .ts-head-entity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--wa-muted); }
-  .ts-head-none { font-size: 11.5px; color: var(--wa-muted); }
-  .ts-head-line > button.ts-reset-btn { flex: none; white-space: nowrap; min-height: 22px; padding: 0 7px; font-size: 11.5px; }
+  .ts-head-ent {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; height: 36px; padding: 0 10px;
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field);
+  }
+  .ts-head-entity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--wa-soft, var(--wa-ink)); }
+  .ts-head-none { font-size: 12.5px; color: var(--wa-muted); }
+  button.link.ts-head-change { flex: none; padding: 2px 4px; border: 0; background: none; font: inherit; font-size: 12px; color: var(--ts-blue, var(--wa-accent)); cursor: pointer; }
+  button.link.ts-head-change:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; }
+  .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 30px; padding: 0 10px; font-size: 13px; }
+  .ts-head-acts > button svg.ui-icon { width: 15px; height: 15px; }
   button.ghost.ts-reset-btn:disabled { opacity: .45; }
 
   ${pictureChoiceStyles}
+
+  /* Several tiles picked: a row whose tiles differ says Mixed in grey after
+     its title, and the primary tile's number it still holds is drawn faint
+     (\`mixedRow\`); a group's parts that are one tile's are named on one
+     grey line. */
+  .ts-mixed-f .field > span:first-child::after {
+    content: "Mixed"; margin-left: 4px; font-style: italic; font-weight: 400; color: var(--wa-hint, var(--wa-muted));
+  }
+  .ts-mixed-f input[type=number]:not(:focus) { color: transparent; }
+  .ts-mixed-f input[type=range] { opacity: .45; }
+  .ts-picked-off { margin: 6px 0 2px; font-size: 12px; color: var(--wa-hint, var(--wa-muted)); }
 
   /* The tile inspector's groups (\`renderTileInspector\`): Look, Text, Tap
      and Layout in one to four columns by the inspector's own width, pure

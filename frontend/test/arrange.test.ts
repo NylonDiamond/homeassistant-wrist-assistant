@@ -34,8 +34,14 @@ import {
   setArrangePickedPart,
 } from "../src/watch-pages/arrange-model.js";
 import { setWatchTileArrange } from "../src/watch-pages/tile-settings-model.js";
-import { renderArrangeHead } from "../src/watch-pages/arrange-card.js";
-import { tileArrangeShown, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
+import { renderArrangeSection } from "../src/watch-pages/arrange-card.js";
+import {
+  tileArrangeShown,
+  tileInspectorParts,
+  tileInspectorSections,
+  watchTileInspectorPartChanged,
+  watchTileInspectorPartReset,
+} from "../src/watch-pages/tile-settings.js";
 
 (globalThis as { document?: unknown }).document ??= { activeElement: null };
 (globalThis as { HTMLElement?: unknown }).HTMLElement ??= class {};
@@ -333,18 +339,20 @@ function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers
   } as unknown as TileSettingsHost;
   return { host, draft };
 }
-/** The head's Arrange rows, under the live tile: Arrange, Part and the part's rows. */
-const head = (host: TileSettingsHost) => renderArrangeHead(host);
+/** The Arrangement section's rows: Arrange, Part and the part's rows. */
+const head = (host: TileSettingsHost) => renderArrangeSection(host);
 const card = head;
 const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel: "Kitchen", color: "#8F7BEA" };
 const stored = (host: TileSettingsHost) => host.tile.arrange;
 
 describe("the Arrangement card", () => {
-  it("comes right after Size under One Look, for tiles with their own parts", () => {
-    // No card of its own: Arrange stands in the head, under the live tile.
+  it("comes right after Size in Layout under One Look, for tiles with their own parts", () => {
+    // No settings section of its own: an inspector part of Layout.
     expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 2)).toEqual(["size", "icon"]);
     expect(tileArrangeShown(tileHost(KITCHEN).host)).toBe(true);
+    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "layout")?.parts).toEqual(["size", "arrange"]);
     expect(tileArrangeShown(tileHost(KITCHEN, { oneLook: false }).host)).toBe(false);
+    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "layout")?.parts).toEqual(["size"]);
     for (const entityId of ["spacer.x", "divider.line.light", "template.x", "map.x", "macro.x"]) {
       expect(arrangeOffered({ id: "x", entityId }), entityId).toBe(false);
     }
@@ -365,6 +373,25 @@ describe("the Arrangement card", () => {
     expect(free).toContain("Native place");
     expect(free).toContain("Put every part back");
     expect(text(head(host))).toContain("aria-label=Part");
+  });
+
+  it("draws the editor's large live tile in Free only, between Arrange and Part", () => {
+    const { host } = tileHost(KITCHEN);
+    const picture = () => svg`<rect class="big-tile"></rect>`;
+    expect(text(renderArrangeSection(host, picture))).not.toContain("big-tile");
+    click(head(host), ">Free</button>");
+    const free = text(renderArrangeSection(host, picture));
+    expect(free).toContain(`<div class="ts-arr-pic"><rect class="big-tile"></rect></div>`);
+    expect(free.indexOf("aria-label=Arrange>")).toBeLessThan(free.indexOf("ts-arr-pic"));
+    expect(free.indexOf("ts-arr-pic")).toBeLessThan(free.indexOf("aria-label=Part"));
+  });
+
+  it("marks the section changed while an arrangement is stored, and its Reset goes back to Default", () => {
+    const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
+    expect(watchTileInspectorPartChanged(host, "arrange")).toBe(true);
+    draft.apply(watchTileInspectorPartReset(host, "arrange")!(draft.document));
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
+    expect(watchTileInspectorPartChanged(host, "arrange")).toBe(false);
   });
 
   it("writes a spot, a size and hidden for the part picked, each one undo step", () => {

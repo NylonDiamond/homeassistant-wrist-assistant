@@ -314,7 +314,7 @@ describe("the inspector's groups", () => {
     expect(of("look")).toEqual(["removed", "header", "phoneTile", "special", "phone", "color", "icon", "glow", "whenOff", "background", "border", "phoneExtras"]);
     expect(of("text")).toEqual(["text", "state"]);
     expect(of("tap")).toEqual(["opens", "target", "request", "action", "tapAnimation", "visibility"]);
-    expect(of("layout")).toEqual(["size"]);
+    expect(of("layout")).toEqual(["size", "arrange"]);
   });
 
   it("give a light its groups in order and leave out a group with nothing in it", () => {
@@ -323,11 +323,15 @@ describe("the inspector's groups", () => {
       { group: "look", parts: ["color", "icon", "glow", "whenOff", "background", "border"] },
       { group: "text", parts: ["text", "state"] },
       { group: "tap", parts: ["action", "tapAnimation", "visibility"] },
-      { group: "layout", parts: ["size"] },
+      { group: "layout", parts: ["size", "arrange"] },
     ]);
-    // Size is the page editor's: without its rows there is no Layout.
+    // Size is the page editor's: without its rows Layout holds the
+    // Arrangement alone.
     const text = flat(renderTileInspector(host));
-    expect([...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "Text", "Tap"]);
+    expect([...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "Text", "Tap", "Layout"]);
     expect(text).toContain(`<span class="ts-grp-d">What it does, when it shows</span>`);
+    expect(text).toContain(`<h3 class="ts-grp-t">Layout</h3><span class="ts-grp-d">Size, arrangement</span>`);
+    expect(text).not.toContain("data-part=size");
+    expect(text).toContain("<h4>Arrangement</h4>");
   });
 });

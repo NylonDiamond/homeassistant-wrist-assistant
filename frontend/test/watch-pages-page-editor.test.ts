@@ -1420,15 +1420,19 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(draft().canUndo).toBe(false);
   });
 
-  it("draws the parts on the inspector head's larger tile too, and drags them by shares of that tile", () => {
+  it("draws the parts on the Arrangement section's larger tile too, and drags them by shares of that tile", () => {
     const { el, body, move, up, tileOf } = stage("T-BIG");
     body();
-    // The inspector is stubbed here: the head's live tile is drawn on its own.
+    // The inspector is stubbed here: the Arrangement's live tile is drawn on its own.
     const page = (el.currentPage as () => WatchPage).call(el);
-    const headTile = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")));
-    expect(headTile).toContain(`class="pe-head-tile arr"`);
-    expect(headTile).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
-    const head = el.headArrange as { scale: number; stage: { size: { width: number; height: number } } };
+    const bigTile = flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")));
+    expect(bigTile).toContain(`class="pe-head-tile arr"`);
+    expect(bigTile).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
+    // The head's live tiles are pictures only: no parts to drag there.
+    const headTile = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile, as: string) => unknown).call(el, page, tileOf("T-BIG"), "on"));
+    expect(headTile).toContain(`class="pe-head-tile"`);
+    expect(headTile).not.toContain("pe-part");
+    const head = el.layoutArrange as { scale: number; stage: { size: { width: number; height: number } } };
     const onStage = el.stageArrange as { scale: number };
     expect(head.scale).toBeGreaterThan(onStage.scale);
     (el.onPartPointerDown as (...a: unknown[]) => void).call(el, {

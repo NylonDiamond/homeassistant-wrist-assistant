@@ -235,30 +235,29 @@ afterEach(() => {
 // ── the head ─────────────────────────────────────────────────────────────
 
 describe("the breadcrumb", () => {
-  it("reads Page to go back, the tile's kind in its color, and the tile's name", () => {
+  it("reads Page to go back, then the tile's name, at the start of the tile's head strip", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
-    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body"`));
-    expect(head).toMatch(/<button type="button" class="pe-back" title="Back to the page's settings"[^>]*>.*<span>Page<\/span><\/button>\s*<div class="crumbs"><span class="kchip"/s);
-    expect(head).not.toContain(`class="root"`);
-    expect(head).toContain(`<span class="kchip" style=--k:${watchTileKindColor("light")}>Light</span>`);
-    expect(head).toContain(`<span class="nm" title=Smart Plug Dimmer>Smart Plug Dimmer</span>`);
-    expect(head).not.toContain("Show the page");
+    // No breadcrumb head over a tile: the strip holds the path.
+    expect(text).not.toContain(`<div class="insp-head">`);
+    const strip = text.slice(text.indexOf(`<div class="pe-strip">`), text.indexOf(`<div class="insp-body`));
+    expect(strip).toMatch(/<nav class="pe-path" aria-label="Where you are">\s*<button type="button" class="pe-path-back" title="Back to the page's settings"[^>]*>Page<\/button>/);
+    expect(strip).toContain(`<span class="pe-path-nm" title=Smart Plug Dimmer (Light)>Smart Plug Dimmer</span>`);
+    expect(strip).not.toContain("Show the page");
   });
 
-  it("hides plain help until Help is on, and keeps the switch in this browser", () => {
+  it("hides plain help until the bar's Help is on, with no Help of the inspector's own", () => {
     const el = editor(hallPage(), DIMMER);
-    expect(flat(inspector(el))).toContain(`<div class="insp-body" data-help=off>`);
-    click(inspector(el), `class="expand pe-help `);
-    expect(flat(inspector(el))).toContain(`<div class="insp-body" data-help=on>`);
-    expect(storage.data["wa-page-editor-help"]).toBe("1");
-    expect(flat(inspector(editor(hallPage(), DIMMER)))).toContain(`data-help=on`);
+    expect(flat(inspector(el))).toContain(`<div class="insp-body pe-tile-body" data-help=off>`);
+    for (const tile of [DIMMER, undefined]) expect(flat(inspector(editor(hallPage(), tile)))).not.toContain(">Help<");
+    el.helpOn = true;
+    expect(flat(inspector(el))).toContain(`<div class="insp-body pe-tile-body" data-help=on>`);
   });
 
   it("goes back to the page's own cards from Page", () => {
     // Leaving a tile ends a drag on one of its numbers, at the window.
     vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
     const el = editor(hallPage(), DIMMER);
-    click(inspector(el), `class="pe-back"`);
+    click(inspector(el), `class="pe-path-back"`);
     expect(el.selectedTileId).toBeUndefined();
     const text = flat(inspector(el));
     expect(text).toContain(`<span class="kchip" style=--k:${WATCH_PAGE_CHIP_COLOR}>Page</span><span class="nm" title=Hall>Hall</span>`);
@@ -322,24 +321,36 @@ describe("Collapse all", () => {
 // ── the cards ────────────────────────────────────────────────────────────
 
 describe("the tile's cards", () => {
-  it("start with the head card, then four groups: Look, Text, Tap and Layout, each with its sections", () => {
+  it("start with the head strip, then four groups: Look, Text, Tap and Layout, each with its sections", () => {
     const el = editor(hallPage(), DIMMER);
     const text = flat(inspector(el));
-    const body = text.slice(text.indexOf(`<div class="insp-body"`));
-    // The head: the live tile, Name, the entity, Reset tile and Preview as,
-    // over the groups, before any section.
-    const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf("<h4>"));
-    expect(body.indexOf(`<div class="pe-tile-head">`)).toBeLessThan(body.indexOf(`<section class="ts-head`));
-    expect(body.indexOf(`<section class="ts-head`)).toBeLessThan(body.indexOf(`<div class="ts-root ts-groups">`));
-    expect(head).toContain(`<div class="ts-head-pic"><span class="pe-head-tile `);
-    expect(head).toContain(`aria-label="Name"`);
-    expect(head).toContain(`<code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code>`);
-    expect(head).toContain(`aria-label=Preview as`);
-    expect(head).toContain("Reset tile</button>");
+    // The head strip over the groups: the path and the live tiles, Name and
+    // Shows, then the actions and Find a setting.
+    expect(text.indexOf(`<div class="pe-strip">`)).toBeLessThan(text.indexOf(`<div class="insp-body`));
+    const head = text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<div class="insp-body`));
     expect(head).not.toContain("<h4>");
+    const lead = head.slice(head.indexOf(`<div class="ts-head-lead">`), head.indexOf(`<div class="ts-head-mid">`));
+    expect(lead.indexOf("pe-path")).toBeLessThan(lead.indexOf("pe-states"));
+    expect(lead).toContain(`<span class="pe-st-pic"><span class="pe-head-tile" `);
+    const mid = head.slice(head.indexOf(`<div class="ts-head-mid">`), head.indexOf(`<div class="ts-head-side">`));
+    expect(mid).toContain(`<span class="ts-head-lab">Name</span>`);
+    expect(mid).toContain(`aria-label="Name"`);
+    expect(mid).toContain(`<span class="ts-head-lab">Shows</span><div class="ts-head-ent"><code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code>`);
+    // A light says what it shows by its entity: no Change, which is a library tile's.
+    expect(mid).not.toContain("ts-head-change");
+    const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
+    const acts = [...side.matchAll(/<span>(Duplicate|Hide|Reset|Delete)<\/span>/g)].map((m) => m[1]);
+    expect(acts).toEqual(["Duplicate", "Hide", "Reset", "Delete"]);
+    expect(side.indexOf("ts-head-acts")).toBeLessThan(side.indexOf(`class="pe-find"`));
+    expect(side).toContain(`placeholder="Find a setting"`);
+    expect(side).toContain(`<kbd class="pe-kbd" title="Press / to find a setting">/</kbd>`);
+    expect(text).not.toContain("Preview as");
+    expect(text).not.toContain("Delete tile");
+    const body = text.slice(text.indexOf(`<div class="insp-body`));
     // No Name card any more, and the name's box is the head's alone.
     expect(body).not.toContain("name-sec");
-    expect(body.match(/aria-label="Name"/g)?.length).toBe(1);
+    expect(body).not.toContain(`aria-label="Name"`);
+    expect(text.match(/aria-label="Name"/g)?.length).toBe(1);
     expect(card(body, "Name")).not.toContain(`aria-label="Label"`);
     // The groups, in their order, each with its title, its line and its
     // sections.
@@ -348,7 +359,12 @@ describe("the tile's cards", () => {
     expect(titles(group(body, "look"))).toEqual(["Color", "Icon", "Glow", "When it is off", "Background", "Border"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
     expect(titles(group(body, "tap"))).toEqual(["Action", "Tap animation", "Show tile"]);
-    expect(titles(group(body, "layout"))).toEqual(["Size"]);
+    expect(titles(group(body, "layout"))).toEqual(["Size", "Arrangement"]);
+    expect(group(body, "layout")).toContain(`<span class="ts-grp-d">Size, arrangement</span>`);
+    // The Arrangement: Default or Free, with no large tile until Free.
+    const arrangement = card(body, "Arrangement");
+    expect(arrangement).toMatch(/aria-label=Arrange>/);
+    expect(arrangement).not.toContain("ts-arr-pic");
     // The Size section: the presets as page strips, then the boxes folded
     // under a line that says where the tile is.
     const size = card(body, "Size");
@@ -357,7 +373,6 @@ describe("the tile's cards", () => {
     expect(size).toContain(`class="pe-size-more" aria-expanded=false`);
     expect(size).not.toContain(`class="pe-fields"`);
     expect(size.indexOf("pe-presets")).toBeLessThan(size.indexOf("pe-size-more"));
-    expect(body).toContain("Delete tile");
   });
 
   it("stand the groups in one to four columns by the inspector's own width, in CSS alone, and the inspector keeps one width with or without a tile", () => {
@@ -377,31 +392,52 @@ describe("the tile's cards", () => {
     expect(css).toContain("@container insp (min-width: 1080px) { .ts-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ts-g2 { display: contents; } .ts-g3 { display: flex; } }");
     expect(css).toContain("@container insp (min-width: 1560px) { .ts-groups { grid-template-columns: repeat(4, minmax(0, 1fr)); } .ts-g3 { display: contents; } }");
     expect(css).not.toContain("pe-tile-on");
-    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 1500px\);/);
+    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 2200px\);/);
+    // The head strip stays at the top only where it is one row tall enough.
+    expect(css).toContain("@container insp (min-width: 1080px) { .pe-strip { position: sticky; top: 0; outline: 8px solid var(--wa-bg); } }");
   });
 
-  it("switch the head's live tile with Preview as, and leave the stage and the draft alone", () => {
+  it("draw the tile on, off and unavailable in the head, and pin the one clicked on the stage, never in the draft", () => {
     const el = editor(hallPage(), DIMMER);
-    const pic = () => {
+    const states = () => {
       const text = flat(inspector(el));
-      return text.slice(text.indexOf(`<div class="ts-head-pic">`), text.indexOf(`<div class="ts-head-fields">`));
+      return text.slice(text.indexOf(`<div class="pe-states"`), text.indexOf(`<div class="ts-head-mid">`));
     };
     const document = () => (el.draft as { document: unknown }).document;
     const before = document();
-    expect(el.tilePreviewAs).toBe("on");
-    const on = pic();
-    expect(on).toContain(">On<");
-    click(inspector(el), `>Off</button>`);
-    expect(el.tilePreviewAs).toBe("off");
-    const off = pic();
-    expect(off).not.toBe(on);
-    expect(off).toContain(">Off<");
-    click(inspector(el), `>Unavailable</button>`);
-    expect(el.tilePreviewAs).toBe("unavailable");
-    expect(pic()).not.toBe(off);
-    expect(document()).toBe(before);
-    expect(el.liveStates).toBe(false);
+    const drawn = states();
+    expect([...drawn.matchAll(/<span class="pe-st-label">([^<]+)/g)].map((m) => m[1])).toEqual(["On", "Off", "Unavailable"]);
+    // Each is its own picture, and Home Assistant says the light is on.
+    const pics = drawn.split(`<span class="pe-st-pic">`).slice(1);
+    expect(new Set(pics).size).toBe(3);
+    expect(drawn).toMatch(/On<i class="pe-state-live"/);
+    expect(drawn).not.toContain(`class="pe-st on"`);
+    click(inspector(el), `<span class="pe-st-label">Off<`);
+    expect([...(el.testStates as Map<string, string>)]).toEqual([["light.smart_plug_dimmer", "off"]]);
+    expect(states()).toMatch(/<button type="button" class="pe-st on" aria-pressed=true[^>]*>\s*<span class="pe-st-pic">.*?<span class="pe-st-label">Off</s);
+    click(inspector(el), `<span class="pe-st-label">Unavailable<`);
+    expect((el.testStates as Map<string, string>).get("light.smart_plug_dimmer")).toBe("unavailable");
+    // A click on the pinned one lets it go.
+    click(inspector(el), `<span class="pe-st-label">Unavailable<`);
     expect((el.testStates as Map<string, string>).size).toBe(0);
+    expect(document()).toBe(before);
+  });
+
+  it("name the states in the entity's own words, offer Now for a kind with no on or off, and one tile with no entity", () => {
+    const person = { ...DIMMER_TILE, id: "C3A0E000-0000-4000-8000-0000000000C3", entityId: "person.anna" };
+    const sensor = { ...DIMMER_TILE, id: "C3A0E000-0000-4000-8000-0000000000C4", entityId: "sensor.hall_temp", gridRow: 4 };
+    const el = editor(hallPage({ items: [person, sensor, SPACER_TILE] }), person.id);
+    const labels = () => {
+      const text = flat(inspector(el));
+      return [...text.matchAll(/<span class="pe-st-label">([^<]+)/g)].map((m) => m[1]);
+    };
+    expect(labels()).toEqual(["Home", "Away", "Unavailable"]);
+    el.selectedTileId = sensor.id;
+    expect(labels()).toEqual(["Now", "Unavailable"]);
+    el.selectedTileId = SPACER;
+    const text = flat(inspector(el));
+    expect(labels()).toEqual([]);
+    expect(text).toContain(`<div class="pe-states"><span class="pe-st-one"><span class="pe-head-tile" `);
   });
 
   it("put the tile's look back in one step with Reset tile, keeping its name and size", () => {
@@ -410,8 +446,8 @@ describe("the tile's cards", () => {
       iconShadow: true, labelShadow: false, iconTapAnimation: "slide",
     }, SPACER_TILE] });
     const el = editor(page, DIMMER);
-    expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=false[^>]*>.*Reset tile<\/button>/s);
-    click(inspector(el), "Reset tile</button>");
+    expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=false[^>]*>.*<span>Reset<\/span><\/button>/s);
+    click(inspector(el), "<span>Reset</span></button>");
     const tile = (el.currentPage()!.items as WatchPageTile[]).find((t) => t.id === DIMMER)!;
     // The keys the phone and the watch require go back to their defaults,
     // never away: without one, both refuse the whole page (2026-10-26).
@@ -481,11 +517,11 @@ describe("the tile's cards", () => {
     expect(Object.keys(WATCH_TILE_SECTION_BADGES).sort()).toEqual(Object.keys(WATCH_TILE_SETTINGS_SECTION_TITLES).sort());
   });
 
-  it("give a spacer no Name and no Preview as in its head: it has no label and no entity", () => {
+  it("give a spacer no Name and no states in its head: it has no label and no entity", () => {
     const text = flat(inspector(editor(hallPage(), SPACER)));
     expect(text).not.toContain("name-sec");
     expect(text).not.toContain(`aria-label="Name"`);
-    expect(text).not.toContain("Preview as");
+    expect(text).not.toContain(`class="pe-st `);
     expect(text).toContain(`<span class="ts-head-none">No entity</span>`);
     // Look and Layout only: a group with nothing in it is not drawn.
     expect(groupTitles(text)).toEqual(["Look", "Layout"]);
@@ -581,9 +617,12 @@ describe("the inspector with several tiles picked", () => {
     expect(head).toContain(`class="pe-back"`);
     expect(head).toMatch(/<span class="kchip"[^>]*>2 tiles<\/span><span class="nm">Hall<\/span>/);
     expect(head).not.toContain("Collapse all");
-    // The picked tiles' card, then the Group card (group-settings.ts).
-    expect(cards(text)).toHaveLength(2);
-    expect(cards(text)[1]).toContain("<h4>Group<");
+    // The groups the picked tiles share, then the picked tiles' card and the
+    // Group card (group-settings.ts).
+    const secs = cards(text).filter((c) => c.startsWith(`<section class="sec `));
+    expect(secs).toHaveLength(2);
+    expect(secs[1]).toContain("<h4>Group<");
+    expect(text.indexOf(`<section class="ts-grp"`)).toBeLessThan(text.indexOf("2 tiles picked"));
     const picked = card(text, "2 tiles picked");
     // Each picked tile, in reading order, with its face, name and kind.
     const rows = [...picked.matchAll(/data-picked-tile=([^\s>]+)/g)].map((m) => m[1]);
@@ -596,9 +635,9 @@ describe("the inspector with several tiles picked", () => {
     expect(picked).toContain("<span>Duplicate 2 tiles</span>");
     expect(picked).toMatch(/class="pe-btn pe-danger pe-picked-del" \?disabled=false/);
     expect(picked).toContain("<span>Delete 2 tiles</span>");
-    // None of the single tile's cards.
-    expect(text).not.toContain("<h4>Name");
+    // Not the size, which is one tile's: the group's grey line names it.
     expect(text).not.toContain("<h4>Size");
+    expect(text).toMatch(/<p class="hint keep ts-picked-off">Shown when one tile is picked: Size[^<]*\.<\/p>/);
   });
 
   it("deletes both from its Delete, and goes back to the page from Page", () => {

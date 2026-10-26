@@ -165,6 +165,22 @@ export interface TileSettingsHost extends WatchPagesEditorHost {
    * colors, the target temperature switches, dim when off, every action but
    * the confirmation). */
   readonly domainStyle?: true;
+  /** Set while several tiles are picked together, so the settings edit all
+   * of them at once (`multi-pick.ts`). `tileId` and `tile` are then the
+   * primary picked tile's, except inside `as`. Absent: one tile. */
+  readonly picked?: TilePick;
+}
+
+/** The tiles picked together on a tile host. */
+export interface TilePick {
+  /** The picked tiles' ids in reading order, two or more. A getter. */
+  readonly ids: readonly string[];
+  /** The picked tiles as the page has them now, in the same order. A
+   * getter. */
+  readonly tiles: readonly WatchPageTile[];
+  /** Run `run` with the host's `tileId` and `tile` reading the picked tile
+   * `id`, so an edit written for one tile makes it on that one. */
+  as<T>(id: string, run: () => T): T;
 }
 
 /** The Add tile dialog's host. The selected tile, when there is one, is the

@@ -527,7 +527,7 @@ describe("a rule's Header", () => {
     expect(card).toContain("placeholder=Lights");
     expect(card).toContain("placeholder=10");
     // The header color is the cards' one picker: its chip says Default.
-    expect(card).toMatch(/aria-label=Default color\s+title=White, the watch's own header color/);
+    expect(card).toMatch(/aria-label=Default color\s+@pointerenter= @focus=\s+title=White, the watch's own header color/);
     type(renderSmartRulesCard(s.host), W("labelText"), "Inside");
     type(renderSmartRulesCard(s.host), W("labelText"), "Indoor");
     expect(s.rule(R1).headerLabel).toBe("Indoor");

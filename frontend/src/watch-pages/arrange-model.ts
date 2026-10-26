@@ -1,4 +1,4 @@
-// What the head's Arrange rows (`arrange-card.ts`) know about the tile they
+// What the Arrangement section's rows (`arrange-card.ts`) know about the tile they
 // arrange, without drawing anything: the tile laid out on its page as One
 // Look draws it, whether Free can place its parts (only the centred layout
 // does) and the words for why not, and which kinds are offered the card at

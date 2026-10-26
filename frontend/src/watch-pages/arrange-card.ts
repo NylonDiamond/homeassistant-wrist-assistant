@@ -1,8 +1,9 @@
-// Where a tile's own parts sit, in the tile's head card under its live tile
-// (`renderArrangeHead`), where the parts are dragged too: Arrange (Default
-// or Free) and, in Free, the Part being placed, its Spot on a 3 by 3 grid of
-// the tile's content box (or its native place), its Size, Shown or Hidden, a
-// small move across and down, and "Put every part back". Every edit is one commit of the tile key
+// Where a tile's own parts sit: the Arrangement section of the tile
+// inspector's Layout group, after Size (`renderArrangeSection`). Arrange
+// (Default or Free) and, in Free, a large live tile the parts are dragged
+// on, the Part being placed, its Spot on a 3 by 3 grid of the tile's content
+// box (or its native place), its Size, Shown or Hidden, a small move across
+// and down, and "Put every part back". Every edit is one commit of the tile key
 // `arrange` (`setWatchTileArrange`), so it goes through the draft and undo
 // like every other tile setting; Default removes the key. The part picked
 // is shared with the stage (`arrangePickedPart`): there the picked part of
@@ -24,6 +25,7 @@ import { numberField, segField } from "../editors.js";
 import type { HassEntityState } from "../ha-api.js";
 import { arrangementFor, arrangementUpdateNote } from "../version.js";
 import { type TileSettingsHost, hostDevice } from "./editor-host.js";
+import type { WatchPagesDocument } from "./model.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
 import {
   type ArrangeFrameSource,
@@ -93,6 +95,13 @@ export function pickArrangeFree(host: TileSettingsHost): void {
   host.requestUpdate();
 }
 
+/** The Arrangement section's Reset: the key goes, as Default writes it,
+ * and Free, if picked, stays picked with nothing moved. */
+export function arrangeResetEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
+  const { pageId, tileId } = host;
+  return (d) => setWatchTileArrange(d, pageId, tileId, undefined);
+}
+
 /** Put every part back: the key goes, Free stays picked. */
 export function putEveryPartBack(host: TileSettingsHost): void {
   setArrangeFreePicked(host.uiState, host.tileId, true);
@@ -117,7 +126,7 @@ function tooOld(host: TileSettingsHost): string[] {
   return (host.pickers ?? []).filter((p) => !arrangementFor(p.version ?? null)).map((p) => p.name);
 }
 
-/** What the head's rows read: the stored arrangement, the tile's One
+/** What the section's rows read: the stored arrangement, the tile's One
  * Look model, why Free cannot place it (undefined when it can), and whether
  * Free shows. */
 function arrangeNow(host: TileSettingsHost): { stored: TileArrange | undefined; model: OneLookPreviewModel | undefined; block: string | undefined; free: boolean } {
@@ -133,12 +142,12 @@ function arrangeNow(host: TileSettingsHost): { stored: TileArrange | undefined; 
 }
 
 /**
- * The head's rows under the live tile: Arrange (Default or Free, Free
- * greyed with the reason on a tile that cannot use it), and with Free the
- * Part being placed and that part's rows. The parts are dragged on the live
- * tile itself.
+ * The Arrangement section's rows: Arrange (Default or Free, Free greyed
+ * with the reason on a tile that cannot use it), and with Free the live
+ * tile the page editor draws for the parts to be dragged on (`picture`, on
+ * a black well), the Part being placed and that part's rows.
  */
-export function renderArrangeHead(host: TileSettingsHost): TemplateResult {
+export function renderArrangeSection(host: TileSettingsHost, picture?: () => TemplateResult | typeof nothing): TemplateResult {
   const { stored, model, block, free } = arrangeNow(host);
   const pick = (v: "default" | "free") => (v === "free" ? pickArrangeFree(host) : pickArrangeDefault(host));
   const arrange = segField<"default" | "free">("Arrange", free ? "free" : "default", [["default", "Default"], ["free", "Free"]], pick, {
@@ -161,7 +170,9 @@ export function renderArrangeHead(host: TileSettingsHost): TemplateResult {
     host.endCoalesce();
     host.requestUpdate();
   };
-  return html`<div class="ts-arr">${arrange}${notes}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
+  const drawn = picture?.() ?? nothing;
+  const well = drawn === nothing ? nothing : html`<div class="ts-arr-pic">${drawn}</div>`;
+  return html`<div class="ts-arr">${arrange}${notes}${well}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
     titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
   })}${renderFreeRows(host, stored, model)}</div>`;
 }

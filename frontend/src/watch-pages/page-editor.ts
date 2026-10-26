@@ -17,7 +17,7 @@
 // scroll) is in `stage.ts`, without any DOM.
 //
 // A tile whose Arrangement is Free shows its parts on the stage while it is
-// the one selected: the part picked in the head's Arrange rows is outlined, a
+// the one selected: the part picked in the Arrangement section is outlined, a
 // drag on it or an arrow key moves it, a click picks another part and
 // Escape lets the pick go, so a drag moves the tile again. The pick is the
 // card's own (`arrangePickedPart` in `arrange-model.ts`), and the math is
@@ -155,7 +155,7 @@ import {
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchCatalogWithHttpLibrary, watchHttpLibraryReadMeansNone } from "./http-library.js";
 import { voiceDocumentOfRecord, watchVoiceFallbacks } from "../watch-voice/defaults.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, type WatchPagesSaveResult, saveWatchPagesDraft } from "./draft.js";
-import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
+import { type AddTileHost, type TilePick, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
   type WatchCell,
   type WatchDropOutcome,
@@ -261,14 +261,24 @@ import {
   phonePagesScreen,
 } from "../phone-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
-import { inspectorColumnCount } from "./inspector-columns.js";
 import {
   forgetTileSettingsNotes,
   renderTileHead,
   renderTileInspector,
+  tileHeadHasEntity,
+  tileInspectorParts,
   tileSettingsStyles,
 } from "./tile-settings.js";
-import { pictureChoice, sizeStrip, watchTriedTile } from "./picture-choice.js";
+import {
+  type SettingFindEntry,
+  findSettings,
+  readSettingFindSections,
+  settingFindIndex,
+  settingFindRows,
+  settingFindWhere,
+} from "./setting-find.js";
+import { watchShowWhenStateChoices } from "./show-when.js";
+import { forgetTileTry, pictureChoice, sizeStrip, watchTriedTile, watchTryLabel } from "./picture-choice.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
   PAGE_DEVICES_FOLD,
@@ -371,12 +381,18 @@ const CARD_THUMB_W = 76;
 /** A page's picture is at most this many times as tall as it is wide: an
  * iPhone's tall pages area shows its top. */
 const PAGE_THUMB_MAX_RATIO = 1.4;
-/** The inspector head's live tile is drawn as large as fits this box, CSS
- * px (its well is `.ts-head-pic`, 220 by 150), and never past this scale,
- * so a small tile does not read as a big one. */
-const HEAD_TILE_W = 204;
-const HEAD_TILE_H = 134;
+/** Each live tile in the inspector head (the tile on, off and unavailable)
+ * is drawn as large as fits this box, CSS px, and never past this scale, so
+ * a small tile does not read as a big one. */
+const STATE_TILE_W = 132;
+const STATE_TILE_H = 88;
 const HEAD_TILE_MAX_SCALE = 3;
+/** The Arrangement section's live tile, which the parts are dragged on, is
+ * larger: as large as fits this box. */
+const ARRANGE_TILE_W = 300;
+const ARRANGE_TILE_H = 190;
+/** How long a setting gone to with Find a setting keeps its blue wash, ms. */
+const FIND_FLASH_MS = 1500;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
@@ -406,6 +422,13 @@ export function stageHiddenReason(
 /** The stage's tag on a hidden tile. */
 export function stageHiddenText(reason: StageHiddenReason): string {
   return reason === "off" ? "Hidden while off" : "Hidden by a rule";
+}
+
+/** A state Home Assistant's words do not name, as plain words: "armed_home"
+ * reads "Armed home". */
+function stateWords(state: string): string {
+  const words = state.replace(/_/g, " ").trim();
+  return words === "" ? state : words[0]!.toUpperCase() + words.slice(1);
 }
 
 /** A copy of a tile with ids of its own: a new id, and a new own id in its
@@ -859,10 +882,14 @@ export class WaPageEditor extends LitElement {
    * strip: the previews draw its entity in that state, over any pinned test
    * state, until the pointer leaves. */
   @state() private hoverState?: { entityId: string; state: string };
-  /** The state the inspector head's preview tile draws its entity in
-   * (Preview as): on, off or unavailable. That tile only, never the stage,
-   * never saved. */
-  @state() private tilePreviewAs: WatchTilePreviewAs = "on";
+  /** Find a setting in the inspector head: what is typed, whether its list
+   * is open, and the entry the arrow keys rest on. */
+  @state() private findQuery = "";
+  @state() private findOpen = false;
+  @state() private findAt = 0;
+  /** The section a Find took the inspector to, washed blue for a moment,
+   * and the timer that lets it go. */
+  private findFlash?: { el: HTMLElement; timer: ReturnType<typeof setTimeout> };
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
@@ -893,11 +920,6 @@ export class WaPageEditor extends LitElement {
    * and the settings stack. Zero before the first measurement. */
   @state() private hostWidth = 0;
   private sizeObserver?: ResizeObserver;
-  /** How many columns of cards the inspector stands, by its measured width
-   * (`inspectorColumnCount`): one until it is first measured. */
-  @state() private inspectorCols = 1;
-  private inspectorObserver?: ResizeObserver;
-  private observedInspector?: HTMLElement;
   /** The sticky block at the top (the bar and a note under it) the observer
    * measures, and its height: written to `--pe-top-h` on the host for the
    * sticky columns under it, and kept here for the drag's auto-scroll. */
@@ -945,10 +967,12 @@ export class WaPageEditor extends LitElement {
    * arrow key on the stage reads to grab, pick or nudge a part. Drawn
    * afresh with every stage. */
   private stageArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
-  /** The same for the inspector head's live tile, while it draws its parts. */
-  private headArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
+  /** The same for the Arrangement section's live tile, while it draws its
+   * parts. */
+  private layoutArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
   /** A press landed on a part of the selected Free tile: the click it ends
-   * with picks that part in the head's Arrange rows, unless it became a drag. */
+   * with picks that part in the Arrangement section's Part row, unless it
+   * became a drag. */
   private pressedPart?: { tileId: string; part: ArrangePart };
   /** The grid's side room in points, as last drawn: the watch's side safe
    * area, none on an iPhone. */
@@ -1042,8 +1066,8 @@ export class WaPageEditor extends LitElement {
     this.headBar.clear();
     this.sizeObserver?.disconnect();
     this.observedTop = undefined;
-    this.inspectorObserver?.disconnect();
-    this.observedInspector = undefined;
+    if (this.findFlash !== undefined) clearTimeout(this.findFlash.timer);
+    this.findFlash = undefined;
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.cancelGestures();
@@ -1184,7 +1208,6 @@ export class WaPageEditor extends LitElement {
       this.renderRoot.querySelector<HTMLElement>(selector)?.focus();
     }
     this.observeTop();
-    this.observeInspector();
     if (this.revealTile) {
       this.revealTile = false;
       const tile = this.selectedTileId === undefined ? undefined : this.tileButton(this.selectedTileId);
@@ -1292,6 +1315,7 @@ export class WaPageEditor extends LitElement {
     // The single tile's cards make way for the pick's card: a field still
     // holding text there commits first.
     if (!this.multiPicked) this.leaveTile();
+    else forgetTileTry(this.uiState);
     this.selectedTileId = primary !== undefined && ids.some((id) => sameWatchId(id, primary)) ? primary : ids[ids.length - 1];
     this.multi = new Set(ids);
     this.fieldNote = undefined;
@@ -1383,6 +1407,8 @@ export class WaPageEditor extends LitElement {
     const focused = (this.renderRoot as ShadowRoot).activeElement;
     if (focused instanceof HTMLElement && focused.closest(".ts-root, .pe-page-insp") !== null) focused.blur();
     forgetTileSettingsNotes(this.uiState);
+    // A choice tried on the old tiles is not one for the new.
+    forgetTileTry(this.uiState);
     this.endScrub();
   }
 
@@ -2543,6 +2569,13 @@ export class WaPageEditor extends LitElement {
     }
     if (isTextField(path[0])) return;
     const dragging = this.gesture !== undefined;
+    // "/" goes to Find a setting from anywhere in the editor but a text
+    // field, while a tile's head draws it. Not Cmd or Ctrl+K: that is Home
+    // Assistant's own quick search, which works on every page.
+    if (e.key === "/" && !mod && !e.altKey && !dragging && this.openFind()) {
+      e.preventDefault();
+      return;
+    }
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
       if (dragging) return;
@@ -2749,7 +2782,7 @@ export class WaPageEditor extends LitElement {
     return part === undefined ? undefined : { tileId: id, part };
   }
 
-  /** Pick a part of a tile, as the head's Part row does. */
+  /** Pick a part of a tile, as the Arrangement section's Part row does. */
   private pickStagePart(tileId: string, part: ArrangePart): void {
     setArrangePickedPart(this.uiState, tileId, part);
     this.draft?.endCoalesce();
@@ -2822,7 +2855,7 @@ export class WaPageEditor extends LitElement {
     this.pressedPart = undefined;
     if (pressed === undefined || e.shiftKey || e.metaKey || e.ctrlKey || !sameWatchId(pressed.tileId, tileId)) return false;
     const drawn = (at: { tileId: string } | undefined) => sameWatchId(at?.tileId, tileId);
-    if (!(drawn(this.stageArrange) || drawn(this.headArrange)) || this.multiPicked) return false;
+    if (!(drawn(this.stageArrange) || drawn(this.layoutArrange)) || this.multiPicked) return false;
     this.pickStagePart(tileId, pressed.part);
     return true;
   }
@@ -3306,7 +3339,10 @@ export class WaPageEditor extends LitElement {
     const document = draft?.document;
     const pages = document === undefined ? [] : watchPagesOf(this.contextPages(document));
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    const helpLabel = this.helpOn ? "Hide the help on the stage and under the settings" : "Show the help on the stage and under the settings";
+    // Called Hints, not Help: the panel's tab row right above has a Help that
+    // opens the setup guide, and two Help buttons doing different jobs read
+    // as one.
+    const helpLabel = this.helpOn ? "Hide the hints on the stage and under the settings" : "Show the hints on the stage and under the settings";
     return html`<div class="wa-bar pe-bar" role="group" aria-label="Page editor">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
@@ -3324,7 +3360,7 @@ export class WaPageEditor extends LitElement {
       ${this.renderSaveStatus(draft)}
       ${this.renderTopMenu(draft)}
       <button type="button" class="tb-btn pe-bar-help ${this.helpOn ? "on" : ""}" aria-pressed=${this.helpOn ? "true" : "false"} title=${helpLabel}
-        @click=${() => { this.helpOn = !this.helpOn; setInspectorHelpOn(this.helpOn); }}>Help</button>
+        @click=${() => { this.helpOn = !this.helpOn; setInspectorHelpOn(this.helpOn); }}>Hints</button>
       ${this.barActions}
     </div>`;
   }
@@ -3466,24 +3502,6 @@ export class WaPageEditor extends LitElement {
     if (top !== undefined) observer.observe(top);
   }
 
-  /** Watch the inspector's width, which sets how many columns its cards
-   * stand in. Its width does not follow what it shows (a tile or the page),
-   * so the count is known before a tile is picked and the cards never
-   * reflow on a pick. Runs after every draw; a no-op on the same column. */
-  private observeInspector(): void {
-    if (typeof ResizeObserver === "undefined") return;
-    const column = this.renderRoot?.querySelector<HTMLElement>(".pe-layout > .column.inspector") ?? undefined;
-    if (column === this.observedInspector) return;
-    this.inspectorObserver ??= new ResizeObserver((entries) => {
-      const box = entries[entries.length - 1]?.contentRect;
-      if (box === undefined) return;
-      const cols = inspectorColumnCount(box.width);
-      if (cols !== this.inspectorCols) this.inspectorCols = cols;
-    });
-    if (this.observedInspector !== undefined) this.inspectorObserver.unobserve(this.observedInspector);
-    this.observedInspector = column;
-    if (column !== undefined) this.inspectorObserver.observe(column);
-  }
 
   /** The top block's whole height, edge to edge, onto the host: no draw
    * follows, the sticky columns read it straight from CSS. */
@@ -3963,7 +3981,7 @@ export class WaPageEditor extends LitElement {
     this.stageScreen = screen;
     // Set again by the selected tile, if the edit screen draws one Free.
     this.stageArrange = undefined;
-    this.headArrange = undefined;
+    this.layoutArrange = undefined;
     this.stageSideInset = this.gridSideInset;
     this.stageTopInset = watchPreviewTopInset(input);
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
@@ -3980,7 +3998,7 @@ export class WaPageEditor extends LitElement {
     const fold = scrolls && this.helpOn;
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       <div class="stage-area pe-stage-area">
-        <div class="pe-stage-top">${this.renderPreviewOn()}</div>
+        <div class="pe-stage-top">${this.renderPreviewOn()}${this.renderTryPill()}</div>
         ${status !== undefined || help !== undefined || fold ? html`<div class="under pe-under">
           ${status !== undefined ? html`<span class="tail">${status}</span>` : nothing}
           ${help !== undefined ? html`<span class="tail pe-hint">${help}</span>` : nothing}
@@ -3995,6 +4013,17 @@ export class WaPageEditor extends LitElement {
         </div>
       </div>
     </div>`;
+  }
+
+  /**
+   * While a choice is tried in the inspector (`tryTileEdit`), a pill under
+   * Preview on naming it: "Previewing Glow: Always · click to keep". It
+   * floats over the stage, so the device never moves for it, and lets the
+   * pointer through.
+   */
+  private renderTryPill(): TemplateResult | typeof nothing {
+    const label = watchTryLabel(this.uiState, this.draft?.document);
+    return label === undefined ? nothing : html`<div class="pe-try-pill" role="status">${uiIcon("show")}<span>Previewing ${label} · click to keep</span></div>`;
   }
 
   /**
@@ -4363,7 +4392,9 @@ export class WaPageEditor extends LitElement {
     // A part being dragged is drawn where the pointer puts it, the tile
     // otherwise as stored, until the drop writes it.
     const partDrag = this.gesture?.kind === "part" && this.gesture.started && sameWatchId(this.gesture.tileId, id) ? this.gesture : undefined;
-    const drawnTile = partDrag === undefined ? tile : withArrange(tile, partDrag.arrange);
+    // A choice pointed at in the inspector draws in place of the stored look
+    // (`tryTileEdit`), on every picked tile, and fades in as any edit does.
+    const drawnTile = partDrag === undefined ? (watchTriedTile(this.uiState, id, this.draft?.document) ?? tile) : withArrange(tile, partDrag.arrange);
     const cell = { width: width / s, height: height / s };
     const face = renderWatchTileFace(drawnTile, cell, input, unit);
     const parts = selected && !inMulti && id !== "" ? this.renderStageParts(drawnTile, id, cell, input, unit, s) : nothing;
@@ -4437,7 +4468,7 @@ export class WaPageEditor extends LitElement {
 
   /** A box over each part `stage` holds, drawn at scale `s`: the picked one
    * outlined and dragged, a click on another picks it. The stage's tile and
-   * the inspector head's live tile both draw them. */
+   * the Arrangement section's live tile both draw them. */
   private renderPartBoxes(id: string, stage: ArrangeStageParts, s: number): TemplateResult {
     const g = this.gesture;
     const picked = arrangePickedPart(this.uiState, id);
@@ -4494,12 +4525,13 @@ export class WaPageEditor extends LitElement {
   // ── the inspector ──────────────────────────────────────────────────────
 
   /**
-   * The inspector column, the complication editor's: a sticky head with the
-   * breadcrumb (the page's kind chip and name; with a tile selected, Page,
-   * the way back to the page's own cards, then the tile's kind chip and
-   * name) and, for the page's cards, Collapse all, then the body. With a
-   * tile selected it is the tile's head and groups (`renderTileCard`), which
-   * never fold; with none, the page's own cards (`renderPageCards`).
+   * The inspector column, the complication editor's. With no tile selected:
+   * a sticky head with the breadcrumb (the page's kind chip and name) and
+   * Collapse all, then the page's own cards (`renderPageCards`). With one
+   * tile: the tile's head strip (`renderTileStrip`: the path back to the
+   * page, the live tiles, Name, Shows, the actions and Find a setting),
+   * then its four groups (`renderTileCard`), which never fold. Help is the
+   * editor bar's alone.
    */
   private renderInspector(page: WatchPage, tile: WatchPageTile | undefined, pages: readonly WatchPage[]): TemplateResult {
     const name = watchPageName(page);
@@ -4514,34 +4546,25 @@ export class WaPageEditor extends LitElement {
         </div>
         <div class="insp-body">${this.renderPickedCard(page, picked, pages)}</div>`;
     }
-    const host = this.editorHost(page);
-    let crumbs: TemplateResult;
-    if (tile === undefined) {
-      crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
-    } else {
-      const kind = tileKind(tileEntityId(tile));
-      const kindLabel = tileKindLabel(kind);
-      const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.pickerCatalog }) || kindLabel;
-      crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${watchTileKindColor(kind)}`}>${kindLabel}</span><span class="nm" title=${label}>${label}</span></div>`;
+    if (tile !== undefined) {
+      return html`
+        ${this.renderTileStrip(page, tile, pages)}
+        <div class="insp-body pe-tile-body" data-help=${this.helpOn ? "on" : "off"}>${this.renderTileCard(page, tile)}</div>`;
     }
+    const host = this.editorHost(page);
+    const crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
     // Every card drawn now that folds, for Collapse all: it folds them all
-    // while one is open, else opens them all, through the fold memory. A
-    // tile's sections never fold (`renderTileInspector`), so a tile has none.
-    const folds: FoldId[] = tile === undefined && host !== undefined
-      ? [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD]
-      : [];
+    // while one is open, else opens them all, through the fold memory.
+    const folds: FoldId[] = host === undefined ? []
+      : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD];
     const anyOpen = anySectionOpen(this.uiState, folds);
-    const helpLabel = this.helpOn ? "Hide the help under the settings" : "Show the help under the settings";
     return html`
       <div class="insp-head">
-        ${tile === undefined ? nothing : back}
         ${crumbs}
-        <button type="button" class="expand pe-help ${this.helpOn ? "on" : ""}" aria-pressed=${this.helpOn ? "true" : "false"} title=${helpLabel}
-          @click=${() => { this.helpOn = !this.helpOn; setInspectorHelpOn(this.helpOn); }}>Help</button>
         ${folds.length === 0 ? nothing : html`<button class="expand" @click=${() => { setSectionsOpen(this.uiState, folds, !anyOpen); this.requestUpdate(); }}>${anyOpen ? "Collapse all" : "Expand all"}</button>`}
       </div>
       <div class="insp-body" data-help=${this.helpOn ? "on" : "off"}>
-        ${tile === undefined ? this.renderPageCards(page, host) : this.renderTileCard(page, tile)}
+        ${this.renderPageCards(page, host)}
       </div>`;
   }
 
@@ -4666,10 +4689,15 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The inspector with several tiles picked, the complication editor's
-   * `multiEditor`: one card naming the picked tiles in reading order, each
-   * with its face, name and kind, then Duplicate and Delete for all of them.
-   * A tile's own settings are one tile at a time.
+   * The inspector with several tiles picked: a line saying a change goes to
+   * every picked tile, the Name they share or Mixed (read only: each tile
+   * keeps its own), then the tile settings' groups over all of them
+   * (`pickHost`: each setting shows the value they share or Mixed, and a
+   * pick writes it to every one in one undo step; what is one tile's is
+   * named on a grey line instead). Under them the complication editor's
+   * `multiEditor` card naming the picked tiles in reading order, each with
+   * its face, name and kind, with Duplicate and Delete for all of them, and
+   * the Group card.
    */
   private renderPickedCard(page: WatchPage, ids: readonly string[], pages: readonly WatchPage[]): TemplateResult {
     const n = ids.length;
@@ -4679,12 +4707,14 @@ export class WaPageEditor extends LitElement {
     const screen = this.screenOf(owner);
     const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
     const states = this.previewStates();
+    const labels: string[] = [];
     const rows = ids.flatMap((id) => {
       const tile = this.tileOn(page, id);
       if (tile === undefined) return [];
       const entityId = tileEntityId(tile);
       const kindLabel = tileKindLabel(tileKind(entityId));
       const label = watchPreviewTileLabel(tile, { states, pages, catalog: this.pickerCatalog }) || kindLabel;
+      labels.push(label);
       const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
       const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
       return [html`<div class="layer pe-picked-row" style=${`--k:${color}`} role="listitem" data-picked-tile=${id}>
@@ -4695,7 +4725,16 @@ export class WaPageEditor extends LitElement {
     });
     const dupTitle = copyable === 0 ? "None of these tiles can be copied here."
       : copyable < n ? `${plural(copyable, "tile", "tiles")} of ${n} can be copied here; the rest cannot.` : `Duplicate ${n} tiles`;
-    return html`<section class="sec pe-picked" data-open="true" data-help="on" style="--c: var(--wa-accent)">
+    const host = this.pickHost(page);
+    const name = labels.length > 0 && labels.every((l) => l === labels[0]) ? labels[0] : undefined;
+    return html`<div class="pe-tile-insp pe-picked-insp">
+    <div class="pe-picked-head">
+      <p class="hint keep">A change here goes to every picked tile. Settings that differ show Mixed.</p>
+      <label class="field pe-picked-name"><span>Name</span><input type="text" readonly aria-readonly="true" .value=${name ?? ""} placeholder=${name === undefined ? "Mixed" : nothing}
+        title="Each tile keeps its own name. Click one tile on its own to rename it." /></label>
+    </div>
+    ${host === undefined ? nothing : renderTileInspector(host)}
+    <section class="sec pe-picked" data-open="true" data-help="on" style="--c: var(--wa-accent)">
       <div class="sec-h pinned">
         <span class="swatch">${uiIcon("layers")}</span>
         <span class="tt"><h4>${n} tiles picked</h4></span>
@@ -4711,7 +4750,56 @@ export class WaPageEditor extends LitElement {
         <p class="hint">${IS_MAC ? "⌘" : "Ctrl"}-click a tile to add it or take it out, Shift-click to pick a run. Drag one to move them all together. Click one on its own to edit it alone.</p>
       </div>
     </section>
-    ${this.renderPickedGroup(page, ids)}`;
+    ${this.renderPickedGroup(page, ids)}
+    </div>`;
+  }
+
+  /**
+   * The tile settings' host over every picked tile (`TilePick`), for the
+   * settings several tiles share: its `tileId` and `tile` are the primary
+   * picked tile's, or, inside `as`, the picked tile named, so an edit written
+   * for one tile is made on each of them (`multi-pick.ts`). Undefined with
+   * no host for the page or no primary tile on it.
+   */
+  private pickHost(page: WatchPage): TileSettingsHost | undefined {
+    const base = this.editorHost(page);
+    const primary = this.selectedTileId;
+    const first = primary === undefined ? undefined : this.tileOn(page, primary);
+    if (base === undefined || primary === undefined || first === undefined) return undefined;
+    // Read again only when the page moved: every row asks.
+    let seen: { page: WatchPage; ids: string[]; tiles: WatchPageTile[] } | undefined;
+    const now = (): { ids: string[]; tiles: WatchPageTile[] } => {
+      const p = base.page;
+      if (seen?.page !== p) {
+        const ids = this.pickedIds(p);
+        const tiles: WatchPageTile[] = [];
+        for (const id of ids) {
+          const t = this.tileOn(p, id);
+          if (t !== undefined) tiles.push(t);
+        }
+        seen = { page: p, ids, tiles };
+      }
+      return seen;
+    };
+    let at: string | undefined;
+    const pick: TilePick = {
+      get ids() { return now().ids; },
+      get tiles() { return now().tiles; },
+      as: (id, run) => {
+        const was = at;
+        at = id;
+        try {
+          return run();
+        } finally {
+          at = was;
+        }
+      },
+    };
+    return extendHost(base, {
+      tileId: () => at ?? primary,
+      tile: () => this.tileOn(base.page, at ?? primary) ?? first,
+      picked: () => pick,
+    });
   }
 
   /** The Group card under the picked tiles (`group-settings.ts`), on the
@@ -4729,10 +4817,10 @@ export class WaPageEditor extends LitElement {
   };
 
   /**
-   * The selected tile's settings: the head card (the live tile, Name,
-   * Preview as, Arrange), then the tile settings' four groups with its place
-   * and size as Layout's Size (handed in, so it looks as the other sections
-   * do), and Delete tile under them.
+   * The selected tile's settings under its head strip: the tile settings'
+   * four groups, with its place and size as Layout's Size and the large
+   * live tile of its Arrangement handed in (so they look as the other
+   * sections do).
    */
   private renderTileCard(page: WatchPage, tile: WatchPageTile): TemplateResult {
     const rect = watchTileRect(tile);
@@ -4786,30 +4874,113 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    // The head card and the group line stand over the four groups (Look,
-    // Text, Tap, Layout), which lay themselves out by the inspector's width.
-    const head = host === undefined ? nothing : html`<div class="pe-tile-head">${renderTileHead(host, {
-        picture: this.renderTileHeadPicture(page, tile),
-        previewAs: this.tilePreviewAs,
-        setPreviewAs: (as) => { this.tilePreviewAs = as; },
-      })}${off ? nothing : renderTileGroupLine(host, this.groupActions)}</div>`;
+    // The four groups (Look, Text, Tap, Layout) lay themselves out by the
+    // inspector's width.
     return html`<div class="pe-tile-insp">
-      ${head}
-      ${host === undefined ? nothing : renderTileInspector(host, { size })}
-      <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
-        ${uiIcon("delete")}<span>Delete tile</span></button></div>
+      ${host === undefined ? nothing : renderTileInspector(host, { size, arrangePicture: () => this.renderArrangePicture(page, tile) })}
     </div>`;
   }
 
   /**
-   * The inspector head's live tile: the selected tile at its own shape as
-   * the stage lays it out on the preview device, at the largest scale that
-   * fits the head's well, its entity drawn as Preview as says (on, off or
-   * unavailable) and the choice being pointed at in an Effect or Animation
-   * menu drawn in place of the stored one (`watchTriedTile`). Nothing for a
-   * tile with no place on the page.
+   * The selected tile's head strip, across the top of the inspector (the
+   * mock's head): the path, Page (back to the page's own settings) then the
+   * tile's name, and under it the tile in its states (`renderStateTiles`);
+   * Name and Shows, with the group line while the tile is in a group;
+   * Duplicate, Hide, Reset and Delete, then Find a setting. Wide, it stays
+   * at the top while the groups scroll under it. With no host (no draft
+   * yet), the path and the tiles alone.
    */
-  private renderTileHeadPicture(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+  private renderTileStrip(page: WatchPage, tile: WatchPageTile, pages: readonly WatchPage[]): TemplateResult {
+    const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
+    const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.pickerCatalog }) || kindLabel;
+    const lead = html`<nav class="pe-path" aria-label="Where you are">
+        <button type="button" class="pe-path-back" title="Back to the page's settings" @click=${() => this.selectTile(undefined)}>Page</button>
+        <span class="pe-path-sep" aria-hidden="true">${uiIcon("right")}</span>
+        <span class="pe-path-nm" title=${label === kindLabel ? label : `${label} (${kindLabel})`}>${label}</span>
+      </nav>
+      ${this.renderStateTiles(page, tile)}`;
+    const host = this.tileSettingsHost(page, tile);
+    if (host === undefined) return html`<div class="pe-strip"><section class="ts-head" aria-label="Tile"><div class="ts-head-lead">${lead}</div></section></div>`;
+    const parts = tileInspectorParts(host).flatMap((g) => g.parts);
+    const acts = this.tileActs(page, tile);
+    // Hide is Show tile's: the tile shows always, only while on, only when
+    // another entity says so, or by a template. It goes there.
+    const actions = html`
+      <button type="button" class="ghost pe-strip-dup" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? "Duplicate the tile"}
+        @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>
+      ${parts.includes("visibility") ? html`<button type="button" class="ghost pe-strip-hide" title="Hide the tile while it is off, or when another entity says so: Show tile, under Tap"
+        @click=${() => this.goToSetting({ part: "visibility", row: -1 })}>${uiIcon("hide")}<span>Hide</span></button>` : nothing}`;
+    const remove = html`<button type="button" class="ghost pe-strip-del" ?disabled=${acts.delRefusal !== undefined}
+      title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile()}>${uiIcon("delete")}<span>Delete</span></button>`;
+    return html`<div class="pe-strip">${renderTileHead(host, {
+      lead,
+      actions,
+      remove,
+      find: this.renderFindField(),
+      below: this.editingOff(page) ? nothing : renderTileGroupLine(host, this.groupActions),
+      // A library tile says what it shows by its Target, under Tap.
+      ...(parts.includes("target") ? { change: { title: "Pick what the tile shows: Target, under Tap", go: () => this.goToSetting({ part: "target", row: -1 }) } } : {}),
+    })}</div>`;
+  }
+
+  /**
+   * The head's live tiles: the selected tile drawn by the stage's renderer
+   * (`renderTileHeadPicture`) in each state its entity can be in, side by
+   * side, named in the entity's own words (On and Off, Home and Away,
+   * Locked and Unlocked), then Unavailable. A kind with no on or off state
+   * (a sensor) shows its state now and Unavailable; a tile with no entity (a
+   * spacer, a header, the app's own kinds) one tile with no name. A click
+   * pins that state on the stage (`setTestValue`), as the Live strip's chips
+   * do, and a click on the pinned one, or on Now, lets it go. The pinned one
+   * is marked, and a dot marks the state Home Assistant reports now.
+   */
+  private renderStateTiles(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    if (!tileHeadHasEntity(tile)) {
+      const one = this.renderTileHeadPicture(page, tile, undefined);
+      return one === nothing ? nothing : html`<div class="pe-states"><span class="pe-st-one">${one}</span></div>`;
+    }
+    const entityId = tileEntityId(tile);
+    const real = this.hass?.states;
+    const live = real?.[entityId]?.state;
+    const pinned = this.testStates.get(entityId);
+    const choices = real === undefined ? [] : watchShowWhenStateChoices(entityId, real);
+    const word = (state: string): string => choices.find((c) => c.value === state)?.label ?? stateWords(state);
+    const shown: { as: WatchTilePreviewAs | undefined; state: string | undefined; label: string }[] = [];
+    for (const as of ["on", "off"] as const) {
+      const states = watchTileStatesAs(tile, real, as);
+      const state = states === real ? undefined : states?.[entityId]?.state;
+      if (state !== undefined && !shown.some((o) => o.state === state)) shown.push({ as, state, label: word(state) });
+    }
+    if (shown.length === 0) shown.push({ as: undefined, state: undefined, label: "Now" });
+    shown.push({ as: "unavailable", state: "unavailable", label: "Unavailable" });
+    return html`<div class="pe-states" role="group" aria-label="The tile in each state">${shown.map((o) => {
+      const on = o.state !== undefined && o.state === pinned;
+      const now = o.state === undefined ? live !== undefined : o.state === live;
+      const title = o.state === undefined ? `Home Assistant's state now${live === undefined ? "" : `: ${live}`}. Click to draw the stage with it.`
+        : on ? "Kept on the stage. Click to go back to Home Assistant's state."
+        : `Click to keep the tile ${o.label.toLowerCase()} on the stage`;
+      const pick = (): void => {
+        this.hoverState = undefined;
+        this.setTestValue(entityId, o.state === undefined || on ? undefined : o.state);
+      };
+      return html`<button type="button" class="pe-st ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} title=${title} @click=${pick}>
+        <span class="pe-st-pic">${this.renderTileHeadPicture(page, tile, o.as)}</span>
+        <span class="pe-st-label">${o.label}${now ? html`<i class="pe-state-live" aria-hidden="true"></i>` : nothing}</span>
+      </button>`;
+    })}</div>`;
+  }
+
+  /**
+   * One of the head's live tiles: the selected tile at its own shape as the
+   * stage lays it out on the preview device, at the largest scale that fits
+   * `STATE_TILE_W` by `STATE_TILE_H`, its entity drawn in the state `as`
+   * says (on, off or unavailable, as `watchTileStatesAs` makes it; its real
+   * state with none), whatever the Live switch or a state tried does to the
+   * stage, and the choice being pointed at in an Effect or Animation menu
+   * drawn in place of the stored one (`watchTriedTile`). Nothing for a tile
+   * with no place on the page.
+   */
+  private renderTileHeadPicture(page: WatchPage, tile: WatchPageTile, as: WatchTilePreviewAs | undefined): TemplateResult | typeof nothing {
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
     const screen = this.screenOf(owner);
     const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
@@ -4821,22 +4992,157 @@ export class WaPageEditor extends LitElement {
     const g = this.gesture;
     const dragged = g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(tile, g.arrange) : tile;
     const drawn = watchTriedTile(this.uiState, id) ?? dragged;
-    const s = Math.min(HEAD_TILE_W / placed.width, HEAD_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
+    const s = Math.min(STATE_TILE_W / placed.width, STATE_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
     const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
-    // Drawn as Preview as says, whatever the Live switch or a state tried
-    // in the Live strip does to the stage.
     const { testedIds: _tested, ...base } = this.previewInput(page, pages, screen, s);
-    const states = watchTileStatesAs(drawn, this.hass?.states, this.tilePreviewAs);
+    const states = as === undefined ? this.hass?.states : watchTileStatesAs(drawn, this.hass?.states, as);
     const input: WatchPagePreviewInput = { ...base, stateMode: "live", ...(states === undefined ? {} : { states }) };
-    // With Free on, the parts are boxes to pick and drag, as on the stage,
-    // only larger.
     const cell = { width: placed.width, height: placed.height };
+    return html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
+      renderWatchTileFace(drawn, cell, input, layout.unit)}</span>`;
+  }
+
+  /**
+   * The Arrangement section's live tile, while its Arrangement is Free: the
+   * selected tile as large as fits `ARRANGE_TILE_W` by `ARRANGE_TILE_H`,
+   * drawn as the stage draws it (Live preview, a state tried), with its
+   * parts as boxes to pick and drag, as on the stage, only larger. Nothing
+   * in Default, while another drag runs, or for a tile with no place.
+   */
+  private renderArrangePicture(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    this.layoutArrange = undefined;
+    const g = this.gesture;
     const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page) && arrangeFreeOn(this.uiState, tile)
       && !(g?.started === true && g.kind !== "part");
-    const stage = free ? arrangeStageParts(drawn, cell, input, layout.unit) : undefined;
-    this.headArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s };
+    if (!free) return nothing;
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const screen = this.screenOf(owner);
+    const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
+    const id = tileIdOf(tile);
+    const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
+    if (placed === undefined || !(placed.width > 0 && placed.height > 0)) return nothing;
+    const dragged = g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(tile, g.arrange) : tile;
+    const drawn = watchTriedTile(this.uiState, id) ?? dragged;
+    const s = Math.min(ARRANGE_TILE_W / placed.width, ARRANGE_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
+    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
+    const input = this.previewInput(page, pages, screen, s);
+    const cell = { width: placed.width, height: placed.height };
+    const stage = arrangeStageParts(drawn, cell, input, layout.unit);
+    this.layoutArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s };
     return html`<span class="pe-head-tile ${stage === undefined ? "" : "arr"}" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
       renderWatchTileFace(drawn, cell, input, layout.unit)}${stage === undefined ? nothing : this.renderPartBoxes(id, stage, s)}</span>`;
+  }
+
+  // ── find a setting ─────────────────────────────────────────────────────
+
+  /** The tile inspector's groups as drawn now, or null. */
+  private inspectorGroupsEl(): HTMLElement | null {
+    return this.renderRoot?.querySelector<HTMLElement>(".pe-tile-insp .ts-groups") ?? null;
+  }
+
+  /** What Find a setting lists for what is typed, read afresh from the
+   * groups as drawn, so a row hidden for this tile is never offered. */
+  private findMatches(): SettingFindEntry[] {
+    const groups = this.inspectorGroupsEl();
+    if (groups === null || this.findQuery.trim() === "") return [];
+    return findSettings(settingFindIndex(readSettingFindSections(groups)), this.findQuery);
+  }
+
+  /**
+   * The Find a setting field at the head strip's end, with its key ("/":
+   * Home Assistant's own quick search has Cmd or Ctrl+K). Typing lists the
+   * matching settings under it, each with its group and section in grey;
+   * the arrow keys move, Enter or a click goes there (`goToSetting`), and
+   * Escape closes the list, then leaves the field.
+   */
+  private renderFindField(): TemplateResult {
+    const matches = this.findOpen ? this.findMatches() : [];
+    const at = Math.min(this.findAt, Math.max(0, matches.length - 1));
+    const open = this.findOpen && this.findQuery.trim() !== "";
+    const go = (entry: SettingFindEntry | undefined): void => {
+      if (entry === undefined) return;
+      this.findOpen = false;
+      this.findQuery = "";
+      this.goToSetting(entry);
+    };
+    const keys = (e: KeyboardEvent): void => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (matches.length > 0) this.findAt = (at + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        go(matches[at]);
+      } else if (e.key === "Escape") {
+        // The editor's own Escape (let the tile go) waits: this one is the field's.
+        e.preventDefault();
+        e.stopPropagation();
+        if (open) { this.findOpen = false; this.findQuery = ""; } else (e.target as HTMLInputElement).blur();
+      }
+    };
+    return html`<div class="pe-find">
+      <label class="pe-find-box">
+        <span class="pe-find-ic" aria-hidden="true">${uiIcon("search")}</span>
+        <input type="search" class="pe-find-input" placeholder="Find a setting" autocomplete="off" spellcheck="false"
+          role="combobox" aria-label="Find a setting" aria-autocomplete="list" aria-expanded=${open ? "true" : "false"} aria-controls="pe-finds"
+          aria-activedescendant=${open && matches.length > 0 ? `pe-find-${at}` : nothing}
+          .value=${live(this.findQuery)}
+          @input=${(e: Event) => { this.findQuery = (e.target as HTMLInputElement).value; this.findAt = 0; this.findOpen = true; }}
+          @focus=${() => { this.findOpen = true; }}
+          @blur=${() => { this.findOpen = false; }}
+          @keydown=${keys} />
+        <kbd class="pe-kbd" title="Press / to find a setting">/</kbd>
+      </label>
+      ${open ? html`<div class="pe-finds" id="pe-finds" role="listbox" aria-label="Settings found">
+        ${matches.length === 0 ? html`<p class="pe-finds-none">No setting matches "${this.findQuery.trim()}".</p>` : matches.map((m, i) => html`
+          <button type="button" class="pe-finds-opt ${i === at ? "on" : ""}" role="option" id=${`pe-find-${i}`} aria-selected=${i === at ? "true" : "false"} tabindex="-1"
+            @pointerdown=${(e: PointerEvent) => e.preventDefault()} @pointerenter=${() => { this.findAt = i; }}
+            @click=${() => go(m)}>${m.label}<span>${settingFindWhere(m)}</span></button>`)}
+      </div>` : nothing}
+    </div>`;
+  }
+
+  /** "/" from the stage, the inspector or nowhere: Find a setting, while a
+   * tile's head draws it. True when it took the key. */
+  private openFind(): boolean {
+    const input = this.renderRoot?.querySelector<HTMLInputElement>(".pe-find-input") ?? null;
+    if (input === null || input.getClientRects().length === 0) return false;
+    input.focus();
+    input.select();
+    return true;
+  }
+
+  /**
+   * Go to a setting Find listed (or the section Hide or Change name): the
+   * section scrolled into view inside the inspector's own scroll, clear of
+   * the head strip while it stays at the top, washed blue for a moment (not
+   * with reduced motion), and the first control of the row, or of the
+   * section, focused.
+   */
+  private goToSetting(entry: Pick<SettingFindEntry, "part" | "row">): void {
+    const groups = this.inspectorGroupsEl();
+    const section = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${entry.part}"]`) ?? null;
+    if (groups === null || section === null) return;
+    const row = entry.row < 0 ? undefined : (settingFindRows(section)[entry.row] as HTMLElement | undefined);
+    const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // The strip sticks over the groups on a wide inspector: land under it.
+    const strip = this.renderRoot.querySelector<HTMLElement>(".pe-strip");
+    const sticks = strip !== null && getComputedStyle(strip).position === "sticky";
+    groups.style.setProperty("--pe-find-top", `${sticks ? strip.offsetHeight : 0}px`);
+    section.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
+    if (this.findFlash !== undefined) {
+      clearTimeout(this.findFlash.timer);
+      this.findFlash.el.classList.remove("pe-found");
+    }
+    if (!reduced) {
+      // Off and on again, so a second go to the same section washes again.
+      void section.offsetWidth;
+      section.classList.add("pe-found");
+      this.findFlash = { el: section, timer: setTimeout(() => { section.classList.remove("pe-found"); this.findFlash = undefined; }, FIND_FLASH_MS) };
+    }
+    const control = (row ?? section).querySelector<HTMLElement>(
+      "input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled):not(.ts-sec-reset), [tabindex]:not([tabindex='-1'])",
+    );
+    control?.focus({ preventScroll: true });
   }
 
   /** The tile settings' host for the selected tile, or undefined with no
@@ -5098,13 +5404,16 @@ export class WaPageEditor extends LitElement {
        column scrolls in its own box, so every card stays on screen (Jesse,
        2026-10-23: two scroll bars, one inside the other, read as broken).
        No gutter: neither column is dragged wider. The inspector takes up to
-       62% of the editor (at most 1500px) while the stage keeps at least
+       62% of the editor (at most 2200px) while the stage keeps at least
        640px, and keeps that width whether it shows a tile or the page, so
        picking a tile never moves the stage; its cards stand in as many
-       columns as that width holds (\`inspectorColumnCount\`). */
+       columns as that width holds, by container queries on the column. On
+       a screen about 3800px wide that is 2200px, room for a tile's four
+       groups side by side (1560px and up), and the stage, which fits the
+       device to its height, keeps about 1500px. */
     .layout.pe-layout { padding: 0; align-items: stretch; }
     .layout.pe-layout.pe-wide {
-      grid-template-columns: minmax(0, 1fr) clamp(340px, max(38%, min(62%, 100% - 640px)), 1500px); column-gap: 8px;
+      grid-template-columns: minmax(0, 1fr) clamp(340px, max(38%, min(62%, 100% - 640px)), 2200px); column-gap: 8px;
       flex: 1 1 0; min-height: 0; overflow: hidden;
     }
     .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
@@ -5254,7 +5563,17 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 460px) {
       .canvas-card.lit .stage-area.pe-stage-area { padding-inline: 4px; }
     }
-    .pe-stage-top { display: flex; justify-content: center; flex: none; }
+    .pe-stage-top { position: relative; display: flex; justify-content: center; flex: none; }
+    /* What a choice pointed at in the inspector tries, under Preview on:
+       over the stage, out of the flow and the pointer's way. */
+    .pe-try-pill {
+      position: absolute; top: calc(100% + 8px); left: 50%; z-index: 9; transform: translateX(-50%);
+      display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; max-width: calc(100% - 16px);
+      border-radius: 14px; background: var(--wa-accent); color: #fff; box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+      font-size: 12px; font-weight: 500; white-space: nowrap; pointer-events: none;
+    }
+    .pe-try-pill > span { overflow: hidden; text-overflow: ellipsis; }
+    .pe-try-pill > svg { flex: none; width: 13px; height: 13px; }
     .pe-seg {
       display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px;
       background: var(--wa-field, var(--wa-panel)); border: 1px solid var(--wa-line);
@@ -5496,12 +5815,89 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:focus:not(:disabled) { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-direction: column; }
-    /* A tile's inspector: the head card, then the four groups, which lay
-       themselves out by the inspector's width (\`tileSettingsStyles\`). The
-       head keeps a card's width on a wide screen rather than a stretched
-       well. The container also lays out the head. */
+    /* A tile's inspector: the head strip (\`renderTileStrip\`, its own rules
+       in \`tileSettingsStyles\` under .ts-head), then the four groups, which
+       lay themselves out by the inspector's width. */
     .pe-tile-insp { container: pe-tile / inline-size; display: flex; flex-direction: column; min-width: 0; }
-    .pe-tile-head { max-width: 460px; }
+    /* Several tiles picked: what a change does and the Name they share, over
+       the groups; the list of them and their actions under. */
+    .pe-picked-head { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 12px; max-width: 440px; }
+    .pe-picked-head .hint { margin: 0; }
+    .pe-picked-name input[readonly] { color: var(--wa-muted); cursor: default; }
+    .pe-picked-insp > .sec.pe-picked { margin-top: 12px; }
+    .pe-strip { position: relative; z-index: 5; }
+    /* Wide, the strip stays at the top of the inspector's scroll while the
+       groups pass under it, with the page's ground around it as the
+       breadcrumb head has; narrow, where it wraps tall, it scrolls away. */
+    @container insp (min-width: 1080px) {
+      .pe-strip { position: sticky; top: 0; outline: 8px solid var(--wa-bg); }
+    }
+    /* A section Find goes to lands under the strip, not behind it. */
+    .ts-groups .ts-sec { scroll-margin-top: calc(var(--pe-find-top, 0px) + 12px); }
+    /* The path over the live tiles: Page, back to the page's settings, then
+       the tile's name. */
+    .pe-path { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12.5px; color: var(--wa-muted); }
+    .pe-path-back {
+      flex: none; padding: 4px 6px; border: 0; border-radius: 6px; background: none;
+      font: inherit; color: var(--wa-muted); cursor: pointer;
+    }
+    .pe-path-back:hover { color: var(--wa-ink); background: var(--wa-hover); }
+    .pe-path-back:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-path-sep { display: inline-flex; flex: none; opacity: .7; }
+    .pe-path-sep svg.ui-icon { width: 12px; height: 12px; }
+    .pe-path-nm { min-width: 0; font-weight: 500; color: var(--wa-ink); overflow-wrap: anywhere; }
+    /* The live tiles, side by side, each over its state's name. The pinned
+       one has the accent ring. */
+    .pe-states { display: flex; flex-wrap: wrap; gap: 12px; }
+    .pe-st, .pe-st-one { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .pe-st {
+      padding: 6px; border: 1px solid transparent; border-radius: 12px; background: none;
+      font: inherit; font-size: 12px; color: var(--wa-muted); cursor: pointer;
+    }
+    .pe-st:hover { background: var(--wa-hover); color: var(--wa-ink); }
+    .pe-st:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-st.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
+    .pe-st-pic { display: grid; place-items: center; min-width: ${STATE_TILE_W}px; min-height: ${STATE_TILE_H}px; }
+    .pe-st-label { display: inline-flex; align-items: center; gap: 5px; }
+    /* Find a setting: a field with its key, and the list under it, over
+       the groups. */
+    .pe-find { position: relative; }
+    .pe-find-box {
+      display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px;
+      border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-field); color: var(--wa-muted); cursor: text;
+    }
+    .pe-find-box:focus-within { border-color: var(--wa-sel-ring, var(--wa-accent)); box-shadow: var(--wa-ring); }
+    .pe-find-ic { display: inline-flex; flex: none; }
+    .pe-find-ic svg.ui-icon { width: 15px; height: 15px; }
+    .pe-find-box > input.pe-find-input {
+      flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0; border: 0; outline: none; box-shadow: none;
+      background: transparent; color: var(--wa-ink); font: inherit; font-size: 13px;
+    }
+    .pe-find-box > input.pe-find-input::-webkit-search-cancel-button { display: none; }
+    .pe-kbd {
+      flex: none; min-width: 20px; padding: 1px 6px; border: 1px solid var(--wa-line-strong); border-radius: 5px;
+      font: inherit; font-size: 11px; text-align: center; color: var(--wa-muted);
+    }
+    .pe-finds {
+      position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; width: min(380px, 100%); min-width: 260px;
+      display: flex; flex-direction: column; padding: 6px;
+      border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-card); box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+    }
+    .pe-finds-opt {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px;
+      border: 0; border-radius: 8px; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--wa-ink); cursor: pointer;
+    }
+    .pe-finds-opt > span { flex: none; font-size: 11.5px; color: var(--wa-muted); }
+    .pe-finds-opt.on { background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
+    .pe-finds-none { margin: 0; padding: 9px 10px; font-size: 12.5px; color: var(--wa-muted); }
+    /* The section Find went to: a soft blue wash that fades. None with
+       reduced motion (the script does not add it then either). */
+    .ts-groups .ts-sec.pe-found { animation: pe-found ${FIND_FLASH_MS}ms ease-out; }
+    @keyframes pe-found {
+      from { background: color-mix(in srgb, var(--ts-blue, var(--wa-accent)) 18%, transparent); }
+      to { background: transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) { .ts-groups .ts-sec.pe-found { animation: none; } }
     /* The page's own cards in one to three columns by the inspector's own
        width, pure CSS: a column balances by height and keeps the cards in
        reading order, top to bottom then across, and never splits a card. */
@@ -5515,7 +5911,8 @@ export class WaPageEditor extends LitElement {
     .pe-page-insp .sec-h h4 { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
     .pe-page-insp .sec-h .swatch { display: none; }
     .pe-head-tile { position: relative; display: block; flex: none; pointer-events: none; }
-    /* With Free on, the head's live tile takes presses on its parts only. */
+    /* With Free on, the Arrangement's live tile takes presses on its parts
+       only. */
     .pe-head-tile.arr { --pe-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); }
     .pe-head-tile.arr > .pe-part { pointer-events: auto; }
     /* The line under the presets that opens the four boxes: where the tile
@@ -5557,10 +5954,6 @@ export class WaPageEditor extends LitElement {
     }
     .insp-head button.pe-back:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .insp-head button.pe-back:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* Help, beside Collapse all: Help takes the auto margin, so the two
-       sit together at the far end. */
-    .insp-head .expand.pe-help + .expand { margin-left: 0; }
-    .insp-head .expand.pe-help.on { color: var(--wa-ink); background: var(--wa-raise); }
     /* With Help off, a plain hint is hidden. A warning, an error, a status, or
        a hint marked keep (an empty list, why a setting is greyed) still shows,
        as the complication editor's "?" does. */
