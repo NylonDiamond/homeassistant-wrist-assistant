@@ -42,7 +42,8 @@ import {
 } from "./model.js";
 import { watchCapitalized } from "./tile-new.js";
 import { WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS, watchShowWhenTemplateShows, watchTileShowWhenTemplate } from "./show-when.js";
-import { TILE_DESIGN_KEY, TILE_TEMPLATE_MAX_CHARS, codePoints, tileHasLayers, tileTemplateKey } from "./tile-design-core.js";
+import { TILE_DESIGN_KEY, TILE_TEMPLATE_MAX_CHARS, tileHasLayers, tileTemplateKey } from "./tile-design-core.js";
+import { codePoints } from "./tile-glow.js";
 
 // ── the home ─────────────────────────────────────────────────────────────
 

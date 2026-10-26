@@ -44,6 +44,7 @@ import {
   watchTileKindEntry,
   watchTriggerModes,
 } from "./tile-settings-model.js";
+import { codePoints } from "./tile-glow.js";
 import {
   type BaseLayerRole,
   type DesignSummary,
@@ -63,7 +64,6 @@ import {
   TILE_ZONE_MIN_POINTS,
   TILE_ZONE_PRESET_FRAMES,
   baseRoleOf,
-  codePoints,
   designSummary,
   elementUsesTileInks,
   layerStatus,

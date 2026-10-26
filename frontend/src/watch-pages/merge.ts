@@ -18,7 +18,8 @@
 
 import pageKeys from "./page-keys.json";
 import { type JsonObject, type WatchPagesDocument, isJsonObject } from "./model.js";
-import { tileDesignProblems, tileGlowProblems } from "./tile-design-core.js";
+import { tileDesignProblems } from "./tile-design-core.js";
+import { tileGlowProblems } from "./tile-glow.js";
 
 /** The key of the page list at the top of the document. */
 const PAGES_KEY = "pages";

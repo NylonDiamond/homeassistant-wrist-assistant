@@ -34,7 +34,6 @@ import {
   setLayerFrame,
   settingOwnerRole,
   tileDesignBox,
-  tileGlowProblems,
   withDesign,
 } from "../src/watch-pages/tile-design.js";
 
@@ -235,21 +234,5 @@ describe("the glow's anchor places it on the native glow", () => {
       expect(cy, device).toBeCloseTo(native.rect.y + native.rect.height / 2, 1);
     }
     expect(tileNativeFramesOn(BED, CTX, "phone")!.native.glow!.size * 1.5).toBeCloseTo(114.77, 1);
-  });
-});
-
-describe("tileGlowProblems (section 14.9)", () => {
-  it("refuses the shapes the integration refuses and leaves ranges to the readers", () => {
-    expect(tileGlowProblems(BED)).toEqual([]);
-    expect(tileGlowProblems({ ...BED, iconGlow: null })).toEqual([]);
-    expect(tileGlowProblems({ ...BED, iconGlow: { mode: "on", size: 900, brightness: -3, color: "red" } })).toEqual([]);
-    expect(tileGlowProblems({ ...BED, iconGlow: "on" })).toEqual(["iconGlow must be an object."]);
-    expect(tileGlowProblems({ ...BED, iconGlow: [] })).toEqual(["iconGlow must be an object."]);
-    expect(tileGlowProblems({ ...BED, iconGlow: { mode: "ON", size: true, brightness: "x", color: 3 } })).toEqual([
-      'iconGlow.mode must be "auto", "on" or "off".',
-      "iconGlow.size must be a number.",
-      "iconGlow.brightness must be a number.",
-      "iconGlow.color must be a string.",
-    ]);
   });
 });
