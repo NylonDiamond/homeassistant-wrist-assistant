@@ -6,6 +6,7 @@
 // and keys (the Add tile group, the stage outline, the "iPhone extras" fold,
 // the device strip's "skips 2", the Help sheet's line) are checked here.
 
+import { html } from "lit";
 import { describe, expect, it } from "vitest";
 
 import { SymbolBrowser } from "../src/symbols.js";
@@ -35,7 +36,7 @@ import {
   watchLabelNote,
   watchLibraryTargetMenu,
 } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileName, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileHead, renderTileSettings } from "../src/watch-pages/tile-settings.js";
 import { PAGES_PHONE_TILES_TEXT } from "../src/help-sheet.js";
 import { tickSkipsText, tickSkipsTitle } from "../src/library/ticks.js";
 import { WATCH_PHONE_SETTING_KEYS, watchPhoneKeyKinds } from "../src/watch-pages/phone-keys-model.js";
@@ -223,7 +224,7 @@ describe("the kinds only the iPhone draws", () => {
     for (const kind of ["map", "chart", "text_field", "web"]) {
       for (const device of ["iphone", undefined] as const) {
         const host = tileHost([tile(`${kind}.C3A0E000-0000-4000-8000-0000000000B7`, { color: "#RAINBOW" })], device);
-        const drawn = text(renderTileName(host)) + text(renderTileSettings(host));
+        const drawn = text(renderTileHead(host, { picture: html``, previewAs: "on", setPreviewAs: () => undefined })) + text(renderTileSettings(host));
         expect(drawn, kind).toContain("The iPhone cycles the tile through every color.");
         expect(drawn.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], `${kind} on ${device ?? "watch"}`).toEqual([]);
       }

@@ -61,6 +61,7 @@ import {
   tileSymbol,
   tileTarget,
   tileDrawsOn,
+  isVirtualTileKind,
   watchPageLayout,
   watchPageName,
 } from "./model.js";
@@ -3167,6 +3168,51 @@ export function watchAllOnStates(
   if (Object.keys(lit).length === 0) return states;
   return { ...states, ...lit };
 }
+
+/** How the tile inspector's preview tile and its pictures draw a tile's
+ * entity: in a typical on state, a typical off state, or unavailable. */
+export type WatchTilePreviewAs = "on" | "off" | "unavailable";
+
+/** A typical off state of each kind that has one, what the watch draws dim
+ * or unlit: the counterpart of `ALL_ON_WORDS`. */
+const ALL_OFF_WORDS: Readonly<Record<string, string>> = {
+  light: "off", switch: "off", input_boolean: "off", fan: "off", automation: "off", siren: "off", remote: "off",
+  cover: "closed", valve: "closed", lock: "unlocked", media_player: "off", vacuum: "docked", lawn_mower: "docked",
+  person: "not_home", device_tracker: "not_home", timer: "idle", climate: "off", alarm_control_panel: "disarmed",
+  binary_sensor: "off", humidifier: "off",
+};
+
+/**
+ * `states` with a tile's entity as the inspector's Preview as picks: on as
+ * the all-on picture draws it (`watchAllOnStates`), off in its kind's typical
+ * off state (a light with no brightness, a cover or valve at 0), or
+ * unavailable. `states` itself for a tile with no entity, and for on or off
+ * on a kind with no such state (a sensor keeps its reading). Nothing here
+ * reaches Home Assistant.
+ */
+export function watchTileStatesAs(
+  tile: WatchPageTile,
+  states: Readonly<Record<string, HassEntityState>> | undefined,
+  as: WatchTilePreviewAs,
+): Record<string, HassEntityState> | undefined {
+  const entityId = tileEntityId(tile);
+  const kind = tileKind(entityId);
+  if (entityId === "" || !entityId.includes(".") || kind === "spacer" || kind === "divider" || isVirtualTileKind(kind)) return states as Record<string, HassEntityState> | undefined;
+  if (as === "on") return watchAllOnStates(tile, states);
+  const real = states !== undefined && Object.hasOwn(states, entityId) ? states[entityId] : undefined;
+  const attributes: Record<string, unknown> = { ...(real?.attributes ?? {}) };
+  let state: string;
+  if (as === "unavailable") state = "unavailable";
+  else {
+    if (!Object.hasOwn(ALL_OFF_WORDS, kind)) return states as Record<string, HassEntityState> | undefined;
+    state = ALL_OFF_WORDS[kind]!;
+    if (kind === "light") delete attributes.brightness;
+    if (kind === "fan") delete attributes.percentage;
+    if ((kind === "cover" || kind === "valve") && storedNumber(attributes.current_position) !== undefined) attributes.current_position = 0;
+  }
+  return { ...states, [entityId]: { last_changed: "", last_updated: "", ...real, entity_id: entityId, state, attributes } };
+}
+
 
 /** `input` as a tile draws it: in the all-on picture, with that tile's
  * entity lit (`watchAllOnStates`), unless its state is being tried. */
