@@ -217,6 +217,7 @@ from .library import (
     rename_menu,
     rename_refs,
     replace_item,
+    stamp_item_revisions,
     stored_item_id,
     validate_library,
 )
@@ -504,12 +505,19 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     beyond the ids and the shape of a tile's icon glow: the app is the only thing that understands a tile or a
     setting, and a server that half understood one would refuse configs a
     newer app writes.
+
+    With ``check_items`` a page config also loses every tile's old layers
+    (``design``, :func:`drop_tile_designs`) in place, before its size is
+    measured: a panel tab opened before layers went still sends them, and its
+    save goes through without them rather than being refused.
     """
     if not isinstance(document, dict):
         raise WatchConfigValidationError("document must be a JSON object")
     list_key = _KIND_LIST_KEYS.get(kind)
     if list_key is not None and not isinstance(document.get(list_key), list):
         raise WatchConfigValidationError(f"document.{list_key} must be a list")
+    if kind == "pages" and check_items:
+        drop_tile_designs(document)
     size = document_size(document)
     limit = WATCH_CONFIG_MAX_DOCUMENT_BYTES[kind]
     if size > limit:
@@ -903,6 +911,35 @@ def _check_icon_glow(glow: Any, at: str) -> None:
             raise WatchConfigValidationError(f"{where}.{key} must be a number")
     if "color" in glow and not isinstance(glow["color"], str):
         raise WatchConfigValidationError(f"{where}.color must be a string")
+
+
+# The key tile layers kept on a tile. Layers were taken out before they were
+# released (app repo docs/page_editor_calm_plan_2026-10.md), and what a tile
+# still carries of them is dropped, never converted: on a panel save or a
+# restore (:func:`validate_document`) and once on load
+# (:meth:`WatchConfigStore._drop_old_tile_designs`).
+_OLD_TILE_DESIGN_KEY = "design"
+
+
+def _drop_designs_from_pages(pages: Any) -> bool:
+    """Take ``design`` off every tile of every page in a list of pages, in
+    place. True when one was there. Anything that is not a page or a tile
+    is left alone."""
+    dropped = False
+    for page in pages if isinstance(pages, list) else []:
+        items = page.get("items") if isinstance(page, dict) else None
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and _OLD_TILE_DESIGN_KEY in item:
+                del item[_OLD_TILE_DESIGN_KEY]
+                dropped = True
+    return dropped
+
+
+def drop_tile_designs(document: Any) -> bool:
+    """Take the old tile layers (``design``) off every tile of a pages
+    document, in place. True when one was there."""
+    pages = document.get("pages") if isinstance(document, dict) else None
+    return _drop_designs_from_pages(pages)
 
 
 def template_budget(document: Any) -> int:
@@ -1526,6 +1563,7 @@ class WatchConfigStore:
         # After the floor is written, so every record the library rewrites
         # gets a revision above it.
         await self._async_load_library()
+        self._drop_old_tile_designs()
         _LOGGER.debug(
             "Loaded watch config for %d owner(s), %d unreadable",
             len(self._records),
@@ -1582,6 +1620,51 @@ class WatchConfigStore:
             except Exception:
                 _LOGGER.exception("Could not write the library; the debounced save retries it")
                 self._schedule_library_save()
+
+    def _drop_old_tile_designs(self) -> None:
+        """Take the old tile layers (``design``) off every stored tile, once.
+
+        Run on load, after the library. The library's pages and the system
+        pages its picks hold lose the key first, and every record the change
+        reaches is built again as its next revision (:meth:`_apply_library`),
+        so each device pulls its tiles without layers. Then any ``pages``
+        record that still has one (an owner the library builds nothing for,
+        or a library that could not be read) is written again without it.
+        Nothing is written when no tile has the key, which after the first
+        start with this build is every start: a device save is the only
+        writer that can still store one (it skips the tile level), and the
+        next start drops that too. The history is left as it was; a restore
+        drops the key on its way in (:func:`validate_document`)."""
+        if self._load_failed:
+            return
+        written = 0
+        if not self._library_failed:
+            library = copy.deepcopy(self._library)
+            pages = list(library["pages"].values())
+            for held in library["picks"].values():
+                pages.extend(
+                    pick["page"]
+                    for pick in held.get("pages", [])
+                    if isinstance(pick, dict) and isinstance(pick.get("page"), dict)
+                )
+            if _drop_designs_from_pages(pages):
+                library = stamp_item_revisions(self._library, library)
+                done, _failed = self._apply_library(library, _MIGRATION_WRITER)
+                written += len(done)
+        for owner in sorted(self._records):
+            if owner in self._failed_owners:
+                continue
+            record = self._records[owner].get("pages")
+            if record is None:
+                continue
+            document = copy.deepcopy(record.document)
+            if drop_tile_designs(document):
+                # Its hash is not noted: the library builds nothing for it,
+                # so the next start folds it in as it would have anyway.
+                self._write_quietly(owner, "pages", document, _MIGRATION_WRITER)
+                written += 1
+        if written:
+            _LOGGER.info("Dropped old tile layers; %d record(s) written again", written)
 
     def _migrate_library(self) -> None:
         """Build the library from the records (the first start with it).
