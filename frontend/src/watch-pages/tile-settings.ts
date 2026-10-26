@@ -866,11 +866,12 @@ export function tileInspectorColumns(sections: readonly WatchTileSettingsSection
   return { left, right };
 }
 
-/** About how tall each section's card stands, open, in tenths of a tall
- * screen: what `tileInspectorColumnRuns` balances three columns by. */
+/** About how tall each section's card stands open, Icon and color (the
+ * tallest) being 9, as measured on a light tile on 2026-10-26: what
+ * `tileInspectorColumnRuns` balances three columns by. */
 const SECTION_WEIGHT: Partial<Record<WatchTileSettingsSection, number>> = {
-  icon: 9, text: 4, background: 4, visibility: 2, header: 3, phoneTile: 3, phone: 3, phoneExtras: 3, removed: 1,
-  size: 2, arrange: 2, state: 6, border: 5, action: 4, opens: 3, target: 3, request: 4, special: 4,
+  icon: 9, text: 4, background: 3, visibility: 1, header: 3, phoneTile: 3, phone: 3, phoneExtras: 3, removed: 1,
+  size: 1.5, arrange: 1.5, state: 6, border: 2, action: 2.5, opens: 3, target: 3, request: 4, special: 4,
 };
 
 /**

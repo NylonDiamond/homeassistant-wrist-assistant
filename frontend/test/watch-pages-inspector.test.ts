@@ -375,7 +375,7 @@ describe("the tile's cards", () => {
       });
     };
     expect(cols(1)).toEqual([["Icon and color", "Text", "Background", "Visibility", "Size", "Arrangement", "State", "Border", "Action"]]);
-    expect(cols(3)).toEqual([["Icon and color", "Text"], ["Background", "Visibility", "Size", "Arrangement"], ["State", "Border", "Action"]]);
+    expect(cols(3)).toEqual([["Icon and color"], ["Text", "Background", "Visibility", "Size", "Arrangement"], ["State", "Border", "Action"]]);
     expect(css).toMatch(/\.pe-insp-cols \{ display: grid; grid-template-columns: repeat\(var\(--pe-cols, 1\), minmax\(0, 1fr\)\);/);
     expect(css).not.toContain("pe-tile-on");
     expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 1500px\);/);
