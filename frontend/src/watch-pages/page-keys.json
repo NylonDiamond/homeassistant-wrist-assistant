@@ -1163,6 +1163,10 @@
           "type": "number",
           "required": false
         },
+        "iconGlow": {
+          "type": "json",
+          "required": false
+        },
         "iconTapAnimation": {
           "type": "enum",
           "enum": "IconTapAnimation",
@@ -2355,7 +2359,8 @@
       "assistPrimaryAction": "speakOnly reads as assistOnly on an Assist tile.",
       "assistSpeechVolumePercent": "0 to 100, clamped on read.",
       "speakMessageSpeechVolumePercent": "0 to 100, clamped on read.",
-      "design": "A tile's layers (docs/tile_layers_contract_2026-10.md in the app repo). Any JSON object; the apps decode it on their own and ignore it when they cannot."
+      "design": "A tile's layers (docs/tile_layers_contract_2026-10.md in the app repo). Any JSON object; the apps decode it on their own and ignore it when they cannot.",
+      "iconGlow": "The soft glow behind a tile's icon (docs/tile_layers_contract_2026-10.md section 14 in the app repo): {mode, size, brightness, color}. Absent draws One Look's own glow; the apps read it tolerantly."
     }
   }
 }

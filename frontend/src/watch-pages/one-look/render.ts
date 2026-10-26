@@ -57,7 +57,8 @@ import {
   oneLookBlendCss,
   oneLookFill,
   oneLookFillTrackStops,
-  oneLookGlyphHaloOpacity,
+  oneLookGlyphHalo,
+  oneLookGlyphGlowOf,
   oneLookGlyphInk,
   oneLookHex,
   oneLookInkCss,
@@ -72,7 +73,6 @@ import {
   ONE_LOOK_BAR_TRACK_OPACITY,
   ONE_LOOK_FILL_EDGE_OPACITY,
   ONE_LOOK_FILL_EDGE_WIDTH,
-  ONE_LOOK_GLYPH_HALO_SHARE,
   ONE_LOOK_PILL_OPACITY,
   ONE_LOOK_UNIT_OPACITY,
 } from "./colour.js";
@@ -295,6 +295,7 @@ export function oneLookTileStyle(
     stateShadow: tile.statusTextShadow !== false,
     glyphShadow: tile.iconShadow === true,
     statePill: watchValueLabelStyle(tile) === "Pill",
+    glow: oneLookGlyphGlowOf(tile.iconGlow),
   };
 }
 
@@ -697,10 +698,16 @@ function discLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: 
     const glow = palette.pearlGlow ? `;box-shadow:0 0 ${r2(oneLookMetrics(device).pearlGlow * s)}px rgba(255, 255, 255, 0.5)` : "";
     back = html`<span class="ol-disc" style=${`${rectCss(rect, s)};background:${oneLookInkCss(palette.disc)}${glow}`}></span>`;
   } else {
-    const halo = oneLookGlyphHaloOpacity(palette, { centred: oneLookCentredGlyph(device), picture: model.picture !== "none", hasIcon: model.baseIcon !== "" });
+    const halo = oneLookGlyphHalo(palette, {
+      centred: oneLookCentredGlyph(device),
+      picture: model.picture !== "none",
+      hasIcon: model.baseIcon !== "",
+      photo: model.picture === "none" && model.photo !== undefined,
+    }, model.style.glow);
     if (halo !== undefined) {
-      const d = layout.glyphSize * ONE_LOOK_GLYPH_HALO_SHARE;
-      back = html`<span class="ol-halo" style=${`${rectCss({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, s)};background:radial-gradient(circle closest-side, rgba(255, 255, 255, ${halo}) 0%, rgba(255, 255, 255, 0) 100%)`}></span>`;
+      const d = layout.glyphSize * halo.share;
+      const [r, g, b] = halo.rgb;
+      back = html`<span class="ol-halo" style=${`${rectCss({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, s)};background:radial-gradient(circle closest-side, rgba(${r}, ${g}, ${b}, ${Math.round(halo.opacity * 10000) / 10000}) 0%, rgba(${r}, ${g}, ${b}, 0) 100%)`}></span>`;
     }
   }
   if (model.picture === "none" && model.photo !== undefined) {

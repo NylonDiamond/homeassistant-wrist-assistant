@@ -42,6 +42,7 @@ import {
   type StateLine,
   type TextMeasurer,
 } from "./text.js";
+import { type OneLookGlyphGlow, ONE_LOOK_NATIVE_GLOW } from "./colour.js";
 
 export interface OneLookSize { readonly width: number; readonly height: number }
 export interface OneLookPoint { readonly x: number; readonly y: number }
@@ -98,6 +99,9 @@ export interface OneLookTileStyle {
   readonly glyphShadow: boolean;
   /** The Pill value style: the state in a capsule. */
   readonly statePill: boolean;
+  /** The soft glow behind a bare glyph (`iconGlow`, tile layers round
+   * three); One Look's own when unset. */
+  readonly glow: OneLookGlyphGlow;
 }
 
 /** A new tile's style: every value the look's own. */
@@ -110,6 +114,7 @@ export const ONE_LOOK_DEFAULT_STYLE: OneLookTileStyle = Object.freeze({
   stateShadow: true,
   glyphShadow: false,
   statePill: false,
+  glow: ONE_LOOK_NATIVE_GLOW,
 });
 
 export const ONE_LOOK_STATE_SCALE_RANGE: readonly [number, number] = [0.75, 1.5];

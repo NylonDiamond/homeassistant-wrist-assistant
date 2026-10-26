@@ -661,8 +661,109 @@ export function oneLookGlyphInk(palette: OneLookPalette, drawsDisc: boolean, cen
  * look, not over a picture, with an icon, not wrist down; brighter while
  * lit. Undefined when none draws. */
 export function oneLookGlyphHaloOpacity(palette: OneLookPalette, o: { centred?: boolean; picture?: boolean; hasIcon?: boolean } = {}): number | undefined {
-  if (o.centred === false || palette.surface !== "coloured" || o.picture === true || o.hasIcon === false || palette.aod) return undefined;
-  return palette.isLit ? ONE_LOOK_GLYPH_HALO_LIT_OPACITY : ONE_LOOK_GLYPH_HALO_OPACITY;
+  return oneLookGlyphHalo(palette, o, ONE_LOOK_NATIVE_GLOW)?.opacity;
+}
+
+// ── the icon's glow setting (tile layers round three) ────────────────────
+
+/** Where the glow draws: `auto` where One Look draws it on its own (a
+ * coloured tile), `on` on a graphite tile too, `off` nowhere. */
+export type OneLookGlowMode = "auto" | "on" | "off";
+/** The glow's colour: white (One Look's own), the tile's colour as set, or
+ * one of the user's. */
+export type OneLookGlowColour = { readonly kind: "white" } | { readonly kind: "tile" } | { readonly kind: "custom"; readonly rgb: OneLookRGB };
+
+/** A tile's `iconGlow` setting, read (app repo
+ * docs/tile_layers_contract_2026-10.md section 14.2): the mode, the size as
+ * a percent of the glyph box, the brightness as a percent of One Look's own
+ * opacity, and the colour. */
+export interface OneLookGlyphGlow {
+  readonly mode: OneLookGlowMode;
+  readonly size: number;
+  readonly brightness: number;
+  readonly colour: OneLookGlowColour;
+}
+
+/** No setting: One Look's own glow. */
+export const ONE_LOOK_NATIVE_GLOW: OneLookGlyphGlow = Object.freeze({ mode: "auto", size: 150, brightness: 100, colour: Object.freeze({ kind: "white" }) });
+export const ONE_LOOK_GLOW_SIZE_RANGE: readonly [number, number] = [50, 250];
+export const ONE_LOOK_GLOW_BRIGHTNESS_RANGE: readonly [number, number] = [0, 300];
+
+const GLOW_HEX = /^#[0-9A-Fa-f]{6}$/;
+
+/** A finite number held in `range`, else `fallback` (JSON `true` is not a
+ * number). */
+function glowNumber(raw: unknown, range: readonly [number, number], fallback: number): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return fallback;
+  return Math.min(range[1], Math.max(range[0], raw));
+}
+
+/** The `iconGlow` key as stored, read tolerantly (section 14.2): anything
+ * that is not an object, and `{}`, is One Look's own glow; a key of the
+ * wrong type or value takes its default, numbers are clamped, unknown keys
+ * are ignored. */
+export function oneLookGlyphGlowOf(raw: unknown): OneLookGlyphGlow {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return ONE_LOOK_NATIVE_GLOW;
+  const o = raw as Record<string, unknown>;
+  const mode: OneLookGlowMode = o.mode === "on" || o.mode === "off" || o.mode === "auto" ? o.mode : "auto";
+  const size = glowNumber(o.size, ONE_LOOK_GLOW_SIZE_RANGE, ONE_LOOK_NATIVE_GLOW.size);
+  const brightness = glowNumber(o.brightness, ONE_LOOK_GLOW_BRIGHTNESS_RANGE, ONE_LOOK_NATIVE_GLOW.brightness);
+  let colour: OneLookGlowColour = ONE_LOOK_NATIVE_GLOW.colour;
+  if (o.color === "tile") colour = { kind: "tile" };
+  else if (typeof o.color === "string" && GLOW_HEX.test(o.color)) colour = { kind: "custom", rgb: oneLookParseHex(o.color)! };
+  if (mode === "auto" && size === ONE_LOOK_NATIVE_GLOW.size && brightness === ONE_LOOK_NATIVE_GLOW.brightness && colour.kind === "white") return ONE_LOOK_NATIVE_GLOW;
+  return { mode, size, brightness, colour };
+}
+
+/** The glow as the panel writes `iconGlow` (section 14.2): keys `mode, size,
+ * brightness, color`, each only when not its default, a custom colour as
+ * `#RRGGBB` upper case; undefined when every key is its default, so the key
+ * is removed. */
+export function encodeOneLookGlyphGlow(glow: OneLookGlyphGlow): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  if (glow.mode !== "auto") out.mode = glow.mode;
+  if (glow.size !== ONE_LOOK_NATIVE_GLOW.size) out.size = glow.size;
+  if (glow.brightness !== ONE_LOOK_NATIVE_GLOW.brightness) out.brightness = glow.brightness;
+  if (glow.colour.kind === "tile") out.color = "tile";
+  else if (glow.colour.kind === "custom") out.color = oneLookHex(glow.colour.rgb);
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/** Whether a glow is One Look's own (writes nothing). */
+export function oneLookGlowIsNative(glow: OneLookGlyphGlow): boolean {
+  return encodeOneLookGlyphGlow(glow) === undefined;
+}
+
+/** The glow One Look draws behind a bare glyph: its opacity at the centre,
+ * its diameter as a share of the glyph box, and its colour. */
+export interface OneLookGlyphHalo {
+  readonly opacity: number;
+  readonly share: number;
+  readonly rgb: OneLookRGB;
+}
+
+/**
+ * The soft light behind a bare glyph with a tile's glow setting (section
+ * 14.3), the same formula as the app's `OneLookColour.glyphHalo`: none with
+ * the mode off, outside the bridge look, over a picture, without an icon,
+ * wrist down or on a camera surface; on a surface that is not coloured only
+ * with the mode on and no photo showing; the opacity One Look's own (brighter
+ * while lit) times the brightness, at most 1, none at 0. Undefined when none
+ * draws.
+ */
+export function oneLookGlyphHalo(
+  palette: OneLookPalette,
+  o: { centred?: boolean; picture?: boolean; hasIcon?: boolean; photo?: boolean },
+  glow: OneLookGlyphGlow,
+): OneLookGlyphHalo | undefined {
+  if (glow.mode === "off") return undefined;
+  if (o.centred === false || o.picture === true || o.hasIcon === false || palette.aod) return undefined;
+  if (palette.surface === "camera") return undefined;
+  if (palette.surface !== "coloured" && (glow.mode === "auto" || o.photo === true)) return undefined;
+  const opacity = Math.min(1, ((palette.isLit ? ONE_LOOK_GLYPH_HALO_LIT_OPACITY : ONE_LOOK_GLYPH_HALO_OPACITY) * glow.brightness) / 100);
+  if (!(opacity > 0)) return undefined;
+  const rgb = glow.colour.kind === "custom" ? glow.colour.rgb : glow.colour.kind === "tile" ? (palette.hue ?? W) : W;
+  return { opacity, share: glow.size / 100, rgb };
 }
 
 // ── the fill ─────────────────────────────────────────────────────────────

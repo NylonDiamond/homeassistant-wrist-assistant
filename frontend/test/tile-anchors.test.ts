@@ -8,6 +8,7 @@ import { type CustomComplicationConfig, type Element, type IconElement, type Tex
 import type { WatchPageTile } from "../src/watch-pages/model.js";
 import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import { resolveOneLookLayout } from "../src/watch-pages/one-look/layout.js";
+import { ONE_LOOK_NATIVE_GLOW } from "../src/watch-pages/one-look/colour.js";
 import { oneLookStateFor } from "../src/watch-pages/one-look/state.js";
 import { type TileNativeFrames, anchorOf, layerPlacementMap, placeDesignDoc, tileNativeFrames } from "../src/watch-pages/tile-anchors.js";
 import type { TemplateResult } from "lit";
@@ -86,7 +87,7 @@ describe("the native frames", () => {
       device: "watch", size: { width: 100.5, height: 66 }, colSpan: 6, rowSpan: 4, name: "Office",
       state: { kind: "number", figure: "82", unit: "%" }, hasIcon: true, accessory: "none", isChart: false,
       centred: false, topBar: false, glyphAspect: 1, glyphExtent: 1.25, glyphIsPhoto: false,
-      style: { iconOffset: 0, stateScale: 1, accessoryScale: 1, nameDesign: "standard", nameShadow: false, stateShadow: false, glyphShadow: false, statePill: false },
+      style: { iconOffset: 0, stateScale: 1, accessoryScale: 1, nameDesign: "standard", nameShadow: false, stateShadow: false, glyphShadow: false, statePill: false, glow: ONE_LOOK_NATIVE_GLOW },
     }, measurer);
     expect(layout.mode).not.toBe("centred");
     const n = tileNativeFrames(layout, "watch");
