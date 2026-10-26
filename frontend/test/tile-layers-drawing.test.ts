@@ -196,7 +196,40 @@ describe("designForEdit", () => {
     expect(fresh.doc.elements.find((el) => el.payload.id === BASE_LAYER_IDS.state)).toEqual(
       designForEdit({ ...LIGHT }, dim).doc.elements.find((el) => el.payload.id === BASE_LAYER_IDS.state),
     );
-    // With no state for the entity the stored layers are kept.
-    expect(designForEdit(tile, { measurer })).toEqual(stored);
+    // With no state for the entity the stored layers are kept, and each
+    // role that is not owned and is laid out as stored takes its fresh
+    // anchor; the owned name keeps its own.
+    const stateless = designForEdit(tile, { measurer });
+    expect(stateless.owned).toEqual(["name"]);
+    expect(stateless.doc).toEqual(stored.doc);
+    expect(stateless.anchors.name).toEqual(stored.anchors.name);
+    expect(stateless.anchors.icon).toEqual(designForEdit(LIGHT, CTX).anchors.icon);
+    expect(stateless.anchors.state).toBeDefined();
+  });
+
+  it("keeps the anchor of a role owned while the entity has no state, so it is not drawn by the box fit", () => {
+    const tile = withLayerFrame(LIGHT, BASE_LAYER_IDS.name, { x: 0.1, y: 0.6, width: 0.8, height: 0.2, rotationDegrees: 0 }, CTX);
+    for (const ctx of [{ measurer }, { states: {}, measurer }]) {
+      const icon = designForEdit(tile, ctx).doc.elements.find((el) => el.payload.id === BASE_LAYER_IDS.icon)!.payload.frame;
+      const moved = readTileDesign(withLayerFrame(tile, BASE_LAYER_IDS.icon, { ...icon, y: icon.y + 0.05 }, ctx))!;
+      expect(moved.owned).toEqual(["icon", "name"]);
+      expect(moved.anchors.icon).toEqual(designForEdit(LIGHT, CTX).anchors.icon);
+      expect(moved.anchors.name).toEqual(readTileDesign(tile)!.anchors.name);
+    }
+  });
+
+  it("keeps a stored layer the face without the state builds otherwise, with no fresh anchor", () => {
+    // A person whose photo is gone with the state falls back to an icon: the
+    // stored photo stays, and the glyph gets no anchor it would not match.
+    const person = { id: "7A1E0000-0000-4000-8000-0000000000B2", entityId: "person.anna", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0 };
+    const states = { "person.anna": entity("person.anna", "home", { friendly_name: "Anna", entity_picture: "/api/image/anna.jpg" }) };
+    const live = { states, measurer };
+    const fresh = designForEdit(person, live);
+    expect(fresh.doc.elements.some((el) => el.payload.id === BASE_LAYER_IDS.photo)).toBe(true);
+    const tile = withLayerFrame(person, BASE_LAYER_IDS.name, { x: 0.1, y: 0.6, width: 0.8, height: 0.2, rotationDegrees: 0 }, live);
+    const stateless = designForEdit(tile, { measurer });
+    expect(stateless.doc).toEqual(readTileDesign(tile)!.doc);
+    expect(stateless.anchors.photo).toBeUndefined();
+    expect(stateless.anchors.icon).toBeUndefined();
   });
 });

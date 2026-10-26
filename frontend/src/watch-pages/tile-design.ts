@@ -37,6 +37,7 @@ import {
   type TileZonePreset,
   BASE_LAYER_IDS,
   BASE_LAYER_PARTS,
+  BASE_LAYER_ROLES,
   BASE_STATE_PILL_ID,
   TILE_DESIGN_KEY,
   TILE_DESIGN_MAX_LAYERS,
@@ -225,8 +226,8 @@ export function withDesign(tile: WatchPageTile, design: TileDesign | undefined, 
  * simple settings built again as they are now (so a layer owned by this edit
  * starts as the part the native tile draws today), or its base layers fresh,
  * nothing owned and no zones (not yet saved). With no state for the tile's
- * entity the stored layers are kept as they are, as `syncTileDesigns` keeps
- * them.
+ * entity the stored layers are kept where they cannot be built the same way
+ * (`designWithoutState`), as `syncTileDesigns` keeps them.
  *
  * Anchors (section 13.1): each role that is not owned gets a fresh anchor
  * beside its fresh layer, held in memory, so the write that owns it keeps
@@ -238,7 +239,7 @@ export function designForEdit(tile: WatchPageTile, ctx: BaseLayerContext): TileD
   const existing = readTileDesign(tile);
   if (existing !== undefined) {
     const entityId = tileEntityId(tile);
-    if (ctx.states === undefined || !Object.hasOwn(ctx.states, entityId)) return existing;
+    if (ctx.states === undefined || !Object.hasOwn(ctx.states, entityId)) return designWithoutState(tile, existing, ctx);
     const anchors = editAnchors(existing, baseAnchors(tile, ctx));
     const rebuilt = rebuildBaseLayers(tile, existing, ctx);
     if (stableJson(encodeConfig(rebuilt.doc)) === stableJson(encodeConfig(normalizeDesignDoc(existing.doc)))) return { ...existing, anchors };
@@ -249,6 +250,52 @@ export function designForEdit(tile: WatchPageTile, ctx: BaseLayerContext): TileD
   const template = designTemplate(doc, []);
   if (template !== undefined) design.template = template;
   return design;
+}
+
+/**
+ * A stored design to edit while its tile's entity has no state (renamed, or
+ * Home Assistant not loaded yet): its stored layers kept as they are (built
+ * without the state they would take its off look), with a fresh anchor for
+ * each role that is not owned wherever the face built without the state
+ * lays that role's layers out exactly as they are stored (same ids, frames
+ * and sizes), so the anchor matches the layer. A write in this session that
+ * owns such a role then keeps an anchor for it, rather than leaving it to
+ * the box fit until the next edit with the entity back. A role laid out
+ * otherwise (a photo that falls back to an icon, a line that changes) gets
+ * no fresh anchor. Returns `existing` itself when no role pairs.
+ */
+function designWithoutState(tile: WatchPageTile, existing: TileDesign, ctx: BaseLayerContext): TileDesign {
+  const fresh = baseLayersById(tile, ctx);
+  const freshAnchors = baseAnchors(tile, ctx);
+  const stored = new Map(existing.doc.elements.map((el) => [el.payload.id.toUpperCase(), el]));
+  const anchors: TileAnchors = { ...existing.anchors };
+  let paired = false;
+  for (const role of BASE_LAYER_ROLES) {
+    if (roleOwned(existing, role)) continue;
+    const anchor = freshAnchors[role];
+    if (anchor === undefined) continue;
+    const ids = BASE_LAYER_PARTS.filter((part) => part.role === role).map((part) => part.id);
+    const same = ids.every((id) => {
+      const a = stored.get(id);
+      const b = fresh.get(id);
+      return a === undefined ? b === undefined : b !== undefined && layerGeometry(a) === layerGeometry(b);
+    });
+    if (!same || !ids.some((id) => stored.has(id))) continue;
+    anchors[role] = anchor;
+    paired = true;
+  }
+  return paired ? { ...existing, anchors } : existing;
+}
+
+/** What of a layer an anchor reads: its frame and its sizes (an icon's
+ * point size, a text's and its parts' font sizes). */
+function layerGeometry(el: Element): string {
+  const p = el.payload;
+  const f = p.frame;
+  const sizes = el.kind === "icon" ? [el.payload.size]
+    : el.kind === "text" ? [el.payload.fontSize, ...(el.payload.parts ?? []).map((part) => part.fontSize ?? null)]
+      : [];
+  return JSON.stringify([el.kind, f.x, f.y, f.width, f.height, f.rotationDegrees, sizes]);
 }
 
 /** The anchors a design is edited with: the fresh ones, with each owned

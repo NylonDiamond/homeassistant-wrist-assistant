@@ -144,6 +144,10 @@ export interface OneLookTileFaceInput {
   /** Drawn over the tile's content, under the rim: the page editor's outline
    * of a picked layer on a tile that has no layers saved yet. */
   overlay?: TemplateResult;
+  /** `overlay` drawn from the model this tile is laid out by, so the outline
+   * of a picked base layer sits on the native part of this very layout, as
+   * `contentFor` places the layers. Wins over `overlay`. */
+  overlayFor?: (model: OneLookPreviewModel) => TemplateResult | undefined;
 }
 
 /** The iPhone's Page look a tile's old sizes are read in; the watch is
@@ -853,7 +857,7 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
       ${f.hidden?.glyph === true ? nothing : discLayer(model, input, s)}${f.hidden?.state === true ? nothing : accessoryLayer(model, input, s)}${textLayer(model, s, f.hidden)}${f.hidden?.state === true ? nothing : bigValueLayer(model, s)}
       ${f.contentFor !== undefined ? (f.contentFor(model) ?? nothing) : (f.content ?? nothing)}
     </span>
-    ${f.overlay ?? nothing}
+    ${f.overlayFor !== undefined ? (f.overlayFor(model) ?? nothing) : (f.overlay ?? nothing)}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>
     ${borderLayer(model, f, active, radius)}
   </div>`;

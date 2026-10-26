@@ -233,8 +233,9 @@ import {
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
-import { previewTileCellInset, renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
+import { previewTileCellInset, previewTileNativeFrames, renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
 import { tileBoxOf, tileDesignDrawsLayer, tileLayerPlacement } from "./tile-design-face.js";
+import { type TileLayerPlacementMap, layerPlacementMap } from "./tile-anchors.js";
 import type { NormalizedFrame } from "../model.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
@@ -260,6 +261,7 @@ import {
 } from "./tile-settings.js";
 import {
   type LayerDragMode,
+  type TileAnchors,
   BASE_LAYER_IDS,
   TILE_DESIGN_SCREEN_WIDTH,
   designForEdit,
@@ -903,6 +905,9 @@ export class WaPageEditor extends LitElement {
   private iconMemo?: { provider: IconProvider; tick: number; icons: IconProvider };
 
   private gesture?: Gesture;
+  /** The edit screen's preview input, grid and unit as last drawn, for a
+   * layer drag to place the picked layer as the stage draws it. */
+  private stageView?: { input: WatchPagePreviewInput; grid: StageGrid; unit: number };
   /** A change from elsewhere arrived during a gesture or a save, and is
    * fetched once it ends. */
   private reloadPending = false;
@@ -2625,6 +2630,12 @@ export class WaPageEditor extends LitElement {
     const drawn = button?.querySelector<HTMLElement>(".ol-tile")?.getBoundingClientRect() ?? button?.getBoundingClientRect();
     if (el === undefined || drawn === undefined || !(drawn.width > 0) || !(drawn.height > 0)) return;
     const { fit } = tileLayerPlacement(el.payload.frame, tileBoxOf(tile), drawn.width, drawn.height);
+    // An owned base layer is drawn placed on its native part, where a move
+    // travels by the part's size rather than the box fit's: the pointer's
+    // travel is turned into the design frame's by that scale, so the layer
+    // keeps up with it on every watch size and the iPhone. `design` has the
+    // anchors the drag's preview is drawn by.
+    const scale = this.stageLayerMap(tile, layerId, design.anchors)?.scale ?? 1;
     if (mode !== "move") e.stopPropagation();
     e.preventDefault();
     this.gesture = {
@@ -2640,7 +2651,7 @@ export class WaPageEditor extends LitElement {
       layerId: layerId.toUpperCase(),
       mode,
       startFrame: { ...el.payload.frame },
-      fitPx: { width: fit.width, height: fit.height },
+      fitPx: { width: fit.width * scale, height: fit.height * scale },
       captured: this.capture(e.currentTarget as HTMLElement, e.pointerId),
       baseVersion: draft.baseVersion,
     };
@@ -3706,7 +3717,7 @@ export class WaPageEditor extends LitElement {
     // its frame as built now.
     if (tileDesignDrawsLayer(tile, id)) return { tileId, layerId: id };
     const frame = this.pickedLayerFrame(page, tile, id);
-    return frame === undefined ? undefined : { tileId, layerId: id, outline: frame };
+    return frame === undefined ? undefined : { tileId, layerId: id, outline: frame, anchors: this.drawnAnchors(page, tile) };
   }
 
   /** A tile as the stage draws it: while its picked layer is dragged, with
@@ -3726,6 +3737,7 @@ export class WaPageEditor extends LitElement {
     tile: WatchPageTile,
     cell: { left: number; top: number; width: number; height: number },
     input: WatchPagePreviewInput,
+    unit: number,
   ): { left: number; top: number; width: number; height: number; tileId: string; layerId: string } | undefined {
     const layerId = this.pickedLayerId();
     const tileId = tileIdOf(tile);
@@ -3738,8 +3750,47 @@ export class WaPageEditor extends LitElement {
     if (frame === undefined) return undefined;
     const s = input.scale ?? 1.5;
     const inset = previewTileCellInset(input, tile, cell.width / s, cell.height / s) * s;
-    const { layer } = tileLayerPlacement(frame, tileBoxOf(tile), cell.width - 2 * inset, cell.height - 2 * inset);
+    // Placed as the stage draws the layer: an owned base layer (or one that
+    // follows the simple settings, which the native tile draws on its part)
+    // on the native part of the layout this very tile is drawn by.
+    const shown = this.stageTile(page, tileId) ?? tile;
+    const faces = previewTileNativeFrames(shown, cell.width / s, cell.height / s, input, unit);
+    const box = tileBoxOf(tile);
+    const placed = faces === undefined ? frame : layerPlacementMap(layerId, this.drawnAnchors(page, shown), faces.native, faces, box).frame(frame);
+    const { layer } = tileLayerPlacement(placed, box, cell.width - 2 * inset, cell.height - 2 * inset);
     return { left: cell.left + inset + layer.left, top: cell.top + inset + layer.top, width: layer.width, height: layer.height, tileId, layerId };
+  }
+
+  /**
+   * The anchors a tile's layers are drawn by: an owned role's stored one
+   * (none for one saved before anchors, which keeps the box fit until the
+   * next edit adds it), and for a role that follows the simple settings its
+   * fresh one, whose frame is where the native tile draws that part.
+   */
+  private drawnAnchors(page: WatchPage, tile: WatchPageTile): TileAnchors {
+    const host = this.tileSettingsHost(page, tile);
+    if (host === undefined) return {};
+    const out: TileAnchors = { ...designForEdit(tile, tileLayerContext(host)).anchors };
+    const stored = readTileDesign(tile);
+    for (const role of stored?.owned ?? []) {
+      const anchor = stored!.anchors[role];
+      if (anchor === undefined) delete out[role];
+      else out[role] = anchor;
+    }
+    return out;
+  }
+
+  /** How the stage places a layer of the selected tile with these anchors
+   * (`layerPlacementMap` on the native parts of the layout the edit screen
+   * last drew the tile by), or undefined when the edit screen has not drawn
+   * it as One Look. */
+  private stageLayerMap(tile: WatchPageTile, layerId: string, anchors: TileAnchors): TileLayerPlacementMap | undefined {
+    const view = this.stageView;
+    if (view === undefined) return undefined;
+    const s = view.input.scale ?? 1.5;
+    const cell = cellRectPx(view.grid, drawnRect(watchTileRect(tile)));
+    const faces = previewTileNativeFrames(tile, cell.width / s, cell.height / s, view.input, view.unit);
+    return faces === undefined ? undefined : layerPlacementMap(layerId, anchors, faces.native, faces, tileBoxOf(tile));
   }
 
   /** The picked layer's frame on a tile: as the design has it, a base layer
@@ -4272,7 +4323,8 @@ export class WaPageEditor extends LitElement {
     // With a layer of the selected tile picked, its corners take the place
     // of the tile's own handles: a drag on the tile moves the layer, a drag
     // on a corner sizes it.
-    const layerBox = selectedPlaced !== undefined && selBox !== undefined && !resize ? this.pickedLayerBox(page, selectedPlaced.tile, selBox, input) : undefined;
+    const layerBox = selectedPlaced !== undefined && selBox !== undefined && !resize ? this.pickedLayerBox(page, selectedPlaced.tile, selBox, input, layout.unit) : undefined;
+    this.stageView = { input, grid, unit: layout.unit };
     // The grid's cells show only while a tile is moved or resized.
     return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}

@@ -169,20 +169,68 @@ function scaledRule(rule: Rule, layerFactor: number, parts: readonly TextPart[] 
   return out;
 }
 
+type Frame = { x: number; y: number; width: number; height: number };
+
+/** A design frame mapped from the anchor `a` to the native part `n`, a move
+ * scaled by `pos`, written back as fractions of the box for the box fit. */
+function placedFrame<T extends Frame>(F: T, a: TileAnchor, n: TilePartFrame, pos: number, fit: { scale: number; x: number; y: number }, box: { width: number; height: number }): T {
+  const f = fit.scale;
+  const bw = box.width;
+  const bh = box.height;
+  const x = n.rect.x + (F.x * bw - a.x * bw) * pos;
+  const y = n.rect.y + (F.y * bh - a.y * bh) * pos;
+  const w = Math.max(0, n.rect.width + (F.width * bw - a.width * bw) * pos);
+  const h = Math.max(0, n.rect.height + (F.height * bh - a.height * bh) * pos);
+  return { ...F, x: (x - fit.x) / (f * bw), y: (y - fit.y) / (f * bh), width: w / (f * bw), height: h / (f * bh) };
+}
+
+/** How one layer is placed on a drawn tile, for the page editor's outline,
+ * corner handles and drag of it. */
+export interface TileLayerPlacementMap {
+  /** A design frame to the frame the renderer's box fit draws: mapped from
+   * the role's anchor to its native part, as `placeDesignDoc` places it, or
+   * the frame itself where the layer keeps the box fit. */
+  frame<T extends Frame>(frame: T): T;
+  /** How far the drawn frame moves, in fractions of the box, per fraction a
+   * design frame moves (1 for the box fit): a drag on the drawn tile divided
+   * by it is the design frame's change. */
+  scale: number;
+}
+
+const BOX_FIT: TileLayerPlacementMap = Object.freeze({ frame: <T extends Frame>(frame: T): T => frame, scale: 1 });
+
+/**
+ * The map `placeDesignDoc` places the layer `elementId` by on a drawn tile
+ * `slot` (points, with `native` its layout's parts and `box` the design
+ * box), as a function of its frame, so the editor's outline and handles sit
+ * on the layer as drawn and a drag follows the pointer on every watch size
+ * and the iPhone. The box fit, unchanged, under the same conditions as
+ * there: an added layer or tap zone, no usable anchor, no native part.
+ */
+export function layerPlacementMap(
+  elementId: string,
+  anchors: TileAnchors,
+  native: TileNativeFrames,
+  slot: { width: number; height: number },
+  box: { width: number; height: number },
+): TileLayerPlacementMap {
+  const role = baseRoleOf(elementId);
+  if (role === undefined) return BOX_FIT;
+  const a = anchors[role];
+  const n = native[role];
+  if (a === undefined || n === undefined) return BOX_FIT;
+  const k = factorsFor(role, a, n);
+  const fit = fitBox(slot, TILE_DESIGN_FAMILY, box);
+  if (k === undefined || !(fit.scale > 0) || !(box.width > 0) || !(box.height > 0)) return BOX_FIT;
+  return { frame: (frame) => placedFrame(frame, a, n, k.pos, fit, box), scale: k.pos / fit.scale };
+}
+
 /** One element of a mapped role, placed: its frame mapped from the anchor to
  * the native part, its sizes scaled so they draw at the native ones. */
 function placed(el: Element, role: BaseLayerRole, a: TileAnchor, n: TilePartFrame, k: Factors, fit: { scale: number; x: number; y: number }, box: { width: number; height: number }): Element {
   const f = fit.scale;
-  const F = el.payload.frame;
-  const bw = box.width;
-  const bh = box.height;
-  const x = n.rect.x + (F.x * bw - a.x * bw) * k.pos;
-  const y = n.rect.y + (F.y * bh - a.y * bh) * k.pos;
-  const w = Math.max(0, n.rect.width + (F.width * bw - a.width * bw) * k.pos);
-  const h = Math.max(0, n.rect.height + (F.height * bh - a.height * bh) * k.pos);
-  const frame: NormalizedFrame = { ...F, x: (x - fit.x) / (f * bw), y: (y - fit.y) / (f * bh), width: w / (f * bw), height: h / (f * bh) };
   const out = structuredClone(el);
-  out.payload.frame = frame;
+  out.payload.frame = placedFrame(el.payload.frame, a, n, k.pos, fit, box);
   const pos = k.pos / f;
   if (out.payload.shadow !== undefined) out.payload.shadow = scaledShadow(out.payload.shadow, pos);
   // The State text layer's own size follows the native fit of the line; every

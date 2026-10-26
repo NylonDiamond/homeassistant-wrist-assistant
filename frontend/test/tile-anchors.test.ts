@@ -9,9 +9,9 @@ import type { WatchPageTile } from "../src/watch-pages/model.js";
 import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import { resolveOneLookLayout } from "../src/watch-pages/one-look/layout.js";
 import { oneLookStateFor } from "../src/watch-pages/one-look/state.js";
-import { type TileNativeFrames, anchorOf, placeDesignDoc, tileNativeFrames } from "../src/watch-pages/tile-anchors.js";
+import { type TileNativeFrames, anchorOf, layerPlacementMap, placeDesignDoc, tileNativeFrames } from "../src/watch-pages/tile-anchors.js";
 import type { TemplateResult } from "lit";
-import { renderWatchTileFace } from "../src/watch-pages/preview.js";
+import { previewTileNativeFrames, renderWatchTileFace } from "../src/watch-pages/preview.js";
 import { phonePagesLayout } from "../src/phone-frame.js";
 import { oneLookCellSize, oneLookGridUnit } from "../src/watch-pages/one-look/metrics.js";
 import { baseAnchors, baseLayers, oneLookStateLineParts, tileNativeFramesOn } from "../src/watch-pages/tile-base-layers.js";
@@ -422,5 +422,86 @@ describe("the preview", () => {
     // The box fit would have drawn it about 9% bigger (section 13.3).
     const stored = readTileDesign(tile)!.doc.elements.find((e) => e.payload.id === BASE_LAYER_IDS.icon)!.payload as IconElement;
     expect((stored.size * drawnRect(stored.frame, on.drawnSize).f) / icon.size).toBeGreaterThan(1.05);
+  });
+
+  /** Where the stage's outline of a picked layer is drawn, in the tile's
+   * points at scale 1. */
+  function drawnOutline(html: string): { x: number; y: number; width: number; height: number } {
+    const m = /ol-design-outline[\s\S]*?position:absolute;left:([-\d.e]+)px;top:([-\d.e]+)px;width:([-\d.e]+)px;height:([-\d.e]+)px/.exec(html)!;
+    return { x: Number(m[1]), y: Number(m[2]), width: Number(m[3]), height: Number(m[4]) };
+  }
+
+  it("lays a tile out for the editor exactly as the face does, on a watch of any size and the iPhone", () => {
+    for (const screen of [162, 176, 208]) {
+      const unit = oneLookGridUnit(screen, "watch");
+      const cell = oneLookCellSize(6, 4, unit);
+      const got = previewTileNativeFrames(BED_TILE, cell.width, cell.height, { page, pages: [page], screen: { width: screen, height: screen }, states: BED, oneLook: true }, unit)!;
+      const want = tileNativeFramesOn(BED_TILE, ctx, "watch", screen)!;
+      expect({ width: got.width, height: got.height }, `watch ${screen}`).toEqual(want.drawnSize);
+      expect(got.native, `watch ${screen}`).toEqual(want.native);
+    }
+    const unit = oneLookGridUnit(402, "phone");
+    const cell = oneLookCellSize(6, 4, unit);
+    const got = previewTileNativeFrames(BED_TILE, cell.width, cell.height, {
+      page, pages: [page], screen: { width: 402, height: 804 }, states: BED, oneLook: true, phone: phonePagesLayout(undefined, { look: "iphone" }),
+    }, unit)!;
+    const want = tileNativeFramesOn(BED_TILE, ctx, "phone")!;
+    expect({ width: got.width, height: got.height }).toEqual(want.drawnSize);
+    expect(got.native).toEqual(want.native);
+    // The old look draws no One Look layout.
+    expect(previewTileNativeFrames(BED_TILE, cell.width, cell.height, { page, pages: [page], screen: { width: 208, height: 208 }, states: BED, oneLook: false }, unit)).toBeUndefined();
+  });
+
+  it("outlines a picked base layer that follows the simple settings on the native part, not at the box fit", () => {
+    const d = designForEdit(BED_TILE, ctx);
+    const frame = elementOf(d.doc, BASE_LAYER_IDS.icon).payload.frame;
+    for (const screen of [162, 208]) {
+      const unit = oneLookGridUnit(screen, "watch");
+      const html = flat(renderWatchTileFace(BED_TILE, oneLookCellSize(6, 4, unit), {
+        page, pages: [page], screen: { width: screen, height: screen }, states: BED, oneLook: true, scale: 1,
+        designFocus: { tileId: TILE_ID, layerId: BASE_LAYER_IDS.icon, outline: frame, anchors: d.anchors },
+      }, unit));
+      const native = tileNativeFramesOn(BED_TILE, ctx, "watch", screen)!.native.icon!.rect;
+      const at = drawnOutline(html);
+      for (const k of ["x", "y", "width", "height"] as const) expect(Math.abs(at[k] - native[k]), `watch ${screen} ${k}`).toBeLessThan(0.01);
+    }
+  });
+});
+
+describe("the editor's placement map", () => {
+  const d = designForEdit(BED_TILE, CTX);
+  const on = tileNativeFramesOn(BED_TILE, CTX, "phone")!;
+  const watch41 = tileNativeFramesOn(BED_TILE, CTX, "watch", 162)!;
+
+  it("places a frame as placeDesignDoc does, and moves it by its scale", () => {
+    for (const device of [on, watch41]) {
+      const map = layerPlacementMap(BASE_LAYER_IDS.icon, d.anchors, device.native, device.drawnSize, BOX);
+      const moved = structuredClone(d.doc);
+      elementOf(moved, BASE_LAYER_IDS.icon).payload.frame.y += 0.05;
+      const placed = elementOf(placeDesignDoc(moved, d.anchors, device.native, device.drawnSize, BOX), BASE_LAYER_IDS.icon).payload.frame;
+      expect(map.frame(elementOf(moved, BASE_LAYER_IDS.icon).payload.frame)).toEqual(placed);
+      const still = map.frame(elementOf(d.doc, BASE_LAYER_IDS.icon).payload.frame);
+      close((placed.y - still.y) / 0.05, map.scale, 6);
+      // The scale is the part's size over the box fit's: kPos / f.
+      const f = drawnRect(still, device.drawnSize).f;
+      close(map.scale, device.native.icon!.size / d.anchors.icon!.size / f, 6);
+    }
+    // The 41 mm watch's case from the review: a drag moves the icon 0.917 of
+    // the box fit's travel.
+    close(layerPlacementMap(BASE_LAYER_IDS.icon, d.anchors, watch41.native, watch41.drawnSize, BOX).scale, 0.917, 3);
+  });
+
+  it("keeps the box fit for an added layer, a role with no anchor and a missing native part", () => {
+    const frame = { x: 0.1, y: 0.2, width: 0.3, height: 0.4, rotationDegrees: 0 };
+    const cases = [
+      layerPlacementMap(newElement("text").payload.id, d.anchors, on.native, on.drawnSize, BOX),
+      layerPlacementMap(BASE_LAYER_IDS.icon, {}, on.native, on.drawnSize, BOX),
+      layerPlacementMap(BASE_LAYER_IDS.name, d.anchors, {}, on.drawnSize, BOX),
+      layerPlacementMap(BASE_LAYER_IDS.icon, d.anchors, on.native, { width: 0, height: 0 }, BOX),
+    ];
+    for (const map of cases) {
+      expect(map.frame(frame)).toBe(frame);
+      expect(map.scale).toBe(1);
+    }
   });
 });
