@@ -375,7 +375,11 @@ def test_both_map_ops_are_unavailable_with_no_store_or_an_unreadable_one(env) ->
 AREAS = [
     {"id": "attic", "name": "attic", "entity_ids": []},
     {"id": "bedroom", "name": "Bedroom", "entity_ids": []},
-    {"id": "kitchen", "name": "Kitchen", "entity_ids": ["climate.thermostat", "light.pendants"]},
+    {
+        "id": "kitchen",
+        "name": "Kitchen",
+        "entity_ids": ["climate.thermostat", "light.pendants", "sensor.hub_signal"],
+    },
     {
         "id": "living_room",
         "name": "Living room",
@@ -387,6 +391,7 @@ AREAS = [
 ENTITIES = [
     {"id": "light.ceiling", "name": "Ceiling", "area_id": "living_room"},
     {"id": "fan.gone_area", "name": "Gone Area", "area_id": "garage"},
+    {"id": "sensor.hub_signal", "name": "Hub Signal", "area_id": "kitchen"},
     {"id": "switch.loose", "name": "Loose", "area_id": None},
     {"id": "light.pendants", "name": "Pendants", "area_id": "kitchen"},
     {"id": "light.reading_lamp", "name": "Reading Lamp", "area_id": "living_room"},
@@ -406,8 +411,9 @@ def test_areas_get_lists_every_area_and_its_entities(env) -> None:
 def test_every_entity_with_a_state_is_listed_by_name(env) -> None:
     rows = env.areas.home_entities(env.hass)
     ids = [row["id"] for row in rows]
-    # Hidden left out, disabled has no state; one outside the registry is in.
-    assert "sensor.hub_signal" not in ids and "light.old" not in ids
+    # Hidden kept (a light group's lamps), disabled has no state; one
+    # outside the registry is in.
+    assert "sensor.hub_signal" in ids and "light.old" not in ids
     assert "sun.sun" in ids
     # Its own area wins over its device's, as for the areas.
     assert {row["id"]: row["area_id"] for row in rows}["light.pendants"] == "kitchen"
@@ -424,19 +430,17 @@ def test_an_entitys_own_area_wins_over_its_devices(env) -> None:
     assert "light.pendants" in by_id["living_room"]
 
 
-def test_hidden_disabled_and_unplaced_entities_are_left_out(env) -> None:
+def test_disabled_and_unplaced_entities_are_left_out(env) -> None:
     listed = {e for a in env.areas.home_areas(env.hass) for e in a["entity_ids"]}
+    # Hidden is kept: Home Assistant hides a light group's lamps.
+    assert "sensor.hub_signal" in listed
     for entity_id in (
-        "sensor.hub_signal",  # hidden
         "light.old",  # disabled
         "switch.loose",  # its device has no area
         "switch.unknown_device",  # its device is gone
         "fan.gone_area",  # its area is gone
     ):
         assert entity_id not in listed, entity_id
-    env.registries.entities["sensor.hub_signal"].hidden_by = None
-    listed = {e for a in env.areas.home_areas(env.hass) for e in a["entity_ids"]}
-    assert "sensor.hub_signal" in listed
 
 
 def test_areas_sort_by_name_whatever_the_case_then_by_id(env) -> None:

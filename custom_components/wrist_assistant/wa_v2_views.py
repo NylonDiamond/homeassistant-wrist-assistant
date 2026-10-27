@@ -5113,7 +5113,8 @@ async def _op_areas_get(ctx: _OpContext) -> Response:
     Every area, sorted by name, its entity ids sorted. ``entities`` is every
     entity with a state, sorted by name, for the iPhone's "All Devices"
     pick; older apps ignore it. An entity's own area wins over its device's;
-    hidden and disabled entities are left out (see ``home_areas.py``). Read
+    disabled entities are left out, hidden ones kept (see
+    ``home_areas.py``). Read
     only, and open to any paired device.
     """
     return ctx.signed_json({

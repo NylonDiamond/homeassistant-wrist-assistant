@@ -6,9 +6,10 @@ entities of that room's area. The signed ``areas_get`` op answers with
 :func:`home_areas`.
 
 An entity's own area wins over its device's area, as Home Assistant itself
-reads it. Hidden and disabled entities are left out (an entity of a disabled
-device is disabled with it). Only entities in the entity registry have an
-area at all.
+reads it. Disabled entities are left out (an entity of a disabled device is
+disabled with it). Hidden ones are kept: Home Assistant hides the lights of a
+light group, and each lamp of the group is still a thing in a room to pin.
+Only entities in the entity registry have an area at all.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ def areas_from_registries(
 
     ``areas`` are area registry entries (``id``, ``name``), ``entities``
     entity registry entries (``entity_id``, ``area_id``, ``device_id``,
-    ``hidden_by``, ``disabled_by``), and ``device_area(device_id)`` the area
+    ``disabled_by``), and ``device_area(device_id)`` the area
     of a device, None for none or an unknown device. An area with no
     entities is listed too, for the iPhone's area pick; an entity whose
     area is not listed is in none.
@@ -43,7 +44,7 @@ def areas_from_registries(
         members[area.id] = []
         names[area.id] = area.name
     for entry in entities:
-        if entry.hidden_by is not None or entry.disabled_by is not None:
+        if entry.disabled_by is not None:
             continue
         area_id = entry.area_id
         if area_id is None and entry.device_id is not None:
@@ -68,8 +69,8 @@ def entities_from_states(
     ``states`` are state objects (``entity_id``, ``attributes``), the other
     two as for :func:`areas_from_registries`. The name is the state's
     ``friendly_name``, else the entity id. ``area_id`` is read as there, and
-    is None for an entity in no area or not in the registry. Hidden and
-    disabled entities are left out.
+    is None for an entity in no area or not in the registry. Disabled
+    entities are left out, hidden ones kept.
     """
     registry = {entry.entity_id: entry for entry in entities}
     rows: list[dict[str, Any]] = []
@@ -77,7 +78,7 @@ def entities_from_states(
         entry = registry.get(state.entity_id)
         area_id = None
         if entry is not None:
-            if entry.hidden_by is not None or entry.disabled_by is not None:
+            if entry.disabled_by is not None:
                 continue
             area_id = entry.area_id
             if area_id is None and entry.device_id is not None:
