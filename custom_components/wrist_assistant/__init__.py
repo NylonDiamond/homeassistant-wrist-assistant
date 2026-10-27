@@ -49,6 +49,7 @@ from .complication_ws import async_register_websocket_commands
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
+    HOME_MAP_CAPABILITY,
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
@@ -82,6 +83,8 @@ from .const import (
 )
 from .control_center_move import ControlCenterMover
 from .device_lookup import paired_device_name
+from .home_map_store import HomeMapStore
+from .home_map_ws import async_register_home_map_commands
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
@@ -946,6 +949,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         watch_config_store.async_add_listener(page_images_store.pages_changed)
     )
+    # The home's map (home_map_store.py): saved by the iPhone and the panel,
+    # read by every device, its rev on every delta reply as `home_map_rev`.
+    # An unreadable file is left alone and refused.
+    home_map_store = HomeMapStore(hass)
+    await home_map_store.async_load()
+    coordinator.attach_home_map_store(home_map_store)
     # Each Home Assistant user's client certificate (link removal, step 4): a
     # phone hands it over sealed, every device of that user fetches it sealed,
     # and the user's revision rides the poll. A change wakes the parked polls
@@ -1111,6 +1120,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # id, and a tile's iconPhotoId counted as a use. The phone sends a photo
     # it made for a tile only when it sees this.
     coordinator.register_capability(TILE_PHOTOS_CAPABILITY)
+    # The home map (home_map_store.py): the signed home_map_get, home_map_put
+    # and areas_get ops, `home_map_rev` on the delta reply, and the panel's
+    # home_map commands. The iPhone offers a scan, and the watch the Home map
+    # tile, only when it sees this.
+    coordinator.register_capability(HOME_MAP_CAPABILITY)
     # Each user's client certificate (client_certificate_store.py): the
     # signed client_certificate_put, client_certificate_get and
     # client_certificate_delete ops and `client_certificate` on the delta
@@ -1149,6 +1163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         http_actions_store=http_actions_store,
         http_action_runner=http_action_runner,
         page_images_store=page_images_store,
+        home_map_store=home_map_store,
         client_certificate_store=client_certificate_store,
         watch_logs_store=watch_logs_store,
     )
@@ -1189,6 +1204,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # The panel's page photos: list, fetch, upload, delete (any
         # signed-in user).
         async_register_page_images_commands(hass)
+        # The panel's home map: read and save (any signed-in user).
+        async_register_home_map_commands(hass)
         # The panel's camera framing: list, save, send a test (any
         # signed-in user; a test goes to the caller's own devices).
         async_register_camera_framing_commands(hass)
@@ -1510,6 +1527,7 @@ _DEBOUNCED_STORES = (
     "watch_voices_store",
     "http_actions_store",
     "page_images_store",
+    "home_map_store",
     "client_certificate_store",
     "watch_logs_store",
     "parts_store",

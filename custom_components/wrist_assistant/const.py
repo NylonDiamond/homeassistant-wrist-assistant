@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .client_certificate_store import ClientCertificateStore
     from .complication_push import ComplicationPhonePush
     from .complication_store import ComplicationStore
+    from .home_map_store import HomeMapStore
     from .http_actions_runner import HTTPActionRunner
     from .http_actions_store import HTTPActionsStore
     from .notification_snapshot import NotificationSnapshotStore
@@ -95,6 +96,9 @@ class WristAssistantData:
     client_certificate_store: ClientCertificateStore
     # Each device's latest log upload, read by its diagnostics download.
     watch_logs_store: WatchLogsStore
+    # The home's map: saved by the iPhone and the panel, read by every
+    # paired device.
+    home_map_store: HomeMapStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -457,6 +461,16 @@ PAGE_IMAGES_CAPABILITY = "page_images"
 # iconPhotoId counts as a use of its photo. The phone sends a tile's photo,
 # and the panel offers photos for tiles, only when it sees this.
 TILE_PHOTOS_CAPABILITY = "tile_photos"
+# The home map (app repo docs/home_map_plan_2026-10.md), see
+# home_map_store.py: one document for the home, the floors, rooms and device
+# pins, and a rev that goes up by one on each save.
+HOME_MAP_STORAGE_KEY = "wrist_assistant.home_map"
+HOME_MAP_STORAGE_VERSION = 1
+# What the integration advertises once it keeps that map, serves the signed
+# home_map_get, home_map_put and areas_get ops, and names the map's rev as
+# `home_map_rev` on the delta reply. The iPhone offers to scan, and the watch
+# and the panel offer the Home map tile, only when they see this.
+HOME_MAP_CAPABILITY = "home_map"
 # Each Home Assistant user's client certificate for an mTLS proxy (step 4 of
 # the phone watch link removal), see client_certificate_store.py: the .p12
 # bytes, its password, its fingerprint and a revision per user. A private

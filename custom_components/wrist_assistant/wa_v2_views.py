@@ -155,6 +155,14 @@ from .const import (
     WristAssistantData,
 )
 from .device_lookup import find_paired_device, paired_device_name
+from .home_areas import home_areas
+from .home_map_store import (
+    HomeMapConflictError,
+    HomeMapError,
+    HomeMapInvalidError,
+    HomeMapTooLargeError,
+    HomeMapUnavailableError,
+)
 from .http_actions_runner import HTTPActionRefusal, run_input_problem
 from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
 from .logbook_events import (
@@ -4999,6 +5007,115 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "status": status})
 
 
+# ── the home map (app repo docs/home_map_plan_2026-10.md) ─────────────────
+#
+# The home keeps one map (``home_map_store.py``). Any device with a valid
+# pair reads it: the watch draws it flat, the iPhone in 3D. Only an iPhone
+# saves it, since only the iPhone scans rooms and places pins (the panel
+# saves over its own WebSocket). ``areas_get`` gives the iPhone the home's
+# areas for its area pick and its device tray.
+
+# Each refusal's HTTP status, as for the page photos. ``conflict`` is a 409
+# like the other "the stored state says no" answers.
+_HOME_MAP_STATUS = {
+    "invalid": 400,
+    "too_large": 413,
+    "conflict": 409,
+    "unavailable": 503,
+}
+# A put is a JSON body around a map of at most 256 KiB as stored. The raw
+# body is held to half as much again before the map is read: room for
+# numbers sent with more than the 2 decimals the store keeps.
+_HOME_MAP_PUT_MAX_BODY_BYTES = 384 * 1024
+
+
+def _home_map_refusal(ctx: _OpContext, err: HomeMapError) -> Response:
+    """The signed refusal; a ``conflict`` also names the stored ``rev``."""
+    body: dict[str, Any] = {"ok": False, "error": err.code, "message": err.message}
+    if isinstance(err, HomeMapConflictError):
+        body["rev"] = err.rev
+    return ctx.signed_json(body, status=_HOME_MAP_STATUS.get(err.code, 400))
+
+
+async def _op_home_map_get(ctx: _OpContext) -> Response:
+    """The home's map, unless the caller already holds its rev.
+
+    Body:  {"rev"?: <the rev the caller holds>}
+    Reply: {"ok": true, "not_modified": true, "rev": <int>} when ``rev`` is
+           the stored one, else {"ok": true, "doc": <the map> | null,
+           "rev": <int>}.
+    Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400 (a
+             ``rev`` that is not a whole number of 0 or more),
+             ``unavailable`` 503.
+
+    With no map stored, ``doc`` is null and ``rev`` 0, and a caller that
+    sends ``rev`` 0 hears ``not_modified``. The delta reply's
+    ``home_map_rev`` is the same number.
+    """
+    store = getattr(ctx.domain_data, "home_map_store", None)
+    if store is None:
+        return _home_map_refusal(ctx, HomeMapUnavailableError("integration not ready"))
+    held = ctx.payload.get("rev")
+    if held is not None and (isinstance(held, bool) or not isinstance(held, int) or held < 0):
+        return _home_map_refusal(
+            ctx, HomeMapInvalidError("rev must be a whole number of 0 or more")
+        )
+    try:
+        doc, rev = store.get()
+    except HomeMapError as err:
+        return _home_map_refusal(ctx, err)
+    if held == rev:
+        return ctx.signed_json({"ok": True, "not_modified": True, "rev": rev})
+    return ctx.signed_json({"ok": True, "doc": doc, "rev": rev})
+
+
+async def _op_home_map_put(ctx: _OpContext) -> Response:
+    """An iPhone saves the home's map.
+
+    Body:  {"doc": <the whole map>, "base_rev": <the rev it was read at>}
+    Reply: {"ok": true, "rev": <the new rev>}
+    Refusal: signed {"ok": false, "error", "message"}: ``not_an_iphone``
+             403 (a watch), ``invalid`` 400 (the message says where the map
+             leaves the contract, see ``home_map_store.check_document``),
+             ``too_large`` 413 (a map over 256 KiB, or a body over 384 KiB),
+             ``conflict`` 409 with ``rev``, the stored one (read again, put
+             the change on top, save again), ``unavailable`` 503.
+
+    ``base_rev`` is 0 for the first map.
+    """
+    store = getattr(ctx.domain_data, "home_map_store", None)
+    if store is None:
+        return _home_map_refusal(ctx, HomeMapUnavailableError("integration not ready"))
+    if not _caller_is_iphone(ctx):
+        return ctx.signed_json(
+            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone saves the home map."},
+            status=403,
+        )
+    if len(ctx.body) > _HOME_MAP_PUT_MAX_BODY_BYTES:
+        return _home_map_refusal(
+            ctx, HomeMapTooLargeError("a home map is at most 256 KiB")
+        )
+    try:
+        rev = store.save(ctx.payload.get("doc"), ctx.payload.get("base_rev"))
+    except HomeMapError as err:
+        return _home_map_refusal(ctx, err)
+    _LOGGER.debug("%s saved the home map at revision %d", ctx.watch_id, rev)
+    return ctx.signed_json({"ok": True, "rev": rev})
+
+
+async def _op_areas_get(ctx: _OpContext) -> Response:
+    """The home's areas, each with the entities in it.
+
+    Body:  {}
+    Reply: {"ok": true, "areas": [{"id", "name", "entity_ids": [<id>]}]}
+
+    Every area, sorted by name, its entity ids sorted. An entity's own area
+    wins over its device's; hidden and disabled entities are left out (see
+    ``home_areas.py``). Read only, and open to any paired device.
+    """
+    return ctx.signed_json({"ok": True, "areas": home_areas(ctx.hass)})
+
+
 # ── the client certificate and the logs (link removal, step 4) ────────────
 #
 # Home Assistant keeps one client certificate per Home Assistant user
@@ -5223,6 +5340,10 @@ _OP_HANDLERS: dict[str, Any] = {
     "http_action_run": _op_http_action_run,
     "page_image_get": _op_page_image_get,
     "page_image_put": _op_page_image_put,
+    # The home map (home_map_store.py, home_areas.py).
+    "home_map_get": _op_home_map_get,
+    "home_map_put": _op_home_map_put,
+    "areas_get": _op_areas_get,
     "client_certificate_put": _op_client_certificate_put,
     "client_certificate_get": _op_client_certificate_get,
     "client_certificate_delete": _op_client_certificate_delete,

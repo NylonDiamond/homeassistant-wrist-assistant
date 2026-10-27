@@ -438,6 +438,11 @@ class DeltaCoordinator:
         # watch_id → the library revision its last reply with a body carried,
         # kept like _watch_config_sent so a woken poll can tell news.
         self._http_actions_sent: dict[str, int] = {}
+        # The home map's rev rides every reply with a body as `home_map_rev`
+        # while a map is stored (see home_map_revision). A save wakes no poll:
+        # the number reaches a watch on its next reply with a body. None
+        # until setup attaches the store (attach_home_map_store).
+        self._home_map_store: Any | None = None
         # The bound user's client certificate rides the poll the same way:
         # every reply with a body names that user's revision as
         # `client_certificate` once the user has a record, and a change wakes
@@ -831,6 +836,23 @@ class DeltaCoordinator:
         superseded."""
         for watch_id in list(self._waiters):
             self.wake_watch(watch_id, renotify=False)
+
+    # ── the home map on the poll ──────────────────────────────────────
+
+    @callback
+    def attach_home_map_store(self, store: Any) -> None:
+        """Wire the home map store in for reading: its rev goes out on every
+        reply with a body as ``home_map_rev``."""
+        self._home_map_store = store
+
+    def home_map_revision(self) -> int | None:
+        """The stored map's rev. None with no store attached, with no map
+        stored, or for a file that could not be read: the reply then leaves
+        ``home_map_rev`` out."""
+        store = self._home_map_store
+        if store is None or not store.has_map:
+            return None
+        return int(store.rev)
 
     # ── the bound user's client certificate on the poll ───────────────
 
@@ -1247,6 +1269,14 @@ class DeltaCoordinator:
         differs from what it holds. Older watches ignore the key. A lean reply
         carries it whole too (see ``_lean_reply``).
 
+        Beside them, once the home has a map (``home_map_store.py``),
+        ``home_map_rev``: the map's rev, the ``rev`` the signed
+        ``home_map_get`` returns. A watch fetches the map again when it is
+        not the one it holds. Left out while no map is stored or its file
+        could not be read. A save wakes no parked poll: the new number rides
+        the next reply with a body. A lean reply carries it whole, since the
+        poll does not report it. Older watches ignore the key.
+
         An entity removed from Home Assistant (deleted, or renamed to another
         id) is an event like any other change: ``state`` ``unavailable``, the
         attributes it last had, and ``removed: true`` beside them (in the
@@ -1370,6 +1400,12 @@ class DeltaCoordinator:
             hashes = self.watch_config_hashes(watch_id)
             if hashes is not None:
                 body["watch_config_hashes"] = hashes
+        # The home map's rev, which comes with the pages: the watch fetches
+        # the map with home_map_get when it is not the one it holds. Left out
+        # while no map is stored. Not recorded: a save wakes no poll.
+        map_revision = self.home_map_revision()
+        if map_revision is not None:
+            body["home_map_rev"] = map_revision
         library_revision = self.http_actions_revision()
         if library_revision is not None:
             body["http_actions"] = library_revision
@@ -1430,7 +1466,8 @@ class DeltaCoordinator:
           only the kinds that differ.
         * ``watch_config_hashes`` always whole, as a full reply carries it:
           the watch does not report the hashes it holds. The same for
-          ``http_actions_hash``.
+          ``http_actions_hash``, and for ``home_map_rev``, which the poll
+          does not report either.
         * ``epoch`` only when the poll's is not this coordinator's.
 
         The device fills a missing number in from the request it sent, so
