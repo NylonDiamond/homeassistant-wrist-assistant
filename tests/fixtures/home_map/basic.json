@@ -1,0 +1,61 @@
+{
+  "v": 1,
+  "floors": [
+    {
+      "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+      "name": "Ground floor",
+      "story": 0,
+      "rooms": [
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000010",
+          "name": "Living room",
+          "areaId": "living_room",
+          "outline": [[0, 0], [6, 0], [6, 5], [0, 5]],
+          "height": 2.5,
+          "walls": [
+            { "a": [0, 0], "b": [6, 0], "t": 0.1 },
+            { "a": [6, 0], "b": [6, 5], "t": 0.1 },
+            { "a": [6, 5], "b": [0, 5], "t": 0.1 },
+            { "a": [0, 5], "b": [0, 0], "t": 0.1 }
+          ],
+          "openings": [
+            { "kind": "window", "a": [1.4, 0], "b": [3.4, 0], "z0": 0.9, "z1": 2.1 },
+            { "kind": "door", "a": [0, 1.5], "b": [0, 2.5], "z0": 0, "z1": 2.05 },
+            { "kind": "opening", "a": [6, 2], "b": [6, 3], "z0": 0, "z1": 2.2 }
+          ],
+          "objects": [
+            { "kind": "sofa", "c": [2.7, 4.15], "size": [3.0, 0.9, 0.75], "turn": 0 },
+            { "kind": "table", "c": [2.7, 2.65], "size": [1.4, 0.7, 0.4], "turn": 0 },
+            { "kind": "television", "c": [2.8, 0.34], "size": [1.6, 0.08, 0.65], "turn": 0 }
+          ]
+        },
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000011",
+          "name": "Kitchen",
+          "areaId": "kitchen",
+          "pageId": "C3A0E000-0000-4000-8000-0000000000AA",
+          "outline": [[6, 0], [10, 0], [10, 5], [6, 5]],
+          "height": 2.5,
+          "walls": [
+            { "a": [6, 0], "b": [10, 0], "t": 0.1 },
+            { "a": [10, 0], "b": [10, 5], "t": 0.1 },
+            { "a": [10, 5], "b": [6, 5], "t": 0.1 }
+          ],
+          "openings": [],
+          "objects": [
+            { "kind": "refrigerator", "c": [9.5, 0.45], "size": [0.75, 0.7, 1.8], "turn": 0 },
+            { "kind": "storage", "c": [7.6, 0.4], "size": [2.8, 0.6, 0.9], "turn": 0 },
+            { "kind": "table", "c": [8.1, 2.5], "size": [1.8, 1.0, 0.75], "turn": 90 }
+          ]
+        }
+      ],
+      "pins": [
+        { "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000100", "entityId": "light.reading_lamp", "roomId": "7B1E0C2A-5D3F-4A8B-9C6D-000000000010", "at": [0.8, 3.1, 1.5] },
+        { "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000101", "entityId": "light.ceiling", "roomId": "7B1E0C2A-5D3F-4A8B-9C6D-000000000010", "at": [3.2, 1.8, 2.4] },
+        { "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000102", "entityId": "lock.side_door", "roomId": "7B1E0C2A-5D3F-4A8B-9C6D-000000000010", "at": [0.25, 2, 1.0] },
+        { "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000103", "entityId": "light.pendants", "roomId": "7B1E0C2A-5D3F-4A8B-9C6D-000000000011", "at": [8.1, 2.5, 2.1] },
+        { "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000104", "entityId": "climate.thermostat", "roomId": "7B1E0C2A-5D3F-4A8B-9C6D-000000000011", "at": [6.3, 4.2, 1.4] }
+      ]
+    }
+  ]
+}
