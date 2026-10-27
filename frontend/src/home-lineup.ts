@@ -13,6 +13,7 @@ import { MENU_UNIT_TITLES, holdsRecord, itemsFor, menuFor, sameId, type Library,
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
 import { PagePhotoStore } from "./watch-pages/page-photo-store.js";
+import type { OneLookGlowRecipe } from "./watch-pages/one-look/glow.js";
 import { libraryTicksStyles, renderTickAsk } from "./library/ticks.js";
 import type { IconProvider } from "./renderer.js";
 import { watchFrameStyles } from "./watch-frame.js";
@@ -87,6 +88,8 @@ export class WaHomeLineup extends LitElement {
     this.requestUpdate();
   });
   private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
+  private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
+  private readonly photoGlow = (id: string): OneLookGlowRecipe | undefined => this.photos.glow(id);
 
   get hass(): HassLike | undefined {
     return this.hassNow;
@@ -114,6 +117,8 @@ export class WaHomeLineup extends LitElement {
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
       photo: this.photoUrl,
+      photoSize: this.photoSize,
+      photoGlow: this.photoGlow,
       photoTick: this.photoTick,
       pageWidth: this.pageW,
       waitsForIphone: this.waitsForIphone,
@@ -405,6 +410,9 @@ export interface LineupDraw {
   /** A tile's icon photo's URL by its id once its bytes are in, and a
    * value that moves as more come in. */
   photo?: (id: string) => string | undefined;
+  /** Its size, and the light saved in it (Light Look). */
+  photoSize?: (id: string) => { width: number; height: number } | undefined;
+  photoGlow?: (id: string) => OneLookGlowRecipe | undefined;
   photoTick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
@@ -450,6 +458,8 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       ...(draw.tick === undefined ? {} : { tick: draw.tick }),
       ...(draw.appVersion === undefined ? {} : { appVersion: draw.appVersion }),
       ...(draw.photo === undefined ? {} : { photo: draw.photo }),
+      ...(draw.photoSize === undefined ? {} : { photoSize: draw.photoSize }),
+      ...(draw.photoGlow === undefined ? {} : { photoGlow: draw.photoGlow }),
       ...(draw.photoTick === undefined ? {} : { photoTick: draw.photoTick }),
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("pages", pick.id) },

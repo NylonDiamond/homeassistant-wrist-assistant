@@ -93,6 +93,7 @@ import {
 } from "./layout.js";
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
 import { type OneLookArranged, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
+import { type OneLookGlowLayers, type OneLookGlowRecipe, ONE_LOOK_GLOW_RAYS, oneLookGlowColour, oneLookGlowLayers } from "./glow.js";
 import { type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
 
 /** Which of a tile's own parts are left undrawn: the glyph (its icon or a
@@ -190,18 +191,26 @@ export interface OneLookCutout {
   url: string;
   /** Width over height; undefined until the photo list has its size. */
   aspect?: number;
+  /** The light saved in the photo (Light Look), drawn while the tile is lit. */
+  glow?: OneLookGlowRecipe;
 }
 
 /** A tile's icon photo once its bytes are in, from the picture's photos,
  * or undefined: no `iconPhotoId`, no photos to read from, or the bytes not
- * in yet (the tile draws its icon meanwhile, as the devices do). */
-export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize">): OneLookCutout | undefined {
+ * in yet (the tile draws its icon meanwhile, as the devices do). Its light
+ * comes with it when the photo carries one. */
+export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow">): OneLookCutout | undefined {
   const id = tile.iconPhotoId;
   if (typeof id !== "string" || id.trim() === "" || input.photo === undefined) return undefined;
   const url = input.photo(id);
   if (url === undefined || url === "") return undefined;
   const size = input.photoSize?.(id);
-  return size !== undefined && size.width > 0 && size.height > 0 ? { url, aspect: size.width / size.height } : { url };
+  const glow = input.photoGlow?.(id);
+  return {
+    url,
+    ...(size !== undefined && size.width > 0 && size.height > 0 ? { aspect: size.width / size.height } : {}),
+    ...(glow === undefined ? {} : { glow }),
+  };
 }
 
 /** The icon photo's box against the disc's diameter, and its corner
@@ -749,14 +758,6 @@ function barLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeo
 }
 
 /**
- * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
- * no disc fill, the photo fitted in a box 1.35 times the disc on its centre,
- * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
- * halo behind it as a glyph has it, the pearl disc's white glow in the disc
- * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
- * 62% when `oneLookCutoutDimmed` says so.
- */
-/**
  * Whether the icon photo draws gray and dark: the tile is not coloured (off
  * with Dim, idle, unavailable), a light is off, or the wrist is down. A
  * switch, fan or any other kind that keeps its colour keeps its photo
@@ -767,10 +768,80 @@ export function oneLookCutoutDimmed(palette: OneLookPalette, light: boolean): bo
   return palette.surface !== "coloured" || (light && !palette.isLit) || palette.aod;
 }
 
+/** Whether an icon photo's light (Light Look) is drawn: the palette is lit
+ * (a light on, media playing) and the photo is not dimmed. */
+export function oneLookCutoutGlows(palette: OneLookPalette, light: boolean): boolean {
+  return palette.isLit && !oneLookCutoutDimmed(palette, light);
+}
+
+/** An alpha as CSS writes it, to four places. */
+const a4 = (v: number) => Math.round(v * 10000) / 10000;
+
+/** A colour at an alpha, as CSS. */
+function rgba(c: readonly [number, number, number], alpha: number): string {
+  return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a4(alpha)})`;
+}
+
+/** A light's circle as a square box on its centre, as CSS. */
+function circleCss(c: { cx: number; cy: number; r: number }, s: number): string {
+  return rectCss({ x: c.cx - c.r, y: c.cy - c.r, width: c.r * 2, height: c.r * 2 }, s);
+}
+
+/** The light's halo, behind the photo in the pearl halo's place. */
+function glowHalo(glow: OneLookGlowLayers, s: number): TemplateResult {
+  const { colour: c, halo } = glow;
+  return html`<span class="ol-light ol-light-halo" style=${`${circleCss(halo, s)};background:radial-gradient(circle closest-side, ${rgba(c, halo.alpha)} 0%, ${rgba(c, halo.alpha * 0.45)} 35%, ${rgba(c, 0)} 100%)`}></span>`;
+}
+
+/**
+ * The light's layers over the photo: the shade, the rays when the recipe has
+ * them, and the core. The shade is laid on the photo's own rect and masked
+ * by the photo itself, so it lights only the photo's opaque pixels; its
+ * circle is placed inside that rect. The mask is fitted as the photo is
+ * (contain, centred), which is the whole rect once the photo's size is
+ * known.
+ */
+function glowOver(glow: OneLookGlowLayers, photo: OneLookRect, radius: number, url: string, s: number): TemplateResult {
+  const { colour: c, shade, rays, core } = glow;
+  const mask = `url("${url.replace(/["\\]/g, (ch) => `\\${ch}`)}")`;
+  const masked = `-webkit-mask-image:${mask};mask-image:${mask};-webkit-mask-size:contain;mask-size:contain;-webkit-mask-position:center;mask-position:center;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat`;
+  const at = `${r2((shade.cx - photo.x) * s)}px ${r2((shade.cy - photo.y) * s)}px`;
+  const shadeSpan = html`<span class="ol-light ol-light-shade" style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px;opacity:${a4(shade.opacity)};background:radial-gradient(circle ${r2(shade.r * s)}px at ${at}, ${rgba(c, 1)} 0%, ${rgba(c, 0.55)} 45%, ${rgba(c, 0)} 100%);${masked}`}></span>`;
+  let raysSpan: TemplateResult | typeof nothing = nothing;
+  if (rays !== undefined) {
+    const { width, every, from, maskFrom } = ONE_LOOK_GLOW_RAYS;
+    const fade = `radial-gradient(circle closest-side, #000 ${maskFrom * 100}%, transparent 100%)`;
+    raysSpan = html`<span class="ol-light ol-light-rays" style=${`${circleCss(rays, s)};background:repeating-conic-gradient(from ${from}deg, ${rgba(c, rays.alpha)} 0deg ${width}deg, ${rgba(c, 0)} ${width}deg ${every}deg);-webkit-mask-image:${fade};mask-image:${fade}`}></span>`;
+  }
+  const coreSpan = html`<span class="ol-light ol-light-core" style=${`${circleCss(core, s)};background:radial-gradient(circle closest-side, ${rgba([255, 255, 255], core.white)} 0%, ${rgba(c, core.tint)} 45%, ${rgba(c, 0)} 100%)`}></span>`;
+  return html`${shadeSpan}${raysSpan}${coreSpan}`;
+}
+
+/**
+ * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
+ * no disc fill, the photo fitted in a box 1.35 times the disc on its centre,
+ * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
+ * halo behind it as a glyph has it, the pearl disc's white glow in the disc
+ * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
+ * 62% when `oneLookCutoutDimmed` says so. A photo that carries a light
+ * (Light Look) and is drawn lit and bright has the light's halo behind it in
+ * the pearl halo's place and the light's layers over it (`glow.ts`).
+ */
 function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: OneLookCutout, s: number): TemplateResult {
   const { palette, device } = model;
   const rect = layout.discRect;
   const lit = palette.isLit && !palette.aod;
+  const { photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
+  const light = model.kind.role.kind === "light";
+  const dimmed = oneLookCutoutDimmed(palette, light);
+  const filter = dimmed ? `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}` : "";
+  // Light Look: with a light in the photo and the photo drawn lit and bright,
+  // the light's halo takes the pearl halo's place and its layers go over the
+  // photo. Otherwise everything is as without one.
+  if (cutout.glow !== undefined && oneLookCutoutGlows(palette, light)) {
+    const glow = oneLookGlowLayers(photo, cutout.glow, palette.brightness, oneLookGlowColour(palette.hue));
+    return html`${glowHalo(glow, s)}<img class="ol-cutout" alt="" src=${cutout.url} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px`} />${glowOver(glow, photo, radius, cutout.url, s)}`;
+  }
   let back: TemplateResult | typeof nothing = nothing;
   if (lit && layout.drawsDisc) {
     if (palette.pearlGlow) back = html`<span class="ol-disc ol-cutout-glow" style=${`${rectCss(rect, s)};box-shadow:0 0 ${r2(oneLookMetrics(device).pearlGlow * s)}px rgba(255, 255, 255, 0.5)`}></span>`;
@@ -784,9 +855,6 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
       back = html`<span class="ol-halo" style=${`${rectCss({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, s)};background:radial-gradient(circle closest-side, rgba(${r}, ${g}, ${b}, ${Math.round(halo.opacity * 10000) / 10000}) 0%, rgba(${r}, ${g}, ${b}, 0) 100%)`}></span>`;
     }
   }
-  const { photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
-  const dimmed = oneLookCutoutDimmed(palette, model.kind.role.kind === "light");
-  const filter = dimmed ? `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}` : "";
   return html`${back}<img class="ol-cutout" alt="" src=${cutout.url} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
 }
 

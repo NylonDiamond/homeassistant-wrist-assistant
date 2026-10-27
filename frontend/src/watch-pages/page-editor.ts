@@ -307,6 +307,7 @@ import {
   setArrangePickedPart,
 } from "./arrange-model.js";
 import { ARRANGE_PARTS, type ArrangePart, type TileArrange, encodeTileArrange } from "./one-look/arrange.js";
+import type { OneLookGlowRecipe } from "./one-look/glow.js";
 import {
   type StageGrid,
   autoScrollStep,
@@ -898,6 +899,8 @@ export class WaPageEditor extends LitElement {
   private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
   /** A listed photo's size, for fitting a tile's icon photo. */
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
+  /** The light saved in a tile's icon photo (Light Look). */
+  private readonly photoGlow = (id: string): OneLookGlowRecipe | undefined => this.photos.glow(id);
   /** The modules' view state (`WatchPagesEditorHost.uiState`). */
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */
@@ -3603,7 +3606,7 @@ export class WaPageEditor extends LitElement {
     const phone = this.phoneLayoutOf(undefined);
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
-      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize,
+      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow,
       appVersion: this.previewAppVersion(undefined),
       ...(phone === undefined ? {} : { phone }),
     };
@@ -3846,6 +3849,7 @@ export class WaPageEditor extends LitElement {
       // The tiles' icon photos (the page's own photo is drawn apart, below).
       photo: this.photoUrl,
       photoSize: this.photoSize,
+      photoGlow: this.photoGlow,
     };
     // An iPhone page's camera tiles play live when the Live video card's
     // switch says so (off by default, kept in this browser).

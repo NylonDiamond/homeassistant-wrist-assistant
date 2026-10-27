@@ -4,7 +4,9 @@
 // scales and compresses the picked file in the browser first, and a delete.
 // The library holds the tiles' icon photos too (`kind` icon, PNG with its
 // clear background kept): their upload tidies the picture first
-// (`icon-photo-tidy.ts`).
+// (`icon-photo-tidy.ts`). A PNG's bytes are read once as they come in, for
+// its size and the light the iPhone may have saved in it (Light Look,
+// `one-look/glow.ts`).
 //
 // Home Assistant's own store (`page_images_store.py`) makes the ids, so
 // nothing here needs `crypto.randomUUID`, which a plain http page lacks.
@@ -23,6 +25,7 @@ import {
   uploadPageImage,
 } from "../ha-api.js";
 import { iconPhotoCrop, stepDownIconPhoto, tidyIconPixels } from "./icon-photo-tidy.js";
+import { type IconPngFacts, type OneLookGlowRecipe, readIconPng } from "./one-look/glow.js";
 import { PAGE_PHOTO_UNREADABLE_TEXT, pagePhotoKind, pagePhotoRefusalText, samePagePhotoId, stepDownPagePhoto } from "./page-photo.js";
 
 /** Where a photo's bytes are: on the way, here, not in the store, or a read
@@ -33,6 +36,35 @@ interface Held {
   status: PagePhotoStatus;
   url?: string;
   done?: Promise<void>;
+  /** A PNG's size and light (Light Look), read once from its bytes. */
+  png?: IconPngFacts;
+}
+
+/** Base64 bytes as bytes, or undefined where the browser cannot decode them. */
+function bytesOfBase64(base64: string): Uint8Array | undefined {
+  if (typeof atob !== "function") return undefined;
+  try {
+    const text = atob(base64);
+    const bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+    return bytes;
+  } catch {
+    return undefined;
+  }
+}
+
+/** What a PNG photo's bytes say of its size and light; nothing for a JPEG. */
+function pngFactsOf(base64: string, contentType: string): IconPngFacts | undefined {
+  if (contentType !== "image/png") return undefined;
+  const bytes = bytesOfBase64(base64);
+  return bytes === undefined ? undefined : readIconPng(bytes);
+}
+
+/** A photo held with its bytes in: its URL, and for a PNG what its bytes
+ * say. */
+function readyEntry(url: string, base64: string, contentType: string): Held {
+  const png = pngFactsOf(base64, contentType);
+  return { status: "ready", url, ...(png === undefined ? {} : { png }) };
 }
 
 /** Every photo's bytes as a URL, by id upper cased, for the session. A
@@ -250,11 +282,20 @@ export class PagePhotoStore {
     return (this.list?.images ?? []).filter((image) => pagePhotoKind(image) === kind);
   }
 
-  /** A listed photo's size in pixels, or undefined while the list does not
-   * have it. */
+  /** A listed photo's size in pixels, else a PNG's own once its bytes are
+   * in (a picture that never reads the list still fits an icon photo), or
+   * undefined while neither has it. */
   size(id: string): { width: number; height: number } | undefined {
     const image = this.list?.images.find((i) => samePagePhotoId(i.id, id));
-    return image !== undefined && image.width > 0 && image.height > 0 ? { width: image.width, height: image.height } : undefined;
+    if (image !== undefined && image.width > 0 && image.height > 0) return { width: image.width, height: image.height };
+    const png = held.get(id.toUpperCase())?.png;
+    return png !== undefined && png.width > 0 && png.height > 0 ? { width: png.width, height: png.height } : undefined;
+  }
+
+  /** The light saved in an icon photo (Light Look) once its bytes are in,
+   * without asking for them; undefined for a photo with none. */
+  glow(id: string): OneLookGlowRecipe | undefined {
+    return held.get(id.toUpperCase())?.png?.glow;
   }
 
   /** Read the list again. A photo that was missing or failed is asked for
@@ -308,7 +349,10 @@ export class PagePhotoStore {
             entry.status = "failed";
             return;
           }
-          entry.url = this.makeUrl(reply.data, pagePhotoContentType(reply.content_type));
+          const type = pagePhotoContentType(reply.content_type);
+          entry.url = this.makeUrl(reply.data, type);
+          const png = pngFactsOf(reply.data, type);
+          if (png !== undefined) entry.png = png;
           entry.status = "ready";
         },
         (error: unknown) => {
@@ -367,7 +411,7 @@ export class PagePhotoStore {
       const reply = await uploadPageImage(hass, data, info);
       const id = reply.image_id;
       if (typeof id !== "string" || id === "") throw new PagePhotoError("Home Assistant did not take that. Try again.");
-      if (held.get(id.toUpperCase())?.status !== "ready") held.set(id.toUpperCase(), { status: "ready", url: this.makeUrl(data, contentType) });
+      if (held.get(id.toUpperCase())?.status !== "ready") held.set(id.toUpperCase(), readyEntry(this.makeUrl(data, contentType), data, contentType));
       void this.refreshList();
       return id;
     } catch (error) {

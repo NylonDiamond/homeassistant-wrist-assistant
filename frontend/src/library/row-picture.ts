@@ -21,6 +21,7 @@ import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS } from "../watch-pages/editor-host.js";
 import { type WatchPage, isSmartWatchPage } from "../watch-pages/model.js";
+import type { OneLookGlowRecipe } from "../watch-pages/one-look/glow.js";
 import {
   type WatchPagePreviewInput,
   previewOneLook,
@@ -81,6 +82,10 @@ export interface PageRowPictureInput {
   /** A tile's icon photo's URL by its id once its bytes are in
    * (`PagePhotoStore.url`); without it the tiles draw their icons. */
   photo?: (id: string) => string | undefined;
+  /** A tile's icon photo's size (`PagePhotoStore.size`), so the photo is
+   * fitted, and the light saved in it (`PagePhotoStore.glow`, Light Look). */
+  photoSize?: (id: string) => { width: number; height: number } | undefined;
+  photoGlow?: (id: string) => OneLookGlowRecipe | undefined;
   /** A new value draws again once more photos are in. */
   photoTick?: number;
 }
@@ -136,6 +141,8 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.appVersion === undefined ? {} : { appVersion: input.appVersion }),
     // The tiles' icon photos; the page's own photo stays out of a row.
     ...(input.photo === undefined ? {} : { photo: input.photo }),
+    ...(input.photoSize === undefined ? {} : { photoSize: input.photoSize }),
+    ...(input.photoGlow === undefined ? {} : { photoGlow: input.photoGlow }),
   };
   const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.

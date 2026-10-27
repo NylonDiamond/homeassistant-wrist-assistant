@@ -113,6 +113,7 @@ import {
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
 import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
+import type { OneLookGlowRecipe } from "./one-look/glow.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -162,6 +163,9 @@ export interface WatchPagePreviewInput {
    * is fitted and its corners rounded exactly; without it the photo is
    * fitted in its square box by the browser. */
   photoSize?: (id: string) => { width: number; height: number } | undefined;
+  /** The light saved in a tile's icon photo (Light Look, `glow.ts`) once its
+   * bytes are in, else undefined; without it no light is drawn. */
+  photoGlow?: (id: string) => OneLookGlowRecipe | undefined;
   /** The page is an iPhone's: `screen` is its pages area, and the picture
    * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
    * look the layout carries (`phonePagesLayout` with `look`). */
@@ -4093,6 +4097,10 @@ export const watchPagePreviewStyles = css`
   /* A tile's icon photo: a cut-out on nothing, fitted whole, its corners
      rounded by the box (render.ts, cutoutLayer). */
   .ol-cutout { position: absolute; display: block; box-sizing: border-box; object-fit: contain; pointer-events: none; }
+  /* Light Look: the light drawn with an icon photo, every layer screen
+     blended over what is under it (render.ts, glowHalo and glowOver). */
+  .ol-light { position: absolute; display: block; pointer-events: none; mix-blend-mode: screen; }
+  .ol-light-halo, .ol-light-rays, .ol-light-core { border-radius: 50%; }
   .ol-glyph { position: absolute; display: flex; align-items: center; justify-content: center; }
   .ol-glyph > svg { display: block; flex: none; }
   .ol-dot-glyph { display: block; border-radius: 50%; opacity: 0.7; }
