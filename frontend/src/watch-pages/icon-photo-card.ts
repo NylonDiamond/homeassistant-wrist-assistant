@@ -1,11 +1,16 @@
-// A tile's icon photo: the Photo row that leads the tile inspector's Icon
-// part (`renderIconPhoto`). None, then the home's icon photos as small
-// pictures (those made for the tile's entity first, marked "For this tile"),
-// then "Add photo", which tidies the picked picture into a PNG and stores it
-// as an icon photo named for the tile (`PagePhotoStore.uploadIcon`). A pick
-// is one commit of the tile key `iconPhotoId` (`setWatchTileIconPhoto`);
-// None removes it. With several tiles picked, a photo is on only when every
-// one has it, and the title says Mixed when they differ.
+// A tile's icon photo. The tile inspector's Icon part leads with Show, Icon
+// or Photo (`renderIconSource`, Icon by default), and draws the icon's rows
+// or the Photo row (`renderIconPhoto`), never both. Photo is on while the
+// tile has a photo, or after a press of Photo before one is picked. Icon
+// takes the photo off.
+//
+// The Photo row: the home's icon photos as small pictures (those made for
+// the tile's entity first, marked "For this tile"), then "Add photo", which
+// tidies the picked picture into a PNG and stores it as an icon photo named
+// for the tile (`PagePhotoStore.uploadIcon`). A pick is one commit of the
+// tile key `iconPhotoId` (`setWatchTileIconPhoto`). With several tiles
+// picked, a photo is on only when every one has it, and the title says
+// Mixed when they differ.
 //
 // One Look draws the photo in the icon's place (`one-look/render.ts`,
 // `cutoutLayer`); the old look keeps the icon, so the row is greyed there.
@@ -16,6 +21,7 @@
 // are read while the two load.
 
 import { html, nothing, type TemplateResult } from "lit";
+import { segField } from "../editors.js";
 import type { PageImageEntry } from "../ha-api.js";
 import { photoTilesFor, photoTilesUpdateNote } from "../version.js";
 import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
@@ -23,7 +29,7 @@ import { isVirtualTileKind, tileEntityId, tileKind, watchPagesOf } from "./model
 import { mixedWord } from "./picture-choice.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
-import { everyPicked, pickedMixed } from "./multi-pick.js";
+import { pickedMixed, somePicked } from "./multi-pick.js";
 import { setWatchTileIconPhoto, watchTileIconPhotoId } from "./tile-settings-model.js";
 import { watchTileFallbackName } from "./tile-settings-options.js";
 import { commit, linkButton } from "./tile-settings.js";
@@ -35,6 +41,30 @@ export const ICON_PHOTO_FROM_PHONE = "For this tile";
 
 /** The line under the row while the old look draws the page's tiles. */
 export const ICON_PHOTO_OLD_LOOK_NOTE = "Only the new tile look draws a photo. This page draws the icon.";
+
+/** Photo pressed before a photo is picked, by tile. */
+const photoModeKey = (host: TileSettingsHost) => `${KEY}:mode:${host.tileId.toUpperCase()}`;
+
+/** Whether the Icon part shows the Photo row in place of the icon's rows:
+ * a picked tile has a photo, or Photo was pressed. */
+export function iconPhotoShown(host: TileSettingsHost): boolean {
+  return host.uiState.get(photoModeKey(host)) === true || somePicked(host, () => watchTileIconPhotoId(host.tile) !== undefined);
+}
+
+/** Show: Icon or Photo. Icon takes the photo off every picked tile; Photo
+ * only shows the Photo row, and the tile keeps its icon until a pick. */
+export function renderIconSource(host: TileSettingsHost): TemplateResult {
+  return segField<"icon" | "photo">("Show", iconPhotoShown(host) ? "photo" : "icon", [["icon", "Icon"], ["photo", "Photo"]], (v) => {
+    if (v === "photo") {
+      host.uiState.set(photoModeKey(host), true);
+      host.requestUpdate();
+      return;
+    }
+    host.uiState.delete(photoModeKey(host));
+    if (somePicked(host, () => watchTileIconPhotoId(host.tile) !== undefined)) pick(host, undefined);
+    else host.requestUpdate();
+  }, { titles: { icon: "A symbol, in the tile's colors", photo: "A photo of the thing itself, in the icon's place" } });
+}
 
 /** The delete being asked about, by tile. */
 const deleteAskKey = (host: TileSettingsHost) => `${KEY}:delete:${host.tileId.toUpperCase()}`;
@@ -98,22 +128,20 @@ async function addPhoto(host: TileSettingsHost, photos: PagePhotoStore, input: H
 /** One choice: its picture (the photo on a light ground, fitted whole), its
  * words under it, and a small delete for a photo nothing uses. */
 function choice(
-  o: { id: string | undefined; on: boolean; label: string; title: string; url?: string; missing?: boolean },
+  o: { id: string; on: boolean; label: string; title: string; url?: string; missing?: boolean },
   host: TileSettingsHost,
   canDelete: boolean,
   deleting: boolean,
 ): TemplateResult {
-  const pic = o.id === undefined
-    ? html`<span class="ts-ph-pic ts-ph-none"></span>`
-    : html`<span class="ts-ph-pic">${o.url === undefined
-      ? (o.missing === true ? html`<span class="ts-ph-gone">Missing</span>` : nothing)
-      : html`<img alt="" src=${o.url} />`}</span>`;
+  const pic = html`<span class="ts-ph-pic">${o.url === undefined
+    ? (o.missing === true ? html`<span class="ts-ph-gone">Missing</span>` : nothing)
+    : html`<img alt="" src=${o.url} />`}</span>`;
   return html`<span class="ts-ph-cell">
     <button type="button" role="radio" class="pc-opt ts-ph-opt ${o.on ? "on" : ""}" aria-checked=${o.on ? "true" : "false"}
-      aria-label=${o.label} title=${o.title} data-photo=${o.id ?? "none"} @click=${() => { if (!o.on) pick(host, o.id); }}>
+      aria-label=${o.label} title=${o.title} data-photo=${o.id} @click=${() => { if (!o.on) pick(host, o.id); }}>
       ${pic}<span class="pc-label">${o.label}</span>
     </button>
-    ${canDelete && o.id !== undefined ? html`<button type="button" class="ts-ph-del" title="Delete this photo from Home Assistant"
+    ${canDelete ? html`<button type="button" class="ts-ph-del" title="Delete this photo from Home Assistant"
       aria-label=${`Delete ${o.label}`} ?disabled=${deleting} @click=${() => { host.uiState.set(deleteAskKey(host), o.id); host.requestUpdate(); }}>×</button>` : nothing}
   </span>`;
 }
@@ -124,7 +152,7 @@ function addedWords(at: string | undefined): string {
 }
 
 /**
- * The Photo row: None, then the icon photos (those made for the tile's
+ * The Photo row: the icon photos (those made for the tile's
  * entity first, "For this tile" under them), then "Add photo". The notes under
  * it: no photo store in this integration, a list that failed, a photo the
  * store does not have, the devices too old to draw one, the old look, and
@@ -137,7 +165,6 @@ export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
   const many = host.picked !== undefined;
   const mixed = pickedMixed(host, (t) => watchTileIconPhotoId(t)?.toUpperCase());
   const current = mixed ? undefined : watchTileIconPhotoId(host.tile);
-  const noneOn = everyPicked(host, () => watchTileIconPhotoId(host.tile) === undefined);
   const entityId = photoEntityOf(host);
   const choices = iconPhotoChoices(list?.images ?? [], entityId, current);
   const inUse = pagePhotoIdsInUse(host.document.pages);
@@ -148,7 +175,6 @@ export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
   const noStore = photos === undefined || photos.listState === "none";
   const row = html`<div class="field ts-ph-field"><span>Photo${mixed ? html` ${mixedWord()}` : nothing}</span>
     <div class="ts-ph-group" role="radiogroup" aria-label="Photo">
-      ${choice({ id: undefined, on: noneOn, label: "None", title: "No photo: the tile draws its icon" }, host, false, false)}
       ${photos === undefined ? nothing : choices.map((c) => {
         const on = !mixed && samePagePhotoId(current, c.id);
         const label = c.forTile ? ICON_PHOTO_FROM_PHONE : (c.entry?.label?.trim() || "Photo");
@@ -179,7 +205,7 @@ export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
     </div>` : nothing}
     ${add}
     ${photos?.error !== undefined ? html`<div class="hint warn ts-under" role="status">${photos.error}</div>` : nothing}
-    ${missing ? html`<div class="hint warn ts-under">Photo missing. Home Assistant does not have it, so the ${hostDeviceNoun(host)} draws the icon. Pick another or None.</div>` : nothing}
+    ${missing ? html`<div class="hint warn ts-under">Photo missing. Home Assistant does not have it, so the ${hostDeviceNoun(host)} draws the icon. Pick another, or Icon.</div>` : nothing}
     ${old === undefined || (current === undefined && !many) ? nothing : html`<div class="hint warn ts-under" role="status">${old}</div>`}
     ${host.oneLook === true ? nothing : html`<div class="hint keep ts-under">${ICON_PHOTO_OLD_LOOK_NOTE}</div>`}
   </div>`;

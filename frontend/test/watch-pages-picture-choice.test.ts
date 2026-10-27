@@ -24,7 +24,7 @@ import {
 } from "../src/watch-pages/tile-settings-model.js";
 import { TILE_INSPECTOR_PARTS, renderTileInspector, renderTileSettings, tileInspectorParts } from "../src/watch-pages/tile-settings.js";
 import { WATCH_TILE_SETTINGS_SECTION_TITLES, type WatchTileSettingsSection } from "../src/watch-pages/tile-settings-options.js";
-import { pictureChoice, watchTriedTile } from "../src/watch-pages/picture-choice.js";
+import { pictureChoice, tilePictures, watchTriedTile } from "../src/watch-pages/picture-choice.js";
 import { watchTileStatesAs } from "../src/watch-pages/preview.js";
 
 (globalThis as { document?: unknown }).document ??= { activeElement: null };
@@ -182,6 +182,19 @@ describe("picture choices", () => {
     const off = text.slice(text.indexOf(`aria-label=When it is off`));
     expect(off.slice(0, off.indexOf("</div>\n  </div>")).match(/<span class="pc-tile"/g)?.length).toBe(2);
     expect(text).not.toContain(">Dim when off<");
+  });
+
+  it("draw the tile's icon photo, its On photo when lit, and again once the photo comes in", () => {
+    const PHOTO = "0A1B2C3D-4E5F-4A6B-8C7D-000000000001";
+    const { host } = tileHost(tile("light.desk", { iconPhotoId: PHOTO }));
+    let url: string | undefined;
+    const photos = { url: () => url, size: () => ({ width: 300, height: 200 }), glow: () => undefined, onUrl: () => (url === undefined ? undefined : "blob:lamp-on") };
+    const withPhotos = Object.assign(Object.create(host) as TileSettingsHost, { photos });
+    // Not in yet: no photo, and the picture is not kept past its arrival.
+    expect(flat(tilePictures(withPhotos).tile("glow", (d) => d, "on", 150, 96))).not.toContain("blob:");
+    url = "blob:lamp";
+    expect(flat(tilePictures(withPhotos).tile("glow", (d) => d, "on", 150, 96))).toContain("blob:lamp-on");
+    expect(flat(tilePictures(withPhotos).tile("dim:on", (d) => d, "off", 120, 76))).toContain("src=blob:lamp ");
   });
 
   it("Glow icon when on: off writes Off, and on again writes When on", () => {

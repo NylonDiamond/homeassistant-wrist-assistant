@@ -234,7 +234,7 @@ import {
   weightSample,
 } from "./picture-choice.js";
 import { arrangeResetEdit, renderArrangeSection } from "./arrange-card.js";
-import { renderIconPhoto } from "./icon-photo-card.js";
+import { iconPhotoShown, renderIconPhoto, renderIconSource } from "./icon-photo-card.js";
 import { arrangeFreeOn, arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
@@ -1211,10 +1211,13 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
   switch (part) {
     case "color":
       return renderTileColor(host, kindDefaults(host).color);
-    case "icon":
-      // The Photo row leads (a rule's style holds no photo); state icons and
-      // colors are per state of one entity: one tile's.
-      return html`${host.domainStyle === true ? nothing : renderIconPhoto(host)}${renderIconGlyph(host)}${host.domainStyle === true ? nothing : host.picked !== undefined ? renderStateIconsOff(host) : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+    case "icon": {
+      // Show, Icon or Photo, leads (a rule's style holds no photo), then the
+      // icon's rows or the Photo row, never both; state icons and colors are
+      // per state of one entity: one tile's.
+      if (host.domainStyle === true) return html`${renderIconGlyph(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+      return html`${renderIconSource(host)}${iconPhotoShown(host) ? renderIconPhoto(host) : renderIconGlyph(host)}${host.picked !== undefined ? renderStateIconsOff(host) : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+    }
     case "glow":
       return renderGlowPart(host);
     case "whenOff":
@@ -3445,7 +3448,6 @@ export const tileSettingsStyles = css`
   }
   .ts-ph-pic > img { display: block; max-width: 34px; max-height: 34px; object-fit: contain; }
   /* None: the ground crossed by one faint line. */
-  .ts-ph-none { background: linear-gradient(135deg, transparent calc(50% - .5px), color-mix(in srgb, var(--wa-ink) 28%, transparent) 50%, transparent calc(50% + .5px)), color-mix(in srgb, var(--wa-ink) 4%, transparent); }
   .ts-ph-gone { font-size: 9px; color: var(--wa-muted); }
   .ts-ph-del {
     position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;

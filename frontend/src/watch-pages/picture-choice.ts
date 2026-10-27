@@ -41,6 +41,7 @@ import { MIXED_WORD, acrossPicked } from "./multi-pick.js";
 import type { WatchPageTile, WatchPagesDocument } from "./model.js";
 import { type WatchTilePreviewAs, renderWatchTileFace, watchPatternLayers, watchTileStatesAs } from "./preview.js";
 import { type ArrangeFrame, arrangeFrame } from "./arrange-model.js";
+import { watchTileIconPhotoId } from "./tile-settings-model.js";
 import { ONE_LOOK_FONT_FAMILIES } from "./one-look/measurer.js";
 
 /** Every `uiState` key of this module starts with this. */
@@ -363,10 +364,25 @@ export function tilePictures(host: TileSettingsHost): TilePictures {
     return frame;
   };
   const oneLook = host.oneLook === true;
+  // The tile's icon photo, drawn as the stage draws it. Its bytes, size,
+  // Light Look and On photo come in after the first draw, so each is part
+  // of the kept picture's key: a picture drawn before they came is not kept
+  // over one drawn after.
+  const photos = host.photos;
+  const photoId = watchTileIconPhotoId(host.tile);
+  const photoInput = photos === undefined ? {} : {
+    photo: (id: string) => photos.url(id),
+    photoSize: (id: string) => photos.size(id),
+    photoGlow: (id: string) => photos.glow(id),
+    photoOn: (id: string) => photos.onUrl(id),
+  };
+  const photoKey = photos === undefined || photoId === undefined ? "" : [
+    photos.url(photoId) ?? "", photos.size(photoId) === undefined ? 0 : 1, photos.glow(photoId) === undefined ? 0 : 1, photos.onUrl(photoId) ?? "",
+  ].join(",");
   return {
     tile(key, edit, as, w, h) {
       const drawn = remembered(host.icons, host.page, host.tile);
-      const id = `${key}|${as}|${w}x${h}|${hostDevice(host)}|${oneLook}`;
+      const id = `${key}|${as}|${w}x${h}|${hostDevice(host)}|${oneLook}|${photoKey}`;
       const kept = drawn.get(id);
       if (kept !== undefined) return kept;
       const f = frameOf();
@@ -376,7 +392,7 @@ export function tilePictures(host: TileSettingsHost): TilePictures {
         return nothing;
       }
       const s = Math.min(w / f.cell.width, h / f.cell.height);
-      const input = { ...f.input, oneLook, scale: s, stateMode: "live" as const, states: watchTileStatesAs(tile, f.input.states, as) };
+      const input = { ...f.input, ...photoInput, oneLook, scale: s, stateMode: "live" as const, states: watchTileStatesAs(tile, f.input.states, as) };
       const picture = html`<span class="pc-tile" style=${`width:${Math.round(f.cell.width * s)}px;height:${Math.round(f.cell.height * s)}px`}>${renderWatchTileFace(tile, f.cell, input, f.unit)}</span>`;
       drawn.set(id, picture);
       return picture;

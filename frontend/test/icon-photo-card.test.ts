@@ -1,7 +1,8 @@
-// The Icon part's Photo row (icon-photo-card.ts): None, then the home's icon
-// photos with those made for the tile's entity first and marked "From
-// iPhone", then Add photo; a pick writes `iconPhotoId`, None removes it,
-// several tiles picked show Mixed, and a photo anything uses has no delete.
+// The Icon part's Show (Icon or Photo) and Photo row (icon-photo-card.ts):
+// Icon by default, Photo shows the home's icon photos with those made for
+// the tile's entity first and marked "For this tile", then Add photo; a pick
+// writes `iconPhotoId`, Icon removes it, several tiles picked show Mixed,
+// and a photo anything uses has no delete.
 // Also the key itself in page-keys.json and the version note.
 //
 // No DOM: the row is drawn to its Lit template and read as text, and a
@@ -15,7 +16,7 @@ import { SymbolBrowser } from "../src/symbols.js";
 import { MIN_VERSION_FOR_PHOTO_TILES, photoTilesFor, photoTilesUpdateNote } from "../src/version.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TilePick, type TileSettingsHost, extendHost } from "../src/watch-pages/editor-host.js";
-import { ICON_PHOTO_FROM_PHONE, iconPhotoChoices, renderIconPhoto } from "../src/watch-pages/icon-photo-card.js";
+import { ICON_PHOTO_FROM_PHONE, iconPhotoChoices, iconPhotoShown, renderIconPhoto, renderIconSource } from "../src/watch-pages/icon-photo-card.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { PagePhotoStore, forgetPagePhotos } from "../src/watch-pages/page-photo-store.js";
 import { setWatchTileIconPhoto, watchTileIconPhotoId } from "../src/watch-pages/tile-settings-model.js";
@@ -78,7 +79,7 @@ function handler(root: unknown, marker: string, event = "@click="): (e: unknown)
 
 const click = (root: unknown, marker: string) => handler(root, marker)({ type: "click" });
 
-/** The photo ids of the row's choices, in order ("none" for None). */
+/** The photo ids of the row's choices, in order. */
 const order = (text: string) => [...text.matchAll(/data-photo=(\S+)/g)].map((m) => m[1]!);
 
 // ── a host and a store ───────────────────────────────────────────────────
@@ -207,26 +208,22 @@ describe("the key", () => {
 // ── the row ──────────────────────────────────────────────────────────────
 
 describe("the Photo row", () => {
-  it("None, then the tile's entity's icon photos marked For this tile, then the rest; no backgrounds", async () => {
+  it("the tile's entity's icon photos marked For this tile, then the rest; no backgrounds", async () => {
     const { host } = await setup([tile(A, "light.desk")], [A]);
     const text = flat(renderIconPhoto(host));
-    expect(order(text)).toEqual(["none", LAMP, OLD_LAMP, FAN]);
+    expect(order(text)).toEqual([LAMP, OLD_LAMP, FAN]);
     expect(text.match(new RegExp(`class="pc-label">${ICON_PHOTO_FROM_PHONE}<`, "g"))).toHaveLength(2);
     expect(text).toContain("Ceiling fan");
     expect(text).toContain("Add photo");
-    // None is on with no photo.
-    expect(text).toMatch(/aria-checked=true[^>]*data-photo=none/);
+    // Nothing is on with no photo.
+    expect(text).not.toContain("aria-checked=true");
   });
 
-  it("a pick writes iconPhotoId, None removes it", async () => {
+  it("a pick writes iconPhotoId", async () => {
     const { host, tileOf } = await setup([tile(A, "light.desk")], [A]);
     click(renderIconPhoto(host), `data-photo=${FAN}`);
     expect(tileOf(A)!.iconPhotoId).toBe(FAN);
-    const text = flat(renderIconPhoto(host));
-    expect(text).toMatch(new RegExp(`aria-checked=true[^>]*data-photo=${FAN}`));
-    expect(text).toMatch(/aria-checked=false[^>]*data-photo=none/);
-    click(renderIconPhoto(host), "data-photo=none");
-    expect(Object.hasOwn(tileOf(A)!, "iconPhotoId")).toBe(false);
+    expect(flat(renderIconPhoto(host))).toMatch(new RegExp(`aria-checked=true[^>]*data-photo=${FAN}`));
   });
 
   it("several tiles picked: Mixed when they differ, nothing on, a pick sets every one", async () => {
@@ -275,6 +272,36 @@ describe("the Photo row", () => {
     const text = flat(renderIconPhoto(host));
     expect(text).toContain("need a newer version of the integration");
     expect(text).not.toContain("Add photo");
+  });
+});
+
+/** Which of Show's two buttons is on. */
+const shown = (text: string) => /aria-checked="true"[^>]*>\s*(Icon|Photo)<|aria-checked=true[^>]*>\s*(Icon|Photo)</.exec(text)?.slice(1).find((x) => x !== undefined);
+
+describe("Show, Icon or Photo", () => {
+  it("is Icon by default, and Photo shows the row without writing anything", async () => {
+    const { host, tileOf } = await setup([tile(A, "light.desk")], [A]);
+    expect(iconPhotoShown(host)).toBe(false);
+    expect(shown(flat(renderIconSource(host)))).toBe("Icon");
+    click(renderIconSource(host), "Photo");
+    expect(iconPhotoShown(host)).toBe(true);
+    expect(shown(flat(renderIconSource(host)))).toBe("Photo");
+    expect(Object.hasOwn(tileOf(A)!, "iconPhotoId")).toBe(false);
+  });
+
+  it("is Photo while the tile has a photo, and Icon takes it off", async () => {
+    const { host, tileOf } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP })], [A]);
+    expect(iconPhotoShown(host)).toBe(true);
+    click(renderIconSource(host), "Icon");
+    expect(Object.hasOwn(tileOf(A)!, "iconPhotoId")).toBe(false);
+    expect(iconPhotoShown(host)).toBe(false);
+  });
+
+  it("several tiles picked: Photo when any has one, Icon takes it off every one", async () => {
+    const { host, tileOf } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP }), tile(B, "fan.ceiling", { iconPhotoId: FAN })], [A, B]);
+    expect(iconPhotoShown(host)).toBe(true);
+    click(renderIconSource(host), "Icon");
+    expect([Object.hasOwn(tileOf(A)!, "iconPhotoId"), Object.hasOwn(tileOf(B)!, "iconPhotoId")]).toEqual([false, false]);
   });
 });
 
