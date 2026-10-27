@@ -5,9 +5,11 @@
 // The library holds the tiles' icon photos too (`kind` icon, PNG with its
 // clear background kept): their upload tidies the picture first
 // (`icon-photo-tidy.ts`). A PNG's bytes are read once as they come in, for
-// its size and the look the iPhone may have saved in it (Light Look,
-// `one-look/glow.ts`); a photo with a look has its three masks made then,
-// once, as images a picture can mask with, never while drawing.
+// its size, the On photo the iPhone may have put in it and the look it may
+// have saved in it (Light Look, `one-look/glow.ts`). An On photo gets its
+// own URL then, once its size is checked; a photo with a look and no On
+// photo has its three masks made then, once, as images a picture can mask
+// with, never while drawing.
 //
 // Home Assistant's own store (`page_images_store.py`) makes the ids, so
 // nothing here needs `crypto.randomUUID`, which a plain http page lacks.
@@ -46,13 +48,28 @@ interface Held {
   url?: string;
   done?: Promise<void>;
   /** A PNG's size and look (Light Look), read once from its bytes. */
-  png?: IconPngFacts;
+  png?: Omit<IconPngFacts, "on">;
   /** The look with its masks made, once they are. */
   light?: OneLookPhotoLight;
+  /** The On photo's URL, once it is made and its size checked. It lives
+   * as long as `url` does. */
+  on?: string;
 }
 
 /** Makes a photo's look from its PNG bytes: its masks as image URLs. */
 export type PhotoLightMaker = (bytes: Uint8Array, recipe: OneLookLightRecipe) => Promise<OneLookPhotoLight | undefined>;
+
+/** Makes an On photo's URL from its PNG bytes, with the size it decodes
+ * to, or undefined when it does not decode. */
+export type PhotoOnMaker = (bytes: Uint8Array) => Promise<{ url: string; width: number; height: number } | undefined>;
+
+/** The makers a photo's bytes go through as they come in, and the way back
+ * from a URL made for nothing. */
+interface PhotoMakers {
+  light: PhotoLightMaker;
+  on: PhotoOnMaker;
+  revoke: (url: string) => void;
+}
 
 /** A mask as a PNG blob URL, white with the mask as its alpha, which a CSS
  * `mask-image` reads. */
@@ -100,6 +117,30 @@ export async function makePhotoLight(bytes: Uint8Array, recipe: OneLookLightReci
   }
 }
 
+/**
+ * An On photo as the browser makes it: the PNG decoded once for its size
+ * (a PNG that does not decode is none), and a blob URL of its bytes.
+ * Undefined where the browser cannot (no `createImageBitmap`).
+ */
+export async function makePhotoOn(bytes: Uint8Array): Promise<{ url: string; width: number; height: number } | undefined> {
+  if (typeof createImageBitmap !== "function" || typeof URL.createObjectURL !== "function") return undefined;
+  const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" });
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    return undefined;
+  }
+  const { width, height } = bitmap;
+  bitmap.close();
+  return { url: URL.createObjectURL(blob), width, height };
+}
+
+/** `URL.revokeObjectURL` where there is one. */
+function revokeUrl(url: string): void {
+  if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(url);
+}
+
 /** Base64 bytes as bytes, or undefined where the browser cannot decode them. */
 function bytesOfBase64(base64: string): Uint8Array | undefined {
   if (typeof atob !== "function") return undefined;
@@ -114,27 +155,53 @@ function bytesOfBase64(base64: string): Uint8Array | undefined {
 }
 
 /**
- * A photo's bytes in: its URL on `entry`, ready, and for a PNG what its
- * bytes say of its size and look. With a look, its masks are made then
- * (`make`); the promise settles once they are, or once there is nothing to
- * make. A look whose masks cannot be made draws no light.
+ * An On photo's URL when its bytes make one of the photo's own size, else
+ * undefined. Bytes whose `IHDR` names another size are never decoded; a
+ * URL made for a PNG that decodes to another size is revoked.
  */
-function takeBytes(entry: Held, url: string, base64: string, contentType: string, make: PhotoLightMaker): Promise<void> {
+async function onUrlOf(on: Uint8Array, width: number, height: number, make: PhotoMakers): Promise<string | undefined> {
+  const header = readIconPng(on);
+  if (header === undefined || header.width !== width || header.height !== height) return undefined;
+  const made = await make.on(on).catch(() => undefined);
+  if (made === undefined) return undefined;
+  if (made.width === width && made.height === height) return made.url;
+  make.revoke(made.url);
+  return undefined;
+}
+
+/**
+ * A photo's bytes in: its URL on `entry`, ready, and for a PNG what its
+ * bytes say of its size, its On photo and its look. An On photo gets its
+ * URL then (`make.on`), and a look without one its masks (`make.light`):
+ * the On photo wins whenever the look would draw, so its masks would never
+ * be used. The promise settles once they are made, or once there is
+ * nothing to make. An On photo of another size, or one that does not
+ * decode, is none; a look whose masks cannot be made draws no light.
+ */
+function takeBytes(entry: Held, url: string, base64: string, contentType: string, make: PhotoMakers): Promise<void> {
   entry.url = url;
   entry.status = "ready";
   if (contentType !== "image/png") return Promise.resolve();
   const bytes = bytesOfBase64(base64);
-  const png = bytes === undefined ? undefined : readIconPng(bytes);
-  if (png === undefined) return Promise.resolve();
+  const read = bytes === undefined ? undefined : readIconPng(bytes);
+  if (read === undefined || bytes === undefined) return Promise.resolve();
+  const { on, ...png } = read;
   entry.png = png;
-  const recipe = png.recipe;
-  if (recipe === undefined || bytes === undefined) return Promise.resolve();
-  return make(bytes, recipe).then(
-    (light) => {
-      if (light !== undefined) entry.light = light;
-    },
-    () => undefined,
-  );
+  const onUrl = on === undefined ? Promise.resolve(undefined) : onUrlOf(on, png.width, png.height, make);
+  return onUrl.then((onAt) => {
+    if (onAt !== undefined) {
+      entry.on = onAt;
+      return;
+    }
+    const recipe = png.recipe;
+    if (recipe === undefined) return;
+    return make.light(bytes, recipe).then(
+      (light) => {
+        if (light !== undefined) entry.light = light;
+      },
+      () => undefined,
+    );
+  });
 }
 
 /** Every photo's bytes as a URL, by id upper cased, for the session. A
@@ -307,6 +374,11 @@ export interface PagePhotoStoreOptions {
   /** A photo's look from its PNG bytes, its masks made; `makePhotoLight`
    * by default. */
   makeLight?: PhotoLightMaker;
+  /** An On photo's URL and decoded size from its PNG bytes; `makePhotoOn`
+   * by default. */
+  makeOn?: PhotoOnMaker;
+  /** Lets go of a URL `makeOn` made; `URL.revokeObjectURL` by default. */
+  revokeUrl?: (url: string) => void;
 }
 
 /** What an icon photo's upload says it is for: the tile's name and its
@@ -338,7 +410,7 @@ export class PagePhotoStore {
   private readonly makeUrl: (base64: string, contentType: string) => string;
   private readonly encodeFile: (file: Blob) => Promise<string>;
   private readonly encodeIcon: (file: Blob) => Promise<string>;
-  private readonly makeLight: PhotoLightMaker;
+  private readonly make: PhotoMakers;
 
   constructor(
     private readonly hass: () => HassLike | undefined,
@@ -348,7 +420,7 @@ export class PagePhotoStore {
     this.makeUrl = options.makeUrl ?? pagePhotoUrl;
     this.encodeFile = options.encodeFile ?? encodePagePhotoFile;
     this.encodeIcon = options.encodeIcon ?? encodeIconPhotoFile;
-    this.makeLight = options.makeLight ?? makePhotoLight;
+    this.make = { light: options.makeLight ?? makePhotoLight, on: options.makeOn ?? makePhotoOn, revoke: options.revokeUrl ?? revokeUrl };
   }
 
   /** The library's photos of one kind, in the list's order (newest first). A
@@ -372,6 +444,13 @@ export class PagePhotoStore {
    * none. */
   glow(id: string): OneLookPhotoLight | undefined {
     return held.get(id.toUpperCase())?.light;
+  }
+
+  /** The URL of the On photo an icon photo carries, once its bytes are in
+   * and its size checked, without asking for them; undefined for a photo
+   * with none. */
+  onUrl(id: string): string | undefined {
+    return held.get(id.toUpperCase())?.on;
   }
 
   /** Read the list again. A photo that was missing or failed is asked for
@@ -426,8 +505,9 @@ export class PagePhotoStore {
             return;
           }
           const type = pagePhotoContentType(reply.content_type);
-          // Settles once a look's masks are made, so the redraw has them.
-          return takeBytes(entry, this.makeUrl(reply.data, type), reply.data, type, this.makeLight);
+          // Settles once an On photo's URL or a look's masks are made, so the
+          // redraw has them.
+          return takeBytes(entry, this.makeUrl(reply.data, type), reply.data, type, this.make);
         },
         (error: unknown) => {
           const code = error !== null && typeof error === "object" ? (error as Record<string, unknown>).code : undefined;
@@ -488,8 +568,8 @@ export class PagePhotoStore {
       if (held.get(id.toUpperCase())?.status !== "ready") {
         const entry: Held = { status: "loading" };
         held.set(id.toUpperCase(), entry);
-        void takeBytes(entry, this.makeUrl(data, contentType), data, contentType, this.makeLight).then(() => {
-          if (entry.light !== undefined) this.changed();
+        void takeBytes(entry, this.makeUrl(data, contentType), data, contentType, this.make).then(() => {
+          if (entry.light !== undefined || entry.on !== undefined) this.changed();
         });
       }
       void this.refreshList();

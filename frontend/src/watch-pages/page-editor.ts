@@ -901,6 +901,8 @@ export class WaPageEditor extends LitElement {
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
   /** The light saved in a tile's icon photo (Light Look). */
   private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
+  /** The On photo a tile's icon photo carries (photo tiles plan, "On photo"). */
+  private readonly photoOn = (id: string): string | undefined => this.photos.onUrl(id);
   /** The modules' view state (`WatchPagesEditorHost.uiState`). */
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */
@@ -3606,7 +3608,7 @@ export class WaPageEditor extends LitElement {
     const phone = this.phoneLayoutOf(undefined);
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
-      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow,
+      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn,
       appVersion: this.previewAppVersion(undefined),
       ...(phone === undefined ? {} : { phone }),
     };
@@ -3850,6 +3852,7 @@ export class WaPageEditor extends LitElement {
       photo: this.photoUrl,
       photoSize: this.photoSize,
       photoGlow: this.photoGlow,
+      photoOn: this.photoOn,
     };
     // An iPhone page's camera tiles play live when the Live video card's
     // switch says so (off by default, kept in this browser).

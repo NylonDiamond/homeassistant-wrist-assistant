@@ -1,10 +1,12 @@
 """Offline tests for Light Look on the server side: the light the iPhone
 saves in a tile's icon photo is a PNG ``tEXt`` chunk (keyword
 ``WristAssistantGlow``) right after ``IHDR`` (app repo
-docs/photo_tiles_plan_2026-10.md, "Light Look"). The store never reads it;
-it must take such a PNG and keep it byte for byte, so a device reading the
-photo back finds the light where it was put. Through the phone's op and the
-panel's WebSocket upload alike.
+docs/photo_tiles_plan_2026-10.md, "Light Look"). A light's photo may also
+carry a second, whole PNG taken with the light on in a ``waOn`` chunk right
+before ``IEND`` ("On photo"). The store never reads either; it must take
+such a PNG and keep it byte for byte, so a device reading the photo back
+finds the light and the On photo where they were put. Through the phone's op
+and the panel's WebSocket upload alike.
 
 Nothing here talks to a live Home Assistant.
 """
@@ -58,3 +60,17 @@ def test_the_panels_upload_and_get_keep_the_light(env) -> None:  # noqa: F811
     assert got["content_type"] == "image/png"
     assert base64.b64decode(got["data"]) == data
     assert b"WristAssistantGlow\x00" in base64.b64decode(got["data"])
+
+
+def test_the_phones_put_of_a_photo_with_an_on_photo_is_kept_byte_for_byte(env) -> None:  # noqa: F811
+    lit = lit_png(48, 32)
+    on = lit_png(48, 32)
+    data = lit[:-12] + _chunk(b"waOn", on) + lit[-12:]
+    assert data.endswith(_chunk(b"IEND", b""))
+    reply = op(env, "_op_page_image_put", {"image_id": ICON_UUID, "data": b64(data), "kind": "icon"})
+    assert (reply.status, reply.body) == (200, {"ok": True, "status": "stored"})
+    entry = env.store.entry(ICON_UUID)
+    assert (entry["format"], entry["width"], entry["height"], entry["bytes"]) == ("png", 48, 32, len(data))
+    got = op(env, "_op_page_image_get", {"image_id": ICON_UUID})
+    assert (got.status, got.content_type, got.body) == (200, "image/png", data)
+    assert b"waOn" + on in got.body

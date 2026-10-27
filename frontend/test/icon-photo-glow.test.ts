@@ -1,9 +1,12 @@
 // Light Look: the look the iPhone saves in a tile's icon photo (a PNG
 // `tEXt` chunk, keyword `WristAssistantGlow`), read and turned into three
 // masks here (one-look/glow.ts), made once in the photo store, and drawn
-// while the tile is lit and bright (one-look/render.ts): the off light's
-// dark fill, the aura and beam behind the photo, the emission over it
-// (app repo docs/photo_tiles_plan_2026-10.md, "Light Look"). The mask
+// while the tile is lit and bright (one-look/render.ts): the tile's own lit
+// fill, the aura and beam behind the photo, the emission over it. And the
+// On photo (a whole PNG in a `waOn` chunk), read, checked for its size and
+// made a URL once in the store, and drawn in the photo's place while the
+// tile is lit and bright, with no look over it (app repo
+// docs/photo_tiles_plan_2026-10.md, "Light Look" and "On photo"). The mask
 // maths is checked on small made up pixels, as the apps check theirs.
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,7 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { HassEntityState, HassLike } from "../src/ha-api.js";
 import { renderPageRowPicture } from "../src/library/row-picture.js";
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
-import { type OneLookPalette, ONE_LOOK_AMBER, ONE_LOOK_GRAPHITE_LIGHT, oneLookHex, oneLookMix } from "../src/watch-pages/one-look/colour.js";
+import { type OneLookPalette, ONE_LOOK_AMBER, oneLookMix } from "../src/watch-pages/one-look/colour.js";
 import {
   type OneLookLightMask,
   type OneLookLightPixels,
@@ -19,6 +22,7 @@ import {
   type OneLookPhotoLight,
   ONE_LOOK_GLOW_KEYWORD,
   ONE_LOOK_LIGHT_DEFAULT,
+  ONE_LOOK_ON_CHUNK,
   oneLookAuraMask,
   oneLookBeamMask,
   oneLookBoxBlur,
@@ -39,7 +43,6 @@ import {
   oneLookCutoutGlows,
   oneLookCutoutOf,
   oneLookCutoutRect,
-  oneLookLightOn,
   oneLookPreviewModel,
   renderOneLookTile,
 } from "../src/watch-pages/one-look/render.js";
@@ -135,6 +138,41 @@ describe("reading the look from the photo's bytes", () => {
     // Cut off mid chunk: the size still reads, the look does not.
     const cut = png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, RECIPE));
     expect(readIconPng(cut.subarray(0, cut.length - 20))).toEqual({ width: 10, height: 10 });
+  });
+});
+
+/** A `waOn` chunk holding `inner`, a whole PNG or anything else. */
+const onChunk = (inner: Uint8Array | number[]) => chunk(ONE_LOOK_ON_CHUNK, [...inner]);
+
+describe("reading the On photo from the photo's bytes", () => {
+  it("takes the data of a waOn chunk before IEND, with the look too", () => {
+    const inner = png(120, 90, IDAT);
+    const facts = readIconPng(png(120, 90, text(ONE_LOOK_GLOW_KEYWORD, RECIPE), IDAT, onChunk(inner)));
+    expect(ONE_LOOK_ON_CHUNK).toBe("waOn");
+    expect(facts?.recipe).toEqual({ dir: "up", glow: 0.5 });
+    expect([...facts!.on!]).toEqual([...inner]);
+    // A look after the On chunk is found as well.
+    expect(readIconPng(png(10, 10, onChunk(png(10, 10)), text(ONE_LOOK_GLOW_KEYWORD, RECIPE)))?.recipe?.dir).toBe("up");
+  });
+
+  it("only the first waOn chunk counts", () => {
+    const first = png(10, 10, chunk("IDAT", [1]));
+    const second = png(10, 10, chunk("IDAT", [2]));
+    expect([...readIconPng(png(10, 10, IDAT, onChunk(first), onChunk(second)))!.on!]).toEqual([...first]);
+    // A first one that does not start with the PNG signature is none, whatever follows.
+    const bad = [...first];
+    bad[0] = 0x88;
+    expect(readIconPng(png(10, 10, IDAT, onChunk(bad), onChunk(second)))?.on).toBeUndefined();
+    expect(readIconPng(png(10, 10, onChunk([0x89, 0x50, 0x4e])))?.on).toBeUndefined();
+    expect(readIconPng(png(10, 10, onChunk([])))?.on).toBeUndefined();
+  });
+
+  it("no chunk, another type, or one cut off: no On photo", () => {
+    expect(readIconPng(png(30, 40, IDAT))).toEqual({ width: 30, height: 40 });
+    expect(readIconPng(png(30, 40, chunk("waON", [...png(30, 40)])))?.on).toBeUndefined();
+    expect(readIconPng(png(30, 40, chunk("wAOn", [...png(30, 40)])))?.on).toBeUndefined();
+    const cut = png(30, 40, IDAT, onChunk(png(30, 40, IDAT)));
+    expect(readIconPng(cut.subarray(0, cut.length - 20))).toEqual({ width: 30, height: 40 });
   });
 });
 
@@ -298,7 +336,7 @@ const states = (state: string, brightness = 255): Record<string, HassEntityState
 const UNIT = 15.5;
 const CELL = { width: 6 * UNIT + 10, height: 4 * UNIT + 6 };
 
-type Photos = Partial<Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow">>;
+type Photos = Partial<Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow" | "photoOn">>;
 
 function face(tile: WatchPageTile, state: string, photos: Photos, o: { brightness?: number; device?: "watch" | "phone" } = {}): OneLookTileFaceInput {
   const input: WatchPagePreviewInput = { page, pages: [page], screen: { width: 211, height: 251 }, states: states(state, o.brightness ?? 255), scale: 1, ...photos };
@@ -332,7 +370,6 @@ describe("a look on a One Look tile", () => {
   it("places and colours each layer: the emission on the photo, the aura and beam reaching the padding past it", () => {
     const f = face(lamp(), "on", lit(LIGHT()));
     const model = oneLookPreviewModel(f)!;
-    expect(oneLookLightOn(model)).toBe(true);
     const rect = oneLookCutoutRect(model.layout.discRect, 2).photo;
     const out = html(renderOneLookTile(f));
     const emit = place(styleOf(out, "ol-light ol-light-emit"));
@@ -369,23 +406,25 @@ describe("a look on a One Look tile", () => {
     expect(styleOf(half, "ol-light ol-light-emit")).toContain(`opacity:${Math.round(0.85 * 0.8 * (0.25 + 0.75 * b) * 10000) / 10000}`);
   });
 
-  it("the tile takes the off light's dark fill and rim, no sheen and no under-glow; the text stays white", () => {
-    const night = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()), { device: "phone" })));
-    const day = html(renderOneLookTile(face(lamp(), "on", lit(undefined), { device: "phone" })));
-    const off = html(renderOneLookTile(face(lamp(), "off", lit(undefined), { device: "phone" })));
-    const ground = (out: string) => /background:(.*)$/.exec(tileStyle(out))?.[1] ?? "";
-    expect(ground(night)).toContain(oneLookHex(ONE_LOOK_GRAPHITE_LIGHT));
-    expect(ground(night)).not.toContain("radial-gradient");
-    // The off tile's ground is its sheen over the same blend.
-    expect(ground(off).endsWith(ground(night))).toBe(true);
-    expect(ground(off)).toContain("radial-gradient");
-    expect(tileStyle(day)).toContain("box-shadow");
-    expect(tileStyle(night)).not.toContain("box-shadow");
+  it("the tile keeps its lit fill, sheen, Fill style bar, under-glow, rim and inks, as any lit tile", () => {
     const rim = (out: string) => /class="ol-rim" style=([^>]*)>/.exec(out)?.[1];
-    expect(rim(night)).toBe(rim(off));
-    expect(rim(night)).not.toBe(rim(day));
     const name = (out: string) => /class="ol-name" style=([^>]*)>/.exec(out)?.[1];
-    expect(name(night)).toBe(name(day));
+    // Everything under the content (the fill, its layers, the underlay).
+    const under = (out: string) => out.slice(0, out.indexOf(`class="ol-content"`));
+    for (const extra of [{}, { stateBarStyle: "Fill" }] as Partial<WatchPageTile>[]) {
+      const glowing = html(renderOneLookTile(face(lamp(extra), "on", lit(LIGHT()), { device: "phone", brightness: 128 })));
+      const plain = html(renderOneLookTile(face(lamp(extra), "on", lit(undefined), { device: "phone", brightness: 128 })));
+      expect(glowing).toContain("ol-light-emit");
+      expect(under(glowing)).toBe(under(plain));
+      expect(under(glowing).includes(`class="ol-fill"`)).toBe(extra.stateBarStyle === "Fill");
+      expect(rim(glowing)).toBe(rim(plain));
+      expect(name(glowing)).toBe(name(plain));
+    }
+    const day = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()), { device: "phone" })));
+    const off = html(renderOneLookTile(face(lamp(), "off", lit(undefined), { device: "phone" })));
+    expect(tileStyle(day)).toContain("box-shadow");
+    expect(tileStyle(day)).not.toBe(tileStyle(off));
+    expect(rim(day)).not.toBe(rim(off));
   });
 
   it("all around: no beam", () => {
@@ -433,12 +472,12 @@ describe("a look on a One Look tile", () => {
     expect(oneLookCutoutOf(lamp(), { photo, photoGlow: () => LIGHT() })?.aspect).toBe(2);
   });
 
-  it("a hidden photo takes no night fill", () => {
-    const f = face(lamp(), "on", lit(LIGHT()));
+  it("a hidden photo draws none of it", () => {
+    const f = face(lamp(), "on", { ...lit(LIGHT()), photoOn: () => "blob:on" });
     f.hidden = { glyph: true, name: false, state: false };
     const out = html(renderOneLookTile(f));
     expect(out).not.toContain("ol-light");
-    expect(oneLookLightOn(oneLookPreviewModel(f)!, f.hidden)).toBe(false);
+    expect(out).not.toContain("blob:on");
     const day = face(lamp(), "on", lit(undefined));
     day.hidden = f.hidden;
     expect(out).toBe(html(renderOneLookTile(day)));
@@ -448,6 +487,50 @@ describe("a look on a One Look tile", () => {
     const withTile: WatchPage = { id: "R", name: "R", items: [{ ...lamp(), gridCol: 0, gridRow: 0 }] };
     const drawn = html(renderPageRowPicture({ page: withTile, states: states("on"), photo, photoGlow: () => LIGHT(), photoTick: 1 }));
     expect(drawn).toContain("ol-light-emit");
+  });
+});
+
+describe("an On photo on a One Look tile", () => {
+  const withOn = (light?: OneLookPhotoLight): Photos => ({ ...lit(light), photoOn: (id) => (id === ID ? "blob:on" : undefined) });
+  const src = (out: string) => /<img class="ol-cutout"[^>]*?src=([^ >]*)/.exec(out)?.[1];
+
+  it("lit and bright: the On photo in the photo's place, no filter, the halo as for any photo", () => {
+    const out = html(renderOneLookTile(face(lamp(), "on", withOn())));
+    expect(src(out)).toBe("blob:on");
+    expect(styleOf(out, "ol-cutout")).not.toContain("filter");
+    expect(out).toContain(`class="ol-halo"`);
+    // Drawn as the Off photo would be, but for the picture.
+    expect(out.replace("blob:on", "blob:lamp")).toBe(html(renderOneLookTile(face(lamp(), "on", lit(undefined)))));
+    expect(oneLookCutoutOf(lamp(), withOn())?.on).toBe("blob:on");
+  });
+
+  it("the real photo wins over a look: none of the look's layers", () => {
+    const out = html(renderOneLookTile(face(lamp(), "on", withOn(LIGHT()))));
+    expect(src(out)).toBe("blob:on");
+    for (const l of LAYERS) expect(out).not.toContain(l);
+    expect(out).toBe(html(renderOneLookTile(face(lamp(), "on", withOn()))));
+  });
+
+  it("not lit: the Off photo, gray and dark", () => {
+    const out = html(renderOneLookTile(face(lamp(), "off", withOn(LIGHT()))));
+    expect(src(out)).toBe("blob:lamp");
+    expect(out).not.toContain("blob:on");
+    expect(styleOf(out, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+    expect(out).toBe(html(renderOneLookTile(face(lamp(), "off", lit(undefined)))));
+  });
+
+  it("a switch that keeps its colour is bright but not lit: the Off photo, bright", () => {
+    const f = face(lamp({ entityId: "switch.fan", color: "#3B82F6" }), "on", withOn());
+    f.input.states = { "switch.fan": { entity_id: "switch.fan", state: "on", attributes: {}, last_changed: "", last_updated: "" } };
+    const out = html(renderOneLookTile(f));
+    expect(src(out)).toBe("blob:lamp");
+    expect(styleOf(out, "ol-cutout")).not.toContain("filter");
+  });
+
+  it("draws in a library row's picture when the row has the photos", () => {
+    const withTile: WatchPage = { id: "R", name: "R", items: [{ ...lamp(), gridCol: 0, gridRow: 0 }] };
+    const drawn = html(renderPageRowPicture({ page: withTile, states: states("on"), photo, photoOn: () => "blob:on", photoTick: 2 }));
+    expect(drawn).toContain("blob:on");
   });
 });
 
@@ -521,5 +604,98 @@ describe("the photo store and a look", () => {
     await flush();
     expect(failing.url(ID)).toBe("u");
     expect(failing.glow(ID)).toBeUndefined();
+  });
+});
+
+describe("the photo store and an On photo", () => {
+  /** A store over `bytes` whose On maker reports `decoded` as the size it
+   * decodes to, and which notes every URL made and revoked. */
+  function storeFor(bytes: Uint8Array, decoded: { width: number; height: number } | undefined, o: { onChanged?: () => void } = {}) {
+    const made: Uint8Array[] = [];
+    const revoked: string[] = [];
+    let lights = 0;
+    const store = new PagePhotoStore(() => hassAnswering("image/png", bytes), o.onChanged ?? (() => {}), {
+      makeUrl: () => "blob:off",
+      makeOn: async (b) => {
+        made.push(b);
+        return decoded === undefined ? undefined : { url: `blob:on${made.length}`, ...decoded };
+      },
+      revokeUrl: (url) => revoked.push(url),
+      makeLight: async (_b, recipe) => {
+        lights++;
+        return { recipe, width: 40, height: 20, pad: 19, emit: "e", aura: "a" };
+      },
+    });
+    return { store, made, revoked, lights: () => lights };
+  }
+
+  it("makes the On photo's URL once its bytes are in and its size checks out, and makes no masks", async () => {
+    const inner = png(40, 20, chunk("IDAT", [7]));
+    let changed = 0;
+    const { store, made, revoked, lights } = storeFor(png(40, 20, text(ONE_LOOK_GLOW_KEYWORD, RECIPE), IDAT, onChunk(inner)), { width: 40, height: 20 }, { onChanged: () => changed++ });
+    expect(store.onUrl(ID)).toBeUndefined();
+    store.url(ID);
+    await flush();
+    expect(store.url(ID)).toBe("blob:off");
+    expect(store.onUrl(ID.toLowerCase())).toBe("blob:on1");
+    expect(changed).toBe(1);
+    expect(made.map((b) => [...b])).toEqual([[...inner]]);
+    expect(revoked).toEqual([]);
+    // The On photo wins whenever the look would draw: no masks are made.
+    expect(lights()).toBe(0);
+    expect(store.glow(ID)).toBeUndefined();
+    // A second store reads the same memory and makes nothing again.
+    const other = new PagePhotoStore(() => hassAnswering("image/png", inner), () => {}, { makeOn: async () => { throw new Error("again"); } });
+    expect(other.onUrl(ID)).toBe("blob:on1");
+  });
+
+  it("an On photo whose IHDR names another size is never decoded; the look then draws", async () => {
+    const { store, made, lights } = storeFor(png(40, 20, text(ONE_LOOK_GLOW_KEYWORD, RECIPE), IDAT, onChunk(png(40, 21))), { width: 40, height: 20 });
+    store.url(ID);
+    await flush();
+    expect(store.onUrl(ID)).toBeUndefined();
+    expect(made).toHaveLength(0);
+    expect(lights()).toBe(1);
+    expect(store.glow(ID)?.emit).toBe("e");
+  });
+
+  it("one that decodes to another size has its URL revoked; one that does not decode is none", async () => {
+    const bytes = png(40, 20, IDAT, onChunk(png(40, 20)));
+    const wrong = storeFor(bytes, { width: 20, height: 10 });
+    wrong.store.url(ID);
+    await flush();
+    expect(wrong.made).toHaveLength(1);
+    expect(wrong.store.onUrl(ID)).toBeUndefined();
+    expect(wrong.revoked).toEqual(["blob:on1"]);
+    expect(wrong.store.url(ID)).toBe("blob:off");
+    forgetPagePhotos();
+    const broken = storeFor(bytes, undefined);
+    broken.store.url(ID);
+    await flush();
+    expect(broken.made).toHaveLength(1);
+    expect(broken.store.onUrl(ID)).toBeUndefined();
+    expect(broken.revoked).toEqual([]);
+    forgetPagePhotos();
+    const failing = new PagePhotoStore(() => hassAnswering("image/png", bytes), () => {}, { makeUrl: () => "u", makeOn: async () => { throw new Error("no canvas"); } });
+    failing.url(ID);
+    await flush();
+    expect(failing.url(ID)).toBe("u");
+    expect(failing.onUrl(ID)).toBeUndefined();
+  });
+
+  it("no waOn chunk, a bad one, or a JPEG: no On photo, nothing made", async () => {
+    for (const [type, bytes] of [
+      ["image/png", png(40, 20, IDAT)],
+      ["image/png", png(40, 20, IDAT, onChunk([1, 2, 3, 4, 5, 6, 7, 8, 9]))],
+      ["image/jpeg", png(40, 20, IDAT, onChunk(png(40, 20)))],
+    ] as const) {
+      forgetPagePhotos();
+      let calls = 0;
+      const store = new PagePhotoStore(() => hassAnswering(type, bytes), () => {}, { makeUrl: () => "u", makeOn: async () => { calls++; return { url: "x", width: 40, height: 20 }; } });
+      store.url(ID);
+      await flush();
+      expect(store.onUrl(ID)).toBeUndefined();
+      expect(calls).toBe(0);
+    }
   });
 });

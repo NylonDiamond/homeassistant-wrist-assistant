@@ -1,8 +1,8 @@
 // Light Look: a tile's icon photo, taken with the light off, glows from
-// within when the light is on, and the tile goes dark like a real lamp at
-// night. The look is a few settings saved inside the photo's PNG (a `tEXt`
-// chunk, keyword `WristAssistantGlow`), never a second picture, so every
-// device draws it live in the light's own colour and brightness.
+// within on its lit tile when the light is on. The look is a few settings
+// saved inside the photo's PNG (a `tEXt` chunk, keyword
+// `WristAssistantGlow`), never a second picture, so every device draws it
+// live in the light's own colour and brightness.
 //
 //   {"v":1,"dir":"around","glow":0.8}
 //
@@ -13,7 +13,12 @@
 // recipe from the bytes, and the masks as numbers, which the apps make with
 // the same maths. The photo store turns the masks into images
 // (`page-photo-store.ts`) and `render.ts` (`cutoutLayer`) lays them out.
-// Plan: app repo docs/photo_tiles_plan_2026-10.md, "Light Look".
+//
+// A light's photo may instead carry a real photo taken with the light on
+// (the On photo): a whole PNG in a `waOn` chunk before `IEND`, read here
+// too. Where there is one, it wins over the recipe.
+// Plan: app repo docs/photo_tiles_plan_2026-10.md, "Light Look" and "On
+// photo".
 
 import { type OneLookRGB, ONE_LOOK_AMBER, oneLookMix } from "./colour.js";
 import type { OneLookRect } from "./layout.js";
@@ -65,39 +70,52 @@ function ascii(bytes: Uint8Array, from: number, to: number): string {
   return text;
 }
 
+/** The type of the chunk that holds the On photo. */
+export const ONE_LOOK_ON_CHUNK = "waOn";
+
 /** What the panel reads from an icon photo's PNG bytes: its size from
- * `IHDR` and its look, when it carries one. */
+ * `IHDR`, its look, and the bytes of its On photo, when it carries them. */
 export interface IconPngFacts {
   width: number;
   height: number;
   recipe?: OneLookLightRecipe;
+  /** The first `waOn` chunk's data when it starts with the PNG signature;
+   * whether it decodes, and to the photo's size, is the store's to check. */
+  on?: Uint8Array;
 }
 
 /**
- * An icon photo's size and look from its PNG bytes, or undefined when they
- * are not a PNG whose first chunk is `IHDR`. The chunks are read up to
- * `IEND` (no CRC is checked) and only the first `tEXt` with the keyword
+ * An icon photo's size, look and On photo from its PNG bytes, or undefined
+ * when they are not a PNG whose first chunk is `IHDR`. The chunks are read
+ * up to `IEND` (no CRC is checked). Only the first `tEXt` with the keyword
  * counts: text over 1024 bytes, text that is not a JSON object, or a `v`
- * other than 1 means no light, as does no such chunk.
+ * other than 1 means no light, as does no such chunk. Only the first `waOn`
+ * counts too: data that does not start with the PNG signature means no On
+ * photo, as does no such chunk.
  */
 export function readIconPng(bytes: Uint8Array): IconPngFacts | undefined {
   if (bytes.length < 24 || SIGNATURE.some((b, i) => bytes[i] !== b)) return undefined;
   if (u32(bytes, 8) !== 13 || ascii(bytes, 12, 16) !== "IHDR") return undefined;
   const facts: IconPngFacts = { width: u32(bytes, 16), height: u32(bytes, 20) };
+  let seenLook = false;
+  let seenOn = false;
   let at = 8;
-  while (at + 8 <= bytes.length) {
+  while (at + 8 <= bytes.length && !(seenLook && seenOn)) {
     const length = u32(bytes, at);
     const type = ascii(bytes, at + 4, at + 8);
     const start = at + 8;
     const end = start + length;
     if (type === "IEND" || end > bytes.length) break;
-    if (type === "tEXt") {
+    if (type === "tEXt" && !seenLook) {
       const nul = bytes.subarray(start, end).indexOf(0);
       if (nul >= 0 && ascii(bytes, start, start + nul) === ONE_LOOK_GLOW_KEYWORD) {
+        seenLook = true;
         const recipe = recipeOfText(bytes, start + nul + 1, end);
         if (recipe !== undefined) facts.recipe = recipe;
-        break;
       }
+    } else if (type === ONE_LOOK_ON_CHUNK && !seenOn) {
+      seenOn = true;
+      if (length >= SIGNATURE.length && SIGNATURE.every((b, i) => bytes[start + i] === b)) facts.on = bytes.subarray(start, end);
     }
     at = end + 4;
   }

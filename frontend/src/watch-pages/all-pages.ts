@@ -296,6 +296,7 @@ export class WaAllPages extends LitElement {
   private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
   private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
+  private readonly photoOn = (id: string): string | undefined => this.photos.onUrl(id);
 
   /** Home Assistant. A new object on every state change: the pictures are
    * drawn again at most every couple of seconds for it. */
@@ -1144,6 +1145,7 @@ export class WaAllPages extends LitElement {
       photo: this.photoUrl,
       photoSize: this.photoSize,
       photoGlow: this.photoGlow,
+      photoOn: this.photoOn,
       photoTick: this.photoTick,
     });
   }

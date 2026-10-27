@@ -167,6 +167,10 @@ export interface WatchPagePreviewInput {
    * bytes are in and its masks made, else undefined; without it no light
    * is drawn. */
   photoGlow?: (id: string) => OneLookPhotoLight | undefined;
+  /** The URL of the On photo a tile's icon photo carries (photo tiles
+   * plan, "On photo") once its bytes are in and its size checked, else
+   * undefined; without it the photo is drawn as it is when lit. */
+  photoOn?: (id: string) => string | undefined;
   /** The page is an iPhone's: `screen` is its pages area, and the picture
    * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
    * look the layout carries (`phonePagesLayout` with `look`). */

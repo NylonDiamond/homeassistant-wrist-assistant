@@ -194,24 +194,29 @@ export interface OneLookCutout {
   /** The look saved in the photo (Light Look) with its masks made, drawn
    * while the tile is lit. */
   light?: OneLookPhotoLight;
+  /** The URL of the On photo the photo carries (the same lamp, its light
+   * on, at the photo's size), drawn in its place while the tile is lit. */
+  on?: string;
 }
 
 /** A tile's icon photo once its bytes are in, from the picture's photos,
  * or undefined: no `iconPhotoId`, no photos to read from, or the bytes not
- * in yet (the tile draws its icon meanwhile, as the devices do). Its look
- * comes with it once its masks are made; the photo's size then comes from
- * the masks when the list has none. */
-export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow">): OneLookCutout | undefined {
+ * in yet (the tile draws its icon meanwhile, as the devices do). Its On
+ * photo and its look come with it once they are made; the photo's size
+ * then comes from the masks when the list has none. */
+export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow" | "photoOn">): OneLookCutout | undefined {
   const id = tile.iconPhotoId;
   if (typeof id !== "string" || id.trim() === "" || input.photo === undefined) return undefined;
   const url = input.photo(id);
   if (url === undefined || url === "") return undefined;
   const light = input.photoGlow?.(id);
+  const on = input.photoOn?.(id);
   const size = input.photoSize?.(id) ?? light;
   return {
     url,
     ...(size !== undefined && size.width > 0 && size.height > 0 ? { aspect: size.width / size.height } : {}),
     ...(light === undefined ? {} : { light }),
+    ...(on === undefined || on === "" ? {} : { on }),
   };
 }
 
@@ -770,8 +775,9 @@ export function oneLookCutoutDimmed(palette: OneLookPalette, light: boolean): bo
   return palette.surface !== "coloured" || (light && !palette.isLit) || palette.aod;
 }
 
-/** Whether an icon photo's light (Light Look) is drawn: the palette is lit
- * (a light on, media playing) and the photo is not dimmed. */
+/** Whether an icon photo is drawn bright and lit, which is when its On
+ * photo takes its place, or else its light (Light Look) is drawn: the
+ * palette is lit (a light on, media playing) and the photo is not dimmed. */
 export function oneLookCutoutGlows(palette: OneLookPalette, light: boolean): boolean {
   return palette.isLit && !oneLookCutoutDimmed(palette, light);
 }
@@ -782,17 +788,6 @@ const a4 = (v: number) => Math.round(v * 10000) / 10000;
 /** A colour at an alpha, as CSS. */
 function rgba(c: readonly [number, number, number], alpha: number): string {
   return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a4(alpha)})`;
-}
-
-/**
- * Whether a tile draws its icon photo's Light Look: its photo has a look
- * with its masks made, the photo is drawn (not hidden by the tile or its
- * Arrangement), and it is lit and bright (`oneLookCutoutGlows`). Then the
- * tile takes the night fill and the photo its light.
- */
-export function oneLookLightOn(model: OneLookPreviewModel, hidden?: TileHiddenParts): boolean {
-  return model.picture === "none" && model.cutout?.light !== undefined && hidden?.glyph !== true && model.arrange?.icon?.hidden !== true
-    && oneLookCutoutGlows(model.palette, model.kind.role.kind === "light");
 }
 
 /** One layer of the light: a span of the light's colour at `opacity`,
@@ -809,20 +804,25 @@ function lightSpan(kind: "aura" | "beam" | "emit", rect: OneLookRect, url: strin
  * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
  * halo behind it as a glyph has it, the pearl disc's white glow in the disc
  * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
- * 62% when `oneLookCutoutDimmed` says so. A photo with a look (Light Look)
- * whose tile is lit and bright (`oneLookLightOn`) has the aura and the beam
- * behind it in the pearl halo's place and the emission over it, in the
- * light's colour (`glow.ts`).
+ * 62% when `oneLookCutoutDimmed` says so. Lit and bright
+ * (`oneLookCutoutGlows`), a photo that carries an On photo has it drawn in
+ * its place, the halo as for any photo; else a photo with a look (Light
+ * Look) has the aura and the beam behind it in the pearl halo's place and
+ * the emission over it, in the light's colour (`glow.ts`). The real photo
+ * wins over the recipe. The tile keeps its lit fill either way.
  */
 function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: OneLookCutout, s: number): TemplateResult {
   const { palette, device } = model;
   const rect = layout.discRect;
   const lit = palette.isLit && !palette.aod;
   const { photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
-  const dimmed = oneLookCutoutDimmed(palette, model.kind.role.kind === "light");
+  const light = model.kind.role.kind === "light";
+  const dimmed = oneLookCutoutDimmed(palette, light);
   const filter = dimmed ? `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}` : "";
+  const glows = oneLookCutoutGlows(palette, light);
+  const src = glows && cutout.on !== undefined ? cutout.on : cutout.url;
   const look = cutout.light;
-  if (look !== undefined && oneLookLightOn(model)) {
+  if (look !== undefined && glows && cutout.on === undefined) {
     const at = oneLookLightPlacement(photo, look, palette.brightness, oneLookGlowColour(palette.hue));
     const c = at.colour;
     return html`${lightSpan("aura", at.aura.rect, look.aura, c, at.aura.opacity, s)}${at.beam === undefined || look.beam === undefined ? nothing : lightSpan("beam", at.beam.rect, look.beam, c, at.beam.opacity, s)}<img class="ol-cutout" alt="" src=${cutout.url} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px`} />${lightSpan("emit", at.emit.rect, look.emit, c, at.emit.opacity, s)}`;
@@ -840,7 +840,7 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
       back = html`<span class="ol-halo" style=${`${rectCss({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, s)};background:radial-gradient(circle closest-side, rgba(${r}, ${g}, ${b}, ${Math.round(halo.opacity * 10000) / 10000}) 0%, rgba(${r}, ${g}, ${b}, 0) 100%)`}></span>`;
     }
   }
-  return html`${back}<img class="ol-cutout" alt="" src=${cutout.url} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
+  return html`${back}<img class="ol-cutout" alt="" src=${src} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
 }
 
 /** The glyph's place: a disc behind it in the disc layouts, the soft halo
@@ -967,21 +967,6 @@ function chartLayer(model: OneLookPreviewModel, s: number): TemplateResult | typ
 
 let chartSeq = 0;
 
-/** The off light's palette, whose graphite fill and rim a tile takes while
- * its icon photo's Light Look is on. */
-const OFF_LIGHT = oneLookPalette({ role: { kind: "light", on: false } });
-
-/**
- * The night fill of a tile whose Light Look is on: the graphite blend an
- * off light's tile has, with its rim, but no corner sheen and no Fill style
- * bar. The glow is what says it is on; the text keeps the lit tile's white
- * ink.
- */
-function nightFill(model: OneLookPreviewModel): { ground: string; layers: typeof nothing; rimOpacity: number } {
-  const fill = oneLookFill(OFF_LIGHT, model.layout.size, model.layout.textOrigin);
-  return { ground: oneLookBlendCss(fill.stops), layers: nothing, rimOpacity: OFF_LIGHT.rimOpacity };
-}
-
 /** The tile's fill: the blend with its corner light, or with the Fill bar
  * style the track, the colour to the level and the white edge where it
  * ends. */
@@ -1028,11 +1013,8 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const { layout, palette, device } = model;
   const { input, s } = f;
   const radius = oneLookCornerRadius(oneLookMetrics(device), layout.size);
-  // Light Look on: the off light's dark fill and rim, and no under-glow.
-  const night = oneLookLightOn(model, f.hidden) ? nightFill(model) : undefined;
-  const { ground, layers } = night ?? fillLayers(model, s);
-  const glow = device === "phone" && night === undefined ? oneLookUnderGlowCss(palette, s) : undefined;
-  const rimOpacity = night?.rimOpacity ?? palette.rimOpacity;
+  const { ground, layers } = fillLayers(model, s);
+  const glow = device === "phone" ? oneLookUnderGlowCss(palette, s) : undefined;
   const active = watchTilePreviewActive(f.tile, input.states);
   const fade = f.stub ? 0.7 : 1;
   const rim = oneLookMetrics(device).rim;
@@ -1047,7 +1029,7 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
       ${barLayer(model, s)}
       ${f.hidden?.glyph === true ? nothing : discLayer(model, input, s)}${f.hidden?.state === true ? nothing : accessoryLayer(model, input, s)}${textLayer(model, s, f.hidden)}${f.hidden?.state === true ? nothing : bigValueLayer(model, s)}
     </span>
-    <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(rimOpacity)}`}></span>
+    <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>
     ${borderLayer(model, f, active, radius)}
   </div>`;
 }

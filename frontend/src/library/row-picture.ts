@@ -83,9 +83,11 @@ export interface PageRowPictureInput {
    * (`PagePhotoStore.url`); without it the tiles draw their icons. */
   photo?: (id: string) => string | undefined;
   /** A tile's icon photo's size (`PagePhotoStore.size`), so the photo is
-   * fitted, and the light saved in it (`PagePhotoStore.glow`, Light Look). */
+   * fitted, the light saved in it (`PagePhotoStore.glow`, Light Look) and
+   * the On photo it carries (`PagePhotoStore.onUrl`). */
   photoSize?: (id: string) => { width: number; height: number } | undefined;
   photoGlow?: (id: string) => OneLookPhotoLight | undefined;
+  photoOn?: (id: string) => string | undefined;
   /** A new value draws again once more photos are in. */
   photoTick?: number;
 }
@@ -143,6 +145,7 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.photo === undefined ? {} : { photo: input.photo }),
     ...(input.photoSize === undefined ? {} : { photoSize: input.photoSize }),
     ...(input.photoGlow === undefined ? {} : { photoGlow: input.photoGlow }),
+    ...(input.photoOn === undefined ? {} : { photoOn: input.photoOn }),
   };
   const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.
