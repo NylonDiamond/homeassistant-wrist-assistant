@@ -89,15 +89,30 @@ export function samePagePhotoId(a: string | undefined, b: string | undefined): b
   return a !== undefined && b !== undefined && a.toUpperCase() === b.toUpperCase();
 }
 
-/** Every photo id the document's pages name, upper cased. */
+/** Every photo id the document's pages name, upper cased: each page's
+ * `backgroundImageId` and each tile's `iconPhotoId` in its `items`, as the
+ * store counts a photo in use. */
 export function pagePhotoIdsInUse(pages: unknown): Set<string> {
   const out = new Set<string>();
   if (!Array.isArray(pages)) return out;
-  for (const page of pages) {
-    const id = page !== null && typeof page === "object" ? (page as Record<string, unknown>).backgroundImageId : undefined;
+  const add = (id: unknown) => {
     if (typeof id === "string" && id !== "") out.add(id.toUpperCase());
+  };
+  for (const page of pages) {
+    if (page === null || typeof page !== "object") continue;
+    const p = page as Record<string, unknown>;
+    add(p.backgroundImageId);
+    if (!Array.isArray(p.items)) continue;
+    for (const tile of p.items) if (tile !== null && typeof tile === "object") add((tile as Record<string, unknown>).iconPhotoId);
   }
   return out;
+}
+
+/** What a listed photo is for: an icon only when it says so, since an
+ * integration before tile photos lists backgrounds alone and names no
+ * kind. */
+export function pagePhotoKind(entry: { kind?: unknown }): "background" | "icon" {
+  return entry.kind === "icon" ? "icon" : "background";
 }
 
 // ── upload sizing ────────────────────────────────────────────────────────
@@ -163,13 +178,16 @@ export function pagePhotoRefusalText(error: unknown): string {
     case "full":
       return "Home Assistant holds 500 photos already. Delete one first.";
     case "in_use":
-      return "A page still uses that photo.";
+      return "A page or a tile still uses that photo.";
     case "not_found":
       return "That photo is not in Home Assistant.";
     case "invalid":
       return "Home Assistant could not read that photo.";
     case "unknown_command":
       return "This version of the integration has no photo store. Update it first.";
+    case "invalid_format":
+      // An integration before tile photos meets an icon photo's keys.
+      return "This version of the integration cannot keep photo icons. Update it first.";
     default:
       return "Home Assistant did not take that. Try again.";
   }

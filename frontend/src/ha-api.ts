@@ -1208,7 +1208,9 @@ export interface PageImagePreset {
 }
 
 /** A photo of the home's page photo library. `used_by` lists the owners
- * whose saved pages name it. */
+ * whose saved pages name it (as a page's background or a tile's icon
+ * photo). An integration before tile photos sends no `format`, `kind`,
+ * `label` or `entity_id`: its photos are JPEG backgrounds. */
 export interface PageImageEntry {
   id: string;
   width: number;
@@ -1216,6 +1218,26 @@ export interface PageImageEntry {
   bytes: number;
   added_at: string;
   used_by: string[];
+  format?: PageImageFormat;
+  kind?: PageImageKind;
+  /** The name it was made for (a tile's), at most 60 characters. */
+  label?: string;
+  /** The entity whose tile it was made for. */
+  entity_id?: string;
+}
+
+/** How a stored photo is encoded. */
+export type PageImageFormat = "jpeg" | "png";
+
+/** What a stored photo is for: a page's background, or a tile's icon. */
+export type PageImageKind = "background" | "icon";
+
+/** What an upload may say about the photo beside its bytes. An
+ * integration before tile photos refuses these keys. */
+export interface PageImageUploadInfo {
+  kind?: PageImageKind;
+  label?: string;
+  entity_id?: string;
 }
 
 /** The built-in photos in the phone's order, then the library, newest
@@ -1225,8 +1247,9 @@ export async function listPageImages(hass: HassLike) {
   return hass.connection.sendMessagePromise<{ presets: PageImagePreset[]; images: PageImageEntry[] }>({ type: `${PAGE_IMAGES}/list` });
 }
 
-/** One photo's JPEG as base64. Built-in ids work too. Refused `not_found`
- * when the store has no such photo. */
+/** One photo's bytes as base64, JPEG or PNG as `content_type` says
+ * (`image/png` for a PNG). Built-in ids work too. Refused `not_found` when
+ * the store has no such photo. */
 export async function fetchPageImage(hass: HassLike, imageId: string) {
   return hass.connection.sendMessagePromise<{ image_id: string; content_type: string; data: string }>({
     type: `${PAGE_IMAGES}/get`,
@@ -1234,13 +1257,19 @@ export async function fetchPageImage(hass: HassLike, imageId: string) {
   });
 }
 
-/** Store a JPEG (base64). The reply names the new photo, or the stored one
- * with the same bytes. Refusals: `invalid`, `too_large`, `full`,
- * `unavailable`. */
-export async function uploadPageImage(hass: HassLike, data: string) {
+/** Store a JPEG or PNG (base64), with what it is for when `info` says
+ * (`kind`, `label`, `entity_id`; only the keys given are sent, so a
+ * background's upload reads as it always did). The reply names the new
+ * photo, or the stored one with the same bytes. Refusals: `invalid`,
+ * `too_large`, `full`, `unavailable`, and `invalid_format` from an
+ * integration before tile photos that meets the new keys. */
+export async function uploadPageImage(hass: HassLike, data: string, info: PageImageUploadInfo = {}) {
   return hass.connection.sendMessagePromise<{ image_id: string; width: number; height: number; bytes: number }>({
     type: `${PAGE_IMAGES}/upload`,
     data,
+    ...(info.kind === undefined ? {} : { kind: info.kind }),
+    ...(info.label === undefined ? {} : { label: info.label }),
+    ...(info.entity_id === undefined ? {} : { entity_id: info.entity_id }),
   });
 }
 

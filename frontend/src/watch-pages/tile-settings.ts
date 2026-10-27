@@ -207,6 +207,7 @@ import {
   watchTileActionSettings,
   watchTileArrange,
   watchTileIconGlow,
+  watchTileIconPhotoId,
   watchTileIconSettings,
   watchTileTextSettings,
 } from "./tile-settings-model.js";
@@ -233,6 +234,7 @@ import {
   weightSample,
 } from "./picture-choice.js";
 import { arrangeResetEdit, renderArrangeSection } from "./arrange-card.js";
+import { renderIconPhoto } from "./icon-photo-card.js";
 import { arrangeFreeOn, arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
@@ -1081,7 +1083,7 @@ function partResetEdit(host: TileSettingsHost, part: TileInspectorPart): ((d: Wa
 /** The tile keys each split part of Icon and color edits, beside the icon
  * and color themselves, and what its rows read of them. */
 const PART_KEYS: Readonly<Partial<Record<TileInspectorPart, readonly string[]>>> = {
-  icon: ["iconSizeOverride", "iconShadow", "stateIcons", "stateColors"],
+  icon: ["iconPhotoId", "iconSizeOverride", "iconShadow", "stateIcons", "stateColors"],
   glow: ["iconGlow"],
   whenOff: ["dimWhenOff", "activeIconAnimationEnabled"],
   tapAnimation: ["iconTapAnimation"],
@@ -1091,7 +1093,7 @@ const PART_READS: Readonly<Partial<Record<TileInspectorPart, (tile: WatchPageTil
   icon: (t) => {
     const s = watchTileIconSettings(t);
     const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
-    return [s.iconSize, s.iconShadow, map(t.stateIcons), map(t.stateColors)];
+    return [watchTileIconPhotoId(t), s.iconSize, s.iconShadow, map(t.stateIcons), map(t.stateColors)];
   },
   glow: (t) => encodeOneLookGlyphGlow(watchTileIconGlow(t)),
   whenOff: (t) => {
@@ -1107,8 +1109,8 @@ const PART_READS: Readonly<Partial<Record<TileInspectorPart, (tile: WatchPageTil
  * A whole section reads as its card's changed dot does
  * (`watchTileSectionChanged`); Size as the page editor says (`sizeChanged`).
  * Of Icon and color's parts, Color counts only away from the kind's color
- * (what Default writes), Icon for an icon away from the kind's or a size,
- * shadow, state icon or state color of its own, and Glow, When it is off and
+ * (what Default writes), Icon for an icon away from the kind's or a photo,
+ * size, shadow, state icon or state color of its own, and Glow, When it is off and
  * Tap animation for a stored key that reads other than its absence. The
  * Arrangement counts while one is stored.
  */
@@ -1210,8 +1212,9 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
     case "color":
       return renderTileColor(host, kindDefaults(host).color);
     case "icon":
-      // State icons and colors are per state of one entity: one tile's.
-      return html`${renderIconGlyph(host)}${host.domainStyle === true ? nothing : host.picked !== undefined ? renderStateIconsOff(host) : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+      // The Photo row leads (a rule's style holds no photo); state icons and
+      // colors are per state of one entity: one tile's.
+      return html`${host.domainStyle === true ? nothing : renderIconPhoto(host)}${renderIconGlyph(host)}${host.domainStyle === true ? nothing : host.picked !== undefined ? renderStateIconsOff(host) : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
     case "glow":
       return renderGlowPart(host);
     case "whenOff":
@@ -1300,12 +1303,12 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
 // ── the inspector's head ─────────────────────────────────────────────────
 
 /** The look keys Reset tile removes beside the styling tasks' own resets:
- * the icon's size, shadow, glow, dimming, animations and per state icons
- * and colors, the label's size, weight, design, shadow and color, and the
+ * the icon's photo, size, shadow, glow, dimming, animations and per state
+ * icons and colors, the label's size, weight, design, shadow and color, and the
  * arrangement. The name, whether it shows, the size, the tap and Show tile
  * stay. */
 const RESET_LOOK_KEYS: readonly string[] = [
-  "iconSizeOverride", "iconShadow", "iconGlow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors",
+  "iconPhotoId", "iconSizeOverride", "iconShadow", "iconGlow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors",
   "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex", "arrange",
 ];
 
@@ -3425,6 +3428,40 @@ export const tileSettingsStyles = css`
   .ts-state-reset { width: 26px; height: 26px; }
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
+
+  /* The Icon part's Photo row (\`icon-photo-card.ts\`): the title in the
+     row's column, then light choices as the picture choices draw them, each
+     photo fitted whole on a faint ground so a cut-out's clear edge reads. */
+  .ts-ph { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+  .field.ts-ph-field { align-items: start; }
+  .field.ts-ph-field > span:first-child { padding-top: 8px; }
+  .ts-ph-group { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding: 2px 0; }
+  .ts-ph-cell { position: relative; display: flex; min-width: 0; }
+  .ts-ph-opt { width: 64px; }
+  .ts-ph-opt .pc-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ts-ph-pic {
+    display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; overflow: hidden;
+    background: color-mix(in srgb, var(--wa-ink) 7%, transparent);
+  }
+  .ts-ph-pic > img { display: block; max-width: 34px; max-height: 34px; object-fit: contain; }
+  /* None: the ground crossed by one faint line. */
+  .ts-ph-none { background: linear-gradient(135deg, transparent calc(50% - .5px), color-mix(in srgb, var(--wa-ink) 28%, transparent) 50%, transparent calc(50% + .5px)), color-mix(in srgb, var(--wa-ink) 4%, transparent); }
+  .ts-ph-gone { font-size: 9px; color: var(--wa-muted); }
+  .ts-ph-del {
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
+    background: var(--wa-card); color: var(--wa-ink); font-size: 13px; line-height: 18px; cursor: pointer;
+    box-shadow: 0 0 0 1px var(--wa-line-strong); opacity: 0;
+  }
+  .ts-ph-cell:hover .ts-ph-del, .ts-ph-del:focus-visible { opacity: 1; }
+  .ts-ph-del:hover:not(:disabled) { color: var(--error-color, #e5484d); }
+  @media (hover: none) { .ts-ph-del { opacity: 1; } }
+  .ts-ph-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0 6px; font-size: 12px; }
+  .ts-ph-ask > span { flex: 1 1 100%; }
+  .ts-ph-add { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+  .ts-ph-add.off { opacity: .55; cursor: default; }
+  /* The file input is the label's own: hidden, the label opens it. */
+  .ts-ph-add > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .ts-ph-add:focus-within { box-shadow: var(--wa-ring); }
 
   /* The Arrangement section (\`arrange-card.ts\`): in Free, the large live
      tile on a black well as wide as the section, then the rows. */

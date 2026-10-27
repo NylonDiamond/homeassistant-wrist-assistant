@@ -591,6 +591,29 @@ export function watchTileArrange(tile: WatchPageTile): TileArrange | undefined {
   return normalizeTileArrange(tile.arrange);
 }
 
+/** The tile's icon photo id (`iconPhotoId`), or undefined for none (an
+ * empty or a non string value is none). */
+export function watchTileIconPhotoId(tile: WatchPageTile): string | undefined {
+  const id = tile.iconPhotoId;
+  return typeof id === "string" && id.trim() !== "" ? id : undefined;
+}
+
+/** Set the tile's icon photo, upper cased as the phone writes ids, or
+ * remove the key for none. The tile keeps its icon either way: a device
+ * draws it until the photo is in, and an older app draws only it. */
+export function setWatchTileIconPhoto(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  id: string | undefined,
+): WatchPagesDocument {
+  const value = id === undefined || id.trim() === "" ? undefined : id.trim().toUpperCase();
+  return setKey(document, pageId, tileId, "iconPhotoId", (tile) => {
+    if (value === undefined) return Object.hasOwn(tile, "iconPhotoId") ? REMOVE : undefined;
+    return value;
+  });
+}
+
 /** The Arrangement written sparsely (`encodeTileArrange`): only the parts
  * with a change, each with only its own keys; the key removed when nothing
  * is left (Default). Writing what is stored already changes nothing. */

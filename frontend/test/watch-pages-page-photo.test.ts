@@ -12,6 +12,7 @@ import {
   PAGE_PHOTO_UNREADABLE_TEXT,
   isBuiltInPagePhoto,
   pagePhotoIdsInUse,
+  pagePhotoKind,
   pagePhotoRefusalText,
   pagePhotoSize,
   samePagePhotoId,
@@ -19,7 +20,7 @@ import {
   watchPagePhoto,
   watchPagePhotoStyle,
 } from "../src/watch-pages/page-photo.js";
-import { PagePhotoError, PagePhotoStore, base64OfBytes, forgetPagePhotos } from "../src/watch-pages/page-photo-store.js";
+import { PagePhotoError, PagePhotoStore, base64OfBytes, forgetPagePhotos, pagePhotoContentType, pagePhotoUrl } from "../src/watch-pages/page-photo-store.js";
 import { watchScreenBackground, watchScreenBackgroundLayers, watchScreenLayers } from "../src/watch-pages/preview.js";
 
 const ID = "6F1C2D3E-4A5B-4C6D-8E7F-0123456789AB";
@@ -59,6 +60,24 @@ describe("the photo as the watch reads it", () => {
     expect(samePagePhotoId(undefined, ID)).toBe(false);
     expect([...pagePhotoIdsInUse([page({ backgroundImageId: ID.toLowerCase() }), page(), page({ backgroundImageId: "preset_sand" })])])
       .toEqual([ID, "PRESET_SAND"]);
+  });
+
+  it("counts a tile's icon photo as in use, as the store does", () => {
+    const icon = "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D";
+    const pages = [
+      page({ items: [{ id: "T1", entityId: "light.lamp", iconPhotoId: icon.toLowerCase() }, { id: "T2", entityId: "fan.desk", iconPhotoId: "" }, null, "x"] }),
+      page({ backgroundImageId: ID, items: [{ id: "T3", entityId: "switch.kettle", iconPhotoId: ID }] }),
+      page({ items: "not a list" }),
+    ];
+    expect([...pagePhotoIdsInUse(pages)].sort()).toEqual([icon, ID].sort());
+    expect(pagePhotoIdsInUse(undefined).size).toBe(0);
+  });
+
+  it("reads a listed photo's kind, a background when it names none", () => {
+    expect(pagePhotoKind({ kind: "icon" })).toBe("icon");
+    expect(pagePhotoKind({ kind: "background" })).toBe("background");
+    expect(pagePhotoKind({})).toBe("background");
+    expect(pagePhotoKind({ kind: "poster" })).toBe("background");
   });
 });
 
@@ -138,7 +157,9 @@ describe("an upload's size", () => {
 
 describe("refusals in words", () => {
   it("names each code", () => {
-    expect(pagePhotoRefusalText({ code: "in_use" })).toBe("A page still uses that photo.");
+    expect(pagePhotoRefusalText({ code: "in_use" })).toBe("A page or a tile still uses that photo.");
+    // An integration before tile photos meets an icon photo's keys.
+    expect(pagePhotoRefusalText({ code: "invalid_format" })).toContain("cannot keep photo icons");
     expect(pagePhotoRefusalText({ code: "full" })).toContain("500");
     expect(pagePhotoRefusalText(new Error("x"))).toContain("Try again");
   });
@@ -252,9 +273,95 @@ describe("the photo store", () => {
     await store.refreshList();
     inUse = true;
     expect(await store.remove(ID)).toBe(false);
-    expect(store.error).toBe("A page still uses that photo.");
+    expect(store.error).toBe("A page or a tile still uses that photo.");
     inUse = false;
     expect(await store.remove(ID)).toBe(true);
     expect(sent.some((m) => m.type === "wrist_assistant/page_images/delete" && m.image_id === ID)).toBe(true);
+  });
+});
+
+describe("tile photos in the store", () => {
+  const ICON = "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D";
+
+  it("names a photo's content type, JPEG unless it says PNG", () => {
+    expect(pagePhotoContentType("image/png")).toBe("image/png");
+    expect(pagePhotoContentType("image/jpeg")).toBe("image/jpeg");
+    expect(pagePhotoContentType(undefined)).toBe("image/jpeg");
+    expect(pagePhotoContentType("image/gif")).toBe("image/jpeg");
+  });
+
+  it("makes a URL of the photo's own type", async () => {
+    const png = pagePhotoUrl("iVBORw0KGgo=", "image/png");
+    const jpeg = pagePhotoUrl("/9j/", undefined);
+    if (png.startsWith("data:")) {
+      expect(png).toBe("data:image/png;base64,iVBORw0KGgo=");
+      expect(jpeg).toBe("data:image/jpeg;base64,/9j/");
+    } else {
+      // A blob URL: the blob carries the type.
+      const blob = await (await fetch(png)).blob();
+      expect(blob.type).toBe("image/png");
+    }
+  });
+
+  it("hands the URL maker a PNG's content type from the reply", async () => {
+    const { hass } = fakeHass((m) => ({ image_id: m.image_id, content_type: m.image_id === ICON ? "image/png" : "image/jpeg", data: "QQ==" }));
+    const made: string[] = [];
+    const store = new PagePhotoStore(() => hass, () => {}, { makeUrl: (b, type) => { made.push(type); return `${type}:${b}`; } });
+    store.url(ICON);
+    store.url(ID);
+    await flush();
+    expect(store.url(ICON)).toBe("image/png:QQ==");
+    expect(store.url(ID)).toBe("image/jpeg:QQ==");
+    // An older integration names no type: JPEG.
+    forgetPagePhotos();
+    const old = fakeHass(() => ({ image_id: ID, data: "QQ==" }));
+    const before = new PagePhotoStore(() => old.hass, () => {}, { makeUrl: (b, type) => `${type}:${b}` });
+    before.url(ID);
+    await flush();
+    expect(before.url(ID)).toBe("image/jpeg:QQ==");
+  });
+
+  it("lists each photo's kind, label and entity, an old entry as a background", async () => {
+    const { hass } = fakeHass(() => ({
+      presets: [],
+      images: [
+        { id: ICON, width: 300, height: 200, bytes: 9, added_at: "", used_by: [], format: "png", kind: "icon", label: "Lamp", entity_id: "light.lamp" },
+        { id: ID, width: 512, height: 384, bytes: 9, added_at: "", used_by: [] },
+      ],
+    }));
+    const store = new PagePhotoStore(() => hass, () => {});
+    await store.refreshList();
+    expect(store.photosOf("icon").map((i) => [i.id, i.label, i.entity_id, i.format])).toEqual([[ICON, "Lamp", "light.lamp", "png"]]);
+    expect(store.photosOf("background").map((i) => i.id)).toEqual([ID]);
+    expect(store.size(ICON.toLowerCase())).toEqual({ width: 300, height: 200 });
+    expect(store.size("preset_waves")).toBeUndefined();
+  });
+
+  it("uploads an icon photo as a PNG of kind icon, with the tile's name and entity", async () => {
+    const { hass, sent } = fakeHass((m) => {
+      if (m.type === "wrist_assistant/page_images/upload") return { image_id: ICON, width: 300, height: 200, bytes: 3 };
+      return { presets: [], images: [] };
+    });
+    const store = new PagePhotoStore(() => hass, () => {}, {
+      makeUrl: (b, type) => `${type}:${b}`,
+      encodeFile: async () => { throw new Error("not the background's encoder"); },
+      encodeIcon: async () => "UE5H",
+    });
+    const long = "A lamp with a name far longer than the store keeps beside a photo, sixty at most";
+    const id = await store.uploadIcon(new Blob(["x"]), { label: `  ${long}  `, entityId: "light.lamp" });
+    expect(id).toBe(ICON);
+    expect(sent[0]).toEqual({ type: "wrist_assistant/page_images/upload", data: "UE5H", kind: "icon", label: long.slice(0, 60), entity_id: "light.lamp" });
+    expect(store.url(ICON)).toBe("image/png:UE5H");
+    // No name, no entity: only the kind.
+    forgetPagePhotos();
+    await store.uploadIcon(new Blob(["x"]), { label: " " });
+    expect(sent.filter((m) => m.type === "wrist_assistant/page_images/upload")[1]).toEqual({ type: "wrist_assistant/page_images/upload", data: "UE5H", kind: "icon" });
+  });
+
+  it("an integration before tile photos refuses the keys, which says to update it", async () => {
+    const { hass } = fakeHass(() => { throw { code: "invalid_format", message: "extra keys not allowed" }; });
+    const store = new PagePhotoStore(() => hass, () => {}, { encodeIcon: async () => "UE5H" });
+    expect(await store.uploadIcon(new Blob(["x"]), { label: "Lamp" })).toBeUndefined();
+    expect(store.error).toContain("Update it first");
   });
 });

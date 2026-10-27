@@ -2,22 +2,28 @@
 // 6e): the list of built-in photos and the library, each photo's bytes
 // fetched once by id and kept in memory for the session, an upload that
 // scales and compresses the picked file in the browser first, and a delete.
+// The library holds the tiles' icon photos too (`kind` icon, PNG with its
+// clear background kept): their upload tidies the picture first
+// (`icon-photo-tidy.ts`).
 //
 // Home Assistant's own store (`page_images_store.py`) makes the ids, so
 // nothing here needs `crypto.randomUUID`, which a plain http page lacks.
 //
-// Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 6".
+// Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 6", and
+// docs/photo_tiles_plan_2026-10.md.
 
 import {
   type HassLike,
   type PageImageEntry,
   type PageImagePreset,
+  type PageImageUploadInfo,
   deletePageImage,
   fetchPageImage,
   listPageImages,
   uploadPageImage,
 } from "../ha-api.js";
-import { PAGE_PHOTO_UNREADABLE_TEXT, pagePhotoRefusalText, stepDownPagePhoto } from "./page-photo.js";
+import { iconPhotoCrop, stepDownIconPhoto, tidyIconPixels } from "./icon-photo-tidy.js";
+import { PAGE_PHOTO_UNREADABLE_TEXT, pagePhotoKind, pagePhotoRefusalText, samePagePhotoId, stepDownPagePhoto } from "./page-photo.js";
 
 /** Where a photo's bytes are: on the way, here, not in the store, or a read
  * that failed (tried again on the next list). */
@@ -54,17 +60,24 @@ export function forgetPagePhotos(): void {
   held.clear();
 }
 
-/** A JPEG in base64 as a URL a style can name: a blob URL where the browser
- * makes them (short, so a page's many thumbs carry no copy of the bytes),
- * else a data URL. */
-export function pagePhotoUrl(base64: string): string {
+/** The content types a photo comes in; anything else reads as JPEG, as
+ * every photo did before tile photos. */
+export function pagePhotoContentType(type: unknown): "image/jpeg" | "image/png" {
+  return type === "image/png" ? "image/png" : "image/jpeg";
+}
+
+/** A photo in base64 as a URL a style can name, of its content type (JPEG
+ * unless it says PNG): a blob URL where the browser makes them (short, so a
+ * page's many thumbs carry no copy of the bytes), else a data URL. */
+export function pagePhotoUrl(base64: string, contentType?: string): string {
+  const type = pagePhotoContentType(contentType);
   if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function" && typeof Blob !== "undefined" && typeof atob === "function") {
     const text = atob(base64);
     const bytes = new Uint8Array(text.length);
     for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
-    return URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    return URL.createObjectURL(new Blob([bytes], { type }));
   }
-  return `data:image/jpeg;base64,${base64}`;
+  return `data:${type};base64,${base64}`;
 }
 
 /** Bytes as base64, a chunk at a time so a large photo never overflows the
@@ -114,6 +127,61 @@ export async function encodePagePhotoFile(file: Blob): Promise<string> {
   }
 }
 
+/** The longest side the tidy reads a picked picture at. The stored photo
+ * is 384 px at most, so a phone camera's 12 megapixels are drawn smaller
+ * first; the means and the bounds come out the same. */
+const ICON_WORK_SIDE = 1024;
+
+/**
+ * The picked file as a tile's icon photo, a PNG in base64 with its clear
+ * background kept: decoded by the browser, drawn at its longest side 1024
+ * px or less, tidied (`tidyIconPixels`), cropped to what is drawn with its
+ * padding (`iconPhotoCrop`), then scaled to 384 px at most and stepped down
+ * by fifths until it is 256 KiB or less (`stepDownIconPhoto`). A file the
+ * browser cannot decode throws a `PagePhotoError` that says so.
+ */
+export async function encodeIconPhotoFile(file: Blob): Promise<string> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new PagePhotoError(PAGE_PHOTO_UNREADABLE_TEXT);
+  }
+  try {
+    const k = Math.min(1, ICON_WORK_SIDE / Math.max(1, bitmap.width, bitmap.height));
+    const work = document.createElement("canvas");
+    work.width = Math.max(1, Math.round(bitmap.width * k));
+    work.height = Math.max(1, Math.round(bitmap.height * k));
+    const wc = work.getContext("2d", { willReadFrequently: true });
+    if (wc === null) throw new PagePhotoError(PAGE_PHOTO_UNREADABLE_TEXT);
+    wc.imageSmoothingEnabled = true;
+    wc.imageSmoothingQuality = "high";
+    wc.drawImage(bitmap, 0, 0, work.width, work.height);
+    const pixels = wc.getImageData(0, 0, work.width, work.height);
+    tidyIconPixels(pixels.data);
+    wc.putImageData(pixels, 0, 0);
+    const crop = iconPhotoCrop(pixels.data, work.width, work.height);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (context === null) throw new PagePhotoError(PAGE_PHOTO_UNREADABLE_TEXT);
+    const encode = (width: number, height: number) => {
+      canvas.width = width;
+      canvas.height = height;
+      context.clearRect(0, 0, width, height);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      // The crop box may reach past the picture: what lies there stays clear.
+      context.drawImage(work, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
+      return new Promise<Blob | undefined>((resolve) => canvas.toBlob((blob) => resolve(blob ?? undefined), "image/png"));
+    };
+    const out = await stepDownIconPhoto(crop.width, crop.height, encode);
+    if (out === undefined) throw new PagePhotoError("That photo could not be made small enough.");
+    return base64OfBytes(new Uint8Array(await out.result.arrayBuffer()));
+  } finally {
+    bitmap.close();
+  }
+}
+
 /** What the store's list holds: the built-in photos in the phone's order,
  * then the library, newest first. */
 export interface PagePhotoList {
@@ -126,12 +194,25 @@ export interface PagePhotoList {
 export type PagePhotoListState = "idle" | "loading" | "ready" | "none" | "failed";
 
 export interface PagePhotoStoreOptions {
-  /** Base64 JPEG to a URL; `pagePhotoUrl` by default. */
-  makeUrl?: (base64: string) => string;
+  /** Base64 bytes of a content type to a URL; `pagePhotoUrl` by default. */
+  makeUrl?: (base64: string, contentType: string) => string;
   /** A picked file to the base64 JPEG uploaded; `encodePagePhotoFile` by
    * default. */
   encodeFile?: (file: Blob) => Promise<string>;
+  /** A picked file to the base64 PNG uploaded as an icon photo;
+   * `encodeIconPhotoFile` by default. */
+  encodeIcon?: (file: Blob) => Promise<string>;
 }
+
+/** What an icon photo's upload says it is for: the tile's name and its
+ * entity. */
+export interface IconPhotoInfo {
+  label?: string;
+  entityId?: string;
+}
+
+/** The longest name the store keeps with a photo. */
+const MAX_LABEL = 60;
 
 /**
  * One editor's way to the photos. Reads go through the module's memory, so
@@ -149,8 +230,9 @@ export class PagePhotoStore {
   error: string | undefined;
   private listSeq = 0;
   private readonly asked = new Set<string>();
-  private readonly makeUrl: (base64: string) => string;
+  private readonly makeUrl: (base64: string, contentType: string) => string;
   private readonly encodeFile: (file: Blob) => Promise<string>;
+  private readonly encodeIcon: (file: Blob) => Promise<string>;
 
   constructor(
     private readonly hass: () => HassLike | undefined,
@@ -159,6 +241,20 @@ export class PagePhotoStore {
   ) {
     this.makeUrl = options.makeUrl ?? pagePhotoUrl;
     this.encodeFile = options.encodeFile ?? encodePagePhotoFile;
+    this.encodeIcon = options.encodeIcon ?? encodeIconPhotoFile;
+  }
+
+  /** The library's photos of one kind, in the list's order (newest first). A
+   * photo listed with no kind is a background. */
+  photosOf(kind: "background" | "icon"): PageImageEntry[] {
+    return (this.list?.images ?? []).filter((image) => pagePhotoKind(image) === kind);
+  }
+
+  /** A listed photo's size in pixels, or undefined while the list does not
+   * have it. */
+  size(id: string): { width: number; height: number } | undefined {
+    const image = this.list?.images.find((i) => samePagePhotoId(i.id, id));
+    return image !== undefined && image.width > 0 && image.height > 0 ? { width: image.width, height: image.height } : undefined;
   }
 
   /** Read the list again. A photo that was missing or failed is asked for
@@ -212,7 +308,7 @@ export class PagePhotoStore {
             entry.status = "failed";
             return;
           }
-          entry.url = this.makeUrl(reply.data);
+          entry.url = this.makeUrl(reply.data, pagePhotoContentType(reply.content_type));
           entry.status = "ready";
         },
         (error: unknown) => {
@@ -240,17 +336,38 @@ export class PagePhotoStore {
    * bytes are kept, so the photo draws without a read.
    */
   async upload(file: Blob): Promise<string | undefined> {
+    return this.send(file, this.encodeFile, "image/jpeg", {});
+  }
+
+  /**
+   * Make the picked file a tile's icon photo (`encodeIconPhotoFile`: the
+   * tidy, the crop, a PNG with its clear background) and store it as kind
+   * icon, with the tile's name (cut to 60 characters) and its entity when
+   * given. The id, or undefined after a refusal, whose words are in
+   * `error`; an integration before tile photos refuses the new keys, which
+   * says to update it.
+   */
+  async uploadIcon(file: Blob, info: IconPhotoInfo = {}): Promise<string | undefined> {
+    const label = info.label?.trim().slice(0, MAX_LABEL);
+    return this.send(file, this.encodeIcon, "image/png", {
+      kind: "icon",
+      ...(label === undefined || label === "" ? {} : { label }),
+      ...(info.entityId === undefined || info.entityId === "" ? {} : { entity_id: info.entityId }),
+    });
+  }
+
+  private async send(file: Blob, encode: (file: Blob) => Promise<string>, contentType: string, info: PageImageUploadInfo): Promise<string | undefined> {
     const hass = this.hass();
     if (hass === undefined || this.uploading) return undefined;
     this.uploading = true;
     this.error = undefined;
     this.changed();
     try {
-      const data = await this.encodeFile(file);
-      const reply = await uploadPageImage(hass, data);
+      const data = await encode(file);
+      const reply = await uploadPageImage(hass, data, info);
       const id = reply.image_id;
       if (typeof id !== "string" || id === "") throw new PagePhotoError("Home Assistant did not take that. Try again.");
-      if (held.get(id.toUpperCase())?.status !== "ready") held.set(id.toUpperCase(), { status: "ready", url: this.makeUrl(data) });
+      if (held.get(id.toUpperCase())?.status !== "ready") held.set(id.toUpperCase(), { status: "ready", url: this.makeUrl(data, contentType) });
       void this.refreshList();
       return id;
     } catch (error) {

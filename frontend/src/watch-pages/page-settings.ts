@@ -518,8 +518,8 @@ async function uploadPhoto(sh: TileSettingsHost, photos: PagePhotoStore, input: 
 
 /**
  * The Image decoration: the built-in photos in the phone's order, then
- * "Your photos" (the library, newest first, a delete button on each photo
- * no page uses), then "Upload a photo". With a photo set: Opacity, Blur, Fit
+ * "Your photos" (the library's backgrounds, newest first, a delete button
+ * on each photo no page uses), then "Upload a photo". With a photo set: Opacity, Blur, Fit
  * and Remove, with the phone's ranges and defaults; a photo the store does
  * not have says so and can still be removed.
  */
@@ -528,6 +528,8 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
   const photos = sh.photos;
   photos?.ensureList();
   const list = photos?.list;
+  // A tile's icon photos are the Icon setting's, not a page's.
+  const backgrounds = photos?.photosOf("background") ?? [];
   const inUse = pagePhotoIdsInUse(sh.document.pages);
   const asked = sh.uiState.get(deleteAskKey(sh)) as string | undefined;
   const askedImage = asked === undefined ? undefined : list?.images.find((image) => samePagePhotoId(image.id, asked));
@@ -544,9 +546,9 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
         ${list.presets.map((p) => photoButton(sh, photos, p.id, p.name, p.name, false))}
       </div>
       <div class="ts-sub-h"><span>Your photos</span></div>
-      ${list.images.length === 0 ? html`<div class="hint keep ts-under">None yet.</div>` : html`
+      ${backgrounds.length === 0 ? html`<div class="hint keep ts-under">None yet.</div>` : html`
         <div class="ps-photos" role="radiogroup" aria-label="Your photos">
-          ${list.images.map((image) => photoButton(sh, photos, image.id, "Photo", addedWords(image.added_at),
+          ${backgrounds.map((image) => photoButton(sh, photos, image.id, "Photo", addedWords(image.added_at),
             image.used_by.length === 0 && !inUse.has(image.id.toUpperCase())))}
         </div>`}
       ${askedImage !== undefined ? html`<div class="ps-ask" role="alert">

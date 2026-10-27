@@ -896,6 +896,8 @@ export class WaPageEditor extends LitElement {
   private readonly photos = new PagePhotoStore(() => this.hass, () => this.requestUpdate());
   /** A photo's URL for the pictures, once its bytes are in. */
   private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
+  /** A listed photo's size, for fitting a tile's icon photo. */
+  private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
   /** The modules' view state (`WatchPagesEditorHost.uiState`). */
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */
@@ -3601,7 +3603,7 @@ export class WaPageEditor extends LitElement {
     const phone = this.phoneLayoutOf(undefined);
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
-      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl,
+      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize,
       appVersion: this.previewAppVersion(undefined),
       ...(phone === undefined ? {} : { phone }),
     };
@@ -3841,6 +3843,9 @@ export class WaPageEditor extends LitElement {
       // being tried in the Live strip. A smart page is always live.
       stateMode: this.liveStates ? "live" : "all-on",
       testedIds: this.testedIds(),
+      // The tiles' icon photos (the page's own photo is drawn apart, below).
+      photo: this.photoUrl,
+      photoSize: this.photoSize,
     };
     // An iPhone page's camera tiles play live when the Live video card's
     // switch says so (off by default, kept in this browser).

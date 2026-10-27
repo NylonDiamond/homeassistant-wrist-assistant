@@ -48,6 +48,7 @@ import {
 } from "../library/model.js";
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
+import { PagePhotoStore } from "./page-photo-store.js";
 import { type BoardCell, type BoardColumn, type BoardDrag, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
   SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
@@ -283,6 +284,15 @@ export class WaAllPages extends LitElement {
 
   /** The library, shared with every other tab and editor. */
   private readonly lib = new LibraryController(this, () => this.hassNow, () => this.devices.map((d) => d.ownerId));
+
+  /** The tiles' icon photos for the page pictures, each fetched once
+   * (`page-photo-store.ts`); `photoTick` moves as they come in. */
+  private photoTick = 0;
+  private readonly photos = new PagePhotoStore(() => this.hassNow, () => {
+    this.photoTick += 1;
+    this.requestUpdate();
+  });
+  private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
 
   /** Home Assistant. A new object on every state change: the pictures are
    * drawn again at most every couple of seconds for it. */
@@ -1128,6 +1138,8 @@ export class WaAllPages extends LitElement {
       ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       ...(appVersion === undefined ? {} : { appVersion }),
+      photo: this.photoUrl,
+      photoTick: this.photoTick,
     });
   }
 

@@ -155,8 +155,13 @@ export interface WatchPagePreviewInput {
   behavior?: Readonly<Record<string, unknown>>;
   /** A page photo's URL by its id once its bytes are in, else undefined
    * (the page draws without it, as the watch does until it has the photo).
-   * Without one, no photo is drawn. */
+   * Without one, no photo is drawn. A tile's icon photo (`iconPhotoId`)
+   * comes the same way. */
   photo?: (id: string) => string | undefined;
+  /** A photo's size in pixels once the list has it, so a tile's icon photo
+   * is fitted and its corners rounded exactly; without it the photo is
+   * fitted in its square box by the browser. */
+  photoSize?: (id: string) => { width: number; height: number } | undefined;
   /** The page is an iPhone's: `screen` is its pages area, and the picture
    * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
    * look the layout carries (`phonePagesLayout` with `look`). */
@@ -4085,6 +4090,9 @@ export const watchPagePreviewStyles = css`
   .ol-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
   .ol-disc, .ol-halo, .ol-acc { position: absolute; display: block; border-radius: 50%; }
   .ol-photo { position: absolute; display: block; box-sizing: border-box; border-radius: 50%; object-fit: cover; background: #000; }
+  /* A tile's icon photo: a cut-out on nothing, fitted whole, its corners
+     rounded by the box (render.ts, cutoutLayer). */
+  .ol-cutout { position: absolute; display: block; box-sizing: border-box; object-fit: contain; pointer-events: none; }
   .ol-glyph { position: absolute; display: flex; align-items: center; justify-content: center; }
   .ol-glyph > svg { display: block; flex: none; }
   .ol-dot-glyph { display: block; border-radius: 50%; opacity: 0.7; }

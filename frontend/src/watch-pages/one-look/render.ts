@@ -156,6 +156,10 @@ export interface OneLookPreviewModel {
   baseIcon: string;
   /** A person's photo in the glyph's place. */
   photo?: string;
+  /** The tile's icon photo (`iconPhotoId`) in the glyph's place, once its
+   * bytes are in: its URL, and its width over its height when the list
+   * has its size. It wins over a person's photo. */
+  cutout?: OneLookCutout;
   /** What fills the tile behind its content: its own fill, a camera's
    * picture, or album art. */
   picture: "none" | "camera" | "artwork";
@@ -179,6 +183,52 @@ export interface OneLookPreviewModel {
    * where its listed parts are drawn, at what size, and which are hidden.
    * Undefined for Default, and in every other layout, which ignores it. */
   arrange?: OneLookArranged;
+}
+
+/** A tile's icon photo as One Look draws it. */
+export interface OneLookCutout {
+  url: string;
+  /** Width over height; undefined until the photo list has its size. */
+  aspect?: number;
+}
+
+/** A tile's icon photo once its bytes are in, from the picture's photos,
+ * or undefined: no `iconPhotoId`, no photos to read from, or the bytes not
+ * in yet (the tile draws its icon meanwhile, as the devices do). */
+export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize">): OneLookCutout | undefined {
+  const id = tile.iconPhotoId;
+  if (typeof id !== "string" || id.trim() === "" || input.photo === undefined) return undefined;
+  const url = input.photo(id);
+  if (url === undefined || url === "") return undefined;
+  const size = input.photoSize?.(id);
+  return size !== undefined && size.width > 0 && size.height > 0 ? { url, aspect: size.width / size.height } : { url };
+}
+
+/** The icon photo's box against the disc's diameter, and its corner
+ * radius against the box's side (photo tiles plan, "Drawing"). */
+export const ONE_LOOK_CUTOUT_BOX = 1.35;
+export const ONE_LOOK_CUTOUT_CORNER = 0.22;
+
+/** The CSS filter of an icon photo that is not lit (and of every one wrist
+ * down): grayscale 85%, brightness 62%, as the apps' `.saturation(0.15)`
+ * and `.brightness(-0.3)`. */
+export const ONE_LOOK_CUTOUT_OFF_FILTER = "grayscale(.85) brightness(.62)";
+
+/**
+ * Where an icon photo is drawn for a disc `rect`: a square box 1.35 times
+ * the disc's diameter on the disc's centre, the photo fitted inside it with
+ * its aspect kept (the whole box while the aspect is unknown), and the
+ * corner radius 22% of the box's side.
+ */
+export function oneLookCutoutRect(rect: OneLookRect, aspect: number | undefined): { box: OneLookRect; photo: OneLookRect; radius: number } {
+  const side = rect.width * ONE_LOOK_CUTOUT_BOX;
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const box = { x: cx - side / 2, y: cy - side / 2, width: side, height: side };
+  const a = aspect !== undefined && Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  const w = a >= 1 ? side : side * a;
+  const h = a >= 1 ? side / a : side;
+  return { box, photo: { x: cx - w / 2, y: cy - h / 2, width: w, height: h }, radius: side * ONE_LOOK_CUTOUT_CORNER };
 }
 
 /** A tile's Bar settings as One Look reads them (`OneLookBar`). */
@@ -458,7 +508,10 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
 
   const { base, drawn } = symbolOf(f, kind, ks, entity);
   const icon = drawn === "" ? "" : ks.isUnavailable ? slashedSymbol(input.icons, drawn) : drawn;
-  const photo = ks.placeholder ? undefined : f.look?.photo;
+  // The tile's icon photo wins over a person's photo; neither on a
+  // placeholder.
+  const cutout = ks.placeholder ? undefined : oneLookCutoutOf(tile, input);
+  const photo = ks.placeholder || cutout !== undefined ? undefined : f.look?.photo;
 
   let picture: OneLookPreviewModel["picture"] = "none";
   let pictureUrl: string | undefined;
@@ -496,7 +549,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     rowSpan,
     name,
     state: ks.state,
-    hasIcon: base !== "" || photo !== undefined,
+    hasIcon: base !== "" || photo !== undefined || cutout !== undefined,
     accessory: ks.accessory,
     isChart,
     ...(ks.bigValue === undefined ? {} : { bigValue: ks.bigValue }),
@@ -536,6 +589,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   return {
     device, pageLook, kind: ks, icon, baseIcon: base,
     ...(photo === undefined ? {} : { photo }),
+    ...(cutout === undefined ? {} : { cutout }),
     picture, ...(pictureUrl === undefined ? {} : { pictureUrl }),
     name, ...(chart === undefined ? {} : { chart }),
     style, bar, ...(barValue === undefined ? {} : { barValue }),
@@ -694,10 +748,41 @@ function barLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeo
   </span>`;
 }
 
+/**
+ * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
+ * no disc fill, the photo fitted in a box 1.35 times the disc on its centre,
+ * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
+ * halo behind it as a glyph has it, the pearl disc's white glow in the disc
+ * layouts, and no filter. Not lit, and wrist down: no halo, grayscale 85%
+ * and brightness 62%.
+ */
+function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: OneLookCutout, s: number): TemplateResult {
+  const { palette, device } = model;
+  const rect = layout.discRect;
+  const lit = palette.isLit && !palette.aod;
+  let back: TemplateResult | typeof nothing = nothing;
+  if (lit && layout.drawsDisc) {
+    if (palette.pearlGlow) back = html`<span class="ol-disc ol-cutout-glow" style=${`${rectCss(rect, s)};box-shadow:0 0 ${r2(oneLookMetrics(device).pearlGlow * s)}px rgba(255, 255, 255, 0.5)`}></span>`;
+  } else if (lit) {
+    const halo = oneLookGlyphHalo(palette, { centred: oneLookCentredGlyph(device), picture: false, hasIcon: true }, model.style.glow);
+    if (halo !== undefined) {
+      const d = layout.glyphSize * halo.share;
+      const [r, g, b] = halo.rgb;
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      back = html`<span class="ol-halo" style=${`${rectCss({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, s)};background:radial-gradient(circle closest-side, rgba(${r}, ${g}, ${b}, ${Math.round(halo.opacity * 10000) / 10000}) 0%, rgba(${r}, ${g}, ${b}, 0) 100%)`}></span>`;
+    }
+  }
+  const { photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
+  const filter = lit ? "" : `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`;
+  return html`${back}<img class="ol-cutout" alt="" src=${cutout.url} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
+}
+
 /** The glyph's place: a disc behind it in the disc layouts, the soft halo
  * behind a bare glyph on a coloured tile, then the glyph or a person's
- * photo. Where the tile's Arrangement puts the icon, all three go together,
- * at its size. */
+ * photo; or the tile's icon photo by its own rules (`cutoutLayer`). Where
+ * the tile's Arrangement puts the icon, all of them go together, at its
+ * size. */
 function discLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: number): TemplateResult | typeof nothing {
   const { palette, device } = model;
   const placed = model.arrange?.icon;
@@ -705,6 +790,7 @@ function discLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: 
   const layout = placed === undefined ? model.layout : { ...model.layout, discRect: placed.rect, glyphSize: model.layout.glyphSize * placed.scale };
   const rect = layout.discRect;
   if (!(rect.width > 0)) return nothing;
+  if (model.picture === "none" && model.cutout !== undefined) return cutoutLayer(model, layout, model.cutout, s);
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
   let back: TemplateResult | typeof nothing = nothing;

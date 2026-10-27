@@ -78,6 +78,11 @@ export interface PageRowPictureInput {
    * Look (`previewOneLook`); absent for a page drawn for no device, which
    * draws it. */
   appVersion?: string | null;
+  /** A tile's icon photo's URL by its id once its bytes are in
+   * (`PagePhotoStore.url`); without it the tiles draw their icons. */
+  photo?: (id: string) => string | undefined;
+  /** A new value draws again once more photos are in. */
+  photoTick?: number;
 }
 
 interface Kept {
@@ -107,7 +112,7 @@ function keptPicture(item: object, size: string, stamp: readonly unknown[], draw
 export function renderPageRowPicture(input: PageRowPictureInput): TemplateResult {
   const iphone = input.iphone === true;
   const width = input.width ?? (iphone ? ROW_PICTURE_PHONE_W : ROW_PICTURE_W);
-  const stamp = [input.states, input.icons, input.tick, input.pages];
+  const stamp = [input.states, input.icons, input.tick, input.pages, input.photoTick];
   const look = input.look ?? "iphone";
   const tiles = previewOneLook({ appVersion: input.appVersion }) === undefined ? "old" : "one";
   return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}:${tiles}`, stamp, () => drawPage(input, width, iphone, look));
@@ -129,6 +134,8 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.icons === undefined ? {} : { icons: input.icons }),
     ...(phone === undefined ? {} : { phone }),
     ...(input.appVersion === undefined ? {} : { appVersion: input.appVersion }),
+    // The tiles' icon photos; the page's own photo stays out of a row.
+    ...(input.photo === undefined ? {} : { photo: input.photo }),
   };
   const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.

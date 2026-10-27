@@ -12,6 +12,7 @@ import type { LibraryKind, MenuUnit } from "./library/client.js";
 import { MENU_UNIT_TITLES, holdsRecord, itemsFor, menuFor, sameId, type Library, type LibraryPick } from "./library/model.js";
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
+import { PagePhotoStore } from "./watch-pages/page-photo-store.js";
 import { libraryTicksStyles, renderTickAsk } from "./library/ticks.js";
 import type { IconProvider } from "./renderer.js";
 import { watchFrameStyles } from "./watch-frame.js";
@@ -78,6 +79,14 @@ export class WaHomeLineup extends LitElement {
   private seen?: ResizeObserver;
 
   private readonly lib = new LibraryController(this, () => this.hassNow, () => (this.ownerId === "" ? [] : [this.ownerId]));
+  /** The tiles' icon photos for the page pictures, each fetched once
+   * (`page-photo-store.ts`); `photoTick` moves as they come in. */
+  private photoTick = 0;
+  private readonly photos = new PagePhotoStore(() => this.hassNow, () => {
+    this.photoTick += 1;
+    this.requestUpdate();
+  });
+  private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
 
   get hass(): HassLike | undefined {
     return this.hassNow;
@@ -104,6 +113,8 @@ export class WaHomeLineup extends LitElement {
       ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
+      photo: this.photoUrl,
+      photoTick: this.photoTick,
       pageWidth: this.pageW,
       waitsForIphone: this.waitsForIphone,
       ...(this.appVersion === undefined ? {} : { appVersion: this.appVersion }),
@@ -391,6 +402,10 @@ export interface LineupDraw {
   hass?: HassLike;
   icons?: IconProvider;
   tick?: number;
+  /** A tile's icon photo's URL by its id once its bytes are in, and a
+   * value that moves as more come in. */
+  photo?: (id: string) => string | undefined;
+  photoTick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
   arrange?: LineupArrange;
@@ -434,6 +449,8 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       ...(draw.icons === undefined ? {} : { icons: draw.icons }),
       ...(draw.tick === undefined ? {} : { tick: draw.tick }),
       ...(draw.appVersion === undefined ? {} : { appVersion: draw.appVersion }),
+      ...(draw.photo === undefined ? {} : { photo: draw.photo }),
+      ...(draw.photoTick === undefined ? {} : { photoTick: draw.photoTick }),
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("pages", pick.id) },
   }));

@@ -109,6 +109,38 @@ export function arrangementUpdateNote(
   return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the Default arrangement.`;
 }
 
+/** First app version, on either device, that draws a tile's icon photo
+ * (`iconPhotoId`, app repo docs/photo_tiles_plan_2026-10.md). Not a gate: an
+ * older app ignores the key and draws the tile's icon, so the Photo rows stay
+ * usable and only carry a note. null until the app release that draws it is
+ * cut, as `MIN_VERSION_FOR_ARRANGEMENT` is. Set it at release. */
+export const MIN_VERSION_FOR_PHOTO_TILES: string | null = null;
+
+/** Whether an app at this version draws a tile's icon photo. Not yet
+ * reported reads as new enough, and so does every version while no minimum
+ * is set. */
+export function photoTilesFor(
+  appVersion: string | null | undefined,
+  minimum: string | null = MIN_VERSION_FOR_PHOTO_TILES,
+): boolean {
+  return oneLookAtVersion(appVersion, minimum);
+}
+
+/** The note the Icon setting's Photo rows show when devices on the page are
+ * too old to draw a photo, naming them: "Needs Wrist Assistant 3.2 on Chen
+ * Watch. Until then it draws the icon." (two: "on A and B ... they draw").
+ * Undefined for an empty list. */
+export function photoTilesUpdateNote(
+  deviceNames: readonly string[],
+  minimum: string | null = MIN_VERSION_FOR_PHOTO_TILES,
+): string | undefined {
+  const names = deviceNames.filter((n) => n.trim() !== "");
+  if (names.length === 0 || minimum === null) return undefined;
+  const version = versionForCopy(minimum);
+  const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the icon.`;
+}
+
 /** Whether every one of these devices draws One Look, from the versions they
  * reported: what a setting shared by all of them can be written for. No
  * device at all (a page on none yet) reads as an unreported one. */
