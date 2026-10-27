@@ -1,33 +1,47 @@
-"""The home's page background photos, kept by Home Assistant.
+"""The home's page photos, kept by Home Assistant.
 
-Step 4d batch 6 (``docs/pages_in_home_assistant_step4.md`` in the app repo).
+Step 4d batch 6 (``docs/pages_in_home_assistant_step4.md`` in the app repo),
+and photo tiles (``docs/photo_tiles_plan_2026-10.md`` there, "Contract").
 One library for the whole home, as with the HTTP actions: a page of any
 watch may name any photo, and any paired device may fetch one by id. The
-rules (ids, the JPEG check, what a sweep does) live in ``page_images.py``.
+rules (ids, the JPEG and PNG checks, what a sweep does) live in
+``page_images.py``.
 
-Two kinds of photo:
+Two kinds of photo by origin:
 
 * Custom photos, uploaded in the panel or handed over by a phone. Each has an
   entry in a small index in ``.storage/wrist_assistant.page_images`` (bytes,
-  width, height, sha256, ``added_at`` and ``unused_since``) and one JPEG file,
-  ``<id>.jpg``, in ``.storage/wrist_assistant_page_images`` beside it. So an
-  upload writes one file and a few hundred bytes of index, never every photo.
+  width, height, sha256, ``added_at``, ``unused_since``, ``format``,
+  ``kind``, ``label`` and ``entity_id``) and one file, ``<id>.jpg`` or
+  ``<id>.png`` by its format, in ``.storage/wrist_assistant_page_images``
+  beside it. So an upload writes one file and a few hundred bytes of index,
+  never every photo. An entry stored before photo tiles has no ``format``,
+  ``kind``, ``label`` or ``entity_id``, and reads as a JPEG background with
+  neither of the other two.
 * Built-in photos, the 15 the phone offers. Their pixels ship with the
   integration in ``page_image_presets/`` (the phone's asset files, as they are) with
   ``presets.json`` naming them in the phone's order. Read only: never in the
-  index, never swept, never deleted.
+  index, never swept, never deleted. All of them are JPEG backgrounds.
+
+A custom photo's ``kind`` says what it is for: ``background`` (a page's
+background) or ``icon`` (a cut out photo a tile shows in place of its icon).
+The kind only sets how long the sweep keeps the photo once nothing names it;
+either kind may be named in either place. ``label`` (the tile name the phone
+made it for) and ``entity_id`` (that tile's entity) help the panel offer it.
 
 A photo is in use while any owner's ``pages`` record names it as a page's
-``backgroundImageId``. The sweep runs at start and after every write of a
-``pages`` record, whoever made it (setup hangs :meth:`pages_changed` on the
-watch config store's listeners, which hear every accepted save, restore,
-forget and move). It marks photos that fell out of use, clears the mark on
-photos back in use, and deletes photos unused for more than seven days. The
-grace keeps an upload whose page save has not happened yet, and the panel's
-undo. The sweep also keeps every photo a revision in some owner's ``pages``
-history names, since the panel can restore that revision; once the last such
-revision is pushed out of the history the photo is marked and the same grace
-runs from then. Only a current page counts for ``used_by`` and for refusing a
+``backgroundImageId`` or a tile's ``iconPhotoId``. The sweep runs at start
+and after every write of a ``pages`` record, whoever made it (setup hangs
+:meth:`pages_changed` on the watch config store's listeners, which hear every
+accepted save, restore, forget and move). It marks photos that fell out of
+use, clears the mark on photos back in use, and deletes photos unused for
+more than seven days, or thirty for an icon photo. The grace keeps an upload
+whose page save has not happened yet, the panel's undo, and a photo the phone
+sent until someone puts it on a tile. The sweep also keeps every photo a
+revision in some owner's ``pages`` history names (a background or a tile's
+photo, read by the same rule), since the panel can restore that revision;
+once the last such revision is pushed out of the history the photo is marked
+and the same grace runs from then. Only a current page counts for ``used_by`` and for refusing a
 delete. When some owner's pages could not be read the sweep marks and deletes
 nothing, since those pages may name any photo.
 
@@ -59,11 +73,20 @@ from homeassistant.helpers.storage import Store
 
 from .const import PAGE_IMAGES_STORAGE_KEY, PAGE_IMAGES_STORAGE_VERSION
 from .page_images import (
+    EXTENSIONS,
+    FORMAT_JPEG,
+    KIND_BACKGROUND,
+    KIND_ICON,
+    KINDS,
     MAX_CUSTOM_IMAGES,
     MAX_IMAGE_BYTES,
     PageImageInvalid,
+    check_entity_id,
     check_id,
+    check_image,
     check_jpeg,
+    check_kind,
+    check_label,
     ids_in_pages,
     is_preset,
     normalize_id,
@@ -152,8 +175,33 @@ def decode_data(raw: Any) -> bytes:
         raise PageImagesInvalidError("data is not base64") from err
 
 
+def check_details(kind: Any, label: Any, entity_id: Any) -> tuple[str, str | None, str | None]:
+    """A photo's ``kind``, ``label`` and ``entity_id`` as an upload or a put
+    sends them, each optional, checked and as stored (see
+    :func:`page_images.check_kind` and its neighbours). Any bad one is
+    ``invalid``."""
+    try:
+        return check_kind(kind), check_label(label), check_entity_id(entity_id)
+    except PageImageInvalid as err:
+        raise PageImagesInvalidError(err.message) from err
+
+
+def _optional(check: Callable[[Any], str | None], raw: Any) -> str | None:
+    """A stored label or entity id as :func:`check_details` would keep it,
+    or None when it no longer passes: it only helps the panel offer a photo,
+    so a bad one is dropped rather than the photo."""
+    try:
+        return check(raw)
+    except PageImageInvalid:
+        return None
+
+
 def _clean_entry(raw: Any) -> dict[str, Any] | None:
-    """One stored index entry, checked, or None to drop it."""
+    """One stored index entry, checked, or None to drop it. An entry from
+    before photo tiles gains ``format`` ``jpeg``, ``kind`` ``background`` and
+    no ``label`` or ``entity_id``. A format or kind that is there but not
+    known drops the entry, as any other damaged field does: its file name or
+    its grace could not be told."""
     if not isinstance(raw, dict):
         return None
     fields: dict[str, Any] = {}
@@ -165,18 +213,34 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     digest = raw.get("sha256")
     added_at = raw.get("added_at")
     unused_since = raw.get("unused_since")
+    image_format = raw.get("format", FORMAT_JPEG)
+    kind = raw.get("kind", KIND_BACKGROUND)
     if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
         return None
     if not isinstance(added_at, str):
         return None
     if unused_since is not None and not isinstance(unused_since, str):
         return None
+    if not isinstance(image_format, str) or image_format not in EXTENSIONS:
+        return None
+    if kind not in KINDS:
+        return None
     return {
         **fields,
         "sha256": digest,
         "added_at": added_at,
         "unused_since": unused_since,
+        "format": image_format,
+        "kind": kind,
+        "label": _optional(check_label, raw.get("label")),
+        "entity_id": _optional(check_entity_id, raw.get("entity_id")),
     }
+
+
+def _file_name(image_id: str, entry: Mapping[str, Any]) -> str:
+    """The name of a custom photo's file: its id and its format's
+    extension."""
+    return f"{image_id}.{EXTENSIONS[entry['format']]}"
 
 
 def _read_presets() -> list[dict[str, Any]]:
@@ -301,7 +365,9 @@ class PageImagesStore:
         removed, then the sweep runs against the pages as loaded."""
         if self._load_failed:
             return
-        wanted = {f"{image_id}.jpg" for image_id in self._index}
+        wanted = {
+            _file_name(image_id, entry): image_id for image_id, entry in self._index.items()
+        }
 
         def on_disk() -> set[str]:
             try:
@@ -310,13 +376,13 @@ class PageImagesStore:
                 return set()
 
         present = await self._hass.async_add_executor_job(on_disk)
-        missing = [name[:-4] for name in wanted - present]
+        missing = sorted(wanted[name] for name in wanted.keys() - present)
         for image_id in missing:
             del self._index[image_id]
         if missing:
             _LOGGER.warning("Page photo file(s) missing, dropped from the index: %s", missing)
             self._schedule_save()
-        strays = sorted(present - wanted)
+        strays = sorted(present - wanted.keys())
         if strays:
             await self._hass.async_add_executor_job(self._unlink, strays)
         self.sweep()
@@ -366,9 +432,10 @@ class PageImagesStore:
 
     def list(self) -> dict[str, Any]:
         """The panel's view: ``{"presets": [{id, name, width, height}],
-        "images": [{id, width, height, bytes, added_at, used_by}]}``, the
-        built-in photos in the phone's order and the custom ones newest
-        first."""
+        "images": [{id, width, height, bytes, added_at, used_by, format,
+        kind, label, entity_id}]}``, the built-in photos in the phone's order
+        and the custom ones newest first. ``label`` and ``entity_id`` are
+        None when the photo has none."""
         self._check_available()
         used, _complete = self._usage()
         # Newest first; among photos added in the same second, the one put in
@@ -391,6 +458,10 @@ class PageImagesStore:
                     "bytes": entry["bytes"],
                     "added_at": entry["added_at"],
                     "used_by": list(used.get(image_id, [])),
+                    "format": entry["format"],
+                    "kind": entry["kind"],
+                    "label": entry["label"],
+                    "entity_id": entry["entity_id"],
                 }
                 for image_id, entry in ordered
             ],
@@ -402,7 +473,8 @@ class PageImagesStore:
         return None if found is None else dict(found)
 
     async def async_read(self, raw_id: Any) -> tuple[str, bytes]:
-        """(the id as stored, the JPEG bytes) of a custom or built-in photo.
+        """(the id as stored, the bytes as they are) of a custom or built-in
+        photo, a JPEG or a PNG (``page_images.content_type`` tells which).
         ``invalid`` for something that is not a photo id, ``not_found`` for
         an id with no photo."""
         self._check_available()
@@ -410,7 +482,7 @@ class PageImagesStore:
         if is_preset(image_id):
             path = _PRESETS_DIR / f"{image_id}.jpg"
         elif image_id in self._index:
-            path = self._dir / f"{image_id}.jpg"
+            path = self._dir / _file_name(image_id, self._index[image_id])
         else:
             raise PageImagesNotFoundError(f"there is no photo {image_id}")
 
@@ -434,42 +506,92 @@ class PageImagesStore:
 
     # ── writes ─────────────────────────────────────────────────────────
 
-    async def async_upload(self, data: bytes) -> dict[str, Any]:
+    async def async_upload(
+        self,
+        data: bytes,
+        *,
+        kind: Any = None,
+        label: Any = None,
+        entity_id: Any = None,
+    ) -> dict[str, Any]:
         """Keep a photo uploaded in the panel under a new upper case UUID.
         Returns ``{"image_id", "width", "height", "bytes"}``.
 
+        ``kind``, ``label`` and ``entity_id`` are optional and checked by
+        :func:`check_details`; a photo with no kind is a background.
+
         The same bytes as a stored photo (by sha256) answer that photo's id
         instead of a copy, and restart its grace if no page names it, so the
-        page save that follows finds it there.
+        page save that follows finds it there. The stored photo keeps its own
+        details, with two exceptions: a background uploaded again as an icon
+        becomes an icon, so it gets the icon's longer grace (an icon is never
+        turned back, and either kind may be named anywhere), and a label or
+        entity id the stored photo lacks is taken from the upload.
         """
         self._check_available()
-        width, height = self._check_bytes(data)
+        kind, label, entity_id = check_details(kind, label, entity_id)
+        image_format, width, height = self._check_bytes(data)
         digest = hashlib.sha256(data).hexdigest()
         async with self._lock:
             for image_id, entry in self._index.items():
                 if entry["sha256"] == digest:
+                    self._merge_details(entry, kind, label, entity_id)
                     if entry["unused_since"] is not None:
                         entry["unused_since"] = _iso(_utcnow())
                         self._schedule_save()
                     return self._upload_reply(image_id, entry)
             image_id = str(uuid.uuid4()).upper()
-            entry = await self._async_add(image_id, data, width, height, digest)
+            entry = await self._async_add(
+                image_id,
+                data,
+                (image_format, width, height),
+                digest,
+                (kind, label, entity_id),
+            )
         return self._upload_reply(image_id, entry)
 
-    async def async_put(self, raw_id: Any, data: bytes) -> str:
+    def _merge_details(
+        self, entry: dict[str, Any], kind: str, label: str | None, entity_id: str | None
+    ) -> None:
+        """What an upload of a stored photo's bytes changes in its entry: see
+        :meth:`async_upload`. Saves only when something moved."""
+        changed = False
+        if kind == KIND_ICON and entry["kind"] != KIND_ICON:
+            entry["kind"] = KIND_ICON
+            changed = True
+        for key, value in (("label", label), ("entity_id", entity_id)):
+            if value is not None and entry[key] is None:
+                entry[key] = value
+                changed = True
+        if changed:
+            self._schedule_save()
+
+    async def async_put(
+        self,
+        raw_id: Any,
+        data: bytes,
+        *,
+        kind: Any = None,
+        label: Any = None,
+        entity_id: Any = None,
+    ) -> str:
         """Keep a phone's photo under its own id. Returns ``"stored"``, or
         ``"exists"`` when that id is already stored or is a built-in id: the
-        bytes are not compared, the first write wins."""
+        bytes are not compared, the first write wins, details included.
+        ``kind``, ``label`` and ``entity_id`` are checked first either way
+        (:func:`check_details`), so a bad one is ``invalid`` whether or not
+        the id is stored."""
         self._check_available()
         image_id = self._check_id(raw_id)
+        details = check_details(kind, label, entity_id)
         if is_preset(image_id) or image_id in self._index:
             return "exists"
-        width, height = self._check_bytes(data)
+        size = self._check_bytes(data)
         digest = hashlib.sha256(data).hexdigest()
         async with self._lock:
             if image_id in self._index:
                 return "exists"
-            await self._async_add(image_id, data, width, height, digest)
+            await self._async_add(image_id, data, size, digest, details)
         return "stored"
 
     async def async_delete(self, raw_id: Any) -> str:
@@ -495,16 +617,18 @@ class PageImagesStore:
                 raise PageImagesUnavailableError(
                     "some watches' pages could not be read, so they may use this photo"
                 )
-            del self._index[image_id]
+            entry = self._index.pop(image_id)
             self._schedule_save()
-            await self._hass.async_add_executor_job(self._unlink, [f"{image_id}.jpg"])
+            await self._hass.async_add_executor_job(
+                self._unlink, [_file_name(image_id, entry)]
+            )
         _LOGGER.debug("Deleted page photo %s", image_id)
         return image_id
 
     @staticmethod
-    def _check_bytes(data: bytes) -> tuple[int, int]:
+    def _check_bytes(data: bytes) -> tuple[str, int, int]:
         try:
-            return check_jpeg(data)
+            return check_image(data)
         except PageImageInvalid as err:
             raise _rule_error(err) from err
 
@@ -518,15 +642,24 @@ class PageImagesStore:
         }
 
     async def _async_add(
-        self, image_id: str, data: bytes, width: int, height: int, digest: str
+        self,
+        image_id: str,
+        data: bytes,
+        size: tuple[str, int, int],
+        digest: str,
+        details: tuple[str, str | None, str | None],
     ) -> dict[str, Any]:
-        """Write the file, then the entry. Called with the lock held. A new
-        photo no page names yet starts its grace now."""
+        """Write the file, then the entry. Called with the lock held.
+        ``size`` is the format, width and height :meth:`_check_bytes` read,
+        ``details`` the kind, label and entity id :func:`check_details`
+        kept. A new photo no page names yet starts its grace now."""
         if len(self._index) >= MAX_CUSTOM_IMAGES:
             raise PageImagesFullError(
                 f"the home holds {MAX_CUSTOM_IMAGES} photos; delete some first"
             )
-        path = self._dir / f"{image_id}.jpg"
+        image_format, width, height = size
+        kind, label, entity_id = details
+        path = self._dir / f"{image_id}.{EXTENSIONS[image_format]}"
 
         def write() -> None:
             self._dir.mkdir(parents=True, exist_ok=True)
@@ -545,6 +678,10 @@ class PageImagesStore:
             "sha256": digest,
             "added_at": now,
             "unused_since": None if image_id in kept else now,
+            "format": image_format,
+            "kind": kind,
+            "label": label,
+            "entity_id": entity_id,
         }
         self._index[image_id] = entry
         self._schedule_save()
@@ -561,9 +698,10 @@ class PageImagesStore:
 
     @callback
     def sweep(self, now: datetime | None = None) -> tuple[str, ...]:
-        """Mark, clear and delete by :func:`page_images.plan_sweep`. Returns
-        the ids deleted. The index changes at once; the files go after, under
-        the lock, each only if its id is still not stored."""
+        """Mark, clear and delete by :func:`page_images.plan_sweep`, an icon
+        photo with the icon's grace. Returns the ids deleted. The index
+        changes at once; the files go after, under the lock, each only if it
+        is not the file of a photo stored again under the same id."""
         if self._load_failed or self._pages is None:
             return ()
         moment = now or _utcnow()
@@ -575,6 +713,9 @@ class PageImagesStore:
             kept,
             moment,
             complete=complete,
+            icons=[
+                image_id for image_id, entry in self._index.items() if entry["kind"] == KIND_ICON
+            ],
         )
         if not (plan.stamp or plan.clear or plan.delete):
             return ()
@@ -583,23 +724,29 @@ class PageImagesStore:
             self._index[image_id]["unused_since"] = stamp
         for image_id in plan.clear:
             self._index[image_id]["unused_since"] = None
-        for image_id in plan.delete:
-            del self._index[image_id]
+        names = tuple(_file_name(image_id, self._index.pop(image_id)) for image_id in plan.delete)
         self._schedule_save()
         if plan.delete:
             _LOGGER.info(
-                "Deleted %d page photo(s) no page has named for over seven days",
+                "Deleted %d page photo(s) no page has named for longer than their grace",
                 len(plan.delete),
             )
             self._hass.async_create_task(
-                self._async_unlink_swept(plan.delete),
+                self._async_unlink_swept(tuple(zip(plan.delete, names, strict=True))),
                 name="wrist_assistant_page_images_sweep",
             )
         return plan.delete
 
-    async def _async_unlink_swept(self, image_ids: tuple[str, ...]) -> None:
+    async def _async_unlink_swept(self, swept: tuple[tuple[str, str], ...]) -> None:
+        """Remove the files of swept photos, each an (id, file name) pair,
+        except one whose id was stored again in the same format meanwhile: its
+        name is now the new photo's file."""
         async with self._lock:
-            names = [f"{image_id}.jpg" for image_id in image_ids if image_id not in self._index]
+            names = [
+                name
+                for image_id, name in swept
+                if image_id not in self._index or _file_name(image_id, self._index[image_id]) != name
+            ]
             if names:
                 await self._hass.async_add_executor_job(self._unlink, names)
 

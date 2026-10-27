@@ -5,10 +5,11 @@ The two signed ops are pulled out of ``wa_v2_views.py`` by name, the way
 ``PageImagesStore`` over the stand-ins of ``test_page_images_store.py``. The
 WebSocket commands are loaded from ``page_images_ws.py`` with stubbed Home
 Assistant modules. The wire shapes the app and the panel are built against
-are asserted as whole dicts.
+are asserted as whole dicts, the photo tiles fields (a PNG's content type,
+``kind``, ``label`` and ``entity_id``) among them.
 
 Static checks at the bottom: the ops in the dispatch table, and setup
-building the store, hooking the sweep and advertising the capability.
+building the store, hooking the sweep and advertising both capabilities.
 """
 
 from __future__ import annotations
@@ -18,14 +19,15 @@ import ast
 import asyncio
 import base64
 import json
+import struct
 import sys
 import types
 from pathlib import Path
 from typing import Any
 
 import pytest
-from test_page_images import UUID_UPPER, jpeg
-from test_page_images_store import Env, loaded_package, pages
+from test_page_images import UUID_UPPER, jpeg, png
+from test_page_images_store import ICON_UUID, Env, loaded_package, pages, tiles
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
@@ -53,7 +55,7 @@ class _Ctx:
         return _Response(status, data, content_type)
 
 
-def _ops(store_mod: Any) -> dict[str, Any]:
+def _ops(store_mod: Any, rules: Any) -> dict[str, Any]:
     tree = ast.parse(_VIEWS.read_text(), filename=str(_VIEWS))
     wanted = [
         node
@@ -82,6 +84,7 @@ def _ops(store_mod: Any) -> dict[str, Any]:
         "PageImagesTooLargeError": store_mod.PageImagesTooLargeError,
         "PageImagesUnavailableError": store_mod.PageImagesUnavailableError,
         "decode_page_image": store_mod.decode_data,
+        "page_image_content_type": rules.content_type,
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -102,13 +105,15 @@ def env(tmp_path):
             websocket_command=lambda schema: (lambda func: func),
             async_response=lambda func: func,
         )
-        sys.modules["voluptuous"] = types.SimpleNamespace(Required=_marker, Optional=_marker)
+        sys.modules["voluptuous"] = types.SimpleNamespace(
+            Required=_marker, Optional=_marker, Any=_marker
+        )
         base = Env(loaded, tmp_path)
         domain = types.SimpleNamespace(page_images_store=base.store)
         yield types.SimpleNamespace(
             base=base,
             store=base.store,
-            ops=_ops(loaded.store_mod),
+            ops=_ops(loaded.store_mod, loaded.rules),
             ws=loaded.load("page_images_ws"),
             domain=domain,
             hass=types.SimpleNamespace(data={"wrist_assistant": domain}),
@@ -208,6 +213,85 @@ def test_put_when_full_is_a_409(env, monkeypatch) -> None:
     assert reply.status == 409 and reply.body["error"] == "full"
 
 
+def test_put_of_a_tile_photo_then_get_answers_the_png(env) -> None:
+    data = png(256, 200)
+    reply = op(
+        env,
+        "_op_page_image_put",
+        {
+            "image_id": ICON_UUID.lower(),
+            "data": b64(data),
+            "kind": "icon",
+            "label": "Desk lamp",
+            "entity_id": "light.desk_lamp",
+        },
+    )
+    assert (reply.status, reply.body) == (200, {"ok": True, "status": "stored"})
+    entry = env.store.entry(ICON_UUID)
+    assert (entry["format"], entry["kind"], entry["label"], entry["entity_id"]) == (
+        "png", "icon", "Desk lamp", "light.desk_lamp"
+    )
+    got = op(env, "_op_page_image_get", {"image_id": ICON_UUID})
+    assert (got.status, got.content_type, got.body) == (200, "image/png", data)
+
+
+def test_put_with_null_details_is_a_plain_background(env) -> None:
+    reply = op(
+        env,
+        "_op_page_image_put",
+        {"image_id": UUID_UPPER, "data": b64(jpeg()), "kind": None, "label": None, "entity_id": None},
+    )
+    assert reply.body == {"ok": True, "status": "stored"}
+    entry = env.store.entry(UUID_UPPER)
+    assert (entry["kind"], entry["label"], entry["entity_id"]) == ("background", None, None)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"kind": "photo"},
+        {"kind": 2},
+        {"label": "x" * 61},
+        {"label": ["Lamp"]},
+        {"entity_id": "desk lamp"},
+        {"entity_id": 3},
+    ],
+)
+def test_put_refuses_bad_details(env, details) -> None:
+    reply = op(env, "_op_page_image_put", {"image_id": ICON_UUID, "data": b64(png()), **details})
+    assert reply.status == 400 and reply.body["error"] == "invalid"
+    assert env.base.files() == []
+
+
+@pytest.mark.parametrize(
+    ("data", "status", "code"),
+    [
+        (png(8, 8), 400, "invalid"),
+        (png()[:12] + b"IDAT" + png()[16:], 400, "invalid"),
+        (png(pad=256 * 1024), 413, "too_large"),
+    ],
+)
+def test_put_refuses_a_bad_png(env, data, status, code) -> None:
+    reply = op(env, "_op_page_image_put", {"image_id": ICON_UUID, "data": b64(data), "kind": "icon"})
+    assert reply.status == status and reply.body["error"] == code
+    assert env.base.files() == []
+
+
+def test_a_put_with_details_at_the_photo_cap_fits_the_body_cap(env) -> None:
+    base = len(png())
+    data = png(pad=256 * 1024 - base - 12)
+    assert len(data) == 256 * 1024
+    payload = {
+        "image_id": ICON_UUID,
+        "data": b64(data),
+        "kind": "icon",
+        "label": "x" * 60,
+        "entity_id": "switch." + "x" * 200,
+    }
+    assert len(json.dumps(payload)) < 360 * 1024
+    assert op(env, "_op_page_image_put", payload).body == {"ok": True, "status": "stored"}
+
+
 def test_both_ops_are_unavailable_with_no_store(env) -> None:
     env.domain.page_images_store = None
     for name, payload in (
@@ -260,6 +344,10 @@ def test_ws_upload_list_get_delete(env) -> None:
             "bytes": len(data),
             "added_at": "2026-10-05T12:00:00Z",
             "used_by": [],
+            "format": "jpeg",
+            "kind": "background",
+            "label": None,
+            "entity_id": None,
         }
     ]
 
@@ -301,6 +389,61 @@ def test_ws_refusals(env) -> None:
         assert [e[1] for e in errors] == [code], (command.__name__, msg)
     listed = ws_call(env, env.ws.ws_page_images_list).results[1]
     assert listed["images"][0]["used_by"] == ["watch-A"]
+
+
+def test_ws_upload_of_an_icon_photo_list_get_and_tile_use(env) -> None:
+    data = png(300, 240)
+    uploaded = ws_call(
+        env,
+        env.ws.ws_page_images_upload,
+        data=b64(data),
+        kind="icon",
+        label=" Coffee machine ",
+        entity_id="switch.coffee",
+    ).results[1]
+    image_id = uploaded["image_id"]
+    assert uploaded == {"image_id": image_id, "width": 300, "height": 240, "bytes": len(data)}
+    env.base.put_pages("watch-A", tiles(image_id))
+
+    [listed] = ws_call(env, env.ws.ws_page_images_list).results[1]["images"]
+    assert listed == {
+        "id": image_id,
+        "width": 300,
+        "height": 240,
+        "bytes": len(data),
+        "added_at": "2026-10-05T12:00:00Z",
+        "used_by": ["watch-A"],
+        "format": "png",
+        "kind": "icon",
+        "label": "Coffee machine",
+        "entity_id": "switch.coffee",
+    }
+
+    got = ws_call(env, env.ws.ws_page_images_get, image_id=image_id).results[1]
+    assert got == {"image_id": image_id, "content_type": "image/png", "data": b64(data)}
+
+    [(_, code, message)] = ws_call(env, env.ws.ws_page_images_delete, image_id=image_id).errors
+    assert code == "in_use" and "watch-A" in message
+
+
+@pytest.mark.parametrize(
+    "details",
+    [{"kind": "sticker"}, {"label": "y" * 61}, {"entity_id": "Lamp"}, {"entity_id": "light."}],
+)
+def test_ws_upload_refuses_bad_details(env, details) -> None:
+    [(_, code, _m)] = ws_call(env, env.ws.ws_page_images_upload, data=b64(png()), **details).errors
+    assert code == "invalid"
+    assert env.base.files() == []
+
+
+def test_ws_upload_of_a_bad_png(env) -> None:
+    for data, code in (
+        (png(2000, 20), "invalid"),
+        (png()[:8] + struct.pack(">I", 12) + png()[12:], "invalid"),
+        (png(pad=256 * 1024), "too_large"),
+    ):
+        [(_, got, _m)] = ws_call(env, env.ws.ws_page_images_upload, data=b64(data)).errors
+        assert got == code
 
 
 def test_ws_upload_when_full(env, monkeypatch) -> None:
@@ -355,6 +498,7 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
         "watch_config_store.async_add_listener(page_images_store.pages_changed)",
         "page_images_store=page_images_store,",
         "register_capability(PAGE_IMAGES_CAPABILITY)",
+        "register_capability(TILE_PHOTOS_CAPABILITY)",
         "async_register_page_images_commands(hass)",
         # Listed among the stores unload writes out and stops.
         '"page_images_store",',
@@ -363,4 +507,10 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
     # Removing the integration keeps the photos, as it keeps every file.
     assert "await PageImagesStore(hass).async_remove()" not in init
     assert 'PAGE_IMAGES_CAPABILITY = "page_images"' in const
+    assert 'TILE_PHOTOS_CAPABILITY = "tile_photos"' in const
+    # Registered right beside page_images.
+    lines = [line.strip() for line in init.splitlines() if "register_capability(" in line]
+    assert lines.index("coordinator.register_capability(TILE_PHOTOS_CAPABILITY)") > lines.index(
+        "coordinator.register_capability(PAGE_IMAGES_CAPABILITY)"
+    )
     assert 'PAGE_IMAGES_STORAGE_KEY = "wrist_assistant.page_images"' in const

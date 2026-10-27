@@ -15,6 +15,12 @@ pages writes of every kind (device put, panel save, restore, forget, move),
 photos kept while a history revision names them and swept after the grace
 once it is pushed out, the start of day sweep of missing and stray files, an unreadable index never
 saved over, unload and removal.
+
+Photo tiles: PNG files beside JPEGs, each photo's format, kind, label and
+entity id (an index entry from before reads as a JPEG background), the dedupe
+rule for a kind, a tile's ``iconPhotoId`` counted as a use for ``used_by``,
+delete and the sweep, history revisions naming a tile photo, and the thirty
+day grace of an icon photo.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ from typing import Any
 
 import pytest
 from test_http_actions_store import FakeStore
-from test_page_images import UUID_UPPER, jpeg
+from test_page_images import UUID_UPPER, jpeg, png
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _PKG = "wa_page_images_test_pkg"
@@ -123,6 +129,26 @@ def pages(*image_ids: str | None) -> dict[str, Any]:
     }
 
 
+def tiles(*photo_ids: str | None) -> dict[str, Any]:
+    """One page whose tiles name these photos as ``iconPhotoId``, a tile with
+    none for each None."""
+    return {
+        "pages": [
+            {
+                "id": "p0",
+                "items": [
+                    {
+                        "id": f"t{i}",
+                        "entityId": "light.desk_lamp",
+                        **({"iconPhotoId": photo_id} if photo_id else {}),
+                    }
+                    for i, photo_id in enumerate(photo_ids)
+                ],
+            }
+        ]
+    }
+
+
 class Env:
     def __init__(self, loaded, root: Path) -> None:
         self.loaded = loaded
@@ -170,8 +196,8 @@ class Env:
         for _ in range(self.loaded.wc_mod.WATCH_CONFIG_HISTORY_LIMIT + 1):
             self.put_pages(owner, pages())
 
-    def upload(self, data: bytes | None = None) -> dict[str, Any]:
-        return asyncio.run(self.store.async_upload(data or jpeg()))
+    def upload(self, data: bytes | None = None, **details: Any) -> dict[str, Any]:
+        return asyncio.run(self.store.async_upload(data or jpeg(), **details))
 
     def files(self) -> list[str]:
         return sorted(p.name for p in self.folder.iterdir()) if self.folder.exists() else []
@@ -348,6 +374,10 @@ def test_list_has_the_presets_in_order_and_the_photos_newest_first(env) -> None:
         "bytes": len(jpeg(100, 100)),
         "added_at": "2026-10-05T12:00:00Z",
         "used_by": ["watch-A", "watch-B"],
+        "format": "jpeg",
+        "kind": "background",
+        "label": None,
+        "entity_id": None,
     }
     assert listed["images"][0]["used_by"] == []
 
@@ -618,6 +648,287 @@ def test_remove_deletes_the_index_and_the_folder_from_a_fresh_instance(env) -> N
     assert KEY in FakeStore.removed and KEY not in FakeStore.files
     assert not env.folder.exists()
     assert (_PKG_DIR / "page_image_presets" / "preset_waves.jpg").exists()
+
+
+# ── photo tiles: PNG, details, tile use, the icon grace ──────────────────
+
+ICON_UUID = "A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D"
+
+
+def test_a_png_upload_is_kept_as_a_png_file(env) -> None:
+    data = png(120, 90)
+    reply = env.upload(data)
+    image_id = reply["image_id"]
+    assert reply == {"image_id": image_id, "width": 120, "height": 90, "bytes": len(data)}
+    assert env.files() == [f"{image_id}.png"]
+    assert env.index()[image_id]["format"] == "png"
+    assert asyncio.run(env.store.async_read(image_id.lower())) == (image_id, data)
+    assert env.store.list()["images"][0]["format"] == "png"
+
+
+def test_an_upload_keeps_its_kind_label_and_entity_id(env) -> None:
+    image_id = env.upload(png(), kind="icon", label="  Desk lamp ", entity_id="light.desk_lamp")["image_id"]
+    entry = env.index()[image_id]
+    assert (entry["format"], entry["kind"], entry["label"], entry["entity_id"]) == (
+        "png", "icon", "Desk lamp", "light.desk_lamp"
+    )
+    listed = env.store.list()["images"][0]
+    assert {k: listed[k] for k in ("format", "kind", "label", "entity_id")} == {
+        "format": "png", "kind": "icon", "label": "Desk lamp", "entity_id": "light.desk_lamp",
+    }
+    # With no details a photo is a background with neither of the others, and
+    # an empty label is no label.
+    plain = env.upload(jpeg(), label="   ")["image_id"]
+    assert {k: env.index()[plain][k] for k in ("format", "kind", "label", "entity_id")} == {
+        "format": "jpeg", "kind": "background", "label": None, "entity_id": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"kind": "photo"},
+        {"kind": "Icon"},
+        {"kind": 1},
+        {"label": "x" * 61},
+        {"label": 5},
+        {"entity_id": "Desk Lamp"},
+        {"entity_id": "light"},
+        {"entity_id": ["light.x"]},
+    ],
+)
+def test_upload_and_put_refuse_bad_details_and_write_nothing(env, details) -> None:
+    _refused(env, lambda: env.store.async_upload(png(), **details), "invalid")
+    _refused(env, lambda: env.store.async_put(UUID_UPPER, png(), **details), "invalid")
+    assert env.files() == []
+    assert KEY not in FakeStore.files
+
+
+@pytest.mark.parametrize(
+    ("data", "code"),
+    [
+        (png(8, 8), "invalid"),
+        (png(2000, 100), "invalid"),
+        (png()[:20], "invalid"),
+        (png()[:12] + b"IDAT" + png()[16:], "invalid"),
+        (png(pad=256 * 1024), "too_large"),
+    ],
+)
+def test_png_refusals_write_nothing(env, data, code) -> None:
+    _refused(env, lambda: env.store.async_upload(data, kind="icon"), code)
+    _refused(env, lambda: env.store.async_put(UUID_UPPER, data, kind="icon"), code)
+    assert env.files() == []
+
+
+def test_a_background_uploaded_again_as_an_icon_becomes_an_icon(env) -> None:
+    """The dedupe answers the stored id. A background asked for as an icon
+    becomes one (the longer grace is the safe side); an icon is never turned
+    back; a label or entity id fills in only where the photo had none."""
+    first = env.upload(png())
+    assert env.index()[first["image_id"]]["kind"] == "background"
+    again = env.upload(png(), kind="icon", label="Lamp", entity_id="light.lamp")
+    assert again == first
+    entry = env.index()[first["image_id"]]
+    assert (entry["kind"], entry["label"], entry["entity_id"]) == ("icon", "Lamp", "light.lamp")
+    third = env.upload(png(), kind="background", label="Other", entity_id="fan.other")
+    assert third == first
+    entry = env.index()[first["image_id"]]
+    assert (entry["kind"], entry["label"], entry["entity_id"]) == ("icon", "Lamp", "light.lamp")
+    assert env.files() == [f"{first['image_id']}.png"]
+
+
+def test_put_keeps_a_phones_icon_photo_and_the_first_write_wins(env) -> None:
+    data = png(256, 256)
+    assert asyncio.run(
+        env.store.async_put(ICON_UUID.lower(), data, kind="icon", label="Lamp", entity_id="light.lamp")
+    ) == "stored"
+    assert env.files() == [f"{ICON_UUID}.png"]
+    entry = env.index()[ICON_UUID]
+    assert (entry["format"], entry["kind"], entry["label"], entry["entity_id"]) == (
+        "png", "icon", "Lamp", "light.lamp"
+    )
+    assert asyncio.run(
+        env.store.async_put(ICON_UUID, jpeg(), kind="background", label="Other")
+    ) == "exists"
+    assert env.index()[ICON_UUID]["kind"] == "icon"
+    assert asyncio.run(env.store.async_read(ICON_UUID)) == (ICON_UUID, data)
+    # Details are checked even when the id is stored.
+    _refused(env, lambda: env.store.async_put(ICON_UUID, data, kind="sticker"), "invalid")
+
+
+def test_a_tiles_photo_is_in_use(env) -> None:
+    image_id = env.upload(png(), kind="icon")["image_id"]
+    env.put_pages("watch-A", tiles(image_id.lower(), None))
+    assert env.index()[image_id]["unused_since"] is None
+    assert env.store.list()["images"][0]["used_by"] == ["watch-A"]
+    message = _refused(env, lambda: env.store.async_delete(image_id), "in_use")
+    assert "watch-A" in message
+    assert env.files() == [f"{image_id}.png"]
+    # Off the tile and out of the history, it can go.
+    env.clear_pages("watch-A")
+    assert env.index()[image_id]["unused_since"] is not None
+    assert asyncio.run(env.store.async_delete(image_id)) == image_id
+    assert env.files() == []
+
+
+def test_a_put_a_tile_already_names_is_in_use_at_once(env) -> None:
+    env.put_pages("watch-A", tiles(ICON_UUID))
+    asyncio.run(env.store.async_put(ICON_UUID, png(), kind="icon"))
+    assert env.index()[ICON_UUID]["unused_since"] is None
+
+
+def test_an_icon_photo_no_tile_names_stays_thirty_days(env) -> None:
+    icon = env.upload(png(), kind="icon")["image_id"]
+    background = env.upload(jpeg())["image_id"]
+    env.advance(days=7, seconds=1)
+    env.put_pages("watch-A", pages())
+    assert set(env.index()) == {icon}
+    env.advance(days=22, hours=23, minutes=59, seconds=59)
+    env.put_pages("watch-A", pages())
+    # Thirty days to the second since it was added.
+    assert icon in env.index()
+    env.advance(seconds=1)
+    env.put_pages("watch-A", pages())
+    assert icon not in env.index()
+    assert env.files() == []
+    assert background not in env.index()
+
+
+def test_an_icon_photo_put_on_a_tile_is_kept_past_thirty_days(env) -> None:
+    image_id = env.upload(png(), kind="icon")["image_id"]
+    env.advance(days=20)
+    env.put_pages("watch-A", tiles(image_id))
+    env.advance(days=40)
+    env.put_pages("watch-A", tiles(image_id))
+    assert env.index()[image_id]["unused_since"] is None
+    env.clear_pages("watch-A")
+    # Its grace starts only when it falls off the tile, sixty days in.
+    assert env.index()[image_id]["unused_since"] == "2026-12-04T12:00:00Z"
+
+
+def test_a_tile_photo_only_a_history_revision_names_is_kept(env) -> None:
+    """The history is read by the same rule as the current pages, so a tile
+    photo an older revision names is kept for a restore."""
+    old = env.upload(png(64, 64), kind="icon")["image_id"]
+    record = env.watch_config.panel_save("watch-A", "pages", tiles(old), base_revision=0)
+    record = env.watch_config.panel_save("watch-A", "pages", tiles(None), base_revision=record.revision)
+    env.advance(days=60)
+    env.put_pages("watch-B", pages())
+    assert env.index()[old]["unused_since"] is None
+    assert {i["id"]: i["used_by"] for i in env.store.list()["images"]}[old] == []
+    env.watch_config.restore("watch-A", "pages", 1, base_revision=record.revision)
+    assert {i["id"]: i["used_by"] for i in env.store.list()["images"]}[old] == ["watch-A"]
+
+
+def test_a_library_page_tile_photo_is_kept(env) -> None:
+    """``page_photo_history`` adds the library's pages, which the same rule
+    reads, so a tile photo only a library page names is kept too."""
+    image_id = env.upload(png(), kind="icon")["image_id"]
+    # No page names it yet, so its grace started at the upload.
+    assert env.index()[image_id]["unused_since"] is not None
+    env.watch_config._library["pages"]["L1"] = tiles(image_id)["pages"][0]
+    store = env.loaded.store_mod.PageImagesStore(
+        env.hass,
+        pages=lambda: env.watch_config.documents("pages"),
+        history=env.watch_config.page_photo_history,
+    )
+    asyncio.run(store.async_load())
+    asyncio.run(store.async_start())
+    assert store.entry(image_id)["unused_since"] is None
+    env.advance(days=60)
+    assert store.sweep() == ()
+    assert store.entry(image_id)["unused_since"] is None
+
+
+def test_an_entry_from_before_photo_tiles_reads_as_a_jpeg_background(env) -> None:
+    data = jpeg(300, 200)
+    env.folder.mkdir(parents=True)
+    (env.folder / f"{UUID_UPPER}.jpg").write_bytes(data)
+    FakeStore.files[KEY] = {
+        "images": {
+            UUID_UPPER: {
+                "bytes": len(data),
+                "width": 300,
+                "height": 200,
+                "sha256": __import__("hashlib").sha256(data).hexdigest(),
+                "added_at": "2026-10-01T12:00:00Z",
+                "unused_since": None,
+            }
+        }
+    }
+    env.put_pages("watch-A", pages(UUID_UPPER))
+    store = env.new_store()
+    entry = store.entry(UUID_UPPER)
+    assert (entry["format"], entry["kind"], entry["label"], entry["entity_id"]) == (
+        "jpeg", "background", None, None
+    )
+    assert env.files() == [f"{UUID_UPPER}.jpg"]
+    assert asyncio.run(store.async_read(UUID_UPPER)) == (UUID_UPPER, data)
+    listed = store.list()["images"][0]
+    assert {k: listed[k] for k in ("format", "kind", "label", "entity_id", "used_by")} == {
+        "format": "jpeg", "kind": "background", "label": None, "entity_id": None, "used_by": ["watch-A"],
+    }
+    # Uploading its bytes again as an icon finds it and makes it one.
+    assert asyncio.run(store.async_upload(data, kind="icon"))["image_id"] == UUID_UPPER
+    assert store.entry(UUID_UPPER)["kind"] == "icon"
+
+
+def test_bad_photo_tile_fields_in_the_index(env) -> None:
+    """An unknown format or kind drops the entry, like any damaged field; a
+    bad label or entity id only loses that detail."""
+    good = env.upload(png(), kind="icon")["image_id"]
+    entries = FakeStore.files[KEY]["images"]
+    template = dict(entries[good])
+    other = "22222222-3333-4444-8555-666666666666"
+    entries.update(
+        {
+            OTHER_UUID: {**template, "format": "gif"},
+            other: {**template, "kind": "sticker"},
+            "33333333-4444-4555-8666-777777777777": {**template, "format": ["png"]},
+            "44444444-5555-4666-8777-888888888888": {**template, "kind": ["icon"]},
+            "55555555-6666-4777-8888-999999999999": {**template, "format": None},
+        }
+    )
+    entries[good] = {**template, "label": "x" * 61, "entity_id": "Not An Id"}
+    again = env.new_store(start=False)
+    assert [i["id"] for i in again.list()["images"]] == [good]
+    entry = again.entry(good)
+    assert (entry["kind"], entry["label"], entry["entity_id"]) == ("icon", None, None)
+
+
+def test_start_matches_png_files_to_their_entries(env) -> None:
+    kept = env.upload(png(64, 64))["image_id"]
+    gone = env.upload(png(65, 64))["image_id"]
+    (env.folder / f"{gone}.png").unlink()
+    # A file in the other format than its entry names is a stray.
+    (env.folder / f"{kept}.jpg").write_bytes(jpeg())
+    (env.folder / f"{OTHER_UUID}.png").write_bytes(png())
+    again = env.new_store()
+    assert [i["id"] for i in again.list()["images"]] == [kept]
+    assert env.files() == [f"{kept}.png"]
+
+
+def test_a_swept_png_file_goes_and_a_put_in_the_other_format_keeps_its_own(env) -> None:
+    asyncio.run(env.store.async_put(UUID_UPPER, png()))
+    env.advance(days=8)
+
+    async def race() -> None:
+        env.put_pages("watch-A", pages())  # schedules the unlink of the PNG
+        await env.store.async_put(UUID_UPPER, jpeg(77, 77))
+        await asyncio.sleep(0)
+
+    asyncio.run(race())
+    # The PNG went with its swept entry; the JPEG stored after it stays.
+    assert env.files() == [f"{UUID_UPPER}.jpg"]
+    assert env.index()[UUID_UPPER]["format"] == "jpeg"
+
+
+def test_the_sweep_deletes_a_png_file(env) -> None:
+    image_id = env.upload(png())["image_id"]
+    env.advance(days=8)
+    env.put_pages("watch-A", pages())
+    assert image_id not in env.index()
+    assert env.files() == []
 
 
 # ── base64 ───────────────────────────────────────────────────────────────

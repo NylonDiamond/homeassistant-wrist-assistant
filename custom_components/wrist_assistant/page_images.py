@@ -1,16 +1,20 @@
-"""The rules for page background photos, with no Home Assistant in them.
+"""The rules for page photos, with no Home Assistant in them.
 
-Step 4d batch 6 (``docs/pages_in_home_assistant_step4.md`` in the app repo).
+Step 4d batch 6 (``docs/pages_in_home_assistant_step4.md`` in the app repo),
+and photo tiles (``docs/photo_tiles_plan_2026-10.md`` there, "Contract").
 The store in ``page_images_store.py`` keeps the photos; this module only
-decides: which ids are photos at all, whether some bytes are a JPEG the watch
-can draw and how big it is, which photos the pages name, and what a sweep
-does with the ones they no longer name.
+decides: which ids are photos at all, whether some bytes are a JPEG or a PNG
+the watch can draw and how big it is, what a photo's ``kind``, ``label`` and
+``entity_id`` may be, which photos the pages name, and what a sweep does with
+the ones they no longer name.
 
-A page names its photo as ``backgroundImageId``. A custom photo's id is the
-UUID the phone or the panel made for it, which the phone writes in upper case;
-it is compared without case and kept in upper case here. A built-in photo's
-id is one of the ``preset_*`` ids the phone offers, whose pixels ship with
-the integration (``page_image_presets/``).
+A page names its background photo as ``backgroundImageId``, and a tile in
+``page.items`` names its photo as ``iconPhotoId``. Both come from the one
+store, in one id space. A custom photo's id is the UUID the phone or the
+panel made for it, which the phone writes in upper case; it is compared
+without case and kept in upper case here. A built-in photo's id is one of the
+``preset_*`` ids the phone offers, whose pixels ship with the integration
+(``page_image_presets/``).
 """
 
 from __future__ import annotations
@@ -53,11 +57,38 @@ MAX_CUSTOM_IMAGES = 500
 # How long a photo no page names is kept. It covers an upload whose page save
 # has not happened yet, and the panel's undo after a photo was taken off.
 UNUSED_GRACE = timedelta(days=7)
+# How long an icon photo no tile names is kept. A photo sent from the phone
+# waits until someone opens the panel and puts it on a tile, which can take a
+# while longer than an upload made in the panel itself.
+UNUSED_ICON_GRACE = timedelta(days=30)
+
+# What a photo is for. A photo stored before photo tiles has no kind and
+# reads as a background.
+KIND_BACKGROUND = "background"
+KIND_ICON = "icon"
+KINDS = (KIND_BACKGROUND, KIND_ICON)
+# The formats a photo may be stored in, each with its file extension and the
+# content type it is served with. A photo stored before photo tiles has no
+# format and reads as a JPEG.
+FORMAT_JPEG = "jpeg"
+FORMAT_PNG = "png"
+EXTENSIONS = {FORMAT_JPEG: "jpg", FORMAT_PNG: "png"}
+CONTENT_TYPES = {FORMAT_JPEG: "image/jpeg", FORMAT_PNG: "image/png"}
+# A photo's label (the tile name the phone made it for) is short text.
+MAX_LABEL_CHARS = 60
 
 _UUID_RE = re.compile(
     r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
 )
+# An entity id as Home Assistant shapes one: a domain and an object id of
+# lower case letters, digits and underscores, joined by one dot.
+_ENTITY_ID_RE = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 _JPEG_MAGIC = b"\xff\xd8\xff"
+# The PNG signature, then the first chunk, which must be ``IHDR``: its length
+# (4 bytes, 13), its type (4), then width and height, each a big endian
+# 32 bit number, at bytes 16 and 20 of the file.
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_PNG_IHDR = b"\x00\x00\x00\x0dIHDR"
 # Start of frame markers: baseline, extended, progressive and lossless, in
 # their Huffman and arithmetic forms. C4 (DHT), C8 (JPG) and CC (DAC) sit in
 # the same range and are not frames.
@@ -110,6 +141,42 @@ def check_id(raw: Any) -> str:
     return image_id
 
 
+def check_kind(raw: Any) -> str:
+    """A photo's ``kind`` as stored: ``"background"`` when absent (None),
+    else ``"background"`` or ``"icon"`` as sent, anything else refused."""
+    if raw is None:
+        return KIND_BACKGROUND
+    if raw not in KINDS:
+        raise PageImageInvalid('kind must be "background" or "icon"')
+    return raw
+
+
+def check_label(raw: Any) -> str | None:
+    """A photo's ``label`` as stored: the text with its ends trimmed, or None
+    when absent or empty. Text over 60 characters once trimmed, or anything
+    that is not text, is refused."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise PageImageInvalid("label must be a string")
+    label = raw.strip()
+    if len(label) > MAX_LABEL_CHARS:
+        raise PageImageInvalid(f"label is at most {MAX_LABEL_CHARS} characters")
+    return label or None
+
+
+def check_entity_id(raw: Any) -> str | None:
+    """A photo's ``entity_id`` as stored, or None when absent. Anything not
+    shaped like an entity id (``light.desk_lamp``) is refused. Whether the
+    entity exists is not checked: it may be renamed or removed later anyway,
+    and the id only puts the photo first among a tile's choices."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not _ENTITY_ID_RE.fullmatch(raw):
+        raise PageImageInvalid("entity_id must be an entity id, like light.desk_lamp")
+    return raw
+
+
 def jpeg_size(data: bytes) -> tuple[int, int] | None:
     """(width, height) from the JPEG's start of frame marker, or None when
     the bytes are not a JPEG this can read.
@@ -152,10 +219,32 @@ def jpeg_size(data: bytes) -> tuple[int, int] | None:
     return None
 
 
+def png_size(data: bytes) -> tuple[int, int] | None:
+    """(width, height) from the PNG's ``IHDR`` chunk, or None when the bytes
+    are not a PNG whose first chunk is a whole ``IHDR`` header. Only the
+    header is read: the image data after it is the device's to decode."""
+    if not data.startswith(_PNG_MAGIC) or len(data) < 24:
+        return None
+    if data[8:16] != _PNG_IHDR:
+        return None
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    return width, height
+
+
+def _check_sides(width: int, height: int) -> None:
+    if not (MIN_SIDE <= width <= MAX_SIDE and MIN_SIDE <= height <= MAX_SIDE):
+        raise PageImageInvalid(
+            f"a photo is {MIN_SIDE} to {MAX_SIDE} px on each side, this one is "
+            f"{width} by {height}"
+        )
+
+
 def check_jpeg(data: bytes) -> tuple[int, int]:
-    """(width, height) of a photo the store may keep, or a refusal: over
+    """(width, height) of a JPEG the store may keep, or a refusal: over
     256 KiB is ``too_large``; not a JPEG, no readable frame, or a side under
-    16 or over 1024 px is ``invalid``."""
+    16 or over 1024 px is ``invalid``. The built-in photos are read by this
+    one, since they are all JPEGs."""
     if len(data) > MAX_IMAGE_BYTES:
         raise PageImageTooLarge(f"a photo is at most {MAX_IMAGE_BYTES // 1024} KB")
     if not data.startswith(_JPEG_MAGIC):
@@ -163,19 +252,42 @@ def check_jpeg(data: bytes) -> tuple[int, int]:
     size = jpeg_size(data)
     if size is None:
         raise PageImageInvalid("the JPEG has no frame header that can be read")
-    width, height = size
-    if not (MIN_SIDE <= width <= MAX_SIDE and MIN_SIDE <= height <= MAX_SIDE):
-        raise PageImageInvalid(
-            f"a photo is {MIN_SIDE} to {MAX_SIDE} px on each side, this one is "
-            f"{width} by {height}"
-        )
-    return width, height
+    _check_sides(*size)
+    return size
+
+
+def check_image(data: bytes) -> tuple[str, int, int]:
+    """(format, width, height) of a photo the store may keep, a JPEG or a
+    PNG, or a refusal. The limits are the same for both: over 256 KiB is
+    ``too_large``; neither format, a JPEG with no readable frame, a PNG with
+    no whole ``IHDR`` chunk first, or a side under 16 or over 1024 px is
+    ``invalid``."""
+    if len(data) > MAX_IMAGE_BYTES:
+        raise PageImageTooLarge(f"a photo is at most {MAX_IMAGE_BYTES // 1024} KB")
+    if data.startswith(_PNG_MAGIC):
+        size = png_size(data)
+        if size is None:
+            raise PageImageInvalid("the PNG has no IHDR header that can be read")
+        _check_sides(*size)
+        return (FORMAT_PNG, *size)
+    if not data.startswith(_JPEG_MAGIC):
+        raise PageImageInvalid("a photo must be a JPEG or a PNG")
+    return (FORMAT_JPEG, *check_jpeg(data))
+
+
+def content_type(data: bytes) -> str:
+    """The content type a photo's bytes are served with: ``image/png`` for a
+    PNG, ``image/jpeg`` for anything else, as every photo was before PNG."""
+    return CONTENT_TYPES[FORMAT_PNG if data.startswith(_PNG_MAGIC) else FORMAT_JPEG]
 
 
 def ids_in_pages(document: Any) -> set[str]:
-    """Every photo id a ``pages`` document names, normalized. Hidden pages
-    count: they are still the owner's pages. An id that is neither a UUID nor
-    a built-in id is left out, since no photo could ever be stored under it."""
+    """Every photo id a ``pages`` document names, normalized: each page's
+    ``backgroundImageId`` and each tile's ``iconPhotoId`` in its ``items``.
+    Hidden pages count: they are still the owner's pages. An id that is
+    neither a UUID nor a built-in id is left out, since no photo could ever
+    be stored under it. Tile groups hold no tiles, so only ``items`` is read.
+    """
     found: set[str] = set()
     pages = document.get("pages") if isinstance(document, dict) else None
     if not isinstance(pages, list):
@@ -186,6 +298,13 @@ def ids_in_pages(document: Any) -> set[str]:
         image_id = normalize_id(page.get("backgroundImageId"))
         if image_id is not None:
             found.add(image_id)
+        items = page.get("items")
+        for item in items if isinstance(items, list) else ():
+            if not isinstance(item, dict):
+                continue
+            photo_id = normalize_id(item.get("iconPhotoId"))
+            if photo_id is not None:
+                found.add(photo_id)
     return found
 
 
@@ -226,6 +345,8 @@ def plan_sweep(
     *,
     complete: bool,
     grace: timedelta = UNUSED_GRACE,
+    icons: Iterable[str] = (),
+    icon_grace: timedelta = UNUSED_ICON_GRACE,
 ) -> SweepPlan:
     """Decide a sweep over the stored custom photos.
 
@@ -234,8 +355,11 @@ def plan_sweep(
     could not, its photos look unused without being so, so only the clearing
     half runs: nothing is marked and nothing is deleted. A mark that cannot be
     read counts as made now, so a damaged index never deletes at once.
+    ``icons`` are the stored ids whose kind is ``icon``: they are kept for
+    ``icon_grace`` once unused, every other photo for ``grace``.
     """
     used = set(in_use)
+    icon_ids = set(icons)
     stamp: list[str] = []
     clear: list[str] = []
     delete: list[str] = []
@@ -249,6 +373,6 @@ def plan_sweep(
         marked = parse_time(since)
         if marked is None:
             stamp.append(image_id)
-        elif now - marked > grace:
+        elif now - marked > (icon_grace if image_id in icon_ids else grace):
             delete.append(image_id)
     return SweepPlan(tuple(stamp), tuple(clear), tuple(delete))

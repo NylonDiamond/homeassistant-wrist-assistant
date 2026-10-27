@@ -3,8 +3,10 @@
 Pure: the module imports nothing from Home Assistant, so it is loaded on its
 own. Covered: which ids are photo ids and how they fold, the JPEG check and
 its frame header read (every built-in photo the integration ships among the
-cases, against the sizes macOS reads), which ids a pages document names, and
-every row of the sweep's decision.
+cases, against the sizes macOS reads), the PNG check and its ``IHDR`` read,
+the content type each is served with, a photo's kind, label and entity id,
+which ids a pages document names (backgrounds and tile photos), and every row
+of the sweep's decision, the icon photo's longer grace included.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import importlib.util
 import json
 import struct
 import sys
+import zlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -43,6 +46,19 @@ def jpeg(width: int = 300, height: int = 400, *, sof: int = 0xC0, pad: int = 0, 
     frame = b"\xff" + bytes([sof]) + struct.pack(">HBHHB", 11, 8, height, width, 1) + b"\x01\x11\x00"
     sos = b"\xff\xda" + struct.pack(">H", 8) + b"\x01\x01\x00\x00\x3f\x00"
     return b"\xff\xd8" + app0 + extra + dqt + b"\xff" * pad + frame + sos + bytes(pad) + b"\xff\xd9"
+
+
+def png(width: int = 200, height: int = 300, *, pad: int = 0) -> bytes:
+    """A minimal PNG: the signature, a whole ``IHDR`` chunk (8 bit RGBA), an
+    empty ``IDAT`` and ``IEND``. Only the header matters here; ``pad`` bytes
+    of a private chunk make it bigger."""
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    filler = chunk(b"prVt", bytes(pad)) if pad else b""
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + filler + chunk(b"IDAT", b"") + chunk(b"IEND", b"")
 
 
 # ── ids ──────────────────────────────────────────────────────────────────
@@ -184,6 +200,142 @@ _PRESET_SIZES = {
 def test_every_shipped_preset_passes_the_check_at_its_real_size(image_id) -> None:
     data = (_PRESETS / f"{image_id}.jpg").read_bytes()
     assert rules.check_jpeg(data) == _PRESET_SIZES[image_id]
+    assert rules.check_image(data) == ("jpeg", *_PRESET_SIZES[image_id])
+
+
+# ── the PNG check, and either format ─────────────────────────────────────
+
+
+def test_the_png_size_comes_from_its_ihdr_chunk() -> None:
+    assert rules.png_size(png(321, 123)) == (321, 123)
+    # The width and height are 32 bit big endian at bytes 16 and 20.
+    data = png(1024, 16)
+    assert int.from_bytes(data[16:20], "big") == 1024
+    assert int.from_bytes(data[20:24], "big") == 16
+    assert rules.png_size(data) == (1024, 16)
+
+
+_GOOD_PNG = png(64, 64)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"",
+        b"\x89PNG\r\n\x1a\n",
+        # Cut off inside the header.
+        _GOOD_PNG[:23],
+        # The first chunk is not IHDR.
+        _GOOD_PNG[:12] + b"IDAT" + _GOOD_PNG[16:],
+        # IHDR with a length other than 13.
+        _GOOD_PNG[:8] + struct.pack(">I", 12) + _GOOD_PNG[12:],
+        # A JPEG is not a PNG.
+        jpeg(),
+    ],
+)
+def test_bytes_with_no_readable_ihdr_have_no_png_size(data) -> None:
+    assert rules.png_size(data) is None
+
+
+def test_check_image_answers_the_format_and_the_size() -> None:
+    assert rules.check_image(png(384, 200)) == ("png", 384, 200)
+    assert rules.check_image(png(16, 1024)) == ("png", 16, 1024)
+    assert rules.check_image(jpeg(416, 300)) == ("jpeg", 416, 300)
+
+
+@pytest.mark.parametrize(
+    ("data", "code"),
+    [
+        (_GOOD_PNG[:23], "invalid"),
+        (_GOOD_PNG[:12] + b"IDAT" + _GOOD_PNG[16:], "invalid"),
+        (_GOOD_PNG[:8] + struct.pack(">I", 12) + _GOOD_PNG[12:], "invalid"),
+        (png(15, 400), "invalid"),
+        (png(400, 1025), "invalid"),
+        (png(0, 0), "invalid"),
+        (png(2**31, 64), "invalid"),
+        (png(pad=256 * 1024), "too_large"),
+        (jpeg(15, 400), "invalid"),
+        (jpeg() + bytes(256 * 1024), "too_large"),
+        (b"GIF89a" + bytes(64), "invalid"),
+        (b"", "invalid"),
+    ],
+)
+def test_check_image_refusals(data, code) -> None:
+    with pytest.raises(rules.PageImageInvalid) as err:
+        rules.check_image(data)
+    assert err.value.code == code
+
+
+def test_a_png_at_the_cap_is_kept_and_one_byte_more_is_too_large() -> None:
+    base = len(png())
+    # A private chunk adds 12 bytes around its body.
+    at_cap = png(pad=256 * 1024 - base - 12)
+    assert len(at_cap) == 256 * 1024
+    assert rules.check_image(at_cap) == ("png", 200, 300)
+    with pytest.raises(rules.PageImageTooLarge):
+        rules.check_image(png(pad=256 * 1024 - base - 11))
+
+
+def test_a_png_is_served_as_a_png_and_anything_else_as_a_jpeg() -> None:
+    assert rules.content_type(png()) == "image/png"
+    assert rules.content_type(jpeg()) == "image/jpeg"
+    assert rules.content_type((_PRESETS / "preset_waves.jpg").read_bytes()) == "image/jpeg"
+    assert rules.EXTENSIONS == {"jpeg": "jpg", "png": "png"}
+
+
+# ── a photo's kind, label and entity id ──────────────────────────────────
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(None, "background"), ("background", "background"), ("icon", "icon")])
+def test_check_kind(raw, expected) -> None:
+    assert rules.check_kind(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["Icon", "", "photo", "tile", 1, True, ["icon"]])
+def test_check_kind_refusals(raw) -> None:
+    with pytest.raises(rules.PageImageInvalid) as err:
+        rules.check_kind(raw)
+    assert err.value.code == "invalid"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        ("Desk lamp", "Desk lamp"),
+        ("  Desk lamp \n", "Desk lamp"),
+        ("", None),
+        ("   ", None),
+        ("x" * 60, "x" * 60),
+        ("  " + "x" * 60 + "  ", "x" * 60),
+        ("Café ☕", "Café ☕"),
+    ],
+)
+def test_check_label(raw, expected) -> None:
+    assert rules.check_label(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["x" * 61, 7, True, ["Lamp"], {"name": "Lamp"}])
+def test_check_label_refusals(raw) -> None:
+    with pytest.raises(rules.PageImageInvalid) as err:
+        rules.check_label(raw)
+    assert err.value.code == "invalid"
+
+
+@pytest.mark.parametrize("raw", ["light.desk_lamp", "fan.bedroom", "switch.coffee_machine_2", "sensor.a"])
+def test_check_entity_id(raw) -> None:
+    assert rules.check_entity_id(raw) == raw
+    assert rules.check_entity_id(None) is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["", "light", "light.", ".lamp", "Light.Lamp", "light.desk lamp", "light.desk.lamp", "light-x.lamp", 3, True],
+)
+def test_check_entity_id_refusals(raw) -> None:
+    with pytest.raises(rules.PageImageInvalid) as err:
+        rules.check_entity_id(raw)
+    assert err.value.code == "invalid"
 
 
 # ── what pages name ──────────────────────────────────────────────────────
@@ -208,6 +360,34 @@ def test_ids_in_pages_of_anything_else_is_empty(document) -> None:
     assert rules.ids_in_pages(document) == set()
 
 
+ICON_UUID = "A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D"
+OTHER_ICON_UUID = "99999999-8888-4777-8666-555555555555"
+
+
+def test_ids_in_pages_reads_each_tiles_photo_too() -> None:
+    document = {
+        "pages": [
+            {
+                "id": "p1",
+                "backgroundImageId": UUID_UPPER,
+                "items": [
+                    {"id": "t1", "entityId": "light.lamp", "iconPhotoId": ICON_UUID.lower()},
+                    {"id": "t2", "entityId": "fan.desk"},
+                    {"id": "t3", "entityId": "fan.desk", "iconPhotoId": None},
+                    {"id": "t4", "entityId": "fan.desk", "iconPhotoId": "not-a-photo"},
+                    {"id": "t5", "entityId": "fan.desk", "iconPhotoId": 7},
+                    "junk",
+                ],
+            },
+            {"id": "p2", "isHidden": True, "items": [{"id": "t", "iconPhotoId": OTHER_ICON_UUID}]},
+            {"id": "p3", "items": "not a list"},
+            # A tile group holds no tiles, so a photo id there is not a use.
+            {"id": "p4", "tileGroups": [{"id": "g", "iconPhotoId": "12345678-1234-4234-8234-123456789012"}]},
+        ]
+    }
+    assert rules.ids_in_pages(document) == {UUID_UPPER, ICON_UUID, OTHER_ICON_UUID}
+
+
 def test_usage_lists_the_owners_of_each_photo_sorted() -> None:
     def page(image_id: str) -> dict:
         return {"pages": [{"id": "p", "backgroundImageId": image_id}]}
@@ -215,6 +395,15 @@ def test_usage_lists_the_owners_of_each_photo_sorted() -> None:
     assert rules.usage(
         {"watch-B": page(UUID_UPPER), "watch-A": page(UUID_UPPER.lower()), "watch-C": page("preset_fern")}
     ) == {UUID_UPPER: ["watch-A", "watch-B"], "preset_fern": ["watch-C"]}
+
+
+def test_usage_counts_a_tiles_photo() -> None:
+    def tile(photo_id: str) -> dict:
+        return {"pages": [{"id": "p", "items": [{"id": "t", "entityId": "light.x", "iconPhotoId": photo_id}]}]}
+
+    assert rules.usage(
+        {"watch-B": tile(ICON_UUID), "watch-A": tile(ICON_UUID.lower()), "watch-C": {"pages": [{"id": "p", "backgroundImageId": ICON_UUID}]}}
+    ) == {ICON_UUID: ["watch-A", "watch-B", "watch-C"]}
 
 
 # ── the sweep's decision ─────────────────────────────────────────────────
@@ -254,3 +443,26 @@ def test_plan_sweep_with_unread_pages_only_clears() -> None:
 
 def test_plan_sweep_of_nothing_changes_nothing() -> None:
     assert rules.plan_sweep({}, {"A"}, NOW, complete=True) == rules.SweepPlan((), (), ())
+
+
+def test_the_graces_are_seven_days_and_thirty_for_an_icon() -> None:
+    assert rules.UNUSED_GRACE == timedelta(days=7)
+    assert rules.UNUSED_ICON_GRACE == timedelta(days=30)
+
+
+def test_plan_sweep_keeps_an_icon_photo_for_thirty_days() -> None:
+    marks = {
+        "ICON-8-DAYS": _iso(NOW - timedelta(days=8)),
+        "ICON-INSIDE": _iso(NOW - timedelta(days=30)),
+        "ICON-PAST": _iso(NOW - timedelta(days=30, seconds=1)),
+        "ICON-IN-USE": _iso(NOW - timedelta(days=60)),
+        "ICON-NEW": None,
+        "BACKGROUND-8-DAYS": _iso(NOW - timedelta(days=8)),
+    }
+    icons = {"ICON-8-DAYS", "ICON-INSIDE", "ICON-PAST", "ICON-IN-USE", "ICON-NEW", "NOT-STORED"}
+    plan = rules.plan_sweep(marks, {"ICON-IN-USE"}, NOW, complete=True, icons=icons)
+    assert plan.clear == ("ICON-IN-USE",)
+    assert plan.stamp == ("ICON-NEW",)
+    assert plan.delete == ("BACKGROUND-8-DAYS", "ICON-PAST")
+    # Unread pages stop the icon deletes too.
+    assert rules.plan_sweep(marks, (), NOW, complete=False, icons=icons).delete == ()
