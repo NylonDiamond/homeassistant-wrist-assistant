@@ -1,26 +1,36 @@
-// Light Look: the light the iPhone saves in a tile's icon photo (a PNG
-// `tEXt` chunk, keyword `WristAssistantGlow`), read here
-// (one-look/glow.ts) and drawn with the photo while the tile is lit and
-// bright (one-look/render.ts, `cutoutLayer`): its halo in the pearl halo's
-// place, then the shade masked by the photo, the rays and the core, all
-// screen blended (app repo docs/photo_tiles_plan_2026-10.md, "Light Look").
-// The worked example there is checked here as numbers; the apps check the
-// same one.
+// Light Look: the look the iPhone saves in a tile's icon photo (a PNG
+// `tEXt` chunk, keyword `WristAssistantGlow`), read and turned into three
+// masks here (one-look/glow.ts), made once in the photo store, and drawn
+// while the tile is lit and bright (one-look/render.ts): the off light's
+// dark fill, the aura and beam behind the photo, the emission over it
+// (app repo docs/photo_tiles_plan_2026-10.md, "Light Look"). The mask
+// maths is checked on small made up pixels, as the apps check theirs.
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { HassEntityState, HassLike } from "../src/ha-api.js";
 import { renderPageRowPicture } from "../src/library/row-picture.js";
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
-import { type OneLookPalette, ONE_LOOK_AMBER, oneLookMix } from "../src/watch-pages/one-look/colour.js";
+import { type OneLookPalette, ONE_LOOK_AMBER, ONE_LOOK_GRAPHITE_LIGHT, oneLookHex, oneLookMix } from "../src/watch-pages/one-look/colour.js";
 import {
-  type OneLookGlowRecipe,
-  ONE_LOOK_GLOW_DEFAULT,
+  type OneLookLightMask,
+  type OneLookLightPixels,
+  type OneLookLightRecipe,
+  type OneLookPhotoLight,
   ONE_LOOK_GLOW_KEYWORD,
-  ONE_LOOK_GLOW_PRESETS,
+  ONE_LOOK_LIGHT_DEFAULT,
+  oneLookAuraMask,
+  oneLookBeamMask,
+  oneLookBoxBlur,
+  oneLookEmitMask,
+  oneLookEmitUnblurred,
   oneLookGlowColour,
-  oneLookGlowLayers,
-  oneLookGlowRecipeOf,
+  oneLookLightMasks,
+  oneLookLightPlacement,
+  oneLookLightRecipeOf,
+  oneLookLightSizes,
+  oneLookMaskPixels,
+  oneLookSmoothstep,
   readIconPng,
 } from "../src/watch-pages/one-look/glow.js";
 import {
@@ -29,6 +39,7 @@ import {
   oneLookCutoutGlows,
   oneLookCutoutOf,
   oneLookCutoutRect,
+  oneLookLightOn,
   oneLookPreviewModel,
   renderOneLookTile,
 } from "../src/watch-pages/one-look/render.js";
@@ -60,112 +71,197 @@ function png(width: number, height: number, ...chunks: number[][]): Uint8Array {
   return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...ihdr, ...chunks.flat(), ...chunk("IEND", [])]);
 }
 
-const RECIPE = '{"v":1,"x":0.4,"y":0.3,"size":0.2,"glow":0.9,"spread":0.6,"rays":0.5,"shade":0.7}';
+const RECIPE = '{"v":1,"dir":"up","glow":0.5}';
 const IDAT = chunk("IDAT", [1, 2, 3, 4]);
+const look = (json: string) => readIconPng(png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, json)))?.recipe;
 
-describe("reading the light from the photo's bytes", () => {
-  it("reads the size and a light right after IHDR", () => {
-    expect(readIconPng(png(120, 90, text(ONE_LOOK_GLOW_KEYWORD, RECIPE), IDAT))).toEqual({
-      width: 120, height: 90, glow: { x: 0.4, y: 0.3, size: 0.2, glow: 0.9, spread: 0.6, rays: 0.5, shade: 0.7 },
-    });
+describe("reading the look from the photo's bytes", () => {
+  it("reads the size and a look right after IHDR", () => {
+    expect(readIconPng(png(120, 90, text(ONE_LOOK_GLOW_KEYWORD, RECIPE), IDAT))).toEqual({ width: 120, height: 90, recipe: { dir: "up", glow: 0.5 } });
   });
 
-  it("finds a chunk anywhere before IEND, after IDAT too", () => {
-    expect(readIconPng(png(10, 10, IDAT, chunk("prVt", [9, 9]), text(ONE_LOOK_GLOW_KEYWORD, RECIPE)))?.glow?.x).toBe(0.4);
+  it("finds the chunk anywhere before IEND, after IDAT too", () => {
+    expect(readIconPng(png(10, 10, IDAT, chunk("prVt", [9, 9]), text(ONE_LOOK_GLOW_KEYWORD, RECIPE)))?.recipe?.dir).toBe("up");
   });
 
-  it("takes the first chunk with the keyword, past other text", () => {
-    const second = '{"v":1,"x":0.9}';
-    const facts = readIconPng(png(10, 10, text("Software", "x"), text(ONE_LOOK_GLOW_KEYWORD, RECIPE), text(ONE_LOOK_GLOW_KEYWORD, second)));
-    expect(facts?.glow?.x).toBe(0.4);
+  it("only the first chunk with the keyword counts", () => {
+    const down = '{"v":1,"dir":"down"}';
+    expect(readIconPng(png(10, 10, text("Software", "x"), text(ONE_LOOK_GLOW_KEYWORD, RECIPE), text(ONE_LOOK_GLOW_KEYWORD, down)))?.recipe?.dir).toBe("up");
+    // A first one that is no look is no look, whatever follows.
+    expect(readIconPng(png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, '{"v":2}'), text(ONE_LOOK_GLOW_KEYWORD, RECIPE)))?.recipe).toBeUndefined();
   });
 
-  it("no chunk, or another keyword: no light", () => {
+  it("no chunk, or another keyword: no look", () => {
     expect(readIconPng(png(30, 40, IDAT))).toEqual({ width: 30, height: 40 });
-    expect(readIconPng(png(30, 40, text("WristAssistantGlo", RECIPE)))?.glow).toBeUndefined();
-    expect(readIconPng(png(30, 40, text("wristassistantglow", RECIPE)))?.glow).toBeUndefined();
+    expect(readIconPng(png(30, 40, text("WristAssistantGlo", RECIPE)))?.recipe).toBeUndefined();
+    expect(readIconPng(png(30, 40, text("wristassistantglow", RECIPE)))?.recipe).toBeUndefined();
   });
 
-  it("ignores text over 1024 bytes, text that is not a JSON object, and a v other than 1", () => {
-    const long = `{"v":1,"x":0.2,"pad":"${"a".repeat(1024)}"}`;
-    expect(long.length).toBeGreaterThan(1024);
-    const exact = `{"v":1,"x":0.2,"pad":"${"a".repeat(1024 - 24)}"}`;
+  it("dir is up, down or around; anything else or missing is around", () => {
+    expect(look('{"v":1,"dir":"up"}')?.dir).toBe("up");
+    expect(look('{"v":1,"dir":"down"}')?.dir).toBe("down");
+    expect(look('{"v":1,"dir":"around"}')?.dir).toBe("around");
+    for (const bad of ['"UP"', '"sideways"', "5", "null", '["up"]']) expect(look(`{"v":1,"dir":${bad}}`)?.dir, bad).toBe("around");
+    expect(look('{"v":1}')).toEqual(ONE_LOOK_LIGHT_DEFAULT);
+    expect(ONE_LOOK_LIGHT_DEFAULT).toEqual({ dir: "around", glow: 0.8 });
+  });
+
+  it("glow is clamped to 0 to 1, and 0.8 when missing or not a number", () => {
+    expect(look('{"v":1,"glow":0.35}')?.glow).toBe(0.35);
+    expect(look('{"v":1,"glow":-1}')?.glow).toBe(0);
+    expect(look('{"v":1,"glow":3}')?.glow).toBe(1);
+    expect(look('{"v":1,"glow":"0.5"}')?.glow).toBe(0.8);
+    expect(look('{"v":1,"glow":null}')?.glow).toBe(0.8);
+    // Other keys, the first version's among them, are ignored.
+    expect(look('{"v":1,"x":0.2,"y":0.3,"rays":0.7,"glow":0.6,"dir":"down"}')).toEqual({ dir: "down", glow: 0.6 });
+  });
+
+  it("no look when v is not 1 (missing included), the text is not a JSON object, or it is over 1024 bytes", () => {
+    for (const bad of ['{"v":2}', '{"v":"1"}', '{"dir":"up"}', "{", "[1]", "1", "null", '"v"']) expect(look(bad), bad).toBeUndefined();
+    const long = `{"v":1,"dir":"up","pad":"${"a".repeat(1001)}"}`;
+    expect(long.length).toBe(1028);
+    expect(look(long)).toBeUndefined();
+    const exact = `{"v":1,"dir":"up","pad":"${"a".repeat(997)}"}`;
     expect(exact.length).toBe(1024);
-    expect(readIconPng(png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, long)))?.glow).toBeUndefined();
-    expect(readIconPng(png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, exact)))?.glow?.x).toBe(0.2);
-    for (const bad of ["{", "[1]", "1", "null", '"v"', '{"v":2,"x":0.2}', '{"v":"1"}', '{"x":0.2}']) {
-      expect(readIconPng(png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, bad)))?.glow, bad).toBeUndefined();
-    }
+    expect(look(exact)?.dir).toBe("up");
+    expect(oneLookLightRecipeOf([{ v: 1 }])).toBeUndefined();
   });
 
   it("is not a PNG whose first chunk is IHDR: nothing", () => {
     expect(readIconPng(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBeUndefined();
     const noHeader = png(10, 10);
-    noHeader[12] = 0x49 + 1;
+    noHeader[12] = 0x4a;
     expect(readIconPng(noHeader)).toBeUndefined();
-    // Cut off mid chunk: the size still reads, the light does not.
+    // Cut off mid chunk: the size still reads, the look does not.
     const cut = png(10, 10, text(ONE_LOOK_GLOW_KEYWORD, RECIPE));
-    expect(readIconPng(cut.subarray(0, cut.length - 30))).toEqual({ width: 10, height: 10 });
-  });
-
-  it("clamps each field to 0 to 1, and a missing or bad field takes the Bulb preset's, centred", () => {
-    expect(ONE_LOOK_GLOW_DEFAULT).toEqual({ x: 0.5, y: 0.5, size: 0.55, glow: 0.85, spread: 0.45, rays: 0, shade: 0.8 });
-    expect(ONE_LOOK_GLOW_PRESETS.soft).toEqual({ size: 0.3, glow: 0.7, spread: 0.8, rays: 0, shade: 0.6 });
-    expect(ONE_LOOK_GLOW_PRESETS.sparkle).toEqual({ size: 0.4, glow: 0.75, spread: 0.55, rays: 0.7, shade: 0.7 });
-    expect(oneLookGlowRecipeOf({ v: 1 })).toEqual(ONE_LOOK_GLOW_DEFAULT);
-    expect(oneLookGlowRecipeOf({ v: 1, x: -2, y: 7, size: "big", glow: null, spread: 0.25, rays: 1.5, shade: Number.NaN })).toEqual({
-      ...ONE_LOOK_GLOW_DEFAULT, x: 0, y: 1, spread: 0.25, rays: 1,
-    });
-    expect(oneLookGlowRecipeOf([{ v: 1 }])).toBeUndefined();
+    expect(readIconPng(cut.subarray(0, cut.length - 20))).toEqual({ width: 10, height: 10 });
   });
 });
 
-describe("the light's layers", () => {
-  it("the worked example", () => {
-    const recipe: OneLookGlowRecipe = { x: 0.5, y: 0.25, size: 0.5, glow: 1, spread: 0.5, rays: 0.5, shade: 1 };
-    const g = oneLookGlowLayers({ x: 10, y: 20, width: 40, height: 40 }, recipe, 1, [1, 2, 3]);
-    expect(g.level).toBe(1);
-    for (const c of [g.halo, g.shade, g.rays!, g.core]) {
-      expect(c.cx).toBe(30);
-      expect(c.cy).toBe(30);
-    }
-    expect(g.halo.r).toBeCloseTo(33, 10);
-    expect(g.shade.r).toBeCloseTo(18.4, 10);
-    expect(g.rays!.r).toBeCloseTo(32, 10);
-    expect(g.rays!.alpha).toBeCloseTo(0.275, 10);
-    expect(g.core.r).toBeCloseTo(3.4, 10);
-    expect(g.halo.alpha).toBe(1);
-    expect(g.shade.opacity).toBe(1);
-    expect(g.core.white).toBeCloseTo(0.95, 10);
-    expect(g.core.tint).toBeCloseTo(0.85, 10);
+// ── the masks ────────────────────────────────────────────────────────────
+
+/** A photo of one colour and alpha everywhere. */
+function solid(width: number, height: number, rgb: number, alpha = 255): OneLookLightPixels {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) data.set([rgb, rgb, rgb, alpha], i * 4);
+  return { width, height, data };
+}
+
+function maskOf(width: number, height: number, value: (x: number, y: number) => number): OneLookLightMask {
+  const data = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) data[y * width + x] = value(x, y);
+  return { width, height, data };
+}
+
+const at = (m: OneLookLightMask, x: number, y: number) => m.data[y * m.width + x]!;
+
+describe("the masks", () => {
+  it("the sizes for a 256 by 384 photo", () => {
+    const z = oneLookLightSizes(256, 384);
+    expect(z.long).toBe(384);
+    expect(z.emitRadius).toBe(2);
+    expect(z.pad).toBe(180);
+    expect(z.auraRadius).toBe(22);
+    expect(z.rim).toBeCloseTo(6.144, 10);
+    expect(z.fadeIn).toBeCloseTo(11.904, 10);
+    expect(z.fadeLength).toBeCloseTo(119.04, 10);
+    // A small photo still blurs its emission by 1.
+    expect(oneLookLightSizes(20, 12).emitRadius).toBe(1);
   });
 
-  it("the level follows the brightness, the longer side sets the size, and no rays at 0", () => {
-    const g = oneLookGlowLayers({ x: 0, y: 0, width: 20, height: 40 }, { ...ONE_LOOK_GLOW_DEFAULT, x: 0.25, y: 1 }, 0.5, [0, 0, 0]);
-    expect(g.level).toBeCloseTo(0.625, 10);
-    expect(g.halo.cx).toBe(5);
-    expect(g.halo.cy).toBe(40);
-    expect(g.shade.r).toBeCloseTo(0.46 * 40, 10);
-    expect(g.halo.alpha).toBeCloseTo(0.85 * 0.625, 10);
-    expect(g.shade.opacity).toBeCloseTo(0.8 * 0.625, 10);
-    expect(g.rays).toBeUndefined();
-    expect(oneLookGlowLayers({ x: 0, y: 0, width: 1, height: 1 }, ONE_LOOK_GLOW_DEFAULT, 0, [0, 0, 0]).level).toBe(0.25);
+  it("emission: smoothstep(0.40, 0.80, luma) where alpha is at least 0.5, else 0", () => {
+    expect(oneLookSmoothstep(0.4, 0.8, 0.6)).toBeCloseTo(0.5, 12);
+    // 153 of 255 is luma 0.6 on every weighting.
+    expect(at(oneLookEmitUnblurred(solid(2, 2, 153)), 0, 0)).toBeCloseTo(0.5, 6);
+    expect(at(oneLookEmitUnblurred(solid(2, 2, 255)), 1, 1)).toBe(1);
+    expect(at(oneLookEmitUnblurred(solid(2, 2, 90)), 1, 1)).toBe(0);
+    expect(at(oneLookEmitUnblurred(solid(2, 2, 255, 127)), 0, 0)).toBe(0);
+    expect(at(oneLookEmitUnblurred(solid(2, 2, 255, 128)), 0, 0)).toBe(1);
+    // Rec. 709 weights: pure green is luma 0.7152.
+    const green: OneLookLightPixels = { width: 1, height: 1, data: new Uint8ClampedArray([0, 255, 0, 255]) };
+    expect(at(oneLookEmitUnblurred(green), 0, 0)).toBeCloseTo(oneLookSmoothstep(0.4, 0.8, 0.7152), 6);
+    // Blurred with the edge pixels repeating, a uniform photo stays uniform.
+    const e = oneLookEmitMask(solid(9, 7, 153));
+    expect(Math.min(...e.data)).toBeCloseTo(0.5, 5);
+    expect(Math.max(...e.data)).toBeCloseTo(0.5, 5);
   });
 
-  it("is in the tile's hue, else amber, mixed 35% toward white", () => {
-    expect(oneLookGlowColour(undefined)).toEqual(oneLookMix(ONE_LOOK_AMBER, [255, 255, 255], 0.35));
-    expect(oneLookGlowColour([0, 100, 200])).toEqual([89, 154, 219]);
+  it("box blur: three passes each way, edges repeating or 0", () => {
+    const dot = maskOf(7, 1, (x) => (x === 3 ? 1 : 0));
+    const repeat = oneLookBoxBlur(dot, 1, "repeat");
+    expect([...repeat.data].map((v) => Math.round(v * 27 * 1000) / 1000)).toEqual([1, 3, 6, 7, 6, 3, 1]);
+    // Each pass down a one row mask reads 0 above and below: a third each time.
+    const zero = oneLookBoxBlur(dot, 1, "zero");
+    expect(at(zero, 3, 0)).toBeCloseTo(7 / 27 / 27, 8);
+    // The two directions commute.
+    const grid = maskOf(6, 5, (x, y) => ((x * 7 + y * 3) % 5) / 4);
+    const both = oneLookBoxBlur(grid, 2, "repeat");
+    const t = (m: OneLookLightMask) => maskOf(m.height, m.width, (x, y) => at(m, y, x));
+    const flipped = t(oneLookBoxBlur(t(grid), 2, "repeat"));
+    for (let i = 0; i < both.data.length; i++) expect(both.data[i]).toBeCloseTo(flipped.data[i]!, 5);
   });
 
-  it("only while lit and not dimmed", () => {
-    const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
-    expect(oneLookCutoutGlows(p("coloured", true), true)).toBe(true);
-    expect(oneLookCutoutGlows(p("coloured", false), true)).toBe(false);
-    expect(oneLookCutoutGlows(p("graphite", false), true)).toBe(false);
-    // A switch that keeps its colour is bright but not lit: no light.
-    expect(oneLookCutoutGlows(p("coloured", false), false)).toBe(false);
-    // Wrist down.
-    expect(oneLookCutoutGlows(p("coloured", true, true), true)).toBe(false);
+  it("aura: the emission on the padded canvas, blurred, 0 past the edge", () => {
+    const emit = maskOf(20, 10, (x, y) => (x >= 8 && x < 12 && y >= 3 && y < 7 ? 1 : 0));
+    const z = oneLookLightSizes(20, 10);
+    const aura = oneLookAuraMask(emit);
+    expect([aura.width, aura.height]).toEqual([20 + 2 * z.pad, 10 + 2 * z.pad]);
+    expect(z.pad).toBe(9);
+    expect(z.auraRadius).toBe(1);
+    expect(at(aura, 0, 0)).toBe(0);
+    expect(at(aura, z.pad + 9, z.pad + 4)).toBeGreaterThan(0.5);
+    const sum = (m: OneLookLightMask) => m.data.reduce((a, v) => a + v, 0);
+    // Nothing reaches the canvas edge, so the blur keeps the whole emission.
+    expect(sum(aura)).toBeCloseTo(sum(emit), 3);
+  });
+
+  // A 100 by 100 photo, the light's pale part a square from 40 to 59: L
+  // 100, p 47, rim offset 1.6, fade in 3.1, fade length 31.
+  const square = maskOf(100, 100, (x, y) => (x >= 40 && x <= 59 && y >= 40 && y <= 59 ? 1 : 0.2));
+  const P = 47;
+
+  it("beam up: nothing below the rim, symmetric about the light's centre, the numbers", () => {
+    const beam = oneLookBeamMask(square, "up")!;
+    expect([beam.width, beam.height]).toEqual([194, 194]);
+    // t 40, rim 41.6: row 42 and below are 0.
+    for (let y = 42; y < 100 + P; y++) for (let x = -P; x < 100 + P; x += 7) expect(at(beam, x + P, y + P)).toBe(0);
+    expect(at(beam, 49 + P, 41 + P)).toBeGreaterThan(0);
+    // cx 49.5: column 49 less k mirrors column 50 plus k.
+    for (const y of [41, 30, 0, -40]) for (let k = 0; k < 49; k++) expect(at(beam, 49 - k + P, y + P)).toBeCloseTo(at(beam, 50 + k + P, y + P), 6);
+    // Row 30: dy 11.6, spread 0.5 * 19 + 0.9 * 11.6, fade 1 * exp(-11.6 / 31).
+    const dy = 41.6 - 30;
+    const spread = 9.5 + 0.9 * dy;
+    const fade = Math.min(1, dy / 3.1) * Math.exp(-dy / 31);
+    expect(at(beam, 49 + P, 30 + P)).toBeCloseTo((1 - 0.5 / spread) ** 1.5 * fade, 5);
+    expect(at(beam, 20 + P, 30 + P)).toBeCloseTo(Math.max(0, 1 - 29.5 / spread) ** 1.5 * fade, 5);
+    // Row 41: dy 0.6, faded in by 0.6 / 3.1.
+    expect(at(beam, 49 + P, 41 + P)).toBeCloseTo((1 - 0.5 / (9.5 + 0.54)) ** 1.5 * (0.6 / 3.1) * Math.exp(-0.6 / 31), 5);
+  });
+
+  it("beam down: nothing above the rim; around and no pale part: no beam", () => {
+    const beam = oneLookBeamMask(square, "down")!;
+    // b 59, rim 57.4: row 57 and above are 0, row 58 lit.
+    for (let y = -P; y <= 57; y++) expect(at(beam, 49 + P, y + P)).toBe(0);
+    expect(at(beam, 49 + P, 58 + P)).toBeGreaterThan(0);
+    // Row 70 is 12.6 past the bottom rim, as row 29 is past the top one going up.
+    expect(at(beam, 49 + P, 70 + P)).toBeGreaterThan(0);
+    expect(at(beam, 49 + P, 70 + P)).toBeCloseTo(at(oneLookBeamMask(square, "up")!, 49 + P, 29 + P), 6);
+    expect(oneLookBeamMask(square, "around")).toBeUndefined();
+    // No pixel over 0.3 (0.3 itself is stored as a float a hair over it).
+    expect(oneLookBeamMask(maskOf(30, 30, () => 0.29), "up")).toBeUndefined();
+    expect(oneLookBeamMask(maskOf(30, 30, () => 0), "down")).toBeUndefined();
+  });
+
+  it("all three from pixels, and a mask as alpha pixels", () => {
+    const pixels = solid(20, 20, 0);
+    for (let y = 8; y < 12; y++) for (let x = 8; x < 12; x++) pixels.data.set([255, 255, 255, 255], (y * 20 + x) * 4);
+    const set = oneLookLightMasks(pixels, "up");
+    expect(set.pad).toBe(9);
+    expect([set.emit.width, set.emit.height]).toEqual([20, 20]);
+    expect([set.aura.width, set.aura.height, set.beam?.width]).toEqual([38, 38, 38]);
+    expect(oneLookLightMasks(pixels, "around").beam).toBeUndefined();
+    const out = oneLookMaskPixels(maskOf(3, 1, (x) => [0, 0.5, 1][x]!));
+    expect([...out]).toEqual([255, 255, 255, 0, 255, 255, 255, 128, 255, 255, 255, 255]);
   });
 });
 
@@ -181,8 +277,12 @@ function html(t: unknown): string {
 }
 
 function styleOf(out: string, cls: string): string | undefined {
-  const tag = new RegExp(`<[a-z]+ class="${cls}(?: [^"]*)?"[^>]*?style=([^>]*)>`).exec(out);
+  const tag = new RegExp(`<[a-z]+ class="${cls}"[^>]*?style=([^>]*)>`).exec(out);
   return tag?.[1]?.replace(/\s*\/$/, "");
+}
+
+function tileStyle(out: string): string {
+  return /<div class="wp-tile ol-tile"[^>]*?style=([^>]*?)\s*title/.exec(out)?.[1] ?? "";
 }
 
 function place(style: string | undefined): { x: number; y: number; w: number; h: number } {
@@ -200,93 +300,111 @@ const CELL = { width: 6 * UNIT + 10, height: 4 * UNIT + 6 };
 
 type Photos = Partial<Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow">>;
 
-function face(tile: WatchPageTile, state: string, photos: Photos, brightness = 255): OneLookTileFaceInput {
-  const input: WatchPagePreviewInput = { page, pages: [page], screen: { width: 211, height: 251 }, states: states(state, brightness), scale: 1, ...photos };
-  return { tile, input, stub: false, device: "watch", look: undefined, width: CELL.width - 1, height: CELL.height - 1, cell: CELL, unit: UNIT, box: "", s: 1 };
+function face(tile: WatchPageTile, state: string, photos: Photos, o: { brightness?: number; device?: "watch" | "phone" } = {}): OneLookTileFaceInput {
+  const input: WatchPagePreviewInput = { page, pages: [page], screen: { width: 211, height: 251 }, states: states(state, o.brightness ?? 255), scale: 1, ...photos };
+  return { tile, input, stub: false, device: o.device ?? "watch", look: undefined, width: CELL.width - 1, height: CELL.height - 1, cell: CELL, unit: UNIT, box: "", s: 1 };
 }
 
 const lamp = (extra: Partial<WatchPageTile> = {}): WatchPageTile => ({ id: "T", entityId: "light.lamp", customLabel: "Lamp", colSpan: 6, rowSpan: 4, iconPhotoId: ID, ...extra });
-const SPARKLE: OneLookGlowRecipe = { x: 0.5, y: 0.25, ...ONE_LOOK_GLOW_PRESETS.sparkle };
 const photo = (id: string) => (id === ID ? "blob:lamp" : undefined);
-const lit = (glow: OneLookGlowRecipe | undefined): Photos => ({ photo, photoSize: () => ({ width: 200, height: 100 }), photoGlow: () => glow });
-const LIGHT_CLASSES = ["ol-light-halo", "ol-light-shade", "ol-light-rays", "ol-light-core"];
+const LIGHT = (recipe: OneLookLightRecipe = { dir: "up", glow: 0.8 }): OneLookPhotoLight => ({
+  recipe, width: 200, height: 100, pad: 94, emit: "blob:emit", aura: "blob:aura", ...(recipe.dir === "around" ? {} : { beam: "blob:beam" }),
+});
+const lit = (light: OneLookPhotoLight | undefined): Photos => ({ photo, photoSize: () => ({ width: 200, height: 100 }), photoGlow: () => light });
+const LAYERS = ["ol-light-aura", "ol-light-beam", "ol-light-emit"];
 
-describe("a light on a One Look tile", () => {
-  it("lit with a light: its halo behind the photo in the pearl halo's place, then the shade, rays and core over it", () => {
-    const out = html(renderOneLookTile(face(lamp(), "on", lit(SPARKLE))));
-    const at = LIGHT_CLASSES.map((c) => out.indexOf(`class="ol-light ${c}"`));
-    const photoAt = out.indexOf(`class="ol-cutout"`);
-    expect(at.every((i) => i >= 0)).toBe(true);
-    expect(at[0]).toBeLessThan(photoAt);
-    expect(photoAt).toBeLessThan(at[1]!);
-    expect(at[1]).toBeLessThan(at[2]!);
-    expect(at[2]).toBeLessThan(at[3]!);
+describe("a look on a One Look tile", () => {
+  it("lit: aura and beam behind the photo in the pearl halo's place, the emission over it", () => {
+    const out = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()))));
+    const aura = out.indexOf(`class="ol-light ol-light-aura"`);
+    const beam = out.indexOf(`class="ol-light ol-light-beam"`);
+    const img = out.indexOf(`class="ol-cutout"`);
+    const emit = out.indexOf(`class="ol-light ol-light-emit"`);
+    expect(aura).toBeGreaterThan(0);
+    expect(aura).toBeLessThan(beam);
+    expect(beam).toBeLessThan(img);
+    expect(img).toBeLessThan(emit);
     expect(out).not.toContain(`class="ol-halo"`);
     expect(out).not.toContain("ol-cutout-glow");
     expect(styleOf(out, "ol-cutout")).not.toContain("filter");
   });
 
-  it("places every layer from the fitted photo rect, and masks the shade with the photo", () => {
-    const f = face(lamp(), "on", lit(SPARKLE));
+  it("places and colours each layer: the emission on the photo, the aura and beam reaching the padding past it", () => {
+    const f = face(lamp(), "on", lit(LIGHT()));
     const model = oneLookPreviewModel(f)!;
-    expect(model.cutout?.glow).toEqual(SPARKLE);
+    expect(oneLookLightOn(model)).toBe(true);
     const rect = oneLookCutoutRect(model.layout.discRect, 2).photo;
-    const g = oneLookGlowLayers(rect, SPARKLE, model.palette.brightness, oneLookGlowColour(model.palette.hue));
     const out = html(renderOneLookTile(f));
-    const halo = place(styleOf(out, "ol-light"));
-    expect(halo.x + halo.w / 2).toBeCloseTo(g.halo.cx, 1);
-    expect(halo.y + halo.h / 2).toBeCloseTo(g.halo.cy, 1);
-    expect(halo.w).toBeCloseTo(g.halo.r * 2, 1);
-    const shadeStyle = out.match(/class="ol-light ol-light-shade" style=([^>]*)>/)?.[1] ?? "";
-    const shade = place(shadeStyle);
-    expect(shade.x).toBeCloseTo(rect.x, 1);
-    expect(shade.w).toBeCloseTo(rect.width, 1);
-    expect(shade.h).toBeCloseTo(rect.height, 1);
-    expect(shadeStyle).toContain(`mask-image:url("blob:lamp")`);
-    expect(shadeStyle).toContain(`-webkit-mask-image:url("blob:lamp")`);
-    expect(shadeStyle).toContain(`opacity:${Math.round(g.shade.opacity * 10000) / 10000}`);
-    expect(shadeStyle).toContain(`circle ${Math.round(g.shade.r * 100) / 100}px at`);
-    const [r, gg, b] = g.colour;
-    expect(out).toContain(`rgba(${r}, ${gg}, ${b}, ${Math.round(g.halo.alpha * 10000) / 10000}) 0%`);
-    const raysStyle = out.match(/class="ol-light ol-light-rays" style=([^>]*)>/)?.[1] ?? "";
-    expect(raysStyle).toContain("repeating-conic-gradient(from 8deg");
-    expect(raysStyle).toContain("0deg 2.4deg");
-    expect(raysStyle).toContain("2.4deg 24deg");
-    expect(raysStyle).toContain("#000 12%, transparent 100%");
-    expect(out).toContain("rgba(255, 255, 255, 0.95) 0%");
+    const emit = place(styleOf(out, "ol-light ol-light-emit"));
+    expect(emit.x).toBeCloseTo(rect.x, 1);
+    expect(emit.w).toBeCloseTo(rect.width, 1);
+    expect(emit.h).toBeCloseTo(rect.height, 1);
+    const reach = 94 * (rect.width / 200);
+    for (const cls of ["ol-light ol-light-aura", "ol-light ol-light-beam"]) {
+      const p = place(styleOf(out, cls));
+      expect(p.x).toBeCloseTo(rect.x - reach, 1);
+      expect(p.y).toBeCloseTo(rect.y - reach, 1);
+      expect(p.w).toBeCloseTo(rect.width + 2 * reach, 1);
+      expect(p.h).toBeCloseTo(rect.height + 2 * reach, 1);
+    }
+    const [r, g, b] = oneLookMix(ONE_LOOK_AMBER, [255, 255, 255], 0.35);
+    expect([r, g, b]).toEqual([247, 202, 140]);
+    // Full brightness, glow 0.8: g is 0.8.
+    expect(styleOf(out, "ol-light ol-light-aura")).toContain(`background:rgba(247, 202, 140, 1);opacity:0.76;-webkit-mask-image:url("blob:aura");mask-image:url("blob:aura")`);
+    expect(styleOf(out, "ol-light ol-light-beam")).toContain(`opacity:0.72;-webkit-mask-image:url("blob:beam")`);
+    expect(styleOf(out, "ol-light ol-light-emit")).toContain(`opacity:0.68;-webkit-mask-image:url("blob:emit")`);
   });
 
-  it("a dimmed light draws its light fainter", () => {
-    const full = oneLookPreviewModel(face(lamp(), "on", lit(SPARKLE)))!;
-    const half = oneLookPreviewModel(face(lamp(), "on", lit(SPARKLE), 128))!;
-    expect(half.palette.brightness).toBeLessThan(full.palette.brightness);
-    const level = 0.25 + 0.75 * half.palette.brightness;
-    const out = html(renderOneLookTile(face(lamp(), "on", lit(SPARKLE), 128)));
-    expect(out).toContain(`rgba(255, 255, 255, ${Math.round(0.95 * level * 10000) / 10000}) 0%`);
+  it("the level follows the brightness, and the colour the tile's hue", () => {
+    const place2 = oneLookLightPlacement({ x: 0, y: 0, width: 50, height: 25 }, LIGHT({ dir: "down", glow: 0.5 }), 0.4, [1, 2, 3]);
+    expect(place2.level).toBeCloseTo(0.5 * (0.25 + 0.75 * 0.4), 10);
+    expect(place2.aura.opacity).toBeCloseTo(0.95 * place2.level, 10);
+    expect(place2.beam!.opacity).toBeCloseTo(0.9 * place2.level, 10);
+    expect(place2.emit.opacity).toBeCloseTo(0.85 * place2.level, 10);
+    expect(place2.aura.rect).toEqual({ x: -23.5, y: -23.5, width: 97, height: 72 });
+    expect(oneLookGlowColour([0, 100, 200])).toEqual([89, 154, 219]);
+    const half = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()), { brightness: 128 })));
+    const b = oneLookPreviewModel(face(lamp(), "on", lit(LIGHT()), { brightness: 128 }))!.palette.brightness;
+    expect(b).toBeLessThan(1);
+    expect(styleOf(half, "ol-light ol-light-emit")).toContain(`opacity:${Math.round(0.85 * 0.8 * (0.25 + 0.75 * b) * 10000) / 10000}`);
   });
 
-  it("no rays at rays 0", () => {
-    const out = html(renderOneLookTile(face(lamp(), "on", lit({ ...SPARKLE, rays: 0 }))));
-    expect(out).not.toContain("ol-light-rays");
-    expect(out).toContain("ol-light-halo");
-    expect(out).toContain("ol-light-shade");
-    expect(out).toContain("ol-light-core");
+  it("the tile takes the off light's dark fill and rim, no sheen and no under-glow; the text stays white", () => {
+    const night = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()), { device: "phone" })));
+    const day = html(renderOneLookTile(face(lamp(), "on", lit(undefined), { device: "phone" })));
+    const off = html(renderOneLookTile(face(lamp(), "off", lit(undefined), { device: "phone" })));
+    const ground = (out: string) => /background:(.*)$/.exec(tileStyle(out))?.[1] ?? "";
+    expect(ground(night)).toContain(oneLookHex(ONE_LOOK_GRAPHITE_LIGHT));
+    expect(ground(night)).not.toContain("radial-gradient");
+    // The off tile's ground is its sheen over the same blend.
+    expect(ground(off).endsWith(ground(night))).toBe(true);
+    expect(ground(off)).toContain("radial-gradient");
+    expect(tileStyle(day)).toContain("box-shadow");
+    expect(tileStyle(night)).not.toContain("box-shadow");
+    const rim = (out: string) => /class="ol-rim" style=([^>]*)>/.exec(out)?.[1];
+    expect(rim(night)).toBe(rim(off));
+    expect(rim(night)).not.toBe(rim(day));
+    const name = (out: string) => /class="ol-name" style=([^>]*)>/.exec(out)?.[1];
+    expect(name(night)).toBe(name(day));
   });
 
-  it("not lit: none of the light, gray and dark as without one", () => {
-    const off = html(renderOneLookTile(face(lamp(), "off", lit(SPARKLE))));
-    expect(off).not.toContain("ol-light");
+  it("all around: no beam", () => {
+    const out = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT({ dir: "around", glow: 0.8 })))));
+    expect(out).not.toContain("ol-light-beam");
+    expect(out).toContain("ol-light-aura");
+    expect(out).toContain("ol-light-emit");
+  });
+
+  it("not lit: none of it, gray and dark as without a look", () => {
+    const off = html(renderOneLookTile(face(lamp(), "off", lit(LIGHT()))));
+    for (const l of LAYERS) expect(off).not.toContain(l);
     expect(styleOf(off, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
     expect(off).toBe(html(renderOneLookTile(face(lamp(), "off", lit(undefined)))));
   });
 
-  it("a switch that keeps its colour is bright but not lit: no light, as without one", () => {
-    const sw = (on: string): OneLookTileFaceInput => {
-      const f = face(lamp({ entityId: "switch.fan", color: "#3B82F6" }), on, lit(SPARKLE));
-      f.input.states = { "switch.fan": { entity_id: "switch.fan", state: on, attributes: {}, last_changed: "", last_updated: "" } };
-      return f;
-    };
-    const f = sw("on");
+  it("a switch that keeps its colour is bright but not lit: none of it", () => {
+    const f = face(lamp({ entityId: "switch.fan", color: "#3B82F6" }), "on", lit(LIGHT()));
+    f.input.states = { "switch.fan": { entity_id: "switch.fan", state: "on", attributes: {}, last_changed: "", last_updated: "" } };
     const drawn = html(renderOneLookTile(f));
     expect(drawn).not.toContain("ol-light");
     expect(drawn).toContain("ol-cutout");
@@ -294,7 +412,15 @@ describe("a light on a One Look tile", () => {
     expect(drawn).toBe(html(renderOneLookTile(f)));
   });
 
-  it("no light in the photo: drawn exactly as before", () => {
+  it("dimmed (wrist down) or not lit: no look", () => {
+    const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
+    expect(oneLookCutoutGlows(p("coloured", true), true)).toBe(true);
+    expect(oneLookCutoutGlows(p("coloured", true, true), true)).toBe(false);
+    expect(oneLookCutoutGlows(p("graphite", false), true)).toBe(false);
+    expect(oneLookCutoutGlows(p("coloured", false), false)).toBe(false);
+  });
+
+  it("no look in the photo: drawn exactly as before", () => {
     const withNone = html(renderOneLookTile(face(lamp(), "on", lit(undefined))));
     const without = html(renderOneLookTile(face(lamp(), "on", { photo, photoSize: () => ({ width: 200, height: 100 }) })));
     expect(withNone).toBe(without);
@@ -303,14 +429,29 @@ describe("a light on a One Look tile", () => {
     expect(oneLookCutoutOf(lamp(), { photo })).toEqual({ url: "blob:lamp" });
   });
 
+  it("the photo's size comes from the look when the picture has no list", () => {
+    expect(oneLookCutoutOf(lamp(), { photo, photoGlow: () => LIGHT() })?.aspect).toBe(2);
+  });
+
+  it("a hidden photo takes no night fill", () => {
+    const f = face(lamp(), "on", lit(LIGHT()));
+    f.hidden = { glyph: true, name: false, state: false };
+    const out = html(renderOneLookTile(f));
+    expect(out).not.toContain("ol-light");
+    expect(oneLookLightOn(oneLookPreviewModel(f)!, f.hidden)).toBe(false);
+    const day = face(lamp(), "on", lit(undefined));
+    day.hidden = f.hidden;
+    expect(out).toBe(html(renderOneLookTile(day)));
+  });
+
   it("draws in a library row's picture when the row has the photos", () => {
     const withTile: WatchPage = { id: "R", name: "R", items: [{ ...lamp(), gridCol: 0, gridRow: 0 }] };
-    const drawn = html(renderPageRowPicture({ page: withTile, states: states("on"), photo, photoGlow: () => SPARKLE, photoTick: 1 }));
-    expect(drawn).toContain("ol-light-core");
+    const drawn = html(renderPageRowPicture({ page: withTile, states: states("on"), photo, photoGlow: () => LIGHT(), photoTick: 1 }));
+    expect(drawn).toContain("ol-light-emit");
   });
 });
 
-// ── the store reads it once ──────────────────────────────────────────────
+// ── the store makes the masks once ───────────────────────────────────────
 
 afterEach(() => forgetPagePhotos());
 
@@ -326,29 +467,59 @@ function hassAnswering(contentType: string, bytes: Uint8Array): HassLike {
   } as unknown as HassLike;
 }
 
-describe("the photo store and a light", () => {
-  it("reads a PNG's light and size once its bytes are in", async () => {
+describe("the photo store and a look", () => {
+  it("makes a PNG's masks once its bytes are in, then redraws once", async () => {
     const bytes = png(300, 150, text(ONE_LOOK_GLOW_KEYWORD, RECIPE), IDAT);
-    const store = new PagePhotoStore(() => hassAnswering("image/png", bytes), () => {}, { makeUrl: () => "blob:x" });
+    const made: { bytes: Uint8Array; recipe: OneLookLightRecipe }[] = [];
+    let changed = 0;
+    const store = new PagePhotoStore(() => hassAnswering("image/png", bytes), () => changed++, {
+      makeUrl: () => "blob:x",
+      makeLight: async (b, recipe) => {
+        made.push({ bytes: b, recipe });
+        return { recipe, width: 300, height: 150, pad: 141, emit: "e", aura: "a", beam: "b" };
+      },
+    });
     expect(store.glow(ID)).toBeUndefined();
     store.url(ID);
     await flush();
     expect(store.url(ID)).toBe("blob:x");
-    expect(store.glow(ID.toLowerCase())?.rays).toBe(0.5);
+    expect(changed).toBe(1);
+    expect(made).toHaveLength(1);
+    expect([...made[0]!.bytes]).toEqual([...bytes]);
+    expect(made[0]!.recipe).toEqual({ dir: "up", glow: 0.5 });
+    expect(store.glow(ID.toLowerCase())?.emit).toBe("e");
     // A picture that never reads the list still has the size.
     expect(store.size(ID)).toEqual({ width: 300, height: 150 });
+    // A second store reads the same memory and makes nothing again.
+    const other = new PagePhotoStore(() => hassAnswering("image/png", bytes), () => {}, { makeLight: async () => { throw new Error("again"); } });
+    expect(other.glow(ID)?.aura).toBe("a");
   });
 
-  it("a PNG with no light, or a JPEG, has none", async () => {
-    const plain = new PagePhotoStore(() => hassAnswering("image/png", png(20, 20, IDAT)), () => {}, { makeUrl: () => "u" });
+  it("a PNG with no look, or a JPEG, makes no masks; masks that fail draw no light", async () => {
+    let calls = 0;
+    const makeLight = async () => {
+      calls++;
+      return undefined;
+    };
+    const plain = new PagePhotoStore(() => hassAnswering("image/png", png(20, 20, IDAT)), () => {}, { makeUrl: () => "u", makeLight });
     plain.url(ID);
     await flush();
     expect(plain.glow(ID)).toBeUndefined();
     forgetPagePhotos();
-    const jpeg = new PagePhotoStore(() => hassAnswering("image/jpeg", png(20, 20, text(ONE_LOOK_GLOW_KEYWORD, RECIPE))), () => {}, { makeUrl: () => "u" });
+    const jpeg = new PagePhotoStore(() => hassAnswering("image/jpeg", png(20, 20, text(ONE_LOOK_GLOW_KEYWORD, RECIPE))), () => {}, { makeUrl: () => "u", makeLight });
     jpeg.url(ID);
     await flush();
     expect(jpeg.glow(ID)).toBeUndefined();
     expect(jpeg.size(ID)).toBeUndefined();
+    expect(calls).toBe(0);
+    forgetPagePhotos();
+    const failing = new PagePhotoStore(() => hassAnswering("image/png", png(20, 20, text(ONE_LOOK_GLOW_KEYWORD, RECIPE))), () => {}, {
+      makeUrl: () => "u",
+      makeLight: async () => { throw new Error("no canvas"); },
+    });
+    failing.url(ID);
+    await flush();
+    expect(failing.url(ID)).toBe("u");
+    expect(failing.glow(ID)).toBeUndefined();
   });
 });

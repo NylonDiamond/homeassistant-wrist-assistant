@@ -307,7 +307,7 @@ import {
   setArrangePickedPart,
 } from "./arrange-model.js";
 import { ARRANGE_PARTS, type ArrangePart, type TileArrange, encodeTileArrange } from "./one-look/arrange.js";
-import type { OneLookGlowRecipe } from "./one-look/glow.js";
+import type { OneLookPhotoLight } from "./one-look/glow.js";
 import {
   type StageGrid,
   autoScrollStep,
@@ -900,7 +900,7 @@ export class WaPageEditor extends LitElement {
   /** A listed photo's size, for fitting a tile's icon photo. */
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
   /** The light saved in a tile's icon photo (Light Look). */
-  private readonly photoGlow = (id: string): OneLookGlowRecipe | undefined => this.photos.glow(id);
+  private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
   /** The modules' view state (`WatchPagesEditorHost.uiState`). */
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */

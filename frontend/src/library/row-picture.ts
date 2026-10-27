@@ -21,7 +21,7 @@ import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS } from "../watch-pages/editor-host.js";
 import { type WatchPage, isSmartWatchPage } from "../watch-pages/model.js";
-import type { OneLookGlowRecipe } from "../watch-pages/one-look/glow.js";
+import type { OneLookPhotoLight } from "../watch-pages/one-look/glow.js";
 import {
   type WatchPagePreviewInput,
   previewOneLook,
@@ -85,7 +85,7 @@ export interface PageRowPictureInput {
   /** A tile's icon photo's size (`PagePhotoStore.size`), so the photo is
    * fitted, and the light saved in it (`PagePhotoStore.glow`, Light Look). */
   photoSize?: (id: string) => { width: number; height: number } | undefined;
-  photoGlow?: (id: string) => OneLookGlowRecipe | undefined;
+  photoGlow?: (id: string) => OneLookPhotoLight | undefined;
   /** A new value draws again once more photos are in. */
   photoTick?: number;
 }

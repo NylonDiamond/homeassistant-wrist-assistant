@@ -19,7 +19,7 @@ import zlib
 from test_page_images_ops import b64, env, op, ws_call  # noqa: F401 (env: fixture)
 from test_page_images_store import ICON_UUID
 
-RECIPE = {"v": 1, "x": 0.5, "y": 0.4, "size": 0.55, "glow": 0.85, "spread": 0.45, "rays": 0, "shade": 0.8}
+RECIPE = {"v": 1, "dir": "up", "glow": 0.8}
 
 
 def _chunk(kind: bytes, body: bytes) -> bytes:

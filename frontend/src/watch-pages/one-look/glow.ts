@@ -1,14 +1,18 @@
-// Light Look: a tile's icon photo, taken with the light off, plus a drawn
-// light for On. The light is a few numbers saved inside the photo's PNG (a
-// `tEXt` chunk, keyword `WristAssistantGlow`), never a second picture, so
-// every device draws it live in the light's own colour and brightness.
+// Light Look: a tile's icon photo, taken with the light off, glows from
+// within when the light is on, and the tile goes dark like a real lamp at
+// night. The look is a few settings saved inside the photo's PNG (a `tEXt`
+// chunk, keyword `WristAssistantGlow`), never a second picture, so every
+// device draws it live in the light's own colour and brightness.
 //
-//   {"v":1,"x":0.5,"y":0.5,"size":0.55,"glow":0.85,"spread":0.45,"rays":0,"shade":0.8}
+//   {"v":1,"dir":"around","glow":0.8}
 //
-// Only the iPhone edits it; the panel reads it here and draws it in
-// `render.ts` (`cutoutLayer`). Everything in this file is pure: reading the
-// recipe from the bytes, and the circles and alphas each layer takes, which
-// the apps compute with the same math.
+// Only the iPhone sets it; the panel reads it here. Each device makes three
+// masks once per photo from the photo's own pixels: the emission (what the
+// light comes through), the aura round it and, for an uplight or a
+// downlight, the beam past it. Everything in this file is pure: reading the
+// recipe from the bytes, and the masks as numbers, which the apps make with
+// the same maths. The photo store turns the masks into images
+// (`page-photo-store.ts`) and `render.ts` (`cutoutLayer`) lays them out.
 // Plan: app repo docs/photo_tiles_plan_2026-10.md, "Light Look".
 
 import { type OneLookRGB, ONE_LOOK_AMBER, oneLookMix } from "./colour.js";
@@ -17,49 +21,36 @@ import type { OneLookRect } from "./layout.js";
 /** The keyword of the `tEXt` chunk that holds the recipe. */
 export const ONE_LOOK_GLOW_KEYWORD = "WristAssistantGlow";
 
-/** The most text the chunk may carry; a longer one is ignored. */
+/** The most text the chunk may carry; a longer one is no light. */
 export const ONE_LOOK_GLOW_MAX_TEXT = 1024;
 
-/** A light drawn over an icon photo, every field 0 to 1. `x` and `y` are its
- * centre as a share of the photo's own width and height (0,0 top left); the
- * rest are the editor's sliders. */
-export interface OneLookGlowRecipe {
-  readonly x: number;
-  readonly y: number;
-  readonly size: number;
+/** Where the light goes past the lamp: an uplight throws it up, a downlight
+ * down, a bare bulb or a lantern all around (no beam). */
+export type OneLookLightDirection = "up" | "down" | "around";
+
+/** The look saved in an icon photo. */
+export interface OneLookLightRecipe {
+  readonly dir: OneLookLightDirection;
+  /** 0 to 1. */
   readonly glow: number;
-  readonly spread: number;
-  readonly rays: number;
-  readonly shade: number;
 }
 
-/** The editor's presets (size, glow, spread, rays, shade). */
-export const ONE_LOOK_GLOW_PRESETS = {
-  soft: { size: 0.3, glow: 0.7, spread: 0.8, rays: 0, shade: 0.6 },
-  bulb: { size: 0.55, glow: 0.85, spread: 0.45, rays: 0, shade: 0.8 },
-  sparkle: { size: 0.4, glow: 0.75, spread: 0.55, rays: 0.7, shade: 0.7 },
-} as const;
-
-/** What a missing or bad field takes: the Bulb preset, centred. */
-export const ONE_LOOK_GLOW_DEFAULT: OneLookGlowRecipe = { x: 0.5, y: 0.5, ...ONE_LOOK_GLOW_PRESETS.bulb };
-
-const FIELDS = ["x", "y", "size", "glow", "spread", "rays", "shade"] as const;
+/** What a missing or bad field takes. */
+export const ONE_LOOK_LIGHT_DEFAULT: OneLookLightRecipe = { dir: "around", glow: 0.8 };
 
 /**
  * The recipe a parsed JSON value holds, or undefined: not an object, or a
- * `v` other than 1. Each field is a number clamped to 0 to 1; a missing or
- * bad one takes its default.
+ * `v` other than 1 (missing included). `dir` other than up, down or around
+ * is around; `glow` is clamped to 0 to 1, and is 0.8 when missing or not a
+ * number. Other keys are ignored.
  */
-export function oneLookGlowRecipeOf(value: unknown): OneLookGlowRecipe | undefined {
+export function oneLookLightRecipeOf(value: unknown): OneLookLightRecipe | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
   if (raw.v !== 1) return undefined;
-  const out: Record<string, number> = {};
-  for (const key of FIELDS) {
-    const n = raw[key];
-    out[key] = typeof n === "number" && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : ONE_LOOK_GLOW_DEFAULT[key];
-  }
-  return out as unknown as OneLookGlowRecipe;
+  const dir: OneLookLightDirection = raw.dir === "up" || raw.dir === "down" ? raw.dir : "around";
+  const glow = typeof raw.glow === "number" && Number.isFinite(raw.glow) ? Math.min(1, Math.max(0, raw.glow)) : ONE_LOOK_LIGHT_DEFAULT.glow;
+  return { dir, glow };
 }
 
 const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -75,19 +66,19 @@ function ascii(bytes: Uint8Array, from: number, to: number): string {
 }
 
 /** What the panel reads from an icon photo's PNG bytes: its size from
- * `IHDR` and its light, when it carries one. */
+ * `IHDR` and its look, when it carries one. */
 export interface IconPngFacts {
   width: number;
   height: number;
-  glow?: OneLookGlowRecipe;
+  recipe?: OneLookLightRecipe;
 }
 
 /**
- * An icon photo's size and light from its PNG bytes, or undefined when they
+ * An icon photo's size and look from its PNG bytes, or undefined when they
  * are not a PNG whose first chunk is `IHDR`. The chunks are read up to
- * `IEND` (no CRC is checked) and the first `tEXt` with the keyword is the
- * light: text over 1024 bytes, text that is not a JSON object, or a `v`
- * other than 1 means none, as does no such chunk.
+ * `IEND` (no CRC is checked) and only the first `tEXt` with the keyword
+ * counts: text over 1024 bytes, text that is not a JSON object, or a `v`
+ * other than 1 means no light, as does no such chunk.
  */
 export function readIconPng(bytes: Uint8Array): IconPngFacts | undefined {
   if (bytes.length < 24 || SIGNATURE.some((b, i) => bytes[i] !== b)) return undefined;
@@ -103,8 +94,8 @@ export function readIconPng(bytes: Uint8Array): IconPngFacts | undefined {
     if (type === "tEXt") {
       const nul = bytes.subarray(start, end).indexOf(0);
       if (nul >= 0 && ascii(bytes, start, start + nul) === ONE_LOOK_GLOW_KEYWORD) {
-        const glow = glowOfText(bytes, start + nul + 1, end);
-        if (glow !== undefined) facts.glow = glow;
+        const recipe = recipeOfText(bytes, start + nul + 1, end);
+        if (recipe !== undefined) facts.recipe = recipe;
         break;
       }
     }
@@ -114,69 +105,267 @@ export function readIconPng(bytes: Uint8Array): IconPngFacts | undefined {
 }
 
 /** The recipe in a chunk's text (Latin-1, as `tEXt` is), or undefined. */
-function glowOfText(bytes: Uint8Array, from: number, to: number): OneLookGlowRecipe | undefined {
+function recipeOfText(bytes: Uint8Array, from: number, to: number): OneLookLightRecipe | undefined {
   if (to - from > ONE_LOOK_GLOW_MAX_TEXT) return undefined;
   try {
-    return oneLookGlowRecipeOf(JSON.parse(ascii(bytes, from, to)));
+    return oneLookLightRecipeOf(JSON.parse(ascii(bytes, from, to)));
   } catch {
     return undefined;
   }
 }
 
+// ── the masks ────────────────────────────────────────────────────────────
+
+/** A photo's own pixels, straight (not premultiplied) RGBA, 8 bits each. */
+export interface OneLookLightPixels {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
+/** One value 0 to 1 per pixel, row by row. */
+export interface OneLookLightMask {
+  width: number;
+  height: number;
+  data: Float32Array;
+}
+
+/** The sizes a photo of `width` by `height` pixels makes its masks with:
+ * `L` its longer side, the emission's blur radius, the padding round the
+ * aura and beam, the aura's blur radius, and the beam's rim offset, fade in
+ * and fade length. */
+export interface OneLookLightSizes {
+  long: number;
+  emitRadius: number;
+  pad: number;
+  auraRadius: number;
+  rim: number;
+  fadeIn: number;
+  fadeLength: number;
+}
+
+export function oneLookLightSizes(width: number, height: number): OneLookLightSizes {
+  const long = Math.max(width, height);
+  return {
+    long,
+    emitRadius: Math.max(1, Math.round(0.006 * long)),
+    pad: Math.round(0.47 * long),
+    auraRadius: Math.round(0.057 * long),
+    rim: 0.016 * long,
+    fadeIn: 0.031 * long,
+    fadeLength: 0.31 * long,
+  };
+}
+
+/** `smoothstep(edge0, edge1, x)`: 0 below, 1 above, the cubic between. */
+export function oneLookSmoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** The emission before its blur: per pixel `smoothstep(0.40, 0.80, luma)`
+ * (Rec. 709 weights on the sRGB values, 0 to 1) where alpha is at least
+ * 0.5 (128 of 255), else 0. */
+export function oneLookEmitUnblurred(pixels: OneLookLightPixels): OneLookLightMask {
+  const { width, height, data } = pixels;
+  const out = new Float32Array(width * height);
+  for (let i = 0; i < out.length; i++) {
+    const o = i * 4;
+    if (data[o + 3]! / 255 < 0.5) continue;
+    const luma = (0.2126 * data[o]! + 0.7152 * data[o + 1]! + 0.0722 * data[o + 2]!) / 255;
+    out[i] = oneLookSmoothstep(0.4, 0.8, luma);
+  }
+  return { width, height, data: out };
+}
+
+/** One box blur pass along a line of `n` values read by `get`, written by
+ * `set`: the mean of the `2r + 1` values round each, past the ends either
+ * the end value repeated or 0. */
+function blurLine(n: number, r: number, edge: "repeat" | "zero", get: (i: number) => number, set: (i: number, v: number) => void): void {
+  const at = edge === "repeat" ? (i: number) => get(i < 0 ? 0 : i >= n ? n - 1 : i) : (i: number) => (i < 0 || i >= n ? 0 : get(i));
+  const line = new Float64Array(n);
+  let sum = 0;
+  for (let j = -r; j <= r; j++) sum += at(j);
+  const size = 2 * r + 1;
+  for (let i = 0; i < n; i++) {
+    line[i] = sum / size;
+    sum += at(i + r + 1) - at(i - r);
+  }
+  for (let i = 0; i < n; i++) set(i, line[i]!);
+}
+
+/**
+ * A mask box blurred with radius `r`, three passes across then three down
+ * (the two directions commute, so the order does not matter). Past the
+ * mask's edge the edge values repeat (`repeat`) or read 0 (`zero`).
+ */
+export function oneLookBoxBlur(mask: OneLookLightMask, r: number, edge: "repeat" | "zero"): OneLookLightMask {
+  const { width, height } = mask;
+  const data = Float32Array.from(mask.data);
+  if (r <= 0 || width === 0 || height === 0) return { width, height, data };
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      blurLine(width, r, edge, (i) => data[row + i]!, (i, v) => { data[row + i] = v; });
+    }
+  }
+  for (let pass = 0; pass < 3; pass++) {
+    for (let x = 0; x < width; x++) {
+      blurLine(height, r, edge, (i) => data[i * width + x]!, (i, v) => { data[i * width + x] = v; });
+    }
+  }
+  return { width, height, data };
+}
+
+/** The emission `E`, at the photo's size: the unblurred emission blurred
+ * with radius `max(1, round(0.006 L))`, the photo's edge pixels repeating. */
+export function oneLookEmitMask(pixels: OneLookLightPixels): OneLookLightMask {
+  return oneLookBoxBlur(oneLookEmitUnblurred(pixels), oneLookLightSizes(pixels.width, pixels.height).emitRadius, "repeat");
+}
+
+/** The aura `A`, on the padded canvas (`W + 2p` by `H + 2p`, the photo at
+ * `(p, p)`): `E` there, 0 round it, box blurred with radius
+ * `round(0.057 L)`, 0 past the canvas edge. */
+export function oneLookAuraMask(emit: OneLookLightMask): OneLookLightMask {
+  const { pad, auraRadius } = oneLookLightSizes(emit.width, emit.height);
+  const width = emit.width + 2 * pad;
+  const height = emit.height + 2 * pad;
+  const data = new Float32Array(width * height);
+  for (let y = 0; y < emit.height; y++) data.set(emit.data.subarray(y * emit.width, (y + 1) * emit.width), (y + pad) * width + pad);
+  return oneLookBoxBlur({ width, height, data }, auraRadius, "zero");
+}
+
+/**
+ * The beam `B`, on the padded canvas, for an uplight or a downlight; none
+ * all around, or when no pixel of `E` is over 0.3. From the box of those
+ * pixels (top `t`, bottom `b`, left `l`, right `r`, in photo pixels):
+ * `cx = (l + r) / 2`, `w = r − l`; `dy` is how far past the rim
+ * (`0.016 L` inside the box's top for up, its bottom for down) a row is,
+ * `spread = 0.5 w + 0.9 max(dy, 0)`, the fan `clamp(1 − |x − cx| /
+ * max(spread, 1), 0, 1)^1.5`, the fade `clamp(dy / 0.031 L, 0, 1) *
+ * exp(-max(dy, 0) / 0.31 L)`, and `B` their product. `x` and `y` are a
+ * padded pixel's column and row less `p`.
+ */
+export function oneLookBeamMask(emit: OneLookLightMask, dir: OneLookLightDirection): OneLookLightMask | undefined {
+  if (dir === "around") return undefined;
+  const { width: W, height: H } = emit;
+  let t = Infinity;
+  let b = -Infinity;
+  let l = Infinity;
+  let r = -Infinity;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!(emit.data[y * W + x]! > 0.3)) continue;
+      if (y < t) t = y;
+      if (y > b) b = y;
+      if (x < l) l = x;
+      if (x > r) r = x;
+    }
+  }
+  if (t === Infinity) return undefined;
+  const { pad, rim, fadeIn, fadeLength } = oneLookLightSizes(W, H);
+  const cx = (l + r) / 2;
+  const w = r - l;
+  const width = W + 2 * pad;
+  const height = H + 2 * pad;
+  const data = new Float32Array(width * height);
+  for (let Y = 0; Y < height; Y++) {
+    const y = Y - pad;
+    const dy = dir === "up" ? t + rim - y : y - (b - rim);
+    if (!(dy > 0)) continue;
+    const spread = 0.5 * w + 0.9 * dy;
+    const fade = Math.min(1, dy / fadeIn) * Math.exp(-dy / fadeLength);
+    const reach = Math.max(spread, 1);
+    for (let X = 0; X < width; X++) {
+      const fan = Math.min(1, Math.max(0, 1 - Math.abs(X - pad - cx) / reach));
+      if (fan > 0) data[Y * width + X] = fan ** 1.5 * fade;
+    }
+  }
+  return { width, height, data };
+}
+
+/** All of a photo's masks for a direction, and the padding the aura and
+ * beam reach past the photo. */
+export interface OneLookLightMaskSet {
+  pad: number;
+  emit: OneLookLightMask;
+  aura: OneLookLightMask;
+  beam?: OneLookLightMask;
+}
+
+export function oneLookLightMasks(pixels: OneLookLightPixels, dir: OneLookLightDirection): OneLookLightMaskSet {
+  const emit = oneLookEmitMask(pixels);
+  const beam = oneLookBeamMask(emit, dir);
+  return { pad: oneLookLightSizes(pixels.width, pixels.height).pad, emit, aura: oneLookAuraMask(emit), ...(beam === undefined ? {} : { beam }) };
+}
+
+/** A mask as 8 bit RGBA pixels: white, its value as the alpha, for a CSS
+ * `mask-image`. */
+export function oneLookMaskPixels(mask: OneLookLightMask): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(mask.width * mask.height * 4);
+  for (let i = 0; i < mask.data.length; i++) {
+    const o = i * 4;
+    out[o] = 255;
+    out[o + 1] = 255;
+    out[o + 2] = 255;
+    out[o + 3] = Math.round(Math.min(1, Math.max(0, mask.data[i]!)) * 255);
+  }
+  return out;
+}
+
+// ── drawing ──────────────────────────────────────────────────────────────
+
+/** A photo's look with its masks made, as a picture draws it: the masks as
+ * image URLs, the photo's own size in pixels and the padding. */
+export interface OneLookPhotoLight {
+  recipe: OneLookLightRecipe;
+  width: number;
+  height: number;
+  pad: number;
+  emit: string;
+  aura: string;
+  beam?: string;
+}
+
 /** The light's colour: the tile's hue, else One Look amber, mixed 35% toward
- * white. */
+ * white, each channel rounded to 8 bits. */
 export function oneLookGlowColour(hue: OneLookRGB | undefined): OneLookRGB {
   return oneLookMix(hue ?? ONE_LOOK_AMBER, [255, 255, 255], 0.35);
 }
 
-/** A circle in points. */
-export interface OneLookGlowCircle {
-  cx: number;
-  cy: number;
-  r: number;
-}
+/** The shares of the level each layer is drawn at. */
+export const ONE_LOOK_LIGHT_AURA = 0.95;
+export const ONE_LOOK_LIGHT_BEAM = 0.9;
+export const ONE_LOOK_LIGHT_EMIT = 0.85;
 
-/** Every layer of a light over a photo, in points and alphas (all screen
- * blended, in this order around the photo). */
-export interface OneLookGlowLayers {
+/** Where a look's layers go over the fitted photo rect `photo`
+ * (`oneLookCutoutRect(...).photo`) and how strong each is: the emission on
+ * the rect, the aura and beam reaching the padding (scaled by `P.w / W`)
+ * past it on every side, each at its share of the level `g = glow × (0.25 +
+ * 0.75 × brightness)`. */
+export interface OneLookLightPlacement {
   colour: OneLookRGB;
-  /** `lf`: 0.25 plus 0.75 of the palette's brightness. */
   level: number;
-  /** Behind the photo: `colour` at `alpha` at 0, 0.45 of it at 0.35, clear
-   * at 1. */
-  halo: OneLookGlowCircle & { alpha: number };
-  /** Over the photo, masked by its alpha: `colour` at 1 at 0, 0.55 at 0.45,
-   * clear at 1, the whole layer at `opacity`. */
-  shade: OneLookGlowCircle & { opacity: number };
-  /** 15 spokes of `colour` at `alpha`, only when the recipe has rays. */
-  rays?: OneLookGlowCircle & { alpha: number };
-  /** White at `white` at 0, `colour` at `tint` at 0.45, clear at 1. */
-  core: OneLookGlowCircle & { white: number; tint: number };
+  emit: { rect: OneLookRect; opacity: number };
+  aura: { rect: OneLookRect; opacity: number };
+  beam?: { rect: OneLookRect; opacity: number };
 }
 
-/** The rays: 15 spokes, each 2.4 deg wide, one every 24 deg, the first
- * starting 8 deg clockwise from up, faded by a radial mask opaque at 12%
- * and clear at 100%. */
-export const ONE_LOOK_GLOW_RAYS = { count: 15, width: 2.4, every: 24, from: 8, maskFrom: 0.12 } as const;
-
-/**
- * Where a light's layers go over the fitted photo rect `photo`
- * (`oneLookCutoutRect(...).photo`), for a palette `brightness` and the
- * light's `colour` (`oneLookGlowColour`). `L` is the rect's longer side and
- * every radius is a share of it, so the light grows with the photo.
- */
-export function oneLookGlowLayers(photo: OneLookRect, recipe: OneLookGlowRecipe, brightness: number, colour: OneLookRGB): OneLookGlowLayers {
-  const long = Math.max(photo.width, photo.height);
-  const cx = photo.x + recipe.x * photo.width;
-  const cy = photo.y + recipe.y * photo.height;
-  const level = 0.25 + 0.75 * Math.min(1, Math.max(0, brightness));
-  const at = (r: number): OneLookGlowCircle => ({ cx, cy, r });
+export function oneLookLightPlacement(
+  photo: OneLookRect,
+  light: Pick<OneLookPhotoLight, "recipe" | "width" | "pad" | "beam">,
+  brightness: number,
+  colour: OneLookRGB,
+): OneLookLightPlacement {
+  const level = light.recipe.glow * (0.25 + 0.75 * Math.min(1, Math.max(0, brightness)));
+  const k = light.width > 0 ? photo.width / light.width : 0;
+  const reach = light.pad * k;
+  const padded = { x: photo.x - reach, y: photo.y - reach, width: photo.width + 2 * reach, height: photo.height + 2 * reach };
   return {
     colour,
     level,
-    halo: { ...at(long * (0.35 + 0.95 * recipe.spread)), alpha: recipe.glow * level },
-    shade: { ...at(0.46 * long), opacity: recipe.shade * level },
-    ...(recipe.rays > 0 ? { rays: { ...at(long * (0.45 + 0.7 * recipe.spread)), alpha: recipe.rays * 0.55 * level } } : {}),
-    core: { ...at(long * (0.03 + 0.11 * recipe.size)), white: 0.95 * level, tint: 0.85 * level },
+    emit: { rect: photo, opacity: ONE_LOOK_LIGHT_EMIT * level },
+    aura: { rect: padded, opacity: ONE_LOOK_LIGHT_AURA * level },
+    ...(light.beam === undefined ? {} : { beam: { rect: padded, opacity: ONE_LOOK_LIGHT_BEAM * level } }),
   };
 }

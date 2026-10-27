@@ -13,7 +13,7 @@ import { MENU_UNIT_TITLES, holdsRecord, itemsFor, menuFor, sameId, type Library,
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
 import { PagePhotoStore } from "./watch-pages/page-photo-store.js";
-import type { OneLookGlowRecipe } from "./watch-pages/one-look/glow.js";
+import type { OneLookPhotoLight } from "./watch-pages/one-look/glow.js";
 import { libraryTicksStyles, renderTickAsk } from "./library/ticks.js";
 import type { IconProvider } from "./renderer.js";
 import { watchFrameStyles } from "./watch-frame.js";
@@ -89,7 +89,7 @@ export class WaHomeLineup extends LitElement {
   });
   private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
-  private readonly photoGlow = (id: string): OneLookGlowRecipe | undefined => this.photos.glow(id);
+  private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
 
   get hass(): HassLike | undefined {
     return this.hassNow;
@@ -412,7 +412,7 @@ export interface LineupDraw {
   photo?: (id: string) => string | undefined;
   /** Its size, and the light saved in it (Light Look). */
   photoSize?: (id: string) => { width: number; height: number } | undefined;
-  photoGlow?: (id: string) => OneLookGlowRecipe | undefined;
+  photoGlow?: (id: string) => OneLookPhotoLight | undefined;
   photoTick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;

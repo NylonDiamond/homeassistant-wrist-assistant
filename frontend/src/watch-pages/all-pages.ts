@@ -49,7 +49,7 @@ import {
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { PagePhotoStore } from "./page-photo-store.js";
-import type { OneLookGlowRecipe } from "./one-look/glow.js";
+import type { OneLookPhotoLight } from "./one-look/glow.js";
 import { type BoardCell, type BoardColumn, type BoardDrag, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
   SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
@@ -295,7 +295,7 @@ export class WaAllPages extends LitElement {
   });
   private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
-  private readonly photoGlow = (id: string): OneLookGlowRecipe | undefined => this.photos.glow(id);
+  private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
 
   /** Home Assistant. A new object on every state change: the pictures are
    * drawn again at most every couple of seconds for it. */
