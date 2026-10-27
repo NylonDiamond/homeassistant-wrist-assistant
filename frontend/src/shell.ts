@@ -125,6 +125,8 @@ export interface WatchScreen {
    * its address still works and moves to the Complications board. Control
    * Center is one: its tiles moved into complication controls. */
   retired?: true;
+  /** Still being tried out: Home draws a BETA pill after its name. */
+  beta?: true;
   /** Listed only once the integration advertises this capability: the
    * Home map, with `home_map` (`home-map/store.ts`). Its address still
    * opens without it and says to update the integration. */
@@ -142,7 +144,7 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
   { id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
-  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, capability: HOME_MAP_CAPABILITY },
+  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: true, capability: HOME_MAP_CAPABILITY },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the

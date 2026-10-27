@@ -63,7 +63,7 @@ export function renderIconSource(host: TileSettingsHost): TemplateResult {
     host.uiState.delete(photoModeKey(host));
     if (somePicked(host, () => watchTileIconPhotoId(host.tile) !== undefined)) pick(host, undefined);
     else host.requestUpdate();
-  }, { titles: { icon: "A symbol, in the tile's colors", photo: "A photo of the thing itself, in the icon's place" } });
+  }, { titles: { icon: "A symbol, in the tile's colors", photo: "A photo of the thing itself, in the icon's place" }, beta: { photo: true } });
 }
 
 /** The delete being asked about, by tile. */

@@ -272,6 +272,7 @@ import {
 const LEGACY_PICKER_HIDDEN_PREFIX = "wrist-assistant-panel.picker-hidden.v1:";
 import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, boxAround, frameInResizedBox, gridFor, gridNudgeFrame, guideCandidates, guideThreshold, isCorner, nudgeFrame, nudgePoint, type Grid, type GuideLine, type Guides, type HandleCorner, type ResizeHandle } from "./interact.js";
 import {
+  betaPill,
   type CopiedPosition,
   type EditorHost,
   type SlotUse,
@@ -20104,7 +20105,7 @@ export class WristAssistantPanel extends LitElement {
           title=${watchScreenSentence(screen)} style=${`--h:${look.hue}`}
           @click=${(e: MouseEvent) => { if (!isPlainClick(e)) return; e.preventDefault(); this.goTo(path); }}>
           <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon(look.icon)}</span>
-          <span class="hb-row-t"><span class="hb-row-name">${screen.label}</span><span class="hb-row-sub">${HOME_SHARED_SUB[screen.id] ?? ""}</span></span>
+          <span class="hb-row-t"><span class="hb-row-name">${screen.label}${screen.beta === true ? betaPill() : nothing}</span><span class="hb-row-sub">${HOME_SHARED_SUB[screen.id] ?? ""}</span></span>
         </a>`;
       })}
     </section>`;

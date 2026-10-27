@@ -979,7 +979,13 @@ export function groupedSelectField<T extends string>(label: string, value: T, gr
  * change length, stay a `selectField`: a row of seven buttons is a menu that
  * forgot to fold.
  */
-export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; def?: T; disabled?: Partial<Record<T, boolean>>; reselect?: boolean } = {}) {
+/** A small BETA pill after a name, for a feature still being tried out. Its
+ * look is inline so it draws the same in every shadow root. */
+export function betaPill(): TemplateResult {
+  return html`<span class="beta-pill" style="display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid currentColor;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.06em;line-height:12px;opacity:0.7;vertical-align:middle">BETA</span>`;
+}
+
+export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; def?: T; disabled?: Partial<Record<T, boolean>>; reselect?: boolean; beta?: Partial<Record<T, boolean>> } = {}) {
   const name = (v: T) => options.find(([o]) => o === v)?.[1] ?? v;
   return html`<div class="field seg-field">${fieldLabel(label, backTo(value, opts.def, (v) => set(v, null), name))}
     ${segButtons(label, value, options, set, opts)}</div>`;
@@ -991,14 +997,14 @@ export function segField<T extends string>(label: string, value: T, options: [T,
  * drawn with a dashed outline, and pressing it sets it for real. With
  * `reselect`, pressing the choice already on calls `set` too (a value read
  * from an older setting, which the press writes out). */
-function segButtons<T extends string>(label: string, value: T | undefined, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; disabled?: Partial<Record<T, boolean>>; inherited?: T; reselect?: boolean } = {}) {
+function segButtons<T extends string>(label: string, value: T | undefined, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; disabled?: Partial<Record<T, boolean>>; inherited?: T; reselect?: boolean; beta?: Partial<Record<T, boolean>> } = {}) {
   return html`<div class="seg wide" role="radiogroup" aria-label=${label}>
       ${options.map(([v, text]) => {
         const inherited = value === undefined && v === opts.inherited;
         const title = inherited ? `${opts.titles?.[v] ?? text} (from the layer)` : opts.titles?.[v];
         return html`<button type="button" role="radio" aria-checked=${v === value ? "true" : "false"}
         class=${v === value ? "on" : inherited ? "inh" : ""} title=${title ?? nothing} ?disabled=${opts.disabled?.[v] === true}
-        @click=${(e: Event) => { if (v !== value || opts.reselect === true) set(v, e.currentTarget); }}>${text}</button>`;
+        @click=${(e: Event) => { if (v !== value || opts.reselect === true) set(v, e.currentTarget); }}>${text}${opts.beta?.[v] === true ? betaPill() : nothing}</button>`;
       })}
     </div>`;
 }

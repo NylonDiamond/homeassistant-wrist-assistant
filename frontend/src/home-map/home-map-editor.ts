@@ -18,7 +18,7 @@ import { LitElement, css, html, nothing, unsafeCSS, type PropertyValues, type Te
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import { chromeTokens, inspectorStyles } from "../editor-chrome.js";
-import { entityField } from "../editors.js";
+import { betaPill, entityField } from "../editors.js";
 import { formStyles } from "../form-styles.js";
 import { type HassLike, fetchHomeMap } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
@@ -323,7 +323,7 @@ export class WaHomeMapEditor extends LitElement {
   override render(): TemplateResult {
     return html`
       <div class="hm-top">
-        <p class="hm-lead">${HOME_MAP_LEAD}</p>
+        <p class="hm-lead">${HOME_MAP_LEAD}${betaPill()}</p>
         ${this.note ? html`<div class="hm-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="hm-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>

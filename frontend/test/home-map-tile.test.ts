@@ -208,7 +208,8 @@ describe("the Home map kind", () => {
 // ── the Add tile dialog ──────────────────────────────────────────────────
 
 describe("the Add tile dialog", () => {
-  const button = `<span class="at-kind-name">${WATCH_HOME_MAP_ADD_WORDS.label}</span>`;
+  // The name, then its BETA pill.
+  const button = `<span class="at-kind-name">${WATCH_HOME_MAP_ADD_WORDS.label}<span class="beta-pill"`;
 
   it("offers nothing without a map, or with one whose floors have no room", () => {
     expect(flatten(renderAddTile(addHost(undefined).host))).not.toContain(button);
