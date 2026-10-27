@@ -324,6 +324,23 @@ describe("the Home map page", () => {
     expect(ha.saves().map((s) => s.base_rev)).toEqual([4, 5]);
   });
 
+  it("adds a pin without crypto.randomUUID, which plain http does not have", async () => {
+    const { el, inside, ha } = await page();
+    const real = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
+    const secure = globalThis.crypto;
+    const plain = { getRandomValues: (a: Uint8Array<ArrayBuffer>) => secure.getRandomValues(a) };
+    Object.defineProperty(globalThis, "crypto", { value: plain, configurable: true });
+    try {
+      expect(await el.addPin("switch.fan")).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, "crypto", real);
+    }
+    const added = ha.now().doc!.floors[0]!.pins.at(-1)!;
+    expect(added.entityId).toBe("switch.fan");
+    expect(added.id).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
+    expect(inside.selected).toEqual({ kind: "pin", id: added.id });
+  });
+
   it("renames a room, sets its area and its page, and deletes it after asking", async () => {
     const { el, inside, ha } = await page();
     await el.renameRoom(KITCHEN, " Galley ");

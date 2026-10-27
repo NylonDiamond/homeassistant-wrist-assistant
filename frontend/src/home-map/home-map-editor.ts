@@ -27,6 +27,7 @@ import { libraryItems, libraryOf } from "../library/model.js";
 import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
+import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { HOME_PLAN_COLORS, homePlan, homePlanViewBox, homePlanViewBoxAttr } from "./draw.js";
 import {
@@ -287,7 +288,9 @@ export class WaHomeMapEditor extends LitElement {
         const pin = floor.pins.find((p) => sameHomeMapId(p.id, sel.id));
         return pin === undefined ? undefined : homeMapPinRoom(floor, pin);
       })() : undefined;
-    const pin = newHomeMapPin(floor, entityId, room, () => crypto.randomUUID());
+    // `randomWatchId`, not `crypto.randomUUID`, which a Home Assistant
+    // reached over plain http does not have.
+    const pin = newHomeMapPin(floor, entityId, room, randomWatchId);
     return this.run({ kind: "addPin", floorId: floor.id, pin }, { kind: "pin", id: pin.id });
   }
 
