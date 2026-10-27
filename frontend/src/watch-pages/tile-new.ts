@@ -165,6 +165,7 @@ interface TileAppTable {
   assist: { add: { entityId: string; picker: string; extras?: Record<string, unknown> } };
   speak: { add: { entityId: string; picker: string; extras?: Record<string, unknown> } };
   phoneTiles: Record<WatchPhoneAddKind, { add: PhoneAddSpec }>;
+  homeMap: { add: AppAddSpec & { colSpan: number; rowSpan: number } };
 }
 
 /** A tile only the iPhone draws (`tile-app.json` `phoneTiles`): an app tile
@@ -958,6 +959,41 @@ export function newWatchPhoneTile(kind: WatchPhoneAddKind, options?: WatchEditOp
   return freshTile(fields);
 }
 
+// ── the Home map tile ────────────────────────────────────────────────────
+
+/** A floor of the home map an add points a Home map tile at: its id as the
+ * map stores it. */
+export interface WatchHomeMapFloorAdd {
+  id: string;
+}
+
+/** The `entityId` of a Home map tile on a floor: the kind's prefix and the
+ * floor's id as the map stores it, never recased, so it matches the map's
+ * own id on every device. */
+export function watchHomeMapEntityId(floorId: string): string {
+  return `${APP.homeMap.add.entityIdPrefix}${floorId}`;
+}
+
+/**
+ * A new Home map tile (`tile-app.json` `homeMap`, app repo
+ * docs/home_map_plan_2026-10.md, "The tile kind"): the fresh keys,
+ * `entityId` the floor's (`watchHomeMapEntityId`), the tile's own upper case
+ * id, the kind's fixed icon, color and label, and its own size. Placed at
+ * row 0, column 0; the add places it.
+ */
+export function newWatchHomeMapTile(floor: WatchHomeMapFloorAdd, options?: WatchEditOptions): WatchPageTile {
+  const spec = APP.homeMap.add;
+  return freshTile({
+    id: newIdFrom(options),
+    entityId: watchHomeMapEntityId(floor.id),
+    icon: spec.icon,
+    color: spec.hex,
+    customLabel: spec.customLabel,
+    colSpan: spec.colSpan,
+    rowSpan: spec.rowSpan,
+  });
+}
+
 /** One add, in the shape the case files use. A music hub add carries the
  * home's media players (`watchMediaPlayersFromHass`); assist and speak
  * message tiles are entity adds of `WATCH_ASSIST_ENTITY_ID` and
@@ -973,7 +1009,8 @@ export type WatchTileAdd =
   | { kind: "template" }
   | { kind: "musicHub"; players: readonly WatchMediaPlayer[] }
   | { kind: "pointControl" }
-  | { kind: WatchPhoneAddKind };
+  | { kind: WatchPhoneAddKind }
+  | { kind: "homeMap"; floor: WatchHomeMapFloorAdd };
 
 /** The library entry of a library add. */
 function libraryEntryOf(add: Extract<WatchTileAdd, { kind: WatchLibraryAddKind }>): WatchLibraryEntryAdd {
@@ -1006,6 +1043,8 @@ export function newWatchTile(add: WatchTileAdd, page: WatchPage | undefined, opt
     case "textField":
     case "web":
       return newWatchPhoneTile(add.kind, options);
+    case "homeMap":
+      return newWatchHomeMapTile(add.floor, options);
   }
 }
 
@@ -1079,6 +1118,8 @@ export function watchAddEntityId(add: WatchTileAdd): string {
     case "textField":
     case "web":
       return APP.phoneTiles[add.kind].add.entityIdPrefix;
+    case "homeMap":
+      return watchHomeMapEntityId(add.floor.id);
   }
 }
 

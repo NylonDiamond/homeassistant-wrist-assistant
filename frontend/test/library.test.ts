@@ -43,13 +43,15 @@ describe("Home's Library", () => {
   it("is the side bar section of the whole home's screens, with its own line", () => {
     expect(HOME_LIBRARY_TITLE).toBe("On every device");
     expect(HOME_LIBRARY_LEAD).toBe("Kept once for the whole home. Every watch and iPhone uses them.");
+    // The Home map only once the integration lists `home_map`.
     expect(homeLibraryScreens().map((s) => s.id)).toEqual(["http-actions", "cameras"]);
-    for (const screen of homeLibraryScreens()) {
+    expect(homeLibraryScreens((c) => c === "home_map").map((s) => s.id)).toEqual(["http-actions", "cameras", "home-map"]);
+    for (const screen of homeLibraryScreens(() => true)) {
       expect(HOME_SHARED_SUB[screen.id], screen.id).toBeTruthy();
       expect(screen.shared).toBe(true);
       expect(screenHowTo(screen.id), screen.id).toBeDefined();
     }
-    expect(Object.keys(HOME_SHARED_SUB)).toEqual(["http-actions", "cameras"]);
+    expect(Object.keys(HOME_SHARED_SUB)).toEqual(["http-actions", "cameras", "home-map"]);
   });
 
   it("names the row over its screens On every device, with the Home button and each screen", () => {

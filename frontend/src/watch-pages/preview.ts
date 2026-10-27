@@ -69,6 +69,9 @@ import type { SettingDevice } from "../watch-settings.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
+import type { HomeMapDocument } from "../home-map/model.js";
+import { HOME_PLAN_COLORS, homePlan, homePlanViewBoxAttr } from "../home-map/draw.js";
+import { watchHomeMapFloorOf, watchHomeMapTileWords } from "./home-map-tile.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
@@ -185,6 +188,10 @@ export interface WatchPagePreviewInput {
   /** Draws One Look (true) or the old tile look (false) whatever the
    * version says. Absent: the version decides. */
   oneLook?: boolean;
+  /** The home's map, which a Home map tile draws its floor of
+   * (`homeMapFace`). Null when the home has none; absent while unread, when
+   * a Home map tile draws its name alone. */
+  homeMap?: HomeMapDocument | null;
 }
 
 /** The device a picture draws One Look's tiles for, or undefined while the
@@ -3328,6 +3335,32 @@ function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: 
   }
 }
 
+/**
+ * A Home map tile (app repo docs/home_map_plan_2026-10.md, board 5): its
+ * floor's flat plan, small, with a glow over each room with a light on and
+ * a dot on each light that is on, and how many lights are on under it, on
+ * the plan's dark ground on both devices (`home-map/draw.ts`). Before the
+ * map is read, or when the map has no such floor, the house symbol stands
+ * in for the plan and the line says which.
+ */
+function homeMapFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
+  const radius = previewTileCornerRadius(input, cell.width, cell.height) * s;
+  const floor = watchHomeMapFloorOf(tile, input.homeMap);
+  const words = watchHomeMapTileWords(floor, input.states, input.homeMap !== undefined);
+  const side = Math.min(width, height);
+  const pad = Math.max(3, Math.min(8, side * 0.07)) * s;
+  // A short tile keeps the plan and drops the line.
+  const showWords = height >= 34;
+  const plan = floor === undefined
+    ? symbolMark(input.icons, "house.fill", Math.min(28, side * 0.42) * s, "#FFD9A0")
+    : html`<svg class="wp-hm-plan" viewBox=${homePlanViewBoxAttr(floor)} preserveAspectRatio="xMidYMid meet" aria-hidden="true">${homePlan(floor, { states: input.states, pins: "lit", roomGlow: true })}</svg>`;
+  return html`<div class="wp-tile wp-hm-face" data-home-map=${floor?.id ?? ""}
+    style=${`${box}border-radius:${radius}px;background:${HOME_PLAN_COLORS.ground};padding:${pad}px;gap:${pad * 0.6}px`} title=${hint ?? nothing}>
+    <span class="wp-hm-plan-box">${plan}</span>
+    ${showWords ? html`<span class="wp-hm-words" style=${`font-size:${Math.max(7, Math.min(13, height * 0.12)) * s}px`}>${words}</span>` : nothing}
+  </div>`;
+}
+
 /** Where a tile face goes: its cell's top left in pixels, or "fill" for the
  * whole of a positioned box the caller puts it in. */
 type TileFaceBox = { left: number; top: number } | "fill";
@@ -3385,6 +3418,9 @@ function tileFace(
     return html`<div class="wp-spacer" style=${`${box}border-radius:${radiusPt * s}px;${watchSpacerStyle(tile, s, { width, height })}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, { width, height }, s, true)}</div>`;
   }
 
+  // A Home map tile keeps its own face, its floor's plan, on both devices
+  // and in either look.
+  if (kind === "home_map") return homeMapFace(tile, width, height, box, input, s, titled ? hint : undefined, cell);
   // A kind only the iPhone draws: its outline on a watch, a simple face on
   // an iPhone.
   if (!tileDrawsOn(tile, "watch")) {
@@ -3976,6 +4012,11 @@ export const watchPagePreviewStyles = css`
   .wp-tile.wp-phone-face { display: flex; align-items: center; justify-content: center; gap: 6%; }
   .wp-phone-face.web { flex-direction: column; gap: 3%; }
   .wp-phone-chart { position: absolute; inset: 0; display: block; }
+  /* A Home map tile: the floor's plan over the line that counts the lights. */
+  .wp-tile.wp-hm-face { display: flex; flex-direction: column; align-items: stretch; box-sizing: border-box; overflow: hidden; }
+  .wp-hm-plan-box { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .wp-hm-plan { display: block; width: 100%; height: 100%; }
+  .wp-hm-words { flex: none; text-align: center; color: #F2ECE4; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wp-phone-field {
     box-sizing: border-box; flex: 1; min-width: 0; margin-left: 6%; display: flex; align-items: center;
     font-family: system-ui, sans-serif;

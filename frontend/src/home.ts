@@ -5,6 +5,7 @@
 import { css } from "lit";
 import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
+import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
 import type { Person } from "./people.js";
 import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
 import { IPHONE_SCREENS, type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
@@ -251,9 +252,16 @@ export const HOME_LIBRARY_TITLE = "On every device";
 export const HOME_LIBRARY_LEAD = "Kept once for the whole home. Every watch and iPhone uses them.";
 
 /** The screens Home's Library lists, in order: every screen of the whole
- * home (`shared`) that is not retired. */
-export function homeLibraryScreens(): WatchScreen[] {
-  return WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true);
+ * home (`shared`) that is not retired, and of those that need a capability
+ * only the ones the integration advertises (the Home map, `home_map`). */
+export function homeLibraryScreens(capable: (capability: string) => boolean = homeScreenCapable): WatchScreen[] {
+  return WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true && (s.capability === undefined || capable(s.capability)));
+}
+
+/** Whether the integration advertises a screen's capability, as the panel
+ * last heard: only the Home map's is known here. */
+function homeScreenCapable(capability: string): boolean {
+  return capability === HOME_MAP_CAPABILITY && homeMapCapable();
 }
 
 /** The line under each of the Library's screens in Home's side bar
@@ -261,6 +269,7 @@ export function homeLibraryScreens(): WatchScreen[] {
 export const HOME_SHARED_SUB: Partial<Record<WatchScreen["id"], string>> = {
   "http-actions": "Web requests every device can run",
   "cameras": "How each camera is framed in alerts",
+  "home-map": "Your home's plan, with a pin for each device",
 };
 
 export const HOME_SYNC_NOTE = "On a watch, Synced and Waiting cover its complications and the whole watch app: pages, menus and settings.";

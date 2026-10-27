@@ -185,6 +185,7 @@ export const VIRTUAL_TILE_KINDS: Readonly<Record<string, string>> = {
   chart: "Chart",
   text_field: "Text field",
   web: "Web card",
+  home_map: "Home map",
 };
 
 // ── which device draws a tile ────────────────────────────────────────────

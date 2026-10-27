@@ -65,6 +65,8 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { watchCameraLiveEntity, watchCameraRows, watchEditorLiveCameras } from "./camera-live.js";
+import type { HomeMapDocument } from "../home-map/model.js";
+import { homeMapRead } from "../home-map/store.js";
 import { beginColumnDrag } from "../column-split.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
@@ -1941,6 +1943,7 @@ export class WaPageEditor extends LitElement {
       behavior: () => this.behavior,
       musicAssistant: () => watchMusicAssistantPresent(this.homeData.musicAssistant, this.hass?.entities),
       cloudTTS: () => this.homeData.cloudTTS,
+      homeMap: () => this.homeMapDoc(),
       templateRenders: () => this.templateRenders,
       oneLook: () => this.oneLookOn(pageId),
       pickers: () => this.pagePickers(pageId),
@@ -3606,12 +3609,21 @@ export class WaPageEditor extends LitElement {
    * states, symbols and renders. */
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
     const phone = this.phoneLayoutOf(undefined);
+    const homeMap = this.homeMapDoc();
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn,
       appVersion: this.previewAppVersion(undefined),
       ...(phone === undefined ? {} : { phone }),
+      ...(homeMap === undefined ? {} : { homeMap }),
     };
+  }
+
+  /** The home's map for the Home map tiles (`home-map/store.ts`): read once
+   * the integration lists `home_map`, and again once the read is a minute
+   * old; undefined until then. */
+  private homeMapDoc(): HomeMapDocument | null | undefined {
+    return homeMapRead(this.hass, () => this.requestUpdate())?.doc;
   }
 
   /** A page as one screen of the device it is drawn on, `width` CSS pixels
@@ -3854,6 +3866,9 @@ export class WaPageEditor extends LitElement {
       photoGlow: this.photoGlow,
       photoOn: this.photoOn,
     };
+    // The home's map, for its Home map tiles.
+    const homeMap = this.homeMapDoc();
+    if (homeMap !== undefined) input.homeMap = homeMap;
     // An iPhone page's camera tiles play live when the Live video card's
     // switch says so (off by default, kept in this browser).
     const hass = this.hass;

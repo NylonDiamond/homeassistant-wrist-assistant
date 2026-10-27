@@ -2353,7 +2353,8 @@
       "map": "map.<UUID>, a map of the entities in mapEntityIds. iPhone only.",
       "chart": "chart.<UUID>, a history chart of the entities in chartEntityIds. iPhone only.",
       "text_field": "text_field.<UUID>, a text field that sends what is typed to textTargetId or Assist. iPhone only.",
-      "web": "web.<UUID>, a web page from webURL. iPhone only."
+      "web": "web.<UUID>, a web page from webURL. iPhone only.",
+      "home_map": "home_map.<floor id>, that floor of the home map (docs/home_map_plan_2026-10.md in the app repo) drawn small, with a glow over each room with a light on and how many lights are on; a tap opens the full map. The floor id is the map's own, as stored."
     },
     "grid": "Placement is absolute on a 12 column grid: gridCol 0 to 11, gridRow from 0, colSpan 1 to 12, rowSpan from 1. Nothing in the decoder stops overlaps.",
     "pageIds": "Every page needs a unique id. A page without one gets a new id on every decode; duplicate page ids crash the watch.",

@@ -226,7 +226,8 @@ export function watchDomainStyleSections(stateTask: boolean): WatchTileSettingsS
  * Background only for a spacer (it has no icon or words); Header, Action and
  * Visibility for a header, whose look is on the Header task; Opens first for a go to
  * page or peek tile; Target first for an HTTP action or status page tile,
- * then Request (an HTTP action); only the line that says why for a tile of
+ * then Request (an HTTP action), and for a Home map tile (its floor), which
+ * has no Action; only the line that says why for a tile of
  * a removed kind (a macro), which the panel keeps as stored; Icon and color,
  * State (for the domains the phone shows it for), Text, Border, Action,
  * Visibility (Show tile, which the phone kept in Action) and Background for
@@ -249,6 +250,9 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
   // shows. No Action: the iPhone gives each its own tap (a marker, the field,
   // the page full screen).
   if (isWatchPhoneTileKind(kind)) return ["phoneTile", "icon", "text", "border", "visibility", "background"];
+  // A Home map tile: its floor first, as Target, then the look and when it
+  // shows. No Action: a tap opens the full map.
+  if (kind === "home_map") return ["target", "icon", "text", "border", "visibility", "background"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");
   const library = watchLibraryTarget(tileEntityId(tile));

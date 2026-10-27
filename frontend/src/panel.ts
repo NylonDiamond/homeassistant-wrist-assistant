@@ -457,6 +457,8 @@ import { dropWatchStatusPagesDrafts, renderWatchStatusPagesView, watchStatusPage
 import { dropWatchRoomsDrafts, renderWatchRoomsView, watchRoomsDirty } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import { dropWatchCamerasDrafts, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
+import { renderHomeMapView } from "./home-map/hook.js";
+import { homeMapOn, setHomeMapCapable } from "./home-map/store.js";
 import {
   COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceListPath, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
@@ -1686,6 +1688,10 @@ export class WristAssistantPanel extends LitElement {
    * reply's capabilities: the iPhone app tab shows, and its Pages, Menus,
    * Status pages, Rooms and Settings edit a phone's own records. */
   @state() private phonePages = false;
+  /** The integration keeps the home's map (`home-map/store.ts`), from the
+   * owners reply's capabilities: Home's "On every device" lists the Home
+   * map, and the page editor offers the Home map tile. */
+  @state() private homeMap = false;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
   @state() private presets: { slot: number; name: string }[] = [];
@@ -7125,6 +7131,8 @@ export class WristAssistantPanel extends LitElement {
     try {
       const reply = await fetchOwners(this.hass);
       this.phonePages = phonePagesOn(reply.capabilities);
+      this.homeMap = homeMapOn(reply.capabilities);
+      setHomeMapCapable(this.homeMap);
       this.owners = reply.owners;
       this.ownersReadAt = Date.now();
       this.maxSchemaVersion = reply.max_schema_version;
@@ -11561,6 +11569,13 @@ export class WristAssistantPanel extends LitElement {
         hass: this.hass, narrow: this.narrow,
         devices: this.myTestDevices(),
         barHost: this.watchBarHost,
+        onLoaded: () => this.requestUpdate(),
+      });
+      // The Home map, on `/home-map`: the home's map, its rooms and device
+      // pins, handed no watch either. Each edit saves at once.
+      case "home-map": return renderHomeMapView({
+        hass: this.hass, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        capable: this.homeMap,
         onLoaded: () => this.requestUpdate(),
       });
     }

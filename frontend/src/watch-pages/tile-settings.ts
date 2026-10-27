@@ -97,6 +97,14 @@ import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSection
 import { renderInboxLine, renderPhoneTileTask } from "./app-settings.js";
 import { watchPhoneTileChanged, watchPhoneTileKindOf, watchPhoneTileSummary, watchPhoneTileTitle } from "./phone-tiles-model.js";
 import { watchSpecialTask } from "./special-model.js";
+import {
+  WATCH_HOME_MAP_FLOOR_HINT,
+  WATCH_HOME_MAP_NO_MAP_TEXT,
+  isWatchHomeMapTile,
+  setWatchHomeMapFloor,
+  watchHomeMapFloorMenu,
+  watchHomeMapFloorSummary,
+} from "./home-map-tile.js";
 import { findWatchPage } from "./edit.js";
 import {
   type WatchShowWhenOperator,
@@ -764,7 +772,8 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
   const title = section === "special"
     ? watchSpecialSectionTitle(host)
     : phoneKey !== undefined ? WATCH_PHONE_KEY_WORDS[phoneKey].title
-    : phoneKind !== undefined ? watchPhoneTileTitle(phoneKind) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
+    : phoneKind !== undefined ? watchPhoneTileTitle(phoneKind)
+    : section === "target" && isWatchHomeMapTile(host.tile) ? HOME_MAP_TARGET_TITLE : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
   const summary = open ? "" : section === "size" ? (extras.size?.summary() ?? "") : sectionSummary(host, section);
   const phone = section === "phone" || section === "phoneExtras" || section === "phoneTile";
   const badge = WATCH_TILE_SECTION_BADGES[section];
@@ -1203,6 +1212,7 @@ function partTitle(host: TileSettingsHost, part: TileInspectorPart): string {
     const kind = watchPhoneTileKindOf(host.tile);
     if (kind !== undefined) return watchPhoneTileTitle(kind);
   }
+  if (part === "target" && isWatchHomeMapTile(host.tile)) return HOME_MAP_TARGET_TITLE;
   return PART_TITLES[part] ?? WATCH_TILE_SETTINGS_SECTION_TITLES[part as WatchTileSettingsSection];
 }
 
@@ -1425,6 +1435,7 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       return page === undefined ? "" : watchPageName(page);
     }
     case "target": {
+      if (isWatchHomeMapTile(tile)) return watchHomeMapFloorSummary(tile, host.homeMap);
       const target = watchLibraryTarget(tileEntityId(tile));
       if (target === undefined || !watchCatalogKnows(host.catalog, target.kind)) return "";
       return findWatchCatalogEntry(host.catalog, target.kind, target.id)?.name ?? watchLibraryMissingText(host.catalog, target.kind, hostDevice(host));
@@ -1679,6 +1690,9 @@ function renderPeekAnimation(host: TileSettingsHost): TemplateResult | typeof no
 
 // ── library tiles: target, request ───────────────────────────────────────
 
+/** A Home map tile's Target card is titled by what it picks. */
+const HOME_MAP_TARGET_TITLE = "Floor";
+
 const TARGET_HINTS: Readonly<Record<WatchLibraryKind, string>> = {
   httpAction: "A tap runs this action. A label that is the action's name follows it.",
   statusPage: "A tap opens this status page. A label that is the page's name follows it.",
@@ -1702,6 +1716,7 @@ function httpActionsLink(): TemplateResult {
  * away.
  */
 function renderTarget(host: TileSettingsHost): TemplateResult {
+  if (isWatchHomeMapTile(host.tile)) return renderHomeMapFloor(host);
   const target = watchLibraryTarget(tileEntityId(host.tile));
   if (target === undefined) return html``;
   const words = WATCH_LIBRARY_WORDS[target.kind];
@@ -1743,6 +1758,23 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
     ${warning === undefined ? nothing : html`<div class="hint warn ts-under">${warning}.</div>`}
     <div class="hint ts-under">${onlyMissing ? nothing : TARGET_HINTS[target.kind]}${listed === undefined ? nothing : html` ${listed}`}</div>
     ${screenHelps ? html`<div class="ts-under">${httpActionsLink()}</div>` : nothing}`;
+}
+
+/**
+ * The Floor of a Home map tile: the home map's floors with a room. A floor
+ * the map no longer has shows as "Not on the map" and stays until another
+ * is picked. With no map (none yet, or not read) the line says where one
+ * comes from; nothing can be picked.
+ */
+function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
+  const menu = watchHomeMapFloorMenu(host.tile, host.homeMap);
+  if (menu === undefined) {
+    return html`<div class="ts-target-now">${watchHomeMapFloorSummary(host.tile, host.homeMap) || "Home map"}</div>
+      <div class="hint keep ts-under">${WATCH_HOME_MAP_NO_MAP_TEXT}</div>`;
+  }
+  const pick = (floorId: string) => commit(host, "target", (d) => setWatchHomeMapFloor(d, host.pageId, host.tileId, floorId));
+  return html`${menuField("Floor", menu, pick)}
+    <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>`;
 }
 
 /** The line under Show reply, naming the device showing the page. */

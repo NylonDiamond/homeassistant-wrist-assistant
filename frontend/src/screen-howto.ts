@@ -34,7 +34,7 @@ const ART: Readonly<Record<HowToArt, TemplateResult>> = {
 
 /** The screens whose tab carries a how-to. Settings and the retired
  * Control Center have none. */
-export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras";
+export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "home-map";
 
 /** How each screen's work is used on the watch, checked against the watch
  * app's code (WatchHomeView, InteractiveGrid, StatusPageIntent,
@@ -79,6 +79,11 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
     art: "crop", label: "In your alerts",
     how: "When an alert has a camera picture, your watch and iPhone show only the part you frame here.",
     use: "Doorbell and motion alerts, so the door or the person fills the small screen. The full camera view still shows the whole picture.",
+  },
+  "home-map": {
+    art: "room", label: "On your watch",
+    how: "Open the map from a Home map tile. Turn the Digital Crown to zoom into a room, tap a pin to use its device, or tap a room for its page.",
+    use: "Seeing at a glance which lights are on and where, and reaching a device by where it is in your home.",
   },
 };
 

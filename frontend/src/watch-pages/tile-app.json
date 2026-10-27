@@ -1819,6 +1819,17 @@
       "help": "An HA dashboard address works after you sign in once inside the card on the iPhone."
     }
   },
+  "homeMap": {
+    "note": "The Home map tile (docs/home_map_plan_2026-10.md in the app repo): home_map.<floor id>, drawn by both devices. The panel offers it once the integration lists home_map and the map has a floor with a room. Its only key of its own is the floor in its entity id; the Floor menu changes it.",
+    "add": {
+      "entityIdPrefix": "home_map.",
+      "icon": "house.fill",
+      "hex": "#FFB340",
+      "customLabel": "Home map",
+      "colSpan": 12,
+      "rowSpan": 6
+    }
+  },
   "resets": {
     "data": "Reset Data on an assist or speak tile writes resets.data of tile-special.json, which removes assistReplyOutputMode too.",
     "none": ["template", "musicHub", "pointControl"]

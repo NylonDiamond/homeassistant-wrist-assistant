@@ -39,7 +39,8 @@ describe("tile-devices.json", () => {
     const expected = new Set([...Object.keys(VIRTUAL_TILE_KINDS), ...addable]);
     expect(TABLE.version).toBe(1);
     expect(Object.keys(TABLE.kinds).sort()).toEqual([...expected].sort());
-    expect(Object.keys(TABLE.kinds)).toHaveLength(67);
+    expect(Object.keys(TABLE.kinds)).toHaveLength(68);
+    expect(TABLE.kinds.home_map).toEqual(BOTH);
   });
 
   it("gives each kind and key both devices or the iPhone only", () => {

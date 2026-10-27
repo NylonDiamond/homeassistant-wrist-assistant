@@ -64,6 +64,7 @@
     "stt": ["watch", "iphone"],
     "wake_word": ["watch", "iphone"],
     "assist_satellite": ["watch", "iphone"],
+    "home_map": ["watch", "iphone"],
     "map": ["iphone"],
     "chart": ["iphone"],
     "text_field": ["iphone"],

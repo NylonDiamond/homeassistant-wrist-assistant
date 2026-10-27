@@ -224,6 +224,8 @@ describe("the Help sheet", () => {
       "voice": WATCH_VOICE_HELP_URL,
       "http-actions": WATCH_HTTP_ACTIONS_HELP_URL,
       "cameras": WATCH_CAMERAS_HELP_URL,
+      // No guide page yet: the website docs come later in the plan.
+      "home-map": undefined,
       "watch-complications": undefined,
       "settings": undefined,
     };

@@ -752,7 +752,7 @@ export interface OneLookTileStateOptions {
 }
 
 /** The kinds that keep their own face under One Look. */
-const OWN_FACE_KINDS: ReadonlySet<string> = new Set(["divider", "spacer", "template", "chart", "map", "web", "text_field"]);
+const OWN_FACE_KINDS: ReadonlySet<string> = new Set(["divider", "spacer", "template", "chart", "map", "web", "text_field", "home_map"]);
 
 /** The kinds the app draws with its sensor tile. */
 const SENSOR_TILE_KINDS: ReadonlySet<string> = new Set([

@@ -3,8 +3,9 @@
 // defaults (part 3c). Under them, "Other tiles" in small groups, each button
 // with the icon its tile carries and one line on what it does: Layout
 // (spacer, header), Navigation (go to page, peek page), App tiles (Music,
-// Template, Assist, Speak and Point control, 3f batch 2) and Library (the
-// iPhone's HTTP actions and status pages from the catalog, part 3e). With
+// Template, Assist, Speak and Point control, 3f batch 2, and the Home map
+// once the home has a map with a floor) and Library (the iPhone's HTTP
+// actions and status pages from the catalog, part 3e). With
 // no catalog, one line says where the library lists come from; without
 // Music Assistant, Music is off and one line says why. Last, the "iPhone
 // only" group: a map, a chart, a text field and a web card (phone native
@@ -84,6 +85,8 @@ import {
   watchNoPhoneLibraryText,
 } from "./catalog.js";
 import { type AddTileHost, type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { type HomeMapFloor, homeMapFloorName } from "../home-map/model.js";
+import { WATCH_HOME_MAP_ADD_WORDS, watchHomeMapAddFloors, watchHomeMapAddedText } from "./home-map-tile.js";
 import { detectCameraRatio } from "./special-settings.js";
 import {
   type WatchPage,
@@ -100,6 +103,7 @@ import {
 import {
   type WatchPhoneAddKind,
   type WatchTileAdd,
+  WATCH_TILE_APP,
   addNewWatchTile,
   watchAddRefusal,
   watchEntityAddFromHass,
@@ -109,9 +113,9 @@ import {
 } from "./tile-new.js";
 
 type LinkKind = "pageLink" | "peekLink";
-/** Which list is open under the kind buttons: pages to link to, or the
- * iPhone's library of one kind. */
-type OpenList = LinkKind | WatchLibraryKind;
+/** Which list is open under the kind buttons: pages to link to, the
+ * iPhone's library of one kind, or the home map's floors. */
+type OpenList = LinkKind | WatchLibraryKind | "homeMap";
 
 /** What the dialog remembers between draws. One object, changed in place
  * and only here. */
@@ -325,6 +329,26 @@ function addApp(host: AddTileHost, view: AddTileView, button: WatchAppAddButton)
   commit(host, view, watchAppAdd(button.key, host.hass), button.done);
 }
 
+/** Add a Home map tile for one floor. A floor may be on a page once. */
+function addHomeMap(host: AddTileHost, view: AddTileView, floor: HomeMapFloor, floors: number): void {
+  const name = floors > 1 ? `The Home map tile for ${homeMapFloorName(floor)}` : "The Home map tile";
+  if (commit(host, view, { kind: "homeMap", floor: { id: floor.id } }, watchHomeMapAddedText(floor, floors), name)) view.links = undefined;
+}
+
+/** The home map's floors to pick from, when it has more than one. */
+function renderHomeMapFloors(host: AddTileHost, view: AddTileView, floors: readonly HomeMapFloor[]): TemplateResult {
+  return html`<div class="at-links" id="at-links">
+    <div class="at-sub">${WATCH_HOME_MAP_ADD_WORDS.question}</div>
+    <div class="at-pages" role="group" aria-label="Floors">
+      ${floors.map((f) => html`<button type="button" class="at-page" ?disabled=${host.busy}
+        @click=${() => addHomeMap(host, view, f, floors.length)}>
+        <span class="at-page-name">${homeMapFloorName(f)}</span>
+        <span class="at-tag">${f.rooms.length === 1 ? "1 room" : `${f.rooms.length} rooms`}</span>
+      </button>`)}
+    </div>
+  </div>`;
+}
+
 /** Add a tile only the iPhone draws. Refused on a watch's editor, where the
  * group is greyed, and while a watch that picks the page runs an app too old
  * to skip it, which the note then names. */
@@ -490,7 +514,7 @@ function noPhoneLine(text: string | undefined): TemplateResult | typeof nothing 
 }
 
 /** Every kind with a button under "Other tiles". */
-type KindKey = WatchAddKindKey | WatchAppAddKey | WatchPhoneAddKind;
+type KindKey = WatchAddKindKey | WatchAppAddKey | WatchPhoneAddKind | "homeMap";
 
 /** The panel's own glyph for a kind whose tile carries no symbol (a spacer,
  * a header), and for the others until the symbols have loaded. A kind with
@@ -505,6 +529,7 @@ const KIND_GLYPH: Readonly<Partial<Record<KindKey, UiIconName>>> = {
   template: "braces",
   assist: "mic",
   pointControl: "tap",
+  homeMap: "home",
   chart: "chart",
   textField: "keyboard",
   web: "globe",
@@ -600,12 +625,20 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     (t) => t !== undefined,
   );
   // A button that opens a list; the list opens under its own group.
-  const listButton = (kind: OpenList) =>
+  const listButton = (kind: Exclude<OpenList, "homeMap">) =>
     kindButton(host, kind, WATCH_ADD_KIND_WORDS[kind], { disabled: false, expanded: view.links === kind, onClick: () => toggleLinks(kind) });
   let linkList: TemplateResult | typeof nothing = nothing;
   let libraryList: TemplateResult | typeof nothing = nothing;
   if (view.links === "pageLink" || view.links === "peekLink") linkList = renderLinks(host, view, view.links);
-  else if (view.links !== undefined && watchCatalogKnows(catalog, view.links)) libraryList = renderLibrary(host, view, view.links, catalog!);
+  else if (view.links !== undefined && view.links !== "homeMap" && watchCatalogKnows(catalog, view.links)) libraryList = renderLibrary(host, view, view.links, catalog!);
+  // The Home map tile, once the home's map has a floor with a room: one
+  // floor adds at once, several open the floors under App tiles.
+  const floors = watchHomeMapAddFloors(host.homeMap);
+  const homeMapWords = { label: WATCH_HOME_MAP_ADD_WORDS.label, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_HOME_MAP_ADD_WORDS.hint };
+  const homeMapButtons = floors.length === 0 ? [] : [floors.length === 1
+    ? kindButton(host, "homeMap", homeMapWords, { disabled: busy, onClick: () => addHomeMap(host, view, floors[0]!, 1) })
+    : kindButton(host, "homeMap", homeMapWords, { disabled: false, expanded: view.links === "homeMap", onClick: () => toggleLinks("homeMap") })];
+  const homeMapList = view.links === "homeMap" && floors.length > 1 ? renderHomeMapFloors(host, view, floors) : nothing;
   const searchChanged = (query: string, kind: string) => {
     view.query = query;
     view.kind = kind;
@@ -697,7 +730,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
   const apps = kindGroup(
     WATCH_ADD_GROUP_TITLES.app,
     WATCH_ADD_GROUP_TITLES.app,
-    WATCH_APP_ADD_BUTTONS.map((b) => {
+    [...WATCH_APP_ADD_BUTTONS.map((b) => {
       const blocked = watchAppAddBlockedText(b.key, host.musicAssistant);
       return kindButton(host, b.key, b, {
         disabled: busy || blocked !== undefined,
@@ -705,8 +738,8 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
         whyId: "at-app-blocked",
         onClick: () => addApp(host, view, b),
       });
-    }),
-    appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`,
+    }), ...homeMapButtons],
+    html`${appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`}${homeMapList}`,
   );
   const library = catalog === undefined
     ? kindGroup(WATCH_ADD_GROUP_TITLES.library, WATCH_ADD_GROUP_TITLES.library, [], html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`)

@@ -13,6 +13,7 @@
 // tested.
 
 import type { HassLike } from "../ha-api.js";
+import type { HomeMapDocument } from "../home-map/model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type SettingDevice, deviceNoun } from "../watch-settings.js";
@@ -95,6 +96,12 @@ export interface WatchPagesEditorHost {
    * after a call that failed. Only false turns the Music Hub add off. Asked
    * once for the home, and again after a reconnect. A getter. */
   readonly musicAssistant: boolean | undefined;
+  /** The home's map (`home-map/model.ts`) once the integration lists
+   * `home_map` and the element has read it: what the Add tile dialog offers
+   * a Home map tile for and its Floor menu picks from. Null when the home
+   * has no map yet; undefined while unread, or with an integration that
+   * keeps none. A getter. */
+  readonly homeMap?: HomeMapDocument | null;
   /** Whether Home Assistant Cloud is logged in and connected, so `tts.cloud`
    * is a voice engine; undefined until known or when the call failed (the
    * phone then leaves `tts.cloud` out). A getter, asked as `musicAssistant`. */

@@ -42,6 +42,7 @@ export interface HassLike {
 
 import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot, chartHistoryRequests, chartStatisticsRequests } from "./model.js";
 import { listRequests } from "./compiler.js";
+import type { HomeMapDocument, HomeMapRead } from "./home-map/model.js";
 import type { SavedPart } from "./parts.js";
 import type { DeviceKind } from "./version.js";
 
@@ -1277,6 +1278,25 @@ export async function uploadPageImage(hass: HassLike, data: string, info: PageIm
  * it, `invalid` for a built-in id. */
 export async function deletePageImage(hass: HassLike, imageId: string) {
   return hass.connection.sendMessagePromise<unknown>({ type: `${PAGE_IMAGES}/delete`, image_id: imageId });
+}
+
+const HOME_MAP = "wrist_assistant/home_map";
+
+/** The home's map (`home-map/model.ts`) and its rev: a null map and rev 0
+ * before the first save. Every signed in user may read it. Refusals:
+ * `unavailable` (the integration is not up, or the stored map could not be
+ * read), and `unknown_command` from an integration older than the map. */
+export async function fetchHomeMap(hass: HassLike) {
+  return hass.connection.sendMessagePromise<HomeMapRead>({ type: `${HOME_MAP}/get` });
+}
+
+/** Save the whole map, made from the map read at `baseRev` (0 for the first
+ * map). The reply names the new rev. Refusals: `invalid` (the message says
+ * where the map leaves the contract), `too_large`, `unavailable`, and
+ * `conflict` when the store has moved past `baseRev`, whose message begins
+ * `stored revision is <N>`: read again, put the change on top, save again. */
+export async function saveHomeMap(hass: HassLike, doc: HomeMapDocument, baseRev: number) {
+  return hass.connection.sendMessagePromise<{ rev: number }>({ type: `${HOME_MAP}/save`, doc, base_rev: baseRev });
 }
 
 /** Hand every live record of one watch to another watch, both ones the
