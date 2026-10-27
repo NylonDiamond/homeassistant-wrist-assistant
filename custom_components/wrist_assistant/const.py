@@ -452,6 +452,11 @@ PAGE_IMAGES_STORAGE_VERSION = 1
 # signed page_image_get and page_image_put ops. The phone hands its photos
 # over, and a watch fetches the photos its pages name, only when it sees this.
 PAGE_IMAGES_CAPABILITY = "page_images"
+# Photo tiles (app repo docs/photo_tiles_plan_2026-10.md): the same store
+# also keeps PNGs, and each photo's kind, label and entity id, and a tile's
+# iconPhotoId counts as a use of its photo. The phone sends a tile's photo,
+# and the panel offers photos for tiles, only when it sees this.
+TILE_PHOTOS_CAPABILITY = "tile_photos"
 # Each Home Assistant user's client certificate for an mTLS proxy (step 4 of
 # the phone watch link removal), see client_certificate_store.py: the .p12
 # bytes, its password, its fingerprint and a revision per user. A private

@@ -170,6 +170,7 @@ from .notifications import (
     phone_watch_ids,
     resolve_push_routes,
 )
+from .page_images import content_type as page_image_content_type
 from .page_images_store import (
     PageImagesError,
     PageImagesTooLargeError,
@@ -4939,11 +4940,12 @@ def _page_image_refusal(ctx: _OpContext, err: PageImagesError) -> Response:
 
 
 async def _op_page_image_get(ctx: _OpContext) -> Response:
-    """One page photo's JPEG, for a device whose pages name it.
+    """One page photo's bytes as they are, for a device whose pages name it
+    as a background or a tile's photo.
 
     Body:  {"image_id": <UUID or built-in id>}
-    Reply: 200, the JPEG bytes, ``Content-Type: image/jpeg``, signed like
-           every other reply.
+    Reply: 200, the JPEG or PNG bytes, ``Content-Type: image/jpeg`` or
+           ``image/png``, signed like every other reply.
     Refusal: signed {"ok": false, "error", "message"}: ``not_found`` 404,
              ``invalid`` 400 (not a photo id), ``unavailable`` 503.
     """
@@ -4954,21 +4956,27 @@ async def _op_page_image_get(ctx: _OpContext) -> Response:
         _image_id, data = await store.async_read(ctx.payload.get("image_id"))
     except PageImagesError as err:
         return _page_image_refusal(ctx, err)
-    return ctx.signed_bytes(data, content_type="image/jpeg")
+    return ctx.signed_bytes(data, content_type=page_image_content_type(data))
 
 
 async def _op_page_image_put(ctx: _OpContext) -> Response:
-    """A phone hands over one photo its pages name, under the phone's own id.
+    """A phone hands over one photo, under the phone's own id: a photo its
+    pages name, or a cut out photo it made for a tile.
 
-    Body:  {"image_id": <UUID>, "data": <base64 JPEG>}
+    Body:  {"image_id": <UUID>, "data": <base64 JPEG or PNG>,
+            "kind"?: "background" | "icon", "label"?: <text>,
+            "entity_id"?: <entity id>}
     Reply: {"ok": true, "status": "stored" | "exists"}
     Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400 (not
-             a photo id, not base64, not a JPEG, a side under 16 or over
-             1024 px), ``too_large`` 413 (over 256 KiB), ``full`` 409 (500
-             photos), ``unavailable`` 503.
+             a photo id, not base64, neither a JPEG nor a PNG, a side under
+             16 or over 1024 px, a kind that is neither, a label over 60
+             characters, an entity id of the wrong shape), ``too_large`` 413
+             (over 256 KiB), ``full`` 409 (500 photos), ``unavailable`` 503.
 
-    ``exists`` when the id is already stored or is a built-in id: the bytes
-    are not compared, the first write wins.
+    ``kind`` defaults to ``background``; ``label`` and ``entity_id`` are
+    optional, and null is the same as absent. ``exists`` when the id is
+    already stored or is a built-in id: the bytes and details are not
+    compared, the first write wins.
     """
     store = getattr(ctx.domain_data, "page_images_store", None)
     if store is None:
@@ -4979,7 +4987,13 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
         )
     try:
         image_id = ctx.payload.get("image_id")
-        status = await store.async_put(image_id, decode_page_image(ctx.payload.get("data")))
+        status = await store.async_put(
+            image_id,
+            decode_page_image(ctx.payload.get("data")),
+            kind=ctx.payload.get("kind"),
+            label=ctx.payload.get("label"),
+            entity_id=ctx.payload.get("entity_id"),
+        )
     except PageImagesError as err:
         return _page_image_refusal(ctx, err)
     return ctx.signed_json({"ok": True, "status": status})

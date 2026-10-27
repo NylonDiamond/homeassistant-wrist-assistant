@@ -59,6 +59,7 @@ from .const import (
     PLATFORMS,
     PUSH_PAIRED_BY_USER_CAPABILITY,
     SEALED_CODE_PAIRING_CAPABILITY,
+    TILE_PHOTOS_CAPABILITY,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_ADDRESSES_CAPABILITY,
     WATCH_CONFIG_CAPABILITY,
@@ -1106,6 +1107,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # page_image_get and page_image_put ops. A watch fetches the photos its
     # pages name, and a phone hands its own over, only when it sees this.
     coordinator.register_capability(PAGE_IMAGES_CAPABILITY)
+    # Photo tiles in the same store: PNGs, a photo's kind, label and entity
+    # id, and a tile's iconPhotoId counted as a use. The phone sends a photo
+    # it made for a tile only when it sees this.
+    coordinator.register_capability(TILE_PHOTOS_CAPABILITY)
     # Each user's client certificate (client_certificate_store.py): the
     # signed client_certificate_put, client_certificate_get and
     # client_certificate_delete ops and `client_certificate` on the delta

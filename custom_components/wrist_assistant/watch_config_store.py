@@ -825,7 +825,8 @@ def _check_pages(pages: list[Any], *, check_items: bool) -> None:
     ``entityId``, no two items in one page share an id, a tile's
     ``iconGlow`` (the glow behind its icon) has the shape the apps read
     (:func:`_check_icon_glow`), and so has its ``arrange`` (where its parts
-    sit, :func:`_check_arrange`). A device save skips this level on purpose: a phone refused for a fault in its own old
+    sit, :func:`_check_arrange`), and its ``iconPhotoId`` is a UUID
+    (:func:`_check_icon_photo`). A device save skips this level on purpose: a phone refused for a fault in its own old
     tiles could never upload again, while the panel can always fix what it
     sends.
 
@@ -883,6 +884,32 @@ def _check_items(page: dict[str, Any], where: str) -> None:
         # A null arrangement is Default, as for the glow.
         if item.get(_ARRANGE_KEY) is not None:
             _check_arrange(item[_ARRANGE_KEY], at)
+        # A null photo is no photo, as for the glow.
+        if item.get(_ICON_PHOTO_KEY) is not None:
+            _check_icon_photo(item[_ICON_PHOTO_KEY], at)
+
+
+# A tile's photo (app repo docs/photo_tiles_plan_2026-10.md, "Tile key"): the
+# id of a photo in the page photo store, drawn in place of the tile's icon.
+# Absent is no photo. The phone writes UUIDs in upper case; any case is taken,
+# as the store folds it.
+_ICON_PHOTO_KEY = "iconPhotoId"
+_UUID_RE = re.compile(
+    r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}", re.IGNORECASE
+)
+
+
+def _check_icon_photo(photo_id: Any, at: str) -> None:
+    """The tile level's guard for one tile's ``iconPhotoId``, run only where
+    :func:`_check_items` runs: a panel save or a restore, never a device save.
+    ``at`` names the tile by page and index.
+
+    The id is a string shaped like a UUID, in any case. Whether a photo is
+    stored under it is not checked: a device draws the tile's icon until the
+    photo is there, and the photo may arrive from the phone after the save.
+    """
+    if not isinstance(photo_id, str) or not _UUID_RE.fullmatch(photo_id):
+        raise WatchConfigValidationError(f"{at}.{_ICON_PHOTO_KEY} must be a photo's UUID")
 
 
 # The glow behind a tile's icon (app repo docs/tile_layers_contract_2026-10.md,
