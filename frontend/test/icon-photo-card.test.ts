@@ -207,7 +207,7 @@ describe("the key", () => {
 // ── the row ──────────────────────────────────────────────────────────────
 
 describe("the Photo row", () => {
-  it("None, then the tile's entity's icon photos marked From iPhone, then the rest; no backgrounds", async () => {
+  it("None, then the tile's entity's icon photos marked For this tile, then the rest; no backgrounds", async () => {
     const { host } = await setup([tile(A, "light.desk")], [A]);
     const text = flat(renderIconPhoto(host));
     expect(order(text)).toEqual(["none", LAMP, OLD_LAMP, FAN]);

@@ -753,9 +753,20 @@ function barLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeo
  * no disc fill, the photo fitted in a box 1.35 times the disc on its centre,
  * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
  * halo behind it as a glyph has it, the pearl disc's white glow in the disc
- * layouts, and no filter. Not lit, and wrist down: no halo, grayscale 85%
- * and brightness 62%.
+ * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
+ * 62% when `oneLookCutoutDimmed` says so.
  */
+/**
+ * Whether the icon photo draws gray and dark: the tile is not coloured (off
+ * with Dim, idle, unavailable), a light is off, or the wrist is down. A
+ * switch, fan or any other kind that keeps its colour keeps its photo
+ * bright, since `isLit` is only ever true for a light or for media. The
+ * apps' `OneLookCutout.isDimmed` reads the same.
+ */
+export function oneLookCutoutDimmed(palette: OneLookPalette, light: boolean): boolean {
+  return palette.surface !== "coloured" || (light && !palette.isLit) || palette.aod;
+}
+
 function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: OneLookCutout, s: number): TemplateResult {
   const { palette, device } = model;
   const rect = layout.discRect;
@@ -774,7 +785,8 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
     }
   }
   const { photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
-  const filter = lit ? "" : `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`;
+  const dimmed = oneLookCutoutDimmed(palette, model.kind.role.kind === "light");
+  const filter = dimmed ? `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}` : "";
   return html`${back}<img class="ol-cutout" alt="" src=${cutout.url} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
 }
 

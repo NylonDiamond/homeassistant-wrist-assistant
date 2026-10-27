@@ -13,10 +13,12 @@ import { describe, expect, it } from "vitest";
 import type { HassEntityState } from "../src/ha-api.js";
 import { renderPageRowPicture } from "../src/library/row-picture.js";
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
+import type { OneLookPalette } from "../src/watch-pages/one-look/colour.js";
 import type { WatchPagePreviewInput } from "../src/watch-pages/preview.js";
 import {
   type OneLookTileFaceInput,
   ONE_LOOK_CUTOUT_OFF_FILTER,
+  oneLookCutoutDimmed,
   oneLookCutoutOf,
   oneLookCutoutRect,
   oneLookPreviewModel,
@@ -82,6 +84,17 @@ describe("an icon photo on a One Look tile", () => {
     expect(styleOf(html, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
     expect(ONE_LOOK_CUTOUT_OFF_FILTER).toBe("grayscale(.85) brightness(.62)");
     expect(html).not.toContain(`class="ol-halo"`);
+  });
+
+  it("gray only when graphite, a light is off, or wrist down; a switch or fan that keeps its colour stays bright", () => {
+    const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
+    expect(oneLookCutoutDimmed(p("coloured", true), true)).toBe(false);
+    expect(oneLookCutoutDimmed(p("coloured", false), true)).toBe(true);
+    expect(oneLookCutoutDimmed(p("graphite", false), true)).toBe(true);
+    expect(oneLookCutoutDimmed(p("coloured", false), false)).toBe(false);
+    expect(oneLookCutoutDimmed(p("graphite", false), false)).toBe(true);
+    expect(oneLookCutoutDimmed(p("coloured", true, true), true)).toBe(true);
+    expect(oneLookCutoutDimmed(p("coloured", false, true), false)).toBe(true);
   });
 
   it("draws the icon while the bytes are not in, or with no photos to read", () => {

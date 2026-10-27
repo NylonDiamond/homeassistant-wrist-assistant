@@ -1,6 +1,6 @@
 // A tile's icon photo: the Photo row that leads the tile inspector's Icon
 // part (`renderIconPhoto`). None, then the home's icon photos as small
-// pictures (those made for the tile's entity first, marked "From iPhone"),
+// pictures (those made for the tile's entity first, marked "For this tile"),
 // then "Add photo", which tidies the picked picture into a PNG and stores it
 // as an icon photo named for the tile (`PagePhotoStore.uploadIcon`). A pick
 // is one commit of the tile key `iconPhotoId` (`setWatchTileIconPhoto`);
@@ -31,7 +31,7 @@ import { commit, linkButton } from "./tile-settings.js";
 const KEY = "ts-photo";
 
 /** The words under a photo made for the tile's own entity. */
-export const ICON_PHOTO_FROM_PHONE = "From iPhone";
+export const ICON_PHOTO_FROM_PHONE = "For this tile";
 
 /** The line under the row while the old look draws the page's tiles. */
 export const ICON_PHOTO_OLD_LOOK_NOTE = "Only the new tile look draws a photo. This page draws the icon.";
@@ -125,7 +125,7 @@ function addedWords(at: string | undefined): string {
 
 /**
  * The Photo row: None, then the icon photos (those made for the tile's
- * entity first, "From iPhone" under them), then "Add photo". The notes under
+ * entity first, "For this tile" under them), then "Add photo". The notes under
  * it: no photo store in this integration, a list that failed, a photo the
  * store does not have, the devices too old to draw one, the old look, and
  * the last upload's or delete's refusal.
