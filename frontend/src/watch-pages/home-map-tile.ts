@@ -21,7 +21,7 @@ import {
 } from "../home-map/model.js";
 import { type WatchPageTile, type WatchPagesDocument, tileEntityId, tileKind, tileTarget } from "./model.js";
 import type { WatchMenu } from "./tile-settings-options.js";
-import { editTile, withKey } from "./tile-settings-model.js";
+import { editTile, withKey, withoutKey } from "./tile-settings-model.js";
 import { watchHomeMapEntityId } from "./tile-new.js";
 
 /** The tile kind. */
@@ -103,6 +103,30 @@ export function setWatchHomeMapFloor(document: WatchPagesDocument, pageId: strin
     const now = watchHomeMapFloorId(tile);
     if (now === undefined || now === floorId) return tile;
     return withKey(tile, "entityId", watchHomeMapEntityId(floorId));
+  });
+}
+
+/** The tile key that makes the iPhone's Home map tile take a tap on a light
+ * as that light's own tap (it toggles), and anywhere else open the map.
+ * Absent or false: every tap opens the map. The watch ignores it. */
+export const WATCH_HOME_MAP_TAP_LIGHTS_KEY = "homeMapTapLights";
+
+/** The line under the Tap lights switch. */
+export const WATCH_HOME_MAP_TAP_LIGHTS_HINT =
+  "Every light on the floor shows as a dot. A tap on a dot turns that light on or off; a tap anywhere else opens the map.";
+
+/** Whether a tap on a light toggles it (`homeMapTapLights`). */
+export function watchHomeMapTapsLights(tile: Pick<WatchPageTile, "entityId"> & Record<string, unknown>): boolean {
+  return tile[WATCH_HOME_MAP_TAP_LIGHTS_KEY] === true;
+}
+
+/** Turn Tap lights on (stores true) or off (removes the key). A tile of
+ * another kind changes nothing. */
+export function setWatchHomeMapTapLights(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
+  if (typeof on !== "boolean") return document;
+  return editTile(document, pageId, tileId, (tile) => {
+    if (!isWatchHomeMapTile(tile) || watchHomeMapTapsLights(tile) === on) return tile;
+    return on ? withKey(tile, WATCH_HOME_MAP_TAP_LIGHTS_KEY, true) : withoutKey(tile, WATCH_HOME_MAP_TAP_LIGHTS_KEY);
   });
 }
 

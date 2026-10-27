@@ -1351,6 +1351,10 @@
           "type": "string",
           "required": false
         },
+        "homeMapTapLights": {
+          "type": "bool",
+          "required": false
+        },
         "associatedMediaPlayerId": {
           "type": "entity",
           "required": false
@@ -2366,7 +2370,8 @@
       "speakMessageSpeechVolumePercent": "0 to 100, clamped on read.",
       "iconGlow": "The soft glow behind a tile's icon (docs/tile_layers_contract_2026-10.md section 14 in the app repo): {mode, size, brightness, color}. Absent draws One Look's own glow; the apps read it tolerantly.",
       "arrange": "The tile's Arrangement (docs/page_editor_calm_plan_2026-10.md in the app repo): {v: 1, parts: {icon, name, state}}, each part optional with spot (tl tc tr ml mc mr bl bc br), dx and dy (-0.5 to 0.5 of the tile's width and height), scale (0.8 to 1.5) and hidden. Absent is Default. Only the centred layout draws it; an app before 3.2 ignores it. The math is in frontend/test/fixtures-arrange/README.md.",
-      "iconPhotoId": "The upper case UUID of a photo in the page image store (kind icon) that One Look draws in the icon's place (docs/photo_tiles_plan_2026-10.md in the app repo). Absent means no photo. The tile keeps its icon, drawn while the photo is not downloaded and by an app that does not know the key."
+      "iconPhotoId": "The upper case UUID of a photo in the page image store (kind icon) that One Look draws in the icon's place (docs/photo_tiles_plan_2026-10.md in the app repo). Absent means no photo. The tile keeps its icon, drawn while the photo is not downloaded and by an app that does not know the key.",
+      "homeMapTapLights": "A Home map tile on the iPhone: true draws every light on its floor as a dot, a tap on a dot runs that light's own tap and a tap anywhere else opens the map. Absent or false: every tap opens the map. The watch ignores it."
     }
   }
 }

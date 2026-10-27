@@ -102,6 +102,9 @@ import {
   WATCH_HOME_MAP_NO_MAP_TEXT,
   isWatchHomeMapTile,
   setWatchHomeMapFloor,
+  setWatchHomeMapTapLights,
+  WATCH_HOME_MAP_TAP_LIGHTS_HINT,
+  watchHomeMapTapsLights,
   watchHomeMapFloorMenu,
   watchHomeMapFloorSummary,
 } from "./home-map-tile.js";
@@ -1773,8 +1776,15 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
       <div class="hint keep ts-under">${WATCH_HOME_MAP_NO_MAP_TEXT}</div>`;
   }
   const pick = (floorId: string) => commit(host, "target", (d) => setWatchHomeMapFloor(d, host.pageId, host.tileId, floorId));
+  // Only the iPhone's tile takes a tap on a light; the watch's is too small.
+  const tapLights = hostDevice(host) === "iphone"
+    ? html`${checkField("Tap lights", watchHomeMapTapsLights(host.tile as WatchPageTile & Record<string, unknown>), (on) =>
+        commit(host, "homeMapTapLights", (d) => setWatchHomeMapTapLights(d, host.pageId, host.tileId, on)))}
+      <div class="hint ts-under">${WATCH_HOME_MAP_TAP_LIGHTS_HINT}</div>`
+    : nothing;
   return html`${menuField("Floor", menu, pick)}
-    <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>`;
+    <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
+    ${tapLights}`;
 }
 
 /** The line under Show reply, naming the device showing the page. */

@@ -24,7 +24,9 @@ import {
   WATCH_HOME_MAP_ADD_WORDS,
   WATCH_HOME_MAP_MISSING_TEXT,
   WATCH_HOME_MAP_NO_MAP_TEXT,
+  WATCH_HOME_MAP_TAP_LIGHTS_HINT,
   setWatchHomeMapFloor,
+  setWatchHomeMapTapLights,
   watchHomeMapAddFloors,
   watchHomeMapFloorId,
   watchHomeMapFloorMenu,
@@ -155,11 +157,12 @@ function addHost(homeMap: HomeMapDocument | null | undefined) {
   return { host: host as unknown as AddTileHost, tiles: () => (pageNow().items as WatchPageTile[] | undefined) ?? [] };
 }
 
-function tileHost(entityId: string, homeMap: HomeMapDocument | null | undefined) {
+function tileHost(entityId: string, homeMap: HomeMapDocument | null | undefined, device?: "watch" | "iphone") {
   const { draft, pageNow } = draftOf([{ id: TILE, entityId, customLabel: "Home map", colSpan: 12, rowSpan: 6, gridCol: 0, gridRow: 0 }]);
   const host = {} as Record<string, unknown>;
   Object.defineProperties(host, Object.getOwnPropertyDescriptors(baseHost(draft, pageNow, homeMap)));
   Object.defineProperty(host, "tileId", { value: TILE });
+  if (device !== undefined) Object.defineProperty(host, "device", { value: device });
   Object.defineProperty(host, "tile", { get: () => ((pageNow().items as WatchPageTile[] | undefined) ?? []).find((t) => t.id === TILE) ?? ({} as WatchPageTile) });
   return { host: host as unknown as TileSettingsHost, tile: () => (host as unknown as TileSettingsHost).tile };
 }
@@ -282,6 +285,24 @@ describe("the Home map tile's settings", () => {
     expect(setWatchHomeMapFloor(draft.document, PAGE, TILE, UPSTAIRS)).toBe(draft.document);
     const own = draftOf([{ id: TILE, entityId: `home_map.${FLOOR}` }]);
     expect(setWatchHomeMapFloor(own.draft.document, PAGE, TILE, FLOOR)).toBe(own.draft.document);
+  });
+
+  it("offer Tap lights on the iPhone only, stored as homeMapTapLights true and removed when off", () => {
+    expect(flatten(draw(tileHost(`home_map.${FLOOR}`, fixture()).host))).not.toContain("Tap lights");
+    const { host, tile } = tileHost(`home_map.${FLOOR}`, fixture(), "iphone");
+    const text = flatten(draw(host));
+    expect(text).toContain("Tap lights");
+    expect(text).toContain(WATCH_HOME_MAP_TAP_LIGHTS_HINT);
+    expect((tile() as Record<string, unknown>).homeMapTapLights).toBeUndefined();
+    handler(draw(host), "Tap lights", "@change=")({ target: { checked: true } });
+    expect((tile() as Record<string, unknown>).homeMapTapLights).toBe(true);
+    handler(draw(host), "Tap lights", "@change=")({ target: { checked: false } });
+    expect(Object.hasOwn(tile(), "homeMapTapLights")).toBe(false);
+    // Only a Home map tile takes it.
+    const { draft } = draftOf([{ id: TILE, entityId: "light.kitchen" }]);
+    expect(setWatchHomeMapTapLights(draft.document, PAGE, TILE, true)).toBe(draft.document);
+    const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
+    expect(keys.homeMapTapLights).toMatch(/^A Home map tile on the iPhone/);
   });
 });
 
