@@ -56,6 +56,58 @@ def areas_from_registries(
     ]
 
 
+def entities_from_states(
+    states: Iterable[Any],
+    entities: Iterable[Any],
+    device_area: Callable[[str], str | None],
+) -> list[dict[str, Any]]:
+    """``[{"id", "name", "area_id"}]``, every entity Home Assistant has a
+    state for, sorted by name ignoring case (then id), for the iPhone's
+    "All Devices" pick.
+
+    ``states`` are state objects (``entity_id``, ``attributes``), the other
+    two as for :func:`areas_from_registries`. The name is the state's
+    ``friendly_name``, else the entity id. ``area_id`` is read as there, and
+    is None for an entity in no area or not in the registry. Hidden and
+    disabled entities are left out.
+    """
+    registry = {entry.entity_id: entry for entry in entities}
+    rows: list[dict[str, Any]] = []
+    for state in states:
+        entry = registry.get(state.entity_id)
+        area_id = None
+        if entry is not None:
+            if entry.hidden_by is not None or entry.disabled_by is not None:
+                continue
+            area_id = entry.area_id
+            if area_id is None and entry.device_id is not None:
+                area_id = device_area(entry.device_id)
+        name = state.attributes.get("friendly_name")
+        rows.append({
+            "id": state.entity_id,
+            "name": name if isinstance(name, str) and name else state.entity_id,
+            "area_id": area_id,
+        })
+    rows.sort(key=lambda row: (row["name"].casefold(), row["id"]))
+    return rows
+
+
+def home_entities(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """:func:`entities_from_states` over Home Assistant's states and
+    registries."""
+    devices = dr.async_get(hass)
+
+    def device_area(device_id: str) -> str | None:
+        device = devices.async_get(device_id)
+        return device.area_id if device is not None else None
+
+    return entities_from_states(
+        hass.states.async_all(),
+        er.async_get(hass).entities.values(),
+        device_area,
+    )
+
+
 def home_areas(hass: HomeAssistant) -> list[dict[str, Any]]:
     """:func:`areas_from_registries` over Home Assistant's own registries."""
     devices = dr.async_get(hass)

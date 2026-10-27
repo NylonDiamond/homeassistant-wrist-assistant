@@ -155,7 +155,7 @@ from .const import (
     WristAssistantData,
 )
 from .device_lookup import find_paired_device, paired_device_name
-from .home_areas import home_areas
+from .home_areas import home_areas, home_entities
 from .home_map_store import (
     HomeMapConflictError,
     HomeMapError,
@@ -5104,16 +5104,23 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
 
 
 async def _op_areas_get(ctx: _OpContext) -> Response:
-    """The home's areas, each with the entities in it.
+    """The home's areas, each with the entities in it, and every entity.
 
     Body:  {}
-    Reply: {"ok": true, "areas": [{"id", "name", "entity_ids": [<id>]}]}
+    Reply: {"ok": true, "areas": [{"id", "name", "entity_ids": [<id>]}],
+            "entities": [{"id", "name", "area_id": <id> | null}]}
 
-    Every area, sorted by name, its entity ids sorted. An entity's own area
-    wins over its device's; hidden and disabled entities are left out (see
-    ``home_areas.py``). Read only, and open to any paired device.
+    Every area, sorted by name, its entity ids sorted. ``entities`` is every
+    entity with a state, sorted by name, for the iPhone's "All Devices"
+    pick; older apps ignore it. An entity's own area wins over its device's;
+    hidden and disabled entities are left out (see ``home_areas.py``). Read
+    only, and open to any paired device.
     """
-    return ctx.signed_json({"ok": True, "areas": home_areas(ctx.hass)})
+    return ctx.signed_json({
+        "ok": True,
+        "areas": home_areas(ctx.hass),
+        "entities": home_entities(ctx.hass),
+    })
 
 
 # ── the client certificate and the logs (link removal, step 4) ────────────

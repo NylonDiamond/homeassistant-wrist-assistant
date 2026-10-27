@@ -104,6 +104,7 @@ def _ops(store_mod: Any, areas: Any) -> dict[str, Any]:
         "_LOGGER": types.SimpleNamespace(debug=lambda *a, **k: None),
         "is_iphone_entry": lambda secret: getattr(secret, "device_kind", None) == "iphone",
         "home_areas": areas.home_areas,
+        "home_entities": areas.home_entities,
         **{
             name: getattr(store_mod, name)
             for name in (
@@ -167,13 +168,27 @@ class _Registries:
                 _entity("light.ceiling", device_id="dev-lamp"),
             )
         }
+        # What has a state: the registry's entities that are not disabled,
+        # and one that is in no registry at all.
+        self.states = [
+            _state(entity_id, entity_id.split(".")[1].replace("_", " ").title())
+            for entity_id, entry in self.entities.items()
+            if entry.disabled_by is None
+        ] + [_state("sun.sun", None)]
+
+
+def _state(entity_id: str, friendly_name):
+    attributes = {} if friendly_name is None else {"friendly_name": friendly_name}
+    return types.SimpleNamespace(entity_id=entity_id, attributes=attributes)
 
 
 @pytest.fixture
 def env():
     with loaded_package() as loaded:
         registries = _Registries()
-        hass = types.SimpleNamespace(data={})
+        hass = types.SimpleNamespace(
+            data={}, states=types.SimpleNamespace(async_all=lambda: list(registries.states))
+        )
         sys.modules["homeassistant.helpers.area_registry"] = types.SimpleNamespace(
             async_get=lambda h: types.SimpleNamespace(async_list_areas=lambda: list(registries.areas))
         )
@@ -369,10 +384,35 @@ AREAS = [
 ]
 
 
+ENTITIES = [
+    {"id": "light.ceiling", "name": "Ceiling", "area_id": "living_room"},
+    {"id": "fan.gone_area", "name": "Gone Area", "area_id": "garage"},
+    {"id": "switch.loose", "name": "Loose", "area_id": None},
+    {"id": "light.pendants", "name": "Pendants", "area_id": "kitchen"},
+    {"id": "light.reading_lamp", "name": "Reading Lamp", "area_id": "living_room"},
+    {"id": "lock.side_door", "name": "Side Door", "area_id": "living_room"},
+    {"id": "sun.sun", "name": "sun.sun", "area_id": None},
+    {"id": "climate.thermostat", "name": "Thermostat", "area_id": "kitchen"},
+    {"id": "switch.unknown_device", "name": "Unknown Device", "area_id": None},
+]
+
+
 def test_areas_get_lists_every_area_and_its_entities(env) -> None:
     for watch_id in (IPHONE, WATCH):
         reply = op(env, "_op_areas_get", {}, watch_id=watch_id)
-        assert (reply.status, reply.body) == (200, {"ok": True, "areas": AREAS})
+        assert (reply.status, reply.body) == (200, {"ok": True, "areas": AREAS, "entities": ENTITIES})
+
+
+def test_every_entity_with_a_state_is_listed_by_name(env) -> None:
+    rows = env.areas.home_entities(env.hass)
+    ids = [row["id"] for row in rows]
+    # Hidden left out, disabled has no state; one outside the registry is in.
+    assert "sensor.hub_signal" not in ids and "light.old" not in ids
+    assert "sun.sun" in ids
+    # Its own area wins over its device's, as for the areas.
+    assert {row["id"]: row["area_id"] for row in rows}["light.pendants"] == "kitchen"
+    names = [row["name"].casefold() for row in rows]
+    assert names == sorted(names)
 
 
 def test_an_entitys_own_area_wins_over_its_devices(env) -> None:
@@ -410,7 +450,7 @@ def test_areas_sort_by_name_whatever_the_case_then_by_id(env) -> None:
 
 def test_a_home_with_no_areas_has_an_empty_list(env) -> None:
     env.registries.areas.clear()
-    assert op(env, "_op_areas_get", {}).body == {"ok": True, "areas": []}
+    assert op(env, "_op_areas_get", {}).body["areas"] == []
 
 
 # ── WebSocket ────────────────────────────────────────────────────────────
