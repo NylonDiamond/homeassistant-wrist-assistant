@@ -27,7 +27,8 @@ and every room not yet recorded, a panel save recording none, records of
 rooms gone from the map dropped on every save, a bad ``scanned`` refused
 with nothing moved, ids matched whatever their case, the map's rev never
 moved by them, an unreadable scans file left alone while the map goes on,
-and unload writing a pending scans save.
+a room that cannot be recorded never failing a load or a save, and unload
+writing a pending scans save.
 """
 
 from __future__ import annotations
@@ -1024,6 +1025,28 @@ def test_an_unreadable_map_backfills_nothing(env) -> None:
     store = env.new_store()
     env.refused(store.scans, "unavailable")
     assert SCANS_KEY not in FakeStore.files
+
+
+def test_a_room_that_cannot_be_recorded_never_stops_the_map_loading(env) -> None:
+    doc = basic()
+    # A stored room missing a key no check of today's would let in.
+    del doc["floors"][0]["rooms"][0]["walls"]
+    FakeStore.files = {KEY: {"rev": 2, "doc": doc}}
+    store = env.new_store()
+    assert store.get() == (doc, 2)
+    env.refused(store.scans, "unavailable")
+    assert SCANS_KEY not in FakeStore.files
+    assert store.save(basic(), 2) == 3
+
+
+def test_a_record_that_fails_never_fails_the_save(env, monkeypatch) -> None:
+    def broken(room: Any, at: str) -> Any:
+        raise RuntimeError("broken")
+
+    monkeypatch.setattr(env.mod, "scan_record", broken)
+    assert env.store.save(basic(), 0, scanned=[LIVING]) == 1
+    assert env.store.get() == (basic(), 1)
+    assert FakeStore.files[KEY] == {"rev": 1, "doc": basic()}
 
 
 def test_shutdown_writes_a_pending_scans_save(env) -> None:

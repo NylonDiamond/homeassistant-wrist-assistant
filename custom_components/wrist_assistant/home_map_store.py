@@ -100,7 +100,8 @@ A panel save never records a room. Every save, the iPhone's and the
 panel's, drops the records of rooms no longer on the map. The scans file is
 saved with the same delay as the map's; a scans file that cannot be read is
 logged and left alone, its records unread and never saved over, while the
-map goes on as before.
+map goes on as before. Recording never fails a load or a save of the map:
+a room that cannot be recorded is logged and the map is kept all the same.
 
 A file that cannot be read is logged and left alone: every read and save is
 then refused ``unavailable`` until a restart reads it, so a damaged map is
@@ -638,9 +639,17 @@ class HomeMapStore:
             self._scans_failed = True
             return
         if data is None:
-            # Saved even when the map has no rooms, so this happens once.
-            at = _now_iso()
-            self._scans = {room["id"]: scan_record(room, at) for room in _rooms_of(self._doc)}
+            # Saved even when the map has no rooms, so this happens once. A
+            # stored map whose rooms cannot be recorded never stops the map
+            # loading: the scans are then left unread until a restart.
+            try:
+                at = _now_iso()
+                self._scans = {room["id"]: scan_record(room, at) for room in _rooms_of(self._doc)}
+            except Exception:
+                _LOGGER.exception("The home map's rooms could not be recorded as first seen")
+                self._scans = {}
+                self._scans_failed = True
+                return
             self._schedule_scans_save()
             return
         if isinstance(data, dict):
@@ -673,13 +682,14 @@ class HomeMapStore:
         """Called on unload: write a save still waiting out its debounce now
         and save nothing after, so a re-added entry reads what was saved."""
         self._closed = True
+        # The map first, so a scans file that cannot be written never costs
+        # the map its save.
+        if self._save_pending and not self._load_failed:
+            self._save_pending = False
+            await self._store.async_save(self._serialize())
         if self._scans_save_pending and not self._scans_failed:
             self._scans_save_pending = False
             await self._scans_store.async_save(self._serialize_scans())
-        if not self._save_pending or self._load_failed:
-            return
-        self._save_pending = False
-        await self._store.async_save(self._serialize())
 
     def _check_available(self) -> None:
         if self._load_failed:
@@ -753,7 +763,10 @@ class HomeMapStore:
         self._doc = doc
         self._rev += 1
         self._schedule_save()
-        self._keep_scans(rooms, scanned_ids)
+        try:
+            self._keep_scans(rooms, scanned_ids)
+        except Exception:  # The map is saved: a record never undoes that.
+            _LOGGER.exception("The home map's scans could not be kept after a save")
         _LOGGER.debug("Saved the home map at revision %d", self._rev)
         return self._rev
 
