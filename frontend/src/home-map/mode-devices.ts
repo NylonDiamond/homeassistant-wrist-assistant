@@ -464,7 +464,15 @@ export class DevicesMode implements HomeMapMode {
         if (!moved) ctx.select({ kind: "pin", pinId });
         else if (Math.hypot(dx, dy) >= 0.005) ctx.apply((d) => movePins(d, ids, dx, dy), selection === undefined ? {} : { select: selection });
       },
+      cancel: () => this.stopDrag(ctx),
     });
+  }
+
+  /** A drag dropped before it let go: the plan as it was, nothing saved. */
+  private stopDrag(ctx: HomeMapEditorContext): void {
+    this.moving = false;
+    this.box = undefined;
+    ctx.preview(undefined);
   }
 
   /** Shift and a drag over empty space: a box, and every pin inside it
@@ -482,6 +490,7 @@ export class DevicesMode implements HomeMapMode {
         if (moved) ctx.select(homeMapAddPicks(before, homeMapPinsInBox(pins, start, p)));
         else ctx.redraw();
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -518,6 +527,7 @@ export class DevicesMode implements HomeMapMode {
         ctx.preview(undefined);
         if (moved && Math.hypot(to[0] - from[0], to[1] - from[1]) >= 0.005) ctx.apply((d) => movePin(d, id, to), { select: { kind: "pin", pinId: id } });
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -540,6 +550,7 @@ export class DevicesMode implements HomeMapMode {
         const g = glow;
         if (g !== undefined) ctx.apply((d) => setPinFields(d, id, { glow: g }));
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 

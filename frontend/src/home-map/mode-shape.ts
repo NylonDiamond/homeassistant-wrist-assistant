@@ -560,6 +560,7 @@ export class ShapeMode implements HomeMapMode {
         if (moved && target !== undefined) ctx.apply((d) => moveCorner(d, roomId, index, target), { select });
         else ctx.select(select);
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -589,6 +590,7 @@ export class ShapeMode implements HomeMapMode {
         ctx.preview(undefined);
         ctx.apply(make(moved ? to : undefined), { select: { kind: "corner", roomId, corner: index } });
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -617,7 +619,15 @@ export class ShapeMode implements HomeMapMode {
         const target = to;
         if (moved && target !== undefined) ctx.apply((d) => moveOpening(d, roomId, index, target), { select });
       },
+      cancel: () => this.stopDrag(ctx),
     });
+  }
+
+  /** A drag dropped before it let go: the plan as it was, nothing saved. */
+  private stopDrag(ctx: HomeMapEditorContext): void {
+    this.dragging = false;
+    this.sliding = undefined;
+    ctx.preview(undefined);
   }
 
   hover(ctx: HomeMapEditorContext, at: HomePoint | undefined): void {

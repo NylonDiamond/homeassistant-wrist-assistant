@@ -19,7 +19,7 @@ import { homeMapSelectionRoom, homeMapSelectionThere, sameHomeMapSelection } fro
 import { HomeMapSession, sameHomeMapDocument } from "../src/home-map/editor-session.js";
 import {
   homeMapFitView,
-  homeMapIsSliderKey,
+  homeMapIsFormControl,
   homeMapIsTypingTarget,
   homeMapMeters,
   homeMapNumberText,
@@ -96,17 +96,31 @@ describe("the editor's keys", () => {
     expect(homeMapIsTypingTarget({ tagName: "input", type: "search" })).toBe(true);
     expect(homeMapIsTypingTarget({ tagName: "INPUT", type: "checkbox" })).toBe(false);
     expect(homeMapIsTypingTarget({ tagName: "INPUT", type: "range" })).toBe(false);
+    expect(homeMapIsTypingTarget({ tagName: "INPUT", type: "color" })).toBe(false);
+    expect(homeMapIsTypingTarget({ tagName: "INPUT", type: "number" })).toBe(true);
+    expect(homeMapIsTypingTarget({ tagName: "INPUT" })).toBe(true);
     expect(homeMapIsTypingTarget({ tagName: "TEXTAREA" })).toBe(true);
-    expect(homeMapIsTypingTarget({ tagName: "SELECT" })).toBe(true);
+    expect(homeMapIsTypingTarget({ tagName: "SELECT" })).toBe(false);
     expect(homeMapIsTypingTarget({ tagName: "DIV", isContentEditable: true })).toBe(true);
     expect(homeMapIsTypingTarget({ tagName: "BUTTON" })).toBe(false);
     expect(homeMapIsTypingTarget(null)).toBe(false);
-    expect(homeMapIsSliderKey({ tagName: "INPUT", type: "range" }, "ArrowUp")).toBe(true);
-    expect(homeMapIsSliderKey({ tagName: "input", type: "RANGE" }, "End")).toBe(true);
-    expect(homeMapIsSliderKey({ tagName: "INPUT", type: "range" }, "Delete")).toBe(false);
-    expect(homeMapIsSliderKey({ tagName: "INPUT", type: "text" }, "ArrowUp")).toBe(false);
-    expect(homeMapIsSliderKey({ tagName: "BUTTON" }, "ArrowUp")).toBe(false);
-    expect(homeMapIsSliderKey(null, "ArrowUp")).toBe(false);
+  });
+
+  it("knows every control of a form, typed or not, from a button", () => {
+    for (const type of ["text", "number", "search", "range", "RANGE", "color", "checkbox", "radio", "file"]) {
+      expect(homeMapIsFormControl({ tagName: "INPUT", type })).toBe(true);
+    }
+    expect(homeMapIsFormControl({ tagName: "input" })).toBe(true);
+    expect(homeMapIsFormControl({ tagName: "SELECT" })).toBe(true);
+    expect(homeMapIsFormControl({ tagName: "TEXTAREA" })).toBe(true);
+    expect(homeMapIsFormControl({ tagName: "SPAN", isContentEditable: true })).toBe(true);
+    for (const type of ["button", "submit", "reset", "image"]) {
+      expect(homeMapIsFormControl({ tagName: "INPUT", type })).toBe(false);
+    }
+    expect(homeMapIsFormControl({ tagName: "BUTTON" })).toBe(false);
+    expect(homeMapIsFormControl({ tagName: "svg" })).toBe(false);
+    expect(homeMapIsFormControl(null)).toBe(false);
+    expect(homeMapIsFormControl("INPUT")).toBe(false);
   });
 
   it("picks Shape's tools by their letters", () => {

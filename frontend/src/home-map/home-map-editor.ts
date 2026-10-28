@@ -9,6 +9,7 @@
 //   picture and counts; add, rename and delete a floor), the mode tabs
 //   Arrange | Shape | Devices | Style, the Flat | Model view switch, Undo and
 //   Redo (also Cmd or Ctrl Z, Shift for redo, whenever no text field has
+//   focus; every other key does nothing while any control of a form has
 //   focus) and whether the map is saved;
 // - the stage, which fills all the space the rails leave and grows with
 //   the window: the floor drawn as the plan look of `tile-art.ts` (floors by
@@ -75,7 +76,7 @@ import {
   HOME_MAP_ZOOM_STEP,
   homeMapCount,
   homeMapFitView,
-  homeMapIsSliderKey,
+  homeMapIsFormControl,
   homeMapIsTypingTarget,
   homeMapOnMac,
   homeMapRoomSizeText,
@@ -517,7 +518,9 @@ export class WaHomeMapEditor extends LitElement {
   }
 
   /** Follow a press as a drag (`ctx.drag`): the pointer captured, moves
-   * past the slop reported once a frame, the end always. */
+   * past the slop reported once a frame, then the end, or the cancel when
+   * the drag is dropped first (`endDrag`: a pinch, another drag, the page
+   * closing), with no move left waiting for its frame. */
   private drag(e: PointerEvent, handlers: HomeMapDragHandlers): void {
     const el = this.stageEl;
     if (el === undefined) return;
@@ -565,12 +568,20 @@ export class WaHomeMapEditor extends LitElement {
       } catch {
         /* already released */
       }
-      if (this.endDrag === cleanup) this.endDrag = undefined;
+      if (this.endDrag === drop) this.endDrag = undefined;
+    };
+    const drop = () => {
+      cleanup();
+      if (frame !== 0) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      handlers.cancel?.();
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", finish);
     el.addEventListener("pointercancel", finish);
-    this.endDrag = cleanup;
+    this.endDrag = drop;
   }
 
   // ── the stage's presses ────────────────────────────────────────────────
@@ -758,23 +769,25 @@ export class WaHomeMapEditor extends LitElement {
   // ── keys ───────────────────────────────────────────────────────────────
 
   /** A key anywhere on the page while it is open: nothing while a text
-   * field has focus or a dialog is open, nor a key a focused slider moves
-   * by; undo and redo; then the mode's;
-   * then Escape, zoom and fit. */
+   * field has focus or a dialog is open; undo and redo; nothing more while
+   * any other control of a form has focus (a slider, a colour, a menu), so
+   * Delete there never removes the picked things; then Space for panning,
+   * the mode's keys, then Escape, zoom and fit. */
   readonly onKey = (e: KeyboardEvent): void => {
     if (this.dialog !== undefined || this.session === undefined) return;
     const target = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
-    if (homeMapIsTypingTarget(target) || homeMapIsSliderKey(target, e.key)) return;
-    if (e.key === " " && !e.repeat) {
-      this.spaceHeld = true;
-      e.preventDefault?.();
-      return;
-    }
+    if (homeMapIsTypingTarget(target)) return;
     const shortcut = homeMapShortcut(e, false);
     if (shortcut === "undo" || shortcut === "redo") {
       e.preventDefault?.();
       if (shortcut === "undo") this.undo();
       else this.redo();
+      return;
+    }
+    if (homeMapIsFormControl(target)) return;
+    if (e.key === " " && !e.repeat) {
+      this.spaceHeld = true;
+      e.preventDefault?.();
       return;
     }
     const ctx = this.context();

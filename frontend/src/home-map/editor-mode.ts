@@ -21,8 +21,9 @@
 //   `data-hme="..."`; the shell's own art takes no presses.
 // - A mode's own state (its tool, a half-drawn room) lives on the mode
 //   object; call `ctx.redraw()` after changing it.
-// - Keys reach a mode only when no text field has focus and no dialog is
-//   open; a mode returns true for a key it used.
+// - Keys reach a mode only when no control of a form (a field, slider,
+//   colour or menu) has focus and no dialog is open; a mode returns true for
+//   a key it used.
 // - `ctx.confirm` and `ctx.ask` are the page's own dialogs, never the
 //   browser's.
 
@@ -107,11 +108,14 @@ export interface HomeMapPageChoice {
 }
 
 /** What a drag reports: plan points in meters. `move` is called only once
- * the pointer has moved past the click slop; `end` always, `moved` false
- * for a click. */
+ * the pointer has moved past the click slop; `end` when the pointer lets
+ * go, `moved` false for a click; `cancel` instead of `end` when the drag is
+ * dropped before that (a second finger starting a pinch, another drag, the
+ * page closing), to put back whatever the drag showed and save nothing. */
 export interface HomeMapDragHandlers {
   move(at: HomePoint, e: PointerEvent): void;
   end(at: HomePoint, e: PointerEvent, moved: boolean): void;
+  cancel?(): void;
 }
 
 /** What `ctx.apply` does after the edit. `select`: the selection once made
@@ -197,7 +201,7 @@ export interface HomeMapMode {
   pointerDown?(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean;
   /** The pointer moving over the stage with no button down. */
   hover?(ctx: HomeMapEditorContext, at: HomePoint | undefined): void;
-  /** A key, when no text field has focus. True when used. */
+  /** A key, when no control of a form has focus. True when used. */
   keyDown?(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean;
   /** The stage's cursor while this mode has it. */
   cursor?(ctx: HomeMapEditorContext): string | undefined;

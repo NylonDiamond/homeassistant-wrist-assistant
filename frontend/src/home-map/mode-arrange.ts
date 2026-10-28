@@ -149,6 +149,15 @@ export class ArrangeMode implements HomeMapMode {
   private dragging = false;
   private resizing = false;
 
+  /** A drag is over, let go or dropped: no guides, the handles and the
+   * sizes back as before it, and the plan without its preview. */
+  private stopDrag(ctx: HomeMapEditorContext): void {
+    this.guides = [];
+    this.dragging = false;
+    this.resizing = false;
+    ctx.preview(undefined);
+  }
+
   private focus(ctx: HomeMapEditorContext): HomeMapRoom | undefined {
     const id = homeMapSelectionRoom(ctx.selection);
     return id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
@@ -255,9 +264,8 @@ export class ArrangeMode implements HomeMapMode {
     }
     return svg`<g class="hme-box">
       <polygon points=${box.map(pt).join(" ")} fill="none" stroke="#5b8def" stroke-width="2" />
-      ${this.resizing ? dims : nothing}
+      ${this.resizing || !this.dragging ? dims : nothing}
       ${this.dragging ? nothing : svg`
-        ${dims}
         <line x1=${fmt(tm[0])} y1=${fmt(tm[1])} x2=${fmt(knob[0])} y2=${fmt(knob[1])} stroke="#5b8def" stroke-width="1.6" />
         ${handles.map((h, i) => svg`<rect data-hme="resize" data-handle=${i} x=${fmt(h[0] - 5)} y=${fmt(h[1] - 5)} width="10" height="10"
           fill="#fff" stroke="#5b8def" stroke-width="1.6" style=${`cursor:${resizeCursor(h[0] - centre[0], h[1] - centre[1])}`}>
@@ -342,12 +350,11 @@ export class ArrangeMode implements HomeMapMode {
         ctx.preview((d) => moveRoom(d, id, dx, dy));
       },
       end: (_p, _ev, moved) => {
-        this.guides = [];
-        this.dragging = false;
-        ctx.preview(undefined);
+        this.stopDrag(ctx);
         const [dx, dy] = delta;
         if (moved && (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005)) ctx.apply((d) => moveRoom(d, id, dx, dy), { select: { kind: "room", roomId: id } });
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -412,15 +419,13 @@ export class ArrangeMode implements HomeMapMode {
         ctx.preview((d) => resizeRoom(d, id, made));
       },
       end: (_p, _ev, moved) => {
-        this.guides = [];
-        this.dragging = false;
-        this.resizing = false;
-        ctx.preview(undefined);
+        this.stopDrag(ctx);
         const made = last;
         if (!moved || made === undefined) return;
         if (Math.abs((made.width ?? w0) - w0) < 0.005 && Math.abs((made.depth ?? d0) - d0) < 0.005) return;
         ctx.apply((d) => resizeRoom(d, id, made), { select: { kind: "room", roomId: id } });
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -441,10 +446,10 @@ export class ArrangeMode implements HomeMapMode {
         ctx.preview((d) => turnRoom(d, id, deg, pivot));
       },
       end: (_p, _ev, moved) => {
-        this.dragging = false;
-        ctx.preview(undefined);
+        this.stopDrag(ctx);
         if (moved && Math.abs(turn) > 0.01) ctx.apply((d) => turnRoom(d, id, turn, pivot), { select: { kind: "room", roomId: id } });
       },
+      cancel: () => this.stopDrag(ctx),
     });
   }
 
@@ -477,6 +482,7 @@ export class ArrangeMode implements HomeMapMode {
     this.draw.stop(ctx);
     this.guides = [];
     this.dragging = false;
+    this.resizing = false;
   }
 
   dock(ctx: HomeMapEditorContext): TemplateResult {

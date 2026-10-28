@@ -388,6 +388,35 @@ describe("the Home map editor", () => {
     expect(inside.selection).toBeUndefined();
   });
 
+  it("puts a resize a second finger interrupts back as it was: its sizes once, its handles back, nothing saved", async () => {
+    const { el, ha, press, stage, pointer, text } = await page();
+    press([8, 2]);
+    const tags = (s: string) => s.split('class="hme-tag"').length - 1;
+    const sizes = (s: string) => s.match(/\d+\.\d\d m</g);
+    const idle = text();
+    expect(sizes(idle)).toEqual(["5.00 m<", "4.00 m<"]);
+    expect(idle).toContain('data-hme="resize"');
+    // A corner's handle, by one finger: both sizes grow, shown once each.
+    const handle = { closest: () => ({ getAttribute: (k: string) => (k === "data-hme" ? "resize" : "4") }) };
+    const touch = (p: [number, number], id: number) => pointer(p, { pointerType: "touch", pointerId: id, target: handle });
+    el.onStageDown(touch([10, 5], 1) as unknown as PointerEvent);
+    stage.fire("pointermove", touch([10.3, 5.3], 1));
+    stage.fire("pointermove", touch([10.5, 5.5], 1));
+    const resizing = text();
+    expect(sizes(resizing)).toHaveLength(2);
+    expect(sizes(resizing)).not.toEqual(sizes(idle));
+    expect(resizing).not.toContain('data-hme="resize"');
+    // A second finger: the stage pinches and the resize is dropped.
+    el.onStageDown(touch([4, 4], 2) as unknown as PointerEvent);
+    const after = text();
+    expect(sizes(after)).toEqual(sizes(idle));
+    expect(after).toContain('data-hme="resize"');
+    expect(tags(after)).toBe(tags(idle));
+    await el.session!.idle();
+    expect(ha.saves()).toHaveLength(0);
+    expect(el.context()!.floor.rooms[1]!.outline[1]).toEqual([10, 0]);
+  });
+
   it("drags a room, snapping to its neighbour's wall with a guide, and saves once on the drop", async () => {
     const { el, ha, press, stage, pointer, text } = await page();
     // Press on the kitchen and drag it 12 cm right and 10 cm down, a step at
@@ -445,6 +474,53 @@ describe("the Home map editor", () => {
     await el.session!.idle();
     expect(ha.saves()).toHaveLength(1);
     expect(ha.now().doc!.floors[0]!.pins[0]!.at[0]).toBeCloseTo(0.81, 5);
+  });
+
+  it("never removes, clears or zooms from a key pressed in any control of a form, though undo still works from a slider", async () => {
+    const { el, ha, press, key, inside } = await page();
+    el.setMode("devices");
+    press([0.8, 3.1]);
+    const picked = el.context()!.selection;
+    expect(picked).toBeDefined();
+    const view = el.context()!.view;
+    const controls = [
+      { tagName: "INPUT", type: "range" },
+      { tagName: "INPUT", type: "color" },
+      { tagName: "INPUT", type: "text" },
+      { tagName: "INPUT", type: "number" },
+      { tagName: "INPUT", type: "checkbox" },
+      { tagName: "SELECT" },
+      { tagName: "TEXTAREA" },
+      { tagName: "DIV", isContentEditable: true },
+    ];
+    for (const control of controls) {
+      for (const k of ["Delete", "Backspace", "Escape", "Enter", "=", "0", "v", " "]) {
+        let stopped = false;
+        el.onKey({ key: k, preventDefault: () => { stopped = true; }, composedPath: () => [control] } as unknown as KeyboardEvent);
+        expect(stopped, `${control.tagName} ${String(control.type)} ${k}`).toBe(false);
+      }
+    }
+    await el.session!.idle();
+    expect(inside.dialog).toBeUndefined();
+    expect(ha.saves()).toHaveLength(0);
+    expect(el.context()!.selection).toEqual(picked);
+    expect(el.context()!.view).toEqual(view);
+    // A nudge, then undo from the slider: undo is still the editor's there,
+    // while in a text field it stays the field's own.
+    key("ArrowRight");
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.pins[0]!.at[0]).toBeCloseTo(0.81, 5);
+    el.onKey({ key: "z", metaKey: true, preventDefault: () => undefined, composedPath: () => [{ tagName: "INPUT", type: "number" }] } as unknown as KeyboardEvent);
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.pins[0]!.at[0]).toBeCloseTo(0.81, 5);
+    el.onKey({ key: "z", metaKey: true, preventDefault: () => undefined, composedPath: () => [{ tagName: "INPUT", type: "range" }] } as unknown as KeyboardEvent);
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.pins[0]!.at[0]).toBeCloseTo(0.8, 5);
+    // Delete anywhere else still takes it off the map.
+    const pins = ha.now().doc!.floors[0]!.pins.length;
+    key("Delete");
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.pins).toHaveLength(pins - 1);
   });
 
   it("asks before deleting a room in its own dialog, not the browser's", async () => {

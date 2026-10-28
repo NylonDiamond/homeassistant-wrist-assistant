@@ -64,28 +64,45 @@ export const HOME_MAP_ZOOM_STEP = 1.25;
 
 // ── keys ─────────────────────────────────────────────────────────────────
 
-/** An element that takes typing: a text field, a box of text, a menu, or
- * anything editable. Keys pressed there are its own, never the editor's. */
-export function homeMapIsTypingTarget(el: unknown): boolean {
-  if (typeof el !== "object" || el === null) return false;
+/** An element's tag in upper case, its input type in lower case (text when
+ * it has none) and whether it is editable, as the key checks below read
+ * them. */
+function fieldOf(el: unknown): { tag: string; type: string; editable: boolean } | undefined {
+  if (typeof el !== "object" || el === null) return undefined;
   const node = el as { tagName?: unknown; type?: unknown; isContentEditable?: unknown };
-  if (node.isContentEditable === true) return true;
-  const tag = typeof node.tagName === "string" ? node.tagName.toUpperCase() : "";
-  if (tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (tag !== "INPUT") return false;
-  const type = typeof node.type === "string" ? node.type.toLowerCase() : "text";
-  return !["button", "checkbox", "radio", "range", "color", "submit", "reset", "file", "image"].includes(type);
+  return {
+    tag: typeof node.tagName === "string" ? node.tagName.toUpperCase() : "",
+    type: typeof node.type === "string" ? node.type.toLowerCase() : "text",
+    editable: node.isContentEditable === true,
+  };
 }
 
-/** Whether a key belongs to a focused slider (its arrows, Home, End and
- * page keys move it), so the editor leaves it alone: else an arrow on the
- * Height slider would nudge the picked pin and stop the slider. */
-export function homeMapIsSliderKey(el: unknown, key: string): boolean {
-  if (typeof el !== "object" || el === null) return false;
-  const node = el as { tagName?: unknown; type?: unknown };
-  if (typeof node.tagName !== "string" || node.tagName.toUpperCase() !== "INPUT") return false;
-  if (typeof node.type !== "string" || node.type.toLowerCase() !== "range") return false;
-  return ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(key);
+/** Input types that are buttons, holding no value a key changes. */
+const NOT_A_FIELD = ["button", "submit", "reset", "image"];
+
+/** Input types that hold a value but take no typing. */
+const NOT_TYPED = ["checkbox", "radio", "range", "color", "file"];
+
+/** An element that takes typing: a text or number field, a box of text, or
+ * anything editable. Every key pressed there is its own, undo and redo
+ * included, never the editor's. */
+export function homeMapIsTypingTarget(el: unknown): boolean {
+  const f = fieldOf(el);
+  if (f === undefined) return false;
+  if (f.editable || f.tag === "TEXTAREA") return true;
+  return f.tag === "INPUT" && !NOT_A_FIELD.includes(f.type) && !NOT_TYPED.includes(f.type);
+}
+
+/** Any control of a form: a field that takes typing, or a slider, colour,
+ * menu, check box or radio. Keys pressed there (Delete, the arrows, Escape,
+ * the letters) are its own, so Delete on the Height slider never removes
+ * the picked pins; only undo and redo still reach the editor when the
+ * control takes no typing. A button is not one. */
+export function homeMapIsFormControl(el: unknown): boolean {
+  const f = fieldOf(el);
+  if (f === undefined) return false;
+  if (homeMapIsTypingTarget(el) || f.tag === "SELECT") return true;
+  return f.tag === "INPUT" && !NOT_A_FIELD.includes(f.type);
 }
 
 /** What a key press asks of the editor as a whole. A plain letter is left
