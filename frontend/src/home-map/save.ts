@@ -4,7 +4,9 @@
 // is read again, the same edit is put on top of it, and that is saved once
 // more. When the edit no longer fits the map read (its room was deleted on
 // the iPhone, say), or the second save is refused as well, nothing is saved
-// and the page says so, with the map Home Assistant holds now.
+// and the page says so, with the map Home Assistant holds now. The change is
+// a plain edit (`HomeMapEdit`) or any of the map editor's edits by ids
+// (`edit-ops.ts`), which can be made again on the newer map the same way.
 
 import type { HassLike } from "../ha-api.js";
 import { fetchHomeMap, saveHomeMap } from "../ha-api.js";
@@ -46,10 +48,14 @@ function read(raw: HomeMapRead): HomeMapRead {
   return { doc: readHomeMap(raw?.doc) ?? null, rev: typeof raw?.rev === "number" ? raw.rev : 0 };
 }
 
+/** What a save puts on the map: a plain edit, or a change made by a
+ * function of the map that names what it changes by id. */
+export type HomeMapChange = HomeMapEdit | ((doc: HomeMapDocument) => HomeMapDocument | undefined);
+
 /** The edit on `doc`, checked as the store checks it; a reason when it
  * cannot be saved. */
-function edited(doc: HomeMapDocument, edit: HomeMapEdit): { doc: HomeMapDocument } | { text: string } | undefined {
-  const next = applyHomeMapEdit(doc, edit);
+function edited(doc: HomeMapDocument, edit: HomeMapChange): { doc: HomeMapDocument } | { text: string } | undefined {
+  const next = typeof edit === "function" ? edit(doc) : applyHomeMapEdit(doc, edit);
   if (next === undefined) return undefined;
   const checked = checkHomeMap(next);
   return checked.ok ? { doc: checked.doc } : { text: `Not saved. ${checked.message}.` };
@@ -57,7 +63,7 @@ function edited(doc: HomeMapDocument, edit: HomeMapEdit): { doc: HomeMapDocument
 
 /** Save one edit made on `from`, with one more try on top of a newer map
  * after a `conflict`. */
-export async function saveHomeMapEdit(api: HomeMapApi, from: HomeMapRead, edit: HomeMapEdit): Promise<HomeMapSaveOutcome> {
+export async function saveHomeMapEdit(api: HomeMapApi, from: HomeMapRead, edit: HomeMapChange): Promise<HomeMapSaveOutcome> {
   if (from.doc === null) return { ok: false, text: "There is no map to change yet." };
   const first = edited(from.doc, edit);
   if (first === undefined) return { ok: false, text: "That is no longer on the map." };
