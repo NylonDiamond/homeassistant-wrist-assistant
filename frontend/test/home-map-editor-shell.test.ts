@@ -406,13 +406,14 @@ describe("door and window styles in the model looks", () => {
     const floor = fixture().floors[0]!;
     const looks = Object.fromEntries((["plan", ...HOME_TILE_MODEL_LOOKS] as HomeTileLook[]).map((look) => [look, hash(draw(floor, look))]));
     // Taken before the styles were drawn in the model looks; a change to how
-    // the looks draw an unstyled map changes these on purpose.
+    // the looks draw an unstyled map changes these on purpose (the TV's
+    // bezel changed night, warm and clay).
     expect(looks).toEqual({
       plan: "81582888e9b19721",
-      night: "41db84fa3f766f08",
-      warm: "dd687a912b8bb9b5",
+      night: "cd5d02d131dd61e0",
+      warm: "903a42ccc98b041c",
       lines: "f8f39d5c61ea580f",
-      clay: "02bf831184585c52",
+      clay: "b814476863794155",
       blueprint: "15793a7930a7b500",
     });
   });
