@@ -1,0 +1,529 @@
+// The map editor's Arrange mode (mock board 1): put the rooms where they
+// stand. The left rail lists the floor's rooms as layers (each with its
+// size, and the picked one open on its doors, windows, things and devices),
+// the other floors, and Draw a room by hand. On the stage a room is dragged
+// to move it, snapping to the walls of the rooms round it with a pink guide
+// and a label saying what it lined up with (Alt moves it freely, the grid
+// moves it in 10 cm steps), turned by the round handle above its box, and
+// shows its two sizes. The pill turns it a quarter, squares its corners,
+// snaps it to the walls the iPhone's way, moves it to another floor or
+// deletes it. The inspector holds the room's name, Home Assistant area and
+// the page a tap opens; where it is (left and top, its turn, its size, its
+// floor, its wall height); its floor finish; and the things in it, each
+// shown or hidden, with its devices and Add a thing.
+//
+// Every edit is an `edit-ops.ts` function by ids, saved through the shell
+// (`editor-mode.ts` has the rules).
+
+import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
+import { live } from "lit/directives/live.js";
+import {
+  type HomeMapSnapGuide,
+  HOME_MAP_OBJECT_KINDS,
+  addObject,
+  deleteRoom,
+  homeMapLevelTurn,
+  homeMapPinsOfRoom,
+  levelRoom,
+  moveRoom,
+  moveRoomToFloor,
+  removeObject,
+  renameFloor,
+  renameRoom,
+  setObjectHidden,
+  setRoomArea,
+  setRoomFinish,
+  setRoomPage,
+  setWallHeight,
+  snapRoom,
+  snapRoomToWalls,
+  squareCorners,
+  turnRoom,
+} from "./edit-ops.js";
+import { HOME_MAP_ARRANGE_GRID, HomeMapDrawTool } from "./draw-tool.js";
+import { type HomeMapEditorContext, type HomeMapMode, homeMapSelectionRoom } from "./editor-mode.js";
+import {
+  HME_FINISH_DOT,
+  hmeCard,
+  hmeChip,
+  hmeFinishSwatch,
+  hmeHint,
+  hmeMenuButton,
+  hmeNumber,
+  hmePic,
+  hmeRoomThumb,
+  hmeRow,
+  hmeSelect,
+  hmeText,
+} from "./editor-parts.js";
+import {
+  homeMapCount,
+  homeMapMeters,
+  homeMapObjectName,
+  homeMapOpeningName,
+  homeMapRoomBox,
+  homeMapRoomSize,
+  homeMapRoomSizeText,
+  homeMapShortcut,
+  homeMapUndoKey,
+} from "./editor-view.js";
+import { type HomeFloorKind, homeFloorGuess, homeFloorKind, homeLabelPoint, homePointBounds, homeRoomUnder } from "./geometry.js";
+import {
+  type HomeMapFinish,
+  type HomeMapFloor,
+  type HomeMapRoom,
+  type HomePoint,
+  HOME_MAP_FINISHES,
+  homeMapFloorName,
+  homeMapLightsOn,
+  homeMapLightsOnWords,
+  homeMapLitRooms,
+  homeMapPinName,
+  homeMapRoomCenter,
+  homeMapRoomName,
+  sameHomeMapId,
+} from "./model.js";
+
+/** A finish's name. */
+export const HOME_MAP_FINISH_NAMES: Readonly<Record<HomeFloorKind, string>> = {
+  wood: "Wood",
+  tile: "Tile",
+  stone: "Stone",
+  carpet: "Carpet",
+  plain: "Plain",
+};
+
+/** A turn handle snaps to this many degrees unless Alt is held. */
+const TURN_STEP = 15;
+
+/** The question before a room is deleted. */
+export function homeMapDeleteRoomText(room: HomeMapRoom, devices: number): string {
+  const these = devices === 0 ? "" : ` Its ${homeMapCount(devices, "device")} come${devices === 1 ? "s" : ""} off the map too.`;
+  return `${homeMapRoomName(room)} comes off the map.${these} A scanned room comes back only by scanning it again on the iPhone. Undo brings it back while this page is open.`;
+}
+
+const fmt = (v: number) => v.toFixed(1);
+const pt = (p: readonly number[]) => `${p[0]!.toFixed(1)},${p[1]!.toFixed(1)}`;
+
+export class ArrangeMode implements HomeMapMode {
+  readonly id = "arrange" as const;
+  readonly draw = new HomeMapDrawTool(HOME_MAP_ARRANGE_GRID);
+  /** What the layers list is filtered by. */
+  query = "";
+  /** The open parts of the picked room's layer: things, devices. */
+  private open = new Set<string>();
+  /** The snap lines while a room is dragged, and whether a drag is on. */
+  private guides: HomeMapSnapGuide[] = [];
+  private dragging = false;
+
+  private focus(ctx: HomeMapEditorContext): HomeMapRoom | undefined {
+    const id = homeMapSelectionRoom(ctx.selection);
+    return id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
+  }
+
+  // ── the rail ───────────────────────────────────────────────────────────
+
+  rail(ctx: HomeMapEditorContext): TemplateResult {
+    const floor = ctx.floor;
+    const q = this.query.trim().toLowerCase();
+    const rooms = floor.rooms.filter((r) => q === "" || homeMapRoomName(r).toLowerCase().includes(q));
+    const found = q === "" ? [] : floor.pins.filter((p) => homeMapPinName(p, ctx.hass).toLowerCase().includes(q) || p.entityId.includes(q));
+    const others = ctx.doc.floors.filter((f) => !sameHomeMapId(f.id, floor.id));
+    const focus = this.focus(ctx);
+    return html`
+      <label class="hme-find"><span aria-hidden="true">⌕</span>
+        <input type="search" placeholder="Find a room or device" aria-label="Find a room or device" .value=${live(this.query)}
+          @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
+      <section class="hme-card hme-layers">
+        <div class="hme-h">${homeMapFloorName(floor)}<span class="hme-h-end">${homeMapCount(floor.rooms.length, "room")}</span></div>
+        ${rooms.map((room) => this.layer(ctx, room, focus !== undefined && sameHomeMapId(focus.id, room.id)))}
+        ${rooms.length === 0 ? html`<p class="hme-empty-line">${q === "" ? "No rooms on this floor yet." : "No room by that name."}</p>` : nothing}
+        ${found.length > 0 ? html`<div class="hme-sep"></div>${found.map((p) => html`<button type="button" class="hme-lay"
+            @click=${() => ctx.setMode("devices", { kind: "pin", pinId: p.id })}><span class="hme-dot dev"></span>${homeMapPinName(p, ctx.hass)}<span class="n">Device</span></button>`)}` : nothing}
+        ${others.length > 0 ? html`<div class="hme-sep"></div>${others.map((f) => html`<button type="button" class="hme-lay dim"
+            @click=${() => ctx.setFloor(f.id)}>▸ ${homeMapFloorName(f)}<span class="n">${homeMapCount(f.rooms.length, "room")}</span></button>`)}` : nothing}
+      </section>
+      <button type="button" class="hme-tb hme-wide ${this.draw.active ? "on" : ""}" @click=${() => (this.draw.active ? this.draw.stop(ctx) : this.draw.start(ctx))}>
+        ${this.draw.active ? "Stop drawing" : "＋ Draw a room by hand"}</button>
+      <p class="hme-foot">Scanned rooms come from the iPhone. Rooms you draw here (a garden, a garage) need no scan.</p>`;
+  }
+
+  private layer(ctx: HomeMapEditorContext, room: HomeMapRoom, on: boolean): TemplateResult {
+    const row = html`<button type="button" class="hme-lay ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      @click=${() => ctx.select({ kind: "room", roomId: room.id })}>
+      <span class="hme-dot" style=${`background:${HME_FINISH_DOT[homeFloorKind(room)]}`}></span>${homeMapRoomName(room)}<span class="n">${homeMapRoomSizeText(room)}</span></button>`;
+    if (!on) return row;
+    const doors = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => o.kind !== "window");
+    const windows = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => o.kind === "window");
+    const pins = homeMapPinsOfRoom(ctx.floor, room.id);
+    const toggle = (key: string) => {
+      if (this.open.has(key)) this.open.delete(key);
+      else this.open.add(key);
+      ctx.redraw();
+    };
+    const toShape = (index: number | undefined) => ctx.setMode("shape", index === undefined ? { kind: "room", roomId: room.id } : { kind: "opening", roomId: room.id, opening: index });
+    return html`${row}
+      <button type="button" class="hme-lay sub" @click=${() => toShape(doors[0]?.i)}>Doors and ways in<span class="n">${doors.length}</span></button>
+      <button type="button" class="hme-lay sub" @click=${() => toShape(windows[0]?.i)}>Windows<span class="n">${windows.length}</span></button>
+      <button type="button" class="hme-lay sub" aria-expanded=${this.open.has("things") ? "true" : "false"} @click=${() => toggle("things")}>Things<span class="n">${room.objects.length}</span></button>
+      ${this.open.has("things") ? room.objects.map((o, i) => html`<div class="hme-lay subsub">${homeMapObjectName(o.kind)}
+        ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapObjectName(o.kind)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, room.id, i, o.hidden !== true)) })}</div>`) : nothing}
+      <button type="button" class="hme-lay sub" aria-expanded=${this.open.has("devices") ? "true" : "false"} @click=${() => toggle("devices")}>Devices<span class="n">${pins.length}</span></button>
+      ${this.open.has("devices") ? pins.map((p) => html`<button type="button" class="hme-lay subsub" @click=${() => ctx.setMode("devices", { kind: "pin", pinId: p.id })}>${homeMapPinName(p, ctx.hass)}<span class="n">›</span></button>`) : nothing}`;
+  }
+
+  // ── the stage ──────────────────────────────────────────────────────────
+
+  overlay(ctx: HomeMapEditorContext): SVGTemplateResult | typeof nothing {
+    if (this.draw.active) return this.draw.overlay(ctx);
+    const room = this.focus(ctx);
+    const parts: SVGTemplateResult[] = [];
+    for (const guide of this.guides) parts.push(this.guide(ctx, guide));
+    if (room !== undefined && room.outline.length >= 3) parts.push(this.box(ctx, room));
+    return parts.length === 0 ? nothing : svg`${parts}`;
+  }
+
+  /** The picked room's box along its walls, its handles, its turn handle and
+   * its two sizes. */
+  private box(ctx: HomeMapEditorContext, room: HomeMapRoom): SVGTemplateResult {
+    const box = homeMapRoomBox(room).map((p) => ctx.toScreen(p));
+    const centre = box.reduce<HomePoint>((s, p) => [s[0] + p[0] / 4, s[1] + p[1] / 4], [0, 0]);
+    const mid = (i: number): HomePoint => [(box[i]![0] + box[(i + 1) % 4]![0]) / 2, (box[i]![1] + box[(i + 1) % 4]![1]) / 2];
+    const out = (p: HomePoint): HomePoint => {
+      const d = Math.max(Math.hypot(p[0] - centre[0], p[1] - centre[1]), 1e-6);
+      return [(p[0] - centre[0]) / d, (p[1] - centre[1]) / d];
+    };
+    const handles = [0, 1, 2, 3].flatMap((i) => [box[i]!, mid(i)]);
+    // The turn handle stands off the edge nearest the top of the screen.
+    const topEdge = [0, 1, 2, 3].reduce((best, i) => (mid(i)[1] < mid(best)[1] ? i : best), 0);
+    const tm = mid(topEdge);
+    const to = out(tm);
+    const knob: HomePoint = [tm[0] + to[0] * 28, tm[1] + to[1] * 28];
+    const size = homeMapRoomSize(room);
+    const dims: SVGTemplateResult[] = [];
+    // One measure along each way: on the edge facing up for the way that
+    // runs across the screen, the edge facing left for the other.
+    for (const pair of [[0, 2], [1, 3]] as const) {
+      const [i, j] = pair;
+      const across = Math.abs(box[(i + 1) % 4]![0] - box[i]![0]) >= Math.abs(box[(i + 1) % 4]![1] - box[i]![1]);
+      const pick = across ? (out(mid(i))[1] <= out(mid(j))[1] ? i : j) : (out(mid(i))[0] <= out(mid(j))[0] ? i : j);
+      const a = box[pick]!;
+      const b = box[(pick + 1) % 4]!;
+      const o = out(mid(pick));
+      const a2: HomePoint = [a[0] + o[0] * 20, a[1] + o[1] * 20];
+      const b2: HomePoint = [b[0] + o[0] * 20, b[1] + o[1] * 20];
+      const m: HomePoint = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
+      const length = pick % 2 === 0 ? size.width : size.depth;
+      const t: HomePoint = [o[0] * 5, o[1] * 5];
+      dims.push(svg`<path d=${`M${pt(a2)}L${pt(b2)}M${pt([a2[0] - t[0], a2[1] - t[1]])}L${pt([a2[0] + t[0], a2[1] + t[1]])}M${pt([b2[0] - t[0], b2[1] - t[1]])}L${pt([b2[0] + t[0], b2[1] + t[1]])}`}
+        stroke="#5b8def" stroke-width="1.2" fill="none" />
+        <g class="hme-tag"><rect x=${fmt(m[0] - 26)} y=${fmt(m[1] - 9)} width="52" height="18" rx="9" fill="#5b8def" />
+        <text x=${fmt(m[0])} y=${fmt(m[1] + 4)} fill="#fff" text-anchor="middle">${length.toFixed(2)} m</text></g>`);
+    }
+    return svg`<g class="hme-box">
+      <polygon points=${box.map(pt).join(" ")} fill="none" stroke="#5b8def" stroke-width="2" />
+      ${this.dragging ? nothing : svg`
+        ${dims}
+        <line x1=${fmt(tm[0])} y1=${fmt(tm[1])} x2=${fmt(knob[0])} y2=${fmt(knob[1])} stroke="#5b8def" stroke-width="1.6" />
+        ${handles.map((h) => svg`<rect data-hme="move" x=${fmt(h[0] - 5)} y=${fmt(h[1] - 5)} width="10" height="10" fill="#fff" stroke="#5b8def" stroke-width="1.6" style="cursor:move" />`)}
+        <g data-hme="turn" style="cursor:grab" transform=${`translate(${pt(knob)})`}>
+          <title>Drag to turn the room. Hold Alt to turn it freely.</title>
+          <circle r="9" fill="#5b8def" />
+          <path d="M-4 0a4 4 0 1 0 1.5-3.1M-4-4.5v2.5h2.5" fill="none" stroke="#fff" stroke-width="1.3" />
+        </g>`}
+    </g>`;
+  }
+
+  /** A snap guide: the neighbour's wall line drawn long and pink, and what
+   * the room lined up with. */
+  private guide(ctx: HomeMapEditorContext, g: HomeMapSnapGuide): SVGTemplateResult {
+    const a = ctx.toScreen(g.a);
+    const b = ctx.toScreen(g.b);
+    const d = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 1e-6);
+    const u: HomePoint = [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
+    const a2: HomePoint = [a[0] - u[0] * 40, a[1] - u[1] * 40];
+    const b2: HomePoint = [b[0] + u[0] * 40, b[1] + u[1] * 40];
+    const other = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, g.roomId));
+    const text = `Lined up with ${other === undefined ? "a" : homeMapRoomName(other)} wall`;
+    const w = text.length * 6.2 + 20;
+    return svg`<g class="hme-guide" pointer-events="none">
+      <line x1=${fmt(a2[0])} y1=${fmt(a2[1])} x2=${fmt(b2[0])} y2=${fmt(b2[1])} stroke="#ff4fa3" stroke-width="1.2" stroke-dasharray="6 4" />
+      <g class="hme-tag"><rect x=${fmt(b2[0] + 6)} y=${fmt(b2[1] - 10)} width=${fmt(w)} height="20" rx="10" fill="#ff4fa3" />
+      <text x=${fmt(b2[0] + 6 + w / 2)} y=${fmt(b2[1] + 4)} fill="#fff" text-anchor="middle">${text}</text></g>
+    </g>`;
+  }
+
+  pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
+    if (this.draw.active) return this.draw.pointerDown(ctx, e, at);
+    if (e.button !== 0) return false;
+    const hit = (e.target as Element | null)?.closest?.("[data-hme]")?.getAttribute("data-hme");
+    const focus = this.focus(ctx);
+    if (hit === "turn" && focus !== undefined) {
+      this.turnDrag(ctx, e, focus, at);
+      return true;
+    }
+    const room = hit === "move" && focus !== undefined ? focus : homeRoomUnder(ctx.floor, at);
+    if (room === undefined) return false;
+    ctx.select({ kind: "room", roomId: room.id });
+    this.moveDrag(ctx, e, room, at);
+    return true;
+  }
+
+  /** Drag a room: snapping to its neighbours' walls unless Alt is held or
+   * snapping is off, in grid steps while the grid is on. Saved on the drop
+   * as one move from where it started. */
+  private moveDrag(ctx: HomeMapEditorContext, e: PointerEvent, room: HomeMapRoom, start: HomePoint): void {
+    const startDoc = ctx.doc;
+    const id = room.id;
+    const corner = homePointBounds(room.outline);
+    let delta: HomePoint = [0, 0];
+    ctx.drag(e, {
+      move: (p, ev) => {
+        let dx = p[0] - start[0];
+        let dy = p[1] - start[1];
+        if (ctx.toggles.grid && corner !== undefined) {
+          const g = HOME_MAP_ARRANGE_GRID;
+          dx = Math.round((corner.minX + dx) / g) * g - corner.minX;
+          dy = Math.round((corner.minY + dy) / g) * g - corner.minY;
+        }
+        this.guides = [];
+        if (ctx.toggles.snap && !ev.altKey) {
+          const snap = snapRoom(startDoc, id, dx, dy);
+          if (snap !== undefined) {
+            dx = snap.dx;
+            dy = snap.dy;
+            this.guides = snap.guides;
+          }
+        }
+        this.dragging = true;
+        delta = [dx, dy];
+        ctx.preview((d) => moveRoom(d, id, dx, dy));
+      },
+      end: (_p, _ev, moved) => {
+        this.guides = [];
+        this.dragging = false;
+        ctx.preview(undefined);
+        const [dx, dy] = delta;
+        if (moved && (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005)) ctx.apply((d) => moveRoom(d, id, dx, dy), { select: { kind: "room", roomId: id } });
+      },
+    });
+  }
+
+  /** Drag the turn handle: the room turns round its middle, in 15 degree
+   * steps unless Alt is held. */
+  private turnDrag(ctx: HomeMapEditorContext, e: PointerEvent, room: HomeMapRoom, start: HomePoint): void {
+    const id = room.id;
+    const pivot = homeMapRoomCenter(room);
+    const a0 = Math.atan2(start[1] - pivot[1], start[0] - pivot[0]);
+    let turn = 0;
+    ctx.drag(e, {
+      move: (p, ev) => {
+        let deg = ((Math.atan2(p[1] - pivot[1], p[0] - pivot[0]) - a0) * 180) / Math.PI;
+        deg = ((deg + 540) % 360) - 180;
+        if (!ev.altKey) deg = Math.round(deg / TURN_STEP) * TURN_STEP;
+        this.dragging = true;
+        turn = deg;
+        ctx.preview((d) => turnRoom(d, id, deg, pivot));
+      },
+      end: (_p, _ev, moved) => {
+        this.dragging = false;
+        ctx.preview(undefined);
+        if (moved && Math.abs(turn) > 0.01) ctx.apply((d) => turnRoom(d, id, turn, pivot), { select: { kind: "room", roomId: id } });
+      },
+    });
+  }
+
+  hover(ctx: HomeMapEditorContext, at: HomePoint | undefined): void {
+    this.draw.hover(ctx, at);
+  }
+
+  keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
+    if (this.draw.active) return this.draw.keyDown(ctx, e);
+    const room = this.focus(ctx);
+    if (room === undefined) return false;
+    const shortcut = homeMapShortcut(e, false);
+    if (shortcut === "delete") {
+      void this.askDelete(ctx, room);
+      return true;
+    }
+    if (typeof shortcut === "object" && "nudge" in shortcut) {
+      const [dx, dy] = shortcut.nudge;
+      ctx.apply((d) => moveRoom(d, room.id, dx, dy));
+      return true;
+    }
+    return false;
+  }
+
+  cursor(): string | undefined {
+    return this.draw.active ? "crosshair" : undefined;
+  }
+
+  leave(ctx: HomeMapEditorContext): void {
+    this.draw.stop(ctx);
+    this.guides = [];
+    this.dragging = false;
+  }
+
+  dock(ctx: HomeMapEditorContext): TemplateResult {
+    return html`<button type="button" class="hme-tb ${ctx.toggles.snap ? "on" : ""}" aria-pressed=${ctx.toggles.snap ? "true" : "false"}
+        title="A dragged room lines up with the walls round it. Hold Alt to move it freely." @click=${() => ctx.setToggle("snap", !ctx.toggles.snap)}>Snap to walls</button>
+      <button type="button" class="hme-tb ${ctx.toggles.grid ? "on" : ""}" aria-pressed=${ctx.toggles.grid ? "true" : "false"}
+        @click=${() => ctx.setToggle("grid", !ctx.toggles.grid)}>Grid 10 cm</button>`;
+  }
+
+  // ── the pill ───────────────────────────────────────────────────────────
+
+  pill(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    if (this.draw.active) {
+      return html`<span class="hme-pill-name">${this.draw.hint()}</span>
+        ${this.draw.points.length >= 3 ? html`<button type="button" class="hme-tb" @click=${() => void this.draw.finish(ctx)}>Close the room</button>` : nothing}
+        <button type="button" class="hme-tb" @click=${() => this.draw.stop(ctx)}>Cancel</button>`;
+    }
+    const room = this.focus(ctx);
+    if (room === undefined || this.dragging) return nothing;
+    const id = room.id;
+    return html`<span class="hme-pill-name">${homeMapRoomName(room)}</span>
+      <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>⟲ Turn 90°</button>
+      <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, id))}>Square the corners</button>
+      <button type="button" class="hme-tb" title="Turn it to the floor's walls and slide it onto the nearest wall line, as the iPhone does"
+        @click=${() => ctx.apply((d) => snapRoomToWalls(d, id))}>Snap to walls</button>
+      ${this.floorMenu(ctx, room, "Move to floor", "hme-tb")}
+      <button type="button" class="hme-tb danger" @click=${() => void this.askDelete(ctx, room)}>Delete</button>`;
+  }
+
+  /** Move to floor: the other floors, and a new one. */
+  private floorMenu(ctx: HomeMapEditorContext, room: HomeMapRoom, label: string, cls: string): TemplateResult {
+    const others = ctx.doc.floors.filter((f) => !sameHomeMapId(f.id, ctx.floor.id));
+    return hmeMenuButton({
+      label,
+      cls,
+      options: [...others.map((f) => ({ value: f.id, label: homeMapFloorName(f) })), { value: "new", label: "New floor…" }],
+      pick: (v) => void this.moveToFloor(ctx, room, v),
+    });
+  }
+
+  private async moveToFloor(ctx: HomeMapEditorContext, room: HomeMapRoom, target: string): Promise<void> {
+    const id = room.id;
+    const select = { kind: "room" as const, roomId: id };
+    if (target !== "new") {
+      ctx.apply((d) => moveRoomToFloor(d, id, { floorId: target }), { select, floorId: target });
+      return;
+    }
+    const story = Math.max(...ctx.doc.floors.map((f) => f.story)) + 1;
+    const name = await ctx.ask({ title: "A new floor", label: "Name", value: story === 1 ? "Upstairs" : `Floor ${story + 1}`, ok: "Move the room there" });
+    if (name === undefined) return;
+    const floorId = ctx.newId();
+    ctx.apply((d) => moveRoomToFloor(d, id, { newFloor: { id: floorId, name, story } }), { select, floorId });
+  }
+
+  private async askDelete(ctx: HomeMapEditorContext, room: HomeMapRoom): Promise<void> {
+    const devices = homeMapPinsOfRoom(ctx.floor, room.id).length;
+    const sure = await ctx.confirm({ title: `Delete ${homeMapRoomName(room)}?`, text: homeMapDeleteRoomText(room, devices), ok: "Delete room", danger: true });
+    if (sure) ctx.apply((d) => deleteRoom(d, room.id), { select: null });
+  }
+
+  // ── the inspector ──────────────────────────────────────────────────────
+
+  inspector(ctx: HomeMapEditorContext): TemplateResult {
+    const room = this.focus(ctx);
+    if (room === undefined) return this.floorCard(ctx, ctx.floor);
+    const id = room.id;
+    const size = homeMapRoomSize(room);
+    const lit = homeMapLitRooms(ctx.floor, ctx.toggles.live ? ctx.hass?.states : undefined).has(room.id);
+    const pins = homeMapPinsOfRoom(ctx.floor, id);
+    const bounds = homePointBounds(room.outline) ?? { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    const tilt = Math.round(-homeMapLevelTurn(room) * 10) / 10;
+    const areaKnown = room.areaId === undefined || ctx.areas.some((a) => a.id === room.areaId);
+    const pageKnown = room.pageId === undefined || ctx.pages.some((p) => sameHomeMapId(p.id, room.pageId));
+    const guess = homeFloorGuess(room);
+    return html`
+      <section class="hme-card hme-head">
+        ${hmeRoomThumb(room, lit)}
+        <div class="hme-head-t">
+          <strong>${homeMapRoomName(room)}</strong>
+          <span>${homeMapFloorName(ctx.floor)} · ${homeMapRoomSizeText(room)} · ${size.area.toFixed(1)} m²</span>
+        </div>
+      </section>
+
+      ${hmeCard("Room", html`
+        ${hmeRow("Name", hmeText({ value: room.name ?? "", label: "Name", placeholder: "Room", set: (v) => ctx.apply((d) => renameRoom(d, id, v)) }))}
+        ${hmeRow("Area", hmeSelect({
+          label: "Area",
+          value: room.areaId ?? "",
+          options: [
+            { value: "", label: "None" },
+            ...(areaKnown ? [] : [{ value: room.areaId!, label: `Not in Home Assistant (${room.areaId})`, disabled: true }]),
+            ...ctx.areas.map((a) => ({ value: a.id, label: a.name })),
+          ],
+          set: (v) => ctx.apply((d) => setRoomArea(d, id, v === "" ? undefined : v)),
+        }))}
+        ${hmeHint("The Home Assistant area. Its devices show first in Devices.")}
+        ${hmeRow("Tap opens", hmeSelect({
+          label: "Tap opens",
+          value: room.pageId ?? "",
+          options: [
+            { value: "", label: "Nothing" },
+            ...(pageKnown ? [] : [{ value: room.pageId!, label: "A page not in your library", disabled: true }]),
+            ...ctx.pages.map((p) => ({ value: p.id, label: `Page: ${p.name}` })),
+          ],
+          set: (v) => ctx.apply((d) => setRoomPage(d, id, v === "" ? undefined : v)),
+        }))}
+        ${hmeHint("What a tap on this room does on the map tiles and the watch.")}`)}
+
+      ${hmeCard("Place", html`
+        ${hmeRow("Left, top",
+          hmeNumber({ label: "Left", value: bounds.minX, unit: "m", set: (v) => ctx.apply((d) => moveRoom(d, id, v - bounds.minX, 0)) }),
+          hmeNumber({ label: "Top", value: bounds.minY, unit: "m", set: (v) => ctx.apply((d) => moveRoom(d, id, 0, v - bounds.minY)) }))}
+        ${hmeRow("Turn",
+          hmeNumber({ label: "Turn", value: tilt, unit: "°", digits: 1, min: -180, max: 180, width: "92px", set: (v) => ctx.apply((d) => turnRoom(d, id, v - tilt)) }),
+          html`<button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, -90))}>−90°</button>
+            <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>+90°</button>
+            <button type="button" class="hme-tb" title="Turn it so its longest wall runs straight across or down" @click=${() => ctx.apply((d) => levelRoom(d, id))}>Level</button>`)}
+        ${hmeRow("Size", html`<span class="hme-in hme-ro mono">${homeMapMeters(size.width)}</span><span class="hme-in hme-ro mono">${homeMapMeters(size.depth)}</span>`)}
+        ${hmeHint("Drag a room on the plan. It snaps to the walls of the rooms around it. Hold Alt to move it freely.")}
+        ${hmeRow("Floor", hmeSelect({
+          label: "Floor",
+          value: ctx.floor.id,
+          options: [...ctx.doc.floors.map((f) => ({ value: f.id, label: homeMapFloorName(f) })), { value: "new", label: "New floor…" }],
+          set: (v) => void this.moveToFloor(ctx, room, v),
+        }))}
+        ${hmeRow("Wall height", hmeNumber({ label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, set: (v) => ctx.apply((d) => setWallHeight(d, id, v)) }))}`)}
+
+      ${hmeCard("Floor finish", html`<div class="hme-pics">
+        ${hmePic({ label: `Auto: ${HOME_MAP_FINISH_NAMES[guess]}`, picture: hmeFinishSwatch(guess), on: room.finish === undefined, title: "Picked from the room's name and furniture", click: () => ctx.apply((d) => setRoomFinish(d, id, undefined)) })}
+        ${HOME_MAP_FINISHES.map((f: HomeMapFinish) => hmePic({ label: HOME_MAP_FINISH_NAMES[f], picture: hmeFinishSwatch(f), on: room.finish === f, click: () => ctx.apply((d) => setRoomFinish(d, id, f)) }))}
+      </div>`)}
+
+      ${hmeCard("In this room", html`
+        ${room.objects.length === 0 ? html`<p class="hme-empty-line">No things. Add a sofa, a bed or stairs so the map reads.</p>` : nothing}
+        ${room.objects.map((o, i) => html`<div class="hme-r tight"><span class="hme-grow ${o.hidden === true ? "dim" : ""}">${homeMapObjectName(o.kind)}</span>
+          ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapObjectName(o.kind)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, id, i, o.hidden !== true)) })}
+          <button type="button" class="hme-x" aria-label=${`Remove ${homeMapObjectName(o.kind)}`} title="Remove" @click=${() => ctx.apply((d) => removeObject(d, id, i))}>×</button></div>`)}
+        ${room.openings.length > 0 ? html`<div class="hme-r tight"><span class="hme-grow">${[...new Set(room.openings.map(homeMapOpeningName))].join(", ")}</span>
+          <button type="button" class="hme-link" @click=${() => ctx.setMode("shape", { kind: "room", roomId: id })}>Shape ›</button></div>` : nothing}
+        <div class="hme-r tight"><span class="hme-grow">${pins.length === 0 ? "No devices" : pins.slice(0, 3).map((p) => homeMapPinName(p, ctx.hass)).join(", ") + (pins.length > 3 ? "…" : "")}</span>
+          <button type="button" class="hme-link" @click=${() => ctx.setMode("devices", { kind: "room", roomId: id })}>${homeMapCount(pins.length, "device")} ›</button></div>
+        <div class="hme-row-end">
+          ${hmeMenuButton({
+            label: "＋ Add a thing",
+            cls: "hme-tb",
+            options: HOME_MAP_OBJECT_KINDS.map((k) => ({ value: k, label: homeMapObjectName(k) })),
+            pick: (kind) => {
+              const at = homeLabelPoint(room) ?? homeMapRoomCenter(room);
+              ctx.apply((d) => addObject(d, id, kind, at));
+            },
+          })}
+          <button type="button" class="hme-tb danger push" @click=${() => void this.askDelete(ctx, room)}>Delete room</button>
+        </div>`)}`;
+  }
+
+  /** With no room picked: the floor itself. */
+  private floorCard(ctx: HomeMapEditorContext, floor: HomeMapFloor): TemplateResult {
+    const lights = homeMapLightsOn(floor, ctx.toggles.live ? ctx.hass?.states : undefined);
+    return html`${hmeCard("Floor", html`
+        ${hmeRow("Name", hmeText({ value: floor.name, label: "Floor name", placeholder: homeMapFloorName(floor), set: (v) => ctx.apply((d) => renameFloor(d, floor.id, v)) }))}
+        ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`)}
+      ${hmeCard("Arrange", html`<p class="hme-text">Pick a room on the plan or in the list to move it, turn it, or change its name, area and floor.</p>
+        <p class="hme-text dim">Drag a room to move it; it lines up with the walls of the rooms round it. Drag the round handle above it to turn it. Undo with ${homeMapUndoKey()}.</p>`)}`;
+  }
+}

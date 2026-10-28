@@ -11572,11 +11572,12 @@ export class WristAssistantPanel extends LitElement {
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       });
-      // The Home map, on `/home-map`: the home's map, its rooms and device
-      // pins, handed no watch either. Each edit saves at once.
+      // The Home map, on `/home-map`: the home's map editor, handed no watch
+      // either. Each edit is saved soon after it is made.
       case "home-map": return renderHomeMapView({
         hass: this.hass, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         capable: this.homeMap,
+        onHome: () => this.backToHome(undefined),
         onLoaded: () => this.requestUpdate(),
       });
     }

@@ -111,6 +111,31 @@ export function homeGapSegments(floor: HomeMapFloor): HomeSegment[] {
   return openingSegments(floor, isGap);
 }
 
+/** A sliding door or window as its two panes: each a little over half the
+ * opening wide, one from each end, set either side of the wall's middle
+ * line so they overlap in the middle as drawn on a builder's plan. */
+export function homeSlidingPanes(opening: Pick<HomeMapOpening, "a" | "b">, t: number): [HomeSegment, HomeSegment] {
+  const width = Math.max(Math.hypot(opening.b[0] - opening.a[0], opening.b[1] - opening.a[1]), 1e-9);
+  const ux = (opening.b[0] - opening.a[0]) / width;
+  const uy = (opening.b[1] - opening.a[1]) / width;
+  const off = t / 4;
+  const pane = width * 0.55;
+  const at = (s: number, side: number): HomePoint => [opening.a[0] + ux * s - uy * off * side, opening.a[1] + uy * s + ux * off * side];
+  return [
+    { a: at(0, 1), b: at(pane, 1), t: t / 4 },
+    { a: at(width - pane, -1), b: at(width, -1), t: t / 4 },
+  ];
+}
+
+/** Every sliding door and window on the floor, with the thickness of the
+ * wall it lies in. */
+export function homeSlidingOpenings(floor: HomeMapFloor): { opening: HomeMapOpening; t: number }[] {
+  return floor.rooms.flatMap((room) => {
+    const walls = homeWallsOf(room);
+    return room.openings.filter((o) => o.style === "sliding").map((opening) => ({ opening, t: walls.find((w) => onWallLine(opening, w))?.t ?? HOME_WALL_THICKNESS }));
+  });
+}
+
 // ── door swings ─────────────────────────────────────────────────────────
 
 /** A door drawn as on a builder's plan: its leaf standing open, square to

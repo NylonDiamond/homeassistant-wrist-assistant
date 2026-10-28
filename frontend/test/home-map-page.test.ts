@@ -1,14 +1,16 @@
-// The Home map page (app repo docs/home_map_plan_2026-10.md, "The panel",
-// step 5): its address among the whole home's screens, listed only with the
+// The Home map page (app repo docs/home_map_plan_2026-10.md, "The panel"):
+// its address among the whole home's screens, listed only with the
 // integration's `home_map`; the flat plan as every device draws it (walls cut
 // for doors and openings, windows in blue, pins coloured by what their
-// entity is doing); and the page's edits, each saved at once with the rev it
-// was read at, put on top of a newer map after a conflict, and said so when
-// that cannot be done.
+// entity is doing); and the map editor's shell with its Arrange and Shape
+// modes: the bar, the stage's presses and drags, the keys, the page's own
+// dialogs, and every edit made at once and saved soon after from the rev
+// it was read at, put on top of a newer map after a conflict, and said so
+// when that cannot be done.
 //
 // The element is made and driven directly, with Home Assistant stood in: its
-// views are read as text, a press on the plan is a stand-in event, and every
-// edit is a real save sent to the stand-in.
+// views are read as text, a press on the stage is a stand-in event on a
+// stand-in stage, and every edit is a real save sent to the stand-in.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +21,7 @@ import { HOME_PLAN_COLORS, homePinGlowRadius, homePinPaint, homePlan, homePlanVi
 import { HOME_MAP_EMPTY_TEXT, HOME_MAP_UPDATE_TEXT, WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
 import { HOME_MAP_PATH, isHomeMapRoute, renderHomeMapView } from "../src/home-map/hook.js";
 import { type HomeMapDocument, type HomeMapStates, applyHomeMapEdit } from "../src/home-map/model.js";
+import { renameRoom } from "../src/home-map/edit-ops.js";
 import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT } from "../src/home-map/save.js";
 import { forgetHomeMap, homeMapRead, setHomeMapCapable } from "../src/home-map/store.js";
 import { NO_ICONS } from "../src/watch-pages/editor-host.js";
@@ -29,7 +32,6 @@ const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocume
 const LIVING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000010";
 const KITCHEN = "7B1E0C2A-5D3F-4A8B-9C6D-000000000011";
 const READING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000100";
-const SIDE_DOOR = "7B1E0C2A-5D3F-4A8B-9C6D-000000000102";
 const PAGE_A = "C3A0E000-0000-4000-8000-0000000000AA";
 const PAGE_B = "C3A0E000-0000-4000-8000-0000000000BB";
 
@@ -65,12 +67,14 @@ describe("the Home map's address", () => {
     expect(isHomeMapRoute(undefined)).toBe(false);
   });
 
-  it("hands the element the home's map capability and the panel's symbols", async () => {
+  it("hands the element the home's map capability, the panel's symbols and the way Home", async () => {
     // The chunk is this module, already loaded by the import above.
-    const view = renderHomeMapView({ hass: {} as HassLike, narrow: false, icons: NO_ICONS, iconsTick: 3, capable: true, onLoaded: () => undefined });
+    const onHome = () => undefined;
+    const view = renderHomeMapView({ hass: {} as HassLike, narrow: false, icons: NO_ICONS, iconsTick: 3, capable: true, onHome, onLoaded: () => undefined });
     expect(flatten(view)).toContain("<wa-home-map-editor");
     expect(view.values).toContain(true);
     expect(view.values).toContain(NO_ICONS);
+    expect(view.values).toContain(onHome);
   });
 });
 
@@ -137,11 +141,11 @@ describe("the plan", () => {
   });
 });
 
-// ── the page ─────────────────────────────────────────────────────────────
+// ── the editor ───────────────────────────────────────────────────────────
 
 /** Home Assistant with the map stored at `rev`, the library's two pages,
- * two areas and a few states. `onSave` may refuse a save. */
-function fakeHass(start: { doc: HomeMapDocument | null; rev: number }, onSave?: (doc: HomeMapDocument, baseRev: number) => void) {
+ * two areas and a few states. */
+function fakeHass(start: { doc: HomeMapDocument | null; rev: number }) {
   let stored = start;
   const sent: Record<string, any>[] = [];
   const hass = {
@@ -155,7 +159,6 @@ function fakeHass(start: { doc: HomeMapDocument | null; rev: number }, onSave?: 
         sent.push(msg);
         if (msg.type === "wrist_assistant/home_map/get") return structuredClone(stored);
         if (msg.type === "wrist_assistant/home_map/save") {
-          onSave?.(msg.doc as HomeMapDocument, msg.base_rev as number);
           if (msg.base_rev !== stored.rev) throw refusal("conflict", `stored revision is ${stored.rev}, save was based on ${msg.base_rev}`);
           stored = { doc: msg.doc as HomeMapDocument, rev: stored.rev + 1 };
           return { rev: stored.rev };
@@ -186,13 +189,27 @@ function fakeHass(start: { doc: HomeMapDocument | null; rev: number }, onSave?: 
 }
 
 type Inside = {
-  read?: { doc: HomeMapDocument | null; rev: number };
-  selected?: { kind: string; id: string };
-  note?: { kind: string; text: string };
-  moving?: unknown;
+  selection?: { kind: string; roomId?: string; wall?: number; opening?: number };
+  dialog?: { kind: string; title: string; text?: string; done: (v: unknown) => void };
+  mode: string;
+  view?: { scale: number; ox: number; oy: number };
+  floorId?: string;
   willUpdate(changed: Map<string, unknown>): void;
-  onPlanDown(e: unknown): void;
 };
+
+/** A stand-in for the stage's `<svg>` at the page's top left, which
+ * keeps the listeners a drag adds. */
+function stageStandIn() {
+  const listeners = new Map<string, (e: unknown) => void>();
+  return {
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 600 }),
+    setPointerCapture: () => undefined,
+    releasePointerCapture: () => undefined,
+    addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, fn),
+    removeEventListener: (type: string) => listeners.delete(type),
+    fire: (type: string, e: unknown) => listeners.get(type)?.(e),
+  };
+}
 
 async function page(start: { doc: HomeMapDocument | null; rev: number } = { doc: fixture(), rev: 4 }, capable = true) {
   const ha = fakeHass(start);
@@ -202,42 +219,29 @@ async function page(start: { doc: HomeMapDocument | null; rev: number } = { doc:
   const inside = el as unknown as Inside;
   inside.willUpdate(new Map());
   await settle();
-  return { el, inside, ha, text: () => flatten(el.render()) };
-}
-
-/** A stand-in for the plan's `<svg>` with the identity as its screen
- * matrix, so a client point is a plan point in meters. */
-function planStandIn() {
-  const listeners = new Map<string, (e: unknown) => void>();
-  return {
-    getScreenCTM: () => ({ inverse: () => ({}) }),
-    setPointerCapture: () => undefined,
-    releasePointerCapture: () => undefined,
-    addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, fn),
-    removeEventListener: (type: string) => listeners.delete(type),
-    fire: (type: string, e: unknown) => listeners.get(type)?.(e),
+  // The stage's observer reports its size; the next draw fits the floor.
+  el.resizeStage(1000, 600);
+  inside.willUpdate(new Map());
+  const stage = stageStandIn();
+  /** The stage point over a plan point. */
+  const screen = (p: [number, number]) => el.context()!.toScreen(p);
+  const pointer = (p: [number, number], extra: Record<string, unknown> = {}) => {
+    const [x, y] = screen(p);
+    return { button: 0, buttons: 1, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y, currentTarget: stage, target: null, preventDefault: () => undefined, ...extra };
   };
-}
-
-/** A press on the plan, landing on a pin or a room (or nothing). */
-function press(svgEl: unknown, on: { pin?: string; room?: string }, x: number, y: number) {
-  const hit = (attr: string, id: string | undefined) => (id === undefined ? null : { getAttribute: (a: string) => (a === attr ? id : null) });
-  return {
-    button: 0, pointerId: 1, clientX: x, clientY: y, currentTarget: svgEl,
-    target: { closest: (sel: string) => (sel === "[data-pin]" ? hit("data-pin", on.pin) : hit("data-room", on.room)) },
-    preventDefault: () => undefined,
+  /** A press, an optional drag through plan points, and the let go. */
+  const press = (from: [number, number], through: [number, number][] = [], extra: Record<string, unknown> = {}) => {
+    el.onStageDown(pointer(from, extra) as unknown as PointerEvent);
+    for (const p of through) stage.fire("pointermove", pointer(p, extra));
+    stage.fire("pointerup", pointer(through.at(-1) ?? from, extra));
   };
+  const key = (k: string, extra: Record<string, unknown> = {}) => el.onKey({ key: k, preventDefault: () => undefined, composedPath: () => [el], ...extra } as unknown as KeyboardEvent);
+  return { el, inside, ha, stage, screen, pointer, press, key, text: () => flatten(el.render()) };
 }
 
-describe("the Home map page", () => {
+describe("the Home map editor", () => {
   beforeEach(() => {
     setHomeMapCapable(true);
-    (globalThis as { DOMPoint?: unknown }).DOMPoint ??= class {
-      constructor(readonly x: number, readonly y: number) {}
-      matrixTransform() {
-        return { x: this.x, y: this.y };
-      }
-    };
   });
   afterEach(() => {
     forgetHomeMap();
@@ -255,140 +259,189 @@ describe("the Home map page", () => {
     expect(text()).toContain(HOME_MAP_EMPTY_TEXT);
   });
 
-  it("draws the floor's plan live, with its names, its counts and a hint until something is picked", async () => {
-    const { ha, text } = await page();
+  it("draws the bar, the floor's layers and the plan with its names and sizes, live", async () => {
+    const { ha, text, inside } = await page();
     expect(ha.sent.map((m) => m.type)).toEqual(["wrist_assistant/home_map/get", "wrist_assistant/library/summary"]);
     const shown = text();
+    expect(shown).toContain("Home map");
+    expect(shown).toContain("BETA");
+    expect(shown).toContain("Ground floor");
+    expect(shown).toContain("2 rooms · 5 devices");
+    for (const tab of ["Arrange", "Shape", "Devices", "Style"]) expect(shown).toContain(`>${tab}</button>`);
+    expect(shown).toContain("Saved");
     expect(shown).toContain("Plan of Ground floor");
     expect(shown).toContain(">Living room</text>");
-    expect(shown).toContain("1 light on");
-    expect(shown).toContain("2 rooms, 5 pins");
-    expect(shown).toContain("Click a room to change it");
-    expect(shown).toContain("Add a pin");
-    // No floor tabs for a map of one floor.
-    expect(shown).not.toContain('role="tablist"');
+    expect(shown).toContain("6.0 × 5.0 m");
+    expect(shown).toContain("Draw a room by hand");
+    expect(shown).toContain("Find a room or device");
+    // Nothing picked: the floor's own card.
+    expect(shown).toContain("Pick a room on the plan");
+    // The view fits the floor in the stage.
+    expect(inside.view!.scale).toBeGreaterThan(50);
     // The read reaches the page editor's tiles.
     expect(homeMapRead(ha.hass, () => undefined)).toEqual({ doc: fixture(), rev: 4 });
   });
 
-  it("picks a room with a press, and shows its name, area and page", async () => {
-    const { inside, text } = await page();
-    inside.onPlanDown(press(planStandIn(), { room: KITCHEN }, 8, 2));
-    expect(inside.selected).toEqual({ kind: "room", id: KITCHEN });
+  it("switches modes, Devices and Style standing in for now", async () => {
+    const { el, inside, text } = await page();
+    el.setMode("shape");
+    expect(inside.mode).toBe("shape");
+    expect(text()).toContain("Walls and corners");
+    expect(text()).toContain("Scan check");
+    expect(text()).toContain("Snap to 90°");
+    el.setMode("devices");
+    expect(text()).toContain("Coming in the next update");
+    el.setMode("arrange");
+    expect(text()).toContain("Snap to walls");
+  });
+
+  it("picks a room with a press and shows its name, area, page, place, finish and things; a click on empty space clears it", async () => {
+    const { inside, press, text } = await page();
+    press([8, 2]);
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
     const shown = text();
-    expect(shown).toContain("<h4>Kitchen</h4>");
     expect(shown).toContain(">Den</option>");
-    expect(shown).toContain(">Evening</option>");
+    expect(shown).toContain(">Page: Evening</option>");
+    expect(shown).toContain("Auto: Tile");
+    expect(shown).toContain("Fridge");
+    expect(shown).toContain("Turn 90°");
     expect(shown).toContain("Delete room");
-    inside.onPlanDown(press(planStandIn(), {}, 20, 20));
-    expect(inside.selected).toBeUndefined();
+    expect(shown).toContain("4.00 m");
+    press([20, 20]);
+    expect(inside.selection).toBeUndefined();
   });
 
-  it("moves a dragged pin and saves it, made from the rev it read; a press that hardly moves picks it", async () => {
-    const { inside, ha, text } = await page();
-    const plan = planStandIn();
-    inside.onPlanDown(press(plan, { pin: READING }, 1, 1));
-    plan.fire("pointerup", { pointerId: 1, clientX: 1, clientY: 1 });
-    expect(inside.selected).toEqual({ kind: "pin", id: READING });
+  it("drags a room, snapping to its neighbour's wall with a guide, and saves once on the drop", async () => {
+    const { el, ha, press, stage, pointer, text } = await page();
+    // Press on the kitchen and drag it 12 cm right and 10 cm down, a step at
+    // a time: its top wall snaps back in line with the living room's.
+    el.onStageDown(pointer([8, 2]) as unknown as PointerEvent);
+    stage.fire("pointermove", pointer([8.05, 2.05]));
+    stage.fire("pointermove", pointer([8.12, 2.1]));
+    expect(text()).toContain("Lined up with Living room wall");
     expect(ha.saves()).toHaveLength(0);
-    expect(text()).toContain("<h4>Reading lamp</h4>");
-    expect(text()).toContain("light.reading_lamp");
-
-    inside.onPlanDown(press(plan, { pin: READING }, 1, 1));
-    plan.fire("pointermove", { pointerId: 1, clientX: 8, clientY: 2 });
-    const moving = inside.moving as { pinId: string; at: [number, number] };
-    expect(moving.pinId).toBe(READING);
-    expect(moving.at[0]).toBeCloseTo(7.8, 6);
-    expect(moving.at[1]).toBeCloseTo(4.1, 6);
-    plan.fire("pointerup", { pointerId: 1, clientX: 8, clientY: 2 });
-    await settle();
-    const [save] = ha.saves();
-    expect(save!.base_rev).toBe(4);
-    const pin = (save!.doc as HomeMapDocument).floors[0]!.pins[0]!;
-    expect(pin).toEqual({ id: READING, entityId: "light.reading_lamp", roomId: KITCHEN, at: [7.8, 4.1, 1.5] });
-    expect(inside.read?.rev).toBe(5);
-    expect(inside.moving).toBeUndefined();
-    expect(homeMapRead(ha.hass, () => undefined)?.rev).toBe(5);
-  });
-
-  it("adds a pin for an entity in the room picked, and removes one", async () => {
-    const { el, inside, ha } = await page();
-    inside.onPlanDown(press(planStandIn(), { room: KITCHEN }, 8, 2));
-    expect(await el.addPin("switch.fan")).toBe(true);
-    const added = ha.now().doc!.floors[0]!.pins.at(-1)!;
-    expect(added).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN, at: [8, 2.5, 1.2] });
-    expect(added.id).toMatch(/^[0-9A-F-]{36}$/);
-    expect(inside.selected).toEqual({ kind: "pin", id: added.id });
-    expect(await el.removePin(SIDE_DOOR)).toBe(true);
-    expect(ha.now().doc!.floors[0]!.pins.map((p) => p.entityId)).toEqual(["light.reading_lamp", "light.ceiling", "light.pendants", "climate.thermostat", "switch.fan"]);
+    stage.fire("pointerup", pointer([8.12, 2.1]));
+    await el.session!.idle();
+    expect(ha.saves()).toHaveLength(1);
+    expect(ha.saves()[0]!.base_rev).toBe(4);
+    const kitchen = ha.now().doc!.floors[0]!.rooms[1]!;
+    expect(kitchen.outline[0]).toEqual([6.12, 0]);
+    // Alt moves it freely.
+    press([8, 2], [[8.6, 2]], { altKey: true });
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.rooms[1]!.outline[0]![0]).toBeCloseTo(6.7, 1);
     expect(ha.saves().map((s) => s.base_rev)).toEqual([4, 5]);
   });
 
-  it("adds a pin without crypto.randomUUID, which plain http does not have", async () => {
-    const { el, inside, ha } = await page();
-    const real = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
-    const secure = globalThis.crypto;
-    const plain = { getRandomValues: (a: Uint8Array<ArrayBuffer>) => secure.getRandomValues(a) };
-    Object.defineProperty(globalThis, "crypto", { value: plain, configurable: true });
-    try {
-      expect(await el.addPin("switch.fan")).toBe(true);
-    } finally {
-      Object.defineProperty(globalThis, "crypto", real);
-    }
-    const added = ha.now().doc!.floors[0]!.pins.at(-1)!;
-    expect(added.entityId).toBe("switch.fan");
-    expect(added.id).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
-    expect(inside.selected).toEqual({ kind: "pin", id: added.id });
+  it("undoes and redoes with the keys, never while a field has focus", async () => {
+    const { el, ha, key } = await page();
+    el.apply((d) => renameRoom(d, KITCHEN, "Galley"));
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
+    // Typing in a field: the field's own undo.
+    el.onKey({ key: "z", metaKey: true, preventDefault: () => undefined, composedPath: () => [{ tagName: "INPUT", type: "text" }] } as unknown as KeyboardEvent);
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
+    key("z", { metaKey: true });
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.rooms[1]!.name).toBe("Kitchen");
+    key("z", { metaKey: true, shiftKey: true });
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
+    expect(ha.saves()).toHaveLength(3);
   });
 
-  it("renames a room, sets its area and its page, and deletes it after asking", async () => {
-    const { el, inside, ha } = await page();
-    await el.renameRoom(KITCHEN, " Galley ");
-    await el.setRoomArea(KITCHEN, "den");
-    await el.setRoomPage(KITCHEN, PAGE_B);
-    expect(ha.now().doc!.floors[0]!.rooms[1]).toMatchObject({ name: "Galley", areaId: "den", pageId: PAGE_B });
-    await el.setRoomArea(KITCHEN, undefined);
-    expect("areaId" in ha.now().doc!.floors[0]!.rooms[1]!).toBe(false);
-    const asked: string[] = [];
-    vi.stubGlobal("window", { confirm: (q: string) => { asked.push(q); return false; } });
-    const doc = inside.read!.doc!;
-    expect(await el.deleteRoom(doc.floors[0]!.rooms[1]!, doc.floors[0]!)).toBe(false);
-    expect(asked[0]).toBe("Delete Galley from the map? Its 2 pins stay on the plan, in no room. Scan it again on the iPhone to bring it back.");
-    vi.stubGlobal("window", { confirm: () => true });
-    expect(await el.deleteRoom(doc.floors[0]!.rooms[1]!, doc.floors[0]!)).toBe(true);
+  it("asks before deleting a room in its own dialog, not the browser's", async () => {
+    const { el, inside, ha, press, key, text } = await page();
+    vi.stubGlobal("window", { confirm: () => { throw new Error("no browser dialogs"); } });
+    press([8, 2]);
+    key("Delete");
+    expect(inside.dialog?.kind).toBe("confirm");
+    expect(inside.dialog?.title).toBe("Delete Kitchen?");
+    expect(inside.dialog?.text).toContain("Its 2 devices come off the map too.");
+    expect(text()).toContain('class="hme-dialog"');
+    // Keys belong to the dialog while it is open.
+    key("z", { metaKey: true });
+    inside.dialog!.done(false);
+    await settle();
+    expect(ha.saves()).toHaveLength(0);
+    key("Delete");
+    inside.dialog!.done(true);
+    await settle();
+    await el.session!.idle();
     expect(ha.now().doc!.floors[0]!.rooms.map((r) => r.id)).toEqual([LIVING]);
-    expect(ha.saves()).toHaveLength(5);
+    expect(inside.selection).toBeUndefined();
   });
 
-  it("puts an edit on top of a map the iPhone saved meanwhile, and says so", async () => {
-    const { el, inside, ha, text } = await page();
+  it("puts an edit on top of a map another device saved meanwhile, and says so", async () => {
+    const { el, ha, text } = await page();
     ha.elsewhere((d) => applyHomeMapEdit(d, { kind: "renameRoom", roomId: LIVING, name: "Lounge" })!);
-    expect(await el.renameRoom(KITCHEN, "Galley")).toBe(true);
+    expect(el.apply((d) => renameRoom(d, KITCHEN, "Galley"))).toBe(true);
+    await el.session!.idle();
     expect(ha.saves().map((s) => s.base_rev)).toEqual([4, 5]);
     expect(ha.now().doc!.floors[0]!.rooms.map((r) => r.name)).toEqual(["Lounge", "Galley"]);
-    expect(inside.note).toEqual({ kind: "warn", text: HOME_MAP_MERGED_TEXT });
     expect(text()).toContain(HOME_MAP_MERGED_TEXT);
+    expect(el.session!.doc!.floors[0]!.rooms[0]!.name).toBe("Lounge");
+    // Undo would lose the other device's change, so it is not offered.
+    expect(el.context()!.canUndo).toBe(false);
   });
 
   it("says so, and shows the map as saved elsewhere, when the edit no longer fits it", async () => {
-    const { el, inside, ha } = await page();
+    const { el, ha, text } = await page();
     ha.elsewhere((d) => applyHomeMapEdit(d, { kind: "deleteRoom", roomId: KITCHEN })!);
-    expect(await el.renameRoom(KITCHEN, "Galley")).toBe(false);
-    expect(inside.note).toEqual({ kind: "err", text: HOME_MAP_GONE_TEXT });
-    expect(inside.read?.rev).toBe(5);
-    expect(inside.read?.doc?.floors[0]!.rooms).toHaveLength(1);
+    expect(el.apply((d) => renameRoom(d, KITCHEN, "Galley"))).toBe(true);
+    await el.session!.idle();
+    expect(text()).toContain(HOME_MAP_GONE_TEXT);
+    expect(text()).toContain("Not saved");
+    expect(el.session!.doc!.floors[0]!.rooms).toHaveLength(1);
     expect(ha.saves()).toHaveLength(1);
   });
 
-  it("shows a tab per floor and switches between them", async () => {
+  it("shows each floor in the picker and switches between them", async () => {
     const doc = fixture();
     const upstairs = { id: "7B1E0C2A-5D3F-4A8B-9C6D-000000000002", name: "Upstairs", story: 1, rooms: [{ ...doc.floors[0]!.rooms[1]!, id: "7B1E0C2A-5D3F-4A8B-9C6D-000000000020", name: "Bedroom" }], pins: [] };
     const { el, text } = await page({ doc: { v: 1, floors: [...doc.floors, upstairs] }, rev: 2 });
-    expect(text()).toContain('role="tablist"');
-    expect(text()).toContain(">Upstairs</button>");
-    expect(text()).toContain("Plan of Ground floor");
-    (el as unknown as { floorId: string }).floorId = upstairs.id;
+    expect(text()).toContain("▸ Upstairs");
+    (el as unknown as { floorMenu: boolean }).floorMenu = true;
+    expect(text()).toContain("Add a floor");
+    el.setFloor(upstairs.id);
     expect(text()).toContain("Plan of Upstairs");
     expect(text()).toContain(">Bedroom</text>");
+  });
+
+  it("picks a wall in Shape, puts a door in it with D and a click, and Escape drops a tool", async () => {
+    const { el, inside, ha, press, key, text } = await page();
+    el.setMode("shape");
+    press([8, 0.03]);
+    expect(inside.selection).toEqual({ kind: "wall", roomId: KITCHEN, wall: 0 });
+    expect(text()).toContain("Kitchen, top wall");
+    expect(text()).toContain("Window here");
+    key("w");
+    expect(text()).toContain("Click where the wall starts");
+    key("Escape");
+    expect(text()).not.toContain("Click where the wall starts");
+    key("d");
+    expect(text()).toContain("Click a wall to put a door in it");
+    press([8, 4.98]);
+    await el.session!.idle();
+    const kitchen = ha.now().doc!.floors[0]!.rooms[1]!;
+    expect(kitchen.openings).toHaveLength(1);
+    expect(kitchen.openings[0]).toMatchObject({ kind: "door", z0: 0, z1: 2 });
+    expect(inside.selection).toEqual({ kind: "opening", roomId: KITCHEN, opening: 0 });
+    expect(text()).toContain("Sliding door");
+    expect(text()).toContain("Remove door");
+  });
+
+  it("pans a drag on empty space and zooms with the keys and the wheel", async () => {
+    const { el, inside, press, key } = await page();
+    const before = { ...inside.view! };
+    press([-3, -1], [[-2, -1]]);
+    expect(inside.view!.ox).toBeCloseTo(before.ox + before.scale, 3);
+    key("+");
+    expect(inside.view!.scale).toBeCloseTo(before.scale * 1.25, 3);
+    el.onWheel({ deltaX: 0, deltaY: -100, deltaMode: 0, ctrlKey: true, metaKey: false, clientX: 500, clientY: 300, currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0 }) }, preventDefault: () => undefined } as unknown as WheelEvent);
+    expect(inside.view!.scale).toBeGreaterThan(before.scale * 1.25);
+    key("0");
+    expect(inside.view!.scale).toBeCloseTo(before.scale, 3);
   });
 });

@@ -5,8 +5,9 @@
 // The map is the home's, shared by every device and person, so the address
 // names no device: `/wrist-assistant/home-map`, and anything after it is
 // ignored. It is one of the whole home's screens ("On every device"), shown
-// only once the integration lists `home_map` (`store.ts`). Every edit saves
-// at once, so the page keeps no draft for the panel's leave guards. Only
+// only once the integration lists `home_map` (`store.ts`). Every edit is
+// saved a moment after it is made, so the page keeps no draft for the
+// panel's leave guards. Only
 // this file is in the panel's first download; the page arrives the first
 // time the route is opened.
 
@@ -48,6 +49,8 @@ export interface HomeMapViewInput {
   /** Whether the integration lists `home_map`. Without it the page says to
    * update the integration and reads nothing. */
   capable: boolean;
+  /** The editor bar's ‹ Home. */
+  onHome?: () => void;
   onLoaded: () => void;
 }
 
@@ -59,7 +62,7 @@ export function renderHomeMapView(input: HomeMapViewInput): TemplateResult {
   if (!ready && !loadFailed) void loadHomeMapEditor().then(input.onLoaded, input.onLoaded);
   return ready
     ? html`<wa-home-map-editor .hass=${input.hass} ?narrow=${input.narrow} .icons=${input.icons} .iconsTick=${input.iconsTick}
-        .capable=${input.capable}></wa-home-map-editor>`
+        .capable=${input.capable} .onHome=${input.onHome}></wa-home-map-editor>`
     : html`<div class="wp-loading">
         ${loadFailed ? html`<span>The Home map page did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
       </div>`;

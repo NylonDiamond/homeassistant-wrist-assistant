@@ -2,8 +2,8 @@
 // a document and returns a new one with the change made, never changing the
 // one it was given, or undefined when the change no longer fits (its room,
 // pin or opening is gone, or a value the store would refuse). Nothing here
-// draws or touches the page; the editor (`home-map-editor.ts`) calls these
-// and saves the result.
+// draws or touches the page; the editor's modes (`mode-*.ts`) hand these to
+// the shell (`home-map-editor.ts`), which makes and saves them.
 //
 // The editor has four modes, each with its own edits:
 //

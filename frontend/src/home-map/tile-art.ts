@@ -9,8 +9,10 @@
 //   each light that is on kept inside its room,
 //   the doorways' thresholds and the doors' dashed swings, the furniture
 //   from above with a soft shadow, the walls near white with a dark edge,
-//   blue window panes, the doors' leaves standing open, and the room names
-//   on dark pills.
+//   blue window panes, the doors' leaves standing open (a sliding door or
+//   window as two offset panes and no swing), and the room names on dark
+//   pills. The map editor's stage draws this look at a fixed fit (`frame`)
+//   so it can pan and zoom it.
 // - night, warm, lines, clay, blueprint: the floor as a small model turned
 //   (`homeMapTurn`) and tipped back 50 degrees. The far outside walls stand
 //   full height so the rooms have a back, the walls between rooms are cut to
@@ -66,6 +68,8 @@ import {
   homeRoomDirection,
   homeRoomReach,
   homeRoomUnder,
+  homeSlidingOpenings,
+  homeSlidingPanes,
   homeWallSegments,
   homeWallsOf,
   homeWindowSegments,
@@ -125,6 +129,11 @@ export interface HomeTileArtOptions {
   icons?: IconProvider | undefined;
   /** The blueprint's sizes in meters, or in feet and inches. */
   metric?: boolean;
+  /** A fixed fit for the flat looks in place of fitting the floor to the
+   * box: `scale` units per meter, the plan's 0, 0 at `ox`, `oy`. The map
+   * editor's stage draws with it, so a room dragged across the plan does
+   * not move every other one with a new fit. The model looks ignore it. */
+  frame?: { scale: number; ox: number; oy: number };
 }
 
 // ── colours ─────────────────────────────────────────────────────────────
@@ -521,7 +530,7 @@ export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
   // Only the glass pins draw icons, so only they depend on the provider;
   // those drawings are not kept.
   const icons = o.devices === "all" ? o.icons : undefined;
-  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric]);
+  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame]);
   let byStates = memo.get(o.floor);
   if (byStates === undefined) memo.set(o.floor, (byStates = new WeakMap()));
   const statesKey = (o.states ?? NO_STATES) as object;
@@ -541,7 +550,9 @@ function draw(o: HomeTileArtOptions): SVGTemplateResult {
   const model = HOME_TILE_MODEL_LOOKS.includes(o.look);
   const turn = (Math.max(-180, Math.min(180, Math.round(o.turn ?? HOME_TILE_DEFAULT_TURN))) * Math.PI) / 180;
   const tallest = floor.rooms.reduce((m, r) => Math.max(m, tallWall(r)), LOW_WALL);
-  const P = model ? tippedProjection(outline, turn, tallest, o.width, o.height) : flatProjection(outline, o.width, o.height);
+  const P = model ? tippedProjection(outline, turn, tallest, o.width, o.height)
+    : o.frame !== undefined ? { scale: o.frame.scale, ox: o.frame.ox, oy: o.frame.oy, turn: 0, squash: 1, lift: 0 }
+    : flatProjection(outline, o.width, o.height);
   if (P === undefined || floor.rooms.length === 0) return svg`<g class="hmt" data-look=${o.look}></g>`;
   const defs = new Defs();
   const lights = lightsOf(floor, o.states);
@@ -674,9 +685,21 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
     return wallLine(s, PLAN.wallEdge, w + Math.min(Math.max(w * 0.3, 0.8), 2), "square");
   })}</g>`);
   out.push(svg`<g>${walls.map((s) => wallLine(s, PLAN.wallFace, Math.max(len(s.t), 1.5), "square"))}</g>`);
-  // Windows: a pane of glass across the wall with its line of light.
+  // Windows: a pane of glass across the wall with its line of light; a
+  // sliding one draws its two panes instead of the one line.
+  const sliding = homeSlidingOpenings(floor);
+  const slidingWindow = (s: HomeSegment) => sliding.some(({ opening: o }) => o.kind === "window" && o.a[0] === s.a[0] && o.a[1] === s.a[1] && o.b[0] === s.b[0] && o.b[1] === s.b[1]);
   for (const s of homeWindowSegments(floor)) {
-    out.push(wallLine(s, "rgba(143,201,247,0.25)", Math.max(len(s.t), 1.5), "butt"), wallLine(s, PLAN.window, Math.max(len(s.t) * 0.25, 1), "butt"));
+    out.push(wallLine(s, "rgba(143,201,247,0.25)", Math.max(len(s.t), 1.5), "butt"));
+    if (!slidingWindow(s)) out.push(wallLine(s, PLAN.window, Math.max(len(s.t) * 0.25, 1), "butt"));
+  }
+  // Sliding doors and windows: two offset panes, no swing.
+  for (const { opening, t } of sliding) {
+    for (const pane of homeSlidingPanes(opening, t)) {
+      const w = Math.max(len(pane.t), 1);
+      if (opening.kind === "window") out.push(wallLine(pane, PLAN.window, w, "butt"));
+      else out.push(wallLine(pane, PLAN.wallEdge, w + 1.2, "butt"), wallLine(pane, PLAN.wallFace, w, "butt"));
+    }
   }
   // The doors' leaves, standing open.
   for (const door of doors) {
