@@ -3,7 +3,9 @@
 // filled with a dark warm colour; walls as lines along it with gaps for
 // doors and openings and a light blue line for windows; furniture as muted
 // rounded boxes seen from above; pins as round buttons, a light that is on
-// yellow with a soft glow on the floor sized by its brightness, a lock green
+// yellow with a soft glow on the floor sized by its brightness (kept inside
+// its room, the walls stopping it, unless the pin lets it spill past them
+// with `glowSpill`; a light in no room is never stopped), a lock green
 // when locked and orange when not, any other kind in its tile colour, and an
 // entity that is gone gray. Room names sit in the middle of each room when
 // the whole floor shows.
@@ -29,6 +31,8 @@ import {
   homeMapBounds,
   homeMapObjectsShown,
   homeMapPinLook,
+  homeMapPinRoom,
+  homeMapRoomAt,
   homeMapRoomCenter,
   homeMapRoomName,
   sameHomeMapId,
@@ -219,13 +223,31 @@ function pinAt(pin: HomeMapPin, options: HomePlanOptions): HomePoint {
   return moving !== undefined && sameHomeMapId(moving.pinId, pin.id) ? moving.at : [pin.at[0], pin.at[1]];
 }
 
+/** The room whose walls stop a pin's glow: its own room (the one it names,
+ * else the one it stands in, or while it is dragged the one under it), none
+ * when the pin lets its glow spill past the walls or stands in no room. */
+function glowRoom(floor: HomeMapFloor, pin: HomeMapPin, options: HomePlanOptions): HomeMapRoom | undefined {
+  if (pin.glowSpill === true) return undefined;
+  const moving = options.moving;
+  const room = moving !== undefined && sameHomeMapId(moving.pinId, pin.id) ? homeMapRoomAt(floor, moving.at) : homeMapPinRoom(floor, pin);
+  return room !== undefined && room.outline.length >= 3 ? room : undefined;
+}
+
 function glows(floor: HomeMapFloor, options: HomePlanOptions): SVGTemplateResult[] {
-  return floor.pins.flatMap((pin) => {
+  const clips = new Map<string, SVGTemplateResult>();
+  const pools = floor.pins.flatMap((pin) => {
     const paint = homePinPaint(pin.entityId, options.states);
     if (paint.glow === undefined) return [];
     const [x, y] = pinAt(pin, options);
-    return [svg`<circle class="hm-glow" cx=${r3(x)} cy=${r3(y)} r=${r3(homePinGlowRadius(paint.glow))} fill="url(#wa-hm-glow)" pointer-events="none" />`];
+    const circle = svg`<circle class="hm-glow" cx=${r3(x)} cy=${r3(y)} r=${r3(homePinGlowRadius(paint.glow))} fill="url(#wa-hm-glow)" pointer-events="none" />`;
+    const room = glowRoom(floor, pin, options);
+    if (room === undefined) return [circle];
+    // Kept inside its room: the room's walls stop it.
+    const id = `wa-hm-pool-${room.id}`;
+    if (!clips.has(id)) clips.set(id, svg`<clipPath id=${id}><polygon points=${points(room.outline)} /></clipPath>`);
+    return [svg`<g clip-path=${`url(#${id})`}>${circle}</g>`];
   });
+  return clips.size === 0 ? pools : [svg`<defs>${[...clips.values()]}</defs>`, ...pools];
 }
 
 function pinButton(pin: HomeMapPin, options: HomePlanOptions, r: number): SVGTemplateResult {

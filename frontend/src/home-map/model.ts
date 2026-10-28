@@ -18,8 +18,8 @@
 // editor's own edits are in `edit-ops.ts`.
 //
 // The editor's keys (the home style, a room's finish, a hidden object, an
-// opening's style, a pin's name, icon, reading, glow, glow colour, tap and
-// page) are all optional, and a default is never stored: the key is left
+// opening's style, a pin's name, icon, reading, glow, glow colour, glow
+// spill, tap and page) are all optional, and a default is never stored: the key is left
 // out, so a map written before them reads the same.
 
 /** A point on the plan: x, y. */
@@ -113,6 +113,10 @@ export interface HomeMapPin {
   glow?: number;
   /** `warm` or `#RRGGBB` in either case; absent follows the light. */
   glowColor?: string;
+  /** The pool of light spreads past the walls into the next rooms. Only
+   * ever true; absent, the pin's room's walls stop it (a pin in no room is
+   * never stopped). */
+  glowSpill?: true;
   tap?: HomeMapPinTap;
   /** Only with `tap` page, which needs it. */
   pageId?: string;
@@ -395,7 +399,7 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
 }
 
 function checkPin(raw: unknown, path: string, ids: Ids, roomIds: ReadonlySet<string>): HomeMapPin {
-  const pin = object(raw, path, ["id", "entityId", "at"], ["roomId", "name", "icon", "reading", "glow", "glowColor", "tap", "pageId"]);
+  const pin = object(raw, path, ["id", "entityId", "at"], ["roomId", "name", "icon", "reading", "glow", "glowColor", "glowSpill", "tap", "pageId"]);
   const out: Partial<HomeMapPin> = { id: ids.take(pin.id, `${path}.id`) };
   if (!isHomeMapEntityId(pin.entityId)) fail(`${path}.entityId`, "must be an entity id, like light.reading_lamp");
   out.entityId = pin.entityId;
@@ -417,6 +421,8 @@ function checkPin(raw: unknown, path: string, ids: Ids, roomIds: ReadonlySet<str
     if (!isHomeMapGlowColor(pin.glowColor)) fail(`${path}.glowColor`, "must be warm or a colour like #FFB347");
     out.glowColor = pin.glowColor;
   }
+  // Staying in the room is the default, so a false glowSpill is left out.
+  if (Object.hasOwn(pin, "glowSpill") && bool(pin.glowSpill, `${path}.glowSpill`)) out.glowSpill = true;
   if (Object.hasOwn(pin, "tap")) out.tap = oneOf(pin.tap, `${path}.tap`, HOME_MAP_PIN_TAPS);
   if (Object.hasOwn(pin, "pageId")) {
     if (out.tap !== "page") fail(`${path}.pageId`, "is only for a pin whose tap is page");
@@ -739,6 +745,7 @@ export function orderedPin(pin: HomeMapPin): HomeMapPin {
   if (pin.reading !== undefined) out.reading = pin.reading;
   if (pin.glow !== undefined) out.glow = pin.glow;
   if (pin.glowColor !== undefined) out.glowColor = pin.glowColor;
+  if (pin.glowSpill === true) out.glowSpill = true;
   if (pin.tap !== undefined) out.tap = pin.tap;
   if (pin.pageId !== undefined) out.pageId = pin.pageId;
   return out;

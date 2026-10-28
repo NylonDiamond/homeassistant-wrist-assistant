@@ -46,25 +46,29 @@ export const HOME_MAP_MODE_LABELS: Readonly<Record<HomeMapModeId, string>> = {
 };
 
 /** What is picked. Indexes are a room's walls as `homeMapRoomWalls` numbers
- * them, its outline corners, openings and objects. */
+ * them, its outline corners, openings and objects. `pins` is two or more
+ * pins picked at once in Devices, in the order picked (one is `pin`). */
 export type HomeMapSelection =
   | { kind: "room"; roomId: string }
   | { kind: "wall"; roomId: string; wall: number }
   | { kind: "corner"; roomId: string; corner: number }
   | { kind: "opening"; roomId: string; opening: number }
   | { kind: "object"; roomId: string; object: number }
-  | { kind: "pin"; pinId: string };
+  | { kind: "pin"; pinId: string }
+  | { kind: "pins"; pinIds: string[] };
 
 /** The room a selection is in, if any. */
 export function homeMapSelectionRoom(sel: HomeMapSelection | undefined): string | undefined {
-  return sel === undefined || sel.kind === "pin" ? undefined : sel.roomId;
+  return sel === undefined || sel.kind === "pin" || sel.kind === "pins" ? undefined : sel.roomId;
 }
 
-/** Whether what a selection names is still on the floor. */
+/** Whether what a selection names is still on the floor: for several pins,
+ * every one of them. */
 export function homeMapSelectionThere(floor: HomeMapFloor | undefined, sel: HomeMapSelection | undefined): boolean {
   if (sel === undefined) return true;
   if (floor === undefined) return false;
   if (sel.kind === "pin") return floor.pins.some((p) => sameHomeMapId(p.id, sel.pinId));
+  if (sel.kind === "pins") return sel.pinIds.every((id) => floor.pins.some((p) => sameHomeMapId(p.id, id)));
   const room = floor.rooms.find((r) => sameHomeMapId(r.id, sel.roomId));
   if (room === undefined) return false;
   switch (sel.kind) {

@@ -44,8 +44,9 @@ so a writer that drifts from it hears so at once::
                                          "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
                            "name"?, "icon"?, "reading"?: "none" | "name",
-                           "glow"?, "glowColor"?, "tap"?: "toggle" |
-                           "details" | "page" | "none", "pageId"?}]}]}
+                           "glow"?, "glowColor"?, "glowSpill"?: true,
+                           "tap"?: "toggle" | "details" | "page" |
+                           "none", "pageId"?}]}]}
 
 A pin's ``roomId``, when it has one, names a room of the same floor. Whether
 its ``entityId`` exists is not checked: a pin whose entity the home no
@@ -69,7 +70,10 @@ door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
 characters) and ``icon`` (one of ``PIN_ICONS``) stand in for the entity's
 own; ``reading`` shows the pin's name in its pill (``name``) or no pill
 (``none``); ``glow`` is a light's pool of light in meters (0.2 to 10) and
-``glowColor`` ``warm`` or ``#RRGGBB`` in either case; ``tap`` is what a tap
+``glowColor`` ``warm`` or ``#RRGGBB`` in either case; the pool stays inside
+the pin's room, its walls stopping it, unless ``glowSpill`` lets it spread
+past them into the next rooms (a false ``glowSpill`` is dropped, and a pin
+in no room is never stopped); ``tap`` is what a tap
 on the pin does, and ``pageId``, the page it opens, goes with ``tap`` page
 and only with it.
 
@@ -414,7 +418,7 @@ def _pin(raw: Any, path: str, ids: _Ids, room_ids: set[str]) -> dict[str, Any]:
         raw,
         path,
         ("id", "entityId", "at"),
-        ("roomId", "name", "icon", "reading", "glow", "glowColor", "tap", "pageId"),
+        ("roomId", "name", "icon", "reading", "glow", "glowColor", "glowSpill", "tap", "pageId"),
     )
     checked: dict[str, Any] = {"id": ids.take(pin["id"], f"{path}.id")}
     entity_id = pin["entityId"]
@@ -443,6 +447,9 @@ def _pin(raw: Any, path: str, ids: _Ids, room_ids: set[str]) -> dict[str, Any]:
         if not isinstance(color, str) or (color != "warm" and not _HEX_COLOR_RE.fullmatch(color)):
             _fail(f"{path}.glowColor", "must be warm or a colour like #FFB347")
         checked["glowColor"] = color
+    # Staying in the room is the default, so a false glowSpill is left out.
+    if "glowSpill" in pin and _bool(pin["glowSpill"], f"{path}.glowSpill"):
+        checked["glowSpill"] = True
     tap = None
     if "tap" in pin:
         tap = checked["tap"] = _one_of(pin["tap"], f"{path}.tap", PIN_TAPS)

@@ -33,9 +33,11 @@ export function hmeHint(text: unknown): TemplateResult {
  * A number field: shows `value` with `digits` decimals and a unit after
  * it; saves on leaving it or Enter, and goes back to the value when what
  * was typed is not a number, lies outside `min` to `max` or is unchanged.
+ * An undefined value (several things picked that differ) shows empty, with
+ * Mixed in its place, until a number is typed.
  */
 export function hmeNumber(o: {
-  value: number;
+  value: number | undefined;
   unit?: string;
   digits?: number;
   min?: number;
@@ -46,7 +48,7 @@ export function hmeNumber(o: {
   width?: string;
 }): TemplateResult {
   const digits = o.digits ?? 2;
-  const text = homeMapNumberText(o.value, digits);
+  const text = o.value === undefined ? "" : homeMapNumberText(o.value, digits);
   const commit = (input: HTMLInputElement) => {
     const v = homeMapParseNumber(input.value);
     if (v === undefined || (o.min !== undefined && v < o.min) || (o.max !== undefined && v > o.max) || homeMapNumberText(v, digits) === text) {
@@ -57,6 +59,7 @@ export function hmeNumber(o: {
   };
   return html`<span class="hme-in hme-num" style=${o.width === undefined ? nothing : `flex:0 0 ${o.width}`}>
     <input type="text" inputmode="decimal" aria-label=${o.label} .value=${live(text)} ?disabled=${o.disabled === true}
+      placeholder=${o.value === undefined ? "Mixed" : ""}
       @change=${(e: Event) => commit(e.target as HTMLInputElement)}
       @keydown=${(e: KeyboardEvent) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();

@@ -229,6 +229,15 @@ export const editorStyles = css`
   }
   .hme-list-row:hover { background: var(--wa-hover); }
   .hme-list-row.on { background: var(--hme-sel-bg); color: var(--wa-ink); }
+  /* A device of several picked: its name picks it alone, × leaves it out. */
+  .hme-pick-row { cursor: default; padding-right: 2px; }
+  .hme-pick-row .hme-link { color: var(--wa-ink); text-align: left; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .hme-x {
+    flex: none; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--wa-faint);
+    font: inherit; font-size: 16px; line-height: 1; cursor: pointer;
+  }
+  .hme-x:hover { background: var(--wa-hover); color: var(--wa-ink); }
+  .hme-x:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
 
   /* ── the rail ─────────────────────────────────────────────────────── */
   .hme-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-faint); flex: none; }
@@ -305,8 +314,13 @@ export const editorStyles = css`
   .hme-r.top { align-items: flex-start; }
   .hme-r.top > .hme-l { padding-top: 6px; }
   .hme-w48 { flex: 0 0 52px; text-align: right; }
-  /* The panel's own slider (form-styles.ts), its fill from --p. */
+  /* The panel's own slider (form-styles.ts), its fill from --p. Mixed, for
+     several picked things that differ: no fill and an empty dashed knob
+     until it is moved. */
   .hme-range { flex: 1; min-width: 0; }
+  .hme-range.mixed::-webkit-slider-thumb { background: transparent; border: 2px dashed var(--wa-faint); box-shadow: none; }
+  .hme-range.mixed::-moz-range-thumb { background: transparent; border: 2px dashed var(--wa-faint); box-shadow: none; }
+  .hme-range.mixed::-moz-range-progress { background: transparent; }
 
   /* ── Devices ──────────────────────────────────────────────────────── */
   .hme-tray { gap: 6px; }

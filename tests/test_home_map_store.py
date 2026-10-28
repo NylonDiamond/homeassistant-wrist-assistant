@@ -17,8 +17,8 @@ in the contract, ids, entity ids, area ids, kinds, a pin's room), the floor,
 room and pin limits over the whole document, the 256 KiB limit, the
 optional keys, ids kept in their own case, the editor's keys (the home
 style with its defaults dropped, a room's finish, a hidden object, an
-opening's style, a pin's name, icon, reading, glow, glow colour, tap and
-page: each accepted, refused, rounded and kept in the contract's order), a
+opening's style, a pin's name, icon, reading, glow, glow colour, glow
+spill, tap and page: each accepted, refused, rounded and kept in the contract's order), a
 restart, an unreadable file never saved over, and unload.
 """
 
@@ -619,6 +619,7 @@ def _full_pin(doc) -> dict[str, Any]:
         {
             "pageId": PAGE,
             "tap": "page",
+            "glowSpill": True,
             "glowColor": "#ffB347",
             "glow": 1.704,
             "reading": "name",
@@ -639,7 +640,8 @@ def test_a_pins_editor_keys_in_order_and_rounded(env) -> None:
     checked = env.mod.check_document(doc)
     pin = checked["floors"][0]["pins"][0]
     assert _keys(pin) == [
-        "id", "entityId", "roomId", "at", "name", "icon", "reading", "glow", "glowColor", "tap", "pageId",
+        "id", "entityId", "roomId", "at", "name", "icon", "reading", "glow", "glowColor", "glowSpill", "tap",
+        "pageId",
     ]
     assert pin["glow"] == 1.7
     assert pin["glowColor"] == "#ffB347"  # kept in its own case
@@ -685,6 +687,8 @@ PIN_REFUSALS = [
     (_pin_set("glowColor", "#FFB34"), "doc.floors[0].pins[0].glowColor must be warm or a colour like #FFB347"),
     (_pin_set("glowColor", "orange"), "doc.floors[0].pins[0].glowColor must be warm or a colour like #FFB347"),
     (_pin_set("glowColor", "#GGB347"), "doc.floors[0].pins[0].glowColor must be warm or a colour like #FFB347"),
+    (_pin_set("glowSpill", "yes"), "doc.floors[0].pins[0].glowSpill must be true or false"),
+    (_pin_set("glowSpill", None), "doc.floors[0].pins[0].glowSpill must be true or false"),
     (_pin_set("tap", "open"), "doc.floors[0].pins[0].tap must be toggle, details, page or none"),
     (_pin_set("tap", "page"), "doc.floors[0].pins[0].pageId is missing"),
     (_pin_set("pageId", PAGE), "doc.floors[0].pins[0].pageId is only for a pin whose tap is page"),
@@ -696,6 +700,19 @@ def test_pin_key_refusals(env, mutate, message) -> None:
     doc = basic()
     mutate(doc)
     assert env.refused_doc(doc) == message
+
+
+def test_a_pins_glow_spill_is_kept_only_when_true(env) -> None:
+    doc = basic()
+    pin = _pin(doc)
+    pin["glowSpill"] = True
+    assert env.mod.check_document(doc)["floors"][0]["pins"][0]["glowSpill"] is True
+    # Staying in the room is the default, never stored.
+    pin["glowSpill"] = False
+    assert "glowSpill" not in env.mod.check_document(doc)["floors"][0]["pins"][0]
+    pin["glowSpell"] = True
+    del pin["glowSpill"]
+    assert env.refused_doc(doc) == "doc.floors[0].pins[0].glowSpell is not a key the home map has"
 
 
 def test_a_pins_page_goes_with_tap_page_only(env) -> None:

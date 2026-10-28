@@ -6,8 +6,8 @@
 //   floor laid in its material (boards, tiles, stone, carpet or a plain
 //   floor, by the room's finish or else its name or its furniture) with a
 //   gentle fall of light and a soft shade along its walls, a warm pool round
-//   each light that is on kept inside its room,
-//   the doorways' thresholds and the doors' dashed swings, the furniture
+//   each light that is on kept inside its room (unless its pin lets it
+//   spill past the walls, `glowSpill`), the doorways' thresholds and the doors' dashed swings, the furniture
 //   from above with a soft shadow, the walls near white with a dark edge,
 //   blue window panes, the doors' leaves standing open (a sliding door or
 //   window as two offset panes and no swing), and the room names on dark
@@ -40,8 +40,10 @@
 // (its reading, its name or none), and for a light the reach of its pool of
 // light (`glow`) and its colour (`glowColor`, a `#RRGGBB` tinting the pool,
 // the halo, the dot and in night and warm the wash up its room's walls;
-// warm and no colour draw the warm lamplight). A map without them draws as
-// before.
+// warm and no colour draw the warm lamplight). A pool stays inside the
+// light's room, the walls stopping it, unless `glowSpill` lets it spread
+// into the next rooms; a light in no room spreads freely in every look. A
+// map without them draws as before.
 //
 // It draws in the caller's own units (the tile's points on its face, CSS
 // pixels in a picture button) inside a box `width` by `height`, working out
@@ -526,6 +528,16 @@ function lightsOf(floor: HomeMapFloor, states: HomeMapStates | undefined): Light
   });
 }
 
+/** The room whose walls stop a light's pool of light, found by `roomOf`
+ * (the plan takes the pin's own room, the models the room it stands in, as
+ * the apps do). Undefined, so the pool spreads freely, when the pin lets it
+ * spill past the walls (`glowSpill`) or stands in no room. */
+function poolRoom(floor: HomeMapFloor, pin: HomeMapPin, roomOf: (floor: HomeMapFloor, pin: HomeMapPin) => HomeMapRoom | undefined): HomeMapRoom | undefined {
+  if (pin.glowSpill === true) return undefined;
+  const room = roomOf(floor, pin);
+  return room !== undefined && room.outline.length >= 3 ? room : undefined;
+}
+
 /** The rooms with a light on: each room a lit light pin stands in. */
 function litRoomsOf(floor: HomeMapFloor, lights: readonly Light[]): Set<string> {
   const out = new Set<string>();
@@ -659,15 +671,16 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
       <polygon points=${text} fill="none" stroke="rgba(0,0,0,0.1)" stroke-width=${r2(shade * 0.8)} /></g>`);
   }
 
-  // The glow on the floor round each lit light, kept inside its room.
+  // The glow on the floor round each lit light, kept inside its room unless
+  // the pin lets it spill past the walls (`poolRoom`).
   if (ctx.glow) {
     for (const light of ctx.lights) {
       if (!light.on) continue;
-      const room = homeMapPinRoom(floor, light.pin);
+      const room = poolRoom(floor, light.pin, homeMapPinRoom);
       const [x, y] = project(P, light.pin.at);
       const pool = glowFill(defs, "plan", POOL_STOPS.plan!, POOL_ALPHAS.plan, homeMapGlowHex(light.pin));
       const circle = svg`<circle class="hmt-pool" cx=${r2(x)} cy=${r2(y)} r=${r2(len(homeMapPinGlowRadius(light.pin, light.brightness)))} fill=${pool} />`;
-      out.push(room === undefined || room.outline.length < 3 ? circle : svg`<g clip-path=${defs.clip(roomPoints(ctx, room))}>${circle}</g>`);
+      out.push(room === undefined ? circle : svg`<g clip-path=${defs.clip(roomPoints(ctx, room))}>${circle}</g>`);
     }
   }
 
@@ -1013,18 +1026,19 @@ function drawModel(ctx: Ctx, style: ModelStyle): SVGTemplateResult[] {
     out.push(svg`<g class="hmt-shadows" opacity="0.22" filter=${defs.blur(Math.max(P.scale * 0.08, 1.5) / 2)}>${solids.map((s) => shadowOf(s, P))}</g>`);
   }
 
-  // Pools of light on the floor, each kept inside its room.
+  // Pools of light on the floor, each kept inside the room it stands in
+  // unless the pin lets it spill past the walls; a light in no room spreads
+  // freely.
   const pool = POOL_STOPS[style];
   if (ctx.glow && pool !== undefined) {
     for (const light of ctx.lights) {
       if (!light.on) continue;
-      const room = homeRoomUnder(floor, light.pin.at);
-      if (room === undefined) continue;
+      const room = poolRoom(floor, light.pin, (f, pin) => homeRoomUnder(f, pin.at));
       const fill = glowFill(defs, style, pool, POOL_ALPHAS[style], homeMapGlowHex(light.pin));
       // A light's own reach is its pool's radius as set; else a little wider
       // than the plan's, as the model's floor is seen at a slant.
       const radius = light.pin.glow !== undefined ? homeMapPinGlowRadius(light.pin, light.brightness) : homeGlowRadius(light.brightness) * 1.15;
-      out.push(svg`<g class="hmt-pool" clip-path=${defs.clip(roomPoints(ctx, room))} style=${style === "night" || style === "warm" ? "mix-blend-mode:screen" : nothing}>
+      out.push(svg`<g class="hmt-pool" clip-path=${room === undefined ? nothing : defs.clip(roomPoints(ctx, room))} style=${style === "night" || style === "warm" ? "mix-blend-mode:screen" : nothing}>
         <circle cx=${r3(light.pin.at[0])} cy=${r3(light.pin.at[1])} r=${r3(radius)} fill=${fill} transform=${affine(P)} /></g>`);
     }
   }

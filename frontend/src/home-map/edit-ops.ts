@@ -19,8 +19,9 @@
 //   ways through, and stairs. Then the scan check: rooms that overlap,
 //   corners a little off square, small gaps between rooms that should touch
 //   and rooms with no way into their neighbours, each with its fix.
-// - Devices: add, move, raise and remove pins, set what a pin shows and
-//   does, and place every device of an area into its room at once.
+// - Devices: add, move, raise and remove pins, one or several picked at
+//   once, set what a pin shows and does (on several pins as one edit),
+//   and place every device of an area into its room at once.
 // - Style: the home style every Home map tile starts with, and a tile's
 //   options as the tile rule reads them.
 //
@@ -2024,6 +2025,9 @@ export interface HomeMapPinFields {
   reading?: HomeMapPinReading | null;
   glow?: number | null;
   glowColor?: string | null;
+  /** True lets the pool of light past the walls; false or null keeps it in
+   * its room, the default, so the key is taken away. */
+  glowSpill?: boolean | null;
   tap?: HomeMapPinTap | null;
   pageId?: string | null;
 }
@@ -2032,9 +2036,9 @@ export interface HomeMapPinFields {
  * What a pin shows and does. A name is trimmed to 100 characters, and the
  * entity's own name (`friendlyName`) or a blank one is not stored. A glow is
  * kept within 0.2 to 10 m, a colour is `warm` or `#RRGGBB` (stored lower
- * case). A tap other than page drops the pin's page; tap page needs a page,
- * given here or already on the pin. Undefined for a value the store would
- * refuse.
+ * case), and a glow spill is only ever stored true. A tap other than page
+ * drops the pin's page; tap page needs a page, given here or already on the
+ * pin. Undefined for a value the store would refuse.
  */
 export function setPinFields(doc: HomeMapDocument, pinId: string, fields: HomeMapPinFields, friendlyName?: string): HomeMapDocument | undefined {
   return editPin(doc, pinId, (pin) => {
@@ -2064,6 +2068,11 @@ export function setPinFields(doc: HomeMapDocument, pinId: string, fields: HomeMa
       else if (isHomeMapGlowColor(fields.glowColor)) next.glowColor = fields.glowColor.toLowerCase();
       else return undefined;
     }
+    if (fields.glowSpill !== undefined) {
+      if (fields.glowSpill === true) next.glowSpill = true;
+      else if (fields.glowSpill === null || fields.glowSpill === false) delete next.glowSpill;
+      else return undefined;
+    }
     if (fields.pageId !== undefined) {
       if (fields.pageId === null) delete next.pageId;
       else if (isHomeMapId(fields.pageId)) next.pageId = fields.pageId;
@@ -2078,6 +2087,60 @@ export function setPinFields(doc: HomeMapDocument, pinId: string, fields: HomeMa
     else if (next.pageId === undefined) return undefined;
     return next;
   });
+}
+
+// Several picked pins at once, as one edit, so one undo takes the whole
+// change back and one save stores it. A pin the map no longer has is passed
+// over, so the same edit made on a newer map (`save.ts`) changes the rest;
+// with none of them left the edit no longer fits.
+
+/** The ids of `pinIds` the map still has, each once. */
+function pinsStill(doc: HomeMapDocument, pinIds: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const id of pinIds) {
+    const at = pinAt(doc, id);
+    if (at !== undefined && !out.some((x) => sameHomeMapId(x, at.pin.id))) out.push(at.pin.id);
+  }
+  return out;
+}
+
+/** Several pins moved by the same step, each from where it stands (its
+ * height stays) into the room it now stands in, none outside every room. */
+export function movePins(doc: HomeMapDocument, pinIds: readonly string[], dx: number, dy: number): HomeMapDocument | undefined {
+  if (!finite(dx, dy)) return undefined;
+  const ids = pinsStill(doc, pinIds);
+  if (ids.length === 0) return undefined;
+  let out = doc;
+  for (const id of ids) {
+    const pin = pinAt(out, id)!.pin;
+    out = movePin(out, id, [pin.at[0] + dx, pin.at[1] + dy]) ?? out;
+  }
+  return out;
+}
+
+/** The same fields on several pins (`setPinFields` on each, never a name,
+ * which is one pin's own). Undefined when any of them would refuse it, so
+ * the picked pins never end up half changed. */
+export function setPinsFields(doc: HomeMapDocument, pinIds: readonly string[], fields: Omit<HomeMapPinFields, "name">): HomeMapDocument | undefined {
+  const ids = pinsStill(doc, pinIds);
+  if (ids.length === 0) return undefined;
+  const { name: _name, ...shared } = fields as HomeMapPinFields;
+  let out = doc;
+  for (const id of ids) {
+    const next = setPinFields(out, id, shared);
+    if (next === undefined) return undefined;
+    out = next;
+  }
+  return out;
+}
+
+/** The map without several pins. */
+export function removePins(doc: HomeMapDocument, pinIds: readonly string[]): HomeMapDocument | undefined {
+  const ids = pinsStill(doc, pinIds);
+  if (ids.length === 0) return undefined;
+  let out = doc;
+  for (const id of ids) out = removePin(out, id) ?? out;
+  return out;
 }
 
 /** A device the home has, for `placeAllByArea`: its entity, its area, and
