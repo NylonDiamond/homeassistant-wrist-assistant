@@ -69,9 +69,9 @@ import type { SettingDevice } from "../watch-settings.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
-import type { HomeMapDocument } from "../home-map/model.js";
-import { HOME_TILE_LOOK_COLORS, HOME_TILE_MODEL_LOOKS, homePlan, homePlanViewBoxAttr } from "../home-map/draw.js";
-import { watchHomeMapDrawnFloor, watchHomeMapLook, watchHomeMapRoomOf, watchHomeMapTileTitle, watchHomeMapTileWords } from "./home-map-tile.js";
+import { type HomeMapDocument, homeMapLightsOn } from "../home-map/model.js";
+import { homeTileArt, homeTileGround, homeTileLightsColor, homeTilePlanRect, homeTileTitleColor } from "../home-map/tile-art.js";
+import { watchHomeMapArtOptions, watchHomeMapDrawnFloor, watchHomeMapRoomOf, watchHomeMapTileTitle, watchHomeMapTileWords } from "./home-map-tile.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
@@ -3337,13 +3337,18 @@ function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: 
 
 /**
  * A Home map tile (app repo docs/home_map_plan_2026-10.md, board 5): its
- * floor's flat plan, small, with a glow over each room with a light on and
- * a dot on each light that is on, and how many lights are on under it, on
- * the plan's dark ground on both devices (`home-map/draw.ts`). A tile that
- * shows one room (`homeMapRoomId`) draws that room alone, filling the tile,
- * and counts its lights only (`watchHomeMapDrawnFloor`). Before the map is
- * read, or when the map has no such floor, the house symbol stands in for
- * the plan and the line says which.
+ * floor drawn in the tile's look (`home-map/tile-art.ts`) over the look's
+ * ground, as the apps lay it out (`PhoneHomeMapTile`, `WatchHomeMapTile`):
+ * the picture inset 8 points at the sides and 26 above and below on a tile
+ * taller than 90 (`homeTilePlanRect`), the tile's title at its top left
+ * while it shows its label and is tall enough, and how many lights are on
+ * at its bottom left, in the look's own colours. The picture is drawn in
+ * the tile's points, so its names and lines keep the sizes the device
+ * gives them. A tile that shows one room (`homeMapRoomId`) draws that room
+ * alone, filling the tile, and counts its lights only
+ * (`watchHomeMapDrawnFloor`). Before the map is read, or when the map has no
+ * such floor, the house symbol stands in for the picture and the line says
+ * which.
  */
 function homeMapFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
   const radius = previewTileCornerRadius(input, cell.width, cell.height) * s;
@@ -3351,24 +3356,47 @@ function homeMapFace(tile: WatchPageTile, width: number, height: number, box: st
   const floor = watchHomeMapDrawnFloor(keyed, input.homeMap);
   const room = watchHomeMapRoomOf(keyed, floor);
   const words = watchHomeMapTileWords(floor, input.states, input.homeMap !== undefined);
+  const name = watchHomeMapTileTitle(keyed, input.homeMap);
   // The hover line leads with the tile's title (its label, else its room's
   // or floor's name).
-  const title = hint === undefined ? undefined : [watchHomeMapTileTitle(keyed, input.homeMap), ...hint.split(" · ")].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ");
+  const title = hint === undefined ? undefined : [name, ...hint.split(" · ")].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ");
   const side = Math.min(width, height);
-  const pad = Math.max(3, Math.min(8, side * 0.07)) * s;
-  // A short tile keeps the plan and drops the line.
+  const options = watchHomeMapArtOptions(keyed);
+  const look = options.look;
+  const phone = input.phone !== undefined;
+  // A short tile keeps the picture and drops the line.
   const showWords = height >= 34;
-  const look = watchHomeMapLook(keyed);
-  // The dollhouse and the model looks tip the plan back as the apps do; the
-  // walls do not stand up here, a picture of the look is enough.
-  const tilt = look === "dollhouse" || HOME_TILE_MODEL_LOOKS.includes(look) ? "transform:perspective(600px) rotateX(54deg) rotateZ(-28deg) scale(0.9)" : nothing;
-  const plan = floor === undefined
-    ? symbolMark(input.icons, "house.fill", Math.min(28, side * 0.42) * s, "#FFD9A0")
-    : html`<svg class="wp-hm-plan" data-look=${look} style=${tilt} viewBox=${homePlanViewBoxAttr(floor)} preserveAspectRatio="xMidYMid meet" aria-hidden="true">${homePlan(floor, { states: input.states, pins: "lit", roomGlow: true, look })}</svg>`;
-  return html`<div class="wp-tile wp-hm-face" data-home-map=${floor?.id ?? ""} data-home-map-room=${room?.id ?? nothing}
-    style=${`${box}border-radius:${radius}px;background:${HOME_TILE_LOOK_COLORS[look].ground};padding:${pad}px;gap:${pad * 0.6}px`} title=${title ?? nothing}>
-    <span class="wp-hm-plan-box">${plan}</span>
-    ${showWords ? html`<span class="wp-hm-words" style=${`font-size:${Math.max(7, Math.min(13, height * 0.12)) * s}px${look === "clay" ? ";color:#2A2724" : ""}`}>${words}</span>` : nothing}
+  if (floor === undefined || floor.rooms.length === 0) {
+    const pad = Math.max(3, Math.min(8, side * 0.07)) * s;
+    return html`<div class="wp-tile wp-hm-face wp-hm-empty" data-home-map=${floor?.id ?? ""} data-look=${look}
+      style=${`${box}border-radius:${radius}px;background:${homeTileGround(look, s)};padding:${pad}px;gap:${pad * 0.6}px`} title=${title ?? nothing}>
+      <span class="wp-hm-plan-box">${symbolMark(input.icons, "house.fill", Math.min(28, side * 0.42) * s, "#FFD9A0")}</span>
+      ${showWords ? html`<span class="wp-hm-words" style=${`font-size:${Math.max(7, Math.min(13, height * 0.12)) * s}px;color:${homeTileLightsColor(look, false)}`}>${words}</span>` : nothing}
+    </div>`;
+  }
+  const rect = homeTilePlanRect(width, height);
+  const art = homeTileArt({
+    floor,
+    states: input.states,
+    ...options,
+    // Only the iPhone's tile takes a tap on a light.
+    tapLights: options.tapLights && phone,
+    width: rect.width,
+    height: rect.height,
+    tileHeight: height,
+    icons: input.icons,
+  });
+  const lit = homeMapLightsOn(floor, input.states) > 0;
+  // The iPhone's words, or the watch's smaller ones. The title shows only
+  // where the picture leaves it room, on a tile taller than 90 points.
+  const inset = (phone ? 10 : 5) * s;
+  const showTitle = tileShowsLabel(tile) && height > 90;
+  return html`<div class="wp-tile wp-hm-face" data-home-map=${floor.id} data-home-map-room=${room?.id ?? nothing} data-look=${look}
+    style=${`${box}border-radius:${radius}px;background:${homeTileGround(look, s)}`} title=${title ?? nothing}>
+    <svg class="wp-hm-plan" data-look=${look} viewBox=${`0 0 ${rect.width} ${rect.height}`} aria-hidden="true"
+      style=${`left:${rect.x * s}px;top:${rect.y * s}px;width:${rect.width * s}px;height:${rect.height * s}px`}>${art}</svg>
+    ${showTitle ? html`<span class="wp-hm-title" style=${`left:${inset}px;top:${inset}px;right:${inset}px;font-size:${(phone ? 13 : 11) * s}px;color:${homeTileTitleColor(look)}`}>${name}</span>` : nothing}
+    ${showWords ? html`<span class="wp-hm-words" style=${`left:${inset}px;bottom:${inset}px;right:${inset}px;font-size:${(phone ? 12 : 10) * s}px;color:${homeTileLightsColor(look, lit)}`}>${words}</span>` : nothing}
   </div>`;
 }
 
@@ -4023,11 +4051,20 @@ export const watchPagePreviewStyles = css`
   .wp-tile.wp-phone-face { display: flex; align-items: center; justify-content: center; gap: 6%; }
   .wp-phone-face.web { flex-direction: column; gap: 3%; }
   .wp-phone-chart { position: absolute; inset: 0; display: block; }
-  /* A Home map tile: the floor's plan over the line that counts the lights. */
-  .wp-tile.wp-hm-face { display: flex; flex-direction: column; align-items: stretch; box-sizing: border-box; overflow: hidden; }
+  /* A Home map tile: its floor in its look, the title at the top left and
+     the line that counts the lights at the bottom left. Without a floor,
+     the house over the line. */
+  .wp-tile.wp-hm-face { box-sizing: border-box; overflow: hidden; }
+  .wp-tile.wp-hm-face.wp-hm-empty { display: flex; flex-direction: column; align-items: stretch; }
   .wp-hm-plan-box { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
-  .wp-hm-plan { display: block; width: 100%; height: 100%; }
-  .wp-hm-words { flex: none; text-align: center; color: #F2ECE4; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wp-hm-plan { position: absolute; display: block; overflow: visible; }
+  .wp-hm-title, .wp-hm-words {
+    position: absolute; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .wp-hm-title { font-weight: 600; }
+  .wp-hm-words { font-weight: 500; }
+  .wp-hm-empty .wp-hm-words { position: static; flex: none; text-align: center; font-weight: 600; }
   .wp-phone-field {
     box-sizing: border-box; flex: 1; min-width: 0; margin-left: 6%; display: flex; align-items: center;
     font-family: system-ui, sans-serif;

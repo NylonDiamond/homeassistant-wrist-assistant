@@ -1363,6 +1363,26 @@
           "type": "string",
           "required": false
         },
+        "homeMapTurn": {
+          "type": "int",
+          "required": false
+        },
+        "homeMapNames": {
+          "type": "bool",
+          "required": false
+        },
+        "homeMapDevices": {
+          "type": "string",
+          "required": false
+        },
+        "homeMapFurniture": {
+          "type": "bool",
+          "required": false
+        },
+        "homeMapGlow": {
+          "type": "bool",
+          "required": false
+        },
         "associatedMediaPlayerId": {
           "type": "entity",
           "required": false
@@ -2380,8 +2400,13 @@
       "arrange": "The tile's Arrangement (docs/page_editor_calm_plan_2026-10.md in the app repo): {v: 1, parts: {icon, name, state}}, each part optional with spot (tl tc tr ml mc mr bl bc br), dx and dy (-0.5 to 0.5 of the tile's width and height), scale (0.8 to 1.5) and hidden. Absent is Default. Only the centred layout draws it; an app before 3.2 ignores it. The math is in frontend/test/fixtures-arrange/README.md.",
       "iconPhotoId": "The upper case UUID of a photo in the page image store (kind icon) that One Look draws in the icon's place (docs/photo_tiles_plan_2026-10.md in the app repo). Absent means no photo. The tile keeps its icon, drawn while the photo is not downloaded and by an app that does not know the key.",
       "homeMapTapLights": "A Home map tile on the iPhone: true draws every light on its floor as a dot, a tap on a dot runs that light's own tap and a tap anywhere else opens the map. Absent or false: every tap opens the map. The watch ignores it.",
-      "homeMapLook": "A Home map tile's look, on both devices: \"dots\" (every light a dot, yellow when on and gray when off), \"dollhouse\" (the plan tipped back with its walls standing up), \"night\" (the plan almost black, only the lights' pools), or one of the model looks, the floor as a small model seen at an angle with its far outside walls full height and its furniture: \"warm\" (wood and lamplight at night), \"lines\" (thin glowing amber lines on black), \"clay\" (a white model in daylight) or \"blueprint\" (blue with pale lines, a measuring grid and, for one room, its sizes). Absent, \"glow\" or a look an app does not know: glow, a soft pool round each light that is on.",
-      "homeMapRoomId": "A Home map tile's one room, on both devices: the id of a room of the tile's floor (compared ignoring case). The tile then draws that room alone with the pins in it (the room a pin names when the floor has it, else the room under its point), so the room fills the tile, and its lights on are that room's. Absent, or a room the floor no longer has: the whole floor. Changing the tile's floor removes it."
+      "homeMapLook": "A Home map tile's look, on both devices: \"night\" (the floor as a small model at night, dark rooms and warm pools of light where a light is on), one of the other model looks, the floor turned and tipped back with its far outside walls full height and its furniture: \"warm\" (wood and lamplight at night), \"lines\" (thin glowing amber lines on black), \"clay\" (a white model in daylight) or \"blueprint\" (blue with pale lines, a measuring grid and, for one room, its sizes), or \"dots\" (a plain gray plan with every light a dot, yellow when on and gray when off). Absent, \"plan\" or a look an app does not know: plan, the floor seen from above like the iPhone's Flat view, each room's floor in its material with near white walls, windows, furniture and a warm pool round each light that is on; plan is never stored. The older \"glow\" reads as plan and \"dollhouse\" as warm.",
+      "homeMapRoomId": "A Home map tile's one room, on both devices: the id of a room of the tile's floor (compared ignoring case). The tile then draws that room alone with the pins in it (the room a pin names when the floor has it, else the room under its point), so the room fills the tile, and its lights on are that room's. Absent, or a room the floor no longer has: the whole floor. Changing the tile's floor removes it.",
+      "homeMapTurn": "A Home map tile's turn of its model, on both devices, in whole degrees from -180 to 180: how far the model looks (night, warm, lines, clay, blueprint) turn the floor before tipping it back. Absent is -28, as the iPhone's 3D view first frames a floor, and -28 is never stored. Out of range clamps. The plan and dots looks ignore it.",
+      "homeMapNames": "A Home map tile's room names, on both devices: false draws none. Absent or true: each room's name on a small dark pill, where the pill fits inside the room and the tile is taller than 90 points. Only false is stored.",
+      "homeMapDevices": "A Home map tile's pins, which of the map's devices it draws, on both devices: \"all\" (every pin as a small smoked glass pin with its icon, a light that is on amber, and its reading under it when it has one, a sensor's value with its unit or a thermostat's room temperature) or \"none\" (no pins and no dots). Absent, \"lights\" or a value an app does not know: lights, each light that is on as a glowing dot, and the lights that are off too with Tap lights on the iPhone or in the dots look. Lights is never stored.",
+      "homeMapFurniture": "A Home map tile's furniture, on both devices: false draws none. Absent or true: the scan's furniture, from above in the plan look and standing on the floor in the model looks. Only false is stored.",
+      "homeMapGlow": "A Home map tile's light, on both devices: false draws no pools of light on the floor, no warm tint over a lit room and no wash up its walls, leaving only the lights themselves. Absent or true: all of them. Only false is stored."
     }
   }
 }

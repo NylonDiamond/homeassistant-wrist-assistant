@@ -62,8 +62,9 @@ export interface PictureOption<T extends string> {
 
 /** How big each option is drawn: a tile picture, two of them side by side,
  * one large tile picture, a neutral sample (`valueSample`, `barSample`, `borderSample`), a small
- * chip (a sample line, "Aa"), a pattern swatch, or a page strip. */
-export type PictureChoiceSize = "tile" | "pair" | "large" | "mini" | "small" | "swatch" | "strip";
+ * chip (a sample line, "Aa"), a pattern swatch, a page strip, or a Home map
+ * tile's floor in one of its looks (96 by 64). */
+export type PictureChoiceSize = "tile" | "pair" | "large" | "mini" | "small" | "swatch" | "strip" | "map";
 
 /** Trying a choice before it is picked (`tryTileEdit`): what pointing at a
  * choice or focusing it does, and what leaving the row does. */
@@ -540,6 +541,10 @@ export const pictureChoiceStyles = css`
   .pc-size-strip .pc-pic { padding: 4px; }
   .pc-strip { --pc-lane: color-mix(in srgb, var(--wa-ink) 14%, transparent); position: relative; display: block; border-radius: 5px; }
   .pc-block { position: absolute; left: 0; top: 0; border-radius: 4px; background: var(--wa-accent); }
+  /* A Home map tile's floor in one look, on the look's own ground. */
+  .pc-size-map .pc-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(106px, 1fr)); }
+  .pc-size-map .pc-pic { width: 96px; height: 64px; overflow: hidden; background: #111; }
+  .pc-size-map .pc-pic svg { display: block; }
 
   .field.pc-menu-field { align-items: start; }
   .field.pc-menu-field > span:first-child { padding-top: 7px; }

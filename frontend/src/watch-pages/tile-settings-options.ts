@@ -250,8 +250,9 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
   // shows. No Action: the iPhone gives each its own tap (a marker, the field,
   // the page full screen).
   if (isWatchPhoneTileKind(kind)) return ["phoneTile", "icon", "text", "border", "visibility", "background"];
-  // A Home map tile: its floor first, as Target, then the look and when it
-  // shows. No Action: a tap opens the full map.
+  // A Home map tile: its Map card first (floor, room and how the map is
+  // drawn), as Target, then the look and when it shows. No Action: a tap
+  // opens the full map.
   if (kind === "home_map") return ["target", "icon", "text", "border", "visibility", "background"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");

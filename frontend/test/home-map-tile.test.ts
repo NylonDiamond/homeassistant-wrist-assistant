@@ -20,22 +20,38 @@ import { SymbolBrowser } from "../src/symbols.js";
 import { renderAddTile } from "../src/watch-pages/add-tile.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { type AddTileHost, NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
+import { homeLengthText, homeTileArt, homeTileGround, homeTileLightsColor, homeTileTitleColor } from "../src/home-map/tile-art.js";
 import {
+  type WatchHomeMapDevices,
+  type WatchHomeMapLook,
   WATCH_HOME_MAP_ADD_WORDS,
+  WATCH_HOME_MAP_DEFAULT_TURN,
+  WATCH_HOME_MAP_DEVICES_HINTS,
   WATCH_HOME_MAP_MISSING_TEXT,
   WATCH_HOME_MAP_NO_MAP_TEXT,
+  WATCH_HOME_MAP_OPTION_HINTS,
   WATCH_HOME_MAP_TAP_LIGHTS_HINT,
   WATCH_HOME_MAP_LOOKS,
   WATCH_HOME_MAP_LOOK_HINTS,
   WATCH_HOME_MAP_ROOM_HINT,
   WATCH_HOME_MAP_WHOLE_FLOOR_TEXT,
+  setWatchHomeMapDevices,
   setWatchHomeMapFloor,
+  setWatchHomeMapFurniture,
+  setWatchHomeMapGlow,
   setWatchHomeMapLook,
+  setWatchHomeMapNames,
   setWatchHomeMapRoom,
   setWatchHomeMapTapLights,
+  setWatchHomeMapTurn,
+  watchHomeMapDevices,
   watchHomeMapDrawnFloor,
   watchHomeMapFloorSummary,
+  watchHomeMapFurniture,
+  watchHomeMapGlow,
   watchHomeMapLook,
+  watchHomeMapNames,
+  watchHomeMapTurn,
   watchHomeMapRoomId,
   watchHomeMapRoomMenu,
   watchHomeMapTileTitle,
@@ -277,7 +293,7 @@ describe("the Home map tile's settings", () => {
   it("pick the floor from the map's floors with a room, and move the tile to it", () => {
     const { host, tile } = tileHost(`home_map.${FLOOR}`, twoFloors());
     const text = flatten(draw(host));
-    expect(text).toContain("<h4>Floor</h4>");
+    expect(text).toContain("<h4>Map</h4>");
     expect(text).toContain("<span>Floor</span>");
     expect(text).toContain(">Ground floor</option>");
     expect(text).toContain(">Upstairs</option>");
@@ -320,27 +336,143 @@ describe("the Home map tile's settings", () => {
     expect(keys.homeMapTapLights).toMatch(/^A Home map tile on the iPhone/);
   });
 
-  it("offer the Look on both devices, stored as homeMapLook and removed for Glow", () => {
+  it("offer the Look on both devices as a picture of the tile's floor in each look, stored as homeMapLook and removed for Plan", () => {
     for (const device of [undefined, "iphone"] as const) {
       const { host, tile } = tileHost(`home_map.${FLOOR}`, fixture(), device);
       const text = flatten(draw(host));
       expect(text).toContain("Look");
-      expect(text).toContain(WATCH_HOME_MAP_LOOK_HINTS.glow);
-      expect(watchHomeMapLook(tile() as Record<string, unknown>)).toBe("glow");
+      expect(text).toContain(WATCH_HOME_MAP_LOOK_HINTS.plan);
+      // One picture button per look, in the picker's order, Plan picked.
+      expect(text).toContain('role="radiogroup" aria-label=Look');
+      expect(text.split('class="ts-hm-look"').length - 1).toBe(WATCH_HOME_MAP_LOOKS.length);
+      for (const [look] of WATCH_HOME_MAP_LOOKS) expect(text).toContain(`data-look=${look}`);
+      expect(text).toMatch(/class="pc-opt on" aria-checked=true\s+data-value=plan/);
+      expect(watchHomeMapLook(tile() as Record<string, unknown>)).toBe("plan");
       handler(draw(host), ">Night<", "@click=")({ currentTarget: null });
       expect((tile() as Record<string, unknown>).homeMapLook).toBe("night");
       expect(flatten(draw(host))).toContain(WATCH_HOME_MAP_LOOK_HINTS.night);
-      handler(draw(host), ">Glow<", "@click=")({ currentTarget: null });
+      handler(draw(host), ">Plan<", "@click=")({ currentTarget: null });
       expect(Object.hasOwn(tile(), "homeMapLook")).toBe(false);
     }
-    // An unknown look reads as glow; only a Home map tile takes one.
-    expect(watchHomeMapLook({ homeMapLook: "sparkle" })).toBe("glow");
+    // Only a Home map tile takes one.
     const { draft } = draftOf([{ id: TILE, entityId: "light.kitchen" }]);
     expect(setWatchHomeMapLook(draft.document, PAGE, TILE, "dots")).toBe(draft.document);
-    expect(WATCH_HOME_MAP_LOOKS.map(([look]) => look)).toEqual(["glow", "dots", "dollhouse", "night", "warm", "lines", "clay", "blueprint"]);
+    expect(WATCH_HOME_MAP_LOOKS).toEqual([["plan", "Plan"], ["night", "Night"], ["warm", "Warm"], ["lines", "Lines"], ["clay", "Clay"], ["blueprint", "Blueprint"], ["dots", "Dots"]]);
     for (const [look] of WATCH_HOME_MAP_LOOKS) expect(WATCH_HOME_MAP_LOOK_HINTS[look]).toBeTruthy();
     const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
     expect(keys.homeMapLook).toMatch(/^A Home map tile's look/);
+  });
+
+  it("read the look: absent, plan or unknown is plan, the older glow is plan and dollhouse is warm", () => {
+    expect(watchHomeMapLook({})).toBe("plan");
+    expect(watchHomeMapLook({ homeMapLook: "plan" })).toBe("plan");
+    expect(watchHomeMapLook({ homeMapLook: "glow" })).toBe("plan");
+    expect(watchHomeMapLook({ homeMapLook: "dollhouse" })).toBe("warm");
+    expect(watchHomeMapLook({ homeMapLook: "sparkle" })).toBe("plan");
+    expect(watchHomeMapLook({ homeMapLook: 3 })).toBe("plan");
+    expect(watchHomeMapLook({ homeMapLook: "toString" })).toBe("plan");
+    for (const [look] of WATCH_HOME_MAP_LOOKS) expect(watchHomeMapLook({ homeMapLook: look })).toBe(look);
+    // Setting a look writes over an older one; plan removes it.
+    const stored = (tile: Record<string, unknown>, look: WatchHomeMapLook) => {
+      const own = draftOf([{ id: TILE, entityId: `home_map.${FLOOR}`, ...tile } as WatchPageTile]);
+      return ((setWatchHomeMapLook(own.draft.document, PAGE, TILE, look).pages as WatchPage[])[0]!.items as Record<string, unknown>[])[0]!;
+    };
+    expect(stored({ homeMapLook: "dollhouse" }, "warm").homeMapLook).toBe("warm");
+    expect(Object.hasOwn(stored({ homeMapLook: "glow" }, "plan"), "homeMapLook")).toBe(false);
+    expect(Object.hasOwn(stored({ homeMapLook: "plan" }, "plan"), "homeMapLook")).toBe(false);
+    expect(stored({}, "blueprint").homeMapLook).toBe("blueprint");
+    // The same look stored changes nothing.
+    const own = draftOf([{ id: TILE, entityId: `home_map.${FLOOR}`, homeMapLook: "clay" } as WatchPageTile]);
+    expect(setWatchHomeMapLook(own.draft.document, PAGE, TILE, "clay")).toBe(own.draft.document);
+    expect(setWatchHomeMapLook(own.draft.document, PAGE, TILE, "glow" as WatchHomeMapLook)).toBe(own.draft.document);
+  });
+
+  it("store each map option only when it is not its default, and change nothing on another kind", () => {
+    const after = (tile: Record<string, unknown>, edit: (d: WatchPagesDocument) => WatchPagesDocument) => {
+      const own = draftOf([{ id: TILE, entityId: `home_map.${FLOOR}`, ...tile } as WatchPageTile]);
+      const next = edit(own.draft.document);
+      return { same: next === own.draft.document, tile: ((next.pages as WatchPage[])[0]!.items as Record<string, unknown>[])[0]! };
+    };
+    // Turn: whole degrees, -180 to 180, -28 removed.
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, 40)).tile.homeMapTurn).toBe(40);
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, 12.6)).tile.homeMapTurn).toBe(13);
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, 500)).tile.homeMapTurn).toBe(180);
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, -900)).tile.homeMapTurn).toBe(-180);
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, -0.2)).tile.homeMapTurn).toBe(0);
+    expect(Object.hasOwn(after({ homeMapTurn: 40 }, (d) => setWatchHomeMapTurn(d, PAGE, TILE, -28)).tile, "homeMapTurn")).toBe(false);
+    expect(Object.hasOwn(after({ homeMapTurn: 40 }, (d) => setWatchHomeMapTurn(d, PAGE, TILE, -28.4)).tile, "homeMapTurn")).toBe(false);
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, -28)).same).toBe(true);
+    expect(after({}, (d) => setWatchHomeMapTurn(d, PAGE, TILE, Number.NaN)).same).toBe(true);
+    expect(after({ homeMapTurn: 40 }, (d) => setWatchHomeMapTurn(d, PAGE, TILE, 40)).same).toBe(true);
+    expect(watchHomeMapTurn({})).toBe(WATCH_HOME_MAP_DEFAULT_TURN);
+    expect(WATCH_HOME_MAP_DEFAULT_TURN).toBe(-28);
+    expect(watchHomeMapTurn({ homeMapTurn: 999 })).toBe(180);
+    expect(watchHomeMapTurn({ homeMapTurn: "40" })).toBe(-28);
+    // Names, furniture and glow: only false is stored.
+    for (const [key, set, read] of [
+      ["homeMapNames", setWatchHomeMapNames, watchHomeMapNames],
+      ["homeMapFurniture", setWatchHomeMapFurniture, watchHomeMapFurniture],
+      ["homeMapGlow", setWatchHomeMapGlow, watchHomeMapGlow],
+    ] as const) {
+      expect(read({}), key).toBe(true);
+      expect(read({ [key]: true }), key).toBe(true);
+      expect(read({ [key]: false }), key).toBe(false);
+      expect(after({}, (d) => set(d, PAGE, TILE, false)).tile[key], key).toBe(false);
+      expect(Object.hasOwn(after({ [key]: false }, (d) => set(d, PAGE, TILE, true)).tile, key), key).toBe(false);
+      expect(Object.hasOwn(after({ [key]: true }, (d) => set(d, PAGE, TILE, true)).tile, key), key).toBe(false);
+      expect(after({}, (d) => set(d, PAGE, TILE, true)).same, key).toBe(true);
+      expect(after({ [key]: false }, (d) => set(d, PAGE, TILE, false)).same, key).toBe(true);
+    }
+    // Devices: lights removed, all and none stored, anything else read as lights.
+    expect(watchHomeMapDevices({})).toBe("lights");
+    expect(watchHomeMapDevices({ homeMapDevices: "pins" })).toBe("lights");
+    expect(watchHomeMapDevices({ homeMapDevices: "all" })).toBe("all");
+    expect(after({}, (d) => setWatchHomeMapDevices(d, PAGE, TILE, "none")).tile.homeMapDevices).toBe("none");
+    expect(Object.hasOwn(after({ homeMapDevices: "all" }, (d) => setWatchHomeMapDevices(d, PAGE, TILE, "lights")).tile, "homeMapDevices")).toBe(false);
+    expect(after({}, (d) => setWatchHomeMapDevices(d, PAGE, TILE, "lights")).same).toBe(true);
+    expect(after({}, (d) => setWatchHomeMapDevices(d, PAGE, TILE, "some" as WatchHomeMapDevices)).same).toBe(true);
+    // Another kind takes none of them.
+    const other = draftOf([{ id: TILE, entityId: "light.kitchen" }]).draft.document;
+    expect(setWatchHomeMapTurn(other, PAGE, TILE, 10)).toBe(other);
+    expect(setWatchHomeMapNames(other, PAGE, TILE, false)).toBe(other);
+    expect(setWatchHomeMapDevices(other, PAGE, TILE, "all")).toBe(other);
+    expect(setWatchHomeMapFurniture(other, PAGE, TILE, false)).toBe(other);
+    expect(setWatchHomeMapGlow(other, PAGE, TILE, false)).toBe(other);
+    // Every key is in page-keys.json with its type and its words.
+    const types = (pageKeys as unknown as { types: { tile: { keys: Record<string, { type: string; required: boolean }> } } }).types.tile.keys;
+    const notes = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
+    for (const [key, type] of [["homeMapTurn", "int"], ["homeMapNames", "bool"], ["homeMapDevices", "string"], ["homeMapFurniture", "bool"], ["homeMapGlow", "bool"], ["homeMapLook", "string"]] as const) {
+      expect(types[key], key).toEqual({ type, required: false });
+      expect(notes[key], key).toMatch(/^A Home map tile's/);
+    }
+  });
+
+  it("offer the Turn for the model looks only, then Room names, Devices, Furniture and Light glow, each written through its setter", () => {
+    const { host, tile } = tileHost(`home_map.${FLOOR}`, fixture());
+    const plan = flatten(draw(host));
+    expect(plan).not.toContain(WATCH_HOME_MAP_OPTION_HINTS.turn);
+    for (const label of ["Room names", "Devices", "Furniture", "Light glow"]) expect(plan).toContain(label);
+    expect(plan.indexOf("Room names")).toBeGreaterThan(plan.indexOf(WATCH_HOME_MAP_LOOK_HINTS.plan));
+    expect(plan).toContain(WATCH_HOME_MAP_DEVICES_HINTS.lights);
+    handler(draw(host), ">Warm<", "@click=")({ currentTarget: null });
+    const warm = flatten(draw(host));
+    expect(warm).toContain(WATCH_HOME_MAP_OPTION_HINTS.turn);
+    expect(warm).toContain("Turn");
+    expect(warm.indexOf("Turn")).toBeLessThan(warm.indexOf("Room names"));
+    const t = () => tile() as Record<string, unknown>;
+    handler(draw(host), "Room names", "@change=")({ target: { checked: false } });
+    expect(t().homeMapNames).toBe(false);
+    handler(draw(host), "Furniture", "@change=")({ target: { checked: false } });
+    expect(t().homeMapFurniture).toBe(false);
+    handler(draw(host), "Light glow", "@change=")({ target: { checked: false } });
+    expect(t().homeMapGlow).toBe(false);
+    handler(draw(host), ">All<", "@click=")({ currentTarget: null });
+    expect(t().homeMapDevices).toBe("all");
+    expect(flatten(draw(host))).toContain(WATCH_HOME_MAP_DEVICES_HINTS.all);
+    handler(draw(host), ">Lights<", "@click=")({ currentTarget: null });
+    expect(Object.hasOwn(t(), "homeMapDevices")).toBe(false);
+    handler(draw(host), "Room names", "@change=")({ target: { checked: true } });
+    expect(Object.hasOwn(t(), "homeMapNames")).toBe(false);
   });
 
   it("offer the Room on both devices, right under the Floor, stored as homeMapRoomId and removed for Whole floor", () => {
@@ -409,69 +541,140 @@ describe("the Home map tile's picture", () => {
     "light.pendants": { entity_id: "light.pendants", state: "off", attributes: {} },
   } as unknown as Record<string, HassEntityState>;
 
-  it("draws the floor's plan small, a glow over each room with a light on, and how many lights are on", () => {
-    const face = flatten(renderWatchTileFace(tile, { width: 180, height: 110 }, { page, pages: [page], screen, scale: 1, states, stateMode: "live", homeMap: fixture() }, 14));
+  const input = { page, pages: [page], screen, scale: 1, states, stateMode: "live" as const, homeMap: fixture() };
+  const faceOf = (keys: Record<string, unknown> = {}, size = { width: 180, height: 110 }, given: Record<string, unknown> = input) =>
+    flatten(renderWatchTileFace({ ...tile, ...keys } as WatchPageTile, size, given as never, 14));
+  const count = (text: string, marker: string) => text.split(marker).length - 1;
+
+  it("draws the floor as the plan from above, a pool round each light that is on, the title and how many lights are on", () => {
+    const face = faceOf();
     expect(face).toContain("wp-hm-face");
     expect(face).toContain(`data-home-map=${FLOOR}`);
-    expect(face).toContain("viewBox=-0.4 -0.4 10.8 5.8");
-    expect(face).toContain("data-room=7B1E0C2A-5D3F-4A8B-9C6D-000000000010");
-    // Only the living room is lit, so one room glows and one light is dotted.
-    expect(face.split("hm-room-glow").length - 1).toBe(1);
-    expect(face.split("hm-dot").length - 1).toBe(1);
-    expect(face).toContain("url(#wa-hm-glow)");
+    expect(face).toContain("data-look=plan");
+    // Drawn in the tile's points, inset as the apps inset it.
+    expect(face).toContain("viewBox=0 0 163 57");
+    expect(face).toContain("left:8px;top:26px;width:163px;height:57px");
+    expect(face).toContain(`data-room=${LIVING}`);
+    expect(face).toContain(`data-room=${KITCHEN}`);
+    // Only the reading lamp is on: one pool and one dot.
+    expect(count(face, 'class="hmt-pool"')).toBe(1);
+    expect(count(face, "class=hmt-dot ")).toBe(1);
+    expect(count(face, "hmt-dot-off")).toBe(0);
+    // The furniture, the walls, the window and the door.
+    expect(count(face, 'class="hmt-piece"')).toBe(6);
+    expect(face).toContain('class="hmt-walls"');
+    expect(face).toContain('stroke-dasharray="3 2.5"');
     expect(face).toContain(">1 light on</span>");
-    // No buttons and no names on the tile.
-    expect(face).not.toContain('class="hm-pin"');
-    expect(face).not.toContain("hm-name");
+    expect(face).toContain('<span class="wp-hm-title"');
+    expect(face).toContain(">Home map</span>");
+    // No pins on the tile while it draws its lights only.
+    expect(face).not.toContain('class="hmt-pin"');
+    // The plan's own ground, not the old tilt.
+    expect(face).toContain(`background:${homeTileGround("plan")}`);
+    expect(face).not.toContain("rotateX");
   });
 
-  it("draws the tile's look: a fainter room glow, every light a dot, a tipped plan, or night", () => {
-    const input = { page, pages: [page], screen, scale: 1, states, stateMode: "live" as const, homeMap: fixture() };
-    const face = (look?: string) => flatten(renderWatchTileFace({ ...tile, ...(look === undefined ? {} : { homeMapLook: look }) } as WatchPageTile, { width: 180, height: 110 }, input, 14));
-    const glow = face();
-    expect(glow).toContain("data-look=glow");
-    expect(glow).toContain("fill-opacity=0.1");
-    expect(glow).not.toContain("hm-object");
-    // Dots: the two lights that are off are gray dots too, and no glow.
-    const dots = face("dots");
-    expect(dots.split("hm-dot-off").length - 1).toBe(2);
-    expect(dots).not.toContain('class="hm-glow"');
-    expect(dots).not.toContain("hm-room-glow");
-    expect(face("dollhouse")).toContain("rotateX(54deg)");
-    const night = face("night");
-    expect(night).toContain("url(#wa-hm-glow-night)");
-    expect(night).toContain("background:#08090B");
-    // The model looks tip the plan back in their own colours.
-    for (const look of ["warm", "lines", "clay", "blueprint"]) {
-      const model = face(look);
-      expect(model).toContain(`data-look=${look}`);
-      expect(model).toContain("rotateX(54deg)");
+  it("draws every look without throwing, each with its own marks", () => {
+    for (const [look] of WATCH_HOME_MAP_LOOKS) {
+      const face = faceOf({ homeMapLook: look });
+      expect(face, look).toContain(`data-look=${look}`);
+      expect(face, look).toContain(`background:${homeTileGround(look)}`);
+      expect(face, look).toContain(">1 light on</span>");
     }
-    expect(face("clay")).toContain("color:#2A2724");
-    expect(face("clay")).not.toContain('class="hm-glow"');
-    expect(face("warm")).toContain("url(#wa-hm-glow-night)");
+    // The models stand their walls up, far to near, with furniture.
+    for (const look of ["night", "warm", "lines", "clay", "blueprint"]) {
+      const face = faceOf({ homeMapLook: look });
+      expect(face, look).toContain("class=hmt-wall>");
+      expect(face, look).toContain("class=hmt-glass>");
+      expect(face, look).toContain("class=hmt-piece>");
+    }
+    // Night and warm: pools of light added to the dark, the lit room's wall
+    // washed, furniture tops drawn from above.
+    const night = faceOf({ homeMapLook: "night" }, { width: 360, height: 240 });
+    expect(night).toContain("mix-blend-mode:screen");
+    expect(night).toContain("url(#wa-hmt-wash)");
+    expect(night).toContain("url(#wa-hmf-table)");
+    // Lines glow; clay casts soft shadows and has no pools; blueprint draws
+    // its grid.
+    expect(faceOf({ homeMapLook: "lines" })).toContain("feDropShadow");
+    const clay = faceOf({ homeMapLook: "clay" });
+    expect(clay).toContain('class="hmt-shadows"');
+    expect(clay).not.toContain('class="hmt-pool"');
+    expect(clay).toContain(`color:${homeTileLightsColor("clay", true)}`);
+    expect(clay).toContain(`color:${homeTileTitleColor("clay")}`);
+    expect(homeTileTitleColor("clay")).not.toBe(homeTileTitleColor("night"));
+    // Dots: every light a dot, the two that are off gray, and no pools or
+    // furniture.
+    const dots = faceOf({ homeMapLook: "dots" });
+    expect(count(dots, "hmt-dot-off")).toBe(2);
+    expect(count(dots, "class=hmt-dot ")).toBe(1);
+    expect(dots).not.toContain('class="hmt-pool"');
+    expect(dots).not.toContain('class="hmt-piece"');
+    // The older looks read as plan and warm.
+    expect(faceOf({ homeMapLook: "glow" })).toContain("data-look=plan");
+    expect(faceOf({ homeMapLook: "dollhouse" })).toContain("data-look=warm");
+  });
+
+  it("follows the tile's options: turn, names, devices, furniture and glow", () => {
+    // The turn moves the model, never the plan.
+    expect(faceOf({ homeMapLook: "warm", homeMapTurn: 30 })).not.toBe(faceOf({ homeMapLook: "warm" }));
+    expect(faceOf({ homeMapTurn: 30 })).toBe(faceOf());
+    // Names show on a tile tall enough where the pill fits the room, and
+    // never once switched off.
+    const big = { width: 360, height: 240 };
+    expect(faceOf({}, big)).toContain(">Living room</text>");
+    expect(faceOf({ homeMapNames: false }, big)).not.toContain('class="hmt-name"');
+    expect(faceOf({}, { width: 360, height: 88 })).not.toContain('class="hmt-name"');
+    // Every pin as glass, with the thermostat's reading under it.
+    const withClimate = { ...input, states: { ...states, "climate.thermostat": { entity_id: "climate.thermostat", state: "heat", attributes: { current_temperature: 21.46 } } } };
+    const all = faceOf({ homeMapDevices: "all" }, big, withClimate);
+    expect(count(all, 'class="hmt-pin"')).toBe(5);
+    expect(all).toContain(">21.5°</text>");
+    expect(all).not.toContain("class=hmt-dot ");
+    const none = faceOf({ homeMapDevices: "none" });
+    expect(none).not.toContain("class=hmt-dot ");
+    expect(none).not.toContain('class="hmt-pin"');
+    expect(none).toContain('class="hmt-pool"');
+    expect(faceOf({ homeMapFurniture: false })).not.toContain('class="hmt-piece"');
+    expect(faceOf({ homeMapLook: "night", homeMapFurniture: false })).not.toContain('class="hmt-piece"');
+    expect(faceOf({ homeMapGlow: false })).not.toContain('class="hmt-pool"');
+    const dark = faceOf({ homeMapLook: "night", homeMapGlow: false });
+    expect(dark).not.toContain('class="hmt-pool"');
+    expect(dark).not.toContain("url(#wa-hmt-wash)");
+    // Tap lights shows the lights that are off only on the iPhone's tile.
+    expect(faceOf({ homeMapTapLights: true })).not.toContain("hmt-dot-off");
+    const floor = fixture().floors[0]!;
+    const art = (o: Partial<Parameters<typeof homeTileArt>[0]>) => flatten(homeTileArt({ floor, states, look: "plan", width: 164, height: 58, ...o }));
+    expect(count(art({ tapLights: true }), "hmt-dot-off")).toBe(2);
+    expect(count(art({ look: "night", tapLights: true }), "hmt-dot-off")).toBe(2);
+    // The blueprint measures a lone room.
+    const one = faceOf({ homeMapLook: "blueprint", homeMapRoomId: LIVING }, big);
+    expect(one).toContain('class="hmt-measures"');
+    expect(one).toContain(">6.0 m</text>");
+    expect(one).toContain(">5.0 m</text>");
+    expect(faceOf({ homeMapLook: "blueprint" }, big)).not.toContain('class="hmt-measures"');
+    expect(homeLengthText(3.5, false)).toBe("11′ 6″");
   });
 
   it("draws only the tile's room, filling the tile, with that room's pins and lights", () => {
-    const input = { page, pages: [page], screen, scale: 1, states, stateMode: "live" as const, homeMap: fixture() };
-    const face = (room?: string) => flatten(renderWatchTileFace({ ...tile, ...(room === undefined ? {} : { homeMapRoomId: room }) } as WatchPageTile, { width: 180, height: 110 }, input, 14));
-    // The living room alone: its outline is the box, its lamp is the one lit.
+    const face = (room?: string) => faceOf(room === undefined ? {} : { homeMapRoomId: room });
+    // The living room alone: its lamp is the one lit.
     const living = face(LIVING);
     expect(living).toContain(`data-home-map-room=${LIVING}`);
-    expect(living).toContain("viewBox=-0.4 -0.4 6.8 5.8");
     expect(living).toContain(`data-room=${LIVING}`);
     expect(living).not.toContain(`data-room=${KITCHEN}`);
-    expect(living.split("hm-room-glow").length - 1).toBe(1);
+    expect(count(living, 'class="hmt-pool"')).toBe(1);
     expect(living).toContain(">1 light on</span>");
     // The kitchen alone: its pendants are off, so nothing is lit.
     const kitchen = face(KITCHEN.toLowerCase());
-    expect(kitchen).toContain("viewBox=5.6 -0.4 4.8 5.8");
     expect(kitchen).not.toContain(`data-room=${LIVING}`);
-    expect(kitchen).not.toContain("hm-room-glow");
+    expect(kitchen).toContain(`data-room=${KITCHEN}`);
+    expect(kitchen).not.toContain('class="hmt-pool"');
     expect(kitchen).toContain(">No lights on</span>");
     // A room the floor no longer has draws the whole floor.
     const lost = face("7B1E0C2A-5D3F-4A8B-9C6D-0000000000EE");
-    expect(lost).toContain("viewBox=-0.4 -0.4 10.8 5.8");
+    expect(lost).toContain(`data-room=${LIVING}`);
+    expect(lost).toContain(`data-room=${KITCHEN}`);
     expect(lost).not.toMatch(/data-home-map-room=[0-9A-Fa-f]/);
   });
 

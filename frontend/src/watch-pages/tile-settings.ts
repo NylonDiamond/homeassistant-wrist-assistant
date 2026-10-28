@@ -98,23 +98,37 @@ import { renderInboxLine, renderPhoneTileTask } from "./app-settings.js";
 import { watchPhoneTileChanged, watchPhoneTileKindOf, watchPhoneTileSummary, watchPhoneTileTitle } from "./phone-tiles-model.js";
 import { watchSpecialTask } from "./special-model.js";
 import {
+  type WatchHomeMapLook,
+  WATCH_HOME_MAP_DEFAULT_TURN,
+  WATCH_HOME_MAP_DEVICES,
+  WATCH_HOME_MAP_DEVICES_HINTS,
   WATCH_HOME_MAP_FLOOR_HINT,
   WATCH_HOME_MAP_NO_MAP_TEXT,
+  WATCH_HOME_MAP_OPTION_HINTS,
+  isWatchHomeMapModelLook,
   isWatchHomeMapTile,
+  setWatchHomeMapDevices,
   setWatchHomeMapFloor,
+  setWatchHomeMapFurniture,
+  setWatchHomeMapGlow,
+  setWatchHomeMapNames,
   setWatchHomeMapTapLights,
+  setWatchHomeMapTurn,
   WATCH_HOME_MAP_TAP_LIGHTS_HINT,
   WATCH_HOME_MAP_LOOKS,
   WATCH_HOME_MAP_LOOK_HINTS,
   WATCH_HOME_MAP_ROOM_HINT,
   setWatchHomeMapLook,
   setWatchHomeMapRoom,
+  watchHomeMapArtOptions,
+  watchHomeMapDrawnFloor,
   watchHomeMapRoomMenu,
-  watchHomeMapLook,
   watchHomeMapTapsLights,
   watchHomeMapFloorMenu,
   watchHomeMapFloorSummary,
 } from "./home-map-tile.js";
+import type { HomeMapStates } from "../home-map/model.js";
+import { homeTileArt, homeTileGround } from "../home-map/tile-art.js";
 import { findWatchPage } from "./edit.js";
 import {
   type WatchShowWhenOperator,
@@ -1700,8 +1714,9 @@ function renderPeekAnimation(host: TileSettingsHost): TemplateResult | typeof no
 
 // ── library tiles: target, request ───────────────────────────────────────
 
-/** A Home map tile's Target card is titled by what it picks. */
-const HOME_MAP_TARGET_TITLE = "Floor";
+/** A Home map tile's Target card is its Map card: the floor and room it
+ * draws, and how it draws them. */
+const HOME_MAP_TARGET_TITLE = "Map";
 
 const TARGET_HINTS: Readonly<Record<WatchLibraryKind, string>> = {
   httpAction: "A tap runs this action. A label that is the action's name follows it.",
@@ -1770,11 +1785,21 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
     ${screenHelps ? html`<div class="ts-under">${httpActionsLink()}</div>` : nothing}`;
 }
 
+/** The size of each Look picture in the Map card, in CSS pixels. */
+const HOME_MAP_PICTURE = { width: 96, height: 64 } as const;
+
 /**
- * The Floor of a Home map tile: the home map's floors with a room. A floor
- * the map no longer has shows as "Not on the map" and stays until another
- * is picked. With no map (none yet, or not read) the line says where one
- * comes from; nothing can be picked.
+ * The Map card of a Home map tile. The Floor: the home map's floors with a
+ * room. A floor the map no longer has shows as "Not on the map" and stays
+ * until another is picked. With no map (none yet, or not read) the line
+ * says where one comes from; nothing can be picked.
+ *
+ * Then the Room; the Look as small pictures, each the tile's own floor (cut
+ * to its room) in that look with the lights as they are now, the tile's
+ * other options applied, and pointing at one tries it on the tile; the Turn
+ * of the model looks; Room names; Devices; Furniture; Light glow; and on
+ * the iPhone, Tap lights. Every edit goes through its pure setter in
+ * `home-map-tile.ts`, which stores nothing for a default.
  */
 function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
   const menu = watchHomeMapFloorMenu(host.tile, host.homeMap);
@@ -1782,27 +1807,67 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
     return html`<div class="ts-target-now">${watchHomeMapFloorSummary(host.tile, host.homeMap) || "Home map"}</div>
       <div class="hint keep ts-under">${WATCH_HOME_MAP_NO_MAP_TEXT}</div>`;
   }
-  const pick = (floorId: string) => commit(host, "target", (d) => setWatchHomeMapFloor(d, host.pageId, host.tileId, floorId));
+  const keyed = host.tile as WatchPageTile & Record<string, unknown>;
+  const at = () => [host.pageId, host.tileId] as const;
+  const pick = (floorId: string) => commit(host, "target", (d) => setWatchHomeMapFloor(d, ...at(), floorId));
+  const iphone = hostDevice(host) === "iphone";
   // Only the iPhone's tile takes a tap on a light; the watch's is too small.
-  const tapLights = hostDevice(host) === "iphone"
-    ? html`${checkField("Tap lights", watchHomeMapTapsLights(host.tile as WatchPageTile & Record<string, unknown>), (on) =>
-        commit(host, "homeMapTapLights", (d) => setWatchHomeMapTapLights(d, host.pageId, host.tileId, on)))}
+  const tapLights = iphone
+    ? html`${checkField("Tap lights", watchHomeMapTapsLights(keyed), (on) =>
+        commit(host, "homeMapTapLights", (d) => setWatchHomeMapTapLights(d, ...at(), on)))}
       <div class="hint ts-under">${WATCH_HOME_MAP_TAP_LIGHTS_HINT}</div>`
     : nothing;
-  const look = watchHomeMapLook(host.tile as WatchPageTile & Record<string, unknown>);
+  const options = watchHomeMapArtOptions(keyed);
+  const look = options.look;
   // One room of the floor, or the whole floor (the key removed).
   const rooms = watchHomeMapRoomMenu(host.tile, host.homeMap);
   const room = rooms === undefined
     ? nothing
     : html`${menuField("Room", rooms, (roomId) =>
-        commit(host, "homeMapRoomId", (d) => setWatchHomeMapRoom(d, host.pageId, host.tileId, roomId)))}
+        commit(host, "homeMapRoomId", (d) => setWatchHomeMapRoom(d, ...at(), roomId)))}
       <div class="hint ts-under">${WATCH_HOME_MAP_ROOM_HINT}</div>`;
+  // Each look drawn as the tile would draw it, on its own ground.
+  const floor = watchHomeMapDrawnFloor(keyed, host.homeMap);
+  const states = host.hass?.states as HomeMapStates | undefined;
+  const picture = (value: WatchHomeMapLook) => () => {
+    if (floor === undefined || floor.rooms.length === 0) return nothing;
+    const { width, height } = HOME_MAP_PICTURE;
+    const art = homeTileArt({
+      floor, states, ...options, look: value, tapLights: options.tapLights && iphone,
+      width: width - 8, height: height - 8, tileHeight: height, icons: host.icons,
+    });
+    return html`<svg class="ts-hm-look" viewBox=${`0 0 ${width} ${height}`} width=${width} height=${height}
+      style=${`background:${homeTileGround(value, 0.5)}`}><g transform="translate(4 4)">${art}</g></svg>`;
+  };
+  const looks = WATCH_HOME_MAP_LOOKS.map(([value, label]) => ({ value, label, picture: picture(value) }));
+  const lookEdit = (v: WatchHomeMapLook) => (d: WatchPagesDocument) => setWatchHomeMapLook(d, ...at(), v);
+  const turn = isWatchHomeMapModelLook(look)
+    ? html`${typingField(host, "homeMapTurn", sliderField("Turn", options.turn, (v) =>
+        commit(host, "homeMapTurn", (d) => setWatchHomeMapTurn(d, ...at(), v), { typing: true }), {
+        min: -180, max: 180, step: 1, def: WATCH_HOME_MAP_DEFAULT_TURN, unit: "°",
+      }), options.turn)}
+      <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.turn}</div>`
+    : nothing;
   return html`${menuField("Floor", menu, pick)}
     <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
     ${room}
-    ${segField("Look", look, WATCH_HOME_MAP_LOOKS, (v) =>
-      commit(host, "homeMapLook", (d) => setWatchHomeMapLook(d, host.pageId, host.tileId, v)), { def: "glow" })}
+    ${pictureChoice("Look", look, looks, (v) => commit(host, "homeMapLook", lookEdit(v)), {
+      def: "plan", size: "map", trial: tileTrial(host, "Look", lookEdit),
+    })}
     <div class="hint ts-under">${WATCH_HOME_MAP_LOOK_HINTS[look]}</div>
+    ${turn}
+    ${checkField("Room names", options.names, (on) =>
+      commit(host, "homeMapNames", (d) => setWatchHomeMapNames(d, ...at(), on)), true)}
+    <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.names}</div>
+    ${segField("Devices", options.devices, WATCH_HOME_MAP_DEVICES, (v) =>
+      commit(host, "homeMapDevices", (d) => setWatchHomeMapDevices(d, ...at(), v)), { def: "lights" })}
+    <div class="hint ts-under">${WATCH_HOME_MAP_DEVICES_HINTS[options.devices]}</div>
+    ${checkField("Furniture", options.furniture, (on) =>
+      commit(host, "homeMapFurniture", (d) => setWatchHomeMapFurniture(d, ...at(), on)), true)}
+    <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.furniture}</div>
+    ${checkField("Light glow", options.glow, (on) =>
+      commit(host, "homeMapGlow", (d) => setWatchHomeMapGlow(d, ...at(), on)), true)}
+    <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.glow}</div>
     ${tapLights}`;
 }
 
