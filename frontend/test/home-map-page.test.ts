@@ -329,7 +329,7 @@ describe("the Home map editor", () => {
     expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 2 });
     shown = text();
     expect(shown).toContain("hmt-mark");
-    expect(shown).toContain("In Kitchen · 1.80 × 1.00 m");
+    expect(shown).toContain("In Kitchen · 1.80 × 1.00 × 0.75 m");
     key("Escape");
     expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
   });
@@ -477,7 +477,7 @@ describe("the Home map editor", () => {
     expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
     press([8, 2]);
     expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 2 });
-    expect(text()).toContain("In Kitchen · 1.80 × 1.00 m");
+    expect(text()).toContain("In Kitchen · 1.80 × 1.00 × 0.75 m");
     expect(text()).toContain('data-hme="resize"');
     // A picked thing is dragged at once.
     press([8, 2], [[8, 2.3], [8, 2.5]]);

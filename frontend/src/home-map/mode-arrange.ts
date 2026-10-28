@@ -81,7 +81,9 @@ import {
   HME_FINISH_DOT,
   hmeCard,
   hmeChip,
+  hmeFields,
   hmeFinishSwatch,
+  hmeGroup,
   hmeHint,
   hmeMenuButton,
   hmeNumber,
@@ -115,6 +117,7 @@ import {
   homeRoomUnder,
 } from "./geometry.js";
 import {
+  type HomeMapDocument,
   type HomeMapFinish,
   type HomeMapFloor,
   type HomeMapObject,
@@ -826,6 +829,7 @@ export class ArrangeMode implements HomeMapMode {
     const areaKnown = room.areaId === undefined || ctx.areas.some((a) => a.id === room.areaId);
     const pageKnown = room.pageId === undefined || ctx.pages.some((p) => sameHomeMapId(p.id, room.pageId));
     const guess = homeFloorGuess(room);
+    const edit = this.edits(ctx);
     return html`
       <section class="hme-card hme-head">
         ${hmeRoomThumb(room, lit)}
@@ -860,26 +864,30 @@ export class ArrangeMode implements HomeMapMode {
         }))}
         ${hmeHint("What a tap on this room does on the map tiles and the watch.")}`)}
 
+      ${hmeCard("Size", html`
+        ${hmeFields(
+          hmeNumber({ tag: "W", label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { width: v })) }),
+          hmeNumber({ tag: "D", label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { depth: v })) }),
+          hmeNumber({ tag: "H", label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, ...edit((d, v) => setWallHeight(d, id, v)) }))}
+        <p class="hme-foot-hint">Along its own walls, about its middle; its doors, things and devices move with it.</p>`)}
+
       ${hmeCard("Place", html`
-        ${hmeRow("Left, top",
-          hmeNumber({ label: "Left", value: bounds.minX, unit: "m", set: (v) => ctx.apply((d) => moveRoom(d, id, v - bounds.minX, 0)) }),
-          hmeNumber({ label: "Top", value: bounds.minY, unit: "m", set: (v) => ctx.apply((d) => moveRoom(d, id, 0, v - bounds.minY)) }))}
-        ${hmeRow("Turn",
-          hmeNumber({ label: "Turn", value: tilt, unit: "°", digits: 1, min: -180, max: 180, width: "92px", set: (v) => ctx.apply((d) => turnRoom(d, id, v - tilt)) }),
-          html`<button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, -90))}>−90°</button>
-            <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>+90°</button>
-            <button type="button" class="hme-tb" title="Turn it so its longest wall runs straight across or down" @click=${() => ctx.apply((d) => levelRoom(d, id))}>Level</button>`)}
-        ${hmeRow("Width, depth",
-          hmeNumber({ label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, set: (v) => ctx.apply((d) => resizeRoom(d, id, { width: v })) }),
-          hmeNumber({ label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, set: (v) => ctx.apply((d) => resizeRoom(d, id, { depth: v })) }))}
-        ${hmeHint("Along its own walls, about its middle; its doors, things and devices move with it. Drag a room on the plan to move it (Alt moves it freely), or a square handle on its box to resize it (Shift keeps its proportions, Alt resizes it about its middle).")}
+        ${hmeGroup("Corner", hmeFields(
+          hmeNumber({ tag: "X", label: "Left", value: bounds.minX, unit: "m", ...edit((d, v) => moveRoom(d, id, v - bounds.minX, 0)) }),
+          hmeNumber({ tag: "Y", label: "Top", value: bounds.minY, unit: "m", ...edit((d, v) => moveRoom(d, id, 0, v - bounds.minY)) })))}
+        ${hmeGroup("Turn", html`<div class="hme-turn">
+          ${hmeNumber({ label: "Turn", value: tilt, unit: "°", digits: 1, min: -180, max: 180, ...edit((d, v) => turnRoom(d, id, v - tilt)) })}
+          <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, -90))}>−90°</button>
+          <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>+90°</button>
+          <button type="button" class="hme-tb" title="Turn it so its longest wall runs straight across or down" @click=${() => ctx.apply((d) => levelRoom(d, id))}>Level</button>
+        </div>`)}
+        <p class="hme-foot-hint">Drag a number sideways to change it (Shift for big steps, Alt for fine ones), or click it to type. On the plan, drag the room to move it, a square handle to resize it, the round one to turn it.</p>
         ${hmeRow("Floor", hmeSelect({
           label: "Floor",
           value: ctx.floor.id,
           options: [...ctx.doc.floors.map((f) => ({ value: f.id, label: homeMapFloorName(f) })), { value: "new", label: "New floor…" }],
           set: (v) => void this.moveToFloor(ctx, room, v),
-        }))}
-        ${hmeRow("Wall height", hmeNumber({ label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, set: (v) => ctx.apply((d) => setWallHeight(d, id, v)) }))}`)}
+        }))}`)}
 
       ${hmeCard("Floor finish", html`<div class="hme-pics">
         ${hmePic({ label: `Auto: ${HOME_MAP_FINISH_NAMES[guess]}`, picture: hmeFinishSwatch(guess), on: room.finish === undefined, title: "Picked from the room's name and furniture", click: () => ctx.apply((d) => setRoomFinish(d, id, undefined)) })}
@@ -910,6 +918,15 @@ export class ArrangeMode implements HomeMapMode {
         </div>`)}`;
   }
 
+  /** A number field's `set` and `preview` for an edit by its value: saved
+   * once when typed or let go, drawn as it goes while scrubbed. */
+  private edits(ctx: HomeMapEditorContext) {
+    return (op: (d: HomeMapDocument, v: number) => HomeMapDocument | undefined) => ({
+      set: (v: number) => ctx.apply((d) => op(d, v)),
+      preview: (v: number | undefined) => ctx.preview(v === undefined ? undefined : (d) => op(d, v)),
+    });
+  }
+
   /** A picked thing: where its middle is, its turn, its sizes, and whether
    * it is shown. */
   private thingInspector(ctx: HomeMapEditorContext, thing: ThingAt): TemplateResult {
@@ -918,35 +935,39 @@ export class ArrangeMode implements HomeMapMode {
     const name = homeMapObjectName(object.kind);
     const [width, depth, height] = object.size;
     const turn = thingTurn(object);
-    const set = (change: { c?: HomePoint; size?: [number, number, number] }) => ctx.apply((d) => setObject(d, id, index, change));
+    const edit = this.edits(ctx);
     const back = { kind: "room" as const, roomId: id };
+    const sizes = { unit: "m", min: HOME_MAP_MIN_OBJECT_SIZE, max: HOME_MAP_MAX_OBJECT_SIZE };
     return html`
       <section class="hme-card hme-head">
         <div class="hme-head-t">
           <strong>${name}</strong>
-          <span>In ${homeMapRoomName(room)} · ${width.toFixed(2)} × ${depth.toFixed(2)} m${object.hidden === true ? " · Hidden" : ""}</span>
+          <span>In ${homeMapRoomName(room)} · ${width.toFixed(2)} × ${depth.toFixed(2)} × ${height.toFixed(2)} m${object.hidden === true ? " · Hidden" : ""}</span>
         </div>
       </section>
 
+      ${hmeCard("Size", html`
+        ${hmeFields(
+          hmeNumber({ tag: "W", label: "Width", value: width, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { width: v })) }),
+          hmeNumber({ tag: "D", label: "Depth", value: depth, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { depth: v })) }),
+          hmeNumber({ tag: "H", label: "Height", value: height, ...sizes, min: 0.01, ...edit((d, v) => setObject(d, id, index, { size: [width, depth, v] })) }))}`)}
+
       ${hmeCard("Place", html`
-        ${hmeRow("Middle",
-          hmeNumber({ label: "Middle across", value: object.c[0], unit: "m", set: (v) => set({ c: [v, object.c[1]] }) }),
-          hmeNumber({ label: "Middle down", value: object.c[1], unit: "m", set: (v) => set({ c: [object.c[0], v] }) }))}
-        ${hmeRow("Turn",
-          hmeNumber({ label: "Turn", value: turn, unit: "°", digits: 1, min: -180, max: 180, width: "92px", set: (v) => ctx.apply((d) => turnObject(d, id, index, v - turn)) }),
-          html`<button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnObject(d, id, index, -90))}>−90°</button>
-            <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnObject(d, id, index, 90))}>+90°</button>
-            <button type="button" class="hme-tb" title="Turn it square with the room's walls" @click=${() => ctx.apply((d) => levelObject(d, id, index))}>Line up</button>`)}
-        ${hmeRow("Width, depth",
-          hmeNumber({ label: "Width", value: width, unit: "m", min: HOME_MAP_MIN_OBJECT_SIZE, max: HOME_MAP_MAX_OBJECT_SIZE, set: (v) => ctx.apply((d) => resizeObject(d, id, index, { width: v })) }),
-          hmeNumber({ label: "Depth", value: depth, unit: "m", min: HOME_MAP_MIN_OBJECT_SIZE, max: HOME_MAP_MAX_OBJECT_SIZE, set: (v) => ctx.apply((d) => resizeObject(d, id, index, { depth: v })) }))}
-        ${hmeRow("Height", hmeNumber({ label: "Height", value: height, unit: "m", min: 0.01, max: HOME_MAP_MAX_OBJECT_SIZE, set: (v) => set({ size: [width, depth, v] }) }))}
-        ${hmeHint("Drag it on the plan to move it; a side along a wall snaps flush against it (Alt moves it freely). Drag a square handle to resize it (Shift keeps its proportions, Alt resizes it about its middle) or the round one to turn it. Arrow keys nudge it, Shift for 10 cm.")}`)}
+        ${hmeGroup("Middle", hmeFields(
+          hmeNumber({ tag: "X", label: "Middle across", value: object.c[0], unit: "m", ...edit((d, v) => moveObject(d, id, index, [v, object.c[1]])) }),
+          hmeNumber({ tag: "Y", label: "Middle down", value: object.c[1], unit: "m", ...edit((d, v) => moveObject(d, id, index, [object.c[0], v])) })))}
+        ${hmeGroup("Turn", html`<div class="hme-turn">
+          ${hmeNumber({ label: "Turn", value: turn, unit: "°", digits: 1, min: -180, max: 180, ...edit((d, v) => turnObject(d, id, index, v - turn)) })}
+          <button type="button" class="hme-tb" title="Turn it a quarter one way" @click=${() => ctx.apply((d) => turnObject(d, id, index, -90))}>−90°</button>
+          <button type="button" class="hme-tb" title="Turn it a quarter the other way" @click=${() => ctx.apply((d) => turnObject(d, id, index, 90))}>+90°</button>
+          <button type="button" class="hme-tb" title="Turn it square with the room's walls" @click=${() => ctx.apply((d) => levelObject(d, id, index))}>Line up</button>
+        </div>`)}
+        <p class="hme-foot-hint">Drag a number sideways to change it (Shift for big steps, Alt for fine ones), or click it to type. On the plan, drag the thing to move it, a square handle to resize it, the round one to turn it.</p>`)}
 
       ${hmeCard("Show", html`
         <div class="hme-r tight"><span class="hme-grow">On the map, the tiles and the watch</span>
           ${hmeChip({ on: object.hidden !== true, onText: "Shown", offText: "Hidden", label: `${name} shown`, click: () => ctx.apply((d) => setObjectHidden(d, id, index, object.hidden !== true)) })}</div>
-        ${hmeHint("Scan Again on the iPhone puts the room's things back where the scan finds them. A hidden thing stays hidden.")}
+        <p class="hme-foot-hint">Scan Again on the iPhone puts the room's things back where the scan finds them. A hidden thing stays hidden.</p>
         <div class="hme-row-end">
           <button type="button" class="hme-tb" @click=${() => ctx.select(back)}>‹ ${homeMapRoomName(room)}</button>
           <button type="button" class="hme-tb danger push" @click=${() => ctx.apply((d) => removeObject(d, id, index), { select: back })}>Remove</button>

@@ -29,45 +29,128 @@ export function hmeHint(text: unknown): TemplateResult {
   return html`<p class="hme-hint">${text}</p>`;
 }
 
+/** How far a dragged number field moves before it scrubs, in pixels. */
+const SCRUB_SLOP = 3;
+
+/** A number field's step by default: a degree for degrees, else one of its
+ * last shown digit (a centimetre for meters at two decimals). */
+function scrubStep(unit: string | undefined, digits: number): number {
+  return unit === "°" ? 1 : 10 ** -digits;
+}
+
 /**
- * A number field: shows `value` with `digits` decimals and a unit after
- * it; saves on leaving it or Enter, and goes back to the value when what
- * was typed is not a number, lies outside `min` to `max` or is unchanged.
- * An undefined value (several things picked that differ) shows empty, with
- * Mixed in its place, until a number is typed.
+ * A number field: shows `value` with `digits` decimals, a short `tag` before
+ * it (W, X) and a unit after it. Dragged sideways it scrubs the value, one
+ * `step` a pixel (Shift ten, Alt a tenth), showing it as it goes through
+ * `preview` and saving once on letting go; clicked without a drag it takes
+ * the typing, saved on leaving it or Enter, back to the value when what was
+ * typed is not a number, lies outside `min` to `max` or is unchanged. Up
+ * and Down arrows step it while it has the typing (Shift ten steps). An
+ * undefined value (several things picked that differ) shows empty, with
+ * Mixed in its place, and only takes a typed number.
  */
 export function hmeNumber(o: {
   value: number | undefined;
   unit?: string;
+  tag?: string;
   digits?: number;
+  step?: number;
   min?: number;
   max?: number;
   label: string;
   disabled?: boolean;
   set: (v: number) => void;
+  /** Called with each value while scrubbing, and undefined once it ends. */
+  preview?: (v: number | undefined) => void;
   width?: string;
 }): TemplateResult {
   const digits = o.digits ?? 2;
+  const step = o.step ?? scrubStep(o.unit, digits);
   const text = o.value === undefined ? "" : homeMapNumberText(o.value, digits);
+  const fit = (v: number) => Math.min(Math.max(v, o.min ?? -Infinity), o.max ?? Infinity);
+  const same = (v: number) => homeMapNumberText(v, digits) === text;
   const commit = (input: HTMLInputElement) => {
     const v = homeMapParseNumber(input.value);
-    if (v === undefined || (o.min !== undefined && v < o.min) || (o.max !== undefined && v > o.max) || homeMapNumberText(v, digits) === text) {
+    if (v === undefined || (o.min !== undefined && v < o.min) || (o.max !== undefined && v > o.max) || same(v)) {
       input.value = text;
       return;
     }
     o.set(v);
   };
-  return html`<span class="hme-in hme-num" style=${o.width === undefined ? nothing : `flex:0 0 ${o.width}`}>
+  const scrub = (e: PointerEvent) => {
+    const box = e.currentTarget as HTMLElement;
+    const input = box.querySelector("input");
+    if (input === null || o.disabled === true || e.button !== 0 || input.matches(":focus")) return;
+    e.preventDefault();
+    const start = o.value;
+    const sx = e.clientX;
+    let moved = false;
+    let now = start;
+    try {
+      box.setPointerCapture(e.pointerId);
+    } catch {
+      /* a synthetic press has no pointer to capture */
+    }
+    const move = (ev: PointerEvent) => {
+      if (start === undefined) return;
+      const dx = ev.clientX - sx;
+      if (!moved && Math.abs(dx) < SCRUB_SLOP) return;
+      if (!moved) box.classList.add("scrubbing");
+      moved = true;
+      const k = ev.shiftKey ? 10 : ev.altKey ? 0.1 : 1;
+      now = fit(Number((start + (dx - Math.sign(dx) * SCRUB_SLOP) * step * k).toFixed(digits + (ev.altKey ? 1 : 0))));
+      input.value = homeMapNumberText(now, digits);
+      o.preview?.(now);
+    };
+    const done = (ev: PointerEvent) => {
+      box.removeEventListener("pointermove", move);
+      box.removeEventListener("pointerup", done);
+      box.removeEventListener("pointercancel", done);
+      box.classList.remove("scrubbing");
+      if (!moved) {
+        input.focus();
+        input.select();
+        return;
+      }
+      o.preview?.(undefined);
+      if (ev.type !== "pointercancel" && now !== undefined && !same(now)) o.set(now);
+      else input.value = text;
+    };
+    box.addEventListener("pointermove", move);
+    box.addEventListener("pointerup", done);
+    box.addEventListener("pointercancel", done);
+  };
+  return html`<span class="hme-in hme-num ${o.disabled === true ? "off" : ""}" style=${o.width === undefined ? nothing : `flex:0 0 ${o.width}`}
+    title=${o.disabled === true ? nothing : "Drag sideways to change it, click to type"} @pointerdown=${scrub}>
+    ${o.tag === undefined ? nothing : html`<span class="hme-ntag" aria-hidden="true">${o.tag}</span>`}
     <input type="text" inputmode="decimal" aria-label=${o.label} .value=${live(text)} ?disabled=${o.disabled === true}
       placeholder=${o.value === undefined ? "Mixed" : ""}
       @change=${(e: Event) => commit(e.target as HTMLInputElement)}
       @keydown=${(e: KeyboardEvent) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        const input = e.target as HTMLInputElement;
+        if (e.key === "Enter") input.blur();
         if (e.key === "Escape") {
-          (e.target as HTMLInputElement).value = text;
-          (e.target as HTMLInputElement).blur();
+          input.value = text;
+          input.blur();
+        }
+        if ((e.key === "ArrowUp" || e.key === "ArrowDown") && o.value !== undefined) {
+          e.preventDefault();
+          const typed = homeMapParseNumber(input.value) ?? o.value;
+          const v = fit(Number((typed + (e.key === "ArrowUp" ? 1 : -1) * step * (e.shiftKey ? 10 : 1)).toFixed(digits)));
+          input.value = homeMapNumberText(v, digits);
+          if (!same(v)) o.set(v);
         }
       }} />${o.unit === undefined ? nothing : html`<span class="hme-unit">${o.unit}</span>`}</span>`;
+}
+
+/** Number fields side by side in equal columns. */
+export function hmeFields(...fields: unknown[]): TemplateResult {
+  return html`<div class="hme-fields" style=${`--n:${fields.length}`}>${fields}</div>`;
+}
+
+/** A small titled block of a card: its name over its controls. */
+export function hmeGroup(title: string, ...body: unknown[]): TemplateResult {
+  return html`<div class="hme-group"><div class="hme-gl">${title}</div>${body}</div>`;
 }
 
 /** A text field that saves on leaving it or Enter. */

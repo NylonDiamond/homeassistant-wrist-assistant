@@ -203,6 +203,24 @@ export const editorStyles = css`
   .hme-in select { cursor: pointer; }
   .hme-num input { font-family: var(--hme-mono); }
   .hme-unit { color: var(--wa-faint); font-size: 12px; }
+  /* A number field scrubs when dragged and types when clicked: until it has
+     the typing, the press goes to the field, not its text. */
+  .hme-num { cursor: ew-resize; transition: border-color 0.12s, background 0.12s; }
+  .hme-num:not(:focus-within) input { pointer-events: none; cursor: ew-resize; }
+  .hme-num:not(:focus-within):hover { border-color: var(--wa-line-strong); background: var(--wa-hover); }
+  .hme-num:focus-within { cursor: text; }
+  .hme-num.scrubbing { border-color: var(--hme-sel); background: var(--wa-hover); }
+  .hme-num.off { cursor: default; opacity: 0.5; }
+  .hme-ntag { color: var(--wa-faint); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; min-width: 12px; user-select: none; }
+  .hme-num.scrubbing .hme-ntag, .hme-num:hover .hme-ntag { color: var(--hme-sel); }
+  .hme-fields { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 8px; }
+  .hme-group { display: flex; flex-direction: column; gap: 6px; }
+  .hme-group + .hme-group { padding-top: 4px; }
+  .hme-gl { color: var(--wa-muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .hme-turn { display: flex; gap: 6px; align-items: center; }
+  .hme-turn .hme-num { flex: 1; }
+  .hme-turn .hme-tb.hme-icon { width: 32px; padding: 0; justify-content: center; }
+  .hme-foot-hint { color: var(--wa-faint); font-size: 11.5px; line-height: 1.4; margin: 2px 0 0; }
   .hme-in.hme-ro { color: var(--wa-soft); }
   .hme-pics { display: flex; gap: 10px; flex-wrap: wrap; }
   .hme-pic { display: flex; flex-direction: column; align-items: center; gap: 5px; font: inherit; font-size: 11px; color: var(--wa-muted); border: 0; background: none; padding: 0; cursor: pointer; max-width: 72px; text-align: center; }
