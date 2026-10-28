@@ -46,6 +46,9 @@ export interface HomeMapViewInput {
   icons: IconProvider | undefined;
   /** Bumped when symbols arrive, so the pins draw them. */
   iconsTick: number;
+  /** The address the panel's bundle was served from (the entry's
+   * `import.meta.url`), for the furniture models in the folder beside it. */
+  bundleUrl?: string;
   /** Whether the integration lists `home_map`. Without it the page says to
    * update the integration and reads nothing. */
   capable: boolean;
@@ -65,7 +68,7 @@ export function renderHomeMapView(input: HomeMapViewInput): TemplateResult {
   if (!ready && !loadFailed) void loadHomeMapEditor().then(input.onLoaded, input.onLoaded);
   return ready
     ? html`<wa-home-map-editor .hass=${input.hass} ?narrow=${input.narrow} .icons=${input.icons} .iconsTick=${input.iconsTick}
-        .capable=${input.capable} .onHome=${input.onHome} .onOpenPage=${input.onOpenPage}></wa-home-map-editor>`
+        .bundleUrl=${input.bundleUrl} .capable=${input.capable} .onHome=${input.onHome} .onOpenPage=${input.onOpenPage}></wa-home-map-editor>`
     : html`<div class="wp-loading">
         ${loadFailed ? html`<span>The Home map page did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
       </div>`;

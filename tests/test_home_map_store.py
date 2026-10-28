@@ -610,6 +610,37 @@ def test_an_objects_lift(env) -> None:
     assert env.refused_doc(doc) == "doc.floors[0].rooms[0].objects[1].lift must be a number"
 
 
+def test_an_objects_model(env) -> None:
+    doc = basic()
+    # Given last, it is kept right after the kind.
+    _living(doc)["objects"][0] = {**_object_(doc), "lift": 0.4, "hidden": True, "model": "bedDouble"}
+    checked = env.mod.check_document(doc)
+    objects = checked["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == ["kind", "model", "c", "size", "turn", "lift", "hidden"]
+    assert objects[0]["model"] == "bedDouble"
+    # A name only: a piece no catalog has yet is kept as sent.
+    _object_(doc)["model"] = "chairRocking2"
+    assert env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"][0]["model"] == "chairRocking2"
+    message = "doc.floors[0].rooms[0].objects[0].model must be a furniture piece's name in lower camel case"
+    for bad in ("", "BedDouble", "bed double", "bed-double", "b" * 41, None, 3):
+        _object_(doc)["model"] = bad
+        assert env.refused_doc(doc) == message
+
+
+# The catalog's kinds RoomPlan never makes: each is a kind like any other.
+CATALOG_ONLY_KINDS = (
+    "rug", "lamp", "plant", "ottoman", "speaker", "screen", "laptop", "bench", "microwave",
+    "coffeeMachine", "toaster", "hood", "shower", "mirror", "fan", "books", "bin", "box",
+)
+
+
+@pytest.mark.parametrize("kind", CATALOG_ONLY_KINDS)
+def test_a_catalog_kind_is_kept(env, kind) -> None:
+    doc = basic()
+    _object_(doc)["kind"] = kind
+    assert env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"][0]["kind"] == kind
+
+
 def test_an_openings_style(env) -> None:
     doc = basic()
     window, door, way = _living(doc)["openings"]

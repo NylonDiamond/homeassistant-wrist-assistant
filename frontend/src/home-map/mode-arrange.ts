@@ -27,14 +27,23 @@
 // freely, the grid moves its middle in 10 cm steps), the square handles
 // resize it along its own sides (Shift and Alt as for a room) and the round
 // one turns it. Arrow keys nudge it, Delete removes it and Escape goes back
-// to its room. Its inspector holds where its middle is, its turn, its width,
-// depth and height, and whether it is shown.
+// to its room. Its inspector holds the furniture piece the 3D look draws it
+// as (Change opens the picker, pieces of its own kind first), where its
+// middle is, its turn, its width, depth and height, and whether it is shown.
+//
+// Add furniture (the rail, and a room's inspector) opens the furniture
+// picker over the page: the catalog's pieces by group, a search, and a card
+// for each with its small 3D picture (drawn once by `scene3d.ts`), name and
+// size. A card picked goes into the picked room, or the room in the middle
+// of the view, at the room's middle, and is picked so it can be dragged
+// into place at once.
 //
 // Every edit is an `edit-ops.ts` function by ids, saved through the shell
 // (`editor-mode.ts` has the rules).
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { live } from "lit/directives/live.js";
+import { ref } from "lit/directives/ref.js";
 import {
   type HomeMapObjectResize,
   type HomeMapResize,
@@ -46,6 +55,7 @@ import {
   HOME_MAP_MIN_ROOM_SIZE,
   HOME_MAP_OBJECT_KINDS,
   addObject,
+  addPiece,
   deleteRoom,
   homeMapLevelTurn,
   homeMapObjectAxes,
@@ -66,6 +76,7 @@ import {
   setRoomFinish,
   setRoomPage,
   setObject,
+  setObjectPiece,
   setWallHeight,
   snapObject,
   snapRoom,
@@ -101,8 +112,17 @@ import {
   homeMapRoomSize,
   homeMapRoomSizeText,
   homeMapShortcut,
+  homeMapToPlan,
   homeMapUndoKey,
 } from "./editor-view.js";
+import {
+  type HomeMapFurniturePiece,
+  HOME_MAP_FURNITURE,
+  homeMapPiece,
+  homeMapPieceOf,
+  homeMapPieceSearch,
+  homeMapPieceSizeText,
+} from "./furniture.js";
 import {
   type HomeFloorKind,
   homeBoxCorners,
@@ -133,6 +153,7 @@ import {
   homeMapRoomName,
   sameHomeMapId,
 } from "./model.js";
+import { homeMapLoad3D } from "./scene3d-load.js";
 
 /** A finish's name. */
 export const HOME_MAP_FINISH_NAMES: Readonly<Record<HomeFloorKind, string>> = {
@@ -177,6 +198,59 @@ interface ThingAt {
   object: HomeMapObject;
 }
 
+/** A thing's name: the furniture piece it was picked as, else its kind's. */
+export function homeMapThingName(object: Pick<HomeMapObject, "kind" | "model">): string {
+  return homeMapPiece(object.model)?.name ?? homeMapObjectName(object.kind);
+}
+
+/** The room a new piece goes into: the picked one, else the one under the
+ * middle of the view, else the one whose middle is nearest it. */
+export function homeMapRoomForAdding(ctx: Pick<HomeMapEditorContext, "floor" | "selection" | "view" | "stage">): HomeMapRoom | undefined {
+  const id = homeMapSelectionRoom(ctx.selection);
+  const picked = id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
+  if (picked !== undefined) return picked;
+  const middle = homeMapToPlan(ctx.view, [ctx.stage.width / 2, ctx.stage.height / 2]);
+  const under = homeRoomUnder(ctx.floor, middle);
+  if (under !== undefined) return under;
+  let best: { room: HomeMapRoom; d: number } | undefined;
+  for (const room of ctx.floor.rooms) {
+    const c = homeMapRoomCenter(room);
+    const d = Math.hypot(c[0] - middle[0], c[1] - middle[1]);
+    if (best === undefined || d < best.d) best = { room, d };
+  }
+  return best?.room;
+}
+
+/** What the furniture picker is open for: a new piece for a room, or
+ * another piece for one of its things. */
+interface Picker {
+  roomId: string;
+  index?: number;
+}
+
+/** A section of the picker: its title and its pieces. */
+export interface HomeMapPickerSection {
+  title: string;
+  pieces: HomeMapFurniturePiece[];
+}
+
+/** The picker's sections: with no search and every group, one section a
+ * group in the catalog's order, a thing's own kind first when changing one
+ * (`kind`); else one section of what the search and group find, its own
+ * kind first. */
+export function homeMapPickerSections(query: string, group: string, kind?: string): HomeMapPickerSection[] {
+  const found = homeMapPieceSearch(query, kind).filter((p) => group === "" || p.group === group);
+  if (query.trim() !== "" || group !== "") return [{ title: group === "" ? "Found" : group, pieces: found }];
+  const sections: HomeMapPickerSection[] = [];
+  const own = kind === undefined ? [] : found.filter((p) => p.kind === kind);
+  if (own.length > 0) sections.push({ title: `${homeMapObjectName(kind!)} pieces`, pieces: own });
+  for (const g of HOME_MAP_FURNITURE.groups) {
+    const pieces = found.filter((p) => p.group === g && !own.includes(p));
+    if (pieces.length > 0) sections.push({ title: g, pieces });
+  }
+  return sections;
+}
+
 /** A thing's turn as the inspector shows it, -180 to 180. */
 function thingTurn(object: HomeMapObject): number {
   return Math.round(homeNormalDegrees(object.turn) * 10) / 10;
@@ -197,6 +271,148 @@ export class ArrangeMode implements HomeMapMode {
   private guides: HomeMapSnapGuide[] = [];
   private dragging = false;
   private resizing = false;
+  /** The furniture picker while it is open, what it searches for and the
+   * group it shows ("" every group). */
+  private picker?: Picker;
+  private pickerQuery = "";
+  private pickerGroup = "";
+  private pickerFocus = false;
+  /** The pieces' small pictures as they arrive, and the ones asked for. */
+  private readonly thumbs = new Map<string, string>();
+  private readonly askedThumbs = new Set<string>();
+  private thumbFrame = 0;
+
+  // ── the furniture picker ───────────────────────────────────────────────
+
+  /** Open the picker to add a piece to `room`, or with `index` to change
+   * that thing's piece. */
+  openPicker(ctx: HomeMapEditorContext, room: HomeMapRoom, index?: number): void {
+    this.picker = index === undefined ? { roomId: room.id } : { roomId: room.id, index };
+    this.pickerQuery = "";
+    this.pickerGroup = "";
+    this.pickerFocus = true;
+    ctx.redraw();
+  }
+
+  closePicker(ctx: HomeMapEditorContext): void {
+    this.picker = undefined;
+    ctx.redraw();
+  }
+
+  /** Whether the picker is open. */
+  get pickerOpen(): boolean {
+    return this.picker !== undefined;
+  }
+
+  /** A piece's small picture, asked for the first time it is shown and
+   * drawn again once it is in (a frame's worth of them at a time). */
+  private thumb(ctx: HomeMapEditorContext, pieceId: string): string | undefined {
+    const done = this.thumbs.get(pieceId);
+    const base = ctx.furnitureBase;
+    if (done !== undefined || base === undefined || this.askedThumbs.has(pieceId)) return done;
+    this.askedThumbs.add(pieceId);
+    void homeMapLoad3D()
+      .then((m) => m.homeMapPieceThumb(base, pieceId))
+      .then((url) => {
+        if (url === undefined) return;
+        this.thumbs.set(pieceId, url);
+        if (this.thumbFrame !== 0) return;
+        const later = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (f: () => void) => setTimeout(f, 16) as unknown as number;
+        this.thumbFrame = later(() => {
+          this.thumbFrame = 0;
+          ctx.redraw();
+        });
+      }, () => undefined);
+    return undefined;
+  }
+
+  /** A piece's picture, or a quiet stand in until it is drawn. */
+  private piecePic(ctx: HomeMapEditorContext, piece: HomeMapFurniturePiece | undefined, cls: string): TemplateResult {
+    const url = piece === undefined ? undefined : this.thumb(ctx, piece.id);
+    return html`<span class="${cls} ${url === undefined ? "wait" : ""}">${url === undefined ? nothing : html`<img src=${url} alt="" draggable="false" />`}</span>`;
+  }
+
+  /** Add the piece to the picker's room at its middle, or put it on the
+   * picker's thing, and pick the thing. */
+  private pickPiece(ctx: HomeMapEditorContext, piece: HomeMapFurniturePiece): void {
+    const picker = this.picker;
+    const room = picker === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, picker.roomId));
+    this.picker = undefined;
+    if (picker === undefined || room === undefined) {
+      ctx.redraw();
+      return;
+    }
+    const id = room.id;
+    if (picker.index !== undefined) {
+      const index = picker.index;
+      if (!ctx.apply((d) => setObjectPiece(d, id, index, piece), { select: { kind: "object", roomId: id, object: index } })) ctx.redraw();
+      return;
+    }
+    const at = homeLabelPoint(room) ?? homeMapRoomCenter(room);
+    const index = room.objects.length;
+    if (!ctx.apply((d) => addPiece(d, id, piece, at), { select: { kind: "object", roomId: id, object: index } })) ctx.redraw();
+  }
+
+  /** The picker over the page. */
+  sheet(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    const picker = this.picker;
+    if (picker === undefined) return nothing;
+    const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, picker.roomId));
+    const thing = picker.index === undefined ? undefined : room?.objects[picker.index];
+    if (room === undefined || (picker.index !== undefined && thing === undefined)) {
+      this.picker = undefined;
+      return nothing;
+    }
+    const current = thing === undefined ? undefined : homeMapPieceOf(thing);
+    const sections = homeMapPickerSections(this.pickerQuery, this.pickerGroup, thing?.kind);
+    const title = thing === undefined ? "Add furniture" : "Change model";
+    const sub = thing === undefined
+      ? `To ${homeMapRoomName(room)}, in its middle. Drag it into place once it is in.`
+      : `${homeMapThingName(thing)} in ${homeMapRoomName(room)} keeps its place, size and turn.`;
+    const count = (g: string) => HOME_MAP_FURNITURE.pieces.filter((p) => g === "" || p.group === g).length;
+    const groups = ["", ...HOME_MAP_FURNITURE.groups];
+    const focus = this.pickerFocus;
+    this.pickerFocus = false;
+    return html`<div class="hme-scrim hme-sheet"
+      @pointerdown=${(e: Event) => { if (e.target === e.currentTarget) this.closePicker(ctx); }}
+      @keydown=${(e: KeyboardEvent) => {
+        // Every key stays in the picker, so Delete or an arrow never reaches the plan.
+        e.stopPropagation();
+        if (e.key === "Escape") this.closePicker(ctx);
+      }}>
+      <div class="hme-fpick" role="dialog" aria-modal="true" aria-label=${title}>
+        <header class="hme-fpick-head">
+          <div class="hme-fpick-t"><strong>${title}</strong><span>${sub}</span></div>
+          <label class="hme-find hme-fpick-find"><span aria-hidden="true">⌕</span>
+            <input type="search" placeholder="Find a piece: sofa, lamp, desk" aria-label="Find a piece" .value=${live(this.pickerQuery)}
+              ${ref((el) => { if (focus && el instanceof HTMLInputElement) setTimeout(() => el.focus(), 0); })}
+              @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
+          <button type="button" class="hme-x hme-fpick-close" aria-label="Close" title="Close (Esc)" @click=${() => this.closePicker(ctx)}>×</button>
+        </header>
+        <div class="hme-fpick-main">
+          <nav class="hme-fpick-groups" aria-label="Groups">
+            ${groups.map((g) => html`<button type="button" class="hme-tool ${g === this.pickerGroup ? "on" : ""}" aria-pressed=${g === this.pickerGroup ? "true" : "false"}
+              @click=${() => { this.pickerGroup = g; ctx.redraw(); }}>${g === "" ? "All" : g}<span class="n">${count(g)}</span></button>`)}
+          </nav>
+          <div class="hme-fpick-body">
+            ${sections.every((s) => s.pieces.length === 0) ? html`<p class="hme-empty-line">No piece by that name${this.pickerGroup === "" ? "" : ` in ${this.pickerGroup}`}.</p>` : nothing}
+            ${sections.filter((s) => s.pieces.length > 0).map((s) => html`<section class="hme-fpick-sec">
+              <div class="hme-h">${s.title}<span class="hme-h-end">${homeMapCount(s.pieces.length, "piece")}</span></div>
+              <div class="hme-fgrid">${s.pieces.map((p) => {
+                const on = current?.id === p.id;
+                return html`<button type="button" class="hme-fcard ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+                  title=${`${thing === undefined ? "Add" : "Use"} ${p.name}, ${homeMapPieceSizeText(p)}`} @click=${() => this.pickPiece(ctx, p)}>
+                  ${this.piecePic(ctx, p, "hme-fcard-pic")}
+                  <span class="hme-fcard-name">${p.name}</span>
+                  <span class="hme-fcard-size mono">${homeMapPieceSizeText(p)}</span>
+                </button>`;
+              })}</div>
+            </section>`)}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
 
   /** A drag is over, let go or dropped: no guides, the handles and the
    * sizes back as before it, and the plan without its preview. */
@@ -265,7 +481,15 @@ export class ArrangeMode implements HomeMapMode {
       </section>
       <button type="button" class="hme-tb hme-wide ${this.draw.active ? "on" : ""}" @click=${() => (this.draw.active ? this.draw.stop(ctx) : this.draw.start(ctx))}>
         ${this.draw.active ? "Stop drawing" : "＋ Draw a room by hand"}</button>
+      ${this.addFurnitureButton(ctx, homeMapRoomForAdding(ctx), "hme-tb hme-wide")}
       <p class="hme-foot">Scanned rooms come from the iPhone. Rooms you draw here (a garden, a garage) need no scan.</p>`;
+  }
+
+  /** Add furniture, into `room`; off with no room to put it in. */
+  private addFurnitureButton(ctx: HomeMapEditorContext, room: HomeMapRoom | undefined, cls: string): TemplateResult {
+    return html`<button type="button" class=${cls} ?disabled=${room === undefined}
+      title=${room === undefined ? "Draw or scan a room first" : `Pick a sofa, a bed, a lamp or more from the furniture catalog for ${homeMapRoomName(room)}`}
+      @click=${() => { if (room !== undefined) this.openPicker(ctx, room); }}>＋ Add furniture</button>`;
   }
 
   private layer(ctx: HomeMapEditorContext, room: HomeMapRoom, on: boolean): TemplateResult {
@@ -287,8 +511,8 @@ export class ArrangeMode implements HomeMapMode {
       <button type="button" class="hme-lay sub" @click=${() => toShape(windows[0]?.i)}>Windows<span class="n">${windows.length}</span></button>
       <button type="button" class="hme-lay sub" aria-expanded=${this.open.has("things") ? "true" : "false"} @click=${() => toggle("things")}>Things<span class="n">${room.objects.length}</span></button>
       ${this.open.has("things") ? room.objects.map((o, i) => html`<div class="hme-lay subsub ${this.picked(ctx)?.index === i ? "on" : ""}">
-        <button type="button" class="hme-link" title="Pick it to move, resize or turn it" @click=${() => this.pickThing(ctx, room, i)}>${homeMapObjectName(o.kind)}</button>
-        ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapObjectName(o.kind)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, room.id, i, o.hidden !== true)) })}</div>`) : nothing}
+        <button type="button" class="hme-link" title="Pick it to move, resize or turn it" @click=${() => this.pickThing(ctx, room, i)}>${homeMapThingName(o)}</button>
+        ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapThingName(o)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, room.id, i, o.hidden !== true)) })}</div>`) : nothing}
       <button type="button" class="hme-lay sub" aria-expanded=${this.open.has("devices") ? "true" : "false"} @click=${() => toggle("devices")}>Devices<span class="n">${pins.length}</span></button>
       ${this.open.has("devices") ? pins.map((p) => html`<button type="button" class="hme-lay subsub" @click=${() => ctx.setMode("devices", { kind: "pin", pinId: p.id })}>${homeMapPinName(p, ctx.hass)}<span class="n">›</span></button>`) : nothing}`;
   }
@@ -740,6 +964,7 @@ export class ArrangeMode implements HomeMapMode {
 
   leave(ctx: HomeMapEditorContext): void {
     this.draw.stop(ctx);
+    this.picker = undefined;
     this.guides = [];
     this.dragging = false;
     this.resizing = false;
@@ -766,7 +991,7 @@ export class ArrangeMode implements HomeMapMode {
     const thing = this.picked(ctx);
     if (thing !== undefined) {
       const { index, object } = thing;
-      return html`<span class="hme-pill-name">${homeMapObjectName(object.kind)}</span>
+      return html`<span class="hme-pill-name">${homeMapThingName(object)}</span>
         <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnObject(d, id, index, 90))}>⟲ Turn 90°</button>
         <button type="button" class="hme-tb" title="Turn it square with the room's walls" @click=${() => ctx.apply((d) => levelObject(d, id, index))}>Line up</button>
         <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => setObjectHidden(d, id, index, object.hidden !== true))}>${object.hidden === true ? "Show" : "Hide"}</button>
@@ -897,9 +1122,9 @@ export class ArrangeMode implements HomeMapMode {
       ${hmeCard("In this room", html`
         ${room.objects.length === 0 ? html`<p class="hme-empty-line">No things. Add a sofa, a bed or stairs so the map reads.</p>` : nothing}
         ${room.objects.map((o, i) => html`<div class="hme-r tight"><span class="hme-grow ${o.hidden === true ? "dim" : ""}">
-            <button type="button" class="hme-link" title="Pick it to move, resize or turn it" @click=${() => this.pickThing(ctx, room, i)}>${homeMapObjectName(o.kind)}</button></span>
-          ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapObjectName(o.kind)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, id, i, o.hidden !== true)) })}
-          <button type="button" class="hme-x" aria-label=${`Remove ${homeMapObjectName(o.kind)}`} title="Remove" @click=${() => ctx.apply((d) => removeObject(d, id, i))}>×</button></div>`)}
+            <button type="button" class="hme-link" title="Pick it to move, resize or turn it" @click=${() => this.pickThing(ctx, room, i)}>${homeMapThingName(o)}</button></span>
+          ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapThingName(o)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, id, i, o.hidden !== true)) })}
+          <button type="button" class="hme-x" aria-label=${`Remove ${homeMapThingName(o)}`} title="Remove" @click=${() => ctx.apply((d) => removeObject(d, id, i))}>×</button></div>`)}
         ${room.openings.length > 0 ? html`<div class="hme-r tight"><span class="hme-grow">${[...new Set(room.openings.map(homeMapOpeningName))].join(", ")}</span>
           <button type="button" class="hme-link" @click=${() => ctx.setMode("shape", { kind: "room", roomId: id })}>Shape ›</button></div>` : nothing}
         <div class="hme-r tight"><span class="hme-grow">${pins.length === 0 ? "No devices" : pins.slice(0, 3).map((p) => homeMapPinName(p, ctx.hass)).join(", ") + (pins.length > 3 ? "…" : "")}</span>
@@ -914,6 +1139,7 @@ export class ArrangeMode implements HomeMapMode {
               ctx.apply((d) => addObject(d, id, kind, at));
             },
           })}
+          ${this.addFurnitureButton(ctx, room, "hme-tb")}
           <button type="button" class="hme-tb danger push" @click=${() => void this.askDelete(ctx, room)}>Delete room</button>
         </div>`)}`;
   }
@@ -932,7 +1158,7 @@ export class ArrangeMode implements HomeMapMode {
   private thingInspector(ctx: HomeMapEditorContext, thing: ThingAt): TemplateResult {
     const { room, index, object } = thing;
     const id = room.id;
-    const name = homeMapObjectName(object.kind);
+    const name = homeMapThingName(object);
     const [width, depth, height] = object.size;
     const turn = thingTurn(object);
     const edit = this.edits(ctx);
@@ -945,6 +1171,8 @@ export class ArrangeMode implements HomeMapMode {
           <span>In ${homeMapRoomName(room)} · ${width.toFixed(2)} × ${depth.toFixed(2)} × ${height.toFixed(2)} m${(object.lift ?? 0) > 0 ? ` · ${(object.lift ?? 0).toFixed(2)} m up` : ""}${object.hidden === true ? " · Hidden" : ""}</span>
         </div>
       </section>
+
+      ${this.modelCard(ctx, thing)}
 
       ${hmeCard("Size", html`
         ${hmeFields(
@@ -973,6 +1201,26 @@ export class ArrangeMode implements HomeMapMode {
           <button type="button" class="hme-tb" @click=${() => ctx.select(back)}>‹ ${homeMapRoomName(room)}</button>
           <button type="button" class="hme-tb danger push" @click=${() => ctx.apply((d) => removeObject(d, id, index), { select: back })}>Remove</button>
         </div>`)}`;
+  }
+
+  /** The piece the 3D look draws a thing as: its picture, name and why it
+   * is that one, and Change, which opens the picker. */
+  private modelCard(ctx: HomeMapEditorContext, thing: ThingAt): TemplateResult {
+    const { room, index, object } = thing;
+    const piece = homeMapPieceOf(object);
+    const own = homeMapPiece(object.model);
+    const why = own !== undefined
+      ? `${own.group}, picked from the catalog`
+      : object.model !== undefined
+        ? piece === undefined ? "A piece this panel does not know yet" : `A piece this panel does not know yet, drawn as the ${piece.name.toLowerCase()} meanwhile`
+        : piece !== undefined ? `Picked by its kind: ${homeMapObjectName(object.kind)}` : "A plain box, as the scan found it";
+    return hmeCard("Model", html`<div class="hme-model">
+        ${this.piecePic(ctx, piece, "hme-model-pic")}
+        <div class="hme-model-t"><strong>${piece?.name ?? "Plain box"}</strong><span>${why}</span></div>
+        <button type="button" class="hme-tb push" title="Pick another piece from the furniture catalog; it keeps its place, size and turn"
+          @click=${() => this.openPicker(ctx, room, index)}>Change…</button>
+      </div>
+      <p class="hme-foot-hint">What it looks like in the 3D view and on the iPhone. The flat plan and the tiles draw it as before.</p>`);
   }
 
   /** With no room picked: the floor itself. */

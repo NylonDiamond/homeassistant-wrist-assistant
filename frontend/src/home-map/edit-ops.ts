@@ -65,6 +65,7 @@ import {
   onWallLine,
   segmentLength,
 } from "./geometry.js";
+import { type HomeMapFurniturePiece, homeMapPieceLift } from "./furniture-rules.js";
 import {
   type HomeMapDevicesShown,
   type HomeMapDocument,
@@ -106,6 +107,7 @@ import {
   isHomeMapEntityId,
   isHomeMapGlowColor,
   isHomeMapId,
+  isHomeMapModelName,
   orderedDocument,
   orderedObject,
   orderedOpening,
@@ -1044,6 +1046,58 @@ export function setObjectHidden(doc: HomeMapDocument, roomId: string, index: num
     const { hidden: _old, ...rest } = o;
     return hidden ? { ...rest, hidden: true } : rest;
   });
+}
+
+/** Where a thing `size` wide and deep, square with the plan, stands with its
+ * middle as near `at` as it can while its box stays inside the room's box
+ * along its own walls, off the walls' inner faces; the room's middle when
+ * that lands outside the room (an L shaped room) or the room has no box. */
+export function homeMapInsideRoom(room: HomeMapRoom, at: HomePoint, size: readonly [number, number, number]): HomePoint {
+  const frame = homeMapRoomFrame(room);
+  const middle = homeLabelPoint(room) ?? homeMapRoomCenter(room);
+  if (frame === undefined) return middle;
+  const inset = HOME_WALL_THICKNESS / 2;
+  const fit = (along: number, axis: HomePoint, lo: number, hi: number) => {
+    const half = (Math.abs(axis[0]) * size[0] + Math.abs(axis[1]) * size[1]) / 2;
+    const min = lo + inset + half;
+    const max = hi - inset - half;
+    return min > max ? (lo + hi) / 2 : clamp(along, min, max);
+  };
+  const a = fit(at[0] * frame.u[0] + at[1] * frame.u[1], frame.u, frame.a0, frame.a1);
+  const c = fit(at[0] * frame.v[0] + at[1] * frame.v[1], frame.v, frame.c0, frame.c1);
+  const p: HomePoint = [a * frame.u[0] + c * frame.v[0], a * frame.u[1] + c * frame.v[1]];
+  return homePolygonHolds(room.outline, p) ? p : middle;
+}
+
+/** Whether a catalog piece can go on a thing: its id and kind names the
+ * store keeps, and a size that is numbers. */
+function pieceFits(piece: HomeMapFurniturePiece): boolean {
+  return isHomeMapModelName(piece.id) && OBJECT_KIND_RE.test(piece.kind) && finite(...piece.size) && piece.size.every((v) => v >= 0 && v <= 1000);
+}
+
+/** A new thing made from the furniture catalog's `piece` (`furniture.ts`
+ * looks it up, so the catalog never comes along with these edits), at the
+ * end of the room's list: the piece's kind and its id as the thing's
+ * `model`, its default size, square with the plan, centred at `at` kept
+ * inside the room (`homeMapInsideRoom`), and off the floor as the piece
+ * starts (`homeMapPieceLift`, by the room's height). */
+export function addPiece(doc: HomeMapDocument, roomId: string, piece: HomeMapFurniturePiece, at: HomePoint): HomeMapDocument | undefined {
+  if (!pieceFits(piece) || !finite(...at)) return undefined;
+  return editRoom(doc, roomId, (room) => {
+    if (room.objects.length >= 256) return undefined;
+    const size = piece.size.map(r) as [number, number, number];
+    const lift = r(clamp(homeMapPieceLift(piece, room.height), 0, 100));
+    const object: HomeMapObject = { kind: piece.kind, model: piece.id, c: roundPoint(homeMapInsideRoom(room, at, size)), size, turn: 0 };
+    if (lift > 0) object.lift = lift;
+    return { ...room, objects: [...room.objects, orderedObject(object)] };
+  });
+}
+
+/** A thing drawn as another catalog piece: its `model` and `kind` the
+ * piece's, its middle, size, turn, lift and whether it is shown kept. */
+export function setObjectPiece(doc: HomeMapDocument, roomId: string, index: number, piece: HomeMapFurniturePiece): HomeMapDocument | undefined {
+  if (!pieceFits(piece)) return undefined;
+  return editObject(doc, roomId, index, (o) => ({ ...o, kind: piece.kind, model: piece.id }));
 }
 
 /** The room without one of its things. */

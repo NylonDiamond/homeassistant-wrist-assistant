@@ -18,7 +18,7 @@
 // editor's own edits are in `edit-ops.ts`.
 //
 // The editor's keys (the home style, a room's finish, a hidden object, an
-// opening's style, a pin's name, icon, reading, glow, glow colour, glow
+// object's furniture piece, an opening's style, a pin's name, icon, reading, glow, glow colour, glow
 // spill, tap and page) are all optional, and a default is never stored: the key is left
 // out, so a map written before them reads the same.
 //
@@ -58,6 +58,11 @@ export interface HomeMapObject {
   /** The RoomPlan category in lower camel case (`sofa`, `television`). A
    * kind nothing knows is drawn as a plain box. */
   kind: string;
+  /** The furniture catalog piece its 3D look draws (`bedDouble`), a name in
+   * lower camel case never checked against the catalog, so a newer
+   * catalog's pieces survive. Absent, the look picks one by `kind`
+   * (`furniture.ts`). */
+  model?: string;
   /** Its centre on the plan. */
   c: HomePoint;
   /** Width, depth, height. */
@@ -215,12 +220,20 @@ const UUID_RE = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0
 const ENTITY_ID_RE = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 const AREA_ID_RE = /^[A-Za-z0-9_-]{1,255}$/;
 const OBJECT_KIND_RE = /^[a-z][A-Za-z0-9]{0,39}$/;
+/** A furniture catalog piece's id, shaped as a kind is. */
+const OBJECT_MODEL_RE = OBJECT_KIND_RE;
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
 
 /** Whether a value is a pin's glow colour: `warm`, or `#RRGGBB` in either
  * case. */
 export function isHomeMapGlowColor(value: unknown): value is string {
   return value === "warm" || (typeof value === "string" && HEX_COLOR_RE.test(value));
+}
+
+/** Whether a value is shaped like a furniture catalog piece's id, as an
+ * object's `model` must be. */
+export function isHomeMapModelName(value: unknown): value is string {
+  return typeof value === "string" && OBJECT_MODEL_RE.test(value);
 }
 
 /** Whether a value is shaped like a UUID, in either case. */
@@ -389,15 +402,18 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   });
   out.objects = list(room.objects, `${path}.objects`, MAX_OBJECTS).map((o, i) => {
     const where = `${path}.objects[${i}]`;
-    const item = object(o, where, ["kind", "c", "size", "turn"], ["lift", "hidden"]);
+    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "lift", "hidden"]);
     if (typeof item.kind !== "string" || !OBJECT_KIND_RE.test(item.kind)) fail(`${where}.kind`, "must be a RoomPlan category in lower camel case");
     if (!Array.isArray(item.size) || item.size.length !== 3) fail(`${where}.size`, "must be a list of 3 numbers");
-    const checked: HomeMapObject = {
-      kind: item.kind,
-      c: point(item.c, `${where}.c`, 2),
-      size: item.size.map((v, j) => number(v, `${where}.size[${j}]`, 0, 1000)) as [number, number, number],
-      turn: number(item.turn, `${where}.turn`),
-    };
+    const checked = { kind: item.kind } as HomeMapObject;
+    // A name only, never looked up, so a newer catalog's pieces are kept.
+    if (Object.hasOwn(item, "model")) {
+      if (!isHomeMapModelName(item.model)) fail(`${where}.model`, "must be a furniture piece's name in lower camel case");
+      checked.model = item.model;
+    }
+    checked.c = point(item.c, `${where}.c`, 2);
+    checked.size = item.size.map((v, j) => number(v, `${where}.size[${j}]`, 0, 1000)) as [number, number, number];
+    checked.turn = number(item.turn, `${where}.turn`);
     // On the floor is the default, so a lift of 0 is left out.
     if (Object.hasOwn(item, "lift")) {
       const lift = number(item.lift, `${where}.lift`, 0, 100);
@@ -787,10 +803,14 @@ export function orderedOpening(opening: HomeMapOpening): HomeMapOpening {
   return out;
 }
 
-/** An object with its keys in the contract's order, `hidden` only when
- * true. */
+/** An object with its keys in the contract's order, `model` only when it
+ * names a piece and `hidden` only when true. */
 export function orderedObject(object: HomeMapObject): HomeMapObject {
-  const out: HomeMapObject = { kind: object.kind, c: object.c, size: object.size, turn: object.turn };
+  const out = { kind: object.kind } as HomeMapObject;
+  if (object.model !== undefined && object.model !== "") out.model = object.model;
+  out.c = object.c;
+  out.size = object.size;
+  out.turn = object.turn;
   if (object.lift !== undefined && object.lift > 0) out.lift = object.lift;
   if (object.hidden === true) out.hidden = true;
   return out;

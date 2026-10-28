@@ -11576,6 +11576,9 @@ export class WristAssistantPanel extends LitElement {
       // either. Each edit is saved soon after it is made.
       case "home-map": return renderHomeMapView({
         hass: this.hass, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        // Where the bundle was served from, for the furniture models beside
+        // it. Only the entry may read import.meta.
+        bundleUrl: import.meta.url,
         capable: this.homeMap,
         onHome: () => this.backToHome(undefined),
         onOpenPage: (pageId: string) => this.goTo(libraryItemPath("pages", pageId)),

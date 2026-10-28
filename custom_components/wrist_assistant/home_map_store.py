@@ -39,7 +39,7 @@ so a writer that drifts from it hears so at once::
                                           "opening",
                                           "style"?: "sliding" | "double",
                                           "a", "b", "z0", "z1"}],
-                            "objects": [{"kind", "c": [x, y],
+                            "objects": [{"kind", "model"?, "c": [x, y],
                                          "size": [w, d, h], "turn",
                                          "lift"?, "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
@@ -66,7 +66,11 @@ its floor is laid with; absent, it is picked from the room's name and
 furniture. An object's ``lift`` is how far its bottom stands above the
 floor in meters (0 to 100: a TV on the wall, a lamp on a table); 0 is
 dropped. An object with ``hidden`` is drawn nowhere but kept, so an editor
-can show it again; a false ``hidden`` is dropped. An opening's ``style`` is
+can show it again; a false ``hidden`` is dropped. An object's ``model``
+names the piece of the furniture catalog its 3D look draws (``bedDouble``,
+``lampRoundFloor``), checked as a name in lower camel case only and never
+against the catalog, so a newer catalog's pieces survive an older reader;
+absent, the look picks one by the object's kind. An opening's ``style`` is
 ``double`` (a door only: two leaves meeting in the middle) or ``sliding`` (a
 door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
 characters) and ``icon`` (one of ``PIN_ICONS``) stand in for the entity's
@@ -187,6 +191,8 @@ _ENTITY_ID_RE = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 _AREA_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,255}")
 # A RoomPlan category in lower camel case: sofa, table, television.
 _OBJECT_KIND_RE = re.compile(r"[a-z][A-Za-z0-9]{0,39}")
+# A furniture catalog piece's id, shaped the same: bedDouble, lampRoundFloor.
+_OBJECT_MODEL_RE = _OBJECT_KIND_RE
 # A pin's glow colour other than warm: six hex digits, either case.
 _HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 # What a scan record keeps of a room, in this order, with ``at`` after.
@@ -429,22 +435,29 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
     objects = []
     for i, raw_object in enumerate(_list(room["objects"], f"{path}.objects", MAX_OBJECTS)):
         where = f"{path}.objects[{i}]"
-        item = _object(raw_object, where, ("kind", "c", "size", "turn"), ("lift", "hidden"))
+        item = _object(
+            raw_object, where, ("kind", "c", "size", "turn"), ("model", "lift", "hidden")
+        )
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
             _fail(f"{where}.kind", "must be a RoomPlan category in lower camel case")
         size = item["size"]
         if not isinstance(size, list) or len(size) != 3:
             _fail(f"{where}.size", "must be a list of 3 numbers")
-        checked_object: dict[str, Any] = {
-            "kind": kind,
-            "c": _point(item["c"], f"{where}.c", 2),
-            "size": [
-                _number(value, f"{where}.size[{j}]", 0, 1000)
-                for j, value in enumerate(size)
-            ],
-            "turn": _number(item["turn"], f"{where}.turn"),
-        }
+        checked_object: dict[str, Any] = {"kind": kind}
+        # A name only, never looked up, so a newer catalog's pieces are kept.
+        if "model" in item:
+            model = item["model"]
+            if not isinstance(model, str) or not _OBJECT_MODEL_RE.fullmatch(model):
+                _fail(
+                    f"{where}.model", "must be a furniture piece's name in lower camel case"
+                )
+            checked_object["model"] = model
+        checked_object["c"] = _point(item["c"], f"{where}.c", 2)
+        checked_object["size"] = [
+            _number(value, f"{where}.size[{j}]", 0, 1000) for j, value in enumerate(size)
+        ]
+        checked_object["turn"] = _number(item["turn"], f"{where}.turn")
         # On the floor is the default, so a lift of 0 is left out.
         if "lift" in item:
             lift = _number(item["lift"], f"{where}.lift", 0, 100)

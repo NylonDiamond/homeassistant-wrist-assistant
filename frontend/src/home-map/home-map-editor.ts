@@ -24,7 +24,11 @@
 //   turn); editing happens in Flat. Both puts the model beside the plan, the
 //   plan on the left edited as in Flat and the model on the right following
 //   every edit and drag as it happens. The model outlines the picked room or
-//   thing in blue;
+//   thing in blue. The model's dock picks its look: the tiles' five, or 3D,
+//   the whole floor drawn for real by three.js (`scene3d.ts`, loaded only
+//   when first picked) with the catalog's furniture and each light lit as
+//   Home Assistant says, orbited by dragging and zoomed by scrolling, at
+//   night (Lights) or by day (Daylight);
 // - the selection, the undo stack and the saves (`editor-session.ts`):
 //   every edit is made at once on the page and saved soon after, a drag
 //   once on the drop;
@@ -109,6 +113,8 @@ import {
   sameHomeMapId,
 } from "./model.js";
 import { homeMapApi } from "./save.js";
+import type { HomeMap3DInput, HomeMapScene3D } from "./scene3d.js";
+import { homeMapFurnitureBase, homeMapLoad3D } from "./scene3d-load.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
@@ -142,6 +148,9 @@ export class WaHomeMapEditor extends LitElement {
   @property({ attribute: false }) icons: IconProvider | undefined = undefined;
   @property({ attribute: false }) iconsTick = 0;
   @property({ attribute: false }) capable = false;
+  /** Where the panel's bundle was served from, for the furniture models
+   * beside it; no 3D look without it. */
+  @property({ attribute: false }) bundleUrl: string | undefined = undefined;
   /** Back to the panel's Home; no ‹ Home without it. */
   @property({ attribute: false }) onHome: (() => void) | undefined = undefined;
   /** Open a library page in the page editor (Style's Used on, Edit). */
@@ -165,6 +174,10 @@ export class WaHomeMapEditor extends LitElement {
   @state() private floorMenu = false;
   @state() private dialog?: Dialog;
   @state() private modelLook?: HomeMapLook;
+  /** The model is drawn in real 3D rather than as one of the looks. */
+  @state() private model3d = false;
+  /** The 3D look by day, a sun coming in; else at night, lights only. */
+  @state() private daylight = false;
   @state() private modelTurn?: number;
   @state() private pages?: HomeMapPageChoice[];
   @state() private spaceHeld = false;
@@ -197,6 +210,11 @@ export class WaHomeMapEditor extends LitElement {
   private artKey = "";
   private artHeld: unknown = nothing;
   private focusedDialog?: Element;
+  /** The 3D look while it is on screen; let go, with all it holds on the
+   * GPU, as soon as it is not. */
+  private scene3d?: HomeMapScene3D;
+  private loading3d = false;
+  private failed3d = false;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -214,6 +232,7 @@ export class WaHomeMapEditor extends LitElement {
     this.observed = undefined;
     if (this.zoomTimer !== undefined) clearTimeout(this.zoomTimer);
     this.loadSeq++;
+    this.drop3d();
   }
 
   protected override willUpdate(_changed: PropertyValues): void {
@@ -253,6 +272,70 @@ export class WaHomeMapEditor extends LitElement {
         if (this.view !== undefined) this.artScale = this.view.scale;
       }, REDRAW_AFTER_ZOOM_MS);
     }
+    this.sync3d();
+  }
+
+  // ── the 3D look ────────────────────────────────────────────────────────
+
+  /** What the 3D look draws now: the floor shown with any drag's preview,
+   * the live states, the picked room or thing. */
+  private input3d(): HomeMap3DInput | undefined {
+    const floor = this.shownFloor();
+    if (floor === undefined) return undefined;
+    const sel = this.selection;
+    const mark = sel === undefined || sel.kind === "pin" || sel.kind === "pins" ? undefined
+      : sel.kind === "object" ? { roomId: sel.roomId, object: sel.object } : { roomId: sel.roomId };
+    return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, daylight: this.daylight };
+  }
+
+  /** After each draw: the 3D look in its place on the page and drawing what
+   * the page shows, loaded the first time; let go when it is off the
+   * page. */
+  private sync3d(): void {
+    const host = this.renderRoot.querySelector?.(".hme-3d-host");
+    const input = this.input3d();
+    if (!(host instanceof HTMLElement) || input === undefined || this.bundleUrl === undefined) {
+      this.drop3d();
+      return;
+    }
+    if (this.scene3d !== undefined) {
+      this.scene3d.attach(host);
+      this.scene3d.update(input, this.modelTurnNow());
+      return;
+    }
+    if (this.loading3d || this.failed3d) return;
+    this.loading3d = true;
+    const base = homeMapFurnitureBase(this.bundleUrl);
+    void homeMapLoad3D().then(
+      (m) => {
+        this.loading3d = false;
+        if (!this.isConnected) return;
+        try {
+          this.scene3d ??= new m.HomeMapScene3D(base);
+        } catch {
+          // No WebGL here.
+          this.failed3d = true;
+        }
+        this.tick++;
+      },
+      () => {
+        this.loading3d = false;
+        this.failed3d = true;
+        this.tick++;
+      },
+    );
+  }
+
+  private drop3d(): void {
+    this.scene3d?.dispose();
+    this.scene3d = undefined;
+  }
+
+  /** Back to the home style's turn: the model looks' turn, and the 3D
+   * look's camera framing the whole floor from there. */
+  private turnBack(): void {
+    this.modelTurn = undefined;
+    this.scene3d?.frameFloor(homeStyleOf(this.doc).turn ?? HOME_TILE_DEFAULT_TURN);
   }
 
   // ── loading ────────────────────────────────────────────────────────────
@@ -483,6 +566,7 @@ export class WaHomeMapEditor extends LitElement {
       pages: this.pages ?? [],
       areas: homeMapAreaChoices(this.hass),
       scans: this.scans,
+      furnitureBase: this.bundleUrl === undefined ? undefined : homeMapFurnitureBase(this.bundleUrl),
       canUndo: session?.canUndo ?? false,
       canRedo: session?.canRedo ?? false,
       toScreen: (p) => homeMapToScreen(view, p),
@@ -779,6 +863,8 @@ export class WaHomeMapEditor extends LitElement {
    * the mode's keys, then Escape, zoom and fit. */
   readonly onKey = (e: KeyboardEvent): void => {
     if (this.dialog !== undefined || this.session === undefined) return;
+    // A mode's sheet keeps its own keys.
+    if ((this.renderRoot as ParentNode | undefined)?.querySelector?.(".hme-sheet") != null) return;
     const target = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
     if (homeMapIsTypingTarget(target)) return;
     const shortcut = homeMapShortcut(e, false);
@@ -845,6 +931,7 @@ export class WaHomeMapEditor extends LitElement {
         <section class="hme-stage-wrap">${mode.stage?.(ctx) ?? this.renderStage(ctx, mode)}</section>
         <aside class="hme-insp" aria-label="Inspector">${mode.inspector(ctx)}</aside>
       </div>
+      ${mode.sheet?.(ctx) ?? nothing}
       ${this.renderDialog()}
     </div>`;
   }
@@ -937,16 +1024,26 @@ export class WaHomeMapEditor extends LitElement {
     const pill = model ? nothing : mode.pill?.(ctx) ?? nothing;
     const cursor = this.spaceHeld ? "grab" : model ? "ew-resize" : this.toggles.measure ? "crosshair" : mode.cursor?.(ctx) ?? "default";
     const empty = ctx.floor.rooms.length === 0;
+    const real = this.model3d && this.bundleUrl !== undefined;
     // The model beside the plan, the same size as it; the stage's observer
     // measures the plan, the first stage.
-    const side = both ? html`<div class="hme-stage model hme-split-r" style=${`background:${homeTileGround(this.modelLookNow())}`}>
+    const side = !both ? nothing : real ? html`<div class="hme-stage model hme-split-r hme-3d">
+      ${this.render3d(ctx)}
+      ${this.renderModelDock(false)}
+    </div>` : html`<div class="hme-stage model hme-split-r" style=${`background:${homeTileGround(this.modelLookNow())}`}>
       <svg class="hme-svg" width="100%" height="100%" viewBox=${`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`} style="cursor:ew-resize"
         role="img" aria-label=${`Model of ${homeMapFloorName(ctx.floor)}`}
         @pointerdown=${(e: PointerEvent) => this.onModelDown(e)}>
         ${this.renderModel(ctx, width, height)}
       </svg>
       ${this.renderModelDock(false)}
-    </div>` : nothing;
+    </div>`;
+    if (model && real) {
+      return html`<div class="hme-stage model hme-3d">
+        ${this.render3d(ctx)}
+        ${this.renderDock(ctx, mode)}
+      </div>`;
+    }
     return html`<div class="hme-stage ${model ? "model" : ""} ${both ? "hme-split-l" : ""}" style=${model ? `background:${homeTileGround(this.modelLookNow())}` : ""}>
       <svg class="hme-svg" width="100%" height="100%" viewBox=${`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`} style=${`cursor:${cursor}`}
         role="img" aria-label=${`Plan of ${homeMapFloorName(ctx.floor)}`}
@@ -1094,14 +1191,31 @@ export class WaHomeMapEditor extends LitElement {
     });
   }
 
-  /** The model's dock: its looks and Turn back, with Live states unless
-   * the plan's dock beside it has them. */
+  /** The 3D look's place: the scene's canvas goes in it after the draw
+   * (`sync3d`), with a word while it loads or when it cannot. */
+  private render3d(ctx: HomeMapEditorContext): TemplateResult {
+    const words = this.failed3d ? "The 3D view needs WebGL, which this browser has turned off." : this.scene3d === undefined ? "Loading the 3D view…" : undefined;
+    return html`<div class="hme-3d-host" role="img" aria-label=${`3D model of ${homeMapFloorName(ctx.floor)}. Drag to turn it, scroll to zoom.`}></div>
+      ${words === undefined ? nothing : html`<div class="hme-3d-note">${words}</div>`}`;
+  }
+
+  /** The model's dock: its looks and 3D, Lights or Daylight in 3D, and Turn
+   * back, with Live states unless the plan's dock beside it has them. */
   private renderModelDock(withLive: boolean, live?: TemplateResult): TemplateResult {
-    const look = this.modelLookNow();
+    const real = this.model3d && this.bundleUrl !== undefined;
+    const look = real ? undefined : this.modelLookNow();
+    const pressed = (on: boolean) => (on ? "true" : "false");
     return html`<div class="hme-dock">
-      ${HOME_TILE_MODEL_LOOKS.map((l) => html`<button type="button" class="hme-tb ${l === look ? "on" : ""}" aria-pressed=${l === look ? "true" : "false"} @click=${() => { this.modelLook = l; }}>${MODEL_LOOK_NAMES[l]}</button>`)}
+      ${HOME_TILE_MODEL_LOOKS.map((l) => html`<button type="button" class="hme-tb ${l === look ? "on" : ""}" aria-pressed=${pressed(l === look)} @click=${() => { this.modelLook = l; this.model3d = false; }}>${MODEL_LOOK_NAMES[l]}</button>`)}
+      ${this.bundleUrl === undefined ? nothing : html`<button type="button" class="hme-tb ${real ? "on" : ""}" aria-pressed=${pressed(real)}
+        title="The floor in real 3D, with its furniture and each light lit as it is now" @click=${() => { this.model3d = true; }}>3D</button>`}
+      ${real ? html`<span class="hme-vsep"></span>
+        <button type="button" class="hme-tb ${this.daylight ? "" : "on"}" aria-pressed=${pressed(!this.daylight)} title="Night: only the lights that are on light the rooms"
+          @click=${() => { this.daylight = false; }}>Lights</button>
+        <button type="button" class="hme-tb ${this.daylight ? "on" : ""}" aria-pressed=${pressed(this.daylight)} title="Day: the sun comes in through the windows"
+          @click=${() => { this.daylight = true; }}>Daylight</button>` : nothing}
       <span class="hme-vsep"></span>
-      <button type="button" class="hme-tb" title="Back to the home style's turn" @click=${() => { this.modelTurn = undefined; }}>⟲ Turn back</button>
+      <button type="button" class="hme-tb" title=${real ? "Show the whole floor from the home style's turn" : "Back to the home style's turn"} @click=${() => this.turnBack()}>⟲ Turn back</button>
       ${withLive && live !== undefined ? html`<span class="hme-vsep"></span>${live}` : nothing}
     </div>`;
   }

@@ -325,6 +325,14 @@ export const editorStyles = css`
     padding: 20px 24px; border-radius: 14px; background: rgba(28, 28, 30, 0.9); border: 1px solid #3a3a3c; color: #d1d1d6; text-align: center; max-width: 340px;
   }
   .hme-stage-empty b { color: #fff; font-size: 14px; }
+  /* The real 3D look: the canvas fills the stage, dragged to orbit. */
+  .hme-stage.hme-3d { background: #0f0e0d; }
+  .hme-3d-host { position: absolute; inset: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .hme-3d-host:active { cursor: grabbing; }
+  .hme-3d-note {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 12px;
+    background: rgba(28, 28, 30, 0.9); border: 1px solid #3a3a3c; color: #d1d1d6; font-size: 13px; pointer-events: none;
+  }
 
   /* ── shared by Devices and Style ──────────────────────────────────── */
   .hme-pad { padding: 4px 6px; }
@@ -415,6 +423,55 @@ export const editorStyles = css`
     .hme-stage-wrap:has(.hme-style-col) { height: auto; }
     .hme-style-col { position: static; }
     .hme-stage.hme-style-big { min-height: 360px; }
+  }
+
+  /* ── Arrange's furniture ──────────────────────────────────────────── */
+  .hme-model { display: flex; align-items: center; gap: 12px; }
+  .hme-model-pic, .hme-fcard-pic {
+    display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden;
+    border-radius: 9px; border: 1px solid #2c2c2e; background: radial-gradient(circle at 50% 38%, #2a2826, #161514 75%);
+  }
+  .hme-model-pic { width: 76px; height: 57px; }
+  .hme-model-pic img, .hme-fcard-pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .hme-model-pic.wait, .hme-fcard-pic.wait { background: linear-gradient(100deg, #1d1c1b 30%, #262423 50%, #1d1c1b 70%) 0 0/300% 100%; animation: hme-wait 1.4s linear infinite; }
+  @keyframes hme-wait { to { background-position: -300% 0; } }
+  .hme-model-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .hme-model-t strong { font-size: 14px; }
+  .hme-model-t span { color: var(--wa-muted); font-size: 12px; line-height: 1.35; }
+  .hme-sheet { z-index: 90; }
+  .hme-fpick {
+    width: min(1240px, 100%); height: min(860px, 100%); display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 18px; background: var(--wa-card); border: 1px solid var(--wa-line-strong); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  }
+  .hme-fpick-head { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--wa-line); }
+  .hme-fpick-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .hme-fpick-t strong { font-size: 17px; }
+  .hme-fpick-t span { color: var(--wa-muted); font-size: 12.5px; }
+  .hme-fpick-find { width: min(360px, 40%); }
+  .hme-x.hme-fpick-close { width: 32px; height: 32px; font-size: 20px; }
+  .hme-fpick-main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr); }
+  .hme-fpick-groups { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; border-right: 1px solid var(--wa-line); overflow: auto; }
+  .hme-fpick-groups .hme-tool { height: 34px; }
+  .hme-fpick-groups .n { margin-left: auto; color: var(--wa-faint); font-size: 12px; font-weight: 500; }
+  .hme-fpick-body { overflow: auto; padding: 14px 18px 22px; display: flex; flex-direction: column; gap: 18px; }
+  .hme-fpick-sec { display: flex; flex-direction: column; gap: 10px; }
+  .hme-fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+  .hme-fcard {
+    display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 6px 6px 9px; text-align: left; cursor: pointer;
+    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-ink); font: inherit;
+  }
+  .hme-fcard:hover { border-color: var(--wa-line-strong); background: var(--wa-hover); }
+  .hme-fcard:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
+  .hme-fcard.on { border-color: var(--hme-sel); background: var(--hme-sel-bg); }
+  .hme-fcard-pic { width: 100%; aspect-ratio: 4 / 3; margin-bottom: 5px; }
+  .hme-fcard-name { font-size: 13px; font-weight: 500; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hme-fcard-size { font-size: 11px; color: var(--wa-faint); padding: 0 4px; }
+  @container (max-width: 760px) {
+    .hme-fpick-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .hme-fpick-groups { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--wa-line); }
+    .hme-fpick-groups .hme-tool { width: auto; }
+    .hme-fpick-head { flex-wrap: wrap; }
+    .hme-fpick-find { width: 100%; order: 3; }
   }
 
   /* ── dialogs and calm states ──────────────────────────────────────── */

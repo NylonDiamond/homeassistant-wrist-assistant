@@ -147,6 +147,9 @@ export interface HomeMapEditorContext {
   /** Each room as the iPhone scanned it, as last read; undefined from an
    * integration that keeps none (and until the first read is in). */
   readonly scans: HomeMapScans | undefined;
+  /** The furniture models' folder (`scene3d-load.ts`), for the furniture
+   * picker's pictures; undefined where the panel gives no address. */
+  readonly furnitureBase: string | undefined;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
 
@@ -218,6 +221,9 @@ export interface HomeMapMode {
    * `ctx.stage`; the shell keeps the bar, the rail and the inspector, and
    * there is no Flat or Model. */
   stage?(ctx: HomeMapEditorContext): TemplateResult;
+  /** A sheet over the whole page, under the page's own dialogs (Arrange's
+   * furniture picker). It keeps its own keys: none reach the shell. */
+  sheet?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
   /** Something dragged from the rail moving over the plan at `at`, or
    * leaving it (undefined). True to take a drop there. */
   dragOver?(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean;
