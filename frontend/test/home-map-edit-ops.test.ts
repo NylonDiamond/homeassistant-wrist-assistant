@@ -58,8 +58,13 @@ import {
   setRoomFinish,
   setRoomPage,
   homeMapRoomFrame,
+  resizeObject,
   resizeRoom,
+  snapObject,
   snapRoomResize,
+  turnObject,
+  levelObject,
+  HOME_MAP_MIN_OBJECT_SIZE,
   setWallHeight,
   setWallLength,
   setWallThickness,
@@ -392,6 +397,58 @@ describe("a room's settings", () => {
     out = done(out, removeObject(out, LIVING, 1));
     expect(room(out, LIVING).objects.map((o) => o.kind)).toEqual(["sofa", "television", "bed", "stairs"]);
     expect(removeObject(out, LIVING, 9)).toBeUndefined();
+  });
+
+  it("resizes a thing along its own sides, the anchor staying put", () => {
+    const doc = home([{ ...box(id(1), 0, 0, 4, 4), objects: [{ kind: "table", c: [2, 2], size: [1, 0.5, 0.75], turn: 0 }] }]);
+    // Its plus side along the width stays put, so its middle moves left.
+    let out = done(doc, resizeObject(doc, id(1), 0, { width: 2, anchor: [1, 0.5] }));
+    expect(room(out, id(1)).objects[0]).toEqual({ kind: "table", c: [1.5, 2], size: [2, 0.5, 0.75], turn: 0 });
+    // About its middle by default; the height never changes here.
+    out = done(out, resizeObject(out, id(1), 0, { depth: 1 }));
+    expect(room(out, id(1)).objects[0]!.c).toEqual([1.5, 2]);
+    expect(room(out, id(1)).objects[0]!.size).toEqual([2, 1, 0.75]);
+    // Turned a quarter, its width runs down the plan.
+    const turned = home([{ ...box(id(1), 0, 0, 4, 4), objects: [{ kind: "table", c: [2, 2], size: [1, 0.5, 0.75], turn: -90 }] }]);
+    out = done(turned, resizeObject(turned, id(1), 0, { width: 2, anchor: [0, 0.5] }));
+    expect(room(out, id(1)).objects[0]!.c).toEqual([2, 2.5]);
+    // Never smaller than 5 cm.
+    out = done(doc, resizeObject(doc, id(1), 0, { width: 0.001 }));
+    expect(room(out, id(1)).objects[0]!.size[0]).toBe(HOME_MAP_MIN_OBJECT_SIZE);
+    expect(resizeObject(doc, id(1), 0, { width: Number.NaN })).toBeUndefined();
+    expect(resizeObject(doc, id(1), 3, { width: 1 })).toBeUndefined();
+  });
+
+  it("turns a thing and lines it up with its room", () => {
+    const doc = home([{ ...box(id(1), 0, 0, 4, 4), objects: [{ kind: "sofa", c: [2, 2], size: [2, 0.9, 0.8], turn: 170 }] }]);
+    let out = done(doc, turnObject(doc, id(1), 0, 30));
+    expect(room(out, id(1)).objects[0]!.turn).toBe(-160);
+    out = done(out, levelObject(out, id(1), 0));
+    expect(room(out, id(1)).objects[0]!.turn).toBe(-180 + 360);
+    const slanted = home([{ ...box(id(1), 0, 0, 4, 4), objects: [{ kind: "sofa", c: [2, 2], size: [2, 0.9, 0.8], turn: 37 }] }]);
+    expect(room(done(slanted, levelObject(slanted, id(1), 0)), id(1)).objects[0]!.turn).toBe(0);
+    expect(turnObject(doc, id(1), 0, Number.POSITIVE_INFINITY)).toBeUndefined();
+  });
+
+  it("snaps a dragged thing flush against a wall of its room", () => {
+    const living = { ...box(id(1), 0, 0, 4, 4), objects: [{ kind: "sofa", c: [2, 2] as HomePoint, size: [2, 0.9, 0.8] as [number, number, number], turn: 0 }] };
+    const sofa = living.objects[0]!;
+    // Its back 10 cm off the top wall's face (half a 10 cm wall in from the line).
+    let snap = snapObject(living, sofa, [2, 0.05 + 0.45 + 0.1]);
+    expect(snap.c[0]).toBeCloseTo(2);
+    expect(snap.c[1]).toBeCloseTo(0.5);
+    expect(snap.guides).toHaveLength(1);
+    // Into a corner: one wall each way.
+    snap = snapObject(living, sofa, [1.1, 0.55]);
+    expect(snap.c[0]).toBeCloseTo(1.05);
+    expect(snap.c[1]).toBeCloseTo(0.5);
+    expect(snap.guides).toHaveLength(2);
+    // Out of reach: left where it was dropped.
+    snap = snapObject(living, sofa, [2, 2]);
+    expect(snap.c).toEqual([2, 2]);
+    expect(snap.guides).toHaveLength(0);
+    // Turned 45 degrees, no wall runs along a side.
+    expect(snapObject(living, { ...sofa, turn: 45 }, [2, 0.6]).guides).toHaveLength(0);
   });
 
   it("draws a room by hand with walls along its outline", () => {

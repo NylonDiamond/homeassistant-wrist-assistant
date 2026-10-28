@@ -439,6 +439,41 @@ describe("the Home map editor", () => {
     expect(ha.saves().map((s) => s.base_rev)).toEqual([4, 5]);
   });
 
+  it("picks a thing with a click in the picked room, drags it, and saves once on the drop", async () => {
+    const { el, inside, ha, press, key, text } = await page();
+    // The first press picks the kitchen; a click on its table then picks the
+    // table, while a drag there still moves the room (the test above).
+    press([8, 2]);
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
+    press([8, 2]);
+    expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 2 });
+    expect(text()).toContain("In Kitchen · 1.80 × 1.00 m");
+    expect(text()).toContain('data-hme="resize"');
+    // A picked thing is dragged at once.
+    press([8, 2], [[8, 2.3], [8, 2.5]]);
+    await el.session!.idle();
+    expect(ha.saves()).toHaveLength(1);
+    const kitchen = () => ha.now().doc!.floors[0]!.rooms[1]!;
+    expect(kitchen().objects[2]!.c).toEqual([8.1, 3]);
+    expect(kitchen().outline[0]).toEqual([6, 0]);
+    expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 2 });
+    // An arrow nudges it, Escape goes back to the room.
+    key("ArrowRight", { shiftKey: true });
+    await el.session!.idle();
+    expect(kitchen().objects[2]!.c).toEqual([8.2, 3]);
+    key("Escape");
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
+    // Cmd and a click picks a thing in another room; Delete removes it with
+    // no question, Undo bringing it back.
+    press([2.7, 4.15], [], { metaKey: true });
+    expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 0 });
+    key("Delete");
+    await el.session!.idle();
+    expect(inside.dialog).toBeUndefined();
+    expect(ha.now().doc!.floors[0]!.rooms[0]!.objects.map((o) => o.kind)).toEqual(["table", "television"]);
+    expect(inside.selection).toEqual({ kind: "room", roomId: LIVING });
+  });
+
   it("undoes and redoes with the keys, never while a field has focus", async () => {
     const { el, ha, key } = await page();
     el.apply((d) => renameRoom(d, KITCHEN, "Galley"));

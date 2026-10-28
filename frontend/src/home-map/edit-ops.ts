@@ -1044,6 +1044,113 @@ export function removeObject(doc: HomeMapDocument, roomId: string, index: number
   return editRoom(doc, roomId, (room) => (room.objects[index] === undefined ? undefined : { ...room, objects: room.objects.filter((_, i) => i !== index) }));
 }
 
+/** The smallest and largest width or depth a resize gives a thing, in
+ * meters. */
+export const HOME_MAP_MIN_OBJECT_SIZE = 0.05;
+export const HOME_MAP_MAX_OBJECT_SIZE = 20;
+
+/** How near, in meters, a dragged thing's side comes to a wall of its room
+ * before it snaps flush against it. */
+export const HOME_MAP_OBJECT_SNAP = 0.15;
+
+/** A thing's two ways on the plan, as unit vectors: `u` along its width and
+ * `v` along its depth (`homeBoxOf`'s corners). */
+export function homeMapObjectAxes(object: HomeMapObject): { u: HomePoint; v: HomePoint } {
+  const angle = homeBoxOf(object).angle;
+  const u: HomePoint = [Math.cos(angle), Math.sin(angle)];
+  return { u, v: [-u[1], u[0]] };
+}
+
+/** A thing's new size: `width` along its `u` and `depth` along its `v`,
+ * either left out staying as it is, each made 0.05 to 20 m; and `anchor`,
+ * the point of its box that stays put, as shares of the box along `u` and
+ * `v` (0 the minus side, 1 the plus side, 0.5, the default, its middle). Its
+ * height never changes here. */
+export interface HomeMapObjectResize {
+  width?: number;
+  depth?: number;
+  anchor?: [number, number];
+}
+
+/** `object` resized (`HomeMapObjectResize`), its centre moved so the anchor
+ * stays put; undefined for a size that is not a number. */
+export function homeMapObjectResized(object: HomeMapObject, resize: HomeMapObjectResize): HomeMapObject | undefined {
+  const [w0, d0] = object.size;
+  const fit = (v: number) => clamp(v, HOME_MAP_MIN_OBJECT_SIZE, HOME_MAP_MAX_OBJECT_SIZE);
+  if ((resize.width !== undefined && !finite(resize.width)) || (resize.depth !== undefined && !finite(resize.depth))) return undefined;
+  const width = resize.width === undefined ? w0 : fit(resize.width);
+  const depth = resize.depth === undefined ? d0 : fit(resize.depth);
+  const [ka, kc] = resize.anchor ?? [0.5, 0.5];
+  if (!finite(ka, kc)) return undefined;
+  // The anchor's place from the middle stays where it was.
+  const sa = (ka - 0.5) * (w0 - width);
+  const sc = (kc - 0.5) * (d0 - depth);
+  const { u, v } = homeMapObjectAxes(object);
+  const c: HomePoint = [object.c[0] + u[0] * sa + v[0] * sc, object.c[1] + u[1] * sa + v[1] * sc];
+  return { ...object, c: roundPoint(c), size: [r(width), r(depth), object.size[2]] };
+}
+
+/** A thing resized (`homeMapObjectResized`). */
+export function resizeObject(doc: HomeMapDocument, roomId: string, index: number, resize: HomeMapObjectResize): HomeMapDocument | undefined {
+  return editObject(doc, roomId, index, (o) => homeMapObjectResized(o, resize));
+}
+
+/** A thing turned by `degrees` (counterclockwise on the plan, as the map
+ * stores a turn) about its middle. */
+export function turnObject(doc: HomeMapDocument, roomId: string, index: number, degrees: number): HomeMapDocument | undefined {
+  if (!finite(degrees)) return undefined;
+  return editObject(doc, roomId, index, (o) => ({ ...o, turn: r(homeNormalDegrees(o.turn + degrees)) }));
+}
+
+/** A thing turned the least it takes to run square with its room's longest
+ * wall. */
+export function levelObject(doc: HomeMapDocument, roomId: string, index: number): HomeMapDocument | undefined {
+  const room = roomAt(doc, roomId)?.room;
+  if (room === undefined) return undefined;
+  const wall = (-homeRoomDirection(room) * 180) / Math.PI;
+  return editObject(doc, roomId, index, (o) => {
+    const off = homeNormalDegrees(o.turn - wall);
+    const turn = o.turn - (off - Math.round(off / 90) * 90);
+    return { ...o, turn: r(homeNormalDegrees(turn)) };
+  });
+}
+
+/** A thing dragged so its centre is at `at`, slid so a side that runs along
+ * one of its room's walls, and comes within `HOME_MAP_OBJECT_SNAP` of that
+ * wall's face, lies flush against it on the side the thing is on: one wall
+ * at most for each of its two ways. The lines to draw name its own room. */
+export function snapObject(room: HomeMapRoom, object: HomeMapObject, at: HomePoint): { c: HomePoint; guides: HomeMapSnapGuide[] } {
+  const { u, v } = homeMapObjectAxes(object);
+  const half = [object.size[0] / 2, object.size[1] / 2] as const;
+  // A wall counts as running along a side within 5 degrees.
+  const square = Math.cos((5 * Math.PI) / 180);
+  let c: HomePoint = [at[0], at[1]];
+  const guides: HomeMapSnapGuide[] = [];
+  // Along v (the thing's front or back) first, then along u (its ends).
+  for (const [axis, h, other] of [[v, half[1], half[0]], [u, half[0], half[1]]] as const) {
+    let best: { shift: number; n: HomePoint; wall: HomeSegment } | undefined;
+    for (const wall of homeWallsOf(room)) {
+      const dx = wall.b[0] - wall.a[0];
+      const dy = wall.b[1] - wall.a[1];
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      const n: HomePoint = [-dy / len, dx / len];
+      if (Math.abs(n[0] * axis[0] + n[1] * axis[1]) < square) continue;
+      const along = ((c[0] - wall.a[0]) * dx + (c[1] - wall.a[1]) * dy) / len;
+      if (along < -other || along > len + other) continue;
+      const dist = (c[0] - wall.a[0]) * n[0] + (c[1] - wall.a[1]) * n[1];
+      const side = dist >= 0 ? 1 : -1;
+      const shift = side * (h + Math.max(wall.t, 0) / 2) - dist;
+      if (Math.abs(shift) > HOME_MAP_OBJECT_SNAP) continue;
+      if (best === undefined || Math.abs(shift) < Math.abs(best.shift)) best = { shift, n, wall };
+    }
+    if (best === undefined) continue;
+    c = [c[0] + best.n[0] * best.shift, c[1] + best.n[1] * best.shift];
+    guides.push({ a: best.wall.a, b: best.wall.b, roomId: room.id });
+  }
+  return { c, guides };
+}
+
 // ── drawing a room ───────────────────────────────────────────────────────
 
 /** A new room's wall height. */
