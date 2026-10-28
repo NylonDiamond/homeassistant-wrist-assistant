@@ -74,6 +74,7 @@ import {
   HOME_MAP_ZOOM_STEP,
   homeMapCount,
   homeMapFitView,
+  homeMapIsSliderKey,
   homeMapIsTypingTarget,
   homeMapOnMac,
   homeMapRoomSizeText,
@@ -735,12 +736,13 @@ export class WaHomeMapEditor extends LitElement {
   // ── keys ───────────────────────────────────────────────────────────────
 
   /** A key anywhere on the page while it is open: nothing while a text
-   * field has focus or a dialog is open; undo and redo; then the mode's;
+   * field has focus or a dialog is open, nor a key a focused slider moves
+   * by; undo and redo; then the mode's;
    * then Escape, zoom and fit. */
   readonly onKey = (e: KeyboardEvent): void => {
     if (this.dialog !== undefined || this.session === undefined) return;
     const target = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
-    if (homeMapIsTypingTarget(target)) return;
+    if (homeMapIsTypingTarget(target) || homeMapIsSliderKey(target, e.key)) return;
     if (e.key === " " && !e.repeat) {
       this.spaceHeld = true;
       e.preventDefault?.();

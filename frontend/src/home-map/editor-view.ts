@@ -77,6 +77,17 @@ export function homeMapIsTypingTarget(el: unknown): boolean {
   return !["button", "checkbox", "radio", "range", "color", "submit", "reset", "file", "image"].includes(type);
 }
 
+/** Whether a key belongs to a focused slider (its arrows, Home, End and
+ * page keys move it), so the editor leaves it alone: else an arrow on the
+ * Height slider would nudge the picked pin and stop the slider. */
+export function homeMapIsSliderKey(el: unknown, key: string): boolean {
+  if (typeof el !== "object" || el === null) return false;
+  const node = el as { tagName?: unknown; type?: unknown };
+  if (typeof node.tagName !== "string" || node.tagName.toUpperCase() !== "INPUT") return false;
+  if (typeof node.type !== "string" || node.type.toLowerCase() !== "range") return false;
+  return ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(key);
+}
+
 /** What a key press asks of the editor as a whole. A plain letter is left
  * for the mode (Shape's tools), as `{ letter }`. */
 export type HomeMapShortcut =

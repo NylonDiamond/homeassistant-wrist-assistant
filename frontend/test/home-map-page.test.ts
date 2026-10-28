@@ -427,6 +427,25 @@ describe("the Home map editor", () => {
     expect(ha.saves()).toHaveLength(3);
   });
 
+  it("leaves a focused slider its arrow keys, so they never nudge the picked pin", async () => {
+    const { el, ha, press, key } = await page();
+    el.setMode("devices");
+    press([0.8, 3.1]);
+    const slider = { tagName: "INPUT", type: "range" };
+    let stopped = false;
+    for (const k of ["ArrowUp", "ArrowLeft", "Home", "PageDown"]) {
+      el.onKey({ key: k, preventDefault: () => { stopped = true; }, composedPath: () => [slider] } as unknown as KeyboardEvent);
+    }
+    await el.session!.idle();
+    expect(stopped).toBe(false);
+    expect(ha.saves()).toHaveLength(0);
+    // An arrow anywhere else still nudges it.
+    key("ArrowRight");
+    await el.session!.idle();
+    expect(ha.saves()).toHaveLength(1);
+    expect(ha.now().doc!.floors[0]!.pins[0]!.at[0]).toBeCloseTo(0.81, 5);
+  });
+
   it("asks before deleting a room in its own dialog, not the browser's", async () => {
     const { el, inside, ha, press, key, text } = await page();
     vi.stubGlobal("window", { confirm: () => { throw new Error("no browser dialogs"); } });

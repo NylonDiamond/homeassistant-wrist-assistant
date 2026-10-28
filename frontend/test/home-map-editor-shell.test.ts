@@ -16,6 +16,7 @@ import { homeMapSelectionRoom, homeMapSelectionThere, sameHomeMapSelection } fro
 import { HomeMapSession, sameHomeMapDocument } from "../src/home-map/editor-session.js";
 import {
   homeMapFitView,
+  homeMapIsSliderKey,
   homeMapIsTypingTarget,
   homeMapMeters,
   homeMapNumberText,
@@ -97,6 +98,12 @@ describe("the editor's keys", () => {
     expect(homeMapIsTypingTarget({ tagName: "DIV", isContentEditable: true })).toBe(true);
     expect(homeMapIsTypingTarget({ tagName: "BUTTON" })).toBe(false);
     expect(homeMapIsTypingTarget(null)).toBe(false);
+    expect(homeMapIsSliderKey({ tagName: "INPUT", type: "range" }, "ArrowUp")).toBe(true);
+    expect(homeMapIsSliderKey({ tagName: "input", type: "RANGE" }, "End")).toBe(true);
+    expect(homeMapIsSliderKey({ tagName: "INPUT", type: "range" }, "Delete")).toBe(false);
+    expect(homeMapIsSliderKey({ tagName: "INPUT", type: "text" }, "ArrowUp")).toBe(false);
+    expect(homeMapIsSliderKey({ tagName: "BUTTON" }, "ArrowUp")).toBe(false);
+    expect(homeMapIsSliderKey(null, "ArrowUp")).toBe(false);
   });
 
   it("picks Shape's tools by their letters", () => {
