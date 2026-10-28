@@ -592,6 +592,24 @@ def test_a_hidden_object(env) -> None:
     assert env.refused_doc(doc) == "doc.floors[0].rooms[0].objects[0].hidden must be true or false"
 
 
+def test_an_objects_lift(env) -> None:
+    doc = basic()
+    # Given before the turn and with hidden, it is kept in the contract's order.
+    raised = _object_(doc)
+    _living(doc)["objects"][0] = {"lift": 1.234, "hidden": True, **raised}
+    _living(doc)["objects"][1] = {**_living(doc)["objects"][1], "lift": 0}
+    checked = env.mod.check_document(doc)
+    objects = checked["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == ["kind", "c", "size", "turn", "lift", "hidden"]
+    assert objects[0]["lift"] == 1.23
+    # On the floor is the default and is never stored.
+    assert "lift" not in objects[1]
+    _living(doc)["objects"][1]["lift"] = -0.1
+    assert env.refused_doc(doc) == "doc.floors[0].rooms[0].objects[1].lift must be between 0 and 100"
+    _living(doc)["objects"][1]["lift"] = "1"
+    assert env.refused_doc(doc) == "doc.floors[0].rooms[0].objects[1].lift must be a number"
+
+
 def test_an_openings_style(env) -> None:
     doc = basic()
     window, door, way = _living(doc)["openings"]

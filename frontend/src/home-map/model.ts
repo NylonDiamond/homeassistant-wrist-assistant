@@ -64,6 +64,9 @@ export interface HomeMapObject {
   size: [number, number, number];
   /** The turn around z, in degrees. */
   turn: number;
+  /** How far its bottom stands above the floor, in meters, 0 to 100: a TV
+   * on the wall, a lamp on a table. Absent on the floor; 0 is never kept. */
+  lift?: number;
   /** Drawn nowhere, but kept so an editor can show it again. Only ever
    * true; shown is the key left out. */
   hidden?: true;
@@ -386,7 +389,7 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   });
   out.objects = list(room.objects, `${path}.objects`, MAX_OBJECTS).map((o, i) => {
     const where = `${path}.objects[${i}]`;
-    const item = object(o, where, ["kind", "c", "size", "turn"], ["hidden"]);
+    const item = object(o, where, ["kind", "c", "size", "turn"], ["lift", "hidden"]);
     if (typeof item.kind !== "string" || !OBJECT_KIND_RE.test(item.kind)) fail(`${where}.kind`, "must be a RoomPlan category in lower camel case");
     if (!Array.isArray(item.size) || item.size.length !== 3) fail(`${where}.size`, "must be a list of 3 numbers");
     const checked: HomeMapObject = {
@@ -395,6 +398,11 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
       size: item.size.map((v, j) => number(v, `${where}.size[${j}]`, 0, 1000)) as [number, number, number],
       turn: number(item.turn, `${where}.turn`),
     };
+    // On the floor is the default, so a lift of 0 is left out.
+    if (Object.hasOwn(item, "lift")) {
+      const lift = number(item.lift, `${where}.lift`, 0, 100);
+      if (lift > 0) checked.lift = lift;
+    }
     // Shown is the default, so a false hidden is left out.
     if (Object.hasOwn(item, "hidden") && bool(item.hidden, `${where}.hidden`)) checked.hidden = true;
     return checked;
@@ -783,6 +791,7 @@ export function orderedOpening(opening: HomeMapOpening): HomeMapOpening {
  * true. */
 export function orderedObject(object: HomeMapObject): HomeMapObject {
   const out: HomeMapObject = { kind: object.kind, c: object.c, size: object.size, turn: object.turn };
+  if (object.lift !== undefined && object.lift > 0) out.lift = object.lift;
   if (object.hidden === true) out.hidden = true;
   return out;
 }

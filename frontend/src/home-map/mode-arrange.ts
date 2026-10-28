@@ -942,7 +942,7 @@ export class ArrangeMode implements HomeMapMode {
       <section class="hme-card hme-head">
         <div class="hme-head-t">
           <strong>${name}</strong>
-          <span>In ${homeMapRoomName(room)} · ${width.toFixed(2)} × ${depth.toFixed(2)} × ${height.toFixed(2)} m${object.hidden === true ? " · Hidden" : ""}</span>
+          <span>In ${homeMapRoomName(room)} · ${width.toFixed(2)} × ${depth.toFixed(2)} × ${height.toFixed(2)} m${(object.lift ?? 0) > 0 ? ` · ${(object.lift ?? 0).toFixed(2)} m up` : ""}${object.hidden === true ? " · Hidden" : ""}</span>
         </div>
       </section>
 
@@ -953,9 +953,10 @@ export class ArrangeMode implements HomeMapMode {
           hmeNumber({ tag: "H", label: "Height", value: height, ...sizes, min: 0.01, ...edit((d, v) => setObject(d, id, index, { size: [width, depth, v] })) }))}`)}
 
       ${hmeCard("Place", html`
-        ${hmeGroup("Middle", hmeFields(
+        ${hmeGroup("Middle, and up off the floor", hmeFields(
           hmeNumber({ tag: "X", label: "Middle across", value: object.c[0], unit: "m", ...edit((d, v) => moveObject(d, id, index, [v, object.c[1]])) }),
-          hmeNumber({ tag: "Y", label: "Middle down", value: object.c[1], unit: "m", ...edit((d, v) => moveObject(d, id, index, [object.c[0], v])) })))}
+          hmeNumber({ tag: "Y", label: "Middle down", value: object.c[1], unit: "m", ...edit((d, v) => moveObject(d, id, index, [object.c[0], v])) }),
+          hmeNumber({ tag: "Z", label: "Up off the floor", value: object.lift ?? 0, unit: "m", min: 0, max: 100, ...edit((d, v) => setObject(d, id, index, { lift: v })) })))}
         ${hmeGroup("Turn", html`<div class="hme-turn">
           ${hmeNumber({ label: "Turn", value: turn, unit: "°", digits: 1, min: -180, max: 180, ...edit((d, v) => turnObject(d, id, index, v - turn)) })}
           <button type="button" class="hme-tb" title="Turn it a quarter one way" @click=${() => ctx.apply((d) => turnObject(d, id, index, -90))}>−90°</button>

@@ -399,6 +399,32 @@ describe("a room's settings", () => {
     expect(removeObject(out, LIVING, 9)).toBeUndefined();
   });
 
+  it("lifts a thing off the floor and puts it back, the lift kept by every other edit", () => {
+    const doc = fixture();
+    let out = done(doc, setObject(doc, LIVING, 2, { lift: 1.2345 }));
+    const tv = () => room(out, LIVING).objects[2]!;
+    expect(tv().lift).toBe(1.23);
+    expect(Object.keys(tv())).toEqual(["kind", "c", "size", "turn", "lift"]);
+    out = done(out, setObjectHidden(out, LIVING, 2, true));
+    expect(Object.keys(tv())).toEqual(["kind", "c", "size", "turn", "lift", "hidden"]);
+    out = done(out, moveObject(out, LIVING, 2, [3, 0.5]));
+    out = done(out, turnObject(out, LIVING, 2, 90));
+    out = done(out, resizeObject(out, LIVING, 2, { width: 2 }));
+    out = done(out, moveRoom(out, LIVING, 1, 0));
+    expect(tv().lift).toBe(1.23);
+    // Never below the floor; 0 puts it back on the floor and is not kept.
+    out = done(out, setObject(out, LIVING, 2, { lift: -1 }));
+    expect(Object.hasOwn(tv(), "lift")).toBe(false);
+    expect(setObject(doc, LIVING, 2, { lift: Number.NaN })).toBeUndefined();
+    // The store's check: a lift of 0 dropped, a negative one refused.
+    const raw = fixture();
+    raw.floors[0]!.rooms[0]!.objects[0] = { ...raw.floors[0]!.rooms[0]!.objects[0]!, lift: 0 };
+    const checked = checkHomeMap(raw);
+    expect(checked.ok && Object.hasOwn(checked.doc.floors[0]!.rooms[0]!.objects[0]!, "lift")).toBe(false);
+    raw.floors[0]!.rooms[0]!.objects[0]!.lift = -0.5;
+    expect(checkHomeMap(raw).ok).toBe(false);
+  });
+
   it("resizes a thing along its own sides, the anchor staying put", () => {
     const doc = home([{ ...box(id(1), 0, 0, 4, 4), objects: [{ kind: "table", c: [2, 2], size: [1, 0.5, 0.75], turn: 0 }] }]);
     // Its plus side along the width stays put, so its middle moves left.

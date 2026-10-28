@@ -634,8 +634,10 @@ function drawMark(P: Projection, mark: NonNullable<HomeTileArtOptions["mark"]>):
   const blue = "#5b8def";
   if (mark.box !== undefined) {
     const corners = homeBoxCorners(homeBoxOf(mark.box));
-    const top = Math.max(mark.box.size[2], 0);
-    const low = corners.map((p) => project(P, p, 0));
+    const lift = Math.max(mark.box.lift ?? 0, 0);
+    // As tall as the model draws the thing.
+    const top = lift + Math.min(Math.max(mark.box.size[2], 0.05), FURNITURE_CAP);
+    const low = corners.map((p) => project(P, p, lift));
     const high = corners.map((p) => project(P, p, top));
     const ring = (q: HomePoint[]) => `M${q.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}Z`;
     const posts = low.map((p, i) => `M${p[0].toFixed(1)},${p[1].toFixed(1)}L${high[i]![0].toFixed(1)},${high[i]![1].toFixed(1)}`).join("");
@@ -1007,6 +1009,9 @@ function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[
       for (const object of room.objects) {
         const box = homeBoxOf(object);
         if (box.width <= 0.02 || box.depth <= 0.02) continue;
+        // A raised thing (a TV on the wall) stands off the floor, never above
+        // its room's ceiling.
+        const lift = Math.min(Math.max(object.lift ?? 0, 0), Math.max(room.height, 0));
         solids.push({
           part: "piece",
           kind: object.kind,
@@ -1014,8 +1019,8 @@ function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[
           box,
           roomId: room.id,
           quad: homeBoxCorners(box),
-          z0: 0,
-          z1: Math.min(Math.max(object.size[2], 0.05), FURNITURE_CAP),
+          z0: lift,
+          z1: lift + Math.min(Math.max(object.size[2], 0.05), FURNITURE_CAP),
           seams: new Set(),
         });
       }

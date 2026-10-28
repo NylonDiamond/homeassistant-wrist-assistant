@@ -1017,18 +1017,25 @@ export function moveObject(doc: HomeMapDocument, roomId: string, index: number, 
   return editObject(doc, roomId, index, (o) => ({ ...o, c: roundPoint(at) }));
 }
 
-/** A thing's centre, size or turn (degrees counterclockwise on the plan,
- * as the map stores it). */
-export function setObject(doc: HomeMapDocument, roomId: string, index: number, change: { c?: HomePoint; size?: [number, number, number]; turn?: number }): HomeMapDocument | undefined {
+/** A thing's centre, size, turn (degrees counterclockwise on the plan, as
+ * the map stores it) or lift (meters from the floor to its bottom, 0 to
+ * 100, 0 putting it back on the floor). */
+export function setObject(doc: HomeMapDocument, roomId: string, index: number, change: { c?: HomePoint; size?: [number, number, number]; turn?: number; lift?: number }): HomeMapDocument | undefined {
   if (change.c !== undefined && !finite(...change.c)) return undefined;
   if (change.size !== undefined && (!finite(...change.size) || change.size.some((v) => v < 0 || v > 1000))) return undefined;
   if (change.turn !== undefined && !finite(change.turn)) return undefined;
-  return editObject(doc, roomId, index, (o) => ({
-    ...o,
-    c: change.c === undefined ? o.c : roundPoint(change.c),
-    size: change.size === undefined ? o.size : (change.size.map(r) as [number, number, number]),
-    turn: change.turn === undefined ? o.turn : r(homeNormalDegrees(change.turn)),
-  }));
+  if (change.lift !== undefined && !finite(change.lift)) return undefined;
+  return editObject(doc, roomId, index, (o) => {
+    const { lift: _old, ...rest } = o;
+    const lift = change.lift === undefined ? o.lift : r(clamp(change.lift, 0, 100));
+    return {
+      ...rest,
+      c: change.c === undefined ? o.c : roundPoint(change.c),
+      size: change.size === undefined ? o.size : (change.size.map(r) as [number, number, number]),
+      turn: change.turn === undefined ? o.turn : r(homeNormalDegrees(change.turn)),
+      ...(lift !== undefined && lift > 0 ? { lift } : {}),
+    };
+  });
 }
 
 /** Hide a thing (drawn nowhere, kept) or show it again. */
@@ -2064,7 +2071,7 @@ function shapeText(room: Pick<HomeMapRoom, "outline" | "walls" | "openings" | "o
     room.outline.map(roundPoint),
     room.walls.map((w) => [roundPoint(w.a), roundPoint(w.b), r(w.t)]),
     room.openings.map((o) => [o.kind, o.style ?? "", roundPoint(o.a), roundPoint(o.b), r(o.z0), r(o.z1)]),
-    room.objects.map((o) => [o.kind, roundPoint(o.c), o.size.map(r), r(o.turn), o.hidden === true]),
+    room.objects.map((o) => [o.kind, roundPoint(o.c), o.size.map(r), r(o.turn), r(o.lift ?? 0), o.hidden === true]),
   ]);
 }
 

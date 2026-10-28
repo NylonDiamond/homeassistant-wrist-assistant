@@ -41,7 +41,7 @@ so a writer that drifts from it hears so at once::
                                           "a", "b", "z0", "z1"}],
                             "objects": [{"kind", "c": [x, y],
                                          "size": [w, d, h], "turn",
-                                         "hidden"?: true}]}],
+                                         "lift"?, "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
                            "name"?, "icon"?, "reading"?: "none" | "name",
                            "glow"?, "glowColor"?, "glowSpill"?: true,
@@ -63,7 +63,9 @@ blueprint or dots; plan when absent), ``turn`` (whole degrees, -180 to 180;
 ``devices`` (lights, all or none; lights). A default sent in ``style`` is
 dropped, and so is a ``style`` left empty. A room's ``finish`` names what
 its floor is laid with; absent, it is picked from the room's name and
-furniture. An object with ``hidden`` is drawn nowhere but kept, so an editor
+furniture. An object's ``lift`` is how far its bottom stands above the
+floor in meters (0 to 100: a TV on the wall, a lamp on a table); 0 is
+dropped. An object with ``hidden`` is drawn nowhere but kept, so an editor
 can show it again; a false ``hidden`` is dropped. An opening's ``style`` is
 ``double`` (a door only: two leaves meeting in the middle) or ``sliding`` (a
 door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
@@ -427,7 +429,7 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
     objects = []
     for i, raw_object in enumerate(_list(room["objects"], f"{path}.objects", MAX_OBJECTS)):
         where = f"{path}.objects[{i}]"
-        item = _object(raw_object, where, ("kind", "c", "size", "turn"), ("hidden",))
+        item = _object(raw_object, where, ("kind", "c", "size", "turn"), ("lift", "hidden"))
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
             _fail(f"{where}.kind", "must be a RoomPlan category in lower camel case")
@@ -443,6 +445,11 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
             ],
             "turn": _number(item["turn"], f"{where}.turn"),
         }
+        # On the floor is the default, so a lift of 0 is left out.
+        if "lift" in item:
+            lift = _number(item["lift"], f"{where}.lift", 0, 100)
+            if lift > 0:
+                checked_object["lift"] = lift
         # Shown is the default, so a false hidden is left out.
         if "hidden" in item and _bool(item["hidden"], f"{where}.hidden"):
             checked_object["hidden"] = True
