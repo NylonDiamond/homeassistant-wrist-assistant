@@ -155,7 +155,7 @@ from .const import (
     WristAssistantData,
 )
 from .device_lookup import find_paired_device, paired_device_name
-from .home_areas import home_areas, home_entities
+from .home_areas import home_areas, home_entities, home_floors
 from .home_map_store import (
     HomeMapConflictError,
     HomeMapError,
@@ -5104,23 +5104,30 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
 
 
 async def _op_areas_get(ctx: _OpContext) -> Response:
-    """The home's areas, each with the entities in it, and every entity.
+    """The home's floors, its areas with the entities in each, and every
+    entity.
 
     Body:  {}
-    Reply: {"ok": true, "areas": [{"id", "name", "entity_ids": [<id>]}],
-            "entities": [{"id", "name", "area_id": <id> | null}]}
+    Reply: {"ok": true,
+            "areas": [{"id", "name", "floor_id": <id> | null,
+                       "entity_ids": [<id>]}],
+            "entities": [{"id", "name", "area_id": <id> | null}],
+            "floors": [{"id", "name", "level": <int> | null}]}
 
-    Every area, sorted by name, its entity ids sorted. ``entities`` is every
-    entity with a state, sorted by name, for the iPhone's "All Devices"
-    pick; older apps ignore it. An entity's own area wins over its device's;
+    Every area, sorted by name, its entity ids sorted, with the Home
+    Assistant floor it is on. ``entities`` is every entity with a state,
+    sorted by name, for the iPhone's "All Devices" pick. ``floors`` is every
+    Home Assistant floor, sorted by level (no level last) then name, for the
+    iPhone's "Which floor are you on?" before a scan. Older apps ignore the
+    keys they do not know. An entity's own area wins over its device's;
     disabled entities are left out, hidden ones kept (see
-    ``home_areas.py``). Read
-    only, and open to any paired device.
+    ``home_areas.py``). Read only, and open to any paired device.
     """
     return ctx.signed_json({
         "ok": True,
         "areas": home_areas(ctx.hass),
         "entities": home_entities(ctx.hass),
+        "floors": home_floors(ctx.hass),
     })
 
 

@@ -2,8 +2,10 @@
 
 Home map (app repo ``docs/home_map_plan_2026-10.md``): the iPhone asks which
 Home Assistant area a scanned room is, and its device tray lists the
-entities of that room's area. The signed ``areas_get`` op answers with
-:func:`home_areas`.
+entities of that room's area. Before a scan it asks which Home Assistant
+floor it is on, and lists that floor's areas first. The signed
+``areas_get`` op answers with :func:`home_areas`, :func:`home_entities` and
+:func:`home_floors`.
 
 An entity's own area wins over its device's area, as Home Assistant itself
 reads it. Disabled entities are left out (an entity of a disabled device is
@@ -21,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
 
 
 def areas_from_registries(
@@ -28,10 +31,11 @@ def areas_from_registries(
     entities: Iterable[Any],
     device_area: Callable[[str], str | None],
 ) -> list[dict[str, Any]]:
-    """``[{"id", "name", "entity_ids": [...]}]``, every area once, sorted by
-    name (then id), each area's entity ids sorted.
+    """``[{"id", "name", "floor_id", "entity_ids": [...]}]``, every area
+    once, sorted by name (then id), each area's entity ids sorted.
 
-    ``areas`` are area registry entries (``id``, ``name``), ``entities``
+    ``areas`` are area registry entries (``id``, ``name``, ``floor_id``, None
+    for an area on no floor), ``entities``
     entity registry entries (``entity_id``, ``area_id``, ``device_id``,
     ``disabled_by``), and ``device_area(device_id)`` the area
     of a device, None for none or an unknown device. An area with no
@@ -40,9 +44,11 @@ def areas_from_registries(
     """
     members: dict[str, list[str]] = {}
     names: dict[str, str] = {}
+    floors: dict[str, str | None] = {}
     for area in areas:
         members[area.id] = []
         names[area.id] = area.name
+        floors[area.id] = area.floor_id
     for entry in entities:
         if entry.disabled_by is not None:
             continue
@@ -52,9 +58,37 @@ def areas_from_registries(
         if area_id in members:
             members[area_id].append(entry.entity_id)
     return [
-        {"id": area_id, "name": names[area_id], "entity_ids": sorted(members[area_id])}
+        {
+            "id": area_id,
+            "name": names[area_id],
+            "floor_id": floors[area_id],
+            "entity_ids": sorted(members[area_id]),
+        }
         for area_id in sorted(members, key=lambda key: (names[key].casefold(), key))
     ]
+
+
+def floors_from_registry(floors: Iterable[Any]) -> list[dict[str, Any]]:
+    """``[{"id", "name", "level"}]``, every floor of the home once, sorted by
+    level (floors with no level last), then by name ignoring case, then id.
+
+    ``floors`` are floor registry entries (``floor_id``, ``name``, ``level``,
+    an int or None). An area names its floor by this id (``floor_id`` in
+    :func:`areas_from_registries`).
+    """
+    rows = [
+        {"id": floor.floor_id, "name": floor.name, "level": floor.level}
+        for floor in floors
+    ]
+    rows.sort(
+        key=lambda row: (
+            row["level"] is None,
+            row["level"] if row["level"] is not None else 0,
+            row["name"].casefold(),
+            row["id"],
+        )
+    )
+    return rows
 
 
 def entities_from_states(
@@ -122,3 +156,8 @@ def home_areas(hass: HomeAssistant) -> list[dict[str, Any]]:
         er.async_get(hass).entities.values(),
         device_area,
     )
+
+
+def home_floors(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """:func:`floors_from_registry` over Home Assistant's floor registry."""
+    return floors_from_registry(fr.async_get(hass).async_list_floors())

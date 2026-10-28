@@ -105,6 +105,7 @@ def _ops(store_mod: Any, areas: Any) -> dict[str, Any]:
         "is_iphone_entry": lambda secret: getattr(secret, "device_kind", None) == "iphone",
         "home_areas": areas.home_areas,
         "home_entities": areas.home_entities,
+        "home_floors": areas.home_floors,
         **{
             name: getattr(store_mod, name)
             for name in (
@@ -123,8 +124,12 @@ def _ops(store_mod: Any, areas: Any) -> dict[str, Any]:
 # ── stand-ins for the registries ─────────────────────────────────────────
 
 
-def _area(area_id: str, name: str):
-    return types.SimpleNamespace(id=area_id, name=name)
+def _area(area_id: str, name: str, floor_id=None):
+    return types.SimpleNamespace(id=area_id, name=name, floor_id=floor_id)
+
+
+def _floor(floor_id: str, name: str, level=None):
+    return types.SimpleNamespace(floor_id=floor_id, name=name, level=level)
 
 
 def _entity(entity_id: str, area_id=None, device_id=None, hidden_by=None, disabled_by=None):
@@ -142,10 +147,17 @@ class _Registries:
 
     def __init__(self) -> None:
         self.areas = [
-            _area("living_room", "Living room"),
-            _area("kitchen", "Kitchen"),
+            _area("living_room", "Living room", "ground_floor"),
+            _area("kitchen", "Kitchen", "ground_floor"),
             _area("attic", "attic"),
-            _area("bedroom", "Bedroom"),
+            _area("bedroom", "Bedroom", "first_floor"),
+        ]
+        # Out of order on purpose: the reply sorts them by level.
+        self.floors = [
+            _floor("loft", "Loft"),
+            _floor("first_floor", "First floor", 1),
+            _floor("basement", "Basement", -1),
+            _floor("ground_floor", "Ground floor", 0),
         ]
         self.devices = {
             "dev-lamp": types.SimpleNamespace(area_id="living_room"),
@@ -198,7 +210,11 @@ def env():
         sys.modules["homeassistant.helpers.entity_registry"] = types.SimpleNamespace(
             async_get=lambda h: types.SimpleNamespace(entities=registries.entities)
         )
+        sys.modules["homeassistant.helpers.floor_registry"] = types.SimpleNamespace(
+            async_get=lambda h: types.SimpleNamespace(async_list_floors=lambda: list(registries.floors))
+        )
         sys.modules["homeassistant.helpers"].area_registry = sys.modules["homeassistant.helpers.area_registry"]
+        sys.modules["homeassistant.helpers"].floor_registry = sys.modules["homeassistant.helpers.floor_registry"]
         sys.modules["homeassistant.helpers"].device_registry = sys.modules["homeassistant.helpers.device_registry"]
         sys.modules["homeassistant.helpers"].entity_registry = sys.modules["homeassistant.helpers.entity_registry"]
         sys.modules["homeassistant.components"] = types.ModuleType("homeassistant.components")
@@ -373,18 +389,28 @@ def test_both_map_ops_are_unavailable_with_no_store_or_an_unreadable_one(env) ->
 # ── areas_get ────────────────────────────────────────────────────────────
 
 AREAS = [
-    {"id": "attic", "name": "attic", "entity_ids": []},
-    {"id": "bedroom", "name": "Bedroom", "entity_ids": []},
+    {"id": "attic", "name": "attic", "floor_id": None, "entity_ids": []},
+    {"id": "bedroom", "name": "Bedroom", "floor_id": "first_floor", "entity_ids": []},
     {
         "id": "kitchen",
         "name": "Kitchen",
+        "floor_id": "ground_floor",
         "entity_ids": ["climate.thermostat", "light.pendants", "sensor.hub_signal"],
     },
     {
         "id": "living_room",
         "name": "Living room",
+        "floor_id": "ground_floor",
         "entity_ids": ["light.ceiling", "light.reading_lamp", "lock.side_door"],
     },
+]
+
+
+FLOORS = [
+    {"id": "basement", "name": "Basement", "level": -1},
+    {"id": "ground_floor", "name": "Ground floor", "level": 0},
+    {"id": "first_floor", "name": "First floor", "level": 1},
+    {"id": "loft", "name": "Loft", "level": None},
 ]
 
 
@@ -405,7 +431,34 @@ ENTITIES = [
 def test_areas_get_lists_every_area_and_its_entities(env) -> None:
     for watch_id in (IPHONE, WATCH):
         reply = op(env, "_op_areas_get", {}, watch_id=watch_id)
-        assert (reply.status, reply.body) == (200, {"ok": True, "areas": AREAS, "entities": ENTITIES})
+        assert (reply.status, reply.body) == (
+            200,
+            {"ok": True, "areas": AREAS, "entities": ENTITIES, "floors": FLOORS},
+        )
+
+
+def test_floors_sort_by_level_with_no_level_last_then_by_name(env) -> None:
+    rows = env.areas.floors_from_registry(
+        [
+            _floor("z", "attic"),
+            _floor("up2", "Upstairs", 1),
+            _floor("b", "Barn"),
+            _floor("down", "Cellar", -2),
+            _floor("up1", "loft", 1),
+            _floor("g", "Ground", 0),
+        ]
+    )
+    assert [row["id"] for row in rows] == ["down", "g", "up1", "up2", "z", "b"]
+    assert rows[0] == {"id": "down", "name": "Cellar", "level": -2}
+
+
+def test_a_home_with_no_floors_has_an_empty_list_and_areas_on_none(env) -> None:
+    env.registries.floors.clear()
+    for area in env.registries.areas:
+        area.floor_id = None
+    body = op(env, "_op_areas_get", {}).body
+    assert body["floors"] == []
+    assert {area["floor_id"] for area in body["areas"]} == {None}
 
 
 def test_every_entity_with_a_state_is_listed_by_name(env) -> None:
