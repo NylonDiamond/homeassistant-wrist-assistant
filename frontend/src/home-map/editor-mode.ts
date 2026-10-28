@@ -164,6 +164,9 @@ export interface HomeMapEditorContext {
   newId(): string;
   note(kind: "warn" | "err", text: string): void;
   redraw(): void;
+  /** Open a library page in the page editor; absent where the panel gives
+   * no way there. */
+  readonly openPage?: ((pageId: string) => void) | undefined;
 }
 
 /** One mode of the editor. */
@@ -191,4 +194,20 @@ export interface HomeMapMode {
   cursor?(ctx: HomeMapEditorContext): string | undefined;
   /** Leaving the mode (another mode, another floor): drop any tool. */
   leave?(ctx: HomeMapEditorContext): void;
+  /** The mode draws the floor's pins in its overlay, so the plan under it
+   * leaves them out (its pools of light stay). */
+  readonly drawsPins?: boolean;
+  /** Small pieces of page over the stage, beside the pill and the dock,
+   * that take their own presses (Devices' side view). */
+  stageExtra?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
+  /** The mode's own middle column in place of the plan stage (Style). The
+   * element in it with the class `hme-stage` is the one measured as
+   * `ctx.stage`; the shell keeps the bar, the rail and the inspector, and
+   * there is no Flat or Model. */
+  stage?(ctx: HomeMapEditorContext): TemplateResult;
+  /** Something dragged from the rail moving over the plan at `at`, or
+   * leaving it (undefined). True to take a drop there. */
+  dragOver?(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean;
+  /** The drop of what `dragOver` took, at plan point `at`. */
+  drop?(ctx: HomeMapEditorContext, at: HomePoint, e: DragEvent): void;
 }

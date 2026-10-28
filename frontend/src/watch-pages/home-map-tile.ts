@@ -12,10 +12,18 @@
 // page editor once the integration lists `home_map` (`home-map/store.ts`).
 // The picture itself is `home-map/tile-art.ts`.
 //
-// Every option key follows one rule, the same in the apps: a value equal to
-// the key's default is never stored, so a tile left as it came stores none
-// of them, and an app that does not know a key draws its default.
+// The six look keys (`homeMapLook`, `homeMapTurn`, `homeMapNames`,
+// `homeMapDevices`, `homeMapFurniture`, `homeMapGlow`) follow the tile rule,
+// the same on every device: a tile's own key when present wins, else the
+// map's home style (`doc.style`, set in the map editor's Style), else the
+// key's default. The Map card shows each resolved that way and stores a key
+// only when the choice differs from the home style, so a tile left alone
+// follows the home style when it changes; "Use the home style" takes all six
+// away. Every reader and setter takes the map as its last argument; without
+// it the home style is the defaults. The other keys (the room, Tap lights)
+// store nothing for their default.
 
+import { homeStyleOf, tileHasOwnStyle, tileOptionsResolved, withoutTileStyle } from "../home-map/edit-ops.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, type HomeTileDevices, type HomeTileLook } from "../home-map/tile-art.js";
 import {
   type HomeMapDocument,
@@ -239,7 +247,7 @@ export function setWatchHomeMapTapLights(document: WatchPagesDocument, pageId: s
 }
 
 /** The tile key that holds a Home map tile's look, on both devices. Absent
- * is plan, so a plan tile stores nothing. */
+ * is the home style's look (plan when the map has none). */
 export const WATCH_HOME_MAP_LOOK_KEY = "homeMapLook";
 
 /** A Home map tile's look: `plan`, the floor from above like the iPhone's
@@ -278,22 +286,18 @@ export const WATCH_HOME_MAP_LOOK_HINTS: Record<WatchHomeMapLook, string> = {
   dots: "A plain gray plan where every light is a dot: yellow when it is on, gray when it is off.",
 };
 
-/** Looks an older panel or app stored, and the look each reads as now. */
-const WATCH_HOME_MAP_OLD_LOOKS: Readonly<Record<string, WatchHomeMapLook>> = { glow: "plan", dollhouse: "warm" };
-
-/** A Home map tile's look (`homeMapLook`): absent or unknown is plan, the
- * older glow is plan and dollhouse is warm. */
-export function watchHomeMapLook(tile: Record<string, unknown>): WatchHomeMapLook {
-  const value = tile[WATCH_HOME_MAP_LOOK_KEY];
-  if (typeof value !== "string") return "plan";
-  if (WATCH_HOME_MAP_LOOKS.some(([look]) => look === value)) return value as WatchHomeMapLook;
-  return Object.hasOwn(WATCH_HOME_MAP_OLD_LOOKS, value) ? WATCH_HOME_MAP_OLD_LOOKS[value]! : "plan";
+/** A Home map tile's look by the tile rule: its own `homeMapLook` (the older
+ * glow read as plan and dollhouse as warm), else the home style's, else
+ * plan. An unknown look counts as none. */
+export function watchHomeMapLook(tile: Record<string, unknown>, home?: HomeMapDocument | null): WatchHomeMapLook {
+  return tileOptionsResolved(tile, home).look;
 }
 
 /**
- * Set a tile key that has a default: storing the default removes the key,
- * any other value stores it. A tile of another kind, or one that already
- * stores exactly what this would, changes nothing.
+ * Set a tile key that follows the home style: the home style's value
+ * (`def`) removes the key, any other value stores it. A tile of another
+ * kind, or one that already stores exactly what this would, changes
+ * nothing.
  */
 function setHomeMapKey(document: WatchPagesDocument, pageId: string, tileId: string, key: string, value: unknown, def: unknown): WatchPagesDocument {
   return editTile(document, pageId, tileId, (tile) => {
@@ -304,12 +308,12 @@ function setHomeMapKey(document: WatchPagesDocument, pageId: string, tileId: str
   });
 }
 
-/** Set a Home map tile's look: plan removes the key, any other look stores
- * it (an older glow or dollhouse is written over). A tile of another kind,
- * or a look it stores, changes nothing. */
-export function setWatchHomeMapLook(document: WatchPagesDocument, pageId: string, tileId: string, look: WatchHomeMapLook): WatchPagesDocument {
+/** Set a Home map tile's look: the home style's look removes the key, any
+ * other look stores it (an older glow or dollhouse is written over). A tile
+ * of another kind, or a look it stores, changes nothing. */
+export function setWatchHomeMapLook(document: WatchPagesDocument, pageId: string, tileId: string, look: WatchHomeMapLook, home?: HomeMapDocument | null): WatchPagesDocument {
   if (!WATCH_HOME_MAP_LOOKS.some(([l]) => l === look)) return document;
-  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_LOOK_KEY, look, "plan");
+  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_LOOK_KEY, look, homeStyleOf(home).look);
 }
 
 // ── the map's other options ─────────────────────────────────────────────
@@ -329,34 +333,37 @@ export function watchHomeMapTurnOf(value: unknown): number | undefined {
   return turn === 0 ? 0 : turn;
 }
 
-/** A Home map tile's turn (`homeMapTurn`): -28 when it stores none or a
- * value that is not a number. */
-export function watchHomeMapTurn(tile: Record<string, unknown>): number {
-  return watchHomeMapTurnOf(tile[WATCH_HOME_MAP_TURN_KEY]) ?? WATCH_HOME_MAP_DEFAULT_TURN;
+/** A Home map tile's turn (`homeMapTurn`) by the tile rule: its own, else
+ * the home style's, else -28; a value that is not a number counts as
+ * none. */
+export function watchHomeMapTurn(tile: Record<string, unknown>, home?: HomeMapDocument | null): number {
+  return tileOptionsResolved(tile, home).turn;
 }
 
 /** Set a Home map tile's turn, clamped to -180...180 and rounded to whole
- * degrees: -28 removes the key. A value that is not a number changes
- * nothing. */
-export function setWatchHomeMapTurn(document: WatchPagesDocument, pageId: string, tileId: string, degrees: number): WatchPagesDocument {
+ * degrees: the home style's turn removes the key. A value that is not a
+ * number changes nothing. */
+export function setWatchHomeMapTurn(document: WatchPagesDocument, pageId: string, tileId: string, degrees: number, home?: HomeMapDocument | null): WatchPagesDocument {
   const turn = watchHomeMapTurnOf(degrees);
   if (turn === undefined) return document;
-  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_TURN_KEY, turn, WATCH_HOME_MAP_DEFAULT_TURN);
+  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_TURN_KEY, turn, homeStyleOf(home).turn);
 }
 
-/** The tile key that turns the room names off. */
+/** The tile key that turns the room names off, or on over a home style
+ * that hides them. */
 export const WATCH_HOME_MAP_NAMES_KEY = "homeMapNames";
 
-/** Whether a Home map tile draws its room names (`homeMapNames`): only a
- * stored false hides them. */
-export function watchHomeMapNames(tile: Record<string, unknown>): boolean {
-  return tile[WATCH_HOME_MAP_NAMES_KEY] !== false;
+/** Whether a Home map tile draws its room names (`homeMapNames`) by the
+ * tile rule. */
+export function watchHomeMapNames(tile: Record<string, unknown>, home?: HomeMapDocument | null): boolean {
+  return tileOptionsResolved(tile, home).names;
 }
 
-/** Show the room names (removes the key) or hide them (stores false). */
-export function setWatchHomeMapNames(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
+/** Show or hide the room names: the home style's choice removes the key,
+ * the other stores it. */
+export function setWatchHomeMapNames(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean, home?: HomeMapDocument | null): WatchPagesDocument {
   if (typeof on !== "boolean") return document;
-  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_NAMES_KEY, on, true);
+  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_NAMES_KEY, on, homeStyleOf(home).names);
 }
 
 /** The tile key that says which devices a Home map tile draws. */
@@ -380,47 +387,72 @@ export const WATCH_HOME_MAP_DEVICES_HINTS: Record<WatchHomeMapDevices, string> =
   none: "No pins or dots, only the plan and its light.",
 };
 
-/** A Home map tile's devices (`homeMapDevices`): absent or unknown is
- * lights. */
-export function watchHomeMapDevices(tile: Record<string, unknown>): WatchHomeMapDevices {
-  const value = tile[WATCH_HOME_MAP_DEVICES_KEY];
-  return value === "all" || value === "none" ? value : "lights";
+/** A Home map tile's devices (`homeMapDevices`) by the tile rule; an
+ * unknown value counts as none. */
+export function watchHomeMapDevices(tile: Record<string, unknown>, home?: HomeMapDocument | null): WatchHomeMapDevices {
+  return tileOptionsResolved(tile, home).devices;
 }
 
-/** Set a Home map tile's devices: lights removes the key. */
-export function setWatchHomeMapDevices(document: WatchPagesDocument, pageId: string, tileId: string, devices: WatchHomeMapDevices): WatchPagesDocument {
+/** Set a Home map tile's devices: the home style's removes the key. */
+export function setWatchHomeMapDevices(document: WatchPagesDocument, pageId: string, tileId: string, devices: WatchHomeMapDevices, home?: HomeMapDocument | null): WatchPagesDocument {
   if (!WATCH_HOME_MAP_DEVICES.some(([d]) => d === devices)) return document;
-  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_DEVICES_KEY, devices, "lights");
+  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_DEVICES_KEY, devices, homeStyleOf(home).devices);
 }
 
-/** The tile key that turns the furniture off. */
+/** The tile key that turns the furniture off, or on over a home style
+ * that hides it. */
 export const WATCH_HOME_MAP_FURNITURE_KEY = "homeMapFurniture";
 
-/** Whether a Home map tile draws the scan's furniture (`homeMapFurniture`):
- * only a stored false hides it. */
-export function watchHomeMapFurniture(tile: Record<string, unknown>): boolean {
-  return tile[WATCH_HOME_MAP_FURNITURE_KEY] !== false;
+/** Whether a Home map tile draws the scan's furniture (`homeMapFurniture`)
+ * by the tile rule. */
+export function watchHomeMapFurniture(tile: Record<string, unknown>, home?: HomeMapDocument | null): boolean {
+  return tileOptionsResolved(tile, home).furniture;
 }
 
-/** Show the furniture (removes the key) or hide it (stores false). */
-export function setWatchHomeMapFurniture(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
+/** Show or hide the furniture: the home style's choice removes the key. */
+export function setWatchHomeMapFurniture(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean, home?: HomeMapDocument | null): WatchPagesDocument {
   if (typeof on !== "boolean") return document;
-  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_FURNITURE_KEY, on, true);
+  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_FURNITURE_KEY, on, homeStyleOf(home).furniture);
 }
 
-/** The tile key that turns the light's glow off. */
+/** The tile key that turns the light's glow off, or on over a home style
+ * without it. */
 export const WATCH_HOME_MAP_GLOW_KEY = "homeMapGlow";
 
 /** Whether a Home map tile draws its pools of light, the lit rooms' tint and
- * the wash up their walls (`homeMapGlow`): only a stored false hides them. */
-export function watchHomeMapGlow(tile: Record<string, unknown>): boolean {
-  return tile[WATCH_HOME_MAP_GLOW_KEY] !== false;
+ * the wash up their walls (`homeMapGlow`) by the tile rule. */
+export function watchHomeMapGlow(tile: Record<string, unknown>, home?: HomeMapDocument | null): boolean {
+  return tileOptionsResolved(tile, home).glow;
 }
 
-/** Show the light's glow (removes the key) or hide it (stores false). */
-export function setWatchHomeMapGlow(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
+/** Show or hide the light's glow: the home style's choice removes the
+ * key. */
+export function setWatchHomeMapGlow(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean, home?: HomeMapDocument | null): WatchPagesDocument {
   if (typeof on !== "boolean") return document;
-  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_GLOW_KEY, on, true);
+  return setHomeMapKey(document, pageId, tileId, WATCH_HOME_MAP_GLOW_KEY, on, homeStyleOf(home).glow);
+}
+
+// ── the home style ──────────────────────────────────────────────────────
+
+/** The Map card's note while a tile has none of the six look keys. */
+export const WATCH_HOME_MAP_FOLLOWS_TEXT = "Follows the home style";
+
+/** The Map card's way back to the home style. */
+export const WATCH_HOME_MAP_USE_HOME_STYLE_TEXT = "Use the home style";
+
+/** The line under the note and the button. */
+export const WATCH_HOME_MAP_HOME_STYLE_HINT = "The home style is set in the Home map's Style. A choice here that differs from it is kept for this tile alone.";
+
+/** Whether a Home map tile has none of the six look keys, so it draws the
+ * home style. */
+export function watchHomeMapFollowsHomeStyle(tile: Record<string, unknown>): boolean {
+  return !tileHasOwnStyle(tile);
+}
+
+/** Use the home style: a Home map tile without any of its six look keys. A
+ * tile of another kind, or one with none, changes nothing. */
+export function useWatchHomeMapHomeStyle(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
+  return editTile(document, pageId, tileId, (tile) => (!isWatchHomeMapTile(tile) || !tileHasOwnStyle(tile) ? tile : withoutTileStyle(tile)));
 }
 
 /** The lines under the Map card's switches. */
@@ -431,16 +463,12 @@ export const WATCH_HOME_MAP_OPTION_HINTS = {
   glow: "Pools of light on the floor round each light that is on.",
 } as const;
 
-/** Everything a Home map tile's picture reads from the tile, in one place
- * for the face and the Map card's pictures. */
-export function watchHomeMapArtOptions(tile: Record<string, unknown>) {
+/** Everything a Home map tile's picture reads from the tile and the map's
+ * home style by the tile rule, in one place for the face and the Map card's
+ * pictures. */
+export function watchHomeMapArtOptions(tile: Record<string, unknown>, home?: HomeMapDocument | null) {
   return {
-    look: watchHomeMapLook(tile),
-    turn: watchHomeMapTurn(tile),
-    names: watchHomeMapNames(tile),
-    devices: watchHomeMapDevices(tile),
-    furniture: watchHomeMapFurniture(tile),
-    glow: watchHomeMapGlow(tile),
+    ...tileOptionsResolved(tile, home),
     tapLights: tile[WATCH_HOME_MAP_TAP_LIGHTS_KEY] === true,
   };
 }

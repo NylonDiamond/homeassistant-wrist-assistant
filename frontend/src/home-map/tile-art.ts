@@ -32,6 +32,13 @@
 // lights, or in the dots look), every pin as a small smoked glass pin with
 // its icon and reading, or none.
 //
+// A pin's own keys (`pin-look.ts`) change what it draws: its icon, its pill
+// (its reading, its name or none), and for a light the reach of its pool of
+// light (`glow`) and its colour (`glowColor`, a `#RRGGBB` tinting the pool,
+// the halo, the dot and in night and warm the wash up its room's walls;
+// warm and no colour draw the warm lamplight). A map without them draws as
+// before.
+//
 // It draws in the caller's own units (the tile's points on its face, CSS
 // pixels in a picture button) inside a box `width` by `height`, working out
 // the projection itself as the apps do (`HomeMapTileRules.tipped`), so text
@@ -44,7 +51,7 @@
 
 import { type SVGTemplateResult, nothing, svg } from "lit";
 import type { IconProvider } from "../renderer.js";
-import { homePinPaint, homePinSymbol } from "./draw.js";
+import { homePinPaint } from "./draw.js";
 import { HOME_FURNITURE_DEFS, homeFurnitureArt, homeFurnitureOutline } from "./furniture-art.js";
 import {
   type HomeBox,
@@ -62,7 +69,6 @@ import {
   homeGlowRadius,
   homeGridLines,
   homeLabelPoint,
-  homePinReading,
   homePointBounds,
   homePolygonHolds,
   homeRoomDirection,
@@ -89,6 +95,7 @@ import {
   homeMapPinRoom,
   homeMapShownFloor,
 } from "./model.js";
+import { homeMapGlowHex, homeMapHexAlpha, homeMapPinGlowRadius, homeMapPinPill, homeMapPinSymbol } from "./pin-look.js";
 
 /** A Home map tile's look (`homeMapLook`), as the home style names it. */
 export type HomeTileLook = HomeMapLook;
@@ -272,6 +279,18 @@ const HALO_STOPS: Record<ModelStyle | "dot", string[]> = {
   blueprint: [rgba(1, 1, 1, 0.6), rgba(1, 1, 1, 0)],
   dot: [rgba(1, 0.83, 0.36, 0.45), rgba(1, 0.83, 0.36, 0)],
 };
+
+/** How opaque each stop of a pool or halo is, from the middle out, for a
+ * light with its own colour: the same fall as the warm stops above. */
+const POOL_ALPHAS: Partial<Record<HomeTileLook, number[]>> = { plan: [0.55, 0.2, 0], night: [0.9, 0.45, 0], warm: [0.75, 0.25, 0], lines: [0.35, 0] };
+const HALO_ALPHAS: Record<ModelStyle | "dot", number[]> = { night: [0.9, 0.45, 0], warm: [0.9, 0.45, 0], lines: [0.9, 0.4, 0], clay: [0.55, 0], blueprint: [0.6, 0], dot: [0.45, 0] };
+
+/** A pool's or halo's gradient: the look's own warm one, or the light's
+ * own colour falling off the same way. */
+function glowFill(defs: Defs, name: string, warm: readonly string[], alphas: readonly number[] | undefined, hex: string | undefined): string {
+  if (hex === undefined || alphas === undefined) return defs.radial(name, warm);
+  return defs.radial(`${name}-${hex.slice(1)}`, alphas.map((a) => homeMapHexAlpha(hex, a)));
+}
 
 // ── the tile's ground and words ─────────────────────────────────────────
 
@@ -514,6 +533,19 @@ function litRoomsOf(floor: HomeMapFloor, lights: readonly Light[]): Set<string> 
   return out;
 }
 
+/** The lit rooms' own light colours: for each room, the colour of the first
+ * light that is on there with a `#RRGGBB` of its own. */
+function litColoursOf(floor: HomeMapFloor, lights: readonly Light[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const l of lights) {
+    const hex = homeMapGlowHex(l.pin);
+    if (!l.on || hex === undefined) continue;
+    const room = homeMapPinRoom(floor, l.pin);
+    if (room !== undefined && !out.has(room.id)) out.set(room.id, hex);
+  }
+  return out;
+}
+
 // ── the picture ─────────────────────────────────────────────────────────
 
 const memo = new WeakMap<HomeMapFloor, WeakMap<object, Map<string, SVGTemplateResult>>>();
@@ -564,6 +596,7 @@ function draw(o: HomeTileArtOptions): SVGTemplateResult {
     floor,
     lights,
     lit,
+    litHex: litColoursOf(floor, lights),
     glow: o.glow !== false,
     furniture: o.furniture !== false,
     devices: o.devices ?? "lights",
@@ -581,6 +614,8 @@ interface Ctx {
   floor: HomeMapFloor;
   lights: Light[];
   lit: Set<string>;
+  /** A lit room's light colour, when a light there has one. */
+  litHex: Map<string, string>;
   glow: boolean;
   furniture: boolean;
   devices: HomeTileDevices;
@@ -622,12 +657,12 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
 
   // The glow on the floor round each lit light, kept inside its room.
   if (ctx.glow) {
-    const pool = defs.radial("plan", POOL_STOPS.plan!);
     for (const light of ctx.lights) {
       if (!light.on) continue;
       const room = homeMapPinRoom(floor, light.pin);
       const [x, y] = project(P, light.pin.at);
-      const circle = svg`<circle class="hmt-pool" cx=${r2(x)} cy=${r2(y)} r=${r2(len(homeGlowRadius(light.brightness)))} fill=${pool} />`;
+      const pool = glowFill(defs, "plan", POOL_STOPS.plan!, POOL_ALPHAS.plan, homeMapGlowHex(light.pin));
+      const circle = svg`<circle class="hmt-pool" cx=${r2(x)} cy=${r2(y)} r=${r2(len(homeMapPinGlowRadius(light.pin, light.brightness)))} fill=${pool} />`;
       out.push(room === undefined || room.outline.length < 3 ? circle : svg`<g clip-path=${defs.clip(roomPoints(ctx, room))}>${circle}</g>`);
     }
   }
@@ -912,12 +947,14 @@ function drawModel(ctx: Ctx, style: ModelStyle): SVGTemplateResult[] {
   // Pools of light on the floor, each kept inside its room.
   const pool = POOL_STOPS[style];
   if (ctx.glow && pool !== undefined) {
-    const fill = defs.radial(style, pool);
     for (const light of ctx.lights) {
       if (!light.on) continue;
       const room = homeRoomUnder(floor, light.pin.at);
       if (room === undefined) continue;
-      const radius = homeGlowRadius(light.brightness) * 1.15;
+      const fill = glowFill(defs, style, pool, POOL_ALPHAS[style], homeMapGlowHex(light.pin));
+      // A light's own reach is its pool's radius as set; else a little wider
+      // than the plan's, as the model's floor is seen at a slant.
+      const radius = light.pin.glow !== undefined ? homeMapPinGlowRadius(light.pin, light.brightness) : homeGlowRadius(light.brightness) * 1.15;
       out.push(svg`<g class="hmt-pool" clip-path=${defs.clip(roomPoints(ctx, room))} style=${style === "night" || style === "warm" ? "mix-blend-mode:screen" : nothing}>
         <circle cx=${r3(light.pin.at[0])} cy=${r3(light.pin.at[1])} r=${r3(radius)} fill=${fill} transform=${affine(P)} /></g>`);
     }
@@ -981,9 +1018,13 @@ function drawSolid(ctx: Ctx, solid: Solid, style: ModelStyle, isLit: boolean): S
     // Light falls from the upper left.
     out.push(svg`<polygon points=${face} fill=${toneColor(tone.side, 0.82 - 0.14 * facing[0], tone.opacity)} />`);
     if (ctx.glow && (style === "warm" || style === "night") && solid.part === "wall" && isLit && solid.z1 > LOW_WALL + 0.1) {
-      // The lamplight washing up a tall wall of a lit room.
-      const wash = defs.own("wa-hmt-wash", svg`<linearGradient id="wa-hmt-wash" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color=${rgba(0.96, 0.72, 0.41)} stop-opacity="0.38" /><stop offset="1" stop-color=${rgba(0.96, 0.72, 0.41)} stop-opacity="0" /></linearGradient>`);
+      // The lamplight washing up a tall wall of a lit room, in the colour of
+      // a light there with its own.
+      const hex = ctx.litHex.get(solid.roomId);
+      const id = hex === undefined ? "wa-hmt-wash" : `wa-hmt-wash-${hex.slice(1)}`;
+      const color = hex ?? rgba(0.96, 0.72, 0.41);
+      const wash = defs.own(id, svg`<linearGradient id=${id} x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color=${color} stop-opacity="0.38" /><stop offset="1" stop-color=${color} stop-opacity="0" /></linearGradient>`);
       out.push(svg`<polygon points=${face} fill=${wash} />`);
     }
     if (stroke !== undefined) {
@@ -1138,10 +1179,10 @@ function devices(ctx: Ctx, look: HomeTileLook): SVGTemplateResult[] {
     if (showsOff) {
       for (const l of ctx.lights) if (!l.on) out.push(disc(standingAt(P, ctx.floor, l.pin), Math.max(P.scale * 0.06, 2.5), offFill, { stroke: offRing, cls: "hmt-dot-off" }));
     }
-    const halo = defs.radial(`halo-${style}`, HALO_STOPS[style]);
     for (const l of ctx.lights) {
       if (!l.on) continue;
       const at = standingAt(P, ctx.floor, l.pin);
+      const halo = glowFill(defs, `halo-${style}`, HALO_STOPS[style], HALO_ALPHAS[style], homeMapGlowHex(l.pin));
       out.push(disc(at, Math.max(P.scale * 0.55, 6), halo), disc(at, Math.max(P.scale * 0.07, 2), MODEL.lampCore(style), { cls: "hmt-dot" }));
     }
     return out;
@@ -1150,18 +1191,20 @@ function devices(ctx: Ctx, look: HomeTileLook): SVGTemplateResult[] {
     const [fill, ring] = look === "dots" ? [rgba(0.36, 0.39, 0.42), rgba(0.62, 0.62, 0.62)] : [PLAN.off, rgba(1, 1, 1, 0.5)];
     for (const l of ctx.lights) if (!l.on) out.push(disc(project(P, l.pin.at), dot, fill, { stroke: ring, cls: "hmt-dot-off" }));
   }
-  const halo = defs.radial("halo-dot", HALO_STOPS.dot);
   const r = look === "dots" ? dot * 1.1 : dot;
   for (const l of ctx.lights) {
     if (!l.on) continue;
     const at = project(P, l.pin.at);
-    out.push(disc(at, r * 2.4, halo), disc(at, r, PLAN.lightOn, { cls: "hmt-dot" }));
+    const hex = homeMapGlowHex(l.pin);
+    const halo = glowFill(defs, "halo-dot", HALO_STOPS.dot, HALO_ALPHAS.dot, hex);
+    out.push(disc(at, r * 2.4, halo), disc(at, r, hex ?? PLAN.lightOn, { cls: "hmt-dot" }));
   }
   return out;
 }
 
-/** A pin as smoked glass with its icon in its colour, a light that is on a
- * warm amber with a glow, and its reading hanging under it. */
+/** A pin as smoked glass with its icon (its own, else its kind's) in its
+ * colour, a light that is on a warm amber with a glow in its own colour, and
+ * its pill hanging under it: its reading, its name, or none. */
 function glassPin(ctx: Ctx, pin: HomeMapPin): SVGTemplateResult {
   const { P, defs, o } = ctx;
   const look = homeMapPinLook(pin.entityId, o.states);
@@ -1173,15 +1216,16 @@ function glassPin(ctx: Ctx, pin: HomeMapPin): SVGTemplateResult {
     : look.kind === "lock" ? (look.locked ? PLAN.locked : PLAN.unlocked)
     : look.kind === "other" ? (look.on ? homePinPaint(pin.entityId, o.states).fill : rgba(0.78, 0.78, 0.78))
     : rgba(0.5, 0.5, 0.5);
-  const symbol = d >= 11 ? homePinSymbol(pin.entityId) : undefined;
+  const symbol = d >= 11 ? homeMapPinSymbol(pin, o.states) : undefined;
   // Each glyph is drawn on a 24 point square, scaled down into the pin.
   const glyph = symbol === undefined ? undefined : o.icons?.render(symbol, 24, iconColor);
   const side = d * 0.52;
-  const reading = homePinReading(pin.entityId, o.states);
+  const reading = homeMapPinPill(pin, o.states);
   const readingSize = 8;
   const readingWidth = reading === undefined ? 0 : textWidth(reading, readingSize) + 8;
+  const hex = homeMapGlowHex(pin);
   return svg`<g class="hmt-pin" data-entity=${pin.entityId} transform=${`translate(${r2(x)} ${r2(y)})`}>
-    ${litLight ? svg`<circle r=${r2(d)} fill=${defs.radial("pin-glow", [rgba(1, 0.83, 0.36, 0.6), rgba(1, 0.83, 0.36, 0)])} />` : nothing}
+    ${litLight ? svg`<circle r=${r2(d)} fill=${glowFill(defs, "pin-glow", [rgba(1, 0.83, 0.36, 0.6), rgba(1, 0.83, 0.36, 0)], [0.6, 0], hex)} />` : nothing}
     <circle r=${r2(d / 2)} fill=${litLight ? PLAN.lightOn : PLAN.glass} stroke="rgba(255,255,255,0.45)" stroke-width="1" />
     ${glyph === undefined ? nothing : svg`<g transform=${`translate(${r2(-side / 2)} ${r2(-side / 2)}) scale(${r3(side / 24)})`}>${glyph}</g>`}
     ${reading === undefined ? nothing : svg`<g class="hmt-reading">

@@ -11578,6 +11578,7 @@ export class WristAssistantPanel extends LitElement {
         hass: this.hass, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         capable: this.homeMap,
         onHome: () => this.backToHome(undefined),
+        onOpenPage: (pageId: string) => this.goTo(libraryItemPath("pages", pageId)),
         onLoaded: () => this.requestUpdate(),
       });
     }

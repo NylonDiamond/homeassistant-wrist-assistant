@@ -21,7 +21,7 @@ import { HOME_PLAN_COLORS, homePinGlowRadius, homePinPaint, homePlan, homePlanVi
 import { HOME_MAP_EMPTY_TEXT, HOME_MAP_UPDATE_TEXT, WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
 import { HOME_MAP_PATH, isHomeMapRoute, renderHomeMapView } from "../src/home-map/hook.js";
 import { type HomeMapDocument, type HomeMapStates, applyHomeMapEdit } from "../src/home-map/model.js";
-import { renameRoom } from "../src/home-map/edit-ops.js";
+import { renameRoom, setHomeStyle } from "../src/home-map/edit-ops.js";
 import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT } from "../src/home-map/save.js";
 import { forgetHomeMap, homeMapRead, setHomeMapCapable } from "../src/home-map/store.js";
 import { NO_ICONS } from "../src/watch-pages/editor-host.js";
@@ -282,7 +282,7 @@ describe("the Home map editor", () => {
     expect(homeMapRead(ha.hass, () => undefined)).toEqual({ doc: fixture(), rev: 4 });
   });
 
-  it("switches modes, Devices and Style standing in for now", async () => {
+  it("switches modes", async () => {
     const { el, inside, text } = await page();
     el.setMode("shape");
     expect(inside.mode).toBe("shape");
@@ -290,9 +290,85 @@ describe("the Home map editor", () => {
     expect(text()).toContain("Scan check");
     expect(text()).toContain("Snap to 90°");
     el.setMode("devices");
-    expect(text()).toContain("Coming in the next update");
+    expect(text()).toContain("Find any device");
+    expect(text()).toContain("Not on the map");
+    expect(text()).toContain("Side view");
+    el.setMode("style");
+    expect(text()).toContain("Looks");
+    expect(text()).toContain("Home style");
+    // Style's own middle: no plan and no Flat or Model.
+    expect(text()).not.toContain("Plan of Ground floor");
+    expect(text()).not.toContain(">Model</button>");
     el.setMode("arrange");
     expect(text()).toContain("Snap to walls");
+  });
+
+  it("draws the pins itself in Devices, picks and drags one, saved once, and sets a light's glow by its ring's handle", async () => {
+    const { el, inside, ha, press, text } = await page();
+    el.setMode("devices");
+    const shown = text();
+    // The plan leaves its glass pins to the mode, which rings none yet.
+    expect(shown).not.toContain('class="hmt-pin"');
+    expect(shown).toContain('class="hme-pin"');
+    press([0.8, 3.1]);
+    expect(inside.selection).toEqual({ kind: "pin", pinId: READING });
+    const picked = text();
+    expect(picked).toContain("Same height for all lights");
+    expect(picked).toContain("Turn off");
+    expect(picked).toContain("Living room from the side");
+    expect(picked).toContain("Living room (found by place)");
+    expect(picked).toContain("Auto (floor lamp)");
+    expect(picked).toContain("Glow 2.0 m");
+    expect(ha.saves()).toHaveLength(0);
+    press([0.8, 3.1], [[1.0, 3.2], [1.3, 3.4]]);
+    await el.session!.idle();
+    expect(ha.saves()).toHaveLength(1);
+    expect(ha.now().doc!.floors[0]!.pins[0]!.at).toEqual([1.3, 3.4, 1.5]);
+    // The handle sits on the ring, down and to the right.
+    const r = 0.6 + 1.8 * (200 / 255);
+    const h: [number, number] = [1.3 + r * Math.SQRT1_2, 3.4 + r * Math.SQRT1_2];
+    press(h, [[h[0] + 0.5, h[1]], [1.3 + 3, 3.4]]);
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.pins[0]!.glow).toBe(3);
+    expect(text()).toContain("Glow 3.0 m");
+  });
+
+  it("places a device dropped on the plan in the room under it, and every device of the floor's areas at once", async () => {
+    const { el, ha, inside, stage, screen, text } = await page();
+    (ha.hass as unknown as Record<string, unknown>).entities = { "switch.fan": { area_id: "kitchen" }, "light.reading_lamp": { area_id: "living_room" } };
+    el.setMode("devices");
+    expect(text()).toContain("Place all 1 by area");
+    const [x, y] = screen([8, 3]);
+    const dropped = { clientX: x, clientY: y, currentTarget: stage, preventDefault: () => undefined, dataTransfer: { types: ["application/x-wa-home-map-entity"], getData: () => "switch.fan" } };
+    el.onStageDrag(dropped as unknown as DragEvent);
+    expect(text()).toContain("Drop in Kitchen");
+    el.onStageDrop(dropped as unknown as DragEvent);
+    await el.session!.idle();
+    const pin = ha.now().doc!.floors[0]!.pins.at(-1)!;
+    expect(pin).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN, at: [8, 3, 0.3] });
+    expect(inside.selection).toEqual({ kind: "pin", pinId: pin.id });
+    expect(text()).not.toContain("Drop in Kitchen");
+    // Gone from the tray now it is on the map.
+    expect(text()).toContain("Every device with an area is on the map.");
+    el.undo();
+    await el.session!.idle();
+    expect(text()).toContain("Place all 1 by area");
+  });
+
+  it("sets the home style in Style, and lists the library's Home map tiles", async () => {
+    const { el, ha, text } = await page();
+    el.setMode("style");
+    text();
+    await settle();
+    expect(text()).toContain("Used on 0 tiles");
+    el.apply((d) => setHomeStyle(d, { look: "night", turn: 40 }));
+    await el.session!.idle();
+    expect(ha.now().doc!.style).toEqual({ look: "night", turn: 40 });
+    const shown = text();
+    expect(shown).toContain("A small model at night.");
+    expect(shown).toContain("Drag to turn · 40°");
+    expect(shown).toContain("Watch tile 2 × 2");
+    expect(shown).toContain("iPhone full map");
   });
 
   it("picks a room with a press and shows its name, area, page, place, finish and things; a click on empty space clears it", async () => {

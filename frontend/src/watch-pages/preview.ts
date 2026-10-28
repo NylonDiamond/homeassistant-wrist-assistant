@@ -3361,7 +3361,9 @@ function homeMapFace(tile: WatchPageTile, width: number, height: number, box: st
   // or floor's name).
   const title = hint === undefined ? undefined : [name, ...hint.split(" · ")].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ");
   const side = Math.min(width, height);
-  const options = watchHomeMapArtOptions(keyed);
+  // The look keys by the tile rule: the tile's own, else the map's home
+  // style, else the defaults.
+  const options = watchHomeMapArtOptions(keyed, input.homeMap);
   const look = options.look;
   const phone = input.phone !== undefined;
   // A short tile keeps the picture and drops the line.

@@ -51,6 +51,9 @@ export interface HomeMapViewInput {
   capable: boolean;
   /** The editor bar's ‹ Home. */
   onHome?: () => void;
+  /** Open a library page in the page editor, for Style's Edit beside a
+   * Home map tile. */
+  onOpenPage?: (pageId: string) => void;
   onLoaded: () => void;
 }
 
@@ -62,7 +65,7 @@ export function renderHomeMapView(input: HomeMapViewInput): TemplateResult {
   if (!ready && !loadFailed) void loadHomeMapEditor().then(input.onLoaded, input.onLoaded);
   return ready
     ? html`<wa-home-map-editor .hass=${input.hass} ?narrow=${input.narrow} .icons=${input.icons} .iconsTick=${input.iconsTick}
-        .capable=${input.capable} .onHome=${input.onHome}></wa-home-map-editor>`
+        .capable=${input.capable} .onHome=${input.onHome} .onOpenPage=${input.onOpenPage}></wa-home-map-editor>`
     : html`<div class="wp-loading">
         ${loadFailed ? html`<span>The Home map page did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
       </div>`;

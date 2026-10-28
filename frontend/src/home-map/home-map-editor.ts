@@ -27,13 +27,17 @@
 //
 // Each mode is its own file implementing `HomeMapMode` (`editor-mode.ts`
 // has the contract and the rules): Arrange (`mode-arrange.ts`), Shape
-// (`mode-shape.ts`); Devices and Style stand in (`mode-later.ts`) until
-// theirs are written. On each draw the shell makes a `HomeMapEditorContext`
+// (`mode-shape.ts`), Devices (`mode-devices.ts`) and Style
+// (`mode-style.ts`). On each draw the shell makes a `HomeMapEditorContext`
 // (the map, the floor shown with any drag's preview, the selection, the
 // view and its coordinate helpers, the switches, apply, preview, select,
 // drag, undo, the dialogs) and asks the mode for its rail, inspector,
 // overlay, pill and dock; presses on the stage and keys go to the mode
-// first, and what it leaves pans, clears the selection or zooms.
+// first, and what it leaves pans, clears the selection or zooms. A mode may
+// also draw its own pins (the plan then leaves them out), put pieces of page
+// over the stage, take a device dragged from its rail onto the plan, or
+// replace the stage with a middle column of its own (Style's previews, with
+// no Flat or Model).
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/home-map` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -80,9 +84,10 @@ import {
   homeMapZoomPercent,
 } from "./editor-view.js";
 import { homeLabelPoint, homePointBounds } from "./geometry.js";
-import { LaterMode } from "./mode-later.js";
 import { ArrangeMode } from "./mode-arrange.js";
+import { DevicesMode } from "./mode-devices.js";
 import { ShapeMode } from "./mode-shape.js";
+import { StyleMode } from "./mode-style.js";
 import {
   type HomeMapDocument,
   type HomeMapFloor,
@@ -131,6 +136,8 @@ export class WaHomeMapEditor extends LitElement {
   @property({ attribute: false }) capable = false;
   /** Back to the panel's Home; no ‹ Home without it. */
   @property({ attribute: false }) onHome: (() => void) | undefined = undefined;
+  /** Open a library page in the page editor (Style's Used on, Edit). */
+  @property({ attribute: false }) onOpenPage: ((pageId: string) => void) | undefined = undefined;
 
   @state() private unsupported = false;
   @state() private loading = false;
@@ -158,8 +165,8 @@ export class WaHomeMapEditor extends LitElement {
   readonly modes: Readonly<Record<HomeMapModeId, HomeMapMode>> = {
     arrange: new ArrangeMode(),
     shape: new ShapeMode(),
-    devices: new LaterMode("devices", "Devices", "Place each device where it is, at its height, with its name, icon and what a tap on it does."),
-    style: new LaterMode("style", "Style", "The look every Home map tile starts with: plan, night, warm, lines, clay, blueprint or dots, with names, devices, furniture and glow."),
+    devices: new DevicesMode(),
+    style: new StyleMode(),
   };
 
   /** A drag's live result (`ctx.preview`), never saved. */
@@ -472,6 +479,7 @@ export class WaHomeMapEditor extends LitElement {
       redraw: () => {
         this.tick++;
       },
+      openPage: this.onOpenPage,
     };
   }
 
@@ -603,6 +611,35 @@ export class WaHomeMapEditor extends LitElement {
 
   onStageUp(e: PointerEvent): void {
     this.touches.delete(e.pointerId);
+  }
+
+  /** Something dragged from the rail over the plan: the mode says whether
+   * it takes a drop there. */
+  onStageDrag(e: DragEvent): void {
+    this.stageEl = e.currentTarget as unknown as StageEl;
+    const ctx = this.context();
+    if (ctx === undefined || this.viewKind === "model" || this.dialog !== undefined) return;
+    if (this.modes[this.mode].dragOver?.(ctx, this.toPlan(e.clientX, e.clientY), e) === true) {
+      e.preventDefault?.();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  onStageDragLeave(e: DragEvent): void {
+    // Leaving for one of the plan's own parts is not leaving the plan.
+    const to = e.relatedTarget as Node | null;
+    const from = e.currentTarget as Node | null;
+    if (to !== null && from !== null && typeof from.contains === "function" && from.contains(to)) return;
+    const ctx = this.context();
+    if (ctx !== undefined) this.modes[this.mode].dragOver?.(ctx, undefined, e);
+  }
+
+  onStageDrop(e: DragEvent): void {
+    this.stageEl = e.currentTarget as unknown as StageEl;
+    const ctx = this.context();
+    if (ctx === undefined || this.viewKind === "model") return;
+    e.preventDefault?.();
+    this.modes[this.mode].drop?.(ctx, this.toPlan(e.clientX, e.clientY), e);
   }
 
   /** Drag the plan about. A click (no move) on empty space clears the
@@ -764,7 +801,7 @@ export class WaHomeMapEditor extends LitElement {
         <button class="hme-link" @click=${() => this.session?.dismissNote()}>Dismiss</button></div>`}
       <div class="hme-body">
         <aside class="hme-rail" aria-label="${HOME_MAP_MODE_LABELS[this.mode]} tools">${mode.rail(ctx)}</aside>
-        <section class="hme-stage-wrap">${this.renderStage(ctx, mode)}</section>
+        <section class="hme-stage-wrap">${mode.stage?.(ctx) ?? this.renderStage(ctx, mode)}</section>
         <aside class="hme-insp" aria-label="Inspector">${mode.inspector(ctx)}</aside>
       </div>
       ${this.renderDialog()}
@@ -797,10 +834,10 @@ export class WaHomeMapEditor extends LitElement {
           @click=${() => this.setMode(m)}>${HOME_MAP_MODE_LABELS[m]}</button>`)}
       </div>
       <span class="hme-flex"></span>
-      <div class="hme-seg" role="group" aria-label="View">
+      ${this.modes[this.mode].stage !== undefined ? nothing : html`<div class="hme-seg" role="group" aria-label="View">
         <button type="button" class=${this.viewKind === "flat" ? "on" : ""} aria-pressed=${this.viewKind === "flat" ? "true" : "false"} @click=${() => { this.viewKind = "flat"; }}>Flat</button>
         <button type="button" class=${this.viewKind === "model" ? "on" : ""} aria-pressed=${this.viewKind === "model" ? "true" : "false"} @click=${() => { this.viewKind = "model"; }}>Model</button>
-      </div>
+      </div>`}
       <button type="button" class="hme-tb hme-icon" aria-label="Undo" title=${`Undo (${mac ? "⌘Z" : "Ctrl+Z"})`} ?disabled=${!ctx.canUndo} @click=${() => this.undo()}>↶</button>
       <button type="button" class="hme-tb hme-icon" aria-label="Redo" title=${`Redo (${mac ? "⇧⌘Z" : "Ctrl+Shift+Z"})`} ?disabled=${!ctx.canRedo} @click=${() => this.redo()}>↷</button>
       <span class="hme-status ${state.kind}" role="status" title=${state.kind === "error" ? state.text : nothing}><span class="hme-status-dot"></span>${homeMapSaveWords(state)}</span>
@@ -864,10 +901,14 @@ export class WaHomeMapEditor extends LitElement {
         @pointerup=${(e: PointerEvent) => this.onStageUp(e)}
         @pointercancel=${(e: PointerEvent) => this.onStageUp(e)}
         @pointerleave=${() => this.onStageLeave()}
-        @wheel=${(e: WheelEvent) => this.onWheel(e)}>
+        @wheel=${(e: WheelEvent) => this.onWheel(e)}
+        @dragover=${(e: DragEvent) => this.onStageDrag(e)}
+        @dragleave=${(e: DragEvent) => this.onStageDragLeave(e)}
+        @drop=${(e: DragEvent) => this.onStageDrop(e)}>
         ${model ? this.renderModel(ctx, width, height) : this.renderPlan(ctx, mode, width, height)}
       </svg>
       ${pill === nothing ? nothing : html`<div class="hme-pill">${pill}</div>`}
+      ${model ? nothing : mode.stageExtra?.(ctx) ?? nothing}
       ${empty && !model ? html`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
         <span>Draw one by hand, or scan this floor with the iPhone.</span>
         <button type="button" class="hme-tb" @click=${() => { this.setMode("arrange"); const c = this.context(); if (c) (this.modes.arrange as ArrangeMode).draw.start(c); }}>＋ Draw a room by hand</button></div>` : nothing}
@@ -879,7 +920,7 @@ export class WaHomeMapEditor extends LitElement {
   private renderPlan(ctx: HomeMapEditorContext, mode: HomeMapMode, width: number, height: number) {
     const view = this.view;
     if (view === undefined || width <= 0) return nothing;
-    const art = this.planArt(ctx.floor, width, height);
+    const art = this.planArt(ctx.floor, width, height, mode.drawsPins === true ? "none" : "all");
     const k = view.scale / (this.artScale || view.scale);
     return svg`${this.background(view, width, height)}
       <g class="hme-art" transform=${`translate(${view.ox.toFixed(2)} ${view.oy.toFixed(2)}) scale(${k.toFixed(5)})`} pointer-events="none">${art}</g>
@@ -889,11 +930,12 @@ export class WaHomeMapEditor extends LitElement {
   }
 
   /** The plan look drawn at the resting scale, kept while nothing it shows
-   * changed (a hover draws the page again but not the plan). */
-  private planArt(floor: HomeMapFloor, width: number, height: number): unknown {
+   * changed (a hover draws the page again but not the plan). `devices`
+   * none leaves the pins to a mode that draws its own. */
+  private planArt(floor: HomeMapFloor, width: number, height: number, devices: "all" | "none"): unknown {
     const states = this.toggles.live ? this.hass?.states : undefined;
     const scale = this.artScale || this.view!.scale;
-    const key = `${floorKey(floor)}|${objectKey(states)}|${scale}|${width}|${height}|${this.iconsTick}|${objectKey(this.icons)}`;
+    const key = `${floorKey(floor)}|${objectKey(states)}|${scale}|${width}|${height}|${this.iconsTick}|${objectKey(this.icons)}|${devices}`;
     if (key !== this.artKey) {
       this.artKey = key;
       this.artHeld = homeTileArt({
@@ -901,7 +943,7 @@ export class WaHomeMapEditor extends LitElement {
         states,
         look: "plan",
         names: false,
-        devices: "all",
+        devices,
         furniture: true,
         glow: true,
         width,

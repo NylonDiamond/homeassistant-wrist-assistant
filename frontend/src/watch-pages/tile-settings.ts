@@ -99,7 +99,6 @@ import { watchPhoneTileChanged, watchPhoneTileKindOf, watchPhoneTileSummary, wat
 import { watchSpecialTask } from "./special-model.js";
 import {
   type WatchHomeMapLook,
-  WATCH_HOME_MAP_DEFAULT_TURN,
   WATCH_HOME_MAP_DEVICES,
   WATCH_HOME_MAP_DEVICES_HINTS,
   WATCH_HOME_MAP_FLOOR_HINT,
@@ -120,7 +119,12 @@ import {
   WATCH_HOME_MAP_ROOM_HINT,
   setWatchHomeMapLook,
   setWatchHomeMapRoom,
+  useWatchHomeMapHomeStyle,
   watchHomeMapArtOptions,
+  watchHomeMapFollowsHomeStyle,
+  WATCH_HOME_MAP_FOLLOWS_TEXT,
+  WATCH_HOME_MAP_HOME_STYLE_HINT,
+  WATCH_HOME_MAP_USE_HOME_STYLE_TEXT,
   watchHomeMapDrawnFloor,
   watchHomeMapRoomMenu,
   watchHomeMapTapsLights,
@@ -129,6 +133,7 @@ import {
 } from "./home-map-tile.js";
 import type { HomeMapStates } from "../home-map/model.js";
 import { homeTileArt, homeTileGround } from "../home-map/tile-art.js";
+import { homeStyleOf } from "../home-map/edit-ops.js";
 import { findWatchPage } from "./edit.js";
 import {
   type WatchShowWhenOperator,
@@ -1794,12 +1799,16 @@ const HOME_MAP_PICTURE = { width: 96, height: 64 } as const;
  * until another is picked. With no map (none yet, or not read) the line
  * says where one comes from; nothing can be picked.
  *
- * Then the Room; the Look as small pictures, each the tile's own floor (cut
+ * Then the Room; whether the tile follows the home style (the map's own,
+ * set in the Home map's Style), with Use the home style once it has a look
+ * of its own; the Look as small pictures, each the tile's own floor (cut
  * to its room) in that look with the lights as they are now, the tile's
  * other options applied, and pointing at one tries it on the tile; the Turn
  * of the model looks; Room names; Devices; Furniture; Light glow; and on
- * the iPhone, Tap lights. Every edit goes through its pure setter in
- * `home-map-tile.ts`, which stores nothing for a default.
+ * the iPhone, Tap lights. Each shows the tile's value by the tile rule (its
+ * own key, else the home style, else the default), and every edit goes
+ * through its pure setter in `home-map-tile.ts`, which stores a key only
+ * where the choice differs from the home style.
  */
 function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
   const menu = watchHomeMapFloorMenu(host.tile, host.homeMap);
@@ -1817,8 +1826,17 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
         commit(host, "homeMapTapLights", (d) => setWatchHomeMapTapLights(d, ...at(), on)))}
       <div class="hint ts-under">${WATCH_HOME_MAP_TAP_LIGHTS_HINT}</div>`
     : nothing;
-  const options = watchHomeMapArtOptions(keyed);
+  // Every look key resolved by the tile rule, and written only where the
+  // choice differs from the home style (`home-map-tile.ts`).
+  const home = host.homeMap;
+  const style = homeStyleOf(home);
+  const options = watchHomeMapArtOptions(keyed, home);
   const look = options.look;
+  const follows = watchHomeMapFollowsHomeStyle(keyed);
+  const homeStyle = html`<div class="ts-with-link"><span class="hint keep">${follows ? WATCH_HOME_MAP_FOLLOWS_TEXT : "Has its own look"}</span>
+      ${follows ? nothing : linkButton(WATCH_HOME_MAP_USE_HOME_STYLE_TEXT, "Take this tile's own choices away, so it draws the home style",
+        () => commit(host, "homeMapStyle", (d) => useWatchHomeMapHomeStyle(d, ...at())))}</div>
+    <div class="hint ts-under">${WATCH_HOME_MAP_HOME_STYLE_HINT}</div>`;
   // One room of the floor, or the whole floor (the key removed).
   const rooms = watchHomeMapRoomMenu(host.tile, host.homeMap);
   const room = rooms === undefined
@@ -1840,33 +1858,34 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
       style=${`background:${homeTileGround(value, 0.5)}`}><g transform="translate(4 4)">${art}</g></svg>`;
   };
   const looks = WATCH_HOME_MAP_LOOKS.map(([value, label]) => ({ value, label, picture: picture(value) }));
-  const lookEdit = (v: WatchHomeMapLook) => (d: WatchPagesDocument) => setWatchHomeMapLook(d, ...at(), v);
+  const lookEdit = (v: WatchHomeMapLook) => (d: WatchPagesDocument) => setWatchHomeMapLook(d, ...at(), v, home);
   const turn = isWatchHomeMapModelLook(look)
     ? html`${typingField(host, "homeMapTurn", sliderField("Turn", options.turn, (v) =>
-        commit(host, "homeMapTurn", (d) => setWatchHomeMapTurn(d, ...at(), v), { typing: true }), {
-        min: -180, max: 180, step: 1, def: WATCH_HOME_MAP_DEFAULT_TURN, unit: "°",
+        commit(host, "homeMapTurn", (d) => setWatchHomeMapTurn(d, ...at(), v, home), { typing: true }), {
+        min: -180, max: 180, step: 1, def: style.turn, unit: "°",
       }), options.turn)}
       <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.turn}</div>`
     : nothing;
   return html`${menuField("Floor", menu, pick)}
     <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
     ${room}
+    ${homeStyle}
     ${pictureChoice("Look", look, looks, (v) => commit(host, "homeMapLook", lookEdit(v)), {
-      def: "plan", size: "map", trial: tileTrial(host, "Look", lookEdit),
+      def: style.look, size: "map", trial: tileTrial(host, "Look", lookEdit),
     })}
     <div class="hint ts-under">${WATCH_HOME_MAP_LOOK_HINTS[look]}</div>
     ${turn}
     ${checkField("Room names", options.names, (on) =>
-      commit(host, "homeMapNames", (d) => setWatchHomeMapNames(d, ...at(), on)), true)}
+      commit(host, "homeMapNames", (d) => setWatchHomeMapNames(d, ...at(), on, home)), style.names)}
     <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.names}</div>
     ${segField("Devices", options.devices, WATCH_HOME_MAP_DEVICES, (v) =>
-      commit(host, "homeMapDevices", (d) => setWatchHomeMapDevices(d, ...at(), v)), { def: "lights" })}
+      commit(host, "homeMapDevices", (d) => setWatchHomeMapDevices(d, ...at(), v, home)), { def: style.devices })}
     <div class="hint ts-under">${WATCH_HOME_MAP_DEVICES_HINTS[options.devices]}</div>
     ${checkField("Furniture", options.furniture, (on) =>
-      commit(host, "homeMapFurniture", (d) => setWatchHomeMapFurniture(d, ...at(), on)), true)}
+      commit(host, "homeMapFurniture", (d) => setWatchHomeMapFurniture(d, ...at(), on, home)), style.furniture)}
     <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.furniture}</div>
     ${checkField("Light glow", options.glow, (on) =>
-      commit(host, "homeMapGlow", (d) => setWatchHomeMapGlow(d, ...at(), on)), true)}
+      commit(host, "homeMapGlow", (d) => setWatchHomeMapGlow(d, ...at(), on, home)), style.glow)}
     <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.glow}</div>
     ${tapLights}`;
 }
