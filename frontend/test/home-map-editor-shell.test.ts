@@ -3,9 +3,12 @@
 // the sizes and names the editor writes; the selection's rules; the
 // session that makes each edit at once, saves one at a time (edits made
 // meanwhile go in one save), undoes without throwing away another device's
-// change, and says why when a save fails; and the plan drawn at a fixed fit
-// for the stage, with sliding doors and windows as two panes.
+// change, and says why when a save fails; the plan drawn at a fixed fit
+// for the stage, with sliding doors and windows as two panes; and the
+// doors' and windows' styles in the model looks, a map with none drawn
+// exactly as before.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -38,9 +41,9 @@ import { homeSlidingPanes } from "../src/home-map/geometry.js";
 import { homeMapSaveWords } from "../src/home-map/home-map-editor.js";
 import { homeMapDeleteRoomText } from "../src/home-map/mode-arrange.js";
 import { HOME_MAP_SHAPE_TOOLS, homeMapFixAllLabel, homeMapShapeToolFor } from "../src/home-map/mode-shape.js";
-import type { HomeMapDocument, HomeMapRead } from "../src/home-map/model.js";
+import type { HomeMapDocument, HomeMapFloor, HomeMapRead } from "../src/home-map/model.js";
 import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT, type HomeMapApi } from "../src/home-map/save.js";
-import { homeTileArt } from "../src/home-map/tile-art.js";
+import { HOME_TILE_MODEL_LOOKS, type HomeTileLook, homeTileArt } from "../src/home-map/tile-art.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
 const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocument;
@@ -367,5 +370,78 @@ describe("the plan on the stage", () => {
     const sliding = flatten(homeTileArt({ floor: doc.floors[0]!, look: "plan", width: 600, height: 400, names: false }));
     // The living room's door swings as before; the sliding one adds no swing.
     expect(sliding.split("stroke-dasharray=\"3 2.5\"").length).toBe(plain.split("stroke-dasharray=\"3 2.5\"").length);
+  });
+});
+
+describe("door and window styles in the model looks", () => {
+  const states = { "light.reading_lamp": { state: "on", attributes: { brightness: 200 } }, "light.ceiling": { state: "off" } };
+  const draw = (floor: HomeMapFloor, look: HomeTileLook) =>
+    flatten(homeTileArt({ floor, states, look, width: 600, height: 400, turn: -28, names: true, devices: "all", furniture: true, glow: true }));
+  const hash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
+  const styled = (style: "sliding" | "double", kind: "door" | "window") => {
+    const doc = fixture();
+    const living = doc.floors[0]!.rooms[0]!;
+    // The living room's window, or its door made 1.6 m wide for a double.
+    const opening = living.openings[kind === "window" ? 0 : 1]!;
+    opening.style = style;
+    if (kind === "door" && style === "double") opening.b = [0, 3.1];
+    return doc.floors[0]!;
+  };
+
+  it("draws a map with no styles exactly as before, in every look", () => {
+    const floor = fixture().floors[0]!;
+    const looks = Object.fromEntries((["plan", ...HOME_TILE_MODEL_LOOKS] as HomeTileLook[]).map((look) => [look, hash(draw(floor, look))]));
+    // Taken before the styles were drawn in the model looks; a change to how
+    // the looks draw an unstyled map changes these on purpose.
+    expect(looks).toEqual({
+      plan: "81582888e9b19721",
+      night: "41db84fa3f766f08",
+      warm: "dd687a912b8bb9b5",
+      lines: "f8f39d5c61ea580f",
+      clay: "02bf831184585c52",
+      blueprint: "15793a7930a7b500",
+    });
+  });
+
+  const count = (text: string, part: string) => text.split(`class=hmt-${part}>`).length - 1;
+
+  it("stands a sliding window's two panes in its hole in place of its one", () => {
+    for (const look of HOME_TILE_MODEL_LOOKS) {
+      const plain = draw(fixture().floors[0]!, look);
+      const sliding = draw(styled("sliding", "window"), look);
+      // The 2 m window's one glass, cut in three for the sort, becomes two
+      // panes of 1.1 m.
+      expect(count(plain, "glass"), look).toBe(3);
+      expect(count(sliding, "glass"), look).toBe(2);
+      expect(count(sliding, "wall"), look).toBe(count(plain, "wall"));
+    }
+  });
+
+  it("stands a sliding door's two panes of glass in its gap", () => {
+    for (const look of HOME_TILE_MODEL_LOOKS) {
+      const plain = draw(fixture().floors[0]!, look);
+      const sliding = draw(styled("sliding", "door"), look);
+      expect(count(sliding, "glass"), look).toBe(count(plain, "glass") + 2);
+      expect(count(sliding, "wall"), look).toBe(count(plain, "wall"));
+    }
+  });
+
+  it("splits a double door's gap with a post of wall", () => {
+    for (const look of HOME_TILE_MODEL_LOOKS) {
+      const wide = fixture();
+      wide.floors[0]!.rooms[0]!.openings[1]!.b = [0, 3.1];
+      const plain = draw(wide.floors[0]!, look);
+      const double = draw(styled("double", "door"), look);
+      expect(count(double, "wall"), look).toBe(count(plain, "wall") + 1);
+      expect(count(double, "glass"), look).toBe(count(plain, "glass"));
+    }
+  });
+
+  it("draws a sliding window on the plan as two offset panes in place of its line", () => {
+    const pane = "stroke=rgb(143,201,247)";
+    const plain = draw(fixture().floors[0]!, "plan");
+    const sliding = draw(styled("sliding", "window"), "plan");
+    expect(plain.split(pane).length - 1).toBe(1);
+    expect(sliding.split(pane).length - 1).toBe(2);
   });
 });

@@ -18,7 +18,11 @@
 //   full height so the rooms have a back, the walls between rooms are cut to
 //   1 m and the near outside walls to a 0.4 m kerb, so nothing hides behind
 //   them. Walls are split at their openings, with glass in each window's
-//   hole, and cut into short stretches; furniture stands on the floor, cut at
+//   hole, and cut into short stretches. A door's or window's style stands in
+//   its hole in the look's own colours: a sliding door or window as two
+//   panes of glass overlapping in the middle, a double door as a thin post
+//   of wall splitting its gap; a map with no styles draws exactly as it did
+//   before they were drawn. Furniture stands on the floor, cut at
 //   1.2 m; everything is sorted far to near and each face shaded by which
 //   way it faces. Night is dark rooms with warm pools of light, warm is wood
 //   and lamplight, lines is thin glowing amber lines on black, clay a white
@@ -846,7 +850,8 @@ function wallParts(wall: HomeSegment, height: number, openings: readonly HomeMap
     const z0 = isGap(opening) ? 0 : Math.max(0, Math.min(opening.z0, opening.z1));
     const z1 = isGap(opening) ? height : Math.min(height, Math.max(opening.z0, opening.z1));
     if (s1 - s0 <= 0.02 || z1 - z0 <= 0.02) continue;
-    holes.push({ s0, s1, z0, z1, window: opening.kind === "window" });
+    // A sliding window's glass is its two panes (`styleParts`), not one.
+    holes.push({ s0, s1, z0, z1, window: opening.kind === "window" && opening.style !== "sliding" });
   }
   const stops = [...new Set([0, length, ...holes.flatMap((h) => [h.s0, h.s1])])].sort((p, q) => p - q);
   const out: Solid[] = [];
@@ -887,11 +892,75 @@ function wallParts(wall: HomeSegment, height: number, openings: readonly HomeMap
   return out;
 }
 
+/** A double door's post, splitting its gap in two, in meters along the
+ * wall. */
+const DOUBLE_POST = 0.06;
+
+/** An upright slab along `seg`, `seg.t` thick, from `z0` up to `z1`, cut
+ * into stretches as a wall is. */
+function slabParts(seg: HomeSegment, z0: number, z1: number, part: Solid["part"], roomId: string): Solid[] {
+  const length = segmentLength(seg);
+  if (length <= 0.02 || z1 - z0 <= 0.02) return [];
+  const ux = (seg.b[0] - seg.a[0]) / length;
+  const uy = (seg.b[1] - seg.a[1]) / length;
+  const nx = (-uy * seg.t) / 2;
+  const ny = (ux * seg.t) / 2;
+  const count = Math.max(1, Math.floor(length / STRETCH));
+  const step = length / count;
+  const out: Solid[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const p: HomePoint = [seg.a[0] + ux * step * i, seg.a[1] + uy * step * i];
+    const q: HomePoint = [seg.a[0] + ux * step * (i + 1), seg.a[1] + uy * step * (i + 1)];
+    const seams = new Set<number>();
+    if (i > 0) seams.add(3);
+    if (i < count - 1) seams.add(1);
+    out.push({ part, roomId, quad: [[p[0] - nx, p[1] - ny], [q[0] - nx, q[1] - ny], [q[0] + nx, q[1] + ny], [p[0] + nx, p[1] + ny]], z0, z1, seams });
+  }
+  return out;
+}
+
+/** What a door's or window's style stands in its hole, in the first wall of
+ * its room it lies in: a sliding door or window as two panes of glass, each
+ * a little over half its width, set either side of the wall's middle so they
+ * overlap in the middle as on the plan (`homeSlidingPanes`), a door's from
+ * the floor to its head and a window's from its sill; a double door as a
+ * thin post of wall the height of its wall, splitting the gap into its two
+ * leaves. Openings with no style stand nothing. */
+function styleParts(floor: HomeMapFloor, turn: number): Solid[] {
+  const out: Solid[] = [];
+  for (const room of floor.rooms) {
+    const walls = homeWallsOf(room);
+    for (const opening of room.openings) {
+      const double = opening.style === "double" && opening.kind === "door";
+      if (opening.style !== "sliding" && !double) continue;
+      const wall = walls.find((w) => onWallLine(opening, w));
+      if (wall === undefined) continue;
+      const height = wallHeight(wall, room, floor, turn);
+      if (double) {
+        const width = Math.hypot(opening.b[0] - opening.a[0], opening.b[1] - opening.a[1]);
+        if (width <= HOME_TOLERANCE) continue;
+        const half = Math.min(DOUBLE_POST, width / 4) / 2;
+        const u: HomePoint = [(opening.b[0] - opening.a[0]) / width, (opening.b[1] - opening.a[1]) / width];
+        const mid: HomePoint = [(opening.a[0] + opening.b[0]) / 2, (opening.a[1] + opening.b[1]) / 2];
+        const post = { a: [mid[0] - u[0] * half, mid[1] - u[1] * half] as HomePoint, b: [mid[0] + u[0] * half, mid[1] + u[1] * half] as HomePoint, t: wall.t * 0.8 };
+        out.push(...slabParts(post, 0, height, "wall", room.id));
+        continue;
+      }
+      const z0 = opening.kind === "window" ? Math.max(0, Math.min(opening.z0, opening.z1)) : 0;
+      const z1 = Math.min(height, Math.max(opening.z0, opening.z1));
+      for (const pane of homeSlidingPanes(opening, wall.t)) out.push(...slabParts(pane, z0, z1, "glass", room.id));
+    }
+  }
+  return out;
+}
+
 /** The model's solids at `turn`, far to near: every stretch of wall and
- * pane of glass, and the furniture standing on the floor. */
+ * pane of glass, what the doors' and windows' styles stand in their holes,
+ * and the furniture standing on the floor. */
 function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[] {
   const openings = floor.rooms.flatMap((r) => r.openings);
   const solids: Solid[] = floor.rooms.flatMap((room) => homeWallsOf(room).flatMap((w) => wallParts(w, wallHeight(w, room, floor, turn), openings, room.id)));
+  solids.push(...styleParts(floor, turn));
   if (furniture) {
     const allWalls = floor.rooms.flatMap(homeWallsOf);
     for (const room of floor.rooms) {
