@@ -236,7 +236,7 @@ export function setWatchHomeMapTapLights(document: WatchPagesDocument, pageId: s
 export const WATCH_HOME_MAP_LOOK_KEY = "homeMapLook";
 
 /** A Home map tile's look. */
-export type WatchHomeMapLook = "glow" | "dots" | "dollhouse" | "night";
+export type WatchHomeMapLook = "glow" | "dots" | "dollhouse" | "night" | "warm" | "lines" | "clay" | "blueprint";
 
 /** The Look choice, in its order. */
 export const WATCH_HOME_MAP_LOOKS: [WatchHomeMapLook, string][] = [
@@ -244,6 +244,10 @@ export const WATCH_HOME_MAP_LOOKS: [WatchHomeMapLook, string][] = [
   ["dots", "Dots"],
   ["dollhouse", "Dollhouse"],
   ["night", "Night"],
+  ["warm", "Warm"],
+  ["lines", "Lines"],
+  ["clay", "Clay"],
+  ["blueprint", "Blueprint"],
 ];
 
 /** The line under the Look choice. */
@@ -252,6 +256,10 @@ export const WATCH_HOME_MAP_LOOK_HINTS: Record<WatchHomeMapLook, string> = {
   dots: "Every light is a dot: yellow when it is on, gray when it is off.",
   dollhouse: "The plan tipped back, with its walls standing up.",
   night: "The plan almost black, so only the light shows.",
+  warm: "A small model at night: wood floors, furniture and warm lamplight.",
+  lines: "A small model drawn in thin glowing amber lines on black.",
+  clay: "A small white model in soft daylight.",
+  blueprint: "A small blue model with pale lines, a measuring grid and sizes.",
 };
 
 /** A Home map tile's look (`homeMapLook`): absent or unknown is glow. */

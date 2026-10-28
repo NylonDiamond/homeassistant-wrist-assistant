@@ -195,7 +195,11 @@ export interface HomePlanOptions {
 
 /** A Home map tile's look, as the apps draw it (app repo
  * `HomeMapTileRules.Look`). */
-export type HomeTileLook = "glow" | "dots" | "dollhouse" | "night";
+export type HomeTileLook = "glow" | "dots" | "dollhouse" | "night" | "warm" | "lines" | "clay" | "blueprint";
+
+/** The looks the apps draw as a small model seen at an angle
+ * (`HomeMapIsoArt`); the panel tips the plan back in their colours. */
+export const HOME_TILE_MODEL_LOOKS: readonly HomeTileLook[] = ["warm", "lines", "clay", "blueprint"];
 
 /** The plan's colours in each tile look: the floor, the walls and how
  * strong they are, and the ground under the plan. */
@@ -204,6 +208,10 @@ export const HOME_TILE_LOOK_COLORS: Record<HomeTileLook, { floor: string; wall: 
   dots: { floor: "#262A30", wall: "#80868F", wallOpacity: 1, wallWidth: 0.7, ground: "#1C1F24" },
   dollhouse: { floor: HOME_PLAN_COLORS.floor, wall: HOME_PLAN_COLORS.wall, wallOpacity: 1, wallWidth: 1.5, ground: HOME_PLAN_COLORS.ground },
   night: { floor: "#111316", wall: "#FFFFFF", wallOpacity: 0.16, wallWidth: 0.5, ground: "#08090B" },
+  warm: { floor: "#6B4A33", wall: "#4C4440", wallOpacity: 1, wallWidth: 1.5, ground: "#1C1612" },
+  lines: { floor: "#0B0D12", wall: "#FFC46B", wallOpacity: 1, wallWidth: 0.6, ground: "#08090B" },
+  clay: { floor: "#E9E6E1", wall: "#FFFFFF", wallOpacity: 1, wallWidth: 1.5, ground: "#E3DFD9" },
+  blueprint: { floor: "#17407F", wall: "#CFE3FF", wallOpacity: 1, wallWidth: 0.8, ground: "#0F2B61" },
 };
 
 const points = (outline: readonly HomePoint[]) => outline.map(([x, y]) => `${r3(x)},${r3(y)}`).join(" ");
@@ -250,9 +258,10 @@ function pinAt(pin: HomeMapPin, options: HomePlanOptions): HomePoint {
 function glows(floor: HomeMapFloor, options: HomePlanOptions): SVGTemplateResult[] {
   // The tile's glow stays near its light; night's pools are wide and warm;
   // dots draw none.
-  if (options.look === "dots") return [];
-  const scale = options.look === undefined ? 1 : options.look === "night" ? 0.9 : 0.6;
-  const fill = options.look === "night" ? "url(#wa-hm-glow-night)" : "url(#wa-hm-glow)";
+  if (options.look === "dots" || options.look === "clay" || options.look === "blueprint") return [];
+  const wide = options.look === "night" || options.look === "warm" || options.look === "lines";
+  const scale = options.look === undefined ? 1 : wide ? 0.9 : 0.6;
+  const fill = wide ? "url(#wa-hm-glow-night)" : "url(#wa-hm-glow)";
   return floor.pins.flatMap((pin) => {
     const paint = homePinPaint(pin.entityId, options.states);
     if (paint.glow === undefined) return [];
@@ -287,8 +296,8 @@ function pinDots(floor: HomeMapFloor, options: HomePlanOptions, r: number): SVGT
       if (options.look !== "dots" || homeMapPinLook(pin.entityId, options.states).kind !== "light") return [];
       return [svg`<circle class="hm-dot hm-dot-off" cx=${r3(x)} cy=${r3(y)} r=${r3(r)} fill="#5D636C" stroke="#9AA0A8" stroke-width=${r3(r * 0.25)} pointer-events="none" />`];
     }
-    if (options.look === "night") {
-      return [svg`<circle class="hm-dot" cx=${r3(x)} cy=${r3(y)} r=${r3(r * 0.6)} fill="#FFF6D6" pointer-events="none" />`];
+    if (options.look !== undefined && options.look !== "glow" && options.look !== "dots" && options.look !== "dollhouse") {
+      return [svg`<circle class="hm-dot" cx=${r3(x)} cy=${r3(y)} r=${r3(r * 0.6)} fill=${options.look === "clay" ? "#F29E33" : "#FFF6D6"} pointer-events="none" />`];
     }
     return [svg`<circle class="hm-dot" cx=${r3(x)} cy=${r3(y)} r=${r3(r)} fill=${HOME_PLAN_COLORS.lit} pointer-events="none" />`];
   });

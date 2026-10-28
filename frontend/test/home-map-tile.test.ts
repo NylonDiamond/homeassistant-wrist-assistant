@@ -337,7 +337,8 @@ describe("the Home map tile's settings", () => {
     expect(watchHomeMapLook({ homeMapLook: "sparkle" })).toBe("glow");
     const { draft } = draftOf([{ id: TILE, entityId: "light.kitchen" }]);
     expect(setWatchHomeMapLook(draft.document, PAGE, TILE, "dots")).toBe(draft.document);
-    expect(WATCH_HOME_MAP_LOOKS.map(([look]) => look)).toEqual(["glow", "dots", "dollhouse", "night"]);
+    expect(WATCH_HOME_MAP_LOOKS.map(([look]) => look)).toEqual(["glow", "dots", "dollhouse", "night", "warm", "lines", "clay", "blueprint"]);
+    for (const [look] of WATCH_HOME_MAP_LOOKS) expect(WATCH_HOME_MAP_LOOK_HINTS[look]).toBeTruthy();
     const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
     expect(keys.homeMapLook).toMatch(/^A Home map tile's look/);
   });
@@ -440,6 +441,15 @@ describe("the Home map tile's picture", () => {
     const night = face("night");
     expect(night).toContain("url(#wa-hm-glow-night)");
     expect(night).toContain("background:#08090B");
+    // The model looks tip the plan back in their own colours.
+    for (const look of ["warm", "lines", "clay", "blueprint"]) {
+      const model = face(look);
+      expect(model).toContain(`data-look=${look}`);
+      expect(model).toContain("rotateX(54deg)");
+    }
+    expect(face("clay")).toContain("color:#2A2724");
+    expect(face("clay")).not.toContain('class="hm-glow"');
+    expect(face("warm")).toContain("url(#wa-hm-glow-night)");
   });
 
   it("draws only the tile's room, filling the tile, with that room's pins and lights", () => {
