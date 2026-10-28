@@ -9,9 +9,27 @@
 // drawn after a save shows the saved map. One read per connection, read
 // again in the background once it is a minute old, so a map the iPhone saved
 // meanwhile reaches the editor without a reload.
+//
+// The rooms as the iPhone scanned them (`readHomeMapScansFrom`) are read
+// only by the map editor, with the map and again when Shape's Show scan as
+// it was is turned on, so they are not held here.
 
-import { type HassLike, fetchHomeMap } from "../ha-api.js";
-import { type HomeMapRead, readHomeMap } from "./model.js";
+import { type HassLike, fetchHomeMap, fetchHomeMapScans } from "../ha-api.js";
+import { watchCommandError } from "../watch-pages/save-note.js";
+import { type HomeMapRead, type HomeMapScans, readHomeMap, readHomeMapScans } from "./model.js";
+
+/** Each room's scan as Home Assistant holds it now, or undefined from an
+ * integration older than the scans (`home_map_scans`), which has no such
+ * command. Any other refusal is thrown. */
+export async function readHomeMapScansFrom(hass: HassLike): Promise<HomeMapScans | undefined> {
+  try {
+    const reply = await fetchHomeMapScans(hass);
+    return readHomeMapScans(reply?.scans);
+  } catch (err) {
+    if (watchCommandError(err).code === "unknown_command") return undefined;
+    throw err;
+  }
+}
 
 /** What the integration advertises once it keeps the home's map. */
 export const HOME_MAP_CAPABILITY = "home_map";

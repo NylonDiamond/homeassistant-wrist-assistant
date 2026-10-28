@@ -30,7 +30,8 @@
 // (`mode-shape.ts`), Devices (`mode-devices.ts`) and Style
 // (`mode-style.ts`). On each draw the shell makes a `HomeMapEditorContext`
 // (the map, the floor shown with any drag's preview, the selection, the
-// view and its coordinate helpers, the switches, apply, preview, select,
+// view and its coordinate helpers, the switches, each room's scan as the
+// iPhone made it, read with the map, apply, preview, select,
 // drag, undo, the dialogs) and asks the mode for its rail, inspector,
 // overlay, pill and dock; presses on the stage and keys go to the mode
 // first, and what it leaves pans, clears the selection or zooms. A mode may
@@ -94,6 +95,7 @@ import {
   type HomeMapFloor,
   type HomeMapLook,
   type HomeMapRead,
+  type HomeMapScans,
   type HomePoint,
   homeMapAreaChoices,
   homeMapFloorName,
@@ -102,7 +104,7 @@ import {
   sameHomeMapId,
 } from "./model.js";
 import { homeMapApi } from "./save.js";
-import { keepHomeMap } from "./store.js";
+import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
 export const HOME_MAP_UPDATE_TEXT = "Update the Wrist Assistant integration to see the home map here.";
@@ -150,7 +152,10 @@ export class WaHomeMapEditor extends LitElement {
   @state() private view?: HomeMapView;
   @state() private artScale = 0;
   @state() private stageSize = { width: 0, height: 0 };
-  @state() private toggles: HomeMapToggles = { snap: true, square: true, grid: false, measure: false, live: true };
+  @state() private toggles: HomeMapToggles = { snap: true, square: true, grid: false, measure: false, live: true, scan: false };
+  /** Each room as the iPhone scanned it; undefined from an integration
+   * that keeps none. */
+  @state() private scans?: HomeMapScans;
   @state() private measure: { a?: HomePoint; b?: HomePoint; hover?: HomePoint } = {};
   @state() private floorMenu = false;
   @state() private dialog?: Dialog;
@@ -261,6 +266,7 @@ export class WaHomeMapEditor extends LitElement {
       this.unsupported = false;
       this.loadError = undefined;
       this.show({ doc: readHomeMap(reply?.doc) ?? null, rev: typeof reply?.rev === "number" ? reply.rev : 0 });
+      void this.loadScans();
     } catch (err) {
       if (seq !== this.loadSeq) return;
       const { code, message } = watchCommandError(err);
@@ -268,6 +274,20 @@ export class WaHomeMapEditor extends LitElement {
       else if (!quiet || this.session === undefined) this.loadError = message;
     }
     this.loading = false;
+  }
+
+  /** Each room as the iPhone scanned it, for Shape's Show scan as it was
+   * and Back to the scan: read with the map and again when the switch is
+   * turned on, so a scan saved meanwhile shows. A failed read keeps the
+   * last one. */
+  private async loadScans(): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    try {
+      this.scans = await readHomeMapScansFrom(hass);
+    } catch {
+      // Kept as last read; the map itself is unaffected.
+    }
   }
 
   /** The library's pages, for a room's Tap opens menu. A home without the
@@ -393,6 +413,7 @@ export class WaHomeMapEditor extends LitElement {
   setToggle(key: keyof HomeMapToggles, on: boolean): void {
     this.toggles = { ...this.toggles, [key]: on };
     if (key === "measure") this.measure = {};
+    if (key === "scan" && on) void this.loadScans();
   }
 
   /** The page's own yes or no. */
@@ -456,6 +477,7 @@ export class WaHomeMapEditor extends LitElement {
       toggles: this.toggles,
       pages: this.pages ?? [],
       areas: homeMapAreaChoices(this.hass),
+      scans: this.scans,
       canUndo: session?.canUndo ?? false,
       canRedo: session?.canRedo ?? false,
       toScreen: (p) => homeMapToScreen(view, p),

@@ -50,6 +50,7 @@ from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
     HOME_MAP_CAPABILITY,
+    HOME_MAP_SCANS_CAPABILITY,
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
@@ -1125,6 +1126,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # home_map commands. The iPhone offers a scan, and the watch the Home map
     # tile, only when it sees this.
     coordinator.register_capability(HOME_MAP_CAPABILITY)
+    # Each room as the iPhone scanned it, kept beside the map: home_map_put
+    # takes `scanned` and the panel reads them with home_map/scans. The
+    # iPhone names the rooms a scan saved only when it sees this.
+    coordinator.register_capability(HOME_MAP_SCANS_CAPABILITY)
     # Each user's client certificate (client_certificate_store.py): the
     # signed client_certificate_put, client_certificate_get and
     # client_certificate_delete ops and `client_certificate` on the delta

@@ -20,6 +20,14 @@ style with its defaults dropped, a room's finish, a hidden object, an
 opening's style, a pin's name, icon, reading, glow, glow colour, glow
 spill, tap and page: each accepted, refused, rounded and kept in the contract's order), a
 restart, an unreadable file never saved over, and unload.
+
+And the scans kept beside the map: the backfill of every room once when
+there is no scans file, a save with ``scanned`` recording the rooms it names
+and every room not yet recorded, a panel save recording none, records of
+rooms gone from the map dropped on every save, a bad ``scanned`` refused
+with nothing moved, ids matched whatever their case, the map's rev never
+moved by them, an unreadable scans file left alone while the map goes on,
+and unload writing a pending scans save.
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ import copy
 import importlib.util
 import json
 import math
+import re
 import sys
 import types
 from pathlib import Path
@@ -852,3 +861,175 @@ def test_the_storage_key_and_capability(env) -> None:
     assert const.HOME_MAP_STORAGE_KEY == KEY
     assert const.HOME_MAP_STORAGE_VERSION == 1
     assert const.HOME_MAP_CAPABILITY == "home_map"
+    assert const.HOME_MAP_SCANS_STORAGE_KEY == SCANS_KEY
+    assert const.HOME_MAP_SCANS_STORAGE_VERSION == 1
+    assert const.HOME_MAP_SCANS_CAPABILITY == "home_map_scans"
+
+
+# ── scans ────────────────────────────────────────────────────────────────
+
+SCANS_KEY = "wrist_assistant.home_map_scans"
+_AT_RE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+
+
+def shape_of(room: dict[str, Any]) -> dict[str, Any]:
+    """What a scan record keeps of a room, without its time."""
+    return {key: room[key] for key in ("outline", "walls", "openings", "objects")}
+
+
+def shapes(records: dict[str, Any]) -> dict[str, Any]:
+    """Records by room id, each without its time, every time checked."""
+    for record in records.values():
+        assert list(record) == ["outline", "walls", "openings", "objects", "at"]
+        assert _AT_RE.fullmatch(record["at"]), record["at"]
+    return {room_id: shape_of(record) for room_id, record in records.items()}
+
+
+def moved(doc: dict[str, Any], room_index: int, dx: float) -> dict[str, Any]:
+    """``doc`` with one room's outline moved along x."""
+    room = doc["floors"][0]["rooms"][room_index]
+    room["outline"] = [[x + dx, y] for x, y in room["outline"]]
+    return doc
+
+
+def test_a_first_load_records_every_room_of_the_map_once(env) -> None:
+    FakeStore.files = {KEY: {"rev": 3, "doc": basic()}}
+    store = env.new_store()
+    living, kitchen = basic()["floors"][0]["rooms"]
+    assert shapes(store.scans()) == {LIVING: shape_of(living), KITCHEN: shape_of(kitchen)}
+    assert shapes(FakeStore.files[SCANS_KEY]) == shapes(store.scans())
+    # The map and its rev are as they were.
+    assert store.get() == (basic(), 3)
+    assert FakeStore.files[KEY] == {"rev": 3, "doc": basic()}
+    # Once: a restart with the scans file there records nothing again,
+    # even rooms the map gained since.
+    FakeStore.files[SCANS_KEY] = {}
+    assert env.new_store().scans() == {}
+
+
+def test_a_first_load_with_no_map_still_writes_the_file(env) -> None:
+    assert env.store.scans() == {}
+    assert FakeStore.files[SCANS_KEY] == {}
+    env.store.save(basic(), 0)
+    # A panel save records nothing, and the restart does not backfill.
+    assert env.new_store().scans() == {}
+
+
+def test_a_save_with_scanned_records_those_rooms_and_every_room_not_yet_recorded(env) -> None:
+    assert env.store.save(basic(), 0, scanned=[LIVING]) == 1
+    living, kitchen = basic()["floors"][0]["rooms"]
+    assert shapes(env.store.scans()) == {LIVING: shape_of(living), KITCHEN: shape_of(kitchen)}
+    # The kitchen, recorded and not named, keeps its record; the living
+    # room, named, is recorded again as saved.
+    doc = moved(moved(basic(), 0, 1), 1, 1)
+    assert env.store.save(doc, 1, scanned=[LIVING]) == 2
+    assert shapes(env.store.scans()) == {
+        LIVING: shape_of(doc["floors"][0]["rooms"][0]),
+        KITCHEN: shape_of(kitchen),
+    }
+    assert shapes(FakeStore.files[SCANS_KEY]) == shapes(env.store.scans())
+    # The map file holds the map alone.
+    assert FakeStore.files[KEY] == {"rev": 2, "doc": doc}
+
+
+def test_an_empty_scanned_records_only_rooms_not_yet_recorded(env) -> None:
+    FakeStore.files = {KEY: {"rev": 1, "doc": basic()}, SCANS_KEY: {}}
+    store = env.new_store()
+    assert store.save(basic(), 1, scanned=[]) == 2
+    assert set(store.scans()) == {LIVING, KITCHEN}
+
+
+def test_a_save_without_scanned_records_nothing(env) -> None:
+    env.store.save(basic(), 0)
+    assert env.store.scans() == {}
+    env.store.save(basic(), 1, scanned=None)
+    assert env.store.scans() == {}
+    # Nor does it change a record: the living room moved in the panel
+    # keeps the shape it was scanned with.
+    env.store.save(basic(), 2, scanned=[LIVING])
+    before = env.store.scans()
+    env.store.save(moved(basic(), 0, 2), 3)
+    assert env.store.scans() == before
+
+
+def test_every_save_drops_the_records_of_rooms_gone_from_the_map(env) -> None:
+    env.store.save(basic(), 0, scanned=[LIVING, KITCHEN])
+    doc = basic()
+    doc["floors"][0]["rooms"].pop()
+    doc["floors"][0]["pins"] = [p for p in doc["floors"][0]["pins"] if p.get("roomId") != KITCHEN]
+    env.store.save(doc, 1)
+    assert set(env.store.scans()) == {LIVING}
+    assert set(FakeStore.files[SCANS_KEY]) == {LIVING}
+    # The kitchen back on the map has no record until it is scanned.
+    env.store.save(basic(), 2)
+    assert set(env.store.scans()) == {LIVING}
+
+
+def test_scanned_ids_match_whatever_their_case(env) -> None:
+    env.store.save(basic(), 0, scanned=[LIVING.lower()])
+    # Kept under the map's own spelling.
+    assert set(env.store.scans()) == {LIVING, KITCHEN}
+    doc = moved(basic(), 0, 1)
+    env.store.save(doc, 1, scanned=[LIVING.lower()])
+    assert env.store.scans()[LIVING]["outline"] == doc["floors"][0]["rooms"][0]["outline"]
+    assert set(FakeStore.files[SCANS_KEY]) == {LIVING, KITCHEN}
+
+
+@pytest.mark.parametrize(
+    ("scanned", "message"),
+    [
+        ("living", "scanned must be a list"),
+        ({"id": LIVING}, "scanned must be a list"),
+        ([LIVING] * 41, "scanned holds at most 40"),
+        ([LIVING, 7], "scanned[1] must be a UUID"),
+        (["living"], "scanned[0] must be a UUID"),
+        ([LIVING, OTHER_UUID], "scanned[1] names no room of the map"),
+        # A floor is not a room.
+        ([FLOOR], "scanned[0] names no room of the map"),
+    ],
+)
+def test_a_bad_scanned_is_refused_and_nothing_moves(env, scanned, message) -> None:
+    env.store.save(basic(), 0)
+    before = (copy.deepcopy(FakeStore.files), env.store.rev, env.store.scans())
+    assert env.refused(lambda: env.store.save(moved(basic(), 0, 1), 1, scanned=scanned), "invalid").message == message
+    assert (FakeStore.files, env.store.rev, env.store.scans()) == before
+
+
+def test_a_stale_save_with_scanned_records_nothing(env) -> None:
+    env.store.save(basic(), 0)
+    env.refused(lambda: env.store.save(basic(), 0, scanned=[LIVING]), "conflict")
+    assert env.store.scans() == {}
+
+
+def test_scans_survive_a_restart(env) -> None:
+    env.store.save(basic(), 0, scanned=[LIVING])
+    held = env.store.scans()
+    assert env.new_store().scans() == held
+
+
+def test_an_unreadable_scans_file_is_left_alone_while_the_map_goes_on(env) -> None:
+    FakeStore.files = {KEY: {"rev": 1, "doc": basic()}, SCANS_KEY: {"x": "damaged"}}
+    FakeStore.unreadable.add(SCANS_KEY)
+    store = env.new_store()
+    env.refused(store.scans, "unavailable")
+    assert store.save(basic(), 1, scanned=[LIVING]) == 2
+    assert store.get() == (basic(), 2)
+    asyncio.run(store.async_shutdown())
+    assert FakeStore.files[SCANS_KEY] == {"x": "damaged"}
+
+
+def test_an_unreadable_map_backfills_nothing(env) -> None:
+    FakeStore.files = {KEY: {"rev": 1, "doc": basic()}}
+    FakeStore.unreadable.add(KEY)
+    store = env.new_store()
+    env.refused(store.scans, "unavailable")
+    assert SCANS_KEY not in FakeStore.files
+
+
+def test_shutdown_writes_a_pending_scans_save(env) -> None:
+    FakeStore.deferred = True
+    env.store.save(basic(), 0, scanned=[LIVING])
+    assert SCANS_KEY in FakeStore.pending
+    asyncio.run(env.store.async_shutdown())
+    assert set(FakeStore.files[SCANS_KEY]) == {LIVING, KITCHEN}
+    assert SCANS_KEY not in FakeStore.pending

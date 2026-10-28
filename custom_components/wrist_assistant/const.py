@@ -471,6 +471,15 @@ HOME_MAP_STORAGE_VERSION = 1
 # `home_map_rev` on the delta reply. The iPhone offers to scan, and the watch
 # and the panel offer the Home map tile, only when they see this.
 HOME_MAP_CAPABILITY = "home_map"
+# Each room as the iPhone scanned it, kept beside the map (home_map_store.py,
+# "Scans"): its own file, never part of the map document or its rev.
+HOME_MAP_SCANS_STORAGE_KEY = "wrist_assistant.home_map_scans"
+HOME_MAP_SCANS_STORAGE_VERSION = 1
+# What the integration advertises once it keeps those scans: home_map_put
+# takes `scanned`, the room ids a scan just saved, and the panel's
+# home_map/scans command reads them. The iPhone sends `scanned` only when it
+# sees this; an older integration reads no such key and records nothing.
+HOME_MAP_SCANS_CAPABILITY = "home_map_scans"
 # Each Home Assistant user's client certificate for an mTLS proxy (step 4 of
 # the phone watch link removal), see client_certificate_store.py: the .p12
 # bytes, its password, its fingerprint and a revision per user. A private

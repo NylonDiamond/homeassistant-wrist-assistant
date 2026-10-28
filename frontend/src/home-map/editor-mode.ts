@@ -31,7 +31,7 @@ import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { HomeMapOp } from "./edit-ops.js";
 import type { HomeMapView } from "./editor-view.js";
-import type { HomeMapDocument, HomeMapFloor, HomePoint } from "./model.js";
+import type { HomeMapDocument, HomeMapFloor, HomeMapScans, HomePoint } from "./model.js";
 import { sameHomeMapId } from "./model.js";
 import { homeMapRoomWalls } from "./edit-ops.js";
 
@@ -89,13 +89,15 @@ export function sameHomeMapSelection(a: HomeMapSelection | undefined, b: HomeMap
 /** The stage's switches in the dock. `snap`: a dragged room snaps to its
  * neighbours' walls; `square`: a dragged corner keeps its walls square;
  * `grid`: points land on the mode's grid; `measure`: clicks measure;
- * `live`: the plan shows Home Assistant's states. */
+ * `live`: the plan shows Home Assistant's states; `scan`: Shape draws each
+ * room's scan as it was over the plan. */
 export interface HomeMapToggles {
   snap: boolean;
   square: boolean;
   grid: boolean;
   measure: boolean;
   live: boolean;
+  scan: boolean;
 }
 
 /** A page a room or pin can open, as the library lists it. */
@@ -138,6 +140,9 @@ export interface HomeMapEditorContext {
   readonly pages: readonly HomeMapPageChoice[];
   /** Home Assistant's areas, by name. */
   readonly areas: readonly { id: string; name: string }[];
+  /** Each room as the iPhone scanned it, as last read; undefined from an
+   * integration that keeps none (and until the first read is in). */
+  readonly scans: HomeMapScans | undefined;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
 

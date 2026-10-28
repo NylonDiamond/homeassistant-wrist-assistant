@@ -9,10 +9,14 @@ checked on real delta replies from the coordinator fixture of
 ``test_delta_coordinator_inprocess.py``. The wire shapes the app and the
 panel are built against are asserted as whole dicts.
 
+The scans: a put naming ``scanned`` rooms records them, a put without it
+records none, a bad ``scanned`` is a 400 with nothing saved, and the
+panel's ``home_map/scans`` reads them while its own save records none.
+
 Static checks at the bottom: the ops in the dispatch table, and setup
 building the store, attaching it to the coordinator, registering the
-commands, advertising the capability beside ``tile_photos`` and writing the
-store out on unload.
+commands, advertising the capability beside ``tile_photos`` and
+``home_map_scans`` after it, and writing the store out on unload.
 """
 
 from __future__ import annotations
@@ -28,7 +32,15 @@ from typing import Any
 
 import pytest
 from test_delta_coordinator_inprocess import _poll, coordinator  # noqa: F401
-from test_home_map_store import KEY, LIVING, basic, loaded_package
+from test_home_map_store import (
+    KEY,
+    KITCHEN,
+    LIVING,
+    OTHER_UUID,
+    SCANS_KEY,
+    basic,
+    loaded_package,
+)
 from test_http_actions_store import FakeStore
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
@@ -373,6 +385,37 @@ def test_a_put_body_over_the_cap_is_refused_before_it_is_read(env) -> None:
     assert put(env, basic(), 0, body=b"x" * (384 * 1024)).body == {"ok": True, "rev": 1}
 
 
+def test_a_put_naming_scanned_rooms_records_them(env) -> None:
+    reply = op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 0, "scanned": [LIVING]})
+    assert (reply.status, reply.body) == (200, {"ok": True, "rev": 1})
+    # The kitchen too, first seen.
+    assert set(env.store.scans()) == {LIVING, KITCHEN}
+    assert env.store.scans()[LIVING]["outline"] == basic()["floors"][0]["rooms"][0]["outline"]
+
+
+def test_a_put_without_scanned_is_todays_put(env) -> None:
+    assert put(env, basic(), 0).body == {"ok": True, "rev": 1}
+    assert op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 1, "scanned": None}).body == {"ok": True, "rev": 2}
+    assert env.store.scans() == {}
+
+
+@pytest.mark.parametrize(
+    ("scanned", "message"),
+    [
+        ("all", "scanned must be a list"),
+        ([LIVING] * 41, "scanned holds at most 40"),
+        ([12], "scanned[0] must be a UUID"),
+        ([OTHER_UUID], "scanned[0] names no room of the map"),
+    ],
+)
+def test_a_put_with_a_bad_scanned_is_a_400(env, scanned, message) -> None:
+    reply = op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 0, "scanned": scanned})
+    assert reply.status == 400
+    assert reply.body == {"ok": False, "error": "invalid", "message": message}
+    assert env.store.get() == (None, 0)
+    assert KEY not in FakeStore.files
+
+
 def test_both_map_ops_are_unavailable_with_no_store_or_an_unreadable_one(env) -> None:
     env.domain.home_map_store = None
     for reply in (op(env, "_op_home_map_get", {}), put(env, basic(), 0)):
@@ -577,9 +620,43 @@ def test_ws_commands_are_unavailable_without_the_integration(env) -> None:
     for command, msg in (
         (env.ws.ws_home_map_get, {}),
         (env.ws.ws_home_map_save, {"doc": basic(), "base_rev": 0}),
+        (env.ws.ws_home_map_scans, {}),
     ):
         [(_, code, _m)] = ws_call(env, command, **msg).errors
         assert code == "unavailable"
+
+
+def test_ws_scans_reads_the_iphones_scans_and_a_panel_save_writes_none(env) -> None:
+    assert ws_call(env, env.ws.ws_home_map_scans).results[1] == {"scans": {}, "rev": 0}
+    ws_call(env, env.ws.ws_home_map_save, doc=basic(), base_rev=0)
+    assert ws_call(env, env.ws.ws_home_map_scans).results[1] == {"scans": {}, "rev": 1}
+    op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 1, "scanned": [KITCHEN]})
+    result = ws_call(env, env.ws.ws_home_map_scans).results[1]
+    assert result["rev"] == 2
+    assert set(result["scans"]) == {LIVING, KITCHEN}
+    kitchen = basic()["floors"][0]["rooms"][1]
+    record = result["scans"][KITCHEN]
+    assert {key: record[key] for key in ("outline", "walls", "openings", "objects")} == {
+        key: kitchen[key] for key in ("outline", "walls", "openings", "objects")
+    }
+    assert isinstance(record["at"], str)
+    # A panel save that takes the kitchen away drops its record.
+    doc = basic()
+    doc["floors"][0]["rooms"].pop()
+    doc["floors"][0]["pins"] = [p for p in doc["floors"][0]["pins"] if p.get("roomId") != KITCHEN]
+    assert ws_call(env, env.ws.ws_home_map_save, doc=doc, base_rev=2).results[1] == {"rev": 3}
+    assert set(ws_call(env, env.ws.ws_home_map_scans).results[1]["scans"]) == {LIVING}
+    [(_, code, _m)] = ws_call(env, env.ws.ws_home_map_scans, _Connection(None)).errors
+    assert code == "unauthorized"
+
+
+def test_ws_scans_is_unavailable_while_the_scans_cannot_be_read(env) -> None:
+    FakeStore.unreadable.add(SCANS_KEY)
+    store = env.mod.HomeMapStore(object())
+    asyncio.run(store.async_load())
+    env.domain.home_map_store = store
+    [(_, code, _m)] = ws_call(env, env.ws.ws_home_map_scans).errors
+    assert code == "unavailable"
 
 
 # ── home_map_rev on the delta reply ──────────────────────────────────────
@@ -673,11 +750,20 @@ def test_setup_builds_the_store_attaches_it_and_advertises() -> None:
     assert lines.index("coordinator.register_capability(HOME_MAP_CAPABILITY)") == lines.index(
         "coordinator.register_capability(TILE_PHOTOS_CAPABILITY)"
     ) + 1
+    # The scans, advertised right after the map.
+    assert 'HOME_MAP_SCANS_CAPABILITY = "home_map_scans"' in const
+    assert 'HOME_MAP_SCANS_STORAGE_KEY = "wrist_assistant.home_map_scans"' in const
+    assert lines.index("coordinator.register_capability(HOME_MAP_SCANS_CAPABILITY)") == lines.index(
+        "coordinator.register_capability(HOME_MAP_CAPABILITY)"
+    ) + 1
+    # The op hands the iPhone's scanned rooms to the store.
+    views = _VIEWS.read_text()
+    assert 'scanned=ctx.payload.get("scanned")' in views
 
 
 def test_the_panel_commands_use_the_library_guard() -> None:
     """The map is the home's: the rule of a save in the home's library,
     every signed-in user, checked before anything is read or written."""
     source = (_PKG_DIR / "home_map_ws.py").read_text()
-    assert source.count("require_owner(hass, connection, msg, LIBRARY_OWNER_ID)") == 2
+    assert source.count("require_owner(hass, connection, msg, LIBRARY_OWNER_ID)") == 3
     assert "require_admin" not in source

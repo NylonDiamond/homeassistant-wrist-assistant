@@ -77,6 +77,31 @@ in no room is never stopped); ``tap`` is what a tap
 on the pin does, and ``pageId``, the page it opens, goes with ``tap`` page
 and only with it.
 
+Scans. Beside the map the store keeps each room as the iPhone scanned it,
+in a file of its own (``HOME_MAP_SCANS_STORAGE_KEY``), so the panel can draw
+the scan over the plan and put a room back as it was scanned. It is not part
+of the map document, and keeping it never moves the map's ``rev``::
+
+    {<room id>: {"outline", "walls", "openings", "objects", "at"}}
+
+Each record is the room's ``outline``, ``walls``, ``openings`` and
+``objects`` as the map held them once checked, and ``at``, the time it was
+recorded (ISO 8601, UTC). A record is written:
+
+- by an iPhone save that names ``scanned``, the room ids its scan just made
+  or replaced (at most 40, each a room of the saved map): each named room is
+  recorded again, and every room of the map with no record yet is recorded
+  too, as first seen;
+- once, when the integration loads and finds no scans file yet: every room
+  of the map then, as first seen, so a map scanned before the scans were
+  kept has one.
+
+A panel save never records a room. Every save, the iPhone's and the
+panel's, drops the records of rooms no longer on the map. The scans file is
+saved with the same delay as the map's; a scans file that cannot be read is
+logged and left alone, its records unread and never saved over, while the
+map goes on as before.
+
 A file that cannot be read is logged and left alone: every read and save is
 then refused ``unavailable`` until a restart reads it, so a damaged map is
 never saved over. Unloading writes a pending save at once and stops saving,
@@ -92,12 +117,18 @@ import logging
 import math
 import re
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any, NoReturn
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import HOME_MAP_STORAGE_KEY, HOME_MAP_STORAGE_VERSION
+from .const import (
+    HOME_MAP_SCANS_STORAGE_KEY,
+    HOME_MAP_SCANS_STORAGE_VERSION,
+    HOME_MAP_STORAGE_KEY,
+    HOME_MAP_STORAGE_VERSION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,6 +186,12 @@ _AREA_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,255}")
 _OBJECT_KIND_RE = re.compile(r"[a-z][A-Za-z0-9]{0,39}")
 # A pin's glow colour other than warm: six hex digits, either case.
 _HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
+# What a scan record keeps of a room, in this order, with ``at`` after.
+SCAN_KEYS = ("outline", "walls", "openings", "objects")
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 class HomeMapError(Exception):
@@ -521,11 +558,33 @@ def document_bytes(doc: Any) -> int:
     return len(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode())
 
 
+def _rooms_of(doc: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Every room of a checked map, floor by floor."""
+    if doc is None:
+        return []
+    return [room for floor in doc["floors"] for room in floor["rooms"]]
+
+
+def check_scanned(raw: Any) -> list[str]:
+    """A save's ``scanned``: a list of at most ``MAX_ROOMS`` UUIDs. Whether
+    each names a room of the map is checked once the map is."""
+    ids = _list(raw, "scanned", MAX_ROOMS)
+    return [_uuid(value, f"scanned[{i}]") for i, value in enumerate(ids)]
+
+
+def scan_record(room: dict[str, Any], at: str) -> dict[str, Any]:
+    """A checked room as its scan record keeps it."""
+    record = {key: copy.deepcopy(room[key]) for key in SCAN_KEYS}
+    record["at"] = at
+    return record
+
+
 # ── the store ────────────────────────────────────────────────────────────
 
 
 class HomeMapStore:
-    """The map document and its ``rev`` in ``.storage``."""
+    """The map document and its ``rev`` in ``.storage``, and each room's
+    scan beside it."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._store: Store = Store(hass, HOME_MAP_STORAGE_VERSION, HOME_MAP_STORAGE_KEY)
@@ -534,6 +593,12 @@ class HomeMapStore:
         self._load_failed = False
         self._save_pending = False
         self._closed = False
+        self._scans_store: Store = Store(
+            hass, HOME_MAP_SCANS_STORAGE_VERSION, HOME_MAP_SCANS_STORAGE_KEY
+        )
+        self._scans: dict[str, dict[str, Any]] = {}
+        self._scans_failed = False
+        self._scans_save_pending = False
 
     # ── persistence ────────────────────────────────────────────────────
 
@@ -547,21 +612,50 @@ class HomeMapStore:
             )
             self._load_failed = True
             return
-        if not isinstance(data, dict):
+        if isinstance(data, dict):
+            rev = data.get("rev")
+            doc = data.get("doc")
+            if isinstance(rev, int) and not isinstance(rev, bool) and rev >= 0:
+                self._rev = rev
+            if isinstance(doc, dict):
+                # It passed the checks when it was saved. A stored map always
+                # has a rev of at least 1, so a device holding 0 never takes
+                # it for the map it has.
+                self._doc = doc
+                self._rev = max(self._rev, 1)
+        await self._async_load_scans()
+
+    async def _async_load_scans(self) -> None:
+        """The scans, or, the first time there is no file, every room of the
+        map recorded as first seen."""
+        try:
+            data = await self._scans_store.async_load()
+        except Exception:  # A damaged file: see the module docstring.
+            _LOGGER.exception(
+                "The home map's scans could not be read; they are left alone "
+                "until a restart reads them"
+            )
+            self._scans_failed = True
             return
-        rev = data.get("rev")
-        doc = data.get("doc")
-        if isinstance(rev, int) and not isinstance(rev, bool) and rev >= 0:
-            self._rev = rev
-        if isinstance(doc, dict):
-            # It passed the checks when it was saved. A stored map always has
-            # a rev of at least 1, so a device holding 0 never takes it for
-            # the map it has.
-            self._doc = doc
-            self._rev = max(self._rev, 1)
+        if data is None:
+            # Saved even when the map has no rooms, so this happens once.
+            at = _now_iso()
+            self._scans = {room["id"]: scan_record(room, at) for room in _rooms_of(self._doc)}
+            self._schedule_scans_save()
+            return
+        if isinstance(data, dict):
+            # Each record passed the checks with its map when it was kept.
+            self._scans = {
+                key: value
+                for key, value in data.items()
+                if isinstance(key, str) and isinstance(value, dict)
+            }
 
     def _serialize(self) -> dict[str, Any]:
         return {"rev": self._rev, "doc": self._doc}
+
+    def _serialize_scans(self) -> dict[str, Any]:
+        return self._scans
 
     def _schedule_save(self) -> None:
         if self._closed or self._load_failed:
@@ -569,10 +663,19 @@ class HomeMapStore:
         self._save_pending = True
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
+    def _schedule_scans_save(self) -> None:
+        if self._closed or self._scans_failed:
+            return
+        self._scans_save_pending = True
+        self._scans_store.async_delay_save(self._serialize_scans, _SAVE_DEBOUNCE_SECONDS)
+
     async def async_shutdown(self) -> None:
         """Called on unload: write a save still waiting out its debounce now
         and save nothing after, so a re-added entry reads what was saved."""
         self._closed = True
+        if self._scans_save_pending and not self._scans_failed:
+            self._scans_save_pending = False
+            await self._scans_store.async_save(self._serialize_scans())
         if not self._save_pending or self._load_failed:
             return
         self._save_pending = False
@@ -604,9 +707,23 @@ class HomeMapStore:
         self._check_available()
         return copy.deepcopy(self._doc), self._rev
 
+    def scans(self) -> dict[str, dict[str, Any]]:
+        """A copy of the scan record of each room of the map that has one,
+        by the room's id as the map spells it. ``unavailable`` while the map
+        or the scans could not be read."""
+        self._check_available()
+        if self._scans_failed:
+            raise HomeMapUnavailableError("the stored scans of the home map could not be read")
+        records = {key.upper(): value for key, value in self._scans.items()}
+        return {
+            room["id"]: copy.deepcopy(records[room["id"].upper()])
+            for room in _rooms_of(self._doc)
+            if room["id"].upper() in records
+        }
+
     # ── writes ─────────────────────────────────────────────────────────
 
-    def save(self, raw_doc: Any, base_rev: Any) -> int:
+    def save(self, raw_doc: Any, base_rev: Any, scanned: Any = None) -> int:
         """Keep a map made from ``base_rev``. Returns the new rev.
 
         The map is checked first (:func:`check_document`): ``invalid`` or
@@ -614,15 +731,50 @@ class HomeMapStore:
         whole number of 0 or more, and ``conflict`` (with the stored rev)
         when it is not the stored rev. Each accepted save adds one to the
         rev, whatever it changed.
+
+        ``scanned`` is the iPhone's alone: the ids of the rooms its scan
+        just made or replaced, recorded with every room not yet recorded
+        (the module docstring, "Scans"). ``invalid`` when it is not a list
+        of at most 40 UUIDs each naming a room of the map. None, as the
+        panel saves, records nothing. Every save drops the records of rooms
+        no longer on the map.
         """
         self._check_available()
         if isinstance(base_rev, bool) or not isinstance(base_rev, int) or base_rev < 0:
             raise HomeMapInvalidError("base_rev must be a whole number of 0 or more")
+        scanned_ids = None if scanned is None else check_scanned(scanned)
         doc = check_document(raw_doc)
+        rooms = {room["id"].upper(): room for room in _rooms_of(doc)}
+        for i, room_id in enumerate(scanned_ids or ()):
+            if room_id.upper() not in rooms:
+                _fail(f"scanned[{i}]", "names no room of the map")
         if base_rev != self._rev:
             raise HomeMapConflictError(self._rev, base_rev)
         self._doc = doc
         self._rev += 1
         self._schedule_save()
+        self._keep_scans(rooms, scanned_ids)
         _LOGGER.debug("Saved the home map at revision %d", self._rev)
         return self._rev
+
+    def _keep_scans(self, rooms: dict[str, dict[str, Any]], scanned: list[str] | None) -> None:
+        """After a save: the records of rooms gone from the map dropped, and
+        with ``scanned`` the rooms it names recorded again and every room
+        with no record recorded. Saved only when something changed."""
+        if self._scans_failed:
+            return
+        kept = {key: value for key, value in self._scans.items() if key.upper() in rooms}
+        changed = len(kept) != len(self._scans)
+        if scanned is not None:
+            at = _now_iso()
+            again = {room_id.upper() for room_id in scanned}
+            held = {key.upper(): key for key in kept}
+            for folded, room in rooms.items():
+                if folded in held and folded not in again:
+                    continue
+                kept.pop(held.get(folded, room["id"]), None)
+                kept[room["id"]] = scan_record(room, at)
+                changed = True
+        self._scans = kept
+        if changed:
+            self._schedule_scans_save()

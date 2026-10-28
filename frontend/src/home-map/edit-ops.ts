@@ -18,7 +18,9 @@
 //   take away a corner, split a room in two, inner walls, doors, windows and
 //   ways through, and stairs. Then the scan check: rooms that overlap,
 //   corners a little off square, small gaps between rooms that should touch
-//   and rooms with no way into their neighbours, each with its fix.
+//   and rooms with no way into their neighbours, each with its fix. And
+//   the scan as it was: each room's scan as Home Assistant kept it, drawn
+//   over the plan, and Back to the scan, which puts a room's shape back.
 // - Devices: add, move, raise and remove pins, one or several picked at
 //   once, set what a pin shows and does (on several pins as one edit),
 //   and place every device of an area into its room at once.
@@ -78,6 +80,8 @@ import {
   type HomeMapPinReading,
   type HomeMapPinTap,
   type HomeMapRoom,
+  type HomeMapScan,
+  type HomeMapScans,
   type HomeMapStyle,
   type HomeMapWall,
   type HomePoint,
@@ -97,6 +101,7 @@ import {
   homeMapRoomCenter,
   homeMapRoomName,
   homeMapRound,
+  homeMapScanOf,
   isHomeMapAreaId,
   isHomeMapEntityId,
   isHomeMapGlowColor,
@@ -1897,6 +1902,101 @@ export function fixAllIssues(doc: HomeMapDocument, floorId: string): HomeMapDocu
     current = next.fix(current) ?? current;
   }
   return current;
+}
+
+// ── the scan as it was ───────────────────────────────────────────────────
+
+/** How near a scanned door's or window's middle must lie to one of the
+ * room's own of its kind to take that one's style, and a scanned thing's
+ * middle to a hidden one of its kind to stay hidden, in meters: the reach
+ * the iPhone's Scan Again keeps them by. */
+export const HOME_MAP_SCAN_MATCH_REACH = 0.5;
+
+const middleOf = (o: Pick<HomeMapOpening, "a" | "b">): HomePoint => [(o.a[0] + o.b[0]) / 2, (o.a[1] + o.b[1]) / 2];
+
+/**
+ * `room` with its outline, walls, openings and things as `scan` has them,
+ * everything else (its id, name, area, page, finish and wall height) its
+ * own. As Scan Again does on the iPhone, a scanned door or window with no
+ * style takes the style of the room's own door or window of its kind
+ * within `HOME_MAP_SCAN_MATCH_REACH`, and a scanned thing is hidden when the
+ * room has a hidden thing of its kind within that reach, else shown.
+ */
+export function homeMapScanRoom(room: HomeMapRoom, scan: HomeMapScan): HomeMapRoom {
+  const styled = room.openings.filter((o) => o.style !== undefined);
+  const openings = scan.openings.map((o) => {
+    const opening: HomeMapOpening = { ...o, a: roundPoint(o.a), b: roundPoint(o.b), z0: r(o.z0), z1: r(o.z1) };
+    if (opening.style === undefined) {
+      const m = middleOf(opening);
+      const style = styled.find((old) => old.kind === opening.kind && distance(middleOf(old), m) <= HOME_MAP_SCAN_MATCH_REACH)?.style;
+      if (style !== undefined) opening.style = style;
+    }
+    return orderedOpening(opening);
+  });
+  const hidden = room.objects.filter((o) => o.hidden === true);
+  const objects = scan.objects.map((o) => {
+    const { hidden: _old, ...rest } = o;
+    const thing: HomeMapObject = { ...rest, c: roundPoint(o.c), size: [r(o.size[0]), r(o.size[1]), r(o.size[2])], turn: r(o.turn) };
+    if (hidden.some((old) => old.kind === o.kind && distance(old.c, o.c) <= HOME_MAP_SCAN_MATCH_REACH)) thing.hidden = true;
+    return orderedObject(thing);
+  });
+  return orderedRoom({
+    ...room,
+    outline: scan.outline.map(roundPoint),
+    walls: scan.walls.map((w) => ({ a: roundPoint(w.a), b: roundPoint(w.b), t: r(w.t) })),
+    openings,
+    objects,
+  });
+}
+
+/** A room's outline, walls, openings and things as text, each number
+ * rounded to 1 cm and keys in one order, so two shapes compare by what
+ * they hold. */
+function shapeText(room: Pick<HomeMapRoom, "outline" | "walls" | "openings" | "objects">): string {
+  return JSON.stringify([
+    room.outline.map(roundPoint),
+    room.walls.map((w) => [roundPoint(w.a), roundPoint(w.b), r(w.t)]),
+    room.openings.map((o) => [o.kind, o.style ?? "", roundPoint(o.a), roundPoint(o.b), r(o.z0), r(o.z1)]),
+    room.objects.map((o) => [o.kind, roundPoint(o.c), o.size.map(r), r(o.turn), o.hidden === true]),
+  ]);
+}
+
+/** Whether Back to the scan would change `room`: its shape, once rounded,
+ * is not the one `scan` would give it. */
+export function homeMapScanDiffers(room: HomeMapRoom, scan: HomeMapScan): boolean {
+  return shapeText(room) !== shapeText(homeMapScanRoom(room, scan));
+}
+
+/** The room put back as it was scanned (`homeMapScanRoom`), its pins left
+ * where they are. Undefined when the room is gone or is already as
+ * scanned. */
+export function backToScan(doc: HomeMapDocument, roomId: string, scan: HomeMapScan): HomeMapDocument | undefined {
+  return editRoom(doc, roomId, (room) => (homeMapScanDiffers(room, scan) ? homeMapScanRoom(room, scan) : undefined));
+}
+
+/** A room's scan as Shape draws it over the plan: its outline, its walls
+ * (the outline's edges when it kept none) and its doors and windows. */
+export interface HomeMapScanMark {
+  roomId: string;
+  outline: HomePoint[];
+  walls: HomeSegment[];
+  openings: Pick<HomeMapOpening, "kind" | "a" | "b">[];
+}
+
+/** The scan of each room of `floor` that has one, in the floor's order. */
+export function homeMapScanMarks(floor: HomeMapFloor, scans: HomeMapScans | undefined): HomeMapScanMark[] {
+  const marks: HomeMapScanMark[] = [];
+  for (const room of floor.rooms) {
+    const scan = homeMapScanOf(scans, room.id);
+    if (scan === undefined || scan.outline.length < 3) continue;
+    marks.push({
+      roomId: room.id,
+      outline: scan.outline,
+      walls: homeWallsOf({ ...room, outline: scan.outline, walls: scan.walls }),
+      openings: scan.openings.filter((o) => o.kind !== "opening").map((o) => ({ kind: o.kind, a: o.a, b: o.b })),
+    });
+  }
+  return marks;
 }
 
 // ── devices ──────────────────────────────────────────────────────────────

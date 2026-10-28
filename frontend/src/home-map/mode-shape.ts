@@ -21,6 +21,14 @@
 // buttons to add more, and the picked opening (its kind as pictures, width,
 // height from the floor and how tall, Remove). Edits go through the shell
 // (`editor-mode.ts`).
+//
+// The dock's Show scan as it was draws each room's scan as Home Assistant
+// kept it (`ctx.scans`) faint and dashed over the plan, in a teal apart
+// from the blue of a picked thing and the amber of an issue: its outline,
+// walls, doors and windows. A picked room whose shape is no longer its
+// scan's has Back to the scan in its card, one undo step that puts its
+// walls, doors, windows and furniture back and leaves its devices; a room
+// drawn by hand, or one already as scanned, has none.
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import {
@@ -29,9 +37,12 @@ import {
   addInnerWall,
   addOpening,
   addStairs,
+  backToScan,
   fixAllIssues,
   homeMapOpeningWall,
   homeMapRoomWalls,
+  homeMapScanDiffers,
+  homeMapScanMarks,
   moveCorner,
   moveOpening,
   removeCorner,
@@ -61,6 +72,7 @@ import {
   type HomePoint,
   homeMapRoomCenter,
   homeMapRoomName,
+  homeMapScanOf,
   sameHomeMapId,
 } from "./model.js";
 
@@ -105,6 +117,16 @@ export function homeMapFixAllLabel(n: number): string {
 const WALL_REACH = 9;
 /** How near a wall a door or window tool looks, in pixels. */
 const PLACE_REACH = 18;
+
+/** The scan as it was: a teal apart from the picked blue, the amber of an
+ * issue and the pink snap guide, light enough for the dark stage of both
+ * skins. */
+const SCAN_COLOR = "#4fd6c2";
+
+/** What the dock's Show scan as it was does, on hover. */
+const SCAN_TOGGLE_TITLE = "Draw each room faint and dashed as the iPhone scanned it, or as first seen for a room scanned before scans were kept. A room drawn here has none.";
+/** What Back to the scan does, on hover. */
+const BACK_TO_SCAN_TITLE = "Put this room's walls, doors, windows and furniture back as the iPhone scanned it. Its devices stay where they are.";
 
 const fmt = (v: number) => v.toFixed(1);
 const pt = (p: readonly number[]) => `${p[0]!.toFixed(1)},${p[1]!.toFixed(1)}`;
@@ -215,10 +237,32 @@ export class ShapeMode implements HomeMapMode {
       const shape = room.outline.map((p) => pt(ctx.toScreen(p))).join("L");
       parts.push(svg`<path d=${`M0 0H${ctx.stage.width}V${ctx.stage.height}H0ZM${shape}Z`} fill="rgba(0,0,0,0.45)" fill-rule="evenodd" pointer-events="none" />`);
     }
+    if (ctx.toggles.scan) parts.push(...this.scanMarks(ctx));
     parts.push(...this.issueMarks(ctx));
     if (room !== undefined) parts.push(this.roomHandles(ctx, room));
     parts.push(...this.toolGhost(ctx));
     return svg`${parts}`;
+  }
+
+  /** Each room's scan as it was, faint and dashed: the outline, the walls
+   * over a dark edge so they read on any floor, a door as a solid bar and
+   * a window as a dotted one. */
+  private scanMarks(ctx: HomeMapEditorContext): SVGTemplateResult[] {
+    return homeMapScanMarks(ctx.floor, ctx.scans).map((mark) => {
+      const shape = mark.outline.map((p) => pt(ctx.toScreen(p))).join("L");
+      const walls = mark.walls.map((w) => `M${pt(ctx.toScreen(w.a))}L${pt(ctx.toScreen(w.b))}`).join("");
+      return svg`<g class="hme-scan" data-room=${mark.roomId} pointer-events="none">
+        <path d=${`M${shape}Z`} fill=${SCAN_COLOR} fill-opacity="0.06" stroke="none" />
+        <path d=${walls} fill="none" stroke="rgba(0,0,0,0.5)" stroke-width="3.5" stroke-dasharray="7 5" />
+        <path d=${walls} fill="none" stroke=${SCAN_COLOR} stroke-width="1.6" stroke-dasharray="7 5" stroke-opacity="0.9" />
+        ${mark.openings.map((o) => {
+          const a = ctx.toScreen(o.a);
+          const b = ctx.toScreen(o.b);
+          return svg`<line x1=${fmt(a[0])} y1=${fmt(a[1])} x2=${fmt(b[0])} y2=${fmt(b[1])} stroke=${SCAN_COLOR} stroke-width="4" stroke-opacity="0.85"
+            stroke-dasharray=${o.kind === "window" ? "2 3" : "none"} />`;
+        })}
+      </g>`;
+    });
   }
 
   private issueMarks(ctx: HomeMapEditorContext): SVGTemplateResult[] {
@@ -628,7 +672,9 @@ export class ShapeMode implements HomeMapMode {
     return html`<button type="button" class="hme-tb ${ctx.toggles.square ? "on" : ""}" aria-pressed=${ctx.toggles.square ? "true" : "false"}
         title="A dragged corner lines up with the corners beside it" @click=${() => ctx.setToggle("square", !ctx.toggles.square)}>Snap to 90°</button>
       <button type="button" class="hme-tb ${ctx.toggles.grid ? "on" : ""}" aria-pressed=${ctx.toggles.grid ? "true" : "false"}
-        @click=${() => ctx.setToggle("grid", !ctx.toggles.grid)}>Grid 5 cm</button>`;
+        @click=${() => ctx.setToggle("grid", !ctx.toggles.grid)}>Grid 5 cm</button>
+      ${ctx.scans === undefined ? nothing : html`<button type="button" class="hme-tb ${ctx.toggles.scan ? "on" : ""}" aria-pressed=${ctx.toggles.scan ? "true" : "false"}
+        title=${SCAN_TOGGLE_TITLE} @click=${() => ctx.setToggle("scan", !ctx.toggles.scan)}>Show scan as it was</button>`}`;
   }
 
   // ── the pill ───────────────────────────────────────────────────────────
@@ -712,12 +758,18 @@ export class ShapeMode implements HomeMapMode {
     if (sel.kind === "corner") return this.cornerCard(ctx, room, sel.corner);
     const wi = this.pickedWall(ctx, room);
     if (wi === undefined) {
+      const scan = homeMapScanOf(ctx.scans, roomId);
+      const back = scan !== undefined && homeMapScanDiffers(room, scan) ? scan : undefined;
       return hmeCard(homeMapRoomName(room), html`
         ${hmeRow("Corners", html`<span class="hme-val">${room.outline.length}</span>`)}
         ${hmeRow("Walls", html`<span class="hme-val">${homeMapRoomWalls(room).length}</span>`)}
         ${hmeRow("Wall height", hmeNumber({ label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, set: (v) => ctx.apply((d) => setWallHeight(d, roomId, v)) }))}
         ${hmeHint("Click a wall to change it or put a door or window in it. Drag a corner to move it, or the dot in a wall's middle to add a corner.")}
-        <div class="hme-row-end"><button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, roomId))}>Square the corners</button></div>`);
+        ${back === undefined ? nothing : hmeHint("Its shape has changed since the iPhone scanned it.")}
+        <div class="hme-row-end">
+          ${back === undefined ? nothing : html`<button type="button" class="hme-tb" title=${BACK_TO_SCAN_TITLE} @click=${() => ctx.apply((d) => backToScan(d, roomId, back))}>Back to the scan</button>`}
+          <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, roomId))}>Square the corners</button>
+        </div>`);
     }
     const seg = homeMapRoomWalls(room)[wi]!;
     const onWall = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => homeMapOpeningWall(room, o) === wi);

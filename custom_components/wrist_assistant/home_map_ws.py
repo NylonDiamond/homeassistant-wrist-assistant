@@ -9,8 +9,13 @@ library (``require_owner`` with ``LIBRARY_OWNER_ID``, see
 
 Commands:
 
-    wrist_assistant/home_map/get   {}
-    wrist_assistant/home_map/save  {doc, base_rev}
+    wrist_assistant/home_map/get    {}
+    wrist_assistant/home_map/save   {doc, base_rev}
+    wrist_assistant/home_map/scans  {}
+
+``scans`` reads each room as the iPhone scanned it (``home_map_store.py``,
+"Scans"), which Shape draws over the plan and puts a room back to. A panel
+save never records a scan.
 
 Every refusal is a WebSocket error with a stable code: ``invalid``,
 ``too_large``, ``conflict`` or ``unavailable``, plus ``unauthorized`` for a
@@ -40,6 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _CMD_GET = f"{DOMAIN}/home_map/get"
 _CMD_SAVE = f"{DOMAIN}/home_map/save"
+_CMD_SCANS = f"{DOMAIN}/home_map/scans"
 
 
 def _store(hass: HomeAssistant) -> HomeMapStore | None:
@@ -50,6 +56,7 @@ def _store(hass: HomeAssistant) -> HomeMapStore | None:
 def async_register_home_map_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_home_map_get)
     websocket_api.async_register_command(hass, ws_home_map_save)
+    websocket_api.async_register_command(hass, ws_home_map_scans)
 
 
 @websocket_api.websocket_command({vol.Required("type"): _CMD_GET})
@@ -111,3 +118,32 @@ def ws_home_map_save(
         return
     _LOGGER.info("Panel saved the home map at revision %d", rev)
     connection.send_result(msg["id"], {"rev": rev})
+
+
+@websocket_api.websocket_command({vol.Required("type"): _CMD_SCANS})
+@callback
+def ws_home_map_scans(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Each room of the map as the iPhone scanned it, and the map's rev.
+
+    Result: {"scans": {<room id>: {"outline", "walls", "openings",
+                                   "objects", "at"}},
+             "rev": <int>}
+
+    Only rooms on the map now, by their id as the map spells it; a room
+    drawn in the panel and never scanned has none. ``unavailable`` while
+    the map or its scans could not be read.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, LIBRARY_OWNER_ID):
+        return
+    try:
+        scans = store.scans()
+    except HomeMapError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], {"scans": scans, "rev": store.rev})

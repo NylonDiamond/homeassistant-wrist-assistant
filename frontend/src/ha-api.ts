@@ -1299,6 +1299,14 @@ export async function saveHomeMap(hass: HassLike, doc: HomeMapDocument, baseRev:
   return hass.connection.sendMessagePromise<{ rev: number }>({ type: `${HOME_MAP}/save`, doc, base_rev: baseRev });
 }
 
+/** Each room of the map as the iPhone scanned it, by room id, and the
+ * map's rev (`home_map_store.py`, "Scans"); a room never scanned has none.
+ * Read with `readHomeMapScans`. Refusals: `unavailable`, and
+ * `unknown_command` from an integration older than `home_map_scans`. */
+export async function fetchHomeMapScans(hass: HassLike) {
+  return hass.connection.sendMessagePromise<{ scans: unknown; rev: number }>({ type: `${HOME_MAP}/scans` });
+}
+
 /** Hand every live record of one watch to another watch, both ones the
  * signed in person may manage. */
 export async function moveOwner(hass: HassLike, source: string, target: string) {

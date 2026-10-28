@@ -261,7 +261,8 @@ describe("the Home map editor", () => {
 
   it("draws the bar, the floor's layers and the plan with its names and sizes, live", async () => {
     const { ha, text, inside } = await page();
-    expect(ha.sent.map((m) => m.type)).toEqual(["wrist_assistant/home_map/get", "wrist_assistant/library/summary"]);
+    // The rooms' scans are read once the map is in.
+    expect(ha.sent.map((m) => m.type)).toEqual(["wrist_assistant/home_map/get", "wrist_assistant/library/summary", "wrist_assistant/home_map/scans"]);
     const shown = text();
     expect(shown).toContain("Home map");
     expect(shown).toContain("BETA");

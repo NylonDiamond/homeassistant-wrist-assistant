@@ -5072,16 +5072,22 @@ async def _op_home_map_get(ctx: _OpContext) -> Response:
 async def _op_home_map_put(ctx: _OpContext) -> Response:
     """An iPhone saves the home's map.
 
-    Body:  {"doc": <the whole map>, "base_rev": <the rev it was read at>}
+    Body:  {"doc": <the whole map>, "base_rev": <the rev it was read at>,
+            "scanned"?: [<room id>]}
     Reply: {"ok": true, "rev": <the new rev>}
     Refusal: signed {"ok": false, "error", "message"}: ``not_an_iphone``
              403 (a watch), ``invalid`` 400 (the message says where the map
-             leaves the contract, see ``home_map_store.check_document``),
-             ``too_large`` 413 (a map over 256 KiB, or a body over 384 KiB),
-             ``conflict`` 409 with ``rev``, the stored one (read again, put
-             the change on top, save again), ``unavailable`` 503.
+             leaves the contract, see ``home_map_store.check_document``, or
+             where ``scanned`` does), ``too_large`` 413 (a map over 256 KiB,
+             or a body over 384 KiB), ``conflict`` 409 with ``rev``, the
+             stored one (read again, put the change on top, save again),
+             ``unavailable`` 503.
 
-    ``base_rev`` is 0 for the first map.
+    ``base_rev`` is 0 for the first map. ``scanned`` (``home_map_scans``)
+    names the rooms a scan just made or replaced, at most 40, each a room
+    of ``doc``: they are kept as scanned beside the map, with every room
+    not kept yet (``home_map_store.py``, "Scans"). Left out, or null, as for
+    every other edit, the map is saved as before and no room is recorded.
     """
     store = getattr(ctx.domain_data, "home_map_store", None)
     if store is None:
@@ -5096,7 +5102,11 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
             ctx, HomeMapTooLargeError("a home map is at most 256 KiB")
         )
     try:
-        rev = store.save(ctx.payload.get("doc"), ctx.payload.get("base_rev"))
+        rev = store.save(
+            ctx.payload.get("doc"),
+            ctx.payload.get("base_rev"),
+            scanned=ctx.payload.get("scanned"),
+        )
     except HomeMapError as err:
         return _home_map_refusal(ctx, err)
     _LOGGER.debug("%s saved the home map at revision %d", ctx.watch_id, rev)

@@ -21,6 +21,10 @@
 // opening's style, a pin's name, icon, reading, glow, glow colour, glow
 // spill, tap and page) are all optional, and a default is never stored: the key is left
 // out, so a map written before them reads the same.
+//
+// Beside the map, never in it, Home Assistant keeps each room as the iPhone
+// scanned it (`HomeMapScan`, read by `readHomeMapScans`), which Shape draws
+// over the plan and puts a room back to.
 
 /** A point on the plan: x, y. */
 export type HomePoint = [number, number];
@@ -487,6 +491,55 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
 export function readHomeMap(raw: unknown): HomeMapDocument | undefined {
   const checked = checkHomeMap(raw);
   return checked.ok ? checked.doc : undefined;
+}
+
+// ── scans ────────────────────────────────────────────────────────────────
+
+/** A room as the iPhone scanned it, kept by Home Assistant beside the map
+ * and never part of it (`home_map_store.py`, "Scans"): the room's shape as
+ * the map held it then, and when it was kept. A map scanned before the
+ * scans were kept has each room as first seen. */
+export interface HomeMapScan {
+  outline: HomePoint[];
+  walls: HomeMapWall[];
+  openings: HomeMapOpening[];
+  objects: HomeMapObject[];
+  /** When it was kept, ISO 8601 in UTC. */
+  at: string;
+}
+
+/** Each room's scan, by the room's id as the map spells it. A room drawn
+ * by hand and never scanned has none. */
+export type HomeMapScans = Readonly<Record<string, HomeMapScan>>;
+
+/** The records of a `home_map/scans` reply, each checked as a room of the
+ * map is; one the checks refuse is left out, so a damaged record draws
+ * nothing rather than throwing. */
+export function readHomeMapScans(raw: unknown): Record<string, HomeMapScan> {
+  const out: Record<string, HomeMapScan> = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
+  for (const [id, value] of Object.entries(raw as Raw)) {
+    if (!isHomeMapId(id) || typeof value !== "object" || value === null) continue;
+    const record = value as Raw;
+    try {
+      // Checked as a room with this id and a stand-in height, which the
+      // record does not keep.
+      const room = checkRoom({ id, outline: record.outline, height: 1, walls: record.walls, openings: record.openings, objects: record.objects }, `scans.${id}`, new Ids());
+      out[id] = { outline: room.outline, walls: room.walls, openings: room.openings, objects: room.objects, at: typeof record.at === "string" ? record.at : "" };
+    } catch (err) {
+      if (!(err instanceof CheckError)) throw err;
+    }
+  }
+  return out;
+}
+
+/** The scan of a room, by its id whatever its case. */
+export function homeMapScanOf(scans: HomeMapScans | undefined, roomId: string): HomeMapScan | undefined {
+  if (scans === undefined) return undefined;
+  const own = scans[roomId];
+  if (own !== undefined) return own;
+  const key = Object.keys(scans).find((k) => sameHomeMapId(k, roomId));
+  return key === undefined ? undefined : scans[key];
 }
 
 // ── finding things ───────────────────────────────────────────────────────
