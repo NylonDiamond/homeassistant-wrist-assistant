@@ -104,6 +104,10 @@ import {
   setWatchHomeMapFloor,
   setWatchHomeMapTapLights,
   WATCH_HOME_MAP_TAP_LIGHTS_HINT,
+  WATCH_HOME_MAP_LOOKS,
+  WATCH_HOME_MAP_LOOK_HINTS,
+  setWatchHomeMapLook,
+  watchHomeMapLook,
   watchHomeMapTapsLights,
   watchHomeMapFloorMenu,
   watchHomeMapFloorSummary,
@@ -1782,8 +1786,12 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
         commit(host, "homeMapTapLights", (d) => setWatchHomeMapTapLights(d, host.pageId, host.tileId, on)))}
       <div class="hint ts-under">${WATCH_HOME_MAP_TAP_LIGHTS_HINT}</div>`
     : nothing;
+  const look = watchHomeMapLook(host.tile as WatchPageTile & Record<string, unknown>);
   return html`${menuField("Floor", menu, pick)}
     <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
+    ${segField("Look", look, WATCH_HOME_MAP_LOOKS, (v) =>
+      commit(host, "homeMapLook", (d) => setWatchHomeMapLook(d, host.pageId, host.tileId, v)), { def: "glow" })}
+    <div class="hint ts-under">${WATCH_HOME_MAP_LOOK_HINTS[look]}</div>
     ${tapLights}`;
 }
 

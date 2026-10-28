@@ -187,15 +187,36 @@ export interface HomePlanOptions {
   moving?: { pinId: string; at: HomePoint };
   /** The size room names are drawn at, in meters. */
   nameSize?: number;
+  /** The Home map tile's look (`homeMapLook`), for the tile's face only:
+   * it drops the furniture, keeps each glow nearer its light, and colours
+   * the plan as the look does. Absent: the page's own plan. */
+  look?: HomeTileLook;
 }
+
+/** A Home map tile's look, as the apps draw it (app repo
+ * `HomeMapTileRules.Look`). */
+export type HomeTileLook = "glow" | "dots" | "dollhouse" | "night";
+
+/** The plan's colours in each tile look: the floor, the walls and how
+ * strong they are, and the ground under the plan. */
+export const HOME_TILE_LOOK_COLORS: Record<HomeTileLook, { floor: string; wall: string; wallOpacity: number; wallWidth: number; ground: string }> = {
+  glow: { floor: HOME_PLAN_COLORS.floor, wall: HOME_PLAN_COLORS.wall, wallOpacity: 1, wallWidth: 1, ground: HOME_PLAN_COLORS.ground },
+  dots: { floor: "#262A30", wall: "#80868F", wallOpacity: 1, wallWidth: 0.7, ground: "#1C1F24" },
+  dollhouse: { floor: HOME_PLAN_COLORS.floor, wall: HOME_PLAN_COLORS.wall, wallOpacity: 1, wallWidth: 1.5, ground: HOME_PLAN_COLORS.ground },
+  night: { floor: "#111316", wall: "#FFFFFF", wallOpacity: 0.16, wallWidth: 0.5, ground: "#08090B" },
+};
 
 const points = (outline: readonly HomePoint[]) => outline.map(([x, y]) => `${r3(x)},${r3(y)}`).join(" ");
 
 function roomShape(room: HomeMapRoom, lit: boolean, options: HomePlanOptions): SVGTemplateResult {
   const selected = options.selected?.kind === "room" && sameHomeMapId(options.selected.id, room.id);
-  return svg`<polygon class="hm-room" data-room=${room.id} points=${points(room.outline)} fill=${HOME_PLAN_COLORS.floor}
-    stroke=${selected ? HOME_PLAN_COLORS.selected : "none"} stroke-width=${selected ? 0.08 : 0} stroke-linejoin="round" />${lit && options.roomGlow === true
-    ? svg`<polygon class="hm-room-glow" points=${points(room.outline)} fill=${HOME_PLAN_COLORS.lit} fill-opacity="0.28" pointer-events="none" />`
+  const floor = options.look === undefined ? HOME_PLAN_COLORS.floor : HOME_TILE_LOOK_COLORS[options.look].floor;
+  // A tile look tints a lit room only faintly: the light's own glow shows
+  // where it is. Dots and night draw no tint.
+  const tint = options.look === undefined ? 0.28 : options.look === "glow" || options.look === "dollhouse" ? 0.1 : 0;
+  return svg`<polygon class="hm-room" data-room=${room.id} points=${points(room.outline)} fill=${floor}
+    stroke=${selected ? HOME_PLAN_COLORS.selected : "none"} stroke-width=${selected ? 0.08 : 0} stroke-linejoin="round" />${lit && options.roomGlow === true && tint > 0
+    ? svg`<polygon class="hm-room-glow" points=${points(room.outline)} fill=${HOME_PLAN_COLORS.lit} fill-opacity=${tint} pointer-events="none" />`
     : nothing}`;
 }
 
@@ -209,14 +230,15 @@ function furniture(room: HomeMapRoom): SVGTemplateResult[] {
   });
 }
 
-function walls(room: HomeMapRoom): SVGTemplateResult[] {
+function walls(room: HomeMapRoom, look: HomeTileLook | undefined): SVGTemplateResult[] {
+  const paint = look === undefined ? undefined : HOME_TILE_LOOK_COLORS[look];
   return room.walls.map((wall) => {
     const { solid, windows } = homeWallPieces(wall, room.openings);
-    const t = Math.max(0.05, wall.t);
-    const line = (piece: HomeWallPiece, stroke: string, width: number, cls: string) =>
+    const t = Math.max(0.05, wall.t) * (paint?.wallWidth ?? 1);
+    const line = (piece: HomeWallPiece, stroke: string, width: number, cls: string, opacity: number) =>
       svg`<line class=${cls} x1=${r3(piece[0][0])} y1=${r3(piece[0][1])} x2=${r3(piece[1][0])} y2=${r3(piece[1][1])}
-        stroke=${stroke} stroke-width=${r3(width)} stroke-linecap="square" pointer-events="none" />`;
-    return svg`${solid.map((p) => line(p, HOME_PLAN_COLORS.wall, t, "hm-wall"))}${windows.map((p) => line(p, HOME_PLAN_COLORS.window, t * 0.6, "hm-window"))}`;
+        stroke=${stroke} stroke-width=${r3(width)} stroke-opacity=${opacity === 1 ? nothing : opacity} stroke-linecap="square" pointer-events="none" />`;
+    return svg`${solid.map((p) => line(p, paint?.wall ?? HOME_PLAN_COLORS.wall, t, "hm-wall", paint?.wallOpacity ?? 1))}${windows.map((p) => line(p, HOME_PLAN_COLORS.window, t * 0.6, "hm-window", look === "night" ? 0.3 : 1))}`;
   });
 }
 
@@ -226,11 +248,16 @@ function pinAt(pin: HomeMapPin, options: HomePlanOptions): HomePoint {
 }
 
 function glows(floor: HomeMapFloor, options: HomePlanOptions): SVGTemplateResult[] {
+  // The tile's glow stays near its light; night's pools are wide and warm;
+  // dots draw none.
+  if (options.look === "dots") return [];
+  const scale = options.look === undefined ? 1 : options.look === "night" ? 0.9 : 0.6;
+  const fill = options.look === "night" ? "url(#wa-hm-glow-night)" : "url(#wa-hm-glow)";
   return floor.pins.flatMap((pin) => {
     const paint = homePinPaint(pin.entityId, options.states);
     if (paint.glow === undefined) return [];
     const [x, y] = pinAt(pin, options);
-    return [svg`<circle class="hm-glow" cx=${r3(x)} cy=${r3(y)} r=${r3(homePinGlowRadius(paint.glow))} fill="url(#wa-hm-glow)" pointer-events="none" />`];
+    return [svg`<circle class="hm-glow" cx=${r3(x)} cy=${r3(y)} r=${r3(homePinGlowRadius(paint.glow) * scale)} fill=${fill} pointer-events="none" />`];
   });
 }
 
@@ -254,8 +281,15 @@ function pinButton(pin: HomeMapPin, options: HomePlanOptions, r: number): SVGTem
 function pinDots(floor: HomeMapFloor, options: HomePlanOptions, r: number): SVGTemplateResult[] {
   return floor.pins.flatMap((pin) => {
     const paint = homePinPaint(pin.entityId, options.states);
-    if (paint.glow === undefined) return [];
     const [x, y] = pinAt(pin, options);
+    if (paint.glow === undefined) {
+      // The dots look draws the lights that are off too, gray.
+      if (options.look !== "dots" || homeMapPinLook(pin.entityId, options.states).kind !== "light") return [];
+      return [svg`<circle class="hm-dot hm-dot-off" cx=${r3(x)} cy=${r3(y)} r=${r3(r)} fill="#5D636C" stroke="#9AA0A8" stroke-width=${r3(r * 0.25)} pointer-events="none" />`];
+    }
+    if (options.look === "night") {
+      return [svg`<circle class="hm-dot" cx=${r3(x)} cy=${r3(y)} r=${r3(r * 0.6)} fill="#FFF6D6" pointer-events="none" />`];
+    }
     return [svg`<circle class="hm-dot" cx=${r3(x)} cy=${r3(y)} r=${r3(r)} fill=${HOME_PLAN_COLORS.lit} pointer-events="none" />`];
   });
 }
@@ -274,6 +308,10 @@ const GLOW_DEFS = svg`<defs><radialGradient id="wa-hm-glow">
   <stop offset="0" stop-color=${HOME_PLAN_COLORS.lit} stop-opacity="0.5" />
   <stop offset="0.55" stop-color=${HOME_PLAN_COLORS.lit} stop-opacity="0.16" />
   <stop offset="1" stop-color=${HOME_PLAN_COLORS.lit} stop-opacity="0" />
+</radialGradient><radialGradient id="wa-hm-glow-night">
+  <stop offset="0" stop-color="#FFCF5A" stop-opacity="0.75" />
+  <stop offset="0.45" stop-color="#F5A83A" stop-opacity="0.28" />
+  <stop offset="1" stop-color="#F5A83A" stop-opacity="0" />
 </radialGradient></defs>`;
 
 /**
@@ -291,8 +329,8 @@ export function homePlan(floor: HomeMapFloor, options: HomePlanOptions = {}): SV
   return svg`${GLOW_DEFS}
     <g class="hm-floors">${floor.rooms.map((room) => roomShape(room, lit.has(room.id), options))}</g>
     <g class="hm-glows">${glows(floor, options)}</g>
-    <g class="hm-objects">${floor.rooms.map((room) => furniture(room))}</g>
-    <g class="hm-walls">${floor.rooms.map((room) => walls(room))}</g>
+    ${options.look === undefined ? svg`<g class="hm-objects">${floor.rooms.map((room) => furniture(room))}</g>` : nothing}
+    <g class="hm-walls">${floor.rooms.map((room) => walls(room, options.look))}</g>
     ${options.names === true ? svg`<g class="hm-names">${names(floor, options.nameSize ?? Math.max(0.2, Math.min(0.5, span / 28)))}</g>` : nothing}
     <g class="hm-pins">${mode === "buttons" ? floor.pins.map((pin) => pinButton(pin, options, r)) : mode === "lit" ? pinDots(floor, options, r) : nothing}</g>`;
 }

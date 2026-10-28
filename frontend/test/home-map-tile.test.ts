@@ -25,8 +25,12 @@ import {
   WATCH_HOME_MAP_MISSING_TEXT,
   WATCH_HOME_MAP_NO_MAP_TEXT,
   WATCH_HOME_MAP_TAP_LIGHTS_HINT,
+  WATCH_HOME_MAP_LOOKS,
+  WATCH_HOME_MAP_LOOK_HINTS,
   setWatchHomeMapFloor,
+  setWatchHomeMapLook,
   setWatchHomeMapTapLights,
+  watchHomeMapLook,
   watchHomeMapAddFloors,
   watchHomeMapFloorId,
   watchHomeMapFloorMenu,
@@ -305,6 +309,28 @@ describe("the Home map tile's settings", () => {
     const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
     expect(keys.homeMapTapLights).toMatch(/^A Home map tile on the iPhone/);
   });
+
+  it("offer the Look on both devices, stored as homeMapLook and removed for Glow", () => {
+    for (const device of [undefined, "iphone"] as const) {
+      const { host, tile } = tileHost(`home_map.${FLOOR}`, fixture(), device);
+      const text = flatten(draw(host));
+      expect(text).toContain("Look");
+      expect(text).toContain(WATCH_HOME_MAP_LOOK_HINTS.glow);
+      expect(watchHomeMapLook(tile() as Record<string, unknown>)).toBe("glow");
+      handler(draw(host), ">Night<", "@click=")({ currentTarget: null });
+      expect((tile() as Record<string, unknown>).homeMapLook).toBe("night");
+      expect(flatten(draw(host))).toContain(WATCH_HOME_MAP_LOOK_HINTS.night);
+      handler(draw(host), ">Glow<", "@click=")({ currentTarget: null });
+      expect(Object.hasOwn(tile(), "homeMapLook")).toBe(false);
+    }
+    // An unknown look reads as glow; only a Home map tile takes one.
+    expect(watchHomeMapLook({ homeMapLook: "sparkle" })).toBe("glow");
+    const { draft } = draftOf([{ id: TILE, entityId: "light.kitchen" }]);
+    expect(setWatchHomeMapLook(draft.document, PAGE, TILE, "dots")).toBe(draft.document);
+    expect(WATCH_HOME_MAP_LOOKS.map(([look]) => look)).toEqual(["glow", "dots", "dollhouse", "night"]);
+    const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
+    expect(keys.homeMapLook).toMatch(/^A Home map tile's look/);
+  });
 });
 
 // ── the picture ──────────────────────────────────────────────────────────
@@ -333,6 +359,24 @@ describe("the Home map tile's picture", () => {
     // No buttons and no names on the tile.
     expect(face).not.toContain('class="hm-pin"');
     expect(face).not.toContain("hm-name");
+  });
+
+  it("draws the tile's look: a fainter room glow, every light a dot, a tipped plan, or night", () => {
+    const input = { page, pages: [page], screen, scale: 1, states, stateMode: "live" as const, homeMap: fixture() };
+    const face = (look?: string) => flatten(renderWatchTileFace({ ...tile, ...(look === undefined ? {} : { homeMapLook: look }) } as WatchPageTile, { width: 180, height: 110 }, input, 14));
+    const glow = face();
+    expect(glow).toContain("data-look=glow");
+    expect(glow).toContain("fill-opacity=0.1");
+    expect(glow).not.toContain("hm-object");
+    // Dots: the two lights that are off are gray dots too, and no glow.
+    const dots = face("dots");
+    expect(dots.split("hm-dot-off").length - 1).toBe(2);
+    expect(dots).not.toContain('class="hm-glow"');
+    expect(dots).not.toContain("hm-room-glow");
+    expect(face("dollhouse")).toContain("rotateX(54deg)");
+    const night = face("night");
+    expect(night).toContain("url(#wa-hm-glow-night)");
+    expect(night).toContain("background:#08090B");
   });
 
   it("draws the house in place of the plan before the map is read, or for a floor it does not have", () => {

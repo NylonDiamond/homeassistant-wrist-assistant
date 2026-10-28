@@ -70,8 +70,8 @@ import { uiIcon } from "../ui-icons.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
 import type { HomeMapDocument } from "../home-map/model.js";
-import { HOME_PLAN_COLORS, homePlan, homePlanViewBoxAttr } from "../home-map/draw.js";
-import { watchHomeMapFloorOf, watchHomeMapTileWords } from "./home-map-tile.js";
+import { HOME_TILE_LOOK_COLORS, homePlan, homePlanViewBoxAttr } from "../home-map/draw.js";
+import { watchHomeMapFloorOf, watchHomeMapLook, watchHomeMapTileWords } from "./home-map-tile.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
@@ -3351,11 +3351,15 @@ function homeMapFace(tile: WatchPageTile, width: number, height: number, box: st
   const pad = Math.max(3, Math.min(8, side * 0.07)) * s;
   // A short tile keeps the plan and drops the line.
   const showWords = height >= 34;
+  const look = watchHomeMapLook(tile as WatchPageTile & Record<string, unknown>);
+  // The dollhouse tips the plan back as the apps do; the walls do not stand
+  // up here, a picture of the look is enough.
+  const tilt = look === "dollhouse" ? "transform:perspective(600px) rotateX(54deg) rotateZ(-28deg) scale(0.9)" : nothing;
   const plan = floor === undefined
     ? symbolMark(input.icons, "house.fill", Math.min(28, side * 0.42) * s, "#FFD9A0")
-    : html`<svg class="wp-hm-plan" viewBox=${homePlanViewBoxAttr(floor)} preserveAspectRatio="xMidYMid meet" aria-hidden="true">${homePlan(floor, { states: input.states, pins: "lit", roomGlow: true })}</svg>`;
+    : html`<svg class="wp-hm-plan" data-look=${look} style=${tilt} viewBox=${homePlanViewBoxAttr(floor)} preserveAspectRatio="xMidYMid meet" aria-hidden="true">${homePlan(floor, { states: input.states, pins: "lit", roomGlow: true, look })}</svg>`;
   return html`<div class="wp-tile wp-hm-face" data-home-map=${floor?.id ?? ""}
-    style=${`${box}border-radius:${radius}px;background:${HOME_PLAN_COLORS.ground};padding:${pad}px;gap:${pad * 0.6}px`} title=${hint ?? nothing}>
+    style=${`${box}border-radius:${radius}px;background:${HOME_TILE_LOOK_COLORS[look].ground};padding:${pad}px;gap:${pad * 0.6}px`} title=${hint ?? nothing}>
     <span class="wp-hm-plan-box">${plan}</span>
     ${showWords ? html`<span class="wp-hm-words" style=${`font-size:${Math.max(7, Math.min(13, height * 0.12)) * s}px`}>${words}</span>` : nothing}
   </div>`;

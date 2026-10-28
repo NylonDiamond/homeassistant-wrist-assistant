@@ -69,7 +69,7 @@ export function watchHomeMapAddedText(floor: HomeMapFloor, floors: number): stri
 export const WATCH_HOME_MAP_MISSING_TEXT = "Not on the map";
 
 /** The line under the Floor menu. */
-export const WATCH_HOME_MAP_FLOOR_HINT = "The tile draws this floor's plan, with a glow over each room with a light on. A tap opens the full map.";
+export const WATCH_HOME_MAP_FLOOR_HINT = "The tile draws this floor's plan, with the lights that are on. A tap opens the full map.";
 
 /** The line in place of the menu while there is no map to pick from. */
 export const WATCH_HOME_MAP_NO_MAP_TEXT = "No home map yet. Scan your rooms in the iPhone app, then pick a floor here.";
@@ -127,6 +127,46 @@ export function setWatchHomeMapTapLights(document: WatchPagesDocument, pageId: s
   return editTile(document, pageId, tileId, (tile) => {
     if (!isWatchHomeMapTile(tile) || watchHomeMapTapsLights(tile) === on) return tile;
     return on ? withKey(tile, WATCH_HOME_MAP_TAP_LIGHTS_KEY, true) : withoutKey(tile, WATCH_HOME_MAP_TAP_LIGHTS_KEY);
+  });
+}
+
+/** The tile key that holds a Home map tile's look, on both devices. Absent
+ * is glow, so a glow tile stores nothing. */
+export const WATCH_HOME_MAP_LOOK_KEY = "homeMapLook";
+
+/** A Home map tile's look. */
+export type WatchHomeMapLook = "glow" | "dots" | "dollhouse" | "night";
+
+/** The Look choice, in its order. */
+export const WATCH_HOME_MAP_LOOKS: [WatchHomeMapLook, string][] = [
+  ["glow", "Glow"],
+  ["dots", "Dots"],
+  ["dollhouse", "Dollhouse"],
+  ["night", "Night"],
+];
+
+/** The line under the Look choice. */
+export const WATCH_HOME_MAP_LOOK_HINTS: Record<WatchHomeMapLook, string> = {
+  glow: "A soft glow round each light that is on.",
+  dots: "Every light is a dot: yellow when it is on, gray when it is off.",
+  dollhouse: "The plan tipped back, with its walls standing up.",
+  night: "The plan almost black, so only the light shows.",
+};
+
+/** A Home map tile's look (`homeMapLook`): absent or unknown is glow. */
+export function watchHomeMapLook(tile: Record<string, unknown>): WatchHomeMapLook {
+  const value = tile[WATCH_HOME_MAP_LOOK_KEY];
+  return WATCH_HOME_MAP_LOOKS.some(([look]) => look === value) ? (value as WatchHomeMapLook) : "glow";
+}
+
+/** Set a Home map tile's look: glow removes the key, any other look stores
+ * it. A tile of another kind, or a look it has, changes nothing. */
+export function setWatchHomeMapLook(document: WatchPagesDocument, pageId: string, tileId: string, look: WatchHomeMapLook): WatchPagesDocument {
+  if (!WATCH_HOME_MAP_LOOKS.some(([l]) => l === look)) return document;
+  return editTile(document, pageId, tileId, (tile) => {
+    const stored = (tile as Record<string, unknown>)[WATCH_HOME_MAP_LOOK_KEY];
+    if (!isWatchHomeMapTile(tile) || (look === "glow" ? stored === undefined : stored === look)) return tile;
+    return look === "glow" ? withoutKey(tile, WATCH_HOME_MAP_LOOK_KEY) : withKey(tile, WATCH_HOME_MAP_LOOK_KEY, look);
   });
 }
 
