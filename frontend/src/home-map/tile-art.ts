@@ -1170,6 +1170,15 @@ function drawSolid(ctx: Ctx, solid: Solid, style: ModelStyle, isLit: boolean): S
     const segs: [HomePoint, HomePoint][] = [];
     for (let i = 0; i < 4; i += 1) if (!solid.seams.has(i)) segs.push([top[i]!, top[(i + 1) % 4]!]);
     out.push(svg`<path d=${linePath(segs)} fill="none" stroke=${stroke} stroke-width=${width} />`);
+  } else if (solid.part === "piece" && solid.kind === "television") {
+    // A TV is near black, so against a dark wall it would vanish: a light
+    // bezel round its outline keeps it in sight.
+    const segs: [HomePoint, HomePoint][] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const j = (i + 1) % 4;
+      segs.push([top[i]!, top[j]!], [bottom[i]!, bottom[j]!], [bottom[i]!, top[i]!]);
+    }
+    out.push(svg`<path d=${linePath(segs)} fill="none" stroke=${style === "clay" ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.34)"} stroke-width="0.9" stroke-linejoin="round" />`);
   } else if (solid.part === "wall") {
     // A wall's top catches the light.
     out.push(svg`<path d=${linePath([[top[0]!, top[1]!], [top[2]!, top[3]!]])} fill="none" stroke=${style === "clay" ? "#FFFFFF" : "rgba(255,255,255,0.14)"} stroke-width="0.6" />`);
