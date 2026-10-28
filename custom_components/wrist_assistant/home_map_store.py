@@ -89,9 +89,9 @@ Each record is the room's ``outline``, ``walls``, ``openings`` and
 recorded (ISO 8601, UTC). A record is written:
 
 - by an iPhone save that names ``scanned``, the room ids its scan just made
-  or replaced (at most 40, each a room of the saved map): each named room is
-  recorded again, and every room of the map with no record yet is recorded
-  too, as first seen;
+  or replaced (at most 40, each a room of the saved map): each named room,
+  and only those, is recorded (again), so a room drawn by hand in the panel
+  never gains a record from a scan of another room;
 - once, when the integration loads and finds no scans file yet: every room
   of the map then, as first seen, so a map scanned before the scans were
   kept has one.
@@ -772,8 +772,10 @@ class HomeMapStore:
 
     def _keep_scans(self, rooms: dict[str, dict[str, Any]], scanned: list[str] | None) -> None:
         """After a save: the records of rooms gone from the map dropped, and
-        with ``scanned`` the rooms it names recorded again and every room
-        with no record recorded. Saved only when something changed."""
+        with ``scanned`` the rooms it names recorded (again). Only a scan
+        records a room, so a room drawn by hand in the panel never gains a
+        record from an iPhone scan of another room. Saved only when
+        something changed."""
         if self._scans_failed:
             return
         kept = {key: value for key, value in self._scans.items() if key.upper() in rooms}
@@ -783,7 +785,7 @@ class HomeMapStore:
             again = {room_id.upper() for room_id in scanned}
             held = {key.upper(): key for key in kept}
             for folded, room in rooms.items():
-                if folded in held and folded not in again:
+                if folded not in again:
                     continue
                 kept.pop(held.get(folded, room["id"]), None)
                 kept[room["id"]] = scan_record(room, at)

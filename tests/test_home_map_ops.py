@@ -388,8 +388,8 @@ def test_a_put_body_over_the_cap_is_refused_before_it_is_read(env) -> None:
 def test_a_put_naming_scanned_rooms_records_them(env) -> None:
     reply = op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 0, "scanned": [LIVING]})
     assert (reply.status, reply.body) == (200, {"ok": True, "rev": 1})
-    # The kitchen too, first seen.
-    assert set(env.store.scans()) == {LIVING, KITCHEN}
+    # Not the kitchen: it was not scanned.
+    assert set(env.store.scans()) == {LIVING}
     assert env.store.scans()[LIVING]["outline"] == basic()["floors"][0]["rooms"][0]["outline"]
 
 
@@ -630,7 +630,7 @@ def test_ws_scans_reads_the_iphones_scans_and_a_panel_save_writes_none(env) -> N
     assert ws_call(env, env.ws.ws_home_map_scans).results[1] == {"scans": {}, "rev": 0}
     ws_call(env, env.ws.ws_home_map_save, doc=basic(), base_rev=0)
     assert ws_call(env, env.ws.ws_home_map_scans).results[1] == {"scans": {}, "rev": 1}
-    op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 1, "scanned": [KITCHEN]})
+    op(env, "_op_home_map_put", {"doc": basic(), "base_rev": 1, "scanned": [LIVING, KITCHEN]})
     result = ws_call(env, env.ws.ws_home_map_scans).results[1]
     assert result["rev"] == 2
     assert set(result["scans"]) == {LIVING, KITCHEN}
