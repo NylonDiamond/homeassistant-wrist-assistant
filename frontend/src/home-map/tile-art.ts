@@ -92,6 +92,7 @@ import {
 import {
   type HomeMapFloor,
   type HomeMapLook,
+  type HomeMapObject,
   type HomeMapOpening,
   type HomeMapPin,
   type HomeMapRoom,
@@ -147,6 +148,10 @@ export interface HomeTileArtOptions {
    * editor's stage draws with it, so a room dragged across the plan does
    * not move every other one with a new fit. The model looks ignore it. */
   frame?: { scale: number; ox: number; oy: number };
+  /** The map editor's pick, drawn in blue over the model looks: a room's
+   * floor outline, or a thing's box as a wire frame up to its height (shown
+   * even while the thing is hidden). The flat looks ignore it. */
+  mark?: { outline?: readonly HomePoint[]; box?: HomeMapObject };
 }
 
 // ── colours ─────────────────────────────────────────────────────────────
@@ -578,7 +583,7 @@ export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
   // Only the glass pins draw icons, so only they depend on the provider;
   // those drawings are not kept.
   const icons = o.devices === "all" ? o.icons : undefined;
-  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame]);
+  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark]);
   let byStates = memo.get(o.floor);
   if (byStates === undefined) memo.set(o.floor, (byStates = new WeakMap()));
   const statesKey = (o.states ?? NO_STATES) as object;
@@ -620,7 +625,29 @@ function draw(o: HomeTileArtOptions): SVGTemplateResult {
     dot: Math.min(Math.max(Math.min(o.width, o.height) * 0.028, 2.5), 6),
   };
   const body = o.look === "plan" ? drawPlan(ctx) : o.look === "dots" ? drawDots(ctx) : drawModel(ctx, o.look as ModelStyle);
-  return svg`<g class="hmt" data-look=${o.look}>${defs.all}${body}</g>`;
+  const mark = model && o.mark !== undefined ? drawMark(P, o.mark) : nothing;
+  return svg`<g class="hmt" data-look=${o.look}>${defs.all}${body}${mark}</g>`;
+}
+
+/** The editor's pick over a model look (`HomeTileArtOptions.mark`). */
+function drawMark(P: Projection, mark: NonNullable<HomeTileArtOptions["mark"]>): SVGTemplateResult | typeof nothing {
+  const blue = "#5b8def";
+  if (mark.box !== undefined) {
+    const corners = homeBoxCorners(homeBoxOf(mark.box));
+    const top = Math.max(mark.box.size[2], 0);
+    const low = corners.map((p) => project(P, p, 0));
+    const high = corners.map((p) => project(P, p, top));
+    const ring = (q: HomePoint[]) => `M${q.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}Z`;
+    const posts = low.map((p, i) => `M${p[0].toFixed(1)},${p[1].toFixed(1)}L${high[i]![0].toFixed(1)},${high[i]![1].toFixed(1)}`).join("");
+    return svg`<g class="hmt-mark" pointer-events="none">
+      <path d=${ring(high)} fill=${blue} fill-opacity="0.18" stroke="none" />
+      <path d=${`${ring(low)}${ring(high)}${posts}`} fill="none" stroke=${blue} stroke-width="2" stroke-linejoin="round" /></g>`;
+  }
+  if (mark.outline !== undefined && mark.outline.length >= 3) {
+    const d = `M${mark.outline.map((p) => project(P, p, 0)).map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}Z`;
+    return svg`<path class="hmt-mark" d=${d} fill="none" stroke=${blue} stroke-width="2.5" stroke-linejoin="round" pointer-events="none" />`;
+  }
+  return nothing;
 }
 
 interface Ctx {

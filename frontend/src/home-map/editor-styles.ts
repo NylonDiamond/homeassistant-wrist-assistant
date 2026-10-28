@@ -278,6 +278,8 @@ export const editorStyles = css`
 
   /* ── the stage ────────────────────────────────────────────────────── */
   .hme-stage { position: absolute; inset: 0; border-radius: 16px; border: 1px solid var(--wa-line); background: #11100f; overflow: hidden; }
+  .hme-stage.hme-split-l { right: calc(50% + 6px); }
+  .hme-stage.hme-split-r { left: calc(50% + 6px); }
   svg.hme-svg { display: block; position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
   svg.hme-svg text { font-family: var(--wa-font, inherit); }
   .hme-tag text { font-size: 11px; font-weight: 600; }

@@ -302,6 +302,36 @@ describe("the Home map editor", () => {
     expect(text()).not.toContain(">Model</button>");
     el.setMode("arrange");
     expect(text()).toContain("Snap to walls");
+    // Model, once picked, stays on through every mode change.
+    (el as unknown as { viewKind: string }).viewKind = "model";
+    el.setMode("shape");
+    el.setMode("devices");
+    el.setMode("arrange");
+    expect((el as unknown as { viewKind: string }).viewKind).toBe("model");
+    expect(text()).toContain("Turn back");
+  });
+
+  it("puts the model beside the plan in Both, the picked thing outlined in it and edited on the plan", async () => {
+    const { el, inside, press, key, text } = await page();
+    (el as unknown as { viewKind: string }).viewKind = "both";
+    let shown = text();
+    expect(shown).toContain("hme-split-l");
+    expect(shown).toContain("hme-split-r");
+    expect(shown).toContain("Model of Ground floor");
+    // The plan's dock and the model's both show; Live states only once.
+    expect(shown).toContain("Snap to walls");
+    expect(shown).toContain("Turn back");
+    expect(shown.split("Live states").length - 1).toBe(1);
+    // The plan still edits: pick the kitchen, then its table.
+    press([8, 2]);
+    expect(text()).toContain("hmt-mark");
+    press([8, 2]);
+    expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 2 });
+    shown = text();
+    expect(shown).toContain("hmt-mark");
+    expect(shown).toContain("In Kitchen · 1.80 × 1.00 m");
+    key("Escape");
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
   });
 
   it("draws the pins itself in Devices, picks and drags one, saved once, and sets a light's glow by its ring's handle", async () => {
