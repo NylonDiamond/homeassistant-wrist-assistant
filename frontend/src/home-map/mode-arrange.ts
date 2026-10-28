@@ -5,12 +5,20 @@
 // to move it, snapping to the walls of the rooms round it with a pink guide
 // and a label saying what it lined up with (Alt moves it freely, the grid
 // moves it in 10 cm steps), turned by the round handle above its box, and
-// shows its two sizes. The pill turns it a quarter, squares its corners,
-// snaps it to the walls the iPhone's way, moves it to another floor or
-// deletes it. The inspector holds the room's name, Home Assistant area and
-// the page a tap opens; where it is (left and top, its turn, its size, its
-// floor, its wall height); its floor finish; and the things in it, each
-// shown or hidden, with its devices and Add a thing.
+// shows its two sizes. The eight square handles on its box resize it along
+// its own walls (`resizeRoom`, a stretch of everything in it): a side
+// handle moves that side, a corner its two, the opposite sides staying put;
+// the dragged sides snap to the neighbours' walls with the same pink guide,
+// the sizes show live and the grid sizes it in 10 cm steps. While resizing,
+// Shift keeps its proportions, Alt resizes it about its middle (both sides
+// move, so nothing snaps, as Alt moves a room freely) and Cmd or Ctrl turns
+// the snapping off for a one sided resize. The pill turns it a quarter,
+// squares its corners, snaps it to the walls the iPhone's way, moves it to
+// another floor or deletes it. The inspector holds the room's name, Home
+// Assistant area and the page a tap opens; where it is (left and top, its
+// turn, its width and depth, its floor, its wall height); its floor finish;
+// and the things in it, each shown or hidden, with its devices and Add a
+// thing.
 //
 // Every edit is an `edit-ops.ts` function by ids, saved through the shell
 // (`editor-mode.ts` has the rules).
@@ -18,24 +26,31 @@
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { live } from "lit/directives/live.js";
 import {
+  type HomeMapResize,
+  type HomeMapResizeSides,
   type HomeMapSnapGuide,
+  HOME_MAP_MAX_ROOM_SIZE,
+  HOME_MAP_MIN_ROOM_SIZE,
   HOME_MAP_OBJECT_KINDS,
   addObject,
   deleteRoom,
   homeMapLevelTurn,
   homeMapPinsOfRoom,
+  homeMapRoomFrame,
   levelRoom,
   moveRoom,
   moveRoomToFloor,
   removeObject,
   renameFloor,
   renameRoom,
+  resizeRoom,
   setObjectHidden,
   setRoomArea,
   setRoomFinish,
   setRoomPage,
   setWallHeight,
   snapRoom,
+  snapRoomResize,
   snapRoomToWalls,
   squareCorners,
   turnRoom,
@@ -58,7 +73,6 @@ import {
 } from "./editor-parts.js";
 import {
   homeMapCount,
-  homeMapMeters,
   homeMapObjectName,
   homeMapOpeningName,
   homeMapRoomBox,
@@ -96,6 +110,23 @@ export const HOME_MAP_FINISH_NAMES: Readonly<Record<HomeFloorKind, string>> = {
 /** A turn handle snaps to this many degrees unless Alt is held. */
 const TURN_STEP = 15;
 
+/** The sides of a room's box each of its eight handles drags, in the order
+ * the box draws them: a corner, then the middle of the side after it,
+ * going round from the corner at a0, c0 (`homeMapRoomFrame`). */
+const RESIZE_HANDLES: readonly HomeMapResizeSides[] = [
+  { a: 0, c: 0 }, { c: 0 },
+  { a: 1, c: 0 }, { a: 1 },
+  { a: 1, c: 1 }, { c: 1 },
+  { a: 0, c: 1 }, { a: 0 },
+];
+
+/** The resize cursor for a handle that lies `dx`, `dy` stage pixels from
+ * the box's middle. */
+function resizeCursor(dx: number, dy: number): string {
+  const degrees = ((Math.atan2(dy, dx) * 180) / Math.PI + 180) % 180;
+  return ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize"][Math.round(degrees / 45) % 4]!;
+}
+
 /** The question before a room is deleted. */
 export function homeMapDeleteRoomText(room: HomeMapRoom, devices: number): string {
   const these = devices === 0 ? "" : ` Its ${homeMapCount(devices, "device")} come${devices === 1 ? "s" : ""} off the map too.`;
@@ -112,9 +143,11 @@ export class ArrangeMode implements HomeMapMode {
   query = "";
   /** The open parts of the picked room's layer: things, devices. */
   private open = new Set<string>();
-  /** The snap lines while a room is dragged, and whether a drag is on. */
+  /** The snap lines while a room is dragged, whether a drag is on, and
+   * whether that drag resizes it (its sizes then stay on show). */
   private guides: HomeMapSnapGuide[] = [];
   private dragging = false;
+  private resizing = false;
 
   private focus(ctx: HomeMapEditorContext): HomeMapRoom | undefined {
     const id = homeMapSelectionRoom(ctx.selection);
@@ -183,8 +216,8 @@ export class ArrangeMode implements HomeMapMode {
     return parts.length === 0 ? nothing : svg`${parts}`;
   }
 
-  /** The picked room's box along its walls, its handles, its turn handle and
-   * its two sizes. */
+  /** The picked room's box along its walls, its resize handles, its turn
+   * handle and its two sizes (kept on show while it is resized). */
   private box(ctx: HomeMapEditorContext, room: HomeMapRoom): SVGTemplateResult {
     const box = homeMapRoomBox(room).map((p) => ctx.toScreen(p));
     const centre = box.reduce<HomePoint>((s, p) => [s[0] + p[0] / 4, s[1] + p[1] / 4], [0, 0]);
@@ -222,10 +255,13 @@ export class ArrangeMode implements HomeMapMode {
     }
     return svg`<g class="hme-box">
       <polygon points=${box.map(pt).join(" ")} fill="none" stroke="#5b8def" stroke-width="2" />
+      ${this.resizing ? dims : nothing}
       ${this.dragging ? nothing : svg`
         ${dims}
         <line x1=${fmt(tm[0])} y1=${fmt(tm[1])} x2=${fmt(knob[0])} y2=${fmt(knob[1])} stroke="#5b8def" stroke-width="1.6" />
-        ${handles.map((h) => svg`<rect data-hme="move" x=${fmt(h[0] - 5)} y=${fmt(h[1] - 5)} width="10" height="10" fill="#fff" stroke="#5b8def" stroke-width="1.6" style="cursor:move" />`)}
+        ${handles.map((h, i) => svg`<rect data-hme="resize" data-handle=${i} x=${fmt(h[0] - 5)} y=${fmt(h[1] - 5)} width="10" height="10"
+          fill="#fff" stroke="#5b8def" stroke-width="1.6" style=${`cursor:${resizeCursor(h[0] - centre[0], h[1] - centre[1])}`}>
+          <title>Drag to resize the room. Shift keeps its proportions, Alt resizes it about its middle, Cmd or Ctrl stops it snapping.</title></rect>`)}
         <g data-hme="turn" style="cursor:grab" transform=${`translate(${pt(knob)})`}>
           <title>Drag to turn the room. Hold Alt to turn it freely.</title>
           <circle r="9" fill="#5b8def" />
@@ -256,13 +292,19 @@ export class ArrangeMode implements HomeMapMode {
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     if (this.draw.active) return this.draw.pointerDown(ctx, e, at);
     if (e.button !== 0) return false;
-    const hit = (e.target as Element | null)?.closest?.("[data-hme]")?.getAttribute("data-hme");
+    const target = (e.target as Element | null)?.closest?.("[data-hme]");
+    const hit = target?.getAttribute("data-hme");
     const focus = this.focus(ctx);
     if (hit === "turn" && focus !== undefined) {
       this.turnDrag(ctx, e, focus, at);
       return true;
     }
-    const room = hit === "move" && focus !== undefined ? focus : homeRoomUnder(ctx.floor, at);
+    const sides = RESIZE_HANDLES[Number(target?.getAttribute("data-handle"))];
+    if (hit === "resize" && focus !== undefined && sides !== undefined) {
+      this.resizeDrag(ctx, e, focus, sides, at);
+      return true;
+    }
+    const room = homeRoomUnder(ctx.floor, at);
     if (room === undefined) return false;
     ctx.select({ kind: "room", roomId: room.id });
     this.moveDrag(ctx, e, room, at);
@@ -305,6 +347,79 @@ export class ArrangeMode implements HomeMapMode {
         ctx.preview(undefined);
         const [dx, dy] = delta;
         if (moved && (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005)) ctx.apply((d) => moveRoom(d, id, dx, dy), { select: { kind: "room", roomId: id } });
+      },
+    });
+  }
+
+  /** Drag a resize handle: the handle's `sides` of the room's box follow the
+   * pointer along the room's own walls, the opposite sides staying put. The
+   * grid sizes it in 10 cm steps; Shift keeps its proportions (the way that
+   * changed most leads); Alt moves the opposite sides too, about its middle,
+   * and does not snap; Cmd or Ctrl does not snap. Otherwise, with snapping
+   * on, the dragged sides snap to the neighbours' walls. Saved on the drop
+   * as one resize from where it started. */
+  private resizeDrag(ctx: HomeMapEditorContext, e: PointerEvent, room: HomeMapRoom, sides: HomeMapResizeSides, start: HomePoint): void {
+    const frame = homeMapRoomFrame(room);
+    if (frame === undefined) return;
+    const startDoc = ctx.doc;
+    const id = room.id;
+    const w0 = frame.a1 - frame.a0;
+    const d0 = frame.c1 - frame.c0;
+    if (w0 <= 1e-6 || d0 <= 1e-6) return;
+    const along = (p: HomePoint) => p[0] * frame.u[0] + p[1] * frame.u[1];
+    const across = (p: HomePoint) => p[0] * frame.v[0] + p[1] * frame.v[1];
+    const fit = (v: number) => Math.min(Math.max(v, HOME_MAP_MIN_ROOM_SIZE), HOME_MAP_MAX_ROOM_SIZE);
+    let last: HomeMapResize | undefined;
+    ctx.drag(e, {
+      move: (p, ev) => {
+        const both = ev.altKey ? 2 : 1;
+        let width = w0;
+        let depth = d0;
+        if (sides.a !== undefined) width = w0 + (along(p) - along(start)) * (sides.a === 1 ? 1 : -1) * both;
+        if (sides.c !== undefined) depth = d0 + (across(p) - across(start)) * (sides.c === 1 ? 1 : -1) * both;
+        if (ctx.toggles.grid) {
+          const g = HOME_MAP_ARRANGE_GRID;
+          if (sides.a !== undefined) width = Math.round(width / g) * g;
+          if (sides.c !== undefined) depth = Math.round(depth / g) * g;
+        }
+        width = fit(width);
+        depth = fit(depth);
+        if (ev.shiftKey) {
+          const ka = width / w0;
+          const kc = depth / d0;
+          let k = sides.a === undefined ? kc : sides.c === undefined ? ka : Math.abs(Math.log(ka)) >= Math.abs(Math.log(kc)) ? ka : kc;
+          k = Math.min(Math.max(k, HOME_MAP_MIN_ROOM_SIZE / Math.min(w0, d0)), HOME_MAP_MAX_ROOM_SIZE / Math.max(w0, d0));
+          width = w0 * k;
+          depth = d0 * k;
+        }
+        const anchor: [number, number] = [
+          ev.altKey || sides.a === undefined ? 0.5 : 1 - sides.a,
+          ev.altKey || sides.c === undefined ? 0.5 : 1 - sides.c,
+        ];
+        let resize: HomeMapResize = { width, depth, anchor };
+        this.guides = [];
+        if (ctx.toggles.snap && !ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+          const snap = snapRoomResize(startDoc, id, resize, sides, { proportional: ev.shiftKey });
+          if (snap !== undefined) {
+            resize = snap.resize;
+            this.guides = snap.guides;
+          }
+        }
+        this.dragging = true;
+        this.resizing = true;
+        last = resize;
+        const made = resize;
+        ctx.preview((d) => resizeRoom(d, id, made));
+      },
+      end: (_p, _ev, moved) => {
+        this.guides = [];
+        this.dragging = false;
+        this.resizing = false;
+        ctx.preview(undefined);
+        const made = last;
+        if (!moved || made === undefined) return;
+        if (Math.abs((made.width ?? w0) - w0) < 0.005 && Math.abs((made.depth ?? d0) - d0) < 0.005) return;
+        ctx.apply((d) => resizeRoom(d, id, made), { select: { kind: "room", roomId: id } });
       },
     });
   }
@@ -479,8 +594,10 @@ export class ArrangeMode implements HomeMapMode {
           html`<button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, -90))}>−90°</button>
             <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>+90°</button>
             <button type="button" class="hme-tb" title="Turn it so its longest wall runs straight across or down" @click=${() => ctx.apply((d) => levelRoom(d, id))}>Level</button>`)}
-        ${hmeRow("Size", html`<span class="hme-in hme-ro mono">${homeMapMeters(size.width)}</span><span class="hme-in hme-ro mono">${homeMapMeters(size.depth)}</span>`)}
-        ${hmeHint("Drag a room on the plan. It snaps to the walls of the rooms around it. Hold Alt to move it freely.")}
+        ${hmeRow("Width, depth",
+          hmeNumber({ label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, set: (v) => ctx.apply((d) => resizeRoom(d, id, { width: v })) }),
+          hmeNumber({ label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, set: (v) => ctx.apply((d) => resizeRoom(d, id, { depth: v })) }))}
+        ${hmeHint("Along its own walls, about its middle; its doors, things and devices move with it. Drag a room on the plan to move it (Alt moves it freely), or a square handle on its box to resize it (Shift keeps its proportions, Alt resizes it about its middle).")}
         ${hmeRow("Floor", hmeSelect({
           label: "Floor",
           value: ctx.floor.id,
@@ -523,7 +640,7 @@ export class ArrangeMode implements HomeMapMode {
     return html`${hmeCard("Floor", html`
         ${hmeRow("Name", hmeText({ value: floor.name, label: "Floor name", placeholder: homeMapFloorName(floor), set: (v) => ctx.apply((d) => renameFloor(d, floor.id, v)) }))}
         ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`)}
-      ${hmeCard("Arrange", html`<p class="hme-text">Pick a room on the plan or in the list to move it, turn it, or change its name, area and floor.</p>
-        <p class="hme-text dim">Drag a room to move it; it lines up with the walls of the rooms round it. Drag the round handle above it to turn it. Undo with ${homeMapUndoKey()}.</p>`)}`;
+      ${hmeCard("Arrange", html`<p class="hme-text">Pick a room on the plan or in the list to move it, turn it, resize it, or change its name, area and floor.</p>
+        <p class="hme-text dim">Drag a room to move it; it lines up with the walls of the rooms round it. Drag the round handle above it to turn it, or a square handle on its box to resize it. Undo with ${homeMapUndoKey()}.</p>`)}`;
   }
 }

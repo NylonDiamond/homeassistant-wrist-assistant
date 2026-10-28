@@ -57,6 +57,9 @@ import {
   setRoomArea,
   setRoomFinish,
   setRoomPage,
+  homeMapRoomFrame,
+  resizeRoom,
+  snapRoomResize,
   setWallHeight,
   setWallLength,
   setWallThickness,
@@ -200,6 +203,104 @@ describe("snapping a dragged room", () => {
     expect(Math.abs(w.a[1] - w.b[1])).toBeLessThan(0.02);
     const minX = Math.min(...hall.outline.map((p) => p[0]));
     expect([4, 4.1].some((x) => Math.abs(minX - x) < 0.03)).toBe(true);
+  });
+});
+
+describe("resizing a room", () => {
+  const size = (r: HomeMapRoom) => {
+    const f = homeMapRoomFrame(r)!;
+    return { width: f.a1 - f.a0, depth: f.c1 - f.c0 };
+  };
+
+  it("stretches a box room from one side, carrying its doors, things and pins, ids kept", () => {
+    const doc = fixture();
+    const out = done(doc, resizeRoom(doc, LIVING, { width: 8, anchor: [0, 0.5] }));
+    const living = room(out, LIVING);
+    expect(living.id).toBe(LIVING);
+    expect(living.outline).toEqual([[0, 0], [8, 0], [8, 5], [0, 5]]);
+    expect(living.walls.map((w) => w.t)).toEqual([0.1, 0.1, 0.1, 0.1]);
+    // The window's middle moves from 2.4 to 3.2, its 2 m width kept; the
+    // door in the side that stayed does not move; the way through moves with
+    // its wall.
+    expect(living.openings[0]).toMatchObject({ kind: "window", a: [2.2, 0], b: [4.2, 0] });
+    expect(living.openings[1]).toMatchObject({ kind: "door", a: [0, 1.5], b: [0, 2.5] });
+    expect(living.openings[2]).toMatchObject({ kind: "opening", a: [8, 2], b: [8, 3] });
+    expect(living.objects[0]).toMatchObject({ kind: "sofa", c: [3.6, 4.15], size: [3, 0.9, 0.75], turn: 0 });
+    expect(pinOf(out, READING).at).toEqual([1.07, 3.1, 1.5]);
+    expect(pinOf(out, CEILING).at).toEqual([4.27, 1.8, 2.4]);
+    expect(pinOf(out, PENDANTS)).toEqual(pinOf(doc, PENDANTS));
+    expect(room(out, KITCHEN)).toEqual(room(doc, KITCHEN));
+    expect(out.floors[0]!.pins.map((p) => p.id)).toEqual(doc.floors[0]!.pins.map((p) => p.id));
+  });
+
+  it("shrinks about its middle, keeping the furniture inside", () => {
+    const doc = fixture();
+    const out = done(doc, resizeRoom(doc, LIVING, { depth: 2 }));
+    const living = room(out, LIVING);
+    expect(living.outline).toEqual([[0, 1.5], [6, 1.5], [6, 3.5], [0, 3.5]]);
+    expect(living.openings[0]).toMatchObject({ a: [1.4, 1.5], b: [3.4, 1.5] });
+    // The sofa, 0.9 m deep, would stand at 3.16 and stick out of the wall at
+    // 3.5, so it is kept 0.45 m off it; the television fits where it lands.
+    expect(living.objects[0]!.c).toEqual([2.7, 3.05]);
+    expect(living.objects[2]!.c).toEqual([2.8, 1.64]);
+    expect(living.objects[0]!.size).toEqual([3, 0.9, 0.75]);
+  });
+
+  it("resizes a turned room along its own walls", () => {
+    const doc = done(home([box(id(1), 0, 0, 4, 3)]), turnRoom(home([box(id(1), 0, 0, 4, 3)]), id(1), 30));
+    const before = homeMapRoomFrame(room(doc, id(1)))!;
+    const out = done(doc, resizeRoom(doc, id(1), { width: 6, anchor: [0, 0] }));
+    const turned = room(out, id(1));
+    const after = homeMapRoomFrame(turned)!;
+    expect(size(turned).width).toBeCloseTo(6, 1);
+    expect(size(turned).depth).toBeCloseTo(3, 1);
+    expect(after.a0).toBeCloseTo(before.a0, 1);
+    expect(after.c0).toBeCloseTo(before.c0, 1);
+    const w = turned.walls[0]!;
+    expect((Math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]) * 180) / Math.PI).toBeCloseTo(30, 0);
+    expect(segmentLength(w)).toBeCloseTo(6, 1);
+  });
+
+  it("keeps a door inside its wall, cut to the wall when the wall gets shorter", () => {
+    const one = box(id(1), 0, 0, 4, 3);
+    one.openings = [{ kind: "door", a: [2.8, 0], b: [3.8, 0], z0: 0, z1: 2 }];
+    const doc = home([one]);
+    const short = room(done(doc, resizeRoom(doc, id(1), { width: 1.5, anchor: [0, 0] })), id(1));
+    expect(short.openings[0]).toMatchObject({ a: [0.5, 0], b: [1.5, 0] });
+    const tiny = room(done(doc, resizeRoom(doc, id(1), { width: 0.8, anchor: [0, 0] })), id(1));
+    expect(tiny.openings[0]).toMatchObject({ a: [0, 0], b: [0.8, 0] });
+  });
+
+  it("keeps a room at least 0.5 m each way, and refuses what no longer fits", () => {
+    const doc = fixture();
+    const out = done(doc, resizeRoom(doc, LIVING, { width: 0.1, depth: 0, anchor: [0, 0] }));
+    expect(size(room(out, LIVING)).width).toBeCloseTo(0.5, 5);
+    expect(size(room(out, LIVING)).depth).toBeCloseTo(0.5, 5);
+    expect(resizeRoom(doc, id(99), { width: 3 })).toBeUndefined();
+    expect(resizeRoom(doc, LIVING, { width: Number.NaN })).toBeUndefined();
+  });
+
+  it("snaps a dragged side to a neighbour's wall, with a guide", () => {
+    const doc = home([box(id(1), 0, 0, 4, 3, "Living"), box(id(2), 4.1, 0, 2, 2.5, "Hall")]);
+    // The right side dragged to 3.95: a wall's thickness off the hall's left
+    // wall is 4.0, 5 cm away.
+    const snap = snapRoomResize(doc, id(1), { width: 3.95, anchor: [0, 0.5] }, { a: 1 })!;
+    expect(snap.resize.width).toBeCloseTo(4, 5);
+    expect(snap.guides.length).toBeGreaterThan(0);
+    expect(snap.guides.every((g) => g.roomId === id(2))).toBe(true);
+    // A corner: each dragged side snaps; kept in proportion, only the
+    // nearest does (the bottom, onto the hall's bottom at 2.5) and the
+    // width follows it.
+    const corner = { width: 3.9, depth: 2.55, anchor: [0, 0] as const };
+    const free = snapRoomResize(doc, id(1), corner, { a: 1, c: 1 })!;
+    expect(free.resize.width).toBeCloseTo(4, 5);
+    expect(free.resize.depth).toBeCloseTo(2.5, 5);
+    const kept = snapRoomResize(doc, id(1), corner, { a: 1, c: 1 }, { proportional: true })!;
+    expect(kept.resize.depth).toBeCloseTo(2.5, 5);
+    expect(kept.resize.width).toBeCloseTo((4 * 2.5) / 3, 5);
+    // Nothing near: the resize as it was.
+    const far = { width: 2, anchor: [0, 0.5] as const };
+    expect(snapRoomResize(doc, id(1), far, { a: 1 })).toEqual({ resize: far, guides: [] });
   });
 });
 

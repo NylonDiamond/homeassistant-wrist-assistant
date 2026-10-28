@@ -8,10 +8,11 @@
 // The editor has four modes, each with its own edits:
 //
 // - Arrange: move and turn a room with everything in it and the pins that
-//   belong to it, snap a dragged room to its neighbours' wall lines, line it
-//   up with the floor (Level, Snap to Walls, as the iPhone's), move it to
-//   another floor, delete it, draw a room by hand, and set a room's name,
-//   area, page, floor finish and wall height and the things in it.
+//   belong to it, snap a dragged room to its neighbours' wall lines, resize
+//   it along its own walls as a stretch (its sides snapping the same way),
+//   line it up with the floor (Level, Snap to Walls, as the iPhone's), move
+//   it to another floor, delete it, draw a room by hand, and set a room's
+//   name, area, page, floor finish and wall height and the things in it.
 // - Shape: move a corner (a corner another room shares moves with it), type
 //   a wall's length, straighten a wall, square a room's corners, add or
 //   take away a corner, split a room in two, inner walls, doors, windows and
@@ -39,6 +40,8 @@ import {
   type HomeSegment,
   HOME_TOLERANCE,
   HOME_WALL_THICKNESS,
+  homeBoxCorners,
+  homeBoxOf,
   homeClipPolygon,
   homeClipSegment,
   homeLabelPoint,
@@ -50,6 +53,8 @@ import {
   homePolygonHolds,
   homeProject,
   homeQuarterTurnRemainder,
+  homeRoomDirection,
+  homeRoomReach,
   homeSide,
   homeTurnPoint,
   homeWallsOf,
@@ -509,6 +514,274 @@ export function snapRoomToWalls(doc: HomeMapDocument, roomId: string): HomeMapDo
   const at = roomAt(doc, roomId);
   if (at === undefined) return undefined;
   return placeRoom(doc, roomId, homeMapSnapPlacement(at.room, at.floor.rooms.filter((x) => x !== at.room)));
+}
+
+// ── resizing a room ──────────────────────────────────────────────────────
+//
+// A resize is a stretch of the room along its own two ways: the way its
+// longest wall runs (as `homeMapLevelTurn` and the box round a picked room
+// measure it) and square to that, so a turned scanned room resizes along its
+// walls. Every point of the room moves by the same stretch: its outline, its
+// walls (each keeping its thickness) and the pins that belong to it (their
+// height kept). A door or window keeps its width, its middle moving with
+// the stretch along its wall and kept inside it; a piece of furniture keeps
+// its size and turn, its middle moving with the stretch and kept inside the
+// room's box along a way the room shrank. Ids never change.
+
+/** The least a resized room measures along each of its ways, in meters. */
+export const HOME_MAP_MIN_ROOM_SIZE = 0.5;
+/** The most, in meters. */
+export const HOME_MAP_MAX_ROOM_SIZE = 100;
+
+/** A room's box along its own walls: `u` the way its longest wall runs and
+ * `v` square to it (both unit vectors on the plan), `a0` to `a1` its reach
+ * along `u` and `c0` to `c1` along `v`. The box's corners, going round, are
+ * (a0, c0), (a1, c0), (a1, c1), (a0, c1), as `homeMapRoomBox` draws it; the
+ * plan point at `a`, `c` is `a * u + c * v`. */
+export interface HomeMapRoomFrame {
+  u: HomePoint;
+  v: HomePoint;
+  a0: number;
+  a1: number;
+  c0: number;
+  c1: number;
+}
+
+/** A room's box along its own walls, undefined for a room with fewer than
+ * three corners. */
+export function homeMapRoomFrame(room: HomeMapRoom): HomeMapRoomFrame | undefined {
+  if (room.outline.length < 3) return undefined;
+  const direction = homeRoomDirection(room);
+  const { a0, a1, c0, c1 } = homeRoomReach(room, direction);
+  const u: HomePoint = [Math.cos(direction), Math.sin(direction)];
+  return { u, v: [-u[1], u[0]], a0, a1, c0, c1 };
+}
+
+/** A room's new size: `width` along its frame's `u` and `depth` along `v`
+ * (`homeMapRoomSize`'s two), either left out staying as it is, each 0.5 to
+ * 100 m; and `anchor`, the point of its box that stays put, as shares of the
+ * box along `u` and `v`: 0 the a0 or c0 side, 1 the far side, 0.5 (the
+ * default) its middle. */
+export interface HomeMapResize {
+  width?: number;
+  depth?: number;
+  anchor?: readonly [number, number];
+}
+
+/** A resize as the stretch it makes: the plan point a point of the room
+ * goes to (unrounded), the factors along `u` and `v`, and the box after. */
+interface HomeMapStretch {
+  map: (p: readonly number[]) => HomePoint;
+  su: number;
+  sv: number;
+  a0: number;
+  a1: number;
+  c0: number;
+  c1: number;
+}
+
+function stretchOf(frame: HomeMapRoomFrame, resize: HomeMapResize): HomeMapStretch | undefined {
+  const w0 = frame.a1 - frame.a0;
+  const d0 = frame.c1 - frame.c0;
+  if (w0 <= 1e-6 || d0 <= 1e-6) return undefined;
+  const size = (value: number | undefined, now: number) => (value === undefined ? now : clamp(value, HOME_MAP_MIN_ROOM_SIZE, HOME_MAP_MAX_ROOM_SIZE));
+  if (!finite(resize.width ?? 0, resize.depth ?? 0, ...(resize.anchor ?? [0.5, 0.5]))) return undefined;
+  const width = size(resize.width, w0);
+  const depth = size(resize.depth, d0);
+  const [ka, kc] = resize.anchor ?? [0.5, 0.5];
+  const fa = frame.a0 + ka * w0;
+  const fc = frame.c0 + kc * d0;
+  const su = width / w0;
+  const sv = depth / d0;
+  const { u, v } = frame;
+  const map = (p: readonly number[]): HomePoint => {
+    const a = fa + (p[0]! * u[0] + p[1]! * u[1] - fa) * su;
+    const c = fc + (p[0]! * v[0] + p[1]! * v[1] - fc) * sv;
+    return [a * u[0] + c * v[0], a * u[1] + c * v[1]];
+  };
+  const a0 = fa + (frame.a0 - fa) * su;
+  const c0 = fc + (frame.c0 - fc) * sv;
+  return { map, su, sv, a0, a1: a0 + width, c0, c1: c0 + depth };
+}
+
+/** A door or window of `room` set in its stretched room `after`: its
+ * middle moved by the stretch onto the same wall, its width kept (cut to
+ * the wall's length if the wall got shorter) and kept inside the wall. One
+ * in no wall keeps its width along its stretched direction. */
+function openingStretched(room: HomeMapRoom, after: HomeMapRoom, opening: HomeMapOpening, stretch: HomeMapStretch): HomeMapOpening {
+  const width = distance(opening.a, opening.b);
+  const middle = stretch.map([(opening.a[0] + opening.b[0]) / 2, (opening.a[1] + opening.b[1]) / 2]);
+  const i = homeMapOpeningWall(room, opening);
+  const wall = i < 0 ? undefined : homeWallsOf(after)[i];
+  if (wall === undefined || segmentLength(wall) <= 0) {
+    const a = stretch.map(opening.a);
+    const b = stretch.map(opening.b);
+    const length = Math.max(distance(a, b), 1e-9);
+    const d: HomePoint = [((b[0] - a[0]) / length) * (width / 2), ((b[1] - a[1]) / length) * (width / 2)];
+    return orderedOpening({ ...opening, a: roundPoint([middle[0] - d[0], middle[1] - d[1]]), b: roundPoint([middle[0] + d[0], middle[1] + d[1]]) });
+  }
+  const before = homeWallsOf(room)[i]!;
+  const length = segmentLength(wall);
+  const w = Math.min(width, length);
+  const centre = clamp(homeProject(middle, wall.a, wall.b).along, w / 2, length - w / 2);
+  // The same way round along the wall as it was: a stretch never reverses
+  // a wall, so the side of `a` along it is kept.
+  const forward = homeProject(opening.b, before.a, before.b).along >= homeProject(opening.a, before.a, before.b).along;
+  const [s0, s1] = forward ? [centre - w / 2, centre + w / 2] : [centre + w / 2, centre - w / 2];
+  return orderedOpening({ ...opening, a: roundPoint(alongWall(wall, s0)), b: roundPoint(alongWall(wall, s1)) });
+}
+
+/** A piece of furniture's middle moved by the stretch; along a way the room
+ * shrank it is kept inside the new box by its own reach (or set in the
+ * box's middle when it no longer fits). Its size and turn stay. */
+function objectStretched(object: HomeMapObject, frame: HomeMapRoomFrame, stretch: HomeMapStretch): HomeMapObject {
+  let [x, y] = stretch.map(object.c);
+  const corners = homeBoxCorners({ ...homeBoxOf(object), centre: [0, 0] });
+  const keep = (axis: HomePoint, lo: number, hi: number, shrank: boolean) => {
+    if (!shrank) return;
+    const reach = Math.max(...corners.map((p) => Math.abs(p[0] * axis[0] + p[1] * axis[1])));
+    const at = x * axis[0] + y * axis[1];
+    const to = hi - lo <= reach * 2 ? (lo + hi) / 2 : clamp(at, lo + reach, hi - reach);
+    x += axis[0] * (to - at);
+    y += axis[1] * (to - at);
+  };
+  keep(frame.u, stretch.a0, stretch.a1, stretch.su < 1);
+  keep(frame.v, stretch.c0, stretch.c1, stretch.sv < 1);
+  return orderedObject({ ...object, c: roundPoint([x, y]) });
+}
+
+/**
+ * The room resized along its own walls (`HomeMapResize`), as a stretch of
+ * everything in it and the pins that belong to it (`homeMapPinsOfRoom`).
+ * Undefined when the room is gone, has no area, or a number is not finite.
+ */
+export function resizeRoom(doc: HomeMapDocument, roomId: string, resize: HomeMapResize): HomeMapDocument | undefined {
+  const at = roomAt(doc, roomId);
+  const frame = at === undefined ? undefined : homeMapRoomFrame(at.room);
+  const stretch = frame === undefined ? undefined : stretchOf(frame, resize);
+  if (at === undefined || frame === undefined || stretch === undefined) return undefined;
+  const room = at.room;
+  const to = (p: readonly number[]) => roundPoint(stretch.map(p));
+  const shaped: HomeMapRoom = {
+    ...room,
+    outline: room.outline.map(to),
+    walls: room.walls.map((w) => ({ a: to(w.a), b: to(w.b), t: w.t })),
+  };
+  const stretched: HomeMapRoom = {
+    ...shaped,
+    openings: room.openings.map((o) => openingStretched(room, shaped, o, stretch)),
+    objects: room.objects.map((o) => objectStretched(o, frame, stretch)),
+  };
+  const moving = new Set(homeMapPinsOfRoom(at.floor, room.id).map((p) => p.id));
+  const rooms = at.floor.rooms.slice();
+  rooms[at.ri] = orderedRoom(stretched);
+  const pins = at.floor.pins.map((p) => {
+    if (!moving.has(p.id)) return p;
+    const [x, y] = to(p.at);
+    return orderedPin({ ...p, at: [x, y, p.at[2]] });
+  });
+  return withFloor(doc, at.fi, { ...at.floor, rooms, pins });
+}
+
+/** Which sides of a room's box a resize drags: along `u` (`a`) and along
+ * `v` (`c`), 0 the low side (a0, c0), 1 the high side, absent for neither. */
+export interface HomeMapResizeSides {
+  a?: 0 | 1;
+  c?: 0 | 1;
+}
+
+/** A resize once its dragged sides snapped, and the lines to draw. */
+export interface HomeMapResizeSnap {
+  resize: HomeMapResize;
+  guides: HomeMapSnapGuide[];
+}
+
+/**
+ * Where the dragged `sides` of a room being resized snap, by `snapRoom`'s
+ * rules: a dragged side within `tolerance` of a neighbour's wall that runs
+ * the same way (within 5 degrees), within a meter of it along its line,
+ * goes in line with it, or onto it or a wall's thickness past it when the
+ * two rooms face each other; the nearest wins. With `proportional`, only
+ * the nearest of the dragged sides snaps and the other way follows it, so
+ * the room keeps its proportions. A snap that would make the room smaller
+ * than 0.5 m is not taken. The resize comes back with the snapped sizes (as
+ * it was when nothing is near) and a guide along each wall it lined up with.
+ * Undefined when the room is gone or has no area.
+ */
+export function snapRoomResize(
+  doc: HomeMapDocument,
+  roomId: string,
+  resize: HomeMapResize,
+  sides: HomeMapResizeSides,
+  options: { proportional?: boolean; tolerance?: number } = {},
+): HomeMapResizeSnap | undefined {
+  const at = roomAt(doc, roomId);
+  const frame = at === undefined ? undefined : homeMapRoomFrame(at.room);
+  const stretch = frame === undefined ? undefined : stretchOf(frame, resize);
+  if (at === undefined || frame === undefined || stretch === undefined) return undefined;
+  const others = at.floor.rooms.filter((x) => x !== at.room);
+  const tolerance = options.tolerance ?? HOME_MAP_SNAP_TOLERANCE;
+  const w0 = frame.a1 - frame.a0;
+  const d0 = frame.c1 - frame.c0;
+  // One dragged side as a wall line across its axis: `along` runs the way
+  // `linesAcross` measures a line's ends for that axis.
+  const lineOf = (key: "a" | "c", side: 0 | 1) => {
+    const axis = key === "a" ? frame.u : frame.v;
+    const along: HomePoint = [-axis[1], axis[0]];
+    const ends = key === "a" ? [stretch.c0, stretch.c1] : [-stretch.a1, -stretch.a0];
+    const own: WallLine = {
+      at: key === "a" ? (side === 1 ? stretch.a1 : stretch.a0) : (side === 1 ? stretch.c1 : stretch.c0),
+      side: side === 1 ? -1 : 1,
+      lo: ends[0]!,
+      hi: ends[1]!,
+      roomId: at.room.id,
+      t: HOME_WALL_THICKNESS,
+    };
+    return { key, side, axis, along, own, theirs: others.flatMap((x) => linesAcross(x, axis)) };
+  };
+  const lines = [
+    ...(sides.a === undefined ? [] : [lineOf("a", sides.a)]),
+    ...(sides.c === undefined ? [] : [lineOf("c", sides.c)]),
+  ];
+  const size = { a: stretch.a1 - stretch.a0, c: stretch.c1 - stretch.c0 };
+  const found: { line: (typeof lines)[number]; delta: number; size: number }[] = [];
+  for (const line of lines) {
+    let best: number | undefined;
+    for (const b of line.theirs) {
+      if (Math.max(line.own.lo, b.lo) - Math.min(line.own.hi, b.hi) > SNAP_NEAR) continue;
+      for (const gap of snapGaps(line.own, b)) {
+        const delta = b.at + gap - line.own.at;
+        if (Math.abs(delta) > tolerance || (best !== undefined && Math.abs(delta) >= Math.abs(best))) continue;
+        const next = size[line.key] + (line.side === 1 ? delta : -delta);
+        if (next >= HOME_MAP_MIN_ROOM_SIZE && next <= HOME_MAP_MAX_ROOM_SIZE) best = delta;
+      }
+    }
+    if (best !== undefined) found.push({ line, delta: best, size: size[line.key] + (line.side === 1 ? best : -best) });
+  }
+  if (options.proportional === true && found.length > 1) found.splice(0, found.length, found.reduce((x, y) => (Math.abs(y.delta) < Math.abs(x.delta) ? y : x)));
+  if (found.length === 0) return { resize, guides: [] };
+  let width = size.a;
+  let depth = size.c;
+  for (const f of found) {
+    if (f.line.key === "a") width = f.size;
+    else depth = f.size;
+  }
+  if (options.proportional === true) {
+    const k = found[0]!.line.key === "a" ? width / w0 : depth / d0;
+    width = w0 * k;
+    depth = d0 * k;
+  }
+  const guides: HomeMapSnapGuide[] = [];
+  for (const f of found) {
+    const { own, theirs, axis, along } = f.line;
+    const point = (at2: number, s: number): HomePoint => [axis[0] * at2 + along[0] * s, axis[1] * at2 + along[1] * s];
+    for (const b of theirs) {
+      if (Math.max(own.lo, b.lo) - Math.min(own.hi, b.hi) > SNAP_NEAR) continue;
+      if (!snapGaps(own, b).some((gap) => Math.abs(own.at + f.delta - (b.at + gap)) < 2e-3)) continue;
+      guides.push({ a: point(b.at, Math.min(own.lo, b.lo)), b: point(b.at, Math.max(own.hi, b.hi)), roomId: b.roomId });
+    }
+  }
+  return { resize: { ...resize, width, depth }, guides };
 }
 
 // ── floors ───────────────────────────────────────────────────────────────
