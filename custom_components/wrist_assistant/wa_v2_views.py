@@ -5085,8 +5085,8 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
 
     ``base_rev`` is 0 for the first map. ``scanned`` (``home_map_scans``)
     names the rooms a scan just made or replaced, at most 40, each a room
-    of ``doc``: they are kept as scanned beside the map, with every room
-    not kept yet (``home_map_store.py``, "Scans"). Left out, or null, as for
+    of ``doc``: they, and no other room, are kept as scanned beside the map
+    (``home_map_store.py``, "Scans"). Left out, or null, as for
     every other edit, the map is saved as before and no room is recorded.
     """
     store = getattr(ctx.domain_data, "home_map_store", None)
