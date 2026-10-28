@@ -27,21 +27,51 @@ rounded rather than refused. A key the contract does not name is refused,
 so a writer that drifts from it hears so at once::
 
     {"v": 1,
+     "style"?: {"look"?, "turn"?, "names"?, "devices"?, "furniture"?,
+                "glow"?},
      "floors": [{"id", "name", "story": <int>,
                  "rooms": [{"id", "name"?, "areaId"?, "pageId"?,
+                            "finish"?: "wood" | "tile" | "stone" |
+                                       "carpet" | "plain",
                             "outline": [[x, y], ...], "height",
                             "walls": [{"a": [x, y], "b": [x, y], "t"}],
                             "openings": [{"kind": "door" | "window" |
-                                          "opening", "a", "b", "z0", "z1"}],
+                                          "opening",
+                                          "style"?: "sliding" | "double",
+                                          "a", "b", "z0", "z1"}],
                             "objects": [{"kind", "c": [x, y],
-                                         "size": [w, d, h], "turn"}]}],
-                 "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z]}]}]}
+                                         "size": [w, d, h], "turn",
+                                         "hidden"?: true}]}],
+                 "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
+                           "name"?, "icon"?, "reading"?: "none" | "name",
+                           "glow"?, "glowColor"?, "tap"?: "toggle" |
+                           "details" | "page" | "none", "pageId"?}]}]}
 
 A pin's ``roomId``, when it has one, names a room of the same floor. Whether
 its ``entityId`` exists is not checked: a pin whose entity the home no
 longer has is kept and drawn gray. An object's ``kind`` is the RoomPlan
 category in lower camel case, any such word, since a device draws a kind it
 does not know as a plain box.
+
+The keys after the first version's are all optional, and a default is never
+stored: the key is left out, so a map written before them reads the same.
+``style`` is the home style, what every Home map tile starts with when the
+tile has no key of its own: ``look`` (plan, night, warm, lines, clay,
+blueprint or dots; plan when absent), ``turn`` (whole degrees, -180 to 180;
+-28), ``names``, ``furniture`` and ``glow`` (true or false; true) and
+``devices`` (lights, all or none; lights). A default sent in ``style`` is
+dropped, and so is a ``style`` left empty. A room's ``finish`` names what
+its floor is laid with; absent, it is picked from the room's name and
+furniture. An object with ``hidden`` is drawn nowhere but kept, so an editor
+can show it again; a false ``hidden`` is dropped. An opening's ``style`` is
+``double`` (a door only: two leaves meeting in the middle) or ``sliding`` (a
+door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
+characters) and ``icon`` (one of ``PIN_ICONS``) stand in for the entity's
+own; ``reading`` shows the pin's name in its pill (``name``) or no pill
+(``none``); ``glow`` is a light's pool of light in meters (0.2 to 10) and
+``glowColor`` ``warm`` or ``#RRGGBB`` in either case; ``tap`` is what a tap
+on the pin does, and ``pageId``, the page it opens, goes with ``tap`` page
+and only with it.
 
 A file that cannot be read is logged and left alone: every read and save is
 then refused ``unavailable`` until a restart reads it, so a damaged map is
@@ -84,6 +114,29 @@ MAX_NAME_CHARS = 100
 # Meters from the plan's origin, either way; a home is far smaller.
 MAX_COORDINATE = 10_000
 OPENING_KINDS = ("door", "window", "opening")
+OPENING_STYLES = ("sliding", "double")
+ROOM_FINISHES = ("wood", "tile", "stone", "carpet", "plain")
+PIN_ICONS = (
+    "bulb", "lamp", "ceiling", "strip", "plug", "fan", "tv", "speaker",
+    "thermostat", "sensor", "motion", "door", "lock", "camera", "blinds",
+    "vacuum",
+)
+PIN_READINGS = ("none", "name")
+PIN_TAPS = ("toggle", "details", "page", "none")
+# A light's pool of light, in meters.
+PIN_GLOW_LOW = 0.2
+PIN_GLOW_HIGH = 10
+STYLE_LOOKS = ("plan", "night", "warm", "lines", "clay", "blueprint", "dots")
+STYLE_DEVICES = ("lights", "all", "none")
+# The home style's defaults, never stored: a key holding one is dropped.
+STYLE_DEFAULTS: dict[str, Any] = {
+    "look": "plan",
+    "turn": -28,
+    "names": True,
+    "devices": "lights",
+    "furniture": True,
+    "glow": True,
+}
 
 # Either case: the phone writes upper case, the panel's ids are lower case.
 # An id is kept as sent, so a room's pageId still matches its page.
@@ -96,6 +149,8 @@ _ENTITY_ID_RE = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 _AREA_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,255}")
 # A RoomPlan category in lower camel case: sofa, table, television.
 _OBJECT_KIND_RE = re.compile(r"[a-z][A-Za-z0-9]{0,39}")
+# A pin's glow colour other than warm: six hex digits, either case.
+_HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 
 
 class HomeMapError(Exception):
@@ -204,6 +259,48 @@ def _uuid(raw: Any, path: str) -> str:
     return raw
 
 
+def _words(choices: Iterable[str]) -> str:
+    """``a, b or c``, as the messages name a key's choices."""
+    choices = tuple(choices)
+    return ", ".join(choices[:-1]) + " or " + choices[-1]
+
+
+def _one_of(raw: Any, path: str, choices: tuple[str, ...]) -> str:
+    if not isinstance(raw, str) or raw not in choices:
+        _fail(path, f"must be {_words(choices)}")
+    return raw
+
+
+def _bool(raw: Any, path: str) -> bool:
+    if not isinstance(raw, bool):
+        _fail(path, "must be true or false")
+    return raw
+
+
+def _style(raw: Any) -> dict[str, Any]:
+    """The home style with its defaults dropped, in the contract's order."""
+    style = _object(raw, "doc.style", (), STYLE_DEFAULTS)
+    checked: dict[str, Any] = {}
+    if "look" in style:
+        checked["look"] = _one_of(style["look"], "doc.style.look", STYLE_LOOKS)
+    if "turn" in style:
+        turn = style["turn"]
+        if isinstance(turn, bool) or not isinstance(turn, (int, float)) or not math.isfinite(turn):
+            _fail("doc.style.turn", "must be a whole number between -180 and 180")
+        turn = round(turn)
+        if not -180 <= turn <= 180:
+            _fail("doc.style.turn", "must be a whole number between -180 and 180")
+        checked["turn"] = turn
+    if "names" in style:
+        checked["names"] = _bool(style["names"], "doc.style.names")
+    if "devices" in style:
+        checked["devices"] = _one_of(style["devices"], "doc.style.devices", STYLE_DEVICES)
+    for key in ("furniture", "glow"):
+        if key in style:
+            checked[key] = _bool(style[key], f"doc.style.{key}")
+    return {key: value for key, value in checked.items() if value != STYLE_DEFAULTS[key]}
+
+
 class _Ids:
     """The floor, room and pin ids seen so far: unique across the whole
     document, whatever their case."""
@@ -225,7 +322,7 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
         raw,
         path,
         ("id", "outline", "height", "walls", "openings", "objects"),
-        ("name", "areaId", "pageId"),
+        ("name", "areaId", "pageId", "finish"),
     )
     checked: dict[str, Any] = {"id": ids.take(room["id"], f"{path}.id")}
     if "name" in room:
@@ -237,6 +334,8 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
         checked["areaId"] = area_id
     if "pageId" in room:
         checked["pageId"] = _uuid(room["pageId"], f"{path}.pageId")
+    if "finish" in room:
+        checked["finish"] = _one_of(room["finish"], f"{path}.finish", ROOM_FINISHES)
     checked["outline"] = [
         _point(point, f"{path}.outline[{i}]", 2)
         for i, point in enumerate(
@@ -261,50 +360,62 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
         _list(room["openings"], f"{path}.openings", MAX_OPENINGS)
     ):
         where = f"{path}.openings[{i}]"
-        opening = _object(raw_opening, where, ("kind", "a", "b", "z0", "z1"))
-        if opening["kind"] not in OPENING_KINDS:
+        opening = _object(raw_opening, where, ("kind", "a", "b", "z0", "z1"), ("style",))
+        kind = opening["kind"]
+        if not isinstance(kind, str) or kind not in OPENING_KINDS:
             _fail(f"{where}.kind", "must be door, window or opening")
+        checked_opening: dict[str, Any] = {"kind": kind}
+        if "style" in opening:
+            style = _one_of(opening["style"], f"{where}.style", OPENING_STYLES)
+            if kind == "opening":
+                _fail(f"{where}.style", "is only for a door or a window")
+            if kind == "window" and style == "double":
+                _fail(f"{where}.style", "double is only for a door")
+            checked_opening["style"] = style
         z0 = _number(opening["z0"], f"{where}.z0")
         z1 = _number(opening["z1"], f"{where}.z1")
         if z1 < z0:
             _fail(f"{where}.z1", "must not be below z0")
-        openings.append(
-            {
-                "kind": opening["kind"],
-                "a": _point(opening["a"], f"{where}.a", 2),
-                "b": _point(opening["b"], f"{where}.b", 2),
-                "z0": z0,
-                "z1": z1,
-            }
-        )
+        checked_opening["a"] = _point(opening["a"], f"{where}.a", 2)
+        checked_opening["b"] = _point(opening["b"], f"{where}.b", 2)
+        checked_opening["z0"] = z0
+        checked_opening["z1"] = z1
+        openings.append(checked_opening)
     checked["openings"] = openings
     objects = []
     for i, raw_object in enumerate(_list(room["objects"], f"{path}.objects", MAX_OBJECTS)):
         where = f"{path}.objects[{i}]"
-        item = _object(raw_object, where, ("kind", "c", "size", "turn"))
+        item = _object(raw_object, where, ("kind", "c", "size", "turn"), ("hidden",))
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
             _fail(f"{where}.kind", "must be a RoomPlan category in lower camel case")
         size = item["size"]
         if not isinstance(size, list) or len(size) != 3:
             _fail(f"{where}.size", "must be a list of 3 numbers")
-        objects.append(
-            {
-                "kind": kind,
-                "c": _point(item["c"], f"{where}.c", 2),
-                "size": [
-                    _number(value, f"{where}.size[{j}]", 0, 1000)
-                    for j, value in enumerate(size)
-                ],
-                "turn": _number(item["turn"], f"{where}.turn"),
-            }
-        )
+        checked_object: dict[str, Any] = {
+            "kind": kind,
+            "c": _point(item["c"], f"{where}.c", 2),
+            "size": [
+                _number(value, f"{where}.size[{j}]", 0, 1000)
+                for j, value in enumerate(size)
+            ],
+            "turn": _number(item["turn"], f"{where}.turn"),
+        }
+        # Shown is the default, so a false hidden is left out.
+        if "hidden" in item and _bool(item["hidden"], f"{where}.hidden"):
+            checked_object["hidden"] = True
+        objects.append(checked_object)
     checked["objects"] = objects
     return checked
 
 
 def _pin(raw: Any, path: str, ids: _Ids, room_ids: set[str]) -> dict[str, Any]:
-    pin = _object(raw, path, ("id", "entityId", "at"), ("roomId",))
+    pin = _object(
+        raw,
+        path,
+        ("id", "entityId", "at"),
+        ("roomId", "name", "icon", "reading", "glow", "glowColor", "tap", "pageId"),
+    )
     checked: dict[str, Any] = {"id": ids.take(pin["id"], f"{path}.id")}
     entity_id = pin["entityId"]
     if not isinstance(entity_id, str) or not _ENTITY_ID_RE.fullmatch(entity_id):
@@ -316,6 +427,31 @@ def _pin(raw: Any, path: str, ids: _Ids, room_ids: set[str]) -> dict[str, Any]:
             _fail(f"{path}.roomId", "names no room of this floor")
         checked["roomId"] = room_id
     checked["at"] = _point(pin["at"], f"{path}.at", 3)
+    if "name" in pin:
+        name = _text(pin["name"], f"{path}.name")
+        if name == "":
+            _fail(f"{path}.name", "must not be empty")
+        checked["name"] = name
+    if "icon" in pin:
+        checked["icon"] = _one_of(pin["icon"], f"{path}.icon", PIN_ICONS)
+    if "reading" in pin:
+        checked["reading"] = _one_of(pin["reading"], f"{path}.reading", PIN_READINGS)
+    if "glow" in pin:
+        checked["glow"] = _number(pin["glow"], f"{path}.glow", PIN_GLOW_LOW, PIN_GLOW_HIGH)
+    if "glowColor" in pin:
+        color = pin["glowColor"]
+        if not isinstance(color, str) or (color != "warm" and not _HEX_COLOR_RE.fullmatch(color)):
+            _fail(f"{path}.glowColor", "must be warm or a colour like #FFB347")
+        checked["glowColor"] = color
+    tap = None
+    if "tap" in pin:
+        tap = checked["tap"] = _one_of(pin["tap"], f"{path}.tap", PIN_TAPS)
+    if "pageId" in pin:
+        if tap != "page":
+            _fail(f"{path}.pageId", "is only for a pin whose tap is page")
+        checked["pageId"] = _uuid(pin["pageId"], f"{path}.pageId")
+    elif tap == "page":
+        _fail(f"{path}.pageId", "is missing")
     return checked
 
 
@@ -325,10 +461,11 @@ def check_document(raw: Any) -> dict[str, Any]:
     contract's order. A new object; ``raw`` is not changed. ``invalid`` for
     anything off the contract (the message says where), ``too_large`` for a
     map over 256 KiB as stored."""
-    doc = _object(raw, "doc", ("v", "floors"))
+    doc = _object(raw, "doc", ("v", "floors"), ("style",))
     version = doc["v"]
     if isinstance(version, bool) or version != DOCUMENT_VERSION:
         _fail("doc.v", f"must be {DOCUMENT_VERSION}")
+    style = _style(doc["style"]) if "style" in doc else {}
     ids = _Ids()
     rooms_in_all = 0
     pins_in_all = 0
@@ -359,7 +496,10 @@ def check_document(raw: Any) -> dict[str, Any]:
         floors.append(
             {"id": floor_id, "name": name, "story": story, "rooms": rooms, "pins": pins}
         )
-    checked = {"v": DOCUMENT_VERSION, "floors": floors}
+    checked: dict[str, Any] = {"v": DOCUMENT_VERSION}
+    if style:
+        checked["style"] = style
+    checked["floors"] = floors
     size = document_bytes(checked)
     if size > MAX_DOCUMENT_BYTES:
         raise HomeMapTooLargeError(

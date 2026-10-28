@@ -27,6 +27,7 @@ import {
   type HomeMapWall,
   type HomePoint,
   homeMapBounds,
+  homeMapObjectsShown,
   homeMapPinLook,
   homeMapRoomCenter,
   homeMapRoomName,
@@ -193,7 +194,7 @@ function roomShape(room: HomeMapRoom, options: HomePlanOptions): SVGTemplateResu
 }
 
 function furniture(room: HomeMapRoom): SVGTemplateResult[] {
-  return room.objects.map((o) => {
+  return homeMapObjectsShown(room).map((o) => {
     const [w, d] = o.size;
     const rx = Math.min(w, d) * 0.18;
     return svg`<rect class="hm-object" x=${r3(o.c[0] - w / 2)} y=${r3(o.c[1] - d / 2)} width=${r3(w)} height=${r3(d)} rx=${r3(rx)}

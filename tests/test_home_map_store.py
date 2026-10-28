@@ -15,8 +15,11 @@ stored rev, ``base_rev`` refusals, numbers rounded to 2 decimals and refused
 when not finite or out of range, every shape refusal (keys missing or not
 in the contract, ids, entity ids, area ids, kinds, a pin's room), the floor,
 room and pin limits over the whole document, the 256 KiB limit, the
-optional keys, ids kept in their own case, a restart, an unreadable file
-never saved over, and unload.
+optional keys, ids kept in their own case, the editor's keys (the home
+style with its defaults dropped, a room's finish, a hidden object, an
+opening's style, a pin's name, icon, reading, glow, glow colour, tap and
+page: each accepted, refused, rounded and kept in the contract's order), a
+restart, an unreadable file never saved over, and unload.
 """
 
 from __future__ import annotations
@@ -386,7 +389,7 @@ PART_REFUSALS = [
     (_set(_pin, "roomId", OTHER_UUID), "doc.floors[0].pins[0].roomId names no room of this floor"),
     (_set(_pin, "roomId", "living"), "doc.floors[0].pins[0].roomId must be a UUID"),
     (_set(_pin, "at", [0.8, 3.1]), "doc.floors[0].pins[0].at must be a list of 3 numbers"),
-    (_set(_pin, "icon", "mdi:lamp"), "doc.floors[0].pins[0].icon is not a key the home map has"),
+    (_set(_pin, "label", "Lamp"), "doc.floors[0].pins[0].label is not a key the home map has"),
     (_drop(_pin, "id"), "doc.floors[0].pins[0].id is missing"),
 ]
 
@@ -484,6 +487,234 @@ def test_an_empty_home_is_a_map(env) -> None:
     assert env.store.save({"v": 1, "floors": []}, 0) == 1
     assert env.store.get() == ({"v": 1, "floors": []}, 1)
     assert env.store.has_map is True
+
+
+# ── the editor's keys ────────────────────────────────────────────────────
+
+PAGE = "C3A0E000-0000-4000-8000-0000000000CC"
+
+
+def _keys(value: dict[str, Any]) -> list[str]:
+    return list(value.keys())
+
+
+def test_the_home_style_is_kept_without_its_defaults_and_before_the_floors(env) -> None:
+    doc = basic()
+    # Sent in another order, and after the floors.
+    doc["style"] = {"glow": False, "devices": "all", "turn": 40, "look": "night", "names": False, "furniture": False}
+    checked = env.mod.check_document(doc)
+    assert _keys(checked) == ["v", "style", "floors"]
+    assert _keys(checked["style"]) == ["look", "turn", "names", "devices", "furniture", "glow"]
+    assert checked["style"] == {
+        "look": "night", "turn": 40, "names": False, "devices": "all", "furniture": False, "glow": False,
+    }
+    # Defaults are dropped, and a style left empty goes.
+    doc["style"] = {"look": "plan", "turn": -28, "names": True, "devices": "lights", "furniture": True, "glow": True}
+    assert _keys(env.mod.check_document(doc)) == ["v", "floors"]
+    doc["style"] = {}
+    assert _keys(env.mod.check_document(doc)) == ["v", "floors"]
+    doc["style"] = {"look": "clay", "glow": True}
+    assert env.mod.check_document(doc)["style"] == {"look": "clay"}
+
+
+def test_the_home_styles_turn_is_whole_degrees(env) -> None:
+    doc = basic()
+    doc["style"] = {"turn": 12.4}
+    assert env.mod.check_document(doc)["style"] == {"turn": 12}
+    doc["style"] = {"turn": -27.6}  # rounds to the default, so it goes
+    assert "style" not in env.mod.check_document(doc)
+    for turn in (180, -180):
+        doc["style"] = {"turn": turn}
+        assert env.mod.check_document(doc)["style"] == {"turn": turn}
+
+
+STYLE_REFUSALS = [
+    ({"look": "glow"}, "doc.style.look must be plan, night, warm, lines, clay, blueprint or dots"),
+    ({"look": None}, "doc.style.look must be plan, night, warm, lines, clay, blueprint or dots"),
+    ({"turn": 181}, "doc.style.turn must be a whole number between -180 and 180"),
+    ({"turn": "40"}, "doc.style.turn must be a whole number between -180 and 180"),
+    ({"turn": True}, "doc.style.turn must be a whole number between -180 and 180"),
+    ({"turn": math.nan}, "doc.style.turn must be a whole number between -180 and 180"),
+    ({"names": 0}, "doc.style.names must be true or false"),
+    ({"devices": "some"}, "doc.style.devices must be lights, all or none"),
+    ({"furniture": "no"}, "doc.style.furniture must be true or false"),
+    ({"glow": None}, "doc.style.glow must be true or false"),
+    ({"tapLights": True}, "doc.style.tapLights is not a key the home map has"),
+    ([], "doc.style must be an object"),
+]
+
+
+@pytest.mark.parametrize(("style", "message"), STYLE_REFUSALS)
+def test_style_refusals(env, style, message) -> None:
+    doc = basic()
+    doc["style"] = style
+    assert env.refused_doc(doc) == message
+
+
+def test_a_rooms_finish(env) -> None:
+    doc = basic()
+    living = _living(doc)
+    # Sent last; kept after pageId's place and before the outline.
+    living["finish"] = "carpet"
+    living["pageId"] = PAGE
+    checked = env.mod.check_document(doc)
+    assert _keys(checked["floors"][0]["rooms"][0]) == [
+        "id", "name", "areaId", "pageId", "finish", "outline", "height", "walls", "openings", "objects",
+    ]
+    for finish in ("wood", "tile", "stone", "carpet", "plain"):
+        living["finish"] = finish
+        assert env.mod.check_document(doc)["floors"][0]["rooms"][0]["finish"] == finish
+    living["finish"] = "marble"
+    assert env.refused_doc(doc) == "doc.floors[0].rooms[0].finish must be wood, tile, stone, carpet or plain"
+
+
+def test_a_hidden_object(env) -> None:
+    doc = basic()
+    _object_(doc)["hidden"] = True
+    _living(doc)["objects"][1] = {"hidden": False, **_living(doc)["objects"][1]}
+    checked = env.mod.check_document(doc)
+    objects = checked["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == ["kind", "c", "size", "turn", "hidden"]
+    assert objects[0]["hidden"] is True
+    # Shown is the default and is never stored.
+    assert "hidden" not in objects[1]
+    _object_(doc)["hidden"] = 1
+    assert env.refused_doc(doc) == "doc.floors[0].rooms[0].objects[0].hidden must be true or false"
+
+
+def test_an_openings_style(env) -> None:
+    doc = basic()
+    window, door, way = _living(doc)["openings"]
+    window["style"] = "sliding"
+    door["style"] = "double"
+    checked = env.mod.check_document(doc)
+    openings = checked["floors"][0]["rooms"][0]["openings"]
+    assert _keys(openings[0]) == ["kind", "style", "a", "b", "z0", "z1"]
+    assert [o.get("style") for o in openings] == ["sliding", "double", None]
+    door["style"] = "sliding"
+    assert env.mod.check_document(doc)["floors"][0]["rooms"][0]["openings"][1]["style"] == "sliding"
+
+
+OPENING_STYLE_REFUSALS = [
+    (0, "double", "doc.floors[0].rooms[0].openings[0].style double is only for a door"),
+    (2, "sliding", "doc.floors[0].rooms[0].openings[2].style is only for a door or a window"),
+    (2, "double", "doc.floors[0].rooms[0].openings[2].style is only for a door or a window"),
+    (1, "french", "doc.floors[0].rooms[0].openings[1].style must be sliding or double"),
+    (1, None, "doc.floors[0].rooms[0].openings[1].style must be sliding or double"),
+]
+
+
+@pytest.mark.parametrize(("index", "style", "message"), OPENING_STYLE_REFUSALS)
+def test_opening_style_refusals(env, index, style, message) -> None:
+    doc = basic()
+    _living(doc)["openings"][index]["style"] = style
+    assert env.refused_doc(doc) == message
+
+
+def _full_pin(doc) -> dict[str, Any]:
+    pin = _pin(doc)
+    # Every key, sent in an order of its own.
+    pin.clear()
+    pin.update(
+        {
+            "pageId": PAGE,
+            "tap": "page",
+            "glowColor": "#ffB347",
+            "glow": 1.704,
+            "reading": "name",
+            "icon": "lamp",
+            "name": "Floor Lamp",
+            "at": [0.8, 3.1, 1.6],
+            "roomId": LIVING,
+            "entityId": "light.reading_lamp",
+            "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000100",
+        }
+    )
+    return pin
+
+
+def test_a_pins_editor_keys_in_order_and_rounded(env) -> None:
+    doc = basic()
+    _full_pin(doc)
+    checked = env.mod.check_document(doc)
+    pin = checked["floors"][0]["pins"][0]
+    assert _keys(pin) == [
+        "id", "entityId", "roomId", "at", "name", "icon", "reading", "glow", "glowColor", "tap", "pageId",
+    ]
+    assert pin["glow"] == 1.7
+    assert pin["glowColor"] == "#ffB347"  # kept in its own case
+    assert pin["name"] == "Floor Lamp"
+    env.store.save(doc, 0)
+    assert env.store.get()[0]["floors"][0]["pins"][0] == pin
+
+
+def test_each_pin_key_choice_is_accepted(env) -> None:
+    doc = basic()
+    pin = _pin(doc)
+    for icon in env.mod.PIN_ICONS:
+        pin["icon"] = icon
+        env.mod.check_document(doc)
+    for reading in ("none", "name"):
+        pin["reading"] = reading
+        env.mod.check_document(doc)
+    for tap in ("toggle", "details", "none"):
+        pin["tap"] = tap
+        env.mod.check_document(doc)
+    for glow in (0.2, 10, 3):
+        pin["glow"] = glow
+        env.mod.check_document(doc)
+    pin["glowColor"] = "warm"
+    pin["name"] = "x" * 100
+    env.mod.check_document(doc)
+    assert len(env.mod.PIN_ICONS) == 16
+
+
+def _pin_set(key, value):
+    return _set(_pin, key, value)
+
+
+PIN_REFUSALS = [
+    (_pin_set("name", ""), "doc.floors[0].pins[0].name must not be empty"),
+    (_pin_set("name", "x" * 101), "doc.floors[0].pins[0].name is at most 100 characters"),
+    (_pin_set("name", 7), "doc.floors[0].pins[0].name must be text"),
+    (_pin_set("icon", "mdi:lamp"), "doc.floors[0].pins[0].icon must be bulb, lamp, ceiling, strip, plug, fan, tv, speaker, thermostat, sensor, motion, door, lock, camera, blinds or vacuum"),
+    (_pin_set("reading", "pill"), "doc.floors[0].pins[0].reading must be none or name"),
+    (_pin_set("glow", 0.19), "doc.floors[0].pins[0].glow must be between 0.2 and 10"),
+    (_pin_set("glow", 10.01), "doc.floors[0].pins[0].glow must be between 0.2 and 10"),
+    (_pin_set("glow", "big"), "doc.floors[0].pins[0].glow must be a number"),
+    (_pin_set("glowColor", "#FFB34"), "doc.floors[0].pins[0].glowColor must be warm or a colour like #FFB347"),
+    (_pin_set("glowColor", "orange"), "doc.floors[0].pins[0].glowColor must be warm or a colour like #FFB347"),
+    (_pin_set("glowColor", "#GGB347"), "doc.floors[0].pins[0].glowColor must be warm or a colour like #FFB347"),
+    (_pin_set("tap", "open"), "doc.floors[0].pins[0].tap must be toggle, details, page or none"),
+    (_pin_set("tap", "page"), "doc.floors[0].pins[0].pageId is missing"),
+    (_pin_set("pageId", PAGE), "doc.floors[0].pins[0].pageId is only for a pin whose tap is page"),
+]
+
+
+@pytest.mark.parametrize(("mutate", "message"), PIN_REFUSALS)
+def test_pin_key_refusals(env, mutate, message) -> None:
+    doc = basic()
+    mutate(doc)
+    assert env.refused_doc(doc) == message
+
+
+def test_a_pins_page_goes_with_tap_page_only(env) -> None:
+    doc = basic()
+    pin = _pin(doc)
+    pin["tap"] = "toggle"
+    pin["pageId"] = PAGE
+    assert env.refused_doc(doc) == "doc.floors[0].pins[0].pageId is only for a pin whose tap is page"
+    pin["tap"] = "page"
+    pin["pageId"] = "page-1"
+    assert env.refused_doc(doc) == "doc.floors[0].pins[0].pageId must be a UUID"
+    pin["pageId"] = PAGE.lower()
+    assert env.mod.check_document(doc)["floors"][0]["pins"][0]["pageId"] == PAGE.lower()
+
+
+def test_an_old_map_reads_the_same(env) -> None:
+    # None of the editor's keys: the first version's map, unchanged.
+    checked = env.mod.check_document(basic())
+    assert json.dumps(checked) == json.dumps(basic())
 
 
 # ── limits ───────────────────────────────────────────────────────────────

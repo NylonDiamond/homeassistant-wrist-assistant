@@ -3,9 +3,10 @@
 // (`HomeMapFlatView.swift`, `HomeMapIsoArt.swift`, `HomeMapTileRules.swift`):
 //
 // - plan: the floor seen from above like the iPhone's Flat view. Each room's
-//   floor laid in its material (boards, tiles, stone or carpet, by its name
-//   or its furniture) with a gentle fall of light and a soft shade along its
-//   walls, a warm pool round each light that is on kept inside its room,
+//   floor laid in its material (boards, tiles, stone, carpet or a plain
+//   floor, by the room's finish or else its name or its furniture) with a
+//   gentle fall of light and a soft shade along its walls, a warm pool round
+//   each light that is on kept inside its room,
 //   the doorways' thresholds and the doors' dashed swings, the furniture
 //   from above with a soft shadow, the walls near white with a dark edge,
 //   blue window panes, the doors' leaves standing open, and the room names
@@ -72,10 +73,21 @@ import {
   onWallLine,
   segmentLength,
 } from "./geometry.js";
-import { type HomeMapFloor, type HomeMapOpening, type HomeMapPin, type HomeMapRoom, type HomeMapStates, type HomePoint, homeMapPinLook, homeMapPinRoom } from "./model.js";
+import {
+  type HomeMapFloor,
+  type HomeMapLook,
+  type HomeMapOpening,
+  type HomeMapPin,
+  type HomeMapRoom,
+  type HomeMapStates,
+  type HomePoint,
+  homeMapPinLook,
+  homeMapPinRoom,
+  homeMapShownFloor,
+} from "./model.js";
 
-/** A Home map tile's look (`homeMapLook`). */
-export type HomeTileLook = "plan" | "night" | "warm" | "lines" | "clay" | "blueprint" | "dots";
+/** A Home map tile's look (`homeMapLook`), as the home style names it. */
+export type HomeTileLook = HomeMapLook;
 
 /** The looks drawn as a small model turned and tipped back. */
 export const HOME_TILE_MODEL_LOOKS: readonly HomeTileLook[] = ["night", "warm", "lines", "clay", "blueprint"];
@@ -149,6 +161,7 @@ const PLAN_FLOOR: Record<HomeFloorKind, string> = {
   tile: rgba(0.8, 0.79, 0.76),
   stone: rgba(0.74, 0.76, 0.78),
   carpet: rgba(0.6, 0.57, 0.54),
+  plain: rgba(0.66, 0.65, 0.63),
 };
 
 const PLAN_FLOOR_LINE: Record<HomeFloorKind, string> = {
@@ -156,6 +169,7 @@ const PLAN_FLOOR_LINE: Record<HomeFloorKind, string> = {
   tile: rgba(0, 0, 0, 0.14),
   stone: rgba(0, 0, 0, 0.14),
   carpet: "none",
+  plain: "none",
 };
 
 type ModelStyle = "night" | "warm" | "lines" | "clay" | "blueprint";
@@ -165,9 +179,9 @@ const MODEL = {
   floor(style: ModelStyle, kind: HomeFloorKind): Tone {
     switch (style) {
       case "night":
-        return ({ wood: [0.29, 0.23, 0.17], tile: [0.23, 0.235, 0.25], stone: [0.23, 0.24, 0.25], carpet: [0.25, 0.23, 0.27] } as const)[kind];
+        return ({ wood: [0.29, 0.23, 0.17], tile: [0.23, 0.235, 0.25], stone: [0.23, 0.24, 0.25], carpet: [0.25, 0.23, 0.27], plain: [0.24, 0.24, 0.25] } as const)[kind];
       case "warm":
-        return ({ wood: [0.42, 0.29, 0.2], tile: [0.36, 0.32, 0.28], stone: [0.33, 0.31, 0.29], carpet: [0.36, 0.2, 0.18] } as const)[kind];
+        return ({ wood: [0.42, 0.29, 0.2], tile: [0.36, 0.32, 0.28], stone: [0.33, 0.31, 0.29], carpet: [0.36, 0.2, 0.18], plain: [0.34, 0.31, 0.28] } as const)[kind];
       case "lines": return [0.043, 0.051, 0.07];
       case "clay": return [0.914, 0.902, 0.882];
       case "blueprint": return [0.09, 0.25, 0.5];
@@ -521,7 +535,8 @@ export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
 }
 
 function draw(o: HomeTileArtOptions): SVGTemplateResult {
-  const floor = o.floor;
+  // A hidden object is drawn nowhere.
+  const floor = homeMapShownFloor(o.floor);
   const outline = floor.rooms.flatMap((r) => r.outline);
   const model = HOME_TILE_MODEL_LOOKS.includes(o.look);
   const turn = (Math.max(-180, Math.min(180, Math.round(o.turn ?? HOME_TILE_DEFAULT_TURN))) * Math.PI) / 180;

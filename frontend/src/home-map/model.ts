@@ -14,7 +14,13 @@
 //
 // Every edit is a plain value (`HomeMapEdit`) applied to a document
 // (`applyHomeMapEdit`), so a save refused `conflict` can put the same edit
-// on the map Home Assistant holds now and save again (`save.ts`).
+// on the map Home Assistant holds now and save again (`save.ts`). The map
+// editor's own edits are in `edit-ops.ts`.
+//
+// The editor's keys (the home style, a room's finish, a hidden object, an
+// opening's style, a pin's name, icon, reading, glow, glow colour, tap and
+// page) are all optional, and a default is never stored: the key is left
+// out, so a map written before them reads the same.
 
 /** A point on the plan: x, y. */
 export type HomePoint = [number, number];
@@ -28,8 +34,15 @@ export interface HomeMapWall {
 
 export type HomeMapOpeningKind = "door" | "window" | "opening";
 
+/** How a door or window opens: `double`, a door of two leaves meeting in
+ * the middle, each with its swing; `sliding`, a door or window of two offset
+ * panes with no swing. Absent is a plain hinged door or plain window. */
+export type HomeMapOpeningStyle = "sliding" | "double";
+
 export interface HomeMapOpening {
   kind: HomeMapOpeningKind;
+  /** Never on an `opening`; `double` never on a window. */
+  style?: HomeMapOpeningStyle;
   a: HomePoint;
   b: HomePoint;
   /** Bottom and top. */
@@ -47,7 +60,14 @@ export interface HomeMapObject {
   size: [number, number, number];
   /** The turn around z, in degrees. */
   turn: number;
+  /** Drawn nowhere, but kept so an editor can show it again. Only ever
+   * true; shown is the key left out. */
+  hidden?: true;
 }
+
+/** What a room's floor is laid with. Absent: picked from the room's name
+ * and furniture (`homeFloorKind`). */
+export type HomeMapFinish = "wood" | "tile" | "stone" | "carpet" | "plain";
 
 export interface HomeMapRoom {
   id: string;
@@ -56,12 +76,26 @@ export interface HomeMapRoom {
   areaId?: string;
   /** The page a tap on the room opens on the watch. */
   pageId?: string;
+  finish?: HomeMapFinish;
   outline: HomePoint[];
   height: number;
   walls: HomeMapWall[];
   openings: HomeMapOpening[];
   objects: HomeMapObject[];
 }
+
+/** A pin's icon in place of the one its entity's domain and device class
+ * pick. */
+export type HomeMapPinIcon =
+  | "bulb" | "lamp" | "ceiling" | "strip" | "plug" | "fan" | "tv" | "speaker"
+  | "thermostat" | "sensor" | "motion" | "door" | "lock" | "camera" | "blinds" | "vacuum";
+
+/** What a pin's pill shows in place of its reading: its name, or no pill. */
+export type HomeMapPinReading = "none" | "name";
+
+/** What a tap on a pin does in place of the tile's own tap: turn it on or
+ * off, open its details, open the page `pageId`, or nothing. */
+export type HomeMapPinTap = "toggle" | "details" | "page" | "none";
 
 export interface HomeMapPin {
   id: string;
@@ -70,7 +104,63 @@ export interface HomeMapPin {
   roomId?: string;
   /** x, y, z. */
   at: [number, number, number];
+  /** The name shown on the map, 1 to 100 characters; absent is the
+   * entity's own. */
+  name?: string;
+  icon?: HomeMapPinIcon;
+  reading?: HomeMapPinReading;
+  /** A light's pool of light, its radius in meters, 0.2 to 10. */
+  glow?: number;
+  /** `warm` or `#RRGGBB` in either case; absent follows the light. */
+  glowColor?: string;
+  tap?: HomeMapPinTap;
+  /** Only with `tap` page, which needs it. */
+  pageId?: string;
 }
+
+/** A Home map tile's look: the floor from above (`plan`, `dots`) or as a
+ * small model (the rest). */
+export type HomeMapLook = "plan" | "night" | "warm" | "lines" | "clay" | "blueprint" | "dots";
+
+/** Which devices a Home map tile draws. */
+export type HomeMapDevicesShown = "lights" | "all" | "none";
+
+/** The home style: what every Home map tile starts with when the tile has
+ * no key of its own. Each key only when it differs from its default
+ * (`HOME_MAP_STYLE_DEFAULTS`). */
+export interface HomeMapStyle {
+  look?: HomeMapLook;
+  /** Whole degrees, -180 to 180. */
+  turn?: number;
+  names?: boolean;
+  devices?: HomeMapDevicesShown;
+  furniture?: boolean;
+  glow?: boolean;
+}
+
+/** The home style's defaults, never stored. */
+export const HOME_MAP_STYLE_DEFAULTS: Readonly<Required<HomeMapStyle>> = {
+  look: "plan",
+  turn: -28,
+  names: true,
+  devices: "lights",
+  furniture: true,
+  glow: true,
+};
+
+export const HOME_MAP_LOOKS: readonly HomeMapLook[] = ["plan", "night", "warm", "lines", "clay", "blueprint", "dots"];
+export const HOME_MAP_DEVICES_SHOWN: readonly HomeMapDevicesShown[] = ["lights", "all", "none"];
+export const HOME_MAP_FINISHES: readonly HomeMapFinish[] = ["wood", "tile", "stone", "carpet", "plain"];
+export const HOME_MAP_OPENING_STYLES: readonly HomeMapOpeningStyle[] = ["sliding", "double"];
+export const HOME_MAP_PIN_ICONS: readonly HomeMapPinIcon[] = [
+  "bulb", "lamp", "ceiling", "strip", "plug", "fan", "tv", "speaker",
+  "thermostat", "sensor", "motion", "door", "lock", "camera", "blinds", "vacuum",
+];
+export const HOME_MAP_PIN_READINGS: readonly HomeMapPinReading[] = ["none", "name"];
+export const HOME_MAP_PIN_TAPS: readonly HomeMapPinTap[] = ["toggle", "details", "page", "none"];
+/** A light's pool of light, in meters. */
+export const HOME_MAP_GLOW_LOW = 0.2;
+export const HOME_MAP_GLOW_HIGH = 10;
 
 export interface HomeMapFloor {
   id: string;
@@ -82,6 +172,8 @@ export interface HomeMapFloor {
 
 export interface HomeMapDocument {
   v: 1;
+  /** Left out when empty. */
+  style?: HomeMapStyle;
   floors: HomeMapFloor[];
 }
 
@@ -112,6 +204,13 @@ const UUID_RE = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0
 const ENTITY_ID_RE = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 const AREA_ID_RE = /^[A-Za-z0-9_-]{1,255}$/;
 const OBJECT_KIND_RE = /^[a-z][A-Za-z0-9]{0,39}$/;
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+/** Whether a value is a pin's glow colour: `warm`, or `#RRGGBB` in either
+ * case. */
+export function isHomeMapGlowColor(value: unknown): value is string {
+  return value === "warm" || (typeof value === "string" && HEX_COLOR_RE.test(value));
+}
 
 /** Whether a value is shaped like a UUID, in either case. */
 export function isHomeMapId(value: unknown): value is string {
@@ -191,6 +290,40 @@ function uuid(raw: unknown, path: string): string {
   return raw;
 }
 
+/** `a, b or c`, as the messages name a key's choices. */
+function words(choices: readonly string[]): string {
+  return `${choices.slice(0, -1).join(", ")} or ${choices[choices.length - 1]}`;
+}
+
+function oneOf<T extends string>(raw: unknown, path: string, choices: readonly T[]): T {
+  if (typeof raw !== "string" || !choices.includes(raw as T)) fail(path, `must be ${words(choices)}`);
+  return raw as T;
+}
+
+function bool(raw: unknown, path: string): boolean {
+  if (typeof raw !== "boolean") fail(path, "must be true or false");
+  return raw;
+}
+
+/** The home style with its defaults dropped, in the contract's order. */
+function checkStyle(raw: unknown): HomeMapStyle {
+  const style = object(raw, "doc.style", [], Object.keys(HOME_MAP_STYLE_DEFAULTS));
+  const out: HomeMapStyle = {};
+  if (Object.hasOwn(style, "look")) out.look = oneOf(style.look, "doc.style.look", HOME_MAP_LOOKS);
+  if (Object.hasOwn(style, "turn")) {
+    const turn = style.turn;
+    const whole = typeof turn === "number" && Number.isFinite(turn) ? Math.round(turn) : NaN;
+    if (!(whole >= -180 && whole <= 180)) fail("doc.style.turn", "must be a whole number between -180 and 180");
+    out.turn = whole === 0 ? 0 : whole;
+  }
+  if (Object.hasOwn(style, "names")) out.names = bool(style.names, "doc.style.names");
+  if (Object.hasOwn(style, "devices")) out.devices = oneOf(style.devices, "doc.style.devices", HOME_MAP_DEVICES_SHOWN);
+  if (Object.hasOwn(style, "furniture")) out.furniture = bool(style.furniture, "doc.style.furniture");
+  if (Object.hasOwn(style, "glow")) out.glow = bool(style.glow, "doc.style.glow");
+  for (const key of Object.keys(out) as (keyof HomeMapStyle)[]) if (out[key] === HOME_MAP_STYLE_DEFAULTS[key]) delete out[key];
+  return out;
+}
+
 /** The floor, room and pin ids seen so far: unique across the document,
  * whatever their case. */
 class Ids {
@@ -206,7 +339,7 @@ class Ids {
 }
 
 function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
-  const room = object(raw, path, ["id", "outline", "height", "walls", "openings", "objects"], ["name", "areaId", "pageId"]);
+  const room = object(raw, path, ["id", "outline", "height", "walls", "openings", "objects"], ["name", "areaId", "pageId", "finish"]);
   const out: Partial<HomeMapRoom> = { id: ids.take(room.id, `${path}.id`) };
   if (Object.hasOwn(room, "name")) out.name = text(room.name, `${path}.name`);
   if (Object.hasOwn(room, "areaId")) {
@@ -214,6 +347,7 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
     out.areaId = room.areaId;
   }
   if (Object.hasOwn(room, "pageId")) out.pageId = uuid(room.pageId, `${path}.pageId`);
+  if (Object.hasOwn(room, "finish")) out.finish = oneOf(room.finish, `${path}.finish`, HOME_MAP_FINISHES);
   out.outline = list(room.outline, `${path}.outline`, MAX_OUTLINE_POINTS, 3).map((p, i) => point(p, `${path}.outline[${i}]`, 2));
   out.height = number(room.height, `${path}.height`, 0.01, 100);
   out.walls = list(room.walls, `${path}.walls`, MAX_WALLS).map((w, i) => {
@@ -223,30 +357,45 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   });
   out.openings = list(room.openings, `${path}.openings`, MAX_OPENINGS).map((o, i) => {
     const where = `${path}.openings[${i}]`;
-    const opening = object(o, where, ["kind", "a", "b", "z0", "z1"]);
+    const opening = object(o, where, ["kind", "a", "b", "z0", "z1"], ["style"]);
     if (!OPENING_KINDS.includes(opening.kind as HomeMapOpeningKind)) fail(`${where}.kind`, "must be door, window or opening");
+    const kind = opening.kind as HomeMapOpeningKind;
+    const checked: HomeMapOpening = { kind } as HomeMapOpening;
+    if (Object.hasOwn(opening, "style")) {
+      const style = oneOf(opening.style, `${where}.style`, HOME_MAP_OPENING_STYLES);
+      if (kind === "opening") fail(`${where}.style`, "is only for a door or a window");
+      if (kind === "window" && style === "double") fail(`${where}.style`, "double is only for a door");
+      checked.style = style;
+    }
     const z0 = number(opening.z0, `${where}.z0`);
     const z1 = number(opening.z1, `${where}.z1`);
     if (z1 < z0) fail(`${where}.z1`, "must not be below z0");
-    return { kind: opening.kind as HomeMapOpeningKind, a: point(opening.a, `${where}.a`, 2), b: point(opening.b, `${where}.b`, 2), z0, z1 };
+    checked.a = point(opening.a, `${where}.a`, 2);
+    checked.b = point(opening.b, `${where}.b`, 2);
+    checked.z0 = z0;
+    checked.z1 = z1;
+    return checked;
   });
   out.objects = list(room.objects, `${path}.objects`, MAX_OBJECTS).map((o, i) => {
     const where = `${path}.objects[${i}]`;
-    const item = object(o, where, ["kind", "c", "size", "turn"]);
+    const item = object(o, where, ["kind", "c", "size", "turn"], ["hidden"]);
     if (typeof item.kind !== "string" || !OBJECT_KIND_RE.test(item.kind)) fail(`${where}.kind`, "must be a RoomPlan category in lower camel case");
     if (!Array.isArray(item.size) || item.size.length !== 3) fail(`${where}.size`, "must be a list of 3 numbers");
-    return {
+    const checked: HomeMapObject = {
       kind: item.kind,
       c: point(item.c, `${where}.c`, 2),
       size: item.size.map((v, j) => number(v, `${where}.size[${j}]`, 0, 1000)) as [number, number, number],
       turn: number(item.turn, `${where}.turn`),
     };
+    // Shown is the default, so a false hidden is left out.
+    if (Object.hasOwn(item, "hidden") && bool(item.hidden, `${where}.hidden`)) checked.hidden = true;
+    return checked;
   });
   return out as HomeMapRoom;
 }
 
 function checkPin(raw: unknown, path: string, ids: Ids, roomIds: ReadonlySet<string>): HomeMapPin {
-  const pin = object(raw, path, ["id", "entityId", "at"], ["roomId"]);
+  const pin = object(raw, path, ["id", "entityId", "at"], ["roomId", "name", "icon", "reading", "glow", "glowColor", "tap", "pageId"]);
   const out: Partial<HomeMapPin> = { id: ids.take(pin.id, `${path}.id`) };
   if (!isHomeMapEntityId(pin.entityId)) fail(`${path}.entityId`, "must be an entity id, like light.reading_lamp");
   out.entityId = pin.entityId;
@@ -256,6 +405,23 @@ function checkPin(raw: unknown, path: string, ids: Ids, roomIds: ReadonlySet<str
     out.roomId = roomId;
   }
   out.at = point(pin.at, `${path}.at`, 3);
+  if (Object.hasOwn(pin, "name")) {
+    const name = text(pin.name, `${path}.name`);
+    if (name === "") fail(`${path}.name`, "must not be empty");
+    out.name = name;
+  }
+  if (Object.hasOwn(pin, "icon")) out.icon = oneOf(pin.icon, `${path}.icon`, HOME_MAP_PIN_ICONS);
+  if (Object.hasOwn(pin, "reading")) out.reading = oneOf(pin.reading, `${path}.reading`, HOME_MAP_PIN_READINGS);
+  if (Object.hasOwn(pin, "glow")) out.glow = number(pin.glow, `${path}.glow`, HOME_MAP_GLOW_LOW, HOME_MAP_GLOW_HIGH);
+  if (Object.hasOwn(pin, "glowColor")) {
+    if (!isHomeMapGlowColor(pin.glowColor)) fail(`${path}.glowColor`, "must be warm or a colour like #FFB347");
+    out.glowColor = pin.glowColor;
+  }
+  if (Object.hasOwn(pin, "tap")) out.tap = oneOf(pin.tap, `${path}.tap`, HOME_MAP_PIN_TAPS);
+  if (Object.hasOwn(pin, "pageId")) {
+    if (out.tap !== "page") fail(`${path}.pageId`, "is only for a pin whose tap is page");
+    out.pageId = uuid(pin.pageId, `${path}.pageId`);
+  } else if (out.tap === "page") fail(`${path}.pageId`, "is missing");
   return out as HomeMapPin;
 }
 
@@ -272,8 +438,9 @@ export function homeMapBytes(doc: unknown): number {
  */
 export function checkHomeMap(raw: unknown): HomeMapCheck {
   try {
-    const doc = object(raw, "doc", ["v", "floors"]);
+    const doc = object(raw, "doc", ["v", "floors"], ["style"]);
     if (doc.v !== HOME_MAP_VERSION) fail("doc.v", `must be ${HOME_MAP_VERSION}`);
+    const style = Object.hasOwn(doc, "style") ? checkStyle(doc.style) : {};
     const ids = new Ids();
     let rooms = 0;
     let pins = 0;
@@ -297,7 +464,7 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
       const checkedPins = rawPins.map((p, j) => checkPin(p, `${path}.pins[${j}]`, ids, roomIds));
       return { id, name, story, rooms: checkedRooms, pins: checkedPins };
     });
-    const checked: HomeMapDocument = { v: HOME_MAP_VERSION, floors };
+    const checked: HomeMapDocument = Object.keys(style).length > 0 ? { v: HOME_MAP_VERSION, style, floors } : { v: HOME_MAP_VERSION, floors };
     const size = homeMapBytes(checked);
     if (size > HOME_MAP_MAX_BYTES) {
       throw new CheckError("too_large", `a home map is at most ${HOME_MAP_MAX_BYTES / 1024} KiB; this one is ${Math.ceil(size / 1024)} KiB`);
@@ -433,6 +600,18 @@ export function homeMapRoomFloor(floor: HomeMapFloor, roomId: string | undefined
   return { ...floor, rooms: [room], pins: floor.pins.filter((p) => homeMapPinRoom(floor, p) === room) };
 }
 
+/** A room's objects that are drawn: every one not `hidden`. */
+export function homeMapObjectsShown(room: Pick<HomeMapRoom, "objects">): HomeMapObject[] {
+  return room.objects.filter((o) => o.hidden !== true);
+}
+
+/** A floor as it is drawn: each room without its hidden objects. The same
+ * floor when nothing is hidden, so drawing code can take it in once. */
+export function homeMapShownFloor(floor: HomeMapFloor): HomeMapFloor {
+  if (!floor.rooms.some((r) => r.objects.some((o) => o.hidden === true))) return floor;
+  return { ...floor, rooms: floor.rooms.map((r) => (r.objects.some((o) => o.hidden === true) ? { ...r, objects: homeMapObjectsShown(r) } : r)) };
+}
+
 /** The floor that holds a pin, or a room, by id. */
 export function homeMapFloorOf(doc: HomeMapDocument, id: string): HomeMapFloor | undefined {
   return doc.floors.find((f) => f.pins.some((p) => sameHomeMapId(p.id, id)) || f.rooms.some((r) => sameHomeMapId(r.id, id)));
@@ -516,11 +695,12 @@ export type HomeMapEdit =
 
 /** A room with its keys in the contract's order, the optional ones only
  * when set. */
-function orderedRoom(room: HomeMapRoom): HomeMapRoom {
+export function orderedRoom(room: HomeMapRoom): HomeMapRoom {
   const out: HomeMapRoom = { id: room.id } as HomeMapRoom;
   if (room.name !== undefined) out.name = room.name;
   if (room.areaId !== undefined) out.areaId = room.areaId;
   if (room.pageId !== undefined) out.pageId = room.pageId;
+  if (room.finish !== undefined) out.finish = room.finish;
   out.outline = room.outline;
   out.height = room.height;
   out.walls = room.walls;
@@ -529,11 +709,45 @@ function orderedRoom(room: HomeMapRoom): HomeMapRoom {
   return out;
 }
 
-function orderedPin(pin: HomeMapPin): HomeMapPin {
+/** An opening with its keys in the contract's order. */
+export function orderedOpening(opening: HomeMapOpening): HomeMapOpening {
+  const out = { kind: opening.kind } as HomeMapOpening;
+  if (opening.style !== undefined) out.style = opening.style;
+  out.a = opening.a;
+  out.b = opening.b;
+  out.z0 = opening.z0;
+  out.z1 = opening.z1;
+  return out;
+}
+
+/** An object with its keys in the contract's order, `hidden` only when
+ * true. */
+export function orderedObject(object: HomeMapObject): HomeMapObject {
+  const out: HomeMapObject = { kind: object.kind, c: object.c, size: object.size, turn: object.turn };
+  if (object.hidden === true) out.hidden = true;
+  return out;
+}
+
+/** A pin with its keys in the contract's order, the optional ones only
+ * when set. */
+export function orderedPin(pin: HomeMapPin): HomeMapPin {
   const out = { id: pin.id, entityId: pin.entityId } as HomeMapPin;
   if (pin.roomId !== undefined) out.roomId = pin.roomId;
   out.at = pin.at;
+  if (pin.name !== undefined) out.name = pin.name;
+  if (pin.icon !== undefined) out.icon = pin.icon;
+  if (pin.reading !== undefined) out.reading = pin.reading;
+  if (pin.glow !== undefined) out.glow = pin.glow;
+  if (pin.glowColor !== undefined) out.glowColor = pin.glowColor;
+  if (pin.tap !== undefined) out.tap = pin.tap;
+  if (pin.pageId !== undefined) out.pageId = pin.pageId;
   return out;
+}
+
+/** A map with its keys in the contract's order, the style only when it
+ * holds a key. */
+export function orderedDocument(doc: HomeMapDocument): HomeMapDocument {
+  return doc.style !== undefined && Object.keys(doc.style).length > 0 ? { v: doc.v, style: doc.style, floors: doc.floors } : { v: doc.v, floors: doc.floors };
 }
 
 /** The pin with its room set to the one it now stands in, or none. */
@@ -682,8 +896,11 @@ export function homeMapAreaChoices(hass: { areas?: Readonly<Record<string, { nam
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** A pin's name: its entity's friendly name, else its id. */
-export function homeMapPinName(pin: Pick<HomeMapPin, "entityId">, hass: { states?: HomeMapStates } | undefined): string {
+/** A pin's name: its own `name` when it has one, else its entity's friendly
+ * name, else its id. */
+export function homeMapPinName(pin: Pick<HomeMapPin, "entityId" | "name">, hass: { states?: HomeMapStates } | undefined): string {
+  const own = pin.name?.trim() ?? "";
+  if (own !== "") return own;
   const friendly = hass?.states?.[pin.entityId]?.attributes?.friendly_name;
   return typeof friendly === "string" && friendly.trim() !== "" ? friendly.trim() : pin.entityId;
 }

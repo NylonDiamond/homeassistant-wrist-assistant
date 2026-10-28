@@ -5,7 +5,9 @@
 // each piece of furniture's turned box and which way its back faces, where a
 // room's name goes, which way a room's boards run, what its floor is laid
 // with and where the boards' or tiles' lines lie, how far a lit lamp's glow
-// reaches, and the reading a sensor shows under its pin.
+// reaches, and the reading a sensor shows under its pin. The last section
+// holds the plain plane geometry the map editor's edits need (`edit-ops.ts`):
+// areas, turns, projections, crossings and cuts.
 //
 // Pure, with no drawing: `tile-art.ts` draws with these. Units are meters on
 // the plan, x to the right and y down, as the map stores them (`model.ts`).
@@ -125,11 +127,13 @@ export interface HomeDoorSwing {
 /** A door wider than this opens as two leaves meeting in its middle. */
 const DOUBLE_DOOR_WIDTH = 1.3;
 
-/** One door's swings: one leaf hung at `a`, or two for a wide door. The
- * leaves open into `room`, towards where its name goes. */
+/** One door's swings: one leaf hung at `a`, or two meeting in the middle
+ * for a `double` door, or a wide door with no style; none for a `sliding`
+ * door, which has no swing. The leaves open into `room`, towards where its
+ * name goes. */
 export function homeDoorSwingsOf(door: HomeMapOpening, room: HomeMapRoom): HomeDoorSwing[] {
   const width = Math.hypot(door.b[0] - door.a[0], door.b[1] - door.a[1]);
-  if (width <= HOME_TOLERANCE) return [];
+  if (width <= HOME_TOLERANCE || door.style === "sliding") return [];
   const ux = (door.b[0] - door.a[0]) / width;
   const uy = (door.b[1] - door.a[1]) / width;
   let nx = -uy;
@@ -146,7 +150,7 @@ export function homeDoorSwingsOf(door: HomeMapOpening, room: HomeMapRoom): HomeD
     const leaf = Math.hypot(shut[0] - hinge[0], shut[1] - hinge[1]);
     return { hinge, shut, open: [hinge[0] + nx * leaf, hinge[1] + ny * leaf] };
   };
-  if (width <= DOUBLE_DOOR_WIDTH) return [swing(door.a, door.b)];
+  if (door.style !== "double" && width <= DOUBLE_DOOR_WIDTH) return [swing(door.a, door.b)];
   const mid: HomePoint = [(door.a[0] + door.b[0]) / 2, (door.a[1] + door.b[1]) / 2];
   return [swing(door.a, mid), swing(door.b, mid)];
 }
@@ -184,7 +188,7 @@ export function homePointBounds(points: readonly HomePoint[]): { minX: number; m
 }
 
 /** The area centroid of a polygon, undefined when its area is zero. */
-function centroid(polygon: readonly HomePoint[]): HomePoint | undefined {
+export function homePolygonCentroid(polygon: readonly HomePoint[]): HomePoint | undefined {
   let area = 0;
   let cx = 0;
   let cy = 0;
@@ -221,7 +225,7 @@ export function homePolygonHolds(polygon: readonly HomePoint[], point: readonly 
 export function homeLabelPoint(room: Pick<HomeMapRoom, "outline">): HomePoint | undefined {
   const outline = room.outline;
   if (outline.length === 0) return undefined;
-  const middle = outline.length >= 3 ? centroid(outline) : undefined;
+  const middle = outline.length >= 3 ? homePolygonCentroid(outline) : undefined;
   if (middle === undefined) {
     const n = outline.length;
     return [outline.reduce((s, p) => s + p[0], 0) / n, outline.reduce((s, p) => s + p[1], 0) / n];
@@ -280,13 +284,13 @@ export function homeBoxCorners(box: HomeBox): HomePoint[] {
 const CHAIR_REACH = 1.4;
 
 /** How far `p` is from the nearest point of `segment`. */
-function distanceTo(p: HomePoint, segment: HomeSegment): number {
+export function homeDistanceToSegment(p: readonly number[], segment: Pick<HomeSegment, "a" | "b">): number {
   const dx = segment.b[0] - segment.a[0];
   const dy = segment.b[1] - segment.a[1];
   const len2 = dx * dx + dy * dy;
-  if (len2 <= 0) return Math.hypot(p[0] - segment.a[0], p[1] - segment.a[1]);
-  const t = Math.min(Math.max(((p[0] - segment.a[0]) * dx + (p[1] - segment.a[1]) * dy) / len2, 0), 1);
-  return Math.hypot(p[0] - (segment.a[0] + t * dx), p[1] - (segment.a[1] + t * dy));
+  if (len2 <= 0) return Math.hypot(p[0]! - segment.a[0], p[1]! - segment.a[1]);
+  const t = Math.min(Math.max(((p[0]! - segment.a[0]) * dx + (p[1]! - segment.a[1]) * dy) / len2, 0), 1);
+  return Math.hypot(p[0]! - (segment.a[0] + t * dx), p[1]! - (segment.a[1] + t * dy));
 }
 
 /** Which end of a piece's depth is its back: +1 for the end at plus half
@@ -310,16 +314,17 @@ export function homeBackSign(object: HomeMapObject, among: readonly HomeMapObjec
       return Math.hypot(plus[0] - table[0], plus[1] - table[1]) >= Math.hypot(minus[0] - table[0], minus[1] - table[1]) ? 1 : -1;
     }
   }
-  const nearest = (p: HomePoint) => walls.reduce((m, w) => Math.min(m, distanceTo(p, w)), Infinity);
+  const nearest = (p: HomePoint) => walls.reduce((m, w) => Math.min(m, homeDistanceToSegment(p, w)), Infinity);
   return nearest(plus) <= nearest(minus) ? 1 : -1;
 }
 
 // ── what a room's floor is ──────────────────────────────────────────────
 
 /** What a room's floor is laid with: boards, large tiles, small stone
- * tiles or carpet. A good guess from the room's name and furniture, not the
+ * tiles, carpet, or a plain floor with no lines. The room's `finish` when it
+ * names one, else a good guess from the room's name and furniture, not the
  * room's real floor. */
-export type HomeFloorKind = "wood" | "tile" | "stone" | "carpet";
+export type HomeFloorKind = "wood" | "tile" | "stone" | "carpet" | "plain";
 
 /** The words in a room's name that say what it is, each with its floor.
  * Earlier words win, so "Bathroom" is stone though it holds "room". */
@@ -332,10 +337,18 @@ const FLOOR_WORDS: readonly [string, HomeFloorKind][] = [
   ["master", "carpet"], ["bed", "carpet"],
 ];
 
-/** A room's floor: from its name first, then from what the scan found in
- * it (a toilet or a bath is a bathroom, a hob, fridge, dishwasher or washer
- * a kitchen or utility room, a bed a bedroom), else boards. */
-export function homeFloorKind(room: Pick<HomeMapRoom, "name" | "objects">): HomeFloorKind {
+/** A room's floor: its `finish` when it has one, else from its name, then
+ * from what the scan found in it (a toilet or a bath is a bathroom, a hob,
+ * fridge, dishwasher or washer a kitchen or utility room, a bed a bedroom),
+ * else boards. */
+export function homeFloorKind(room: Pick<HomeMapRoom, "name" | "objects" | "finish">): HomeFloorKind {
+  if (room.finish !== undefined) return room.finish;
+  return homeFloorGuess(room);
+}
+
+/** The floor a room's name and furniture suggest, whatever its `finish`:
+ * what an editor shows as "Auto". */
+export function homeFloorGuess(room: Pick<HomeMapRoom, "name" | "objects">): HomeFloorKind {
   const name = room.name?.toLowerCase() ?? "";
   if (name !== "") {
     const words = new Set(name.split(/[^\p{L}]+/u).filter((w) => w !== ""));
@@ -345,7 +358,7 @@ export function homeFloorKind(room: Pick<HomeMapRoom, "name" | "objects">): Home
       if (word.length <= 3 ? words.has(word) : name.includes(word)) return kind;
     }
   }
-  const kinds = new Set(room.objects.map((o) => o.kind));
+  const kinds = new Set(room.objects.filter((o) => o.hidden !== true).map((o) => o.kind));
   const any = (list: string[]) => list.some((k) => kinds.has(k));
   if (any(["toilet", "bathtub"])) return "stone";
   if (any(["oven", "stove", "refrigerator", "dishwasher", "washerDryer"])) return "tile";
@@ -354,13 +367,14 @@ export function homeFloorKind(room: Pick<HomeMapRoom, "name" | "objects">): Home
 }
 
 /** How far apart a floor's lines lie, in meters: a board's width, a tile's
- * side. Undefined for carpet, which has none. */
+ * side. Undefined for carpet and a plain floor, which have none. */
 export function homeFloorSpacing(kind: HomeFloorKind): number | undefined {
   switch (kind) {
     case "wood": return 0.18;
     case "tile": return 0.6;
     case "stone": return 0.3;
-    case "carpet": return undefined;
+    case "carpet":
+    case "plain": return undefined;
   }
 }
 
@@ -452,4 +466,143 @@ export function homePinReading(entityId: string, states: HomeMapStates | undefin
   if (domain === "climate") return homeReadingText(entity.attributes?.current_temperature, "°");
   if (domain === "sensor") return homeReadingText(entity.state, entity.attributes?.unit_of_measurement);
   return undefined;
+}
+
+// ── for the editor ──────────────────────────────────────────────────────
+
+/** A polygon's area by the shoelace sum, signed: positive when its points
+ * go clockwise on the y-down plan. */
+export function homePolygonArea(polygon: readonly HomePoint[]): number {
+  let sum = 0;
+  for (let i = 0; i < polygon.length; i += 1) {
+    const p = polygon[i]!;
+    const q = polygon[(i + 1) % polygon.length]!;
+    sum += p[0] * q[1] - q[0] * p[1];
+  }
+  return sum / 2;
+}
+
+/** The plan box a room covers: its outline and its walls. */
+export function homeRoomBounds(room: Pick<HomeMapRoom, "outline" | "walls">): { minX: number; minY: number; maxX: number; maxY: number } | undefined {
+  return homePointBounds([...room.outline, ...room.walls.flatMap((w) => [w.a, w.b])]);
+}
+
+/** `p` turned `degrees` round `pivot`, clockwise on the y-down plan. */
+export function homeTurnPoint(p: readonly number[], pivot: readonly number[], degrees: number): HomePoint {
+  const angle = (degrees * Math.PI) / 180;
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const x = p[0]! - pivot[0]!;
+  const y = p[1]! - pivot[1]!;
+  return [pivot[0]! + x * c - y * s, pivot[1]! + x * s + y * c];
+}
+
+/** Degrees folded into (-180, 180]. */
+export function homeNormalDegrees(degrees: number): number {
+  let value = degrees % 360;
+  if (value <= -180) value += 360;
+  if (value > 180) value -= 360;
+  return value === 0 ? 0 : value;
+}
+
+/** An angle less whole quarter turns, between -45 and 45 degrees' worth,
+ * in radians. */
+export function homeQuarterTurnRemainder(angle: number): number {
+  const quarter = Math.PI / 2;
+  let value = angle % quarter;
+  if (value > quarter / 2) value -= quarter;
+  if (value < -quarter / 2) value += quarter;
+  return value;
+}
+
+/** The way most of some walls run, in radians, as the app finds it
+ * (`HomeMapScanConverter.mainDirection`): each wall's angle times four
+ * summed by length, so walls at right angles count as one direction. 0 for
+ * none. */
+export function homeMainDirection(walls: readonly Pick<HomeSegment, "a" | "b">[]): number {
+  let c = 0;
+  let s = 0;
+  for (const w of walls) {
+    const angle = Math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]);
+    const length = segmentLength(w);
+    c += length * Math.cos(4 * angle);
+    s += length * Math.sin(4 * angle);
+  }
+  return Math.hypot(c, s) > 1e-9 ? Math.atan2(s, c) / 4 : 0;
+}
+
+/** Where `p` falls on the line through `a` and `b`: the meters along it
+ * from `a`, the fraction of the way to `b`, the foot of the square from
+ * `p`, and how far `p` is from the line, positive when it lies on the right
+ * of a to b as seen on the y-down plan. */
+export function homeProject(p: readonly number[], a: HomePoint, b: HomePoint): { along: number; t: number; point: HomePoint; offset: number } {
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (length <= 1e-12) return { along: 0, t: 0, point: a, offset: Math.hypot(p[0]! - a[0], p[1]! - a[1]) };
+  const ux = (b[0] - a[0]) / length;
+  const uy = (b[1] - a[1]) / length;
+  const along = (p[0]! - a[0]) * ux + (p[1]! - a[1]) * uy;
+  const offset = (p[1]! - a[1]) * ux - (p[0]! - a[0]) * uy;
+  return { along, t: along / length, point: [a[0] + ux * along, a[1] + uy * along], offset };
+}
+
+/** Which side of the line from `a` to `b` a point lies: the cross product,
+ * positive on one side, negative on the other, 0 on it. */
+export function homeSide(p: readonly number[], a: HomePoint, b: HomePoint): number {
+  return (b[0] - a[0]) * (p[1]! - a[1]) - (b[1] - a[1]) * (p[0]! - a[0]);
+}
+
+/** Where the lines through `p` along `d` and through `q` along `e` cross;
+ * undefined for parallel lines. */
+export function homeLineCrossing(p: HomePoint, d: HomePoint, q: HomePoint, e: HomePoint): HomePoint | undefined {
+  const den = d[0] * e[1] - d[1] * e[0];
+  if (Math.abs(den) < 1e-9) return undefined;
+  const t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den;
+  return [p[0] + d[0] * t, p[1] + d[1] * t];
+}
+
+/** Where two segments cross, their ends included; undefined when they do
+ * not, or lie along one line. */
+export function homeSegmentCrossing(a1: HomePoint, a2: HomePoint, b1: HomePoint, b2: HomePoint): HomePoint | undefined {
+  const d: HomePoint = [a2[0] - a1[0], a2[1] - a1[1]];
+  const e: HomePoint = [b2[0] - b1[0], b2[1] - b1[1]];
+  const den = d[0] * e[1] - d[1] * e[0];
+  if (Math.abs(den) < 1e-12) return undefined;
+  const t = ((b1[0] - a1[0]) * e[1] - (b1[1] - a1[1]) * e[0]) / den;
+  const u = ((b1[0] - a1[0]) * d[1] - (b1[1] - a1[1]) * d[0]) / den;
+  const eps = 1e-9;
+  if (t < -eps || t > 1 + eps || u < -eps || u > 1 + eps) return undefined;
+  return [a1[0] + d[0] * t, a1[1] + d[1] * t];
+}
+
+/** The part of a polygon on one side of the line from `a` to `b`: where
+ * `homeSide` is at least 0 (`keep` 1) or at most 0 (`keep` -1). A concave
+ * polygon cut into two pieces on one side comes back as one ring joined
+ * along the line. */
+export function homeClipPolygon(polygon: readonly HomePoint[], a: HomePoint, b: HomePoint, keep: 1 | -1): HomePoint[] {
+  const out: HomePoint[] = [];
+  const side = (p: HomePoint) => keep * homeSide(p, a, b);
+  for (let i = 0; i < polygon.length; i += 1) {
+    const p = polygon[i]!;
+    const q = polygon[(i + 1) % polygon.length]!;
+    const sp = side(p);
+    const sq = side(q);
+    if (sp >= 0) out.push(p);
+    if ((sp > 0 && sq < 0) || (sp < 0 && sq > 0)) {
+      const t = sp / (sp - sq);
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+    }
+  }
+  return out;
+}
+
+/** The part of a segment on one side of the line from `a` to `b`, as
+ * `homeClipPolygon` keeps it; undefined when none of it is. */
+export function homeClipSegment(p: HomePoint, q: HomePoint, a: HomePoint, b: HomePoint, keep: 1 | -1): [HomePoint, HomePoint] | undefined {
+  const sp = keep * homeSide(p, a, b);
+  const sq = keep * homeSide(q, a, b);
+  if (sp < 0 && sq < 0) return undefined;
+  if (sp >= 0 && sq >= 0) return [p, q];
+  const t = sp / (sp - sq);
+  const cut: HomePoint = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+  return sp >= 0 ? [p, cut] : [cut, q];
 }
