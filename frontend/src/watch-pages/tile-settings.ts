@@ -106,7 +106,10 @@ import {
   WATCH_HOME_MAP_TAP_LIGHTS_HINT,
   WATCH_HOME_MAP_LOOKS,
   WATCH_HOME_MAP_LOOK_HINTS,
+  WATCH_HOME_MAP_ROOM_HINT,
   setWatchHomeMapLook,
+  setWatchHomeMapRoom,
+  watchHomeMapRoomMenu,
   watchHomeMapLook,
   watchHomeMapTapsLights,
   watchHomeMapFloorMenu,
@@ -1787,8 +1790,16 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
       <div class="hint ts-under">${WATCH_HOME_MAP_TAP_LIGHTS_HINT}</div>`
     : nothing;
   const look = watchHomeMapLook(host.tile as WatchPageTile & Record<string, unknown>);
+  // One room of the floor, or the whole floor (the key removed).
+  const rooms = watchHomeMapRoomMenu(host.tile, host.homeMap);
+  const room = rooms === undefined
+    ? nothing
+    : html`${menuField("Room", rooms, (roomId) =>
+        commit(host, "homeMapRoomId", (d) => setWatchHomeMapRoom(d, host.pageId, host.tileId, roomId)))}
+      <div class="hint ts-under">${WATCH_HOME_MAP_ROOM_HINT}</div>`;
   return html`${menuField("Floor", menu, pick)}
     <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
+    ${room}
     ${segField("Look", look, WATCH_HOME_MAP_LOOKS, (v) =>
       commit(host, "homeMapLook", (d) => setWatchHomeMapLook(d, host.pageId, host.tileId, v)), { def: "glow" })}
     <div class="hint ts-under">${WATCH_HOME_MAP_LOOK_HINTS[look]}</div>

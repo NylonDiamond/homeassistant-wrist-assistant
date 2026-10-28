@@ -27,10 +27,18 @@ import {
   WATCH_HOME_MAP_TAP_LIGHTS_HINT,
   WATCH_HOME_MAP_LOOKS,
   WATCH_HOME_MAP_LOOK_HINTS,
+  WATCH_HOME_MAP_ROOM_HINT,
+  WATCH_HOME_MAP_WHOLE_FLOOR_TEXT,
   setWatchHomeMapFloor,
   setWatchHomeMapLook,
+  setWatchHomeMapRoom,
   setWatchHomeMapTapLights,
+  watchHomeMapDrawnFloor,
+  watchHomeMapFloorSummary,
   watchHomeMapLook,
+  watchHomeMapRoomId,
+  watchHomeMapRoomMenu,
+  watchHomeMapTileTitle,
   watchHomeMapAddFloors,
   watchHomeMapFloorId,
   watchHomeMapFloorMenu,
@@ -47,6 +55,8 @@ const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocume
 
 const FLOOR = "7B1E0C2A-5D3F-4A8B-9C6D-000000000001";
 const UPSTAIRS = "7B1E0C2A-5D3F-4A8B-9C6D-000000000002";
+const LIVING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000010";
+const KITCHEN = "7B1E0C2A-5D3F-4A8B-9C6D-000000000011";
 const PAGE = "C3A0E000-0000-4000-8000-0000000000A1";
 const TILE = "C3A0E000-0000-4000-8000-0000000000A2";
 
@@ -331,6 +341,59 @@ describe("the Home map tile's settings", () => {
     const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
     expect(keys.homeMapLook).toMatch(/^A Home map tile's look/);
   });
+
+  it("offer the Room on both devices, right under the Floor, stored as homeMapRoomId and removed for Whole floor", () => {
+    for (const device of [undefined, "iphone"] as const) {
+      const { host, tile } = tileHost(`home_map.${FLOOR}`, fixture(), device);
+      const text = flatten(draw(host));
+      expect(text).toContain("<span>Room</span>");
+      expect(text).toContain(WATCH_HOME_MAP_ROOM_HINT);
+      expect(text.indexOf("<span>Room</span>")).toBeGreaterThan(text.indexOf("<span>Floor</span>"));
+      expect(text.indexOf("<span>Room</span>")).toBeLessThan(text.indexOf("Look"));
+      expect(text).toContain(`>${WATCH_HOME_MAP_WHOLE_FLOOR_TEXT}</option>`);
+      expect(text).toContain(">Living room</option>");
+      expect(text).toContain(">Kitchen</option>");
+      expect(watchHomeMapRoomId(tile() as Record<string, unknown>)).toBeUndefined();
+      handler(draw(host), "<span>Room</span>", "@change=")({ target: { value: KITCHEN } });
+      expect((tile() as Record<string, unknown>).homeMapRoomId).toBe(KITCHEN);
+      expect(watchHomeMapRoomMenu(tile(), fixture())!.selected).toBe(KITCHEN);
+      expect(watchHomeMapFloorSummary(tile(), fixture())).toBe("Ground floor · Kitchen");
+      handler(draw(host), "<span>Room</span>", "@change=")({ target: { value: "" } });
+      expect(Object.hasOwn(tile(), "homeMapRoomId")).toBe(false);
+    }
+    // Only a Home map tile takes one.
+    const { draft } = draftOf([{ id: TILE, entityId: "light.kitchen" }]);
+    expect(setWatchHomeMapRoom(draft.document, PAGE, TILE, KITCHEN)).toBe(draft.document);
+    const keys = (pageKeys as unknown as { notes: { keys: Record<string, string> } }).notes.keys;
+    expect(keys.homeMapRoomId).toMatch(/^A Home map tile's one room/);
+  });
+
+  it("name an unnamed room by its place, keep a room the floor lost until another is picked, and drop the room with the floor", () => {
+    const doc = fixture();
+    delete doc.floors[0]!.rooms[1]!.name;
+    const menu = watchHomeMapRoomMenu({ entityId: `home_map.${FLOOR}` }, doc)!;
+    expect(menu.options).toEqual([
+      { value: "", label: WATCH_HOME_MAP_WHOLE_FLOOR_TEXT },
+      { value: LIVING, label: "Living room" },
+      { value: KITCHEN, label: "Room 2" },
+    ]);
+    expect(menu.selected).toBe("");
+    const gone = "7B1E0C2A-5D3F-4A8B-9C6D-0000000000EE";
+    const lost = watchHomeMapRoomMenu({ entityId: `home_map.${FLOOR}`, homeMapRoomId: gone } as WatchPageTile, fixture())!;
+    expect(lost.selected).toBe(`stored:${gone}`);
+    expect(lost.options[0]).toEqual({ value: `stored:${gone}`, label: WATCH_HOME_MAP_MISSING_TEXT, disabled: true });
+    // Ids compare ignoring case.
+    expect(watchHomeMapRoomMenu({ entityId: `home_map.${FLOOR}`, homeMapRoomId: KITCHEN.toLowerCase() } as WatchPageTile, fixture())!.selected).toBe(KITCHEN);
+    // No menu for a floor the map does not have.
+    expect(watchHomeMapRoomMenu({ entityId: `home_map.${UPSTAIRS}` }, fixture())).toBeUndefined();
+    // Moving the tile to another floor shows that whole floor.
+    const own = draftOf([{ id: TILE, entityId: `home_map.${FLOOR}`, homeMapRoomId: KITCHEN, homeMapLook: "night" } as WatchPageTile]);
+    const moved = setWatchHomeMapFloor(own.draft.document, PAGE, TILE, UPSTAIRS);
+    const tile = ((moved.pages as WatchPage[])[0]!.items as WatchPageTile[])[0] as unknown as Record<string, unknown>;
+    expect(tile.entityId).toBe(`home_map.${UPSTAIRS}`);
+    expect(Object.hasOwn(tile, "homeMapRoomId")).toBe(false);
+    expect(tile.homeMapLook).toBe("night");
+  });
 });
 
 // ── the picture ──────────────────────────────────────────────────────────
@@ -377,6 +440,53 @@ describe("the Home map tile's picture", () => {
     const night = face("night");
     expect(night).toContain("url(#wa-hm-glow-night)");
     expect(night).toContain("background:#08090B");
+  });
+
+  it("draws only the tile's room, filling the tile, with that room's pins and lights", () => {
+    const input = { page, pages: [page], screen, scale: 1, states, stateMode: "live" as const, homeMap: fixture() };
+    const face = (room?: string) => flatten(renderWatchTileFace({ ...tile, ...(room === undefined ? {} : { homeMapRoomId: room }) } as WatchPageTile, { width: 180, height: 110 }, input, 14));
+    // The living room alone: its outline is the box, its lamp is the one lit.
+    const living = face(LIVING);
+    expect(living).toContain(`data-home-map-room=${LIVING}`);
+    expect(living).toContain("viewBox=-0.4 -0.4 6.8 5.8");
+    expect(living).toContain(`data-room=${LIVING}`);
+    expect(living).not.toContain(`data-room=${KITCHEN}`);
+    expect(living.split("hm-room-glow").length - 1).toBe(1);
+    expect(living).toContain(">1 light on</span>");
+    // The kitchen alone: its pendants are off, so nothing is lit.
+    const kitchen = face(KITCHEN.toLowerCase());
+    expect(kitchen).toContain("viewBox=5.6 -0.4 4.8 5.8");
+    expect(kitchen).not.toContain(`data-room=${LIVING}`);
+    expect(kitchen).not.toContain("hm-room-glow");
+    expect(kitchen).toContain(">No lights on</span>");
+    // A room the floor no longer has draws the whole floor.
+    const lost = face("7B1E0C2A-5D3F-4A8B-9C6D-0000000000EE");
+    expect(lost).toContain("viewBox=-0.4 -0.4 10.8 5.8");
+    expect(lost).not.toMatch(/data-home-map-room=[0-9A-Fa-f]/);
+  });
+
+  it("puts a pin in the room it names, else the room under its point", () => {
+    const doc = fixture();
+    const floor = doc.floors[0]!;
+    // The lamp names the kitchen though it stands in the living room; the
+    // ceiling light names nothing and stands in the living room.
+    floor.pins[0]!.roomId = KITCHEN;
+    delete floor.pins[1]!.roomId;
+    const drawn = (room: string) => watchHomeMapDrawnFloor({ entityId: `home_map.${FLOOR}`, homeMapRoomId: room }, doc)!;
+    expect(drawn(LIVING).rooms.map((r) => r.id)).toEqual([LIVING]);
+    expect(drawn(LIVING).pins.map((p) => p.entityId)).toEqual(["light.ceiling", "lock.side_door"]);
+    expect(drawn(KITCHEN).pins.map((p) => p.entityId)).toEqual(["light.reading_lamp", "light.pendants", "climate.thermostat"]);
+    expect(watchHomeMapDrawnFloor({ entityId: `home_map.${FLOOR}` }, doc)).toBe(floor);
+  });
+
+  it("titles the tile by its label, else its room, else its floor, else Home map", () => {
+    const doc = fixture();
+    const title = (t: Record<string, unknown>, d: HomeMapDocument | null = doc) => watchHomeMapTileTitle({ entityId: `home_map.${FLOOR}`, ...t }, d);
+    expect(title({ customLabel: "Downstairs", homeMapRoomId: KITCHEN })).toBe("Downstairs");
+    expect(title({ customLabel: " ", homeMapRoomId: KITCHEN })).toBe("Kitchen");
+    expect(title({ homeMapRoomId: "7B1E0C2A-5D3F-4A8B-9C6D-0000000000EE" })).toBe("Ground floor");
+    expect(title({})).toBe("Ground floor");
+    expect(title({}, null)).toBe("Home map");
   });
 
   it("draws the house in place of the plan before the map is read, or for a floor it does not have", () => {

@@ -71,7 +71,7 @@ import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
 import type { HomeMapDocument } from "../home-map/model.js";
 import { HOME_TILE_LOOK_COLORS, homePlan, homePlanViewBoxAttr } from "../home-map/draw.js";
-import { watchHomeMapFloorOf, watchHomeMapLook, watchHomeMapTileWords } from "./home-map-tile.js";
+import { watchHomeMapDrawnFloor, watchHomeMapLook, watchHomeMapRoomOf, watchHomeMapTileTitle, watchHomeMapTileWords } from "./home-map-tile.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
@@ -3339,27 +3339,34 @@ function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: 
  * A Home map tile (app repo docs/home_map_plan_2026-10.md, board 5): its
  * floor's flat plan, small, with a glow over each room with a light on and
  * a dot on each light that is on, and how many lights are on under it, on
- * the plan's dark ground on both devices (`home-map/draw.ts`). Before the
- * map is read, or when the map has no such floor, the house symbol stands
- * in for the plan and the line says which.
+ * the plan's dark ground on both devices (`home-map/draw.ts`). A tile that
+ * shows one room (`homeMapRoomId`) draws that room alone, filling the tile,
+ * and counts its lights only (`watchHomeMapDrawnFloor`). Before the map is
+ * read, or when the map has no such floor, the house symbol stands in for
+ * the plan and the line says which.
  */
 function homeMapFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
   const radius = previewTileCornerRadius(input, cell.width, cell.height) * s;
-  const floor = watchHomeMapFloorOf(tile, input.homeMap);
+  const keyed = tile as WatchPageTile & Record<string, unknown>;
+  const floor = watchHomeMapDrawnFloor(keyed, input.homeMap);
+  const room = watchHomeMapRoomOf(keyed, floor);
   const words = watchHomeMapTileWords(floor, input.states, input.homeMap !== undefined);
+  // The hover line leads with the tile's title (its label, else its room's
+  // or floor's name).
+  const title = hint === undefined ? undefined : [watchHomeMapTileTitle(keyed, input.homeMap), ...hint.split(" · ")].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ");
   const side = Math.min(width, height);
   const pad = Math.max(3, Math.min(8, side * 0.07)) * s;
   // A short tile keeps the plan and drops the line.
   const showWords = height >= 34;
-  const look = watchHomeMapLook(tile as WatchPageTile & Record<string, unknown>);
+  const look = watchHomeMapLook(keyed);
   // The dollhouse tips the plan back as the apps do; the walls do not stand
   // up here, a picture of the look is enough.
   const tilt = look === "dollhouse" ? "transform:perspective(600px) rotateX(54deg) rotateZ(-28deg) scale(0.9)" : nothing;
   const plan = floor === undefined
     ? symbolMark(input.icons, "house.fill", Math.min(28, side * 0.42) * s, "#FFD9A0")
     : html`<svg class="wp-hm-plan" data-look=${look} style=${tilt} viewBox=${homePlanViewBoxAttr(floor)} preserveAspectRatio="xMidYMid meet" aria-hidden="true">${homePlan(floor, { states: input.states, pins: "lit", roomGlow: true, look })}</svg>`;
-  return html`<div class="wp-tile wp-hm-face" data-home-map=${floor?.id ?? ""}
-    style=${`${box}border-radius:${radius}px;background:${HOME_TILE_LOOK_COLORS[look].ground};padding:${pad}px;gap:${pad * 0.6}px`} title=${hint ?? nothing}>
+  return html`<div class="wp-tile wp-hm-face" data-home-map=${floor?.id ?? ""} data-home-map-room=${room?.id ?? nothing}
+    style=${`${box}border-radius:${radius}px;background:${HOME_TILE_LOOK_COLORS[look].ground};padding:${pad}px;gap:${pad * 0.6}px`} title=${title ?? nothing}>
     <span class="wp-hm-plan-box">${plan}</span>
     ${showWords ? html`<span class="wp-hm-words" style=${`font-size:${Math.max(7, Math.min(13, height * 0.12)) * s}px`}>${words}</span>` : nothing}
   </div>`;

@@ -1359,6 +1359,10 @@
           "type": "string",
           "required": false
         },
+        "homeMapRoomId": {
+          "type": "string",
+          "required": false
+        },
         "associatedMediaPlayerId": {
           "type": "entity",
           "required": false
@@ -2376,7 +2380,8 @@
       "arrange": "The tile's Arrangement (docs/page_editor_calm_plan_2026-10.md in the app repo): {v: 1, parts: {icon, name, state}}, each part optional with spot (tl tc tr ml mc mr bl bc br), dx and dy (-0.5 to 0.5 of the tile's width and height), scale (0.8 to 1.5) and hidden. Absent is Default. Only the centred layout draws it; an app before 3.2 ignores it. The math is in frontend/test/fixtures-arrange/README.md.",
       "iconPhotoId": "The upper case UUID of a photo in the page image store (kind icon) that One Look draws in the icon's place (docs/photo_tiles_plan_2026-10.md in the app repo). Absent means no photo. The tile keeps its icon, drawn while the photo is not downloaded and by an app that does not know the key.",
       "homeMapTapLights": "A Home map tile on the iPhone: true draws every light on its floor as a dot, a tap on a dot runs that light's own tap and a tap anywhere else opens the map. Absent or false: every tap opens the map. The watch ignores it.",
-      "homeMapLook": "A Home map tile's look, on both devices: \"dots\" (every light a dot, yellow when on and gray when off), \"dollhouse\" (the plan tipped back with its walls standing up) or \"night\" (the plan almost black, only the lights' pools). Absent, \"glow\" or a look an app does not know: glow, a soft pool round each light that is on."
+      "homeMapLook": "A Home map tile's look, on both devices: \"dots\" (every light a dot, yellow when on and gray when off), \"dollhouse\" (the plan tipped back with its walls standing up) or \"night\" (the plan almost black, only the lights' pools). Absent, \"glow\" or a look an app does not know: glow, a soft pool round each light that is on.",
+      "homeMapRoomId": "A Home map tile's one room, on both devices: the id of a room of the tile's floor (compared ignoring case). The tile then draws that room alone with the pins in it (the room a pin names when the floor has it, else the room under its point), so the room fills the tile, and its lights on are that room's. Absent, or a room the floor no longer has: the whole floor. Changing the tile's floor removes it."
     }
   }
 }

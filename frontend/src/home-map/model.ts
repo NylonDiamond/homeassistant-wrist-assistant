@@ -422,6 +422,17 @@ export function homeMapPinRoom(floor: HomeMapFloor, pin: HomeMapPin): HomeMapRoo
   return homeMapRoomAt(floor, pin.at);
 }
 
+/** A floor cut down to one of its rooms, for a Home map tile that shows one
+ * room (`homeMapRoomId`): that room alone, and the pins that belong to it
+ * by `homeMapPinRoom` on the whole floor (the room a pin names when the
+ * floor has it, else the room it stands in). Everything drawn from a floor
+ * then reads the room alone. Undefined when the floor has no such room. */
+export function homeMapRoomFloor(floor: HomeMapFloor, roomId: string | undefined): HomeMapFloor | undefined {
+  const room = floor.rooms.find((r) => sameHomeMapId(r.id, roomId));
+  if (room === undefined) return undefined;
+  return { ...floor, rooms: [room], pins: floor.pins.filter((p) => homeMapPinRoom(floor, p) === room) };
+}
+
 /** The floor that holds a pin, or a room, by id. */
 export function homeMapFloorOf(doc: HomeMapDocument, id: string): HomeMapFloor | undefined {
   return doc.floors.find((f) => f.pins.some((p) => sameHomeMapId(p.id, id)) || f.rooms.some((r) => sameHomeMapId(r.id, id)));
