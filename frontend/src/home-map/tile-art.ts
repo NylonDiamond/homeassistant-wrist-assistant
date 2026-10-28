@@ -1009,9 +1009,11 @@ function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[
       for (const object of room.objects) {
         const box = homeBoxOf(object);
         if (box.width <= 0.02 || box.depth <= 0.02) continue;
-        // A raised thing (a TV on the wall) stands off the floor, never above
-        // its room's ceiling.
-        const lift = Math.min(Math.max(object.lift ?? 0, 0), Math.max(room.height, 0));
+        // A raised thing (a TV on the wall) stands off the floor, kept low
+        // enough that its top stays within the walls the model is fitted to,
+        // as the iPhone draws it.
+        const height = Math.min(Math.max(object.size[2], 0.05), FURNITURE_CAP);
+        const lift = Math.min(Math.max(object.lift ?? 0, 0), Math.max(tallWall(room) - height, 0));
         solids.push({
           part: "piece",
           kind: object.kind,
@@ -1020,7 +1022,7 @@ function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[
           roomId: room.id,
           quad: homeBoxCorners(box),
           z0: lift,
-          z1: lift + Math.min(Math.max(object.size[2], 0.05), FURNITURE_CAP),
+          z1: lift + height,
           seams: new Set(),
         });
       }
