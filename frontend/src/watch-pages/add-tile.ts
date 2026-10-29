@@ -88,6 +88,7 @@ import {
 import { type AddTileHost, type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type HomeMapFloor, homeMapFloorName } from "../home-map/model.js";
 import { WATCH_HOME_MAP_ADD_WORDS, watchHomeMapAddFloors, watchHomeMapAddedText } from "./home-map-tile.js";
+import { WATCH_MAP_PAGE_WORDS, makeWatchMapPage, watchMapPageAddRemovedCount } from "./map-page.js";
 import { detectCameraRatio } from "./special-settings.js";
 import {
   type WatchPage,
@@ -115,8 +116,9 @@ import {
 
 type LinkKind = "pageLink" | "peekLink";
 /** Which list is open under the kind buttons: pages to link to, the
- * iPhone's library of one kind, or the home map's floors. */
-type OpenList = LinkKind | WatchLibraryKind | "homeMap";
+ * iPhone's library of one kind, or the home map's floors for a Home map
+ * tile or a map page. */
+type OpenList = LinkKind | WatchLibraryKind | "homeMap" | "mapPage";
 
 /** What the dialog remembers between draws. One object, changed in place
  * and only here. */
@@ -137,6 +139,8 @@ interface AddTileView {
   /** Tiles added in this visit. */
   added: number;
   note: { tone: "ok" | "err"; text: string } | undefined;
+  /** The floor a map page waits on while its question shows. */
+  mapAsk: string | undefined;
   cache: WatchAddListCache;
 }
 
@@ -156,6 +160,7 @@ function freshView(pageId: string, cache = new WatchAddListCache()): AddTileView
     links: undefined,
     added: 0,
     note: undefined,
+    mapAsk: undefined,
     cache,
   };
 }
@@ -176,6 +181,7 @@ function viewOf(host: AddTileHost): AddTileView {
       links: undefined,
       added: 0,
       note: undefined,
+      mapAsk: undefined,
     });
   }
   host.uiState.delete(ENDED_KEY);
@@ -337,15 +343,66 @@ function addHomeMap(host: AddTileHost, view: AddTileView, floor: HomeMapFloor, f
 }
 
 /** The home map's floors to pick from, when it has more than one. */
-function renderHomeMapFloors(host: AddTileHost, view: AddTileView, floors: readonly HomeMapFloor[]): TemplateResult {
+function renderHomeMapFloors(
+  host: AddTileHost,
+  floors: readonly HomeMapFloor[],
+  question: string,
+  pick: (floor: HomeMapFloor) => void,
+): TemplateResult {
   return html`<div class="at-links" id="at-links">
-    <div class="at-sub">${WATCH_HOME_MAP_ADD_WORDS.question}</div>
+    <div class="at-sub">${question}</div>
     <div class="at-pages" role="group" aria-label="Floors">
       ${floors.map((f) => html`<button type="button" class="at-page" ?disabled=${host.busy}
-        @click=${() => addHomeMap(host, view, f, floors.length)}>
+        @click=${() => pick(f)}>
         <span class="at-page-name">${homeMapFloorName(f)}</span>
         <span class="at-tag">${f.rooms.length === 1 ? "1 room" : `${f.rooms.length} rooms`}</span>
       </button>`)}
+    </div>
+  </div>`;
+}
+
+/** Map page picked on a floor: a page with tiles asks first, since a map
+ * page holds only its map; an empty page becomes one at once. */
+function pickMapPage(host: AddTileHost, view: AddTileView, floor: HomeMapFloor): void {
+  if ((watchMapPageAddRemovedCount(host.document, host.pageId) ?? 0) > 0) {
+    view.mapAsk = floor.id;
+    host.requestUpdate();
+    return;
+  }
+  makeMapPage(host, view, floor.id);
+}
+
+/** Make the page a map page on the floor, as one undo step, and close the
+ * dialog: nothing more can be added to a map page. */
+function makeMapPage(host: AddTileHost, view: AddTileView, floorId: string): void {
+  view.mapAsk = undefined;
+  if (host.busy) {
+    view.note = { tone: "err", text: WATCH_ADD_BUSY_TEXT };
+    host.requestUpdate();
+    return;
+  }
+  const next = makeWatchMapPage(host.document, host.pageId, floorId);
+  if (next === host.document || !host.apply(next)) {
+    view.note = { tone: "err", text: WATCH_ADD_BUSY_TEXT };
+    host.requestUpdate();
+    return;
+  }
+  view.links = undefined;
+  host.selectTile(undefined);
+  host.close();
+}
+
+/** Map page's question on a page with tiles: how many go, then Cancel or
+ * Make map page. */
+function renderMapPageAsk(host: AddTileHost, view: AddTileView, floorId: string): TemplateResult {
+  const count = watchMapPageAddRemovedCount(host.document, host.pageId) ?? 0;
+  return html`<div class="at-links at-map-ask" id="at-links" role="alertdialog" aria-labelledby="at-map-ask-title">
+    <div class="at-sub" id="at-map-ask-title">${WATCH_MAP_PAGE_WORDS.askTitle}</div>
+    <div class="at-note err">${WATCH_MAP_PAGE_WORDS.addAsk(count)}</div>
+    <div class="at-map-ask-foot">
+      <button type="button" class="pe-btn" @click=${() => { view.mapAsk = undefined; host.requestUpdate(); }}>Cancel</button>
+      <button type="button" class="pe-btn pe-primary pe-danger" ?disabled=${host.busy}
+        @click=${() => makeMapPage(host, view, floorId)}>${WATCH_MAP_PAGE_WORDS.askConfirm}</button>
     </div>
   </div>`;
 }
@@ -515,7 +572,7 @@ function noPhoneLine(text: string | undefined): TemplateResult | typeof nothing 
 }
 
 /** Every kind with a button under "Other tiles". */
-type KindKey = WatchAddKindKey | WatchAppAddKey | WatchPhoneAddKind | "homeMap";
+type KindKey = WatchAddKindKey | WatchAppAddKey | WatchPhoneAddKind | "homeMap" | "mapPage";
 
 /** The panel's own glyph for a kind whose tile carries no symbol (a spacer,
  * a header), and for the others until the symbols have loaded. A kind with
@@ -531,6 +588,7 @@ const KIND_GLYPH: Readonly<Partial<Record<KindKey, UiIconName>>> = {
   assist: "mic",
   pointControl: "tap",
   homeMap: "home",
+  mapPage: "home",
   chart: "chart",
   textField: "keyboard",
   web: "globe",
@@ -618,6 +676,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
 
   const toggleLinks = (kind: OpenList) => {
     view.links = view.links === kind ? undefined : kind;
+    view.mapAsk = undefined;
     host.requestUpdate();
   };
   const catalog = host.catalog;
@@ -626,20 +685,35 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     (t) => t !== undefined,
   );
   // A button that opens a list; the list opens under its own group.
-  const listButton = (kind: Exclude<OpenList, "homeMap">) =>
+  const listButton = (kind: Exclude<OpenList, "homeMap" | "mapPage">) =>
     kindButton(host, kind, WATCH_ADD_KIND_WORDS[kind], { disabled: false, expanded: view.links === kind, onClick: () => toggleLinks(kind) });
   let linkList: TemplateResult | typeof nothing = nothing;
   let libraryList: TemplateResult | typeof nothing = nothing;
   if (view.links === "pageLink" || view.links === "peekLink") linkList = renderLinks(host, view, view.links);
-  else if (view.links !== undefined && view.links !== "homeMap" && watchCatalogKnows(catalog, view.links)) libraryList = renderLibrary(host, view, view.links, catalog!);
+  else if (view.links !== undefined && view.links !== "homeMap" && view.links !== "mapPage" && watchCatalogKnows(catalog, view.links)) libraryList = renderLibrary(host, view, view.links, catalog!);
   // The Home map tile, once the home's map has a floor with a room: one
   // floor adds at once, several open the floors under App tiles.
   const floors = watchHomeMapAddFloors(host.homeMap);
   const homeMapWords = { label: WATCH_HOME_MAP_ADD_WORDS.label, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_HOME_MAP_ADD_WORDS.hint, beta: true };
-  const homeMapButtons = floors.length === 0 ? [] : [floors.length === 1
+  const homeMapButtons: TemplateResult[] = floors.length === 0 ? [] : [floors.length === 1
     ? kindButton(host, "homeMap", homeMapWords, { disabled: busy, onClick: () => addHomeMap(host, view, floors[0]!, 1) })
     : kindButton(host, "homeMap", homeMapWords, { disabled: false, expanded: view.links === "homeMap", onClick: () => toggleLinks("homeMap") })];
-  const homeMapList = view.links === "homeMap" && floors.length > 1 ? renderHomeMapFloors(host, view, floors) : nothing;
+  // Map page beside it: the whole page becomes the map, so a page with
+  // tiles asks first. A page that cannot be one (system, smart) has none.
+  const canMapPage = watchMapPageAddRemovedCount(host.document, host.pageId) !== undefined;
+  const mapPageWords = { label: WATCH_MAP_PAGE_WORDS.addLabel, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_MAP_PAGE_WORDS.addHint, beta: true };
+  if (floors.length > 0 && canMapPage) {
+    homeMapButtons.push(floors.length === 1
+      ? kindButton(host, "mapPage", mapPageWords, { disabled: busy, onClick: () => pickMapPage(host, view, floors[0]!) })
+      : kindButton(host, "mapPage", mapPageWords, { disabled: false, expanded: view.links === "mapPage", onClick: () => toggleLinks("mapPage") }));
+  }
+  const homeMapList = view.mapAsk !== undefined
+    ? renderMapPageAsk(host, view, view.mapAsk)
+    : view.links === "homeMap" && floors.length > 1
+      ? renderHomeMapFloors(host, floors, WATCH_HOME_MAP_ADD_WORDS.question, (f) => addHomeMap(host, view, f, floors.length))
+      : view.links === "mapPage" && floors.length > 1
+        ? renderHomeMapFloors(host, floors, WATCH_MAP_PAGE_WORDS.addQuestion, (f) => pickMapPage(host, view, f))
+        : nothing;
   const searchChanged = (query: string, kind: string) => {
     view.query = query;
     view.kind = kind;
@@ -823,6 +897,7 @@ export const addTileStyles = css`
     border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised, var(--wa-panel));
   }
   .at-pages { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; }
+  .at-map-ask-foot { display: flex; justify-content: flex-end; gap: 8px; }
   button.at-page {
     display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px;
     border: 0; border-radius: 7px; background: none; color: var(--wa-ink); font: inherit; font-size: 13px;

@@ -15,8 +15,10 @@ import { deleteWatchPage, deleteWatchTile, dropWatchTile, findWatchPage, nudgeWa
 import { setWatchHomeMapFloor, setWatchHomeMapLook, setWatchHomeMapRoom } from "../src/watch-pages/home-map-tile.js";
 import {
   WATCH_MAP_PAGE_WORDS,
+  makeWatchMapPage,
   newMapWatchPage,
   setWatchMapPage,
+  watchMapPageAddRemovedCount,
   watchMapPageFloorId,
   watchMapPageRefusal,
   watchMapPageRemovedCount,
@@ -37,6 +39,8 @@ const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocume
 
 const FLOOR = "7B1E0C2A-5D3F-4A8B-9C6D-000000000001";
 const LIVING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000010";
+/** Any other floor id: the page's tile names what it is given. */
+const LIVING_FLOOR = "7B1E0C2A-5D3F-4A8B-9C6D-000000000002";
 const PAGE = "C3A0E000-0000-4000-8000-0000000000A1";
 const MAP_TILE = "C3A0E000-0000-4000-8000-0000000000A2";
 const LAMP_TILE = "C3A0E000-0000-4000-8000-0000000000A3";
@@ -196,6 +200,41 @@ describe("the Map page switch", () => {
     const page = pageOf(convertToSmartPage(doc({ mapPage: true, items: [mapTile()] }), PAGE));
     expect(Object.hasOwn(page, "mapPage")).toBe(false);
     expect(page.items).toEqual([]);
+  });
+});
+
+describe("Add tile's Map page", () => {
+  it("counts every tile it would remove, the Home map tile too", () => {
+    expect(watchMapPageAddRemovedCount(doc({ items: [lampTile(), mapTile()] }), PAGE)).toBe(2);
+    expect(watchMapPageAddRemovedCount(doc({}), PAGE)).toBe(0);
+  });
+
+  it("makes the page a map page with one new Home map tile on the floor picked, across the top", () => {
+    n = 20;
+    const d = doc({ items: [lampTile({ groupId: "G1" }), mapTile()], groups: [{ id: "G1" }] });
+    const page = pageOf(makeWatchMapPage(d, PAGE, LIVING_FLOOR, { newId: ids }));
+    expect(page.mapPage).toBe(true);
+    expect(page.groups).toEqual([]);
+    expect(watchPageTiles(page)).toHaveLength(1);
+    expect(watchPageTiles(page)[0]).toMatchObject({ id: "00000000-0000-4000-8000-000000000021", entityId: `home_map.${LIVING_FLOOR}`, gridCol: 0, gridRow: 0, colSpan: 12 });
+    expect(isMapWatchPage(page)).toBe(true);
+  });
+
+  it("changes nothing on a map page already, a smart or missing page, or without a floor", () => {
+    const on = doc({ mapPage: true, items: [mapTile()] });
+    expect(watchMapPageAddRemovedCount(on, PAGE)).toBeUndefined();
+    expect(makeWatchMapPage(on, PAGE, FLOOR)).toBe(on);
+    const smart = doc({ dynamicConfig: {}, items: [] });
+    expect(watchMapPageAddRemovedCount(smart, PAGE)).toBeUndefined();
+    expect(makeWatchMapPage(smart, PAGE, FLOOR)).toBe(smart);
+    const plain = doc({ items: [lampTile()] });
+    expect(makeWatchMapPage(plain, PAGE, "")).toBe(plain);
+    expect(makeWatchMapPage(plain, "NOPE", FLOOR)).toBe(plain);
+  });
+
+  it("asks with how many tiles go", () => {
+    expect(WATCH_MAP_PAGE_WORDS.addAsk(1)).toContain("the 1 tile");
+    expect(WATCH_MAP_PAGE_WORDS.addAsk(3)).toContain("the 3 tiles");
   });
 });
 

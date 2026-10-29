@@ -47,6 +47,12 @@ export const WATCH_MAP_PAGE_WORDS = {
   askTitle: "Make this a map page?",
   ask: (n: number) => `This removes ${n === 1 ? "1 tile" : `${n} tiles`}. A map page holds only its Home map tile. Undo brings ${n === 1 ? "it" : "them"} back.`,
   askConfirm: "Make map page",
+  /** Add tile's Map page button. */
+  addLabel: "Map page",
+  addHint: "The whole page is your home's live 3D map on the iPhone",
+  addQuestion: "Which floor should the map page show?",
+  /** Add tile's question on a page with tiles. */
+  addAsk: (n: number) => `A map page holds only its map, so this removes ${n === 1 ? "the 1 tile" : `the ${n} tiles`} on this page. Undo brings ${n === 1 ? "it" : "them"} back.`,
   /** The stage's status line and the inspector's line on a map page. */
   stage: "A map page holds only its Home map tile. Its floor, room and look are in the Map card.",
   /** The Map card's note over the tile's look keys. */
@@ -114,6 +120,36 @@ export function watchMapPageRemovedCount(document: WatchPagesDocument, pageId: s
   if (page === undefined || isMapWatchPage(page)) return undefined;
   const kept = watchMapPageTile(page);
   return watchPageTiles(page).filter((t) => t !== kept).length;
+}
+
+/** How many tiles Add tile's Map page would remove: every tile on the page.
+ * Undefined for a page that cannot be switched, or one that is a map page
+ * already. */
+export function watchMapPageAddRemovedCount(document: WatchPagesDocument, pageId: string): number | undefined {
+  const page = switchablePage(document, pageId);
+  if (page === undefined || isMapWatchPage(page)) return undefined;
+  return watchPageTiles(page).length;
+}
+
+/**
+ * Add tile's Map page: the page becomes a map page with one new Home map
+ * tile on `floorId`, placed at the top across the whole width; every tile
+ * and group it had goes. A system page, a smart page, a map page already,
+ * or no floor changes nothing.
+ */
+export function makeWatchMapPage(
+  document: WatchPagesDocument,
+  pageId: string,
+  floorId: string,
+  options?: WatchEditOptions,
+): WatchPagesDocument {
+  const page = switchablePage(document, pageId);
+  if (page === undefined || isMapWatchPage(page) || typeof floorId !== "string" || floorId === "") return document;
+  const tile = placedMapTile(newWatchHomeMapTile({ id: floorId }, { newId: options?.newId ?? randomWatchId }));
+  let next: JsonObject = { ...page, items: [tile] };
+  if (Array.isArray(page.groups) && page.groups.length > 0) next = { ...next, groups: [] };
+  next = withField(next, WATCH_MAP_PAGE_KEY, true);
+  return replacePage(document, page, next as WatchPage);
 }
 
 /** The document with one page replaced. */
