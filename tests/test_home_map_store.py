@@ -15,8 +15,9 @@ stored rev, ``base_rev`` refusals, numbers rounded to 2 decimals and refused
 when not finite or out of range, every shape refusal (keys missing or not
 in the contract, ids, entity ids, area ids, kinds, a pin's room), the floor,
 room and pin limits over the whole document, the 256 KiB limit, the
-optional keys, ids kept in their own case, the editor's keys (the home
-style with its defaults dropped, a room's finish and colours, a hidden object, an
+optional keys, ids kept in their own case, a floor's place (kept rounded
+and in order, refused out of bounds or off its shape), the editor's keys
+(the home style with its defaults dropped, a room's finish and colours, a hidden object, an
 opening's style, a pin's name, icon, reading, glow, glow colour, glow
 spill, tap and page: each accepted, refused, rounded and kept in the contract's order), a
 restart, an unreadable file never saved over, and unload.
@@ -558,6 +559,52 @@ STYLE_REFUSALS = [
 def test_style_refusals(env, style, message) -> None:
     doc = basic()
     doc["style"] = style
+    assert env.refused_doc(doc) == message
+
+
+def test_a_floors_place_is_kept_rounded_and_in_the_contracts_order(env) -> None:
+    doc = basic()
+    # Sent last, its keys in another order.
+    doc["floors"][0]["place"] = {"turn": 90.004, "y": -0.5, "x": 1.25678}
+    checked = env.mod.check_document(doc)
+    floor = checked["floors"][0]
+    assert _keys(floor) == ["id", "name", "story", "place", "rooms", "pins"]
+    assert _keys(floor["place"]) == ["x", "y", "turn"]
+    assert floor["place"] == {"x": 1.26, "y": -0.5, "turn": 90.0}
+    # Every bound is allowed, and minus zero is zero.
+    doc["floors"][0]["place"] = {"x": -500, "y": 500, "turn": -360}
+    assert env.mod.check_document(doc)["floors"][0]["place"] == {"x": -500, "y": 500, "turn": -360}
+    doc["floors"][0]["place"] = {"x": -0.001, "y": 0, "turn": 360}
+    assert env.mod.check_document(doc)["floors"][0]["place"] == {"x": 0.0, "y": 0, "turn": 360}
+    # Saved and read back, and a later save without it leaves it out.
+    doc["floors"][0]["place"] = {"x": 1.25, "y": -0.5, "turn": 90}
+    assert env.store.save(doc, 0) == 1
+    assert env.store.get()[0]["floors"][0]["place"] == {"x": 1.25, "y": -0.5, "turn": 90}
+    assert env.new_store().get()[0]["floors"][0]["place"] == {"x": 1.25, "y": -0.5, "turn": 90}
+    assert env.store.save(basic(), 1) == 2
+    assert "place" not in env.store.get()[0]["floors"][0]
+
+
+PLACE_WHERE = "doc.floors[0].place"
+PLACE_REFUSALS = [
+    ({"x": 501, "y": 0, "turn": 0}, f"{PLACE_WHERE}.x must be between -500 and 500"),
+    ({"x": 0, "y": -500.01, "turn": 0}, f"{PLACE_WHERE}.y must be between -500 and 500"),
+    ({"x": 0, "y": 0, "turn": 360.5}, f"{PLACE_WHERE}.turn must be between -360 and 360"),
+    ({"x": 0, "y": 0, "turn": -361}, f"{PLACE_WHERE}.turn must be between -360 and 360"),
+    ({"x": "1", "y": 0, "turn": 0}, f"{PLACE_WHERE}.x must be a number"),
+    ({"x": 0, "y": True, "turn": 0}, f"{PLACE_WHERE}.y must be a number"),
+    ({"x": 0, "y": 0, "turn": math.inf}, f"{PLACE_WHERE}.turn must be a finite number"),
+    ({"x": 0, "y": 0}, f"{PLACE_WHERE}.turn is missing"),
+    ({"x": 0, "y": 0, "turn": 0, "z": 1}, f"{PLACE_WHERE}.z is not a key the home map has"),
+    ([0, 0, 0], f"{PLACE_WHERE} must be an object"),
+    (None, f"{PLACE_WHERE} must be an object"),
+]
+
+
+@pytest.mark.parametrize(("place", "message"), PLACE_REFUSALS)
+def test_place_refusals(env, place, message) -> None:
+    doc = basic()
+    doc["floors"][0]["place"] = place
     assert env.refused_doc(doc) == message
 
 

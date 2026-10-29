@@ -30,7 +30,8 @@ so a writer that drifts from it hears so at once::
      "style"?: {"look"?, "turn"?, "names"?, "devices"?, "furniture"?,
                 "glow"?},
      "floors": [{"id", "name", "story": <int>,
-                 "rooms": [{"id", "name"?, "areaId"?, "pageId"?,
+                 "place"?: {"x", "y", "turn"},
+                 "rooms":[{"id", "name"?, "areaId"?, "pageId"?,
                             "finish"?: "wood" | "tile" | "stone" |
                                        "carpet" | "plain",
                             "floorColor"?, "wallColor"?,
@@ -63,7 +64,15 @@ tile has no key of its own: ``look`` (plan, night, warm, lines, clay,
 blueprint or dots; plan when absent), ``turn`` (whole degrees, -180 to 180;
 -28), ``names``, ``furniture`` and ``glow`` (true or false; true) and
 ``devices`` (lights, all or none; lights). A default sent in ``style`` is
-dropped, and so is a ``style`` left empty. A room's ``finish`` names what
+dropped, and so is a ``style`` left empty. A floor's ``place`` says how it
+sits over the base floor (the floor with the lowest ``story``, the first
+of them on a tie), whose plan is the whole house's frame: a point of the
+floor's plan is turned round the plan's 0, 0 by ``turn`` degrees, the same
+sense as an object's ``turn``, then moved by ``x`` and ``y`` meters. It
+holds exactly those three numbers, ``x`` and ``y`` -500 to 500 and ``turn``
+-360 to 360. Absent, the floor is centred: the middle of its rooms' bounds
+over the base floor's middle, unturned, worked out by the reader and never
+stored; the base floor's own ``place`` is ignored.A room's ``finish`` names what
 its floor is laid with; absent, it is picked from the room's name and
 furniture. A room's ``floorColor`` and ``wallColor`` (``#RRGGBB`` in either
 case, kept as sent) paint its floor and its walls' faces in the plan, night,
@@ -180,6 +189,9 @@ MAX_OBJECTS = 256
 MAX_NAME_CHARS = 100
 # Meters from the plan's origin, either way; a home is far smaller.
 MAX_COORDINATE = 10_000
+# A floor's place over the base floor: meters either way, degrees either way.
+FLOOR_PLACE_SHIFT = 500
+FLOOR_PLACE_TURN = 360
 OPENING_KINDS = ("door", "window", "opening")
 OPENING_STYLES = ("sliding", "double")
 ROOM_FINISHES = ("wood", "tile", "stone", "carpet", "plain")
@@ -574,6 +586,17 @@ def _pin(raw: Any, path: str, ids: _Ids, room_ids: set[str]) -> dict[str, Any]:
     return checked
 
 
+def _place(raw: Any, path: str) -> dict[str, int | float]:
+    """A floor's place over the base floor: exactly ``x``, ``y`` and
+    ``turn``, in that order, rounded as the map's other numbers."""
+    place = _object(raw, path, ("x", "y", "turn"))
+    return {
+        "x": _number(place["x"], f"{path}.x", -FLOOR_PLACE_SHIFT, FLOOR_PLACE_SHIFT),
+        "y": _number(place["y"], f"{path}.y", -FLOOR_PLACE_SHIFT, FLOOR_PLACE_SHIFT),
+        "turn": _number(place["turn"], f"{path}.turn", -FLOOR_PLACE_TURN, FLOOR_PLACE_TURN),
+    }
+
+
 def check_document(raw: Any) -> dict[str, Any]:
     """The map as stored: ``raw`` checked by the rules in the module
     docstring, its numbers rounded to 2 decimals and its keys in the
@@ -591,12 +614,13 @@ def check_document(raw: Any) -> dict[str, Any]:
     floors = []
     for i, raw_floor in enumerate(_list(doc["floors"], "doc.floors", MAX_FLOORS)):
         path = f"doc.floors[{i}]"
-        floor = _object(raw_floor, path, ("id", "name", "story", "rooms", "pins"))
+        floor = _object(raw_floor, path, ("id", "name", "story", "rooms", "pins"), ("place",))
         floor_id = ids.take(floor["id"], f"{path}.id")
         name = _text(floor["name"], f"{path}.name")
         story = floor["story"]
         if isinstance(story, bool) or not isinstance(story, int) or not -100 <= story <= 100:
             _fail(f"{path}.story", "must be a whole number between -100 and 100")
+        place = _place(floor["place"], f"{path}.place") if "place" in floor else None
         raw_rooms = _list(floor["rooms"], f"{path}.rooms", MAX_ROOMS)
         rooms_in_all += len(raw_rooms)
         if rooms_in_all > MAX_ROOMS:
@@ -612,9 +636,12 @@ def check_document(raw: Any) -> dict[str, Any]:
         pins = [
             _pin(pin, f"{path}.pins[{j}]", ids, room_ids) for j, pin in enumerate(raw_pins)
         ]
-        floors.append(
-            {"id": floor_id, "name": name, "story": story, "rooms": rooms, "pins": pins}
-        )
+        checked_floor: dict[str, Any] = {"id": floor_id, "name": name, "story": story}
+        if place is not None:
+            checked_floor["place"] = place
+        checked_floor["rooms"] = rooms
+        checked_floor["pins"] = pins
+        floors.append(checked_floor)
     checked: dict[str, Any] = {"v": DOCUMENT_VERSION}
     if style:
         checked["style"] = style

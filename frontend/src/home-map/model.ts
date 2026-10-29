@@ -22,7 +22,10 @@
 // object's furniture piece and its fabric and wood colours, the device a thing
 // holds (`device`, once `light`), an opening's style, a pin's name, icon, reading, glow, glow colour, glow
 // spill, tap and page) are all optional, and a default is never stored: the key is left
-// out, so a map written before them reads the same.
+// out, so a map written before them reads the same. A floor's `place`, how
+// it sits over the base floor in the iPhone's stacked 3D, is the iPhone's:
+// the panel checks it and keeps it through every edit, and never draws or
+// changes it.
 //
 // Beside the map, never in it, Home Assistant keeps each room as the iPhone
 // scanned it (`HomeMapScan`, read by `readHomeMapScans`), which Shape draws
@@ -204,10 +207,27 @@ export const HOME_MAP_PIN_TAPS: readonly HomeMapPinTap[] = ["toggle", "details",
 export const HOME_MAP_GLOW_LOW = 0.2;
 export const HOME_MAP_GLOW_HIGH = 10;
 
+/** How a floor sits over the base floor (the lowest `story`, the first of
+ * them on a tie), whose plan is the house's frame: a point of the floor's
+ * plan is turned round its 0, 0 by `turn` degrees, the same sense as an
+ * object's `turn`, then moved by `x` and `y` meters. The iPhone writes and
+ * draws it; the panel only keeps it. */
+export interface HomeMapFloorPlace {
+  /** -500 to 500. */
+  x: number;
+  /** -500 to 500. */
+  y: number;
+  /** Degrees, -360 to 360. */
+  turn: number;
+}
+
 export interface HomeMapFloor {
   id: string;
   name: string;
   story: number;
+  /** Left out for a floor centred over the base floor, and on the base
+   * floor itself. */
+  place?: HomeMapFloorPlace;
   rooms: HomeMapRoom[];
   pins: HomeMapPin[];
 }
@@ -240,6 +260,9 @@ const MAX_OPENINGS = 128;
 const MAX_OBJECTS = 256;
 export const HOME_MAP_MAX_NAME = 100;
 const MAX_COORDINATE = 10_000;
+/** A floor's place: meters either way, degrees either way. */
+const FLOOR_PLACE_SHIFT = 500;
+const FLOOR_PLACE_TURN = 360;
 const OPENING_KINDS: readonly HomeMapOpeningKind[] = ["door", "window", "opening"];
 
 const UUID_RE = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
@@ -359,6 +382,17 @@ function oneOf<T extends string>(raw: unknown, path: string, choices: readonly T
 function bool(raw: unknown, path: string): boolean {
   if (typeof raw !== "boolean") fail(path, "must be true or false");
   return raw;
+}
+
+/** A floor's place: exactly `x`, `y` and `turn`, in that order, rounded as
+ * the map's other numbers. */
+function checkFloorPlace(raw: unknown, path: string): HomeMapFloorPlace {
+  const place = object(raw, path, ["x", "y", "turn"]);
+  return {
+    x: number(place.x, `${path}.x`, -FLOOR_PLACE_SHIFT, FLOOR_PLACE_SHIFT),
+    y: number(place.y, `${path}.y`, -FLOOR_PLACE_SHIFT, FLOOR_PLACE_SHIFT),
+    turn: number(place.turn, `${path}.turn`, -FLOOR_PLACE_TURN, FLOOR_PLACE_TURN),
+  };
 }
 
 /** The home style with its defaults dropped, in the contract's order. */
@@ -536,13 +570,14 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
     let pins = 0;
     const floors = list(doc.floors, "doc.floors", HOME_MAP_MAX_FLOORS).map((f, i): HomeMapFloor => {
       const path = `doc.floors[${i}]`;
-      const floor = object(f, path, ["id", "name", "story", "rooms", "pins"]);
+      const floor = object(f, path, ["id", "name", "story", "rooms", "pins"], ["place"]);
       const id = ids.take(floor.id, `${path}.id`);
       const name = text(floor.name, `${path}.name`);
       const story = floor.story;
       if (typeof story !== "number" || !Number.isInteger(story) || story < -100 || story > 100) {
         fail(`${path}.story`, "must be a whole number between -100 and 100");
       }
+      const place = Object.hasOwn(floor, "place") ? checkFloorPlace(floor.place, `${path}.place`) : undefined;
       const rawRooms = list(floor.rooms, `${path}.rooms`, HOME_MAP_MAX_ROOMS);
       rooms += rawRooms.length;
       if (rooms > HOME_MAP_MAX_ROOMS) throw new CheckError("invalid", `the home map holds at most ${HOME_MAP_MAX_ROOMS} rooms`);
@@ -552,7 +587,7 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
       if (pins > HOME_MAP_MAX_PINS) throw new CheckError("invalid", `the home map holds at most ${HOME_MAP_MAX_PINS} pins`);
       const roomIds = new Set(checkedRooms.map((r) => r.id));
       const checkedPins = rawPins.map((p, j) => checkPin(p, `${path}.pins[${j}]`, ids, roomIds));
-      return { id, name, story, rooms: checkedRooms, pins: checkedPins };
+      return { id, name, story, ...(place === undefined ? {} : { place }), rooms: checkedRooms, pins: checkedPins };
     });
     const checked: HomeMapDocument = Object.keys(style).length > 0 ? { v: HOME_MAP_VERSION, style, floors } : { v: HOME_MAP_VERSION, floors };
     const size = homeMapBytes(checked);
