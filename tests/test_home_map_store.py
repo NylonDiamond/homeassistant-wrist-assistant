@@ -627,6 +627,37 @@ def test_an_objects_model(env) -> None:
         assert env.refused_doc(doc) == message
 
 
+def test_an_objects_colours(env) -> None:
+    doc = basic()
+    # Given last, they are kept after the model, fabric before wood, case as sent.
+    _living(doc)["objects"][0] = {
+        **_object_(doc),
+        "hidden": True,
+        "wood": "#6b4a32",
+        "lift": 0.4,
+        "fabric": "#8E8E93",
+        "model": "loungeSofa",
+    }
+    checked = env.mod.check_document(doc)
+    objects = checked["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == [
+        "kind", "model", "fabric", "wood", "c", "size", "turn", "lift", "hidden",
+    ]
+    assert objects[0]["fabric"] == "#8E8E93"
+    assert objects[0]["wood"] == "#6b4a32"
+    # Kept on any object, with no model and either one alone.
+    doc = basic()
+    _object_(doc)["wood"] = "#D9B88A"
+    objects = env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == ["kind", "wood", "c", "size", "turn"]
+    for part in ("fabric", "wood"):
+        doc = basic()
+        message = f"doc.floors[0].rooms[0].objects[0].{part} must be a colour like #8E8E93"
+        for bad in ("", "warm", "8E8E93", "#8E8E9", "#8E8E93FF", "#GGGGGG", None, 3):
+            _object_(doc)[part] = bad
+            assert env.refused_doc(doc) == message
+
+
 # The catalog's kinds RoomPlan never makes: each is a kind like any other.
 CATALOG_ONLY_KINDS = (
     "rug", "lamp", "plant", "ottoman", "speaker", "screen", "laptop", "bench", "microwave",

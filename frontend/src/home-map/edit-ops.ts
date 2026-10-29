@@ -108,6 +108,7 @@ import {
   isHomeMapGlowColor,
   isHomeMapId,
   isHomeMapModelName,
+  isHomeMapPartColor,
   orderedDocument,
   orderedObject,
   orderedOpening,
@@ -1098,6 +1099,25 @@ export function addPiece(doc: HomeMapDocument, roomId: string, piece: HomeMapFur
 export function setObjectPiece(doc: HomeMapDocument, roomId: string, index: number, piece: HomeMapFurniturePiece): HomeMapDocument | undefined {
   if (!pieceFits(piece)) return undefined;
   return editObject(doc, roomId, index, (o) => ({ ...o, kind: piece.kind, model: piece.id }));
+}
+
+/** A part of a thing's 3D model that takes a colour of its own. */
+export type HomeMapPart = "fabric" | "wood";
+
+/** A thing's fabric or wood in `color` (`#RRGGBB`, written upper case), or
+ * back to its model's own colour when `color` is undefined, the key then
+ * left out. Unchanged is no edit. */
+export function setObjectPart(doc: HomeMapDocument, roomId: string, index: number, part: HomeMapPart, color: string | undefined): HomeMapDocument | undefined {
+  if (part !== "fabric" && part !== "wood") return undefined;
+  if (color !== undefined && !isHomeMapPartColor(color)) return undefined;
+  const next = color?.toUpperCase();
+  return editObject(doc, roomId, index, (o) => {
+    if (o[part] === next) return undefined;
+    const out = { ...o };
+    if (next === undefined) delete out[part];
+    else out[part] = next;
+    return out;
+  });
 }
 
 /** The room without one of its things. */

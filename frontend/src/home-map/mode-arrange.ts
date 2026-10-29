@@ -27,7 +27,8 @@
 // resize it along its own sides (Shift and Alt as for a room) and the round
 // one turns it. Arrow keys nudge it, Delete removes it and Escape goes back
 // to its room. Its inspector holds the furniture piece the 3D look draws it
-// as (Change opens the picker, pieces of its own kind first), where its
+// as (Change opens the picker, pieces of its own kind first), the colours
+// of the piece's fabric and wood when it has either, where its
 // middle is, its turn, its width, depth and height, and whether it is shown.
 //
 // Add furniture (the tool rail's F, and a room's inspector) opens the
@@ -48,6 +49,7 @@ import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
 import {
   type HomeMapObjectResize,
+  type HomeMapPart,
   type HomeMapResize,
   type HomeMapResizeSides,
   type HomeMapSnapGuide,
@@ -78,6 +80,7 @@ import {
   setRoomFinish,
   setRoomPage,
   setObject,
+  setObjectPart,
   setObjectPiece,
   setWallHeight,
   snapObject,
@@ -119,9 +122,12 @@ import {
 } from "./editor-view.js";
 import {
   type HomeMapFurniturePiece,
+  HOME_MAP_FABRIC_PRESETS,
   HOME_MAP_FURNITURE,
+  HOME_MAP_WOOD_PRESETS,
   homeMapPiece,
   homeMapPieceOf,
+  homeMapPieceParts,
   homeMapPieceSearch,
   homeMapPieceSizeText,
 } from "./furniture.js";
@@ -202,6 +208,12 @@ interface ThingAt {
 /** A thing's name: the furniture piece it was picked as, else its kind's. */
 export function homeMapThingName(object: Pick<HomeMapObject, "kind" | "model">): string {
   return homeMapPiece(object.model)?.name ?? homeMapObjectName(object.kind);
+}
+
+/** The parts of a thing its Colours card offers, those of the piece it draws
+ * as (its `model`, else its kind's): fabric, wood, both or none. */
+export function homeMapColourParts(object: Pick<HomeMapObject, "kind" | "model" | "size">): HomeMapPart[] {
+  return homeMapPieceParts(homeMapPieceOf(object));
 }
 
 /** The room a new piece goes into: the picked one, else the one under the
@@ -1120,6 +1132,8 @@ export class ArrangeMode {
 
       ${this.modelCard(ctx, thing)}
 
+      ${this.coloursCard(ctx, thing)}
+
       ${hmeCard("Size", html`
         ${hmeFields(
           hmeNumber({ tag: "W", label: "Width", value: width, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { width: v })) }),
@@ -1167,6 +1181,37 @@ export class ArrangeMode {
           @click=${() => this.openPicker(ctx, room, index)}>Change…</button>
       </div>
       <p class="hme-foot-hint">What it looks like in the 3D view and on the iPhone. The flat plan and the tiles draw it as before.</p>`);
+  }
+
+  /** The colours of the piece's fabric and wood, a row for each part the
+   * piece has (none, no card): Default (the model's own), the presets and a
+   * custom colour. Each pick is one edit. */
+  private coloursCard(ctx: HomeMapEditorContext, thing: ThingAt): TemplateResult | typeof nothing {
+    const parts = homeMapColourParts(thing.object);
+    if (parts.length === 0) return nothing;
+    return hmeCard("Colours", html`
+      ${parts.map((part) => this.colourRow(ctx, thing, part))}
+      <p class="hme-foot-hint">In the 3D view and on the iPhone. The flat plan, the tiles and the furniture picker keep the model's own colours.</p>`);
+  }
+
+  private colourRow(ctx: HomeMapEditorContext, thing: ThingAt, part: HomeMapPart): TemplateResult {
+    const { room, index, object } = thing;
+    const id = room.id;
+    const word = part === "fabric" ? "Fabric" : "Wood";
+    const presets = part === "fabric" ? HOME_MAP_FABRIC_PRESETS : HOME_MAP_WOOD_PRESETS;
+    const now = object[part]?.toUpperCase();
+    const custom = now !== undefined && !presets.some((p) => p.hex === now);
+    const set = (color: string | undefined) => ctx.apply((d) => setObjectPart(d, id, index, part, color));
+    return html`<div class="hme-r top"><span class="hme-l">${word}</span>
+      <div class="hme-chips hme-colours" role="group" aria-label=${`${word} colour`}>
+        <button type="button" class="hme-chip sel ${now === undefined ? "on" : ""}" aria-pressed=${now === undefined ? "true" : "false"}
+          title="The model's own colour" @click=${() => set(undefined)}>Default</button>
+        ${presets.map((p) => html`<button type="button" class="hme-colour ${now === p.hex ? "on" : ""}" style=${`--c:${p.hex}`}
+          title=${p.name} aria-label=${`${word}: ${p.name}`} aria-pressed=${now === p.hex ? "true" : "false"} @click=${() => set(p.hex)}></button>`)}
+        <label class="hme-chip sel hme-pick ${custom ? "on" : ""}" title=${`Any ${part} colour`}>${custom ? html`<span class="hme-swatch" style=${`background:${now}`}></span>` : nothing}Custom
+          <input type="color" .value=${live((now ?? presets[0]!.hex).toLowerCase())} aria-label=${`Pick a ${part} colour`}
+            @change=${(e: Event) => set((e.target as HTMLInputElement).value)} /></label>
+      </div></div>`;
   }
 
   /** With no room picked: the floor itself. */

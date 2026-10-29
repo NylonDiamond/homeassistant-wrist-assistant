@@ -24,7 +24,36 @@ import catalogJson from "./furniture-catalog.json";
 import type { HomeMapFurniturePiece } from "./furniture-rules.js";
 import type { HomeMapObject } from "./model.js";
 
-export { type HomeMapFurniturePiece, homeMapModelFit, homeMapPieceLift, homeMapPieceSizeText } from "./furniture-rules.js";
+export { type HomeMapFurniturePiece, homeMapModelFit, homeMapPieceLift, homeMapPieceParts, homeMapPieceSizeText } from "./furniture-rules.js";
+
+/** A colour the Colours card offers for a part. */
+export interface HomeMapPartPreset {
+  name: string;
+  /** `#RRGGBB`, upper case, as the panel writes it. */
+  hex: string;
+}
+
+/** The fabric colours offered before a custom one. */
+export const HOME_MAP_FABRIC_PRESETS: readonly HomeMapPartPreset[] = [
+  { name: "Grey", hex: "#8E8E93" },
+  { name: "Charcoal", hex: "#3A3A3C" },
+  { name: "Cream", hex: "#E8DCC8" },
+  { name: "Navy", hex: "#2E4A7D" },
+  { name: "Green", hex: "#4F6B4A" },
+  { name: "Mustard", hex: "#C9A13B" },
+  { name: "Rust", hex: "#A0522D" },
+  { name: "Blush", hex: "#D8A7A0" },
+];
+
+/** The wood colours offered before a custom one. */
+export const HOME_MAP_WOOD_PRESETS: readonly HomeMapPartPreset[] = [
+  { name: "Light oak", hex: "#D9B88A" },
+  { name: "Oak", hex: "#B98B5A" },
+  { name: "Walnut", hex: "#6B4A32" },
+  { name: "Espresso", hex: "#3B2A20" },
+  { name: "White", hex: "#EDEDED" },
+  { name: "Black", hex: "#2A2A2A" },
+];
 
 export interface HomeMapFurnitureCatalog {
   v: number;

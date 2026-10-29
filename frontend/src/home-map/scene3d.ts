@@ -8,7 +8,8 @@
 // finish; walls with their doors, windows and ways through cut out, and
 // glass in the windows; the walls between the camera and a room faded, like
 // a doll's house; the things in the rooms as the furniture catalog's models
-// (`furniture.ts` says which piece and how it fits the thing's box), a thing
+// (`furniture.ts` says which piece and how it fits the thing's box), its
+// fabric and wood in the thing's own colours when it has them, a thing
 // with no piece as the plain box it always was, a hidden thing nowhere; the
 // picked room's floor or the picked thing's box outlined in the editor's
 // blue; and each light on the floor as a real light at its pin, lit as Home
@@ -125,6 +126,39 @@ export function homeMapKelvinColor(kelvin: number): [number, number, number] {
   const b = t >= 66 ? 255 : t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04;
   const c = (v: number) => Math.max(0, Math.min(255, v)) / 255;
   return [c(r), c(g), c(b)];
+}
+
+/** The models' materials a thing's colours change, by name (the iPhone's
+ * models keep the same names): the fabric ones take its `fabric` and the
+ * wood ones its `wood`, a darker one that colour times its factor in each
+ * linear channel. Every other material (white cloth, metal, glass, a lamp's
+ * shade, a plant) keeps the model's own colour. */
+export const HOME_MAP_TINTED_MATERIALS: Readonly<Record<string, { part: "fabric" | "wood"; factor: number }>> = {
+  carpet: { part: "fabric", factor: 1 },
+  carpetBlue: { part: "fabric", factor: 1 },
+  carpetDarker: { part: "fabric", factor: 0.645 },
+  wood: { part: "wood", factor: 1 },
+  woodDark: { part: "wood", factor: 0.757 },
+};
+
+/** A `#RRGGBB` sRGB colour as linear RGB, 0 to 1 each; undefined for
+ * anything else. */
+export function homeMapLinearOf(hex: string | undefined): [number, number, number] | undefined {
+  if (hex === undefined || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return undefined;
+  const channel = (at: number) => {
+    const c = Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return [channel(1), channel(3), channel(5)];
+}
+
+/** The linear colour a model's material named `name` takes on a thing with
+ * these colours, or undefined when it keeps its own. */
+export function homeMapMaterialTint(name: string, colors: Pick<HomeMapObject, "fabric" | "wood">): [number, number, number] | undefined {
+  const rule = Object.hasOwn(HOME_MAP_TINTED_MATERIALS, name) ? HOME_MAP_TINTED_MATERIALS[name] : undefined;
+  if (rule === undefined) return undefined;
+  const linear = homeMapLinearOf(colors[rule.part]);
+  return linear?.map((v) => v * rule.factor) as [number, number, number] | undefined;
 }
 
 /** How a light pin shines: how bright (0 off, 1 full) and its colour, from
@@ -279,6 +313,64 @@ interface Thing {
   body?: THREE.Object3D;
   model?: Model;
   size: [number, number, number];
+  /** Its fabric and wood as last drawn. */
+  colors: Pick<HomeMapObject, "fabric" | "wood">;
+  /** The materials made for its colours, its own so the loaded model's
+   * shared ones and every other thing's stay as they are. */
+  copies: THREE.Material[];
+}
+
+/** The loaded model's own material a recoloured mesh had. */
+const ownMaterials = new WeakMap<THREE.Mesh, THREE.Material | THREE.Material[]>();
+
+/** A thing's model back in its own colours, the copies made for its colours
+ * freed. */
+function untint(thing: Thing): void {
+  thing.body?.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    const own = ownMaterials.get(mesh);
+    if (own === undefined) return;
+    mesh.material = own;
+    ownMaterials.delete(mesh);
+  });
+  for (const copy of thing.copies) copy.dispose();
+  thing.copies = [];
+}
+
+/** A thing's model in its fabric and wood colours: each material that
+ * takes one (`homeMapMaterialTint`) swapped for a copy of its own, one copy
+ * for each material however many meshes share it. */
+function tint(thing: Thing, colors: Pick<HomeMapObject, "fabric" | "wood">): void {
+  untint(thing);
+  if (thing.body === undefined || (colors.fabric === undefined && colors.wood === undefined)) return;
+  const made = new Map<THREE.Material, THREE.Material>();
+  const recolour = (material: THREE.Material): THREE.Material => {
+    const rgb = homeMapMaterialTint(material.name, colors);
+    const color = (material as THREE.MeshStandardMaterial).color as THREE.Color | undefined;
+    if (rgb === undefined || color === undefined) return material;
+    let copy = made.get(material);
+    if (copy === undefined) {
+      copy = material.clone();
+      (copy as THREE.MeshStandardMaterial).color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+      made.set(material, copy);
+      thing.copies.push(copy);
+    }
+    return copy;
+  };
+  thing.body.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const own = mesh.material;
+    const next = Array.isArray(own) ? own.map(recolour) : recolour(own);
+    if (Array.isArray(own) ? (next as THREE.Material[]).every((m, i) => m === own[i]) : next === own) return;
+    ownMaterials.set(mesh, own);
+    mesh.material = next;
+  });
+}
+
+/** A thing's colours as a key, to tell when they change. */
+function tintKey(object: Pick<HomeMapObject, "fabric" | "wood">): string {
+  return `${object.fabric?.toUpperCase() ?? ""}|${object.wood?.toUpperCase() ?? ""}`;
 }
 
 interface Lamp {
@@ -468,6 +560,7 @@ export class HomeMapScene3D {
       if (thingIds.has(id)) continue;
       this.scene.remove(thing.group);
       if (thing.piece === undefined) disposeTree(thing.group);
+      else untint(thing);
       this.things.delete(id);
       moved = true;
     }
@@ -475,15 +568,21 @@ export class HomeMapScene3D {
   }
 
   /** One thing placed at its middle, foot and turn, its model fitted to its
-   * box, made the first time it is seen. True when it moved. */
+   * box and in its colours, made the first time it is seen; a change of
+   * colour only recolours it. True when it moved. */
   private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject): boolean {
     let thing = this.things.get(id);
     const size: [number, number, number] = [Math.max(object.size[0], 0.01), Math.max(object.size[1], 0.01), Math.max(object.size[2], 0.01)];
     const lift = Math.max(object.lift ?? 0, 0);
     const turn = (object.turn * Math.PI) / 180;
+    const colors = { fabric: object.fabric, wood: object.wood };
+    if (thing !== undefined && piece !== undefined && tintKey(thing.colors) !== tintKey(colors)) {
+      thing.colors = colors;
+      tint(thing, colors);
+    }
     if (thing === undefined) {
       const group = new THREE.Group();
-      thing = { piece, group, size };
+      thing = { piece, group, size, colors, copies: [] };
       this.things.set(id, thing);
       this.scene.add(group);
       if (piece === undefined) {
@@ -498,6 +597,7 @@ export class HomeMapScene3D {
           if (model === undefined || this.disposed || this.things.get(id) !== made) return;
           made.model = model;
           made.body = fitted(model, made.size);
+          tint(made, made.colors);
           made.group.add(made.body);
           this.renderer.shadowMap.needsUpdate = true;
           this.wake();

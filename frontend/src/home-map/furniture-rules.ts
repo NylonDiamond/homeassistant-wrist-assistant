@@ -19,6 +19,20 @@ export interface HomeMapFurniturePiece {
   lift?: number;
   /** A new one hangs with its top at the room's height. */
   ceiling?: true;
+  /** Its model has fabric parts a thing's `fabric` recolours. */
+  fabric?: true;
+  /** Its model has wood parts a thing's `wood` recolours. */
+  wood?: true;
+}
+
+/** The parts of a piece a thing can colour, fabric before wood: none for a
+ * plain box or a piece with neither. */
+export function homeMapPieceParts(piece: Pick<HomeMapFurniturePiece, "fabric" | "wood"> | undefined): ("fabric" | "wood")[] {
+  if (piece === undefined) return [];
+  const parts: ("fabric" | "wood")[] = [];
+  if (piece.fabric === true) parts.push("fabric");
+  if (piece.wood === true) parts.push("wood");
+  return parts;
 }
 
 /** How much a model is stretched along its own x (width), y (height) and z

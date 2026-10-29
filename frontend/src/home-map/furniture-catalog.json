@@ -38,7 +38,9 @@
         2.0,
         0.84,
         0.94
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "loungeSofaLong",
@@ -49,7 +51,9 @@
         2.6,
         2.18,
         1.22
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "loungeSofaCorner",
@@ -60,7 +64,9 @@
         2.4,
         2.4,
         1.13
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "loungeDesignSofa",
@@ -71,7 +77,8 @@
         2.0,
         0.73,
         0.71
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "loungeDesignSofaCorner",
@@ -82,7 +89,8 @@
         2.4,
         2.4,
         0.71
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "loungeSofaOttoman",
@@ -93,7 +101,9 @@
         0.8,
         0.82,
         0.42
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "loungeChair",
@@ -104,7 +114,9 @@
         0.9,
         0.75,
         0.84
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "loungeChairRelax",
@@ -115,7 +127,9 @@
         0.9,
         1.24,
         1.16
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "loungeDesignChair",
@@ -126,7 +140,8 @@
         0.8,
         0.45,
         0.44
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "tableCoffee",
@@ -137,7 +152,8 @@
         1.1,
         0.67,
         0.38
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "tableCoffeeGlass",
@@ -159,7 +175,8 @@
         0.8,
         0.8,
         0.46
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "sideTable",
@@ -170,7 +187,8 @@
         1.0,
         0.41,
         0.72
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "sideTableDrawers",
@@ -181,7 +199,8 @@
         1.0,
         0.42,
         0.72
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "cabinetTelevision",
@@ -192,7 +211,8 @@
         1.6,
         0.5,
         0.62
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "cabinetTelevisionDoors",
@@ -203,7 +223,8 @@
         1.6,
         0.52,
         0.62
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "televisionModern",
@@ -225,7 +246,8 @@
         0.6,
         0.4,
         0.4
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "bookcaseOpen",
@@ -236,7 +258,8 @@
         0.9,
         0.56,
         1.98
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "bookcaseOpenLow",
@@ -247,7 +270,8 @@
         0.9,
         0.56,
         0.9
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "bookcaseClosed",
@@ -258,7 +282,8 @@
         0.8,
         0.5,
         1.7
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "bookcaseClosedDoors",
@@ -269,7 +294,8 @@
         0.8,
         0.5,
         1.7
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "speaker",
@@ -280,7 +306,8 @@
         0.3,
         0.3,
         1.29
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "speakerSmall",
@@ -292,7 +319,8 @@
         0.18,
         0.4
       ],
-      "lift": 0.75
+      "lift": 0.75,
+      "wood": true
     },
     {
       "id": "bedDouble",
@@ -303,7 +331,9 @@
         1.6,
         1.88,
         0.63
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "bedSingle",
@@ -314,7 +344,9 @@
         1.0,
         1.97,
         0.66
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "bedBunk",
@@ -325,7 +357,9 @@
         1.0,
         1.92,
         1.49
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "bookcaseClosedWide",
@@ -336,7 +370,8 @@
         1.4,
         0.44,
         1.38
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "cabinetBed",
@@ -347,7 +382,8 @@
         0.5,
         0.4,
         0.44
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "cabinetBedDrawer",
@@ -358,7 +394,8 @@
         0.5,
         0.41,
         0.49
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "coatRackStanding",
@@ -369,7 +406,8 @@
         0.6,
         0.6,
         1.69
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "desk",
@@ -380,7 +418,8 @@
         1.4,
         0.75,
         0.73
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "deskCorner",
@@ -391,7 +430,8 @@
         1.6,
         1.6,
         0.63
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "chairDesk",
@@ -402,7 +442,8 @@
         0.6,
         0.56,
         1.09
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "computerScreen",
@@ -437,7 +478,8 @@
         1.6,
         0.85,
         0.62
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "tableCloth",
@@ -448,7 +490,9 @@
         1.6,
         0.85,
         0.62
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "tableGlass",
@@ -470,7 +514,8 @@
         1.1,
         1.27,
         0.58
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "chair",
@@ -481,7 +526,8 @@
         0.45,
         0.45,
         1.06
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "chairCushion",
@@ -492,7 +538,9 @@
         0.45,
         0.45,
         1.04
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "chairModernCushion",
@@ -503,7 +551,8 @@
         0.45,
         0.45,
         1.04
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "chairModernFrameCushion",
@@ -514,7 +563,8 @@
         0.45,
         0.45,
         1.04
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "chairRounded",
@@ -525,7 +575,8 @@
         0.5,
         0.5,
         1.14
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "stoolBar",
@@ -536,7 +587,9 @@
         0.4,
         0.35,
         0.66
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "stoolBarSquare",
@@ -547,7 +600,9 @@
         0.4,
         0.39,
         1.06
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "bench",
@@ -558,7 +613,8 @@
         0.85,
         0.43,
         1.0
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "benchCushion",
@@ -569,7 +625,9 @@
         0.85,
         0.43,
         0.98
-      ]
+      ],
+      "fabric": true,
+      "wood": true
     },
     {
       "id": "kitchenCabinet",
@@ -580,7 +638,8 @@
         0.6,
         0.63,
         0.63
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenCabinetDrawer",
@@ -591,7 +650,8 @@
         0.6,
         0.63,
         0.63
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenCabinetCornerInner",
@@ -602,7 +662,8 @@
         0.9,
         0.9,
         0.88
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenCabinetUpper",
@@ -614,7 +675,8 @@
         0.31,
         0.54
       ],
-      "lift": 1.45
+      "lift": 1.45,
+      "wood": true
     },
     {
       "id": "kitchenCabinetUpperDouble",
@@ -626,7 +688,8 @@
         0.41,
         0.73
       ],
-      "lift": 1.45
+      "lift": 1.45,
+      "wood": true
     },
     {
       "id": "kitchenBar",
@@ -637,7 +700,8 @@
         1.2,
         0.59,
         1.17
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenFridge",
@@ -681,7 +745,8 @@
         0.75,
         0.78,
         0.78
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenStoveElectric",
@@ -692,7 +757,8 @@
         0.75,
         0.78,
         0.78
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenSink",
@@ -703,7 +769,8 @@
         0.8,
         0.84,
         0.91
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "kitchenMicrowave",
@@ -839,7 +906,8 @@
         0.8,
         0.6,
         0.88
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "bathroomCabinet",
@@ -850,7 +918,8 @@
         0.5,
         0.28,
         0.85
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "bathroomMirror",
@@ -862,7 +931,8 @@
         0.29,
         0.87
       ],
-      "lift": 1.1
+      "lift": 1.1,
+      "wood": true
     },
     {
       "id": "washer",
@@ -977,7 +1047,8 @@
         1.38,
         0.35
       ],
-      "ceiling": true
+      "ceiling": true,
+      "wood": true
     },
     {
       "id": "rugRectangle",
@@ -988,7 +1059,8 @@
         2.0,
         1.17,
         0.01
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "rugRound",
@@ -999,7 +1071,8 @@
         1.6,
         1.6,
         0.02
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "rugRounded",
@@ -1010,7 +1083,8 @@
         2.0,
         1.17,
         0.01
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "rugSquare",
@@ -1021,7 +1095,8 @@
         1.6,
         1.63,
         0.02
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "rugDoormat",
@@ -1032,7 +1107,8 @@
         0.8,
         0.44,
         0.02
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "pottedPlant",
@@ -1043,7 +1119,8 @@
         0.45,
         0.51,
         1.39
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "plantSmall1",
@@ -1054,7 +1131,8 @@
         0.25,
         0.25,
         0.37
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "plantSmall2",
@@ -1065,7 +1143,8 @@
         0.25,
         0.25,
         0.37
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "books",
@@ -1077,7 +1156,8 @@
         0.19,
         0.21
       ],
-      "lift": 0.75
+      "lift": 0.75,
+      "fabric": true
     },
     {
       "id": "trashcan",
@@ -1099,7 +1179,8 @@
         0.4,
         0.4,
         0.53
-      ]
+      ],
+      "wood": true
     },
     {
       "id": "stairs",
@@ -1110,7 +1191,8 @@
         1.0,
         0.43,
         0.74
-      ]
+      ],
+      "wood": true
     }
   ]
 }

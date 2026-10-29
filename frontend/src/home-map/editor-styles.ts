@@ -486,6 +486,15 @@ export const editorStyles = css`
   .hme-model-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .hme-model-t strong { font-size: 14px; }
   .hme-model-t span { color: var(--wa-muted); font-size: 12px; line-height: 1.35; }
+  /* A thing's fabric or wood: Default, a round button for each preset in
+     its colour (--c), ringed when picked, and Custom. */
+  .hme-colours { align-items: center; }
+  .hme-colour {
+    width: 24px; height: 24px; border-radius: 50%; padding: 0; flex: none; cursor: pointer;
+    background: var(--c); border: 1px solid var(--wa-line-strong);
+  }
+  .hme-colour:hover { border-color: var(--wa-faint); }
+  .hme-colour.on, .hme-colour:focus-visible { outline: 2px solid var(--hme-sel); outline-offset: 2px; }
   .hme-sheet { z-index: 90; }
   .hme-fpick {
     width: min(1240px, 100%); height: min(860px, 100%); display: flex; flex-direction: column; overflow: hidden;

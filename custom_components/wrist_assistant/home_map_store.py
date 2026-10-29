@@ -39,7 +39,8 @@ so a writer that drifts from it hears so at once::
                                           "opening",
                                           "style"?: "sliding" | "double",
                                           "a", "b", "z0", "z1"}],
-                            "objects": [{"kind", "model"?, "c": [x, y],
+                            "objects": [{"kind", "model"?, "fabric"?,
+                                         "wood"?, "c": [x, y],
                                          "size": [w, d, h], "turn",
                                          "lift"?, "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
@@ -70,7 +71,10 @@ can show it again; a false ``hidden`` is dropped. An object's ``model``
 names the piece of the furniture catalog its 3D look draws (``bedDouble``,
 ``lampRoundFloor``), checked as a name in lower camel case only and never
 against the catalog, so a newer catalog's pieces survive an older reader;
-absent, the look picks one by the object's kind. An opening's ``style`` is
+absent, the look picks one by the object's kind. An object's ``fabric``
+and ``wood`` (``#RRGGBB`` in either case, kept as sent) recolour its 3D
+model's fabric and wood parts; absent, the model keeps its own colours.
+They are kept on any object whatever its kind or model. An opening's ``style`` is
 ``double`` (a door only: two leaves meeting in the middle) or ``sliding`` (a
 door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
 characters) and ``icon`` (one of ``PIN_ICONS``) stand in for the entity's
@@ -436,7 +440,10 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
     for i, raw_object in enumerate(_list(room["objects"], f"{path}.objects", MAX_OBJECTS)):
         where = f"{path}.objects[{i}]"
         item = _object(
-            raw_object, where, ("kind", "c", "size", "turn"), ("model", "lift", "hidden")
+            raw_object,
+            where,
+            ("kind", "c", "size", "turn"),
+            ("model", "fabric", "wood", "lift", "hidden"),
         )
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
@@ -453,6 +460,13 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
                     f"{where}.model", "must be a furniture piece's name in lower camel case"
                 )
             checked_object["model"] = model
+        # Kept on any object, as sent, whatever its kind: a plain box ignores them.
+        for part in ("fabric", "wood"):
+            if part in item:
+                color = item[part]
+                if not isinstance(color, str) or not _HEX_COLOR_RE.fullmatch(color):
+                    _fail(f"{where}.{part}", "must be a colour like #8E8E93")
+                checked_object[part] = color
         checked_object["c"] = _point(item["c"], f"{where}.c", 2)
         checked_object["size"] = [
             _number(value, f"{where}.size[{j}]", 0, 1000) for j, value in enumerate(size)

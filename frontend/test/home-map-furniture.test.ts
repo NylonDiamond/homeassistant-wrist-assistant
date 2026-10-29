@@ -13,21 +13,31 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { addPiece, homeMapInsideRoom, setObject, setObjectHidden, setObjectPiece } from "../src/home-map/edit-ops.js";
+import { type HomeMapOp, addPiece, homeMapInsideRoom, setObject, setObjectHidden, setObjectPart, setObjectPiece } from "../src/home-map/edit-ops.js";
+import type { HomeMapEditorContext, HomeMapSelection } from "../src/home-map/editor-mode.js";
 import { HomeMapSession } from "../src/home-map/editor-session.js";
 import {
+  HOME_MAP_FABRIC_PRESETS,
   HOME_MAP_FURNITURE,
+  HOME_MAP_WOOD_PRESETS,
   homeMapModelFit,
   homeMapPiece,
   homeMapPieceLift,
   homeMapPieceOf,
+  homeMapPieceParts,
   homeMapPieceSearch,
   homeMapPieceSizeText,
 } from "../src/home-map/furniture.js";
-import { homeMapPickerSections, homeMapRoomForAdding, homeMapThingName } from "../src/home-map/mode-arrange.js";
+import { ArrangeMode, homeMapColourParts, homeMapPickerSections, homeMapRoomForAdding, homeMapThingName } from "../src/home-map/mode-arrange.js";
 import { type HomeMapDocument, type HomeMapObject, type HomeMapRoom, checkHomeMap, orderedObject } from "../src/home-map/model.js";
 import type { HomeMapApi } from "../src/home-map/save.js";
-import { homeMapKelvinColor, homeMapLampOf } from "../src/home-map/scene3d.js";
+import {
+  HOME_MAP_TINTED_MATERIALS,
+  homeMapKelvinColor,
+  homeMapLampOf,
+  homeMapLinearOf,
+  homeMapMaterialTint,
+} from "../src/home-map/scene3d.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
 const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocument;
@@ -315,5 +325,221 @@ describe("a light in the 3D look", () => {
     expect(b).toBeLessThan(g);
     const day = homeMapKelvinColor(6600);
     expect(day.every((v) => v > 0.95)).toBe(true);
+  });
+});
+
+describe("an object's fabric and wood", () => {
+  it("are kept after the model, fabric before wood, in the case they were sent", () => {
+    const doc = fixture() as unknown as Record<string, any>;
+    doc.floors[0].rooms[0].objects[0] = { ...doc.floors[0].rooms[0].objects[0], hidden: true, wood: "#6b4a32", lift: 0.4, fabric: "#8E8E93", model: "loungeSofa" };
+    const out = checkHomeMap(doc);
+    if (!out.ok) throw new Error(out.message);
+    const object = out.doc.floors[0]!.rooms[0]!.objects[0]!;
+    expect(Object.keys(object)).toEqual(["kind", "model", "fabric", "wood", "c", "size", "turn", "lift", "hidden"]);
+    expect(object.fabric).toBe("#8E8E93");
+    expect(object.wood).toBe("#6b4a32");
+    // On any object, either alone, with no model.
+    const plain = fixture() as unknown as Record<string, any>;
+    plain.floors[0].rooms[0].objects[0].wood = "#D9B88A";
+    const kept = checkHomeMap(plain);
+    expect(kept.ok && Object.keys(kept.doc.floors[0]!.rooms[0]!.objects[0]!)).toEqual(["kind", "wood", "c", "size", "turn"]);
+  });
+
+  it("are refused empty or not #RRGGBB, in the store's words", () => {
+    for (const part of ["fabric", "wood"]) {
+      const words = `doc.floors[0].rooms[0].objects[0].${part} must be a colour like #8E8E93`;
+      for (const bad of ["", "warm", "8E8E93", "#8E8E9", "#8E8E93FF", "#GGGGGG", null, 3]) {
+        expect(refusal((d) => { d.floors[0].rooms[0].objects[0][part] = bad; })).toBe(words);
+      }
+    }
+  });
+
+  it("are ordered by orderedObject and never kept empty", () => {
+    const object = { wood: "#2A2A2A", turn: 0, size: [1, 1, 1], c: [0, 0], fabric: "#3A3A3C", model: "loungeSofa", kind: "sofa" } as unknown as HomeMapObject;
+    expect(Object.keys(orderedObject(object))).toEqual(["kind", "model", "fabric", "wood", "c", "size", "turn"]);
+    expect(Object.keys(orderedObject({ ...object, fabric: "", wood: undefined }))).toEqual(["kind", "model", "c", "size", "turn"]);
+  });
+});
+
+describe("colouring a thing", () => {
+  it("sets a part in upper case and Default takes the key away, each its own edit", () => {
+    const start = fixture();
+    const fabric = done(start, setObjectPart(start, LIVING, 0, "fabric", "#2e4a7d"));
+    expect(room(fabric, LIVING).objects[0]!.fabric).toBe("#2E4A7D");
+    const both = done(fabric, setObjectPart(fabric, LIVING, 0, "wood", "#6B4A32"));
+    expect(Object.keys(room(both, LIVING).objects[0]!)).toEqual(["kind", "fabric", "wood", "c", "size", "turn"]);
+    const back = done(both, setObjectPart(both, LIVING, 0, "fabric", undefined));
+    expect(room(back, LIVING).objects[0]).not.toHaveProperty("fabric");
+    expect(room(back, LIVING).objects[0]!.wood).toBe("#6B4A32");
+  });
+
+  it("makes no edit for the same colour, a bad one, a thing that is gone or a part it does not know", () => {
+    const start = fixture();
+    const set = setObjectPart(start, LIVING, 0, "wood", "#B98B5A")!;
+    expect(setObjectPart(set, LIVING, 0, "wood", "#b98b5a")).toBeUndefined();
+    expect(setObjectPart(start, LIVING, 0, "wood", undefined)).toBeUndefined();
+    expect(setObjectPart(start, LIVING, 0, "wood", "brown")).toBeUndefined();
+    expect(setObjectPart(start, LIVING, 99, "wood", "#B98B5A")).toBeUndefined();
+    expect(setObjectPart(start, LIVING, 0, "metal" as "wood", "#B98B5A")).toBeUndefined();
+  });
+
+  it("keeps the colours when the thing is changed to another piece", () => {
+    const start = fixture();
+    const coloured = done(start, setObjectPart(start, LIVING, 0, "fabric", "#4F6B4A"));
+    const changed = done(coloured, setObjectPiece(coloured, LIVING, 0, piece("loungeDesignSofa")));
+    expect(room(changed, LIVING).objects[0]).toMatchObject({ model: "loungeDesignSofa", fabric: "#4F6B4A" });
+  });
+
+  it("is one undo step and one save for each pick", async () => {
+    const saves: HomeMapDocument[] = [];
+    const api: HomeMapApi = { get: async () => ({ doc: fixture(), rev: 1 }), save: async (doc, baseRev) => { saves.push(doc); return { rev: baseRev + 1 }; } };
+    const s = new HomeMapSession(api, { doc: fixture(), rev: 1 });
+    expect(s.apply((d) => setObjectPart(d, LIVING, 0, "fabric", "#C9A13B"))).toBe(true);
+    await s.idle();
+    expect(saves).toHaveLength(1);
+    expect(room(saves[0]!, LIVING).objects[0]!.fabric).toBe("#C9A13B");
+    expect(s.apply((d) => setObjectPart(d, LIVING, 0, "wood", "#3B2A20"))).toBe(true);
+    await s.idle();
+    expect(saves).toHaveLength(2);
+    expect(room(s.doc!, LIVING).objects[0]).toMatchObject({ fabric: "#C9A13B", wood: "#3B2A20" });
+    expect(s.undo()).toBe(true);
+    expect(room(s.doc!, LIVING).objects[0]).toMatchObject({ fabric: "#C9A13B" });
+    expect(room(s.doc!, LIVING).objects[0]).not.toHaveProperty("wood");
+    expect(s.undo()).toBe(true);
+    expect(room(s.doc!, LIVING).objects[0]).not.toHaveProperty("fabric");
+    expect(s.redo()).toBe(true);
+    expect(room(s.doc!, LIVING).objects[0]!.fabric).toBe("#C9A13B");
+  });
+});
+
+interface Tpl {
+  strings: readonly string[];
+  values: unknown[];
+}
+function isTpl(node: unknown): node is Tpl {
+  return typeof node === "object" && node !== null && "strings" in node && "values" in node;
+}
+function flatten(node: unknown): string {
+  if (node === undefined || node === null || typeof node === "symbol") return "";
+  if (Array.isArray(node)) return node.map(flatten).join("");
+  if (isTpl(node)) return node.strings.map((s, i) => s + (i < node.values.length ? flatten(node.values[i]) : "")).join("");
+  if (typeof node === "function" || typeof node === "object") return "";
+  return String(node);
+}
+
+/** The thing inspector's text for the living room's thing `index` on
+ * `doc`, and the edits its buttons made. */
+function inspect(doc: HomeMapDocument, index: number) {
+  let now = doc;
+  const selection: HomeMapSelection = { kind: "object", roomId: LIVING, object: index };
+  const ctx = {
+    hass: undefined,
+    get doc() { return now; },
+    get floor() { return now.floors[0]!; },
+    selection,
+    toggles: { snap: true, square: true, grid: false, measure: false, live: false },
+    pages: [],
+    areas: [],
+    furnitureBase: undefined,
+    apply(op: HomeMapOp) {
+      const next = op(now);
+      if (next === undefined) return false;
+      now = next;
+      return true;
+    },
+    preview: () => {},
+    select: () => {},
+    redraw: () => {},
+  } as unknown as HomeMapEditorContext;
+  return { text: flatten(new ArrangeMode().inspector(ctx)), get doc() { return now; } };
+}
+
+describe("the Colours card", () => {
+  it("offers fabric and wood for a sofa, wood only for a desk and nothing for a TV", () => {
+    expect(homeMapColourParts({ kind: "sofa", size: [2, 0.9, 0.8] })).toEqual(["fabric", "wood"]);
+    expect(homeMapColourParts({ kind: "table", model: "desk", size: [1.4, 0.7, 0.75] })).toEqual(["wood"]);
+    expect(homeMapColourParts({ kind: "television", size: [1.2, 0.1, 0.7] })).toEqual([]);
+    expect(homeMapColourParts({ kind: "sofa", model: "loungeDesignSofa", size: [2, 0.9, 0.8] })).toEqual(["fabric"]);
+    // A plain box has no parts.
+    expect(homeMapColourParts({ kind: "fireplace", size: [1, 0.4, 1] })).toEqual([]);
+    expect(homeMapPieceParts(undefined)).toEqual([]);
+  });
+
+  it("shows a row for each part the piece has, beside the Model card, and none for a TV", () => {
+    const start = fixture();
+    const desk = done(start, setObjectPiece(start, LIVING, 1, piece("desk")));
+    const sofa = inspect(desk, 0).text;
+    expect(sofa).toContain(">Colours<");
+    expect(sofa.indexOf(">Model<")).toBeLessThan(sofa.indexOf(">Colours<"));
+    expect(sofa.indexOf(">Colours<")).toBeLessThan(sofa.indexOf(">Size<"));
+    expect(sofa).toContain(">Fabric<");
+    expect(sofa).toContain(">Wood<");
+    for (const p of [...HOME_MAP_FABRIC_PRESETS, ...HOME_MAP_WOOD_PRESETS]) expect(sofa).toContain(p.hex);
+    const deskText = inspect(desk, 1).text;
+    expect(deskText).toContain(">Colours<");
+    expect(deskText).not.toContain(">Fabric<");
+    expect(deskText).toContain(">Wood<");
+    expect(deskText).not.toContain(HOME_MAP_FABRIC_PRESETS[0]!.hex);
+    const tv = inspect(desk, 2).text;
+    expect(tv).not.toContain(">Colours<");
+    expect(tv).not.toContain(">Fabric<");
+  });
+
+  it("offers the spec's presets in its order", () => {
+    expect(HOME_MAP_FABRIC_PRESETS.map((p) => `${p.name} ${p.hex}`)).toEqual([
+      "Grey #8E8E93", "Charcoal #3A3A3C", "Cream #E8DCC8", "Navy #2E4A7D", "Green #4F6B4A", "Mustard #C9A13B", "Rust #A0522D", "Blush #D8A7A0",
+    ]);
+    expect(HOME_MAP_WOOD_PRESETS.map((p) => `${p.name} ${p.hex}`)).toEqual([
+      "Light oak #D9B88A", "Oak #B98B5A", "Walnut #6B4A32", "Espresso #3B2A20", "White #EDEDED", "Black #2A2A2A",
+    ]);
+  });
+});
+
+describe("recolouring a model", () => {
+  const near = (got: readonly number[] | undefined, want: readonly number[]) => {
+    expect(got).toBeDefined();
+    got!.forEach((v, i) => expect(v).toBeCloseTo(want[i]!, 5));
+  };
+
+  it("turns an sRGB hex into linear colour", () => {
+    near(homeMapLinearOf("#FFFFFF"), [1, 1, 1]);
+    near(homeMapLinearOf("#000000"), [0, 0, 0]);
+    // 0x80 is 0.2159 linear; 0x0A falls on the straight part of the curve.
+    near(homeMapLinearOf("#80800a"), [0.215861, 0.215861, 10 / 255 / 12.92]);
+    expect(homeMapLinearOf("warm")).toBeUndefined();
+    expect(homeMapLinearOf(undefined)).toBeUndefined();
+  });
+
+  it("changes the fabric and wood materials only, the darker ones by their factor in linear", () => {
+    const colors = { fabric: "#2E4A7D", wood: "#6B4A32" };
+    const fabric = homeMapLinearOf("#2E4A7D")!;
+    const wood = homeMapLinearOf("#6B4A32")!;
+    near(homeMapMaterialTint("carpet", colors), fabric);
+    near(homeMapMaterialTint("carpetBlue", colors), fabric);
+    near(homeMapMaterialTint("carpetDarker", colors), fabric.map((v) => v * 0.645));
+    near(homeMapMaterialTint("wood", colors), wood);
+    near(homeMapMaterialTint("woodDark", colors), wood.map((v) => v * 0.757));
+    for (const name of ["carpetWhite", "metal", "metalDark", "metalLight", "glass", "lamp", "plant", "_defaultMat", "toString", ""]) {
+      expect(homeMapMaterialTint(name, colors), name).toBeUndefined();
+    }
+    expect(Object.keys(HOME_MAP_TINTED_MATERIALS).sort()).toEqual(["carpet", "carpetBlue", "carpetDarker", "wood", "woodDark"]);
+  });
+
+  it("leaves a part with no colour of its own as the model has it", () => {
+    expect(homeMapMaterialTint("carpet", { wood: "#6B4A32" })).toBeUndefined();
+    expect(homeMapMaterialTint("wood", { fabric: "#2E4A7D" })).toBeUndefined();
+    expect(homeMapMaterialTint("wood", {})).toBeUndefined();
+  });
+
+  it("finds the flagged parts in the models themselves", () => {
+    // Each piece's fabric and wood flags match its model's material names.
+    for (const p of HOME_MAP_FURNITURE.pieces) {
+      const glb = readFileSync(join(MODELS, `${p.id}.glb`));
+      const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as { materials?: { name?: string }[] };
+      const names = (json.materials ?? []).map((m) => m.name ?? "");
+      const has = (part: "fabric" | "wood") => names.some((n) => HOME_MAP_TINTED_MATERIALS[n]?.part === part);
+      expect(p.fabric === true, `${p.id} fabric`).toBe(has("fabric"));
+      expect(p.wood === true, `${p.id} wood`).toBe(has("wood"));
+    }
   });
 });
