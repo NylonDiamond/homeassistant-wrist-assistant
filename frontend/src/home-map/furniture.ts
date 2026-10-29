@@ -16,9 +16,11 @@
 // Fitting a piece to a thing's box (`furniture-rules.ts`): stretched to the
 // box's width and height, and to its depth too, except that a very thin box
 // (a scanned TV is 5 cm deep) never squashes the piece below half its other
-// stretch, so a TV keeps its stand. A lamp can hold a light: its `bulb`
-// says where the bulb sits in the model's own box and `cast` how it shines
-// (`homeMapBulbSpot`). A piece's `paint` is its model's own fabric, wood and
+// stretch, so a TV keeps its stand. Any thing can hold a device: a lamp's
+// `bulb` says where a light sits in the model's own box and `cast` how it
+// shines, a piece's `hold` where any other device sits (a TV's screen), and
+// a piece with neither holds it on the middle of its top
+// (`homeMapHoldSpot`). A piece's `paint` is its model's own fabric, wood and
 // body colours, read from the model's materials, which the editor's plan
 // draws its top view in (`homeMapPlanLook`). Nothing here draws;
 // `scene3d.ts` and `furniture-art.ts` do.
@@ -36,7 +38,8 @@ export {
   type HomeMapLampChoice,
   HOME_MAP_LAMP_CHOICES,
   HOME_MAP_LAMP_CHOICE_MODELS,
-  homeMapBulbSpot,
+  homeMapHoldPiece,
+  homeMapHoldSpot,
   homeMapLampPiece,
   homeMapModelFit,
   homeMapPieceLift,

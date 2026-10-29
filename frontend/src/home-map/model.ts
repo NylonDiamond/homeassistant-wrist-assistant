@@ -19,8 +19,8 @@
 //
 // The editor's keys (the home style, a room's finish and its floor and wall
 // colours, a hidden object, an
-// object's furniture piece and its fabric and wood colours, the light a lamp
-// holds, an opening's style, a pin's name, icon, reading, glow, glow colour, glow
+// object's furniture piece and its fabric and wood colours, the device a thing
+// holds (`device`, once `light`), an opening's style, a pin's name, icon, reading, glow, glow colour, glow
 // spill, tap and page) are all optional, and a default is never stored: the key is left
 // out, so a map written before them reads the same.
 //
@@ -71,11 +71,17 @@ export interface HomeMapObject {
   fabric?: string;
   /** The colour of its 3D model's wood parts, as `fabric` is. */
   wood?: string;
-  /** The `id` of a pin of the same floor that this thing, a lamp, holds: the
-   * light it is. Checked as shaped like a pin id only, never that the pin is
-   * there. A reader ignores one that names no pin of the floor, a pin whose
-   * entity is not a `light.*`, or a pin an earlier thing of the floor already
-   * holds (`homeMapLampOfPin`, `edit-ops.ts`). Never empty. */
+  /** The `id` of a pin of the same floor that this thing holds: the device
+   * it is or carries (a lamp's light, a TV's media player), any entity.
+   * Checked as shaped like a pin id only, never that the pin is there. A
+   * reader ignores one that names no pin of the floor or a pin an earlier
+   * thing of the floor already holds (`homeMapThingOfPin`, `edit-ops.ts`).
+   * Never empty. */
+  device?: string;
+  /** The old spelling of `device`, from when only a lamp held a light: read
+   * (`homeMapHeldIdOf`), never written. The check turns it into `device`
+   * (`device` winning when both are sent), as the store does, and
+   * `orderedObject` writes it as `device`. */
   light?: string;
   /** Its centre on the plan. */
   c: HomePoint;
@@ -434,7 +440,7 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   });
   out.objects = list(room.objects, `${path}.objects`, MAX_OBJECTS).map((o, i) => {
     const where = `${path}.objects[${i}]`;
-    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "fabric", "wood", "light", "lift", "hidden"]);
+    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "fabric", "wood", "device", "light", "lift", "hidden"]);
     if (typeof item.kind !== "string" || !OBJECT_KIND_RE.test(item.kind)) fail(`${where}.kind`, "must be a RoomPlan category in lower camel case");
     if (!Array.isArray(item.size) || item.size.length !== 3) fail(`${where}.size`, "must be a list of 3 numbers");
     const checked = { kind: item.kind } as HomeMapObject;
@@ -450,12 +456,17 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
       if (!isHomeMapPartColor(color)) fail(`${where}.${part}`, "must be a colour like #8E8E93");
       checked[part] = color;
     }
-    // The pin the lamp holds, by its id's shape only, as an entity id is
-    // never looked up either.
-    if (Object.hasOwn(item, "light")) {
-      if (!isHomeMapId(item.light)) fail(`${where}.light`, "must be a pin's id, a UUID");
-      checked.light = item.light;
+    // The pin the thing holds, by its id's shape only, as an entity id is
+    // never looked up either. light is its old spelling, kept as device;
+    // device wins when both are sent.
+    let held: string | undefined;
+    for (const key of ["light", "device"] as const) {
+      if (!Object.hasOwn(item, key)) continue;
+      const value = item[key];
+      if (!isHomeMapId(value)) fail(`${where}.${key}`, "must be a pin's id, a UUID");
+      held = value;
     }
+    if (held !== undefined) checked.device = held;
     checked.c = point(item.c, `${where}.c`, 2);
     checked.size = item.size.map((v, j) => number(v, `${where}.size[${j}]`, 0, 1000)) as [number, number, number];
     checked.turn = number(item.turn, `${where}.turn`);
@@ -850,15 +861,24 @@ export function orderedOpening(opening: HomeMapOpening): HomeMapOpening {
   return out;
 }
 
+/** The pin a thing names as held: its `device`, else its old `light`;
+ * undefined for none or an empty one. Whether a reader takes the link is
+ * `homeMapHeldPins`' (`edit-ops.ts`). */
+export function homeMapHeldIdOf(object: Pick<HomeMapObject, "device" | "light">): string | undefined {
+  const id = object.device !== undefined && object.device !== "" ? object.device : object.light;
+  return id === "" ? undefined : id;
+}
+
 /** An object with its keys in the contract's order, `model` only when it
- * names a piece, `fabric`, `wood` and `light` only when set and `hidden`
- * only when true. */
+ * names a piece, `fabric`, `wood` and `device` only when set (an old
+ * `light` written as `device`) and `hidden` only when true. */
 export function orderedObject(object: HomeMapObject): HomeMapObject {
   const out = { kind: object.kind } as HomeMapObject;
   if (object.model !== undefined && object.model !== "") out.model = object.model;
   if (object.fabric !== undefined && object.fabric !== "") out.fabric = object.fabric;
   if (object.wood !== undefined && object.wood !== "") out.wood = object.wood;
-  if (object.light !== undefined && object.light !== "") out.light = object.light;
+  const held = homeMapHeldIdOf(object);
+  if (held !== undefined) out.device = held;
   out.c = object.c;
   out.size = object.size;
   out.turn = object.turn;

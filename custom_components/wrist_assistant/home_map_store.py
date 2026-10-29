@@ -41,7 +41,7 @@ so a writer that drifts from it hears so at once::
                                           "style"?: "sliding" | "double",
                                           "a", "b", "z0", "z1"}],
                             "objects": [{"kind", "model"?, "fabric"?,
-                                         "wood"?, "light"?, "c": [x, y],
+                                         "wood"?, "device"?, "c": [x, y],
                                          "size": [w, d, h], "turn",
                                          "lift"?, "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
@@ -79,16 +79,23 @@ absent, the look picks one by the object's kind. An object's ``fabric``
 and ``wood`` (``#RRGGBB`` in either case, kept as sent) recolour its 3D
 model's fabric and wood parts; absent, the model keeps its own colours.
 They are kept on any object whatever its kind or model. An object's
-``light`` is the ``id`` of a pin of the same floor that the object, a lamp,
-holds: the light it is. It is checked as shaped like a pin id (a UUID) only,
-never that such a pin exists, as a pin's ``entityId`` is never checked
-against the home. A reader ignores a ``light`` that names no pin of the
-floor, a pin whose entity is not a ``light.*``, or a pin an earlier object
-already holds (the floor's rooms in order, each room's objects in order), so
-one pin is held by at most one lamp. The editor always writes the held pin's
-``at`` where the lamp's bulb is, so a reader that ignores ``light`` still
-draws the light in the right place. A ``light.*`` entity may have any number
-of pins (six ceiling lamps on one light group). An opening's ``style`` is
+``device`` is the ``id`` of a pin of the same floor that the object holds:
+the device it is or carries (a lamp's light, a TV's media player, a fan's
+switch), any entity at all. It is checked as shaped like a pin id (a UUID)
+only, never that such a pin exists, as a pin's ``entityId`` is never checked
+against the home. ``light`` is its old spelling, from when only a lamp held
+a pin and only a light: a save may still send it, and the checked map keeps
+it as ``device`` (when both are sent, ``device`` wins and ``light`` is
+dropped). A map stored with ``light`` is never rewritten on load; the next
+save writes ``device``, and a reader takes ``device``, else ``light``. A
+reader ignores a link that names no pin of the floor or a pin an earlier
+object already holds (the floor's rooms in order, each room's objects in
+order), so one pin is held by at most one thing. The editor always writes
+the held pin's ``at`` on its thing (a lamp's bulb when the pin is a light,
+else the piece's hold spot, else the middle of the thing's top), so a reader
+that ignores ``device`` still draws the pin in the right place. A
+``light.*`` entity may have any number of pins (six ceiling lamps on one
+light group). An opening's ``style`` is
 ``double`` (a door only: two leaves meeting in the middle) or ``sliding`` (a
 door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
 characters) and ``icon`` (one of ``PIN_ICONS``) stand in for the entity's
@@ -463,7 +470,7 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
             raw_object,
             where,
             ("kind", "c", "size", "turn"),
-            ("model", "fabric", "wood", "light", "lift", "hidden"),
+            ("model", "fabric", "wood", "device", "light", "lift", "hidden"),
         )
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
@@ -487,13 +494,19 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
                 if not isinstance(color, str) or not _HEX_COLOR_RE.fullmatch(color):
                     _fail(f"{where}.{part}", "must be a colour like #8E8E93")
                 checked_object[part] = color
-        # The pin the lamp holds, by its id's shape only: whether a pin of the
-        # floor has it is never checked, as a pin's entity id never is.
-        if "light" in item:
-            light = item["light"]
-            if not isinstance(light, str) or not _UUID_RE.fullmatch(light):
-                _fail(f"{where}.light", "must be a pin's id, a UUID")
-            checked_object["light"] = light
+        # The pin the thing holds, by its id's shape only: whether a pin of the
+        # floor has it is never checked, as a pin's entity id never is. light
+        # is the old spelling of device, still read and always written back as
+        # device; when both are sent, device wins and light is dropped.
+        held = None
+        for key in ("light", "device"):
+            if key in item:
+                value = item[key]
+                if not isinstance(value, str) or not _UUID_RE.fullmatch(value):
+                    _fail(f"{where}.{key}", "must be a pin's id, a UUID")
+                held = value
+        if held is not None:
+            checked_object["device"] = held
         checked_object["c"] = _point(item["c"], f"{where}.c", 2)
         checked_object["size"] = [
             _number(value, f"{where}.size[{j}]", 0, 1000) for j, value in enumerate(size)

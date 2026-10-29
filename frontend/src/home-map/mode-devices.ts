@@ -32,20 +32,23 @@
 // glow's size, colour and Stay in room) on all of them as one edit, Mixed
 // where they differ.
 //
-// Lamps hold lights (a light's pin and the lamp it sits in are one thing,
-// `edit-ops.ts` keeping the pin at the lamp's bulb). A light's row always
-// adds another: a light group can sit in six ceiling cans. Its
+// Things hold devices (a device's pin and the thing it sits on are one
+// thing, a light and its lamp, a media player and its TV, `edit-ops.ts`
+// keeping the pin on the thing). A light's row always adds another: a light
+// group can sit in six ceiling cans. Its
 // row says how many are on the map ("2 on map"), a click there picking each
 // in turn. Adding a light, by a click on its row or a drop on the plan,
 // opens the lamp chooser by the spot: Ceiling, Floor, Table, Wall or Just a
 // bulb, each with its picture, the last one taken ringed (kept in the
 // browser), Enter taking it and Escape or a click outside cancelling. A
-// light dropped on a lamp that holds nothing goes straight into it, and a
-// light's pin dragged onto one is put in it, the lamp lit up while the
-// light is over it. A lamp's inspector starts with its light (`lampCards`):
-// its name and entity (changed by a search of the home's lights), its glow
-// and its tap, Add another and Unlink; a lamp with no light has a search to
-// give it one.
+// device dropped on a thing that holds nothing goes straight onto it (a
+// light only into a lamp), and an unheld pin dragged onto one is put on it,
+// the thing lit up while the pin is over it; a rug never takes one. A
+// thing's inspector starts with its device (`thingCards`, called Light on a
+// lamp): its name and entity (changed by a search of the home's devices, a
+// lamp's of its lights), a light's glow, its icon and reading, its tap, a
+// light's Add another, and Unlink; a thing with no device has Choose, a
+// lamp a search of the lights straight away.
 //
 // Every edit is an `edit-ops.ts` function by ids, saved through the shell
 // (`editor-mode.ts` has the rules). The device lists are `devices-model.ts`,
@@ -83,14 +86,14 @@ import {
   type HomeMapPinFields,
   type HomeMapThingRef,
   addAnotherLamp,
+  addDeviceToThing,
   addLampLight,
-  addLightToLamp,
   addPin,
   centerPinInRoom,
   homeMapHeldPin,
-  homeMapLampOfPin,
   homeMapPinsOfEntity,
-  linkLight,
+  homeMapThingOfPin,
+  linkDevice,
   movePin,
   movePins,
   placeAllByArea,
@@ -102,13 +105,14 @@ import {
   setPinHeight,
   setPinsFields,
   setPinsHeight,
-  unlinkLight,
+  unlinkDevice,
 } from "./edit-ops.js";
 import type { HomeMapEditorContext, HomeMapSelection, HomeMapViewItem } from "./editor-mode.js";
 import { hmeCard, hmeChip, hmeColourInput, hmeHint, hmeNumber, hmePic, hmeRow, hmeSelect, hmeText } from "./editor-parts.js";
 import { homeMapCount, homeMapShortcut, homeMapToPlan } from "./editor-view.js";
 import { HOME_MAP_LAMP_CHOICES, HOME_MAP_LAMP_CHOICE_MODELS, type HomeMapLampChoice, homeMapLampPiece } from "./furniture.js";
 import { homeBoxCorners, homeBoxOf, homeLabelPoint, homePointBounds, homePolygonHolds, homeRoomUnder } from "./geometry.js";
+import { homeMapIsLamp, homeMapThingName } from "./mode-arrange.js";
 import {
   type HomeMapFloor,
   type HomeMapPin,
@@ -201,12 +205,12 @@ export function homeMapKeepLampChoice(choice: HomeMapLampChoice): void {
   }
 }
 
-/** Whether an entity is a light, the only kind a lamp holds. */
+/** Whether an entity is a light, the only kind a lamp's bulb shines. */
 const isLight = (entityId: string) => entityId.startsWith("light.");
 
-/** A press this near a small lamp's middle, in pixels, lands on it. */
+/** A press this near a small thing's middle, in pixels, lands on it. */
 const LAMP_REACH = 16;
-/** How many lights a lamp's light search lists. */
+/** How many devices a thing's device search lists. */
 const LIGHTS_LISTED = 8;
 
 /** The lamp chooser while it is open: the light it adds, the spot, the
@@ -242,11 +246,11 @@ export class DevicesMode {
    * to take the focus. */
   private chooser: LampChooser | undefined;
   private chooserFocus = false;
-  /** The lamp holding nothing that a light dragged from its row, or a
-   * light's pin dragged on the plan, is over: lit up, and the drop puts the
-   * light in it. */
+  /** The thing holding nothing that a device dragged from its row, or an
+   * unheld pin dragged on the plan, is over: lit up, and the drop puts the
+   * device on it. */
   private lampOver: HomeMapThingRef | undefined;
-  /** A lamp's light search: the lamp it is open for (its room and place)
+  /** A thing's device search: the thing it is open for (its room and place)
    * and what it holds. */
   private lightFind: { key: string; query: string } | undefined;
 
@@ -351,8 +355,8 @@ export class DevicesMode {
     const i = now === undefined ? -1 : all.findIndex((x) => sameHomeMapId(x.pin.id, now));
     const next = all[(i + 1) % all.length]!;
     if (!sameHomeMapId(next.floor.id, ctx.floor.id)) ctx.setFloor(next.floor.id);
-    const lamp = homeMapLampOfPin(next.floor, next.pin.id);
-    ctx.select(lamp === undefined ? { kind: "pin", pinId: next.pin.id } : { kind: "object", roomId: lamp.roomId, object: lamp.object });
+    const thing = homeMapThingOfPin(next.floor, next.pin.id);
+    ctx.select(thing === undefined ? { kind: "pin", pinId: next.pin.id } : { kind: "object", roomId: thing.roomId, object: thing.object });
   }
 
   // ── the lamp chooser ───────────────────────────────────────────────────
@@ -484,19 +488,23 @@ export class DevicesMode {
     </div>`;
   }
 
-  // ── lamps under the plan ───────────────────────────────────────────────
+  // ── things under the plan ──────────────────────────────────────────────
 
-  /** The lamp holding nothing at plan point `at`: a shown thing whose piece
-   * has a bulb, under the point, or with its middle within a small reach of
-   * it on screen (a table lamp is a few pixels wide); the nearest middle
-   * first. On `floor`, the floor shown unless a drag keeps the one it
-   * started on. */
-  emptyLampAt(ctx: HomeMapEditorContext, at: HomePoint, floor: HomeMapFloor = ctx.floor): HomeMapThingRef | undefined {
+  /** The thing holding nothing at plan point `at` that a device dropped
+   * there goes onto: a shown thing under the point, or with its middle
+   * within a small reach of it on screen (a table lamp is a few pixels
+   * wide); the nearest middle first. A light (`light`) goes only into a
+   * lamp (a piece with a bulb), so a ceiling light dropped over a bed is
+   * still a light of its own; anything else onto any thing but a rug, which
+   * lies under everything else. On `floor`, the floor shown unless a drag
+   * keeps the one it started on. */
+  emptyThingAt(ctx: HomeMapEditorContext, at: HomePoint, light: boolean, floor: HomeMapFloor = ctx.floor): HomeMapThingRef | undefined {
     const s = ctx.toScreen(at);
     let best: { ref: HomeMapThingRef; d: number } | undefined;
     for (const room of floor.rooms) {
       room.objects.forEach((object, index) => {
-        if (object.hidden === true || homeMapLampPiece(object.model) === undefined) return;
+        if (object.hidden === true) return;
+        if (light ? homeMapLampPiece(object.model) === undefined : object.kind === "rug") return;
         if (homeMapHeldPin(floor, room.id, index) !== undefined) return;
         const c = ctx.toScreen(object.c);
         const d = Math.hypot(c[0] - s[0], c[1] - s[1]);
@@ -507,20 +515,21 @@ export class DevicesMode {
     return best?.ref;
   }
 
-  /** The lamp holding the light whose pin a press at `at` lands on, if the
-   * pin there is one a lamp holds: the press is the lamp's. */
-  heldLampAt(ctx: HomeMapEditorContext, at: HomePoint): HomeMapThingRef | undefined {
+  /** The thing holding the pin a press at `at` lands on, if a thing holds
+   * the pin there: the press is the thing's. */
+  heldThingAt(ctx: HomeMapEditorContext, at: HomePoint): HomeMapThingRef | undefined {
     const pin = this.pinAt(ctx, ctx.toScreen(at));
-    return pin === undefined ? undefined : homeMapLampOfPin(ctx.floor, pin.id);
+    return pin === undefined ? undefined : homeMapThingOfPin(ctx.floor, pin.id);
   }
 
-  /** A lamp lit up as the light over it would go in it, with a word. */
+  /** A thing lit up as the device over it would go onto it, with a word: in
+   * this lamp, or on this TV. */
   private lampMark(ctx: HomeMapEditorContext, ref: HomeMapThingRef): SVGTemplateResult | typeof nothing {
     const object = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, ref.roomId))?.objects[ref.object];
     if (object === undefined) return nothing;
     const box = homeBoxCorners(homeBoxOf(object)).map((p) => ctx.toScreen(p).map(fmt).join(",")).join(" ");
     const [x, y] = ctx.toScreen(object.c);
-    const text = "Put it in this lamp";
+    const text = homeMapIsLamp(object) ? "Put it in this lamp" : `Put it on this ${homeMapThingName(object)}`;
     const w = text.length * 6.4 + 20;
     return svg`<g class="hme-lamp-over" pointer-events="none">
       <circle cx=${fmt(x)} cy=${fmt(y)} r="22" fill="rgba(255,191,85,0.22)" stroke=${LIT} stroke-width="2" stroke-dasharray="4 3" />
@@ -533,7 +542,8 @@ export class DevicesMode {
   // ── dragging a device onto the plan ────────────────────────────────────
 
   /** A device dragged from its row over the plan: the room it would land
-   * in lit, or for a light over a lamp that holds nothing, that lamp. */
+   * in lit, or the thing holding nothing it would go onto (a light only
+   * into a lamp). */
   dragOver(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean {
     const types = [...(e.dataTransfer?.types ?? [])];
     const carries = this.dragging !== undefined || types.includes(HOME_MAP_DEVICE_DRAG_TYPE);
@@ -541,14 +551,14 @@ export class DevicesMode {
     const before = this.dropAt;
     const lampBefore = this.lampOver;
     this.dropAt = carries ? at : undefined;
-    this.lampOver = carries && light && at !== undefined ? this.emptyLampAt(ctx, at) : undefined;
+    this.lampOver = carries && at !== undefined ? this.emptyThingAt(ctx, at, light) : undefined;
     if (before !== this.dropAt || JSON.stringify(lampBefore) !== JSON.stringify(this.lampOver)) ctx.redraw();
     return carries && at !== undefined;
   }
 
-  /** A device dropped on the plan: a light on a lamp that holds nothing
-   * goes straight into it; any other light opens the lamp chooser there;
-   * anything else is placed there. */
+  /** A device dropped on the plan: on a thing that holds nothing it goes
+   * straight onto it (a light only into a lamp); else a light opens the lamp
+   * chooser there, and anything else is placed there. */
   drop(ctx: HomeMapEditorContext, at: HomePoint, e: DragEvent): void {
     const entityId = this.dragging ?? e.dataTransfer?.getData(HOME_MAP_DEVICE_DRAG_TYPE) ?? "";
     this.dragging = undefined;
@@ -558,20 +568,35 @@ export class DevicesMode {
       ctx.redraw();
       return;
     }
-    if (!isLight(entityId)) {
-      this.place(ctx, entityId, at);
+    const light = isLight(entityId);
+    const thing = this.emptyThingAt(ctx, at, light);
+    if (thing === undefined) {
+      if (light) this.addLight(ctx, entityId, at);
+      else this.place(ctx, entityId, at);
       return;
     }
-    const lamp = this.emptyLampAt(ctx, at);
-    if (lamp === undefined) {
-      this.addLight(ctx, entityId, at);
-      return;
+    this.putOn(ctx, thing, entityId);
+  }
+
+  /** A device put onto a thing that holds nothing, the thing picked: a new
+   * pin for a light (a light can be on the map many times), and for
+   * anything else its one pin when this floor has it, else a new one; a
+   * device on another floor's map stays there, with a word. */
+  private putOn(ctx: HomeMapEditorContext, thing: HomeMapThingRef, entityId: string): boolean {
+    const floorId = ctx.floor.id;
+    const there = isLight(entityId) ? undefined : homeMapPinOfEntity(ctx.doc, entityId);
+    const select = { select: { kind: "object", ...thing } as HomeMapSelection };
+    if (there !== undefined) {
+      if (!sameHomeMapId(there.floorId, floorId)) {
+        ctx.note("warn", "That device is on another floor's map. Remove it there first to put it here.");
+        return false;
+      }
+      return ctx.apply((d) => linkDevice(d, floorId, thing.roomId, thing.object, there.pinId), select);
     }
     const id = ctx.newId().toUpperCase();
-    const floorId = ctx.floor.id;
-    if (!ctx.apply((d) => addLightToLamp(d, floorId, lamp.roomId, lamp.object, entityId, id), { select: { kind: "object", ...lamp } })) {
-      ctx.note("warn", "That light could not be put in the lamp: the map holds at most 400 devices.");
-    }
+    const ok = ctx.apply((d) => addDeviceToThing(d, floorId, thing.roomId, thing.object, entityId, id), select);
+    if (!ok) ctx.note("warn", "That device could not be put on it: the map holds at most 400 devices.");
+    return ok;
   }
 
   // ── the stage ──────────────────────────────────────────────────────────
@@ -803,30 +828,31 @@ export class DevicesMode {
   }
 
   /** Drag a pin: it follows the pointer, into the room it lands in, saved
-   * once on the drop. A light no lamp holds, let go over a lamp that holds
-   * nothing, goes into that lamp instead: the lamp lights up while the
-   * light is over it and the light shows in it. */
+   * once on the drop. A pin no thing holds, let go over a thing that holds
+   * nothing (a light only over a lamp), goes onto that thing instead: the
+   * thing lights up while the pin is over it and the pin shows on it. */
   private moveDrag(ctx: HomeMapEditorContext, e: PointerEvent, pin: HomeMapPin, start: HomePoint): void {
     const id = pin.id;
     const floor = ctx.floor;
     const floorId = floor.id;
     const from: HomePoint = [pin.at[0], pin.at[1]];
-    const light = isLight(pin.entityId) && homeMapLampOfPin(floor, id) === undefined;
+    const free = homeMapThingOfPin(floor, id) === undefined;
+    const light = isLight(pin.entityId);
     let to = from;
     ctx.drag(e, {
       move: (p) => {
         this.moving = true;
         to = [from[0] + p[0] - start[0], from[1] + p[1] - start[1]];
-        const lamp = light ? this.emptyLampAt(ctx, to, floor) : undefined;
-        this.lampOver = lamp;
-        ctx.preview(lamp === undefined ? (d) => movePin(d, id, to) : (d) => linkLight(d, floorId, lamp.roomId, lamp.object, id));
+        const thing = free ? this.emptyThingAt(ctx, to, light, floor) : undefined;
+        this.lampOver = thing;
+        ctx.preview(thing === undefined ? (d) => movePin(d, id, to) : (d) => linkDevice(d, floorId, thing.roomId, thing.object, id));
       },
       end: (_p, _ev, moved) => {
-        const lamp = this.lampOver;
+        const thing = this.lampOver;
         this.moving = false;
         this.lampOver = undefined;
         ctx.preview(undefined);
-        if (moved && lamp !== undefined) ctx.apply((d) => linkLight(d, floorId, lamp.roomId, lamp.object, id), { select: { kind: "object", ...lamp } });
+        if (moved && thing !== undefined) ctx.apply((d) => linkDevice(d, floorId, thing.roomId, thing.object, id), { select: { kind: "object", ...thing } });
         else if (moved && Math.hypot(to[0] - from[0], to[1] - from[1]) >= 0.005) ctx.apply((d) => movePin(d, id, to), { select: { kind: "pin", pinId: id } });
       },
       cancel: () => this.stopDrag(ctx),
@@ -1068,17 +1094,9 @@ export class DevicesMode {
 
       ${hmeCard("On the map", html`
         ${hmeRow("Name", hmeText({ value: pin.name ?? "", label: "Name on the map", placeholder: friendly ?? pin.entityId, set: (v) => set({ name: v.trim() === "" ? null : v }) }))}
-        ${hmeRow("Icon", html`<button type="button" class="hme-in hme-icon-btn" aria-haspopup="true" aria-expanded=${this.iconsOpen ? "true" : "false"}
-          @click=${() => { this.iconsOpen = !this.iconsOpen; ctx.redraw(); }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">${homeMapPinGlyph(icon, "currentColor", 24, 2)}</svg>
-          <span class="hme-grow">${homeMapIconWords(pin, deviceClass, friendly)}</span><span class="hme-caret" aria-hidden="true">▾</span></button>`)}
-        ${this.iconsOpen ? this.iconMenu(ctx, pin, auto, set) : nothing}
+        ${this.iconRows(ctx, pin, set)}
         ${hmeRow("Room", html`<span class="hme-in hme-ro">${homeMapPinRoomWords(ctx.floor, pin)}</span>`)}
-        <div class="hme-r top"><span class="hme-l">Reading</span><div class="hme-pics">
-          ${hmePic({ label: "None", picture: readingPicture("none", tile), on: pin.reading === "none", click: () => set({ reading: "none" }) })}
-          ${hmePic({ label: "Pill", picture: readingPicture("pill", tile), on: pin.reading === undefined, title: "Its reading, as 21.5°, 52% or 627 W, when it has one", click: () => set({ reading: null }) })}
-          ${hmePic({ label: "Name", picture: readingPicture("name", tile), on: pin.reading === "name", click: () => set({ reading: "name" }) })}
-        </div></div>`)}
+        ${readingRow(pin, tile, set)}`)}
 
       ${hmeCard("Height", html`
         <div class="hme-r">
@@ -1096,6 +1114,20 @@ export class DevicesMode {
       ${this.tapCard(ctx, pin, set)}
 
       <div class="hme-row-end"><button type="button" class="hme-tb danger" @click=${() => ctx.apply((d) => removePin(d, id), { select: null })}>Remove from the map</button></div>`;
+  }
+
+  /** A pin's Icon row, its own icon or Auto, and the icon menu under it
+   * while open. */
+  private iconRows(ctx: HomeMapEditorContext, pin: HomeMapPin, set: (f: HomeMapPinFields) => void): TemplateResult {
+    const friendly = this.friendly(ctx, pin.entityId);
+    const deviceClass = this.deviceClass(ctx, pin.entityId);
+    const auto = homeMapAutoPinIcon(pin.entityId, deviceClass, friendly);
+    const icon = pin.icon ?? auto;
+    return html`${hmeRow("Icon", html`<button type="button" class="hme-in hme-icon-btn" aria-haspopup="true" aria-expanded=${this.iconsOpen ? "true" : "false"}
+        @click=${() => { this.iconsOpen = !this.iconsOpen; ctx.redraw(); }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">${homeMapPinGlyph(icon, "currentColor", 24, 2)}</svg>
+        <span class="hme-grow">${homeMapIconWords(pin, deviceClass, friendly)}</span><span class="hme-caret" aria-hidden="true">▾</span></button>`)}
+      ${this.iconsOpen ? this.iconMenu(ctx, pin, auto, set) : nothing}`;
   }
 
   /** The icon menu: Auto and the sixteen icons, each drawn. */
@@ -1149,42 +1181,54 @@ export class DevicesMode {
       ${hmeHint("The pool of light round this light on the plan and the tiles. Warm is the lamplight every light has without a color of its own.")}`;
   }
 
-  // ── a lamp's light ─────────────────────────────────────────────────────
+  // ── a thing's device ───────────────────────────────────────────────────
 
-  /** The cards a picked lamp shows before its own: the light it holds (its
-   * name and entity, a search to change it, its glow, Add another and
-   * Unlink) and what a tap on it does; or for a lamp that holds none, a
-   * search to give it one. Nothing for a thing that is no lamp. Its height
-   * is the lamp's, so it has no Height card. */
-  lampCards(ctx: HomeMapEditorContext, roomId: string, index: number): TemplateResult | typeof nothing {
+  /** The cards a picked thing shows before its own: the device it holds
+   * (its name and entity, a search to change it, a light's glow, its icon
+   * and reading, a light's Add another, and Unlink) and what a tap on it
+   * does; or for a thing that holds none, a way to give it one: a lamp's
+   * search of the home's lights straight away, any other thing's Choose,
+   * which opens a search of all the home's devices. A lamp calls its device
+   * its Light. The pin's height is the thing's, so it has no Height card. */
+  thingCards(ctx: HomeMapEditorContext, roomId: string, index: number): TemplateResult | typeof nothing {
     const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, roomId));
     const object = room?.objects[index];
-    if (room === undefined || object === undefined || homeMapLampPiece(object.model) === undefined) return nothing;
+    if (room === undefined || object === undefined) return nothing;
+    const lamp = homeMapIsLamp(object) || homeMapLampPiece(object.model) !== undefined;
+    const title = lamp ? "Light" : "Device";
+    const thingName = homeMapThingName(object);
     const floorId = ctx.floor.id;
     const key = `${room.id}/${index}`.toUpperCase();
     const pin = homeMapHeldPin(ctx.floor, room.id, index);
+    const finding = this.lightFind?.key === key;
+    const query = finding ? this.lightFind!.query : "";
     if (pin === undefined) {
-      const find = this.lightFind?.key === key ? this.lightFind.query : "";
-      return hmeCard("Light", html`
-        ${hmeRow("Light", html`<span class="hme-in hme-ro dim">None</span>`)}
-        ${this.lightSearch(ctx, room, key, find, undefined, (entityId) => {
-          const id = ctx.newId().toUpperCase();
-          this.lightFind = undefined;
-          if (!ctx.apply((d) => addLightToLamp(d, floorId, room.id, index, entityId, id), { select: { kind: "object", roomId: room.id, object: index } })) {
-            ctx.note("warn", "That light could not be put in the lamp: the map holds at most 400 devices.");
-          }
-        })}
-        ${hmeHint("Pick the light this lamp holds, or drag its light's pin onto it on the plan.")}`);
+      const put = (entityId: string) => {
+        this.lightFind = undefined;
+        if (!this.putOn(ctx, { roomId: room.id, object: index }, entityId)) ctx.redraw();
+      };
+      if (lamp) {
+        return hmeCard("Light", html`
+          ${hmeRow("Light", html`<span class="hme-in hme-ro dim">None</span>`)}
+          ${this.deviceSearch(ctx, room, key, query, undefined, true, put)}
+          ${hmeHint("Pick the light this lamp holds, or drag its light's pin onto it on the plan.")}`);
+      }
+      return hmeCard("Device", html`
+        ${hmeRow("Device", html`<span class="hme-in hme-ro dim">None</span>`,
+          html`<button type="button" class="hme-tb" aria-expanded=${finding ? "true" : "false"} title=${`Pick the device this ${thingName} is or carries`}
+            @click=${() => { this.lightFind = finding ? undefined : { key, query: "" }; ctx.redraw(); }}>${finding ? "Cancel" : "Choose…"}</button>`)}
+        ${finding ? this.deviceSearch(ctx, room, key, query, undefined, false, put) : nothing}
+        ${hmeHint(`The device this ${thingName} is or carries, a TV's media player or a fan's switch: choose it, or drag its pin onto it on the plan.`)}`);
     }
     const states = ctx.hass?.states;
     const id = pin.id;
+    const light = isLight(pin.entityId);
     const look = homeMapPinLook(pin.entityId, states);
     const lit = look.kind === "light" && look.on;
     const friendly = this.friendly(ctx, pin.entityId);
     const set = (fields: HomeMapPinFields) => ctx.apply((d) => setPinFields(d, id, fields, friendly));
     const icon = pin.icon ?? homeMapAutoPinIcon(pin.entityId, this.deviceClass(ctx, pin.entityId), friendly);
     const tile = homeMapGlowHex(pin) ?? LIT;
-    const changing = this.lightFind?.key === key;
     const doc = ctx.doc.floors.find((f) => sameHomeMapId(f.id, floorId))?.rooms.find((r) => sameHomeMapId(r.id, room.id));
     const another = () => {
       const newId = ctx.newId().toUpperCase();
@@ -1193,7 +1237,20 @@ export class DevicesMode {
         ctx.note("warn", "Another lamp could not be added: the map holds at most 400 devices, and a room at most 256 things.");
       }
     };
-    return html`${hmeCard("Light", html`
+    // Any other entity keeps one pin, so it can take only a device not on
+    // the map yet; a light may be on it many times.
+    const change = (entityId: string) => {
+      this.lightFind = undefined;
+      if (!isLight(entityId) && homeMapPinOfEntity(ctx.doc, entityId) !== undefined) {
+        ctx.note("warn", "That device is on the map already. Drag its pin onto this instead.");
+        ctx.redraw();
+        return;
+      }
+      if (!ctx.apply((d) => setPinEntity(d, id, entityId))) ctx.redraw();
+    };
+    const holder = lamp ? "lamp" : thingName;
+    const what = light ? "light" : "device";
+    return html`${hmeCard(title, html`
         <div class="hme-lamp-light">
           <span class="hme-pin-big ${lit ? "lit" : ""}" style=${lit ? `background:${tile};box-shadow:0 0 24px ${tile}80` : ""}>
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${homeMapPinGlyph(icon, lit ? "#3a2600" : "#d1d1d6", 24, 2)}</svg></span>
@@ -1204,38 +1261,40 @@ export class DevicesMode {
           <span class="hme-state ${lit ? "lit" : ""}">${homeMapStateText(pin.entityId, states)}</span>
         </div>
         ${hmeRow("Name", hmeText({ value: pin.name ?? "", label: "Name on the map", placeholder: friendly ?? pin.entityId, set: (v) => set({ name: v.trim() === "" ? null : v }) }))}
-        ${hmeRow("Light", html`<span class="hme-in hme-ro mono">${pin.entityId}</span>`,
-          html`<button type="button" class="hme-tb" aria-expanded=${changing ? "true" : "false"} title="Show another of the home's lights in this lamp"
-            @click=${() => { this.lightFind = changing ? undefined : { key, query: "" }; ctx.redraw(); }}>${changing ? "Cancel" : "Change…"}</button>`)}
-        ${changing ? this.lightSearch(ctx, room, key, this.lightFind!.query, pin.entityId, (entityId) => {
-          this.lightFind = undefined;
-          if (!ctx.apply((d) => setPinEntity(d, id, entityId))) ctx.redraw();
-        }) : nothing}
-        ${this.glowRows(ctx, pin, lit ? look.brightness : undefined, set)}
+        ${hmeRow(title, html`<span class="hme-in hme-ro mono">${pin.entityId}</span>`,
+          html`<button type="button" class="hme-tb" aria-expanded=${finding ? "true" : "false"} title=${lamp ? "Show another of the home's lights in this lamp" : `Show another of the home's devices on this ${thingName}`}
+            @click=${() => { this.lightFind = finding ? undefined : { key, query: "" }; ctx.redraw(); }}>${finding ? "Cancel" : "Change…"}</button>`)}
+        ${finding ? this.deviceSearch(ctx, room, key, query, pin.entityId, lamp, change) : nothing}
+        ${light ? this.glowRows(ctx, pin, lit ? look.brightness : undefined, set) : nothing}
+        ${this.iconRows(ctx, pin, set)}
+        ${readingRow(pin, tile, set)}
         <div class="hme-row-end">
           ${homeMapCanToggle(pin.entityId) && ctx.hass !== undefined ? html`<button type="button" class="hme-tb" @click=${() => this.toggle(ctx, pin.entityId)}>${homeMapToggleWords(pin.entityId, states)}</button>` : nothing}
-          <button type="button" class="hme-tb" title="Another of this lamp beside it, holding the same light: a light group in many lamps" @click=${another}>Add another</button>
-          <button type="button" class="hme-tb push" title="The lamp lets go of the light; both stay where they are" @click=${() => ctx.apply((d) => unlinkLight(d, floorId, room.id, index))}>Unlink</button>
+          ${light ? html`<button type="button" class="hme-tb" title=${`Another of this ${holder} beside it, holding the same light: a light group in many lamps`} @click=${another}>Add another</button>` : nothing}
+          <button type="button" class="hme-tb push" title=${`The ${holder} lets go of the ${what}; both stay where they are`} @click=${() => ctx.apply((d) => unlinkDevice(d, floorId, room.id, index))}>Unlink</button>
         </div>
-        <p class="hme-foot-hint">The light sits in the lamp: move, lift or turn the lamp and the light goes with it.</p>`)}
+        <p class="hme-foot-hint">${lamp && light ? "The light sits in the lamp: move, lift or turn the lamp and the light goes with it."
+          : `The ${what} sits on the ${holder}: move, lift or turn the ${holder} and the ${what} goes with it.`}</p>`)}
       ${this.tapCard(ctx, pin, set)}`;
   }
 
-  /** A search of the home's lights for a lamp: with nothing typed, the
-   * lights of the lamp's room's area first; a click on one picks it. `now`
-   * is the light shown now, left out. */
-  private lightSearch(ctx: HomeMapEditorContext, room: HomeMapRoom, key: string, query: string, now: string | undefined, pick: (entityId: string) => void): TemplateResult {
-    const lights = homeMapDevices(ctx.hass).filter((d) => d.domain === "light" && d.entityId !== now);
+  /** A search of the home's devices for a thing (`lights`: only its lights,
+   * for a lamp): with nothing typed, the devices of the thing's room's area
+   * first; a click on one picks it. `now` is the device shown now, left
+   * out. */
+  private deviceSearch(ctx: HomeMapEditorContext, room: HomeMapRoom, key: string, query: string, now: string | undefined, lightsOnly: boolean, pick: (entityId: string) => void): TemplateResult {
+    const lights = homeMapDevices(ctx.hass).filter((d) => (!lightsOnly || d.domain === "light") && d.entityId !== now);
     const found = query.trim() === ""
       ? [...lights.filter((d) => room.areaId !== undefined && d.areaId === room.areaId), ...lights.filter((d) => room.areaId === undefined || d.areaId !== room.areaId)].slice(0, LIGHTS_LISTED)
       : homeMapFindDevices(lights, query, LIGHTS_LISTED);
     const states = ctx.hass?.states;
+    const word = lightsOnly ? "light" : "device";
     return html`<div class="hme-light-find">
       <label class="hme-find"><span aria-hidden="true">⌕</span>
-        <input type="search" placeholder="Find a light" aria-label="Find a light" .value=${live(query)}
+        <input type="search" placeholder="Find a ${word}" aria-label="Find a ${word}" .value=${live(query)}
           @input=${(e: Event) => { this.lightFind = { key, query: (e.target as HTMLInputElement).value }; ctx.redraw(); }} /></label>
-      ${found.length === 0 ? html`<p class="hme-empty-line">${lights.length === 0 ? "Home Assistant has no lights." : "No light by that name."}</p>`
-        : found.map((d) => html`<button type="button" class="hme-list-row hme-light-row" title=${`Put ${d.name} in this lamp`} @click=${() => pick(d.entityId)}>
+      ${found.length === 0 ? html`<p class="hme-empty-line">${lights.length === 0 ? `Home Assistant has no ${word}s.` : `No ${word} by that name.`}</p>`
+        : found.map((d) => html`<button type="button" class="hme-list-row hme-light-row" title=${lightsOnly ? `Put ${d.name} in this lamp` : `Put ${d.name} on it`} @click=${() => pick(d.entityId)}>
           <span class="hme-grow">${d.name}<small class="mono">${d.entityId}</small></span>
           <span class="hme-val">${homeMapStateText(d.entityId, states)}</span></button>`)}
     </div>`;
@@ -1446,6 +1505,15 @@ function mixedRange(o: { label: string; value: number | undefined; min: number; 
       o.preview(Number(el.value));
     }}
     @change=${(e: Event) => o.set(Number((e.target as HTMLInputElement).value))} />`;
+}
+
+/** A pin's Reading row: no pill, its reading in its pill, or its name. */
+function readingRow(pin: HomeMapPin, tile: string, set: (f: HomeMapPinFields) => void): TemplateResult {
+  return html`<div class="hme-r top"><span class="hme-l">Reading</span><div class="hme-pics">
+    ${hmePic({ label: "None", picture: readingPicture("none", tile), on: pin.reading === "none", click: () => set({ reading: "none" }) })}
+    ${hmePic({ label: "Pill", picture: readingPicture("pill", tile), on: pin.reading === undefined, title: "Its reading, as 21.5°, 52% or 627 W, when it has one", click: () => set({ reading: null }) })}
+    ${hmePic({ label: "Name", picture: readingPicture("name", tile), on: pin.reading === "name", click: () => set({ reading: "name" }) })}
+  </div></div>`;
 }
 
 /** The Reading choice's small pictures: a pin alone, with its pill, or with

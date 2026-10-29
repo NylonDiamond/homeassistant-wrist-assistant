@@ -704,14 +704,15 @@ describe("the Home map editor", () => {
      * takes them. */
     const tray = () => homeMapTray(el.context()!.doc, el.context()!.floor, homeMapDevices(ha.hass)).flatMap((g) => g.devices);
     expect(tray().map((d) => d.entityId)).toEqual(["switch.fan"]);
-    const [x, y] = screen([8, 3]);
+    // Clear of the kitchen's things: dropped on one, it would go onto it.
+    const [x, y] = screen([7, 4]);
     const dropped = { clientX: x, clientY: y, currentTarget: stage, preventDefault: () => undefined, dataTransfer: { types: ["application/x-wa-home-map-entity"], getData: () => "switch.fan" } };
     el.onStageDrag(dropped as unknown as DragEvent);
     expect(text()).toContain("Drop in Kitchen");
     el.onStageDrop(dropped as unknown as DragEvent);
     await el.session!.idle();
     const pin = ha.now().doc!.floors[0]!.pins.at(-1)!;
-    expect(pin).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN, at: [8, 3, 0.3] });
+    expect(pin).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN, at: [7, 4, 0.3] });
     expect(inside.selection).toEqual({ kind: "pin", pinId: pin.id });
     expect(text()).not.toContain("Drop in Kitchen");
     // No longer one to add now it is on the map.

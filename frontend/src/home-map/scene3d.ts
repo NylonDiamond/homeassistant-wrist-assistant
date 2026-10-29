@@ -29,7 +29,10 @@
 // soft cone, any other light every way. A light a lamp holds has no bulb of
 // its own drawn: it shines from inside the lamp, which casts no shadow so
 // its shade never closes the light in, and the shade glows while it is on;
-// a click on either picks the lamp. The finished picture is shaded in
+// a click on either picks the lamp. Any other device a thing holds has no
+// pin of its own here either (no device but a light is drawn in 3D), and a
+// TV holding one glows its screen a soft cool white while it is on,
+// playing, paused or buffering. The finished picture is shaded in
 // its corners and under its things (ambient occlusion) and its bulbs glow
 // past their edges. The numbers were tuned by eye on a real scanned room.
 //
@@ -52,7 +55,7 @@ import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { CopyShader } from "three/addons/shaders/CopyShader.js";
-import { homeMapHeldLights } from "./edit-ops.js";
+import { homeMapHeldPins } from "./edit-ops.js";
 import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeWallsOf } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
@@ -384,6 +387,40 @@ interface Thing {
   /** A lamp holding a light: its shade's own materials (among `copies`),
    * which glow while the light is on. */
   shades: THREE.MeshStandardMaterial[];
+  /** The entity of the device this thing holds, any kind, or none: a TV's
+   * screen glows while it is on. */
+  device?: string;
+  /** A TV holding a device: its screen's own materials (among `copies`). */
+  screens: THREE.MeshStandardMaterial[];
+  /** Whether its screen glows now, as Home Assistant last said. */
+  screenOn: boolean;
+}
+
+/** The models' material a TV's screen is made of: the Kenney TVs draw the
+ * screen, and only the screen, in it (a flat quad on the modern one's front,
+ * the old one's curved glass), so it glows alone. */
+const SCREEN = "metal";
+/** A TV's screen while its device is on: a soft cool white, under the
+ * bloom's threshold so it lights the screen rather than flaring. */
+const SCREEN_GLOW = 0xd6e4ff;
+const SCREEN_GLOW_LEVEL = 0.6;
+/** The catalog's kind of a TV. */
+const TV = "television";
+
+/** Whether the device a TV holds is on as a screen is: a media player on,
+ * playing, paused or buffering, a switch or anything else on; off, idle,
+ * standby, unavailable, unknown or no state at all leave it dark. */
+export function homeMapScreenOn(entityId: string | undefined, states: HomeMapStates | undefined): boolean {
+  const state = entityId === undefined ? undefined : states?.[entityId]?.state;
+  return state === "on" || state === "playing" || state === "paused" || state === "buffering";
+}
+
+/** A TV's screens lit or dark as its `screenOn` says. */
+function lightScreens(thing: Thing): void {
+  for (const screen of thing.screens) {
+    screen.emissive.set(SCREEN_GLOW);
+    screen.emissiveIntensity = thing.screenOn ? SCREEN_GLOW_LEVEL : 0;
+  }
 }
 
 /** The models' material a lamp's shade is made of, which glows while the
@@ -410,22 +447,27 @@ function untint(thing: Thing): void {
   for (const copy of thing.copies) copy.dispose();
   thing.copies = [];
   thing.shades = [];
+  thing.screens = [];
 }
 
 /** A thing's model in its fabric and wood colours: each material that
  * takes one (`homeMapMaterialTint`) swapped for a copy of its own, one copy
  * for each material however many meshes share it. A lamp holding a light
- * has its shade copied too, coloured or not, so its glow is its own. */
+ * has its shade copied too, coloured or not, so its glow is its own, and a
+ * TV holding a device its screen. */
 function tint(thing: Thing, colors: Pick<HomeMapObject, "fabric" | "wood">): void {
   untint(thing);
   const glows = thing.holds !== undefined;
-  if (thing.body === undefined || (colors.fabric === undefined && colors.wood === undefined && !glows)) return;
+  const tv = thing.device !== undefined && thing.piece?.kind === TV;
+  if (thing.body === undefined || (colors.fabric === undefined && colors.wood === undefined && !glows && !tv)) return;
   const made = new Map<THREE.Material, THREE.Material>();
   const recolour = (material: THREE.Material): THREE.Material => {
     const rgb = homeMapMaterialTint(material.name, colors);
-    const shade = glows && material.name === SHADE && (material as THREE.MeshStandardMaterial).emissive !== undefined;
+    const emits = (material as THREE.MeshStandardMaterial).emissive !== undefined;
+    const shade = glows && material.name === SHADE && emits;
+    const screen = tv && material.name === SCREEN && emits;
     const color = (material as THREE.MeshStandardMaterial).color as THREE.Color | undefined;
-    if ((rgb === undefined && !shade) || color === undefined) return material;
+    if ((rgb === undefined && !shade && !screen) || color === undefined) return material;
     let copy = made.get(material);
     if (copy === undefined) {
       copy = material.clone();
@@ -433,6 +475,7 @@ function tint(thing: Thing, colors: Pick<HomeMapObject, "fabric" | "wood">): voi
       made.set(material, copy);
       thing.copies.push(copy);
       if (shade) thing.shades.push(copy as THREE.MeshStandardMaterial);
+      if (screen) thing.screens.push(copy as THREE.MeshStandardMaterial);
     }
     return copy;
   };
@@ -445,6 +488,7 @@ function tint(thing: Thing, colors: Pick<HomeMapObject, "fabric" | "wood">): voi
     ownMaterials.set(mesh, own);
     mesh.material = next;
   });
+  lightScreens(thing);
 }
 
 /** A thing's meshes casting shadows, or not when it is a lamp holding a
@@ -619,8 +663,8 @@ export class HomeMapScene3D {
   private readonly rooms = new Map<string, { key: string; group: THREE.Group; walls: WallPiece[] }>();
   private readonly things = new Map<string, Thing>();
   private readonly lamps = new Map<string, Lamp>();
-  /** Each light a shown lamp holds, by its pin's id. */
-  private held = new Map<string, HeldLight>();
+  /** Each pin a shown thing holds, by its pin's id. */
+  private held = new Map<string, HeldPin>();
   private readonly lines: LineMaterial[] = [];
   private mark?: THREE.Object3D;
   private markKey = "";
@@ -899,12 +943,13 @@ export class HomeMapScene3D {
     let moved = false;
     let changed = false;
     if (seen === undefined || seen.floor !== input.floor) {
-      this.held = heldLightsOf(input.floor);
+      this.held = heldPinsOf(input.floor);
       moved = this.build(input.floor);
       changed = true;
     }
     if (seen === undefined || seen.floor !== input.floor || seen.states !== input.states) {
       this.light(input.floor, input.states);
+      this.lightScreens(input.states);
       changed = true;
     }
     if (seen === undefined || seen.daylight !== input.daylight) {
@@ -978,14 +1023,16 @@ export class HomeMapScene3D {
       moved = true;
     }
     const thingIds = new Set<string>();
-    const holders = new Map([...this.held].map(([pinId, h]) => [`${h.roomId}|${h.object}`, pinId]));
+    const holders = new Map([...this.held.values()].map((h) => [`${h.roomId}|${h.object}`, h.pin]));
     for (const room of floor.rooms) {
       room.objects.forEach((object, index) => {
         if (object.hidden === true) return;
         const piece = homeMapPieceOf(object);
         const id = `${room.id}|${index}|${piece?.id ?? `box:${object.kind}`}`;
         thingIds.add(id);
-        moved = this.place(id, piece, object, holders.get(`${room.id}|${index}`)) || moved;
+        const pin = holders.get(`${room.id}|${index}`);
+        // The lamp rules are a held light's alone; any device lights a TV.
+        moved = this.place(id, piece, object, pin !== undefined && isLight(pin) ? pin.id : undefined, pin?.entityId) || moved;
         this.things.get(id)!.group.userData.pick = { kind: "object", roomId: room.id, object: index } satisfies HomeMap3DPick;
       });
     }
@@ -1003,8 +1050,9 @@ export class HomeMapScene3D {
   /** One thing placed at its middle, foot and turn, its model fitted to its
    * box and in its colours, made the first time it is seen; a change of
    * colour only recolours it. `holds` is the pin of the light it holds, if
-   * it is a lamp holding one. True when it moved or its shadow changed. */
-  private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject, holds: string | undefined): boolean {
+   * it holds one, and `device` the entity of whatever device it holds. True
+   * when it moved or its shadow changed. */
+  private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject, holds: string | undefined, device: string | undefined): boolean {
     let thing = this.things.get(id);
     const size: [number, number, number] = [Math.max(object.size[0], 0.01), Math.max(object.size[1], 0.01), Math.max(object.size[2], 0.01)];
     const lift = Math.max(object.lift ?? 0, 0);
@@ -1015,17 +1063,20 @@ export class HomeMapScene3D {
       // A light put in this lamp or taken out: its shade glows or not, and
       // it casts shadows or not.
       thing.holds = holds;
+      thing.device = device;
       thing.colors = colors;
       if (piece !== undefined) tint(thing, colors);
       castFor(thing);
       changed = true;
-    } else if (thing !== undefined && piece !== undefined && tintKey(thing.colors) !== tintKey(colors)) {
+    } else if (thing !== undefined && piece !== undefined && (tintKey(thing.colors) !== tintKey(colors) || thing.device !== device)) {
+      // New colours, or a device put on it or taken off (a TV's screen).
       thing.colors = colors;
+      thing.device = device;
       tint(thing, colors);
     }
     if (thing === undefined) {
       const group = new THREE.Group();
-      thing = { piece, group, size, colors, copies: [], holds, shades: [] };
+      thing = { piece, group, size, colors, copies: [], holds, shades: [], device, screens: [], screenOn: false };
       this.things.set(id, thing);
       this.scene.add(group);
       if (piece === undefined) {
@@ -1078,7 +1129,7 @@ export class HomeMapScene3D {
       // A light a lamp holds shines as the lamp's piece says, whatever its
       // pin's icon; any other light down when its icon is a ceiling light.
       const holder = this.held.get(pin.id);
-      const cast = holder === undefined ? undefined : homeMapLampPiece(holder.lamp.model)?.cast;
+      const cast = holder === undefined ? undefined : homeMapLampPiece(holder.thing.model)?.cast;
       const down = cast !== undefined ? cast === "down" : pin.icon === "ceiling";
       let lamp = this.lamps.get(pin.id);
       if (lamp !== undefined && lamp.down !== down) {
@@ -1136,6 +1187,17 @@ export class HomeMapScene3D {
       lamp.light.castShadow = cast;
     }
     if (moved) this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  /** Each TV holding a device lit or dark as `states` says its device is
+   * (`homeMapScreenOn`); one frame is drawn for a change. */
+  private lightScreens(states: HomeMapStates | undefined): void {
+    for (const thing of this.things.values()) {
+      const on = thing.device !== undefined && thing.piece?.kind === TV && homeMapScreenOn(thing.device, states);
+      if (on === thing.screenOn) continue;
+      thing.screenOn = on;
+      lightScreens(thing);
+    }
   }
 
   /** A light pin's light, its bulb and, for a ceiling light, its glow,
@@ -1359,26 +1421,27 @@ interface HomeMapInputSeen extends HomeMap3DInput {
   turn: number;
 }
 
-/** A light held by a lamp: the lamp, by its room and place in that room's
- * list, and the lamp itself. */
-interface HeldLight {
+/** A pin held by a thing: the thing, by its room and place in that room's
+ * list, the thing itself, and the pin. */
+interface HeldPin {
   roomId: string;
   object: number;
-  lamp: HomeMapObject;
+  thing: HomeMapObject;
+  pin: HomeMapPin;
 }
 
-/** Each light a lamp of the floor holds, by its pin's id, as a reader takes
- * the links (`homeMapHeldLights`), a hidden lamp holding nothing here: its
+/** Each pin a thing of the floor holds, by its pin's id, as a reader takes
+ * the links (`homeMapHeldPins`), a hidden thing holding nothing here: its
  * light is drawn as a plain bulb, so it can still be seen and clicked. */
-function heldLightsOf(floor: HomeMapFloor): Map<string, HeldLight> {
-  const links = homeMapHeldLights(floor);
-  const out = new Map<string, HeldLight>();
+function heldPinsOf(floor: HomeMapFloor): Map<string, HeldPin> {
+  const links = homeMapHeldPins(floor);
+  const out = new Map<string, HeldPin>();
   for (const pin of floor.pins) {
     const ref = links.get(pin.id.toUpperCase());
     if (ref === undefined) continue;
-    const lamp = floor.rooms.find((r) => sameHomeMapId(r.id, ref.roomId))?.objects[ref.object];
-    if (lamp === undefined || lamp.hidden === true) continue;
-    out.set(pin.id, { roomId: ref.roomId, object: ref.object, lamp });
+    const thing = floor.rooms.find((r) => sameHomeMapId(r.id, ref.roomId))?.objects[ref.object];
+    if (thing === undefined || thing.hidden === true) continue;
+    out.set(pin.id, { roomId: ref.roomId, object: ref.object, thing, pin });
   }
   return out;
 }

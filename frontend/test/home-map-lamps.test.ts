@@ -1,13 +1,15 @@
-// Lamps hold lights: an object's `light` key as the store checks and orders
-// it (a pin id's shape only, never looked up), the catalog's bulb and cast on
-// every lamp and the first download's copy of them, where a lamp's bulb is
-// (against three.js placing the model as the 3D look does), how a reader
-// takes the links (a link to no pin, to a pin that is not a light, or to a
-// light an earlier lamp holds is ignored), and the edits: a light added in a
-// new lamp of each kind, linked into and out of a lamp, kept at its lamp's
-// bulb by every edit that moves, sizes, turns, lifts or re-models the lamp
-// or moves its room, moving its lamp when it is moved itself, and deleted
-// with its lamp either way round. A light entity may have many pins.
+// Things hold devices, lamps lights among them: an object's `device` key as
+// the store checks and orders it (a pin id's shape only, never looked up),
+// `light` its old spelling read as `device`, the catalog's bulb and cast on
+// every lamp and its hold spots, and the first download's copy of them,
+// where a lamp's bulb and any other thing's hold spot are (against three.js
+// placing the model as the 3D look does), how a reader takes the links (a
+// link to no pin, or to a pin an earlier thing holds, is ignored), and the
+// edits: a light added in a new lamp of each kind, any device linked onto
+// and off any thing, kept on it by every edit that moves, sizes, turns,
+// lifts or re-models the thing or moves its room, moving its thing when it
+// is moved itself, and deleted with its thing either way round. A light
+// entity may have many pins.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,19 +18,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   addAnotherLamp,
+  addDeviceToThing,
   addLampLight,
-  addLightToLamp,
   addPiece,
   addPin,
   centerPinInRoom,
   deleteRoom,
-  homeMapHeldLights,
+  homeMapHeldPins,
   homeMapHeldPin,
-  homeMapLampOfPin,
+  homeMapThingOfPin,
   homeMapPinsOfEntity,
   homeMapWallSpot,
   levelObject,
-  linkLight,
+  linkDevice,
   moveObject,
   moveObjects,
   movePin,
@@ -55,18 +57,20 @@ import {
   setWallHeight,
   turnObject,
   turnRoom,
-  unlinkLight,
+  unlinkDevice,
 } from "../src/home-map/edit-ops.js";
 import {
   HOME_MAP_FURNITURE,
   HOME_MAP_LAMP_CHOICES,
   HOME_MAP_LAMP_CHOICE_MODELS,
-  homeMapBulbSpot,
+  homeMapHoldPiece,
+  homeMapHoldSpot,
   homeMapLampPiece,
   homeMapModelFit,
   homeMapPiece,
+  homeMapPieceOf,
 } from "../src/home-map/furniture.js";
-import { HOME_MAP_LAMP_PIECES } from "../src/home-map/furniture-rules.js";
+import { HOME_MAP_HOLD_DEFAULTS, HOME_MAP_HOLD_PIECES, HOME_MAP_LAMP_PIECES } from "../src/home-map/furniture-rules.js";
 import { type HomeMapDocument, type HomeMapFloor, type HomeMapObject, type HomeMapPin, checkHomeMap, orderedObject } from "../src/home-map/model.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
@@ -80,6 +84,10 @@ const LOCK = "7B1E0C2A-5D3F-4A8B-9C6D-000000000102";
 const NEW = "7B1E0C2A-5D3F-4A8B-9C6D-000000000200";
 const NEW2 = "7B1E0C2A-5D3F-4A8B-9C6D-000000000201";
 const NEW3 = "7B1E0C2A-5D3F-4A8B-9C6D-000000000202";
+const THERMOSTAT = "7B1E0C2A-5D3F-4A8B-9C6D-000000000104";
+const PENDANTS = "7B1E0C2A-5D3F-4A8B-9C6D-000000000103";
+/** The fixture living room's television, the third thing of the room. */
+const TV_INDEX = 2;
 
 const floorOf = (doc: HomeMapDocument): HomeMapFloor => doc.floors[0]!;
 const roomOf = (doc: HomeMapDocument, roomId: string) => doc.floors.flatMap((f) => f.rooms).find((r) => r.id === roomId)!;
@@ -105,13 +113,25 @@ function done(before: HomeMapDocument, after: HomeMapDocument | undefined): Home
 /** The light `pinId` stands at its lamp's bulb and in its lamp's room. */
 function expectAtBulb(doc: HomeMapDocument, pinId: string): { lamp: HomeMapObject; pin: HomeMapPin } {
   const floor = floorOf(doc);
-  const ref = homeMapLampOfPin(floor, pinId);
+  const ref = homeMapThingOfPin(floor, pinId);
   expect(ref).toBeDefined();
   const lamp = roomOf(doc, ref!.roomId).objects[ref!.object]!;
   const pin = pinOf(doc, pinId)!;
-  expect(pin.at).toEqual(homeMapBulbSpot(lamp, homeMapLampPiece(lamp.model)!));
+  expect(pin.at).toEqual(homeMapHoldSpot(lamp, homeMapLampPiece(lamp.model)!, true));
   expect(pin.roomId).toBe(ref!.roomId);
   return { lamp, pin };
+}
+
+/** The pin `pinId` stands on the thing holding it, at its hold spot, and in
+ * its room. */
+function expectOnThing(doc: HomeMapDocument, pinId: string): { thing: HomeMapObject; pin: HomeMapPin } {
+  const ref = homeMapThingOfPin(floorOf(doc), pinId);
+  expect(ref).toBeDefined();
+  const thing = roomOf(doc, ref!.roomId).objects[ref!.object]!;
+  const pin = pinOf(doc, pinId)!;
+  expect(pin.at).toEqual(homeMapHoldSpot(thing, homeMapHoldPiece(thing), pin.entityId.startsWith("light.")));
+  expect(pin.roomId).toBe(ref!.roomId);
+  return { thing, pin };
 }
 
 /** The fixture with a floor lamp in the living room at (2, 2) holding the
@@ -120,47 +140,81 @@ function withFloorLamp(): HomeMapDocument {
   const doc = fixture();
   const added = done(doc, addPiece(doc, LIVING, lampPiece("lampRoundFloor"), [2, 2]));
   const index = roomOf(added, LIVING).objects.length - 1;
-  return done(added, linkLight(added, FLOOR, LIVING, index, READING));
+  return done(added, linkDevice(added, FLOOR, LIVING, index, READING));
 }
 const LAMP_INDEX = 3;
 
 // ── the contract ─────────────────────────────────────────────────────────
 
-describe("an object's light key", () => {
+describe("an object's device key", () => {
   it("is kept after the wood and before the centre, whatever order it was sent in", () => {
     const doc = fixture() as unknown as Record<string, any>;
     const object = doc.floors[0].rooms[0].objects[0];
-    doc.floors[0].rooms[0].objects[0] = { light: READING.toLowerCase(), ...object, hidden: true, lift: 0.4, wood: "#6B4A32", fabric: "#8E8E93", model: "lampRoundFloor" };
+    doc.floors[0].rooms[0].objects[0] = { device: READING.toLowerCase(), ...object, hidden: true, lift: 0.4, wood: "#6B4A32", fabric: "#8E8E93", model: "lampRoundFloor" };
     const out = checkHomeMap(doc);
     if (!out.ok) throw new Error(out.message);
     const kept = out.doc.floors[0]!.rooms[0]!.objects[0]!;
-    expect(Object.keys(kept)).toEqual(["kind", "model", "fabric", "wood", "light", "c", "size", "turn", "lift", "hidden"]);
-    expect(kept.light).toBe(READING.toLowerCase());
-    expect(Object.keys(orderedObject({ ...object, hidden: true, lift: 0.4, light: READING, model: "lampWall" } as HomeMapObject))).toEqual(
-      ["kind", "model", "light", "c", "size", "turn", "lift", "hidden"],
+    expect(Object.keys(kept)).toEqual(["kind", "model", "fabric", "wood", "device", "c", "size", "turn", "lift", "hidden"]);
+    expect(kept.device).toBe(READING.toLowerCase());
+    expect(Object.keys(orderedObject({ ...object, hidden: true, lift: 0.4, device: READING, model: "lampWall" } as HomeMapObject))).toEqual(
+      ["kind", "model", "device", "c", "size", "turn", "lift", "hidden"],
     );
+  });
+
+  it("reads light, its old spelling, as device, and device wins when both are sent", () => {
+    // The real map has two light links stored, and the iPhone build of then
+    // still writes light.
+    const doc = fixture() as unknown as Record<string, any>;
+    const object = doc.floors[0].rooms[0].objects[0];
+    doc.floors[0].rooms[0].objects[0] = { light: READING, ...object, model: "lampRoundFloor" };
+    const out = checkHomeMap(doc);
+    if (!out.ok) throw new Error(out.message);
+    const kept = out.doc.floors[0]!.rooms[0]!.objects[0]!;
+    expect(Object.keys(kept)).toEqual(["kind", "model", "device", "c", "size", "turn"]);
+    expect(kept.device).toBe(READING);
+    doc.floors[0].rooms[0].objects[0].device = CEILING;
+    const both = checkHomeMap(doc);
+    if (!both.ok) throw new Error(both.message);
+    expect(both.doc.floors[0]!.rooms[0]!.objects[0]).toMatchObject({ device: CEILING });
+    expect("light" in both.doc.floors[0]!.rooms[0]!.objects[0]!).toBe(false);
+    // orderedObject, every edit's last step, writes it as device too.
+    expect(orderedObject({ ...object, light: READING } as HomeMapObject)).toEqual({ kind: "sofa", device: READING, c: [2.7, 4.15], size: [3, 0.9, 0.75], turn: 0 });
+    expect(orderedObject({ ...object, light: READING, device: CEILING } as HomeMapObject).device).toBe(CEILING);
+  });
+
+  it("reads an unchecked light link as held, and the next edit writes it as device", () => {
+    const doc = fixture();
+    doc.floors[0]!.rooms[0]!.objects[TV_INDEX] = { ...doc.floors[0]!.rooms[0]!.objects[TV_INDEX]!, light: LOCK };
+    expect(homeMapThingOfPin(floorOf(doc), LOCK)).toEqual({ roomId: LIVING, object: TV_INDEX });
+    const out = done(doc, renameRoom(doc, KITCHEN, "Galley"));
+    expect(roomOf(out, LIVING).objects[TV_INDEX]).toMatchObject({ device: LOCK });
+    expect("light" in roomOf(out, LIVING).objects[TV_INDEX]!).toBe(false);
+    expectOnThing(out, LOCK);
   });
 
   it("is checked by its shape only: a pin no floor has is kept, as an entity id is", () => {
     const doc = fixture() as unknown as Record<string, any>;
-    doc.floors[0].rooms[0].objects[0].light = NEW;
-    doc.floors[0].rooms[0].objects[1].light = NEW;
+    doc.floors[0].rooms[0].objects[0].device = NEW;
+    doc.floors[0].rooms[0].objects[1].device = NEW;
     expect(checkHomeMap(doc).ok).toBe(true);
   });
 
-  it("is refused when it is not shaped like a pin id, an empty one too", () => {
-    for (const bad of ["", "light.reading_lamp", `${READING}0`, READING.slice(1), null, 3, [READING]]) {
-      const doc = fixture() as unknown as Record<string, any>;
-      doc.floors[0].rooms[0].objects[0].light = bad;
-      const out = checkHomeMap(doc);
-      expect(out.ok).toBe(false);
-      if (!out.ok) expect(out.message).toBe("doc.floors[0].rooms[0].objects[0].light must be a pin's id, a UUID");
+  it("is refused when it is not shaped like a pin id, an empty one too, by the name it was sent as", () => {
+    for (const key of ["device", "light"]) {
+      for (const bad of ["", "light.reading_lamp", `${READING}0`, READING.slice(1), null, 3, [READING]]) {
+        const doc = fixture() as unknown as Record<string, any>;
+        doc.floors[0].rooms[0].objects[0][key] = bad;
+        const out = checkHomeMap(doc);
+        expect(out.ok).toBe(false);
+        if (!out.ok) expect(out.message).toBe(`doc.floors[0].rooms[0].objects[0].${key} must be a pin's id, a UUID`);
+      }
     }
   });
 
   it("is never written empty", () => {
     const object = fixture().floors[0]!.rooms[0]!.objects[0]!;
-    expect("light" in orderedObject({ ...object, light: "" })).toBe(false);
+    expect("device" in orderedObject({ ...object, device: "" })).toBe(false);
+    expect("device" in orderedObject({ ...object, light: "" })).toBe(false);
   });
 });
 
@@ -189,6 +243,35 @@ describe("the catalog's lamps", () => {
     expect(homeMapLampPiece(undefined)).toBeUndefined();
     expect(homeMapLampPiece("lampFromANewerCatalog")).toBeUndefined();
   });
+});
+
+describe("the catalog's hold spots", () => {
+  const holders = HOME_MAP_FURNITURE.pieces.filter((p) => p.hold !== undefined);
+
+  it("are on the TVs and the monitor, each inside its own box, never on a lamp", () => {
+    expect(holders.map((p) => p.id)).toEqual(["televisionModern", "televisionVintage", "computerScreen"]);
+    for (const p of holders) {
+      expect(p.hold, p.id).toHaveLength(3);
+      for (const v of p.hold!) expect(v >= 0 && v <= 1, p.id).toBe(true);
+      expect(p.bulb).toBeUndefined();
+    }
+  });
+
+  it("are copied for the first download exactly as the catalog has them, with the kinds whose default is one", () => {
+    expect(HOME_MAP_HOLD_PIECES).toEqual(holders);
+    const copied = new Set(HOME_MAP_HOLD_PIECES.map((p) => p.id));
+    const defaults = Object.fromEntries(Object.entries(HOME_MAP_FURNITURE.defaults).filter(([, id]) => copied.has(id)));
+    expect(HOME_MAP_HOLD_DEFAULTS).toEqual(defaults);
+  });
+
+  it("are found for a thing by its model, or with none by its kind, as the 3D look draws it", () => {
+    const tv = { kind: "television", size: [1.6, 0.08, 0.65] as [number, number, number] };
+    expect(homeMapHoldPiece(tv)?.id).toBe(homeMapPieceOf(tv)?.id);
+    expect(homeMapHoldPiece({ ...tv, model: "televisionVintage" })?.id).toBe("televisionVintage");
+    expect(homeMapHoldPiece({ ...tv, model: "lampWall" })?.id).toBe("lampWall");
+    expect(homeMapHoldPiece({ kind: "sofa" })).toBeUndefined();
+    expect(homeMapHoldPiece({ kind: "sofa", model: "loungeSofa" })).toBeUndefined();
+  });
 
   it("are what the lamp chooser makes, and a bare bulb makes none", () => {
     expect(HOME_MAP_LAMP_CHOICES).toEqual(["ceiling", "floor", "table", "wall", "bulb"]);
@@ -206,17 +289,18 @@ describe("the catalog's lamps", () => {
 
 // ── the bulb spot ────────────────────────────────────────────────────────
 
-describe("where a lamp's bulb is", () => {
-  /** The bulb as the 3D look places it: the thing's group at its middle and
-   * lift turned by its turn, the model fitted to its box from its foot. */
-  function threeBulb(object: HomeMapObject, pieceId: string): [number, number, number] {
+describe("where a lamp's bulb, or any other thing's device, is", () => {
+  /** The bulb (or `share`) as the 3D look places it: the thing's group at
+   * its middle and lift turned by its turn, the model fitted to its box from
+   * its foot. */
+  function threeBulb(object: HomeMapObject, pieceId: string, share?: readonly [number, number, number]): [number, number, number] {
     const piece = lampPiece(pieceId);
     const fit = homeMapModelFit(piece.size, object.size);
     const group = new THREE.Group();
     group.position.set(object.c[0], object.lift ?? 0, object.c[1]);
     group.rotation.y = (object.turn * Math.PI) / 180;
     group.updateMatrixWorld(true);
-    const [fx, fy, fz] = piece.bulb!;
+    const [fx, fy, fz] = share ?? piece.bulb!;
     const local = new THREE.Vector3((fx - 0.5) * piece.size[0] * fit.x, fz * piece.size[2] * fit.y, (fy - 0.5) * piece.size[1] * fit.z);
     const world = local.applyMatrix4(group.matrixWorld);
     return [world.x, world.z, world.y];
@@ -224,12 +308,12 @@ describe("where a lamp's bulb is", () => {
 
   it("is the shade's middle of a lamp standing square on the floor", () => {
     const object: HomeMapObject = { kind: "lamp", model: "lampRoundFloor", c: [2, 2], size: [0.33, 0.38, 1.87], turn: 0 };
-    expect(homeMapBulbSpot(object, lampPiece("lampRoundFloor"))).toEqual([2, 2, 1.68]);
+    expect(homeMapHoldSpot(object, lampPiece("lampRoundFloor"), true)).toEqual([2, 2, 1.68]);
   });
 
   it("stands on the lamp's lift, a ceiling lamp's where it hangs", () => {
     const object: HomeMapObject = { kind: "lamp", model: "lampSquareCeiling", c: [3, 2], size: [0.5, 0.5, 0.96], turn: 0, lift: 1.54 };
-    expect(homeMapBulbSpot(object, lampPiece("lampSquareCeiling"))).toEqual([3, 2, 2.02]);
+    expect(homeMapHoldSpot(object, lampPiece("lampSquareCeiling"), true)).toEqual([3, 2, 2.02]);
   });
 
   it("turns and stretches with the lamp as three.js places its model", () => {
@@ -241,7 +325,7 @@ describe("where a lamp's bulb is", () => {
       ["lampSquareCeiling", 12, [0.8, 0.4, 0.5], 2],
     ] as const) {
       const object: HomeMapObject = { kind: "lamp", model: pieceId, c: [4.2, 1.3], size: [...size], turn, lift };
-      const spot = homeMapBulbSpot(object, lampPiece(pieceId))!;
+      const spot = homeMapHoldSpot(object, lampPiece(pieceId), true);
       const three = threeBulb(object, pieceId);
       for (let k = 0; k < 3; k++) expect(Math.abs(spot[k]! - three[k]!), `${pieceId} ${turn} ${k}`).toBeLessThanOrEqual(0.005 + 1e-9);
     }
@@ -250,63 +334,98 @@ describe("where a lamp's bulb is", () => {
   it("sits toward a wall lamp's back, the wall side", () => {
     // Turned 90, its depth runs along +x: its back, toward the wall, is -x.
     const object: HomeMapObject = { kind: "lamp", model: "lampWall", c: [1, 1], size: [0.25, 0.17, 0.1], turn: 90, lift: 1.6 };
-    expect(homeMapBulbSpot(object, lampPiece("lampWall"))).toEqual([0.98, 1, 1.65]);
+    expect(homeMapHoldSpot(object, lampPiece("lampWall"), true)).toEqual([0.98, 1, 1.65]);
   });
 
-  it("is none for a piece with no bulb", () => {
-    expect(homeMapBulbSpot({ c: [0, 0], size: [1, 1, 1], turn: 0 }, lampPiece("loungeSofa"))).toBeUndefined();
+  // ── where any other device a thing holds is ──
+
+  it("is the piece's hold spot, a TV's screen, turned and stretched as three.js places the model", () => {
+    for (const [pieceId, turn, size, lift] of [
+      ["televisionModern", 0, [1.2, 0.22, 0.8], 0],
+      ["televisionModern", -90, [1.6, 0.08, 0.65], 1.1],
+      ["televisionVintage", 33, [0.6, 0.4, 0.4], 0.5],
+      ["computerScreen", 180, [0.6, 0.16, 0.45], 0.75],
+    ] as const) {
+      const object: HomeMapObject = { kind: "television", model: pieceId, c: [3.1, 1.7], size: [...size], turn, lift };
+      const piece = lampPiece(pieceId);
+      const spot = homeMapHoldSpot(object, piece, false);
+      const three = threeBulb(object, pieceId, piece.hold);
+      for (let k = 0; k < 3; k++) expect(Math.abs(spot[k]! - three[k]!), `${pieceId} ${turn} ${k}`).toBeLessThanOrEqual(0.005 + 1e-9);
+    }
+  });
+
+  it("sits on a TV's screen, toward its front, a little above its middle", () => {
+    const object: HomeMapObject = { kind: "television", model: "televisionModern", c: [2, 1], size: [1.2, 0.22, 0.8], turn: 0 };
+    expect(homeMapHoldSpot(object, lampPiece("televisionModern"), false)).toEqual([2, 1.04, 0.46]);
+  });
+
+  it("is the middle of the top for a piece with neither, or a light in a piece with no bulb, or no piece at all", () => {
+    const sofa: HomeMapObject = { kind: "sofa", model: "loungeSofa", c: [1, 2], size: [2, 0.9, 0.75], turn: 30, lift: 0.1 };
+    expect(homeMapHoldSpot(sofa, lampPiece("loungeSofa"), false)).toEqual([1, 2, 0.85]);
+    expect(homeMapHoldSpot(sofa, lampPiece("loungeSofa"), true)).toEqual([1, 2, 0.85]);
+    expect(homeMapHoldSpot(sofa, undefined, false)).toEqual([1, 2, 0.85]);
+    // A TV's light is no bulb: it sits on the screen as any device does.
+    const tv: HomeMapObject = { kind: "television", c: [2, 1], size: [1.2, 0.22, 0.8], turn: 0 };
+    expect(homeMapHoldSpot(tv, homeMapHoldPiece(tv), true)).toEqual([2, 1.04, 0.46]);
+    // A lamp's own bulb is a light's only: a switch in it sits on its top.
+    const lamp: HomeMapObject = { kind: "lamp", model: "lampRoundFloor", c: [2, 2], size: [0.33, 0.38, 1.87], turn: 0 };
+    expect(homeMapHoldSpot(lamp, lampPiece("lampRoundFloor"), false)).toEqual([2, 2, 1.87]);
   });
 });
 
 // ── reading the links ────────────────────────────────────────────────────
 
-describe("which lamp holds which light", () => {
-  it("is the first lamp of the floor to name a light pin; a link to no pin or to a pin that is not a light holds nothing", () => {
+describe("which thing holds which pin", () => {
+  it("is the first thing of the floor to name a pin, of any entity; a link to no pin holds nothing", () => {
     const doc = fixture();
     const living = doc.floors[0]!.rooms[0]!;
     const kitchen = doc.floors[0]!.rooms[1]!;
     // The living room comes first on the floor, so its television holds the
     // reading lamp's light, whatever the case of the link.
-    kitchen.objects[0]!.light = READING;
-    living.objects[2]!.light = READING.toLowerCase();
-    living.objects[0]!.light = NEW; // no such pin
-    living.objects[1]!.light = LOCK; // not a light
-    kitchen.objects[1]!.light = CEILING;
-    const held = homeMapHeldLights(doc.floors[0]!);
+    kitchen.objects[0]!.device = READING;
+    living.objects[2]!.device = READING.toLowerCase();
+    living.objects[0]!.device = NEW; // no such pin
+    living.objects[1]!.device = LOCK; // a lock, held as any device is
+    kitchen.objects[1]!.light = CEILING; // the old spelling
+    const held = homeMapHeldPins(doc.floors[0]!);
     expect([...held.entries()]).toEqual([
+      [LOCK, { roomId: LIVING, object: 1 }],
       [READING, { roomId: LIVING, object: 2 }],
       [CEILING, { roomId: KITCHEN, object: 1 }],
     ]);
-    expect(homeMapLampOfPin(doc.floors[0]!, READING.toLowerCase())).toEqual({ roomId: LIVING, object: 2 });
-    expect(homeMapLampOfPin(doc.floors[0]!, LOCK)).toBeUndefined();
+    expect(homeMapThingOfPin(doc.floors[0]!, READING.toLowerCase())).toEqual({ roomId: LIVING, object: 2 });
+    expect(homeMapThingOfPin(doc.floors[0]!, LOCK)).toEqual({ roomId: LIVING, object: 1 });
     expect(homeMapHeldPin(doc.floors[0]!, LIVING, 2)?.id).toBe(READING);
-    // The second holder, the dangling link and the lock hold nothing.
+    expect(homeMapHeldPin(doc.floors[0]!, LIVING, 1)?.id).toBe(LOCK);
+    expect(homeMapHeldPin(doc.floors[0]!, KITCHEN, 1)?.id).toBe(CEILING);
+    // The second holder and the dangling link hold nothing.
     expect(homeMapHeldPin(doc.floors[0]!, KITCHEN, 0)).toBeUndefined();
     expect(homeMapHeldPin(doc.floors[0]!, LIVING, 0)).toBeUndefined();
-    expect(homeMapHeldPin(doc.floors[0]!, LIVING, 1)).toBeUndefined();
     expect(homeMapHeldPin(doc.floors[0]!, LIVING, 9)).toBeUndefined();
   });
 
-  it("is tidied by the next edit: the links a reader ignores are dropped, the held light put at its lamp's bulb", () => {
+  it("is tidied by the next edit: the links a reader ignores are dropped, each held pin put on its thing", () => {
     const doc = fixture();
     const living = doc.floors[0]!.rooms[0]!;
     const kitchen = doc.floors[0]!.rooms[1]!;
-    living.objects[0] = orderedObject({ ...living.objects[0]!, model: "lampRoundFloor", light: READING });
-    living.objects[1]!.light = NEW;
-    living.objects[2]!.light = LOCK;
-    kitchen.objects[0]!.light = READING;
+    living.objects[0] = orderedObject({ ...living.objects[0]!, model: "lampRoundFloor", device: READING });
+    living.objects[1]!.device = NEW;
+    living.objects[2] = orderedObject({ ...living.objects[2]!, device: LOCK });
+    kitchen.objects[0]!.device = READING;
     const out = done(doc, renameRoom(doc, KITCHEN, "Galley"));
-    expect(roomOf(out, LIVING).objects.map((o) => o.light)).toEqual([READING, undefined, undefined]);
-    expect(roomOf(out, KITCHEN).objects[0]!.light).toBeUndefined();
+    expect(roomOf(out, LIVING).objects.map((o) => o.device)).toEqual([READING, undefined, LOCK]);
+    expect(roomOf(out, KITCHEN).objects[0]!.device).toBeUndefined();
     expectAtBulb(out, READING);
+    // The lock sits on the television's screen.
+    expect(expectOnThing(out, LOCK).pin.at).toEqual(homeMapHoldSpot(living.objects[2]!, lampPiece("televisionModern"), false));
   });
 
-  it("leaves a light in a lamp this catalog does not know where it stands", () => {
+  it("puts a light in a lamp this catalog does not know on the middle of its top", () => {
     const doc = fixture();
-    doc.floors[0]!.rooms[0]!.objects[0] = orderedObject({ ...doc.floors[0]!.rooms[0]!.objects[0]!, model: "lampFromANewerCatalog", light: READING });
+    doc.floors[0]!.rooms[0]!.objects[0] = orderedObject({ ...doc.floors[0]!.rooms[0]!.objects[0]!, model: "lampFromANewerCatalog", device: READING });
     const out = done(doc, renameRoom(doc, LIVING, "Lounge"));
-    expect(roomOf(out, LIVING).objects[0]!.light).toBe(READING);
-    expect(pinOf(out, READING)).toEqual(pinOf(doc, READING));
+    expect(roomOf(out, LIVING).objects[0]!.device).toBe(READING);
+    expect(pinOf(out, READING)!.at).toEqual([2.7, 4.15, 0.75]);
   });
 });
 
@@ -321,7 +440,7 @@ describe("adding a light in a lamp", () => {
       expect(made!.pinId).toBe(NEW);
       expect(made!.lamp).toEqual({ roomId: LIVING, object: 3 });
       const lamp = roomOf(out, LIVING).objects[3]!;
-      expect(lamp).toEqual(orderedObject({ kind: "lamp", model, light: NEW, c: [2, 2], size: lampPiece(model).size, turn: 0, ...(lift === undefined ? {} : { lift }) }));
+      expect(lamp).toEqual(orderedObject({ kind: "lamp", model, device: NEW, c: [2, 2], size: lampPiece(model).size, turn: 0, ...(lift === undefined ? {} : { lift }) }));
       const { pin } = expectAtBulb(out, NEW);
       expect(pin.entityId).toBe("light.kitchen_cans");
       expect(floorOf(out).pins).toHaveLength(6);
@@ -389,7 +508,7 @@ describe("adding a light in a lamp", () => {
     for (const [i, id] of ids.entries()) doc = done(doc, addLampLight(doc, FLOOR, LIVING, "light.cans", "ceiling", [1 + (i % 3) * 2, 1.5 + Math.floor(i / 3) * 2], id)?.doc);
     expect(homeMapPinsOfEntity(doc, "light.cans").map((p) => p.id)).toEqual(ids);
     for (const id of ids) expectAtBulb(doc, id);
-    expect(homeMapHeldLights(floorOf(doc)).size).toBe(6);
+    expect(homeMapHeldPins(floorOf(doc)).size).toBe(6);
     // A plain pin of the same light can be added too.
     expect(addPin(doc, FLOOR, { id: NEW, entityId: "light.cans", at: [1, 1] })).toBeDefined();
   });
@@ -404,92 +523,122 @@ describe("adding a light in a lamp", () => {
     expect(made!.lamp).toEqual({ roomId: LIVING, object: 4 });
     const [first, second] = [roomOf(out, LIVING).objects[3]!, roomOf(out, LIVING).objects[4]!];
     // Along its width, which runs along the wall: still flush on it.
-    expect(second).toEqual({ ...first, light: NEW2, c: [first.c[0], 2.15] });
+    expect(second).toEqual({ ...first, device: NEW2, c: [first.c[0], 2.15] });
     const pin = expectAtBulb(out, NEW2).pin;
     expect(pin).toMatchObject({ entityId: "light.sconce", name: "Sconce", glow: 1.5 });
     expect(addAnotherLamp(doc, FLOOR, LIVING, 0, NEW3)).toBeUndefined();
     expect(addAnotherLamp(doc, FLOOR, LIVING, 3, NEW)).toBeUndefined();
+    // Any other entity keeps one pin: a TV holding the lock has no other.
+    const tv = done(doc, linkDevice(doc, FLOOR, LIVING, TV_INDEX, LOCK));
+    expect(addAnotherLamp(tv, FLOOR, LIVING, TV_INDEX, NEW3)).toBeUndefined();
   });
 
-  it("from the rail onto a lamp that holds nothing puts a new pin straight in it", () => {
+  it("from the rail onto a thing that holds nothing puts a new pin straight on it, any device on any thing", () => {
     const doc = done(fixture(), addPiece(fixture(), LIVING, lampPiece("lampRoundTable"), [4, 3]));
-    const out = done(doc, addLightToLamp(doc, FLOOR, LIVING, 3, "light.bedside", NEW));
-    expect(roomOf(out, LIVING).objects[3]!.light).toBe(NEW);
+    const out = done(doc, addDeviceToThing(doc, FLOOR, LIVING, 3, "light.bedside", NEW));
+    expect(roomOf(out, LIVING).objects[3]!.device).toBe(NEW);
     expectAtBulb(out, NEW);
-    expect(addLightToLamp(out, FLOOR, LIVING, 3, "light.other", NEW2)).toBeUndefined();
-    expect(addLightToLamp(doc, FLOOR, LIVING, 0, "light.other", NEW2)).toBeUndefined();
-    expect(addLightToLamp(doc, FLOOR, LIVING, 3, "switch.other", NEW2)).toBeUndefined();
+    expect(addDeviceToThing(out, FLOOR, LIVING, 3, "light.other", NEW2)).toBeUndefined();
+    // A media player onto the television sits on its screen.
+    const tv = done(doc, addDeviceToThing(doc, FLOOR, LIVING, TV_INDEX, "media_player.living_room_tv", NEW2));
+    expect(expectOnThing(tv, NEW2).pin).toMatchObject({ entityId: "media_player.living_room_tv", roomId: LIVING });
+    // A switch into a lamp sits on its top, never at its bulb.
+    const fan = done(doc, addDeviceToThing(doc, FLOOR, LIVING, 3, "switch.lamp_plug", NEW2));
+    expect(expectOnThing(fan, NEW2).pin.at[2]).toBe(1.37);
+    expect(addDeviceToThing(doc, FLOOR, LIVING, 9, "switch.other", NEW2)).toBeUndefined();
+    expect(addDeviceToThing(doc, FLOOR, LIVING, 0, "switch.other", READING)).toBeUndefined();
   });
 
   it("leaves placing every device by area making bulbs, never lamps", () => {
     const doc = fixture();
     const placed = placeAllByArea(doc, FLOOR, [{ entityId: "light.hall", areaId: "living_room" }], () => NEW)!;
-    expect(roomOf(placed.doc, LIVING).objects.every((o) => o.light === undefined)).toBe(true);
+    expect(roomOf(placed.doc, LIVING).objects.every((o) => o.device === undefined)).toBe(true);
   });
 });
 
 // ── linking ──────────────────────────────────────────────────────────────
 
-describe("linking a light into a lamp", () => {
+describe("linking a device onto a thing", () => {
   it("moves the light to the lamp's bulb and into its room", () => {
     const doc = withFloorLamp();
-    expect(roomOf(doc, LIVING).objects[LAMP_INDEX]!.light).toBe(READING);
+    expect(roomOf(doc, LIVING).objects[LAMP_INDEX]!.device).toBe(READING);
     const { pin } = expectAtBulb(doc, READING);
     expect(pin.at).toEqual([2, 2, 1.68]);
   });
 
-  it("takes the light from another lamp, and the light this lamp held before stays where it is", () => {
-    let doc = withFloorLamp();
-    doc = done(doc, addPiece(doc, KITCHEN, lampPiece("lampSquareFloor"), [8, 4]));
-    doc = done(doc, linkLight(doc, FLOOR, KITCHEN, 3, CEILING));
-    const ceilingAt = pinOf(doc, CEILING)!.at;
-    // The kitchen lamp now takes the reading lamp's light.
-    const out = done(doc, linkLight(doc, FLOOR, KITCHEN, 3, READING));
-    expect(roomOf(out, LIVING).objects[LAMP_INDEX]!.light).toBeUndefined();
-    expect(roomOf(out, KITCHEN).objects[3]!.light).toBe(READING);
-    expect(expectAtBulb(out, READING).pin.roomId).toBe(KITCHEN);
-    expect(pinOf(out, CEILING)!.at).toEqual(ceilingAt);
-    expect(homeMapLampOfPin(floorOf(out), CEILING)).toBeUndefined();
+  it("puts any pin on any thing: the lock on the sofa, the thermostat from the kitchen onto the television's screen", () => {
+    const doc = fixture();
+    const sofa = done(doc, linkDevice(doc, FLOOR, LIVING, 0, LOCK));
+    expect(expectOnThing(sofa, LOCK).pin.at).toEqual([2.7, 4.15, 0.75]);
+    const tv = done(doc, linkDevice(doc, FLOOR, LIVING, TV_INDEX, THERMOSTAT));
+    expect(expectOnThing(tv, THERMOSTAT).pin.roomId).toBe(LIVING);
+    // A light on a thing with no bulb sits on its top as any device does.
+    const table = done(doc, linkDevice(doc, FLOOR, KITCHEN, 2, PENDANTS));
+    expect(expectOnThing(table, PENDANTS).pin.at).toEqual([8.1, 2.5, 0.75]);
   });
 
-  it("is refused for a pin that is not a light, a thing that is no lamp, or a light it already holds", () => {
+  it("takes the pin from another thing, and the pin this thing held before stays where it is", () => {
+    let doc = withFloorLamp();
+    doc = done(doc, addPiece(doc, KITCHEN, lampPiece("lampSquareFloor"), [8, 4]));
+    doc = done(doc, linkDevice(doc, FLOOR, KITCHEN, 3, CEILING));
+    const ceilingAt = pinOf(doc, CEILING)!.at;
+    // The kitchen lamp now takes the reading lamp's light.
+    const out = done(doc, linkDevice(doc, FLOOR, KITCHEN, 3, READING));
+    expect(roomOf(out, LIVING).objects[LAMP_INDEX]!.device).toBeUndefined();
+    expect(roomOf(out, KITCHEN).objects[3]!.device).toBe(READING);
+    expect(expectAtBulb(out, READING).pin.roomId).toBe(KITCHEN);
+    expect(pinOf(out, CEILING)!.at).toEqual(ceilingAt);
+    expect(homeMapThingOfPin(floorOf(out), CEILING)).toBeUndefined();
+  });
+
+  it("writes an old light link as device when it takes one", () => {
+    const doc = fixture();
+    doc.floors[0]!.rooms[0]!.objects[0] = { ...doc.floors[0]!.rooms[0]!.objects[0]!, light: READING };
+    const out = done(doc, linkDevice(doc, FLOOR, LIVING, 1, READING));
+    expect("light" in roomOf(out, LIVING).objects[0]!).toBe(false);
+    expect("device" in roomOf(out, LIVING).objects[0]!).toBe(false);
+    expect(roomOf(out, LIVING).objects[1]!.device).toBe(READING);
+  });
+
+  it("is refused for a pin it already holds, or a thing or pin the floor does not have", () => {
     const doc = withFloorLamp();
-    expect(linkLight(doc, FLOOR, LIVING, LAMP_INDEX, LOCK)).toBeUndefined();
-    expect(linkLight(doc, FLOOR, LIVING, 0, CEILING)).toBeUndefined();
-    expect(linkLight(doc, FLOOR, LIVING, LAMP_INDEX, READING)).toBeUndefined();
-    expect(linkLight(doc, FLOOR, LIVING, 9, CEILING)).toBeUndefined();
-    expect(linkLight(doc, FLOOR, LIVING, LAMP_INDEX, NEW)).toBeUndefined();
-    expect(linkLight(doc, NEW, LIVING, LAMP_INDEX, CEILING)).toBeUndefined();
+    expect(linkDevice(doc, FLOOR, LIVING, LAMP_INDEX, READING)).toBeUndefined();
+    expect(linkDevice(doc, FLOOR, LIVING, 9, CEILING)).toBeUndefined();
+    expect(linkDevice(doc, FLOOR, LIVING, LAMP_INDEX, NEW)).toBeUndefined();
+    expect(linkDevice(doc, NEW, LIVING, LAMP_INDEX, CEILING)).toBeUndefined();
   });
 
   it("unlinks, both staying where they are", () => {
     const doc = withFloorLamp();
-    const out = done(doc, unlinkLight(doc, FLOOR, LIVING, LAMP_INDEX));
-    expect("light" in roomOf(out, LIVING).objects[LAMP_INDEX]!).toBe(false);
+    const out = done(doc, unlinkDevice(doc, FLOOR, LIVING, LAMP_INDEX));
+    expect("device" in roomOf(out, LIVING).objects[LAMP_INDEX]!).toBe(false);
     expect(roomOf(out, LIVING).objects[LAMP_INDEX]!.c).toEqual([2, 2]);
     expect(pinOf(out, READING)).toEqual(pinOf(doc, READING));
-    expect(unlinkLight(out, FLOOR, LIVING, LAMP_INDEX)).toBeUndefined();
+    expect(unlinkDevice(out, FLOOR, LIVING, LAMP_INDEX)).toBeUndefined();
     // Now moving the lamp leaves the light behind.
     expect(pinOf(moveObject(out, LIVING, LAMP_INDEX, [4, 4])!, READING)).toEqual(pinOf(doc, READING));
   });
 
-  it("lets go when the lamp becomes a piece with no bulb, and moves the light to a new lamp's bulb", () => {
+  it("keeps the link through a new piece: a lamp's light at its new bulb, on the middle of the top of a piece with none", () => {
     const doc = withFloorLamp();
     const table = done(doc, setObjectPiece(doc, LIVING, LAMP_INDEX, lampPiece("lampSquareTable")));
-    expect(roomOf(table, LIVING).objects[LAMP_INDEX]!.light).toBe(READING);
+    expect(roomOf(table, LIVING).objects[LAMP_INDEX]!.device).toBe(READING);
     expectAtBulb(table, READING);
     expect(pinOf(table, READING)!.at).not.toEqual(pinOf(doc, READING)!.at);
     const sofa = done(doc, setObjectPiece(doc, LIVING, LAMP_INDEX, lampPiece("loungeSofa")));
-    expect("light" in roomOf(sofa, LIVING).objects[LAMP_INDEX]!).toBe(false);
-    expect(pinOf(sofa, READING)).toEqual(pinOf(doc, READING));
+    expect(roomOf(sofa, LIVING).objects[LAMP_INDEX]!.device).toBe(READING);
+    expectOnThing(sofa, READING);
+    expect(pinOf(sofa, READING)!.at).toEqual([2, 2, 1.87]);
   });
 
-  it("changes the light's entity only to another light while a lamp holds it", () => {
+  it("changes a held pin's entity to any other, the pin moving to the thing's spot for it", () => {
     const doc = withFloorLamp();
-    expect(setPinEntity(doc, READING, "switch.lamp")).toBeUndefined();
+    const plug = done(doc, setPinEntity(doc, READING, "switch.lamp"));
+    expect(homeMapThingOfPin(floorOf(plug), READING)).toEqual({ roomId: LIVING, object: LAMP_INDEX });
+    expect(pinOf(plug, READING)!.at).toEqual([2, 2, 1.87]);
     const out = done(doc, setPinEntity(doc, READING, "light.floor_lamp"));
     expect(pinOf(out, READING)!.entityId).toBe("light.floor_lamp");
-    expect(homeMapLampOfPin(floorOf(out), READING)).toEqual({ roomId: LIVING, object: LAMP_INDEX });
+    expect(homeMapThingOfPin(floorOf(out), READING)).toEqual({ roomId: LIVING, object: LAMP_INDEX });
     expect(setPinEntity(doc, LOCK, "switch.door")).toBeDefined();
     expect(setPinEntity(doc, READING, "light.reading_lamp")).toBeUndefined();
     expect(setPinEntity(doc, READING, "not an entity")).toBeUndefined();
@@ -532,9 +681,26 @@ describe("every edit to the lamp or its room", () => {
     const out = done(doc, moveRoomToFloor(doc, LIVING, { newFloor: { id: NEW3, name: "Upstairs", story: 1 } }));
     const upstairs = out.floors.find((f) => f.id === NEW3)!;
     expect(upstairs.pins.map((p) => p.id)).toContain(READING);
-    const ref = homeMapLampOfPin(upstairs, READING)!;
+    const ref = homeMapThingOfPin(upstairs, READING)!;
     const lamp = upstairs.rooms.find((r) => r.id === ref.roomId)!.objects[ref.object]!;
-    expect(upstairs.pins.find((p) => p.id === READING)!.at).toEqual(homeMapBulbSpot(lamp, lampPiece("lampRoundFloor")));
+    expect(upstairs.pins.find((p) => p.id === READING)!.at).toEqual(homeMapHoldSpot(lamp, lampPiece("lampRoundFloor"), true));
+  });
+
+  it("keeps any device on its thing the same way: a thermostat on the television, the room moved, turned and stretched", () => {
+    const doc = done(fixture(), linkDevice(fixture(), FLOOR, LIVING, TV_INDEX, THERMOSTAT));
+    for (const edit of [
+      (d: HomeMapDocument) => moveObject(d, LIVING, TV_INDEX, [3.5, 0.5]),
+      (d: HomeMapDocument) => turnObject(d, LIVING, TV_INDEX, 90),
+      (d: HomeMapDocument) => setObject(d, LIVING, TV_INDEX, { lift: 1.2 }),
+      (d: HomeMapDocument) => moveRoom(d, LIVING, 1, 1),
+      (d: HomeMapDocument) => turnRoom(d, LIVING, 15),
+    ]) {
+      const out = done(doc, edit(doc));
+      expectOnThing(out, THERMOSTAT);
+      expect(pinOf(out, THERMOSTAT)!.at).not.toEqual(pinOf(doc, THERMOSTAT)!.at);
+    }
+    const upstairs = done(doc, moveRoomToFloor(doc, LIVING, { newFloor: { id: NEW3, name: "Upstairs", story: 1 } })).floors.find((f) => f.id === NEW3)!;
+    expect(homeMapThingOfPin(upstairs, THERMOSTAT)).toEqual({ roomId: LIVING, object: TV_INDEX });
   });
 });
 
@@ -571,6 +737,14 @@ describe("moving a light a lamp holds", () => {
     expect(pinOf(same, CEILING)!.at[2]).toBe(1.68);
     expect(pinOf(same, READING)).toEqual(pinOf(doc, READING));
   });
+
+  it("is so for any device a thing holds: the lock on the sofa moves the sofa, and keeps the sofa's height", () => {
+    const doc = done(fixture(), linkDevice(fixture(), FLOOR, LIVING, 0, LOCK));
+    const out = done(doc, movePin(doc, LOCK, [3, 4]));
+    expect(roomOf(out, LIVING).objects[0]!.c).toEqual([3, 4]);
+    expect(expectOnThing(out, LOCK).pin.at).toEqual([3, 4, 0.75]);
+    expect(setPinHeight(doc, LOCK, 2)).toBeUndefined();
+  });
 });
 
 // ── deleting ─────────────────────────────────────────────────────────────
@@ -600,7 +774,7 @@ describe("deleting a lamp or its light", () => {
   });
 
   it("keeps a light whose lamp let go when that lamp is deleted", () => {
-    const doc = done(withFloorLamp(), unlinkLight(withFloorLamp(), FLOOR, LIVING, LAMP_INDEX));
+    const doc = done(withFloorLamp(), unlinkDevice(withFloorLamp(), FLOOR, LIVING, LAMP_INDEX));
     expect(pinOf(removeObject(doc, LIVING, LAMP_INDEX)!, READING)).toBeDefined();
   });
 
@@ -611,5 +785,16 @@ describe("deleting a lamp or its light", () => {
     doc.floors[0]!.pins.find((p) => p.id === READING)!.roomId = KITCHEN;
     const out = done(doc, deleteRoom(doc, LIVING));
     expect(pinOf(out, READING)).toBeUndefined();
+  });
+
+  it("deletes a TV and the media player it holds together, from either end, and several at once", () => {
+    const doc = done(fixture(), addDeviceToThing(fixture(), FLOOR, LIVING, TV_INDEX, "media_player.living_room_tv", NEW));
+    const noTv = done(doc, removeObject(doc, LIVING, TV_INDEX));
+    expect(pinOf(noTv, NEW)).toBeUndefined();
+    const noPlayer = done(doc, removePin(doc, NEW));
+    expect(JSON.stringify(noPlayer)).toBe(JSON.stringify(noTv));
+    const both = done(doc, removeObjects(doc, [{ roomId: LIVING, object: TV_INDEX }, { roomId: LIVING, object: 0 }]));
+    expect(pinOf(both, NEW)).toBeUndefined();
+    expect(roomOf(both, LIVING).objects.map((o) => o.kind)).toEqual(["table"]);
   });
 });

@@ -80,10 +80,10 @@ import {
   deleteRoom,
   homeMapLevelTurn,
   homeMapHeldPin,
-  homeMapLampOfPin,
   homeMapObjectAxes,
   homeMapPinsOfRoom,
   homeMapRoomFrame,
+  homeMapThingOfPin,
   levelObject,
   levelRoom,
   moveObject,
@@ -329,9 +329,9 @@ export function homeMapThingNames(things: readonly { object: Pick<HomeMapObject,
 }
 
 /** Whether a thing is a lamp, listed with the lights in In this room: a
- * lamp's kind or piece, or a thing that names a light. */
-export function homeMapIsLamp(object: Pick<HomeMapObject, "kind" | "model" | "size" | "light">): boolean {
-  return object.kind === "lamp" || object.light !== undefined || homeMapPieceOf(object)?.kind === "lamp";
+ * lamp's kind or piece. */
+export function homeMapIsLamp(object: Pick<HomeMapObject, "kind" | "model" | "size">): boolean {
+  return object.kind === "lamp" || homeMapPieceOf(object)?.kind === "lamp";
 }
 
 /** Whether a light is on now, for its dot. */
@@ -1347,8 +1347,10 @@ export class ArrangeMode {
   }
 
   /** In this room: its lamps and lights (a lamp with the light it holds and
-   * that light's state, then any light no lamp holds), its furniture and
-   * its other devices. A row picks its thing with a click (Cmd or Ctrl
+   * that light's state, then any light no lamp holds), its furniture (a
+   * thing holding a device with that device's name and state in its row,
+   * "TV · Living room TV · playing") and its other devices. A row picks its
+   * thing with a click (Cmd or Ctrl
    * adding a thing to the pick, Shift, Cmd or Ctrl a device), tints it on
    * the plan and in 3D while the pointer is over it (`ctx.setHover`), and
    * is ringed while the plan or 3D has it under the pointer. A thing's eye
@@ -1365,26 +1367,29 @@ export class ArrangeMode {
       const thing = { roomId: id, object: index };
       const name = homeMapThingName(object);
       const hidden = object.hidden === true;
-      const light = homeMapIsLamp(object) ? homeMapHeldPin(floor, id, index) : undefined;
+      // The device it holds is shown in its row, never in a row of its own.
+      const held = homeMapHeldPin(floor, id, index);
+      const lamp = homeMapIsLamp(object) || (held !== undefined && held.entityId.startsWith("light."));
       const row = inRoomRow(ctx, {
         sel: { kind: "object", ...thing },
         picked: homeMapThingPicked(sel, id, index),
         hidden,
-        icon: homeMapIsLamp(object)
-          ? html`<span class="hme-ly-lamp ${light !== undefined && homeMapLightOn(light.entityId, states) ? "lit" : ""}" aria-hidden="true"></span>`
+        icon: lamp
+          ? html`<span class="hme-ly-lamp ${held !== undefined && homeMapLightOn(held.entityId, states) ? "lit" : ""}" aria-hidden="true"></span>`
           : html`<span class="hme-thing-ic" aria-hidden="true"></span>`,
         name,
         end: hidden ? "hidden"
-          : homeMapIsLamp(object) ? (light === undefined ? "no light" : `${homeMapPinName(light, ctx.hass)} · ${homeMapStateText(light.entityId, states)}`)
+          : held !== undefined ? `${homeMapPinName(held, ctx.hass)} · ${homeMapStateText(held.entityId, states)}`
+          : lamp ? "no light"
           : `${object.size[0].toFixed(1)} × ${object.size[1].toFixed(1)}`,
         title: "Pick it to move, resize or turn it. Cmd or Ctrl and a click picks several.",
         pick: (e) => ctx.select(e.metaKey || e.ctrlKey ? homeMapToggleThing(ctx.selection, thing) : { kind: "object", ...thing }),
         eye: () => ctx.apply((d) => setObjectHidden(d, id, index, !hidden)),
       });
-      (homeMapIsLamp(object) ? lamps : things).push(row);
+      (lamp ? lamps : things).push(row);
     });
-    // A light a lamp holds is its lamp's row; a light no lamp holds is its own.
-    const pins = homeMapPinsOfRoom(floor, id).filter((p) => homeMapLampOfPin(floor, p.id) === undefined);
+    // A pin a thing holds is its thing's row; a pin no thing holds is its own.
+    const pins = homeMapPinsOfRoom(floor, id).filter((p) => homeMapThingOfPin(floor, p.id) === undefined);
     const pinRow = (p: HomeMapPin) => inRoomRow(ctx, {
       sel: { kind: "pin", pinId: p.id },
       picked: homeMapPickedPins(sel).some((x) => sameHomeMapId(x, p.id)),

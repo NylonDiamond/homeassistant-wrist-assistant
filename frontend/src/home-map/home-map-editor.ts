@@ -76,7 +76,7 @@ import { libraryItems, libraryOf } from "../library/model.js";
 import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { type HomeMapOp, addFloor, deleteFloor, homeMapLampOfPin, homeStyleOf, renameFloor } from "./edit-ops.js";
+import { type HomeMapOp, addFloor, deleteFloor, homeMapThingOfPin, homeStyleOf, renameFloor } from "./edit-ops.js";
 import { HomeMapEditPage } from "./edit-page.js";
 import { type HomeMapAddTab, HomeMapAddDialog, homeMapAddDialogStyles } from "./add-dialog.js";
 import {
@@ -370,14 +370,14 @@ export class WaHomeMapEditor extends LitElement {
    * does: a thing, a light's pin or a room, empty space picking nothing.
    * With Cmd or Ctrl (`keys.add`) a thing or a light is added to the pick or
    * taken out, as on the plan, and a room or empty space leaves the pick as
-   * it is. A light a lamp holds is its lamp, picked or added as the lamp.
+   * it is. A pin a thing holds is its thing, picked or added as the thing.
    * While a room's walls are edited, a click anywhere but that room goes
    * back to the floor, the room picked. */
   pick3d(found: HomeMap3DPick | undefined, keys: { add: boolean } = { add: false }): void {
     if (this.dialog !== undefined) return;
     this.floorMenu = false;
     const floor = this.baseFloor();
-    const lamp = found?.kind === "pin" && floor !== undefined ? homeMapLampOfPin(floor, found.pinId) : undefined;
+    const lamp = found?.kind === "pin" && floor !== undefined ? homeMapThingOfPin(floor, found.pinId) : undefined;
     const pick: HomeMap3DPick | undefined = lamp === undefined ? found : { kind: "object", roomId: lamp.roomId, object: lamp.object };
     if (this.walls !== undefined) {
       if (pick === undefined || pick.kind === "pin" || !sameHomeMapId(pick.roomId, this.walls)) this.editWalls(undefined);

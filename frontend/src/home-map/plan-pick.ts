@@ -14,7 +14,7 @@
 // new.
 
 import { type SVGTemplateResult, nothing, svg } from "lit";
-import { homeMapLampOfPin } from "./edit-ops.js";
+import { homeMapThingOfPin } from "./edit-ops.js";
 import { type HomeMapSelection, homeMapPickedThings } from "./editor-mode.js";
 import { homeBoxCorners, homeBoxOf, homePolygonArea, homePolygonHolds, homeRoomUnder } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomePoint, sameHomeMapId } from "./model.js";
@@ -66,13 +66,13 @@ export function homeMapThingUnder(floor: HomeMapFloor, at: HomePoint, room?: Hom
 }
 
 /** What a plain click at plan point `at` picks while the floor is edited
- * with the Pick tool: a pin (a light a lamp holds picking its lamp), else a
- * thing, else a room, else nothing. */
+ * with the Pick tool: a pin (a pin a thing holds picking its thing), else
+ * a thing, else a room, else nothing. */
 export function homeMapClickPick(floor: HomeMapFloor, toScreen: ToScreen, at: HomePoint): HomeMapSelection | undefined {
   const pin = homeMapPinAt(floor, toScreen, toScreen(at));
   if (pin !== undefined) {
-    const lamp = homeMapLampOfPin(floor, pin.id);
-    return lamp === undefined ? { kind: "pin", pinId: pin.id } : { kind: "object", roomId: lamp.roomId, object: lamp.object };
+    const thing = homeMapThingOfPin(floor, pin.id);
+    return thing === undefined ? { kind: "pin", pinId: pin.id } : { kind: "object", roomId: thing.roomId, object: thing.object };
   }
   const thing = homeMapThingUnder(floor, at);
   if (thing !== undefined) return { kind: "object", roomId: thing.room.id, object: thing.index };

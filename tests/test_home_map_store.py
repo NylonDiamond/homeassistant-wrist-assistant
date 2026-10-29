@@ -685,12 +685,12 @@ def test_an_objects_colours(env) -> None:
             assert env.refused_doc(doc) == message
 
 
-def test_an_objects_light(env) -> None:
+def test_an_objects_device(env) -> None:
     doc = basic()
     pin_id = _pin(doc)["id"]
     # Given first, it is kept after the wood and before the centre, as sent.
     _living(doc)["objects"][0] = {
-        "light": pin_id.lower(),
+        "device": pin_id.lower(),
         **_object_(doc),
         "hidden": True,
         "lift": 1.6,
@@ -701,24 +701,50 @@ def test_an_objects_light(env) -> None:
     checked = env.mod.check_document(doc)
     objects = checked["floors"][0]["rooms"][0]["objects"]
     assert _keys(objects[0]) == [
-        "kind", "model", "fabric", "wood", "light", "c", "size", "turn", "lift", "hidden",
+        "kind", "model", "fabric", "wood", "device", "c", "size", "turn", "lift", "hidden",
     ]
-    assert objects[0]["light"] == pin_id.lower()
+    assert objects[0]["device"] == pin_id.lower()
     # Its shape only: a pin no floor has, or one on another floor, is kept, as
-    # is a light held by two objects.
+    # is a pin held by two objects.
     nowhere = uuid_n(900)
     doc = basic()
-    _object_(doc)["light"] = nowhere
-    _living(doc)["objects"][1]["light"] = nowhere
+    _object_(doc)["device"] = nowhere
+    _living(doc)["objects"][1]["device"] = nowhere
     objects = env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"]
-    assert objects[0]["light"] == nowhere and objects[1]["light"] == nowhere
-    assert _keys(objects[0]) == ["kind", "light", "c", "size", "turn"]
-    # Absent on an object that holds no light.
-    assert "light" not in env.mod.check_document(basic())["floors"][0]["rooms"][0]["objects"][0]
-    message = "doc.floors[0].rooms[0].objects[0].light must be a pin's id, a UUID"
+    assert objects[0]["device"] == nowhere and objects[1]["device"] == nowhere
+    assert _keys(objects[0]) == ["kind", "device", "c", "size", "turn"]
+    # Absent on an object that holds nothing.
+    plain = env.mod.check_document(basic())["floors"][0]["rooms"][0]["objects"][0]
+    assert "device" not in plain and "light" not in plain
+    message = "doc.floors[0].rooms[0].objects[0].device must be a pin's id, a UUID"
     for bad in ("", "light.reading_lamp", pin_id + "0", pin_id[:-1], None, 3, [pin_id]):
+        _object_(doc)["device"] = bad
+        assert env.refused_doc(doc) == message
+
+
+def test_an_objects_light_is_the_old_spelling_of_device(env) -> None:
+    doc = basic()
+    pin_id = _pin(doc)["id"]
+    # A map saved before device (the real map has two) still saves, its light
+    # kept as device in device's place.
+    _living(doc)["objects"][0] = {"light": pin_id.lower(), **_object_(doc), "lift": 1.6}
+    objects = env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == ["kind", "device", "c", "size", "turn", "lift"]
+    assert objects[0]["device"] == pin_id.lower()
+    # Both sent: device wins and light is dropped.
+    other = uuid_n(901)
+    _object_(doc)["device"] = other
+    objects = env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"]
+    assert objects[0]["device"] == other and "light" not in objects[0]
+    # A light of the wrong shape is refused by its own name, whether or not
+    # a device is sent beside it.
+    message = "doc.floors[0].rooms[0].objects[0].light must be a pin's id, a UUID"
+    for bad in ("", "light.reading_lamp", pin_id[:-1], None, 3):
         _object_(doc)["light"] = bad
         assert env.refused_doc(doc) == message
+        del _object_(doc)["device"]
+        assert env.refused_doc(doc) == message
+        _object_(doc)["device"] = other
 
 
 def test_a_light_entity_may_have_many_pins(env) -> None:

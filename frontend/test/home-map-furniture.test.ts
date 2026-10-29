@@ -37,6 +37,7 @@ import {
   homeMapLampOf,
   homeMapLinearOf,
   homeMapMaterialTint,
+  homeMapScreenOn,
 } from "../src/home-map/scene3d.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
@@ -325,6 +326,29 @@ describe("a light in the 3D look", () => {
     expect(b).toBeLessThan(g);
     const day = homeMapKelvinColor(6600);
     expect(day.every((v) => v > 0.95)).toBe(true);
+  });
+});
+
+describe("a TV's screen in the 3D look", () => {
+  it("glows while the device it holds is on, playing, paused or buffering, and never when it is off, idle, standby, gone or unknown", () => {
+    const states = (state: string) => ({ "media_player.tv": { state } });
+    for (const state of ["on", "playing", "paused", "buffering"]) expect(homeMapScreenOn("media_player.tv", states(state)), state).toBe(true);
+    for (const state of ["off", "idle", "standby", "unavailable", "unknown"]) expect(homeMapScreenOn("media_player.tv", states(state)), state).toBe(false);
+    expect(homeMapScreenOn("switch.tv_plug", { "switch.tv_plug": { state: "on" } })).toBe(true);
+    expect(homeMapScreenOn("media_player.tv", {})).toBe(false);
+    expect(homeMapScreenOn("media_player.tv", undefined)).toBe(false);
+    expect(homeMapScreenOn(undefined, states("on"))).toBe(false);
+  });
+
+  it("is a material the Kenney TVs draw their screen, and only their screen, in", () => {
+    // Read from the models: the screen's own material is named metal, and
+    // no other part of either TV uses it.
+    for (const id of ["televisionModern", "televisionVintage"]) {
+      const glb = readFileSync(join(__dirname, "..", "..", "custom_components", "wrist_assistant", "frontend", "furniture", `${id}.glb`));
+      const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as { materials: { name: string }[]; meshes: { primitives: { material: number }[] }[] };
+      const names = json.meshes.flatMap((m) => m.primitives.map((p) => json.materials[p.material]!.name));
+      expect(names.filter((n) => n === "metal"), id).toHaveLength(1);
+    }
   });
 });
 

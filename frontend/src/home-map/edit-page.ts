@@ -50,7 +50,7 @@
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { homeMapPickOf, homeMapPickedPins } from "./devices-model.js";
-import { homeMapHeldLights } from "./edit-ops.js";
+import { homeMapHeldPins } from "./edit-ops.js";
 import type { HomeMapEditorContext, HomeMapPart, HomeMapViewItem } from "./editor-mode.js";
 import { hmeCard } from "./editor-parts.js";
 import { homeMapCount, homeMapShortcut, homeMapUndoKey } from "./editor-view.js";
@@ -111,7 +111,7 @@ export interface HomeMapStartSteps {
 }
 
 export function homeMapStartSteps(floor: HomeMapFloor): HomeMapStartSteps {
-  const held = homeMapHeldLights(floor);
+  const held = homeMapHeldPins(floor);
   const lights = floor.pins.filter((p) => p.entityId.startsWith("light."));
   const loose = lights.filter((p) => !held.has(p.id.toUpperCase())).map((p) => p.id);
   const rooms = floor.rooms.length;
@@ -173,7 +173,7 @@ export class HomeMapEditPage implements HomeMapPart {
   /** A press: with the lamp chooser open, it closes it and nothing more; a
    * tool's while one is out; else what is on top, the picked room's or
    * thing's handles first, then the picked light's glow handle, a pin (a
-   * light a lamp holds being its lamp), with Shift off a pin the box that
+   * pin a thing holds being its thing), with Shift off a pin the box that
    * picks pins, a thing, a room. */
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     if (this.devices.choosing) {
@@ -185,7 +185,7 @@ export class HomeMapEditPage implements HomeMapPart {
     if (this.shape.armed) return this.shape.pointerDown(ctx, e, at);
     if (e.button !== 0) return false;
     if (this.arrange.pressHandle(ctx, e, at) || this.devices.pressHandle(ctx, e, at)) return true;
-    const lamp = this.devices.heldLampAt(ctx, at);
+    const lamp = this.devices.heldThingAt(ctx, at);
     if (lamp !== undefined && this.arrange.pressThing(ctx, e, lamp, at)) return true;
     return this.devices.pressPin(ctx, e, at)
       || this.devices.pressBox(ctx, e, at)
@@ -323,8 +323,8 @@ export class HomeMapEditPage implements HomeMapPart {
     if (this.picksPins(ctx)) return this.devices.inspector(ctx);
     const sel = ctx.selection;
     if (sel === undefined) return this.startPanel(ctx);
-    // A lamp's light first, then the lamp's own cards.
-    const lamp = sel.kind === "object" ? this.devices.lampCards(ctx, sel.roomId, sel.object) : nothing;
+    // A thing's device first (a lamp's light), then the thing's own cards.
+    const lamp = sel.kind === "object" ? this.devices.thingCards(ctx, sel.roomId, sel.object) : nothing;
     return lamp === nothing ? this.arrange.inspector(ctx) : html`${lamp}${this.arrange.inspector(ctx)}`;
   }
 

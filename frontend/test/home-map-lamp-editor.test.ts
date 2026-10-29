@@ -22,7 +22,7 @@ import type { HassLike } from "../src/ha-api.js";
 import { HOME_MAP_DEVICE_DRAG_TYPE, HOME_MAP_LIGHT_DRAG_TYPE, homeMapDevices } from "../src/home-map/devices-model.js";
 import { addLampLight, addPiece, homeMapHeldPin } from "../src/home-map/edit-ops.js";
 import { homeMapLampPick } from "../src/home-map/editor-mode.js";
-import { homeMapBulbSpot, homeMapLampPiece, homeMapPiece } from "../src/home-map/furniture.js";
+import { homeMapHoldSpot, homeMapLampPiece, homeMapPiece } from "../src/home-map/furniture.js";
 import { WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
 import { HOME_MAP_LAMP_CHOICE_KEY, homeMapKeepLampChoice, homeMapLastLampChoice } from "../src/home-map/mode-devices.js";
 import type { HomeMapDocument } from "../src/home-map/model.js";
@@ -105,8 +105,9 @@ function fakeHass(start: { doc: HomeMapDocument; rev: number }) {
       "light.pendants": { entity_id: "light.pendants", state: "off", attributes: { friendly_name: "Pendants" } },
       "light.kitchen_cans": { entity_id: "light.kitchen_cans", state: "off", attributes: { friendly_name: "Kitchen cans" } },
       "switch.fan": { entity_id: "switch.fan", state: "off", attributes: { friendly_name: "Fan" } },
+      "media_player.living_room_tv": { entity_id: "media_player.living_room_tv", state: "playing", attributes: { friendly_name: "Living room TV" } },
     },
-    entities: { "light.pendants": { area_id: "kitchen" }, "light.kitchen_cans": { area_id: "kitchen" }, "switch.fan": { area_id: "kitchen" } },
+    entities: { "light.pendants": { area_id: "kitchen" }, "light.kitchen_cans": { area_id: "kitchen" }, "switch.fan": { area_id: "kitchen" }, "media_player.living_room_tv": { area_id: "living_room" } },
     areas: { living_room: { name: "Living room" }, kitchen: { name: "Kitchen" } },
     connection: {
       async sendMessagePromise(msg: Record<string, any>) {
@@ -251,7 +252,7 @@ describe("lamps that hold lights in the map editor", () => {
     expect(lamp.model).toBe("lampSquareCeiling");
     const held = homeMapHeldPin(el.context()!.doc.floors[0]!, KITCHEN, 3)!;
     expect(held.entityId).toBe("light.pendants");
-    expect(held.at).toEqual(homeMapBulbSpot(lamp, homeMapLampPiece(lamp.model)!));
+    expect(held.at).toEqual(homeMapHoldSpot(lamp, homeMapLampPiece(lamp.model)!, true));
     expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 3 });
     expect(localStorage.getItem(HOME_MAP_LAMP_CHOICE_KEY)).toBe("ceiling");
     expect((await saved()).pins.filter((p) => p.entityId === "light.pendants")).toHaveLength(2);
@@ -336,9 +337,9 @@ describe("lamps that hold lights in the map editor", () => {
     const { inside, drag, text, saved } = await page(withLamp());
     const over = drag("light.kitchen_cans", [4.8, 2]);
     expect(text()).toContain("Put it in this lamp");
-    // A switch over the same lamp lights nothing up.
-    drag("switch.fan", [4.8, 2]);
-    expect(text()).not.toContain("Put it in this lamp");
+    // A light over the sofa lights nothing up: a light goes only in a lamp.
+    drag("light.kitchen_cans", [2.7, 4.15]);
+    expect(text()).not.toContain("Put it");
     over.drop();
     expect(text()).not.toContain("Which lamp is it in?");
     expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 3 });
@@ -346,13 +347,37 @@ describe("lamps that hold lights in the map editor", () => {
     const held = homeMapHeldPin(floor, LIVING, 3)!;
     expect(held.entityId).toBe("light.kitchen_cans");
     const lamp = floor.rooms[0]!.objects[3]!;
-    expect(held.at).toEqual(homeMapBulbSpot(lamp, homeMapLampPiece(lamp.model)!));
+    expect(held.at).toEqual(homeMapHoldSpot(lamp, homeMapLampPiece(lamp.model)!, true));
     // That lamp holds a light now: another light dropped there gets the chooser.
     drag("light.pendants", [4.8, 2]);
     expect(text()).not.toContain("Put it in this lamp");
   });
 
-  it("puts a light's pin dragged onto a lamp that holds nothing in it, and only a light's", async () => {
+  it("puts any other device dropped on a thing that holds nothing on it, never on a rug, the thing lit while it is over it", async () => {
+    const { el, inside, drag, text, saved, room } = await page();
+    // The television takes the media player; it sits on its screen.
+    const over = drag("media_player.living_room_tv", [2.8, 0.34]);
+    expect(text()).toContain("Put it on this TV");
+    over.drop();
+    expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 2 });
+    let floor = await saved();
+    const tv = homeMapHeldPin(floor, LIVING, 2)!;
+    expect(tv.entityId).toBe("media_player.living_room_tv");
+    expect(tv.at).toEqual([2.8, 0.35, 0.38]);
+    // In this room lists it in the TV's row, not in a row of its own.
+    el.select({ kind: "room", roomId: LIVING });
+    const shown = text();
+    expect(shown).toContain('<span class="hme-ly-nm">TV</span><span class="hme-ly-end">Living room TV · playing</span>');
+    expect(shown).not.toContain('<span class="hme-ly-nm">Living room TV</span>');
+    // A rug under the drop never takes one: the fan is placed on the floor.
+    el.apply((d) => addPiece(d, LIVING, homeMapPiece("rugRectangle")!, [4.5, 3.5]));
+    drag("switch.fan", [4.5, 3.5]).drop();
+    floor = await saved();
+    expect(room(LIVING).objects.at(-1)!.device).toBeUndefined();
+    expect(floor.pins.at(-1)).toMatchObject({ entityId: "switch.fan", at: [4.5, 3.5, 0.3] });
+  });
+
+  it("puts a pin dragged onto a thing that holds nothing on it: a light only in a lamp, anything else on any thing", async () => {
     const { el, inside, stage, pointer, press, text, saved } = await page(withLamp());
     el.onStageDown(pointer([3.2, 1.8]) as unknown as PointerEvent);
     stage.fire("pointermove", pointer([4, 2]));
@@ -364,18 +389,24 @@ describe("lamps that hold lights in the map editor", () => {
     expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 3 });
     let floor = await saved();
     expect(homeMapHeldPin(floor, LIVING, 3)?.id).toBe(CEILING);
-    // The lock is no light: dragged over a lamp it just moves.
+    // The lock goes onto an empty lamp too, as onto any thing, sitting on
+    // its top rather than at its bulb.
     el.apply((d) => addPiece(d, LIVING, homeMapPiece("lampRoundFloor")!, [4.8, 3.5]));
-    press([0.25, 2], [[2, 3], [4.8, 3.5]]);
+    press([0.25, 2], [[1, 1], [4.8, 3.5]]);
     floor = await saved();
-    expect(homeMapHeldPin(floor, LIVING, 4)).toBeUndefined();
-    expect(floor.pins.find((p) => p.id === LOCK)!.at).toEqual([4.8, 3.5, 1]);
+    expect(homeMapHeldPin(floor, LIVING, 4)?.id).toBe(LOCK);
+    expect(floor.pins.find((p) => p.id === LOCK)!.at).toEqual([4.8, 3.5, 1.87]);
+    // A light's pin dragged over a thing that is no lamp only moves.
+    press([8.1, 2.5], [[8.2, 2.6], [8.3, 2.7]]);
+    floor = await saved();
+    expect(homeMapHeldPin(floor, KITCHEN, 2)).toBeUndefined();
+    expect(floor.pins.find((p) => p.id === PENDANTS)!.at).toEqual([8.3, 2.7, 2.1]);
   });
 
   it("picks the lamp for a press on the light it holds, drags the lamp with it, and adds it with Cmd, on the plan and in 3D", async () => {
     const { el, inside, press, room, saved } = await page(withHeld());
     const lamp = room(LIVING).objects[3]!;
-    const bulb = homeMapBulbSpot(lamp, homeMapLampPiece(lamp.model)!)!;
+    const bulb = homeMapHoldSpot(lamp, homeMapLampPiece(lamp.model)!, true);
     press(bulb);
     expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 3 });
     // A drag from the light moves the lamp, the light kept at its bulb.
@@ -418,9 +449,46 @@ describe("lamps that hold lights in the map editor", () => {
     expect(shown).not.toContain("The model looks stand the pin at this height.");
     expect(shown.indexOf("Glow size")).toBeLessThan(shown.indexOf("Up off the floor"));
     expect(shown.indexOf("Tap on the map")).toBeLessThan(shown.indexOf("Up off the floor"));
-    // A thing that is no lamp has no Light card.
+    // A thing that is no lamp has a Device card, holding nothing.
     el.select({ kind: "object", roomId: LIVING, object: 0 });
-    expect(text()).not.toContain("Glow size");
+    const sofa = text();
+    expect(sofa).not.toContain("Glow size");
+    expect(sofa).toContain('<span class="hme-l">Device</span><span class="hme-in hme-ro dim">None</span>');
+    expect(sofa).toContain(">Choose…</button>");
+  });
+
+  it("gives any thing a device from its Device card's search of all the home's devices, then shows it without a glow", async () => {
+    const { el, inside, click, type, text, saved } = await page();
+    el.select({ kind: "object", roomId: LIVING, object: 2 });
+    click(">Choose…</button>");
+    let shown = text();
+    expect(shown).toContain('aria-label="Find a device"');
+    // Every kind of device, the living room's first.
+    expect(shown.indexOf("Put Living room TV on it")).toBeLessThan(shown.indexOf("Put Fan on it"));
+    expect(shown).toContain("Put Reading lamp on it");
+    type('aria-label="Find a device"', "tv");
+    click("Put Living room TV on it");
+    const floor = await saved();
+    const held = homeMapHeldPin(floor, LIVING, 2)!;
+    expect(held.entityId).toBe("media_player.living_room_tv");
+    expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 2 });
+    shown = text();
+    expect(shown).toContain('<span class="hme-l">Device</span><span class="hme-in hme-ro mono">media_player.living_room_tv</span>');
+    expect(shown).not.toContain("Glow size");
+    expect(shown).not.toContain(">Add another</button>");
+    expect(shown).toContain(">Unlink</button>");
+    expect(shown).toContain("Tap on the map");
+    expect(shown).toContain('<span class="hme-l">Reading</span>');
+    expect(shown).toContain('<span class="hme-l">Icon</span>');
+    // A device on the map already keeps its one pin: picked for the sofa,
+    // that pin moves from the TV onto the sofa.
+    el.select({ kind: "object", roomId: LIVING, object: 0 });
+    click(">Choose…</button>");
+    click("Put Living room TV on it");
+    const after = await saved();
+    expect(after.pins.filter((p) => p.entityId === "media_player.living_room_tv").map((p) => p.id)).toEqual([held.id]);
+    expect(homeMapHeldPin(after, LIVING, 0)?.id).toBe(held.id);
+    expect(homeMapHeldPin(after, LIVING, 2)).toBeUndefined();
   });
 
   it("changes a lamp's light by a search of the home's lights, adds another lamp beside it, and unlinks it", async () => {
@@ -484,7 +552,7 @@ describe("lamps that hold lights in the map editor", () => {
   it("deletes a picked lamp and its light together with Delete, one undo bringing both back", async () => {
     const { el, inside, key, press, room, saved } = await page(withHeld());
     const lamp = room(LIVING).objects[3]!;
-    press(homeMapBulbSpot(lamp, homeMapLampPiece(lamp.model)!)!);
+    press(homeMapHoldSpot(lamp, homeMapLampPiece(lamp.model)!, true));
     key("Backspace");
     let floor = await saved();
     expect(floor.rooms[0]!.objects).toHaveLength(3);
