@@ -2,12 +2,11 @@
 // device where it is, at its height, and say what it shows and what a tap on
 // it does.
 //
-// The edit page's rail lists the devices not on the map yet by Home
-// Assistant area (the areas of this floor's rooms first), each row drawn
-// here (`deviceRow`), dragged onto the plan to place it (the room it would
-// land in lit with "Drop in <room>") or clicked to put it in its area's
-// room; Place all by area places them all at once; a kind's chip dims the
-// pins of the other kinds. On the stage every pin is drawn by this part as a
+// A device to add is a row drawn here (`deviceRow`), dragged onto the plan
+// to place it (the room it would land in lit with "Drop in <room>") or
+// clicked to put it in its area's room (`place`); Place all by area
+// (`placeAll`) places a list at once. The page's Add dialog lists the
+// devices. On the stage every pin is drawn by this part as a
 // glass pin with its icon and live state (a light that is on amber, in its
 // own colour when it has one) and its pill, over the rooms and things; a pin
 // is dragged to move it, and
@@ -34,8 +33,8 @@
 // where they differ.
 //
 // Lamps hold lights (a light's pin and the lamp it sits in are one thing,
-// `edit-ops.ts` keeping the pin at the lamp's bulb). A light's row in the
-// rail always adds another: a light group can sit in six ceiling cans. Its
+// `edit-ops.ts` keeping the pin at the lamp's bulb). A light's row always
+// adds another: a light group can sit in six ceiling cans. Its
 // row says how many are on the map ("2 on map"), a click there picking each
 // in turn. Adding a light, by a click on its row or a drop on the plan,
 // opens the lamp chooser by the spot: Ceiling, Floor, Table, Wall or Just a
@@ -63,16 +62,13 @@ import {
   HOME_MAP_LIGHT_DRAG_TYPE,
   HOME_MAP_TAP_CHOICES,
   type HomeMapDeviceEntry,
-  type HomeMapDeviceKind,
   homeMapAddPicks,
   homeMapCanToggle,
-  homeMapDeviceKind,
   homeMapDevices,
   homeMapDomainWords,
   homeMapEntityAreaId,
   homeMapFindDevices,
   homeMapGroupToggle,
-  homeMapKindCounts,
   homeMapPickOf,
   homeMapPickedPins,
   homeMapPinOfEntity,
@@ -108,7 +104,7 @@ import {
   setPinsHeight,
   unlinkLight,
 } from "./edit-ops.js";
-import type { HomeMapEditorContext, HomeMapSelection } from "./editor-mode.js";
+import type { HomeMapEditorContext, HomeMapSelection, HomeMapViewItem } from "./editor-mode.js";
 import { hmeCard, hmeChip, hmeColourInput, hmeHint, hmeNumber, hmePic, hmeRow, hmeSelect, hmeText } from "./editor-parts.js";
 import { homeMapCount, homeMapShortcut, homeMapToPlan } from "./editor-view.js";
 import { HOME_MAP_LAMP_CHOICES, HOME_MAP_LAMP_CHOICE_MODELS, type HomeMapLampChoice, homeMapLampPiece } from "./furniture.js";
@@ -133,9 +129,8 @@ import {
   sameHomeMapId,
 } from "./model.js";
 import { HOME_MAP_PIN_ICON_NAMES, homeMapAutoPinIcon, homeMapGlowHex, homeMapPinGlowRadius, homeMapPinGlyph, homeMapPinPill } from "./pin-look.js";
+import { homeMapPinAt } from "./plan-pick.js";
 
-/** A press this near a pin's middle, in pixels, picks it. */
-const PIN_REACH = 15;
 /** The glow ring's handle sits at this angle, down and to the right. */
 const HANDLE_ANGLE = Math.PI / 4;
 /** The glow slider's top; a bigger pool is typed. */
@@ -144,7 +139,7 @@ const GLOW_SLIDER_HIGH = 8;
 const LIT = "#ffbf55";
 const fmt = (v: number) => v.toFixed(1);
 
-/** The words under a device's name in the rail: its kind and its state. */
+/** The words under a device's name in its row: its kind and its state. */
 export function homeMapDeviceLine(d: HomeMapDeviceEntry, states: HomeMapStates | undefined): string {
   return `${homeMapDomainWords(d.domain)} · ${homeMapStateText(d.entityId, states)}`;
 }
@@ -228,13 +223,11 @@ export class DevicesMode {
    * the lamp chooser (the edit page hands it the furniture picker's). */
   constructor(private readonly picture?: (ctx: HomeMapEditorContext, pieceId: string, cls: string) => TemplateResult) {}
 
-  /** The kind whose pins stay bright; the rest dim. */
-  filter: HomeMapDeviceKind | undefined;
   /** The room's side view under the picked pin. */
   side = true;
   /** Every pin's name in its pill. */
   names = false;
-  /** The device dragged from the rail, and where over the plan. */
+  /** The device dragged from its row, and where over the plan. */
   private dragging: string | undefined;
   private dropAt: HomePoint | undefined;
   /** A pin or its glow ring is being dragged. */
@@ -249,7 +242,7 @@ export class DevicesMode {
    * to take the focus. */
   private chooser: LampChooser | undefined;
   private chooserFocus = false;
-  /** The lamp holding nothing that a light dragged from the rail, or a
+  /** The lamp holding nothing that a light dragged from its row, or a
    * light's pin dragged on the plan, is over: lit up, and the drop puts the
    * light in it. */
   private lampOver: HomeMapThingRef | undefined;
@@ -311,18 +304,9 @@ export class DevicesMode {
     ctx.apply((d) => placeAllByArea(d, floorId, list, () => ctx.newId())?.doc, { select: null });
   }
 
-  /** The kind chips: a kind's chip keeps its pins bright and dims the
-   * rest, a second press brings them all back. */
-  kindChips(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    const kinds = homeMapKindCounts(ctx.floor);
-    if (kinds.length === 0) return nothing;
-    return html`<div class="hme-chips">${kinds.map((k) => html`<button type="button" class="hme-chip sel ${this.filter === k.kind ? "on" : ""}"
-      aria-pressed=${this.filter === k.kind ? "true" : "false"} title="Dim the other kinds of device on the plan"
-      @click=${() => { this.filter = this.filter === k.kind ? undefined : k.kind; ctx.redraw(); }}>${k.label} ${k.count}</button>`)}</div>`;
-  }
-
-  /** A device in the rail: dragged onto the plan to place it, clicked to
-   * put it in its area's room; one on the map already is picked. A light
+  /** A device's row, for a list of devices to add: dragged onto the plan
+   * to place it, clicked to put it in its area's room; one on the map
+   * already is picked. A light
    * always adds another (dragged, or clicked into its area's room), each
    * through the lamp chooser, and says how many it has on the map, a click
    * there picking the next one in turn. */
@@ -548,7 +532,7 @@ export class DevicesMode {
 
   // ── dragging a device onto the plan ────────────────────────────────────
 
-  /** Something dragged from the rail over the plan: the room it would land
+  /** A device dragged from its row over the plan: the room it would land
    * in lit, or for a light over a lamp that holds nothing, that lamp. */
   dragOver(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean {
     const types = [...(e.dataTransfer?.types ?? [])];
@@ -604,8 +588,7 @@ export class DevicesMode {
     if (picked !== undefined && look?.kind === "light") parts.push(this.glowRing(ctx, picked, look.on ? look.brightness : undefined));
     for (const pin of ctx.floor.pins) {
       const on = picks.some((id) => sameHomeMapId(pin.id, id));
-      const dim = this.filter !== undefined && homeMapDeviceKind(pin.entityId) !== this.filter;
-      parts.push(this.pinMark(ctx, pin, on, dim, states));
+      parts.push(this.pinMark(ctx, pin, on, false, states));
     }
     if (this.box !== undefined) parts.push(this.boxMark(ctx, this.box));
     return svg`${parts}`;
@@ -686,19 +669,10 @@ export class DevicesMode {
     </g>`;
   }
 
-  /** The pin a press at stage point `s` lands on, the top one first. */
+  /** The pin a press at stage point `s` lands on, the top one first, as
+   * the plan's hover finds it (`plan-pick.ts`). */
   private pinAt(ctx: HomeMapEditorContext, s: HomePoint): HomeMapPin | undefined {
-    let best: HomeMapPin | undefined;
-    let bestD = PIN_REACH;
-    for (const pin of ctx.floor.pins) {
-      const p = ctx.toScreen(pin.at);
-      const d = Math.hypot(p[0] - s[0], p[1] - s[1]);
-      if (d <= bestD) {
-        best = pin;
-        bestD = d;
-      }
-    }
-    return best;
+    return homeMapPinAt(ctx.floor, ctx.toScreen, s);
   }
 
   /** A press on the stage: the glow ring's handle, a pin (Shift, Cmd or
@@ -819,7 +793,7 @@ export class DevicesMode {
     if (ids.length > 1) {
       const sure = await ctx.confirm({
         title: `Remove ${homeMapCount(ids.length, "device")} from the map?`,
-        text: "They go back to Not on the map. Undo puts them back where they were.",
+        text: "They come off the map, and Add can put them back. Undo puts them back where they were.",
         ok: "Remove",
         danger: true,
       });
@@ -912,11 +886,12 @@ export class DevicesMode {
     this.lightFind = undefined;
   }
 
-  dock(ctx: HomeMapEditorContext): TemplateResult {
-    const toggle = (label: string, on: boolean, flip: () => void, title: string) => html`<button type="button" class="hme-tb ${on ? "on" : ""}"
-      aria-pressed=${on ? "true" : "false"} title=${title} @click=${() => { flip(); ctx.redraw(); }}>${label}</button>`;
-    return html`${toggle("Side view", this.side, () => { this.side = !this.side; }, "The picked device's room from the side, to set its height")}
-      ${toggle("Names", this.names, () => { this.names = !this.names; }, "Every device's name under its pin")}`;
+  /** The dock's View menu: the side view and every pin's name. */
+  viewItems(ctx: HomeMapEditorContext): HomeMapViewItem[] {
+    return [
+      { label: "Side view", on: this.side, title: "The picked device's room from the side, to set its height", flip: () => { this.side = !this.side; ctx.redraw(); } },
+      { label: "Names", on: this.names, title: "Every device's name under its pin", flip: () => { this.names = !this.names; ctx.redraw(); } },
+    ];
   }
 
   // ── the side view ──────────────────────────────────────────────────────
@@ -1199,7 +1174,7 @@ export class DevicesMode {
             ctx.note("warn", "That light could not be put in the lamp: the map holds at most 400 devices.");
           }
         })}
-        ${hmeHint("Pick the light this lamp holds, or drag one from the rail onto it.")}`);
+        ${hmeHint("Pick the light this lamp holds, or drag its light's pin onto it on the plan.")}`);
     }
     const states = ctx.hass?.states;
     const id = pin.id;

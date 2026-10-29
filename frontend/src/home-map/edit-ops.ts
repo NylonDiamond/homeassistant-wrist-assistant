@@ -44,6 +44,7 @@ import {
   type HomeSegment,
   HOME_TOLERANCE,
   HOME_WALL_THICKNESS,
+  cutWall,
   homeBoxCorners,
   homeBoxOf,
   homeClipPolygon,
@@ -1127,6 +1128,158 @@ export function addPiece(doc: HomeMapDocument, roomId: string, piece: HomeMapFur
     const size = piece.size.map(r) as [number, number, number];
     const lift = r(clamp(homeMapPieceLift(piece, room.height), 0, 100));
     const object: HomeMapObject = { kind: piece.kind, model: piece.id, c: roundPoint(homeMapInsideRoom(room, at, size)), size, turn: 0 };
+    if (lift > 0) object.lift = lift;
+    return { ...room, objects: [...room.objects, orderedObject(object)] };
+  });
+}
+
+// ── a new piece against a wall ───────────────────────────────────────────
+//
+// The Add dialog's furniture goes where a person would put it: its back to
+// the nearest stretch of wall that has room for it, facing into the room,
+// clear of the room's things and of the floor in front of its doorways
+// where any such spot is left. A thing only blocks a spot when the two
+// share some height, so a table lamp can stand over a low cabinet and a wall
+// lamp over a sofa; a rug never blocks one. A doorway is never a wall to
+// stand against, and a window is not one for a piece whose top would reach
+// past its sill.
+
+/** The spots along a wall a new piece is tried at lie this far apart, in
+ * meters. */
+const WALL_SPOT_STEP = 0.05;
+/** A thing lower than this (a rug, a doormat) is never in a new piece's
+ * way. */
+const FLAT_THING = 0.05;
+/** Boxes that only touch, or overlap by less than this, in meters, are
+ * clear of each other. */
+const CLEAR_SLACK = 0.01;
+/** A window is no wall for a piece whose top stands this far above its
+ * sill. */
+const SILL_SLACK = 0.1;
+/** The floor kept clear on each side of a door or a way through reaches as
+ * far as the gap is wide, within these, in meters. */
+const DOORWAY_MIN = 0.6;
+const DOORWAY_MAX = 1.0;
+
+/** Where a new piece stands against a wall: its middle, its turn (its back
+ * to the wall and its front, the model's +z, facing into the room), and
+ * whether it is clear of the floor's things and doorways there. */
+export interface HomeMapFreeWallSpot {
+  c: HomePoint;
+  turn: number;
+  clear: boolean;
+}
+
+/** Whether a piece stands free in a room rather than against a wall: one
+ * that hangs from the ceiling, or a rug. */
+export function homeMapPieceStandsFree(piece: Pick<HomeMapFurniturePiece, "kind" | "ceiling">): boolean {
+  return piece.ceiling === true || piece.kind === "rug";
+}
+
+/** The band `half` meters either side of the line from `a` to `b`. */
+function band(a: HomePoint, b: HomePoint, half: number): HomePoint[] {
+  const length = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 1e-9);
+  const nx = (-(b[1] - a[1]) / length) * half;
+  const ny = ((b[0] - a[0]) / length) * half;
+  return [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]];
+}
+
+/** Whether two convex shapes overlap, by their edges' separating lines;
+ * touching is not overlapping. */
+function convexOverlap(p: readonly HomePoint[], q: readonly HomePoint[]): boolean {
+  for (const shape of [p, q]) {
+    for (let i = 0; i < shape.length; i += 1) {
+      const a = shape[i]!;
+      const b = shape[(i + 1) % shape.length]!;
+      const nx = a[1] - b[1];
+      const ny = b[0] - a[0];
+      if (Math.abs(nx) < 1e-12 && Math.abs(ny) < 1e-12) continue;
+      let p0 = Infinity;
+      let p1 = -Infinity;
+      for (const v of p) {
+        const d = v[0] * nx + v[1] * ny;
+        p0 = Math.min(p0, d);
+        p1 = Math.max(p1, d);
+      }
+      let q0 = Infinity;
+      let q1 = -Infinity;
+      for (const v of q) {
+        const d = v[0] * nx + v[1] * ny;
+        q0 = Math.min(q0, d);
+        q1 = Math.max(q1, d);
+      }
+      if (p1 <= q0 || q1 <= p0) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The spot nearest `near` where a piece `size` big, its bottom `lift` up,
+ * stands with its back against one of `room`'s walls, wholly inside the
+ * room, crossing none of the floor's walls; a spot clear of the floor's
+ * shown things and doorways first, else the nearest that is not (spots
+ * are tried every 5 cm along each stretch of wall, and at the one nearest
+ * `near`). Undefined when no stretch of the room's walls is wide enough.
+ */
+export function homeMapFreeWallSpot(floor: HomeMapFloor, room: HomeMapRoom, size: readonly [number, number, number], lift: number, near: readonly number[]): HomeMapFreeWallSpot | undefined {
+  const [width, depth, height] = size;
+  if (!finite(width, depth, height, lift, near[0]!, near[1]!) || width <= 0 || depth <= 0) return undefined;
+  const top = lift + height;
+  const openings = floor.rooms.flatMap((r) => r.openings);
+  const gaps = openings.filter(isGap);
+  const cuts = openings.filter((o) => isGap(o) || top > o.z0 + SILL_SLACK);
+  const walls = floor.rooms.flatMap((r) => homeWallsOf(r).flatMap((w) => cutWall(w, gaps))).map((w) => band(w.a, w.b, w.t / 2));
+  const things = floor.rooms
+    .flatMap((r) => r.objects)
+    .filter((o) => o.hidden !== true && o.size[2] >= FLAT_THING && (o.lift ?? 0) < top - CLEAR_SLACK && (o.lift ?? 0) + o.size[2] > lift + CLEAR_SLACK)
+    .map((o) => homeBoxCorners(homeBoxOf(o)));
+  const doorways = gaps.filter((o) => lift < o.z1).map((o) => band(o.a, o.b, clamp(segmentLength(o), DOORWAY_MIN, DOORWAY_MAX)));
+  let best: { spot: HomeMapFreeWallSpot; d: number } | undefined;
+  for (const wall of homeWallsOf(room)) {
+    for (const stretch of cutWall(wall, cuts)) {
+      const length = segmentLength(stretch);
+      if (length + 1e-9 < width) continue;
+      const u: HomePoint = [(stretch.b[0] - stretch.a[0]) / length, (stretch.b[1] - stretch.a[1]) / length];
+      const lo = width / 2;
+      const hi = Math.max(length - width / 2, lo);
+      const alongs: number[] = [];
+      for (let s = lo; s <= hi + 1e-9; s += WALL_SPOT_STEP) alongs.push(s);
+      alongs.push(hi, clamp((near[0]! - stretch.a[0]) * u[0] + (near[1]! - stretch.a[1]) * u[1], lo, hi));
+      for (const side of [1, -1]) {
+        const into: HomePoint = [-u[1] * side, u[0] * side];
+        const off = stretch.t / 2 + depth / 2;
+        const turn = homeNormalDegrees((Math.atan2(into[0], into[1]) * 180) / Math.PI);
+        for (const s of alongs) {
+          const c: HomePoint = [stretch.a[0] + u[0] * s + into[0] * off, stretch.a[1] + u[1] * s + into[1] * off];
+          const box = homeBoxCorners({ centre: c, width: Math.max(width - 2 * CLEAR_SLACK, 0), depth: Math.max(depth - 2 * CLEAR_SLACK, 0), angle: (-turn * Math.PI) / 180 });
+          if (!box.every((p) => homePolygonHolds(room.outline, p)) || walls.some((w) => convexOverlap(box, w))) continue;
+          const clear = !things.some((t) => convexOverlap(box, t)) && !doorways.some((g) => convexOverlap(box, g));
+          const d = distance(c, near);
+          if (best === undefined || (clear && !best.spot.clear) || (clear === best.spot.clear && d < best.d - 1e-9)) best = { spot: { c, turn, clear }, d };
+        }
+      }
+    }
+  }
+  return best?.spot;
+}
+
+/** A new thing made from the catalog's `piece`, as `addPiece` makes one,
+ * but standing where the Add dialog puts it: against the wall nearest `near`
+ * that has room for it, facing into the room, clear of the other things
+ * where it can be (`homeMapFreeWallSpot`). A piece that stands free (a ceiling
+ * lamp, a rug), or one no wall has room for, goes square at `near` kept
+ * inside the room, as `addPiece` puts it. */
+export function addPieceByWall(doc: HomeMapDocument, roomId: string, piece: HomeMapFurniturePiece, near: HomePoint): HomeMapDocument | undefined {
+  if (!pieceFits(piece) || !finite(...near)) return undefined;
+  return editRoom(doc, roomId, (room, at) => {
+    if (room.objects.length >= 256) return undefined;
+    const size = piece.size.map(r) as [number, number, number];
+    const lift = r(clamp(homeMapPieceLift(piece, room.height), 0, 100));
+    const spot = homeMapPieceStandsFree(piece) ? undefined : homeMapFreeWallSpot(at.floor, room, size, lift, near);
+    const object: HomeMapObject = spot === undefined
+      ? { kind: piece.kind, model: piece.id, c: roundPoint(homeMapInsideRoom(room, near, size)), size, turn: 0 }
+      : { kind: piece.kind, model: piece.id, c: roundPoint(spot.c), size, turn: r(spot.turn) || 0 };
     if (lift > 0) object.lift = lift;
     return { ...room, objects: [...room.objects, orderedObject(object)] };
   });

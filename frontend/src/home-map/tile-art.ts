@@ -65,7 +65,7 @@
 import { type SVGTemplateResult, nothing, svg } from "lit";
 import type { IconProvider } from "../renderer.js";
 import { homePinPaint } from "./draw.js";
-import { HOME_FURNITURE_DEFS, homeFurnitureArt, homeFurnitureOutline } from "./furniture-art.js";
+import { HOME_FURNITURE_DEFS, type HomeFurnitureLook, homeFurnitureArt, homeFurnitureOutline } from "./furniture-art.js";
 import {
   type HomeBox,
   type HomeFloorKind,
@@ -162,6 +162,12 @@ export interface HomeTileArtOptions {
    * even while the thing is hidden), or several things' boxes. The flat
    * looks ignore it. */
   mark?: { outline?: readonly HomePoint[]; box?: HomeMapObject; boxes?: readonly HomeMapObject[] };
+  /** The map editor's plan: the catalog piece each thing is drawn as and
+   * its colours, the piece the 3D view picks for a thing with no `model`
+   * and the model's own colours under the thing's (`homeMapPlanLook`,
+   * `furniture.ts`, which the tiles never load). Absent: a thing's own
+   * `model`, `fabric` and `wood`. The plan look only. */
+  furnitureLook?: (object: HomeMapObject) => HomeFurnitureLook;
 }
 
 // ── colours ─────────────────────────────────────────────────────────────
@@ -619,7 +625,7 @@ export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
   // Only the glass pins draw icons, so only they depend on the provider;
   // those drawings are not kept.
   const icons = o.devices === "all" ? o.icons : undefined;
-  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark]);
+  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark, o.furnitureLook !== undefined]);
   let byStates = memo.get(o.floor);
   if (byStates === undefined) memo.set(o.floor, (byStates = new WeakMap()));
   const statesKey = (o.states ?? NO_STATES) as object;
@@ -770,26 +776,34 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
       svg`<path d=${d} fill="none" stroke=${PLAN.ink} stroke-width="1" stroke-dasharray="3 2.5" />`);
   }
 
-  // Furniture, each piece drawn as itself with a soft shadow under it.
+  // Furniture, each piece drawn as itself with a soft shadow under it, the
+  // rugs first, flat under everything else and casting none. A piece from
+  // the furniture catalog (its `model`) is drawn as that piece in its own
+  // colours, its back where its turn puts it, as the 3D view stands it.
   if (ctx.furniture) {
     const allWalls = floor.rooms.flatMap(homeWallsOf);
     let any = false;
-    for (const room of floor.rooms) {
-      for (const object of room.objects) {
-        const box = homeBoxOf(object);
-        const w = len(box.width);
-        const d = len(box.depth);
-        if (w <= 0.5 || d <= 0.5) continue;
-        any = true;
-        const [cx, cy] = project(P, box.centre);
-        const back = homeBackSign(object, room.objects, allWalls);
-        // The art draws its back towards minus y.
-        const place = `translate(${r2(cx)} ${r2(cy)}) rotate(${r3((box.angle * 180) / Math.PI)}) scale(1 ${back > 0 ? -1 : 1})`;
-        const blur = Math.min(Math.max(Math.min(w, d) * 0.08, 1.5), 4);
-        out.push(svg`<g class="hmt-piece" data-kind=${object.kind}>
-          <g transform=${`translate(0 1.5) ${place}`} filter=${defs.blur(blur / 2)}>${homeFurnitureOutline(object.kind, w, d, "rgba(0,0,0,0.45)")}</g>
-          <g transform=${place}>${homeFurnitureArt(object.kind, w, d, P.scale)}</g></g>`);
-      }
+    const pieces = floor.rooms.flatMap((room) => room.objects.map((object) => ({ room, object })));
+    const flat = (kind: string) => (kind === "rug" ? 0 : 1);
+    pieces.sort((a, b) => flat(a.object.kind) - flat(b.object.kind));
+    for (const { room, object } of pieces) {
+      const box = homeBoxOf(object);
+      const w = len(box.width);
+      const d = len(box.depth);
+      if (w <= 0.5 || d <= 0.5) continue;
+      any = true;
+      const [cx, cy] = project(P, box.centre);
+      const look = ctx.o.furnitureLook?.(object) ?? { model: object.model, fabric: object.fabric, wood: object.wood };
+      const back = look.model !== undefined ? -1 : homeBackSign(object, room.objects, allWalls);
+      // The art draws its back towards minus y.
+      const place = `translate(${r2(cx)} ${r2(cy)}) rotate(${r3((box.angle * 180) / Math.PI)}) scale(1 ${back > 0 ? -1 : 1})`;
+      const blur = Math.min(Math.max(Math.min(w, d) * 0.08, 1.5), 4);
+      const kind = look.kind ?? object.kind;
+      const shadow = homeFurnitureOutline(kind, w, d, "rgba(0,0,0,0.45)", look);
+      const art = homeFurnitureArt(kind, w, d, P.scale, look);
+      out.push(shadow === nothing ? svg`<g class="hmt-piece" data-kind=${object.kind}><g transform=${place}>${art}</g></g>` : svg`<g class="hmt-piece" data-kind=${object.kind}>
+          <g transform=${`translate(0 1.5) ${place}`} filter=${defs.blur(blur / 2)}>${shadow}</g>
+          <g transform=${place}>${art}</g></g>`);
     }
     if (any) defs.own("wa-hmf", HOME_FURNITURE_DEFS);
   }
@@ -883,6 +897,8 @@ function drawDots(ctx: Ctx): SVGTemplateResult[] {
 interface Solid {
   part: "wall" | "glass" | "piece";
   kind?: string;
+  /** A piece's catalog piece and colours, for its top. */
+  look?: HomeFurnitureLook;
   back?: number;
   box?: HomeBox;
   roomId: string;
@@ -1067,7 +1083,8 @@ function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[
         solids.push({
           part: "piece",
           kind: object.kind,
-          back: homeBackSign(object, room.objects, allWalls),
+          look: { model: object.model, fabric: object.fabric, wood: object.wood },
+          back: object.model !== undefined ? -1 : homeBackSign(object, room.objects, allWalls),
           box,
           roomId: room.id,
           quad: homeBoxCorners(box),
@@ -1213,7 +1230,7 @@ function drawSolid(ctx: Ctx, solid: Solid, style: ModelStyle, isLit: boolean, wa
     const box = solid.box;
     if (box.width * k >= 8 && box.depth * k >= 8) {
       const place = `${affine(P, solid.z1)} translate(${r3(box.centre[0])} ${r3(box.centre[1])}) scale(${r3(1 / k)}) rotate(${r3((box.angle * 180) / Math.PI)}) scale(1 ${(solid.back ?? 1) > 0 ? -1 : 1})`;
-      out.push(svg`<g clip-path=${defs.clip(top)}><g transform=${place}>${homeFurnitureArt(solid.kind ?? "", box.width * k, box.depth * k, k)}</g></g>`);
+      out.push(svg`<g clip-path=${defs.clip(top)}><g transform=${place}>${homeFurnitureArt(solid.kind ?? "", box.width * k, box.depth * k, k, solid.look)}</g></g>`);
       const unlit = MODEL.unlitShade(style);
       if (!isLit && unlit > 0) out.push(svg`<polygon points=${lid} fill=${rgba(0, 0, 0, unlit * 0.8)} />`);
     }

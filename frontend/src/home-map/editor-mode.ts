@@ -1,11 +1,12 @@
 // The contract between the map editor's shell (`home-map-editor.ts`) and
 // the part that edits on its page. The shell owns the bar, the stage (the
-// plan drawn, pan and zoom, the measure, the dock), the selection, the undo
-// stack, the saves and the Home style panel; the page has no modes. Its one
-// editing part, `HomeMapEditPage` (`edit-page.ts`), implements `HomeMapPart`:
-// it draws the left rail, the inspector, the stage's overlay, its tool rail,
-// pill and dock switches from the `HomeMapEditorContext` the shell hands it
-// on every draw, and answers the presses and keys the shell passes it.
+// plan drawn, pan and zoom, the measure, the dock and its View menu), the
+// selection, the hover, the undo stack, the saves and the Home style panel;
+// the page has no modes. Its one editing part, `HomeMapEditPage`
+// (`edit-page.ts`), implements `HomeMapPart`: it draws the side panel on the
+// left, the stage's overlay, its tool rail, pill, dock switches and View
+// menu items from the `HomeMapEditorContext` the shell hands it on every
+// draw, and answers the presses and keys the shell passes it.
 //
 // The page is in one of two states. Editing (no `ctx.walls`): a click picks
 // what is on top, a device pin, else a thing, else a room, and moves it.
@@ -237,16 +238,30 @@ export interface HomeMapEditorContext {
   newId(): string;
   note(kind: "warn" | "err", text: string): void;
   redraw(): void;
+  /** What a click would pick right where the pointer rests, on the plan,
+   * in 3D or over a row of a list: the plan, the 3D view and the lists tint
+   * it, as the complication editor's face and Layers list do. */
+  readonly hover: HomeMapSelection | undefined;
+  /** Set or clear the hover; the same value again draws nothing new. */
+  setHover(hover: HomeMapSelection | undefined): void;
+  /** Open the Add dialog on its Devices or Furniture tab. */
+  openAdd(tab?: "devices" | "furniture"): void;
   /** Open a library page in the page editor; absent where the panel gives
    * no way there. */
   readonly openPage?: ((pageId: string) => void) | undefined;
 }
 
+/** A switch of the plan's View menu: Grid, Side view, Names, the scan. */
+export interface HomeMapViewItem {
+  label: string;
+  on: boolean;
+  title?: string;
+  flip(): void;
+}
+
 /** The page's editing part, as the shell asks it. */
 export interface HomeMapPart {
-  /** The left column's cards. */
-  rail(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** The right column's cards. */
+  /** The side panel's cards, on the left of the stage. */
   inspector(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
   /** Drawn over the plan, in stage pixels. */
   overlay(ctx: HomeMapEditorContext): SVGTemplateResult | typeof nothing;
@@ -256,8 +271,11 @@ export interface HomeMapPart {
   /** A bar across the top of the stage, the pill under it (wall editing's
    * Done). */
   banner?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** Switches in the dock, after the zoom. */
+  /** Switches in the dock, after the zoom and Fit (Snap). */
   dock?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
+  /** The switches of the dock's View menu, before the shell's Live
+   * states. */
+  viewItems?(ctx: HomeMapEditorContext): HomeMapViewItem[];
   /** A press on the stage at plan point `at`. True when the part took it;
    * false lets the shell pan (and clear the selection on a click). */
   pointerDown?(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean;
@@ -280,7 +298,7 @@ export interface HomeMapPart {
   /** A sheet over the whole page, under the page's own dialogs (the
    * furniture picker). It keeps its own keys: none reach the shell. */
   sheet?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** Something dragged from the rail moving over the plan at `at`, or
+  /** Something dragged onto the stage moving over the plan at `at`, or
    * leaving it (undefined). True to take a drop there. */
   dragOver?(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean;
   /** The drop of what `dragOver` took, at plan point `at`. */

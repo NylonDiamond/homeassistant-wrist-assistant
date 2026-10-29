@@ -2,8 +2,8 @@
 // what the scan got a little wrong in one room, and draw what it never saw.
 // A double-click on a room edits its walls (`ctx.walls`); the tool rail
 // holds the tools, each with its key (Corners and walls V, Split the room S,
-// Inner wall W, Door D, Window N, Way through O, Stairs T), and the left
-// rail the room's walls with what is on each, and the scan check:
+// Inner wall W, Door D, Window N, Way through O, Stairs T), and the side
+// panel the room's walls with what is on each, and the scan check:
 // overlapping rooms, corners a little off square, small gaps and rooms with
 // no way into their neighbours (`scanIssues`), each with its fix and a fix
 // for all. Inner wall, Door and Window also work from the edit page's own
@@ -26,11 +26,12 @@
 // height from the floor and how tall, Remove). Edits go through the shell
 // (`editor-mode.ts`).
 //
-// Show scan as it was (the dock and the rail) draws each room's scan as
+// Show scan as it was (the dock's View menu and the side panel) draws each
+// room's scan as
 // Home Assistant kept it (`ctx.scans`) faint and dashed over the plan, in a
 // teal apart from the blue of a picked thing and the amber of an issue: its
 // outline, walls, doors and windows. A room whose shape is no longer its
-// scan's has Back to the scan in its card and the rail, one undo step that
+// scan's has Back to the scan in its card and its walls list, one undo step that
 // puts its walls, doors, windows and furniture back and leaves its devices;
 // a room drawn by hand, or one already as scanned, has none.
 
@@ -62,7 +63,7 @@ import {
   straightenWall,
 } from "./edit-ops.js";
 import { HOME_MAP_SHAPE_GRID, homeMapSnapPoint } from "./draw-tool.js";
-import { type HomeMapEditorContext, type HomeMapSelection, homeMapSelectionRoom } from "./editor-mode.js";
+import { type HomeMapEditorContext, type HomeMapSelection, type HomeMapViewItem, homeMapSelectionRoom } from "./editor-mode.js";
 import { hmeCard, hmeHint, hmeNumber, hmePic, hmeRow } from "./editor-parts.js";
 import { homeMapCount, homeMapMeters, homeMapOpeningName, homeMapShortcut, homeMapWallName, homeMapWallNames } from "./editor-view.js";
 import { type HomeSegment, homeDistanceToSegment, homeLabelPoint, homeMainDirection, homeProject, homeRoomUnder, homeWallsOf, segmentLength } from "./geometry.js";
@@ -761,11 +762,15 @@ export class ShapeMode {
 
   dock(ctx: HomeMapEditorContext): TemplateResult {
     return html`<button type="button" class="hme-tb ${ctx.toggles.square ? "on" : ""}" aria-pressed=${ctx.toggles.square ? "true" : "false"}
-        title="A dragged corner lines up with the corners beside it" @click=${() => ctx.setToggle("square", !ctx.toggles.square)}>Snap to 90°</button>
-      <button type="button" class="hme-tb ${ctx.toggles.grid ? "on" : ""}" aria-pressed=${ctx.toggles.grid ? "true" : "false"}
-        @click=${() => ctx.setToggle("grid", !ctx.toggles.grid)}>Grid 5 cm</button>
-      ${ctx.scans === undefined ? nothing : html`<button type="button" class="hme-tb ${ctx.toggles.scan ? "on" : ""}" aria-pressed=${ctx.toggles.scan ? "true" : "false"}
-        title=${SCAN_TOGGLE_TITLE} @click=${() => ctx.setToggle("scan", !ctx.toggles.scan)}>Show scan as it was</button>`}`;
+        title="A dragged corner lines up with the corners beside it" @click=${() => ctx.setToggle("square", !ctx.toggles.square)}>Snap to 90°</button>`;
+  }
+
+  /** The dock's View menu while a room's walls are edited: the 5 cm grid,
+   * and the scan as it was where Home Assistant keeps scans. */
+  viewItems(ctx: HomeMapEditorContext): HomeMapViewItem[] {
+    const items: HomeMapViewItem[] = [{ label: "Grid 5 cm", on: ctx.toggles.grid, flip: () => ctx.setToggle("grid", !ctx.toggles.grid) }];
+    if (ctx.scans !== undefined) items.push({ label: "Show scan as it was", on: ctx.toggles.scan, title: SCAN_TOGGLE_TITLE, flip: () => ctx.setToggle("scan", !ctx.toggles.scan) });
+    return items;
   }
 
   // ── the pill ───────────────────────────────────────────────────────────

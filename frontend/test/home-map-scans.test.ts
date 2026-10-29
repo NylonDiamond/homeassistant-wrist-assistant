@@ -273,12 +273,20 @@ function shell(options: { doc?: HomeMapDocument; scans?: HomeMapScans; scan?: bo
 }
 
 describe("wall editing's scan as it was", () => {
-  it("offers Show scan as it was in the dock only when Home Assistant keeps scans", () => {
+  it("offers Show scan as it was in the dock's View menu only when Home Assistant keeps scans", () => {
     const mode = new ShapeMode();
-    expect(flatten(mode.dock(shell({ scans: {} }).ctx))).toContain("Show scan as it was");
-    expect(flatten(mode.dock(shell({ scans: {} }).ctx))).toContain("as first seen");
-    expect(flatten(mode.dock(shell({}).ctx))).not.toContain("Show scan as it was");
-    expect(flatten(mode.dock(shell({ scans: {}, scan: true }).ctx))).toMatch(/hme-tb on" aria-pressed=true[^>]*>Show scan as it was/);
+    const item = (o: { scans?: HomeMapScans; scan?: boolean }) => mode.viewItems(shell(o).ctx).find((i) => i.label === "Show scan as it was");
+    expect(item({ scans: {} })?.title).toContain("as first seen");
+    expect(item({ scans: {} })?.on).toBe(false);
+    expect(item({})).toBeUndefined();
+    expect(item({ scans: {}, scan: true })?.on).toBe(true);
+    // The menu flips the switch; the dock keeps Snap to 90° alone.
+    const s = shell({ scans: {} });
+    mode.viewItems(s.ctx).find((i) => i.label === "Show scan as it was")!.flip();
+    expect(s.log.toggles).toEqual([["scan", true]]);
+    expect(mode.viewItems(s.ctx).map((i) => i.label)).toEqual(["Grid 5 cm", "Show scan as it was"]);
+    expect(flatten(mode.dock(s.ctx))).toContain(">Snap to 90°</button>");
+    expect(flatten(mode.dock(s.ctx))).not.toContain("Show scan as it was");
   });
 
   it("draws the scans over the plan only while the switch is on", () => {

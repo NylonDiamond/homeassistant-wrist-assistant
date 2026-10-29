@@ -16,7 +16,10 @@
 // blue; and each light on the floor as a real light at its pin, lit as Home
 // Assistant says it is. Drag to orbit, scroll or pinch to zoom; a click
 // hands the page what it met (`onPick`), a thing, a light or a room, and
-// whether Cmd or Ctrl was held.
+// whether Cmd or Ctrl was held. The pointer resting on the view hands the
+// page what a click there would meet (`onHover`), and the page has the
+// view mark its hover, from here, the plan or a list row, in a paler blue
+// than the pick (`setHover`).
 //
 // The plan's x stays x, the plan's y becomes z, and up is y; a thing's turn
 // is a turn about up by the same angle, a model's front its +z. Shown at
@@ -122,6 +125,8 @@ function fitted(model: Model, size: readonly [number, number, number]): THREE.Gr
 // ── colours ──────────────────────────────────────────────────────────────
 
 const BLUE = 0x5b8def;
+/** The hover's mark, paler than the pick's blue. */
+const HOVER = 0xa8c6ff;
 const WALL = 0xdcd5c8;
 const BOX = 0x8a7f72;
 const FINISH: Readonly<Record<string, number>> = { carpet: 0x6f665c, wood: 0x8a6a4a, tile: 0xb9b4aa, stone: 0x8f8a82, plain: 0x8a847c };
@@ -626,11 +631,26 @@ export class HomeMapScene3D {
   private disposed = false;
   private press?: { id: number; x: number; y: number };
   private readonly raycaster = new THREE.Raycaster();
+  /** The hover's soft mark (`setHover`), its lines, and what it marks. */
+  private hoverMark?: THREE.Object3D;
+  private readonly hoverLines: LineMaterial[] = [];
+  private hoverKey = "";
+  /** Where the pointer rests with no button down, for the next frame's
+   * hover; undefined once it left, pressed or is a finger. */
+  private hoverAt?: { x: number; y: number };
+  private hoverFrame = 0;
+  /** What the hover last told the page, as a key. */
+  private hoverSent = "";
 
   /** A click (a press let go where it started) on the view: what is under
    * it, or undefined for empty space, and whether Cmd or Ctrl was held
    * (`add`), to add it to the pick or take it out. */
   onPick?: (pick: HomeMap3DPick | undefined, keys: { add: boolean }) => void;
+  /** The pointer resting on the view with no button down: what a click
+   * there would pick, or undefined for empty space, after the pointer left,
+   * or while a press orbits the view. Found at most once a frame, and told
+   * only when it changes. */
+  onHover?: (pick: HomeMap3DPick | undefined) => void;
 
   /** `base` is the furniture folder's address, ending in a slash. */
   constructor(private readonly base: string) {
@@ -688,7 +708,13 @@ export class HomeMapScene3D {
     this.canvas.addEventListener("pointerdown", (e) => {
       this.wake(1500);
       this.press = e.isPrimary && e.button === 0 ? { id: e.pointerId, x: e.clientX, y: e.clientY } : undefined;
+      // A press orbits or clicks: no hover until the pointer moves again
+      // with no button down.
+      this.hoverAt = undefined;
+      this.sendHover(undefined);
     });
+    this.canvas.addEventListener("pointermove", (e) => this.hoverMove(e));
+    this.canvas.addEventListener("pointerleave", () => this.hoverMove(undefined));
     this.canvas.addEventListener("pointerup", (e) => {
       const press = this.press;
       this.press = undefined;
@@ -724,6 +750,107 @@ export class HomeMapScene3D {
     return undefined;
   }
 
+  // ── the hover ──────────────────────────────────────────────────────────
+
+  /** The pointer moved over the view, or left it (undefined): looked at on
+   * the next frame, once however many moves come before it. A finger has
+   * no hover, and a button down is an orbit. */
+  private hoverMove(e: PointerEvent | undefined): void {
+    this.hoverAt = e === undefined || e.pointerType === "touch" || e.buttons !== 0 ? undefined : { x: e.clientX, y: e.clientY };
+    if (this.hoverFrame === 0 && !this.disposed && typeof requestAnimationFrame === "function") this.hoverFrame = requestAnimationFrame(this.hoverTick);
+  }
+
+  private readonly hoverTick = (): void => {
+    this.hoverFrame = 0;
+    if (this.disposed) return;
+    const at = this.hoverAt;
+    this.sendHover(at === undefined || this.press !== undefined ? undefined : this.pickAt(at.x, at.y));
+  };
+
+  /** Tell the page the hover, when it changed. */
+  private sendHover(pick: HomeMap3DPick | undefined): void {
+    const key = pick === undefined ? "" : JSON.stringify(pick);
+    if (key === this.hoverSent) return;
+    this.hoverSent = key;
+    this.onHover?.(pick);
+  }
+
+  /** Mark a room, a thing or a light softly, lighter than the pick's
+   * outline: a faint wash over it and a thin pale line round it, drawn
+   * with the outline over the finished scene, so it costs no pass of its
+   * own. The page sets it, from this view's hover or from the plan's or a
+   * list row's; undefined takes it away. One frame is drawn for a change. */
+  setHover(pick: HomeMap3DPick | undefined): void {
+    if (this.disposed) return;
+    const floor = this.input?.floor;
+    const room = pick === undefined || pick.kind === "pin" || floor === undefined ? undefined : floor.rooms.find((r) => sameHomeMapId(r.id, pick.roomId));
+    const object = pick?.kind === "object" ? room?.objects[pick.object] : undefined;
+    const lamp = pick?.kind === "pin" ? this.lamps.get(pick.pinId) : undefined;
+    const bulb = lamp?.bulb.position;
+    const key = object !== undefined ? JSON.stringify(["thing", object.c, object.size, object.turn, object.lift ?? 0])
+      : bulb !== undefined ? JSON.stringify(["light", bulb.x, bulb.y, bulb.z])
+      : room !== undefined && pick?.kind === "room" ? JSON.stringify(["room", room.outline])
+      : "";
+    if (key === this.hoverKey) return;
+    this.hoverKey = key;
+    if (this.hoverMark !== undefined) {
+      this.overlay.remove(this.hoverMark);
+      disposeTree(this.hoverMark);
+      this.hoverMark = undefined;
+      this.hoverLines.length = 0;
+    }
+    // Seen through everything, as the outline is: a box's faces towards the
+    // camera only, so the wash is as faint from any side.
+    const wash = (opacity: number, side: THREE.Side = THREE.FrontSide) => new THREE.MeshBasicMaterial({ color: HOVER, transparent: true, opacity, depthTest: false, depthWrite: false, side });
+    const line = () => {
+      const m = new LineMaterial({ color: HOVER, linewidth: 1.5, depthTest: false, transparent: true, opacity: 0.7 });
+      m.resolution.set(Math.max(this.host?.clientWidth ?? 1, 1), Math.max(this.host?.clientHeight ?? 1, 1));
+      this.hoverLines.push(m);
+      return m;
+    };
+    let mark: THREE.Object3D | undefined;
+    if (object !== undefined) {
+      const [w, d, h] = object.size;
+      const y0 = Math.max(object.lift ?? 0, 0);
+      const group = new THREE.Group();
+      const box = new THREE.Mesh(new THREE.BoxGeometry(Math.max(w, 0.01), Math.max(h, 0.01), Math.max(d, 0.01)), wash(0.07));
+      box.position.y = y0 + h / 2;
+      const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]] as const;
+      const positions: number[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        const [x0, z0] = corners[i]!;
+        const [x1, z1] = corners[(i + 1) % 4]!;
+        positions.push(x0, y0, z0, x1, y0, z1, x0, y0 + h, z0, x1, y0 + h, z1, x0, y0, z0, x0, y0 + h, z0);
+      }
+      const geometry = new LineSegmentsGeometry();
+      geometry.setPositions(positions);
+      group.add(box, new LineSegments2(geometry, line()));
+      group.position.set(object.c[0], 0, object.c[1]);
+      group.rotation.y = (object.turn * Math.PI) / 180;
+      mark = group;
+    } else if (bulb !== undefined) {
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), wash(0.3));
+      ball.position.copy(bulb);
+      mark = ball;
+    } else if (room !== undefined && pick?.kind === "room" && room.outline.length >= 3) {
+      const group = new THREE.Group();
+      const floorWash = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(room.outline.map(([x, y]) => new THREE.Vector2(x, -y)))), wash(0.06, THREE.DoubleSide));
+      floorWash.rotation.x = -Math.PI / 2;
+      floorWash.position.y = 0.02;
+      const edge = new LineGeometry();
+      edge.setPositions([...room.outline, room.outline[0]!].flatMap(([x, y]) => [x, 0.02, y]));
+      group.add(floorWash, new Line2(edge, line()));
+      mark = group;
+    }
+    if (mark !== undefined) {
+      // Under the pick's outline, which draws at 10.
+      mark.traverse((o) => { o.renderOrder = 9; });
+      this.hoverMark = mark;
+      this.overlay.add(mark);
+    }
+    this.wake(0);
+  }
+
   /** Draw into `host`, filling it; the canvas moves there from wherever it
    * was, and the floor is framed whole again for the new shape. */
   attach(host: HTMLElement): void {
@@ -750,24 +877,34 @@ export class HomeMapScene3D {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     for (const m of this.lines) m.resolution.set(width, height);
+    for (const m of this.hoverLines) m.resolution.set(width, height);
     this.wake();
   }
 
   /** Draw `input`, building again only what changed; the lights follow the
    * states without anything being built. A new floor is framed whole, from
-   * `turn` degrees round, as the model looks turn. */
+   * `turn` degrees round, as the model looks turn. Nothing new to draw
+   * (the page drawn again for a hover, say) draws no frame. */
   update(input: HomeMap3DInput, turn: number): void {
     if (this.disposed) return;
     const seen = this.input;
     this.input = { ...input, turn };
     let moved = false;
+    let changed = false;
     if (seen === undefined || seen.floor !== input.floor) {
       this.held = heldLightsOf(input.floor);
       moved = this.build(input.floor);
+      changed = true;
     }
-    if (seen === undefined || seen.floor !== input.floor || seen.states !== input.states) this.light(input.floor, input.states);
-    if (seen === undefined || seen.daylight !== input.daylight) this.setDaylight(input.daylight, input.floor);
-    this.setMark(input.floor, input.mark);
+    if (seen === undefined || seen.floor !== input.floor || seen.states !== input.states) {
+      this.light(input.floor, input.states);
+      changed = true;
+    }
+    if (seen === undefined || seen.daylight !== input.daylight) {
+      this.setDaylight(input.daylight, input.floor);
+      changed = true;
+    }
+    if (this.setMark(input.floor, input.mark)) changed = true;
     if (!sameHomeMapId(this.floorId, input.floor.id)) {
       this.floorId = input.floor.id;
       this.frameFloor(turn);
@@ -775,7 +912,7 @@ export class HomeMapScene3D {
       this.frameFloor(turn);
     }
     if (moved) this.renderer.shadowMap.needsUpdate = true;
-    this.wake();
+    if (changed) this.wake();
   }
 
   /** Show the whole floor again from `turn` degrees round. */
@@ -1057,14 +1194,14 @@ export class HomeMapScene3D {
   }
 
   /** The picked room's floor, or each picked thing's box, outlined in
-   * blue. */
-  private setMark(floor: HomeMapFloor, mark: HomeMap3DInput["mark"]): void {
+   * blue. True when the outline changed. */
+  private setMark(floor: HomeMapFloor, mark: HomeMap3DInput["mark"]): boolean {
     const roomOf = (id: string) => floor.rooms.find((r) => sameHomeMapId(r.id, id));
     const room = mark === undefined || !("roomId" in mark) ? undefined : roomOf(mark.roomId);
     const objects = mark === undefined || !("things" in mark) ? [] : mark.things.flatMap((t) => roomOf(t.roomId)?.objects[t.object] ?? []);
     const key = objects.length > 0 ? JSON.stringify(["things", objects.map((o) => [o.c, o.size, o.turn, o.lift ?? 0])])
       : room !== undefined ? JSON.stringify(["room", room.outline]) : "";
-    if (key === this.markKey) return;
+    if (key === this.markKey) return false;
     this.markKey = key;
     if (this.mark !== undefined) {
       this.overlay.remove(this.mark);
@@ -1111,6 +1248,7 @@ export class HomeMapScene3D {
       this.mark = line;
     }
     if (this.mark !== undefined) this.overlay.add(this.mark);
+    return true;
   }
 
   /** Keep drawing for a moment: the camera easing to rest, a light easing
@@ -1181,6 +1319,8 @@ export class HomeMapScene3D {
     this.disposed = true;
     if (this.frame !== 0) cancelAnimationFrame(this.frame);
     this.frame = 0;
+    if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
+    this.hoverFrame = 0;
     this.observer?.disconnect();
     this.controls.dispose();
     for (const lamp of this.lamps.values()) {

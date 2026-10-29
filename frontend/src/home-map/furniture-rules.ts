@@ -39,18 +39,32 @@ export interface HomeMapFurniturePiece {
   bulb?: [number, number, number];
   /** A lamp's only: how its light shines. */
   cast?: HomeMapLampCast;
+  /** Its model's own colours, `#RRGGBB` as the panel writes them, read from
+   * the model's materials: its fabric and wood (the colours a thing's own
+   * `fabric` and `wood` replace) and its body, the other part seen most from
+   * above. The editor's plan paints the piece's top view in them. */
+  paint?: HomeMapPiecePaint;
+}
+
+/** A piece's own colours (`HomeMapFurniturePiece.paint`). */
+export interface HomeMapPiecePaint {
+  fabric?: string;
+  wood?: string;
+  body?: string;
 }
 
 /** The catalog's lamps (`furniture-catalog.json`, every piece of kind
  * `lamp`), byte for byte the same numbers, for the edits that put a light in
  * one. */
+const LAMP_PAINT: HomeMapPiecePaint = { fabric: "#FFF5CA", body: "#DFEAEC" };
+
 export const HOME_MAP_LAMP_PIECES: readonly HomeMapFurniturePiece[] = [
-  { id: "lampRoundFloor", kind: "lamp", name: "Floor lamp", group: "Lights", size: [0.33, 0.38, 1.87], fabric: true, bulb: [0.5, 0.5, 0.9], cast: "point" },
-  { id: "lampSquareFloor", kind: "lamp", name: "Square floor lamp", group: "Lights", size: [0.25, 0.25, 1.79], fabric: true, bulb: [0.5, 0.5, 0.58], cast: "point" },
-  { id: "lampRoundTable", kind: "lamp", name: "Table lamp", group: "Lights", size: [0.3, 0.35, 0.62], lift: 0.75, fabric: true, bulb: [0.5, 0.5, 0.72], cast: "point" },
-  { id: "lampSquareTable", kind: "lamp", name: "Square table lamp", group: "Lights", size: [0.25, 0.25, 0.6], lift: 0.75, fabric: true, bulb: [0.5, 0.5, 0.74], cast: "point" },
-  { id: "lampWall", kind: "lamp", name: "Wall lamp", group: "Lights", size: [0.25, 0.17, 0.1], lift: 1.6, fabric: true, bulb: [0.5, 0.4, 0.5], cast: "point" },
-  { id: "lampSquareCeiling", kind: "lamp", name: "Ceiling lamp", group: "Lights", size: [0.5, 0.5, 0.96], ceiling: true, fabric: true, bulb: [0.5, 0.5, 0.5], cast: "down" },
+  { id: "lampRoundFloor", kind: "lamp", name: "Floor lamp", group: "Lights", size: [0.33, 0.38, 1.87], fabric: true, bulb: [0.5, 0.5, 0.9], cast: "point", paint: LAMP_PAINT },
+  { id: "lampSquareFloor", kind: "lamp", name: "Square floor lamp", group: "Lights", size: [0.25, 0.25, 1.79], fabric: true, bulb: [0.5, 0.5, 0.58], cast: "point", paint: LAMP_PAINT },
+  { id: "lampRoundTable", kind: "lamp", name: "Table lamp", group: "Lights", size: [0.3, 0.35, 0.62], lift: 0.75, fabric: true, bulb: [0.5, 0.5, 0.72], cast: "point", paint: LAMP_PAINT },
+  { id: "lampSquareTable", kind: "lamp", name: "Square table lamp", group: "Lights", size: [0.25, 0.25, 0.6], lift: 0.75, fabric: true, bulb: [0.5, 0.5, 0.74], cast: "point", paint: LAMP_PAINT },
+  { id: "lampWall", kind: "lamp", name: "Wall lamp", group: "Lights", size: [0.25, 0.17, 0.1], lift: 1.6, fabric: true, bulb: [0.5, 0.4, 0.5], cast: "point", paint: LAMP_PAINT },
+  { id: "lampSquareCeiling", kind: "lamp", name: "Ceiling lamp", group: "Lights", size: [0.5, 0.5, 0.96], ceiling: true, fabric: true, bulb: [0.5, 0.5, 0.5], cast: "down", paint: LAMP_PAINT },
 ];
 
 const lampsById = new Map(HOME_MAP_LAMP_PIECES.map((p) => [p.id, p]));

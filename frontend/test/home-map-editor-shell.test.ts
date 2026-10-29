@@ -126,11 +126,15 @@ describe("the editor's keys", () => {
   });
 
   it("picks the edit page's tools and the wall tools by their letters, none of them a key the editor already has", () => {
-    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.key).join("")).toBe("vrwdnfm");
-    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.label)).toEqual(["Pick and move", "Draw a room", "Inner wall", "Door", "Window", "Add furniture", "Measure"]);
-    expect(homeMapEditToolFor("F")).toBe("furniture");
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.key).join("")).toBe("vrwdnm");
+    // Each named under its picture; the longer words and the key in its title.
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.name)).toEqual(["Pick", "Room", "Wall", "Door", "Window", "Measure"]);
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.label)).toEqual(["Pick and move", "Draw a room", "Inner wall", "Door", "Window", "Measure"]);
+    // F opens Add on its furniture, no tool of its own.
+    expect(homeMapEditToolFor("F")).toBeUndefined();
     expect(homeMapEditToolFor("m")).toBe("measure");
     expect(homeMapEditToolFor("s")).toBeUndefined();
+    expect(homeMapEditToolFor("a")).toBeUndefined();
     expect(HOME_MAP_SHAPE_TOOLS.map((t) => t.key).join("")).toBe("vswdnot");
     expect(homeMapShapeToolFor("D")).toBe("door");
     expect(homeMapShapeToolFor("n")).toBe("window");

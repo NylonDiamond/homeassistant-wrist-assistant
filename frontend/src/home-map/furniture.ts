@@ -18,11 +18,15 @@
 // (a scanned TV is 5 cm deep) never squashes the piece below half its other
 // stretch, so a TV keeps its stand. A lamp can hold a light: its `bulb`
 // says where the bulb sits in the model's own box and `cast` how it shines
-// (`homeMapBulbSpot`). Nothing here draws; `scene3d.ts` does.
+// (`homeMapBulbSpot`). A piece's `paint` is its model's own fabric, wood and
+// body colours, read from the model's materials, which the editor's plan
+// draws its top view in (`homeMapPlanLook`). Nothing here draws;
+// `scene3d.ts` and `furniture-art.ts` do.
 // This file is the editor's alone: the catalog never reaches the panel's
 // first download, and three.js never reaches this file's chunk.
 
 import catalogJson from "./furniture-catalog.json";
+import type { HomeFurnitureLook } from "./furniture-art.js";
 import type { HomeMapFurniturePiece } from "./furniture-rules.js";
 import type { HomeMapObject } from "./model.js";
 
@@ -101,6 +105,24 @@ export function homeMapPieceOf(object: Pick<HomeMapObject, "kind" | "model" | "s
   if (object.kind === "bed") return homeMapPiece(width >= HOME_MAP_DOUBLE_BED_WIDTH ? "bedDouble" : "bedSingle");
   if (object.kind === "storage") return homeMapPiece(width >= height ? "bookcaseClosedWide" : "bookcaseClosed");
   return homeMapPiece(HOME_MAP_FURNITURE.defaults[object.kind]);
+}
+
+/** How the editor's plan draws a thing from above: as the piece the 3D
+ * view draws it as (`homeMapPieceOf`, so a scanned thing with no `model`
+ * is its kind's default piece there too), in the piece's own colours
+ * (`paint`) under the thing's own fabric and wood. A thing with no piece
+ * keeps its kind and draws as it always did. */
+export function homeMapPlanLook(object: HomeMapObject): HomeFurnitureLook {
+  const piece = homeMapPieceOf(object);
+  if (piece === undefined) return { model: object.model, fabric: object.fabric, wood: object.wood };
+  const paint = piece.paint;
+  return {
+    model: piece.id,
+    kind: piece.kind,
+    fabric: object.fabric ?? paint?.fabric,
+    wood: object.wood ?? paint?.wood,
+    body: paint?.body,
+  };
 }
 
 /** The pieces whose name, group or kind holds every word of `query`, in

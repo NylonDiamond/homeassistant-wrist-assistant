@@ -40,7 +40,11 @@
         0.94
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "loungeSofaLong",
@@ -53,7 +57,11 @@
         1.22
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "loungeSofaCorner",
@@ -66,7 +74,11 @@
         1.13
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "loungeDesignSofa",
@@ -78,7 +90,10 @@
         0.73,
         0.71
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#A1BEF0"
+      }
     },
     {
       "id": "loungeDesignSofaCorner",
@@ -90,7 +105,10 @@
         2.4,
         0.71
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#A1BEF0"
+      }
     },
     {
       "id": "loungeSofaOttoman",
@@ -103,7 +121,11 @@
         0.42
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "loungeChair",
@@ -116,7 +138,11 @@
         0.84
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "loungeChairRelax",
@@ -129,7 +155,12 @@
         1.16
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "loungeDesignChair",
@@ -141,7 +172,10 @@
         0.45,
         0.44
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#A1BEF0"
+      }
     },
     {
       "id": "tableCoffee",
@@ -153,7 +187,10 @@
         0.67,
         0.38
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "tableCoffeeGlass",
@@ -164,7 +201,10 @@
         1.1,
         0.67,
         0.38
-      ]
+      ],
+      "paint": {
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "tableCoffeeSquare",
@@ -176,7 +216,10 @@
         0.8,
         0.46
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "sideTable",
@@ -188,7 +231,10 @@
         0.41,
         0.72
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "sideTableDrawers",
@@ -200,7 +246,11 @@
         0.42,
         0.72
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "cabinetTelevision",
@@ -212,7 +262,10 @@
         0.5,
         0.62
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "cabinetTelevisionDoors",
@@ -224,7 +277,11 @@
         0.52,
         0.62
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "televisionModern",
@@ -235,7 +292,10 @@
         1.2,
         0.22,
         0.8
-      ]
+      ],
+      "paint": {
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "televisionVintage",
@@ -247,7 +307,11 @@
         0.4,
         0.4
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "bookcaseOpen",
@@ -259,7 +323,10 @@
         0.56,
         1.98
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "bookcaseOpenLow",
@@ -271,7 +338,10 @@
         0.56,
         0.9
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "bookcaseClosed",
@@ -283,7 +353,10 @@
         0.5,
         1.7
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "bookcaseClosedDoors",
@@ -295,7 +368,11 @@
         0.5,
         1.7
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "speaker",
@@ -307,7 +384,11 @@
         0.3,
         1.29
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#A3B6B6"
+      }
     },
     {
       "id": "speakerSmall",
@@ -320,7 +401,11 @@
         0.4
       ],
       "lift": 0.75,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#A3B6B6"
+      }
     },
     {
       "id": "bedDouble",
@@ -333,7 +418,12 @@
         0.63
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8",
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bedSingle",
@@ -346,7 +436,12 @@
         0.66
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8",
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bedBunk",
@@ -359,7 +454,12 @@
         1.49
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8",
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bookcaseClosedWide",
@@ -371,7 +471,10 @@
         0.44,
         1.38
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "cabinetBed",
@@ -383,7 +486,11 @@
         0.4,
         0.44
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "cabinetBedDrawer",
@@ -395,7 +502,11 @@
         0.41,
         0.49
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "coatRackStanding",
@@ -407,7 +518,10 @@
         0.6,
         1.69
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "desk",
@@ -419,7 +533,11 @@
         0.75,
         0.73
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "deskCorner",
@@ -431,7 +549,11 @@
         1.6,
         0.63
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "chairDesk",
@@ -443,7 +565,11 @@
         0.56,
         1.09
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "body": "#A3B6B6"
+      }
     },
     {
       "id": "computerScreen",
@@ -455,7 +581,10 @@
         0.16,
         0.45
       ],
-      "lift": 0.75
+      "lift": 0.75,
+      "paint": {
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "laptop",
@@ -467,7 +596,10 @@
         0.32,
         0.21
       ],
-      "lift": 0.75
+      "lift": 0.75,
+      "paint": {
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "table",
@@ -479,7 +611,10 @@
         0.85,
         0.62
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "tableCloth",
@@ -492,7 +627,11 @@
         0.62
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "tableGlass",
@@ -503,7 +642,10 @@
         1.6,
         0.85,
         0.62
-      ]
+      ],
+      "paint": {
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "tableRound",
@@ -515,7 +657,10 @@
         1.27,
         0.58
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "chair",
@@ -527,7 +672,10 @@
         0.45,
         1.06
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "chairCushion",
@@ -540,7 +688,11 @@
         1.04
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "chairModernCushion",
@@ -552,7 +704,11 @@
         0.45,
         1.04
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#A1BEF0",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "chairModernFrameCushion",
@@ -564,7 +720,11 @@
         0.45,
         1.04
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#A1BEF0",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "chairRounded",
@@ -576,7 +736,10 @@
         0.5,
         1.14
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "stoolBar",
@@ -589,7 +752,11 @@
         0.66
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "stoolBarSquare",
@@ -602,7 +769,11 @@
         1.06
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "bench",
@@ -614,7 +785,10 @@
         0.43,
         1.0
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "benchCushion",
@@ -627,7 +801,11 @@
         0.98
       ],
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "kitchenCabinet",
@@ -639,7 +817,11 @@
         0.63,
         0.63
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenCabinetDrawer",
@@ -651,7 +833,11 @@
         0.63,
         0.63
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenCabinetCornerInner",
@@ -663,7 +849,11 @@
         0.9,
         0.88
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenCabinetUpper",
@@ -676,7 +866,11 @@
         0.54
       ],
       "lift": 1.45,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenCabinetUpperDouble",
@@ -689,7 +883,11 @@
         0.73
       ],
       "lift": 1.45,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenBar",
@@ -701,7 +899,11 @@
         0.59,
         1.17
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenFridge",
@@ -712,7 +914,10 @@
         0.7,
         0.48,
         1.5
-      ]
+      ],
+      "paint": {
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "kitchenFridgeLarge",
@@ -723,7 +928,10 @@
         0.9,
         0.7,
         1.59
-      ]
+      ],
+      "paint": {
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "kitchenFridgeSmall",
@@ -734,7 +942,10 @@
         0.5,
         0.34,
         0.7
-      ]
+      ],
+      "paint": {
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "kitchenStove",
@@ -746,7 +957,11 @@
         0.78,
         0.78
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "kitchenStoveElectric",
@@ -758,7 +973,11 @@
         0.78,
         0.78
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "kitchenSink",
@@ -770,7 +989,11 @@
         0.84,
         0.91
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "kitchenMicrowave",
@@ -782,7 +1005,10 @@
         0.4,
         0.31
       ],
-      "lift": 0.9
+      "lift": 0.9,
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "kitchenCoffeeMachine",
@@ -794,7 +1020,10 @@
         0.38,
         0.28
       ],
-      "lift": 0.9
+      "lift": 0.9,
+      "paint": {
+        "body": "#A3B6B6"
+      }
     },
     {
       "id": "toaster",
@@ -806,7 +1035,10 @@
         0.16,
         0.21
       ],
-      "lift": 0.9
+      "lift": 0.9,
+      "paint": {
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "hoodModern",
@@ -818,7 +1050,10 @@
         0.5,
         0.7
       ],
-      "lift": 1.5
+      "lift": 1.5,
+      "paint": {
+        "body": "#A3B6B6"
+      }
     },
     {
       "id": "toilet",
@@ -829,7 +1064,10 @@
         0.4,
         0.61,
         0.58
-      ]
+      ],
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "toiletSquare",
@@ -840,7 +1078,10 @@
         0.4,
         0.51,
         0.59
-      ]
+      ],
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bathtub",
@@ -851,7 +1092,10 @@
         1.7,
         0.8,
         0.6
-      ]
+      ],
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "shower",
@@ -862,7 +1106,10 @@
         0.9,
         0.93,
         1.75
-      ]
+      ],
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "showerRound",
@@ -873,7 +1120,10 @@
         0.9,
         0.9,
         1.75
-      ]
+      ],
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bathroomSink",
@@ -884,7 +1134,10 @@
         0.6,
         0.51,
         0.99
-      ]
+      ],
+      "paint": {
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "bathroomSinkSquare",
@@ -895,7 +1148,10 @@
         0.6,
         0.42,
         0.81
-      ]
+      ],
+      "paint": {
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bathroomCabinetDrawer",
@@ -907,7 +1163,11 @@
         0.6,
         0.88
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#FCFFFF"
+      }
     },
     {
       "id": "bathroomCabinet",
@@ -919,7 +1179,10 @@
         0.28,
         0.85
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "bathroomMirror",
@@ -932,7 +1195,10 @@
         0.87
       ],
       "lift": 1.1,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "washer",
@@ -943,7 +1209,10 @@
         0.6,
         0.6,
         0.72
-      ]
+      ],
+      "paint": {
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "dryer",
@@ -954,7 +1223,10 @@
         0.6,
         0.58,
         0.72
-      ]
+      ],
+      "paint": {
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "washerDryerStacked",
@@ -965,7 +1237,10 @@
         0.6,
         0.6,
         1.45
-      ]
+      ],
+      "paint": {
+        "body": "#A3B6B6"
+      }
     },
     {
       "id": "lampRoundFloor",
@@ -983,7 +1258,11 @@
         0.5,
         0.9
       ],
-      "cast": "point"
+      "cast": "point",
+      "paint": {
+        "fabric": "#FFF5CA",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "lampSquareFloor",
@@ -1001,7 +1280,11 @@
         0.5,
         0.58
       ],
-      "cast": "point"
+      "cast": "point",
+      "paint": {
+        "fabric": "#FFF5CA",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "lampRoundTable",
@@ -1020,7 +1303,11 @@
         0.5,
         0.72
       ],
-      "cast": "point"
+      "cast": "point",
+      "paint": {
+        "fabric": "#FFF5CA",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "lampSquareTable",
@@ -1039,7 +1326,11 @@
         0.5,
         0.74
       ],
-      "cast": "point"
+      "cast": "point",
+      "paint": {
+        "fabric": "#FFF5CA",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "lampWall",
@@ -1058,7 +1349,11 @@
         0.4,
         0.5
       ],
-      "cast": "point"
+      "cast": "point",
+      "paint": {
+        "fabric": "#FFF5CA",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "lampSquareCeiling",
@@ -1077,7 +1372,11 @@
         0.5,
         0.5
       ],
-      "cast": "down"
+      "cast": "down",
+      "paint": {
+        "fabric": "#FFF5CA",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "ceilingFan",
@@ -1091,7 +1390,12 @@
       ],
       "ceiling": true,
       "fabric": true,
-      "wood": true
+      "wood": true,
+      "paint": {
+        "fabric": "#FFF5CA",
+        "wood": "#F3CCA8",
+        "body": "#F8FDFA"
+      }
     },
     {
       "id": "rugRectangle",
@@ -1103,7 +1407,10 @@
         1.17,
         0.01
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#F9A39E"
+      }
     },
     {
       "id": "rugRound",
@@ -1115,7 +1422,10 @@
         1.6,
         0.02
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#F9A39E"
+      }
     },
     {
       "id": "rugRounded",
@@ -1127,7 +1437,10 @@
         1.17,
         0.01
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#F9A39E"
+      }
     },
     {
       "id": "rugSquare",
@@ -1139,7 +1452,10 @@
         1.63,
         0.02
       ],
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#F9A39E"
+      }
     },
     {
       "id": "rugDoormat",
@@ -1151,7 +1467,10 @@
         0.44,
         0.02
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "pottedPlant",
@@ -1163,7 +1482,11 @@
         0.51,
         1.39
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#76EAC8"
+      }
     },
     {
       "id": "plantSmall1",
@@ -1175,7 +1498,11 @@
         0.25,
         0.37
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#76EAC8"
+      }
     },
     {
       "id": "plantSmall2",
@@ -1187,7 +1514,11 @@
         0.25,
         0.37
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#76EAC8"
+      }
     },
     {
       "id": "books",
@@ -1200,7 +1531,11 @@
         0.21
       ],
       "lift": 0.75,
-      "fabric": true
+      "fabric": true,
+      "paint": {
+        "fabric": "#F8B5B1",
+        "body": "#DFEAEC"
+      }
     },
     {
       "id": "trashcan",
@@ -1211,7 +1546,10 @@
         0.35,
         0.39,
         0.72
-      ]
+      ],
+      "paint": {
+        "body": "#96A7A7"
+      }
     },
     {
       "id": "cardboardBoxClosed",
@@ -1223,7 +1561,10 @@
         0.4,
         0.53
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     },
     {
       "id": "stairs",
@@ -1235,7 +1576,10 @@
         0.43,
         0.74
       ],
-      "wood": true
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
     }
   ]
 }

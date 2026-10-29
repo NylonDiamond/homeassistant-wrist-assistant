@@ -1,5 +1,5 @@
-// Lamps hold lights, as the map editor's page edits them: a light's row in
-// the rail always adding another and saying how many are on the map, a
+// Lamps hold lights, as the map editor's page edits them: a light's device
+// row always adding another and saying how many are on the map, a
 // click there picking each in turn; the lamp chooser by the spot a light
 // goes to (its last choice ringed and kept in the browser, or not when the
 // browser keeps nothing, Enter taking it, the arrows ringing another, Escape
@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike } from "../src/ha-api.js";
-import { HOME_MAP_DEVICE_DRAG_TYPE, HOME_MAP_LIGHT_DRAG_TYPE } from "../src/home-map/devices-model.js";
+import { HOME_MAP_DEVICE_DRAG_TYPE, HOME_MAP_LIGHT_DRAG_TYPE, homeMapDevices } from "../src/home-map/devices-model.js";
 import { addLampLight, addPiece, homeMapHeldPin } from "../src/home-map/edit-ops.js";
 import { homeMapLampPick } from "../src/home-map/editor-mode.js";
 import { homeMapBulbSpot, homeMapLampPiece, homeMapPiece } from "../src/home-map/furniture.js";
@@ -168,7 +168,15 @@ async function page(doc: HomeMapDocument = fixture()) {
   const event = { target: null, currentTarget: null, shiftKey: false, metaKey: false, ctrlKey: false, stopPropagation: () => undefined, preventDefault: () => undefined };
   const click = (marker: string) => handler(el.render(), marker, "@click=")(event);
   const type = (marker: string, value: string) => handler(el.render(), marker, "@input=")({ ...event, target: { value } });
-  /** Something dragged from the rail over a plan point, then dropped. */
+  /** A device's row as a list of devices to add draws it (`deviceRow`),
+   * and a click on it or on a marker in it. */
+  const row = (name: string) => {
+    const ctx = el.context()!;
+    const d = homeMapDevices(ctx.hass).find((x) => x.name === name)!;
+    return el.page.devices.deviceRow(ctx, d, ctx.hass?.states);
+  };
+  const clickRow = (name: string, marker = `${name}<small>`) => handler(row(name), marker, "@click=")(event);
+  /** A device dragged from its row over a plan point, then dropped. */
   const drag = (entityId: string, p: readonly number[]) => {
     const [x, y] = screen(p);
     const types = entityId.startsWith("light.") ? [HOME_MAP_DEVICE_DRAG_TYPE, HOME_MAP_LIGHT_DRAG_TYPE] : [HOME_MAP_DEVICE_DRAG_TYPE];
@@ -182,7 +190,7 @@ async function page(doc: HomeMapDocument = fixture()) {
     await el.session!.idle();
     return ha.now().doc.floors[0]!;
   };
-  return { el, inside, ha, stage, pointer, press, key, click, type, drag, floor, room, saved, text: () => flatten(el.render()) };
+  return { el, inside, ha, stage, pointer, press, key, click, type, row: (name: string) => flatten(row(name)), clickRow, drag, floor, room, saved, text: () => flatten(el.render()) };
 }
 
 /** The choice the lamp chooser rings. */
@@ -224,15 +232,13 @@ describe("lamps that hold lights in the map editor", () => {
   });
 
   it("adds a light from its row through the lamp chooser every time, says how many are on the map and picks each in turn", async () => {
-    const { el, inside, key, click, text, saved, room } = await page();
-    el.page.query = "pend";
-    let shown = text();
+    const { el, inside, key, text, saved, room, row, clickRow } = await page();
     // On the map already, and still offered: it can go in many lamps.
-    expect(shown).toContain("Devices found");
-    expect(shown).toContain(">1 on map</button>");
+    expect(row("Pendants")).toContain(">1 on map</button>");
+    expect(row("Pendants")).toContain('draggable=true');
     // A click on the row opens the chooser by its area's room.
-    click("Pendants<small>");
-    shown = text();
+    clickRow("Pendants");
+    let shown = text();
     expect(shown).toContain('aria-label="Which lamp is it in?"');
     expect(shown).toContain("In Kitchen. Which lamp is it in?");
     for (const word of ["Ceiling", "Floor", "Table", "Wall", "Just a bulb"]) expect(shown).toContain(`<span>${word}</span>`);
@@ -251,14 +257,13 @@ describe("lamps that hold lights in the map editor", () => {
     expect((await saved()).pins.filter((p) => p.entityId === "light.pendants")).toHaveLength(2);
     // Two on the map now; the count picks the next after the one picked,
     // the plain pin, then the lamp that holds the other.
-    expect(text()).toContain(">2 on map</button>");
-    click(">2 on map</button>");
+    expect(row("Pendants")).toContain(">2 on map</button>");
+    clickRow("Pendants", ">2 on map</button>");
     expect(inside.selection).toEqual({ kind: "pin", pinId: PENDANTS });
-    click(">2 on map</button>");
+    clickRow("Pendants", ">2 on map</button>");
     expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 3 });
     // Other devices are one to the map as before: on the map, a click picks it.
-    el.page.query = "fan";
-    click("Fan<small>");
+    clickRow("Fan");
     const fan = el.context()!.doc.floors[0]!.pins.at(-1)!;
     expect(fan.entityId).toBe("switch.fan");
     expect(text()).not.toContain("Which lamp is it in?");
@@ -267,9 +272,8 @@ describe("lamps that hold lights in the map editor", () => {
 
   it("rings the last choice taken, moves the ring with the arrows, and cancels with Escape or a press outside, saving nothing", async () => {
     vi.stubGlobal("localStorage", storage({ [HOME_MAP_LAMP_CHOICE_KEY]: "table" }));
-    const { el, ha, inside, key, click, press, text, room } = await page();
-    el.page.query = "cans";
-    click("Kitchen cans<small>");
+    const { el, ha, inside, key, click, clickRow, press, text, room } = await page();
+    clickRow("Kitchen cans");
     expect(ringed(text())).toBe("Table");
     key("ArrowRight");
     expect(ringed(text())).toBe("Wall");
@@ -281,7 +285,7 @@ describe("lamps that hold lights in the map editor", () => {
     key("Escape");
     expect(text()).not.toContain("Which lamp is it in?");
     // A press outside it closes it and does nothing more.
-    click("Kitchen cans<small>");
+    clickRow("Kitchen cans");
     press([3, 3]);
     expect(text()).not.toContain("Which lamp is it in?");
     expect(inside.selection).toBeUndefined();
@@ -289,7 +293,7 @@ describe("lamps that hold lights in the map editor", () => {
     expect(ha.saves()).toHaveLength(0);
     expect(localStorage.getItem(HOME_MAP_LAMP_CHOICE_KEY)).toBe("table");
     // A click on a choice takes it, and it is kept for next time.
-    click("Kitchen cans<small>");
+    clickRow("Kitchen cans");
     click("<span>Floor</span>");
     expect(room(KITCHEN).objects[3]!.model).toBe("lampRoundFloor");
     expect(localStorage.getItem(HOME_MAP_LAMP_CHOICE_KEY)).toBe("floor");
@@ -297,9 +301,8 @@ describe("lamps that hold lights in the map editor", () => {
 
   it("works without the browser's storage, starting from Ceiling", async () => {
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
-    const { el, key, click, text, room } = await page();
-    el.page.query = "cans";
-    click("Kitchen cans<small>");
+    const { key, clickRow, text, room } = await page();
+    clickRow("Kitchen cans");
     expect(ringed(text())).toBe("Ceiling");
     key("Enter");
     expect(room(KITCHEN).objects[3]!.model).toBe("lampSquareCeiling");

@@ -5,12 +5,12 @@
 // skin. The blue of a picked thing (#5b8def) and the amber of something to
 // fix are the mock boards' own.
 //
-// The three columns (rail, stage, inspector) share the width, the stage
-// taking everything the rails leave and growing with the window; narrower,
-// the rail goes under the stage, and on a phone everything stacks. The tool
-// rail, the side view and wall editing's Done bar float over the stage like
-// the pill and the dock, so they keep their dark glass. The Home style panel
-// hangs from its button in the bar, over a dimmed page.
+// Two columns share the width: the side panel on the left and the stage,
+// which takes everything the panel leaves and grows with the window; on a
+// phone the panel goes under the stage. The tool rail, the side view, wall
+// editing's Done bar and the dock's View and Look menus float over the stage
+// like the pill and the dock, so they keep their dark glass. The Home style
+// panel hangs from its button in the bar, over a dimmed page.
 
 import { css } from "lit";
 
@@ -42,29 +42,23 @@ export const editorStyles = css`
     flex: 1 1 auto;
     min-height: 600px;
     display: grid;
-    grid-template-columns: minmax(220px, 264px) minmax(0, 1fr) minmax(300px, 440px);
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
-    grid-template-areas: "rail stage insp";
+    grid-template-areas: "insp stage";
     gap: 12px;
     padding: 12px;
   }
-  .hme-rail { grid-area: rail; }
   .hme-insp { grid-area: insp; }
   .hme-stage-wrap { grid-area: stage; position: relative; min-width: 0; min-height: 520px; }
-  .hme-rail, .hme-insp { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow: auto; }
+  .hme-insp { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow: auto; }
 
-  @container (max-width: 1180px) {
-    .hme-body {
-      grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
-      grid-template-rows: minmax(520px, 1fr) auto;
-      grid-template-areas: "stage insp" "rail insp";
-    }
-    .hme-rail { overflow: visible; }
+  @container (max-width: 1000px) {
+    .hme-body { grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); }
   }
   @container (max-width: 760px) {
     .hme-body { display: flex; flex-direction: column; min-height: 0; }
-    .hme-stage-wrap { flex: none; height: max(420px, 64vh); }
-    .hme-rail, .hme-insp { overflow: visible; }
+    .hme-stage-wrap { flex: none; height: max(420px, 64vh); order: 0; }
+    .hme-insp { overflow: visible; order: 1; }
     .hme-bar { gap: 10px; }
     .hme-hint { margin-left: 0; }
     .hme-row-end.indent { padding-left: 0; }
@@ -96,6 +90,10 @@ export const editorStyles = css`
   .hme-tb.danger { color: var(--wa-need); }
   .hme-tb.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
   .hme-tb.primary.danger-fill { background: var(--wa-need); color: #fff; }
+  /* The bar's Add, the editor's one way in for devices and furniture, in the
+   * picked blue so it is the first thing a new user finds. */
+  .hme-tb.hme-add-btn { background: var(--hme-sel); color: #fff; font-weight: 600; padding: 0 14px; }
+  .hme-tb.hme-add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); color: #fff; }
   .hme-tb.hme-icon { width: 30px; padding: 0; font-size: 15px; }
   .hme-tb.hme-wide { width: 100%; height: 36px; }
   .hme-tb.push { margin-left: auto; }
@@ -263,7 +261,63 @@ export const editorStyles = css`
   .hme-x:hover { background: var(--wa-hover); color: var(--wa-ink); }
   .hme-x:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
 
-  /* ── the rail ─────────────────────────────────────────────────────── */
+  /* ── Start here, with nothing picked ──────────────────────────────── */
+  .hme-steps { display: flex; flex-direction: column; gap: 12px; }
+  .hme-step { display: flex; gap: 12px; align-items: flex-start; }
+  .hme-step-no {
+    width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; background: var(--wa-raise); color: var(--wa-muted);
+  }
+  .hme-step.done .hme-step-no { background: rgba(48, 209, 88, 0.16); color: #30d158; }
+  .hme-step.now .hme-step-no { background: var(--hme-sel); color: #fff; }
+  .hme-step-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; align-items: flex-start; }
+  .hme-step-t b { font-size: 14px; font-weight: 600; color: var(--wa-ink); }
+  .hme-step.next .hme-step-t b { color: var(--wa-soft); }
+  .hme-step-t > span { color: var(--wa-muted); font-size: 12px; line-height: 1.45; }
+  .hme-step-t .hme-link { margin-top: 4px; font-size: 12.5px; }
+  .hme-tips-card { padding: 10px 16px; }
+  .hme-tips > summary { cursor: pointer; color: var(--wa-soft); font-size: 13px; list-style: none; }
+  .hme-tips > summary::-webkit-details-marker { display: none; }
+  .hme-tips > summary:hover { color: var(--wa-ink); }
+  .hme-tips[open] > summary { margin-bottom: 10px; }
+  .hme-tips[open] > summary > span { display: inline-block; transform: rotate(90deg); }
+  .hme-tips > p + p { margin-top: 6px; }
+  .hme-keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 10px 0 0; align-items: baseline; }
+  .hme-keys dt { margin: 0; }
+  .hme-keys dd { margin: 0; color: var(--wa-muted); font-size: 12px; }
+  .hme-keys kbd { font: 500 11px var(--hme-mono); color: var(--wa-soft); border: 1px solid var(--wa-line-strong); border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+
+  /* ── In this room, with a room picked ─────────────────────────────── */
+  .hme-ly-list { display: flex; flex-direction: column; gap: 1px; margin: 0 -8px; }
+  .hme-ly-grp { padding: 8px 8px 2px; color: var(--wa-faint); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .hme-ly { display: flex; align-items: center; gap: 2px; border-radius: 8px; padding-right: 2px; }
+  .hme-ly:hover { background: var(--wa-hover); }
+  .hme-ly.on { background: var(--hme-sel-bg); }
+  /* Under the pointer, here, on the plan or in 3D: a soft ring, lighter
+     than the picked blue. */
+  .hme-ly.hov { box-shadow: inset 0 0 0 1px rgba(91, 141, 239, 0.55); background: rgba(91, 141, 239, 0.07); }
+  .hme-ly.on.hov { background: var(--hme-sel-bg); }
+  .hme-ly-main {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px; border: 0; background: none;
+    color: var(--wa-ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; border-radius: 8px;
+  }
+  .hme-ly-main:focus-visible, .hme-eye:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
+  .hme-ly-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hme-ly-end { margin-left: auto; padding-left: 8px; color: var(--wa-faint); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+  .hme-ly.hid .hme-ly-main { color: var(--wa-faint); }
+  .hme-ly.hid .hme-ly-main > span:first-child { opacity: 0.5; }
+  .hme-eye {
+    flex: none; width: 26px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--wa-faint); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .hme-eye:hover { background: var(--wa-raise); color: var(--wa-ink); }
+  .hme-ly.hid .hme-eye { color: var(--wa-muted); }
+  .hme-ly-lamp { width: 14px; height: 14px; border-radius: 50%; flex: none; background: var(--wa-raise); border: 1px solid var(--wa-line-strong); display: inline-flex; align-items: center; justify-content: center; }
+  .hme-ly-lamp::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #636366; }
+  .hme-ly-lamp.lit::after { background: var(--hme-amber); }
+  .hme-inroom .hme-tb.hme-wide { margin-top: 2px; }
+
+  /* ── lists ────────────────────────────────────────────────────────── */
   .hme-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-faint); flex: none; }
   .hme-find:focus-within { border-color: var(--hme-sel); }
   .hme-find input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--wa-ink); font: inherit; outline: none; }
@@ -344,15 +398,31 @@ export const editorStyles = css`
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
   .hme-rtool {
-    width: 40px; height: 40px; flex: none; border-radius: 10px; border: 0; background: transparent; color: #c7c7cc; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0;
+    width: 56px; min-height: 46px; flex: none; border-radius: 10px; border: 0; background: transparent; color: #c7c7cc; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 0 5px;
   }
   .hme-rtool:hover { background: #2c2c2e; color: #fff; }
   .hme-rtool.on { background: #3a3a3c; color: #fff; }
   .hme-rtool:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--hme-sel); }
-  .hme-rtool kbd { font: 500 9px var(--hme-mono); color: #8e8e93; line-height: 1; }
+  .hme-rtool-name { font-size: 10.5px; font-weight: 500; line-height: 1; white-space: nowrap; }
   .hme-rtool-sep { height: 1px; background: #3a3a3c; margin: 2px 6px; flex: none; }
-  .hme-stage-hint { position: absolute; left: 70px; bottom: 22px; z-index: 1; color: #8e8e93; font-size: 11px; pointer-events: none; }
+  .hme-stage-hint { position: absolute; left: 86px; bottom: 22px; z-index: 1; color: #8e8e93; font-size: 11px; pointer-events: none; }
+  /* The dock's View and Look menus, over the dock. */
+  .hme-dock-pop {
+    position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); z-index: 4; min-width: 200px; padding: 4px;
+    display: flex; flex-direction: column; gap: 1px; border-radius: 12px;
+    background: rgba(28, 28, 30, 0.96); border: 1px solid #3a3a3c; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+  .hme-dock-item {
+    display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; background: none;
+    color: #d1d1d6; font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap;
+  }
+  .hme-dock-item:hover { background: #2c2c2e; color: #fff; }
+  .hme-dock-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--hme-sel); }
+  .hme-dock-item.on { color: #fff; }
+  .hme-check { width: 16px; flex: none; text-align: center; color: var(--hme-sel); font-weight: 700; }
+  .hme-dock .hme-caret { color: #98989d; }
   .hme-pill-name { padding: 0 10px; display: inline-flex; align-items: center; font-weight: 600; color: #fff; }
   .hme-pill .hme-tb, .hme-dock .hme-tb, .hme-pill .hme-menu, .hme-stage-empty .hme-tb { background: #161617; border-color: #2c2c2e; color: #d1d1d6; }
   .hme-pill .hme-tb:hover:not(:disabled), .hme-dock .hme-tb:hover:not(:disabled), .hme-pill .hme-menu:hover { background: #2c2c2e; color: #fff; }

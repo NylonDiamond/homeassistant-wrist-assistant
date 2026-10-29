@@ -9,14 +9,17 @@
 //
 // - the bar: ‹ Home, the title (with "› <Room> walls" while a room's walls
 //   are edited), the floor picker (each floor with its picture and counts;
-//   add, rename and delete a floor), the Flat | Model | Both view switch,
+//   add, rename and delete a floor), ＋ Add (also the key A), which opens
+//   the Add dialog of devices and furniture (`add-dialog.ts`), the Flat |
+//   Model | Both view switch,
 //   Home style with a swatch of the home style's look, which opens the Home
 //   style panel (`mode-style.ts`) over the page, closed by ✕, Escape or a
 //   click outside it, Undo and Redo (also Cmd or Ctrl Z, Shift for redo,
 //   whenever no text field has focus; every other key does nothing while
 //   any control of a form has focus) and whether the map is saved;
-// - the stage, which fills all the space the rails leave and grows with
-//   the window: the floor drawn as the plan look of `tile-art.ts` (floors by
+// - the side panel on the left, the page's;
+// - the stage, which fills all the space the side panel leaves and grows
+//   with the window: the floor drawn as the plan look of `tile-art.ts` (floors by
 //   finish, walls, doors with their swing, windows, furniture, pools of
 //   light, pins), each room's name and size, and over it the page's overlay
 //   and its tool rail. Drag empty space, hold Space and drag, or scroll to
@@ -24,17 +27,25 @@
 //   shows the floor; a double-click goes to the page. The floating pill at
 //   the top is the page's (under the blue Done bar while a room's walls are
 //   edited, the stage ringed in blue); the dock at the bottom has the zoom,
-//   the page's switches and Live states. Measure (the tool rail's M) clicks
+//   Fit, the page's Snap and the View menu (the page's switches and Live
+//   states), closed by Escape or a press on the stage. Measure (the tool
+//   rail's M) clicks
 //   two points. Model shows the floor as the tiles' small model (read only,
 //   dragged to turn); editing happens in Flat. Both puts the model beside
 //   the plan, the
 //   plan on the left edited as in Flat and the model on the right following
 //   every edit and drag as it happens. The model outlines the picked room or
-//   thing in blue. The model's dock picks its look: the tiles' five, or 3D,
+//   thing in blue. The model's dock has Lights and Daylight in 3D, Turn
+//   back, and the Look menu, which picks its look: the tiles' five, or 3D,
 //   the whole floor drawn for real by three.js (`scene3d.ts`, loaded only
 //   when first picked) with the catalog's furniture and each light lit as
 //   Home Assistant says, orbited by dragging and zoomed by scrolling, at
 //   night (Lights) or by day (Daylight);
+// - the hover (`ctx.hover`), as the complication editor's: the pointer
+//   resting on the plan or the 3D view, or on a list row, names what a
+//   click there would pick (`plan-pick.ts` finds it on the plan, as the
+//   page's presses do), and the plan and the 3D view mark it in a paler
+//   blue than the pick, never on what is picked; it never picks or saves;
 // - the selection, the undo stack and the saves (`editor-session.ts`):
 //   every edit is made at once on the page and saved soon after, a drag
 //   once on the drop;
@@ -46,12 +57,11 @@
 // whose walls are edited, the view and its coordinate helpers, the
 // switches, each room's scan as the iPhone made it, read with the map,
 // apply, preview, select, editWalls, drag, undo, the dialogs) and asks the
-// page for its rail, inspector, overlay, pill and dock; presses on the
-// stage and keys go to the page first, and what it leaves pans, clears the
-// selection or zooms. The page draws its own pins while the floor is
+// page for its side panel, overlay, pill, dock and View menu; presses on
+// the stage and keys go to the page first, and what it leaves pans, clears
+// the selection or zooms. The page draws its own pins while the floor is
 // edited (the plan then leaves them out), puts its tool rail and the side
-// view over the stage, and takes a device dragged from its rail onto the
-// plan.
+// view over the stage, and takes a device dragged onto the plan.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/home-map` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -68,6 +78,7 @@ import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { type HomeMapOp, addFloor, deleteFloor, homeMapLampOfPin, homeStyleOf, renameFloor } from "./edit-ops.js";
 import { HomeMapEditPage } from "./edit-page.js";
+import { type HomeMapAddTab, HomeMapAddDialog, homeMapAddDialogStyles } from "./add-dialog.js";
 import {
   type HomeMapApplyOptions,
   type HomeMapDragHandlers,
@@ -80,6 +91,7 @@ import {
   homeMapSelectionRoom,
   homeMapSelectionThere,
   homeMapToggleThing,
+  sameHomeMapSelection,
 } from "./editor-mode.js";
 import { homeMapTogglePick } from "./devices-model.js";
 import { hmeFloorThumb } from "./editor-parts.js";
@@ -116,9 +128,11 @@ import {
   readHomeMap,
   sameHomeMapId,
 } from "./model.js";
+import { homeMapClickPick, homeMapHoverMark, homeMapLiveHover } from "./plan-pick.js";
 import { homeMapApi } from "./save.js";
 import type { HomeMap3DInput, HomeMap3DPick, HomeMapScene3D } from "./scene3d.js";
 import { homeMapFurnitureBase, homeMapLoad3D } from "./scene3d-load.js";
+import { homeMapPlanLook } from "./furniture.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
@@ -137,6 +151,14 @@ export function homeMapSaveWords(state: HomeMapSaveState): string {
 }
 
 const MODEL_LOOK_NAMES: Readonly<Record<string, string>> = { night: "Night", warm: "Warm", lines: "Lines", clay: "Clay", blueprint: "Blueprint" };
+
+/** A choice in a dock's View or Look menu. */
+interface HomeMapDockItem {
+  label: string;
+  on: boolean;
+  title?: string | undefined;
+  pick(): void;
+}
 
 type Dialog =
   | { kind: "confirm"; title: string; text?: string; ok: string; danger?: boolean; done: (v: boolean) => void }
@@ -180,6 +202,8 @@ export class WaHomeMapEditor extends LitElement {
   @state() private scans?: HomeMapScans;
   @state() private measure: { a?: HomePoint; b?: HomePoint; hover?: HomePoint } = {};
   @state() private floorMenu = false;
+  /** The dock's View menu (the plan's) or Look menu (the model's) is open. */
+  @state() private dockMenu?: "view" | "look";
   @state() private dialog?: Dialog;
   @state() private modelLook?: HomeMapLook;
   /** The model is drawn in real 3D rather than as one of the looks. */
@@ -191,12 +215,19 @@ export class WaHomeMapEditor extends LitElement {
   @state() private spaceHeld = false;
   /** Bumped to draw again after a change the shell cannot see. */
   @state() private tick = 0;
+  /** What a click would pick under the pointer (the context's `hover`). */
+  @state() private hover?: HomeMapSelection;
+  /** The Add dialog is open, on this tab. */
+  @state() private addOpen?: "devices" | "furniture";
 
   /** The map, its undo stack and its saves; made on the first read. */
   session?: HomeMapSession;
   /** The one edit page, and the Home style panel. */
   readonly page = new HomeMapEditPage();
   readonly stylePanel = new HomeStylePanel();
+  /** The Add dialog (`add-dialog.ts`): it adds devices through the page's
+   * devices part and draws pieces with its furniture pictures. */
+  readonly addDialog = new HomeMapAddDialog(this.page.devices, (ctx, piece, cls) => this.page.arrange.piecePic(ctx, piece, cls));
 
   /** A drag's live result (`ctx.preview`), never saved. */
   private previewDoc?: HomeMapDocument;
@@ -307,6 +338,7 @@ export class WaHomeMapEditor extends LitElement {
     if (this.scene3d !== undefined) {
       this.scene3d.attach(host);
       this.scene3d.update(input, this.modelTurnNow());
+      this.scene3d.setHover(this.hoverFor3d());
       return;
     }
     if (this.loading3d || this.failed3d) return;
@@ -319,6 +351,7 @@ export class WaHomeMapEditor extends LitElement {
         try {
           this.scene3d ??= new m.HomeMapScene3D(base);
           this.scene3d.onPick = (pick, keys) => this.pick3d(pick, keys);
+          this.scene3d.onHover = (pick) => this.hover3d(pick);
         } catch {
           // No WebGL here.
           this.failed3d = true;
@@ -364,6 +397,51 @@ export class WaHomeMapEditor extends LitElement {
   private drop3d(): void {
     this.scene3d?.dispose();
     this.scene3d = undefined;
+  }
+
+  // ── the hover ──────────────────────────────────────────────────────────
+
+  /** Set or clear what a click would pick under the pointer (`ctx.hover`);
+   * the same again draws nothing. It never changes the pick or saves. */
+  setHover(hover: HomeMapSelection | undefined): void {
+    if (!sameHomeMapSelection(hover, this.hover)) this.hover = hover;
+  }
+
+  /** The pointer resting on the 3D look over what a click there would
+   * pick, as `pick3d` reads a click: a light a lamp holds is its lamp.
+   * Nothing while a room's walls are edited or a dialog is open. */
+  hover3d(found: HomeMap3DPick | undefined): void {
+    if (this.dialog !== undefined || this.walls !== undefined) {
+      this.setHover(undefined);
+      return;
+    }
+    this.setHover(found === undefined ? undefined
+      : found.kind === "pin" ? homeMapLampPick(this.baseFloor(), { kind: "pin", pinId: found.pinId })
+      : found.kind === "object" ? { kind: "object", roomId: found.roomId, object: found.object }
+      : { kind: "room", roomId: found.roomId });
+  }
+
+  /** The hover as the 3D look marks it: a room, a thing or a light's pin,
+   * unless it is picked already (the pick's own outline shows it). */
+  private hoverFor3d(): HomeMap3DPick | undefined {
+    const h = homeMapLiveHover(this.hover, this.selection);
+    if (h === undefined) return undefined;
+    if (h.kind === "pin") return { kind: "pin", pinId: h.pinId };
+    if (h.kind === "object") return { kind: "object", roomId: h.roomId, object: h.object };
+    return h.kind === "room" ? { kind: "room", roomId: h.roomId } : undefined;
+  }
+
+  /** What a click at plan point `at` would pick, for the plan's hover:
+   * nothing for a finger, while Space pans, while a tool other than Pick is
+   * out (Measure, drawing, a door or window to place, a room's walls), while
+   * the lamp chooser or a dialog is open, or over a picked thing's handles,
+   * which take the press. */
+  private planHoverAt(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): HomeMapSelection | undefined {
+    if (e.pointerType === "touch" || this.spaceHeld || this.dialog !== undefined || this.walls !== undefined) return undefined;
+    if (this.page.tool(ctx) !== "pick" || this.page.devices.choosing) return undefined;
+    const target = e.target as Element | null;
+    if (typeof target?.closest === "function" && target.closest("[data-hme=turn], [data-hme=resize]") !== null) return undefined;
+    return homeMapClickPick(ctx.floor, ctx.toScreen, at);
   }
 
   /** Back to the home style's turn: the model looks' turn, and the 3D
@@ -458,6 +536,7 @@ export class WaHomeMapEditor extends LitElement {
     const walls = this.walls;
     if (walls !== undefined && !(this.baseFloor()?.rooms ?? []).some((r) => sameHomeMapId(r.id, walls))) this.walls = undefined;
     if (!homeMapSelectionThere(this.baseFloor(), this.selection)) this.selection = undefined;
+    if (!homeMapSelectionThere(this.baseFloor(), this.hover)) this.hover = undefined;
     this.tick++;
   }
 
@@ -638,8 +717,33 @@ export class WaHomeMapEditor extends LitElement {
       redraw: () => {
         this.tick++;
       },
+      hover: this.hover,
+      setHover: (hover) => this.setHover(hover),
+      openAdd: (tab) => this.openAdd(tab),
       openPage: this.onOpenPage,
     };
+  }
+
+  /** Open the Add dialog on a tab (`ctx.openAdd`, the bar's ＋ Add, the key
+   * A): the floor menu and the Home style panel close first. */
+  openAdd(tab: HomeMapAddTab = "devices"): void {
+    const ctx = this.context();
+    if (ctx === undefined) return;
+    this.floorMenu = false;
+    if (this.styleOpen) this.closeStyle();
+    this.addDialog.open(ctx, tab);
+    this.addOpen = tab;
+  }
+
+  /** Close the Add dialog, the focus going back to ＋ Add (a lamp chooser
+   * an add opened takes it from there). */
+  closeAdd(): void {
+    if (this.addOpen === undefined) return;
+    this.addOpen = undefined;
+    void this.updateComplete.then(() => {
+      const button = this.renderRoot?.querySelector?.(".hme-add-btn") as { focus?: () => void } | null | undefined;
+      button?.focus?.();
+    });
   }
 
   private toPlan(clientX: number, clientY: number): HomePoint {
@@ -727,6 +831,9 @@ export class WaHomeMapEditor extends LitElement {
   onStageDown(e: PointerEvent): void {
     this.stageEl = e.currentTarget as unknown as StageEl;
     this.floorMenu = false;
+    this.dockMenu = undefined;
+    // A press lets go of the hover: what it picks is lit as the pick.
+    this.setHover(undefined);
     if (this.dialog !== undefined) return;
     if (e.pointerType === "touch") {
       this.touches.set(e.pointerId, [e.clientX, e.clientY]);
@@ -771,17 +878,26 @@ export class WaHomeMapEditor extends LitElement {
     if (ctx !== undefined) this.page.doubleClick?.(ctx, e, this.toPlan(e.clientX, e.clientY));
   }
 
+  /** The pointer over the plan: the measure's loose end, the page's hover,
+   * and what a click there would pick, tinted (none while a button is
+   * down, so a drag or a pan shows none). */
   onStageMove(e: PointerEvent): void {
     this.stageEl = e.currentTarget as unknown as StageEl;
     if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, [e.clientX, e.clientY]);
-    if (e.buttons !== 0 || this.viewKind === "model") return;
+    if (e.buttons !== 0 || this.viewKind === "model") {
+      this.setHover(undefined);
+      return;
+    }
     const at = this.toPlan(e.clientX, e.clientY);
     if (this.toggles.measure && this.measure.a !== undefined && this.measure.b === undefined) this.measure = { ...this.measure, hover: at };
     const ctx = this.context();
-    if (ctx !== undefined) this.page.hover?.(ctx, at);
+    if (ctx === undefined) return;
+    this.page.hover?.(ctx, at);
+    this.setHover(this.planHoverAt(ctx, e, at));
   }
 
   onStageLeave(): void {
+    this.setHover(undefined);
     const ctx = this.context();
     if (ctx !== undefined) this.page.hover?.(ctx, undefined);
   }
@@ -918,7 +1034,8 @@ export class WaHomeMapEditor extends LitElement {
    * open, only Escape, which closes it; then Space for panning, the page's
    * keys, then Escape, zoom and fit. */
   readonly onKey = (e: KeyboardEvent): void => {
-    if (this.dialog !== undefined || this.session === undefined) return;
+    // The Add dialog keeps its own keys.
+    if (this.dialog !== undefined || this.addOpen !== undefined || this.session === undefined) return;
     // A sheet keeps its own keys.
     if ((this.renderRoot as ParentNode | undefined)?.querySelector?.(".hme-sheet") != null) return;
     const target = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
@@ -935,9 +1052,19 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     if (homeMapIsFormControl(target)) return;
+    if (this.dockMenu !== undefined && e.key === "Escape") {
+      this.dockMenu = undefined;
+      return;
+    }
     if (e.key === " " && !e.repeat) {
       this.spaceHeld = true;
       e.preventDefault?.();
+      return;
+    }
+    // A opens the Add dialog, in any view, unless the lamp chooser is open.
+    if (typeof shortcut === "object" && "letter" in shortcut && shortcut.letter === "a" && !this.page.devices.choosing) {
+      e.preventDefault?.();
+      this.openAdd();
       return;
     }
     const ctx = this.context();
@@ -1004,12 +1131,12 @@ export class WaHomeMapEditor extends LitElement {
       ${note === undefined ? nothing : html`<div class="hme-note ${note.kind}" role="status"><span>${note.text}</span>
         <button class="hme-link" @click=${() => this.session?.dismissNote()}>Dismiss</button></div>`}
       <div class="hme-body">
-        <aside class="hme-rail" aria-label=${this.walls === undefined ? "Layers" : "Walls"}>${this.page.rail(ctx)}</aside>
+        <aside class="hme-insp" aria-label=${this.walls === undefined ? "Side panel" : "Walls"}>${this.page.inspector(ctx)}</aside>
         <section class="hme-stage-wrap">${this.renderStage(ctx)}</section>
-        <aside class="hme-insp" aria-label="Inspector">${this.page.inspector(ctx)}</aside>
       </div>
       ${this.page.sheet?.(ctx) ?? nothing}
       ${this.renderDialog()}
+      ${this.addOpen === undefined ? nothing : this.addDialog.render(ctx, () => this.closeAdd())}
     </div>`;
   }
 
@@ -1038,6 +1165,8 @@ export class WaHomeMapEditor extends LitElement {
         ${this.floorMenu ? this.renderFloorMenu(doc, floor) : nothing}
       </div>
       <span class="hme-flex"></span>
+      <button type="button" class="hme-tb primary hme-add-btn" aria-haspopup="dialog" aria-expanded=${this.addOpen === undefined ? "false" : "true"}
+        title="Add a device or a piece of furniture (A)" @click=${() => this.openAdd()}>＋ Add</button>
       <div class="hme-seg" role="group" aria-label="View">
         <button type="button" class=${this.viewKind === "flat" ? "on" : ""} aria-pressed=${this.viewKind === "flat" ? "true" : "false"} @click=${() => { this.viewKind = "flat"; }}>Flat</button>
         <button type="button" class=${this.viewKind === "model" ? "on" : ""} aria-pressed=${this.viewKind === "model" ? "true" : "false"} @click=${() => { this.viewKind = "model"; }}>Model</button>
@@ -1165,6 +1294,7 @@ export class WaHomeMapEditor extends LitElement {
     if (this.dialog !== undefined || e.button !== 0) return;
     this.stageEl = e.currentTarget as unknown as StageEl;
     this.floorMenu = false;
+    this.dockMenu = undefined;
     this.turnModel(e);
   }
 
@@ -1176,6 +1306,7 @@ export class WaHomeMapEditor extends LitElement {
     const k = view.scale / (this.artScale || view.scale);
     return svg`${this.background(view, width, height)}
       <g class="hme-art" transform=${`translate(${view.ox.toFixed(2)} ${view.oy.toFixed(2)}) scale(${k.toFixed(5)})`} pointer-events="none">${art}</g>
+      ${ctx.walls === undefined ? homeMapHoverMark(ctx.floor, this.hover, this.selection, ctx.toScreen) : nothing}
       <g class="hme-labels" pointer-events="none">${this.labels(ctx)}</g>
       <g class="hme-overlay">${this.page.overlay(ctx)}</g>
       ${this.toggles.measure ? this.measureMarks(ctx) : nothing}`;
@@ -1197,6 +1328,8 @@ export class WaHomeMapEditor extends LitElement {
         names: false,
         devices,
         furniture: true,
+        // Each thing as the piece the 3D view draws, in its own colours.
+        furnitureLook: homeMapPlanLook,
         glow: true,
         width,
         height,
@@ -1293,33 +1426,48 @@ export class WaHomeMapEditor extends LitElement {
       ${words === undefined ? nothing : html`<div class="hme-3d-note">${words}</div>`}`;
   }
 
-  /** The model's dock: its looks and 3D, Lights or Daylight in 3D, and Turn
-   * back, with Live states unless the plan's dock beside it has them. */
+  /** The model's dock: Lights or Daylight in 3D, the Look menu (the tiles'
+   * looks and 3D) and Turn back, with Live states when no plan's dock is
+   * beside it. */
   private renderModelDock(withLive: boolean, live?: TemplateResult): TemplateResult {
     const real = this.model3d && this.bundleUrl !== undefined;
     const look = real ? undefined : this.modelLookNow();
     const pressed = (on: boolean) => (on ? "true" : "false");
+    const looks: HomeMapDockItem[] = HOME_TILE_MODEL_LOOKS.map((l) => ({
+      label: MODEL_LOOK_NAMES[l] ?? l,
+      on: l === look,
+      pick: () => { this.modelLook = l; this.model3d = false; this.dockMenu = undefined; },
+    }));
+    if (this.bundleUrl !== undefined) {
+      looks.push({ label: "3D", on: real, title: "The floor in real 3D, with its furniture and each light lit as it is now", pick: () => { this.model3d = true; this.dockMenu = undefined; } });
+    }
     return html`<div class="hme-dock">
-      ${HOME_TILE_MODEL_LOOKS.map((l) => html`<button type="button" class="hme-tb ${l === look ? "on" : ""}" aria-pressed=${pressed(l === look)} @click=${() => { this.modelLook = l; this.model3d = false; }}>${MODEL_LOOK_NAMES[l]}</button>`)}
-      ${this.bundleUrl === undefined ? nothing : html`<button type="button" class="hme-tb ${real ? "on" : ""}" aria-pressed=${pressed(real)}
-        title="The floor in real 3D, with its furniture and each light lit as it is now" @click=${() => { this.model3d = true; }}>3D</button>`}
-      ${real ? html`<span class="hme-vsep"></span>
-        <button type="button" class="hme-tb ${this.daylight ? "" : "on"}" aria-pressed=${pressed(!this.daylight)} title="Night: only the lights that are on light the rooms"
+      ${real ? html`<button type="button" class="hme-tb ${this.daylight ? "" : "on"}" aria-pressed=${pressed(!this.daylight)} title="Night: only the lights that are on light the rooms"
           @click=${() => { this.daylight = false; }}>Lights</button>
         <button type="button" class="hme-tb ${this.daylight ? "on" : ""}" aria-pressed=${pressed(this.daylight)} title="Day: the sun comes in through the windows"
-          @click=${() => { this.daylight = true; }}>Daylight</button>` : nothing}
-      <span class="hme-vsep"></span>
+          @click=${() => { this.daylight = true; }}>Daylight</button>
+        <span class="hme-vsep"></span>` : nothing}
+      ${this.dockMenuButton("look", `Look: ${real ? "3D" : MODEL_LOOK_NAMES[look ?? "night"] ?? look}`, "How the model is drawn: the tiles' looks, or real 3D")}
       <button type="button" class="hme-tb" title=${real ? "Show the whole floor from the home style's turn" : "Back to the home style's turn"} @click=${() => this.turnBack()}>⟲ Turn back</button>
       ${withLive && live !== undefined ? html`<span class="hme-vsep"></span>${live}` : nothing}
-    </div>`;
+    </div>${this.dockMenuList("look", "Look", looks, "menuitemradio")}`;
   }
 
+  /** The plan's dock: the zoom, Fit, the page's Snap and the View menu (the
+   * page's switches and Live states). */
   private renderDock(ctx: HomeMapEditorContext): TemplateResult {
-    const live = html`<button type="button" class="hme-tb ${this.toggles.live ? "on" : ""}" aria-pressed=${this.toggles.live ? "true" : "false"}
-      title="Draw what Home Assistant's devices are doing now" @click=${() => this.setToggle("live", !this.toggles.live)}><span class="hme-live-dot"></span>Live states</button>`;
-    if (this.viewKind === "model") return this.renderModelDock(true, live);
+    const liveTitle = "Draw what Home Assistant's devices are doing now";
+    const flipLive = () => this.setToggle("live", !this.toggles.live);
+    if (this.viewKind === "model") {
+      return this.renderModelDock(true, html`<button type="button" class="hme-tb ${this.toggles.live ? "on" : ""}" aria-pressed=${this.toggles.live ? "true" : "false"}
+        title=${liveTitle} @click=${flipLive}><span class="hme-live-dot"></span>Live states</button>`);
+    }
     const fit = this.stageSize.width > 0 ? homeMapFitView(this.baseFloor(), this.stageSize.width, this.stageSize.height) : undefined;
     const percent = this.view === undefined || fit === undefined ? 100 : homeMapZoomPercent(this.view, fit);
+    const items: HomeMapDockItem[] = [
+      ...(this.page.viewItems?.(ctx) ?? []).map((v) => ({ label: v.label, on: v.on, title: v.title, pick: () => v.flip() })),
+      { label: "Live states", on: this.toggles.live, title: liveTitle, pick: flipLive },
+    ];
     return html`<div class="hme-dock">
       <button type="button" class="hme-tb hme-icon" aria-label="Zoom out" @click=${() => this.zoomBy(1 / HOME_MAP_ZOOM_STEP)}>−</button>
       <span class="hme-zoom mono">${percent}%</span>
@@ -1327,7 +1475,25 @@ export class WaHomeMapEditor extends LitElement {
       <button type="button" class="hme-tb" @click=${() => this.fit()}>Fit</button>
       <span class="hme-vsep"></span>
       ${this.page.dock?.(ctx) ?? nothing}
-      <span class="hme-vsep"></span>${live}
+      ${this.dockMenuButton("view", "View", "What the plan shows: the grid, names, live states and more")}
+    </div>${this.dockMenuList("view", "View", items, "menuitemcheckbox")}`;
+  }
+
+  /** A dock's menu button, View or Look, opening or closing its list. */
+  private dockMenuButton(which: "view" | "look", label: string, title: string): TemplateResult {
+    const open = this.dockMenu === which;
+    return html`<button type="button" class="hme-tb ${open ? "on" : ""}" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} title=${title}
+      @click=${() => { this.dockMenu = open ? undefined : which; }}>${label} <span class="hme-caret" aria-hidden="true">▾</span></button>`;
+  }
+
+  /** A dock's menu while it is open, over the dock rather than in it (the
+   * dock scrolls sideways, which would cut it off): each switch ticked
+   * when on. A View switch keeps the menu open; a look closes it. */
+  private dockMenuList(which: "view" | "look", label: string, items: readonly HomeMapDockItem[], role: "menuitemcheckbox" | "menuitemradio"): TemplateResult | typeof nothing {
+    if (this.dockMenu !== which) return nothing;
+    return html`<div class="hme-dock-pop" role="menu" aria-label=${label}>
+      ${items.map((it) => html`<button type="button" role=${role} aria-checked=${it.on ? "true" : "false"} class="hme-dock-item ${it.on ? "on" : ""}"
+        title=${it.title ?? it.label} @click=${() => it.pick()}><span class="hme-check" aria-hidden="true">${it.on ? "✓" : ""}</span>${it.label}</button>`)}
     </div>`;
   }
 
@@ -1357,7 +1523,7 @@ export class WaHomeMapEditor extends LitElement {
     </div>`;
   }
 
-  static override styles = [formStyles, chromeTokens, editorStyles];
+  static override styles = [formStyles, chromeTokens, editorStyles, homeMapAddDialogStyles];
 }
 
 /** A cheap key for a floor drawn: the object itself, by identity. */
