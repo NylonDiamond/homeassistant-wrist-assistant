@@ -118,7 +118,8 @@ import {
   watchTemplateSignature,
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
-import { SCRUB_END, SCRUB_START } from "../editors.js";
+import { SCRUB_END, SCRUB_START, betaPill } from "../editors.js";
+import { watchHomeMapFloorSummary } from "./home-map-tile.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -145,7 +146,7 @@ import {
 } from "../watch-settings.js";
 import { type LinkDevice, deviceWord, linkDevicesOf } from "./devices.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
-import { type WatchPhoneTilesGroup, type WatchPhoneTilesPicker, watchPhoneTilesGroup } from "./add-tile-list.js";
+import { type WatchPhoneTilesGroup, type WatchPhoneTilesPicker, watchAddRefusalText, watchPhoneTilesGroup } from "./add-tile-list.js";
 import {
   type WatchCatalog,
   type WatchCatalogVoice,
@@ -208,6 +209,7 @@ import {
   asWatchPagesDocument,
   isHiddenWatchPage,
   isJsonObject,
+  isMapWatchPage,
   isSmartWatchPage,
   isSystemWatchPage,
   isVirtualTileKind,
@@ -219,14 +221,17 @@ import {
   watchPageHasHeader,
   watchPageId,
   watchPageName,
+  watchMapPageTile,
   watchPageTiles,
   watchPagesOf,
 } from "./model.js";
+import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
   PHONE_SCREEN_FOLD_TEXT,
   WATCH_SCREEN_FOLD_TEXT,
+  renderMapPageArt,
   renderPreviewFrame,
   renderWatchPagePreview,
   renderWatchScreenFold,
@@ -265,6 +270,8 @@ import {
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import {
   forgetTileSettingsNotes,
+  renderHomeMapLooks,
+  renderHomeMapPlace,
   renderTileHead,
   renderTileInspector,
   tileHeadHasEntity,
@@ -275,6 +282,7 @@ import { forgetTileTry, watchTriedTile, watchTryLabel } from "./picture-choice.j
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
   PAGE_DEVICES_FOLD,
+  PAGE_MAP_FOLD,
   PAGE_SWITCHER_FOLD,
   PAGE_WATCH_FOLD,
   WATCH_PAGE_CHIP_COLOR,
@@ -880,6 +888,9 @@ export class WaPageEditor extends LitElement {
   private stageRefusal?: Note;
   /** The Add tile dialog is open, over the selected page. */
   @state() private addTileOpen = false;
+  /** The Map page switch's question is open, for the page with this id: it
+   * would remove the page's other tiles. */
+  @state() private mapAsk?: string;
 
   /** The host's measured content width, which decides whether the stage
    * and the settings stack. Zero before the first measurement. */
@@ -1141,10 +1152,10 @@ export class WaPageEditor extends LitElement {
    * modal. */
   private closeStaleAsks(): void {
     if (this.addTileOpen) {
-      // The page the dialog adds to went away, or turned into a smart page,
-      // in a merge from another save.
+      // The page the dialog adds to went away, or turned into a smart page
+      // or a map page, in a merge from another save.
       const page = this.currentPage();
-      if (page === undefined || isSmartWatchPage(page)) this.closeAsk();
+      if (page === undefined || isSmartWatchPage(page) || isMapWatchPage(page)) this.closeAsk();
     }
   }
 
@@ -1200,9 +1211,11 @@ export class WaPageEditor extends LitElement {
       this.selectedPageId = page === undefined ? undefined : watchPageId(page);
       this.selectedTileId = undefined;
     }
-    if (this.selectedTileId !== undefined && (page === undefined || this.tileOn(page, this.selectedTileId) === undefined)) {
+    // A map page's tile is never selected: the page's Map card holds it.
+    if (this.selectedTileId !== undefined && (page === undefined || isMapWatchPage(page) || this.tileOn(page, this.selectedTileId) === undefined)) {
       this.selectedTileId = undefined;
     }
+    if (page !== undefined && isMapWatchPage(page) && this.multi.size > 0) this.multi = new Set();
     this.reconcilePick(page);
     // A tile that goes away (a delete, an undo) takes its pointerleave with it.
     if (this.stageHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.stageHoverTileId) === undefined)) {
@@ -1328,7 +1341,7 @@ export class WaPageEditor extends LitElement {
    * shown page. One tile is a plain selection of it; none, nothing. */
   private selectAll(): void {
     const page = this.currentPage();
-    if (page === undefined || isSmartWatchPage(page)) return;
+    if (page === undefined || isSmartWatchPage(page) || isMapWatchPage(page)) return;
     const ids = this.readingIds(page);
     if (ids.length === 0) return;
     this.setPick(ids, this.selectedTileId ?? ids[0]);
@@ -1969,7 +1982,7 @@ export class WaPageEditor extends LitElement {
 
   private openAddTile(): void {
     const page = this.currentPage();
-    if (this.busy || this.editingOff() || page === undefined || isSmartWatchPage(page)) return;
+    if (this.busy || this.editingOff() || page === undefined || isSmartWatchPage(page) || isMapWatchPage(page)) return;
     this.pickerOpen = false;
     this.addTileOpen = true;
   }
@@ -2218,6 +2231,7 @@ export class WaPageEditor extends LitElement {
     this.libraryDeleteAsk = undefined;
     this.saveAsk = false;
     this.addTileOpen = false;
+    this.mapAsk = undefined;
   }
 
   /**
@@ -2454,7 +2468,7 @@ export class WaPageEditor extends LitElement {
     // but a text field; while Watch view draws the page, the browser keeps it.
     if (mod && !e.altKey && !e.shiftKey && key === "a" && !dragging && !this.editingOff()) {
       const page = this.currentPage();
-      if (page !== undefined && !isSmartWatchPage(page)) {
+      if (page !== undefined && !isSmartWatchPage(page) && !isMapWatchPage(page)) {
         e.preventDefault();
         this.selectAll();
         return;
@@ -2500,7 +2514,7 @@ export class WaPageEditor extends LitElement {
    */
   private stepPick(step: 1 | -1): boolean {
     const page = this.currentPage();
-    if (page === undefined || isSmartWatchPage(page)) return false;
+    if (page === undefined || isSmartWatchPage(page) || isMapWatchPage(page)) return false;
     const order = this.readingIds(page);
     const at = this.selectedTileId === undefined ? -1 : order.findIndex((id) => sameWatchId(id, this.selectedTileId));
     const next = at < 0 ? (step === 1 ? 0 : order.length - 1) : at + step;
@@ -3259,7 +3273,7 @@ export class WaPageEditor extends LitElement {
     // Select all needs two tiles to make a pick of several, and a page drawn
     // to edit.
     const page = open ? this.currentPage() : undefined;
-    const selectable = page === undefined || isSmartWatchPage(page) || this.editingOff(page) ? 0 : this.readingIds(page).length;
+    const selectable = page === undefined || isSmartWatchPage(page) || isMapWatchPage(page) || this.editingOff(page) ? 0 : this.readingIds(page).length;
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
     const facts = page === undefined ? undefined : this.pageFacts(page, owner);
@@ -3439,7 +3453,7 @@ export class WaPageEditor extends LitElement {
   private renderPagePicker(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
     const name = watchPageName(page);
     const tiles = watchPageTiles(page).length;
-    const what = isSmartWatchPage(page) ? "Smart page" : plural(tiles, "tile", "tiles");
+    const what = isSmartWatchPage(page) ? "Smart page" : isMapWatchPage(page) ? WATCH_MAP_PAGE_WORDS.kind : plural(tiles, "tile", "tiles");
     const open = this.pickerOpen;
     return html`<div class="pe-pp-wrap">
       <button type="button" class="pe-pp" aria-haspopup="dialog" aria-expanded=${open ? "true" : "false"}
@@ -3536,6 +3550,7 @@ export class WaPageEditor extends LitElement {
     const empty = !isSmartWatchPage(page) && watchPageTiles(page).length === 0;
     const on = deviceWord(this.linkKind);
     const text = isSmartWatchPage(page) ? `Click a tile on the ${on} to pick its rule.`
+      : isMapWatchPage(page) ? WATCH_MAP_PAGE_WORDS.stage
       : empty ? NO_TILES_TEXT
       : `Click a tile on the ${on} to edit it.`;
     return html`<div class="pe-no-tile">
@@ -3554,11 +3569,13 @@ export class WaPageEditor extends LitElement {
   }
 
   /** "+ Add tile" first in the stage's dock, which opens the Add tile
-   * dialog. None on a smart page, which fills itself. */
+   * dialog. None on a smart page, which fills itself; greyed on a map page,
+   * which holds its Home map tile alone, saying so. */
   private renderStageAddTile(page: WatchPage): TemplateResult | typeof nothing {
     if (isSmartWatchPage(page)) return nothing;
-    const off = this.busy || this.editingOff(page);
-    const title = this.saving ? SAVING_TEXT : this.editingOff(page) ? `Turn off ${this.viewName} to add a tile.` : "Add a tile to this page";
+    const map = isMapWatchPage(page);
+    const off = this.busy || this.editingOff(page) || map;
+    const title = map ? watchAddRefusalText("mapPage") : this.saving ? SAVING_TEXT : this.editingOff(page) ? `Turn off ${this.viewName} to add a tile.` : "Add a tile to this page";
     return html`<button type="button" class="pe-stage-add" aria-haspopup="dialog" ?disabled=${off} title=${title}
       @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add tile</span></button>`;
   }
@@ -3639,6 +3656,10 @@ export class WaPageEditor extends LitElement {
       return html`<span class="pe-pic pe-pic-smart" style=${`${box}background:${watchScreenColor(page)}`} aria-hidden="true">${uiIcon("states")}</span>`;
     }
     const input = this.previewInput(page, pages, screen, s);
+    if (input.phone !== undefined && isMapWatchPage(page)) {
+      // A map page on an iPhone: the map is the whole picture.
+      return html`<span class="pe-pic" style=${box} aria-hidden="true">${renderMapPageArt(input, screen.width, height / s, s)}</span>`;
+    }
     const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
     // Only what reaches onto the picture: a long page costs no more than a short one.
     const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < height);
@@ -3844,10 +3865,13 @@ export class WaPageEditor extends LitElement {
     const phone = phoneLayout !== undefined;
     const screen = phoneLayout === undefined ? (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen : phonePagesScreen(phoneLayout);
     const smart = isSmartWatchPage(page);
+    // A map page is drawn, never edited, on the stage: its one tile moves
+    // nowhere and is changed in the page's Map card.
+    const map = !smart && isMapWatchPage(page);
     const tiles = watchPageTiles(page).length;
     const config = readSmartConfig(page);
     const states = this.previewStates();
-    const headers = !smart && watchPageHasHeader(page);
+    const headers = !smart && !map && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
     const scale = phone ? this.stageScale * PHONE_STAGE_ZOOM : this.stageScale;
     const input: WatchPagePreviewInput = {
@@ -3893,16 +3917,17 @@ export class WaPageEditor extends LitElement {
     this.layoutArrange = undefined;
     this.stageSideInset = this.gridSideInset;
     this.stageTopInset = watchPreviewTopInset(input);
-    const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
-    const empty = !smart && !asOnWatch && tiles === 0;
+    const scrolls = !smart && (asOnWatch || map ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
+    const empty = !smart && !map && !asOnWatch && tiles === 0;
     // Watch view and an empty page are statuses, said whatever Help says;
     // how to use the stage and where the screen ends are help, said only
     // while Help is on (the inspector's switch, `helpOn`).
     const status = smart ? undefined
+      : map ? WATCH_MAP_PAGE_WORDS.stage
       : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
       : undefined;
-    const help = !this.helpOn || smart || asOnWatch || empty ? undefined
+    const help = !this.helpOn || smart || map || asOnWatch || empty ? undefined
       : "Click a tile to change it, Shift or Cmd-click to pick several. Drag a tile to move it, or onto another tile to swap the two; drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile, Tab picks the next one. Hidden tiles and spacers show with a dashed edge.";
     const fold = scrolls && this.helpOn;
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
@@ -3914,7 +3939,7 @@ export class WaPageEditor extends LitElement {
           ${fold ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
         </div>` : nothing}
         <div class="pe-stage-body">
-          ${this.renderLibraryStage(page, pages, input, smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
+          ${this.renderLibraryStage(page, pages, input, smart || map || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
         </div>
         <div class="pe-dock-area">
           ${this.renderLiveStrip(page, tile)}
@@ -4480,11 +4505,12 @@ export class WaPageEditor extends LitElement {
         <div class="insp-body pe-tile-body" data-help=${this.helpOn ? "on" : "off"}>${this.renderTileCard(page, tile, this.renderTileStrip(page, tile, pages))}</div>`;
     }
     const host = this.editorHost(page);
-    const crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
+    const kind = isSmartWatchPage(page) ? "Smart page" : isMapWatchPage(page) ? WATCH_MAP_PAGE_WORDS.kind : "Page";
+    const crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${kind}</span><span class="nm" title=${name}>${name}</span></div>`;
     // Every card drawn now that folds, for Collapse all: it folds them all
     // while one is open, else opens them all, through the fold memory.
     const folds: FoldId[] = host === undefined ? []
-      : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD];
+      : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...(isMapWatchPage(page) ? [PAGE_MAP_FOLD] : []), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD];
     const anyOpen = anySectionOpen(this.uiState, folds);
     return html`
       <div class="insp-head">
@@ -4498,7 +4524,8 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The inspector with no tile selected: the page's own settings. On a smart
-   * page its Rules cards lead (`renderRulesCard`). Then the Look card
+   * page its Rules cards lead (`renderRulesCard`), on a map page its Map
+   * card (`renderMapCard`). Then the Look card
    * (`renderPageLookCard`: Theme, Background, Page title, Reset page) and the
    * On the watch card (`renderOnWatchCard`), a line saying how to reach a
    * tile, and Delete page.
@@ -4512,6 +4539,7 @@ export class WaPageEditor extends LitElement {
       <div class="pe-insp-cols">
         ${this.renderDevicesCard()}
         ${this.renderRulesCard(page)}
+        ${this.renderMapCard(page)}
         ${host === undefined ? nothing : renderPageLookCard(host)}
         ${this.renderOnWatchCard(page, host)}
         ${host === undefined ? nothing : this.renderSwitcherCard(host)}
@@ -4562,7 +4590,8 @@ export class WaPageEditor extends LitElement {
     const open = sectionOpen(this.uiState, module, section);
     const hidden = isHiddenWatchPage(page);
     const smart = isSmartWatchPage(page);
-    const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : [])].join(", ");
+    const map = isMapWatchPage(page);
+    const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : []), ...(map ? ["map page"] : [])].join(", ");
     return sectionCard({
       color: SECTION_COLOR.place,
       icon: uiIcon(this.onPhone ? "phone" : "watch"),
@@ -4574,9 +4603,115 @@ export class WaPageEditor extends LitElement {
       id: `${module}:${section}`,
     }, open ? html`<div class="pe-ow">
       ${host === undefined ? nothing : html`
-        ${renderSmartPageSwitch(host, { detail: "Fills itself from its rules with what is on right now." })}
-        ${renderSmartPageBody(host)}`}
+        ${map ? nothing : renderSmartPageSwitch(host, { detail: "Fills itself from its rules with what is on right now." })}
+        ${renderSmartPageBody(host)}
+        ${this.renderMapPageSwitch(page)}`}
     </div>` : html``);
+  }
+
+  /**
+   * The Map page switch, a row of the On the iPhone card (a BETA): on, the
+   * page becomes a map page, which the iPhone draws as one live 3D map
+   * (`map-page.ts`); off, a normal page keeping its Home map tile. On asks
+   * first when it would remove other tiles. Only in iPhone view, and never
+   * on a smart page. It cannot be turned on while the page has no Home map
+   * tile and the home's map has no floor to add one on.
+   */
+  private renderMapPageSwitch(page: WatchPage): TemplateResult | typeof nothing {
+    if (!this.onPhone || isSmartWatchPage(page)) return nothing;
+    const map = isMapWatchPage(page);
+    const refusal = map || watchMapPageTile(page) !== undefined ? undefined : watchMapPageRefusal(this.homeMapDoc());
+    const off = this.busy || refusal !== undefined;
+    const detail = refusal ?? WATCH_MAP_PAGE_WORDS.switchDetail;
+    const asking = this.mapAsk !== undefined && sameWatchId(this.mapAsk, watchPageId(page));
+    return html`<label class="pe-switch pe-ow-row pe-map-switch">
+        <span class="pe-ow-t"><span class="pe-ow-l">${WATCH_MAP_PAGE_WORDS.kind}${betaPill()}</span><span class="pe-ow-d">${detail}</span></span>
+        <input type="checkbox" role="switch" .checked=${live(map)} ?disabled=${off}
+          @change=${(e: Event) => this.mapSwitchPressed(page, (e.target as HTMLInputElement).checked)} />
+      </label>
+      ${asking ? this.renderMapAsk(page) : nothing}`;
+  }
+
+  /** The Map page switch was pressed. Off makes the page a normal one at
+   * once; on does too when nothing but its Home map tile would go, and
+   * otherwise asks first. Undo brings either back. */
+  private mapSwitchPressed(page: WatchPage, on: boolean): void {
+    const id = watchPageId(page);
+    const document = this.draft?.document;
+    if (document === undefined || this.busy) {
+      this.requestUpdate();
+      return;
+    }
+    if (on && (watchMapPageRemovedCount(document, id) ?? 0) > 0) {
+      this.mapAsk = id;
+      return;
+    }
+    this.applyMapPage(id, on);
+  }
+
+  /** Make the page a map page, or a normal one again, as one undo step. */
+  private applyMapPage(pageId: string, on: boolean): void {
+    const document = this.draft?.document;
+    if (document === undefined || this.busy) return;
+    const next = setWatchMapPage(document, pageId, on, watchMapPageFloorId(this.homeMapDoc()));
+    if (next === document) {
+      this.requestUpdate();
+      return;
+    }
+    if (on) this.selectTile(undefined);
+    this.edit(next);
+  }
+
+  /** The Map page switch's question: "This removes N tiles", as the Smart
+   * Page switch asks. */
+  private renderMapAsk(page: WatchPage): TemplateResult {
+    const id = watchPageId(page);
+    const count = this.draft === undefined ? 0 : watchMapPageRemovedCount(this.draft.document, id) ?? 0;
+    const end = (e?: Event) => {
+      this.mapAsk = undefined;
+      (e?.currentTarget as HTMLElement | undefined)?.closest?.("dialog")?.close();
+    };
+    return html`<dialog class="pe-ask pe-map-ask" aria-labelledby="pe-map-ask-title" @close=${() => { this.mapAsk = undefined; }}>
+      <h3 id="pe-map-ask-title">${WATCH_MAP_PAGE_WORDS.askTitle}</h3>
+      <p>${WATCH_MAP_PAGE_WORDS.ask(count)}</p>
+      <div class="pe-ask-foot">
+        <button type="button" class="pe-btn" @click=${(e: Event) => end(e)}>Cancel</button>
+        <button type="button" class="pe-btn pe-primary pe-danger" @click=${(e: Event) => { end(e); this.applyMapPage(id, true); }}>${WATCH_MAP_PAGE_WORDS.askConfirm}</button>
+      </div>
+    </dialog>`;
+  }
+
+  /**
+   * A map page's Map card: its Home map tile's Floor and Room (the tile's
+   * own controls, `renderHomeMapPlace`), what the iPhone draws in iPhone
+   * view, then under "On the watch" the tile's look keys
+   * (`renderHomeMapLooks`), which draw the tile on the watch and on an
+   * iPhone app before map pages. The tile is reached nowhere else: the stage
+   * never selects it. Nothing on a page that is not a map page.
+   */
+  private renderMapCard(page: WatchPage): TemplateResult | typeof nothing {
+    if (!isMapWatchPage(page)) return nothing;
+    const tile = watchMapPageTile(page)!;
+    const { module, section } = PAGE_MAP_FOLD;
+    const open = sectionOpen(this.uiState, module, section);
+    const host = this.tileSettingsHost(page, tile);
+    const summary = watchHomeMapFloorSummary(tile, this.homeMapDoc()) || "Home map";
+    return sectionCard({
+      color: SECTION_COLOR.content,
+      icon: uiIcon("home"),
+      title: "Map",
+      open,
+      onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
+      ...(open ? {} : { summary }),
+      id: `${module}:${section}`,
+    }, open ? html`<fieldset class="ts-body pe-map-card" ?disabled=${this.busy} aria-label="Map">
+      ${host === undefined ? html`<div class="ts-target-now">${summary}</div>` : html`
+        ${renderHomeMapPlace(host)}
+        ${this.onPhone ? html`<p class="hint keep">${WATCH_MAP_PAGE_WORDS.phoneNote}</p>` : nothing}
+        <div class="pe-map-sub">On the watch</div>
+        <p class="hint keep">${WATCH_MAP_PAGE_WORDS.watchNote}</p>
+        ${renderHomeMapLooks(host, { tapLights: false })}`}
+    </fieldset>` : html``);
   }
 
   /**
@@ -5690,6 +5825,12 @@ export class WaPageEditor extends LitElement {
     .pe-ow-l { font-size: 12.5px; color: var(--wa-ink); }
     .pe-ow-d { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
     .pe-ow-row > input { flex: none; }
+    /* A map page's Map card: the tile's floor and room, then its look keys
+       under a small "On the watch" label. */
+    .pe-map-card .pe-map-sub {
+      margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--wa-line);
+      font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
+    }
     .pe-chip {
       min-height: 28px; padding: 0 10px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
       background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12px; cursor: pointer;

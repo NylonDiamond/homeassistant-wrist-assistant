@@ -1811,17 +1811,49 @@ const HOME_MAP_PICTURE = { width: 96, height: 64 } as const;
  * where the choice differs from the home style.
  */
 function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
+  if (watchHomeMapFloorMenu(host.tile, host.homeMap) === undefined) return renderHomeMapPlace(host);
+  return html`${renderHomeMapPlace(host)}${renderHomeMapLooks(host)}`;
+}
+
+/**
+ * The Floor and Room of a Home map tile's Map card, or with no map the
+ * floor's name and the line that says where a map comes from. A map page's
+ * Map card (`page-editor.ts`) draws these alone at its top.
+ */
+export function renderHomeMapPlace(host: TileSettingsHost): TemplateResult {
   const menu = watchHomeMapFloorMenu(host.tile, host.homeMap);
   if (menu === undefined) {
     return html`<div class="ts-target-now">${watchHomeMapFloorSummary(host.tile, host.homeMap) || "Home map"}</div>
       <div class="hint keep ts-under">${WATCH_HOME_MAP_NO_MAP_TEXT}</div>`;
   }
-  const keyed = host.tile as WatchPageTile & Record<string, unknown>;
   const at = () => [host.pageId, host.tileId] as const;
   const pick = (floorId: string) => commit(host, "target", (d) => setWatchHomeMapFloor(d, ...at(), floorId));
+  // One room of the floor, or the whole floor (the key removed).
+  const rooms = watchHomeMapRoomMenu(host.tile, host.homeMap);
+  const room = rooms === undefined
+    ? nothing
+    : html`${menuField("Room", rooms, (roomId) =>
+        commit(host, "homeMapRoomId", (d) => setWatchHomeMapRoom(d, ...at(), roomId)))}
+      <div class="hint ts-under">${WATCH_HOME_MAP_ROOM_HINT}</div>`;
+  return html`${menuField("Floor", menu, pick)}
+    <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
+    ${room}`;
+}
+
+/**
+ * The rest of a Home map tile's Map card: whether it follows the home
+ * style, the Look, the Turn, Room names, Devices, Furniture, Light glow and,
+ * on the iPhone, Tap lights. A map page's Map card draws these under its
+ * "On the watch" label with `tapLights` false, since the iPhone draws that
+ * page as the live map and never the tile. Nothing while there is no map.
+ */
+export function renderHomeMapLooks(host: TileSettingsHost, opts: { tapLights?: boolean } = {}): TemplateResult | typeof nothing {
+  if (watchHomeMapFloorMenu(host.tile, host.homeMap) === undefined) return nothing;
+  const keyed = host.tile as WatchPageTile & Record<string, unknown>;
+  const at = () => [host.pageId, host.tileId] as const;
   const iphone = hostDevice(host) === "iphone";
   // Only the iPhone's tile takes a tap on a light; the watch's is too small.
-  const tapLights = iphone
+  const tapLights = iphone && opts.tapLights !== false
     ? html`${checkField("Tap lights", watchHomeMapTapsLights(keyed), (on) =>
         commit(host, "homeMapTapLights", (d) => setWatchHomeMapTapLights(d, ...at(), on)))}
       <div class="hint ts-under">${WATCH_HOME_MAP_TAP_LIGHTS_HINT}</div>`
@@ -1837,13 +1869,6 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
       ${follows ? nothing : linkButton(WATCH_HOME_MAP_USE_HOME_STYLE_TEXT, "Take this tile's own choices away, so it draws the home style",
         () => commit(host, "homeMapStyle", (d) => useWatchHomeMapHomeStyle(d, ...at())))}</div>
     <div class="hint ts-under">${WATCH_HOME_MAP_HOME_STYLE_HINT}</div>`;
-  // One room of the floor, or the whole floor (the key removed).
-  const rooms = watchHomeMapRoomMenu(host.tile, host.homeMap);
-  const room = rooms === undefined
-    ? nothing
-    : html`${menuField("Room", rooms, (roomId) =>
-        commit(host, "homeMapRoomId", (d) => setWatchHomeMapRoom(d, ...at(), roomId)))}
-      <div class="hint ts-under">${WATCH_HOME_MAP_ROOM_HINT}</div>`;
   // Each look drawn as the tile would draw it, on its own ground.
   const floor = watchHomeMapDrawnFloor(keyed, host.homeMap);
   const states = host.hass?.states as HomeMapStates | undefined;
@@ -1866,10 +1891,7 @@ function renderHomeMapFloor(host: TileSettingsHost): TemplateResult {
       }), options.turn)}
       <div class="hint ts-under">${WATCH_HOME_MAP_OPTION_HINTS.turn}</div>`
     : nothing;
-  return html`${menuField("Floor", menu, pick)}
-    <div class="hint ts-under">${WATCH_HOME_MAP_FLOOR_HINT}</div>
-    ${room}
-    ${homeStyle}
+  return html`${homeStyle}
     ${pictureChoice("Look", look, looks, (v) => commit(host, "homeMapLook", lookEdit(v)), {
       def: style.look, size: "map", trial: tileTrial(host, "Look", lookEdit),
     })}

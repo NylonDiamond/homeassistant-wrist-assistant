@@ -207,6 +207,9 @@ export const PAGE_WATCH_FOLD: FoldId = Object.freeze({ module: KEY, section: "wa
 export const PAGE_SWITCHER_FOLD: FoldId = Object.freeze({ module: KEY, section: "switcher" });
 /** The one editor's On each device card's fold (`library/on-each-device.ts`). */
 export const PAGE_DEVICES_FOLD: FoldId = Object.freeze({ module: KEY, section: "devices" });
+/** A map page's Map card's fold (`map-page.ts`): its tile's floor, room and
+ * look. */
+export const PAGE_MAP_FOLD: FoldId = Object.freeze({ module: KEY, section: "map" });
 
 /** The fold the inspector's Collapse all turns for the Look card. */
 export function pageLookFoldIds(): FoldId[] {
