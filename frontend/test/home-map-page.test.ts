@@ -531,6 +531,26 @@ describe("the Home map editor", () => {
     expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
   });
 
+  it("picks what a click on the 3D look found, and leaves a room's walls for a click elsewhere", async () => {
+    const { el, inside } = await page();
+    el.pick3d({ kind: "object", roomId: KITCHEN, object: 2 });
+    expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 2 });
+    el.pick3d({ kind: "pin", pinId: READING });
+    expect(inside.selection).toEqual({ kind: "pin", pinId: READING });
+    el.pick3d({ kind: "room", roomId: LIVING });
+    expect(inside.selection).toEqual({ kind: "room", roomId: LIVING });
+    el.pick3d(undefined);
+    expect(inside.selection).toBeUndefined();
+    // Editing the kitchen's walls: a click on the kitchen keeps them, a
+    // click on another room goes back to the floor with the kitchen picked.
+    el.editWalls(KITCHEN);
+    el.pick3d({ kind: "room", roomId: KITCHEN });
+    expect(inside.walls).toBe(KITCHEN);
+    el.pick3d({ kind: "room", roomId: LIVING });
+    expect(inside.walls).toBeUndefined();
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
+  });
+
   it("draws the pins itself, picks and drags one, saved once, and sets a light's glow by its ring's handle", async () => {
     const { el, inside, ha, press, text } = await page();
     const shown = text();

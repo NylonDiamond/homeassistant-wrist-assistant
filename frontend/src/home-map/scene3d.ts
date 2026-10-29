@@ -13,7 +13,8 @@
 // with no piece as the plain box it always was, a hidden thing nowhere; the
 // picked room's floor or the picked thing's box outlined in the editor's
 // blue; and each light on the floor as a real light at its pin, lit as Home
-// Assistant says it is. Drag to orbit, scroll or pinch to zoom.
+// Assistant says it is. Drag to orbit, scroll or pinch to zoom; a click
+// hands the page what it met (`onPick`), a thing, a light or a room.
 //
 // The plan's x stays x, the plan's y becomes z, and up is y; a thing's turn
 // is a turn about up by the same angle, a model's front its +z. Shown at
@@ -373,6 +374,19 @@ function tintKey(object: Pick<HomeMapObject, "fabric" | "wood">): string {
   return `${object.fabric?.toUpperCase() ?? ""}|${object.wood?.toUpperCase() ?? ""}`;
 }
 
+/** What a click on the 3D look found: a thing by its place in its room's
+ * list, a room (its floor or a wall that is not faded), or a light's pin. */
+export type HomeMap3DPick =
+  | { kind: "object"; roomId: string; object: number }
+  | { kind: "room"; roomId: string }
+  | { kind: "pin"; pinId: string };
+
+/** How far a press may move, in CSS pixels, and still be a click rather
+ * than a turn of the view. */
+const CLICK_SLOP = 5;
+/** A light's bulb is small; a click this near its middle still finds it. */
+const BULB_REACH = 0.15;
+
 interface Lamp {
   light: THREE.PointLight;
   bulb: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
@@ -404,6 +418,12 @@ export class HomeMapScene3D {
   private framedTurn = 0;
   private input?: HomeMapInputSeen;
   private disposed = false;
+  private press?: { id: number; x: number; y: number };
+  private readonly raycaster = new THREE.Raycaster();
+
+  /** A click (a press let go where it started) on the view: what is under
+   * it, or undefined for empty space. */
+  onPick?: (pick: HomeMap3DPick | undefined) => void;
 
   /** `base` is the furniture folder's address, ending in a slash. */
   constructor(private readonly base: string) {
@@ -439,7 +459,40 @@ export class HomeMapScene3D {
     this.controls.minDistance = 1.5;
     this.controls.maxDistance = 60;
     this.controls.addEventListener("change", () => this.wake());
-    this.canvas.addEventListener("pointerdown", () => this.wake(1500));
+    this.canvas.addEventListener("pointerdown", (e) => {
+      this.wake(1500);
+      this.press = e.isPrimary && e.button === 0 ? { id: e.pointerId, x: e.clientX, y: e.clientY } : undefined;
+    });
+    this.canvas.addEventListener("pointerup", (e) => {
+      const press = this.press;
+      this.press = undefined;
+      if (press === undefined || press.id !== e.pointerId || Math.hypot(e.clientX - press.x, e.clientY - press.y) > CLICK_SLOP) return;
+      this.onPick?.(this.pickAt(e.clientX, e.clientY));
+    });
+    this.canvas.addEventListener("pointercancel", () => { this.press = undefined; });
+  }
+
+  /** What is under a point of the page: the nearest thing, light or room
+   * the eye meets, looking through faded walls and window glass. */
+  pickAt(clientX: number, clientY: number): HomeMap3DPick | undefined {
+    const box = this.canvas.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return undefined;
+    const at = new THREE.Vector2(((clientX - box.left) / box.width) * 2 - 1, -((clientY - box.top) / box.height) * 2 + 1);
+    this.raycaster.setFromCamera(at, this.camera);
+    const targets: THREE.Object3D[] = [
+      ...[...this.rooms.values()].map((r) => r.group),
+      ...[...this.things.values()].map((t) => t.group),
+      ...[...this.lamps.values()].map((l) => l.bulb),
+    ];
+    for (const hit of this.raycaster.intersectObjects(targets, true)) {
+      const material = (hit.object as THREE.Mesh).material as THREE.Material | undefined;
+      if (material !== undefined && !Array.isArray(material) && material.transparent && material.opacity < 0.5) continue;
+      for (let o: THREE.Object3D | null = hit.object; o !== null; o = o.parent) {
+        const pick = o.userData.pick as HomeMap3DPick | undefined;
+        if (pick !== undefined) return pick;
+      }
+    }
+    return undefined;
   }
 
   /** Draw into `host`, filling it; the canvas moves there from wherever it
@@ -535,6 +588,7 @@ export class HomeMapScene3D {
         disposeTree(had.group);
       }
       const built = buildRoom(room);
+      built.group.userData.pick = { kind: "room", roomId: room.id } satisfies HomeMap3DPick;
       this.scene.add(built.group);
       this.rooms.set(room.id, { key, ...built });
       moved = true;
@@ -554,6 +608,7 @@ export class HomeMapScene3D {
         const id = `${room.id}|${index}|${piece?.id ?? `box:${object.kind}`}`;
         thingIds.add(id);
         moved = this.place(id, piece, object) || moved;
+        this.things.get(id)!.group.userData.pick = { kind: "object", roomId: room.id, object: index } satisfies HomeMap3DPick;
       });
     }
     for (const [id, thing] of this.things) {
@@ -637,6 +692,10 @@ export class HomeMapScene3D {
         light.shadow.radius = 4;
         light.shadow.camera.near = 0.05;
         const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffc98a, emissiveIntensity: 0 }));
+        // A larger ball round the bulb, never drawn, for clicks to find.
+        const reach = new THREE.Mesh(new THREE.SphereGeometry(BULB_REACH, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+        bulb.add(reach);
+        bulb.userData.pick = { kind: "pin", pinId: pin.id } satisfies HomeMap3DPick;
         lamp = { light, bulb, target: 0 };
         this.lamps.set(pin.id, lamp);
         this.scene.add(light, bulb);

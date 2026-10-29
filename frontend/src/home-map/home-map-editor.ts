@@ -112,7 +112,7 @@ import {
   sameHomeMapId,
 } from "./model.js";
 import { homeMapApi } from "./save.js";
-import type { HomeMap3DInput, HomeMapScene3D } from "./scene3d.js";
+import type { HomeMap3DInput, HomeMap3DPick, HomeMapScene3D } from "./scene3d.js";
 import { homeMapFurnitureBase, homeMapLoad3D } from "./scene3d-load.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
@@ -312,6 +312,7 @@ export class WaHomeMapEditor extends LitElement {
         if (!this.isConnected) return;
         try {
           this.scene3d ??= new m.HomeMapScene3D(base);
+          this.scene3d.onPick = (pick) => this.pick3d(pick);
         } catch {
           // No WebGL here.
           this.failed3d = true;
@@ -324,6 +325,23 @@ export class WaHomeMapEditor extends LitElement {
         this.tick++;
       },
     );
+  }
+
+  /** A click on the 3D look picks what it found, as a click on the plan
+   * does: a thing, a light's pin or a room, empty space picking nothing.
+   * While a room's walls are edited, a click anywhere but that room goes
+   * back to the floor, the room picked. */
+  pick3d(pick: HomeMap3DPick | undefined): void {
+    if (this.dialog !== undefined) return;
+    this.floorMenu = false;
+    if (this.walls !== undefined) {
+      if (pick === undefined || pick.kind === "pin" || !sameHomeMapId(pick.roomId, this.walls)) this.editWalls(undefined);
+      return;
+    }
+    this.select(pick === undefined ? undefined
+      : pick.kind === "pin" ? { kind: "pin", pinId: pick.pinId }
+      : pick.kind === "object" ? { kind: "object", roomId: pick.roomId, object: pick.object }
+      : { kind: "room", roomId: pick.roomId });
   }
 
   private drop3d(): void {
@@ -1251,7 +1269,7 @@ export class WaHomeMapEditor extends LitElement {
    * (`sync3d`), with a word while it loads or when it cannot. */
   private render3d(ctx: HomeMapEditorContext): TemplateResult {
     const words = this.failed3d ? "The 3D view needs WebGL, which this browser has turned off." : this.scene3d === undefined ? "Loading the 3D view…" : undefined;
-    return html`<div class="hme-3d-host" role="img" aria-label=${`3D model of ${homeMapFloorName(ctx.floor)}. Drag to turn it, scroll to zoom.`}></div>
+    return html`<div class="hme-3d-host" role="img" aria-label=${`3D model of ${homeMapFloorName(ctx.floor)}. Drag to turn it, scroll to zoom, click a thing to pick it.`}></div>
       ${words === undefined ? nothing : html`<div class="hme-3d-note">${words}</div>`}`;
   }
 
