@@ -27,6 +27,7 @@ import {
   type WatchPagesDocument,
   WATCH_GRID_COLUMNS,
   isJsonObject,
+  isMapWatchPage,
   isSmartWatchPage,
   isSystemWatchPage,
   tileEntityId,
@@ -129,10 +130,12 @@ function listedSlot(document: WatchPagesDocument, pageId: string): PageSlot | un
   return slot === undefined || isSystemWatchPage(slot.page) ? undefined : slot;
 }
 
-/** A page whose tiles may be edited: listed, and not a smart page. */
+/** A page whose tiles may be edited: listed, and not a smart page or a map
+ * page (whose one Home map tile is changed only through the page's Map
+ * card, and never moved, resized or removed). */
 function tileSlot(document: WatchPagesDocument, pageId: string): PageSlot | undefined {
   const slot = listedSlot(document, pageId);
-  return slot === undefined || isSmartWatchPage(slot.page) ? undefined : slot;
+  return slot === undefined || isSmartWatchPage(slot.page) || isMapWatchPage(slot.page) ? undefined : slot;
 }
 
 /** The document with one page replaced, or the document itself when the
@@ -1625,7 +1628,9 @@ export function giveWatchTileId(
   tile: WatchPageTile,
   options?: WatchEditOptions,
 ): { document: WatchPagesDocument; id?: string } {
-  const slot = tileSlot(document, pageId);
+  // A map page's tile may get one too, so its Map card can name it.
+  const listed = listedSlot(document, pageId);
+  const slot = listed === undefined || isSmartWatchPage(listed.page) ? undefined : listed;
   const items = slot?.page.items;
   if (slot === undefined || !Array.isArray(items) || idKey(tile.id) !== undefined) return { document };
   const index = items.indexOf(tile);

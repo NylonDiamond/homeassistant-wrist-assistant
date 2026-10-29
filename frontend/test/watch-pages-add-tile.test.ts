@@ -295,6 +295,7 @@ describe("words", () => {
     const all: Record<WatchAddRefusal, string> = {
       onPage: "Kitchen is already on this page.",
       smartPage: "This page fills itself with tiles, so none can be added by hand.",
+      mapPage: "This is a map page: it holds its Home map tile alone, so no tiles can be added. Turn off Map page in its settings to add some.",
       systemPage: "This page belongs to the app, so no tiles can be added to it.",
       noPage: "This page is gone. It may have been deleted somewhere else.",
       badItems: "The tiles on this page could not be read, so adding one would lose them.",

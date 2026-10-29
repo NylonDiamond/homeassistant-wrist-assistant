@@ -751,6 +751,15 @@
           "required": false,
           "default": "house",
           "fresh": true
+        },
+        "mapPage": {
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "writeWhen": {
+            "key": "mapPage",
+            "not": false
+          }
         }
       }
     },
@@ -2406,7 +2415,8 @@
       "homeMapNames": "A Home map tile's room names, on both devices: false draws none. Absent or true: each room's name on a small dark pill, where the pill fits inside the room and the tile is taller than 90 points. Only false is stored.",
       "homeMapDevices": "A Home map tile's pins, which of the map's devices it draws, on both devices: \"all\" (every pin as a small smoked glass pin with its icon, a light that is on amber, and its reading under it when it has one, a sensor's value with its unit or a thermostat's room temperature) or \"none\" (no pins and no dots). Absent, \"lights\" or a value an app does not know: lights, each light that is on as a glowing dot, and the lights that are off too with Tap lights on the iPhone or in the dots look. Lights is never stored.",
       "homeMapFurniture": "A Home map tile's furniture, on both devices: false draws none. Absent or true: the scan's furniture, from above in the plan look and standing on the floor in the model looks. Only false is stored.",
-      "homeMapGlow": "A Home map tile's light, on both devices: false draws no pools of light on the floor, no warm tint over a lit room and no wash up its walls, leaving only the lights themselves. Absent or true: all of them. Only false is stored."
+      "homeMapGlow": "A Home map tile's light, on both devices: false draws no pools of light on the floor, no warm tint over a lit room and no wash up its walls, leaving only the lights themselves. Absent or true: all of them. Only false is stored.",
+      "mapPage": "A page key. true makes a map page (docs/home_map_plan_2026-10.md in the app repo, \"Map page\"): the page holds one Home map tile and nothing else, and the iPhone draws the whole page as that tile's floor (or room) as a live 3D map, ignoring the tile's look keys. It is a map page only while it has a Home map tile (the first counts); without one it is a normal page. The watch, and an app that does not know the key, draw the page's grid with that one tile. Absent or false: a normal page. Only true is stored."
     }
   }
 }

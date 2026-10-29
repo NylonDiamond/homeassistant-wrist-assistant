@@ -144,6 +144,25 @@ export function isSmartWatchPage(page: WatchPage): boolean {
   return isJsonObject(page.dynamicConfig);
 }
 
+/** The page key that makes a map page (`page-keys.json`), written only
+ * while true. */
+export const WATCH_MAP_PAGE_KEY = "mapPage";
+
+/** A page's first Home map tile (`home_map.<floor id>`), the one a map page
+ * draws, or undefined when it has none. */
+export function watchMapPageTile(page: WatchPage): WatchPageTile | undefined {
+  return watchPageTiles(page).find((t) => tileKind(tileEntityId(t)) === "home_map");
+}
+
+/** A map page (app repo docs/home_map_plan_2026-10.md, "Map page"): `mapPage`
+ * is true and the page has a Home map tile. The iPhone draws the whole page
+ * as that tile's live map; the watch, and an app that does not know the key,
+ * draw the tile in the page's grid. A page with the key and no Home map tile
+ * is a normal page. */
+export function isMapWatchPage(page: WatchPage): boolean {
+  return page[WATCH_MAP_PAGE_KEY] === true && watchMapPageTile(page) !== undefined;
+}
+
 // ── tile kinds ─────────────────────────────────────────────────────────────
 
 export function tileEntityId(tile: WatchPageTile): string {

@@ -35,6 +35,7 @@ import {
   type WatchPagesDocument,
   isJsonObject,
   isHiddenWatchPage,
+  isMapWatchPage,
   isSmartWatchPage,
   isSystemWatchPage,
   tileEntityId,
@@ -1055,11 +1056,12 @@ export function newWatchTile(add: WatchTileAdd, page: WatchPage | undefined, opt
  * - `noPage`: no page has this id.
  * - `systemPage`: the page is a system page.
  * - `smartPage`: the page is a smart page, which the watch fills itself.
+ * - `mapPage`: the page is a map page, which holds its Home map tile alone.
  * - `badItems`: the page's `items` is there but is not a list, so an add
  *   would lose it.
  * - `onPage`: the page already holds a tile for this entity.
  */
-export type WatchAddRefusal = "noPage" | "systemPage" | "smartPage" | "badItems" | "onPage";
+export type WatchAddRefusal = "noPage" | "systemPage" | "smartPage" | "mapPage" | "badItems" | "onPage";
 
 /** Kinds that may sit on a page more than once (the phone checks nothing
  * for these). */
@@ -1125,8 +1127,8 @@ export function watchAddEntityId(add: WatchTileAdd): string {
 
 /**
  * Whether a tile with this entity id can be added to the page, and if not
- * why (`WatchAddRefusal`): the page must exist, be no system page and no
- * smart page, and, for an entity tile, hold no tile with the same `entityId`
+ * why (`WatchAddRefusal`): the page must exist, be no system page, no
+ * smart page and no map page, and, for an entity tile, hold no tile with the same `entityId`
  * (compared exactly, as on the phone). Spacers, headers, page links and the
  * app's assist, speak, template, music hub, point control, HTTP action and
  * status page tiles may repeat. Undefined means it can.
@@ -1137,6 +1139,7 @@ export function watchAddRefusal(document: WatchPagesDocument, pageId: string, en
   const page = (document.pages as unknown[])[index] as WatchPage;
   if (isSystemWatchPage(page)) return "systemPage";
   if (isSmartWatchPage(page)) return "smartPage";
+  if (isMapWatchPage(page)) return "mapPage";
   if (page.items !== undefined && !Array.isArray(page.items)) return "badItems";
   if (!REPEATABLE_KINDS.has(tileKind(entityId)) && watchPageTiles(page).some((t) => t.entityId === entityId)) {
     return "onPage";

@@ -589,11 +589,13 @@ export function smartConvertTileCount(document: WatchPagesDocument, pageId: stri
 }
 
 /** Makes a page smart: the eight keys with their defaults, `items: []` and
- * `groups: []`; every other page key stays. Refused for a smart page. */
+ * `groups: []`; every other page key stays but a map page's `mapPage`.
+ * Refused for a smart page. */
 export function convertToSmartPage(document: WatchPagesDocument, pageId: string): WatchPagesDocument {
   const page = listedPage(document, pageId);
   if (page === undefined || isJsonObject(page.dynamicConfig)) return document;
-  let next: JsonObject = without(page, "dynamicConfig");
+  // A map page's key goes with its tile: a smart page is never a map page.
+  let next: JsonObject = without(without(page, "dynamicConfig"), "mapPage");
   next = withField(next, "dynamicConfig", structuredClone(WATCH_SMART_PAGE_DEFAULTS));
   next = withValue(next, "items", []);
   next = withValue(next, "groups", []);

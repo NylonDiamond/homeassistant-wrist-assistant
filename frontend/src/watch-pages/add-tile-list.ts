@@ -465,6 +465,8 @@ export function watchAddRefusalText(refusal: WatchAddRefusal, name?: string): st
       return name ? `${name} is already on this page.` : "That entity is already on this page.";
     case "smartPage":
       return "This page fills itself with tiles, so none can be added by hand.";
+    case "mapPage":
+      return "This is a map page: it holds its Home map tile alone, so no tiles can be added. Turn off Map page in its settings to add some.";
     case "systemPage":
       return "This page belongs to the app, so no tiles can be added to it.";
     case "noPage":
