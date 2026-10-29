@@ -7,7 +7,8 @@
 // (`icon-photo-tidy.ts`). A PNG's bytes are read once as they come in, for
 // its size, the On photo the iPhone may have put in it and the look it may
 // have saved in it (Light Look, `one-look/glow.ts`). An On photo gets its
-// own URL then, once its size is checked; a photo with a look and no On
+// own URL then, once its size is checked, and its tint mask from the two
+// photos (`one-look/tint.ts`), once; a photo with a look and no On
 // photo has its three masks made then, once, as images a picture can mask
 // with, never while drawing.
 //
@@ -31,12 +32,14 @@ import { iconPhotoCrop, stepDownIconPhoto, tidyIconPixels } from "./icon-photo-t
 import {
   type IconPngFacts,
   type OneLookLightMask,
+  type OneLookLightPixels,
   type OneLookLightRecipe,
   type OneLookPhotoLight,
   oneLookLightMasks,
   oneLookMaskPixels,
   readIconPng,
 } from "./one-look/glow.js";
+import { oneLookOnTintMask } from "./one-look/tint.js";
 import { PAGE_PHOTO_UNREADABLE_TEXT, pagePhotoKind, pagePhotoRefusalText, samePagePhotoId, stepDownPagePhoto } from "./page-photo.js";
 
 /** Where a photo's bytes are: on the way, here, not in the store, or a read
@@ -54,6 +57,9 @@ interface Held {
   /** The On photo's URL, once it is made and its size checked. It lives
    * as long as `url` does. */
   on?: string;
+  /** The On photo's tint mask (`one-look/tint.ts`) as an image URL, made
+   * with the On photo's URL. */
+  onMask?: string;
 }
 
 /** Makes a photo's look from its PNG bytes: its masks as image URLs. */
@@ -63,11 +69,16 @@ export type PhotoLightMaker = (bytes: Uint8Array, recipe: OneLookLightRecipe) =>
  * to, or undefined when it does not decode. */
 export type PhotoOnMaker = (bytes: Uint8Array) => Promise<{ url: string; width: number; height: number } | undefined>;
 
+/** Makes an On photo's tint mask as an image URL from the Off photo's and
+ * the On photo's PNG bytes, or undefined where it cannot. */
+export type PhotoOnMaskMaker = (off: Uint8Array, on: Uint8Array) => Promise<string | undefined>;
+
 /** The makers a photo's bytes go through as they come in, and the way back
  * from a URL made for nothing. */
 interface PhotoMakers {
   light: PhotoLightMaker;
   on: PhotoOnMaker;
+  onMask: PhotoOnMaskMaker;
   revoke: (url: string) => void;
 }
 
@@ -94,27 +105,13 @@ function maskUrl(mask: OneLookLightMask): Promise<string | undefined> {
  */
 export async function makePhotoLight(bytes: Uint8Array, recipe: OneLookLightRecipe): Promise<OneLookPhotoLight | undefined> {
   if (typeof createImageBitmap !== "function" || typeof document === "undefined" || typeof URL.createObjectURL !== "function") return undefined;
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
-  } catch {
-    return undefined;
-  }
-  try {
-    const { width, height } = bitmap;
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (context === null || width === 0 || height === 0) return undefined;
-    context.drawImage(bitmap, 0, 0);
-    const masks = oneLookLightMasks({ width, height, data: context.getImageData(0, 0, width, height).data }, recipe.dir);
-    const [emit, aura, beam] = await Promise.all([maskUrl(masks.emit), maskUrl(masks.aura), masks.beam === undefined ? undefined : maskUrl(masks.beam)]);
-    if (emit === undefined || aura === undefined) return undefined;
-    return { recipe, width, height, pad: masks.pad, emit, aura, ...(beam === undefined ? {} : { beam }) };
-  } finally {
-    bitmap.close();
-  }
+  const pixels = await straightPixels(bytes);
+  if (pixels === undefined) return undefined;
+  const { width, height } = pixels;
+  const masks = oneLookLightMasks(pixels, recipe.dir);
+  const [emit, aura, beam] = await Promise.all([maskUrl(masks.emit), maskUrl(masks.aura), masks.beam === undefined ? undefined : maskUrl(masks.beam)]);
+  if (emit === undefined || aura === undefined) return undefined;
+  return { recipe, width, height, pad: masks.pad, emit, aura, ...(beam === undefined ? {} : { beam }) };
 }
 
 /**
@@ -134,6 +131,44 @@ export async function makePhotoOn(bytes: Uint8Array): Promise<{ url: string; wid
   const { width, height } = bitmap;
   bitmap.close();
   return { url: URL.createObjectURL(blob), width, height };
+}
+
+/** A PNG decoded to its own straight pixels (no premultiplying, no colour
+ * conversion), or undefined where the browser cannot or it does not
+ * decode. */
+async function straightPixels(bytes: Uint8Array): Promise<OneLookLightPixels | undefined> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+  } catch {
+    return undefined;
+  }
+  try {
+    const { width, height } = bitmap;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (context === null || width === 0 || height === 0) return undefined;
+    context.drawImage(bitmap, 0, 0);
+    return { width, height, data: context.getImageData(0, 0, width, height).data };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * An On photo's tint mask as the browser makes it: both PNGs decoded to
+ * their straight pixels, the glow mask `W` clipped to the On photo's alpha
+ * (`oneLookOnTintMask`), written as a PNG blob URL. Undefined where the
+ * browser cannot (no canvas), either does not decode, or their sizes differ.
+ */
+export async function makePhotoOnMask(off: Uint8Array, on: Uint8Array): Promise<string | undefined> {
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined" || typeof URL.createObjectURL !== "function") return undefined;
+  const [offPixels, onPixels] = await Promise.all([straightPixels(off), straightPixels(on)]);
+  if (offPixels === undefined || onPixels === undefined) return undefined;
+  const mask = oneLookOnTintMask(offPixels, onPixels);
+  return mask === undefined ? undefined : maskUrl(mask);
 }
 
 /** `URL.revokeObjectURL` where there is one. */
@@ -189,9 +224,16 @@ function takeBytes(entry: Held, url: string, base64: string, contentType: string
   entry.png = png;
   const onUrl = on === undefined ? Promise.resolve(undefined) : onUrlOf(on, png.width, png.height, make);
   return onUrl.then((onAt) => {
-    if (onAt !== undefined) {
+    if (onAt !== undefined && on !== undefined) {
       entry.on = onAt;
-      return;
+      // The tint mask, made once with the On photo's URL; none where it
+      // cannot be made (the On photo then draws untinted).
+      return make.onMask(bytes, on).then(
+        (mask) => {
+          if (mask !== undefined) entry.onMask = mask;
+        },
+        () => undefined,
+      );
     }
     const recipe = png.recipe;
     if (recipe === undefined) return;
@@ -377,6 +419,9 @@ export interface PagePhotoStoreOptions {
   /** An On photo's URL and decoded size from its PNG bytes; `makePhotoOn`
    * by default. */
   makeOn?: PhotoOnMaker;
+  /** An On photo's tint mask URL from the Off and On PNG bytes;
+   * `makePhotoOnMask` by default. */
+  makeOnMask?: PhotoOnMaskMaker;
   /** Lets go of a URL `makeOn` made; `URL.revokeObjectURL` by default. */
   revokeUrl?: (url: string) => void;
 }
@@ -420,7 +465,7 @@ export class PagePhotoStore {
     this.makeUrl = options.makeUrl ?? pagePhotoUrl;
     this.encodeFile = options.encodeFile ?? encodePagePhotoFile;
     this.encodeIcon = options.encodeIcon ?? encodeIconPhotoFile;
-    this.make = { light: options.makeLight ?? makePhotoLight, on: options.makeOn ?? makePhotoOn, revoke: options.revokeUrl ?? revokeUrl };
+    this.make = { light: options.makeLight ?? makePhotoLight, on: options.makeOn ?? makePhotoOn, onMask: options.makeOnMask ?? makePhotoOnMask, revoke: options.revokeUrl ?? revokeUrl };
   }
 
   /** The library's photos of one kind, in the list's order (newest first). A
@@ -451,6 +496,13 @@ export class PagePhotoStore {
    * with none. */
   onUrl(id: string): string | undefined {
     return held.get(id.toUpperCase())?.on;
+  }
+
+  /** The URL of an On photo's tint mask (`one-look/tint.ts`), made with its
+   * On photo, without asking for the bytes; undefined until then, for a
+   * photo with no On photo, and where it could not be made. */
+  onMask(id: string): string | undefined {
+    return held.get(id.toUpperCase())?.onMask;
   }
 
   /** Read the list again. A photo that was missing or failed is asked for

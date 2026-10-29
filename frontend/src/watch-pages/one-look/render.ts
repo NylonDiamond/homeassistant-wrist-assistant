@@ -95,6 +95,7 @@ import {
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
 import { type OneLookArranged, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
 import { type OneLookPhotoLight, oneLookGlowColour, oneLookLightPlacement } from "./glow.js";
+import { type OneLookTint, oneLookTintIsWhite, oneLookTintOf, oneLookTintRGB8 } from "./tint.js";
 import { type OneLookTextDesign, type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf, measureDesign } from "./text.js";
 
 /** Which of a tile's own parts are left undrawn: the glyph (its icon or a
@@ -185,6 +186,10 @@ export interface OneLookPreviewModel {
    * where its listed parts are drawn, at what size, and which are hidden.
    * Undefined for Default, and in every other layout, which ignores it. */
   arrange?: OneLookArranged;
+  /** A light's tint from its live state (`tint.ts`): the colour its On
+   * photo and its Clear look's glow take, and their level. Only for a
+   * tile of the `light` domain. */
+  tint?: OneLookTint;
 }
 
 /** A tile's icon photo as One Look draws it. */
@@ -198,6 +203,9 @@ export interface OneLookCutout {
   /** The URL of the On photo the photo carries (the same lamp, its light
    * on, at the photo's size), drawn in its place while the tile is lit. */
   on?: string;
+  /** The URL of the On photo's tint mask (`tint.ts`, `W` clipped to the On
+   * photo's alpha), which a light's On photo is tinted through. */
+  onMask?: string;
   /** The tile asks for the photo's Clear look (`iconPhotoLook` "clear"). */
   clear?: true;
 }
@@ -207,19 +215,21 @@ export interface OneLookCutout {
  * in yet (the tile draws its icon meanwhile, as the devices do). Its On
  * photo and its look come with it once they are made; the photo's size
  * then comes from the masks when the list has none. */
-export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow" | "photoOn">): OneLookCutout | undefined {
+export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "photo" | "photoSize" | "photoGlow" | "photoOn" | "photoOnMask">): OneLookCutout | undefined {
   const id = tile.iconPhotoId;
   if (typeof id !== "string" || id.trim() === "" || input.photo === undefined) return undefined;
   const url = input.photo(id);
   if (url === undefined || url === "") return undefined;
   const light = input.photoGlow?.(id);
   const on = input.photoOn?.(id);
+  const onMask = on === undefined || on === "" ? undefined : input.photoOnMask?.(id);
   const size = input.photoSize?.(id) ?? light;
   return {
     url,
     ...(size !== undefined && size.width > 0 && size.height > 0 ? { aspect: size.width / size.height } : {}),
     ...(light === undefined ? {} : { light }),
     ...(on === undefined || on === "" ? {} : { on }),
+    ...(onMask === undefined || onMask === "" ? {} : { onMask }),
     ...(tile.iconPhotoLook === "clear" ? { clear: true as const } : {}),
   };
 }
@@ -265,17 +275,21 @@ function fittedPhoto(box: OneLookRect, aspect: number | undefined): OneLookRect 
 /** The Clear look's numbers, the apps' `OneLookPhotoClear`: the white wash
  * and hairline in place of the fill; the photo box's side as a share of the
  * tile's height, never over a share of its width, its top a share of the
- * height down; the glow behind a lit photo, its alpha at the box's centre
- * and the share of the tile's width where it is gone; the state's size
- * against the name's; how far the name and the state shrink before they
- * truncate; and the state's grey while not lit. */
+ * height down; the glow behind a lit photo (photo tiles plan, "On photo
+ * tint", screen blended), its alpha at the box's centre, its alpha at a
+ * stop part way out (a share of its radius), and its radius, where it is
+ * gone, as a share of the tile's width; the state's size against the
+ * name's; how far the name and the state shrink before they truncate; and
+ * the state's grey while not lit. */
 export const ONE_LOOK_CLEAR = Object.freeze({
   washOpacity: 0.025,
   borderOpacity: 0.06,
   boxHeightShare: 0.62,
   boxWidthCap: 0.8,
   topShare: 0.05,
-  glowOpacity: 0.3,
+  glowCentreOpacity: 0.42,
+  glowMidOpacity: 0.18,
+  glowMidStop: 0.45,
   glowRadiusShare: 0.7,
   stateShare: 0.82,
   textMinimumScale: 0.7,
@@ -297,8 +311,25 @@ export function oneLookClearDimmed(active: boolean, aod: boolean): boolean {
 
 /** The Clear look's lit colour: the tile's (its state's colour first, as
  * the palette resolves it), else One Look's amber. */
-export function oneLookClearColour(palette: OneLookPalette): readonly [number, number, number] {
+export function oneLookClearColour(palette: Pick<OneLookPalette, "hue">): readonly [number, number, number] {
   return palette.hue ?? ONE_LOOK_AMBER;
+}
+
+/** The colour of the Clear look's glow: a light's tint colour when the
+ * light's colour is known (`tint.ts`), else the Clear look's lit colour. */
+export function oneLookClearGlowColour(palette: Pick<OneLookPalette, "hue">, tint: OneLookTint | undefined): readonly [number, number, number] {
+  return tint?.known === true ? oneLookTintRGB8(tint.colour) : oneLookClearColour(palette);
+}
+
+/** The Clear look's glow behind a lit photo in a tile of `size` around the
+ * photo box `box`, as CSS: a radial of `colour` from 0.42 alpha at the
+ * box's centre through 0.18 at 45% of the radius to 0 at the radius, 70% of
+ * the tile's width, every alpha scaled by `level` (a light's `k`, else 1),
+ * screen blended so it reads as light, not paint. */
+export function oneLookClearGlowCss(size: { width: number }, box: OneLookRect, colour: readonly [number, number, number], level: number, s: number): string {
+  const c = ONE_LOOK_CLEAR;
+  const k = Math.min(1, Math.max(0, level));
+  return `background:radial-gradient(circle ${r2(size.width * c.glowRadiusShare * s)}px at ${r2((box.x + box.width / 2) * s)}px ${r2((box.y + box.height / 2) * s)}px, ${rgba(colour, c.glowCentreOpacity * k)} 0%, ${rgba(colour, c.glowMidOpacity * k)} ${c.glowMidStop * 100}%, ${rgba(colour, 0)} 100%);mix-blend-mode:screen`;
 }
 
 /** Whether a tile draws its photo in the Clear look: it asks for it
@@ -663,6 +694,8 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   });
   const barValue = oneLookBarValue(ks);
   const arrange = oneLookArrangeLayout(layout, normalizeTileArrange(tile.arrange));
+  // Only a light is tinted, from its live colour and brightness.
+  const tint = kind === "light" && !ks.placeholder ? oneLookTintOf(entity?.attributes) : undefined;
   return {
     device, pageLook, kind: ks, icon, baseIcon: base,
     ...(photo === undefined ? {} : { photo }),
@@ -673,6 +706,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     decorated: !ks.placeholder && picture !== "camera",
     colSpan, rowSpan, layout, palette,
     ...(arrange === undefined ? {} : { arrange }),
+    ...(tint === undefined ? {} : { tint }),
   };
 }
 
@@ -882,6 +916,34 @@ function lightSpan(kind: "aura" | "beam" | "emit", rect: OneLookRect, url: strin
 }
 
 /**
+ * A light's On photo, tinted (photo tiles plan, "On photo tint"), in the
+ * photo rect whose CSS is `place` (position, size, corners): the Off photo
+ * with no filter, the On photo over it at opacity `k`, then the tint colour
+ * `C` multiply blended through the tint mask at opacity `k`. `shadow` (a
+ * CSS filter) goes on the lowest photo drawn only, so it is cast once.
+ *
+ * Two layers that would change nothing are left out: at full brightness
+ * (`k` 1) the On photo covers the Off one (and, drawn over it, would
+ * thicken its soft edges), and a white `C` multiplies by 1. So a white
+ * light at full brightness draws exactly as its On photo did before the
+ * tint. With no mask yet, the tint layer waits for it.
+ */
+export function oneLookTintedOn(cutout: Pick<OneLookCutout, "url" | "on" | "onMask">, tint: OneLookTint, place: string, clear: boolean, shadow: string): TemplateResult {
+  const k = Math.min(1, Math.max(0, tint.level));
+  const full = k >= 1;
+  const shadowCss = shadow === "" ? "" : `;filter:${shadow}`;
+  const img = (src: string, style: string) => clear
+    ? html`<img class="ol-cutout clear" alt="" src=${src} style=${style} />`
+    : html`<img class="ol-cutout" alt="" src=${src} style=${style} />`;
+  const off = full ? nothing : img(cutout.url, `${place}${shadowCss}`);
+  const on = img(cutout.on ?? cutout.url, `${place}${full ? shadowCss : `;opacity:${a4(k)}`}`);
+  if (cutout.onMask === undefined || oneLookTintIsWhite(tint.colour)) return html`${off}${on}`;
+  const mask = `url("${cutout.onMask.replace(/["\\]/g, (ch) => `\\${ch}`)}")`;
+  const tinted = html`<span class="ol-tint" style=${`${place};background:${rgba(oneLookTintRGB8(tint.colour), 1)};opacity:${a4(k)};-webkit-mask-image:${mask};mask-image:${mask}`}></span>`;
+  return html`${off}${on}${tinted}`;
+}
+
+/**
  * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
  * no disc fill, the photo fitted in a box 1.35 times the disc on its centre,
  * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
@@ -889,7 +951,8 @@ function lightSpan(kind: "aura" | "beam" | "emit", rect: OneLookRect, url: strin
  * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
  * 62% when `oneLookCutoutDimmed` says so. Lit and bright
  * (`oneLookCutoutGlows`), a photo that carries an On photo has it drawn in
- * its place, the halo as for any photo; else a photo with a look (Light
+ * its place, the halo as for any photo (a light's tinted to its colour and
+ * brightness, `oneLookTintedOn`); else a photo with a look (Light
  * Look) has the aura and the beam behind it in the pearl halo's place and
  * the emission over it, in the light's colour (`glow.ts`). The real photo
  * wins over the recipe. The tile keeps its lit fill either way.
@@ -924,7 +987,10 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
       back = html`<span class="ol-halo" style=${`${rectCss({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, s)};background:radial-gradient(circle closest-side, rgba(${r}, ${g}, ${b}, ${Math.round(halo.opacity * 10000) / 10000}) 0%, rgba(${r}, ${g}, ${b}, 0) 100%)`}></span>`;
     }
   }
-  return html`${back}<img class="ol-cutout" alt="" src=${src} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
+  const place = `${rectCss(photo, s)};border-radius:${r2(radius * s)}px`;
+  // A light's On photo follows the light's colour and brightness.
+  if (glows && cutout.on !== undefined && model.tint !== undefined) return html`${back}${oneLookTintedOn(cutout, model.tint, place, false, "")}`;
+  return html`${back}<img class="ol-cutout" alt="" src=${src} style=${`${place}${filter}`} />`;
 }
 
 /** A state line as plain words, as the apps speak it: a number with its
@@ -948,12 +1014,14 @@ function clearFitSize(measurer: TextMeasurer, text: string, size: number, weight
  * The photo's Clear look (photo tiles plan, "Clear look"; the apps'
  * `OneLookPhotoClear`), in place of the disc, the bar, the accessory, the
  * text and the big value: the photo fitted in its box near the top (no
- * rounding), with a soft glow of the tile's colour behind it while lit, and
- * the name and state centred under it in the room left, each on one line,
- * shrinking to 70% before truncating. Lit (its thing on, not wrist down):
- * the state in the tile's colour, the On photo in the photo's place, else
- * the Light Look's layers as on any tile. Not lit: the Off filter and the
- * grey state.
+ * rounding), with a soft screen blended glow behind it while lit (a light's
+ * tint colour when its colour is known, else the tile's, scaled by a
+ * light's level; `oneLookClearGlowCss`), and the name and state centred
+ * under it in the room left, each on one line, shrinking to 70% before
+ * truncating. Lit (its thing on, not wrist down): the state in the tile's
+ * colour, the On photo in the photo's place (a light's tinted,
+ * `oneLookTintedOn`), else the Light Look's layers as on any tile. Not lit:
+ * the Off filter and the grey state.
  */
 function clearLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, cutout: OneLookCutout): TemplateResult {
   const { palette, device, layout, kind, style } = model;
@@ -967,13 +1035,18 @@ function clearLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, cutout:
   let picture: TemplateResult | typeof nothing = nothing;
   if (hidden?.glyph !== true) {
     const photo = fittedPhoto(box, cutout.aspect);
+    const tint = model.tint;
     const glow = lit
-      ? html`<span class="ol-layer ol-clear-glow" style=${`background:radial-gradient(circle ${r2(size.width * ONE_LOOK_CLEAR.glowRadiusShare * s)}px at ${r2((box.x + box.width / 2) * s)}px ${r2((box.y + box.height / 2) * s)}px, ${rgba(colour, ONE_LOOK_CLEAR.glowOpacity)} 0%, ${rgba(colour, 0)} 100%)`}></span>`
+      ? html`<span class="ol-layer ol-clear-glow" style=${oneLookClearGlowCss(size, box, oneLookClearGlowColour(palette, tint), tint?.level ?? 1, s)}></span>`
       : nothing;
-    const filters = [dimmed ? ONE_LOOK_CUTOUT_OFF_FILTER : "", style.glyphShadow ? `drop-shadow(0 ${r2(s)}px ${r2(4 * s)}px rgba(0, 0, 0, 0.5))` : ""].filter((v) => v !== "");
+    const shadow = style.glyphShadow ? `drop-shadow(0 ${r2(s)}px ${r2(4 * s)}px rgba(0, 0, 0, 0.5))` : "";
+    const filters = [dimmed ? ONE_LOOK_CUTOUT_OFF_FILTER : "", shadow].filter((v) => v !== "");
     const filter = filters.length === 0 ? "" : `;filter:${filters.join(" ")}`;
     const look = cutout.light;
-    if (look !== undefined && lit && cutout.on === undefined) {
+    if (lit && cutout.on !== undefined && tint !== undefined) {
+      // A light's On photo follows the light's colour and brightness.
+      picture = html`${glow}${oneLookTintedOn(cutout, tint, rectCss(photo, s), true, shadow)}`;
+    } else if (look !== undefined && lit && cutout.on === undefined) {
       const at = oneLookLightPlacement(photo, look, palette.brightness, oneLookGlowColour(palette.hue));
       const c = at.colour;
       picture = html`${glow}${lightSpan("aura", at.aura.rect, look.aura, c, at.aura.opacity, s)}${at.beam === undefined || look.beam === undefined ? nothing : lightSpan("beam", at.beam.rect, look.beam, c, at.beam.opacity, s)}<img class="ol-cutout clear" alt="" src=${cutout.url} style=${`${rectCss(photo, s)}${filter}`} />${lightSpan("emit", at.emit.rect, look.emit, c, at.emit.opacity, s)}`;

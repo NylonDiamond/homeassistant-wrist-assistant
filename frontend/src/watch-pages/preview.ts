@@ -176,6 +176,10 @@ export interface WatchPagePreviewInput {
    * plan, "On photo") once its bytes are in and its size checked, else
    * undefined; without it the photo is drawn as it is when lit. */
   photoOn?: (id: string) => string | undefined;
+  /** The URL of an On photo's tint mask (`one-look/tint.ts`) once it is
+   * made with the On photo, else undefined; without it a light's On photo
+   * is drawn untinted. */
+  photoOnMask?: (id: string) => string | undefined;
   /** The page is an iPhone's: `screen` is its pages area, and the picture
    * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
    * look the layout carries (`phonePagesLayout` with `look`). */
@@ -4284,6 +4288,15 @@ export const watchPagePreviewStyles = css`
   .ol-light {
     position: absolute; display: block; pointer-events: none; mix-blend-mode: screen;
     -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  }
+  /* On photo tint: a light's colour over its On photo, through the photo's
+     tint mask fitted as the photo is, multiply blended (render.ts,
+     oneLookTintedOn). */
+  .ol-tint {
+    position: absolute; display: block; pointer-events: none; mix-blend-mode: multiply;
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-position: center; mask-position: center;
     -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   }
   .ol-glyph { position: absolute; display: flex; align-items: center; justify-content: center; }

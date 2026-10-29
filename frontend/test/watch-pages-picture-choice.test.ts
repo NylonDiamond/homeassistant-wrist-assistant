@@ -188,7 +188,7 @@ describe("picture choices", () => {
     const PHOTO = "0A1B2C3D-4E5F-4A6B-8C7D-000000000001";
     const { host } = tileHost(tile("light.desk", { iconPhotoId: PHOTO }));
     let url: string | undefined;
-    const photos = { url: () => url, size: () => ({ width: 300, height: 200 }), glow: () => undefined, onUrl: () => (url === undefined ? undefined : "blob:lamp-on") };
+    const photos = { url: () => url, size: () => ({ width: 300, height: 200 }), glow: () => undefined, onUrl: () => (url === undefined ? undefined : "blob:lamp-on"), onMask: () => undefined };
     const withPhotos = Object.assign(Object.create(host) as TileSettingsHost, { photos });
     // Not in yet: no photo, and the picture is not kept past its arrival.
     expect(flat(tilePictures(withPhotos).tile("glow", (d) => d, "on", 150, 96))).not.toContain("blob:");

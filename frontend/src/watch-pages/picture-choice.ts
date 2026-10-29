@@ -376,9 +376,10 @@ export function tilePictures(host: TileSettingsHost): TilePictures {
     photoSize: (id: string) => photos.size(id),
     photoGlow: (id: string) => photos.glow(id),
     photoOn: (id: string) => photos.onUrl(id),
+    photoOnMask: (id: string) => photos.onMask(id),
   };
   const photoKey = photos === undefined || photoId === undefined ? "" : [
-    photos.url(photoId) ?? "", photos.size(photoId) === undefined ? 0 : 1, photos.glow(photoId) === undefined ? 0 : 1, photos.onUrl(photoId) ?? "",
+    photos.url(photoId) ?? "", photos.size(photoId) === undefined ? 0 : 1, photos.glow(photoId) === undefined ? 0 : 1, photos.onUrl(photoId) ?? "", photos.onMask(photoId) ?? "",
   ].join(",");
   return {
     tile(key, edit, as, w, h) {

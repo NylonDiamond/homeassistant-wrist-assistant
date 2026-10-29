@@ -150,8 +150,11 @@ describe("a tile photo's thing is on", () => {
     for (const [id, state, attrs] of ON) {
       for (const color of ["#30A0FF", undefined]) {
         const out = html(renderOneLookTile(face(thing(id, color === undefined ? {} : { color }), entity(id, state, attrs))));
-        expect(src(out), `${id} ${state} ${color}`).toBe("blob:on");
-        expect(styleOf(out, "ol-cutout"), `${id} ${state} ${color}`).not.toContain("filter");
+        // A dimmed light draws its Off photo under the On photo (On photo
+        // tint), so look at every photo drawn.
+        const all = [...out.matchAll(/<img class="ol-cutout[^"]*"[^>]*?src=([^ >]*)[^>]*?style=([^>]*)>/g)];
+        expect(all.map((m) => m[1]), `${id} ${state} ${color}`).toContain("blob:on");
+        for (const m of all) expect(m[2], `${id} ${state} ${color}`).not.toContain("filter");
       }
     }
     for (const [id, state, attrs] of OFF) {
@@ -258,8 +261,10 @@ describe("the Clear look", () => {
     expect(styleOf(out, "ol-cutout")).not.toContain("filter");
     expect(styleOf(out, "ol-clear-state")).toContain("color:rgba(48, 160, 255, 1)");
     const glow = styleOf(out, "ol-layer ol-clear-glow") ?? "";
-    expect(glow).toContain("rgba(48, 160, 255, 0.3) 0%");
-    expect(glow).toContain("rgba(48, 160, 255, 0) 100%");
+    // On photo tint's clean glow: 0.42 at the centre, 0.18 at 45%, screen
+    // blended; the tile's colour, as the light's colour is not known.
+    expect(glow).toContain("rgba(48, 160, 255, 0.42) 0%, rgba(48, 160, 255, 0.18) 45%, rgba(48, 160, 255, 0) 100%");
+    expect(glow).toContain("mix-blend-mode:screen");
     expect(out.indexOf("ol-clear-glow")).toBeLessThan(out.indexOf("ol-cutout"));
   });
 

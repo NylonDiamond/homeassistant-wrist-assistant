@@ -86,10 +86,12 @@ export interface PageRowPictureInput {
   photo?: (id: string) => string | undefined;
   /** A tile's icon photo's size (`PagePhotoStore.size`), so the photo is
    * fitted, the light saved in it (`PagePhotoStore.glow`, Light Look) and
-   * the On photo it carries (`PagePhotoStore.onUrl`). */
+   * the On photo it carries (`PagePhotoStore.onUrl`) with its tint mask
+   * (`PagePhotoStore.onMask`). */
   photoSize?: (id: string) => { width: number; height: number } | undefined;
   photoGlow?: (id: string) => OneLookPhotoLight | undefined;
   photoOn?: (id: string) => string | undefined;
+  photoOnMask?: (id: string) => string | undefined;
   /** A new value draws again once more photos are in. */
   photoTick?: number;
   /** The home's map, for a map page on an iPhone, which is drawn as its
@@ -152,6 +154,7 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.photoSize === undefined ? {} : { photoSize: input.photoSize }),
     ...(input.photoGlow === undefined ? {} : { photoGlow: input.photoGlow }),
     ...(input.photoOn === undefined ? {} : { photoOn: input.photoOn }),
+    ...(input.photoOnMask === undefined ? {} : { photoOnMask: input.photoOnMask }),
   };
   if (phone !== undefined && input.homeMap !== undefined && isMapWatchPage(page)) {
     return html`<span class="lr-pic ph" style=${box} aria-hidden="true">${renderMapPageArt({ ...preview, homeMap: input.homeMap }, screen.width, height / s, s)}</span>`;
