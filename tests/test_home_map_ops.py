@@ -172,9 +172,10 @@ class _Registries:
             _floor("ground_floor", "Ground floor", 0),
         ]
         self.devices = {
-            "dev-lamp": types.SimpleNamespace(area_id="living_room"),
-            "dev-hub": types.SimpleNamespace(area_id="kitchen"),
-            "dev-none": types.SimpleNamespace(area_id=None),
+            "dev-lamp": _device("living_room", "Lamp Bridge", model="Bridge v2"),
+            # The user's own name wins; an empty model is none.
+            "dev-hub": _device("kitchen", "HUB-01", name_by_user="Kitchen Hub", model=""),
+            "dev-none": _device(None, ""),
         }
         self.entities = {
             e.entity_id: e
@@ -194,15 +195,27 @@ class _Registries:
         }
         # What has a state: the registry's entities that are not disabled,
         # and one that is in no registry at all.
+        # A device class only where it is a non-empty string.
+        device_classes = {"sensor.hub_signal": "signal_strength", "light.ceiling": "", "lock.side_door": 3}
         self.states = [
-            _state(entity_id, entity_id.split(".")[1].replace("_", " ").title())
+            _state(
+                entity_id,
+                entity_id.split(".")[1].replace("_", " ").title(),
+                device_classes.get(entity_id),
+            )
             for entity_id, entry in self.entities.items()
             if entry.disabled_by is None
         ] + [_state("sun.sun", None)]
 
 
-def _state(entity_id: str, friendly_name):
+def _device(area_id, name, name_by_user=None, model=None):
+    return types.SimpleNamespace(area_id=area_id, name=name, name_by_user=name_by_user, model=model)
+
+
+def _state(entity_id: str, friendly_name, device_class=None):
     attributes = {} if friendly_name is None else {"friendly_name": friendly_name}
+    if device_class is not None:
+        attributes["device_class"] = device_class
     return types.SimpleNamespace(entity_id=entity_id, attributes=attributes)
 
 
@@ -457,17 +470,35 @@ FLOORS = [
 ]
 
 
+def _row(entity_id, name, area_id, device_class=None, device_id=None, device_name=None, device_model=None):
+    return {
+        "id": entity_id,
+        "name": name,
+        "area_id": area_id,
+        "device_class": device_class,
+        "device_id": device_id,
+        "device_name": device_name,
+        "device_model": device_model,
+    }
+
+
+LAMP = ("dev-lamp", "Lamp Bridge", "Bridge v2")
+HUB = ("dev-hub", "Kitchen Hub", None)
+
 ENTITIES = [
-    {"id": "light.ceiling", "name": "Ceiling", "area_id": "living_room"},
-    {"id": "fan.gone_area", "name": "Gone Area", "area_id": "garage"},
-    {"id": "sensor.hub_signal", "name": "Hub Signal", "area_id": "kitchen"},
-    {"id": "switch.loose", "name": "Loose", "area_id": None},
-    {"id": "light.pendants", "name": "Pendants", "area_id": "kitchen"},
-    {"id": "light.reading_lamp", "name": "Reading Lamp", "area_id": "living_room"},
-    {"id": "lock.side_door", "name": "Side Door", "area_id": "living_room"},
-    {"id": "sun.sun", "name": "sun.sun", "area_id": None},
-    {"id": "climate.thermostat", "name": "Thermostat", "area_id": "kitchen"},
-    {"id": "switch.unknown_device", "name": "Unknown Device", "area_id": None},
+    _row("light.ceiling", "Ceiling", "living_room", None, *LAMP),
+    _row("fan.gone_area", "Gone Area", "garage"),
+    _row("sensor.hub_signal", "Hub Signal", "kitchen", "signal_strength", *HUB),
+    # A device with no name and no model.
+    _row("switch.loose", "Loose", None, None, "dev-none"),
+    _row("light.pendants", "Pendants", "kitchen", None, *LAMP),
+    _row("light.reading_lamp", "Reading Lamp", "living_room", None, *LAMP),
+    _row("lock.side_door", "Side Door", "living_room"),
+    # Not in the registry: no device at all.
+    _row("sun.sun", "sun.sun", None),
+    _row("climate.thermostat", "Thermostat", "kitchen", None, *HUB),
+    # Its device is gone from the device registry: the id, nothing more.
+    _row("switch.unknown_device", "Unknown Device", None, None, "dev-gone"),
 ]
 
 
@@ -515,6 +546,35 @@ def test_every_entity_with_a_state_is_listed_by_name(env) -> None:
     assert {row["id"]: row["area_id"] for row in rows}["light.pendants"] == "kitchen"
     names = [row["name"].casefold() for row in rows]
     assert names == sorted(names)
+
+
+def test_an_entity_names_its_device_class_device_and_model(env) -> None:
+    rows = {row["id"]: row for row in env.areas.home_entities(env.hass)}
+    assert rows["sensor.hub_signal"]["device_class"] == "signal_strength"
+    # An empty or non-string device class is none.
+    assert rows["light.ceiling"]["device_class"] is None
+    assert rows["lock.side_door"]["device_class"] is None
+    # The device's own name when the user gave it none.
+    env.registries.devices["dev-hub"].name_by_user = None
+    env.registries.devices["dev-hub"].model = "TV-55"
+    rows = {row["id"]: row for row in env.areas.home_entities(env.hass)}
+    assert (rows["climate.thermostat"]["device_name"], rows["climate.thermostat"]["device_model"]) == (
+        "HUB-01",
+        "TV-55",
+    )
+    # A model that is not a string is none.
+    env.registries.devices["dev-hub"].model = 55
+    assert {row["id"]: row for row in env.areas.home_entities(env.hass)}["climate.thermostat"]["device_model"] is None
+
+
+def test_entities_from_states_without_a_device_lookup_names_no_device(env) -> None:
+    # Called as before, with no device lookup: the id is there, the names not.
+    rows = env.areas.entities_from_states(
+        [_state("media_player.tv", "TV", "tv")],
+        [_entity("media_player.tv", area_id="living_room", device_id="dev-tv")],
+        lambda _device: None,
+    )
+    assert rows == [_row("media_player.tv", "TV", "living_room", "tv", "dev-tv")]
 
 
 def test_an_entitys_own_area_wins_over_its_devices(env) -> None:

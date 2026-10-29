@@ -5121,12 +5121,18 @@ async def _op_areas_get(ctx: _OpContext) -> Response:
     Reply: {"ok": true,
             "areas": [{"id", "name", "floor_id": <id> | null,
                        "entity_ids": [<id>]}],
-            "entities": [{"id", "name", "area_id": <id> | null}],
+            "entities": [{"id", "name", "area_id": <id> | null,
+                          "device_class": <str> | null,
+                          "device_id": <id> | null,
+                          "device_name": <str> | null,
+                          "device_model": <str> | null}],
             "floors": [{"id", "name", "level": <int> | null}]}
 
     Every area, sorted by name, its entity ids sorted, with the Home
     Assistant floor it is on. ``entities`` is every entity with a state,
-    sorted by name, for the iPhone's "All Devices" pick. ``floors`` is every
+    sorted by name, for the iPhone's "All Devices" pick; its device class,
+    device, device name and model let the iPhone ask whether a scanned TV
+    or fridge is one device of its room. ``floors`` is every
     Home Assistant floor, sorted by level (no level last) then name, for the
     iPhone's "Which floor are you on?" before a scan. Older apps ignore the
     keys they do not know. An entity's own area wins over its device's;
