@@ -495,16 +495,8 @@ export const editorStyles = css`
     color: var(--wa-soft); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   .hme-dv-count:hover { color: var(--wa-ink); border-color: var(--hme-sel); }
-  /* A lamp's light: its head, and the search of the home's lights. */
+  /* A thing's device: its head. */
   .hme-lamp-light { display: flex; align-items: center; gap: 12px; }
-  .hme-light-find { display: flex; flex-direction: column; gap: 4px; }
-  .hme-light-row {
-    display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 8px; border: 1px solid transparent;
-    background: none; color: var(--wa-ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
-  }
-  .hme-light-row:hover { background: var(--wa-hover); border-color: var(--wa-line); }
-  .hme-light-row .hme-grow { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-  .hme-light-row small { color: var(--wa-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The lamp chooser, by the spot a light goes to, over a clear scrim that
      closes it when pressed. */
   .hme-lamp-scrim { background: transparent; display: block; padding: 0; }

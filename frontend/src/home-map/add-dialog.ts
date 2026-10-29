@@ -19,6 +19,11 @@
 // placed it, one on the map already being picked instead. The footer's
 // Place all N by area places every device whose area is a room here.
 //
+// A thing's Device card (`mode-devices.ts`) opens the same Devices tab to
+// choose the device the thing holds (`HomeMapDeviceChoice`): no tabs and no
+// Place all, its own title, only lights for a lamp, and a click on a row
+// hands the device to the card rather than adding it.
+//
 // Furniture: a search, the catalog's groups as chips and the pieces with
 // their small pictures, names and sizes (the furniture picker's). A piece
 // goes into the picked room, else the room under the middle of the plan,
@@ -44,7 +49,7 @@ import {
   homeMapTray,
 } from "./devices-model.js";
 import { addPieceByWall, homeMapPinsOfEntity } from "./edit-ops.js";
-import { type HomeMapEditorContext, homeMapSelectionRoom } from "./editor-mode.js";
+import { type HomeMapDeviceChoice, type HomeMapEditorContext, homeMapSelectionRoom } from "./editor-mode.js";
 import { homeMapCount, homeMapToPlan } from "./editor-view.js";
 import { HOME_MAP_FURNITURE, type HomeMapFurniturePiece, homeMapPieceSizeText } from "./furniture.js";
 import { homeLabelPoint, homePolygonHolds, homeRoomUnder } from "./geometry.js";
@@ -267,11 +272,16 @@ export class HomeMapAddDialog {
   roomId: string | undefined;
   /** The open tab's search takes the focus at the next draw. */
   private focus = false;
+  /** Set while the dialog chooses one device for a thing (a Device card's
+   * Choose… or Change…), not adding to the map. */
+  choice: HomeMapDeviceChoice | undefined;
 
-  /** Ready the dialog to open on `tab`: empty searches, the picked room's
-   * area chip on (else All areas), every furniture group. */
-  open(ctx: HomeMapEditorContext, tab: HomeMapAddTab = "devices"): void {
-    this.tab = tab;
+  /** Ready the dialog to open on `tab` (Devices alone with `choice`): empty
+   * searches, the picked room's area chip on (else All areas), every
+   * furniture group. */
+  open(ctx: HomeMapEditorContext, tab: HomeMapAddTab = "devices", choice?: HomeMapDeviceChoice): void {
+    this.choice = choice;
+    this.tab = choice === undefined ? tab : "devices";
     this.query = "";
     this.pieceQuery = "";
     this.pieceGroup = "";
@@ -301,6 +311,12 @@ export class HomeMapAddDialog {
    * chooser in the dialog's room (else its area's room), and any other
    * device is put there, or picked when it is on the map already. */
   addDevice(ctx: HomeMapEditorContext, d: HomeMapDeviceEntry, close: () => void): void {
+    const choice = this.choice;
+    if (choice !== undefined) {
+      close();
+      choice.pick(d.entityId);
+      return;
+    }
     const room = homeMapAddRoom(ctx);
     const at = room === undefined ? undefined : homeLabelPoint(room) ?? homeMapRoomCenter(room);
     close();
@@ -325,7 +341,8 @@ export class HomeMapAddDialog {
   /** The dialog, modal over the page. */
   render(ctx: HomeMapEditorContext, close: () => void): TemplateResult {
     const room = homeMapAddRoom(ctx);
-    const title = `Add to ${room === undefined ? homeMapFloorName(ctx.floor) : homeMapRoomName(room)}`;
+    const choice = this.choice;
+    const title = choice?.title ?? `Add to ${room === undefined ? homeMapFloorName(ctx.floor) : homeMapRoomName(room)}`;
     const focus = this.focus;
     this.focus = false;
     const search = ref((el) => {
@@ -349,8 +366,8 @@ export class HomeMapAddDialog {
           <h3 id="hma-title">${title}</h3>
           <button type="button" class="hme-x hma-close" aria-label="Close" title="Close (Esc)" @click=${close}>×</button>
         </div>
-        <div class="hme-seg hma-tabs" role="tablist" aria-label="What to add">${tab("devices", "Devices")}${tab("furniture", "Furniture")}</div>
-        <div class="hma-panel" id="hma-panel" role="tabpanel" aria-labelledby=${`hma-tab-${this.tab}`}>
+        ${choice === undefined ? html`<div class="hme-seg hma-tabs" role="tablist" aria-label="What to add">${tab("devices", "Devices")}${tab("furniture", "Furniture")}</div>` : nothing}
+        <div class="hma-panel" id="hma-panel" role=${choice === undefined ? "tabpanel" : "group"} aria-labelledby=${choice === undefined ? `hma-tab-${this.tab}` : "hma-title"}>
           ${this.tab === "devices" ? this.devicesTab(ctx, room, close, search) : this.furnitureTab(ctx, close, search)}
         </div>
       </div>
@@ -361,8 +378,10 @@ export class HomeMapAddDialog {
 
   private devicesTab(ctx: HomeMapEditorContext, room: HomeMapRoom | undefined, close: () => void, search: unknown): TemplateResult {
     const states: HomeMapStates | undefined = ctx.hass?.states;
+    const choice = this.choice;
     const all = homeMapDevices(ctx.hass);
-    const candidates = homeMapAddCandidates(all, this.query);
+    const offered = choice === undefined ? all : all.filter((d) => (!choice.lightsOnly || d.domain === "light") && d.entityId !== choice.now);
+    const candidates = homeMapAddCandidates(offered, this.query);
     // The picked room's area opens on, unless it has nothing to add: an empty
     // list on opening reads as "nothing to add here", so All areas takes over
     // until a chip is pressed.
@@ -384,9 +403,13 @@ export class HomeMapAddDialog {
       : this.area === HOME_MAP_ADD_NO_AREA ? "with no area"
       : `in ${chips.find((c) => c.id === this.area)?.name ?? "this area"}`;
     const searching = this.query.trim() !== "";
+    const word = choice?.lightsOnly === true ? "light" : "device";
+    const foot = choice !== undefined ? nothing : html`<button type="button" class="hme-tb" ?disabled=${placeable === 0}
+          title=${placeable === 0 ? "Link this floor's rooms to Home Assistant areas first (a room's Area, in its card)" : "Each device not on the map goes into the room linked to its area, at a good height for its kind"}
+          @click=${() => { this.devices.placeAll(ctx, tray.flatMap((g) => g.devices)); close(); }}>Place all ${placeable} by area</button>`;
     return html`
       <label class="hme-find"><span aria-hidden="true">⌕</span>
-        <input type="search" placeholder="Find a device" aria-label="Find a device" autofocus .value=${live(this.query)} ${search}
+        <input type="search" placeholder="Find a ${word}" aria-label="Find a ${word}" autofocus .value=${live(this.query)} ${search}
           @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
       <div class="hme-chips hma-chips" role="group" aria-label="Areas">
         ${chips.map((c) => {
@@ -396,7 +419,7 @@ export class HomeMapAddDialog {
         })}
       </div>
       <div class="hma-list">
-        ${total === 0 ? html`<p class="hma-empty">${searching ? `Nothing by that name ${where}.` : `No devices ${where}.`}</p>` : nothing}
+        ${total === 0 ? html`<p class="hma-empty">${searching ? `Nothing by that name ${where}.` : `No ${word}s ${where}.`}</p>` : nothing}
         ${shown.map((s) => html`<section class="hma-sec">
           <div class="hme-h">${s.label}<span class="hme-h-end">${s.devices.length}</span></div>
           ${s.devices.map((d) => this.deviceRow(ctx, d, states, close))}
@@ -404,20 +427,20 @@ export class HomeMapAddDialog {
         ${total > HOME_MAP_ADD_ROWS_SHOWN ? html`<p class="hma-empty">Showing ${HOME_MAP_ADD_ROWS_SHOWN} of ${total}. Type to narrow the list.</p>` : nothing}
       </div>
       <div class="hma-foot">
-        <span class="hma-count">${homeMapCount(total, "device")}</span>
-        <button type="button" class="hme-tb" ?disabled=${placeable === 0}
-          title=${placeable === 0 ? "Link this floor's rooms to Home Assistant areas first (a room's Area, in its card)" : "Each device not on the map goes into the room linked to its area, at a good height for its kind"}
-          @click=${() => { this.devices.placeAll(ctx, tray.flatMap((g) => g.devices)); close(); }}>Place all ${placeable} by area</button>
+        <span class="hma-count">${homeMapCount(total, word)}</span>
+        ${foot}
       </div>`;
   }
 
   private deviceRow(ctx: HomeMapEditorContext, d: HomeMapDeviceEntry, states: HomeMapStates | undefined, close: () => void): TemplateResult {
     const light = d.entityId.startsWith("light.");
     const tag = homeMapAddTag(ctx.doc, d.entityId);
-    const title = light ? "Add it in a lamp. A light can be on the map many times."
+    const choice = this.choice;
+    const title = choice !== undefined ? choice.rowTitle(d.name)
+      : light ? "Add it in a lamp. A light can be on the map many times."
       : tag === undefined ? "Put it on the map" : "On the map: click to pick it";
     const icon = homeMapAutoPinIcon(d.entityId, d.deviceClass, d.name);
-    return html`<button type="button" class="hma-row ${!light && tag !== undefined ? "placed" : ""}" title=${title}
+    return html`<button type="button" class="hma-row ${choice === undefined && !light && tag !== undefined ? "placed" : ""}" title=${title}
       @click=${() => this.addDevice(ctx, d, close)}>
       <span class="hme-dv-ic"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">${homeMapPinGlyph(icon, "currentColor", 24, 2)}</svg></span>
       <span class="hma-nm"><span>${d.name}</span><small class="mono">${d.entityId}</small></span>

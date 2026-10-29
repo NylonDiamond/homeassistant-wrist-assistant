@@ -178,6 +178,19 @@ export interface HomeMapApplyOptions {
   floorId?: string;
 }
 
+/** The Add dialog opened to choose one device for a thing, from its Device
+ * card's Choose… or Change…: its Devices tab alone under `title`, only the
+ * home's lights for a lamp (`lightsOnly`), the device it holds now (`now`)
+ * left out, and a click on a row handing the row's entity to `pick` rather
+ * than adding it to the map. `rowTitle` is a row's tooltip, by its name. */
+export interface HomeMapDeviceChoice {
+  readonly title: string;
+  readonly lightsOnly: boolean;
+  readonly now?: string | undefined;
+  rowTitle(name: string): string;
+  pick(entityId: string): void;
+}
+
 /** Everything a part draws from and acts through, made fresh for each
  * draw. */
 export interface HomeMapEditorContext {
@@ -244,8 +257,9 @@ export interface HomeMapEditorContext {
   readonly hover: HomeMapSelection | undefined;
   /** Set or clear the hover; the same value again draws nothing new. */
   setHover(hover: HomeMapSelection | undefined): void;
-  /** Open the Add dialog on its Devices or Furniture tab. */
-  openAdd(tab?: "devices" | "furniture"): void;
+  /** Open the Add dialog on its Devices or Furniture tab, or with `choice`
+   * on its Devices tab alone to choose one device for a thing. */
+  openAdd(tab?: "devices" | "furniture", choice?: HomeMapDeviceChoice): void;
   /** Open a library page in the page editor; absent where the panel gives
    * no way there. */
   readonly openPage?: ((pageId: string) => void) | undefined;

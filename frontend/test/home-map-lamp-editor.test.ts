@@ -457,17 +457,25 @@ describe("lamps that hold lights in the map editor", () => {
     expect(sofa).toContain(">Choose…</button>");
   });
 
-  it("gives any thing a device from its Device card's search of all the home's devices, then shows it without a glow", async () => {
+  it("gives any thing a device from its Device card's Choose…, the Add dialog's Devices tab alone, then shows it without a glow", async () => {
     const { el, inside, click, type, text, saved } = await page();
     el.select({ kind: "object", roomId: LIVING, object: 2 });
     click(">Choose…</button>");
     let shown = text();
+    expect(shown).toContain('class="hma"');
+    expect(shown).toContain("Choose a device for this ");
     expect(shown).toContain('aria-label="Find a device"');
-    // Every kind of device, the living room's first.
-    expect(shown.indexOf("Put Living room TV on it")).toBeLessThan(shown.indexOf("Put Fan on it"));
-    expect(shown).toContain("Put Reading lamp on it");
+    // No tabs and no Place all: it chooses one device, it adds nothing.
+    expect(shown).not.toContain('role="tablist"');
+    expect(shown).not.toContain("by area</button>");
+    // Every kind of device, under All areas.
+    click('All areas<span class="hma-n">');
+    shown = text();
+    expect(shown).toContain("Put Fan on this ");
+    expect(shown).toContain("Put Reading lamp on this ");
     type('aria-label="Find a device"', "tv");
-    click("Put Living room TV on it");
+    click("Put Living room TV on this ");
+    expect(text()).not.toContain('class="hma"');
     const floor = await saved();
     const held = homeMapHeldPin(floor, LIVING, 2)!;
     expect(held.entityId).toBe("media_player.living_room_tv");
@@ -484,20 +492,25 @@ describe("lamps that hold lights in the map editor", () => {
     // that pin moves from the TV onto the sofa.
     el.select({ kind: "object", roomId: LIVING, object: 0 });
     click(">Choose…</button>");
-    click("Put Living room TV on it");
+    click('All areas<span class="hma-n">');
+    click("Put Living room TV on this ");
     const after = await saved();
     expect(after.pins.filter((p) => p.entityId === "media_player.living_room_tv").map((p) => p.id)).toEqual([held.id]);
     expect(homeMapHeldPin(after, LIVING, 0)?.id).toBe(held.id);
     expect(homeMapHeldPin(after, LIVING, 2)).toBeUndefined();
   });
 
-  it("changes a lamp's light by a search of the home's lights, adds another lamp beside it, and unlinks it", async () => {
+  it("changes a lamp's light from the Add dialog listing only lights, adds another lamp beside it, and unlinks it", async () => {
     const { el, inside, click, type, text, saved, room } = await page(withHeld());
     el.select({ kind: "object", roomId: LIVING, object: 3 });
     click("Show another of the home's lights");
     let shown = text();
+    expect(shown).toContain("Change the light in this lamp");
     expect(shown).toContain('aria-label="Find a light"');
-    // The light it holds now is left out of the list.
+    click('All areas<span class="hma-n">');
+    shown = text();
+    // Only lights, and the light it holds now is left out of the list.
+    expect(shown).not.toContain("Put Fan in this lamp");
     expect(shown).not.toContain("Put Reading lamp in this lamp");
     expect(shown).toContain("Put Pendants in this lamp");
     type('aria-label="Find a light"', "cans");
@@ -529,17 +542,20 @@ describe("lamps that hold lights in the map editor", () => {
     expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 4 });
     shown = text();
     expect(shown).toContain('<span class="hme-l">Light</span><span class="hme-in hme-ro dim">None</span>');
-    expect(shown).toContain('aria-label="Find a light"');
+    expect(shown).toContain(">Choose…</button>");
   });
 
-  it("gives a lamp that holds nothing its light from its search, the room's area's lights first", async () => {
+  it("gives a lamp that holds nothing its light from its Choose…, the room's area's lights on", async () => {
     const { el, inside, click, text, saved } = await page(addPiece(fixture(), KITCHEN, homeMapPiece("lampRoundTable")!, [9, 4])!);
     el.select({ kind: "object", roomId: KITCHEN, object: 3 });
+    expect(text()).toContain(">None</span>");
+    click(">Choose…</button>");
     const shown = text();
-    expect(shown).toContain(">None</span>");
-    // The kitchen's lights first, with nothing typed.
-    expect(shown.indexOf("Put Kitchen cans in this lamp")).toBeLessThan(shown.indexOf("Put Ceiling light in this lamp"));
-    expect(shown.indexOf("Put Pendants in this lamp")).toBeLessThan(shown.indexOf("Put Reading lamp in this lamp"));
+    expect(shown).toContain("Choose a light for this lamp");
+    // The kitchen's lights, with nothing typed.
+    expect(shown).toContain("Put Kitchen cans in this lamp");
+    expect(shown).toContain("Put Pendants in this lamp");
+    expect(shown).not.toContain("Put Reading lamp in this lamp");
     click("Put Pendants in this lamp");
     const floor = await saved();
     const held = homeMapHeldPin(floor, KITCHEN, 3)!;

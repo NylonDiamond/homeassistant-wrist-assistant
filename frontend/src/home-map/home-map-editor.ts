@@ -81,6 +81,7 @@ import { HomeMapEditPage } from "./edit-page.js";
 import { type HomeMapAddTab, HomeMapAddDialog, homeMapAddDialogStyles } from "./add-dialog.js";
 import {
   type HomeMapApplyOptions,
+  type HomeMapDeviceChoice,
   type HomeMapDragHandlers,
   type HomeMapEditorContext,
   type HomeMapPageChoice,
@@ -719,19 +720,20 @@ export class WaHomeMapEditor extends LitElement {
       },
       hover: this.hover,
       setHover: (hover) => this.setHover(hover),
-      openAdd: (tab) => this.openAdd(tab),
+      openAdd: (tab, choice) => this.openAdd(tab, choice),
       openPage: this.onOpenPage,
     };
   }
 
   /** Open the Add dialog on a tab (`ctx.openAdd`, the bar's ＋ Add, the key
-   * A): the floor menu and the Home style panel close first. */
-  openAdd(tab: HomeMapAddTab = "devices"): void {
+   * A), or to choose a thing's device (`choice`): the floor menu and the
+   * Home style panel close first. */
+  openAdd(tab: HomeMapAddTab = "devices", choice?: HomeMapDeviceChoice): void {
     const ctx = this.context();
     if (ctx === undefined) return;
     this.floorMenu = false;
     if (this.styleOpen) this.closeStyle();
-    this.addDialog.open(ctx, tab);
+    this.addDialog.open(ctx, tab, choice);
     this.addOpen = tab;
   }
 
