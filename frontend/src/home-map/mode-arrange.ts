@@ -14,8 +14,8 @@
 // squares its corners, snaps it to the walls the iPhone's way, moves it to
 // another floor or deletes it. The inspector holds the room's name, Home
 // Assistant area and the page a tap opens; where it is (left and top, its
-// turn, its width and depth, its floor, its wall height); its floor finish;
-// and the things in it, each shown or hidden, with its devices and Add a
+// turn, its width and depth, its floor, its wall height); its floor finish
+// with its floor and wall colours; and the things in it, each shown or hidden, with its devices and Add a
 // thing.
 //
 // A thing (a sofa, a TV, a desk) lies over its room, so a click on it picks
@@ -52,6 +52,7 @@ import {
   type HomeMapPart,
   type HomeMapResize,
   type HomeMapResizeSides,
+  type HomeMapRoomPart,
   type HomeMapSnapGuide,
   HOME_MAP_MAX_OBJECT_SIZE,
   HOME_MAP_MAX_ROOM_SIZE,
@@ -77,6 +78,7 @@ import {
   resizeRoom,
   setObjectHidden,
   setRoomArea,
+  setRoomColor,
   setRoomFinish,
   setRoomPage,
   setObject,
@@ -122,6 +124,7 @@ import {
 } from "./editor-view.js";
 import {
   type HomeMapFurniturePiece,
+  type HomeMapPartPreset,
   HOME_MAP_FABRIC_PRESETS,
   HOME_MAP_FURNITURE,
   HOME_MAP_WOOD_PRESETS,
@@ -136,6 +139,7 @@ import {
   homeBoxCorners,
   homeBoxOf,
   homeFloorGuess,
+  homeFloorKind,
   homeLabelPoint,
   homeNormalDegrees,
   homePointBounds,
@@ -170,6 +174,74 @@ export const HOME_MAP_FINISH_NAMES: Readonly<Record<HomeFloorKind, string>> = {
   carpet: "Carpet",
   plain: "Plain",
 };
+
+/** The floor colours offered before a custom one, by the room's finish (its
+ * auto guess when it has none). */
+export const HOME_MAP_FLOOR_COLOR_PRESETS: Readonly<Record<HomeFloorKind, readonly HomeMapPartPreset[]>> = {
+  wood: [
+    { name: "Light oak", hex: "#D9B88A" },
+    { name: "Oak", hex: "#B98B5A" },
+    { name: "Walnut", hex: "#6B4A32" },
+    { name: "Grey wash", hex: "#9A948C" },
+  ],
+  tile: [
+    { name: "White", hex: "#E9E7E2" },
+    { name: "Grey", hex: "#8E8E8A" },
+    { name: "Black", hex: "#2E2E30" },
+    { name: "Terracotta", hex: "#B4664A" },
+  ],
+  stone: [
+    { name: "Light", hex: "#C9C3B8" },
+    { name: "Sand", hex: "#B8A98E" },
+    { name: "Slate", hex: "#5E6468" },
+  ],
+  carpet: [
+    { name: "Grey", hex: "#8E8E93" },
+    { name: "Beige", hex: "#CBB9A0" },
+    { name: "Navy", hex: "#2E4A7D" },
+    { name: "Green", hex: "#4F6B4A" },
+  ],
+  plain: [
+    { name: "White", hex: "#E9E7E2" },
+    { name: "Grey", hex: "#8E8E8A" },
+    { name: "Black", hex: "#2E2E30" },
+  ],
+};
+
+/** The wall colours offered before a custom one. */
+export const HOME_MAP_WALL_COLOR_PRESETS: readonly HomeMapPartPreset[] = [
+  { name: "White", hex: "#F2F0EB" },
+  { name: "Warm white", hex: "#EDE6D8" },
+  { name: "Greige", hex: "#CFC6B8" },
+  { name: "Sage", hex: "#A3B09A" },
+  { name: "Blue grey", hex: "#8C9AA6" },
+  { name: "Charcoal", hex: "#3E4044" },
+];
+
+/** A row of colours: Default (no key), a round button for each preset,
+ * ringed when picked, and Custom, a picker saved when it closes. */
+function colourChoice(o: {
+  word: string;
+  presets: readonly HomeMapPartPreset[];
+  now: string | undefined;
+  defaultTitle: string;
+  customTitle: string;
+  customLabel: string;
+  set: (color: string | undefined) => void;
+}): TemplateResult {
+  const now = o.now?.toUpperCase();
+  const custom = now !== undefined && !o.presets.some((p) => p.hex === now);
+  return html`<div class="hme-r top"><span class="hme-l">${o.word}</span>
+    <div class="hme-chips hme-colours" role="group" aria-label=${`${o.word} colour`}>
+      <button type="button" class="hme-chip sel ${now === undefined ? "on" : ""}" aria-pressed=${now === undefined ? "true" : "false"}
+        title=${o.defaultTitle} @click=${() => o.set(undefined)}>Default</button>
+      ${o.presets.map((p) => html`<button type="button" class="hme-colour ${now === p.hex ? "on" : ""}" style=${`--c:${p.hex}`}
+        title=${p.name} aria-label=${`${o.word}: ${p.name}`} aria-pressed=${now === p.hex ? "true" : "false"} @click=${() => o.set(p.hex)}></button>`)}
+      <label class="hme-chip sel hme-pick ${custom ? "on" : ""}" title=${o.customTitle}>${custom ? html`<span class="hme-swatch" style=${`background:${now}`}></span>` : nothing}Custom
+        <input type="color" .value=${live((now ?? o.presets[0]!.hex).toLowerCase())} aria-label=${o.customLabel}
+          @change=${(e: Event) => o.set((e.target as HTMLInputElement).value)} /></label>
+    </div></div>`;
+}
 
 /** A turn handle snaps to this many degrees unless Alt is held. */
 const TURN_STEP = 15;
@@ -1072,7 +1144,10 @@ export class ArrangeMode {
       ${hmeCard("Floor finish", html`<div class="hme-pics">
         ${hmePic({ label: `Auto: ${HOME_MAP_FINISH_NAMES[guess]}`, picture: hmeFinishSwatch(guess), on: room.finish === undefined, title: "Picked from the room's name and furniture", click: () => ctx.apply((d) => setRoomFinish(d, id, undefined)) })}
         ${HOME_MAP_FINISHES.map((f: HomeMapFinish) => hmePic({ label: HOME_MAP_FINISH_NAMES[f], picture: hmeFinishSwatch(f), on: room.finish === f, click: () => ctx.apply((d) => setRoomFinish(d, id, f)) }))}
-      </div>`)}
+      </div>
+        ${this.roomColourRow(ctx, room, "floorColor")}
+        ${this.roomColourRow(ctx, room, "wallColor")}
+        <p class="hme-foot-hint">On the plan, the night, warm and clay looks and in 3D, here, on the iPhone and on the watch. The line looks keep their own colour.</p>`)}
 
       ${hmeCard("In this room", html`
         ${room.objects.length === 0 ? html`<p class="hme-empty-line">No things. Add a sofa, a bed or stairs so the map reads.</p>` : nothing}
@@ -1198,20 +1273,32 @@ export class ArrangeMode {
     const { room, index, object } = thing;
     const id = room.id;
     const word = part === "fabric" ? "Fabric" : "Wood";
-    const presets = part === "fabric" ? HOME_MAP_FABRIC_PRESETS : HOME_MAP_WOOD_PRESETS;
-    const now = object[part]?.toUpperCase();
-    const custom = now !== undefined && !presets.some((p) => p.hex === now);
-    const set = (color: string | undefined) => ctx.apply((d) => setObjectPart(d, id, index, part, color));
-    return html`<div class="hme-r top"><span class="hme-l">${word}</span>
-      <div class="hme-chips hme-colours" role="group" aria-label=${`${word} colour`}>
-        <button type="button" class="hme-chip sel ${now === undefined ? "on" : ""}" aria-pressed=${now === undefined ? "true" : "false"}
-          title="The model's own colour" @click=${() => set(undefined)}>Default</button>
-        ${presets.map((p) => html`<button type="button" class="hme-colour ${now === p.hex ? "on" : ""}" style=${`--c:${p.hex}`}
-          title=${p.name} aria-label=${`${word}: ${p.name}`} aria-pressed=${now === p.hex ? "true" : "false"} @click=${() => set(p.hex)}></button>`)}
-        <label class="hme-chip sel hme-pick ${custom ? "on" : ""}" title=${`Any ${part} colour`}>${custom ? html`<span class="hme-swatch" style=${`background:${now}`}></span>` : nothing}Custom
-          <input type="color" .value=${live((now ?? presets[0]!.hex).toLowerCase())} aria-label=${`Pick a ${part} colour`}
-            @change=${(e: Event) => set((e.target as HTMLInputElement).value)} /></label>
-      </div></div>`;
+    return colourChoice({
+      word,
+      presets: part === "fabric" ? HOME_MAP_FABRIC_PRESETS : HOME_MAP_WOOD_PRESETS,
+      now: object[part],
+      defaultTitle: "The model's own colour",
+      customTitle: `Any ${part} colour`,
+      customLabel: `Pick a ${part} colour`,
+      set: (color) => ctx.apply((d) => setObjectPart(d, id, index, part, color)),
+    });
+  }
+
+  /** A room's floor or wall colour: Default (the look's own), the presets
+   * (for the floor, those of its finish or its auto guess) and a custom
+   * colour. Each pick is one edit. */
+  private roomColourRow(ctx: HomeMapEditorContext, room: HomeMapRoom, part: HomeMapRoomPart): TemplateResult {
+    const id = room.id;
+    const floor = part === "floorColor";
+    return colourChoice({
+      word: floor ? "Floor" : "Walls",
+      presets: floor ? HOME_MAP_FLOOR_COLOR_PRESETS[homeFloorKind(room)] : HOME_MAP_WALL_COLOR_PRESETS,
+      now: room[part],
+      defaultTitle: floor ? "The finish's own colour" : "The look's own wall colour",
+      customTitle: floor ? "Any floor colour" : "Any wall colour",
+      customLabel: floor ? "Pick a floor colour" : "Pick a wall colour",
+      set: (color) => ctx.apply((d) => setRoomColor(d, id, part, color)),
+    });
   }
 
   /** With no room picked: the floor itself. */

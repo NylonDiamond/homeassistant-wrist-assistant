@@ -947,6 +947,25 @@ export function setRoomFinish(doc: HomeMapDocument, roomId: string, finish: Home
   });
 }
 
+/** The part of a room that takes a colour of its own. */
+export type HomeMapRoomPart = "floorColor" | "wallColor";
+
+/** A room's floor or wall colour in `color` (`#RRGGBB`, written upper
+ * case), or back to the look's own colour when `color` is undefined, the
+ * key then left out. Unchanged is no edit. */
+export function setRoomColor(doc: HomeMapDocument, roomId: string, part: HomeMapRoomPart, color: string | undefined): HomeMapDocument | undefined {
+  if (part !== "floorColor" && part !== "wallColor") return undefined;
+  if (color !== undefined && !isHomeMapPartColor(color)) return undefined;
+  const next = color?.toUpperCase();
+  return editRoom(doc, roomId, (room) => {
+    if (room[part] === next) return undefined;
+    const out = { ...room };
+    if (next === undefined) delete out[part];
+    else out[part] = next;
+    return out;
+  });
+}
+
 /** A room's wall height, 0.01 to 100 meters. */
 export function setWallHeight(doc: HomeMapDocument, roomId: string, meters: number): HomeMapDocument | undefined {
   if (!finite(meters)) return undefined;
@@ -1586,9 +1605,9 @@ export function removeWall(doc: HomeMapDocument, roomId: string, wallIndex: numb
 
 /**
  * A room split in two by the line through `a` and `b`. The piece on the
- * line's right as seen on screen keeps the room's id, name, area, page and
- * finish; the other becomes the room `newRoomId`, named `name` when given,
- * with the same height and finish. Walls are cut where they cross the line,
+ * line's right as seen on screen keeps the room's id, name, area, page,
+ * finish and colours; the other becomes the room `newRoomId`, named `name`
+ * when given, with the same height, finish and colours. Walls are cut where they cross the line,
  * a wall along the cut goes into both, and doors, windows, things and the
  * room's pins go to the side they are on. Undefined when the line leaves a
  * piece under 0.1 m², or the id is taken.
@@ -1629,6 +1648,8 @@ export function splitRoom(doc: HomeMapDocument, roomId: string, a: HomePoint, b:
     id: newRoomId,
     ...(newName === undefined ? {} : { name: newName }),
     ...(room.finish === undefined ? {} : { finish: room.finish }),
+    ...(room.floorColor === undefined ? {} : { floorColor: room.floorColor }),
+    ...(room.wallColor === undefined ? {} : { wallColor: room.wallColor }),
     outline: give,
     height: room.height,
     walls: walls(-1),
@@ -2104,7 +2125,7 @@ const middleOf = (o: Pick<HomeMapOpening, "a" | "b">): HomePoint => [(o.a[0] + o
 
 /**
  * `room` with its outline, walls, openings and things as `scan` has them,
- * everything else (its id, name, area, page, finish and wall height) its
+ * everything else (its id, name, area, page, finish, colours and wall height) its
  * own. As Scan Again does on the iPhone, a scanned door or window with no
  * style takes the style of the room's own door or window of its kind
  * within `HOME_MAP_SCAN_MATCH_REACH`, and a scanned thing is hidden when the

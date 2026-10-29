@@ -16,7 +16,7 @@ when not finite or out of range, every shape refusal (keys missing or not
 in the contract, ids, entity ids, area ids, kinds, a pin's room), the floor,
 room and pin limits over the whole document, the 256 KiB limit, the
 optional keys, ids kept in their own case, the editor's keys (the home
-style with its defaults dropped, a room's finish, a hidden object, an
+style with its defaults dropped, a room's finish and colours, a hidden object, an
 opening's style, a pin's name, icon, reading, glow, glow colour, glow
 spill, tap and page: each accepted, refused, rounded and kept in the contract's order), a
 restart, an unreadable file never saved over, and unload.
@@ -576,6 +576,33 @@ def test_a_rooms_finish(env) -> None:
         assert env.mod.check_document(doc)["floors"][0]["rooms"][0]["finish"] == finish
     living["finish"] = "marble"
     assert env.refused_doc(doc) == "doc.floors[0].rooms[0].finish must be wood, tile, stone, carpet or plain"
+
+
+def test_a_rooms_colours(env) -> None:
+    doc = basic()
+    living = _living(doc)
+    # Sent last; kept after the finish, floor before wall, case as sent.
+    living.update({"wallColor": "#cfc6b8", "floorColor": "#B98B5A", "finish": "wood"})
+    checked = env.mod.check_document(doc)["floors"][0]["rooms"][0]
+    assert _keys(checked) == [
+        "id", "name", "areaId", "finish", "floorColor", "wallColor",
+        "outline", "height", "walls", "openings", "objects",
+    ]
+    assert checked["floorColor"] == "#B98B5A"
+    assert checked["wallColor"] == "#cfc6b8"
+    # Either one alone, with no finish.
+    doc = basic()
+    _living(doc)["wallColor"] = "#3E4044"
+    checked = env.mod.check_document(doc)["floors"][0]["rooms"][0]
+    assert _keys(checked) == [
+        "id", "name", "areaId", "wallColor", "outline", "height", "walls", "openings", "objects",
+    ]
+    for part in ("floorColor", "wallColor"):
+        doc = basic()
+        message = f"doc.floors[0].rooms[0].{part} must be a colour like #8E8E93"
+        for bad in ("", "warm", "8E8E93", "#8E8E9", "#8E8E93FF", "#GGGGGG", None, 3):
+            _living(doc)[part] = bad
+            assert env.refused_doc(doc) == message
 
 
 def test_a_hidden_object(env) -> None:

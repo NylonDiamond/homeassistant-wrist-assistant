@@ -45,6 +45,13 @@
 // into the next rooms; a light in no room spreads freely in every look. A
 // map without them draws as before.
 //
+// A room's own colours (`floorColor`, `wallColor`) paint its floor and its
+// walls in the looks that carry real colours: on the plan its floor fill (a
+// wood floor's boards in a darker shade of it) and its walls' pale face; in
+// night and warm its floor and walls darkened to sit in the dark; in clay as
+// they are, the walls' sides a touch darker. Lines, blueprint and dots keep
+// their one colour style. A map without them draws as before.
+//
 // It draws in the caller's own units (the tile's points on its face, CSS
 // pixels in a picture button) inside a box `width` by `height`, working out
 // the projection itself as the apps do (`HomeMapTileRules.tipped`), so text
@@ -67,6 +74,7 @@ import {
   homeBackSign,
   homeBoxCorners,
   homeBoxOf,
+  cutWall,
   homeDoorSwings,
   homeFloorKind,
   homeFloorLines,
@@ -101,6 +109,7 @@ import {
   homeMapPinLook,
   homeMapPinRoom,
   homeMapShownFloor,
+  isHomeMapPartColor,
 } from "./model.js";
 import { homeMapGlowHex, homeMapHexAlpha, homeMapPinGlowRadius, homeMapPinPill, homeMapPinSymbol } from "./pin-look.js";
 
@@ -167,6 +176,14 @@ type Tone = readonly [number, number, number];
 const toneColor = (t: Tone, shade = 1, opacity = 1) => rgba(t[0] * shade, t[1] * shade, t[2] * shade, opacity);
 const scaled = (t: Tone, f: number): Tone => [Math.min(t[0] * f, 1), Math.min(t[1] * f, 1), Math.min(t[2] * f, 1)];
 
+/** A room's own floor or wall colour (`floorColor`, `wallColor`) as a
+ * tone, when it has one. */
+function roomTone(hex: string | undefined): Tone | undefined {
+  if (!isHomeMapPartColor(hex)) return undefined;
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
 /** The plan's colours (`HomeMapFlatView.Palette`). */
 const PLAN = {
   ground: rgba(0.07, 0.065, 0.06),
@@ -214,6 +231,19 @@ const MODEL = {
       case "blueprint": return [0.09, 0.25, 0.5];
     }
   },
+  /** A room's floor in a style: its own `floorColor` darkened for night
+   * and warm, as it is in clay, the look's own in lines and blueprint or
+   * when the room has none. */
+  roomFloor(style: ModelStyle, kind: HomeFloorKind, own: Tone | undefined): Tone {
+    if (own === undefined) return MODEL.floor(style, kind);
+    switch (style) {
+      case "night": return scaled(own, 0.36);
+      case "warm": return scaled(own, 0.55);
+      case "clay": return own;
+      case "lines":
+      case "blueprint": return MODEL.floor(style, kind);
+    }
+  },
   floorLine(style: ModelStyle, kind: HomeFloorKind): string {
     switch (style) {
       case "night":
@@ -248,8 +278,10 @@ const MODEL = {
       default: return [0.38, 0.35, 0.32];
     }
   },
-  /** A solid's top and sides, and how opaque. */
-  tone(style: ModelStyle, solid: Solid, isLit: boolean): { top: Tone; side: Tone; opacity: number } {
+  /** A solid's top and sides, and how opaque. A wall of a room with its own
+   * `wallColor` (`wall`) takes it in night, warm and clay, darkened by the
+   * style's factors. */
+  tone(style: ModelStyle, solid: Solid, isLit: boolean, wall?: Tone): { top: Tone; side: Tone; opacity: number } {
     const glass = solid.part === "glass";
     switch (style) {
       case "lines":
@@ -258,11 +290,14 @@ const MODEL = {
         return glass ? { top: [0.07, 0.21, 0.4], side: [0.07, 0.21, 0.4], opacity: 0.9 } : { top: [0.12, 0.31, 0.63], side: [0.09, 0.25, 0.5], opacity: 1 };
       case "clay":
         if (glass) return { top: [0.81, 0.88, 0.93], side: [0.81, 0.88, 0.93], opacity: 0.9 };
-        if (solid.part === "wall") return { top: [1, 1, 1], side: [0.97, 0.96, 0.945], opacity: 1 };
+        if (solid.part === "wall") return wall !== undefined ? { top: wall, side: scaled(wall, 0.93), opacity: 1 } : { top: [1, 1, 1], side: [0.97, 0.96, 0.945], opacity: 1 };
         return { top: [0.97, 0.96, 0.94], side: [0.9, 0.88, 0.85], opacity: 1 };
       case "night":
       case "warm": {
         if (solid.part === "wall") {
+          if (wall !== undefined) {
+            return style === "warm" ? { top: scaled(wall, 0.32), side: scaled(wall, 0.175), opacity: 1 } : { top: scaled(wall, 0.305), side: scaled(wall, 0.147), opacity: 1 };
+          }
           return style === "warm" ? { top: [0.3, 0.27, 0.24], side: [0.165, 0.145, 0.13], opacity: 1 } : { top: [0.29, 0.29, 0.32], side: [0.14, 0.14, 0.165], opacity: 1 };
         }
         if (glass) return { top: [0.36, 0.5, 0.72], side: [0.36, 0.5, 0.72], opacity: 0.35 };
@@ -688,13 +723,17 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
     const points = roomPoints(ctx, room);
     const text = pts(points);
     const kind = homeFloorKind(room);
-    out.push(svg`<polygon class="hmt-floor" data-room=${room.id} points=${text} fill=${PLAN_FLOOR[kind]} />`,
+    // A room's own floor colour stands in for its finish's; a wood floor's
+    // boards take a darker shade of it, tiles and stone keep their lines.
+    const own = roomTone(room.floorColor);
+    const boards = own !== undefined && kind === "wood" ? toneColor(own, 0.6, 0.38) : PLAN_FLOOR_LINE[kind];
+    out.push(svg`<polygon class="hmt-floor" data-room=${room.id} points=${text} fill=${own !== undefined ? toneColor(own) : PLAN_FLOOR[kind]} />`,
       svg`<polygon points=${text} fill=${fall} />`);
     const clip = defs.clip(points);
     const spacing = homeFloorSpacing(kind);
     const lines = spacing !== undefined && len(spacing) >= 3.5
       ? svg`<path d=${linePath(homeFloorLines(room, kind, homeRoomDirection(room)).map(([a, b]) => [project(P, a), project(P, b)] as const))}
-        stroke=${PLAN_FLOOR_LINE[kind]} stroke-width=${kind === "wood" ? 0.75 : 1} fill="none" />`
+        stroke=${boards} stroke-width=${kind === "wood" ? 0.75 : 1} fill="none" />`
       : nothing;
     out.push(svg`<g clip-path=${clip}>${lines}<polygon points=${text} fill="none" stroke="rgba(0,0,0,0.1)" stroke-width=${r2(shade * 2)} />
       <polygon points=${text} fill="none" stroke="rgba(0,0,0,0.1)" stroke-width=${r2(shade * 0.8)} /></g>`);
@@ -765,7 +804,15 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
     const w = Math.max(len(s.t), 1.5);
     return wallLine(s, PLAN.wallEdge, w + Math.min(Math.max(w * 0.3, 0.8), 2), "square");
   })}</g>`);
-  out.push(svg`<g>${walls.map((s) => wallLine(s, PLAN.wallFace, Math.max(len(s.t), 1.5), "square"))}</g>`);
+  // Each room's walls' faces in its own `wallColor` when it has one; a wall
+  // two rooms share is drawn for each, the later room's on top.
+  const openings = floor.rooms.flatMap((room) => room.openings);
+  const faces = floor.rooms.flatMap((room) => {
+    const own = roomTone(room.wallColor);
+    const face = own !== undefined ? toneColor(own) : PLAN.wallFace;
+    return homeWallsOf(room).flatMap((w) => cutWall(w, openings)).map((s) => wallLine(s, face, Math.max(len(s.t), 1.5), "square"));
+  });
+  out.push(svg`<g>${faces}</g>`);
   // Windows: a pane of glass across the wall with its line of light; a
   // sliding one draws its two panes instead of the one line.
   const sliding = homeSlidingOpenings(floor);
@@ -1044,7 +1091,7 @@ function drawModel(ctx: Ctx, style: ModelStyle): SVGTemplateResult[] {
     const points = roomPoints(ctx, room);
     const text = pts(points);
     const kind = homeFloorKind(room);
-    out.push(svg`<polygon class="hmt-floor" data-room=${room.id} points=${text} fill=${toneColor(MODEL.floor(style, kind))} />`);
+    out.push(svg`<polygon class="hmt-floor" data-room=${room.id} points=${text} fill=${toneColor(MODEL.roomFloor(style, kind, roomTone(room.floorColor)))} />`);
     const direction = homeRoomDirection(room);
     const spacing = style === "blueprint" ? 0.25 : homeFloorSpacing(kind) ?? 0;
     const lines = style === "blueprint" ? homeGridLines(room, 0.25, direction) : homeFloorLines(room, kind, direction);
@@ -1085,9 +1132,11 @@ function drawModel(ctx: Ctx, style: ModelStyle): SVGTemplateResult[] {
     }
   }
 
-  // Every solid, far to near. Lines glow, so its solids go in a group with
-  // a soft amber light round every line.
-  const drawn = solids.map((s) => drawSolid(ctx, s, style, lit.has(s.roomId)));
+  // Every solid, far to near, a room's walls in its own `wallColor` when it
+  // has one. Lines glow, so its solids go in a group with a soft amber light
+  // round every line.
+  const wallTones = new Map(floor.rooms.map((room) => [room.id, roomTone(room.wallColor)] as const));
+  const drawn = solids.map((s) => drawSolid(ctx, s, style, lit.has(s.roomId), wallTones.get(s.roomId)));
   if (style === "lines") {
     out.push(svg`<g class="hmt-solids" filter=${defs.shadow(Math.max(P.scale * 0.04, 1.2) / 2, 0, rgba(1, 0.77, 0.42, 0.7))}>${drawn}</g>`);
   } else {
@@ -1108,13 +1157,13 @@ function drawModel(ctx: Ctx, style: ModelStyle): SVGTemplateResult[] {
   return out;
 }
 
-function drawSolid(ctx: Ctx, solid: Solid, style: ModelStyle, isLit: boolean): SVGTemplateResult {
+function drawSolid(ctx: Ctx, solid: Solid, style: ModelStyle, isLit: boolean, wall?: Tone): SVGTemplateResult {
   const { P, defs } = ctx;
   const quad = solid.quad;
   const bottom = quad.map((p) => project(P, p, solid.z0));
   const top = quad.map((p) => project(P, p, solid.z1));
   const centre = middleOf(quad);
-  const tone = MODEL.tone(style, solid, isLit);
+  const tone = MODEL.tone(style, solid, isLit, wall);
   const stroke = MODEL.stroke(style);
   const width = style === "lines" ? 0.9 : 0.8;
   const out: SVGTemplateResult[] = [];

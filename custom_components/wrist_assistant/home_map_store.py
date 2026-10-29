@@ -33,6 +33,7 @@ so a writer that drifts from it hears so at once::
                  "rooms": [{"id", "name"?, "areaId"?, "pageId"?,
                             "finish"?: "wood" | "tile" | "stone" |
                                        "carpet" | "plain",
+                            "floorColor"?, "wallColor"?,
                             "outline": [[x, y], ...], "height",
                             "walls": [{"a": [x, y], "b": [x, y], "t"}],
                             "openings": [{"kind": "door" | "window" |
@@ -64,7 +65,10 @@ blueprint or dots; plan when absent), ``turn`` (whole degrees, -180 to 180;
 ``devices`` (lights, all or none; lights). A default sent in ``style`` is
 dropped, and so is a ``style`` left empty. A room's ``finish`` names what
 its floor is laid with; absent, it is picked from the room's name and
-furniture. An object's ``lift`` is how far its bottom stands above the
+furniture. A room's ``floorColor`` and ``wallColor`` (``#RRGGBB`` in either
+case, kept as sent) paint its floor and its walls' faces in the plan, night,
+warm and clay looks and the 3D views; absent, they keep their own colours.
+An object's ``lift`` is how far its bottom stands above the
 floor in meters (0 to 100: a TV on the wall, a lamp on a table); 0 is
 dropped. An object with ``hidden`` is drawn nowhere but kept, so an editor
 can show it again; a false ``hidden`` is dropped. An object's ``model``
@@ -376,7 +380,7 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
         raw,
         path,
         ("id", "outline", "height", "walls", "openings", "objects"),
-        ("name", "areaId", "pageId", "finish"),
+        ("name", "areaId", "pageId", "finish", "floorColor", "wallColor"),
     )
     checked: dict[str, Any] = {"id": ids.take(room["id"], f"{path}.id")}
     if "name" in room:
@@ -390,6 +394,12 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
         checked["pageId"] = _uuid(room["pageId"], f"{path}.pageId")
     if "finish" in room:
         checked["finish"] = _one_of(room["finish"], f"{path}.finish", ROOM_FINISHES)
+    for part in ("floorColor", "wallColor"):
+        if part in room:
+            color = room[part]
+            if not isinstance(color, str) or not _HEX_COLOR_RE.fullmatch(color):
+                _fail(f"{path}.{part}", "must be a colour like #8E8E93")
+            checked[part] = color
     checked["outline"] = [
         _point(point, f"{path}.outline[{i}]", 2)
         for i, point in enumerate(

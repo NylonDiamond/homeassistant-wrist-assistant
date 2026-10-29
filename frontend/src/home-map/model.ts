@@ -17,7 +17,8 @@
 // on the map Home Assistant holds now and save again (`save.ts`). The map
 // editor's own edits are in `edit-ops.ts`.
 //
-// The editor's keys (the home style, a room's finish, a hidden object, an
+// The editor's keys (the home style, a room's finish and its floor and wall
+// colours, a hidden object, an
 // object's furniture piece and its fabric and wood colours, an opening's style, a pin's name, icon, reading, glow, glow colour, glow
 // spill, tap and page) are all optional, and a default is never stored: the key is left
 // out, so a map written before them reads the same.
@@ -95,6 +96,12 @@ export interface HomeMapRoom {
   /** The page a tap on the room opens on the watch. */
   pageId?: string;
   finish?: HomeMapFinish;
+  /** Its floor's colour, `#RRGGBB` in either case (the panel writes upper
+   * case), in the plan, night, warm and clay looks and in 3D. Absent, the
+   * finish's own colour. */
+  floorColor?: string;
+  /** Its walls' face colour, as `floorColor` is. Absent, the look's own. */
+  wallColor?: string;
   outline: HomePoint[];
   height: number;
   walls: HomeMapWall[];
@@ -236,8 +243,8 @@ export function isHomeMapGlowColor(value: unknown): value is string {
   return value === "warm" || (typeof value === "string" && HEX_COLOR_RE.test(value));
 }
 
-/** Whether a value is an object's fabric or wood colour: `#RRGGBB` in
- * either case. */
+/** Whether a value is an object's fabric or wood colour, or a room's floor
+ * or wall colour: `#RRGGBB` in either case. */
 export function isHomeMapPartColor(value: unknown): value is string {
   return typeof value === "string" && HEX_COLOR_RE.test(value);
 }
@@ -375,7 +382,7 @@ class Ids {
 }
 
 function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
-  const room = object(raw, path, ["id", "outline", "height", "walls", "openings", "objects"], ["name", "areaId", "pageId", "finish"]);
+  const room = object(raw, path, ["id", "outline", "height", "walls", "openings", "objects"], ["name", "areaId", "pageId", "finish", "floorColor", "wallColor"]);
   const out: Partial<HomeMapRoom> = { id: ids.take(room.id, `${path}.id`) };
   if (Object.hasOwn(room, "name")) out.name = text(room.name, `${path}.name`);
   if (Object.hasOwn(room, "areaId")) {
@@ -384,6 +391,12 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   }
   if (Object.hasOwn(room, "pageId")) out.pageId = uuid(room.pageId, `${path}.pageId`);
   if (Object.hasOwn(room, "finish")) out.finish = oneOf(room.finish, `${path}.finish`, HOME_MAP_FINISHES);
+  for (const part of ["floorColor", "wallColor"] as const) {
+    if (!Object.hasOwn(room, part)) continue;
+    const color = room[part];
+    if (!isHomeMapPartColor(color)) fail(`${path}.${part}`, "must be a colour like #8E8E93");
+    out[part] = color;
+  }
   out.outline = list(room.outline, `${path}.outline`, MAX_OUTLINE_POINTS, 3).map((p, i) => point(p, `${path}.outline[${i}]`, 2));
   out.height = number(room.height, `${path}.height`, 0.01, 100);
   out.walls = list(room.walls, `${path}.walls`, MAX_WALLS).map((w, i) => {
@@ -803,6 +816,8 @@ export function orderedRoom(room: HomeMapRoom): HomeMapRoom {
   if (room.areaId !== undefined) out.areaId = room.areaId;
   if (room.pageId !== undefined) out.pageId = room.pageId;
   if (room.finish !== undefined) out.finish = room.finish;
+  if (room.floorColor !== undefined && room.floorColor !== "") out.floorColor = room.floorColor;
+  if (room.wallColor !== undefined && room.wallColor !== "") out.wallColor = room.wallColor;
   out.outline = room.outline;
   out.height = room.height;
   out.walls = room.walls;

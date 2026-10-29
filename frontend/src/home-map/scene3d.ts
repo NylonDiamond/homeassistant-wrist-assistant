@@ -5,7 +5,8 @@
 // the editor's own chunk carries them.
 //
 // The scene is the floor shown, every room of it: each floor laid by its
-// finish; walls with their doors, windows and ways through cut out, and
+// finish, or in the room's own floor colour; walls in the room's own wall
+// colour when it has one, with their doors, windows and ways through cut out, and
 // glass in the windows; the walls between the camera and a room faded, like
 // a doll's house; the things in the rooms as the furniture catalog's models
 // (`furniture.ts` says which piece and how it fits the thing's box), its
@@ -37,7 +38,7 @@ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { type HomeMapFurniturePiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeWallsOf } from "./geometry.js";
-import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, sameHomeMapId } from "./model.js";
+import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
 
 /** What the 3D look draws. */
 export interface HomeMap3DInput {
@@ -205,13 +206,23 @@ function covers(big: HomeSegment, small: HomeSegment): boolean {
   });
 }
 
+/** A room's floor and wall colours (sRGB): its own `floorColor` and
+ * `wallColor` when it has them, else its finish's and the plain wall's. */
+export function homeMapRoomColors(room: HomeMapRoom): { floor: string | number; wall: string | number } {
+  return {
+    floor: isHomeMapPartColor(room.floorColor) ? room.floorColor.toUpperCase() : (FINISH[homeFloorKind(room)] ?? BOX),
+    wall: isHomeMapPartColor(room.wallColor) ? room.wallColor.toUpperCase() : WALL,
+  };
+}
+
 /** One room's floor, walls and window glass, and its wall pieces. */
 function buildRoom(room: HomeMapRoom): { group: THREE.Group; walls: WallPiece[] } {
   const group = new THREE.Group();
   const walls: WallPiece[] = [];
+  const colors = homeMapRoomColors(room);
   if (room.outline.length >= 3) {
     const shape = new THREE.Shape(room.outline.map(([x, y]) => new THREE.Vector2(x, -y)));
-    const floor = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: FINISH[homeFloorKind(room)] ?? BOX, roughness: 0.95 }));
+    const floor = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     group.add(floor);
@@ -255,7 +266,7 @@ function buildRoom(room: HomeMapRoom): { group: THREE.Group; walls: WallPiece[] 
     const thick = w.t > 0 ? w.t : 0.1;
     const piece = (s0: number, s1: number, z0: number, z1: number) => {
       if (s1 - s0 < 0.005 || z1 - z0 < 0.005) return;
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(s1 - s0, z1 - z0, thick), new THREE.MeshStandardMaterial({ color: WALL, roughness: 0.92, transparent: true }));
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(s1 - s0, z1 - z0, thick), new THREE.MeshStandardMaterial({ color: colors.wall, roughness: 0.92, transparent: true }));
       const s = (s0 + s1) / 2;
       mesh.position.set(ax + ux * s, (z0 + z1) / 2, ay + uy * s);
       mesh.rotation.y = angle;
@@ -286,10 +297,12 @@ function buildRoom(room: HomeMapRoom): { group: THREE.Group; walls: WallPiece[] 
   return { group, walls };
 }
 
-/** What a room's structure is built from, as text: built again only when
- * it changes. */
-function roomKey(room: HomeMapRoom): string {
-  return JSON.stringify([room.outline, room.height, room.walls, room.openings, homeFloorKind(room)]);
+/** What a room's structure is built from, as text, its colours too: built
+ * again only when it changes, so a colour picked for one room builds that
+ * room alone. */
+export function homeMapRoomKey(room: HomeMapRoom): string {
+  const colors = homeMapRoomColors(room);
+  return JSON.stringify([room.outline, room.height, room.walls, room.openings, homeFloorKind(room), colors.floor, colors.wall]);
 }
 
 /** Free a group's geometry and materials. */
@@ -580,7 +593,7 @@ export class HomeMapScene3D {
     const roomIds = new Set<string>();
     for (const room of floor.rooms) {
       roomIds.add(room.id);
-      const key = roomKey(room);
+      const key = homeMapRoomKey(room);
       const had = this.rooms.get(room.id);
       if (had?.key === key) continue;
       if (had !== undefined) {
