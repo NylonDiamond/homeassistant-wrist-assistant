@@ -46,11 +46,13 @@ import {
   type WatchTileColor,
   WATCH_KIND_FALLBACK_LABELS,
   dividerParts,
+  isMapWatchPage,
   isSmartWatchPage,
   parseTileColor,
   tileClass,
   tileEntityId,
   tileGeometry,
+  watchMapPageTile,
   watchPageTiles,
   tileInkColor,
   tileKind,
@@ -70,7 +72,7 @@ import { uiIcon } from "../ui-icons.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
 import { type HomeMapDocument, homeMapLightsOn } from "../home-map/model.js";
-import { homeTileArt, homeTileGround, homeTileLightsColor, homeTilePlanRect, homeTileTitleColor } from "../home-map/tile-art.js";
+import { HOME_TILE_DEFAULT_TURN, homeTileArt, homeTileGround, homeTileLightsColor, homeTilePlanRect, homeTileTitleColor } from "../home-map/tile-art.js";
 import { watchHomeMapArtOptions, watchHomeMapDrawnFloor, watchHomeMapRoomOf, watchHomeMapTileTitle, watchHomeMapTileWords } from "./home-map-tile.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
@@ -3774,6 +3776,9 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   const width = screen.width * s;
   const name = watchPageName(page);
   if (isSmartWatchPage(page)) return renderSmartPreview(input);
+  // A map page is the whole page on the iPhone; the watch draws its grid
+  // with the one tile, as below.
+  if (input.phone !== undefined && isMapWatchPage(page)) return renderMapPagePreview(input);
   // Tiles hidden while off are gone and the rest packed up, as on the watch;
   // in the all-on picture every tile is on, so none is hidden. A tile the
   // device does not draw is gone in both.
@@ -3795,6 +3800,72 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
     ${layout.tiles.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
     ${phone ? nothing : renderWatchPageIndicator(input, s)}
     ${scrolls ? renderWatchScreenFold(screen.height * s, phone) : nothing}
+  </div>`);
+}
+
+/** The look a map page's picture is drawn in: the iPhone draws the page as a
+ * live 3D model, and the warm look is the nearest the panel's pictures come
+ * to it. */
+export const MAP_PAGE_PREVIEW_LOOK = "warm";
+
+/**
+ * A map page's floor (or room) as the iPhone draws the whole page, in a box
+ * `width` by `height` points at `s` pixels a point: the map tile's floor
+ * cut to its room (`watchHomeMapDrawnFloor`) in the warm look, turned as
+ * the 3D view first frames it, with the room names, every device and the
+ * tile's furniture by the tile rule, over the look's ground, and the lights
+ * that are on in its corner. The tile's other look keys are the watch's and
+ * are not read. Before the map is read, or with no such floor, the house
+ * and a line say which.
+ */
+export function renderMapPageArt(input: WatchPagePreviewInput, width: number, height: number, s: number): TemplateResult {
+  const tile = watchMapPageTile(input.page) as (WatchPageTile & Record<string, unknown>) | undefined;
+  const look = MAP_PAGE_PREVIEW_LOOK;
+  const floor = tile === undefined ? undefined : watchHomeMapDrawnFloor(tile, input.homeMap);
+  const words = watchHomeMapTileWords(floor, input.states, input.homeMap !== undefined);
+  const box = `width:${width * s}px;height:${height * s}px;background:${homeTileGround(look, s)}`;
+  if (tile === undefined || floor === undefined || floor.rooms.length === 0) {
+    return html`<div class="wp-map-page wp-hm-empty" data-map-page="" style=${box}>
+      ${symbolMark(input.icons, "house.fill", 40 * s, "#FFD9A0")}
+      <span class="wp-map-page-words" style=${`font-size:${12 * s}px;color:${homeTileLightsColor(look, false)}`}>${words}</span>
+    </div>`;
+  }
+  const options = watchHomeMapArtOptions(tile, input.homeMap);
+  const pad = 12;
+  const art = homeTileArt({
+    floor,
+    states: input.states,
+    look,
+    turn: HOME_TILE_DEFAULT_TURN,
+    names: true,
+    devices: "all",
+    furniture: options.furniture,
+    glow: true,
+    width: Math.max(width - pad * 2, 0),
+    height: Math.max(height - pad * 2, 0),
+    tileHeight: height,
+    icons: input.icons,
+  });
+  const lit = homeMapLightsOn(floor, input.states) > 0;
+  return html`<div class="wp-map-page" data-map-page=${floor.id} style=${box}>
+    <svg class="wp-hm-plan" data-look=${look} viewBox=${`0 0 ${Math.max(width - pad * 2, 0)} ${Math.max(height - pad * 2, 0)}`} aria-hidden="true"
+      style=${`left:${pad * s}px;top:${pad * s}px;width:${(width - pad * 2) * s}px;height:${(height - pad * 2) * s}px`}>${art}</svg>
+    <span class="wp-map-page-words" style=${`left:${pad * s}px;bottom:${pad * s}px;font-size:${12 * s}px;color:${homeTileLightsColor(look, lit)}`}>${words}</span>
+  </div>`;
+}
+
+/** A map page on the iPhone (app repo docs/home_map_plan_2026-10.md, "Map
+ * page"): the pages area is the map (`renderMapPageArt`), so it reads as
+ * "this whole page is the house", in the iPhone's frame with its page name
+ * and dots. It never scrolls. */
+function renderMapPagePreview(input: WatchPagePreviewInput): TemplateResult {
+  const s = input.scale ?? 1.5;
+  const { page, screen } = input;
+  const topInset = watchPreviewTopInset(input);
+  return renderPreviewFrame(input, s, html`<div class="wp-screen wp-map-screen" role="img" aria-label=${`Preview of ${watchPageName(page)}: the home map`}
+    style=${`width:${screen.width * s}px;height:${screen.height * s}px;background:${homeTileGround(MAP_PAGE_PREVIEW_LOOK, s)}`}>
+    ${renderMapPageArt(input, screen.width, screen.height, s)}
+    ${renderPreviewPageTitle(input, page, s, topInset)}
   </div>`);
 }
 
@@ -3946,9 +4017,10 @@ export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watc
 export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPhone's screen. The page scrolls on below it.";
 
 /** Whether the picture of a page runs past the screen, so it shows the
- * fold. A smart page never does. With `phone`, an iPhone's pages area. */
+ * fold. A smart page never does, nor a map page on an iPhone. With
+ * `phone`, an iPhone's pages area. */
 export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number; height: number }, phone = false): boolean {
-  if (isSmartWatchPage(page)) return false;
+  if (isSmartWatchPage(page) || (phone && isMapWatchPage(page))) return false;
   if (!phone) return watchPreviewLayout(page, screen).height > screen.height + 0.5;
   return watchPreviewHeight(watchPreviewLayout(page, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET }), true) > screen.height + 0.5;
 }
@@ -4067,6 +4139,14 @@ export const watchPagePreviewStyles = css`
   .wp-hm-title { font-weight: 600; }
   .wp-hm-words { font-weight: 500; }
   .wp-hm-empty .wp-hm-words { position: static; flex: none; text-align: center; font-weight: 600; }
+  /* A map page on the iPhone: the whole pages area is the map. */
+  .wp-map-page { position: absolute; left: 0; top: 0; overflow: hidden; }
+  .wp-map-page.wp-hm-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+  .wp-map-page-words {
+    position: absolute; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; line-height: 1.2;
+    font-weight: 500; white-space: nowrap;
+  }
+  .wp-map-page.wp-hm-empty .wp-map-page-words { position: static; font-weight: 600; }
   .wp-phone-field {
     box-sizing: border-box; flex: 1; min-width: 0; margin-left: 6%; display: flex; align-items: center;
     font-family: system-ui, sans-serif;

@@ -25,6 +25,10 @@ import { type WatchPage, type WatchPagesDocument, WATCH_MAP_PAGE_KEY, isMapWatch
 import { encodeWatchPageKeys, setWatchPageFullScreen } from "../src/watch-pages/page-settings-model.js";
 import { convertToSmartPage } from "../src/watch-pages/smart-model.js";
 import { addNewWatchTile, watchAddRefusal } from "../src/watch-pages/tile-new.js";
+import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
+import { type WatchPagePreviewInput, renderMapPageArt, renderWatchPagePreview, watchPagePreviewScrolls } from "../src/watch-pages/preview.js";
+import { phonePagesLayout, phonePagesScreen } from "../src/phone-frame.js";
+import { REFERENCE_CASE } from "../src/renderer.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
 const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocument;
@@ -230,5 +234,75 @@ describe("the guards", () => {
   it("let the page be deleted", () => {
     const d = map();
     expect(findWatchPage(deleteWatchPage(d, PAGE), PAGE)).toBeUndefined();
+  });
+});
+
+// ── the picture ──────────────────────────────────────────────────────────
+
+interface Tpl {
+  strings: readonly string[];
+  values: unknown[];
+}
+
+function flatten(node: unknown): string {
+  if (node === undefined || node === null || typeof node === "symbol") return "";
+  if (Array.isArray(node)) return node.map(flatten).join("");
+  if (typeof node === "object" && "strings" in node && "values" in node) {
+    const t = node as Tpl;
+    return t.strings.map((s, i) => s + (i < t.values.length ? flatten(t.values[i]) : "")).join("");
+  }
+  if (typeof node === "function" || typeof node === "object") return "";
+  return String(node);
+}
+
+describe("the preview", () => {
+  const page = () => pageOf(doc({ mapPage: true, items: [mapTile({ gridRow: 0, colSpan: 12, homeMapLook: "blueprint" })] }));
+  const phone = phonePagesLayout(undefined, { look: "iphone" });
+  const input = (p: WatchPage, onPhone: boolean, read = true): WatchPagePreviewInput => ({
+    page: p, pages: [p], screen: onPhone ? phonePagesScreen(phone) : REFERENCE_CASE.screen, scale: 1, stateMode: "live",
+    ...(onPhone ? { phone } : {}),
+    ...(read ? { homeMap: fixture() } : {}),
+  });
+
+  it("draws the whole pages area as the map on the iPhone, warm, whatever the tile's own look", () => {
+    const text = flatten(renderWatchPagePreview(input(page(), true)));
+    expect(text).toContain(`data-map-page=${FLOOR}`);
+    expect(text).toContain(`data-look=warm`);
+    expect(text).not.toContain("blueprint");
+    expect(text).not.toContain("wp-hm-face");
+    expect(text).not.toContain("wp-fold");
+    expect(watchPagePreviewScrolls(page(), phonePagesScreen(phone), true)).toBe(false);
+  });
+
+  it("draws the room the tile names", () => {
+    const p = pageOf(doc({ mapPage: true, items: [mapTile({ homeMapRoomId: LIVING })] }));
+    const art = flatten(renderMapPageArt(input(p, true), 300, 500, 1));
+    expect(art).toContain(`data-map-page=${FLOOR}`);
+    expect(art).toContain("Living");
+    expect(art).not.toContain("Kitchen");
+  });
+
+  it("shows the house and why before the map is read", () => {
+    const text = flatten(renderWatchPagePreview(input(page(), true, false)));
+    expect(text).toContain("wp-map-page wp-hm-empty");
+    expect(text).toContain("Home map");
+  });
+
+  it("draws the grid with the Home map tile on the watch, the fallback", () => {
+    const text = flatten(renderWatchPagePreview(input(page(), false)));
+    expect(text).toContain("wp-hm-face");
+    expect(text).toContain("data-look=blueprint");
+    expect(text).not.toContain("data-map-page");
+  });
+
+  it("draws a page with the key and no Home map tile as a normal page", () => {
+    const p = pageOf(doc({ mapPage: true, items: [lampTile()] }));
+    expect(flatten(renderWatchPagePreview(input(p, true)))).not.toContain("data-map-page");
+  });
+
+  it("says how each device draws it under Side by side", () => {
+    expect(deviceDifferenceText(page(), "watch")).toBe("The watch shows the Home map tile.");
+    expect(deviceDifferenceText(page(), "iphone")).toBe("The whole page is the live 3D map.");
+    expect(deviceDifferenceText(pageOf(doc({ items: [mapTile()] })), "watch")).toBe("");
   });
 });

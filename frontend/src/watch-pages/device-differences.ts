@@ -9,7 +9,8 @@
 
 import type { PreviewKind } from "../library/item-mode.js";
 import { joinNames } from "../copies.js";
-import { type WatchPage, type WatchPageTile, watchPageTiles } from "./model.js";
+import { type WatchPage, type WatchPageTile, isMapWatchPage, watchPageTiles } from "./model.js";
+import { WATCH_MAP_PAGE_WORDS } from "./map-page.js";
 import { watchCameraTileLive, watchMediaArtwork, watchPhoneKeysOf, watchSensorChart } from "./phone-keys-model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 
@@ -36,8 +37,11 @@ function extrasOn(tiles: readonly WatchPageTile[]): { cameras: number; charts: n
  * The differences line under one kind's preview, or "" when it draws the
  * page as the other kind does. A watch: "Skips Map and Web. Cameras show a
  * still picture." An iPhone: "Also shows Map and Web. Cameras play live."
+ * A map page says only how each draws it: the watch its Home map tile, the
+ * iPhone the whole page as the live 3D map.
  */
 export function deviceDifferenceText(page: WatchPage | undefined, kind: PreviewKind): string {
+  if (page !== undefined && isMapWatchPage(page)) return kind === "watch" ? WATCH_MAP_PAGE_WORDS.watchDifference : WATCH_MAP_PAGE_WORDS.phoneDifference;
   const skipped = watchSkippedTileNames(page);
   const extras = extrasOn(watchPageTiles(page));
   const lines: string[] = [];
