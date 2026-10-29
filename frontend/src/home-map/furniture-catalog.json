@@ -222,6 +222,20 @@
       }
     },
     {
+      "id": "tableCoffeeGlassSquare",
+      "kind": "table",
+      "name": "Square glass coffee table",
+      "group": "Living",
+      "size": [
+        0.8,
+        0.8,
+        0.46
+      ],
+      "paint": {
+        "body": "#DFEAEC"
+      }
+    },
+    {
       "id": "sideTable",
       "kind": "table",
       "name": "Console table",
@@ -418,6 +432,23 @@
       }
     },
     {
+      "id": "radio",
+      "kind": "speaker",
+      "name": "Radio",
+      "group": "Living",
+      "size": [
+        0.5,
+        0.16,
+        0.36
+      ],
+      "lift": 0.75,
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#A3B6B6"
+      }
+    },
+    {
       "id": "bedDouble",
       "kind": "bed",
       "name": "Double bed",
@@ -519,6 +550,22 @@
       }
     },
     {
+      "id": "cabinetBedDrawerTable",
+      "kind": "storage",
+      "name": "Nightstand with shelf",
+      "group": "Bedroom",
+      "size": [
+        0.5,
+        0.41,
+        0.49
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
+    },
+    {
       "id": "coatRackStanding",
       "kind": "storage",
       "name": "Coat stand",
@@ -531,6 +578,23 @@
       "wood": true,
       "paint": {
         "wood": "#F3CCA8"
+      }
+    },
+    {
+      "id": "coatRack",
+      "kind": "storage",
+      "name": "Coat hooks",
+      "group": "Bedroom",
+      "size": [
+        0.8,
+        0.24,
+        0.5
+      ],
+      "lift": 1.5,
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#A3B6B6"
       }
     },
     {
@@ -674,6 +738,38 @@
       ],
       "wood": true,
       "paint": {
+        "wood": "#F3CCA8"
+      }
+    },
+    {
+      "id": "tableCross",
+      "kind": "table",
+      "name": "Trestle table",
+      "group": "Dining",
+      "size": [
+        1.6,
+        0.84,
+        0.65
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
+    },
+    {
+      "id": "tableCrossCloth",
+      "kind": "table",
+      "name": "Trestle table with cloth",
+      "group": "Dining",
+      "size": [
+        1.6,
+        0.84,
+        0.65
+      ],
+      "fabric": true,
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
         "wood": "#F3CCA8"
       }
     },
@@ -823,6 +919,23 @@
       }
     },
     {
+      "id": "benchCushionLow",
+      "kind": "bench",
+      "name": "Low cushioned bench",
+      "group": "Dining",
+      "size": [
+        0.9,
+        0.47,
+        0.43
+      ],
+      "fabric": true,
+      "wood": true,
+      "paint": {
+        "fabric": "#F9A39E",
+        "wood": "#F3CCA8"
+      }
+    },
+    {
       "id": "kitchenCabinet",
       "kind": "storage",
       "name": "Base cabinet",
@@ -871,6 +984,22 @@
       }
     },
     {
+      "id": "kitchenCabinetCornerRound",
+      "kind": "storage",
+      "name": "Round corner cabinet",
+      "group": "Kitchen",
+      "size": [
+        0.63,
+        0.63,
+        0.63
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
+    },
+    {
       "id": "kitchenCabinetUpper",
       "kind": "storage",
       "name": "Wall cabinet",
@@ -905,6 +1034,39 @@
       }
     },
     {
+      "id": "kitchenCabinetUpperCorner",
+      "kind": "storage",
+      "name": "Corner wall cabinet",
+      "group": "Kitchen",
+      "size": [
+        0.3,
+        0.29,
+        0.54
+      ],
+      "lift": 1.45,
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
+    },
+    {
+      "id": "kitchenCabinetUpperLow",
+      "kind": "storage",
+      "name": "Low wall cabinet",
+      "group": "Kitchen",
+      "size": [
+        0.6,
+        0.31,
+        0.27
+      ],
+      "lift": 1.72,
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
+    },
+    {
       "id": "kitchenBar",
       "kind": "table",
       "name": "Kitchen island",
@@ -913,6 +1075,22 @@
         1.2,
         0.59,
         1.17
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
+    },
+    {
+      "id": "kitchenBarEnd",
+      "kind": "table",
+      "name": "Island end",
+      "group": "Kitchen",
+      "size": [
+        0.28,
+        0.58,
+        1.15
       ],
       "wood": true,
       "paint": {
@@ -959,6 +1137,22 @@
         0.7
       ],
       "paint": {
+        "body": "#F8FDFA"
+      }
+    },
+    {
+      "id": "kitchenFridgeBuiltIn",
+      "kind": "refrigerator",
+      "name": "Built-in fridge",
+      "group": "Kitchen",
+      "size": [
+        0.7,
+        0.73,
+        1.41
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
         "body": "#F8FDFA"
       }
     },
@@ -1068,6 +1262,21 @@
       "lift": 1.5,
       "paint": {
         "body": "#A3B6B6"
+      }
+    },
+    {
+      "id": "hoodLarge",
+      "kind": "hood",
+      "name": "Chimney hood",
+      "group": "Kitchen",
+      "size": [
+        0.75,
+        0.5,
+        0.65
+      ],
+      "lift": 1.5,
+      "paint": {
+        "body": "#96A7A7"
       }
     },
     {
@@ -1536,6 +1745,22 @@
       }
     },
     {
+      "id": "plantSmall3",
+      "kind": "plant",
+      "name": "Spiky plant",
+      "group": "Decor",
+      "size": [
+        0.25,
+        0.22,
+        0.37
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#76EAC8"
+      }
+    },
+    {
       "id": "books",
       "kind": "books",
       "name": "Books",
@@ -1582,6 +1807,21 @@
       }
     },
     {
+      "id": "cardboardBoxOpen",
+      "kind": "box",
+      "name": "Open box",
+      "group": "Decor",
+      "size": [
+        0.7,
+        0.4,
+        0.53
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
+    },
+    {
       "id": "stairs",
       "kind": "stairs",
       "name": "Stairs",
@@ -1590,6 +1830,53 @@
         1.0,
         0.43,
         0.74
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      }
+    },
+    {
+      "id": "stairsOpen",
+      "kind": "stairs",
+      "name": "Open stairs",
+      "group": "Decor",
+      "size": [
+        1.0,
+        0.43,
+        0.74
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
+    },
+    {
+      "id": "stairsOpenSingle",
+      "kind": "stairs",
+      "name": "Floating stairs",
+      "group": "Decor",
+      "size": [
+        1.0,
+        0.43,
+        0.74
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8",
+        "body": "#DFEAEC"
+      }
+    },
+    {
+      "id": "stairsCorner",
+      "kind": "stairs",
+      "name": "Corner stairs",
+      "group": "Decor",
+      "size": [
+        0.97,
+        0.78,
+        0.73
       ],
       "wood": true,
       "paint": {

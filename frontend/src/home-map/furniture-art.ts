@@ -588,19 +588,22 @@ function pieceOf(model: string, b: Box, small: number, p: Paint): SVGTemplateRes
       ];
     }
     case "benchCushion":
+    case "benchCushionLow":
       return [rounded(b, small * 0.1, p.wood), ...cushion(inset(b, small * 0.08, small * 0.1), small * 0.1, p.fabric)];
     case "tableRound": {
       const i = Math.min(small * 0.1, 4);
       return [ellipse(b, p.table), ellipse(inset(b, i, i), "none", C.shine, 0.75)];
     }
     case "tableGlass":
-    case "tableCoffeeGlass": {
+    case "tableCoffeeGlass":
+    case "tableCoffeeGlassSquare": {
       // The legs seen through the glass.
       const leg = Math.max(small * 0.1, 1.5);
       const legs = [[b.x, b.y], [maxX - leg, b.y], [b.x, maxY - leg], [maxX - leg, maxY - leg]].map(([x, y]) => rounded({ x: x!, y: y!, w: leg, h: leg }, leg * 0.3, p.body ?? p.wood));
       return [...legs, rounded(b, small * 0.06, GLASS_TOP), rounded(inset(b, 1, 1), small * 0.05, "", { stroke: GLASS, width: 0.75 })];
     }
     case "tableCloth":
+    case "tableCrossCloth":
       return [rounded(b, small * 0.08, p.table), rounded(inset(b, small * 0.05, small * 0.05), small * 0.06, p.fabricLight), rounded(inset(b, small * 0.05, small * 0.05), small * 0.06, "", { stroke: p.fabricDark, width: 0.75 })];
     case "desk": {
       // Its top, a drawer unit at its right end under it.
