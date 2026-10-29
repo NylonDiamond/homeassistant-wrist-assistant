@@ -1,11 +1,11 @@
 // A light's pool staying in its room (`glowSpill`) and picking several
-// devices at once in the map editor's Devices mode: the key checked as the
+// devices at once on the map editor's edit page: the key checked as the
 // store checks it (true kept, false dropped, in the contract's order), set
 // and taken away by the pin edits, and drawn on the page's flat plan, the
 // tile's plan look and the model looks (the room's walls stopping the pool
 // unless it spills, a light in no room never stopped); then the pick (a
 // click, Shift adding or taking away, a box), the values the picked pins
-// share or not, the group's Turn on or off, the Devices mode itself with a
+// share or not, the group's Turn on or off, the page's devices part with a
 // stand-in shell (Shift clicks, a box, dragging and nudging them all, Delete
 // after the page's own yes, the pill and the inspector with Mixed and Stay
 // in room, the glow ring faint past the walls), and the group edits (move,
@@ -221,10 +221,10 @@ describe("picking several devices", () => {
   });
 });
 
-// ── the Devices mode with several picked ─────────────────────────────────
+// ── the devices part with several picked ─────────────────────────────────
 
 /** A stand-in for the shell: 100 pixels a meter, the edits made on its own
- * map, and a record of what the mode asked for. */
+ * map, and a record of what the part asked for. */
 function shell(selection?: HomeMapSelection, states?: HomeMapStates) {
   let doc = fixture();
   let preview: HomeMapOp | undefined;
@@ -236,7 +236,7 @@ function shell(selection?: HomeMapSelection, states?: HomeMapStates) {
     get doc() { return doc; },
     get floor() { return (preview?.(doc) ?? doc).floors[0]!; },
     selection,
-    mode: "devices",
+    walls: undefined,
     view: { scale: 100, ox: 0, oy: 0 },
     stage: { width: 1200, height: 800 },
     toggles: { snap: true, square: true, grid: false, measure: false, live: true },
@@ -278,7 +278,7 @@ function shell(selection?: HomeMapSelection, states?: HomeMapStates) {
   return { ctx: ctx as unknown as HomeMapEditorContext & { selection: HomeMapSelection | undefined }, log, press, handlers: () => drag, get doc() { return doc; } };
 }
 
-describe("the Devices mode with several picked", () => {
+describe("the devices part with several picked", () => {
   it("adds a pin with Shift, Cmd or Ctrl and a click, never moving it", () => {
     const s = shell({ kind: "pin", pinId: READING });
     const mode = new DevicesMode();

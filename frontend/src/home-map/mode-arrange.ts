@@ -1,7 +1,5 @@
-// The map editor's Arrange mode (mock board 1): put the rooms where they
-// stand. The left rail lists the floor's rooms as layers (each with its
-// size, and the picked one open on its doors, windows, things and devices),
-// the other floors, and Draw a room by hand. On the stage a room is dragged
+// The edit page's rooms and things (`edit-page.ts`, which uses this part):
+// put the rooms where they stand. On the stage a room is dragged
 // to move it, snapping to the walls of the rooms round it with a pink guide
 // and a label saying what it lined up with (Alt moves it freely, the grid
 // moves it in 10 cm steps), turned by the round handle above its box, and
@@ -20,9 +18,10 @@
 // and the things in it, each shown or hidden, with its devices and Add a
 // thing.
 //
-// A thing (a sofa, a TV, a desk) is picked by a click on it inside the
-// picked room, by Cmd or Ctrl and a click in any room, or by its name in the
-// lists. Picked, it has the same box as a room: dragged to move it (a side
+// A thing (a sofa, a TV, a desk) lies over its room, so a click on it picks
+// it, in any room, and a drag on it moves it at once; a room is dragged by
+// its open floor. It is also picked by its name in the lists. Picked, it
+// has the same box as a room: dragged to move it (a side
 // that runs along a wall of its room snaps flush against it, Alt moves it
 // freely, the grid moves its middle in 10 cm steps), the square handles
 // resize it along its own sides (Shift and Alt as for a room) and the round
@@ -31,12 +30,15 @@
 // as (Change opens the picker, pieces of its own kind first), where its
 // middle is, its turn, its width, depth and height, and whether it is shown.
 //
-// Add furniture (the rail, and a room's inspector) opens the furniture
-// picker over the page: the catalog's pieces by group, a search, and a card
+// Add furniture (the tool rail's F, and a room's inspector) opens the
+// furniture picker over the page: the catalog's pieces by group, a search, and a card
 // for each with its small 3D picture (drawn once by `scene3d.ts`), name and
 // size. A card picked goes into the picked room, or the room in the middle
 // of the view, at the room's middle, and is picked so it can be dragged
 // into place at once.
+//
+// Draw a room by hand (the tool rail's R) puts a room down corner by corner
+// (`draw-tool.ts`).
 //
 // Every edit is an `edit-ops.ts` function by ids, saved through the shell
 // (`editor-mode.ts` has the rules).
@@ -87,9 +89,9 @@ import {
   turnRoom,
 } from "./edit-ops.js";
 import { HOME_MAP_ARRANGE_GRID, HomeMapDrawTool } from "./draw-tool.js";
-import { type HomeMapEditorContext, type HomeMapMode, homeMapSelectionRoom } from "./editor-mode.js";
+import { homeMapStateText } from "./devices-model.js";
+import { type HomeMapEditorContext, homeMapSelectionRoom } from "./editor-mode.js";
 import {
-  HME_FINISH_DOT,
   hmeCard,
   hmeChip,
   hmeFields,
@@ -128,7 +130,6 @@ import {
   homeBoxCorners,
   homeBoxOf,
   homeFloorGuess,
-  homeFloorKind,
   homeLabelPoint,
   homeNormalDegrees,
   homePointBounds,
@@ -259,13 +260,8 @@ function thingTurn(object: HomeMapObject): number {
 const fmt = (v: number) => v.toFixed(1);
 const pt = (p: readonly number[]) => `${p[0]!.toFixed(1)},${p[1]!.toFixed(1)}`;
 
-export class ArrangeMode implements HomeMapMode {
-  readonly id = "arrange" as const;
+export class ArrangeMode {
   readonly draw = new HomeMapDrawTool(HOME_MAP_ARRANGE_GRID);
-  /** What the layers list is filtered by. */
-  query = "";
-  /** The open parts of the picked room's layer: things, devices. */
-  private open = new Set<string>();
   /** The snap lines while a room is dragged, whether a drag is on, and
    * whether that drag resizes it (its sizes then stay on show). */
   private guides: HomeMapSnapGuide[] = [];
@@ -457,64 +453,11 @@ export class ArrangeMode implements HomeMapMode {
     ctx.select({ kind: "object", roomId: room.id, object: index });
   }
 
-  // ── the rail ───────────────────────────────────────────────────────────
-
-  rail(ctx: HomeMapEditorContext): TemplateResult {
-    const floor = ctx.floor;
-    const q = this.query.trim().toLowerCase();
-    const rooms = floor.rooms.filter((r) => q === "" || homeMapRoomName(r).toLowerCase().includes(q));
-    const found = q === "" ? [] : floor.pins.filter((p) => homeMapPinName(p, ctx.hass).toLowerCase().includes(q) || p.entityId.includes(q));
-    const others = ctx.doc.floors.filter((f) => !sameHomeMapId(f.id, floor.id));
-    const focus = this.focus(ctx);
-    return html`
-      <label class="hme-find"><span aria-hidden="true">⌕</span>
-        <input type="search" placeholder="Find a room or device" aria-label="Find a room or device" .value=${live(this.query)}
-          @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
-      <section class="hme-card hme-layers">
-        <div class="hme-h">${homeMapFloorName(floor)}<span class="hme-h-end">${homeMapCount(floor.rooms.length, "room")}</span></div>
-        ${rooms.map((room) => this.layer(ctx, room, focus !== undefined && sameHomeMapId(focus.id, room.id)))}
-        ${rooms.length === 0 ? html`<p class="hme-empty-line">${q === "" ? "No rooms on this floor yet." : "No room by that name."}</p>` : nothing}
-        ${found.length > 0 ? html`<div class="hme-sep"></div>${found.map((p) => html`<button type="button" class="hme-lay"
-            @click=${() => ctx.setMode("devices", { kind: "pin", pinId: p.id })}><span class="hme-dot dev"></span>${homeMapPinName(p, ctx.hass)}<span class="n">Device</span></button>`)}` : nothing}
-        ${others.length > 0 ? html`<div class="hme-sep"></div>${others.map((f) => html`<button type="button" class="hme-lay dim"
-            @click=${() => ctx.setFloor(f.id)}>▸ ${homeMapFloorName(f)}<span class="n">${homeMapCount(f.rooms.length, "room")}</span></button>`)}` : nothing}
-      </section>
-      <button type="button" class="hme-tb hme-wide ${this.draw.active ? "on" : ""}" @click=${() => (this.draw.active ? this.draw.stop(ctx) : this.draw.start(ctx))}>
-        ${this.draw.active ? "Stop drawing" : "＋ Draw a room by hand"}</button>
-      ${this.addFurnitureButton(ctx, homeMapRoomForAdding(ctx), "hme-tb hme-wide")}
-      <p class="hme-foot">Scanned rooms come from the iPhone. Rooms you draw here (a garden, a garage) need no scan.</p>`;
-  }
-
   /** Add furniture, into `room`; off with no room to put it in. */
   private addFurnitureButton(ctx: HomeMapEditorContext, room: HomeMapRoom | undefined, cls: string): TemplateResult {
     return html`<button type="button" class=${cls} ?disabled=${room === undefined}
       title=${room === undefined ? "Draw or scan a room first" : `Pick a sofa, a bed, a lamp or more from the furniture catalog for ${homeMapRoomName(room)}`}
       @click=${() => { if (room !== undefined) this.openPicker(ctx, room); }}>＋ Add furniture</button>`;
-  }
-
-  private layer(ctx: HomeMapEditorContext, room: HomeMapRoom, on: boolean): TemplateResult {
-    const row = html`<button type="button" class="hme-lay ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-      @click=${() => ctx.select({ kind: "room", roomId: room.id })}>
-      <span class="hme-dot" style=${`background:${HME_FINISH_DOT[homeFloorKind(room)]}`}></span>${homeMapRoomName(room)}<span class="n">${homeMapRoomSizeText(room)}</span></button>`;
-    if (!on) return row;
-    const doors = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => o.kind !== "window");
-    const windows = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => o.kind === "window");
-    const pins = homeMapPinsOfRoom(ctx.floor, room.id);
-    const toggle = (key: string) => {
-      if (this.open.has(key)) this.open.delete(key);
-      else this.open.add(key);
-      ctx.redraw();
-    };
-    const toShape = (index: number | undefined) => ctx.setMode("shape", index === undefined ? { kind: "room", roomId: room.id } : { kind: "opening", roomId: room.id, opening: index });
-    return html`${row}
-      <button type="button" class="hme-lay sub" @click=${() => toShape(doors[0]?.i)}>Doors and ways in<span class="n">${doors.length}</span></button>
-      <button type="button" class="hme-lay sub" @click=${() => toShape(windows[0]?.i)}>Windows<span class="n">${windows.length}</span></button>
-      <button type="button" class="hme-lay sub" aria-expanded=${this.open.has("things") ? "true" : "false"} @click=${() => toggle("things")}>Things<span class="n">${room.objects.length}</span></button>
-      ${this.open.has("things") ? room.objects.map((o, i) => html`<div class="hme-lay subsub ${this.picked(ctx)?.index === i ? "on" : ""}">
-        <button type="button" class="hme-link" title="Pick it to move, resize or turn it" @click=${() => this.pickThing(ctx, room, i)}>${homeMapThingName(o)}</button>
-        ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapThingName(o)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, room.id, i, o.hidden !== true)) })}</div>`) : nothing}
-      <button type="button" class="hme-lay sub" aria-expanded=${this.open.has("devices") ? "true" : "false"} @click=${() => toggle("devices")}>Devices<span class="n">${pins.length}</span></button>
-      ${this.open.has("devices") ? pins.map((p) => html`<button type="button" class="hme-lay subsub" @click=${() => ctx.setMode("devices", { kind: "pin", pinId: p.id })}>${homeMapPinName(p, ctx.hass)}<span class="n">›</span></button>`) : nothing}`;
   }
 
   // ── the stage ──────────────────────────────────────────────────────────
@@ -614,38 +557,41 @@ export class ArrangeMode implements HomeMapMode {
     </g>`;
   }
 
+  /** A press: the drawing tool's while it draws, else the picked room's or
+   * thing's handles, else the thing or room under it. */
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     if (this.draw.active) return this.draw.pointerDown(ctx, e, at);
     if (e.button !== 0) return false;
+    return this.pressHandle(ctx, e, at) || this.pressBody(ctx, e, at);
+  }
+
+  /** A press on the picked room's or thing's resize or turn handle, which
+   * lie over everything else on the plan. */
+  pressHandle(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     const target = (e.target as Element | null)?.closest?.("[data-hme]");
     const hit = target?.getAttribute("data-hme");
-    const focus = this.focus(ctx);
-    const picked = this.picked(ctx);
+    if (hit !== "turn" && hit !== "resize") return false;
     const sides = RESIZE_HANDLES[Number(target?.getAttribute("data-handle"))];
+    const picked = this.picked(ctx);
+    const focus = this.focus(ctx);
     if (picked !== undefined) {
-      if (hit === "turn") {
-        this.thingTurnDrag(ctx, e, picked, at);
-        return true;
-      }
-      if (hit === "resize" && sides !== undefined) {
-        this.thingResizeDrag(ctx, e, picked, sides, at);
-        return true;
-      }
-    } else if (focus !== undefined) {
-      if (hit === "turn") {
-        this.turnDrag(ctx, e, focus, at);
-        return true;
-      }
-      if (hit === "resize" && sides !== undefined) {
-        this.resizeDrag(ctx, e, focus, sides, at);
-        return true;
-      }
+      if (hit === "turn") this.thingTurnDrag(ctx, e, picked, at);
+      else if (sides !== undefined) this.thingResizeDrag(ctx, e, picked, sides, at);
+      else return false;
+      return true;
     }
-    // A thing is dragged at once beside a picked thing in its room, or with
-    // Cmd or Ctrl in any room. In a picked room a drag still moves the room
-    // and a click without one picks the thing under it.
-    const command = e.metaKey || e.ctrlKey;
-    const thing = command || picked !== undefined ? this.thingUnder(ctx, at, command ? undefined : picked?.room) : undefined;
+    if (focus === undefined) return false;
+    if (hit === "turn") this.turnDrag(ctx, e, focus, at);
+    else if (sides !== undefined) this.resizeDrag(ctx, e, focus, sides, at);
+    else return false;
+    return true;
+  }
+
+  /** A press on a thing (in any room; the smallest where several overlap)
+   * picks it and drags it at once; on a room's open floor, picks the room
+   * and drags it. */
+  pressBody(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
+    const thing = this.thingUnder(ctx, at, undefined);
     if (thing !== undefined) {
       this.pickThing(ctx, thing.room, thing.index);
       this.thingMoveDrag(ctx, e, thing, at);
@@ -653,17 +599,15 @@ export class ArrangeMode implements HomeMapMode {
     }
     const room = homeRoomUnder(ctx.floor, at);
     if (room === undefined) return false;
-    const inside = focus !== undefined && sameHomeMapId(focus.id, room.id) ? this.thingUnder(ctx, at, room) : undefined;
     ctx.select({ kind: "room", roomId: room.id });
-    this.moveDrag(ctx, e, room, at, inside);
+    this.moveDrag(ctx, e, room, at);
     return true;
   }
 
   /** Drag a room: snapping to its neighbours' walls unless Alt is held or
    * snapping is off, in grid steps while the grid is on. Saved on the drop
-   * as one move from where it started; let go without a move, `thing` (the
-   * thing under the press in an already picked room) is picked. */
-  private moveDrag(ctx: HomeMapEditorContext, e: PointerEvent, room: HomeMapRoom, start: HomePoint, thing?: ThingAt): void {
+   * as one move from where it started. */
+  private moveDrag(ctx: HomeMapEditorContext, e: PointerEvent, room: HomeMapRoom, start: HomePoint): void {
     const startDoc = ctx.doc;
     const id = room.id;
     const corner = homePointBounds(room.outline);
@@ -694,7 +638,6 @@ export class ArrangeMode implements HomeMapMode {
         this.stopDrag(ctx);
         const [dx, dy] = delta;
         if (moved && (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005)) ctx.apply((d) => moveRoom(d, id, dx, dy), { select: { kind: "room", roomId: id } });
-        else if (!moved && thing !== undefined) this.pickThing(ctx, thing.room, thing.index);
       },
       cancel: () => this.stopDrag(ctx),
     });
@@ -1076,7 +1019,7 @@ export class ArrangeMode implements HomeMapMode {
           ],
           set: (v) => ctx.apply((d) => setRoomArea(d, id, v === "" ? undefined : v)),
         }))}
-        ${hmeHint("The Home Assistant area. Its devices show first in Devices.")}
+        ${hmeHint("The Home Assistant area. Its devices show first in Not on the map, and Place all by area puts them here.")}
         ${hmeRow("Tap opens", hmeSelect({
           label: "Tap opens",
           value: room.pageId ?? "",
@@ -1125,10 +1068,13 @@ export class ArrangeMode implements HomeMapMode {
             <button type="button" class="hme-link" title="Pick it to move, resize or turn it" @click=${() => this.pickThing(ctx, room, i)}>${homeMapThingName(o)}</button></span>
           ${hmeChip({ on: o.hidden !== true, onText: "Shown", offText: "Hidden", label: `${homeMapThingName(o)} shown`, click: () => ctx.apply((d) => setObjectHidden(d, id, i, o.hidden !== true)) })}
           <button type="button" class="hme-x" aria-label=${`Remove ${homeMapThingName(o)}`} title="Remove" @click=${() => ctx.apply((d) => removeObject(d, id, i))}>×</button></div>`)}
-        ${room.openings.length > 0 ? html`<div class="hme-r tight"><span class="hme-grow">${[...new Set(room.openings.map(homeMapOpeningName))].join(", ")}</span>
-          <button type="button" class="hme-link" @click=${() => ctx.setMode("shape", { kind: "room", roomId: id })}>Shape ›</button></div>` : nothing}
-        <div class="hme-r tight"><span class="hme-grow">${pins.length === 0 ? "No devices" : pins.slice(0, 3).map((p) => homeMapPinName(p, ctx.hass)).join(", ") + (pins.length > 3 ? "…" : "")}</span>
-          <button type="button" class="hme-link" @click=${() => ctx.setMode("devices", { kind: "room", roomId: id })}>${homeMapCount(pins.length, "device")} ›</button></div>
+        <div class="hme-r tight"><span class="hme-grow">${room.openings.length === 0 ? "No doors or windows" : [...new Set(room.openings.map(homeMapOpeningName))].join(", ")}</span>
+          <button type="button" class="hme-link" title="Edit this room's corners, walls, doors and windows (or double-click the room)"
+            @click=${() => ctx.editWalls(id)}>Edit walls ›</button></div>
+        ${pins.length === 0 ? html`<div class="hme-r tight"><span class="hme-grow dim">No devices. Drag one from Not on the map.</span></div>` : nothing}
+        ${pins.map((p) => html`<div class="hme-r tight"><span class="hme-grow">
+          <button type="button" class="hme-link" title="Pick it to set its height, glow and tap" @click=${() => ctx.select({ kind: "pin", pinId: p.id })}>${homeMapPinName(p, ctx.hass)}</button></span>
+          <span class="hme-val">${homeMapStateText(p.entityId, ctx.toggles.live ? ctx.hass?.states : undefined)}</span></div>`)}
         <div class="hme-row-end">
           ${hmeMenuButton({
             label: "＋ Add a thing",
@@ -1229,8 +1175,8 @@ export class ArrangeMode implements HomeMapMode {
     return html`${hmeCard("Floor", html`
         ${hmeRow("Name", hmeText({ value: floor.name, label: "Floor name", placeholder: homeMapFloorName(floor), set: (v) => ctx.apply((d) => renameFloor(d, floor.id, v)) }))}
         ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`)}
-      ${hmeCard("Arrange", html`<p class="hme-text">Pick a room on the plan or in the list to move it, turn it, resize it, or change its name, area and floor.</p>
-        <p class="hme-text dim">Drag a room to move it; it lines up with the walls of the rooms round it. Drag the round handle above it to turn it, or a square handle on its box to resize it. Undo with ${homeMapUndoKey()}.</p>
-        <p class="hme-text dim">To move a thing in a room (a sofa, a TV, a desk), pick the room, then click the thing. Cmd or Ctrl and a click picks a thing in any room.</p>`)}`;
+      ${hmeCard("Edit", html`<p class="hme-text">Click picks what is on top: a device, then a thing (a sofa, a TV, a desk), then the room under them. Drag it to move it.</p>
+        <p class="hme-text dim">A dragged room lines up with the walls of the rooms round it. Drag the round handle above it to turn it, or a square handle on its box to resize it. Undo with ${homeMapUndoKey()}.</p>
+        <p class="hme-text dim">Double-click a room to edit its walls, doors and windows. Drag a device from Not on the map onto the plan to place it; Shift, Cmd or Ctrl and a click picks several.</p>`)}`;
   }
 }

@@ -1,27 +1,33 @@
 // `<wa-home-map-editor>`: the home's map editor in the panel, built from the
-// four approved mock boards (Arrange, Shape, Devices, Style). The map is made
-// by the iPhone's scan; here it is arranged, reshaped, dressed with devices
-// and styled.
+// approved mock boards of one edit page (A: one edit page, B: a room's walls,
+// C: the Home style panel). The map is made by the iPhone's scan; here it is
+// arranged, reshaped, dressed with devices and styled, all on one page with
+// no modes.
 //
-// The page is a shell with four modes. The shell owns:
+// The page is a shell round one editing part (`edit-page.ts`). The shell
+// owns:
 //
-// - the bar: ‹ Home, the title, the floor picker (each floor with its
-//   picture and counts; add, rename and delete a floor), the mode tabs
-//   Arrange | Shape | Devices | Style, the Flat | Model | Both view switch
-//   (kept as picked through every mode change), Undo and
-//   Redo (also Cmd or Ctrl Z, Shift for redo, whenever no text field has
-//   focus; every other key does nothing while any control of a form has
-//   focus) and whether the map is saved;
+// - the bar: ‹ Home, the title (with "› <Room> walls" while a room's walls
+//   are edited), the floor picker (each floor with its picture and counts;
+//   add, rename and delete a floor), the Flat | Model | Both view switch,
+//   Home style with a swatch of the home style's look, which opens the Home
+//   style panel (`mode-style.ts`) over the page, closed by ✕, Escape or a
+//   click outside it, Undo and Redo (also Cmd or Ctrl Z, Shift for redo,
+//   whenever no text field has focus; every other key does nothing while
+//   any control of a form has focus) and whether the map is saved;
 // - the stage, which fills all the space the rails leave and grows with
 //   the window: the floor drawn as the plan look of `tile-art.ts` (floors by
 //   finish, walls, doors with their swing, windows, furniture, pools of
-//   light, pins), each room's name and size, and over it the mode's overlay.
-//   Drag empty space, hold Space and drag, or scroll to pan; Ctrl or Cmd and
-//   scroll, a pinch, or the dock's buttons to zoom; Fit shows the floor. The
-//   floating pill at the top is the mode's; the dock at the bottom has the
-//   zoom, the mode's switches, Measure (click two points) and Live states.
-//   Model shows the floor as the tiles' small model (read only, dragged to
-//   turn); editing happens in Flat. Both puts the model beside the plan, the
+//   light, pins), each room's name and size, and over it the page's overlay
+//   and its tool rail. Drag empty space, hold Space and drag, or scroll to
+//   pan; Ctrl or Cmd and scroll, a pinch, or the dock's buttons to zoom; Fit
+//   shows the floor; a double-click goes to the page. The floating pill at
+//   the top is the page's (under the blue Done bar while a room's walls are
+//   edited, the stage ringed in blue); the dock at the bottom has the zoom,
+//   the page's switches and Live states. Measure (the tool rail's M) clicks
+//   two points. Model shows the floor as the tiles' small model (read only,
+//   dragged to turn); editing happens in Flat. Both puts the model beside
+//   the plan, the
 //   plan on the left edited as in Flat and the model on the right following
 //   every edit and drag as it happens. The model outlines the picked room or
 //   thing in blue. The model's dock picks its look: the tiles' five, or 3D,
@@ -34,20 +40,18 @@
 //   once on the drop;
 // - the page's own dialogs for a yes or no and for one line of text.
 //
-// Each mode is its own file implementing `HomeMapMode` (`editor-mode.ts`
-// has the contract and the rules): Arrange (`mode-arrange.ts`), Shape
-// (`mode-shape.ts`), Devices (`mode-devices.ts`) and Style
-// (`mode-style.ts`). On each draw the shell makes a `HomeMapEditorContext`
-// (the map, the floor shown with any drag's preview, the selection, the
-// view and its coordinate helpers, the switches, each room's scan as the
-// iPhone made it, read with the map, apply, preview, select,
-// drag, undo, the dialogs) and asks the mode for its rail, inspector,
-// overlay, pill and dock; presses on the stage and keys go to the mode
-// first, and what it leaves pans, clears the selection or zooms. A mode may
-// also draw its own pins (the plan then leaves them out), put pieces of page
-// over the stage, take a device dragged from its rail onto the plan, or
-// replace the stage with a middle column of its own (Style's previews, with
-// no Flat or Model).
+// The edit page implements `HomeMapPart` (`editor-mode.ts` has the contract
+// and the rules). On each draw the shell makes a `HomeMapEditorContext` (the
+// map, the floor shown with any drag's preview, the selection, the room
+// whose walls are edited, the view and its coordinate helpers, the
+// switches, each room's scan as the iPhone made it, read with the map,
+// apply, preview, select, editWalls, drag, undo, the dialogs) and asks the
+// page for its rail, inspector, overlay, pill and dock; presses on the
+// stage and keys go to the page first, and what it leaves pans, clears the
+// selection or zooms. The page draws its own pins while the floor is
+// edited (the plan then leaves them out), puts its tool rail and the side
+// view over the stage, and takes a device dragged from its rail onto the
+// plan.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/home-map` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -63,17 +67,14 @@ import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { type HomeMapOp, addFloor, deleteFloor, homeStyleOf, renameFloor } from "./edit-ops.js";
+import { HomeMapEditPage } from "./edit-page.js";
 import {
   type HomeMapApplyOptions,
   type HomeMapDragHandlers,
   type HomeMapEditorContext,
-  type HomeMapMode,
-  type HomeMapModeId,
   type HomeMapPageChoice,
   type HomeMapSelection,
   type HomeMapToggles,
-  HOME_MAP_MODE_IDS,
-  HOME_MAP_MODE_LABELS,
   homeMapSelectionThere,
 } from "./editor-mode.js";
 import { hmeFloorThumb } from "./editor-parts.js";
@@ -94,11 +95,9 @@ import {
   homeMapZoomAt,
   homeMapZoomPercent,
 } from "./editor-view.js";
+import { HOME_MAP_ARRANGE_GRID, HOME_MAP_SHAPE_GRID } from "./draw-tool.js";
 import { homeLabelPoint, homePointBounds } from "./geometry.js";
-import { ArrangeMode } from "./mode-arrange.js";
-import { DevicesMode } from "./mode-devices.js";
-import { ShapeMode } from "./mode-shape.js";
-import { StyleMode } from "./mode-style.js";
+import { HomeStylePanel } from "./mode-style.js";
 import {
   type HomeMapDocument,
   type HomeMapFloor,
@@ -161,7 +160,10 @@ export class WaHomeMapEditor extends LitElement {
   @state() private loadError?: string;
   @state() private floorId?: string;
   @state() private selection?: HomeMapSelection;
-  @state() private mode: HomeMapModeId = "arrange";
+  /** The room whose walls are being edited; undefined while the floor is. */
+  @state() private walls?: string;
+  /** The Home style panel is open. */
+  @state() private styleOpen = false;
   /** Opens on Both, the plan to edit beside the model in 3D. */
   @state() private viewKind: "flat" | "model" | "both" = "both";
   @state() private view?: HomeMapView;
@@ -187,12 +189,9 @@ export class WaHomeMapEditor extends LitElement {
 
   /** The map, its undo stack and its saves; made on the first read. */
   session?: HomeMapSession;
-  readonly modes: Readonly<Record<HomeMapModeId, HomeMapMode>> = {
-    arrange: new ArrangeMode(),
-    shape: new ShapeMode(),
-    devices: new DevicesMode(),
-    style: new StyleMode(),
-  };
+  /** The one edit page, and the Home style panel. */
+  readonly page = new HomeMapEditPage();
+  readonly stylePanel = new HomeStylePanel();
 
   /** A drag's live result (`ctx.preview`), never saved. */
   private previewDoc?: HomeMapDocument;
@@ -412,14 +411,17 @@ export class WaHomeMapEditor extends LitElement {
     return hass;
   }
 
-  /** After the map changed: the floor shown still on it, the selection
-   * still there, and a draw. */
+  /** After the map changed: the floor shown still on it, the room whose
+   * walls are edited still on that floor, the selection still there, and a
+   * draw. */
   private afterChange(): void {
     const floors = this.session?.doc?.floors ?? [];
     if (!floors.some((f) => sameHomeMapId(f.id, this.floorId))) {
       this.floorId = floors[0]?.id;
       this.needFit = true;
     }
+    const walls = this.walls;
+    if (walls !== undefined && !(this.baseFloor()?.rooms ?? []).some((r) => sameHomeMapId(r.id, walls))) this.walls = undefined;
     if (!homeMapSelectionThere(this.baseFloor(), this.selection)) this.selection = undefined;
     this.tick++;
   }
@@ -480,18 +482,26 @@ export class WaHomeMapEditor extends LitElement {
     this.selection = selection;
   }
 
-  setMode(mode: HomeMapModeId, selection?: HomeMapSelection): void {
+  /** Edit a room's walls (`ctx.editWalls`), or with undefined go back to
+   * editing the floor; any tool is put down on the way in or out. Flat,
+   * Model or Both stays as picked. */
+  editWalls(roomId: string | undefined, selection?: HomeMapSelection): void {
+    const from = this.walls;
+    const room = roomId === undefined ? undefined : this.baseFloor()?.rooms.find((r) => sameHomeMapId(r.id, roomId));
+    if (roomId !== undefined && room === undefined) return;
     const ctx = this.context();
-    if (ctx !== undefined && mode !== this.mode) this.modes[this.mode].leave?.(ctx);
-    // Flat or Model stays as picked: a mode change never switches it.
-    this.mode = mode;
-    if (selection !== undefined) this.selection = selection;
+    if (ctx !== undefined && !(roomId === undefined ? from === undefined : sameHomeMapId(roomId, from))) this.page.leave?.(ctx);
+    this.walls = room?.id;
+    this.styleOpen = false;
+    const back = room?.id ?? from;
+    this.selection = selection ?? (back === undefined ? this.selection : { kind: "room", roomId: back });
   }
 
   setFloor(floorId: string): void {
     const ctx = this.context();
-    if (ctx !== undefined) this.modes[this.mode].leave?.(ctx);
+    if (ctx !== undefined) this.page.leave?.(ctx);
     this.floorId = floorId;
+    this.walls = undefined;
     this.selection = undefined;
     this.floorMenu = false;
     this.measure = {};
@@ -544,9 +554,9 @@ export class WaHomeMapEditor extends LitElement {
     this.userMoved = true;
   }
 
-  // ── the context a mode is handed ───────────────────────────────────────
+  // ── the context the page is handed ─────────────────────────────────────
 
-  /** The context for the modes, or undefined before a map with a floor is
+  /** The context for the page, or undefined before a map with a floor is
    * in. */
   context(): HomeMapEditorContext | undefined {
     const doc = this.doc;
@@ -560,7 +570,7 @@ export class WaHomeMapEditor extends LitElement {
       doc,
       floor,
       selection: this.selection,
-      mode: this.mode,
+      walls: this.walls,
       view,
       stage: this.stageSize,
       toggles: this.toggles,
@@ -576,7 +586,7 @@ export class WaHomeMapEditor extends LitElement {
       apply: (op, options) => this.apply(op, options),
       preview: (op) => this.preview(op),
       select: (sel) => this.select(sel),
-      setMode: (m, sel) => this.setMode(m, sel),
+      editWalls: (roomId, sel) => this.editWalls(roomId, sel),
       setFloor: (id) => this.setFloor(id),
       setToggle: (key, on) => this.setToggle(key, on),
       drag: (e, handlers) => this.drag(e, handlers),
@@ -676,8 +686,8 @@ export class WaHomeMapEditor extends LitElement {
   // ── the stage's presses ────────────────────────────────────────────────
 
   /** A press on the stage: a pinch's second finger, the model's turn, a
-   * pan (middle button, Space, or a press the mode leaves), a measure, or
-   * the mode's. */
+   * pan (middle button, Space, or a press the page leaves), a measure, or
+   * the page's. */
   onStageDown(e: PointerEvent): void {
     this.stageEl = e.currentTarget as unknown as StageEl;
     this.floorMenu = false;
@@ -710,11 +720,19 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     const at = this.toPlan(e.clientX, e.clientY);
-    if (this.modes[this.mode].pointerDown?.(ctx, e, at) === true) {
+    if (this.page.pointerDown?.(ctx, e, at) === true) {
       e.preventDefault?.();
       return;
     }
     this.pan(e, true);
+  }
+
+  /** A double-click on the plan: the page's (a room's walls). */
+  onStageDblClick(e: MouseEvent): void {
+    this.stageEl = e.currentTarget as unknown as StageEl;
+    if (this.dialog !== undefined || this.viewKind === "model" || this.toggles.measure || this.spaceHeld || e.button !== 0) return;
+    const ctx = this.context();
+    if (ctx !== undefined) this.page.doubleClick?.(ctx, e, this.toPlan(e.clientX, e.clientY));
   }
 
   onStageMove(e: PointerEvent): void {
@@ -724,25 +742,25 @@ export class WaHomeMapEditor extends LitElement {
     const at = this.toPlan(e.clientX, e.clientY);
     if (this.toggles.measure && this.measure.a !== undefined && this.measure.b === undefined) this.measure = { ...this.measure, hover: at };
     const ctx = this.context();
-    if (ctx !== undefined) this.modes[this.mode].hover?.(ctx, at);
+    if (ctx !== undefined) this.page.hover?.(ctx, at);
   }
 
   onStageLeave(): void {
     const ctx = this.context();
-    if (ctx !== undefined) this.modes[this.mode].hover?.(ctx, undefined);
+    if (ctx !== undefined) this.page.hover?.(ctx, undefined);
   }
 
   onStageUp(e: PointerEvent): void {
     this.touches.delete(e.pointerId);
   }
 
-  /** Something dragged from the rail over the plan: the mode says whether
+  /** Something dragged from the rail over the plan: the page says whether
    * it takes a drop there. */
   onStageDrag(e: DragEvent): void {
     this.stageEl = e.currentTarget as unknown as StageEl;
     const ctx = this.context();
     if (ctx === undefined || this.viewKind === "model" || this.dialog !== undefined) return;
-    if (this.modes[this.mode].dragOver?.(ctx, this.toPlan(e.clientX, e.clientY), e) === true) {
+    if (this.page.dragOver?.(ctx, this.toPlan(e.clientX, e.clientY), e) === true) {
       e.preventDefault?.();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     }
@@ -754,7 +772,7 @@ export class WaHomeMapEditor extends LitElement {
     const from = e.currentTarget as Node | null;
     if (to !== null && from !== null && typeof from.contains === "function" && from.contains(to)) return;
     const ctx = this.context();
-    if (ctx !== undefined) this.modes[this.mode].dragOver?.(ctx, undefined, e);
+    if (ctx !== undefined) this.page.dragOver?.(ctx, undefined, e);
   }
 
   onStageDrop(e: DragEvent): void {
@@ -762,7 +780,7 @@ export class WaHomeMapEditor extends LitElement {
     const ctx = this.context();
     if (ctx === undefined || this.viewKind === "model") return;
     e.preventDefault?.();
-    this.modes[this.mode].drop?.(ctx, this.toPlan(e.clientX, e.clientY), e);
+    this.page.drop?.(ctx, this.toPlan(e.clientX, e.clientY), e);
   }
 
   /** Drag the plan about. A click (no move) on empty space clears the
@@ -860,11 +878,12 @@ export class WaHomeMapEditor extends LitElement {
   /** A key anywhere on the page while it is open: nothing while a text
    * field has focus or a dialog is open; undo and redo; nothing more while
    * any other control of a form has focus (a slider, a colour, a menu), so
-   * Delete there never removes the picked things; then Space for panning,
-   * the mode's keys, then Escape, zoom and fit. */
+   * Delete there never removes the picked things; with the Home style panel
+   * open, only Escape, which closes it; then Space for panning, the page's
+   * keys, then Escape, zoom and fit. */
   readonly onKey = (e: KeyboardEvent): void => {
     if (this.dialog !== undefined || this.session === undefined) return;
-    // A mode's sheet keeps its own keys.
+    // A sheet keeps its own keys.
     if ((this.renderRoot as ParentNode | undefined)?.querySelector?.(".hme-sheet") != null) return;
     const target = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
     if (homeMapIsTypingTarget(target)) return;
@@ -875,6 +894,10 @@ export class WaHomeMapEditor extends LitElement {
       else this.redo();
       return;
     }
+    if (this.styleOpen) {
+      if (e.key === "Escape") this.closeStyle();
+      return;
+    }
     if (homeMapIsFormControl(target)) return;
     if (e.key === " " && !e.repeat) {
       this.spaceHeld = true;
@@ -882,7 +905,7 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     const ctx = this.context();
-    if (ctx !== undefined && this.viewKind !== "model" && this.modes[this.mode].keyDown?.(ctx, e) === true) {
+    if (ctx !== undefined && this.viewKind !== "model" && this.page.keyDown?.(ctx, e) === true) {
       e.preventDefault?.();
       return;
     }
@@ -890,6 +913,7 @@ export class WaHomeMapEditor extends LitElement {
       case "cancel":
         if (this.floorMenu) this.floorMenu = false;
         else if (this.toggles.measure) this.setToggle("measure", false);
+        else if (this.walls !== undefined) this.editWalls(undefined);
         else this.selection = undefined;
         return;
       case "zoomIn":
@@ -908,6 +932,23 @@ export class WaHomeMapEditor extends LitElement {
     if (e.key === " ") this.spaceHeld = false;
   };
 
+  // ── the Home style panel ───────────────────────────────────────────────
+
+  /** Open or close the Home style panel. */
+  toggleStyle(): void {
+    if (this.styleOpen) {
+      this.closeStyle();
+      return;
+    }
+    this.floorMenu = false;
+    this.styleOpen = true;
+  }
+
+  closeStyle(): void {
+    this.styleOpen = false;
+    this.stylePanel.leave();
+  }
+
   // ── drawing ────────────────────────────────────────────────────────────
 
   override render(): TemplateResult {
@@ -921,18 +962,17 @@ export class WaHomeMapEditor extends LitElement {
     const doc = this.doc;
     if (doc === null || doc.floors.length === 0) return this.calm(html`<b>${HOME_MAP_EMPTY_TEXT}</b>`);
     const ctx = this.context()!;
-    const mode = this.modes[this.mode];
     const note = this.session.note;
     return html`<div class="hme">
       ${this.renderBar(doc, ctx)}
       ${note === undefined ? nothing : html`<div class="hme-note ${note.kind}" role="status"><span>${note.text}</span>
         <button class="hme-link" @click=${() => this.session?.dismissNote()}>Dismiss</button></div>`}
       <div class="hme-body">
-        <aside class="hme-rail" aria-label="${HOME_MAP_MODE_LABELS[this.mode]} tools">${mode.rail(ctx)}</aside>
-        <section class="hme-stage-wrap">${mode.stage?.(ctx) ?? this.renderStage(ctx, mode)}</section>
-        <aside class="hme-insp" aria-label="Inspector">${mode.inspector(ctx)}</aside>
+        <aside class="hme-rail" aria-label=${this.walls === undefined ? "Layers" : "Walls"}>${this.page.rail(ctx)}</aside>
+        <section class="hme-stage-wrap">${this.renderStage(ctx)}</section>
+        <aside class="hme-insp" aria-label="Inspector">${this.page.inspector(ctx)}</aside>
       </div>
-      ${mode.sheet?.(ctx) ?? nothing}
+      ${this.page.sheet?.(ctx) ?? nothing}
       ${this.renderDialog()}
     </div>`;
   }
@@ -945,9 +985,13 @@ export class WaHomeMapEditor extends LitElement {
     const floor = this.baseFloor()!;
     const state = this.session?.state ?? { kind: "saved" };
     const mac = homeMapOnMac();
+    const wallsRoom = this.walls === undefined ? undefined : floor.rooms.find((r) => sameHomeMapId(r.id, this.walls));
+    const look = homeStyleOf(doc).look;
     return html`<header class="hme-bar">
       ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-back" @click=${() => this.onHome?.()}>‹ Home</button><span class="hme-vsep"></span>`}
       <strong class="hme-title">Home map</strong><span class="hme-beta">BETA</span>
+      ${wallsRoom === undefined ? nothing : html`<span class="hme-crumb-sep" aria-hidden="true">›</span>
+        <strong class="hme-title hme-crumb">${homeMapRoomName(wallsRoom)} walls</strong>`}
       <div class="hme-floor-wrap">
         <button type="button" class="hme-tb hme-floor-btn" aria-label="Switch floor" aria-haspopup="menu" aria-expanded=${this.floorMenu ? "true" : "false"}
           @click=${() => { this.floorMenu = !this.floorMenu; }}>
@@ -958,21 +1002,27 @@ export class WaHomeMapEditor extends LitElement {
         ${this.floorMenu ? this.renderFloorMenu(doc, floor) : nothing}
       </div>
       <span class="hme-flex"></span>
-      <div class="hme-seg" role="tablist" aria-label="Edit mode">
-        ${HOME_MAP_MODE_IDS.map((m) => html`<button type="button" role="tab" class=${m === this.mode ? "on" : ""} aria-selected=${m === this.mode ? "true" : "false"}
-          @click=${() => this.setMode(m)}>${HOME_MAP_MODE_LABELS[m]}</button>`)}
-      </div>
-      <span class="hme-flex"></span>
-      ${this.modes[this.mode].stage !== undefined ? nothing : html`<div class="hme-seg" role="group" aria-label="View">
+      <div class="hme-seg" role="group" aria-label="View">
         <button type="button" class=${this.viewKind === "flat" ? "on" : ""} aria-pressed=${this.viewKind === "flat" ? "true" : "false"} @click=${() => { this.viewKind = "flat"; }}>Flat</button>
         <button type="button" class=${this.viewKind === "model" ? "on" : ""} aria-pressed=${this.viewKind === "model" ? "true" : "false"} @click=${() => { this.viewKind = "model"; }}>Model</button>
         <button type="button" class=${this.viewKind === "both" ? "on" : ""} aria-pressed=${this.viewKind === "both" ? "true" : "false"}
           title="The plan to edit on the left, the model following it on the right" @click=${() => { this.viewKind = "both"; }}>Both</button>
-      </div>`}
+      </div>
+      <div class="hme-style-wrap">
+        ${this.renderStyleButton(look)}
+        ${this.styleOpen ? this.stylePanel.panel(ctx, () => this.closeStyle()) : nothing}
+      </div>
       <button type="button" class="hme-tb hme-icon" aria-label="Undo" title=${`Undo (${mac ? "⌘Z" : "Ctrl+Z"})`} ?disabled=${!ctx.canUndo} @click=${() => this.undo()}>↶</button>
       <button type="button" class="hme-tb hme-icon" aria-label="Redo" title=${`Redo (${mac ? "⇧⌘Z" : "Ctrl+Shift+Z"})`} ?disabled=${!ctx.canRedo} @click=${() => this.redo()}>↷</button>
       <span class="hme-status ${state.kind}" role="status" title=${state.kind === "error" ? state.text : nothing}><span class="hme-status-dot"></span>${homeMapSaveWords(state)}</span>
     </header>`;
+  }
+
+  /** Home style, with a swatch of the home style's look: opens its panel. */
+  private renderStyleButton(look: HomeMapLook): TemplateResult {
+    return html`<button type="button" class="hme-tb hme-style-btn ${this.styleOpen ? "on" : ""}" aria-haspopup="dialog" aria-expanded=${this.styleOpen ? "true" : "false"}
+      title="How every map tile looks, unless a tile picks its own" @click=${() => this.toggleStyle()}>
+      <span class="hme-style-sw" style=${`background:${homeTileGround(look, 0.2)}`} aria-hidden="true"></span>Home style</button>`;
   }
 
   private renderFloorMenu(doc: HomeMapDocument, on: HomeMapFloor): TemplateResult {
@@ -1018,12 +1068,14 @@ export class WaHomeMapEditor extends LitElement {
 
   // ── the stage ──────────────────────────────────────────────────────────
 
-  private renderStage(ctx: HomeMapEditorContext, mode: HomeMapMode): TemplateResult {
+  private renderStage(ctx: HomeMapEditorContext): TemplateResult {
+    const page = this.page;
     const { width, height } = this.stageSize;
     const model = this.viewKind === "model";
     const both = this.viewKind === "both";
-    const pill = model ? nothing : mode.pill?.(ctx) ?? nothing;
-    const cursor = this.spaceHeld ? "grab" : model ? "ew-resize" : this.toggles.measure ? "crosshair" : mode.cursor?.(ctx) ?? "default";
+    const pill = model ? nothing : page.pill?.(ctx) ?? nothing;
+    const banner = model ? nothing : page.banner?.(ctx) ?? nothing;
+    const cursor = this.spaceHeld ? "grab" : model ? "ew-resize" : this.toggles.measure ? "crosshair" : page.cursor?.(ctx) ?? "default";
     const empty = ctx.floor.rooms.length === 0;
     const real = this.model3d && this.bundleUrl !== undefined;
     // The model beside the plan, the same size as it; the stage's observer
@@ -1042,13 +1094,15 @@ export class WaHomeMapEditor extends LitElement {
     if (model && real) {
       return html`<div class="hme-stage model hme-3d">
         ${this.render3d(ctx)}
-        ${this.renderDock(ctx, mode)}
+        ${this.renderDock(ctx)}
       </div>`;
     }
-    return html`<div class="hme-stage ${model ? "model" : ""} ${both ? "hme-split-l" : ""}" style=${model ? `background:${homeTileGround(this.modelLookNow())}` : ""}>
+    const walls = this.walls !== undefined && !model;
+    return html`<div class="hme-stage ${model ? "model" : ""} ${both ? "hme-split-l" : ""} ${walls ? "walls" : ""}" style=${model ? `background:${homeTileGround(this.modelLookNow())}` : ""}>
       <svg class="hme-svg" width="100%" height="100%" viewBox=${`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`} style=${`cursor:${cursor}`}
         role="img" aria-label=${`Plan of ${homeMapFloorName(ctx.floor)}`}
         @pointerdown=${(e: PointerEvent) => this.onStageDown(e)}
+        @dblclick=${(e: MouseEvent) => this.onStageDblClick(e)}
         @pointermove=${(e: PointerEvent) => this.onStageMove(e)}
         @pointerup=${(e: PointerEvent) => this.onStageUp(e)}
         @pointercancel=${(e: PointerEvent) => this.onStageUp(e)}
@@ -1057,14 +1111,15 @@ export class WaHomeMapEditor extends LitElement {
         @dragover=${(e: DragEvent) => this.onStageDrag(e)}
         @dragleave=${(e: DragEvent) => this.onStageDragLeave(e)}
         @drop=${(e: DragEvent) => this.onStageDrop(e)}>
-        ${model ? this.renderModel(ctx, width, height) : this.renderPlan(ctx, mode, width, height)}
+        ${model ? this.renderModel(ctx, width, height) : this.renderPlan(ctx, width, height)}
       </svg>
-      ${pill === nothing ? nothing : html`<div class="hme-pill">${pill}</div>`}
-      ${model ? nothing : mode.stageExtra?.(ctx) ?? nothing}
-      ${empty && !model ? html`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
+      ${banner === nothing ? nothing : html`<div class="hme-banner">${banner}</div>`}
+      ${pill === nothing ? nothing : html`<div class="hme-pill ${banner === nothing ? "" : "under"}">${pill}</div>`}
+      ${model ? nothing : page.stageExtra?.(ctx) ?? nothing}
+      ${empty && !model && !page.arrange.draw.active ? html`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
         <span>Draw one by hand, or scan this floor with the iPhone.</span>
-        <button type="button" class="hme-tb" @click=${() => { this.setMode("arrange"); const c = this.context(); if (c) (this.modes.arrange as ArrangeMode).draw.start(c); }}>＋ Draw a room by hand</button></div>` : nothing}
-      ${this.renderDock(ctx, mode)}
+        <button type="button" class="hme-tb" @click=${() => { const c = this.context(); if (c) page.startDrawing(c); }}>＋ Draw a room by hand</button></div>` : nothing}
+      ${this.renderDock(ctx)}
     </div>${side}`;
   }
 
@@ -1076,22 +1131,22 @@ export class WaHomeMapEditor extends LitElement {
     this.turnModel(e);
   }
 
-  /** The plan, its names and sizes, the mode's overlay and the measure. */
-  private renderPlan(ctx: HomeMapEditorContext, mode: HomeMapMode, width: number, height: number) {
+  /** The plan, its names and sizes, the page's overlay and the measure. */
+  private renderPlan(ctx: HomeMapEditorContext, width: number, height: number) {
     const view = this.view;
     if (view === undefined || width <= 0) return nothing;
-    const art = this.planArt(ctx.floor, width, height, mode.drawsPins === true ? "none" : "all");
+    const art = this.planArt(ctx.floor, width, height, this.page.drawsPins?.(ctx) === true ? "none" : "all");
     const k = view.scale / (this.artScale || view.scale);
     return svg`${this.background(view, width, height)}
       <g class="hme-art" transform=${`translate(${view.ox.toFixed(2)} ${view.oy.toFixed(2)}) scale(${k.toFixed(5)})`} pointer-events="none">${art}</g>
       <g class="hme-labels" pointer-events="none">${this.labels(ctx)}</g>
-      <g class="hme-overlay">${mode.overlay(ctx)}</g>
+      <g class="hme-overlay">${this.page.overlay(ctx)}</g>
       ${this.toggles.measure ? this.measureMarks(ctx) : nothing}`;
   }
 
   /** The plan look drawn at the resting scale, kept while nothing it shows
    * changed (a hover draws the page again but not the plan). `devices`
-   * none leaves the pins to a mode that draws its own. */
+   * none leaves the pins to the page, which draws its own. */
   private planArt(floor: HomeMapFloor, width: number, height: number, devices: "all" | "none"): unknown {
     const states = this.toggles.live ? this.hass?.states : undefined;
     const scale = this.artScale || this.view!.scale;
@@ -1117,7 +1172,7 @@ export class WaHomeMapEditor extends LitElement {
 
   /** Dots that move with the plan, or the grid while it is on. */
   private background(view: HomeMapView, width: number, height: number) {
-    const step = this.mode === "shape" ? 0.05 : 0.1;
+    const step = this.walls !== undefined ? HOME_MAP_SHAPE_GRID : HOME_MAP_ARRANGE_GRID;
     let size = 20;
     if (this.toggles.grid) {
       size = step * view.scale;
@@ -1221,7 +1276,7 @@ export class WaHomeMapEditor extends LitElement {
     </div>`;
   }
 
-  private renderDock(ctx: HomeMapEditorContext, mode: HomeMapMode): TemplateResult {
+  private renderDock(ctx: HomeMapEditorContext): TemplateResult {
     const live = html`<button type="button" class="hme-tb ${this.toggles.live ? "on" : ""}" aria-pressed=${this.toggles.live ? "true" : "false"}
       title="Draw what Home Assistant's devices are doing now" @click=${() => this.setToggle("live", !this.toggles.live)}><span class="hme-live-dot"></span>Live states</button>`;
     if (this.viewKind === "model") return this.renderModelDock(true, live);
@@ -1233,9 +1288,7 @@ export class WaHomeMapEditor extends LitElement {
       <button type="button" class="hme-tb hme-icon" aria-label="Zoom in" @click=${() => this.zoomBy(HOME_MAP_ZOOM_STEP)}>＋</button>
       <button type="button" class="hme-tb" @click=${() => this.fit()}>Fit</button>
       <span class="hme-vsep"></span>
-      ${mode.dock?.(ctx) ?? nothing}
-      <button type="button" class="hme-tb ${this.toggles.measure ? "on" : ""}" aria-pressed=${this.toggles.measure ? "true" : "false"}
-        title="Click two points to measure between them" @click=${() => this.setToggle("measure", !this.toggles.measure)}>Measure</button>
+      ${this.page.dock?.(ctx) ?? nothing}
       <span class="hme-vsep"></span>${live}
     </div>`;
   }

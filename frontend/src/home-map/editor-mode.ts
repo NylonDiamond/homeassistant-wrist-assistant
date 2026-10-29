@@ -1,13 +1,23 @@
 // The contract between the map editor's shell (`home-map-editor.ts`) and
-// its modes. The shell owns the bar, the stage (the plan drawn, pan and
-// zoom, the measure tool, the dock), the selection, the undo stack and the
-// saves; each mode is one file (`mode-arrange.ts`, `mode-shape.ts`, ...)
-// exporting a `HomeMapMode` that draws its own left rail, inspector, stage
-// overlay, selection pill and dock toggles from the `HomeMapEditorContext`
-// the shell hands it on every draw, and answers the presses and keys the
-// shell passes it.
+// the part that edits on its page. The shell owns the bar, the stage (the
+// plan drawn, pan and zoom, the measure, the dock), the selection, the undo
+// stack, the saves and the Home style panel; the page has no modes. Its one
+// editing part, `HomeMapEditPage` (`edit-page.ts`), implements `HomeMapPart`:
+// it draws the left rail, the inspector, the stage's overlay, its tool rail,
+// pill and dock switches from the `HomeMapEditorContext` the shell hands it
+// on every draw, and answers the presses and keys the shell passes it.
 //
-// Rules a mode keeps:
+// The page is in one of two states. Editing (no `ctx.walls`): a click picks
+// what is on top, a device pin, else a thing, else a room, and moves it.
+// Wall editing (`ctx.walls`, a room's id), entered by a double-click on a
+// room: that room's corners, walls, doors and windows, the rest dimmed. The
+// edit page does its work through three files that each keep one kind of
+// edit, as parts of it: `mode-arrange.ts` (rooms and things, the furniture
+// picker), `mode-devices.ts` (pins and the devices not on the map) and
+// `mode-shape.ts` (walls, corners and openings, and the placing tools).
+// `mode-style.ts` is the Home style panel the bar opens.
+//
+// Rules every part keeps:
 //
 // - Every change goes through `ctx.apply(op)`, with `op` an `edit-ops.ts`
 //   function of the map naming things by id, so a save that meets a newer
@@ -19,11 +29,11 @@
 // - The overlay is drawn in stage pixels: `ctx.toScreen(p)` for a plan
 //   point, `ctx.px(m)` for a length. Elements a press should find carry
 //   `data-hme="..."`; the shell's own art takes no presses.
-// - A mode's own state (its tool, a half-drawn room) lives on the mode
+// - A part's own state (its tool, a half-drawn room) lives on the part
 //   object; call `ctx.redraw()` after changing it.
-// - Keys reach a mode only when no control of a form (a field, slider,
-//   colour or menu) has focus and no dialog is open; a mode returns true for
-//   a key it used.
+// - Keys reach the page only when no control of a form (a field, slider,
+//   colour or menu) has focus and no dialog or panel is open; it returns
+//   true for a key it used.
 // - `ctx.confirm` and `ctx.ask` are the page's own dialogs, never the
 //   browser's.
 
@@ -36,19 +46,10 @@ import type { HomeMapDocument, HomeMapFloor, HomeMapScans, HomePoint } from "./m
 import { sameHomeMapId } from "./model.js";
 import { homeMapRoomWalls } from "./edit-ops.js";
 
-/** The editor's four modes, in the bar's order. */
-export type HomeMapModeId = "arrange" | "shape" | "devices" | "style";
-export const HOME_MAP_MODE_IDS: readonly HomeMapModeId[] = ["arrange", "shape", "devices", "style"];
-export const HOME_MAP_MODE_LABELS: Readonly<Record<HomeMapModeId, string>> = {
-  arrange: "Arrange",
-  shape: "Shape",
-  devices: "Devices",
-  style: "Style",
-};
-
 /** What is picked. Indexes are a room's walls as `homeMapRoomWalls` numbers
- * them, its outline corners, openings and objects. `pins` is two or more
- * pins picked at once in Devices, in the order picked (one is `pin`). */
+ * them, its outline corners, openings and objects (walls, corners and
+ * openings only while that room's walls are edited). `pins` is two or more
+ * pins picked at once, in the order picked (one is `pin`). */
 export type HomeMapSelection =
   | { kind: "room"; roomId: string }
   | { kind: "wall"; roomId: string; wall: number }
@@ -87,11 +88,12 @@ export function sameHomeMapSelection(a: HomeMapSelection | undefined, b: HomeMap
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** The stage's switches in the dock. `snap`: a dragged room snaps to its
- * neighbours' walls; `square`: a dragged corner keeps its walls square;
- * `grid`: points land on the mode's grid; `measure`: clicks measure;
- * `live`: the plan shows Home Assistant's states; `scan`: Shape draws each
- * room's scan as it was over the plan. */
+/** The stage's switches. `snap`: a dragged room snaps to its neighbours'
+ * walls; `square`: a dragged corner keeps its walls square; `grid`: points
+ * land on the grid (10 cm, 5 cm while editing walls); `measure`: clicks
+ * measure (the tool rail's Measure); `live`: the plan shows Home Assistant's
+ * states; `scan`: wall editing draws each room's scan as it was over the
+ * plan. */
 export interface HomeMapToggles {
   snap: boolean;
   square: boolean;
@@ -125,7 +127,7 @@ export interface HomeMapApplyOptions {
   floorId?: string;
 }
 
-/** Everything a mode draws from and acts through, made fresh for each
+/** Everything a part draws from and acts through, made fresh for each
  * draw. */
 export interface HomeMapEditorContext {
   readonly hass: HassLike | undefined;
@@ -135,7 +137,9 @@ export interface HomeMapEditorContext {
   /** The floor on the stage, with the preview made on it. */
   readonly floor: HomeMapFloor;
   readonly selection: HomeMapSelection | undefined;
-  readonly mode: HomeMapModeId;
+  /** The room whose walls are being edited; undefined while editing the
+   * floor as a whole. */
+  readonly walls: string | undefined;
   readonly view: HomeMapView;
   /** The stage's size in pixels. */
   readonly stage: { width: number; height: number };
@@ -165,7 +169,10 @@ export interface HomeMapEditorContext {
   /** Show a change live without saving it; undefined ends it. */
   preview(op: HomeMapOp | undefined): void;
   select(selection: HomeMapSelection | undefined): void;
-  setMode(mode: HomeMapModeId, selection?: HomeMapSelection): void;
+  /** Edit a room's walls, `selection` picked in it (else the room); with
+   * undefined, back to editing the floor, `selection` picked (else the room
+   * whose walls were edited). */
+  editWalls(roomId: string | undefined, selection?: HomeMapSelection): void;
   setFloor(floorId: string): void;
   setToggle(key: keyof HomeMapToggles, on: boolean): void;
   /** Follow a press as a drag, the pointer captured. */
@@ -185,9 +192,8 @@ export interface HomeMapEditorContext {
   readonly openPage?: ((pageId: string) => void) | undefined;
 }
 
-/** One mode of the editor. */
-export interface HomeMapMode {
-  readonly id: HomeMapModeId;
+/** The page's editing part, as the shell asks it. */
+export interface HomeMapPart {
   /** The left column's cards. */
   rail(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
   /** The right column's cards. */
@@ -197,31 +203,31 @@ export interface HomeMapMode {
   /** The floating pill at the top of the stage: what is picked and what can
    * be done to it. */
   pill?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** The mode's switches in the dock, between the zoom and Measure. */
+  /** A bar across the top of the stage, the pill under it (wall editing's
+   * Done). */
+  banner?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
+  /** Switches in the dock, after the zoom. */
   dock?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** A press on the stage at plan point `at`. True when the mode took it;
+  /** A press on the stage at plan point `at`. True when the part took it;
    * false lets the shell pan (and clear the selection on a click). */
   pointerDown?(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean;
+  /** A double-click on the stage at plan point `at`. */
+  doubleClick?(ctx: HomeMapEditorContext, e: MouseEvent, at: HomePoint): void;
   /** The pointer moving over the stage with no button down. */
   hover?(ctx: HomeMapEditorContext, at: HomePoint | undefined): void;
   /** A key, when no control of a form has focus. True when used. */
   keyDown?(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean;
-  /** The stage's cursor while this mode has it. */
+  /** The stage's cursor. */
   cursor?(ctx: HomeMapEditorContext): string | undefined;
-  /** Leaving the mode (another mode, another floor): drop any tool. */
+  /** Another floor, or into or out of a room's walls: drop any tool. */
   leave?(ctx: HomeMapEditorContext): void;
-  /** The mode draws the floor's pins in its overlay, so the plan under it
-   * leaves them out (its pools of light stay). */
-  readonly drawsPins?: boolean;
+  /** Whether the part draws the floor's pins in its overlay, so the plan
+   * under it leaves them out (its pools of light stay). */
+  drawsPins?(ctx: HomeMapEditorContext): boolean;
   /** Small pieces of page over the stage, beside the pill and the dock,
-   * that take their own presses (Devices' side view). */
+   * that take their own presses (the tool rail, the side view). */
   stageExtra?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** The mode's own middle column in place of the plan stage (Style). The
-   * element in it with the class `hme-stage` is the one measured as
-   * `ctx.stage`; the shell keeps the bar, the rail and the inspector, and
-   * there is no Flat or Model. */
-  stage?(ctx: HomeMapEditorContext): TemplateResult;
-  /** A sheet over the whole page, under the page's own dialogs (Arrange's
+  /** A sheet over the whole page, under the page's own dialogs (the
    * furniture picker). It keeps its own keys: none reach the shell. */
   sheet?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
   /** Something dragged from the rail moving over the plan at `at`, or

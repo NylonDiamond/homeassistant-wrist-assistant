@@ -1,19 +1,23 @@
-// The map editor's Shape mode (mock board 2): fix what the scan got a
-// little wrong, and draw what it never saw. The left rail holds the tools,
-// each with its key (Walls and corners V, Draw a room R, Split a room S,
-// Inner wall W, Door D, Window N, Way through O, Stairs T), and the scan
-// check: overlapping rooms, corners a little off square, small gaps and
-// rooms with no way into their neighbours (`scanIssues`), each with its fix
-// and a fix for all.
+// The edit page's wall editing (`edit-page.ts`, which uses this part): fix
+// what the scan got a little wrong in one room, and draw what it never saw.
+// A double-click on a room edits its walls (`ctx.walls`); the tool rail
+// holds the tools, each with its key (Corners and walls V, Split the room S,
+// Inner wall W, Door D, Window N, Way through O, Stairs T), and the left
+// rail the room's walls with what is on each, and the scan check:
+// overlapping rooms, corners a little off square, small gaps and rooms with
+// no way into their neighbours (`scanIssues`), each with its fix and a fix
+// for all. Inner wall, Door and Window also work from the edit page's own
+// tool rail on any room, and go into that room's walls once placed.
 //
-// On the stage the picked room stands out from the rest. Its corners are
+// On the stage the room stands out from the rest, dimmed. Its corners are
 // handles (a corner another room shares moves with it; with Snap to 90° on
 // a corner lines up with the corners beside it), the middle of each wall
 // adds a corner when dragged, a wall is picked with a click and shows its
 // length, and each door, window and way through slides along its wall with
 // the space to each corner shown. Corners off square and the other issues
 // are marked in amber wherever they are. The placing tools show where the
-// door, window or stairs would go before the click.
+// door, window or stairs would go before the click. A click outside the
+// room goes back to the edit page with the room picked.
 //
 // The inspector shows the picked wall (its room and side, length, which
 // moves its far corner, thickness and the room's wall height, and
@@ -22,13 +26,13 @@
 // height from the floor and how tall, Remove). Edits go through the shell
 // (`editor-mode.ts`).
 //
-// The dock's Show scan as it was draws each room's scan as Home Assistant
-// kept it (`ctx.scans`) faint and dashed over the plan, in a teal apart
-// from the blue of a picked thing and the amber of an issue: its outline,
-// walls, doors and windows. A picked room whose shape is no longer its
-// scan's has Back to the scan in its card, one undo step that puts its
-// walls, doors, windows and furniture back and leaves its devices; a room
-// drawn by hand, or one already as scanned, has none.
+// Show scan as it was (the dock and the rail) draws each room's scan as
+// Home Assistant kept it (`ctx.scans`) faint and dashed over the plan, in a
+// teal apart from the blue of a picked thing and the amber of an issue: its
+// outline, walls, doors and windows. A room whose shape is no longer its
+// scan's has Back to the scan in its card and the rail, one undo step that
+// puts its walls, doors, windows and furniture back and leaves its devices;
+// a room drawn by hand, or one already as scanned, has none.
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import {
@@ -57,10 +61,10 @@ import {
   squareCorners,
   straightenWall,
 } from "./edit-ops.js";
-import { HOME_MAP_SHAPE_GRID, HomeMapDrawTool, homeMapSnapPoint } from "./draw-tool.js";
-import { type HomeMapEditorContext, type HomeMapMode, type HomeMapSelection, homeMapSelectionRoom } from "./editor-mode.js";
+import { HOME_MAP_SHAPE_GRID, homeMapSnapPoint } from "./draw-tool.js";
+import { type HomeMapEditorContext, type HomeMapSelection, homeMapSelectionRoom } from "./editor-mode.js";
 import { hmeCard, hmeHint, hmeNumber, hmePic, hmeRow } from "./editor-parts.js";
-import { homeMapCount, homeMapMeters, homeMapOpeningName, homeMapShortcut, homeMapWallName } from "./editor-view.js";
+import { homeMapCount, homeMapMeters, homeMapOpeningName, homeMapShortcut, homeMapWallName, homeMapWallNames } from "./editor-view.js";
 import { type HomeSegment, homeDistanceToSegment, homeLabelPoint, homeMainDirection, homeProject, homeRoomUnder, homeWallsOf, segmentLength } from "./geometry.js";
 import {
   type HomeMapDocument,
@@ -76,19 +80,23 @@ import {
   sameHomeMapId,
 } from "./model.js";
 
-/** Shape's tools, by the key that picks each. */
-export type HomeMapShapeTool = "select" | "draw" | "split" | "inner" | "door" | "window" | "opening" | "stairs";
+/** Wall editing's tools, by the key that picks each. */
+export type HomeMapShapeTool = "select" | "split" | "inner" | "door" | "window" | "opening" | "stairs";
 
 export const HOME_MAP_SHAPE_TOOLS: readonly { id: HomeMapShapeTool; label: string; key: string }[] = [
-  { id: "select", label: "Walls and corners", key: "v" },
-  { id: "draw", label: "Draw a room", key: "r" },
-  { id: "split", label: "Split a room", key: "s" },
+  { id: "select", label: "Corners and walls", key: "v" },
+  { id: "split", label: "Split the room", key: "s" },
   { id: "inner", label: "Inner wall", key: "w" },
   { id: "door", label: "Door", key: "d" },
   { id: "window", label: "Window", key: "n" },
   { id: "opening", label: "Way through (no door)", key: "o" },
   { id: "stairs", label: "Stairs", key: "t" },
 ];
+
+/** A tool's small picture, for the tool rails. */
+export function homeMapShapeToolIcon(tool: HomeMapShapeTool): TemplateResult {
+  return TOOL_ICONS[tool];
+}
 
 /** The tool a key picks, if any. */
 export function homeMapShapeToolFor(letter: string): HomeMapShapeTool | undefined {
@@ -140,8 +148,10 @@ function issuesOf(floor: HomeMapFloor): HomeMapIssue[] {
 }
 
 /** The wall nearest a plan point within `reach` pixels: the picked room's
- * walls first, then every room's. */
+ * walls first, then every room's; while a room's walls are edited, only
+ * that room's. */
 function wallNear(ctx: HomeMapEditorContext, at: HomePoint, reach: number, prefer?: HomeMapRoom): { room: HomeMapRoom; wall: number; seg: HomeSegment } | undefined {
+  if (ctx.walls !== undefined && prefer === undefined) return undefined;
   const limit = reach / ctx.view.scale;
   const search = (rooms: readonly HomeMapRoom[]) => {
     let best: { room: HomeMapRoom; wall: number; seg: HomeSegment; d: number } | undefined;
@@ -153,7 +163,8 @@ function wallNear(ctx: HomeMapEditorContext, at: HomePoint, reach: number, prefe
     }
     return best;
   };
-  return (prefer === undefined ? undefined : search([prefer])) ?? search(ctx.floor.rooms);
+  const first = prefer === undefined ? undefined : search([prefer]);
+  return ctx.walls !== undefined ? first : first ?? search(ctx.floor.rooms);
 }
 
 /** The unit normal of a wall pointing out of its room. */
@@ -166,11 +177,9 @@ function outward(room: HomeMapRoom, seg: HomeSegment): HomePoint {
   return n;
 }
 
-export class ShapeMode implements HomeMapMode {
-  readonly id = "shape" as const;
+export class ShapeMode {
   tool: HomeMapShapeTool = "select";
-  readonly draw = new HomeMapDrawTool(HOME_MAP_SHAPE_GRID);
-  /** The first click of Split a room or Inner wall. */
+  /** The first click of Split the room or Inner wall. */
   private first: { roomId: string; a: HomePoint } | undefined;
   private hoverAt: HomePoint | undefined;
   /** Where the picked wall was clicked, for the pill's "here". */
@@ -181,15 +190,34 @@ export class ShapeMode implements HomeMapMode {
 
   setTool(ctx: HomeMapEditorContext, tool: HomeMapShapeTool): void {
     this.first = undefined;
-    if (tool === "draw") this.draw.start(ctx);
-    else this.draw.stop();
     this.tool = tool;
     ctx.redraw();
   }
 
+  /** Whether a placing tool is armed. */
+  get armed(): boolean {
+    return this.tool !== "select";
+  }
+
+  /** The room whose walls are edited, else the picked one. */
   private focus(ctx: HomeMapEditorContext): HomeMapRoom | undefined {
-    const id = homeMapSelectionRoom(ctx.selection);
+    const id = ctx.walls ?? homeMapSelectionRoom(ctx.selection);
     return id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
+  }
+
+  /** The room a tool may act on at `at`: while a room's walls are edited,
+   * only that one; else the room under it. */
+  private roomAt(ctx: HomeMapEditorContext, at: HomePoint): HomeMapRoom | undefined {
+    const under = homeRoomUnder(ctx.floor, at);
+    if (ctx.walls === undefined) return under;
+    return under !== undefined && sameHomeMapId(under.id, ctx.walls) ? under : undefined;
+  }
+
+  /** After a tool put something in `roomId`: the tool put down, and that
+   * room's walls edited with `select` picked. */
+  private placed(ctx: HomeMapEditorContext, roomId: string, select: HomeMapSelection): void {
+    this.setTool(ctx, "select");
+    ctx.editWalls(roomId, select);
   }
 
   /** The wall picked: the wall itself, or the wall a picked opening is in. */
@@ -207,16 +235,61 @@ export class ShapeMode implements HomeMapMode {
 
   // ── the rail ───────────────────────────────────────────────────────────
 
+  /** The left rail while a room's walls are edited: its walls with what is
+   * on each, the scan check, and the scan as it was. */
   rail(ctx: HomeMapEditorContext): TemplateResult {
+    const room = this.focus(ctx);
+    return html`${room === undefined ? nothing : this.wallsCard(ctx, room)}
+      ${this.checkCard(ctx)}
+      ${room === undefined ? nothing : this.scanCard(ctx, room)}`;
+  }
+
+  /** The room's walls, each with its length and the doors and windows in
+   * it; a click picks one. */
+  private wallsCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
+    const walls = homeMapRoomWalls(room);
+    const sel = ctx.selection;
+    const roomId = room.id;
+    const names = homeMapWallNames(room);
+    const loose = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => homeMapOpeningWall(room, o) < 0);
+    const opening = ({ o, i }: { o: HomeMapOpening; i: number }) => {
+      const on = sel?.kind === "opening" && sel.opening === i;
+      return html`<button type="button" class="hme-lay sub ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+        @click=${() => ctx.select({ kind: "opening", roomId, opening: i })}>${homeMapOpeningName(o)}<span class="n">${homeMapMeters(Math.hypot(o.b[0] - o.a[0], o.b[1] - o.a[1]))}</span></button>`;
+    };
+    return html`<section class="hme-card hme-layers">
+      <div class="hme-h">${homeMapRoomName(room)}<span class="hme-h-end">${homeMapCount(walls.length, "wall")}</span></div>
+      ${walls.map((seg, wi) => {
+        const on = sel?.kind === "wall" && sel.wall === wi;
+        return html`<button type="button" class="hme-lay ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+            @click=${() => ctx.select({ kind: "wall", roomId, wall: wi })}>${names[wi]}<span class="n">${homeMapMeters(segmentLength(seg))}</span></button>
+          ${room.openings.map((o, i) => ({ o, i })).filter(({ o }) => homeMapOpeningWall(room, o) === wi).map(opening)}`;
+      })}
+      ${loose.length === 0 ? nothing : html`<div class="hme-lay dim">In no wall</div>${loose.map(opening)}`}
+    </section>`;
+  }
+
+  /** Show scan as it was, and Back to the scan for a room whose shape has
+   * changed since; none from an integration that keeps no scans. */
+  private scanCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult | typeof nothing {
+    if (ctx.scans === undefined) return nothing;
+    const roomId = room.id;
+    const scan = homeMapScanOf(ctx.scans, roomId);
+    const back = scan !== undefined && homeMapScanDiffers(room, scan) ? scan : undefined;
+    return hmeCard("Show scan as it was", html`<div class="hme-row-end">
+      <button type="button" class="hme-tb ${ctx.toggles.scan ? "on" : ""}" aria-pressed=${ctx.toggles.scan ? "true" : "false"} title=${SCAN_TOGGLE_TITLE}
+        @click=${() => ctx.setToggle("scan", !ctx.toggles.scan)}>${ctx.toggles.scan ? "On" : "Off"}</button>
+      <button type="button" class="hme-tb" ?disabled=${back === undefined} title=${back === undefined ? "This room is as the iPhone scanned it, or was drawn here" : BACK_TO_SCAN_TITLE}
+        @click=${() => { if (back !== undefined) ctx.apply((d) => backToScan(d, roomId, back)); }}>Back to the scan</button>
+    </div>`);
+  }
+
+  /** The scan check: the floor's issues, each with its fix, and a fix for
+   * all. */
+  private checkCard(ctx: HomeMapEditorContext): TemplateResult {
     const issues = issuesOf(ctx.floor);
     const floorId = ctx.floor.id;
     return html`
-      <section class="hme-card hme-tools">
-        <div class="hme-h">Tools</div>
-        ${HOME_MAP_SHAPE_TOOLS.map((t, i) => html`${i === 4 ? html`<div class="hme-sep"></div>` : nothing}
-          <button type="button" class="hme-tool ${this.tool === t.id ? "on" : ""}" aria-pressed=${this.tool === t.id ? "true" : "false"}
-            @click=${() => this.setTool(ctx, t.id)}>${TOOL_ICONS[t.id]}${t.label}<kbd>${t.key.toUpperCase()}</kbd></button>`)}
-      </section>
       ${hmeCard("Scan check", html`
         ${issues.length === 0 ? html`<p class="hme-text dim">Nothing to fix. The walls meet and every room has a way in.</p>` : nothing}
         ${issues.map((issue) => html`<div class="hme-fix">
@@ -230,7 +303,6 @@ export class ShapeMode implements HomeMapMode {
   // ── the stage ──────────────────────────────────────────────────────────
 
   overlay(ctx: HomeMapEditorContext): SVGTemplateResult | typeof nothing {
-    if (this.tool === "draw") return this.draw.overlay(ctx);
     const room = this.focus(ctx);
     const parts: SVGTemplateResult[] = [];
     if (room !== undefined && room.outline.length >= 3) {
@@ -240,7 +312,7 @@ export class ShapeMode implements HomeMapMode {
     if (ctx.toggles.scan) parts.push(...this.scanMarks(ctx));
     parts.push(...this.issueMarks(ctx));
     if (room !== undefined) parts.push(this.roomHandles(ctx, room));
-    parts.push(...this.toolGhost(ctx));
+    parts.push(...this.ghost(ctx));
     return svg`${parts}`;
   }
 
@@ -367,7 +439,7 @@ export class ShapeMode implements HomeMapMode {
   }
 
   /** Where the current tool would put what it makes. */
-  private toolGhost(ctx: HomeMapEditorContext): SVGTemplateResult[] {
+  ghost(ctx: HomeMapEditorContext): SVGTemplateResult[] {
     const at = this.hoverAt;
     if (at === undefined) return [];
     const out: SVGTemplateResult[] = [];
@@ -384,7 +456,7 @@ export class ShapeMode implements HomeMapMode {
         out.push(svg`<line x1=${fmt(a[0])} y1=${fmt(a[1])} x2=${fmt(b[0])} y2=${fmt(b[1])} stroke="#5b8def" stroke-width="10" stroke-opacity="0.6" stroke-linecap="round" pointer-events="none" />`);
       }
     }
-    if (this.tool === "stairs" && homeRoomUnder(ctx.floor, at) !== undefined) {
+    if (this.tool === "stairs" && this.roomAt(ctx, at) !== undefined) {
       const [x, y] = ctx.toScreen(at);
       const w = ctx.px(1.0);
       const h = ctx.px(2.6);
@@ -412,7 +484,6 @@ export class ShapeMode implements HomeMapMode {
   }
 
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
-    if (this.tool === "draw") return this.draw.pointerDown(ctx, e, at);
     if (e.button !== 0) return false;
     switch (this.tool) {
       case "door":
@@ -422,16 +493,17 @@ export class ShapeMode implements HomeMapMode {
         if (near === undefined) return false;
         const kind: HomeMapOpeningKind = this.tool;
         const roomId = near.room.id;
-        const index = near.room.openings.length;
+        const select: HomeMapSelection = { kind: "opening", roomId, opening: near.room.openings.length };
         const wall = near.wall;
-        if (ctx.apply((d) => addOpening(d, roomId, wall, { kind, at }), { select: { kind: "opening", roomId, opening: index } })) this.setTool(ctx, "select");
+        if (ctx.apply((d) => addOpening(d, roomId, wall, { kind, at }), { select })) this.placed(ctx, roomId, select);
         return true;
       }
       case "stairs": {
-        const room = homeRoomUnder(ctx.floor, at);
+        const room = this.roomAt(ctx, at);
         if (room === undefined) return false;
         const roomId = room.id;
-        if (ctx.apply((d) => addStairs(d, roomId, at), { select: { kind: "room", roomId } })) this.setTool(ctx, "select");
+        const select: HomeMapSelection = { kind: "room", roomId };
+        if (ctx.apply((d) => addStairs(d, roomId, at), { select })) this.placed(ctx, roomId, select);
         return true;
       }
       case "split":
@@ -442,14 +514,16 @@ export class ShapeMode implements HomeMapMode {
     }
   }
 
-  /** Split a room or Inner wall: the first click starts the line, the
-   * second ends it. */
+  /** Split the room or Inner wall: the first click starts the line, the
+   * second ends it. While a room's walls are edited the line is that
+   * room's wherever it starts. */
   private twoPoints(ctx: HomeMapEditorContext, at: HomePoint): boolean {
     if (this.first === undefined) {
-      const room = homeRoomUnder(ctx.floor, at) ?? this.focus(ctx);
+      const room = (ctx.walls === undefined ? homeRoomUnder(ctx.floor, at) : undefined) ?? this.focus(ctx);
       if (room === undefined) return false;
       this.first = { roomId: room.id, a: this.snap(ctx, at) };
-      ctx.select({ kind: "room", roomId: room.id });
+      if (ctx.walls === undefined) ctx.select({ kind: "room", roomId: room.id });
+      else ctx.redraw();
       return true;
     }
     const { roomId, a } = this.first;
@@ -461,8 +535,8 @@ export class ShapeMode implements HomeMapMode {
     }
     if (this.tool === "inner") {
       const room = ctx.doc.floors.flatMap((f) => f.rooms).find((r) => sameHomeMapId(r.id, roomId));
-      const index = room === undefined ? 0 : homeWallsOf(room).length;
-      if (ctx.apply((d) => addInnerWall(d, roomId, a, b), { select: { kind: "wall", roomId, wall: index } })) this.setTool(ctx, "select");
+      const select: HomeMapSelection = { kind: "wall", roomId, wall: room === undefined ? 0 : homeWallsOf(room).length };
+      if (ctx.apply((d) => addInnerWall(d, roomId, a, b), { select })) this.placed(ctx, roomId, select);
       else ctx.note("err", "An inner wall needs to be at least 10 cm long.");
       return true;
     }
@@ -470,16 +544,23 @@ export class ShapeMode implements HomeMapMode {
     return true;
   }
 
+  /** Cut the room in two along the line, the new half named first; then
+   * back to the edit page with the new room picked. */
   private async split(ctx: HomeMapEditorContext, roomId: string, a: HomePoint, b: HomePoint): Promise<void> {
     const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, roomId));
     const name = await ctx.ask({ title: "Name the new room", label: "Name", value: room === undefined ? "Room" : `${homeMapRoomName(room)} 2`, ok: "Split the room" });
     if (name === undefined) return;
     const id = ctx.newId();
-    if (ctx.apply((d) => splitRoom(d, roomId, a, b, id, name), { select: { kind: "room", roomId: id } })) this.setTool(ctx, "select");
-    else ctx.note("err", "That line does not cut the room in two. Draw it right across the room.");
+    const select: HomeMapSelection = { kind: "room", roomId: id };
+    if (ctx.apply((d) => splitRoom(d, roomId, a, b, id, name), { select })) {
+      this.setTool(ctx, "select");
+      ctx.editWalls(undefined, select);
+    } else ctx.note("err", "That line does not cut the room in two. Draw it right across the room.");
   }
 
-  /** Walls and corners: a handle drags, a wall or room is picked. */
+  /** Corners and walls: a handle drags, a wall or the room is picked; a
+   * press outside the room whose walls are edited goes back to the edit
+   * page with that room picked. */
   private pick(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     const room = this.focus(ctx);
     const hit = (e.target as Element | null)?.closest?.("[data-hme]")?.getAttribute("data-hme") ?? "";
@@ -509,6 +590,10 @@ export class ShapeMode implements HomeMapMode {
       return true;
     }
     const under = homeRoomUnder(ctx.floor, at);
+    if (ctx.walls !== undefined && (under === undefined || !sameHomeMapId(under.id, ctx.walls))) {
+      ctx.editWalls(undefined);
+      return true;
+    }
     if (under === undefined) return false;
     ctx.select({ kind: "room", roomId: under.id });
     return true;
@@ -631,17 +716,14 @@ export class ShapeMode implements HomeMapMode {
   }
 
   hover(ctx: HomeMapEditorContext, at: HomePoint | undefined): void {
-    if (this.tool === "draw") {
-      this.draw.hover(ctx, at);
-      return;
-    }
     if (this.tool === "select") return;
     this.hoverAt = at;
     ctx.redraw();
   }
 
+  /** A tool's letter picks it; Escape puts an armed tool down; Delete
+   * removes the picked corner, opening or wall. */
   keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
-    if (this.tool === "draw" && this.draw.active && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) return this.draw.keyDown(ctx, e);
     const shortcut = homeMapShortcut(e, false);
     if (typeof shortcut === "object" && "letter" in shortcut) {
       const tool = homeMapShapeToolFor(shortcut.letter);
@@ -673,7 +755,6 @@ export class ShapeMode implements HomeMapMode {
     this.hoverAt = undefined;
     this.dragging = false;
     this.sliding = undefined;
-    this.draw.stop();
     this.tool = "select";
     ctx.redraw();
   }
@@ -690,11 +771,6 @@ export class ShapeMode implements HomeMapMode {
   // ── the pill ───────────────────────────────────────────────────────────
 
   pill(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    if (this.tool === "draw") {
-      return html`<span class="hme-pill-name">${this.draw.hint()}</span>
-        ${this.draw.points.length >= 3 ? html`<button type="button" class="hme-tb" @click=${() => void this.draw.finish(ctx)}>Close the room</button>` : nothing}
-        <button type="button" class="hme-tb" @click=${() => this.setTool(ctx, "select")}>Cancel</button>`;
-    }
     if (this.tool !== "select") {
       const words: Record<string, string> = {
         split: this.first === undefined ? "Click where the cut starts" : "Click where it ends, across the room",
@@ -702,7 +778,7 @@ export class ShapeMode implements HomeMapMode {
         door: "Click a wall to put a door in it",
         window: "Click a wall to put a window in it",
         opening: "Click a wall to open a way through it",
-        stairs: "Click in a room to put stairs there",
+        stairs: "Click in the room to put stairs there",
       };
       return html`<span class="hme-pill-name">${words[this.tool]}</span>
         <button type="button" class="hme-tb" @click=${() => this.setTool(ctx, "select")}>Cancel</button>`;
@@ -861,7 +937,6 @@ export class ShapeMode implements HomeMapMode {
 
 const TOOL_ICONS: Readonly<Record<HomeMapShapeTool, TemplateResult>> = {
   select: html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 3h12v12H3z" fill="none" stroke="currentColor" stroke-width="1.4"></path><circle cx="3" cy="3" r="2" fill="currentColor"></circle><circle cx="15" cy="3" r="2" fill="currentColor"></circle><circle cx="15" cy="15" r="2" fill="currentColor"></circle><circle cx="3" cy="15" r="2" fill="currentColor"></circle></svg>`,
-  draw: html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 15V3h8l4 4v8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2"></path></svg>`,
   split: html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 3h14v12H2z" fill="none" stroke="currentColor" stroke-width="1.4"></path><path d="M9 1v16" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2"></path></svg>`,
   inner: html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 9h14" stroke="currentColor" stroke-width="2.4"></path></svg>`,
   door: html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 15h4M12 15h4M6 15V5M6 5a10 10 0 0 1 10 10" fill="none" stroke="currentColor" stroke-width="1.4"></path></svg>`,

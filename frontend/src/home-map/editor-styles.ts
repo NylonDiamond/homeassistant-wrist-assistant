@@ -7,10 +7,10 @@
 //
 // The three columns (rail, stage, inspector) share the width, the stage
 // taking everything the rails leave and growing with the window; narrower,
-// the rail goes under the stage, and on a phone everything stacks. Style
-// puts its own column in the stage's place: the big preview growing the
-// same way, and the tile previews under it. Devices' side view floats over
-// the stage like the pill and the dock, so it keeps their dark glass.
+// the rail goes under the stage, and on a phone everything stacks. The tool
+// rail, the side view and wall editing's Done bar float over the stage like
+// the pill and the dock, so they keep their dark glass. The Home style panel
+// hangs from its button in the bar, over a dimmed page.
 
 import { css } from "lit";
 
@@ -145,6 +145,12 @@ export const editorStyles = css`
   .hme-floor-t > small { color: var(--wa-faint); font-size: 11px; }
   .hme-caret { color: var(--wa-muted); font-size: 11px; }
   .hme-status { color: var(--wa-faint); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .hme-crumb-sep { color: var(--wa-faint); }
+  .hme-title.hme-crumb { color: var(--hme-sel); }
+  .hme-style-wrap { position: relative; flex: none; }
+  .hme-tb.hme-style-btn { height: 34px; }
+  .hme-tb.hme-style-btn.on { border-color: var(--hme-sel); }
+  .hme-style-sw { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--wa-line-strong); flex: none; }
   .hme-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #30d158; }
   .hme-status.saving .hme-status-dot { background: var(--hme-amber); }
   .hme-status.error { color: var(--wa-need); }
@@ -276,10 +282,16 @@ export const editorStyles = css`
   .hme-lay .n { margin-left: auto; color: var(--wa-faint); font-size: 12px; white-space: nowrap; }
   .hme-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
   .hme-dot.dev { border-radius: 50%; background: var(--hme-amber); }
+  .hme-lay.sub .hme-dot.dev { width: 8px; height: 8px; }
+  .hme-dot.dev.off { background: #636366; }
+  .hme-lay .hme-caret { width: 10px; font-size: 10px; color: var(--wa-faint); flex: none; }
+  .hme-lay.on .hme-caret { color: var(--wa-muted); }
+  .hme-lay.sub.dim { color: var(--wa-faint); }
+  .hme-thing-ic { width: 8px; height: 8px; border-radius: 2px; border: 1px solid var(--wa-faint); flex: none; }
+  .hme-thing-ic.on { border-color: var(--hme-sel); }
+  .hme-tb.hme-grow-btn { flex: 1 1 auto; }
   .hme-sep { height: 1px; background: var(--wa-line); margin: 8px 6px; flex: none; }
   .hme-foot { color: var(--wa-faint); font-size: 12px; line-height: 1.45; margin: 2px 4px; }
-  .hme-tools { padding: 10px 8px; gap: 2px; }
-  .hme-tools > .hme-h { padding: 4px 10px 8px; }
   .hme-tool {
     display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 9px; border: 0; background: none;
     color: var(--wa-soft); font: inherit; font-size: 13px; font-weight: 500; width: 100%; text-align: left; cursor: pointer;
@@ -309,7 +321,38 @@ export const editorStyles = css`
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
   .hme-pill { top: 14px; }
+  .hme-pill.under { top: 62px; }
   .hme-dock { bottom: 14px; gap: 6px; padding: 6px; }
+  /* Wall editing: the stage ringed in blue, and its Done bar. */
+  .hme-stage.walls { border: 2px solid var(--hme-sel); }
+  .hme-banner {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3;
+    display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 14px; border-radius: 12px;
+    background: rgba(28, 28, 30, 0.94); border: 1px solid var(--hme-sel); white-space: nowrap; color: #d1d1d6;
+    max-width: calc(100% - 28px); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+  .hme-banner-t { overflow: hidden; text-overflow: ellipsis; }
+  .hme-banner b { color: #fff; }
+  .hme-tb.hme-blue { background: var(--hme-sel); border-color: var(--hme-sel); color: #fff; }
+  .hme-tb.hme-blue:hover:not(:disabled) { background: #6f9cf2; color: #fff; }
+  .hme-tb.hme-blue kbd { font: 500 11px var(--hme-mono); opacity: 0.75; }
+  /* The tool rail, floating on the left of the plan. */
+  .hme-toolrail {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 3;
+    display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 12px;
+    background: rgba(28, 28, 30, 0.94); border: 1px solid #3a3a3c; max-height: calc(100% - 28px); overflow-y: auto; scrollbar-width: none;
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+  .hme-rtool {
+    width: 40px; height: 40px; flex: none; border-radius: 10px; border: 0; background: transparent; color: #c7c7cc; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0;
+  }
+  .hme-rtool:hover { background: #2c2c2e; color: #fff; }
+  .hme-rtool.on { background: #3a3a3c; color: #fff; }
+  .hme-rtool:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--hme-sel); }
+  .hme-rtool kbd { font: 500 9px var(--hme-mono); color: #8e8e93; line-height: 1; }
+  .hme-rtool-sep { height: 1px; background: #3a3a3c; margin: 2px 6px; flex: none; }
+  .hme-stage-hint { position: absolute; left: 70px; bottom: 22px; z-index: 1; color: #8e8e93; font-size: 11px; pointer-events: none; }
   .hme-pill-name { padding: 0 10px; display: inline-flex; align-items: center; font-weight: 600; color: #fff; }
   .hme-pill .hme-tb, .hme-dock .hme-tb, .hme-pill .hme-menu, .hme-stage-empty .hme-tb { background: #161617; border-color: #2c2c2e; color: #d1d1d6; }
   .hme-pill .hme-tb:hover:not(:disabled), .hme-dock .hme-tb:hover:not(:disabled), .hme-pill .hme-menu:hover { background: #2c2c2e; color: #fff; }
@@ -383,7 +426,7 @@ export const editorStyles = css`
   .hme-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: 0; padding: 0; }
   .hme-swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.4); }
   .hme-side {
-    position: absolute; left: 16px; bottom: 70px; z-index: 2; width: 300px; max-width: calc(100% - 32px); padding: 12px 14px; border-radius: 12px;
+    position: absolute; left: 68px; bottom: 70px; z-index: 2; width: 300px; max-width: calc(100% - 84px); padding: 12px 14px; border-radius: 12px;
     background: rgba(22, 22, 23, 0.95); border: 1px solid #3a3a3c; display: flex; flex-direction: column; gap: 8px; color: #fff;
   }
   .hme-side .hme-h { color: #98989d; }
@@ -391,8 +434,25 @@ export const editorStyles = css`
   .hme-side text { font-family: var(--wa-font, inherit); }
   .hme-side-hint { color: #8e8e93; font-size: 11.5px; }
 
-  /* ── Style ────────────────────────────────────────────────────────── */
+  /* ── the Home style panel ─────────────────────────────────────────── */
+  .hme-style-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.4); }
+  .hme-style-pop {
+    position: absolute; top: calc(100% + 10px); right: 0; z-index: 61; width: 600px; max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 140px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px;
+    border-radius: 18px; background: var(--wa-raised); border: 1px solid var(--wa-line-strong); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  }
+  .hme-style-head { display: flex; align-items: center; gap: 10px; padding: 2px 4px; }
+  .hme-style-head strong { font-size: 16px; flex: none; }
+  .hme-style-head span { color: var(--wa-faint); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hme-x.hme-style-close { margin-left: auto; width: 30px; height: 30px; font-size: 15px; }
+  .hme-style-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .hme-grow-card { flex: 1 1 250px; min-width: 0; }
+  .hme-grow-card .hme-l { flex-basis: 84px; }
   .hme-looks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; flex: none; }
+  .hme-looks.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @container (max-width: 560px) {
+    .hme-looks.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .hme-look {
     display: flex; flex-direction: column; gap: 6px; border: 0; background: none; padding: 6px; border-radius: 12px; cursor: pointer;
     color: var(--wa-muted); font: inherit; font-size: 12px; font-weight: 500; text-align: left; min-width: 0;
@@ -402,14 +462,7 @@ export const editorStyles = css`
   .hme-look.on { background: var(--wa-raise); color: var(--wa-ink); }
   .hme-look.on > svg { outline: 2px solid var(--hme-sel); outline-offset: 2px; }
   .hme-look:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
-  .hme-style-col { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-  .hme-stage.hme-style-big { position: relative; inset: auto; flex: 1 1 auto; min-height: 320px; }
-  .hme-stage.hme-style-big.turns { cursor: ew-resize; touch-action: none; }
-  .hme-style-title { position: absolute; top: 14px; left: 16px; z-index: 1; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
-  .hme-style-title strong { font-size: 20px; }
-  .hme-style-title span { font-size: 12px; opacity: 0.7; }
-  .hme-style-turn { position: absolute; right: 16px; bottom: 12px; z-index: 1; font-size: 12px; opacity: 0.7; pointer-events: none; }
-  .hme-style-tiles { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 24px; }
+  .hme-style-tiles { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 12px; }
   .hme-fr { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; color: var(--wa-muted); font-size: 12px; }
   .hme-face { position: relative; overflow: hidden; border: 1px solid #3a3a3c; flex: none; }
   .hme-face > svg { position: absolute; display: block; }
@@ -419,13 +472,8 @@ export const editorStyles = css`
   .hme-use > div { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
   .hme-use > div > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hme-use small { color: var(--wa-faint); font-size: 11.5px; }
-  @container (max-width: 760px) {
-    .hme-stage-wrap:has(.hme-style-col) { height: auto; }
-    .hme-style-col { position: static; }
-    .hme-stage.hme-style-big { min-height: 360px; }
-  }
 
-  /* ── Arrange's furniture ──────────────────────────────────────────── */
+  /* ── the furniture picker ─────────────────────────────────────────── */
   .hme-model { display: flex; align-items: center; gap: 12px; }
   .hme-model-pic, .hme-fcard-pic {
     display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden;

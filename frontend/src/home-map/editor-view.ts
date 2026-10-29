@@ -34,10 +34,10 @@ export function homeMapToPlan(view: HomeMapView, s: readonly number[]): HomePoin
 }
 
 /** The view that shows the whole floor in a stage `width` by `height`
- * pixels, `pad` pixels clear of the sides and `padY` of the top and bottom
- * (room for the pill and the dock), centred. A floor with no rooms shows
- * 10 meters across round 0, 0. */
-export function homeMapFitView(floor: HomeMapFloor | undefined, width: number, height: number, pad = 56, padY = 96): HomeMapView {
+ * pixels, `pad` pixels clear of the sides (room for the tool rail) and
+ * `padY` of the top and bottom (room for the pill and the dock), centred. A
+ * floor with no rooms shows 10 meters across round 0, 0. */
+export function homeMapFitView(floor: HomeMapFloor | undefined, width: number, height: number, pad = 72, padY = 96): HomeMapView {
   const empty = floor === undefined || (floor.rooms.length === 0 && floor.pins.length === 0);
   const b = empty ? { minX: -5, minY: -5, maxX: 5, maxY: 5 } : homeMapBounds(floor);
   const w = Math.max(b.maxX - b.minX, 1);
@@ -256,6 +256,20 @@ export function homeMapWallSide(room: HomeMapRoom, wallIndex: number): "top" | "
 export function homeMapWallName(room: HomeMapRoom, wallIndex: number, roomName: string): string {
   const side = homeMapWallSide(room, wallIndex);
   return `${roomName}, ${side} wall`;
+}
+
+/** Each of a room's walls by its side, as the wall list names them: "Top
+ * wall", "Inner wall", a second wall on the same side numbered ("Top wall
+ * 2"). */
+export function homeMapWallNames(room: HomeMapRoom): string[] {
+  const sides = homeMapRoomWalls(room).map((_w, i) => homeMapWallSide(room, i));
+  const seen = new Map<string, number>();
+  return sides.map((side, i) => {
+    const n = (seen.get(side) ?? 0) + 1;
+    seen.set(side, n);
+    const word = `${side.charAt(0).toUpperCase()}${side.slice(1)} wall`;
+    return n === 1 && sides.indexOf(side, i + 1) < 0 ? word : `${word} ${n}`;
+  });
 }
 
 /** An opening's kind as the editor names it, its style included. */

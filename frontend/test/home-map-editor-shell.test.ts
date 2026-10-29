@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { HOME_MAP_ARRANGE_GRID, homeMapSnapPoint } from "../src/home-map/draw-tool.js";
+import { HOME_MAP_EDIT_TOOLS, homeMapEditToolFor, homeMapOpeningsWords } from "../src/home-map/edit-page.js";
 import { addOpening, moveRoom, renameRoom, setRoomFinish } from "../src/home-map/edit-ops.js";
 import { homeMapSelectionRoom, homeMapSelectionThere, sameHomeMapSelection } from "../src/home-map/editor-mode.js";
 import { HomeMapSession, sameHomeMapDocument } from "../src/home-map/editor-session.js";
@@ -33,6 +34,7 @@ import {
   homeMapToPlan,
   homeMapToScreen,
   homeMapWallName,
+  homeMapWallNames,
   homeMapWallSide,
   homeMapZoomAt,
   homeMapZoomPercent,
@@ -123,12 +125,32 @@ describe("the editor's keys", () => {
     expect(homeMapIsFormControl("INPUT")).toBe(false);
   });
 
-  it("picks Shape's tools by their letters", () => {
-    expect(HOME_MAP_SHAPE_TOOLS.map((t) => t.key).join("")).toBe("vrswdnot");
+  it("picks the edit page's tools and the wall tools by their letters, none of them a key the editor already has", () => {
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.key).join("")).toBe("vrwdnfm");
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.label)).toEqual(["Pick and move", "Draw a room", "Inner wall", "Door", "Window", "Add furniture", "Measure"]);
+    expect(homeMapEditToolFor("F")).toBe("furniture");
+    expect(homeMapEditToolFor("m")).toBe("measure");
+    expect(homeMapEditToolFor("s")).toBeUndefined();
+    expect(HOME_MAP_SHAPE_TOOLS.map((t) => t.key).join("")).toBe("vswdnot");
     expect(homeMapShapeToolFor("D")).toBe("door");
     expect(homeMapShapeToolFor("n")).toBe("window");
     expect(homeMapShapeToolFor("o")).toBe("opening");
+    expect(homeMapShapeToolFor("r")).toBeUndefined();
     expect(homeMapShapeToolFor("x")).toBeUndefined();
+    // Every tool key is a plain letter, never undo, redo, zoom or fit.
+    for (const key of [...HOME_MAP_EDIT_TOOLS, ...HOME_MAP_SHAPE_TOOLS].map((t) => t.key)) {
+      expect(homeMapShortcut({ key }, false)).toEqual({ letter: key });
+      expect(homeMapShortcut({ key, metaKey: true }, false)).toBeUndefined();
+    }
+    expect(homeMapShortcut({ key: "z", metaKey: true }, false)).toBe("undo");
+  });
+
+  it("names a room's walls by their sides for the wall list, numbering a side that has two", () => {
+    const living = fixture().floors[0]!.rooms[0]!;
+    expect(homeMapWallNames(living)).toEqual(["Top wall", "Right wall", "Bottom wall", "Left wall"]);
+    const inner = { ...living, walls: [...living.walls, { a: [3, 1], b: [3, 4], t: 0.1 }, { a: [4, 1], b: [4, 4], t: 0.1 }] } as typeof living;
+    expect(homeMapWallNames(inner).slice(4)).toEqual(["Inner wall 1", "Inner wall 2"]);
+    expect(homeMapOpeningsWords(living)).toBe("2 doors · 1 window");
   });
 });
 

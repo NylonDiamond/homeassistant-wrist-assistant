@@ -1,12 +1,13 @@
 // Each room as the iPhone scanned it, kept by Home Assistant beside the map
-// (`home_map_store.py`, "Scans"), in the map editor's Shape mode: the
+// (`home_map_store.py`, "Scans"), in the map editor's wall editing: the
 // records read as the store checks a room (`readHomeMapScans`) and through
 // `home_map/scans` (`readHomeMapScansFrom`, none from an older
 // integration), Back to the scan (`backToScan`: the room's shape put back,
 // its pins, name and height left, a door's or window's style and a hidden
 // thing kept as the iPhone's Scan Again keeps them, nothing when it already
 // matches once rounded, one undo step in the session), the overlay's marks
-// (`homeMapScanMarks`) and the Shape mode's dock switch, overlay and card.
+// (`homeMapScanMarks`) and wall editing's dock switch, overlay, card and
+// rail.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -234,10 +235,11 @@ describe("the scan's marks", () => {
   });
 });
 
-// ── the Shape mode ───────────────────────────────────────────────────────
+// ── wall editing ─────────────────────────────────────────────────────────
 
-/** A stand-in for the shell at 100 pixels a meter. */
-function shell(options: { doc?: HomeMapDocument; scans?: HomeMapScans; scan?: boolean; selection?: HomeMapSelection }) {
+/** A stand-in for the shell at 100 pixels a meter, editing `walls`' walls
+ * when given. */
+function shell(options: { doc?: HomeMapDocument; scans?: HomeMapScans; scan?: boolean; selection?: HomeMapSelection; walls?: string }) {
   let doc = options.doc ?? fixture();
   const log = { toggles: [] as [string, boolean][], applied: 0 };
   const ctx = {
@@ -246,7 +248,7 @@ function shell(options: { doc?: HomeMapDocument; scans?: HomeMapScans; scan?: bo
     get doc() { return doc; },
     get floor() { return doc.floors[0]!; },
     selection: options.selection,
-    mode: "shape",
+    walls: options.walls,
     view: { scale: 100, ox: 0, oy: 0 },
     stage: { width: 1200, height: 800 },
     toggles: { snap: true, square: true, grid: false, measure: false, live: true, scan: options.scan ?? false },
@@ -270,7 +272,7 @@ function shell(options: { doc?: HomeMapDocument; scans?: HomeMapScans; scan?: bo
   return { ctx: ctx as unknown as HomeMapEditorContext, log };
 }
 
-describe("the Shape mode's scan as it was", () => {
+describe("wall editing's scan as it was", () => {
   it("offers Show scan as it was in the dock only when Home Assistant keeps scans", () => {
     const mode = new ShapeMode();
     expect(flatten(mode.dock(shell({ scans: {} }).ctx))).toContain("Show scan as it was");
@@ -307,5 +309,23 @@ describe("the Shape mode's scan as it was", () => {
     // A room drawn by hand has no scan, and no button.
     expect(flatten(mode.inspector(shell({ doc: changed, scans: {}, selection: select }).ctx))).not.toContain("Back to the scan");
     expect(flatten(mode.inspector(shell({ doc: changed, scans: undefined, selection: select }).ctx))).not.toContain("Back to the scan");
+  });
+
+  it("lists the room's walls with what is on each in the rail, with the scan as it was and Back to the scan", () => {
+    const mode = new ShapeMode();
+    const scans = { [LIVING]: scanOf(living(fixture())) };
+    const select: HomeMapSelection = { kind: "wall", roomId: LIVING, wall: 0 };
+    const rail = flatten(mode.rail(shell({ scans, selection: select, walls: LIVING }).ctx));
+    expect(rail).toContain("4 walls");
+    expect(rail).toMatch(/hme-lay on" aria-pressed=true[^>]*>Top wall<span class="n">6\.00 m/);
+    expect(rail).toContain("Window<span class=\"n\">2.00 m");
+    expect(rail).toContain("Scan check");
+    expect(rail).toContain("Show scan as it was");
+    // As scanned: Back to the scan is off until the room differs.
+    expect(rail).toMatch(/\?disabled=true[^>]*>Back to the scan/);
+    const changed = moveCorner(fixture(), LIVING, 2, [6.4, 5.4])!;
+    expect(flatten(mode.rail(shell({ doc: changed, scans, selection: select, walls: LIVING }).ctx))).toMatch(/\?disabled=false[^>]*>Back to the scan/);
+    // None from an integration that keeps no scans.
+    expect(flatten(mode.rail(shell({ selection: select, walls: LIVING }).ctx))).not.toContain("Show scan as it was");
   });
 });

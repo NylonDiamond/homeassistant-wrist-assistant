@@ -1,14 +1,16 @@
-// The map editor's Devices mode (mock board 3): put each device where it
-// is, at its height, and say what it shows and what a tap on it does.
+// The edit page's devices (`edit-page.ts`, which uses this part): put each
+// device where it is, at its height, and say what it shows and what a tap on
+// it does.
 //
-// The left rail finds any device Home Assistant has; lists the devices not
-// on the map yet by Home Assistant area (the areas of this floor's rooms
-// first), each dragged onto the plan to place it (the room it would land in
-// lit with "Drop in <room>") or clicked to put it in its area's room; places
-// them all by area at once; and counts the pins on the map by kind, a kind's
-// chip dimming the others. On the stage every pin is drawn by this mode as a
+// The edit page's rail lists the devices not on the map yet by Home
+// Assistant area (the areas of this floor's rooms first), each row drawn
+// here (`deviceRow`), dragged onto the plan to place it (the room it would
+// land in lit with "Drop in <room>") or clicked to put it in its area's
+// room; Place all by area places them all at once; a kind's chip dims the
+// pins of the other kinds. On the stage every pin is drawn by this part as a
 // glass pin with its icon and live state (a light that is on amber, in its
-// own colour when it has one) and its pill; a pin is dragged to move it, and
+// own colour when it has one) and its pill, over the rooms and things; a pin
+// is dragged to move it, and
 // the picked one is ringed, a light with the reach of its pool of light as a
 // dashed ring whose handle sets `glow`. The room's side view, bottom left,
 // shows the wall's height with a ruler, the furniture and the pin at its
@@ -48,28 +50,23 @@ import {
   homeMapAddPicks,
   homeMapCanToggle,
   homeMapDeviceKind,
-  homeMapDevices,
   homeMapDomainWords,
-  homeMapFindDevices,
   homeMapGroupToggle,
   homeMapKindCounts,
   homeMapPickOf,
   homeMapPickedPins,
   homeMapPinOfEntity,
   homeMapPinsInBox,
-  homeMapPlaceableCount,
   homeMapRoomOfArea,
   homeMapShared,
   homeMapStateText,
   homeMapTogglePick,
   homeMapToggleWords,
-  homeMapTray,
 } from "./devices-model.js";
 import {
   type HomeMapPinFields,
   addPin,
   centerPinInRoom,
-  homeMapPinsOfRoom,
   movePin,
   movePins,
   placeAllByArea,
@@ -81,7 +78,7 @@ import {
   setPinsFields,
   setPinsHeight,
 } from "./edit-ops.js";
-import { type HomeMapEditorContext, type HomeMapMode, homeMapSelectionRoom } from "./editor-mode.js";
+import type { HomeMapEditorContext } from "./editor-mode.js";
 import { hmeCard, hmeChip, hmeHint, hmeNumber, hmePic, hmeRow, hmeSelect, hmeText } from "./editor-parts.js";
 import { homeMapCount, homeMapShortcut, homeMapToPlan } from "./editor-view.js";
 import { homeLabelPoint, homePointBounds, homeRoomUnder } from "./geometry.js";
@@ -90,7 +87,6 @@ import {
   type HomeMapPin,
   type HomeMapPinIcon,
   type HomeMapPinTap,
-  type HomeMapRoom,
   type HomeMapStates,
   type HomePoint,
   HOME_MAP_GLOW_HIGH,
@@ -137,11 +133,7 @@ export function homeMapIconWords(pin: HomeMapPin, deviceClass?: string, name?: s
   return `Auto (${HOME_MAP_PIN_ICON_NAMES[homeMapAutoPinIcon(pin.entityId, deviceClass, name)].toLowerCase()})`;
 }
 
-export class DevicesMode implements HomeMapMode {
-  readonly id = "devices" as const;
-  readonly drawsPins = true;
-  /** What the find box holds. */
-  query = "";
+export class DevicesMode {
   /** The kind whose pins stay bright; the rest dim. */
   filter: HomeMapDeviceKind | undefined;
   /** The room's side view under the picked pin. */
@@ -207,56 +199,26 @@ export class DevicesMode implements HomeMapMode {
     return ok;
   }
 
-  private placeAll(ctx: HomeMapEditorContext, devices: readonly HomeMapDeviceEntry[]): void {
+  /** Put every device of `devices` with an area in its area's room. */
+  placeAll(ctx: HomeMapEditorContext, devices: readonly HomeMapDeviceEntry[]): void {
     const list = devices.map((d) => ({ entityId: d.entityId, areaId: d.areaId, name: d.name, deviceClass: d.deviceClass }));
     const floorId = ctx.floor.id;
     ctx.apply((d) => placeAllByArea(d, floorId, list, () => ctx.newId())?.doc, { select: null });
   }
 
-  // ── the rail ───────────────────────────────────────────────────────────
-
-  rail(ctx: HomeMapEditorContext): TemplateResult {
-    const states = ctx.hass?.states;
-    const devices = homeMapDevices(ctx.hass);
-    const groups = homeMapTray(ctx.doc, ctx.floor, devices);
-    const tray = groups.reduce((n, g) => n + g.devices.length, 0);
-    const placeable = homeMapPlaceableCount(ctx.floor, groups);
-    const found = homeMapFindDevices(devices, this.query);
+  /** The kind chips: a kind's chip keeps its pins bright and dims the
+   * rest, a second press brings them all back. */
+  kindChips(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
     const kinds = homeMapKindCounts(ctx.floor);
-    const shownPins = ctx.floor.pins.filter((p) => this.filter === undefined || homeMapDeviceKind(p.entityId) === this.filter);
-    const picked = homeMapPickedPins(ctx.selection);
-    return html`
-      <label class="hme-find"><span aria-hidden="true">⌕</span>
-        <input type="search" placeholder="Find any device" aria-label="Find any device" .value=${live(this.query)}
-          @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
-      ${this.query.trim() === "" ? nothing : hmeCard("Found", html`
-        ${found.length === 0 ? html`<p class="hme-empty-line">No device by that name.</p>` : nothing}
-        ${found.map((d) => this.deviceRow(ctx, d, states))}`, found.length >= 40 ? "40+" : String(found.length), "hme-tray")}
-      ${hmeCard("Not on the map", html`
-        ${tray === 0 ? html`<p class="hme-empty-line">Every device with an area is on the map. Find any other above.</p>` : nothing}
-        ${groups.map((g) => html`<div class="hme-ar ${g.here ? "" : "dim"}">${g.name}<span>${g.devices.length}</span></div>
-          ${g.devices.map((d) => this.deviceRow(ctx, d, states))}`)}
-        ${tray === 0 ? nothing : html`<button type="button" class="hme-tb hme-wide" ?disabled=${placeable === 0}
-            title=${placeable === 0 ? "Link this floor's rooms to Home Assistant areas in Arrange first" : ""}
-            @click=${() => this.placeAll(ctx, groups.flatMap((g) => g.devices))}>Place all ${placeable} by area</button>
-          <p class="hme-foot">Each goes into the room linked to its area, at a good height for its kind. Then drag to fine tune.</p>`}`,
-        String(tray), "hme-tray")}
-      ${hmeCard("On the map", html`
-        ${kinds.length === 0 ? html`<p class="hme-empty-line">No devices on this floor yet. Drag one onto the plan.</p>` : html`<div class="hme-chips">
-          ${kinds.map((k) => html`<button type="button" class="hme-chip sel ${this.filter === k.kind ? "on" : ""}" aria-pressed=${this.filter === k.kind ? "true" : "false"}
-            @click=${() => { this.filter = this.filter === k.kind ? undefined : k.kind; ctx.redraw(); }}>${k.label} ${k.count}</button>`)}</div>`}
-        ${shownPins.slice(0, 60).map((p) => {
-          const on = picked.some((id) => sameHomeMapId(id, p.id));
-          return html`<button type="button" class="hme-lay ${on ? "on" : ""}" title="Shift, Cmd or Ctrl and a click picks several"
-            @click=${(e: MouseEvent) => ctx.select(e.shiftKey || e.metaKey || e.ctrlKey ? homeMapTogglePick(ctx.selection, p.id) : { kind: "pin", pinId: p.id })}>
-            <span class="hme-dot dev ${homeMapPinLook(p.entityId, states).kind === "light" ? "" : "gray"}"></span>${homeMapPinName(p, ctx.hass)}
-            <span class="n">${homeMapStateText(p.entityId, states)}</span></button>`;
-        })}`, String(ctx.floor.pins.length))}`;
+    if (kinds.length === 0) return nothing;
+    return html`<div class="hme-chips">${kinds.map((k) => html`<button type="button" class="hme-chip sel ${this.filter === k.kind ? "on" : ""}"
+      aria-pressed=${this.filter === k.kind ? "true" : "false"} title="Dim the other kinds of device on the plan"
+      @click=${() => { this.filter = this.filter === k.kind ? undefined : k.kind; ctx.redraw(); }}>${k.label} ${k.count}</button>`)}</div>`;
   }
 
   /** A device in the rail: dragged onto the plan to place it, clicked to
    * put it in its area's room; one on the map already is picked. */
-  private deviceRow(ctx: HomeMapEditorContext, d: HomeMapDeviceEntry, states: HomeMapStates | undefined): TemplateResult {
+  deviceRow(ctx: HomeMapEditorContext, d: HomeMapDeviceEntry, states: HomeMapStates | undefined): TemplateResult {
     const there = homeMapPinOfEntity(ctx.doc, d.entityId);
     const icon = homeMapAutoPinIcon(d.entityId, d.deviceClass, d.name);
     return html`<div class="hme-dv ${this.dragging === d.entityId ? "dragging" : ""} ${there === undefined ? "" : "placed"}" role="button" tabindex="0"
@@ -406,28 +368,48 @@ export class DevicesMode implements HomeMapMode {
 
   /** A press on the stage: the glow ring's handle, a pin (Shift, Cmd or
    * Ctrl adding it to the pick or taking it out; a press on one of several
-   * picked moving them all), or with Shift on empty space a box that picks
-   * the pins inside it. Anything else pans. */
+   * picked moving them all), or with Shift off a pin a box that picks the
+   * pins inside it. Anything else is left (the edit page tries a thing, then
+   * a room). */
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     if (e.button !== 0) return false;
-    const s = ctx.toScreen(at);
-    const many = e.shiftKey || e.metaKey || e.ctrlKey;
+    return this.pressHandle(ctx, e, at) || this.pressPin(ctx, e, at) || this.pressBox(ctx, e, at);
+  }
+
+  /** A press on the picked light's glow handle drags it. */
+  pressHandle(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     const picked = this.picked(ctx);
-    const look = picked === undefined ? undefined : homeMapPinLook(picked.entityId, this.states(ctx));
-    if (!many && picked !== undefined && look?.kind === "light") {
-      const [x, y] = ctx.toScreen(picked.at);
-      const R = ctx.px(homeMapPinGlowRadius(picked, look.on ? look.brightness : undefined));
-      if (Math.hypot(s[0] - (x + R * Math.cos(HANDLE_ANGLE)), s[1] - (y + R * Math.sin(HANDLE_ANGLE))) <= 10) {
-        this.glowDrag(ctx, e, picked);
-        return true;
-      }
-    }
-    const pin = this.pinAt(ctx, s);
-    if (pin === undefined) {
-      if (!e.shiftKey) return false;
-      this.boxDrag(ctx, e, at);
-      return true;
-    }
+    if (picked === undefined || e.shiftKey || e.metaKey || e.ctrlKey) return false;
+    const look = homeMapPinLook(picked.entityId, this.states(ctx));
+    if (look.kind !== "light") return false;
+    const s = ctx.toScreen(at);
+    const [x, y] = ctx.toScreen(picked.at);
+    const R = ctx.px(homeMapPinGlowRadius(picked, look.on ? look.brightness : undefined));
+    if (Math.hypot(s[0] - (x + R * Math.cos(HANDLE_ANGLE)), s[1] - (y + R * Math.sin(HANDLE_ANGLE))) > 10) return false;
+    this.glowDrag(ctx, e, picked);
+    return true;
+  }
+
+  /** Whether a press at plan point `at` lands on a pin. */
+  onPin(ctx: HomeMapEditorContext, at: HomePoint): boolean {
+    return this.pinAt(ctx, ctx.toScreen(at)) !== undefined;
+  }
+
+  /** With Shift, a press anywhere off a pin starts the box that picks the
+   * pins inside it. */
+  pressBox(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
+    if (!e.shiftKey) return false;
+    this.boxDrag(ctx, e, at);
+    return true;
+  }
+
+  /** A press on a pin: picks it and drags it, Shift, Cmd or Ctrl adding it
+   * to the pick or taking it out, a press on one of several picked moving
+   * them all. */
+  pressPin(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
+    const many = e.shiftKey || e.metaKey || e.ctrlKey;
+    const pin = this.pinAt(ctx, ctx.toScreen(at));
+    if (pin === undefined) return false;
     this.pickPage = false;
     this.iconsOpen = false;
     if (many) {
@@ -730,11 +712,12 @@ export class DevicesMode implements HomeMapMode {
 
   // ── the inspector ──────────────────────────────────────────────────────
 
-  inspector(ctx: HomeMapEditorContext): TemplateResult {
+  /** The picked pin's cards, or several picked pins'; nothing with none. */
+  inspector(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
     const picks = this.picks(ctx);
     if (picks.length > 1) return this.groupInspector(ctx, picks);
     const pin = this.picked(ctx);
-    if (pin === undefined) return this.overview(ctx);
+    if (pin === undefined) return nothing;
     const states = ctx.hass?.states;
     const id = pin.id;
     const look = homeMapPinLook(pin.entityId, states);
@@ -1005,20 +988,6 @@ export class DevicesMode implements HomeMapMode {
       <p class="hme-text dim">${pin.tap === undefined && !this.pickPage ? "As the tile does: a light toggles, anything else opens its control." : "Hold on the watch or iPhone: its controls."}</p>`);
   }
 
-  /** With no pin picked: the floor's devices, or a picked room's. */
-  private overview(ctx: HomeMapEditorContext): TemplateResult {
-    const roomId = homeMapSelectionRoom(ctx.selection);
-    const room: HomeMapRoom | undefined = roomId === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, roomId));
-    const pins = room === undefined ? ctx.floor.pins : homeMapPinsOfRoom(ctx.floor, room.id);
-    const states = ctx.hass?.states;
-    return html`${hmeCard(room === undefined ? "Devices" : homeMapRoomName(room), html`
-        <p class="hme-text">${room === undefined ? `${homeMapCount(ctx.floor.pins.length, "device")} on this floor.` : `${homeMapCount(pins.length, "device")} in this room.`}</p>
-        ${pins.map((p) => html`<button type="button" class="hme-list-row" @click=${() => ctx.select({ kind: "pin", pinId: p.id })}>
-          <span class="hme-grow">${homeMapPinName(p, ctx.hass)}</span><span class="hme-val">${homeMapStateText(p.entityId, states)}</span></button>`)}`)}
-      ${hmeCard("Devices", html`<p class="hme-text">Pick a device on the plan to set its name, icon, height, glow and what a tap on it does.</p>
-        <p class="hme-text dim">Drag a device from Not on the map onto the plan to place it. Drag a pin to move it; arrow keys nudge it, Delete takes it off the map.</p>
-        <p class="hme-text dim">Shift, Cmd or Ctrl and a click picks several; Shift and a drag over empty space picks every device in the box. Then drag one to move them all, or set them together.</p>`)}`;
-  }
 }
 
 /** The Light card's Stay in room switch: On keeps the pool of light inside
