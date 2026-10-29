@@ -40,7 +40,7 @@
 import type { SVGTemplateResult, TemplateResult, nothing } from "lit";
 import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
-import type { HomeMapOp } from "./edit-ops.js";
+import type { HomeMapOp, HomeMapThingRef } from "./edit-ops.js";
 import type { HomeMapView } from "./editor-view.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapScans, HomePoint } from "./model.js";
 import { sameHomeMapId } from "./model.js";
@@ -49,28 +49,69 @@ import { homeMapRoomWalls } from "./edit-ops.js";
 /** What is picked. Indexes are a room's walls as `homeMapRoomWalls` numbers
  * them, its outline corners, openings and objects (walls, corners and
  * openings only while that room's walls are edited). `pins` is two or more
- * pins picked at once, in the order picked (one is `pin`). */
+ * pins picked at once, in the order picked (one is `pin`); `objects` two or
+ * more things, in any rooms of the floor, in the order picked (one is
+ * `object`). */
 export type HomeMapSelection =
   | { kind: "room"; roomId: string }
   | { kind: "wall"; roomId: string; wall: number }
   | { kind: "corner"; roomId: string; corner: number }
   | { kind: "opening"; roomId: string; opening: number }
   | { kind: "object"; roomId: string; object: number }
+  | { kind: "objects"; items: HomeMapThingRef[] }
   | { kind: "pin"; pinId: string }
   | { kind: "pins"; pinIds: string[] };
 
-/** The room a selection is in, if any. */
+/** The room a selection is in, if any; none for several things, which may
+ * lie in several rooms. */
 export function homeMapSelectionRoom(sel: HomeMapSelection | undefined): string | undefined {
-  return sel === undefined || sel.kind === "pin" || sel.kind === "pins" ? undefined : sel.roomId;
+  return sel === undefined || sel.kind === "pin" || sel.kind === "pins" || sel.kind === "objects" ? undefined : sel.roomId;
 }
 
-/** Whether what a selection names is still on the floor: for several pins,
- * every one of them. */
+// A plain click picks one thing; Cmd or Ctrl and a click adds a thing to the
+// pick or takes it out. One thing picked is the selection `object`, two or
+// more `objects`, in the order they were picked.
+
+/** The things a selection picks, in the order picked: none, one, or
+ * several. */
+export function homeMapPickedThings(sel: HomeMapSelection | undefined): HomeMapThingRef[] {
+  if (sel?.kind === "object") return [{ roomId: sel.roomId, object: sel.object }];
+  if (sel?.kind === "objects") return sel.items.map((t) => ({ roomId: t.roomId, object: t.object }));
+  return [];
+}
+
+const sameThing = (a: HomeMapThingRef, b: HomeMapThingRef) => sameHomeMapId(a.roomId, b.roomId) && a.object === b.object;
+
+/** The selection that picks these things, each once: none, `object` for
+ * one, `objects` for several. */
+export function homeMapThingsPickOf(things: readonly HomeMapThingRef[]): HomeMapSelection | undefined {
+  const items: HomeMapThingRef[] = [];
+  for (const t of things) if (!items.some((x) => sameThing(x, t))) items.push({ roomId: t.roomId, object: t.object });
+  if (items.length === 0) return undefined;
+  return items.length === 1 ? { kind: "object", roomId: items[0]!.roomId, object: items[0]!.object } : { kind: "objects", items };
+}
+
+/** Cmd or Ctrl and a click on a thing: the pick with the thing taken out
+ * when it was in it, else added to it. Anything else picked (a room, a pin
+ * or several) gives way to the thing alone. */
+export function homeMapToggleThing(sel: HomeMapSelection | undefined, thing: HomeMapThingRef): HomeMapSelection | undefined {
+  const things = homeMapPickedThings(sel);
+  return things.some((t) => sameThing(t, thing)) ? homeMapThingsPickOf(things.filter((t) => !sameThing(t, thing))) : homeMapThingsPickOf([...things, thing]);
+}
+
+/** Whether a selection picks this thing, alone or among several. */
+export function homeMapThingPicked(sel: HomeMapSelection | undefined, roomId: string, object: number): boolean {
+  return homeMapPickedThings(sel).some((t) => sameThing(t, { roomId, object }));
+}
+
+/** Whether what a selection names is still on the floor: for several pins
+ * or things, every one of them. */
 export function homeMapSelectionThere(floor: HomeMapFloor | undefined, sel: HomeMapSelection | undefined): boolean {
   if (sel === undefined) return true;
   if (floor === undefined) return false;
   if (sel.kind === "pin") return floor.pins.some((p) => sameHomeMapId(p.id, sel.pinId));
   if (sel.kind === "pins") return sel.pinIds.every((id) => floor.pins.some((p) => sameHomeMapId(p.id, id)));
+  if (sel.kind === "objects") return sel.items.every((t) => floor.rooms.find((r) => sameHomeMapId(r.id, t.roomId))?.objects[t.object] !== undefined);
   const room = floor.rooms.find((r) => sameHomeMapId(r.id, sel.roomId));
   if (room === undefined) return false;
   switch (sel.kind) {

@@ -12,10 +12,11 @@
 // (`furniture.ts` says which piece and how it fits the thing's box), its
 // fabric and wood in the thing's own colours when it has them, a thing
 // with no piece as the plain box it always was, a hidden thing nowhere; the
-// picked room's floor or the picked thing's box outlined in the editor's
+// picked room's floor or each picked thing's box outlined in the editor's
 // blue; and each light on the floor as a real light at its pin, lit as Home
 // Assistant says it is. Drag to orbit, scroll or pinch to zoom; a click
-// hands the page what it met (`onPick`), a thing, a light or a room.
+// hands the page what it met (`onPick`), a thing, a light or a room, and
+// whether Cmd or Ctrl was held.
 //
 // The plan's x stays x, the plan's y becomes z, and up is y; a thing's turn
 // is a turn about up by the same angle, a model's front its +z. Shown at
@@ -45,8 +46,9 @@ export interface HomeMap3DInput {
   floor: HomeMapFloor;
   /** Home Assistant's states, or undefined to draw every light off. */
   states: HomeMapStates | undefined;
-  /** The picked room, or a thing in it by its place in the room's list. */
-  mark: { roomId: string; object?: number } | undefined;
+  /** The picked room, or the picked things (one or several, in any rooms),
+   * each by its room and its place in that room's list. */
+  mark: { roomId: string } | { things: readonly { roomId: string; object: number }[] } | undefined;
   /** Daylight: a sun comes in. Off, only the lights light the rooms. */
   daylight: boolean;
 }
@@ -131,14 +133,15 @@ export function homeMapKelvinColor(kelvin: number): [number, number, number] {
 }
 
 /** The models' materials a thing's colours change, by name (the iPhone's
- * models keep the same names): the fabric ones take its `fabric` and the
- * wood ones its `wood`, a darker one that colour times its factor in each
- * linear channel. Every other material (white cloth, metal, glass, a lamp's
- * shade, a plant) keeps the model's own colour. */
+ * models keep the same names): the fabric ones, a lamp's shade among them,
+ * take its `fabric` and the wood ones its `wood`, a darker one that colour
+ * times its factor in each linear channel. Every other material (white
+ * cloth, metal, glass, a plant) keeps the model's own colour. */
 export const HOME_MAP_TINTED_MATERIALS: Readonly<Record<string, { part: "fabric" | "wood"; factor: number }>> = {
   carpet: { part: "fabric", factor: 1 },
   carpetBlue: { part: "fabric", factor: 1 },
   carpetDarker: { part: "fabric", factor: 0.645 },
+  lamp: { part: "fabric", factor: 1 },
   wood: { part: "wood", factor: 1 },
   woodDark: { part: "wood", factor: 0.757 },
 };
@@ -435,8 +438,9 @@ export class HomeMapScene3D {
   private readonly raycaster = new THREE.Raycaster();
 
   /** A click (a press let go where it started) on the view: what is under
-   * it, or undefined for empty space. */
-  onPick?: (pick: HomeMap3DPick | undefined) => void;
+   * it, or undefined for empty space, and whether Cmd or Ctrl was held
+   * (`add`), to add it to the pick or take it out. */
+  onPick?: (pick: HomeMap3DPick | undefined, keys: { add: boolean }) => void;
 
   /** `base` is the furniture folder's address, ending in a slash. */
   constructor(private readonly base: string) {
@@ -480,9 +484,12 @@ export class HomeMapScene3D {
       const press = this.press;
       this.press = undefined;
       if (press === undefined || press.id !== e.pointerId || Math.hypot(e.clientX - press.x, e.clientY - press.y) > CLICK_SLOP) return;
-      this.onPick?.(this.pickAt(e.clientX, e.clientY));
+      this.onPick?.(this.pickAt(e.clientX, e.clientY), { add: e.metaKey || e.ctrlKey });
     });
     this.canvas.addEventListener("pointercancel", () => { this.press = undefined; });
+    // On a Mac a Ctrl click adds to the pick; it must not also open the
+    // browser's menu.
+    this.canvas.addEventListener("contextmenu", (e) => { if (e.ctrlKey) e.preventDefault(); });
   }
 
   /** What is under a point of the page: the nearest thing, light or room
@@ -759,12 +766,14 @@ export class HomeMapScene3D {
     this.renderer.shadowMap.needsUpdate = true;
   }
 
-  /** The picked room's floor, or the picked thing's box, outlined in
+  /** The picked room's floor, or each picked thing's box, outlined in
    * blue. */
   private setMark(floor: HomeMapFloor, mark: HomeMap3DInput["mark"]): void {
-    const room = mark === undefined ? undefined : floor.rooms.find((r) => sameHomeMapId(r.id, mark.roomId));
-    const object = mark?.object === undefined ? undefined : room?.objects[mark.object];
-    const key = object !== undefined ? JSON.stringify(["thing", object.c, object.size, object.turn, object.lift ?? 0]) : room !== undefined ? JSON.stringify(["room", room.outline]) : "";
+    const roomOf = (id: string) => floor.rooms.find((r) => sameHomeMapId(r.id, id));
+    const room = mark === undefined || !("roomId" in mark) ? undefined : roomOf(mark.roomId);
+    const objects = mark === undefined || !("things" in mark) ? [] : mark.things.flatMap((t) => roomOf(t.roomId)?.objects[t.object] ?? []);
+    const key = objects.length > 0 ? JSON.stringify(["things", objects.map((o) => [o.c, o.size, o.turn, o.lift ?? 0])])
+      : room !== undefined ? JSON.stringify(["room", room.outline]) : "";
     if (key === this.markKey) return;
     this.markKey = key;
     if (this.mark !== undefined) {
@@ -779,25 +788,29 @@ export class HomeMapScene3D {
       this.lines.push(m);
       return m;
     };
-    if (object !== undefined) {
-      const [w, d, h] = object.size;
-      const y0 = Math.max(object.lift ?? 0, 0);
-      const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]] as const;
-      const positions: number[] = [];
-      for (let i = 0; i < 4; i += 1) {
-        const [x0, z0] = corners[i]!;
-        const [x1, z1] = corners[(i + 1) % 4]!;
-        positions.push(x0, y0, z0, x1, y0, z1, x0, y0 + h, z0, x1, y0 + h, z1, x0, y0, z0, x0, y0 + h, z0);
+    if (objects.length > 0) {
+      const marks = new THREE.Group();
+      for (const object of objects) {
+        const [w, d, h] = object.size;
+        const y0 = Math.max(object.lift ?? 0, 0);
+        const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]] as const;
+        const positions: number[] = [];
+        for (let i = 0; i < 4; i += 1) {
+          const [x0, z0] = corners[i]!;
+          const [x1, z1] = corners[(i + 1) % 4]!;
+          positions.push(x0, y0, z0, x1, y0, z1, x0, y0 + h, z0, x1, y0 + h, z1, x0, y0, z0, x0, y0 + h, z0);
+        }
+        const geometry = new LineSegmentsGeometry();
+        geometry.setPositions(positions);
+        const lines = new LineSegments2(geometry, material());
+        lines.renderOrder = 10;
+        const group = new THREE.Group();
+        group.add(lines);
+        group.position.set(object.c[0], 0, object.c[1]);
+        group.rotation.y = (object.turn * Math.PI) / 180;
+        marks.add(group);
       }
-      const geometry = new LineSegmentsGeometry();
-      geometry.setPositions(positions);
-      const lines = new LineSegments2(geometry, material());
-      lines.renderOrder = 10;
-      const group = new THREE.Group();
-      group.add(lines);
-      group.position.set(object.c[0], 0, object.c[1]);
-      group.rotation.y = (object.turn * Math.PI) / 180;
-      this.mark = group;
+      this.mark = marks;
     } else if (room !== undefined && room.outline.length >= 3) {
       const points = [...room.outline, room.outline[0]!].flatMap(([x, y]) => [x, 0.02, y]);
       const geometry = new LineGeometry();

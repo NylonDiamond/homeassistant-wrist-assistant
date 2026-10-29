@@ -79,7 +79,7 @@ import {
   setPinsHeight,
 } from "./edit-ops.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
-import { hmeCard, hmeChip, hmeHint, hmeNumber, hmePic, hmeRow, hmeSelect, hmeText } from "./editor-parts.js";
+import { hmeCard, hmeChip, hmeColourInput, hmeHint, hmeNumber, hmePic, hmeRow, hmeSelect, hmeText } from "./editor-parts.js";
 import { homeMapCount, homeMapShortcut, homeMapToPlan } from "./editor-view.js";
 import { homeLabelPoint, homePointBounds, homeRoomUnder } from "./geometry.js";
 import {
@@ -808,8 +808,12 @@ export class DevicesMode {
         ${chip("Follow the light", pin.glowColor === undefined, () => set({ glowColor: null }))}
         ${chip("Warm", pin.glowColor === "warm", () => set({ glowColor: "warm" }))}
         <label class="hme-chip sel hme-pick ${hex !== undefined ? "on" : ""}">${hex === undefined ? nothing : html`<span class="hme-swatch" style=${`background:${hex}`}></span>`}Pick
-          <input type="color" .value=${live(hex ?? "#ffb648")} aria-label="Pick the glow's color"
-            @change=${(e: Event) => set({ glowColor: (e.target as HTMLInputElement).value })} /></label>
+          ${hmeColourInput({
+            value: hex ?? "#ffb648",
+            label: "Pick the glow's color",
+            preview: (v) => ctx.preview(v === undefined ? undefined : (d) => setPinFields(d, id, { glowColor: v }) ?? d),
+            set: (v) => set({ glowColor: v }),
+          })}</label>
       </div></div>
       ${stayRow(pin.glowSpill === true ? "off" : "on", (stay) => set({ glowSpill: stay ? null : true }))}
       ${hmeHint("The pool of light round this light on the plan and the tiles. Warm is the lamplight every light has without a color of its own.")}`);
@@ -898,8 +902,12 @@ export class DevicesMode {
         ${chip("Follow the light", !colour.mixed && colour.value === undefined, () => setAll({ glowColor: null }))}
         ${chip("Warm", !colour.mixed && colour.value === "warm", () => setAll({ glowColor: "warm" }))}
         <label class="hme-chip sel hme-pick ${hex !== undefined ? "on" : ""}">${hex === undefined ? nothing : html`<span class="hme-swatch" style=${`background:${hex}`}></span>`}Pick
-          <input type="color" .value=${live(hex ?? "#ffb648")} aria-label="Pick the glow's color for every picked light"
-            @change=${(e: Event) => setAll({ glowColor: (e.target as HTMLInputElement).value })} /></label>
+          ${hmeColourInput({
+            value: hex ?? "#ffb648",
+            label: "Pick the glow's color for every picked light",
+            preview: (v) => ctx.preview(v === undefined ? undefined : (d) => setPinsFields(d, ids, { glowColor: v }) ?? d),
+            set: (v) => setAll({ glowColor: v }),
+          })}</label>
       </div></div>
       ${colour.mixed ? hmeHint("Mixed: their colors differ. Pick one to set them all.") : nothing}
       ${stayRow(spill.mixed ? "mixed" : spill.value ? "off" : "on", (stay) => setAll({ glowSpill: stay ? null : true }))}`);

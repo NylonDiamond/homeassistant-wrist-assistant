@@ -519,10 +519,17 @@ describe("recolouring a model", () => {
     near(homeMapMaterialTint("carpetDarker", colors), fabric.map((v) => v * 0.645));
     near(homeMapMaterialTint("wood", colors), wood);
     near(homeMapMaterialTint("woodDark", colors), wood.map((v) => v * 0.757));
-    for (const name of ["carpetWhite", "metal", "metalDark", "metalLight", "glass", "lamp", "plant", "_defaultMat", "toString", ""]) {
+    for (const name of ["carpetWhite", "metal", "metalDark", "metalLight", "glass", "plant", "_defaultMat", "toString", ""]) {
       expect(homeMapMaterialTint(name, colors), name).toBeUndefined();
     }
-    expect(Object.keys(HOME_MAP_TINTED_MATERIALS).sort()).toEqual(["carpet", "carpetBlue", "carpetDarker", "wood", "woodDark"]);
+    expect(Object.keys(HOME_MAP_TINTED_MATERIALS).sort()).toEqual(["carpet", "carpetBlue", "carpetDarker", "lamp", "wood", "woodDark"]);
+  });
+
+  it("takes a lamp's shade as fabric, in the fabric colour as it is", () => {
+    const fabric = homeMapLinearOf("#C9A13B")!;
+    near(homeMapMaterialTint("lamp", { fabric: "#C9A13B", wood: "#6B4A32" }), fabric);
+    expect(homeMapMaterialTint("lamp", { wood: "#6B4A32" })).toBeUndefined();
+    expect(HOME_MAP_FURNITURE.pieces.find((p) => p.id === "lampRoundFloor")?.fabric).toBe(true);
   });
 
   it("leaves a part with no colour of its own as the model has it", () => {

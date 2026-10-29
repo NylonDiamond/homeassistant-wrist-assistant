@@ -30,6 +30,19 @@
 // as (Change opens the picker, pieces of its own kind first), the colours
 // of the piece's fabric and wood when it has either, where its
 // middle is, its turn, its width, depth and height, and whether it is shown.
+// A custom colour shows on the plan and in 3D as the picker moves and is
+// saved once, when the picker closes or is left.
+//
+// Cmd or Ctrl and a click on a thing (on the plan, in 3D or in the layers)
+// adds it to the pick or takes it out, things in any rooms together; a
+// plain click picks one again. Several things are each outlined, with no
+// handles. Their inspector names them and holds the Colours card (a Fabric
+// row when any of their pieces has fabric, a Wood row when any has wood,
+// each pick set on every one that has the part), Shown or Hidden for all and
+// Delete for all, after the page's own yes; their pill has Hide and Delete.
+// The arrows nudge them all, Delete asks to take them off, and Escape goes
+// back to their room when they are all in one, else to nothing picked. Each
+// of these is one edit.
 //
 // Add furniture (the tool rail's F, and a room's inspector) opens the
 // furniture picker over the page: the catalog's pieces by group, a search, and a card
@@ -54,6 +67,7 @@ import {
   type HomeMapResizeSides,
   type HomeMapRoomPart,
   type HomeMapSnapGuide,
+  type HomeMapThingRef,
   HOME_MAP_MAX_OBJECT_SIZE,
   HOME_MAP_MAX_ROOM_SIZE,
   HOME_MAP_MIN_OBJECT_SIZE,
@@ -69,14 +83,18 @@ import {
   levelObject,
   levelRoom,
   moveObject,
+  moveObjects,
   moveRoom,
   moveRoomToFloor,
   removeObject,
+  removeObjects,
   resizeObject,
   renameFloor,
   renameRoom,
   resizeRoom,
   setObjectHidden,
+  setObjectsHidden,
+  setObjectsPart,
   setRoomArea,
   setRoomColor,
   setRoomFinish,
@@ -94,11 +112,12 @@ import {
   turnRoom,
 } from "./edit-ops.js";
 import { HOME_MAP_ARRANGE_GRID, HomeMapDrawTool } from "./draw-tool.js";
-import { homeMapStateText } from "./devices-model.js";
-import { type HomeMapEditorContext, homeMapSelectionRoom } from "./editor-mode.js";
+import { homeMapShared, homeMapStateText } from "./devices-model.js";
+import { type HomeMapEditorContext, type HomeMapSelection, homeMapPickedThings, homeMapSelectionRoom, homeMapToggleThing } from "./editor-mode.js";
 import {
   hmeCard,
   hmeChip,
+  hmeColourInput,
   hmeFields,
   hmeFinishSwatch,
   hmeGroup,
@@ -219,28 +238,33 @@ export const HOME_MAP_WALL_COLOR_PRESETS: readonly HomeMapPartPreset[] = [
 ];
 
 /** A row of colours: Default (no key), a round button for each preset,
- * ringed when picked, and Custom, a picker saved when it closes. */
+ * ringed when picked, and Custom, a picker whose colour shows live as it
+ * moves (`preview`) and is saved once when it closes or is left. `mixed`:
+ * several things picked that differ, so nothing is ringed. */
 function colourChoice(o: {
   word: string;
   presets: readonly HomeMapPartPreset[];
   now: string | undefined;
+  mixed?: boolean;
   defaultTitle: string;
   customTitle: string;
   customLabel: string;
   set: (color: string | undefined) => void;
+  preview: (color: string | undefined) => void;
 }): TemplateResult {
-  const now = o.now?.toUpperCase();
+  const mixed = o.mixed === true;
+  const now = mixed ? undefined : o.now?.toUpperCase();
   const custom = now !== undefined && !o.presets.some((p) => p.hex === now);
   return html`<div class="hme-r top"><span class="hme-l">${o.word}</span>
     <div class="hme-chips hme-colours" role="group" aria-label=${`${o.word} colour`}>
-      <button type="button" class="hme-chip sel ${now === undefined ? "on" : ""}" aria-pressed=${now === undefined ? "true" : "false"}
+      <button type="button" class="hme-chip sel ${now === undefined && !mixed ? "on" : ""}" aria-pressed=${now === undefined && !mixed ? "true" : "false"}
         title=${o.defaultTitle} @click=${() => o.set(undefined)}>Default</button>
       ${o.presets.map((p) => html`<button type="button" class="hme-colour ${now === p.hex ? "on" : ""}" style=${`--c:${p.hex}`}
         title=${p.name} aria-label=${`${o.word}: ${p.name}`} aria-pressed=${now === p.hex ? "true" : "false"} @click=${() => o.set(p.hex)}></button>`)}
       <label class="hme-chip sel hme-pick ${custom ? "on" : ""}" title=${o.customTitle}>${custom ? html`<span class="hme-swatch" style=${`background:${now}`}></span>` : nothing}Custom
-        <input type="color" .value=${live((now ?? o.presets[0]!.hex).toLowerCase())} aria-label=${o.customLabel}
-          @change=${(e: Event) => o.set((e.target as HTMLInputElement).value)} /></label>
-    </div></div>`;
+        ${hmeColourInput({ value: now ?? o.presets[0]!.hex, label: o.customLabel, preview: o.preview, set: o.set })}</label>
+    </div></div>
+    ${mixed ? hmeHint(`Mixed: their ${o.word.toLowerCase()} colours differ. Pick one to set them all.`) : nothing}`;
 }
 
 /** A turn handle snaps to this many degrees unless Alt is held. */
@@ -281,6 +305,26 @@ interface ThingAt {
 export function homeMapThingName(object: Pick<HomeMapObject, "kind" | "model">): string {
   return homeMapPiece(object.model)?.name ?? homeMapObjectName(object.kind);
 }
+
+/** Several things' names, as a sentence lists them: "Sofa, Floor lamp and
+ * Floor lamp". */
+export function homeMapThingNames(things: readonly { object: Pick<HomeMapObject, "kind" | "model"> }[]): string {
+  const names = things.map((t) => homeMapThingName(t.object));
+  return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** Where Escape goes from several things: their room when they are all in
+ * one, else nothing picked. */
+export function homeMapThingsHome(things: readonly { room: Pick<HomeMapRoom, "id"> }[]): HomeMapSelection | undefined {
+  const first = things[0]?.room.id;
+  return first !== undefined && things.every((t) => sameHomeMapId(t.room.id, first)) ? { kind: "room", roomId: first } : undefined;
+}
+
+/** The parts a thing's colours can change, in the Colours card's order. */
+const HOME_MAP_COLOUR_PARTS: readonly HomeMapPart[] = ["fabric", "wood"];
+
+/** Things as an edit names them. */
+const thingRefs = (things: readonly ThingAt[]): HomeMapThingRef[] => things.map((t) => ({ roomId: t.room.id, object: t.index }));
 
 /** The parts of a thing its Colours card offers, those of the piece it draws
  * as (its `model`, else its kind's): fabric, wood, both or none. */
@@ -508,6 +552,17 @@ export class ArrangeMode {
     return id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
   }
 
+  /** The things picked together, two or more in the order picked; undefined
+   * unless several are. */
+  private pickedMany(ctx: HomeMapEditorContext): ThingAt[] | undefined {
+    if (ctx.selection?.kind !== "objects") return undefined;
+    return homeMapPickedThings(ctx.selection).flatMap((t) => {
+      const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, t.roomId));
+      const object = room?.objects[t.object];
+      return room === undefined || object === undefined ? [] : [{ room, index: t.object, object }];
+    });
+  }
+
   /** The picked thing, its room and its place in the room's list. */
   private picked(ctx: HomeMapEditorContext): ThingAt | undefined {
     const sel = ctx.selection;
@@ -550,9 +605,17 @@ export class ArrangeMode {
     if (this.draw.active) return this.draw.overlay(ctx);
     const room = this.focus(ctx);
     const thing = this.picked(ctx);
+    const many = this.pickedMany(ctx);
     const parts: SVGTemplateResult[] = [];
     for (const guide of this.guides) parts.push(this.guide(ctx, guide));
-    if (thing !== undefined) {
+    if (many !== undefined) {
+      // Each picked thing outlined, no handles: several move by the arrows.
+      for (const t of many) {
+        const box = homeBoxCorners(homeBoxOf(t.object)).map((p) => pt(ctx.toScreen(p))).join(" ");
+        parts.push(svg`<polygon class="hme-box" points=${box} fill="rgba(91,141,239,0.1)" stroke="#5b8def" stroke-width="2"
+          stroke-dasharray=${t.object.hidden === true ? "5 4" : "none"} pointer-events="none" />`);
+      }
+    } else if (thing !== undefined) {
       // The thing's room stays outlined faintly, so it is plain whose it is.
       const outline = thing.room.outline.map((p) => pt(ctx.toScreen(p))).join(" ");
       parts.push(svg`<polygon points=${outline} fill="none" stroke="#5b8def" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" pointer-events="none" />`);
@@ -672,10 +735,15 @@ export class ArrangeMode {
   }
 
   /** A press on a thing (in any room; the smallest where several overlap)
-   * picks it and drags it at once; on a room's open floor, picks the room
-   * and drags it. */
+   * picks it alone and drags it at once; on a room's open floor, picks the
+   * room and drags it. With Cmd or Ctrl a thing is added to the pick or
+   * taken out, and a room's open floor leaves the pick as it is. */
   pressBody(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     const thing = this.thingUnder(ctx, at, undefined);
+    if (e.metaKey || e.ctrlKey) {
+      if (thing !== undefined) ctx.select(homeMapToggleThing(ctx.selection, { roomId: thing.room.id, object: thing.index }));
+      return thing !== undefined || homeRoomUnder(ctx.floor, at) !== undefined;
+    }
     if (thing !== undefined) {
       this.pickThing(ctx, thing.room, thing.index);
       this.thingMoveDrag(ctx, e, thing, at);
@@ -951,6 +1019,8 @@ export class ArrangeMode {
 
   keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
     if (this.draw.active) return this.draw.keyDown(ctx, e);
+    const many = this.pickedMany(ctx);
+    if (many !== undefined) return this.manyKeyDown(ctx, e, many);
     const room = this.focus(ctx);
     if (room === undefined) return false;
     const shortcut = homeMapShortcut(e, false);
@@ -985,6 +1055,41 @@ export class ArrangeMode {
     return false;
   }
 
+  /** Keys for several picked things: Delete asks, then takes them all off;
+   * the arrows nudge them all, as one edit; Escape goes back to their room
+   * when they are all in one, else to nothing picked. */
+  private manyKeyDown(ctx: HomeMapEditorContext, e: KeyboardEvent, many: readonly ThingAt[]): boolean {
+    const shortcut = homeMapShortcut(e, false);
+    const refs = thingRefs(many);
+    if (shortcut === "delete") {
+      void this.askDeleteThings(ctx, many);
+      return true;
+    }
+    if (shortcut === "cancel") {
+      ctx.select(homeMapThingsHome(many));
+      return true;
+    }
+    if (typeof shortcut === "object" && "nudge" in shortcut) {
+      const [dx, dy] = shortcut.nudge;
+      ctx.apply((d) => moveObjects(d, refs, dx, dy));
+      return true;
+    }
+    return false;
+  }
+
+  /** Take several things off the map, after the page's own yes, as one
+   * edit that one undo brings back. */
+  private async askDeleteThings(ctx: HomeMapEditorContext, many: readonly ThingAt[]): Promise<void> {
+    const refs = thingRefs(many);
+    const sure = await ctx.confirm({
+      title: `Delete ${homeMapCount(many.length, "thing")}?`,
+      text: `${homeMapThingNames(many)} come off the map. Undo brings them back while this page is open.`,
+      ok: "Delete",
+      danger: true,
+    });
+    if (sure) ctx.apply((d) => removeObjects(d, refs), { select: homeMapThingsHome(many) ?? null });
+  }
+
   cursor(): string | undefined {
     return this.draw.active ? "crosshair" : undefined;
   }
@@ -1011,6 +1116,15 @@ export class ArrangeMode {
       return html`<span class="hme-pill-name">${this.draw.hint()}</span>
         ${this.draw.points.length >= 3 ? html`<button type="button" class="hme-tb" @click=${() => void this.draw.finish(ctx)}>Close the room</button>` : nothing}
         <button type="button" class="hme-tb" @click=${() => this.draw.stop(ctx)}>Cancel</button>`;
+    }
+    const many = this.pickedMany(ctx);
+    if (many !== undefined) {
+      const refs = thingRefs(many);
+      const shown = many.some((t) => t.object.hidden !== true);
+      return html`<span class="hme-pill-name">${homeMapCount(many.length, "thing")}</span>
+        <button type="button" class="hme-tb" title=${shown ? "Hide every picked thing" : "Show every picked thing"}
+          @click=${() => ctx.apply((d) => setObjectsHidden(d, refs, shown))}>${shown ? "Hide" : "Show"}</button>
+        <button type="button" class="hme-tb danger" @click=${() => void this.askDeleteThings(ctx, many)}>Delete</button>`;
     }
     const room = this.focus(ctx);
     if (room === undefined || this.dragging) return nothing;
@@ -1068,6 +1182,8 @@ export class ArrangeMode {
   // ── the inspector ──────────────────────────────────────────────────────
 
   inspector(ctx: HomeMapEditorContext): TemplateResult {
+    const many = this.pickedMany(ctx);
+    if (many !== undefined) return this.manyInspector(ctx, many);
     const room = this.focus(ctx);
     if (room === undefined) return this.floorCard(ctx, ctx.floor);
     const thing = this.picked(ctx);
@@ -1238,6 +1354,65 @@ export class ArrangeMode {
         </div>`)}`;
   }
 
+  /** Several picked things: how many and which; the colours of the parts
+   * any of their pieces has, each pick set on every one that has that part;
+   * shown or hidden; and Delete. Each change is one edit (one undo, one
+   * save). */
+  private manyInspector(ctx: HomeMapEditorContext, many: readonly ThingAt[]): TemplateResult {
+    const refs = thingRefs(many);
+    const rooms = [...new Set(many.map((t) => homeMapRoomName(t.room)))];
+    const hidden = homeMapShared(many.map((t) => t.object.hidden === true));
+    const parts = HOME_MAP_COLOUR_PARTS.filter((part) => many.some((t) => homeMapColourParts(t.object).includes(part)));
+    return html`
+      <section class="hme-card hme-head">
+        <div class="hme-head-t">
+          <strong>${homeMapCount(many.length, "thing")}</strong>
+          <span>${homeMapThingNames(many)} · in ${rooms.join(", ")}</span>
+        </div>
+      </section>
+
+      ${hmeCard("Picked", html`${many.map((t) => html`<div class="hme-list-row hme-pick-row">
+          <button type="button" class="hme-grow hme-link ${t.object.hidden === true ? "dim" : ""}" title="Pick this one alone"
+            @click=${() => this.pickThing(ctx, t.room, t.index)}>${homeMapThingName(t.object)}</button>
+          <span class="hme-val">${homeMapRoomName(t.room)}</span>
+          <button type="button" class="hme-x" aria-label=${`Leave ${homeMapThingName(t.object)} out of the pick`} title="Leave it out of the pick"
+            @click=${() => ctx.select(homeMapToggleThing(ctx.selection, { roomId: t.room.id, object: t.index }))}>×</button></div>`)}
+        <p class="hme-foot-hint">Cmd or Ctrl and a click on the plan or in 3D adds a thing or takes one away. The arrow keys move them all.</p>`, String(many.length))}
+
+      ${parts.length === 0 ? nothing : hmeCard("Colours", html`
+        ${parts.map((part) => this.manyColourRow(ctx, many, part))}
+        <p class="hme-foot-hint">Set on every picked thing whose piece has that part. In the 3D view and on the iPhone.</p>`)}
+
+      ${hmeCard("Show", html`
+        <div class="hme-r tight"><span class="hme-grow">On the map, the tiles and the watch</span>
+          ${hidden.mixed
+            ? html`<button type="button" class="hme-chip off" aria-pressed="mixed" aria-label="Shown" title="Some are hidden: show them all"
+                @click=${() => ctx.apply((d) => setObjectsHidden(d, refs, false))}>Mixed</button>`
+            : hmeChip({ on: !hidden.value, onText: "Shown", offText: "Hidden", label: "Shown", click: () => ctx.apply((d) => setObjectsHidden(d, refs, !hidden.value)) })}</div>
+        <div class="hme-row-end">
+          <button type="button" class="hme-tb danger push" @click=${() => void this.askDeleteThings(ctx, many)}>Delete ${homeMapCount(many.length, "thing")}</button>
+        </div>`)}`;
+  }
+
+  /** A part's colour for several things: on those whose piece has it,
+   * Mixed while they differ. */
+  private manyColourRow(ctx: HomeMapEditorContext, many: readonly ThingAt[], part: HomeMapPart): TemplateResult {
+    const having = many.filter((t) => homeMapColourParts(t.object).includes(part));
+    const refs = thingRefs(having);
+    const shared = homeMapShared(having.map((t) => t.object[part]?.toUpperCase()));
+    return colourChoice({
+      word: part === "fabric" ? "Fabric" : "Wood",
+      presets: part === "fabric" ? HOME_MAP_FABRIC_PRESETS : HOME_MAP_WOOD_PRESETS,
+      now: shared.mixed ? undefined : shared.value,
+      mixed: shared.mixed,
+      defaultTitle: "Each model's own colour",
+      customTitle: `Any ${part} colour`,
+      customLabel: `Pick a ${part} colour for every picked thing`,
+      set: (color) => ctx.apply((d) => setObjectsPart(d, refs, part, color)),
+      preview: (color) => ctx.preview(color === undefined ? undefined : (d) => setObjectsPart(d, refs, part, color) ?? d),
+    });
+  }
+
   /** The piece the 3D look draws a thing as: its picture, name and why it
    * is that one, and Change, which opens the picker. */
   private modelCard(ctx: HomeMapEditorContext, thing: ThingAt): TemplateResult {
@@ -1281,6 +1456,7 @@ export class ArrangeMode {
       customTitle: `Any ${part} colour`,
       customLabel: `Pick a ${part} colour`,
       set: (color) => ctx.apply((d) => setObjectPart(d, id, index, part, color)),
+      preview: (color) => ctx.preview(color === undefined ? undefined : (d) => setObjectPart(d, id, index, part, color) ?? d),
     });
   }
 
@@ -1298,6 +1474,7 @@ export class ArrangeMode {
       customTitle: floor ? "Any floor colour" : "Any wall colour",
       customLabel: floor ? "Pick a floor colour" : "Pick a wall colour",
       set: (color) => ctx.apply((d) => setRoomColor(d, id, part, color)),
+      preview: (color) => ctx.preview(color === undefined ? undefined : (d) => setRoomColor(d, id, part, color) ?? d),
     });
   }
 
@@ -1309,6 +1486,6 @@ export class ArrangeMode {
         ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`)}
       ${hmeCard("Edit", html`<p class="hme-text">Click picks what is on top: a device, then a thing (a sofa, a TV, a desk), then the room under them. Drag it to move it.</p>
         <p class="hme-text dim">A dragged room lines up with the walls of the rooms round it. Drag the round handle above it to turn it, or a square handle on its box to resize it. Undo with ${homeMapUndoKey()}.</p>
-        <p class="hme-text dim">Double-click a room to edit its walls, doors and windows. Drag a device from Not on the map onto the plan to place it; Shift, Cmd or Ctrl and a click picks several.</p>`)}`;
+        <p class="hme-text dim">Double-click a room to edit its walls, doors and windows. Drag a device from Not on the map onto the plan to place it; Shift, Cmd or Ctrl and a click picks several. Cmd or Ctrl and a click picks several things too, to colour or hide them together.</p>`)}`;
   }
 }

@@ -26,15 +26,33 @@ import {
 } from "../src/home-map/devices-model.js";
 import { nothing } from "lit";
 import { homePlan } from "../src/home-map/draw.js";
-import { type HomeMapOp, movePins, removePins, setPinFields, setPinsFields } from "../src/home-map/edit-ops.js";
+import {
+  type HomeMapOp,
+  addPiece,
+  moveObjects,
+  movePins,
+  removeObjects,
+  removePins,
+  setObjectsHidden,
+  setObjectsPart,
+  setPinFields,
+  setPinsFields,
+} from "../src/home-map/edit-ops.js";
 import {
   type HomeMapApplyOptions,
   type HomeMapDragHandlers,
   type HomeMapEditorContext,
   type HomeMapSelection,
+  homeMapPickedThings,
   homeMapSelectionRoom,
   homeMapSelectionThere,
+  homeMapThingPicked,
+  homeMapThingsPickOf,
+  homeMapToggleThing,
 } from "../src/home-map/editor-mode.js";
+import { hmeColourInput } from "../src/home-map/editor-parts.js";
+import { homeMapPiece } from "../src/home-map/furniture.js";
+import { ArrangeMode } from "../src/home-map/mode-arrange.js";
 import { DevicesMode } from "../src/home-map/mode-devices.js";
 import { type HomeMapDocument, type HomeMapStates, type HomePoint, checkHomeMap, orderedPin } from "../src/home-map/model.js";
 import { homeTileArt } from "../src/home-map/tile-art.js";
@@ -225,8 +243,8 @@ describe("picking several devices", () => {
 
 /** A stand-in for the shell: 100 pixels a meter, the edits made on its own
  * map, and a record of what the part asked for. */
-function shell(selection?: HomeMapSelection, states?: HomeMapStates) {
-  let doc = fixture();
+function shell(selection?: HomeMapSelection, states?: HomeMapStates, start: HomeMapDocument = fixture()) {
+  let doc = start;
   let preview: HomeMapOp | undefined;
   let drag: HomeMapDragHandlers | undefined;
   const log = { applied: 0, previews: 0, confirms: [] as string[], selects: [] as (HomeMapSelection | undefined)[], answer: true };
@@ -439,5 +457,278 @@ describe("editing several pins as one edit", () => {
     const left = removePins(fixture(), [READING, PENDANTS, READING])!;
     expect(left.floors[0]!.pins.map((p) => p.id)).toEqual([CEILING, LOCK, THERMOSTAT]);
     expect(removePins(fixture(), [])).toBeUndefined();
+  });
+});
+
+// ── several things picked ────────────────────────────────────────────────
+
+const LIVING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000010";
+const KITCHEN = "7B1E0C2A-5D3F-4A8B-9C6D-000000000011";
+
+/** The fixture with two floor lamps in the living room (its things 3 and
+ * 4), as Add furniture puts them there. */
+function lamps(): HomeMapDocument {
+  const lamp = homeMapPiece("lampRoundFloor")!;
+  const one = addPiece(fixture(), LIVING, lamp, [1, 1])!;
+  return addPiece(one, LIVING, lamp, [5, 1])!;
+}
+const LAMP_A = { roomId: LIVING, object: 3 };
+const LAMP_B = { roomId: LIVING, object: 4 };
+/** The kitchen's table, drawn as the plain wooden table: wood, no fabric. */
+const TABLE = { roomId: KITCHEN, object: 2 };
+const thingOf = (doc: HomeMapDocument, t: { roomId: string; object: number }) => doc.floors[0]!.rooms.find((r) => r.id === t.roomId)!.objects[t.object]!;
+
+function templates(node: unknown, out: Tpl[] = []): Tpl[] {
+  if (Array.isArray(node)) for (const n of node) templates(n, out);
+  else if (isTpl(node)) {
+    out.push(node);
+    for (const v of node.values) templates(v, out);
+  }
+  return out;
+}
+
+/** The `event` handler of the smallest template whose text holds `marker`
+ * and that binds the event itself. */
+function handler(root: unknown, marker: string, event: string): (e?: unknown) => void {
+  const found = templates(root)
+    .map((t) => {
+      let text = "";
+      let fn: unknown;
+      t.strings.forEach((s, i) => {
+        text += s;
+        if (i >= t.values.length) return;
+        const v = t.values[i];
+        if (typeof v === "function" && s.trimEnd().endsWith(event)) fn ??= v;
+        text += flatten(v);
+      });
+      return { text, fn };
+    })
+    .filter((c) => c.text.includes(marker) && c.fn !== undefined)
+    .sort((a, b) => a.text.length - b.text.length);
+  if (found.length === 0) throw new Error(`no ${event} handler near ${marker}`);
+  return found[0]!.fn as (e?: unknown) => void;
+}
+
+describe("picking several things", () => {
+  it("adds a thing to the pick or takes it out, one thing being `object` and more `objects`, in any rooms", () => {
+    let sel = homeMapToggleThing({ kind: "object", ...LAMP_A }, LAMP_B);
+    expect(sel).toEqual({ kind: "objects", items: [LAMP_A, LAMP_B] });
+    sel = homeMapToggleThing(sel, TABLE);
+    expect(homeMapPickedThings(sel)).toEqual([LAMP_A, LAMP_B, TABLE]);
+    expect(homeMapThingPicked(sel, KITCHEN, 2)).toBe(true);
+    expect(homeMapThingPicked(sel, KITCHEN, 1)).toBe(false);
+    sel = homeMapToggleThing(homeMapToggleThing(sel, LAMP_A), TABLE);
+    expect(sel).toEqual({ kind: "object", ...LAMP_B });
+    expect(homeMapToggleThing(sel, LAMP_B)).toBeUndefined();
+    // A pin, several pins or a room give way to the thing alone.
+    expect(homeMapToggleThing({ kind: "pins", pinIds: [READING, LOCK] }, TABLE)).toEqual({ kind: "object", ...TABLE });
+    expect(homeMapToggleThing({ kind: "room", roomId: LIVING }, TABLE)).toEqual({ kind: "object", ...TABLE });
+    // And the other way round: a pin picked with Cmd gives several things up.
+    expect(homeMapTogglePick({ kind: "objects", items: [LAMP_A, TABLE] }, READING)).toEqual({ kind: "pin", pinId: READING });
+    expect(homeMapThingsPickOf([LAMP_A, LAMP_A])).toEqual({ kind: "object", ...LAMP_A });
+    expect(homeMapThingsPickOf([])).toBeUndefined();
+  });
+
+  it("is still there while every picked thing is, and is in no one room", () => {
+    const doc = lamps();
+    const sel: HomeMapSelection = { kind: "objects", items: [LAMP_A, TABLE] };
+    expect(homeMapSelectionThere(doc.floors[0], sel)).toBe(true);
+    expect(homeMapSelectionThere(fixture().floors[0], sel)).toBe(false);
+    expect(homeMapSelectionRoom(sel)).toBeUndefined();
+  });
+});
+
+describe("the things part with several picked", () => {
+  it("adds a thing with Cmd or Ctrl and a click, never moving it, and a plain click picks one alone", () => {
+    const s = shell({ kind: "object", ...LAMP_A }, undefined, lamps());
+    const mode = new ArrangeMode();
+    expect(mode.pointerDown(s.ctx, s.press({ metaKey: true }), [5, 1])).toBe(true);
+    expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_A, LAMP_B] });
+    expect(mode.pointerDown(s.ctx, s.press({ ctrlKey: true }), [8.1, 2.5])).toBe(true);
+    expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_A, LAMP_B, TABLE] });
+    expect(mode.pointerDown(s.ctx, s.press({ metaKey: true }), [1, 1])).toBe(true);
+    expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_B, TABLE] });
+    // Cmd on a room's open floor keeps the pick; nothing was dragged.
+    expect(mode.pointerDown(s.ctx, s.press({ metaKey: true }), [4, 3.4])).toBe(true);
+    expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_B, TABLE] });
+    expect(s.handlers()).toBeUndefined();
+    expect(mode.pointerDown(s.ctx, s.press(), [5, 1])).toBe(true);
+    expect(s.ctx.selection).toEqual({ kind: "object", ...LAMP_B });
+    expect(s.handlers()).toBeDefined();
+  });
+
+  it("outlines every picked thing, with no handles", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B, TABLE] }, undefined, lamps());
+    const art = flatten(new ArrangeMode().overlay(s.ctx));
+    expect(art.split(`<polygon class="hme-box"`).length - 1).toBe(3);
+    expect(art).not.toContain(`data-hme="resize"`);
+    expect(art).not.toContain(`data-hme="turn"`);
+  });
+
+  it("shows how many, which, a Fabric row for the lamps and a Wood row for the table, Shown and Delete", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B, TABLE] }, undefined, lamps());
+    const text = flatten(new ArrangeMode().inspector(s.ctx));
+    expect(text).toContain("<strong>3 things</strong>");
+    expect(text).toContain("Floor lamp, Floor lamp and Table · in Living room, Kitchen");
+    expect(text).toContain(">Picked<");
+    expect(text).toContain(">Fabric<");
+    expect(text).toContain(">Wood<");
+    expect(text).toContain(">Shown</button>");
+    expect(text).toContain("Delete 3 things");
+    // Two lamps alone: fabric only.
+    const two = shell({ kind: "objects", items: [LAMP_A, LAMP_B] }, undefined, lamps());
+    const only = flatten(new ArrangeMode().inspector(two.ctx));
+    expect(only).toContain(">Fabric<");
+    expect(only).not.toContain(">Wood<");
+  });
+
+  it("colours every picked thing that has the part as one edit, the rest left as they are, Mixed where they differ", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B, TABLE] }, undefined, lamps());
+    const mode = new ArrangeMode();
+    handler(mode.inspector(s.ctx), "Fabric: Navy", "@click=")();
+    expect(s.log.applied).toBe(1);
+    expect(thingOf(s.doc, LAMP_A).fabric).toBe("#2E4A7D");
+    expect(thingOf(s.doc, LAMP_B).fabric).toBe("#2E4A7D");
+    expect(thingOf(s.doc, TABLE).fabric).toBeUndefined();
+    expect(flatten(mode.inspector(s.ctx))).toMatch(/class="hme-colour on" style=--c:#2E4A7D/);
+    s.ctx.apply((d) => setObjectsPart(d, [LAMP_A], "fabric", "#C9A13B"));
+    const mixed = flatten(mode.inspector(s.ctx));
+    expect(mixed).toContain("Mixed: their fabric colours differ");
+    expect(mixed).not.toMatch(/class="hme-colour on"/);
+  });
+
+  it("shows a custom colour live on every picked thing and saves it once when the picker closes", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B] }, undefined, lamps());
+    const view = new ArrangeMode().inspector(s.ctx);
+    const el = { value: "#112233" };
+    handler(view, "Pick a fabric colour for every picked thing", "@input=")({ target: el });
+    el.value = "#445566";
+    handler(view, "Pick a fabric colour for every picked thing", "@input=")({ target: el });
+    expect(s.log.previews).toBe(2);
+    expect(s.log.applied).toBe(0);
+    expect(thingOf({ ...s.doc, floors: [s.ctx.floor] }, LAMP_A).fabric).toBe("#445566");
+    expect(thingOf({ ...s.doc, floors: [s.ctx.floor] }, LAMP_B).fabric).toBe("#445566");
+    expect(thingOf(s.doc, LAMP_A).fabric).toBeUndefined();
+    handler(view, "Pick a fabric colour for every picked thing", "@change=")({ target: el });
+    expect(s.log.applied).toBe(1);
+    expect(thingOf(s.doc, LAMP_A).fabric).toBe("#445566");
+    expect(thingOf(s.doc, LAMP_B).fabric).toBe("#445566");
+    // The preview is over: the floor shown is the map itself.
+    expect(s.ctx.floor).toBe(s.doc.floors[0]);
+  });
+
+  it("hides, shows and deletes them all, each one edit, Delete after the page's own yes", async () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, TABLE] }, undefined, lamps());
+    const mode = new ArrangeMode();
+    const pill = flatten(mode.pill(s.ctx));
+    expect(pill).toContain("2 things");
+    expect(pill).toContain(">Hide</button>");
+    expect(pill).toContain(">Delete</button>");
+    handler(mode.pill(s.ctx), ">Hide<", "@click=")();
+    expect(s.log.applied).toBe(1);
+    expect(thingOf(s.doc, LAMP_A).hidden).toBe(true);
+    expect(thingOf(s.doc, TABLE).hidden).toBe(true);
+    expect(flatten(mode.pill(s.ctx))).toContain(">Show</button>");
+    s.log.answer = false;
+    expect(mode.keyDown(s.ctx, { key: "Delete" } as KeyboardEvent)).toBe(true);
+    await Promise.resolve();
+    expect(s.log.confirms).toEqual(["Delete 2 things?"]);
+    expect(s.log.applied).toBe(1);
+    s.log.answer = true;
+    handler(mode.inspector(s.ctx), "Delete 2 things", "@click=")();
+    await Promise.resolve();
+    expect(s.log.applied).toBe(2);
+    expect(s.doc.floors[0]!.rooms[0]!.objects.map((o) => o.model ?? o.kind)).toEqual(["sofa", "table", "television", "lampRoundFloor"]);
+    expect(s.doc.floors[0]!.rooms[1]!.objects.map((o) => o.kind)).toEqual(["refrigerator", "storage"]);
+    // Across two rooms, nothing is picked after.
+    expect(s.ctx.selection).toBeUndefined();
+  });
+
+  it("nudges them all with an arrow key as one edit, and Escape goes to their room when they share one, else to nothing", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B] }, undefined, lamps());
+    const mode = new ArrangeMode();
+    const a = thingOf(s.doc, LAMP_A).c;
+    const b = thingOf(s.doc, LAMP_B).c;
+    expect(mode.keyDown(s.ctx, { key: "ArrowDown", shiftKey: true } as KeyboardEvent)).toBe(true);
+    expect(s.log.applied).toBe(1);
+    expect(thingOf(s.doc, LAMP_A).c).toEqual([a[0], a[1] + 0.1]);
+    expect(thingOf(s.doc, LAMP_B).c).toEqual([b[0], b[1] + 0.1]);
+    expect(mode.keyDown(s.ctx, { key: "Escape" } as KeyboardEvent)).toBe(true);
+    expect(s.ctx.selection).toEqual({ kind: "room", roomId: LIVING });
+    const across = shell({ kind: "objects", items: [LAMP_A, TABLE] }, undefined, lamps());
+    expect(mode.keyDown(across.ctx, { key: "Escape" } as KeyboardEvent)).toBe(true);
+    expect(across.ctx.selection).toBeUndefined();
+  });
+});
+
+describe("editing several things as one edit", () => {
+  it("sets a part on each that changes, and refuses when one is gone or none changes", () => {
+    const doc = lamps();
+    const out = setObjectsPart(doc, [LAMP_A, LAMP_B, LAMP_A], "fabric", "#8e8e93")!;
+    expect(thingOf(out, LAMP_A).fabric).toBe("#8E8E93");
+    expect(thingOf(out, LAMP_B).fabric).toBe("#8E8E93");
+    expect(checkHomeMap(out).ok).toBe(true);
+    expect(setObjectsPart(out, [LAMP_A, LAMP_B], "fabric", "#8E8E93")).toBeUndefined();
+    expect(setObjectsPart(doc, [LAMP_A, { roomId: LIVING, object: 9 }], "fabric", "#8E8E93")).toBeUndefined();
+    expect(setObjectsPart(doc, [LAMP_A], "fabric", "grey")).toBeUndefined();
+    expect("fabric" in thingOf(setObjectsPart(out, [LAMP_A], "fabric", undefined)!, LAMP_A)).toBe(false);
+  });
+
+  it("hides, moves and removes several, a room's things taken from the end so the rest keep their places", () => {
+    const doc = lamps();
+    const hidden = setObjectsHidden(doc, [LAMP_A, TABLE], true)!;
+    expect(thingOf(hidden, LAMP_A).hidden).toBe(true);
+    expect(thingOf(hidden, TABLE).hidden).toBe(true);
+    expect(setObjectsHidden(hidden, [LAMP_A, TABLE], true)).toBeUndefined();
+    const moved = moveObjects(doc, [LAMP_B, TABLE], 0.5, -0.5)!;
+    expect(thingOf(moved, TABLE).c).toEqual([8.6, 2]);
+    const left = removeObjects(doc, [{ roomId: LIVING, object: 0 }, LAMP_A])!;
+    expect(left.floors[0]!.rooms[0]!.objects.map((o) => o.model ?? o.kind)).toEqual(["table", "television", "lampRoundFloor"]);
+    expect(removeObjects(doc, [])).toBeUndefined();
+  });
+});
+
+describe("a colour picker that shows its colour live", () => {
+  const picker = () => {
+    const calls: (string | undefined)[] = [];
+    const saved: string[] = [];
+    const view = hmeColourInput({ value: "#8E8E93", label: "Pick", preview: (v) => calls.push(v), set: (v) => saved.push(v) });
+    const on = (event: string) => handler(view, "Pick", event);
+    return { calls, saved, on };
+  };
+
+  it("previews each move, then ends the preview and saves once on a change", () => {
+    const p = picker();
+    const el = { value: "#112233" };
+    p.on("@input=")({ target: el });
+    el.value = "#223344";
+    p.on("@input=")({ target: el });
+    p.on("@change=")({ target: el });
+    expect(p.calls).toEqual(["#112233", "#223344", undefined]);
+    expect(p.saved).toEqual(["#223344"]);
+  });
+
+  it("ends the preview when moved back to its own colour, or left with no change", async () => {
+    const p = picker();
+    const el = { value: "#112233" };
+    p.on("@input=")({ target: el });
+    el.value = "#8e8e93";
+    p.on("@input=")({ target: el });
+    expect(p.calls).toEqual(["#112233", undefined]);
+    el.value = "#445566";
+    p.on("@input=")({ target: el });
+    p.on("@blur=")({ target: el });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(p.calls).toEqual(["#112233", undefined, "#445566", undefined]);
+    expect(p.saved).toEqual([]);
+    // A blur after a change ends nothing more.
+    const q = picker();
+    const other = { value: "#000000" };
+    q.on("@input=")({ target: other });
+    q.on("@change=")({ target: other });
+    q.on("@blur=")({ target: other });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(q.calls).toEqual(["#000000", undefined]);
+    expect(q.saved).toEqual(["#000000"]);
   });
 });

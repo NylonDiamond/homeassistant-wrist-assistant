@@ -551,6 +551,76 @@ describe("the Home map editor", () => {
     expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
   });
 
+  it("picks several things with Cmd or Ctrl on the plan and in 3D, each outlined and shown picked in the layers", async () => {
+    const { el, inside, press, key, text } = await page();
+    const view3d = () => (el as unknown as { input3d(): { mark: unknown; floor: HomeMapDocument["floors"][number] } }).input3d();
+    const table = { roomId: KITCHEN, object: 2 };
+    const sofa = { roomId: LIVING, object: 0 };
+    const tv = { roomId: LIVING, object: 2 };
+    press([8, 2]);
+    press([2.7, 4.15], [], { metaKey: true });
+    expect(inside.selection).toEqual({ kind: "objects", items: [table, sofa] });
+    // In 3D, Ctrl adds the television and takes it out again; a room or
+    // empty space with Ctrl leaves the pick as it is.
+    el.pick3d({ kind: "object", ...tv }, { add: true });
+    expect(inside.selection).toEqual({ kind: "objects", items: [table, sofa, tv] });
+    el.pick3d({ kind: "room", roomId: LIVING }, { add: true });
+    el.pick3d(undefined, { add: true });
+    expect(inside.selection).toEqual({ kind: "objects", items: [table, sofa, tv] });
+    expect(view3d().mark).toEqual({ things: [table, sofa, tv] });
+    el.pick3d({ kind: "object", ...tv }, { add: true });
+    const shown = text();
+    expect(shown).toContain("<strong>2 things</strong>");
+    expect(shown).toContain("Table and Sofa · in Kitchen, Living room");
+    expect(shown.split(`class="hme-thing-ic on"`).length - 1).toBe(2);
+    expect(shown).toContain("2 things</span>");
+    // A light with Cmd starts a pick of lights; a plain click one thing again.
+    el.pick3d({ kind: "pin", pinId: READING }, { add: true });
+    expect(inside.selection).toEqual({ kind: "pin", pinId: READING });
+    el.pick3d({ kind: "object", ...sofa }, { add: true });
+    el.pick3d({ kind: "object", ...table }, { add: true });
+    expect(inside.selection).toEqual({ kind: "objects", items: [sofa, table] });
+    el.pick3d({ kind: "object", ...table });
+    expect(inside.selection).toEqual({ kind: "object", ...table });
+    el.pick3d({ kind: "object", ...sofa }, { add: true });
+    key("Escape");
+    expect(inside.selection).toBeUndefined();
+  });
+
+  it("shows a custom colour live on the plan and in 3D, saved once when the picker closes, and nothing kept when it is left unchanged", async () => {
+    const { el, ha, press } = await page();
+    const view3d = () => (el as unknown as { input3d(): { floor: HomeMapDocument["floors"][number] } }).input3d();
+    press([2.7, 4.15]);
+    const target = { value: "#112233" };
+    handler(el.render(), "Pick a fabric colour", "@input=")({ target });
+    expect(view3d().floor.rooms[0]!.objects[0]!.fabric).toBe("#112233");
+    expect(el.context()!.doc.floors[0]!.rooms[0]!.objects[0]!.fabric).toBeUndefined();
+    await settle();
+    expect(ha.saves()).toHaveLength(0);
+    target.value = "#223344";
+    handler(el.render(), "Pick a fabric colour", "@input=")({ target });
+    expect(view3d().floor.rooms[0]!.objects[0]!.fabric).toBe("#223344");
+    handler(el.render(), "Pick a fabric colour", "@change=")({ target });
+    await settle();
+    expect(ha.saves()).toHaveLength(1);
+    expect(el.context()!.doc.floors[0]!.rooms[0]!.objects[0]!.fabric).toBe("#223344");
+    // One undo takes the whole pick back.
+    el.undo();
+    expect(view3d().floor.rooms[0]!.objects[0]!.fabric).toBeUndefined();
+    // A light's glow colour moved and then left with no change: the
+    // preview ends, nothing is saved.
+    await settle();
+    const saves = ha.saves().length;
+    press([0.8, 3.1]);
+    const glow = { value: "#00ff00" };
+    handler(el.render(), "Pick the glow's color", "@input=")({ target: glow });
+    expect(view3d().floor.pins.find((p) => p.id === READING)!.glowColor).toBe("#00ff00");
+    handler(el.render(), "Pick the glow's color", "@blur=")({ target: glow });
+    await settle();
+    expect(view3d().floor.pins.find((p) => p.id === READING)!.glowColor).toBeUndefined();
+    expect(ha.saves()).toHaveLength(saves);
+  });
+
   it("draws the pins itself, picks and drags one, saved once, and sets a light's glow by its ring's handle", async () => {
     const { el, inside, ha, press, text } = await page();
     const shown = text();

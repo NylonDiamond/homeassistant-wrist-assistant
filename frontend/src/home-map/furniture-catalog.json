@@ -976,7 +976,8 @@
         0.33,
         0.38,
         1.87
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "lampSquareFloor",
@@ -987,7 +988,8 @@
         0.25,
         0.25,
         1.79
-      ]
+      ],
+      "fabric": true
     },
     {
       "id": "lampRoundTable",
@@ -999,7 +1001,8 @@
         0.35,
         0.62
       ],
-      "lift": 0.75
+      "lift": 0.75,
+      "fabric": true
     },
     {
       "id": "lampSquareTable",
@@ -1011,7 +1014,8 @@
         0.25,
         0.6
       ],
-      "lift": 0.75
+      "lift": 0.75,
+      "fabric": true
     },
     {
       "id": "lampWall",
@@ -1023,7 +1027,8 @@
         0.17,
         0.1
       ],
-      "lift": 1.6
+      "lift": 1.6,
+      "fabric": true
     },
     {
       "id": "lampSquareCeiling",
@@ -1035,7 +1040,8 @@
         0.5,
         0.96
       ],
-      "ceiling": true
+      "ceiling": true,
+      "fabric": true
     },
     {
       "id": "ceilingFan",
@@ -1048,6 +1054,7 @@
         0.35
       ],
       "ceiling": true,
+      "fabric": true,
       "wood": true
     },
     {

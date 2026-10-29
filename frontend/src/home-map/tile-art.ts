@@ -159,8 +159,9 @@ export interface HomeTileArtOptions {
   frame?: { scale: number; ox: number; oy: number };
   /** The map editor's pick, drawn in blue over the model looks: a room's
    * floor outline, or a thing's box as a wire frame up to its height (shown
-   * even while the thing is hidden). The flat looks ignore it. */
-  mark?: { outline?: readonly HomePoint[]; box?: HomeMapObject };
+   * even while the thing is hidden), or several things' boxes. The flat
+   * looks ignore it. */
+  mark?: { outline?: readonly HomePoint[]; box?: HomeMapObject; boxes?: readonly HomeMapObject[] };
 }
 
 // ── colours ─────────────────────────────────────────────────────────────
@@ -667,18 +668,20 @@ function draw(o: HomeTileArtOptions): SVGTemplateResult {
 /** The editor's pick over a model look (`HomeTileArtOptions.mark`). */
 function drawMark(P: Projection, mark: NonNullable<HomeTileArtOptions["mark"]>): SVGTemplateResult | typeof nothing {
   const blue = "#5b8def";
-  if (mark.box !== undefined) {
-    const corners = homeBoxCorners(homeBoxOf(mark.box));
-    const lift = Math.max(mark.box.lift ?? 0, 0);
-    // As tall as the model draws the thing.
-    const top = lift + Math.min(Math.max(mark.box.size[2], 0.05), FURNITURE_CAP);
-    const low = corners.map((p) => project(P, p, lift));
-    const high = corners.map((p) => project(P, p, top));
+  const boxes = [...(mark.box === undefined ? [] : [mark.box]), ...(mark.boxes ?? [])];
+  if (boxes.length > 0) {
     const ring = (q: HomePoint[]) => `M${q.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}Z`;
-    const posts = low.map((p, i) => `M${p[0].toFixed(1)},${p[1].toFixed(1)}L${high[i]![0].toFixed(1)},${high[i]![1].toFixed(1)}`).join("");
-    return svg`<g class="hmt-mark" pointer-events="none">
-      <path d=${ring(high)} fill=${blue} fill-opacity="0.18" stroke="none" />
-      <path d=${`${ring(low)}${ring(high)}${posts}`} fill="none" stroke=${blue} stroke-width="2" stroke-linejoin="round" /></g>`;
+    return svg`<g class="hmt-mark" pointer-events="none">${boxes.map((box) => {
+      const corners = homeBoxCorners(homeBoxOf(box));
+      const lift = Math.max(box.lift ?? 0, 0);
+      // As tall as the model draws the thing.
+      const top = lift + Math.min(Math.max(box.size[2], 0.05), FURNITURE_CAP);
+      const low = corners.map((p) => project(P, p, lift));
+      const high = corners.map((p) => project(P, p, top));
+      const posts = low.map((p, i) => `M${p[0].toFixed(1)},${p[1].toFixed(1)}L${high[i]![0].toFixed(1)},${high[i]![1].toFixed(1)}`).join("");
+      return svg`<path d=${ring(high)} fill=${blue} fill-opacity="0.18" stroke="none" />
+        <path d=${`${ring(low)}${ring(high)}${posts}`} fill="none" stroke=${blue} stroke-width="2" stroke-linejoin="round" />`;
+    })}</g>`;
   }
   if (mark.outline !== undefined && mark.outline.length >= 3) {
     const d = `M${mark.outline.map((p) => project(P, p, 0)).map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}Z`;

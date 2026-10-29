@@ -1144,6 +1144,76 @@ export function removeObject(doc: HomeMapDocument, roomId: string, index: number
   return editRoom(doc, roomId, (room) => (room.objects[index] === undefined ? undefined : { ...room, objects: room.objects.filter((_, i) => i !== index) }));
 }
 
+/** A thing by its room and its place in that room's list, as a pick of
+ * several things names each. */
+export interface HomeMapThingRef {
+  roomId: string;
+  object: number;
+}
+
+/** `things` each once, every one still on the map; undefined when any is
+ * gone, so several things are never changed by half. */
+function thingsStill(doc: HomeMapDocument, things: readonly HomeMapThingRef[]): HomeMapThingRef[] | undefined {
+  const out: HomeMapThingRef[] = [];
+  for (const t of things) {
+    const at = roomAt(doc, t.roomId);
+    if (at?.room.objects[t.object] === undefined) return undefined;
+    if (!out.some((x) => sameHomeMapId(x.roomId, at.room.id) && x.object === t.object)) out.push({ roomId: at.room.id, object: t.object });
+  }
+  return out.length === 0 ? undefined : out;
+}
+
+/** The same edit made on several things, one at a time on the map as each
+ * leaves it: those it leaves unchanged (undefined) are skipped, and the map
+ * is undefined when none changes or any of them is gone. */
+function editThings(doc: HomeMapDocument, things: readonly HomeMapThingRef[], change: (d: HomeMapDocument, t: HomeMapThingRef) => HomeMapDocument | undefined): HomeMapDocument | undefined {
+  const refs = thingsStill(doc, things);
+  if (refs === undefined) return undefined;
+  let out = doc;
+  let changed = false;
+  for (const t of refs) {
+    const next = change(out, t);
+    if (next === undefined) continue;
+    out = next;
+    changed = true;
+  }
+  return changed ? out : undefined;
+}
+
+/** The same fabric or wood on several things (`setObjectPart` on each), as
+ * one edit; a thing already in that colour stays as it is. */
+export function setObjectsPart(doc: HomeMapDocument, things: readonly HomeMapThingRef[], part: HomeMapPart, color: string | undefined): HomeMapDocument | undefined {
+  if (color !== undefined && !isHomeMapPartColor(color)) return undefined;
+  return editThings(doc, things, (d, t) => setObjectPart(d, t.roomId, t.object, part, color));
+}
+
+/** Several things hidden, or shown again, as one edit. */
+export function setObjectsHidden(doc: HomeMapDocument, things: readonly HomeMapThingRef[], hidden: boolean): HomeMapDocument | undefined {
+  return editThings(doc, things, (d, t) => {
+    const object = roomAt(d, t.roomId)?.room.objects[t.object];
+    return object === undefined || (object.hidden === true) === hidden ? undefined : setObjectHidden(d, t.roomId, t.object, hidden);
+  });
+}
+
+/** Several things moved by the same step, each in its own room. */
+export function moveObjects(doc: HomeMapDocument, things: readonly HomeMapThingRef[], dx: number, dy: number): HomeMapDocument | undefined {
+  if (!finite(dx, dy)) return undefined;
+  return editThings(doc, things, (d, t) => {
+    const object = roomAt(d, t.roomId)?.room.objects[t.object];
+    return object === undefined ? undefined : moveObject(d, t.roomId, t.object, [object.c[0] + dx, object.c[1] + dy]);
+  });
+}
+
+/** The map without several things, taken out of each room from the end of
+ * its list so the places of the rest stay right. */
+export function removeObjects(doc: HomeMapDocument, things: readonly HomeMapThingRef[]): HomeMapDocument | undefined {
+  const refs = thingsStill(doc, things);
+  if (refs === undefined) return undefined;
+  let out = doc;
+  for (const t of refs.slice().sort((a, b) => b.object - a.object)) out = removeObject(out, t.roomId, t.object) ?? out;
+  return out;
+}
+
 /** The smallest and largest width or depth a resize gives a thing, in
  * meters. */
 export const HOME_MAP_MIN_OBJECT_SIZE = 0.05;

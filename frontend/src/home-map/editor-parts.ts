@@ -143,6 +143,44 @@ export function hmeNumber(o: {
       }} />${o.unit === undefined ? nothing : html`<span class="hme-unit">${o.unit}</span>`}</span>`;
 }
 
+/** The colour inputs whose colour shows on the plan without being saved,
+ * each with the colour it had before (lower case), to tell a move back to
+ * it. */
+const colourPreviews = new WeakMap<HTMLInputElement, string>();
+
+/**
+ * A colour input (the browser's own picker) that shows its colour live:
+ * each move of the picker (`input`) goes to `preview`, never saved, and the
+ * picker closing or a click away with a new colour (`change`) ends the
+ * preview and goes to `set` once, as one edit. A move back to the colour it
+ * had, or leaving it without a change, ends the preview
+ * (`preview(undefined)`), so nothing stays on show that was not saved.
+ */
+export function hmeColourInput(o: { value: string; label: string; preview: (hex: string | undefined) => void; set: (hex: string) => void }): TemplateResult {
+  const value = o.value.toLowerCase();
+  return html`<input type="color" .value=${live(value)} aria-label=${o.label}
+    @input=${(e: Event) => {
+      const el = e.target as HTMLInputElement;
+      // The first move keeps the colour shown before it, which this draw holds.
+      if (!colourPreviews.has(el)) colourPreviews.set(el, value);
+      const v = el.value.toLowerCase();
+      o.preview(v === colourPreviews.get(el) ? undefined : v);
+    }}
+    @change=${(e: Event) => {
+      const el = e.target as HTMLInputElement;
+      colourPreviews.delete(el);
+      o.preview(undefined);
+      o.set(el.value);
+    }}
+    @blur=${(e: Event) => {
+      const el = e.target as HTMLInputElement;
+      // A change may follow the blur in the same moment: let it land first.
+      setTimeout(() => {
+        if (colourPreviews.delete(el)) o.preview(undefined);
+      }, 0);
+    }} />`;
+}
+
 /** Number fields side by side in equal columns. */
 export function hmeFields(...fields: unknown[]): TemplateResult {
   return html`<div class="hme-fields" style=${`--n:${fields.length}`}>${fields}</div>`;

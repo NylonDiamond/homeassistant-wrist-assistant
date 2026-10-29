@@ -75,8 +75,12 @@ import {
   type HomeMapPageChoice,
   type HomeMapSelection,
   type HomeMapToggles,
+  homeMapPickedThings,
+  homeMapSelectionRoom,
   homeMapSelectionThere,
+  homeMapToggleThing,
 } from "./editor-mode.js";
+import { homeMapTogglePick } from "./devices-model.js";
 import { hmeFloorThumb } from "./editor-parts.js";
 import { type HomeMapSaveState, HomeMapSession } from "./editor-session.js";
 import { editorStyles } from "./editor-styles.js";
@@ -283,8 +287,9 @@ export class WaHomeMapEditor extends LitElement {
     const floor = this.shownFloor();
     if (floor === undefined) return undefined;
     const sel = this.selection;
-    const mark = sel === undefined || sel.kind === "pin" || sel.kind === "pins" ? undefined
-      : sel.kind === "object" ? { roomId: sel.roomId, object: sel.object } : { roomId: sel.roomId };
+    const things = homeMapPickedThings(sel);
+    const roomId = homeMapSelectionRoom(sel);
+    const mark = things.length > 0 ? { things } : roomId === undefined ? undefined : { roomId };
     return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, daylight: this.daylight };
   }
 
@@ -312,7 +317,7 @@ export class WaHomeMapEditor extends LitElement {
         if (!this.isConnected) return;
         try {
           this.scene3d ??= new m.HomeMapScene3D(base);
-          this.scene3d.onPick = (pick) => this.pick3d(pick);
+          this.scene3d.onPick = (pick, keys) => this.pick3d(pick, keys);
         } catch {
           // No WebGL here.
           this.failed3d = true;
@@ -329,13 +334,20 @@ export class WaHomeMapEditor extends LitElement {
 
   /** A click on the 3D look picks what it found, as a click on the plan
    * does: a thing, a light's pin or a room, empty space picking nothing.
-   * While a room's walls are edited, a click anywhere but that room goes
-   * back to the floor, the room picked. */
-  pick3d(pick: HomeMap3DPick | undefined): void {
+   * With Cmd or Ctrl (`keys.add`) a thing or a light is added to the pick or
+   * taken out, as on the plan, and a room or empty space leaves the pick as
+   * it is. While a room's walls are edited, a click anywhere but that room
+   * goes back to the floor, the room picked. */
+  pick3d(pick: HomeMap3DPick | undefined, keys: { add: boolean } = { add: false }): void {
     if (this.dialog !== undefined) return;
     this.floorMenu = false;
     if (this.walls !== undefined) {
       if (pick === undefined || pick.kind === "pin" || !sameHomeMapId(pick.roomId, this.walls)) this.editWalls(undefined);
+      return;
+    }
+    if (keys.add) {
+      if (pick?.kind === "object") this.select(homeMapToggleThing(this.selection, { roomId: pick.roomId, object: pick.object }));
+      else if (pick?.kind === "pin") this.select(homeMapTogglePick(this.selection, pick.pinId));
       return;
     }
     this.select(pick === undefined ? undefined
@@ -1120,6 +1132,7 @@ export class WaHomeMapEditor extends LitElement {
       <svg class="hme-svg" width="100%" height="100%" viewBox=${`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`} style=${`cursor:${cursor}`}
         role="img" aria-label=${`Plan of ${homeMapFloorName(ctx.floor)}`}
         @pointerdown=${(e: PointerEvent) => this.onStageDown(e)}
+        @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}
         @dblclick=${(e: MouseEvent) => this.onStageDblClick(e)}
         @pointermove=${(e: PointerEvent) => this.onStageMove(e)}
         @pointerup=${(e: PointerEvent) => this.onStageUp(e)}
@@ -1247,9 +1260,10 @@ export class WaHomeMapEditor extends LitElement {
   private renderModel(ctx: HomeMapEditorContext, width: number, height: number) {
     if (width <= 0) return nothing;
     const sel = this.selection;
-    const room = sel === undefined || sel.kind === "pin" || sel.kind === "pins" ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, sel.roomId));
-    const box = sel?.kind === "object" ? room?.objects[sel.object] : undefined;
-    const mark = box !== undefined ? { box } : room !== undefined ? { outline: room.outline } : undefined;
+    const roomId = homeMapSelectionRoom(sel);
+    const room = roomId === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, roomId));
+    const boxes = homeMapPickedThings(sel).flatMap((t) => ctx.floor.rooms.find((r) => sameHomeMapId(r.id, t.roomId))?.objects[t.object] ?? []);
+    const mark = boxes.length > 0 ? { boxes } : room !== undefined ? { outline: room.outline } : undefined;
     return homeTileArt({
       mark,
       floor: ctx.floor,

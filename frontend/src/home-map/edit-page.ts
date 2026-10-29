@@ -7,14 +7,16 @@
 // a drag moves what it picked (`mode-devices.ts` for pins, `mode-arrange.ts`
 // for things and rooms, each keeping all its own gestures: the room's and
 // thing's handles, snapping, Shift, Cmd or Ctrl and a click picking several
-// pins, Shift and a drag picking every pin in a box, the light's glow ring,
-// the side view, the keys). The handles of what is picked lie over
-// everything. The inspector and the pill follow what is picked: a pin or
-// several pins have the devices' cards, a room or thing its own, nothing
+// pins, Cmd or Ctrl and a click picking several things in any rooms, Shift
+// and a drag picking every pin in a box, the light's glow ring, the side
+// view, the keys). The handles of what is picked lie over everything. The
+// inspector and the pill follow what is picked: a pin or several pins have
+// the devices' cards, a room, a thing or several things their own, nothing
 // picked the floor and how the page works. The left rail finds a room, a
 // thing or a device; lists the floor's rooms as layers, the picked room (or
-// the picked device's) open on its things, its devices with their on or off
-// dot, and a count of its doors and windows; and holds Not on the map, the
+// the picked device's, or each picked thing's) open on its things, its
+// devices with their on or off dot, and a count of its doors and windows;
+// and holds Not on the map, the
 // devices that are not placed yet, dragged onto the plan or placed all at
 // once by area, the rest behind More. A tool rail floats on the left of the
 // plan, each tool with its key: Pick and move V, Draw a room R, Inner wall
@@ -48,7 +50,7 @@ import {
   homeMapTray,
 } from "./devices-model.js";
 import { homeMapPinsOfRoom } from "./edit-ops.js";
-import type { HomeMapEditorContext, HomeMapPart } from "./editor-mode.js";
+import { type HomeMapEditorContext, type HomeMapPart, homeMapThingPicked, homeMapToggleThing } from "./editor-mode.js";
 import { HME_FINISH_DOT, hmeCard } from "./editor-parts.js";
 import { homeMapCount, homeMapRoomSizeText, homeMapShortcut } from "./editor-view.js";
 import { homeFloorKind, homeRoomUnder } from "./geometry.js";
@@ -153,16 +155,18 @@ export class HomeMapEditPage implements HomeMapPart {
     this.shape.setTool(ctx, tool === "pick" ? "select" : tool);
   }
 
-  /** The room whose layer is open: the picked room's, or the picked
-   * device's. */
-  private openRoom(ctx: HomeMapEditorContext): string | undefined {
+  /** The rooms whose layers are open: the picked room's, the picked
+   * device's, or the room of each picked thing. */
+  private openRooms(ctx: HomeMapEditorContext): string[] {
     const sel = ctx.selection;
-    if (sel === undefined) return undefined;
+    if (sel === undefined || sel.kind === "pins") return [];
     if (sel.kind === "pin") {
       const pin = ctx.floor.pins.find((p) => sameHomeMapId(p.id, sel.pinId));
-      return pin === undefined ? undefined : homeMapPinRoom(ctx.floor, pin)?.id;
+      const room = pin === undefined ? undefined : homeMapPinRoom(ctx.floor, pin)?.id;
+      return room === undefined ? [] : [room];
     }
-    return sel.kind === "pins" ? undefined : sel.roomId;
+    if (sel.kind === "objects") return sel.items.map((t) => t.roomId);
+    return [sel.roomId];
   }
 
   private picksPins(ctx: HomeMapEditorContext): boolean {
@@ -194,11 +198,11 @@ export class HomeMapEditPage implements HomeMapPart {
     const states = ctx.toggles.live ? ctx.hass?.states : undefined;
     const has = (text: string) => text.toLowerCase().includes(q);
     const pinMatch = (p: HomeMapPin) => has(homeMapPinName(p, ctx.hass)) || p.entityId.includes(q);
-    const open = this.openRoom(ctx);
+    const open = this.openRooms(ctx);
     const rows = floor.rooms.map((room) => {
       const things = room.objects.map((object, index) => ({ object, index }));
       const pins = homeMapPinsOfRoom(floor, room.id);
-      if (q === "") return { room, things, pins, open: sameHomeMapId(room.id, open) };
+      if (q === "") return { room, things, pins, open: open.some((id) => sameHomeMapId(room.id, id)) };
       const self = has(homeMapRoomName(room));
       const t = things.filter(({ object }) => has(homeMapThingName(object)));
       const p = pins.filter(pinMatch);
@@ -231,9 +235,11 @@ export class HomeMapEditPage implements HomeMapPart {
     if (!open) return row;
     return html`${row}
       ${things.map(({ object, index }) => {
-        const picked = sel?.kind === "object" && sameHomeMapId(sel.roomId, room.id) && sel.object === index;
+        const picked = homeMapThingPicked(sel, room.id, index);
+        const thing = { roomId: room.id, object: index };
         return html`<button type="button" class="hme-lay sub ${picked ? "on" : ""} ${object.hidden === true ? "dim" : ""}" aria-pressed=${picked ? "true" : "false"}
-          title="Pick it to move, resize or turn it" @click=${() => ctx.select({ kind: "object", roomId: room.id, object: index })}>
+          title="Pick it to move, resize or turn it. Cmd or Ctrl and a click picks several."
+          @click=${(e: MouseEvent) => ctx.select(e.metaKey || e.ctrlKey ? homeMapToggleThing(ctx.selection, thing) : { kind: "object", ...thing })}>
           <span class="hme-thing-ic ${picked ? "on" : ""}" aria-hidden="true"></span>${homeMapThingName(object)}<span class="n">${object.hidden === true ? "hidden" : footprint(object.size)}</span></button>`;
       })}
       ${pins.map((p) => this.pinLayer(ctx, p, states))}
