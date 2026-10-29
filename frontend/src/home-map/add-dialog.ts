@@ -21,7 +21,7 @@
 //
 // A thing's Device card (`mode-devices.ts`) opens the same Devices tab to
 // choose the device the thing holds (`HomeMapDeviceChoice`): no tabs and no
-// Place all, its own title, only lights for a lamp, and a click on a row
+// Place all, its own title, All areas on, only lights for a lamp, and a click on a row
 // hands the device to the card rather than adding it.
 //
 // Furniture: a search, the catalog's groups as chips and the pieces with
@@ -286,7 +286,9 @@ export class HomeMapAddDialog {
     this.pieceQuery = "";
     this.pieceGroup = "";
     this.roomId = undefined;
-    this.area = homeMapAddRoom(ctx)?.areaId ?? HOME_MAP_ADD_ALL_AREAS;
+    // Choosing a thing's device opens on All areas: what a thing holds is
+    // often in no area, or in another.
+    this.area = choice === undefined ? homeMapAddRoom(ctx)?.areaId ?? HOME_MAP_ADD_ALL_AREAS : HOME_MAP_ADD_ALL_AREAS;
     this.areaChosen = false;
     this.focus = true;
   }

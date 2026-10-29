@@ -545,15 +545,21 @@ describe("lamps that hold lights in the map editor", () => {
     expect(shown).toContain(">Choose…</button>");
   });
 
-  it("gives a lamp that holds nothing its light from its Choose…, the room's area's lights on", async () => {
+  it("gives a lamp that holds nothing its light from its Choose…, every area's lights listed", async () => {
     const { el, inside, click, text, saved } = await page(addPiece(fixture(), KITCHEN, homeMapPiece("lampRoundTable")!, [9, 4])!);
     el.select({ kind: "object", roomId: KITCHEN, object: 3 });
     expect(text()).toContain(">None</span>");
     click(">Choose…</button>");
-    const shown = text();
+    let shown = text();
     expect(shown).toContain("Choose a light for this lamp");
-    // The kitchen's lights, with nothing typed.
+    // All areas on, with nothing typed: the kitchen's lights and the others.
+    expect(shown).toMatch(/class="hme-chip sel on"[^>]*>\s*All areas<span/);
     expect(shown).toContain("Put Kitchen cans in this lamp");
+    expect(shown).toContain("Put Pendants in this lamp");
+    expect(shown).toContain("Put Reading lamp in this lamp");
+    // The room's area chip narrows it.
+    click('Kitchen<span class="hma-n">');
+    shown = text();
     expect(shown).toContain("Put Pendants in this lamp");
     expect(shown).not.toContain("Put Reading lamp in this lamp");
     click("Put Pendants in this lamp");
