@@ -14,6 +14,7 @@ import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { live } from "lit/directives/live.js";
 import type { LibraryKind, MenuUnit } from "./client.js";
 import { MENU_UNIT_TITLES } from "./model.js";
+import { betaPill } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import type { WatchPagesNote } from "../watch-pages/save-note.js";
 
@@ -31,12 +32,21 @@ export interface NewItemForm {
   /** Pages and status pages: the device kind the editor opens on, when the
    * home has both kinds to choose from. */
   preview?: NewPreview;
+  /** Pages: a map page (`map-page.ts`) rather than a page of tiles. */
+  mapPage?: boolean;
+}
+
+/** The New page dialog's Map page choice: offered with it, refused with
+ * the reason (the home has no map with a room yet). */
+export interface NewMapPageChoice {
+  refusal?: string;
 }
 
 export interface NewItemDialogHandlers {
   onName: (name: string) => void;
   onUnit?: (unit: MenuUnit) => void;
   onPreview?: (preview: NewPreview) => void;
+  onMapPage?: (on: boolean) => void;
   /** Create, or Enter in the name. */
   onMake: () => void;
   /** Cancel, the close cross, or Escape. */
@@ -71,7 +81,19 @@ export function newItemSummary(kind: LibraryKind, form: NewItemForm): string {
     const unit = form.unit ?? "anywhere";
     return `${name}, an ${MENU_UNIT_TITLES[unit]} on no device yet. Tick a device any time.`;
   }
-  return `${name}, a ${newItemNoun(kind)} on no device yet. Tick a device any time.`;
+  const noun = kind === "pages" && form.mapPage === true ? "map page" : newItemNoun(kind);
+  return `${name}, a ${noun} on no device yet. Tick a device any time.`;
+}
+
+/** What a page of each kind is, under its card. */
+export function pageKindNote(map: boolean, choice?: NewMapPageChoice): string {
+  if (!map) return "Tiles you place yourself.";
+  return choice?.refusal ?? "On the iPhone the whole page is your home's live map. The watch shows it as one tile.";
+}
+
+/** A house, the Map page card's picture; a grid of tiles for a page. */
+function pageKindArt(map: boolean): TemplateResult {
+  return html`<span class="lib-new-art lib-new-device">${uiIcon(map ? "home" : "grid")}</span>`;
 }
 
 /** What a menu of each kind is, under its card. */
@@ -104,7 +126,7 @@ function tick(on: boolean): TemplateResult {
     : html`<span class="pick-tick off" aria-hidden="true"></span>`;
 }
 
-function card(on: boolean, title: string, note: string, art: TemplateResult, pick: () => void, disabled: boolean): TemplateResult {
+function card(on: boolean, title: string | TemplateResult, note: string, art: TemplateResult, pick: () => void, disabled: boolean): TemplateResult {
   return html`<button type="button" class="shape-card lib-new-card ${on ? "on" : ""}" role="radio" aria-checked=${on ? "true" : "false"}
     title=${note} ?disabled=${disabled} @click=${pick}>
     <span class="shape-arts">${art}</span>
@@ -127,13 +149,27 @@ function stepHead(step: number, title: string, hint: string): TemplateResult {
  * step 2; with fewer than two there is no choice, and the step is not drawn.
  * Rendered only while the tab holds a form, so closing it is dropping the
  * form; the tab calls `openNewItemDialog` once it is in the tree.
+ *
+ * With `mapPage`, a page's dialog first asks which kind of page: a page of
+ * tiles, or a Map page (a BETA, `map-page.ts`), which cannot be picked
+ * while the choice carries a refusal (the home has no map yet) and then
+ * says why under its card. Preview on follows as the next step.
  */
-export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previews: readonly NewPreview[], h: NewItemDialogHandlers): TemplateResult {
+export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previews: readonly NewPreview[], h: NewItemDialogHandlers, mapPage?: NewMapPageChoice): TemplateResult {
   const named = form.name.trim() !== "";
   const noun = newItemNoun(kind);
   const wait = named ? "" : "waiting";
   const menus = kind === "menus";
+  const kinds = kind === "pages" && mapPage !== undefined;
   const second = menus || previews.length > 1;
+  const map = kinds && form.mapPage === true && mapPage.refusal === undefined;
+  const pageKinds = !kinds ? nothing : html`<section class="new-step step-shapes step-kind ${wait}" aria-disabled=${named ? "false" : "true"}>
+          ${stepHead(2, "Which kind", named ? "A page of tiles, or your home's map over the whole page." : "Waits for a name.")}
+          <div class="shape-cards" role="radiogroup" aria-label="Kind of page">
+            ${card(!map, "Page", pageKindNote(false), pageKindArt(false), () => h.onMapPage?.(false), form.busy)}
+            ${card(map, html`Map page${betaPill()}`, pageKindNote(true, mapPage), pageKindArt(true), () => h.onMapPage?.(true), form.busy || mapPage.refusal !== undefined)}
+          </div>
+        </section>`;
   return html`<dialog class="new-dialog lib-new" aria-label=${newItemTitle(kind)} @close=${() => h.onClose()}
     @cancel=${(e: Event) => { e.preventDefault(); if (!form.busy) h.onClose(); }}>
     <form class="lib-new-form" @submit=${(e: Event) => { e.preventDefault(); if (named && !form.busy) h.onMake(); }}>
@@ -149,6 +185,7 @@ export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previe
           <input type="text" class="new-name" .value=${live(form.name)} maxlength="80" autofocus aria-label=${`${newItemTitle(kind)} name`}
             ?disabled=${form.busy} @input=${(e: Event) => h.onName((e.target as HTMLInputElement).value)} />
         </section>
+        ${pageKinds}
         ${!second ? nothing : menus ? html`<section class="new-step step-shapes ${wait}" aria-disabled=${named ? "false" : "true"}>
           ${stepHead(2, "Which kind", named ? "A device uses one of each. It starts as the app's own menu of that kind." : "Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Kind of menu">
@@ -156,7 +193,7 @@ export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previe
               () => h.onUnit?.(unit), form.busy))}
           </div>
         </section>` : html`<section class="new-step step-shapes ${wait}" aria-disabled=${named ? "false" : "true"}>
-          ${stepHead(2, "Preview on", named ? "Only the picture the editor opens with. Nothing is put on a device; the ticks do that." : "Waits for a name.")}
+          ${stepHead(kinds ? 3 : 2, "Preview on", named ? "Only the picture the editor opens with. Nothing is put on a device; the ticks do that." : "Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Preview on">
             ${previews.map((preview) => card((form.preview ?? previews[0]) === preview, preview === "iphone" ? "iPhone" : "Watch", previewNote(preview),
               html`<span class="lib-new-art lib-new-device">${uiIcon(preview === "iphone" ? "phone" : "watch")}</span>`, () => h.onPreview?.(preview), form.busy))}

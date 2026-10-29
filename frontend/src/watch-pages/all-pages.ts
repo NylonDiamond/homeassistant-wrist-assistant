@@ -111,6 +111,9 @@ import { listTabStyles } from "./list-tab-styles.js";
 import { type WatchPage, isSmartWatchPage, watchPageTiles, watchPagesOf } from "./model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
+import { newMapWatchPage, watchMapPageFloorId, watchMapPageRefusal } from "./map-page.js";
+import { type HomeMapDocument } from "../home-map/model.js";
+import { homeMapRead } from "../home-map/store.js";
 import { newId } from "../model.js";
 import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, rememberPreview } from "../library/item-mode.js";
 import { type NewItemForm, type NewPreview, newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
@@ -499,9 +502,12 @@ export class WaAllPages extends LitElement {
     const { note: _dropped, ...asked } = form;
     this.newForm = { ...asked, busy: true };
     const id = newId();
+    // A map page on the map's first floor with a room; without one the
+    // choice could not be picked, and a plain page is made.
+    const floorId = form.mapPage === true ? watchMapPageFloorId(this.homeMapDoc()) : undefined;
     const document = this.kind === "status_pages"
       ? { schemaVersion: 1, statusPages: [newStatusPage(name, id)] }
-      : { schemaVersion: 1, pages: [newWatchPage(id, name)] };
+      : { schemaVersion: 1, pages: [floorId === undefined ? newWatchPage(id, name) : newMapWatchPage(id, name, floorId)] };
     const made = await store.createItem(this.kind, document);
     if (!made.ok) {
       this.newForm = { ...form, busy: false, note: { kind: "err", text: `Not made. ${made.text}` } };
@@ -935,12 +941,22 @@ export class WaAllPages extends LitElement {
    * kind of device to preview on. No device: a tick in the editor puts the
    * page on one. */
   private renderNewDialog(form: NewItemForm, devices: readonly LinkDevice[]): TemplateResult {
+    // A page may be a map page, once the home's map has a floor with a room.
+    const refusal = watchMapPageRefusal(this.homeMapDoc());
     return renderNewItemDialog(this.kind, form, previewKinds(devices), {
       onName: (name) => { this.newForm = { ...form, name }; },
       onPreview: (preview) => { this.newForm = { ...form, preview }; },
+      onMapPage: (on) => { this.newForm = { ...form, mapPage: on }; },
       onMake: () => void this.makeCard(),
       onClose: () => { if (!form.busy) this.newForm = undefined; },
-    });
+    }, this.kind === "pages" ? (refusal === undefined ? {} : { refusal }) : undefined);
+  }
+
+  /** The home's map (`home-map/store.ts`), for the Map page choice and the
+   * map pages' pictures: read once the integration lists `home_map`;
+   * undefined until then. */
+  private homeMapDoc(): HomeMapDocument | null | undefined {
+    return homeMapRead(this.hassNow, () => this.requestUpdate())?.doc;
   }
 
   /** What a tick row or a board row of one item is drawn from: its chips'

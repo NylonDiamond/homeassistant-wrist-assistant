@@ -6,7 +6,12 @@
 // the home), saves Hide here and the order on that device's own record, and
 // deletes from the library.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { HomeMapDocument } from "../src/home-map/model.js";
+import { forgetHomeMap, keepHomeMap, setHomeMapCapable } from "../src/home-map/store.js";
 
 import { laterHidden, laterToast, resetLaterForTest, sendLaterNow, undoLater } from "../src/delete-later.js";
 
@@ -316,6 +321,44 @@ describe("the Pages tab", () => {
     showTab(other, "all");
     await other.ready();
     expect(other.whole()).toContain("Only a Home Assistant administrator can make a new page.");
+  });
+
+  it("New page offers a Map page, refused until the home has a map, which makes a map page on the map's first floor", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    t.call("toggleNew");
+    const form = t.el.newForm as { name: string; busy: boolean; preview?: string; mapPage?: boolean };
+    const dialogOf = () => {
+      const whole = t.whole();
+      return whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new"`), whole.indexOf("</dialog>"));
+    };
+    // No map: the card is there, greyed, saying why; Preview on is step 3.
+    let dialog = dialogOf();
+    expect(dialog).toContain("Which kind");
+    expect(dialog).toContain("Map page");
+    expect(dialog).toContain("BETA");
+    expect(dialog).toContain("Scan a room in the iPhone app first.");
+    expect(dialog).toMatch(/new-step-num" aria-hidden="true">3<\/span>\s*<span class="new-step-title">Preview on/);
+    try {
+      setHomeMapCapable(true);
+      keepHomeMap(t.home.hass as never, { doc: JSON.parse(readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8")) as HomeMapDocument, rev: 1 });
+      dialog = dialogOf();
+      expect(dialog).not.toContain("Scan a room in the iPhone app first.");
+      expect(dialog).toContain("On the iPhone the whole page is your home's live map.");
+      t.el.newForm = { ...form, name: "House", mapPage: true };
+      expect(t.whole()).toContain("House, a map page on no device yet.");
+      await t.call("makeCard");
+      const sent = t.sentOf("library/item/create");
+      expect(sent).toHaveLength(1);
+      const page = (sent[0]!.document as { pages: JsonObject[] }).pages[0]!;
+      expect(page.name).toBe("House");
+      expect(page.mapPage).toBe(true);
+      expect(page.items).toEqual([expect.objectContaining({ entityId: "home_map.7B1E0C2A-5D3F-4A8B-9C6D-000000000001", gridCol: 0, gridRow: 0, colSpan: 12 })]);
+      expect(t.library).toEqual([["pages", page.id]]);
+    } finally {
+      forgetHomeMap();
+    }
   });
 
   it("New status page makes a status page in the library the same way", async () => {
