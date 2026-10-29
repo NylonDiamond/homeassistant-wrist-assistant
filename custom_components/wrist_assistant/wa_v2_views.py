@@ -181,6 +181,7 @@ from .notifications import (
 from .page_images import content_type as page_image_content_type
 from .page_images_store import (
     PageImagesError,
+    PageImagesInvalidError,
     PageImagesTooLargeError,
     PageImagesUnavailableError,
 )
@@ -5007,6 +5008,55 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "status": status})
 
 
+async def _op_page_image_list(ctx: _OpContext) -> Response:
+    """The home's icon photos, so a phone can tell which things already have
+    one. Any device with a valid pair may ask, as for ``page_image_put``.
+
+    Body:  {} or {"entity_ids": [<entity id>, ...]}
+    Reply: {"images": [{"image_id", "kind": "icon", "label"?, "entity_id"?,
+            "format": "jpeg" | "png", "updated_at"?}]}
+    Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400
+             (``entity_ids`` not a list of strings), ``unavailable`` 503.
+
+    Only photos of kind ``icon``, newest first (the store's order, by when
+    each was added). ``label`` and ``entity_id`` are left out when the photo
+    has none; ``updated_at`` is when it was added, an ISO time, left out
+    when the store has none. ``entity_ids`` keeps only the photos made for
+    one of those entities (compared as written); null is the same as
+    absent, and an empty list keeps none.
+    """
+    store = getattr(ctx.domain_data, "page_images_store", None)
+    if store is None:
+        return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
+    wanted = ctx.payload.get("entity_ids")
+    if wanted is not None and (
+        not isinstance(wanted, list) or not all(isinstance(e, str) for e in wanted)
+    ):
+        return _page_image_refusal(
+            ctx, PageImagesInvalidError("entity_ids must be a list of entity ids")
+        )
+    try:
+        listed = store.list()["images"]
+    except PageImagesError as err:
+        return _page_image_refusal(ctx, err)
+    keep = None if wanted is None else set(wanted)
+    images: list[dict[str, Any]] = []
+    for entry in listed:
+        if entry["kind"] != "icon":
+            continue
+        if keep is not None and entry["entity_id"] not in keep:
+            continue
+        image: dict[str, Any] = {"image_id": entry["id"], "kind": entry["kind"]}
+        for key in ("label", "entity_id"):
+            if entry[key] is not None:
+                image[key] = entry[key]
+        image["format"] = entry["format"]
+        if isinstance(entry.get("added_at"), str) and entry["added_at"]:
+            image["updated_at"] = entry["added_at"]
+        images.append(image)
+    return ctx.signed_json({"images": images})
+
+
 # ── the home map (app repo docs/home_map_plan_2026-10.md) ─────────────────
 #
 # The home keeps one map (``home_map_store.py``). Any device with a valid
@@ -5371,6 +5421,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "http_action_run": _op_http_action_run,
     "page_image_get": _op_page_image_get,
     "page_image_put": _op_page_image_put,
+    "page_image_list": _op_page_image_list,
     # The home map (home_map_store.py, home_areas.py).
     "home_map_get": _op_home_map_get,
     "home_map_put": _op_home_map_put,

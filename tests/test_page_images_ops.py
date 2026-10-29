@@ -31,7 +31,7 @@ from test_page_images_store import ICON_UUID, Env, loaded_package, pages, tiles
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
-_NAMES = ("_page_image_refusal", "_op_page_image_get", "_op_page_image_put")
+_NAMES = ("_page_image_refusal", "_op_page_image_get", "_op_page_image_put", "_op_page_image_list")
 
 
 class _Response:
@@ -81,6 +81,7 @@ def _ops(store_mod: Any, rules: Any) -> dict[str, Any]:
         "Any": Any,
         "Response": _Response,
         "PageImagesError": store_mod.PageImagesError,
+        "PageImagesInvalidError": store_mod.PageImagesInvalidError,
         "PageImagesTooLargeError": store_mod.PageImagesTooLargeError,
         "PageImagesUnavailableError": store_mod.PageImagesUnavailableError,
         "decode_page_image": store_mod.decode_data,
@@ -292,11 +293,74 @@ def test_a_put_with_details_at_the_photo_cap_fits_the_body_cap(env) -> None:
     assert op(env, "_op_page_image_put", payload).body == {"ok": True, "status": "stored"}
 
 
-def test_both_ops_are_unavailable_with_no_store(env) -> None:
+# ── page_image_list ──────────────────────────────────────────────────────
+
+LAMP_UUID = "11111111-2222-4333-8444-555555555555"
+FAN_UUID = "66666666-7777-4888-8999-AAAAAAAAAAAA"
+
+
+def _three_photos(env) -> None:
+    """A background, then a lamp photo, then an unnamed fan photo, an hour
+    apart, so newest first is fan, lamp."""
+    asyncio.run(env.store.async_put(UUID_UPPER, jpeg()))
+    env.base.advance(hours=1)
+    asyncio.run(env.store.async_put(LAMP_UUID, png(), kind="icon", label="Desk lamp", entity_id="light.desk_lamp"))
+    env.base.advance(hours=1)
+    asyncio.run(env.store.async_put(FAN_UUID, png(240, 240), kind="icon"))
+
+
+def test_list_answers_only_icon_photos_newest_first(env) -> None:
+    _three_photos(env)
+    reply = op(env, "_op_page_image_list", {})
+    assert reply.status == 200
+    assert reply.body == {
+        "images": [
+            {"image_id": FAN_UUID, "kind": "icon", "format": "png", "updated_at": "2026-10-05T14:00:00Z"},
+            {
+                "image_id": LAMP_UUID,
+                "kind": "icon",
+                "label": "Desk lamp",
+                "entity_id": "light.desk_lamp",
+                "format": "png",
+                "updated_at": "2026-10-05T13:00:00Z",
+            },
+        ]
+    }
+
+
+def test_list_of_an_empty_store(env) -> None:
+    assert op(env, "_op_page_image_list", {}).body == {"images": []}
+
+
+def test_list_filters_by_entity_ids(env) -> None:
+    _three_photos(env)
+    only = op(env, "_op_page_image_list", {"entity_ids": ["light.desk_lamp", "fan.desk"]}).body
+    assert [i["image_id"] for i in only["images"]] == [LAMP_UUID]
+    assert op(env, "_op_page_image_list", {"entity_ids": []}).body == {"images": []}
+    # Null is the same as no filter.
+    everything = op(env, "_op_page_image_list", {"entity_ids": None}).body
+    assert [i["image_id"] for i in everything["images"]] == [FAN_UUID, LAMP_UUID]
+
+
+@pytest.mark.parametrize("entity_ids", ["light.desk_lamp", [3], {"light.desk_lamp": True}, [None]])
+def test_list_refuses_a_bad_filter(env, entity_ids) -> None:
+    reply = op(env, "_op_page_image_list", {"entity_ids": entity_ids})
+    assert reply.status == 400
+    assert reply.body["ok"] is False and reply.body["error"] == "invalid"
+
+
+def test_list_of_a_damaged_index_is_unavailable(env) -> None:
+    env.store._load_failed = True
+    reply = op(env, "_op_page_image_list", {})
+    assert reply.status == 503 and reply.body["error"] == "unavailable"
+
+
+def test_every_op_is_unavailable_with_no_store(env) -> None:
     env.domain.page_images_store = None
     for name, payload in (
         ("_op_page_image_get", {"image_id": "preset_fern"}),
         ("_op_page_image_put", {"image_id": UUID_UPPER, "data": b64(jpeg())}),
+        ("_op_page_image_list", {}),
     ):
         reply = op(env, name, payload)
         assert reply.status == 503 and reply.body["error"] == "unavailable"
@@ -484,6 +548,7 @@ def test_the_two_ops_are_in_the_dispatch_table() -> None:
         raise AssertionError("no _OP_HANDLERS")
     assert table["page_image_get"] == "_op_page_image_get"
     assert table["page_image_put"] == "_op_page_image_put"
+    assert table["page_image_list"] == "_op_page_image_list"
 
 
 def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
@@ -499,6 +564,7 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
         "page_images_store=page_images_store,",
         "register_capability(PAGE_IMAGES_CAPABILITY)",
         "register_capability(TILE_PHOTOS_CAPABILITY)",
+        "register_capability(TILE_PHOTO_LIST_CAPABILITY)",
         "async_register_page_images_commands(hass)",
         # Listed among the stores unload writes out and stops.
         '"page_images_store",',
@@ -508,9 +574,10 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
     assert "await PageImagesStore(hass).async_remove()" not in init
     assert 'PAGE_IMAGES_CAPABILITY = "page_images"' in const
     assert 'TILE_PHOTOS_CAPABILITY = "tile_photos"' in const
-    # Registered right beside page_images.
+    assert 'TILE_PHOTO_LIST_CAPABILITY = "tile_photo_list"' in const
+    # Registered right beside page_images, the list right after tile_photos.
     lines = [line.strip() for line in init.splitlines() if "register_capability(" in line]
-    assert lines.index("coordinator.register_capability(TILE_PHOTOS_CAPABILITY)") > lines.index(
-        "coordinator.register_capability(PAGE_IMAGES_CAPABILITY)"
-    )
+    photos = lines.index("coordinator.register_capability(TILE_PHOTOS_CAPABILITY)")
+    assert photos > lines.index("coordinator.register_capability(PAGE_IMAGES_CAPABILITY)")
+    assert lines[photos + 1] == "coordinator.register_capability(TILE_PHOTO_LIST_CAPABILITY)"
     assert 'PAGE_IMAGES_STORAGE_KEY = "wrist_assistant.page_images"' in const
