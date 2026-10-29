@@ -124,5 +124,5 @@ export function awaitingMove(owners: readonly OwnerSummary[], facts: ReadonlyMap
  * plan, Jesse's Watch shows only its first page." Undefined for none. */
 export function freePlanText(names: readonly string[]): string | undefined {
   if (names.length === 0) return undefined;
-  return `On the free plan, ${joinWords(names)} ${names.length === 1 ? "shows only its" : "show only their"} first page.`;
+  return `On the free plan, ${joinWords(names)} ${names.length === 1 ? "shows" : "show"} a small Get Pro mark on every page after the first, in the apps.`;
 }

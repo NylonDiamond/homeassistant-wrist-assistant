@@ -528,9 +528,10 @@ export class WaAllPages extends LitElement {
 
   /** A tick: put the item on the device, or take it off, with that device's
    * menu slots and complication taps that opened it (`tickItem`). An untick
-   * that would clear some asks under the card first (`askUntick`). A page
-   * put on a device on the free plan says that it shows only its first
-   * page. */
+   * that would clear some asks under the card first (`askUntick`). A second
+   * page put on a device on the free plan says, in grey, that it shows a
+   * Get Pro mark in the apps: every page works on every plan, so nothing
+   * here blocks or warns. */
   private async tick(entry: LibraryItem, ownerId: string, on: boolean): Promise<void> {
     const store = this.lib.store;
     if (store === undefined) return;
@@ -551,7 +552,8 @@ export class WaAllPages extends LitElement {
     const name = this.devices.find((d) => d.ownerId === ownerId)?.name;
     if (!free || library === undefined || name === undefined || countFor(library, ownerId, "pages") < 2) return;
     const text = freePlanText([name]);
-    if (text !== undefined) this.tickNotes = new Map(this.tickNotes).set(key, { kind: "warn", text: `Added to ${name}. ${text}` });
+    // "ok" draws as a plain grey line (`.lt-note.ok`), not a warning.
+    if (text !== undefined) this.tickNotes = new Map(this.tickNotes).set(key, { kind: "ok", text });
   }
 
   /** Remove under an untick's question: take the item off, then say under
@@ -1094,8 +1096,6 @@ export class WaAllPages extends LitElement {
         cell.note = chip.skips.text;
         cell.noteTitle = chip.skips.title;
       }
-      const free = this.freeNote(library, entry, chip.ownerId, chip.name, chip.on);
-      if (free !== undefined && cell.note === undefined) Object.assign(cell, free);
       if (focus?.pick !== undefined && sameId(chip.ownerId, focus.device.ownerId) && entry.kind === "pages") {
         const at = rowKey(focus.device.ownerId, entry.id);
         const hidden = this.hiddenAsked.get(at) ?? focus.pick.hidden;
@@ -1132,18 +1132,6 @@ export class WaAllPages extends LitElement {
       if (this.itemAsk === key) row.under = this.renderItemAsk(entry, devices, focus?.device);
     }
     return row;
-  }
-
-  /** A device on the free plan shows only its first page: its box on that
-   * page says "1st page", on every other page "free: not shown". Nothing for
-   * a device with one page, or not on the free plan. */
-  private freeNote(library: Library, entry: LibraryItem, ownerId: string, name: string, on: boolean): Pick<BoardCell, "note" | "noteTitle" | "noteWarn"> | undefined {
-    if (entry.kind !== "pages" || !on || this.freeFacts.get(ownerId) !== true) return undefined;
-    const shown = itemsFor(library, ownerId, "pages").filter((p) => !p.hidden);
-    if (shown.length < 2) return undefined;
-    const why = freePlanText([name]);
-    if (sameId(shown[0]!.id, entry.id)) return { note: "1st page", ...(why === undefined ? {} : { noteTitle: why }) };
-    return { note: "free: not shown", noteWarn: true, ...(why === undefined ? {} : { noteTitle: why }) };
   }
 
   /** A row's small picture: the page as a watch draws it, or as the
@@ -1188,14 +1176,12 @@ export class WaAllPages extends LitElement {
     const ids = picks.map((p) => p.id);
     const total = countFor(library, device.ownerId, this.kind);
     const drag = this.search.trim() === "" && !this.picksBusy;
-    const free = this.kind === "pages" && this.freeFacts.get(device.ownerId) === true && total > 1 ? freePlanText([device.name]) : undefined;
     const waiting = this.waiting(library);
     const many = cardNoun(this.kind, 2);
     const rows = picks.map((pick, i) => this.boardRow(library, pick.entry, devices, waiting, { device, pick, drag: this.rowDrag(pick, i, ids, device, drag) }));
     const rest = view.rest.map((entry) => this.boardRow(library, entry, devices, waiting, { device }));
     return html`${this.renderFocusHead(device, total)}
       ${this.picksNote === undefined ? nothing : html`<p class="lt-line ${this.picksNote.kind}" role="status">${this.picksNote.text}</p>`}
-      ${free === undefined ? nothing : html`<p class="lt-line">${free}</p>`}
       ${this.renderBoardOf(library, devices, [
         {
           key: "on", title: onDeviceTitle(device), count: total, hint: orderHint(device), rows,
