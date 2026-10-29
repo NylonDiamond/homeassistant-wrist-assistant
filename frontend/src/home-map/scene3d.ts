@@ -339,7 +339,10 @@ export class HomeMapScene3D {
     this.sun.shadow.bias = -0.0005;
     this.scene.add(this.sky, this.sun, this.sun.target);
     this.controls = new OrbitControls(this.camera, this.canvas);
+    // Damped enough to settle softly, not so much that the view trails the
+    // pointer: three's own 0.05 felt like lag.
     this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.3;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.minDistance = 1.5;
     this.controls.maxDistance = 60;

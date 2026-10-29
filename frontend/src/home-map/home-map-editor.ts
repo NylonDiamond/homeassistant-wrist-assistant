@@ -162,7 +162,8 @@ export class WaHomeMapEditor extends LitElement {
   @state() private floorId?: string;
   @state() private selection?: HomeMapSelection;
   @state() private mode: HomeMapModeId = "arrange";
-  @state() private viewKind: "flat" | "model" | "both" = "flat";
+  /** Opens on Both, the plan to edit beside the model in 3D. */
+  @state() private viewKind: "flat" | "model" | "both" = "both";
   @state() private view?: HomeMapView;
   @state() private artScale = 0;
   @state() private stageSize = { width: 0, height: 0 };
@@ -175,7 +176,7 @@ export class WaHomeMapEditor extends LitElement {
   @state() private dialog?: Dialog;
   @state() private modelLook?: HomeMapLook;
   /** The model is drawn in real 3D rather than as one of the looks. */
-  @state() private model3d = false;
+  @state() private model3d = true;
   /** The 3D look by day, a sun coming in; else at night, lights only. */
   @state() private daylight = false;
   @state() private modelTurn?: number;
