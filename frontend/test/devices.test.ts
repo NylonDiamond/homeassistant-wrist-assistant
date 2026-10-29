@@ -40,8 +40,8 @@ describe("a watch that waits for its iPhone", () => {
 describe("the free plan line", () => {
   it("names the devices that show only their first page", () => {
     expect(freePlanText([])).toBeUndefined();
-    expect(freePlanText(["Chen's Watch"])).toBe("On the free plan, Chen's Watch shows only its first page.");
-    expect(freePlanText(["Chen's Watch", "Jesse's Watch"])).toBe("On the free plan, Chen's Watch and Jesse's Watch show only their first page.");
+    expect(freePlanText(["Chen's Watch"])).toBe("On the free plan, Chen's Watch shows a small Get Pro mark on every page after the first, in the apps.");
+    expect(freePlanText(["Chen's Watch", "Jesse's Watch"])).toBe("On the free plan, Chen's Watch and Jesse's Watch show a small Get Pro mark on every page after the first, in the apps.");
   });
 });
 

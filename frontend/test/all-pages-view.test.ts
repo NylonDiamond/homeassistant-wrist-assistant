@@ -201,7 +201,7 @@ describe("the Pages tab", () => {
     expect(t.sentOf("watch_config/save")).toHaveLength(1);
   });
 
-  it("says a page ticked onto a device on the free plan shows only if it is first", async () => {
+  it("says in grey that a page ticked onto a device on the free plan carries a Get Pro mark", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
@@ -209,7 +209,7 @@ describe("the Pages tab", () => {
     const entry = (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.find((e) => e.id === CAMERA)!;
     await t.call("tick", entry, JESSE, true);
     await settle();
-    expect(t.whole()).toContain("Added to Jesse Apple Watch. On the free plan, Jesse Apple Watch shows only its first page.");
+    expect(t.whole()).toContain(`lt-note ok" role="status">On the free plan, Jesse Apple Watch shows a small Get Pro mark on every page after the first, in the apps.`);
   });
 
   it("shows a refused tick on its card in plain words", async () => {
@@ -480,14 +480,15 @@ describe("a focused device", () => {
     }
   });
 
-  it("says when the device is on the free plan", async () => {
+  it("shows no plan line on a focused device on the free plan: every page works there", async () => {
     const t = tab();
     t.home.held.get(`${CHEN}/pages`)!.multiple_pages = false;
     showTab(t, CHEN);
     await t.ready();
     t.call("willUpdate", new Map());
     await settle();
-    expect(t.whole()).toContain("On the free plan, Chen Watch shows only its first page.");
+    expect(t.whole()).not.toContain("On the free plan");
+    expect(t.whole()).not.toContain("free: not shown");
   });
 });
 
