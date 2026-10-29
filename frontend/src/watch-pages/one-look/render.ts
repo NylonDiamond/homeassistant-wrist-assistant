@@ -67,6 +67,7 @@ import {
   oneLookScrimCss,
   oneLookSheenCss,
   oneLookUnderGlowCss,
+  ONE_LOOK_AMBER,
   ONE_LOOK_AMBER_DOT,
   ONE_LOOK_BAR_BORDER_OPACITY,
   ONE_LOOK_BAR_FILL_OPACITY,
@@ -76,7 +77,7 @@ import {
   ONE_LOOK_PILL_OPACITY,
   ONE_LOOK_UNIT_OPACITY,
 } from "./colour.js";
-import { type OneLookKindState, oneLookBarValue, oneLookFillLevel, oneLookTileState } from "./state.js";
+import { type OneLookKindState, oneLookBarValue, oneLookFillLevel, oneLookStateFor, oneLookTileState } from "./state.js";
 import { ONE_LOOK_CHOICES, type OneLookDevice, oneLookCentredGlyph, oneLookCornerRadius, oneLookMetrics } from "./metrics.js";
 import {
   type OneLookLayout,
@@ -94,7 +95,7 @@ import {
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
 import { type OneLookArranged, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
 import { type OneLookPhotoLight, oneLookGlowColour, oneLookLightPlacement } from "./glow.js";
-import { type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
+import { type OneLookTextDesign, type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf, measureDesign } from "./text.js";
 
 /** Which of a tile's own parts are left undrawn: the glyph (its icon or a
  * person's photo, and the glow with it), the name, and the state line. */
@@ -197,6 +198,8 @@ export interface OneLookCutout {
   /** The URL of the On photo the photo carries (the same lamp, its light
    * on, at the photo's size), drawn in its place while the tile is lit. */
   on?: string;
+  /** The tile asks for the photo's Clear look (`iconPhotoLook` "clear"). */
+  clear?: true;
 }
 
 /** A tile's icon photo once its bytes are in, from the picture's photos,
@@ -217,6 +220,7 @@ export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePrevie
     ...(size !== undefined && size.width > 0 && size.height > 0 ? { aspect: size.width / size.height } : {}),
     ...(light === undefined ? {} : { light }),
     ...(on === undefined || on === "" ? {} : { on }),
+    ...(tile.iconPhotoLook === "clear" ? { clear: true as const } : {}),
   };
 }
 
@@ -241,10 +245,67 @@ export function oneLookCutoutRect(rect: OneLookRect, aspect: number | undefined)
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
   const box = { x: cx - side / 2, y: cy - side / 2, width: side, height: side };
+  return { box, photo: fittedPhoto(box, aspect), radius: side * ONE_LOOK_CUTOUT_CORNER };
+}
+
+/** A photo of `aspect` (width over height) fitted whole in a square `box`
+ * on its centre; the whole box while the aspect is unknown. */
+function fittedPhoto(box: OneLookRect, aspect: number | undefined): OneLookRect {
+  const side = box.width;
+  const cx = box.x + side / 2;
+  const cy = box.y + box.height / 2;
   const a = aspect !== undefined && Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
   const w = a >= 1 ? side : side * a;
   const h = a >= 1 ? side / a : side;
-  return { box, photo: { x: cx - w / 2, y: cy - h / 2, width: w, height: h }, radius: side * ONE_LOOK_CUTOUT_CORNER };
+  return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
+}
+
+// ── the Clear look (photo tiles plan, "Clear look") ─────────────────────
+
+/** The Clear look's numbers, the apps' `OneLookPhotoClear`: the white wash
+ * and hairline in place of the fill; the photo box's side as a share of the
+ * tile's height, never over a share of its width, its top a share of the
+ * height down; the glow behind a lit photo, its alpha at the box's centre
+ * and the share of the tile's width where it is gone; the state's size
+ * against the name's; how far the name and the state shrink before they
+ * truncate; and the state's grey while not lit. */
+export const ONE_LOOK_CLEAR = Object.freeze({
+  washOpacity: 0.025,
+  borderOpacity: 0.06,
+  boxHeightShare: 0.62,
+  boxWidthCap: 0.8,
+  topShare: 0.05,
+  glowOpacity: 0.3,
+  glowRadiusShare: 0.7,
+  stateShare: 0.82,
+  textMinimumScale: 0.7,
+  offStateOpacity: 0.6,
+});
+
+/** The Clear look's photo box in a tile of `size`: a square of side
+ * `min(0.62 h, 0.8 w)`, centred across, its top 5% of the height down. */
+export function oneLookClearBox(size: { width: number; height: number }): OneLookRect {
+  const side = Math.max(0, Math.min(size.height * ONE_LOOK_CLEAR.boxHeightShare, size.width * ONE_LOOK_CLEAR.boxWidthCap));
+  return { x: (size.width - side) / 2, y: size.height * ONE_LOOK_CLEAR.topShare, width: side, height: side };
+}
+
+/** Whether a Clear look photo draws gray and dark: its thing is off, or
+ * the wrist is down. There is no fill whose colour could keep it bright. */
+export function oneLookClearDimmed(active: boolean, aod: boolean): boolean {
+  return !active || aod;
+}
+
+/** The Clear look's lit colour: the tile's (its state's colour first, as
+ * the palette resolves it), else One Look's amber. */
+export function oneLookClearColour(palette: OneLookPalette): readonly [number, number, number] {
+  return palette.hue ?? ONE_LOOK_AMBER;
+}
+
+/** Whether a tile draws its photo in the Clear look: it asks for it
+ * (`iconPhotoLook` "clear") and its photo draws (in, and nothing fills the
+ * tile). */
+export function oneLookDrawsClear(model: Pick<OneLookPreviewModel, "picture" | "cutout">): boolean {
+  return model.picture === "none" && model.cutout?.clear === true;
 }
 
 /** A tile's Bar settings as One Look reads them (`OneLookBar`). */
@@ -765,21 +826,43 @@ function barLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeo
 }
 
 /**
- * Whether the icon photo draws gray and dark: the tile is not coloured (off
- * with Dim, idle, unavailable), a light is off, or the wrist is down. A
- * switch, fan or any other kind that keeps its colour keeps its photo
- * bright, since `isLit` is only ever true for a light or for media. The
- * apps' `OneLookCutout.isDimmed` reads the same.
+ * Whether the thing in a tile's photo is on (photo tiles plan, "On for every
+ * kind"; the apps' `OneLookCutout.isActive`): a light on or media playing
+ * (the palette's `isLit`), and any other kind in an active state, that is
+ * not calm and not unavailable (a cover open, opening or closing, a switch,
+ * fan or input boolean on, a lock unlocked). A camera never is.
  */
-export function oneLookCutoutDimmed(palette: OneLookPalette, light: boolean): boolean {
-  return palette.surface !== "coloured" || (light && !palette.isLit) || palette.aod;
+export function oneLookCutoutActive(kind: Pick<OneLookKindState, "role" | "isCalm" | "isUnavailable">, palette: Pick<OneLookPalette, "isLit">): boolean {
+  switch (kind.role.kind) {
+    case "light":
+    case "media":
+      return palette.isLit;
+    case "plain":
+      return !kind.isCalm && !kind.isUnavailable;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether the icon photo draws gray and dark: the wrist is down, a light is
+ * off, or the tile is graphite (off with Dim, idle, unavailable, no colour)
+ * while its thing is not on (`active`, `oneLookCutoutActive`). A switch, fan
+ * or any other kind that keeps its colour keeps its photo bright; one with
+ * no colour is bright while it is on. The apps' `OneLookCutout.isDimmed`
+ * reads the same. `active` left out is the palette's `isLit`, which is the
+ * rule for a light and for media.
+ */
+export function oneLookCutoutDimmed(palette: OneLookPalette, light: boolean, active: boolean = palette.isLit): boolean {
+  return palette.aod || (!active && (light || palette.surface !== "coloured"));
 }
 
 /** Whether an icon photo is drawn bright and lit, which is when its On
- * photo takes its place, or else its light (Light Look) is drawn: the
- * palette is lit (a light on, media playing) and the photo is not dimmed. */
-export function oneLookCutoutGlows(palette: OneLookPalette, light: boolean): boolean {
-  return palette.isLit && !oneLookCutoutDimmed(palette, light);
+ * photo takes its place, or else its light (Light Look) is drawn: its thing
+ * is on (`active`, the palette's `isLit` when left out) and the photo is not
+ * dimmed. */
+export function oneLookCutoutGlows(palette: OneLookPalette, light: boolean, active: boolean = palette.isLit): boolean {
+  return active && !oneLookCutoutDimmed(palette, light, active);
 }
 
 /** An alpha as CSS writes it, to four places. */
@@ -817,9 +900,10 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
   const lit = palette.isLit && !palette.aod;
   const { photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
   const light = model.kind.role.kind === "light";
-  const dimmed = oneLookCutoutDimmed(palette, light);
+  const active = oneLookCutoutActive(model.kind, palette);
+  const dimmed = oneLookCutoutDimmed(palette, light, active);
   const filter = dimmed ? `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}` : "";
-  const glows = oneLookCutoutGlows(palette, light);
+  const glows = oneLookCutoutGlows(palette, light, active);
   const src = glows && cutout.on !== undefined ? cutout.on : cutout.url;
   const look = cutout.light;
   if (look !== undefined && glows && cutout.on === undefined) {
@@ -841,6 +925,88 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
     }
   }
   return html`${back}<img class="ol-cutout" alt="" src=${src} style=${`${rectCss(photo, s)};border-radius:${r2(radius * s)}px${filter}`} />`;
+}
+
+/** A state line as plain words, as the apps speak it: a number with its
+ * unit and its tail, or a word; undefined for none. */
+function stateWords(line: StateLine): string | undefined {
+  if (line.kind === "none") return undefined;
+  if (line.kind === "word") return line.word === "" ? undefined : line.word;
+  const unit = line.unit === undefined ? "" : `${line.unitSpaced === true ? " " : ""}${line.unit}`;
+  return `${line.figure}${unit}${line.tail === undefined ? "" : ` ${line.tail}`}`;
+}
+
+/** The size `text` draws at to fit `width`: its own, shrunk as far as the
+ * Clear look's minimum scale, past which the line truncates. */
+function clearFitSize(measurer: TextMeasurer, text: string, size: number, weight: OneLookTextWeight, design: OneLookTextDesign, tracking: number, width: number): number {
+  const measured = measureDesign(measurer, text, size, weight, design, tracking);
+  if (!(measured > width) || !(measured > 0)) return size;
+  return size * Math.max(ONE_LOOK_CLEAR.textMinimumScale, width / measured);
+}
+
+/**
+ * The photo's Clear look (photo tiles plan, "Clear look"; the apps'
+ * `OneLookPhotoClear`), in place of the disc, the bar, the accessory, the
+ * text and the big value: the photo fitted in its box near the top (no
+ * rounding), with a soft glow of the tile's colour behind it while lit, and
+ * the name and state centred under it in the room left, each on one line,
+ * shrinking to 70% before truncating. Lit (its thing on, not wrist down):
+ * the state in the tile's colour, the On photo in the photo's place, else
+ * the Light Look's layers as on any tile. Not lit: the Off filter and the
+ * grey state.
+ */
+function clearLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, cutout: OneLookCutout): TemplateResult {
+  const { palette, device, layout, kind, style } = model;
+  const { s, hidden } = f;
+  const size = layout.size;
+  const box = oneLookClearBox(size);
+  const active = oneLookCutoutActive(kind, palette);
+  const dimmed = oneLookClearDimmed(active, palette.aod);
+  const lit = active && !dimmed;
+  const colour = oneLookClearColour(palette);
+  let picture: TemplateResult | typeof nothing = nothing;
+  if (hidden?.glyph !== true) {
+    const photo = fittedPhoto(box, cutout.aspect);
+    const glow = lit
+      ? html`<span class="ol-layer ol-clear-glow" style=${`background:radial-gradient(circle ${r2(size.width * ONE_LOOK_CLEAR.glowRadiusShare * s)}px at ${r2((box.x + box.width / 2) * s)}px ${r2((box.y + box.height / 2) * s)}px, ${rgba(colour, ONE_LOOK_CLEAR.glowOpacity)} 0%, ${rgba(colour, 0)} 100%)`}></span>`
+      : nothing;
+    const filters = [dimmed ? ONE_LOOK_CUTOUT_OFF_FILTER : "", style.glyphShadow ? `drop-shadow(0 ${r2(s)}px ${r2(4 * s)}px rgba(0, 0, 0, 0.5))` : ""].filter((v) => v !== "");
+    const filter = filters.length === 0 ? "" : `;filter:${filters.join(" ")}`;
+    const look = cutout.light;
+    if (look !== undefined && lit && cutout.on === undefined) {
+      const at = oneLookLightPlacement(photo, look, palette.brightness, oneLookGlowColour(palette.hue));
+      const c = at.colour;
+      picture = html`${glow}${lightSpan("aura", at.aura.rect, look.aura, c, at.aura.opacity, s)}${at.beam === undefined || look.beam === undefined ? nothing : lightSpan("beam", at.beam.rect, look.beam, c, at.beam.opacity, s)}<img class="ol-cutout clear" alt="" src=${cutout.url} style=${`${rectCss(photo, s)}${filter}`} />${lightSpan("emit", at.emit.rect, look.emit, c, at.emit.opacity, s)}`;
+    } else {
+      const src = lit && cutout.on !== undefined ? cutout.on : cutout.url;
+      picture = html`${glow}<img class="ol-cutout clear" alt="" src=${src} style=${`${rectCss(photo, s)}${filter}`} />`;
+    }
+  }
+
+  const metrics = oneLookLayoutMetrics(layout, device);
+  const measurer = f.measurer ?? measurerFor(device, f.input.icons);
+  const width = Math.max(0, size.width - 2 * layout.insetH);
+  const nameSize = layout.name.lines.length === 0 ? metrics.nameSize : layout.name.size;
+  const family = ONE_LOOK_FONT_FAMILIES[device];
+  const name = model.name !== "" && hidden?.name !== true ? model.name : undefined;
+  const state = kind.stateHidden || hidden?.state === true ? undefined : stateWords(oneLookStateFor(kind, false));
+  const nameWeight = style.nameWeight ?? "semibold";
+  const lines: TemplateResult[] = [];
+  if (name !== undefined) {
+    const at = clearFitSize(measurer, name, nameSize, nameWeight, style.nameDesign, metrics.nameTracking, width);
+    const ink = style.nameColour ?? oneLookInkCss(palette.ink);
+    lines.push(html`<span class="ol-clear-name" style=${`font:${oneLookCssWeight(nameWeight)} ${r2(at * s)}px/${r2(at * 1.2 * s)}px ${family[style.nameDesign]};letter-spacing:${metrics.nameTracking}em;color:${ink}`}>${name}</span>`);
+  }
+  if (state !== undefined) {
+    const own = nameSize * ONE_LOOK_CLEAR.stateShare;
+    const at = clearFitSize(measurer, state, own, "semibold", "standard", 0, width);
+    const ink = lit ? rgba(colour, 1) : `rgba(255, 255, 255, ${ONE_LOOK_CLEAR.offStateOpacity})`;
+    lines.push(html`<span class="ol-clear-state" style=${`font:600 ${r2(at * s)}px/${r2(at * 1.2 * s)}px ${family.standard};color:${ink}`}>${state}</span>`);
+  }
+  const top = box.y + box.height;
+  const text = lines.length === 0 ? nothing
+    : html`<span class="ol-clear-text" style=${rectCss({ x: layout.insetH, y: top, width, height: Math.max(0, size.height - top) }, s)}>${lines}</span>`;
+  return html`${picture}${text}`;
 }
 
 /** The glyph's place: a disc behind it in the disc layouts, the soft halo
@@ -1017,6 +1183,18 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const glow = device === "phone" ? oneLookUnderGlowCss(palette, s) : undefined;
   const active = watchTilePreviewActive(f.tile, input.states);
   const fade = f.stub ? 0.7 : 1;
+  if (oneLookDrawsClear(model) && model.cutout !== undefined) {
+    // The Clear look: the wash and the hairline in place of the fill, its
+    // sheen, the rim and the under-glow; the user's pattern, animation and
+    // border stay.
+    return html`<div class="wp-tile ol-tile clear" data-ol-mode="clear"
+      style=${`${f.box}border-radius:${r2(radius * s)}px;background:rgba(255, 255, 255, ${ONE_LOOK_CLEAR.washOpacity});box-shadow:inset 0 0 0 1px rgba(255, 255, 255, ${ONE_LOOK_CLEAR.borderOpacity})${fade < 1 ? `;opacity:${fade}` : ""}`}
+      title=${f.hint ?? nothing}>
+      ${model.decorated ? tileUnderlay(f.tile, input, active, { width: f.width, height: f.height }, s) : nothing}
+      <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>${clearLayer(model, f, model.cutout)}</span>
+      ${borderLayer(model, f, active, radius)}
+    </div>`;
+  }
   const rim = oneLookMetrics(device).rim;
   return html`<div class="wp-tile ol-tile" data-ol-mode=${layout.mode}
     style=${`${f.box}border-radius:${r2(radius * s)}px;background:${ground}${glow === undefined ? "" : `;box-shadow:${glow}`}${fade < 1 ? `;opacity:${fade}` : ""}`}

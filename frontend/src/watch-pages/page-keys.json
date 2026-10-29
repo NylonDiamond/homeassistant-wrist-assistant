@@ -1360,6 +1360,10 @@
           "type": "string",
           "required": false
         },
+        "iconPhotoLook": {
+          "type": "string",
+          "required": false
+        },
         "homeMapTapLights": {
           "type": "bool",
           "required": false
@@ -2408,6 +2412,7 @@
       "iconGlow": "The soft glow behind a tile's icon (docs/tile_layers_contract_2026-10.md section 14 in the app repo): {mode, size, brightness, color}. Absent draws One Look's own glow; the apps read it tolerantly.",
       "arrange": "The tile's Arrangement (docs/page_editor_calm_plan_2026-10.md in the app repo): {v: 1, parts: {icon, name, state}}, each part optional with spot (tl tc tr ml mc mr bl bc br), dx and dy (-0.5 to 0.5 of the tile's width and height), scale (0.8 to 1.5) and hidden. Absent is Default. Only the centred layout draws it; an app before 3.2 ignores it. The math is in frontend/test/fixtures-arrange/README.md.",
       "iconPhotoId": "The upper case UUID of a photo in the page image store (kind icon) that One Look draws in the icon's place (docs/photo_tiles_plan_2026-10.md in the app repo). Absent means no photo. The tile keeps its icon, drawn while the photo is not downloaded and by an app that does not know the key.",
+      "iconPhotoLook": "How a tile with an icon photo draws (docs/photo_tiles_plan_2026-10.md in the app repo). \"clear\" is the Clear look: no fill, a faint white wash and hairline border, the photo near the top and the name and state centred under it, a glow in the tile's colour behind the photo while lit. Absent, or any other value, is the normal look. It counts only while the tile has an iconPhotoId whose photo is in, and only in One Look. The panel writes it only while Icon shows Photo; Show Icon removes it.",
       "homeMapTapLights": "A Home map tile on the iPhone: true draws every light on its floor as a dot, a tap on a dot runs that light's own tap and a tap anywhere else opens the map. Absent or false: every tap opens the map. The watch ignores it.",
       "homeMapLook": "A Home map tile's look, on both devices: \"night\" (the floor as a small model at night, dark rooms and warm pools of light where a light is on), one of the other model looks, the floor turned and tipped back with its far outside walls full height and its furniture: \"warm\" (wood and lamplight at night), \"lines\" (thin glowing amber lines on black), \"clay\" (a white model in daylight) or \"blueprint\" (blue with pale lines, a measuring grid and, for one room, its sizes), or \"dots\" (a plain gray plan with every light a dot, yellow when on and gray when off). Absent, \"plan\" or a look an app does not know: plan, the floor seen from above like the iPhone's Flat view, each room's floor in its material with near white walls, windows, furniture and a warm pool round each light that is on; plan is never stored. The older \"glow\" reads as plan and \"dollhouse\" as warm.",
       "homeMapRoomId": "A Home map tile's one room, on both devices: the id of a room of the tile's floor (compared ignoring case). The tile then draws that room alone with the pins in it (the room a pin names when the floor has it, else the room under its point), so the room fills the tile, and its lights on are that room's. Absent, or a room the floor no longer has: the whole floor. Changing the tile's floor removes it.",
