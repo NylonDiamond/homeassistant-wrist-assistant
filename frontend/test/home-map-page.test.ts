@@ -697,11 +697,10 @@ describe("the Home map editor", () => {
     expect(text()).toContain("Glow 3.0 m");
   });
 
-  it("places a device dropped on the plan in the room under it, and every device of the floor's areas at once", async () => {
+  it("places a device dropped on the plan in the room under it", async () => {
     const { el, ha, inside, stage, screen, text } = await page();
     (ha.hass as unknown as Record<string, unknown>).entities = { "switch.fan": { area_id: "kitchen" }, "light.reading_lamp": { area_id: "living_room" } };
-    /** The devices with an area not on the map yet, as Add's Place all
-     * takes them. */
+    /** The devices with an area not on the map yet. */
     const tray = () => homeMapTray(el.context()!.doc, el.context()!.floor, homeMapDevices(ha.hass)).flatMap((g) => g.devices);
     expect(tray().map((d) => d.entityId)).toEqual(["switch.fan"]);
     // Clear of the kitchen's things: dropped on one, it would go onto it.
@@ -720,11 +719,6 @@ describe("the Home map editor", () => {
     el.undo();
     await el.session!.idle();
     expect(tray().map((d) => d.entityId)).toEqual(["switch.fan"]);
-    // Place all puts each into the room of its area, as one edit.
-    el.page.devices.placeAll(el.context()!, tray());
-    await el.session!.idle();
-    expect(ha.now().doc!.floors[0]!.pins.at(-1)).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN });
-    expect(tray()).toEqual([]);
   });
 
   it("sets the home style in its panel, and lists the library's Home map tiles", async () => {

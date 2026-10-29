@@ -7,8 +7,9 @@
 // itself, opened by ＋ Add and the key A, closed by Escape and Close, its
 // devices by area and kind, a light going through the lamp chooser into the
 // picked room, any other device placed there or picked when it is on the
-// map, Place all by area, and its furniture added into the picked room, the
-// room under the middle of the view, or one picked in the dialog.
+// map, one device at a time with no Place all, and its furniture added into
+// the picked room, the room under the middle of the view, or one picked in
+// the dialog.
 //
 // The element is made and driven directly, as `home-map-lamp-editor.test.ts`
 // does, with Home Assistant stood in.
@@ -469,15 +470,14 @@ describe("the Add dialog in the map editor", () => {
     expect(inside.selection).toEqual({ kind: "pin", pinId: LOCK });
   });
 
-  it("places every device not on the map by area from its footer", async () => {
-    const { el, click, text, floor } = await page();
+  it("has no Place all: its footer only counts the devices listed", async () => {
+    const { el, text } = await page();
     el.openAdd();
-    expect(text()).toContain("Place all 3 by area");
-    click("Place all 3 by area");
-    expect(text()).not.toContain(OPEN);
-    const ids = floor().pins.map((p) => p.entityId);
-    for (const id of ["light.kitchen_cans", "switch.fan", "sensor.living_temp"]) expect(ids).toContain(id);
-    expect(ids).not.toContain("sensor.outside");
+    const shown = text();
+    expect(shown).toContain(OPEN);
+    expect(shown).toMatch(/class="hma-count">\d+ devices?</);
+    expect(shown).not.toContain("Place all");
+    expect(shown).not.toContain("by area</button>");
   });
 
   it("adds a piece into the room under the middle of the view, against its nearest free wall, and picks it", async () => {

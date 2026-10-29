@@ -37,7 +37,6 @@ import {
   movePins,
   moveRoom,
   moveRoomToFloor,
-  placeAllByArea,
   removeObject,
   removeObjects,
   removePin,
@@ -547,12 +546,6 @@ describe("adding a light in a lamp", () => {
     expect(expectOnThing(fan, NEW2).pin.at[2]).toBe(1.37);
     expect(addDeviceToThing(doc, FLOOR, LIVING, 9, "switch.other", NEW2)).toBeUndefined();
     expect(addDeviceToThing(doc, FLOOR, LIVING, 0, "switch.other", READING)).toBeUndefined();
-  });
-
-  it("leaves placing every device by area making bulbs, never lamps", () => {
-    const doc = fixture();
-    const placed = placeAllByArea(doc, FLOOR, [{ entityId: "light.hall", areaId: "living_room" }], () => NEW)!;
-    expect(roomOf(placed.doc, LIVING).objects.every((o) => o.device === undefined)).toBe(true);
   });
 });
 

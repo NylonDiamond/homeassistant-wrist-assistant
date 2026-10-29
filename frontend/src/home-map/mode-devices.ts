@@ -4,9 +4,8 @@
 //
 // A device to add is a row drawn here (`deviceRow`), dragged onto the plan
 // to place it (the room it would land in lit with "Drop in <room>") or
-// clicked to put it in its area's room (`place`); Place all by area
-// (`placeAll`) places a list at once. The page's Add dialog lists the
-// devices. On the stage every pin is drawn by this part as a
+// clicked to put it in its area's room (`place`), one device at a time.
+// The page's Add dialog lists the devices. On the stage every pin is drawn by this part as a
 // glass pin with its icon and live state (a light that is on amber, in its
 // own colour when it has one) and its pill, over the rooms and things; a pin
 // is dragged to move it, and
@@ -94,7 +93,6 @@ import {
   linkDevice,
   movePin,
   movePins,
-  placeAllByArea,
   removePin,
   removePins,
   sameHeightForLights,
@@ -291,13 +289,6 @@ export class DevicesMode {
     const ok = ctx.apply((d) => addPin(d, floorId, { id, entityId, at: [spot[0], spot[1]], ...(name === undefined ? {} : { name }) }), { select: { kind: "pin", pinId: id } });
     if (!ok) ctx.note("warn", "That device could not be put on the map: the map holds at most 400 devices.");
     return ok;
-  }
-
-  /** Put every device of `devices` with an area in its area's room. */
-  placeAll(ctx: HomeMapEditorContext, devices: readonly HomeMapDeviceEntry[]): void {
-    const list = devices.map((d) => ({ entityId: d.entityId, areaId: d.areaId, name: d.name, deviceClass: d.deviceClass }));
-    const floorId = ctx.floor.id;
-    ctx.apply((d) => placeAllByArea(d, floorId, list, () => ctx.newId())?.doc, { select: null });
   }
 
   /** A device's row, for a list of devices to add: dragged onto the plan

@@ -1282,7 +1282,7 @@ export class ArrangeMode {
           ],
           set: (v) => ctx.apply((d) => setRoomArea(d, id, v === "" ? undefined : v)),
         }))}
-        ${hmeHint("The Home Assistant area. Add lists its devices first, and Place all by area puts them here.")}
+        ${hmeHint("The Home Assistant area. Add lists its devices first.")}
         ${hmeRow("Tap opens", hmeSelect({
           label: "Tap opens",
           value: room.pageId ?? "",

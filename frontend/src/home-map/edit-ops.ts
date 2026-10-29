@@ -3070,118 +3070,11 @@ export function setPinEntity(doc: HomeMapDocument, pinId: string, entityId: stri
   return editPin(doc, pinId, (pin) => ({ ...pin, entityId }));
 }
 
-/** A device the home has, for `placeAllByArea`: its entity, its area, and
- * its name and device class for its height. */
-export interface HomeMapDeviceInfo {
-  entityId: string;
-  areaId?: string | undefined;
-  name?: string | undefined;
-  deviceClass?: string | undefined;
-}
-
-/** Spots for new pins are kept this far from the walls, and laid on a grid
- * this fine. */
-const PLACE_INSET = 0.3;
-const PLACE_STEP = 0.2;
-
-/** Where `count` new pins go in a room: the spot of a grid over the room
- * (kept off the walls) furthest from every pin already there and each spot
- * picked before, so they spread out; the middle of the room first. A lock
- * or door goes by the room's first door when it has one. */
-function spotsIn(room: HomeMapRoom, taken: readonly HomePoint[], devices: readonly HomeMapDeviceInfo[]): HomePoint[] {
-  const middle = homeLabelPoint(room) ?? homeMapRoomCenter(room);
-  const edges = room.outline.map((p, i) => ({ a: p, b: room.outline[(i + 1) % room.outline.length]! }));
-  const clear = (p: HomePoint) => homePolygonHolds(room.outline, p) && edges.every((e) => homeProjectDistance(p, e.a, e.b) >= PLACE_INSET);
-  const bounds = homePointBounds(room.outline);
-  const grid: HomePoint[] = [];
-  if (bounds !== undefined) {
-    for (let y = bounds.minY + PLACE_INSET; y <= bounds.maxY - PLACE_INSET + 1e-9; y += PLACE_STEP) {
-      for (let x = bounds.minX + PLACE_INSET; x <= bounds.maxX - PLACE_INSET + 1e-9; x += PLACE_STEP) if (clear([x, y])) grid.push([x, y]);
-    }
-  }
-  const door = room.openings.find((o) => o.kind === "door");
-  const used = taken.slice();
-  return devices.map((device) => {
-    const domain = device.entityId.slice(0, device.entityId.indexOf("."));
-    const doorish = domain === "lock" || device.deviceClass === "door" || /\bdoor\b/.test((device.name ?? "").toLowerCase());
-    let spot: HomePoint | undefined;
-    if (doorish && door !== undefined) {
-      const m: HomePoint = [(door.a[0] + door.b[0]) / 2, (door.a[1] + door.b[1]) / 2];
-      const inward = Math.hypot(middle[0] - m[0], middle[1] - m[1]);
-      const step = Math.min(0.3, inward);
-      spot = inward > 0 ? [m[0] + ((middle[0] - m[0]) / inward) * step, m[1] + ((middle[1] - m[1]) / inward) * step] : m;
-      if (used.some((u) => distance(u, spot!) < 0.15)) spot = undefined;
-    }
-    if (spot === undefined) {
-      if (grid.length === 0) spot = used.some((u) => distance(u, middle) < 0.05) ? [middle[0] + 0.2 * used.length, middle[1]] : middle;
-      else if (used.length === 0) spot = grid.reduce((m, p) => (distance(p, middle) < distance(m, middle) ? p : m));
-      else {
-        let best = grid[0]!;
-        let bestScore = -Infinity;
-        for (const p of grid) {
-          // Furthest from every pin, then nearest the middle.
-          const score = Math.min(...used.map((u) => distance(u, p))) - 0.01 * distance(p, middle);
-          if (score > bestScore) {
-            best = p;
-            bestScore = score;
-          }
-        }
-        spot = best;
-      }
-    }
-    used.push(spot);
-    return spot;
-  });
-}
-
 function homeProjectDistance(p: HomePoint, a: HomePoint, b: HomePoint): number {
   const { t, point } = homeProject(p, a, b);
   if (t <= 0) return distance(p, a);
   if (t >= 1) return distance(p, b);
   return distance(p, point);
-}
-
-/**
- * Place all by area: each device not yet on the map (on any floor) whose
- * area is a room's on this floor gets a pin in that room, the room's new
- * pins spread out and away from its pins already there, each at its kind's
- * height (`homeMapPlaceHeight`). New ids from `newId`, upper case as the
- * phone writes them. Stops at 400 pins. The map and the entities placed;
- * undefined when the floor is gone.
- */
-export function placeAllByArea(doc: HomeMapDocument, floorId: string, devices: readonly HomeMapDeviceInfo[], newId: () => string): { doc: HomeMapDocument; placed: string[] } | undefined {
-  const fi = floorIndex(doc, floorId);
-  if (fi < 0) return undefined;
-  const floor = doc.floors[fi]!;
-  const onMap = new Set(doc.floors.flatMap((f) => f.pins.map((p) => p.entityId)));
-  const byRoom = new Map<HomeMapRoom, HomeMapDeviceInfo[]>();
-  const seen = new Set<string>();
-  for (const device of devices) {
-    if (onMap.has(device.entityId) || seen.has(device.entityId) || !isHomeMapEntityId(device.entityId) || device.areaId === undefined) continue;
-    const room = floor.rooms.find((x) => x.areaId === device.areaId);
-    if (room === undefined) continue;
-    seen.add(device.entityId);
-    if (!byRoom.has(room)) byRoom.set(room, []);
-    byRoom.get(room)!.push(device);
-  }
-  let total = pinCount(doc);
-  const pins = floor.pins.slice();
-  const placed: string[] = [];
-  for (const [target, list] of byRoom) {
-    const already = homeMapPinsOfRoom(floor, target.id).map((p): HomePoint => [p.at[0], p.at[1]]);
-    const spots = spotsIn(target, already, list);
-    for (const [i, device] of list.entries()) {
-      if (total >= HOME_MAP_MAX_PINS) break;
-      let id = newId().toUpperCase();
-      while (idTaken(doc, id) || pins.some((p) => sameHomeMapId(p.id, id))) id = newId().toUpperCase();
-      const spot = spots[i]!;
-      pins.push(orderedPin({ id, entityId: device.entityId, roomId: target.id, at: [r(spot[0]), r(spot[1]), homeMapPlaceHeight(device.entityId, device.name, device.deviceClass)] }));
-      placed.push(device.entityId);
-      total += 1;
-    }
-  }
-  if (placed.length === 0) return { doc, placed };
-  return { doc: withFloor(doc, fi, { ...floor, pins }), placed };
 }
 
 // ── style ────────────────────────────────────────────────────────────────

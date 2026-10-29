@@ -16,12 +16,12 @@
 // no entity category, as the old rail did; a search finds any entity. A
 // light opens the lamp chooser (`mode-devices.ts`) in the picked room, or
 // its area's room; any other device is placed as the old rail's click
-// placed it, one on the map already being picked instead. The footer's
-// Place all N by area places every device whose area is a room here.
+// placed it, one on the map already being picked instead. Devices go on the
+// map one at a time; the footer counts the devices listed.
 //
 // A thing's Device card (`mode-devices.ts`) opens the same Devices tab to
-// choose the device the thing holds (`HomeMapDeviceChoice`): no tabs and no
-// Place all, its own title, All areas on, only lights for a lamp, and a click on a row
+// choose the device the thing holds (`HomeMapDeviceChoice`): no tabs, its
+// own title, All areas on, only lights for a lamp, and a click on a row
 // hands the device to the card rather than adding it.
 //
 // Furniture: a search, the catalog's groups as chips and the pieces with
@@ -44,9 +44,7 @@ import {
   homeMapDevices,
   homeMapFindDevices,
   homeMapPinOfEntity,
-  homeMapPlaceableCount,
   homeMapStateText,
-  homeMapTray,
 } from "./devices-model.js";
 import { addPieceByWall, homeMapPinsOfEntity } from "./edit-ops.js";
 import { type HomeMapDeviceChoice, type HomeMapEditorContext, homeMapSelectionRoom } from "./editor-mode.js";
@@ -399,16 +397,11 @@ export class HomeMapAddDialog {
       left -= devices.length;
       return { ...s, devices };
     }).filter((s) => s.devices.length > 0);
-    const tray = homeMapTray(ctx.doc, ctx.floor, all);
-    const placeable = homeMapPlaceableCount(ctx.floor, tray);
     const where = this.area === HOME_MAP_ADD_ALL_AREAS ? "in any area"
       : this.area === HOME_MAP_ADD_NO_AREA ? "with no area"
       : `in ${chips.find((c) => c.id === this.area)?.name ?? "this area"}`;
     const searching = this.query.trim() !== "";
     const word = choice?.lightsOnly === true ? "light" : "device";
-    const foot = choice !== undefined ? nothing : html`<button type="button" class="hme-tb" ?disabled=${placeable === 0}
-          title=${placeable === 0 ? "Link this floor's rooms to Home Assistant areas first (a room's Area, in its card)" : "Each device not on the map goes into the room linked to its area, at a good height for its kind"}
-          @click=${() => { this.devices.placeAll(ctx, tray.flatMap((g) => g.devices)); close(); }}>Place all ${placeable} by area</button>`;
     return html`
       <label class="hme-find"><span aria-hidden="true">⌕</span>
         <input type="search" placeholder="Find a ${word}" aria-label="Find a ${word}" autofocus .value=${live(this.query)} ${search}
@@ -430,7 +423,6 @@ export class HomeMapAddDialog {
       </div>
       <div class="hma-foot">
         <span class="hma-count">${homeMapCount(total, word)}</span>
-        ${foot}
       </div>`;
   }
 

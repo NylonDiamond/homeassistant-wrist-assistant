@@ -18,7 +18,6 @@ import {
   homeMapEntityAreaId,
   homeMapFindDevices,
   homeMapKindCounts,
-  homeMapPlaceableCount,
   homeMapStateText,
   homeMapToggleWords,
   homeMapTray,
@@ -120,8 +119,6 @@ describe("the Devices rail's lists", () => {
       ["Kitchen", true, ["switch.dishwasher"]],
       ["Hall", false, ["binary_sensor.hall_motion"]],
     ]);
-    // Place all by area places only the devices of this floor's rooms.
-    expect(homeMapPlaceableCount(doc.floors[0]!, groups)).toBe(3);
   });
 
   it("finds devices by every word typed, a name starting with them first", () => {

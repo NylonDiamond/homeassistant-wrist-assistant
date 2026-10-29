@@ -115,13 +115,6 @@ export function homeMapTray(doc: HomeMapDocument, floor: HomeMapFloor, devices: 
   });
 }
 
-/** How many of the tray's devices Place all by area would place on this
- * floor: those whose area is a room's here. */
-export function homeMapPlaceableCount(floor: HomeMapFloor, groups: readonly HomeMapTrayGroup[]): number {
-  const areas = new Set(floor.rooms.map((r) => r.areaId).filter((a) => a !== undefined));
-  return groups.filter((g) => areas.has(g.areaId)).reduce((n, g) => n + g.devices.length, 0);
-}
-
 /** The devices whose name, id or area holds every word typed, the best
  * first: a name starting with the words, then any. */
 export function homeMapFindDevices(devices: readonly HomeMapDeviceEntry[], query: string, limit = 40): HomeMapDeviceEntry[] {

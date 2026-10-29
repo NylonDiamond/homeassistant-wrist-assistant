@@ -465,9 +465,8 @@ describe("lamps that hold lights in the map editor", () => {
     expect(shown).toContain('class="hma"');
     expect(shown).toContain("Choose a device for this ");
     expect(shown).toContain('aria-label="Find a device"');
-    // No tabs and no Place all: it chooses one device, it adds nothing.
+    // No tabs: it chooses one device, it adds nothing.
     expect(shown).not.toContain('role="tablist"');
-    expect(shown).not.toContain("by area</button>");
     // Every kind of device, under All areas.
     click('All areas<span class="hma-n">');
     shown = text();

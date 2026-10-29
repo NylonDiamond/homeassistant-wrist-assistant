@@ -38,7 +38,6 @@ import {
   movePin,
   moveRoom,
   moveRoomToFloor,
-  placeAllByArea,
   removeCorner,
   removeObject,
   removeOpening,
@@ -745,38 +744,6 @@ describe("pins", () => {
     expect(homeMapPlaceHeight("lock.front")).toBe(1.0);
     expect(homeMapPlaceHeight("binary_sensor.front", undefined, "door")).toBe(1.0);
     expect(homeMapPlaceHeight("binary_sensor.motion")).toBe(1.5);
-  });
-
-  it("places every device of an area in its room, spread out, skipping those on the map", () => {
-    const doc = fixture();
-    let n = 100;
-    const result = placeAllByArea(
-      doc,
-      FLOOR,
-      [
-        { entityId: "light.reading_lamp", areaId: "living_room" },
-        { entityId: "light.wall", areaId: "living_room" },
-        { entityId: "media_player.soundbar", areaId: "living_room" },
-        { entityId: "switch.dishwasher", areaId: "kitchen" },
-        { entityId: "cover.blinds", areaId: "bedroom" },
-        { entityId: "light.nowhere" },
-      ],
-      () => id((n += 1)),
-    )!;
-    const out = done(doc, result.doc);
-    expect(result.placed).toEqual(["light.wall", "media_player.soundbar", "switch.dishwasher"]);
-    const added = out.floors[0]!.pins.slice(5);
-    expect(added.map((p) => [p.entityId, p.roomId, p.at[2]])).toEqual([
-      ["light.wall", LIVING, 2.4],
-      ["media_player.soundbar", LIVING, 1.0],
-      ["switch.dishwasher", KITCHEN, 0.3],
-    ]);
-    // Spread out: no two pins of a room within 50 cm.
-    const living = out.floors[0]!.pins.filter((p) => p.roomId === LIVING);
-    for (const p of living) for (const q of living) if (p !== q) expect(Math.hypot(p.at[0] - q.at[0], p.at[1] - q.at[1])).toBeGreaterThan(0.5);
-    // Inside the room and off its walls.
-    for (const p of added.slice(0, 2)) expect(p.at[0] > 0.29 && p.at[0] < 5.71 && p.at[1] > 0.29 && p.at[1] < 4.71).toBe(true);
-    expect(placeAllByArea(out, FLOOR, [{ entityId: "light.wall", areaId: "living_room" }], () => id(500))!.placed).toEqual([]);
   });
 });
 
