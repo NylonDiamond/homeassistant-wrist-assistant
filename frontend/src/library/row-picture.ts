@@ -20,11 +20,13 @@ import { type PhonePageLook, phonePagesLayout, phonePagesScreen } from "../phone
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS } from "../watch-pages/editor-host.js";
-import { type WatchPage, isSmartWatchPage } from "../watch-pages/model.js";
+import type { HomeMapDocument } from "../home-map/model.js";
+import { type WatchPage, isMapWatchPage, isSmartWatchPage } from "../watch-pages/model.js";
 import type { OneLookPhotoLight } from "../watch-pages/one-look/glow.js";
 import {
   type WatchPagePreviewInput,
   previewOneLook,
+  renderMapPageArt,
   renderWatchTileFace,
   watchPreviewLayout,
   watchPreviewSideInset,
@@ -90,6 +92,9 @@ export interface PageRowPictureInput {
   photoOn?: (id: string) => string | undefined;
   /** A new value draws again once more photos are in. */
   photoTick?: number;
+  /** The home's map, for a map page on an iPhone, which is drawn as its
+   * map (`renderMapPageArt`); without it the page's Home map tile shows. */
+  homeMap?: HomeMapDocument | null;
 }
 
 interface Kept {
@@ -115,11 +120,12 @@ function keptPicture(item: object, size: string, stamp: readonly unknown[], draw
 }
 
 /** A page as one screen, small: its background and the tiles that reach
- * onto the screen; a smart page its color and glyph. */
+ * onto the screen; a smart page its color and glyph; a map page on an
+ * iPhone, once the map is in, its map. */
 export function renderPageRowPicture(input: PageRowPictureInput): TemplateResult {
   const iphone = input.iphone === true;
   const width = input.width ?? (iphone ? ROW_PICTURE_PHONE_W : ROW_PICTURE_W);
-  const stamp = [input.states, input.icons, input.tick, input.pages, input.photoTick];
+  const stamp = [input.states, input.icons, input.tick, input.pages, input.photoTick, input.homeMap];
   const look = input.look ?? "iphone";
   const tiles = previewOneLook({ appVersion: input.appVersion }) === undefined ? "old" : "one";
   return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}:${tiles}`, stamp, () => drawPage(input, width, iphone, look));
@@ -147,6 +153,9 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.photoGlow === undefined ? {} : { photoGlow: input.photoGlow }),
     ...(input.photoOn === undefined ? {} : { photoOn: input.photoOn }),
   };
+  if (phone !== undefined && input.homeMap !== undefined && isMapWatchPage(page)) {
+    return html`<span class="lr-pic ph" style=${box} aria-hidden="true">${renderMapPageArt({ ...preview, homeMap: input.homeMap }, screen.width, height / s, s)}</span>`;
+  }
   const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.
   const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < height);

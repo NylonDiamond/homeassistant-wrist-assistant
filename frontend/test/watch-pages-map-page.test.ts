@@ -29,6 +29,8 @@ import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
 import { type WatchPagePreviewInput, renderMapPageArt, renderWatchPagePreview, watchPagePreviewScrolls } from "../src/watch-pages/preview.js";
 import { phonePagesLayout, phonePagesScreen } from "../src/phone-frame.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
+import { renderPageRowPicture } from "../src/library/row-picture.js";
+import { itemDetail } from "../src/library/model.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
 const fixture = (): HomeMapDocument => JSON.parse(FIXTURE_TEXT) as HomeMapDocument;
@@ -298,6 +300,15 @@ describe("the preview", () => {
   it("draws a page with the key and no Home map tile as a normal page", () => {
     const p = pageOf(doc({ mapPage: true, items: [lampTile()] }));
     expect(flatten(renderWatchPagePreview(input(p, true)))).not.toContain("data-map-page");
+  });
+
+  it("draws a library row's iPhone picture as the map once the map is in, and the tile on a watch", () => {
+    const withMap = flatten(renderPageRowPicture({ page: page(), iphone: true, homeMap: fixture() }));
+    expect(withMap).toContain(`data-map-page=${FLOOR}`);
+    expect(flatten(renderPageRowPicture({ page: page(), iphone: true }))).not.toContain("data-map-page");
+    expect(flatten(renderPageRowPicture({ page: page(), homeMap: fixture() }))).not.toContain("data-map-page");
+    expect(itemDetail("pages", page())).toBe("Map page");
+    expect(itemDetail("pages", pageOf(doc({ items: [mapTile()] })))).toBe("1 tile");
   });
 
   it("says how each device draws it under Side by side", () => {

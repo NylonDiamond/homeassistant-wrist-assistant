@@ -1163,6 +1163,7 @@ export class WaAllPages extends LitElement {
       photoGlow: this.photoGlow,
       photoOn: this.photoOn,
       photoTick: this.photoTick,
+      ...(device?.kind === "iphone" ? { homeMap: this.homeMapDoc() } : {}),
     });
   }
 

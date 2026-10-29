@@ -11,7 +11,7 @@
 import type { LinkDevice } from "../watch-pages/devices.js";
 import { joinWords } from "../watch-pages/devices.js";
 import type { MenusDocument } from "../watch-menus/model.js";
-import { type WatchPage, type WatchPagesDocument, isSmartWatchPage, watchPageName, watchPageTiles } from "../watch-pages/model.js";
+import { type WatchPage, type WatchPagesDocument, isMapWatchPage, isSmartWatchPage, watchPageName, watchPageTiles } from "../watch-pages/model.js";
 import { isSystemStatusPage, statusPageName, statusPageRows } from "../watch-status-pages/model.js";
 import type { LibraryKind, LibraryListKind, LibraryObject, LibraryOwnerPicks, LibrarySummary, MenuUnit } from "./client.js";
 
@@ -99,6 +99,7 @@ function isObject(value: unknown): value is LibraryObject {
 export function itemDetail(kind: LibraryListKind, item: LibraryObject): string {
   if (kind === "status_pages") return plural(statusPageRows(item).length, "row", "rows");
   if (isSmartWatchPage(item as WatchPage)) return "Smart page";
+  if (isMapWatchPage(item as WatchPage)) return "Map page";
   return plural(watchPageTiles(item as WatchPage).length, "tile", "tiles");
 }
 
