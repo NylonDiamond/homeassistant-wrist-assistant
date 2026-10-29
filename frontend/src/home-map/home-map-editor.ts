@@ -66,7 +66,7 @@ import { libraryItems, libraryOf } from "../library/model.js";
 import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { type HomeMapOp, addFloor, deleteFloor, homeStyleOf, renameFloor } from "./edit-ops.js";
+import { type HomeMapOp, addFloor, deleteFloor, homeMapLampOfPin, homeStyleOf, renameFloor } from "./edit-ops.js";
 import { HomeMapEditPage } from "./edit-page.js";
 import {
   type HomeMapApplyOptions,
@@ -75,6 +75,7 @@ import {
   type HomeMapPageChoice,
   type HomeMapSelection,
   type HomeMapToggles,
+  homeMapLampPick,
   homeMapPickedThings,
   homeMapSelectionRoom,
   homeMapSelectionThere,
@@ -336,11 +337,15 @@ export class WaHomeMapEditor extends LitElement {
    * does: a thing, a light's pin or a room, empty space picking nothing.
    * With Cmd or Ctrl (`keys.add`) a thing or a light is added to the pick or
    * taken out, as on the plan, and a room or empty space leaves the pick as
-   * it is. While a room's walls are edited, a click anywhere but that room
-   * goes back to the floor, the room picked. */
-  pick3d(pick: HomeMap3DPick | undefined, keys: { add: boolean } = { add: false }): void {
+   * it is. A light a lamp holds is its lamp, picked or added as the lamp.
+   * While a room's walls are edited, a click anywhere but that room goes
+   * back to the floor, the room picked. */
+  pick3d(found: HomeMap3DPick | undefined, keys: { add: boolean } = { add: false }): void {
     if (this.dialog !== undefined) return;
     this.floorMenu = false;
+    const floor = this.baseFloor();
+    const lamp = found?.kind === "pin" && floor !== undefined ? homeMapLampOfPin(floor, found.pinId) : undefined;
+    const pick: HomeMap3DPick | undefined = lamp === undefined ? found : { kind: "object", roomId: lamp.roomId, object: lamp.object };
     if (this.walls !== undefined) {
       if (pick === undefined || pick.kind === "pin" || !sameHomeMapId(pick.roomId, this.walls)) this.editWalls(undefined);
       return;
@@ -487,7 +492,7 @@ export class WaHomeMapEditor extends LitElement {
       return false;
     }
     if (options.floorId !== undefined) this.floorId = options.floorId;
-    if (options.select !== undefined) this.selection = options.select ?? undefined;
+    if (options.select !== undefined) this.selection = homeMapLampPick(this.baseFloor(), options.select ?? undefined);
     this.afterChange();
     return true;
   }
@@ -508,8 +513,9 @@ export class WaHomeMapEditor extends LitElement {
     if (this.session?.redo() === true) this.afterChange();
   }
 
+  /** Pick something (`ctx.select`); a light a lamp holds picks its lamp. */
   select(selection: HomeMapSelection | undefined): void {
-    this.selection = selection;
+    this.selection = homeMapLampPick(this.baseFloor(), selection);
   }
 
   /** Edit a room's walls (`ctx.editWalls`), or with undefined go back to

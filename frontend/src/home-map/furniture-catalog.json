@@ -977,7 +977,13 @@
         0.38,
         1.87
       ],
-      "fabric": true
+      "fabric": true,
+      "bulb": [
+        0.5,
+        0.5,
+        0.9
+      ],
+      "cast": "point"
     },
     {
       "id": "lampSquareFloor",
@@ -989,7 +995,13 @@
         0.25,
         1.79
       ],
-      "fabric": true
+      "fabric": true,
+      "bulb": [
+        0.5,
+        0.5,
+        0.58
+      ],
+      "cast": "point"
     },
     {
       "id": "lampRoundTable",
@@ -1002,7 +1014,13 @@
         0.62
       ],
       "lift": 0.75,
-      "fabric": true
+      "fabric": true,
+      "bulb": [
+        0.5,
+        0.5,
+        0.72
+      ],
+      "cast": "point"
     },
     {
       "id": "lampSquareTable",
@@ -1015,7 +1033,13 @@
         0.6
       ],
       "lift": 0.75,
-      "fabric": true
+      "fabric": true,
+      "bulb": [
+        0.5,
+        0.5,
+        0.74
+      ],
+      "cast": "point"
     },
     {
       "id": "lampWall",
@@ -1028,7 +1052,13 @@
         0.1
       ],
       "lift": 1.6,
-      "fabric": true
+      "fabric": true,
+      "bulb": [
+        0.5,
+        0.4,
+        0.5
+      ],
+      "cast": "point"
     },
     {
       "id": "lampSquareCeiling",
@@ -1041,7 +1071,13 @@
         0.96
       ],
       "ceiling": true,
-      "fabric": true
+      "fabric": true,
+      "bulb": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "cast": "down"
     },
     {
       "id": "ceilingFan",

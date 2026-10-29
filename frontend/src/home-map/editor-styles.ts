@@ -410,6 +410,49 @@ export const editorStyles = css`
   .hme-dv-nm { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; color: var(--wa-ink); overflow: hidden; }
   .hme-dv-nm small { color: var(--wa-faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hme-dv-grip { color: var(--wa-faint); font-size: 13px; }
+  /* A light's "2 on map": a click picks the next one in turn. */
+  .hme-dv-count {
+    flex: none; height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid var(--wa-line-strong); background: var(--wa-raise);
+    color: var(--wa-soft); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .hme-dv-count:hover { color: var(--wa-ink); border-color: var(--hme-sel); }
+  /* A lamp's light: its head, and the search of the home's lights. */
+  .hme-lamp-light { display: flex; align-items: center; gap: 12px; }
+  .hme-light-find { display: flex; flex-direction: column; gap: 4px; }
+  .hme-light-row {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 8px; border: 1px solid transparent;
+    background: none; color: var(--wa-ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  }
+  .hme-light-row:hover { background: var(--wa-hover); border-color: var(--wa-line); }
+  .hme-light-row .hme-grow { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .hme-light-row small { color: var(--wa-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The lamp chooser, by the spot a light goes to, over a clear scrim that
+     closes it when pressed. */
+  .hme-lamp-scrim { background: transparent; display: block; padding: 0; }
+  .hme-lampc {
+    position: absolute; max-width: calc(100vw - 16px); padding: 12px; border-radius: 14px; display: flex; flex-direction: column; gap: 10px;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  .hme-lampc-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hme-lampc-t strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hme-lampc-t span { color: var(--wa-muted); font-size: 12px; }
+  .hme-lampc-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .hme-lampc-b {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 3px 6px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-soft); font: inherit; font-size: 11px; text-align: center;
+  }
+  .hme-lampc-b:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+  .hme-lampc-b:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
+  .hme-lampc-b.on { border-color: var(--hme-sel); background: var(--hme-sel-bg); color: var(--wa-ink); }
+  .hme-lampc-b:disabled { opacity: 0.4; cursor: default; }
+  .hme-lampc-pic {
+    width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    border-radius: 8px; background: radial-gradient(circle at 50% 38%, #2a2826, #161514 75%);
+  }
+  .hme-lampc-pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .hme-lampc-pic.wait { background: linear-gradient(100deg, #1d1c1b 30%, #262423 50%, #1d1c1b 70%) 0 0/300% 100%; animation: hme-wait 1.4s linear infinite; }
+  .hme-lampc-pic.bulb { color: #ffbf55; }
+  .hme-lampc-hint { color: var(--wa-faint); font-size: 11px; }
   .hme-dot.gray { background: #8e8e93; }
   .hme-pin-big { width: 46px; height: 46px; border-radius: 50%; background: #2c2c2e; display: flex; align-items: center; justify-content: center; flex: none; }
   .hme-state { color: var(--wa-soft); font-weight: 600; white-space: nowrap; }

@@ -19,7 +19,8 @@
 //
 // The editor's keys (the home style, a room's finish and its floor and wall
 // colours, a hidden object, an
-// object's furniture piece and its fabric and wood colours, an opening's style, a pin's name, icon, reading, glow, glow colour, glow
+// object's furniture piece and its fabric and wood colours, the light a lamp
+// holds, an opening's style, a pin's name, icon, reading, glow, glow colour, glow
 // spill, tap and page) are all optional, and a default is never stored: the key is left
 // out, so a map written before them reads the same.
 //
@@ -70,6 +71,12 @@ export interface HomeMapObject {
   fabric?: string;
   /** The colour of its 3D model's wood parts, as `fabric` is. */
   wood?: string;
+  /** The `id` of a pin of the same floor that this thing, a lamp, holds: the
+   * light it is. Checked as shaped like a pin id only, never that the pin is
+   * there. A reader ignores one that names no pin of the floor, a pin whose
+   * entity is not a `light.*`, or a pin an earlier thing of the floor already
+   * holds (`homeMapLampOfPin`, `edit-ops.ts`). Never empty. */
+  light?: string;
   /** Its centre on the plan. */
   c: HomePoint;
   /** Width, depth, height. */
@@ -427,7 +434,7 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   });
   out.objects = list(room.objects, `${path}.objects`, MAX_OBJECTS).map((o, i) => {
     const where = `${path}.objects[${i}]`;
-    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "fabric", "wood", "lift", "hidden"]);
+    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "fabric", "wood", "light", "lift", "hidden"]);
     if (typeof item.kind !== "string" || !OBJECT_KIND_RE.test(item.kind)) fail(`${where}.kind`, "must be a RoomPlan category in lower camel case");
     if (!Array.isArray(item.size) || item.size.length !== 3) fail(`${where}.size`, "must be a list of 3 numbers");
     const checked = { kind: item.kind } as HomeMapObject;
@@ -442,6 +449,12 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
       const color = item[part];
       if (!isHomeMapPartColor(color)) fail(`${where}.${part}`, "must be a colour like #8E8E93");
       checked[part] = color;
+    }
+    // The pin the lamp holds, by its id's shape only, as an entity id is
+    // never looked up either.
+    if (Object.hasOwn(item, "light")) {
+      if (!isHomeMapId(item.light)) fail(`${where}.light`, "must be a pin's id, a UUID");
+      checked.light = item.light;
     }
     checked.c = point(item.c, `${where}.c`, 2);
     checked.size = item.size.map((v, j) => number(v, `${where}.size[${j}]`, 0, 1000)) as [number, number, number];
@@ -838,13 +851,14 @@ export function orderedOpening(opening: HomeMapOpening): HomeMapOpening {
 }
 
 /** An object with its keys in the contract's order, `model` only when it
- * names a piece, `fabric` and `wood` only when set and `hidden` only when
- * true. */
+ * names a piece, `fabric`, `wood` and `light` only when set and `hidden`
+ * only when true. */
 export function orderedObject(object: HomeMapObject): HomeMapObject {
   const out = { kind: object.kind } as HomeMapObject;
   if (object.model !== undefined && object.model !== "") out.model = object.model;
   if (object.fabric !== undefined && object.fabric !== "") out.fabric = object.fabric;
   if (object.wood !== undefined && object.wood !== "") out.wood = object.wood;
+  if (object.light !== undefined && object.light !== "") out.light = object.light;
   out.c = object.c;
   out.size = object.size;
   out.turn = object.turn;

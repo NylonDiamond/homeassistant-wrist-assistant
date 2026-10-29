@@ -16,7 +16,9 @@
 // Fitting a piece to a thing's box (`furniture-rules.ts`): stretched to the
 // box's width and height, and to its depth too, except that a very thin box
 // (a scanned TV is 5 cm deep) never squashes the piece below half its other
-// stretch, so a TV keeps its stand. Nothing here draws; `scene3d.ts` does.
+// stretch, so a TV keeps its stand. A lamp can hold a light: its `bulb`
+// says where the bulb sits in the model's own box and `cast` how it shines
+// (`homeMapBulbSpot`). Nothing here draws; `scene3d.ts` does.
 // This file is the editor's alone: the catalog never reaches the panel's
 // first download, and three.js never reaches this file's chunk.
 
@@ -24,7 +26,19 @@ import catalogJson from "./furniture-catalog.json";
 import type { HomeMapFurniturePiece } from "./furniture-rules.js";
 import type { HomeMapObject } from "./model.js";
 
-export { type HomeMapFurniturePiece, homeMapModelFit, homeMapPieceLift, homeMapPieceParts, homeMapPieceSizeText } from "./furniture-rules.js";
+export {
+  type HomeMapFurniturePiece,
+  type HomeMapLampCast,
+  type HomeMapLampChoice,
+  HOME_MAP_LAMP_CHOICES,
+  HOME_MAP_LAMP_CHOICE_MODELS,
+  homeMapBulbSpot,
+  homeMapLampPiece,
+  homeMapModelFit,
+  homeMapPieceLift,
+  homeMapPieceParts,
+  homeMapPieceSizeText,
+} from "./furniture-rules.js";
 
 /** A colour the Colours card offers for a part. */
 export interface HomeMapPartPreset {

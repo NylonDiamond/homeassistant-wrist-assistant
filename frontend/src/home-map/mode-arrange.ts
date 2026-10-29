@@ -450,8 +450,9 @@ export class ArrangeMode {
     return undefined;
   }
 
-  /** A piece's picture, or a quiet stand in until it is drawn. */
-  private piecePic(ctx: HomeMapEditorContext, piece: HomeMapFurniturePiece | undefined, cls: string): TemplateResult {
+  /** A piece's picture, or a quiet stand in until it is drawn (the lamp
+   * chooser's pictures too). */
+  piecePic(ctx: HomeMapEditorContext, piece: HomeMapFurniturePiece | undefined, cls: string): TemplateResult {
     const url = piece === undefined ? undefined : this.thumb(ctx, piece.id);
     return html`<span class="${cls} ${url === undefined ? "wait" : ""}">${url === undefined ? nothing : html`<img src=${url} alt="" draggable="false" />`}</span>`;
   }
@@ -731,6 +732,22 @@ export class ArrangeMode {
     if (hit === "turn") this.turnDrag(ctx, e, focus, at);
     else if (sides !== undefined) this.resizeDrag(ctx, e, focus, sides, at);
     else return false;
+    return true;
+  }
+
+  /** A press on a light a lamp holds, which is its lamp: picks the lamp
+   * alone and drags it at once, or with Shift, Cmd or Ctrl adds it to the
+   * pick of things or takes it out. False when the lamp is gone. */
+  pressThing(ctx: HomeMapEditorContext, e: PointerEvent, ref: HomeMapThingRef, at: HomePoint): boolean {
+    const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, ref.roomId));
+    const object = room?.objects[ref.object];
+    if (room === undefined || object === undefined) return false;
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      ctx.select(homeMapToggleThing(ctx.selection, { roomId: room.id, object: ref.object }));
+      return true;
+    }
+    this.pickThing(ctx, room, ref.object);
+    this.thingMoveDrag(ctx, e, { room, index: ref.object, object }, at);
     return true;
   }
 

@@ -41,7 +41,7 @@ so a writer that drifts from it hears so at once::
                                           "style"?: "sliding" | "double",
                                           "a", "b", "z0", "z1"}],
                             "objects": [{"kind", "model"?, "fabric"?,
-                                         "wood"?, "c": [x, y],
+                                         "wood"?, "light"?, "c": [x, y],
                                          "size": [w, d, h], "turn",
                                          "lift"?, "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
@@ -78,7 +78,17 @@ against the catalog, so a newer catalog's pieces survive an older reader;
 absent, the look picks one by the object's kind. An object's ``fabric``
 and ``wood`` (``#RRGGBB`` in either case, kept as sent) recolour its 3D
 model's fabric and wood parts; absent, the model keeps its own colours.
-They are kept on any object whatever its kind or model. An opening's ``style`` is
+They are kept on any object whatever its kind or model. An object's
+``light`` is the ``id`` of a pin of the same floor that the object, a lamp,
+holds: the light it is. It is checked as shaped like a pin id (a UUID) only,
+never that such a pin exists, as a pin's ``entityId`` is never checked
+against the home. A reader ignores a ``light`` that names no pin of the
+floor, a pin whose entity is not a ``light.*``, or a pin an earlier object
+already holds (the floor's rooms in order, each room's objects in order), so
+one pin is held by at most one lamp. The editor always writes the held pin's
+``at`` where the lamp's bulb is, so a reader that ignores ``light`` still
+draws the light in the right place. A ``light.*`` entity may have any number
+of pins (six ceiling lamps on one light group). An opening's ``style`` is
 ``double`` (a door only: two leaves meeting in the middle) or ``sliding`` (a
 door or a window); a plain opening takes none. A pin's ``name`` (1 to 100
 characters) and ``icon`` (one of ``PIN_ICONS``) stand in for the entity's
@@ -453,7 +463,7 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
             raw_object,
             where,
             ("kind", "c", "size", "turn"),
-            ("model", "fabric", "wood", "lift", "hidden"),
+            ("model", "fabric", "wood", "light", "lift", "hidden"),
         )
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
@@ -477,6 +487,13 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
                 if not isinstance(color, str) or not _HEX_COLOR_RE.fullmatch(color):
                     _fail(f"{where}.{part}", "must be a colour like #8E8E93")
                 checked_object[part] = color
+        # The pin the lamp holds, by its id's shape only: whether a pin of the
+        # floor has it is never checked, as a pin's entity id never is.
+        if "light" in item:
+            light = item["light"]
+            if not isinstance(light, str) or not _UUID_RE.fullmatch(light):
+                _fail(f"{where}.light", "must be a pin's id, a UUID")
+            checked_object["light"] = light
         checked_object["c"] = _point(item["c"], f"{where}.c", 2)
         checked_object["size"] = [
             _number(value, f"{where}.size[{j}]", 0, 1000) for j, value in enumerate(size)

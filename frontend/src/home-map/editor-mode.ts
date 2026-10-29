@@ -44,7 +44,7 @@ import type { HomeMapOp, HomeMapThingRef } from "./edit-ops.js";
 import type { HomeMapView } from "./editor-view.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapScans, HomePoint } from "./model.js";
 import { sameHomeMapId } from "./model.js";
-import { homeMapRoomWalls } from "./edit-ops.js";
+import { homeMapLampOfPin, homeMapRoomWalls } from "./edit-ops.js";
 
 /** What is picked. Indexes are a room's walls as `homeMapRoomWalls` numbers
  * them, its outline corners, openings and objects (walls, corners and
@@ -97,6 +97,15 @@ export function homeMapThingsPickOf(things: readonly HomeMapThingRef[]): HomeMap
 export function homeMapToggleThing(sel: HomeMapSelection | undefined, thing: HomeMapThingRef): HomeMapSelection | undefined {
   const things = homeMapPickedThings(sel);
   return things.some((t) => sameThing(t, thing)) ? homeMapThingsPickOf(things.filter((t) => !sameThing(t, thing))) : homeMapThingsPickOf([...things, thing]);
+}
+
+/** A light a lamp holds is one thing with its lamp, so picking the light
+ * picks the lamp: a selection of one such pin becomes its lamp's, anything
+ * else stays as it is. */
+export function homeMapLampPick(floor: HomeMapFloor | undefined, sel: HomeMapSelection | undefined): HomeMapSelection | undefined {
+  if (sel?.kind !== "pin" || floor === undefined) return sel;
+  const lamp = homeMapLampOfPin(floor, sel.pinId);
+  return lamp === undefined ? sel : { kind: "object", roomId: lamp.roomId, object: lamp.object };
 }
 
 /** Whether a selection picks this thing, alone or among several. */

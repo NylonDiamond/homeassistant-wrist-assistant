@@ -685,6 +685,52 @@ def test_an_objects_colours(env) -> None:
             assert env.refused_doc(doc) == message
 
 
+def test_an_objects_light(env) -> None:
+    doc = basic()
+    pin_id = _pin(doc)["id"]
+    # Given first, it is kept after the wood and before the centre, as sent.
+    _living(doc)["objects"][0] = {
+        "light": pin_id.lower(),
+        **_object_(doc),
+        "hidden": True,
+        "lift": 1.6,
+        "wood": "#6B4A32",
+        "fabric": "#8E8E93",
+        "model": "lampWall",
+    }
+    checked = env.mod.check_document(doc)
+    objects = checked["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == [
+        "kind", "model", "fabric", "wood", "light", "c", "size", "turn", "lift", "hidden",
+    ]
+    assert objects[0]["light"] == pin_id.lower()
+    # Its shape only: a pin no floor has, or one on another floor, is kept, as
+    # is a light held by two objects.
+    nowhere = uuid_n(900)
+    doc = basic()
+    _object_(doc)["light"] = nowhere
+    _living(doc)["objects"][1]["light"] = nowhere
+    objects = env.mod.check_document(doc)["floors"][0]["rooms"][0]["objects"]
+    assert objects[0]["light"] == nowhere and objects[1]["light"] == nowhere
+    assert _keys(objects[0]) == ["kind", "light", "c", "size", "turn"]
+    # Absent on an object that holds no light.
+    assert "light" not in env.mod.check_document(basic())["floors"][0]["rooms"][0]["objects"][0]
+    message = "doc.floors[0].rooms[0].objects[0].light must be a pin's id, a UUID"
+    for bad in ("", "light.reading_lamp", pin_id + "0", pin_id[:-1], None, 3, [pin_id]):
+        _object_(doc)["light"] = bad
+        assert env.refused_doc(doc) == message
+
+
+def test_a_light_entity_may_have_many_pins(env) -> None:
+    doc = basic()
+    first = _pin(doc)
+    first["entityId"] = "light.kitchen_cans"
+    floor = _floor(doc)
+    floor["pins"] = [first, *[{**first, "id": uuid_n(800 + i)} for i in range(5)], *floor["pins"][1:]]
+    checked = env.mod.check_document(doc)
+    assert sum(p["entityId"] == "light.kitchen_cans" for p in checked["floors"][0]["pins"]) == 6
+
+
 # The catalog's kinds RoomPlan never makes: each is a kind like any other.
 CATALOG_ONLY_KINDS = (
     "rug", "lamp", "plant", "ottoman", "speaker", "screen", "laptop", "bench", "microwave",

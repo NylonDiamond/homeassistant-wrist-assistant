@@ -22,7 +22,10 @@
 // plan, each tool with its key: Pick and move V, Draw a room R, Inner wall
 // W, Door D, Window N, Add furniture F and Measure M. Inner wall, Door and
 // Window work on any room's walls, and once placed go into that room's wall
-// editing with the new wall or opening picked.
+// editing with the new wall or opening picked. A light a lamp holds is one
+// thing with its lamp: a press on its pin picks the lamp and drags it, and
+// the lamp's inspector starts with the light's cards (`mode-devices.ts`).
+// Adding a light opens the lamp chooser over the page, by the spot.
 //
 // Editing a room's walls (board B), entered by a double-click on a room on
 // the plan or on its layer: the other rooms dim and its corners, walls and
@@ -53,6 +56,7 @@ import { homeMapPinsOfRoom } from "./edit-ops.js";
 import { type HomeMapEditorContext, type HomeMapPart, homeMapThingPicked, homeMapToggleThing } from "./editor-mode.js";
 import { HME_FINISH_DOT, hmeCard } from "./editor-parts.js";
 import { homeMapCount, homeMapRoomSizeText, homeMapShortcut } from "./editor-view.js";
+import { homeMapPiece } from "./furniture.js";
 import { homeFloorKind, homeRoomUnder } from "./geometry.js";
 import { ArrangeMode, homeMapRoomForAdding, homeMapThingName } from "./mode-arrange.js";
 import { DevicesMode } from "./mode-devices.js";
@@ -111,7 +115,9 @@ function pinOn(pin: HomeMapPin, states: HomeMapStates | undefined): boolean {
 
 export class HomeMapEditPage implements HomeMapPart {
   readonly arrange = new ArrangeMode();
-  readonly devices = new DevicesMode();
+  /** The lamp chooser draws its lamps with the furniture picker's
+   * pictures. */
+  readonly devices = new DevicesMode((ctx, pieceId, cls) => this.arrange.piecePic(ctx, homeMapPiece(pieceId), cls));
   readonly shape = new ShapeMode();
   /** What the rail's find field holds. */
   query = "";
@@ -180,13 +186,14 @@ export class HomeMapEditPage implements HomeMapPart {
     const states = ctx.hass?.states;
     const devices = homeMapDevices(ctx.hass);
     const q = this.query.trim().toLowerCase();
-    const found = q === "" ? [] : homeMapFindDevices(devices, this.query).filter((d) => !ctx.floor.pins.some((p) => p.entityId === d.entityId));
+    // A light is found even when it is on the map: it can go in many lamps.
+    const found = q === "" ? [] : homeMapFindDevices(devices, this.query).filter((d) => d.domain === "light" || !ctx.floor.pins.some((p) => p.entityId === d.entityId));
     return html`
       <label class="hme-find"><span aria-hidden="true">⌕</span>
         <input type="search" placeholder="Find a room, thing or device" aria-label="Find a room, thing or device" .value=${live(this.query)}
           @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
       ${this.layers(ctx, q)}
-      ${q === "" || found.length === 0 ? nothing : hmeCard("Not on the map, found", html`
+      ${q === "" || found.length === 0 ? nothing : hmeCard("Devices found", html`
         ${found.map((d) => this.devices.deviceRow(ctx, d, states))}`, found.length >= 40 ? "40+" : String(found.length), "hme-tray")}
       ${this.trayCard(ctx, devices, states)}`;
   }
@@ -293,17 +300,24 @@ export class HomeMapEditPage implements HomeMapPart {
     return ctx.walls === undefined;
   }
 
-  /** A press: a tool's while one is out; else what is on top, the picked
-   * room's or thing's handles first, then the picked light's glow handle, a
-   * pin, with Shift off a pin the box that picks pins, a thing, a room. */
+  /** A press: with the lamp chooser open, it closes it and nothing more; a
+   * tool's while one is out; else what is on top, the picked room's or
+   * thing's handles first, then the picked light's glow handle, a pin (a
+   * light a lamp holds being its lamp), with Shift off a pin the box that
+   * picks pins, a thing, a room. */
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
+    if (this.devices.choosing) {
+      this.devices.cancelChooser(ctx);
+      return true;
+    }
     if (ctx.walls !== undefined) return this.shape.pointerDown(ctx, e, at);
     if (this.arrange.draw.active) return this.arrange.draw.pointerDown(ctx, e, at);
     if (this.shape.armed) return this.shape.pointerDown(ctx, e, at);
     if (e.button !== 0) return false;
-    return this.arrange.pressHandle(ctx, e, at)
-      || this.devices.pressHandle(ctx, e, at)
-      || this.devices.pressPin(ctx, e, at)
+    if (this.arrange.pressHandle(ctx, e, at) || this.devices.pressHandle(ctx, e, at)) return true;
+    const lamp = this.devices.heldLampAt(ctx, at);
+    if (lamp !== undefined && this.arrange.pressThing(ctx, e, lamp, at)) return true;
+    return this.devices.pressPin(ctx, e, at)
       || this.devices.pressBox(ctx, e, at)
       || this.arrange.pressBody(ctx, e, at);
   }
@@ -327,6 +341,7 @@ export class HomeMapEditPage implements HomeMapPart {
    * walls, or goes from a thing back to its room; the rest is the picked
    * thing's (Delete, the arrows). */
   keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
+    if (this.devices.chooserKey(ctx, e)) return true;
     const shortcut = homeMapShortcut(e, false);
     const letter = typeof shortcut === "object" && "letter" in shortcut ? shortcut.letter : undefined;
     if (letter === "m") {
@@ -423,11 +438,19 @@ export class HomeMapEditPage implements HomeMapPart {
       return html`${this.shape.inspector(ctx)}
         ${hmeCard("Leave this", html`<p class="hme-text dim">Press Esc, click Done, or click outside the room to go back to moving things. Double-click any room to edit its walls.</p>`)}`;
     }
-    return this.picksPins(ctx) ? this.devices.inspector(ctx) : this.arrange.inspector(ctx);
+    if (this.picksPins(ctx)) return this.devices.inspector(ctx);
+    // A lamp's light first, then the lamp's own cards.
+    const sel = ctx.selection;
+    const lamp = sel?.kind === "object" ? this.devices.lampCards(ctx, sel.roomId, sel.object) : nothing;
+    return lamp === nothing ? this.arrange.inspector(ctx) : html`${lamp}${this.arrange.inspector(ctx)}`;
   }
 
+  /** The furniture picker, or the lamp chooser (its scrim clear, and its
+   * keys reaching the page as well as its own, so Enter and Escape work
+   * wherever the focus is). */
   sheet(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    return this.arrange.sheet(ctx);
+    const chooser = this.devices.lampChooser(ctx);
+    return chooser === nothing ? this.arrange.sheet(ctx) : chooser;
   }
 
   dragOver(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean {

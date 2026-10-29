@@ -19,6 +19,11 @@ import { type HomeMapDocument, type HomeMapFloor, type HomeMapPin, type HomeMapP
 /** The data type a device carries while dragged from the rail. */
 export const HOME_MAP_DEVICE_DRAG_TYPE = "application/x-wa-home-map-entity";
 
+/** The data type a light carries beside it while dragged from the rail, so
+ * the plan can tell a light is coming before the drop (a drag's data is
+ * read only on the drop): a lamp that holds nothing lights up under it. */
+export const HOME_MAP_LIGHT_DRAG_TYPE = "application/x-wa-home-map-light";
+
 /** One of the home's devices. */
 export interface HomeMapDeviceEntry {
   entityId: string;

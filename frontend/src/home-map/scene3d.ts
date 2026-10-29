@@ -22,8 +22,13 @@
 // is a turn about up by the same angle, a model's front its +z. Shown at
 // night only the lights and a faint sky light it, by day a sun comes in
 // too; a soft environment stands in for the light a room's walls bounce
-// about, so a shadow is never pure black. The numbers were tuned by eye on a
-// real scanned room.
+// about, so a shadow is never pure black. A ceiling light shines down in a
+// soft cone, any other light every way. A light a lamp holds has no bulb of
+// its own drawn: it shines from inside the lamp, which casts no shadow so
+// its shade never closes the light in, and the shade glows while it is on;
+// a click on either picks the lamp. The finished picture is shaded in
+// its corners and under its things (ambient occlusion) and its bulbs glow
+// past their edges. The numbers were tuned by eye on a real scanned room.
 //
 // Nothing here reads `import.meta`: the furniture folder's address is handed
 // in (`base`), from the panel's entry.
@@ -37,7 +42,15 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { type HomeMapFurniturePiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { CopyShader } from "three/addons/shaders/CopyShader.js";
+import { homeMapHeldLights } from "./edit-ops.js";
+import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeWallsOf } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
 
@@ -117,8 +130,31 @@ const DAY_SKY = 0x1a1916;
 
 /** A light's brightest, in candela, as tuned on a real lamp. */
 const LAMP_CANDELA = 9;
-/** How many lit lights cast shadows, the brightest first. */
-const SHADOW_LIGHTS = 4;
+/** A ceiling light's brightest straight down, in candela: its light goes
+ * into a cone rather than every way, so the same bulb is brighter under it,
+ * tuned by eye against the lamps. */
+const SPOT_CANDELA = 40;
+/** A ceiling light's cone, from straight down to its edge, and how much of
+ * that is a soft edge: half the light is gone about 34 degrees out, a beam
+ * of about 68 degrees as a real downlight's. */
+const SPOT_ANGLE = Math.PI / 4;
+const SPOT_PENUMBRA = 0.6;
+/** A ceiling light's faint glow every way, as a share of a lamp's, for the
+ * light a real ceiling and its shade spill round the fitting: without it the
+ * walls above the cone are black. */
+const SPOT_FILL = 0.15;
+/** What the lit lights' shadows may cost, in shadow maps drawn, the
+ * brightest light first: a ceiling light's shadow is one map, a lamp's six
+ * (one for each way it shines). The maps are drawn again only when the
+ * scene changes, a thing dragged on the plan for one, never when the view
+ * turns, so this is what that drag pays each frame; 24 is what the four
+ * shadowed lamps of before cost, now shared so that four ceiling lights and
+ * three lamps all cast. */
+const SHADOW_BUDGET = 24;
+/** And at most this many lit lights cast, each one more shadow map every
+ * lit surface reads each frame, and one more of the few textures a material
+ * may read. */
+const SHADOW_LIGHTS = 8;
 /** A wall seen from outside its room is this see through. */
 const FADED = 0.1;
 
@@ -335,7 +371,20 @@ interface Thing {
   /** The materials made for its colours, its own so the loaded model's
    * shared ones and every other thing's stay as they are. */
   copies: THREE.Material[];
+  /** The pin of the light this lamp holds, or none. */
+  holds?: string;
+  /** A lamp holding a light: its shade's own materials (among `copies`),
+   * which glow while the light is on. */
+  shades: THREE.MeshStandardMaterial[];
 }
+
+/** The models' material a lamp's shade is made of, which glows while the
+ * lamp's light is on. */
+const SHADE = "lamp";
+/** A lit shade's brightness for each candela its light gives: past the
+ * glow's threshold at full, so the shade reads as lit through its fabric
+ * with a soft glow round it, and under it when dimmed. */
+const SHADE_GLOW = 0.6;
 
 /** The loaded model's own material a recoloured mesh had. */
 const ownMaterials = new WeakMap<THREE.Mesh, THREE.Material | THREE.Material[]>();
@@ -352,25 +401,30 @@ function untint(thing: Thing): void {
   });
   for (const copy of thing.copies) copy.dispose();
   thing.copies = [];
+  thing.shades = [];
 }
 
 /** A thing's model in its fabric and wood colours: each material that
  * takes one (`homeMapMaterialTint`) swapped for a copy of its own, one copy
- * for each material however many meshes share it. */
+ * for each material however many meshes share it. A lamp holding a light
+ * has its shade copied too, coloured or not, so its glow is its own. */
 function tint(thing: Thing, colors: Pick<HomeMapObject, "fabric" | "wood">): void {
   untint(thing);
-  if (thing.body === undefined || (colors.fabric === undefined && colors.wood === undefined)) return;
+  const glows = thing.holds !== undefined;
+  if (thing.body === undefined || (colors.fabric === undefined && colors.wood === undefined && !glows)) return;
   const made = new Map<THREE.Material, THREE.Material>();
   const recolour = (material: THREE.Material): THREE.Material => {
     const rgb = homeMapMaterialTint(material.name, colors);
+    const shade = glows && material.name === SHADE && (material as THREE.MeshStandardMaterial).emissive !== undefined;
     const color = (material as THREE.MeshStandardMaterial).color as THREE.Color | undefined;
-    if (rgb === undefined || color === undefined) return material;
+    if ((rgb === undefined && !shade) || color === undefined) return material;
     let copy = made.get(material);
     if (copy === undefined) {
       copy = material.clone();
-      (copy as THREE.MeshStandardMaterial).color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+      if (rgb !== undefined) (copy as THREE.MeshStandardMaterial).color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
       made.set(material, copy);
       thing.copies.push(copy);
+      if (shade) thing.shades.push(copy as THREE.MeshStandardMaterial);
     }
     return copy;
   };
@@ -382,6 +436,17 @@ function tint(thing: Thing, colors: Pick<HomeMapObject, "fabric" | "wood">): voi
     if (Array.isArray(own) ? (next as THREE.Material[]).every((m, i) => m === own[i]) : next === own) return;
     ownMaterials.set(mesh, own);
     mesh.material = next;
+  });
+}
+
+/** A thing's meshes casting shadows, or not when it is a lamp holding a
+ * light: its shade and stand stand round the light's bulb, and as casters
+ * they would close it in and the room would stay dark. They still take
+ * the shadows other things cast. */
+function castFor(thing: Thing): void {
+  const cast = thing.holds === undefined;
+  thing.body?.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = cast;
   });
 }
 
@@ -404,16 +469,139 @@ const CLICK_SLOP = 5;
 const BULB_REACH = 0.15;
 
 interface Lamp {
-  light: THREE.PointLight;
+  /** A ceiling light shines down in a cone, any other light every way. */
+  light: THREE.PointLight | THREE.SpotLight;
+  /** A ceiling light's faint glow every way, round its cone. */
+  fill?: THREE.PointLight;
   bulb: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
+  /** Whether it shines down (a ceiling light), what it was made as. */
+  down: boolean;
+  /** Held by a lamp: its bulb ball is never drawn, the lamp is. */
+  held: boolean;
+  /** Its candela when full. */
+  peak: number;
   /** The intensity it eases towards. */
   target: number;
+}
+
+// ── the finish ───────────────────────────────────────────────────────────
+
+/** How far, in meters, ambient occlusion looks for what shades a point: a
+ * room's corners and the floor under a chair darken, a whole wall does not. */
+const AO_RADIUS = 0.5;
+/** How strongly the occlusion darkens, 1 its full measure. */
+const AO_STRENGTH = 0.85;
+/** A bulb's glow spreads past it: how much, how far, and how bright a pixel
+ * must be (in light before tone mapping, where a lit wall stays under it and
+ * a bulb past half its level goes over) to glow. Lower, a room with every
+ * light on glowed out into the dark round it. */
+const BLOOM_STRENGTH = 0.3;
+const BLOOM_RADIUS = 0.45;
+const BLOOM_THRESHOLD = 4;
+/** A lit bulb's own brightness for each candela its light gives, high
+ * enough that a bulb past half its level is over the glow's threshold. */
+const BULB_GLOW = 1.5;
+
+/** The scene drawn with its edges smoothed, four samples a pixel, into a
+ * target of its own, then copied once into the composer's. Only this draw
+ * is smoothed: had the composer's own targets four samples, every full
+ * screen pass after it (the occlusion, the glow) would write all four too,
+ * which measured more than half the frame. */
+class SmoothScenePass extends Pass {
+  private readonly target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  private readonly copy = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.clone(CopyShader.uniforms),
+    vertexShader: CopyShader.vertexShader,
+    fragmentShader: CopyShader.fragmentShader,
+    blending: THREE.NoBlending,
+    depthTest: false,
+    depthWrite: false,
+  });
+  private readonly quad = new FullScreenQuad(this.copy);
+
+  constructor(private readonly scene: THREE.Scene, private readonly camera: THREE.Camera) {
+    super();
+    this.needsSwap = false;
+  }
+
+  override render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+    renderer.setRenderTarget(this.target);
+    renderer.render(this.scene, this.camera);
+    this.copy.uniforms.tDiffuse!.value = this.target.texture;
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    this.quad.render(renderer);
+  }
+
+  override setSize(width: number, height: number): void {
+    this.target.setSize(width, height);
+  }
+
+  override dispose(): void {
+    this.target.dispose();
+    this.copy.dispose();
+    this.quad.dispose();
+  }
+}
+
+/** What shades nothing round it: what is seen through rather than seen (a
+ * faded wall, window glass) and a bulb, which gives light rather than
+ * blocking it and would otherwise ring itself with a grey halo on the wall
+ * behind. */
+function shadesNothing(o: THREE.Object3D): boolean {
+  if (o.userData.bulb === true) return true;
+  const material = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+  return material !== undefined && !Array.isArray(material) && material.transparent && material.opacity < 0.5;
+}
+
+/** Ground truth ambient occlusion (GTAO) that leaves out of its depth and
+ * normals what shades nothing (`shadesNothing`), so the floor behind a
+ * faded wall is shaded by what stands on it and not by the wall; three's own
+ * pass leaves out only points and lines. Its two shaders its own dispose
+ * forgets are freed too. */
+class RoomAO extends GTAOPass {
+  private readonly hiddenNow: THREE.Object3D[] = [];
+
+  override overrideVisibility(): void {
+    this.scene.traverse((o) => {
+      if (o.visible && shadesNothing(o)) {
+        o.visible = false;
+        this.hiddenNow.push(o);
+      }
+    });
+  }
+
+  override restoreVisibility(): void {
+    for (const o of this.hiddenNow) o.visible = true;
+    this.hiddenNow.length = 0;
+  }
+
+  /** Worked out at half the canvas's size each way, a quarter of the
+   * pixels: the shading is soft, so the drawn picture loses nothing a person
+   * sees, and it cost three of the frame's ten milliseconds at full size. */
+  override setSize(width: number, height: number): void {
+    super.setSize(Math.max(Math.round(width / 2), 1), Math.max(Math.round(height / 2), 1));
+  }
+
+  override dispose(): void {
+    super.dispose();
+    this.gtaoMaterial.dispose();
+    this.blendMaterial.dispose();
+  }
 }
 
 export class HomeMapScene3D {
   readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
+  /** What is drawn over the finished scene, after the occlusion and before
+   * the glow: the picked outline, which neither shades nor glows. */
+  private readonly overlay = new THREE.Scene();
+  /** The scene drawn, then shaded in its corners (`ao`), the outline laid
+   * over it, its bulbs glowing (`bloom`), and last tone mapped into the
+   * page's colours (`OutputPass`), which the renderer did itself before. */
+  private readonly composer: EffectComposer;
+  private readonly ao: RoomAO;
+  private readonly bloom: UnrealBloomPass;
   private readonly camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
   private readonly controls: OrbitControls;
   private readonly pmrem: THREE.PMREMGenerator;
@@ -423,6 +611,8 @@ export class HomeMapScene3D {
   private readonly rooms = new Map<string, { key: string; group: THREE.Group; walls: WallPiece[] }>();
   private readonly things = new Map<string, Thing>();
   private readonly lamps = new Map<string, Lamp>();
+  /** Each light a shown lamp holds, by its pin's id. */
+  private held = new Map<string, HeldLight>();
   private readonly lines: LineMaterial[] = [];
   private mark?: THREE.Object3D;
   private markKey = "";
@@ -444,7 +634,10 @@ export class HomeMapScene3D {
 
   /** `base` is the furniture folder's address, ending in a slash. */
   constructor(private readonly base: string) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // No antialiasing of the canvas itself: the scene is drawn smoothed into
+    // a target of its own (`SmoothScenePass`), and the canvas only takes the
+    // finished picture.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -467,6 +660,22 @@ export class HomeMapScene3D {
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
     this.scene.add(this.sky, this.sun, this.sun.target);
+    // Half floats keep a bulb's light brighter than white until the end, so
+    // the glow finds it and the tone mapping rolls it off as before.
+    this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }));
+    this.composer.addPass(new SmoothScenePass(this.scene, this.camera));
+    this.ao = new RoomAO(this.scene, this.camera, 1, 1);
+    // Twice three's own scale and thickness: at its own the corners of a lit
+    // room barely darkened, tuned by eye on a real scanned room.
+    this.ao.updateGtaoMaterial({ radius: AO_RADIUS, distanceExponent: 1, thickness: 2, scale: 2, samples: 16 });
+    this.ao.blendIntensity = AO_STRENGTH;
+    this.composer.addPass(this.ao);
+    const overlay = new RenderPass(this.overlay, this.camera);
+    overlay.clear = false;
+    this.composer.addPass(overlay);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
     this.controls = new OrbitControls(this.camera, this.canvas);
     // Damped enough to settle softly, not so much that the view trails the
     // pointer: three's own 0.05 felt like lag.
@@ -537,6 +746,7 @@ export class HomeMapScene3D {
     const width = Math.max(host.clientWidth, 1);
     const height = Math.max(host.clientHeight, 1);
     this.renderer.setSize(width, height, false);
+    this.composer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     for (const m of this.lines) m.resolution.set(width, height);
@@ -551,7 +761,10 @@ export class HomeMapScene3D {
     const seen = this.input;
     this.input = { ...input, turn };
     let moved = false;
-    if (seen === undefined || seen.floor !== input.floor) moved = this.build(input.floor);
+    if (seen === undefined || seen.floor !== input.floor) {
+      this.held = heldLightsOf(input.floor);
+      moved = this.build(input.floor);
+    }
     if (seen === undefined || seen.floor !== input.floor || seen.states !== input.states) this.light(input.floor, input.states);
     if (seen === undefined || seen.daylight !== input.daylight) this.setDaylight(input.daylight, input.floor);
     this.setMark(input.floor, input.mark);
@@ -621,13 +834,14 @@ export class HomeMapScene3D {
       moved = true;
     }
     const thingIds = new Set<string>();
+    const holders = new Map([...this.held].map(([pinId, h]) => [`${h.roomId}|${h.object}`, pinId]));
     for (const room of floor.rooms) {
       room.objects.forEach((object, index) => {
         if (object.hidden === true) return;
         const piece = homeMapPieceOf(object);
         const id = `${room.id}|${index}|${piece?.id ?? `box:${object.kind}`}`;
         thingIds.add(id);
-        moved = this.place(id, piece, object) || moved;
+        moved = this.place(id, piece, object, holders.get(`${room.id}|${index}`)) || moved;
         this.things.get(id)!.group.userData.pick = { kind: "object", roomId: room.id, object: index } satisfies HomeMap3DPick;
       });
     }
@@ -644,27 +858,37 @@ export class HomeMapScene3D {
 
   /** One thing placed at its middle, foot and turn, its model fitted to its
    * box and in its colours, made the first time it is seen; a change of
-   * colour only recolours it. True when it moved. */
-  private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject): boolean {
+   * colour only recolours it. `holds` is the pin of the light it holds, if
+   * it is a lamp holding one. True when it moved or its shadow changed. */
+  private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject, holds: string | undefined): boolean {
     let thing = this.things.get(id);
     const size: [number, number, number] = [Math.max(object.size[0], 0.01), Math.max(object.size[1], 0.01), Math.max(object.size[2], 0.01)];
     const lift = Math.max(object.lift ?? 0, 0);
     const turn = (object.turn * Math.PI) / 180;
     const colors = { fabric: object.fabric, wood: object.wood };
-    if (thing !== undefined && piece !== undefined && tintKey(thing.colors) !== tintKey(colors)) {
+    let changed = false;
+    if (thing !== undefined && thing.holds !== holds) {
+      // A light put in this lamp or taken out: its shade glows or not, and
+      // it casts shadows or not.
+      thing.holds = holds;
+      thing.colors = colors;
+      if (piece !== undefined) tint(thing, colors);
+      castFor(thing);
+      changed = true;
+    } else if (thing !== undefined && piece !== undefined && tintKey(thing.colors) !== tintKey(colors)) {
       thing.colors = colors;
       tint(thing, colors);
     }
     if (thing === undefined) {
       const group = new THREE.Group();
-      thing = { piece, group, size, colors, copies: [] };
+      thing = { piece, group, size, colors, copies: [], holds, shades: [] };
       this.things.set(id, thing);
       this.scene.add(group);
       if (piece === undefined) {
         const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: BOX, roughness: 0.85 }));
-        box.castShadow = true;
         box.receiveShadow = true;
         thing.body = box;
+        castFor(thing);
         group.add(box);
       } else {
         const made = thing;
@@ -673,6 +897,7 @@ export class HomeMapScene3D {
           made.model = model;
           made.body = fitted(model, made.size);
           tint(made, made.colors);
+          castFor(made);
           made.group.add(made.body);
           this.renderer.shadowMap.needsUpdate = true;
           this.wake();
@@ -680,7 +905,7 @@ export class HomeMapScene3D {
       }
     } else if (thing.group.position.x === object.c[0] && thing.group.position.z === object.c[1] && thing.group.position.y === lift
       && thing.group.rotation.y === turn && thing.size.every((v, i) => v === size[i])) {
-      return false;
+      return changed;
     }
     thing.group.position.set(object.c[0], lift, object.c[1]);
     thing.group.rotation.y = turn;
@@ -695,8 +920,10 @@ export class HomeMapScene3D {
     return true;
   }
 
-  /** A light at each light pin, lit as `states` says; the brightest few
-   * cast shadows. */
+  /** A light at each light pin, lit as `states` says: a ceiling light (its
+   * icon `ceiling`) shining down in a soft cone with a faint glow round it,
+   * any other light every way; the brightest cast shadows as far as the
+   * shadow budget goes. */
   private light(floor: HomeMapFloor, states: HomeMapStates | undefined): void {
     const seen = new Set<string>();
     const lit: { lamp: Lamp; level: number }[] = [];
@@ -704,51 +931,114 @@ export class HomeMapScene3D {
     for (const pin of floor.pins) {
       if (!isLight(pin)) continue;
       seen.add(pin.id);
+      // A light a lamp holds shines as the lamp's piece says, whatever its
+      // pin's icon; any other light down when its icon is a ceiling light.
+      const holder = this.held.get(pin.id);
+      const cast = holder === undefined ? undefined : homeMapLampPiece(holder.lamp.model)?.cast;
+      const down = cast !== undefined ? cast === "down" : pin.icon === "ceiling";
       let lamp = this.lamps.get(pin.id);
+      if (lamp !== undefined && lamp.down !== down) {
+        // Its icon or its lamp changed between shining down and not: made
+        // again as the other.
+        this.dropLamp(lamp);
+        this.lamps.delete(pin.id);
+        lamp = undefined;
+      }
       if (lamp === undefined) {
-        const light = new THREE.PointLight(0xffc98a, 0, 0, 2);
-        light.shadow.mapSize.set(1024, 1024);
-        light.shadow.bias = -0.002;
-        light.shadow.radius = 4;
-        light.shadow.camera.near = 0.05;
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffc98a, emissiveIntensity: 0 }));
-        // A larger ball round the bulb, never drawn, for clicks to find.
-        const reach = new THREE.Mesh(new THREE.SphereGeometry(BULB_REACH, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
-        bulb.add(reach);
-        bulb.userData.pick = { kind: "pin", pinId: pin.id } satisfies HomeMap3DPick;
-        lamp = { light, bulb, target: 0 };
+        lamp = this.makeLamp(pin.id, down);
         this.lamps.set(pin.id, lamp);
-        this.scene.add(light, bulb);
         moved = true;
       }
+      // Held, its ball is never drawn, the lamp's shade glowing instead, and
+      // a click at the bulb picks the lamp, as a click on the lamp does.
+      lamp.held = holder !== undefined;
+      lamp.bulb.userData.pick = (holder === undefined ? { kind: "pin", pinId: pin.id } : { kind: "object", roomId: holder.roomId, object: holder.object }) satisfies HomeMap3DPick;
       const x = pin.at[0];
       const y = Math.max(pin.at[2] ?? 1.2, 0.05);
       const z = pin.at[1];
       if (lamp.light.position.x !== x || lamp.light.position.y !== y || lamp.light.position.z !== z) moved = true;
       lamp.light.position.set(x, y, z);
+      lamp.fill?.position.set(x, y, z);
       lamp.bulb.position.set(x, y, z);
+      if (lamp.light instanceof THREE.SpotLight) {
+        lamp.light.target.position.set(x, 0, z);
+        lamp.light.target.updateMatrixWorld();
+      }
       const { level, rgb } = homeMapLampOf(pin, states);
       lamp.light.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
+      lamp.fill?.color.copy(lamp.light.color);
       lamp.bulb.material.emissive.copy(lamp.light.color);
-      lamp.target = level * LAMP_CANDELA;
+      lamp.target = level * lamp.peak;
       if (level > 0) lit.push({ lamp, level });
     }
     for (const [id, lamp] of this.lamps) {
       if (seen.has(id)) continue;
-      this.scene.remove(lamp.light, lamp.bulb);
-      lamp.light.dispose();
-      disposeTree(lamp.bulb);
+      this.dropLamp(lamp);
       this.lamps.delete(id);
       moved = true;
     }
     lit.sort((a, b) => b.level - a.level);
-    const casting = new Set(lit.slice(0, SHADOW_LIGHTS).map((l) => l.lamp));
+    const casting = new Set<Lamp>();
+    let budget = SHADOW_BUDGET;
+    for (const { lamp } of lit) {
+      const cost = lamp.down ? 1 : 6;
+      if (casting.size >= SHADOW_LIGHTS || cost > budget) continue;
+      casting.add(lamp);
+      budget -= cost;
+    }
     for (const lamp of this.lamps.values()) {
       const cast = casting.has(lamp);
       if (lamp.light.castShadow !== cast) moved = true;
       lamp.light.castShadow = cast;
     }
     if (moved) this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  /** A light pin's light, its bulb and, for a ceiling light, its glow,
+   * added to the scene unlit. */
+  private makeLamp(pinId: string, down: boolean): Lamp {
+    let light: THREE.PointLight | THREE.SpotLight;
+    let fill: THREE.PointLight | undefined;
+    if (down) {
+      const spot = new THREE.SpotLight(0xffc98a, 0, 0, SPOT_ANGLE, SPOT_PENUMBRA, 2);
+      spot.shadow.mapSize.set(1024, 1024);
+      spot.shadow.bias = -0.0008;
+      spot.shadow.camera.near = 0.05;
+      spot.shadow.camera.far = 15;
+      // Its target is in the scene so it is placed with everything else.
+      this.scene.add(spot.target);
+      light = spot;
+      // The glow casts nothing: its light is faint, and a shadow of it
+      // would cost six maps.
+      fill = new THREE.PointLight(0xffc98a, 0, 0, 2);
+      this.scene.add(fill);
+    } else {
+      light = new THREE.PointLight(0xffc98a, 0, 0, 2);
+      light.shadow.mapSize.set(1024, 1024);
+      light.shadow.bias = -0.002;
+      light.shadow.camera.near = 0.05;
+    }
+    light.shadow.radius = 4;
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffc98a, emissiveIntensity: 0 }));
+    // A larger ball round the bulb, never drawn, for clicks to find.
+    const reach = new THREE.Mesh(new THREE.SphereGeometry(BULB_REACH, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+    bulb.add(reach);
+    bulb.userData.pick = { kind: "pin", pinId } satisfies HomeMap3DPick;
+    bulb.userData.bulb = true;
+    this.scene.add(light, bulb);
+    return { light, fill, bulb, down, held: false, peak: down ? SPOT_CANDELA : LAMP_CANDELA, target: 0 };
+  }
+
+  /** A light pin's light taken out of the scene and freed. */
+  private dropLamp(lamp: Lamp): void {
+    this.scene.remove(lamp.light, lamp.bulb);
+    if (lamp.light instanceof THREE.SpotLight) this.scene.remove(lamp.light.target);
+    lamp.light.dispose();
+    if (lamp.fill !== undefined) {
+      this.scene.remove(lamp.fill);
+      lamp.fill.dispose();
+    }
+    disposeTree(lamp.bulb);
   }
 
   private setDaylight(day: boolean, floor: HomeMapFloor): void {
@@ -777,7 +1067,7 @@ export class HomeMapScene3D {
     if (key === this.markKey) return;
     this.markKey = key;
     if (this.mark !== undefined) {
-      this.scene.remove(this.mark);
+      this.overlay.remove(this.mark);
       disposeTree(this.mark);
       this.lines.length = 0;
       this.mark = undefined;
@@ -820,7 +1110,7 @@ export class HomeMapScene3D {
       line.renderOrder = 10;
       this.mark = line;
     }
-    if (this.mark !== undefined) this.scene.add(this.mark);
+    if (this.mark !== undefined) this.overlay.add(this.mark);
   }
 
   /** Keep drawing for a moment: the camera easing to rest, a light easing
@@ -844,12 +1134,31 @@ export class HomeMapScene3D {
       } else {
         lamp.light.intensity = lamp.target;
       }
-      lamp.bulb.material.emissiveIntensity = lamp.light.intensity * 0.6;
-      lamp.bulb.visible = lamp.light.intensity > 0.01;
+      // The bulb and a ceiling light's glow follow its level, whatever its
+      // candela: a ceiling light's bulb looks as a lamp's at the same level.
+      const share = lamp.light.intensity / lamp.peak;
+      if (lamp.fill !== undefined) lamp.fill.intensity = share * LAMP_CANDELA * SPOT_FILL;
+      lamp.bulb.material.emissiveIntensity = share * LAMP_CANDELA * BULB_GLOW;
+      lamp.bulb.visible = !lamp.held && share > 0.01 / LAMP_CANDELA;
+    }
+    // A lamp's shade glows in its light's colour as its light is lit, easing
+    // with it.
+    for (const thing of this.things.values()) {
+      if (thing.holds === undefined || thing.shades.length === 0) continue;
+      const lamp = this.lamps.get(thing.holds);
+      const share = lamp === undefined ? 0 : lamp.light.intensity / lamp.peak;
+      for (const shade of thing.shades) {
+        if (lamp !== undefined) shade.emissive.copy(lamp.light.color);
+        shade.emissiveIntensity = share * LAMP_CANDELA * SHADE_GLOW;
+      }
     }
     this.fadeWalls();
-    this.renderer.render(this.scene, this.camera);
-    if (moving || easing || performance.now() < this.awakeUntil) this.frame = requestAnimationFrame(this.tick);
+    this.composer.render();
+    // The controls' change while they ease after a drag wakes the view from
+    // inside this tick, which may have asked for the next frame already;
+    // asking again would draw the view twice a frame, then four times, and
+    // so on for as long as the easing lasts.
+    if (this.frame === 0 && (moving || easing || performance.now() < this.awakeUntil)) this.frame = requestAnimationFrame(this.tick);
   };
 
   /** Fade the walls between the camera and their room, like a doll's
@@ -874,9 +1183,17 @@ export class HomeMapScene3D {
     this.frame = 0;
     this.observer?.disconnect();
     this.controls.dispose();
-    for (const lamp of this.lamps.values()) lamp.light.dispose();
+    for (const lamp of this.lamps.values()) {
+      lamp.light.dispose();
+      lamp.fill?.dispose();
+    }
     this.sun.dispose();
+    // The composer frees its two targets; each pass its own targets and
+    // shaders (the scene passes hold none).
+    for (const pass of this.composer.passes) pass.dispose();
+    this.composer.dispose();
     disposeTree(this.scene);
+    disposeTree(this.overlay);
     this.environment.dispose();
     this.pmrem.dispose();
     this.renderer.dispose();
@@ -890,6 +1207,30 @@ export class HomeMapScene3D {
 
 interface HomeMapInputSeen extends HomeMap3DInput {
   turn: number;
+}
+
+/** A light held by a lamp: the lamp, by its room and place in that room's
+ * list, and the lamp itself. */
+interface HeldLight {
+  roomId: string;
+  object: number;
+  lamp: HomeMapObject;
+}
+
+/** Each light a lamp of the floor holds, by its pin's id, as a reader takes
+ * the links (`homeMapHeldLights`), a hidden lamp holding nothing here: its
+ * light is drawn as a plain bulb, so it can still be seen and clicked. */
+function heldLightsOf(floor: HomeMapFloor): Map<string, HeldLight> {
+  const links = homeMapHeldLights(floor);
+  const out = new Map<string, HeldLight>();
+  for (const pin of floor.pins) {
+    const ref = links.get(pin.id.toUpperCase());
+    if (ref === undefined) continue;
+    const lamp = floor.rooms.find((r) => sameHomeMapId(r.id, ref.roomId))?.objects[ref.object];
+    if (lamp === undefined || lamp.hidden === true) continue;
+    out.set(pin.id, { roomId: ref.roomId, object: ref.object, lamp });
+  }
+  return out;
 }
 
 function floorBounds(floor: HomeMapFloor): { minX: number; minY: number; maxX: number; maxY: number } {

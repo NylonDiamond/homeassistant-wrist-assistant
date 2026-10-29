@@ -23,7 +23,8 @@
 //   over the plan, and Back to the scan, which puts a room's shape back.
 // - Devices: add, move, raise and remove pins, one or several picked at
 //   once, set what a pin shows and does (on several pins as one edit),
-//   and place every device of an area into its room at once.
+//   place every device of an area into its room at once, and put a light
+//   in a lamp, the two then one thing ("lamps that hold lights").
 // - Style: the home style every Home map tile starts with, and a tile's
 //   options as the tile rule reads them.
 //
@@ -65,7 +66,15 @@ import {
   onWallLine,
   segmentLength,
 } from "./geometry.js";
-import { type HomeMapFurniturePiece, homeMapPieceLift } from "./furniture-rules.js";
+import {
+  type HomeMapFurniturePiece,
+  type HomeMapLampChoice,
+  HOME_MAP_LAMP_CHOICE_MODELS,
+  HOME_MAP_LAMP_CHOICES,
+  homeMapBulbSpot,
+  homeMapLampPiece,
+  homeMapPieceLift,
+} from "./furniture-rules.js";
 import {
   type HomeMapDevicesShown,
   type HomeMapDocument,
@@ -162,9 +171,12 @@ function floorIndex(doc: HomeMapDocument, floorId: string): number {
   return doc.floors.findIndex((f) => sameHomeMapId(f.id, floorId));
 }
 
+/** The map with floor `fi` replaced, every edit's last step: the new floor's
+ * lamps keep their lights (`keptHeldLights`, against the floor it replaces),
+ * so no edit can leave a held light out of its lamp. */
 function withFloor(doc: HomeMapDocument, fi: number, floor: HomeMapFloor): HomeMapDocument {
   const floors = doc.floors.slice();
-  floors[fi] = floor;
+  floors[fi] = keptHeldLights(doc.floors[fi], floor);
   return orderedDocument({ ...doc, floors });
 }
 
@@ -858,7 +870,8 @@ export function deleteFloor(doc: HomeMapDocument, floorId: string): HomeMapDocum
 export type HomeMapFloorTarget = { floorId: string } | { newFloor: HomeMapNewFloor };
 
 /**
- * The room and the pins that belong to it moved off its floor onto another,
+ * The room and the pins that belong to it (the lights its lamps hold among
+ * them) moved off its floor onto another,
  * as the iPhone moves one (`HomeMapRoomEdits.movingToFloor`): set at 0, 0 on
  * an empty floor, else turned to the floor's walls and set to the right of
  * its rooms (`homeMapBesidePlacement`), every pin naming the room. A floor
@@ -878,9 +891,11 @@ export function moveRoomToFloor(doc: HomeMapDocument, roomId: string, target: Ho
   }
   const to = floors.findIndex((f) => sameHomeMapId(f.id, targetId));
   if (to < 0) return undefined;
-  const moving = homeMapPinsOfRoom(at.floor, at.room.id);
+  // The lights its lamps hold go with it too, wherever they stand.
+  const held = heldPinIdsOf(at.floor, at.room.id);
+  const moving = at.floor.pins.filter((p) => held.has(p.id.toUpperCase()) || homeMapPinsOfRoom(at.floor, at.room.id).includes(p));
   const movingIds = new Set(moving.map((p) => p.id));
-  const source: HomeMapFloor = { ...at.floor, rooms: at.floor.rooms.filter((x) => x !== at.room), pins: at.floor.pins.filter((p) => !movingIds.has(p.id)) };
+  const source = keptHeldLights(undefined, { ...at.floor, rooms: at.floor.rooms.filter((x) => x !== at.room), pins: at.floor.pins.filter((p) => !movingIds.has(p.id)) });
   const destination = floors[to]!;
   const placement = homeMapBesidePlacement([at.room], destination.rooms);
   floors[to] = {
@@ -888,6 +903,7 @@ export function moveRoomToFloor(doc: HomeMapDocument, roomId: string, target: Ho
     rooms: [...destination.rooms, placedRoom(at.room, placement)],
     pins: [...destination.pins, ...moving.map((p) => placedPin({ ...p, roomId: at.room.id }, placement))],
   };
+  floors[to] = keptHeldLights(undefined, floors[to]!);
   floors[at.fi] = source;
   if (source.rooms.length === 0 && source.pins.length === 0) floors = floors.filter((f) => f !== source);
   return orderedDocument({ ...doc, floors });
@@ -897,14 +913,17 @@ export function moveRoomToFloor(doc: HomeMapDocument, roomId: string, target: Ho
 
 /**
  * The map without a room and the pins that belong to it (the room a pin
- * names, else the room it stands in), as the iPhone deletes one. A floor
+ * names, else the room it stands in, and the lights its lamps hold), as the
+ * iPhone deletes one. A floor
  * left with no rooms and no pins is taken off the map.
  */
 export function deleteRoom(doc: HomeMapDocument, roomId: string): HomeMapDocument | undefined {
   const at = roomAt(doc, roomId);
   if (at === undefined) return undefined;
-  const gone = new Set(homeMapPinsOfRoom(at.floor, at.room.id).map((p) => p.id));
-  const floor: HomeMapFloor = { ...at.floor, rooms: at.floor.rooms.filter((x) => x !== at.room), pins: at.floor.pins.filter((p) => !gone.has(p.id)) };
+  // The lights its lamps hold go with their lamps, wherever they stand.
+  const gone = heldPinIdsOf(at.floor, at.room.id);
+  for (const p of homeMapPinsOfRoom(at.floor, at.room.id)) gone.add(p.id.toUpperCase());
+  const floor: HomeMapFloor = { ...at.floor, rooms: at.floor.rooms.filter((x) => x !== at.room), pins: at.floor.pins.filter((p) => !gone.has(p.id.toUpperCase())) };
   if (floor.rooms.length === 0 && floor.pins.length === 0) return orderedDocument({ ...doc, floors: doc.floors.filter((_, i) => i !== at.fi) });
   return withFloor(doc, at.fi, floor);
 }
@@ -1114,10 +1133,17 @@ export function addPiece(doc: HomeMapDocument, roomId: string, piece: HomeMapFur
 }
 
 /** A thing drawn as another catalog piece: its `model` and `kind` the
- * piece's, its middle, size, turn, lift and whether it is shown kept. */
+ * piece's, its middle, size, turn, lift and whether it is shown kept. A
+ * light it holds stays in it, moved to the new piece's bulb, while the
+ * piece is a lamp with a bulb; another piece lets go of it, the light
+ * staying where it is. */
 export function setObjectPiece(doc: HomeMapDocument, roomId: string, index: number, piece: HomeMapFurniturePiece): HomeMapDocument | undefined {
   if (!pieceFits(piece)) return undefined;
-  return editObject(doc, roomId, index, (o) => ({ ...o, kind: piece.kind, model: piece.id }));
+  return editObject(doc, roomId, index, (o) => {
+    const { light, ...rest } = o;
+    const keeps = light !== undefined && piece.bulb !== undefined;
+    return { ...rest, kind: piece.kind, model: piece.id, ...(keeps ? { light } : {}) };
+  });
 }
 
 /** A part of a thing's 3D model that takes a colour of its own. */
@@ -1139,9 +1165,16 @@ export function setObjectPart(doc: HomeMapDocument, roomId: string, index: numbe
   });
 }
 
-/** The room without one of its things. */
+/** The room without one of its things; a lamp takes the light it holds with
+ * it, the two being one thing. */
 export function removeObject(doc: HomeMapDocument, roomId: string, index: number): HomeMapDocument | undefined {
-  return editRoom(doc, roomId, (room) => (room.objects[index] === undefined ? undefined : { ...room, objects: room.objects.filter((_, i) => i !== index) }));
+  const at = roomAt(doc, roomId);
+  if (at?.room.objects[index] === undefined) return undefined;
+  const held = homeMapHeldPin(at.floor, at.room.id, index);
+  const rooms = at.floor.rooms.slice();
+  rooms[at.ri] = orderedRoom({ ...at.room, objects: at.room.objects.filter((_, i) => i !== index) });
+  const pins = held === undefined ? at.floor.pins : at.floor.pins.filter((p) => p !== held);
+  return withFloor(doc, at.fi, { ...at.floor, rooms, pins });
 }
 
 /** A thing by its room and its place in that room's list, as a pick of
@@ -1205,7 +1238,8 @@ export function moveObjects(doc: HomeMapDocument, things: readonly HomeMapThingR
 }
 
 /** The map without several things, taken out of each room from the end of
- * its list so the places of the rest stay right. */
+ * its list so the places of the rest stay right, each lamp with the light
+ * it holds (`removeObject`). */
 export function removeObjects(doc: HomeMapDocument, things: readonly HomeMapThingRef[]): HomeMapDocument | undefined {
   const refs = thingsStill(doc, things);
   if (refs === undefined) return undefined;
@@ -2345,7 +2379,9 @@ export function addPin(doc: HomeMapDocument, floorId: string, pin: HomeMapNewPin
 }
 
 /** A pin moved to `at` (its height stays), into the room it now stands in,
- * none outside every room. */
+ * none outside every room. A light a lamp holds moves its lamp by the same
+ * step instead and stays at the lamp's bulb (`keptHeldLights`), as it does
+ * for every edit that moves a pin. */
 export function movePin(doc: HomeMapDocument, pinId: string, at: HomePoint): HomeMapDocument | undefined {
   if (!finite(...at)) return undefined;
   return editPin(doc, pinId, (pin, where) => {
@@ -2355,9 +2391,13 @@ export function movePin(doc: HomeMapDocument, pinId: string, at: HomePoint): Hom
   });
 }
 
-/** A pin's height, 0 to 100 meters. */
+/** A pin's height, 0 to 100 meters. A light a lamp holds keeps its lamp's
+ * bulb height, so its height is no edit (undefined); lift the lamp
+ * instead. */
 export function setPinHeight(doc: HomeMapDocument, pinId: string, z: number): HomeMapDocument | undefined {
   if (!finite(z)) return undefined;
+  const at = pinAt(doc, pinId);
+  if (at === undefined || homeMapLampOfPin(at.floor, at.pin.id) !== undefined) return undefined;
   return editPin(doc, pinId, (pin) => ({ ...pin, at: [pin.at[0], pin.at[1], r(clamp(z, 0, 100))] }));
 }
 
@@ -2389,11 +2429,16 @@ export function centerPinInRoom(doc: HomeMapDocument, pinId: string): HomeMapDoc
   return editPin(doc, pinId, (pin) => ({ ...pin, roomId: room.id, at: [r(middle[0]), r(middle[1]), pin.at[2]] }));
 }
 
-/** The map without a pin. */
+/** The map without a pin; a light a lamp holds takes its lamp with it, the
+ * two being one thing. */
 export function removePin(doc: HomeMapDocument, pinId: string): HomeMapDocument | undefined {
   const at = pinAt(doc, pinId);
   if (at === undefined) return undefined;
-  return withFloor(doc, at.fi, { ...at.floor, pins: at.floor.pins.filter((_, i) => i !== at.pi) });
+  const lamp = homeMapLampOfPin(at.floor, at.pin.id);
+  const rooms = lamp === undefined
+    ? at.floor.rooms
+    : at.floor.rooms.map((room) => (sameHomeMapId(room.id, lamp.roomId) ? orderedRoom({ ...room, objects: room.objects.filter((_, i) => i !== lamp.object) }) : room));
+  return withFloor(doc, at.fi, { ...at.floor, rooms, pins: at.floor.pins.filter((_, i) => i !== at.pi) });
 }
 
 /** What `setPinFields` changes; null (or a blank name) takes a key away, so
@@ -2520,6 +2565,348 @@ export function removePins(doc: HomeMapDocument, pinIds: readonly string[]): Hom
   let out = doc;
   for (const id of ids) out = removePin(out, id) ?? out;
   return out;
+}
+
+// ── lamps that hold lights ───────────────────────────────────────────────
+//
+// A light and its lamp are one thing. The lamp is a thing whose piece has a
+// bulb (`homeMapLampPiece`); it holds a light by naming the light's pin in
+// its `light` key, and the pin then stands where the lamp's bulb is
+// (`homeMapBulbSpot`), in the lamp's room, so a reader that knows nothing of
+// lamps still draws the light in the right place. Every edit keeps it so
+// (`keptHeldLights`, run by `withFloor` on each floor an edit makes): moving,
+// resizing, turning, lifting or changing the lamp's piece, or moving or
+// stretching its room, puts the light back at its bulb, and moving the light
+// moves the lamp by the same step. Deleting either deletes both. A light
+// entity may have any number of pins, so six ceiling lamps can hold one
+// light group.
+//
+// A link counts as a reader takes it: one naming no pin of the floor, a pin
+// whose entity is not a light, or a pin an earlier thing of the floor
+// already holds (the floor's rooms in order, each room's things in order) is
+// ignored, and an edit drops it.
+
+/** Whether a pin is a light, the only kind a lamp holds. */
+function isLightPin(pin: Pick<HomeMapPin, "entityId">): boolean {
+  return pin.entityId.startsWith("light.");
+}
+
+/** Each light a thing of the floor holds, by the pin's id in upper case, as
+ * a reader takes the links: the first holder of each light pin of the
+ * floor, a link to anything else ignored. */
+export function homeMapHeldLights(floor: HomeMapFloor): Map<string, HomeMapThingRef> {
+  const pins = new Map(floor.pins.map((p) => [p.id.toUpperCase(), p]));
+  const held = new Map<string, HomeMapThingRef>();
+  for (const room of floor.rooms) {
+    for (const [i, object] of room.objects.entries()) {
+      if (object.light === undefined) continue;
+      const key = object.light.toUpperCase();
+      const pin = pins.get(key);
+      if (pin === undefined || !isLightPin(pin) || held.has(key)) continue;
+      held.set(key, { roomId: room.id, object: i });
+    }
+  }
+  return held;
+}
+
+/** The lamp that holds a pin of the floor, by its room and place, or none. */
+export function homeMapLampOfPin(floor: HomeMapFloor, pinId: string): HomeMapThingRef | undefined {
+  return homeMapHeldLights(floor).get(pinId.toUpperCase());
+}
+
+/** The light a thing of the floor holds, or none: a link a reader ignores
+ * holds nothing. */
+export function homeMapHeldPin(floor: HomeMapFloor, roomId: string, objectIndex: number): HomeMapPin | undefined {
+  const room = floor.rooms.find((x) => sameHomeMapId(x.id, roomId));
+  const light = room?.objects[objectIndex]?.light;
+  if (room === undefined || light === undefined) return undefined;
+  const lamp = homeMapLampOfPin(floor, light);
+  if (lamp === undefined || !sameHomeMapId(lamp.roomId, room.id) || lamp.object !== objectIndex) return undefined;
+  return floor.pins.find((p) => sameHomeMapId(p.id, light));
+}
+
+/** The pins an entity has on the map, every floor's, in the map's order. */
+export function homeMapPinsOfEntity(doc: HomeMapDocument, entityId: string): HomeMapPin[] {
+  return doc.floors.flatMap((f) => f.pins.filter((p) => p.entityId === entityId));
+}
+
+/** The ids, in upper case, of the lights a room's lamps hold. */
+function heldPinIdsOf(floor: HomeMapFloor, roomId: string): Set<string> {
+  const out = new Set<string>();
+  for (const [key, lamp] of homeMapHeldLights(floor)) if (sameHomeMapId(lamp.roomId, roomId)) out.add(key);
+  return out;
+}
+
+/** Whether two things stand in the same place as the same piece. */
+function samePlace(a: HomeMapObject, b: HomeMapObject): boolean {
+  return a.c[0] === b.c[0] && a.c[1] === b.c[1] && a.size.every((v, i) => v === b.size[i]) && a.turn === b.turn
+    && (a.lift ?? 0) === (b.lift ?? 0) && a.model === b.model;
+}
+
+/**
+ * The floor `after` an edit with every lamp keeping its light: a light the
+ * edit moved on the plan while its lamp stayed as it was (against `before`,
+ * the floor the edit started from) takes its lamp the same step; then each
+ * light a lamp holds stands at the lamp's bulb (`homeMapBulbSpot`) and names
+ * the lamp's room, and a link a reader ignores is dropped. A lamp whose piece
+ * this catalog does not know keeps its light where it is. The same floor
+ * when nothing changes.
+ */
+function keptHeldLights(before: HomeMapFloor | undefined, after: HomeMapFloor): HomeMapFloor {
+  let rooms = after.rooms;
+  if (before !== undefined) {
+    const was = homeMapHeldLights(before);
+    const steps = new Map<string, Map<number, HomePoint>>();
+    for (const [key, lamp] of homeMapHeldLights(after)) {
+      const old = was.get(key);
+      if (old === undefined || !sameHomeMapId(old.roomId, lamp.roomId) || old.object !== lamp.object) continue;
+      const lampBefore = before.rooms.find((x) => sameHomeMapId(x.id, lamp.roomId))?.objects[lamp.object];
+      const lampAfter = after.rooms.find((x) => sameHomeMapId(x.id, lamp.roomId))?.objects[lamp.object];
+      const pinBefore = before.pins.find((p) => p.id.toUpperCase() === key);
+      const pinAfter = after.pins.find((p) => p.id.toUpperCase() === key);
+      if (lampBefore === undefined || lampAfter === undefined || pinBefore === undefined || pinAfter === undefined || !samePlace(lampBefore, lampAfter)) continue;
+      const step: HomePoint = [pinAfter.at[0] - pinBefore.at[0], pinAfter.at[1] - pinBefore.at[1]];
+      if (step[0] === 0 && step[1] === 0) continue;
+      const roomKey = lamp.roomId.toUpperCase();
+      if (!steps.has(roomKey)) steps.set(roomKey, new Map());
+      steps.get(roomKey)!.set(lamp.object, step);
+    }
+    if (steps.size > 0) {
+      rooms = rooms.map((room) => {
+        const moved = steps.get(room.id.toUpperCase());
+        if (moved === undefined) return room;
+        const objects = room.objects.map((o, i) => {
+          const step = moved.get(i);
+          return step === undefined ? o : orderedObject({ ...o, c: roundPoint([o.c[0] + step[0], o.c[1] + step[1]]) });
+        });
+        return orderedRoom({ ...room, objects });
+      });
+    }
+  }
+  const pinIndex = new Map(after.pins.map((p, i) => [p.id.toUpperCase(), i]));
+  const pins = after.pins.slice();
+  let pinsChanged = false;
+  const taken = new Set<string>();
+  const kept = rooms.map((room) => {
+    let objects: HomeMapObject[] | undefined;
+    for (const [i, object] of room.objects.entries()) {
+      if (object.light === undefined) continue;
+      const key = object.light.toUpperCase();
+      const pi = pinIndex.get(key);
+      const pin = pi === undefined ? undefined : pins[pi];
+      if (pi === undefined || pin === undefined || !isLightPin(pin) || taken.has(key)) {
+        const { light: _ignored, ...rest } = object;
+        objects ??= room.objects.slice();
+        objects[i] = orderedObject(rest);
+        continue;
+      }
+      taken.add(key);
+      const piece = homeMapLampPiece(object.model);
+      const spot = piece === undefined ? undefined : homeMapBulbSpot(object, piece);
+      if (spot === undefined) continue;
+      if (spot.every((v, k) => v === pin.at[k]) && sameHomeMapId(pin.roomId, room.id)) continue;
+      pins[pi] = orderedPin({ ...pin, roomId: room.id, at: spot });
+      pinsChanged = true;
+    }
+    return objects === undefined ? room : orderedRoom({ ...room, objects });
+  });
+  const roomsChanged = kept.some((room, i) => room !== after.rooms[i]);
+  if (!roomsChanged && !pinsChanged) return after;
+  return { ...after, rooms: roomsChanged ? kept : after.rooms, pins: pinsChanged ? pins : after.pins };
+}
+
+/** Where a thing `size` wide and deep goes on the wall of `room` nearest
+ * `at`: its back flush against the wall's face (as `snapObject` lays a side
+ * flush), its middle across from `at` along the wall and kept on it, and
+ * turned so its front faces into the room. Undefined for a room with no
+ * walls. */
+export function homeMapWallSpot(room: HomeMapRoom, size: readonly [number, number, number], at: HomePoint): { c: HomePoint; turn: number } | undefined {
+  let best: { wall: HomeSegment; gap: number; length: number } | undefined;
+  for (const wall of homeWallsOf(room)) {
+    const length = segmentLength(wall);
+    if (length < 1e-6) continue;
+    const gap = homeProjectDistance(at, wall.a, wall.b);
+    if (best === undefined || gap < best.gap) best = { wall, gap, length };
+  }
+  if (best === undefined) return undefined;
+  const { wall, length } = best;
+  const dir: HomePoint = [(wall.b[0] - wall.a[0]) / length, (wall.b[1] - wall.a[1]) / length];
+  const n: HomePoint = [-dir[1], dir[0]];
+  const half = size[0] / 2;
+  const along = clamp((at[0] - wall.a[0]) * dir[0] + (at[1] - wall.a[1]) * dir[1], Math.min(half, length / 2), Math.max(length - half, length / 2));
+  const foot: HomePoint = [wall.a[0] + dir[0] * along, wall.a[1] + dir[1] * along];
+  const off = size[1] / 2 + Math.max(wall.t, 0) / 2;
+  const sides = [n, [-n[0], -n[1]] as HomePoint].map((m) => ({ m, c: [foot[0] + m[0] * off, foot[1] + m[1] * off] as HomePoint }));
+  const inside = sides.filter((s) => homePolygonHolds(room.outline, s.c));
+  // Into the room: the one side inside it, else the side `at` is on, else
+  // the side the room's middle is on.
+  const toward = (p: readonly number[]) => ((p[0]! - wall.a[0]) * n[0] + (p[1]! - wall.a[1]) * n[1] >= 0 ? sides[0]! : sides[1]!);
+  const middle = homeLabelPoint(room) ?? homeMapRoomCenter(room);
+  const side = inside.length === 1 ? inside[0]! : inside.length === 2 ? toward(at) : toward(middle);
+  // Its depth runs along v = (-sin a, cos a), a = -turn, so v is the inward
+  // normal when the turn is atan2(m.x, m.y).
+  return { c: side.c, turn: homeNormalDegrees((Math.atan2(side.m[0], side.m[1]) * 180) / Math.PI) };
+}
+
+/** A new lamp made from `piece` in `room` near `at`, holding the pin
+ * `pinId`: the piece's size and lift, kept inside the room square with the
+ * plan, or for a wall lamp flush on the nearest wall facing in. */
+function newLamp(room: HomeMapRoom, piece: HomeMapFurniturePiece, at: HomePoint, onWall: boolean, pinId: string): HomeMapObject {
+  const size = piece.size.map(r) as [number, number, number];
+  const lift = r(clamp(homeMapPieceLift(piece, room.height), 0, 100));
+  const wall = onWall ? homeMapWallSpot(room, size, at) : undefined;
+  const c = wall?.c ?? homeMapInsideRoom(room, at, size);
+  const object: HomeMapObject = { kind: piece.kind, model: piece.id, light: pinId, c: roundPoint(c), size, turn: r(wall?.turn ?? 0) };
+  if (lift > 0) object.lift = lift;
+  return orderedObject(object);
+}
+
+/** What `addLampLight` made: the map, the new pin's id and, unless the
+ * choice was `bulb`, the new lamp. */
+export interface HomeMapLampLight {
+  doc: HomeMapDocument;
+  pinId: string;
+  lamp?: HomeMapThingRef;
+}
+
+/**
+ * A light added in a new lamp, as one edit: `choice` picks the lamp
+ * (`HOME_MAP_LAMP_CHOICE_MODELS`: ceiling, floor, table or wall), made at
+ * the end of the room's things with its piece's size and lift, kept inside
+ * the room near `at` square with the plan, a wall lamp flush on the nearest
+ * wall facing in (`homeMapWallSpot`); and the light's pin `newId` for
+ * `entityId` (a `light.*`), at the lamp's bulb and in its room, held by it.
+ * `bulb` adds only the pin, as `addPin` does (its kind's height, by `name`
+ * when given), in `roomId` when given. Undefined for a lamp choice outside a
+ * room of the floor, an entity that is not a light, a taken id, 400 pins or
+ * a room with 256 things.
+ */
+export function addLampLight(
+  doc: HomeMapDocument,
+  floorId: string,
+  roomId: string | undefined,
+  entityId: string,
+  choice: HomeMapLampChoice,
+  at: HomePoint,
+  newId: string,
+  name?: string,
+): HomeMapLampLight | undefined {
+  if (!HOME_MAP_LAMP_CHOICES.includes(choice)) return undefined;
+  const model = HOME_MAP_LAMP_CHOICE_MODELS[choice];
+  if (model === undefined) {
+    const out = addPin(doc, floorId, { id: newId, entityId, at, ...(roomId === undefined ? {} : { roomId }), ...(name === undefined ? {} : { name }) });
+    return out === undefined ? undefined : { doc: out, pinId: newId };
+  }
+  const piece = homeMapLampPiece(model);
+  const fi = floorIndex(doc, floorId);
+  if (piece === undefined || roomId === undefined || fi < 0 || !finite(...at)) return undefined;
+  if (!isHomeMapId(newId) || !isHomeMapEntityId(entityId) || !isLightPin({ entityId }) || idTaken(doc, newId) || pinCount(doc) >= HOME_MAP_MAX_PINS) return undefined;
+  const floor = doc.floors[fi]!;
+  const ri = floor.rooms.findIndex((x) => sameHomeMapId(x.id, roomId));
+  const room = floor.rooms[ri];
+  if (room === undefined || room.objects.length >= 256) return undefined;
+  const lamp = newLamp(room, piece, at, choice === "wall", newId);
+  const rooms = floor.rooms.slice();
+  rooms[ri] = orderedRoom({ ...room, objects: [...room.objects, lamp] });
+  const pin = orderedPin({ id: newId, entityId, roomId: room.id, at: homeMapBulbSpot(lamp, piece)! });
+  return { doc: withFloor(doc, fi, { ...floor, rooms, pins: [...floor.pins, pin] }), pinId: newId, lamp: { roomId: room.id, object: room.objects.length } };
+}
+
+/** A thing of the floor (a lamp whose piece has a bulb) now holds the light
+ * `pinId`, a `light.*` pin of the same floor: the light moves to the lamp's
+ * bulb and into its room; another lamp that held it lets go, and a light
+ * this lamp held before stays where it is, held by nothing. Undefined when
+ * it already holds that light, or the thing cannot hold a light. */
+export function linkLight(doc: HomeMapDocument, floorId: string, roomId: string, objectIndex: number, pinId: string): HomeMapDocument | undefined {
+  const fi = floorIndex(doc, floorId);
+  if (fi < 0) return undefined;
+  const floor = doc.floors[fi]!;
+  const room = floor.rooms.find((x) => sameHomeMapId(x.id, roomId));
+  const object = room?.objects[objectIndex];
+  const pin = floor.pins.find((p) => sameHomeMapId(p.id, pinId));
+  if (room === undefined || object === undefined || pin === undefined || !isLightPin(pin) || homeMapLampPiece(object.model) === undefined) return undefined;
+  if (sameHomeMapId(homeMapHeldPin(floor, room.id, objectIndex)?.id, pin.id)) return undefined;
+  const rooms = floor.rooms.map((x) => {
+    let changed = false;
+    const objects = x.objects.map((o, i) => {
+      if (x === room && i === objectIndex) {
+        changed = true;
+        return orderedObject({ ...o, light: pin.id });
+      }
+      if (!sameHomeMapId(o.light, pin.id)) return o;
+      changed = true;
+      const { light: _gone, ...rest } = o;
+      return orderedObject(rest);
+    });
+    return changed ? orderedRoom({ ...x, objects }) : x;
+  });
+  return withFloor(doc, fi, { ...floor, rooms });
+}
+
+/** A thing lets go of its light: the link goes, the lamp and the light both
+ * stay where they are. Undefined when it names none. */
+export function unlinkLight(doc: HomeMapDocument, floorId: string, roomId: string, objectIndex: number): HomeMapDocument | undefined {
+  const fi = floorIndex(doc, floorId);
+  const room = fi < 0 ? undefined : doc.floors[fi]!.rooms.find((x) => sameHomeMapId(x.id, roomId));
+  if (room?.objects[objectIndex]?.light === undefined) return undefined;
+  return editObject(doc, room.id, objectIndex, (o) => {
+    const { light: _gone, ...rest } = o;
+    return rest;
+  });
+}
+
+/** A new pin `newId` for `entityId` (a `light.*`) put straight into a lamp
+ * that holds no light, as one edit: what a light dropped on an empty lamp
+ * does. Undefined when the lamp holds one already, or as `addPin` and
+ * `linkLight` refuse. */
+export function addLightToLamp(doc: HomeMapDocument, floorId: string, roomId: string, objectIndex: number, entityId: string, newId: string): HomeMapDocument | undefined {
+  const fi = floorIndex(doc, floorId);
+  const room = fi < 0 ? undefined : doc.floors[fi]!.rooms.find((x) => sameHomeMapId(x.id, roomId));
+  const object = room?.objects[objectIndex];
+  if (room === undefined || object === undefined || !isLightPin({ entityId }) || homeMapLampPiece(object.model) === undefined) return undefined;
+  if (homeMapHeldPin(doc.floors[fi]!, room.id, objectIndex) !== undefined) return undefined;
+  const added = addPin(doc, floorId, { id: newId, entityId, at: [object.c[0], object.c[1], 0], roomId: room.id });
+  return added === undefined ? undefined : linkLight(added, floorId, room.id, objectIndex, newId);
+}
+
+/** Another of the same lamp holding another pin of the same light, as one
+ * edit (a lamp's Add another): the lamp's piece, size, turn, lift and
+ * colours, one width and 10 cm along its width beside it (the side that
+ * stays in the room, a wall lamp so staying on its wall), and a new pin
+ * `newId` with the light's entity and its name, icon, reading, glow and
+ * tap, at the new lamp's bulb. Undefined when the thing holds no light. */
+export function addAnotherLamp(doc: HomeMapDocument, floorId: string, roomId: string, objectIndex: number, newId: string): HomeMapLampLight | undefined {
+  const fi = floorIndex(doc, floorId);
+  if (fi < 0 || !isHomeMapId(newId) || idTaken(doc, newId) || pinCount(doc) >= HOME_MAP_MAX_PINS) return undefined;
+  const floor = doc.floors[fi]!;
+  const ri = floor.rooms.findIndex((x) => sameHomeMapId(x.id, roomId));
+  const room = floor.rooms[ri];
+  const lamp = room?.objects[objectIndex];
+  const light = room === undefined ? undefined : homeMapHeldPin(floor, room.id, objectIndex);
+  if (room === undefined || lamp === undefined || light === undefined || room.objects.length >= 256) return undefined;
+  const { u } = homeMapObjectAxes(lamp);
+  const step = lamp.size[0] + 0.1;
+  const beside = [1, -1].map((s): HomePoint => [lamp.c[0] + u[0] * step * s, lamp.c[1] + u[1] * step * s]);
+  const c = beside.find((p) => homePolygonHolds(room.outline, p)) ?? beside[0]!;
+  const copy = orderedObject({ ...lamp, light: newId, c: roundPoint(c) });
+  const { id: _id, roomId: _room, at: _at, ...looks } = light;
+  const piece = homeMapLampPiece(copy.model);
+  const at = (piece === undefined ? undefined : homeMapBulbSpot(copy, piece)) ?? [copy.c[0], copy.c[1], light.at[2]];
+  const pin = orderedPin({ ...looks, id: newId, roomId: room.id, at });
+  const rooms = floor.rooms.slice();
+  rooms[ri] = orderedRoom({ ...room, objects: [...room.objects, copy] });
+  return { doc: withFloor(doc, fi, { ...floor, rooms, pins: [...floor.pins, pin] }), pinId: newId, lamp: { roomId: room.id, object: room.objects.length } };
+}
+
+/** A pin shows another entity: the entity search's pick. A light a lamp
+ * holds takes only another light, so the lamp keeps it. Undefined for an id
+ * not shaped like an entity's, or the same entity. */
+export function setPinEntity(doc: HomeMapDocument, pinId: string, entityId: string): HomeMapDocument | undefined {
+  if (!isHomeMapEntityId(entityId)) return undefined;
+  const at = pinAt(doc, pinId);
+  if (at === undefined || at.pin.entityId === entityId) return undefined;
+  if (homeMapLampOfPin(at.floor, at.pin.id) !== undefined && !isLightPin({ entityId })) return undefined;
+  return editPin(doc, pinId, (pin) => ({ ...pin, entityId }));
 }
 
 /** A device the home has, for `placeAllByArea`: its entity, its area, and
