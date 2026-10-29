@@ -1165,8 +1165,6 @@ export class WaHomeMapEditor extends LitElement {
         ${this.floorMenu ? this.renderFloorMenu(doc, floor) : nothing}
       </div>
       <span class="hme-flex"></span>
-      <button type="button" class="hme-tb primary hme-add-btn" aria-haspopup="dialog" aria-expanded=${this.addOpen === undefined ? "false" : "true"}
-        title="Add a device or a piece of furniture (A)" @click=${() => this.openAdd()}>＋ Add</button>
       <div class="hme-seg" role="group" aria-label="View">
         <button type="button" class=${this.viewKind === "flat" ? "on" : ""} aria-pressed=${this.viewKind === "flat" ? "true" : "false"} @click=${() => { this.viewKind = "flat"; }}>Flat</button>
         <button type="button" class=${this.viewKind === "model" ? "on" : ""} aria-pressed=${this.viewKind === "model" ? "true" : "false"} @click=${() => { this.viewKind = "model"; }}>Model</button>
@@ -1259,6 +1257,7 @@ export class WaHomeMapEditor extends LitElement {
     if (model && real) {
       return html`<div class="hme-stage model hme-3d">
         ${this.render3d(ctx)}
+        ${this.renderAddButton()}
         ${this.renderDock(ctx)}
       </div>`;
     }
@@ -1285,8 +1284,18 @@ export class WaHomeMapEditor extends LitElement {
       ${empty && !model && !page.arrange.draw.active ? html`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
         <span>Draw one by hand, or scan this floor with the iPhone.</span>
         <button type="button" class="hme-tb" @click=${() => { const c = this.context(); if (c) page.startDrawing(c); }}>＋ Draw a room by hand</button></div>` : nothing}
+      ${walls ? nothing : this.renderAddButton()}
       ${this.renderDock(ctx)}
     </div>${side}`;
+  }
+
+  /** The Add button, floating in the plan's top left corner (the 3D view's
+   * in Model): the one way in for devices and furniture, where the eye
+   * already is rather than in the bar, where it was easy to miss. */
+  private renderAddButton(): TemplateResult {
+    return html`<button type="button" class="hme-add-btn" aria-haspopup="dialog" aria-expanded=${this.addOpen === undefined ? "false" : "true"}
+      title="Add a device or a piece of furniture (A)" @click=${() => this.openAdd()}>
+      <span aria-hidden="true">＋</span>Add device or furniture</button>`;
   }
 
   /** A press on the model beside the plan turns it, as in Model. */

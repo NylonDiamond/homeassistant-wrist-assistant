@@ -160,6 +160,9 @@ const SHADOW_BUDGET = 24;
  * lit surface reads each frame, and one more of the few textures a material
  * may read. */
 const SHADOW_LIGHTS = 8;
+/** How far a lamp's shadow edge spreads, in shadow map texels: a real shade
+ * is a hand wide, so its shadows fade over a few centimetres, never a cut. */
+const SHADOW_SOFTNESS = 5;
 /** A wall seen from outside its room is this see through. */
 const FADED = 0.1;
 
@@ -660,7 +663,10 @@ export class HomeMapScene3D {
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Plain PCF rather than PCFSoft: PCFSoft ignores a shadow's radius for
+    // the sun and the downlights, and its fixed edge left a plant's shadow
+    // as sharp as a cut-out. PCF spreads every edge over the light's radius.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     // Shadows only move when the scene does, never with the camera.
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -679,6 +685,7 @@ export class HomeMapScene3D {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.radius = 3;
     this.scene.add(this.sky, this.sun, this.sun.target);
     // Half floats keep a bulb's light brighter than white until the end, so
     // the glow finds it and the tone mapping rolls it off as before.
@@ -1151,11 +1158,14 @@ export class HomeMapScene3D {
       this.scene.add(fill);
     } else {
       light = new THREE.PointLight(0xffc98a, 0, 0, 2);
-      light.shadow.mapSize.set(1024, 1024);
+      // A smaller map with a wider radius: a lamp's shade is no point, so
+      // its shadows have soft edges, and six faces at 512 cost a quarter of
+      // six at 1024.
+      light.shadow.mapSize.set(512, 512);
       light.shadow.bias = -0.002;
       light.shadow.camera.near = 0.05;
     }
-    light.shadow.radius = 4;
+    light.shadow.radius = SHADOW_SOFTNESS;
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffc98a, emissiveIntensity: 0 }));
     // A larger ball round the bulb, never drawn, for clicks to find.
     const reach = new THREE.Mesh(new THREE.SphereGeometry(BULB_REACH, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));

@@ -387,7 +387,7 @@ describe("the Add dialog in the map editor", () => {
 
   it("opens from ＋ Add and the key A, keeps the page's keys while open, and closes on Escape and Close", async () => {
     const { el, inside, key, click, text, event, floor } = await page();
-    expect(text()).toContain("＋ Add</button>");
+    expect(text()).toContain("Add device or furniture</button>");
     expect(text()).not.toContain(OPEN);
     click("Add a device or a piece of furniture (A)");
     let shown = text();

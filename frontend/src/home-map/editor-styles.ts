@@ -90,10 +90,19 @@ export const editorStyles = css`
   .hme-tb.danger { color: var(--wa-need); }
   .hme-tb.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
   .hme-tb.primary.danger-fill { background: var(--wa-need); color: #fff; }
-  /* The bar's Add, the editor's one way in for devices and furniture, in the
-   * picked blue so it is the first thing a new user finds. */
-  .hme-tb.hme-add-btn { background: var(--hme-sel); color: #fff; font-weight: 600; padding: 0 14px; }
-  .hme-tb.hme-add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); color: #fff; }
+  /* The Add button, the editor's one way in for devices and furniture,
+   * floating in the plan's top left corner in the picked blue so it is the
+   * first thing a new user finds. */
+  .hme-add-btn {
+    position: absolute; left: 14px; top: 14px; z-index: 4;
+    height: 40px; padding: 0 16px 0 12px; border: 0; border-radius: 12px;
+    background: var(--hme-sel); color: #fff; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .hme-add-btn span { font-size: 18px; font-weight: 500; }
+  .hme-add-btn:hover { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); }
+  .hme-add-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .hme-tb.hme-icon { width: 30px; padding: 0; font-size: 15px; }
   .hme-tb.hme-wide { width: 100%; height: 36px; }
   .hme-tb.push { margin-left: auto; }

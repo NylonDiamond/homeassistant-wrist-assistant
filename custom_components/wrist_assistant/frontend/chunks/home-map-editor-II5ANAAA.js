@@ -36,7 +36,7 @@ import{a as De}from"./chunk-PHLRY3PT.js";import{a as Jo,b as Qo,c as Re,d as dt,
       ${o!==void 0&&r>.05?k`<g class="hme-tag"><rect x=${o[0]+10} y=${o[1]-26} width="58" height="18" rx="9" fill="#5b8def" />
         <text x=${o[0]+39} y=${o[1]-13} fill="#fff" text-anchor="middle">${r.toFixed(2)} m</text></g>`:b}
     </g>`}hint(){return this.points.length===0?"Click to put down the first corner":this.points.length<3?"Click to add corners":"Click the first corner or press Enter to close the room"}};function he(s){return s===void 0||s.kind==="pin"||s.kind==="pins"||s.kind==="objects"?void 0:s.roomId}function me(s){return s?.kind==="object"?[{roomId:s.roomId,object:s.object}]:s?.kind==="objects"?s.items.map(e=>({roomId:e.roomId,object:e.object})):[]}var io=(s,e)=>M(s.roomId,e.roomId)&&s.object===e.object;function Ha(s){let e=[];for(let t of s)e.some(o=>io(o,t))||e.push({roomId:t.roomId,object:t.object});if(e.length!==0)return e.length===1?{kind:"object",roomId:e[0].roomId,object:e[0].object}:{kind:"objects",items:e}}function _e(s,e){let t=me(s);return t.some(o=>io(o,e))?Ha(t.filter(o=>!io(o,e))):Ha([...t,e])}function ao(s,e){if(e?.kind!=="pin"||s===void 0)return e;let t=X(s,e.pinId);return t===void 0?e:{kind:"object",roomId:t.roomId,object:t.object}}function Pa(s,e,t){return me(s).some(o=>io(o,{roomId:e,object:t}))}function vn(s,e){if(e===void 0)return!0;if(s===void 0)return!1;if(e.kind==="pin")return s.pins.some(o=>M(o.id,e.pinId));if(e.kind==="pins")return e.pinIds.every(o=>s.pins.some(n=>M(n.id,o)));if(e.kind==="objects")return e.items.every(o=>s.rooms.find(n=>M(n.id,o.roomId))?.objects[o.object]!==void 0);let t=s.rooms.find(o=>M(o.id,e.roomId));if(t===void 0)return!1;switch(e.kind){case"room":return!0;case"wall":return G(t)[e.wall]!==void 0;case"corner":return t.outline[e.corner]!==void 0;case"opening":return t.openings[e.opening]!==void 0;case"object":return t.objects[e.object]!==void 0}}function ro(s,e){return s===void 0||e===void 0?s===e:JSON.stringify(s)===JSON.stringify(e)}var gr=15;function yn(s,e,t){let o,n=gr;for(let i of s.pins){let a=e(i.at),r=Math.hypot(a[0]-t[0],a[1]-t[1]);r<=n&&(o=i,n=r)}return o}function Mn(s,e,t){let o;for(let n of t===void 0?s.rooms:[t])n.objects.forEach((i,a)=>{if(i.hidden===!0)return;let r=pe(le(i));if(!de(r,e))return;let d=Math.abs(At(r));(o===void 0||d<o.area)&&(o={thing:{room:n,index:a,object:i},area:d})});return o?.thing}function Ca(s,e,t){let o=yn(s,e,e(t));if(o!==void 0){let a=X(s,o.id);return a===void 0?{kind:"pin",pinId:o.id}:{kind:"object",roomId:a.roomId,object:a.object}}let n=Mn(s,t);if(n!==void 0)return{kind:"object",roomId:n.room.id,object:n.index};let i=K(s,t);return i===void 0?void 0:{kind:"room",roomId:i.id}}function kn(s,e){if(s!==void 0){if(s.kind==="room")return e?.kind==="room"&&M(e.roomId,s.roomId)?void 0:s;if(s.kind==="object")return me(e).some(o=>M(o.roomId,s.roomId)&&o.object===s.object)?void 0:s;if(s.kind==="pin")return(e?.kind==="pin"?[e.pinId]:e?.kind==="pins"?e.pinIds:[]).some(o=>M(o,s.pinId))?void 0:s}}var Ea="rgba(91,141,239,0.14)",br="rgba(91,141,239,0.07)",wn="rgba(150,186,255,0.75)",Ta=s=>`${s[0].toFixed(1)},${s[1].toFixed(1)}`;function Sa(s,e,t,o){let n=kn(e,t);if(n===void 0)return b;if(n.kind==="pin"){let r=s.pins.find(p=>M(p.id,n.pinId));if(r===void 0)return b;let[d,l]=o(r.at);return k`<g class="hme-hover" pointer-events="none"><circle cx=${d.toFixed(1)} cy=${l.toFixed(1)} r="18" fill=${Ea} stroke=${wn} stroke-width="1.5" /></g>`}let i=s.rooms.find(r=>M(r.id,n.roomId));if(i===void 0)return b;if(n.kind==="object"){let r=i.objects[n.object];if(r===void 0)return b;let d=pe(le(r)).map(l=>Ta(o(l))).join(" ");return k`<g class="hme-hover" pointer-events="none"><polygon points=${d} fill=${Ea} stroke=${wn} stroke-width="1.5"
-      stroke-dasharray=${r.hidden===!0?"4 3":"none"} stroke-linejoin="round" /></g>`}if(i.outline.length<3)return b;let a=i.outline.map(r=>Ta(o(r))).join(" ");return k`<g class="hme-hover" pointer-events="none"><polygon points=${a} fill=${br} stroke=${wn} stroke-width="1.5" stroke-linejoin="round" /></g>`}var $n;function so(){return $n??=import("./scene3d-PWBZURYG.js").catch(s=>{throw $n=void 0,s}),$n}function xn(s){return new URL("furniture/",s).href}var Ia={wood:"Wood",tile:"Tile",stone:"Stone",carpet:"Carpet",plain:"Plain"},vr={wood:[{name:"Light oak",hex:"#D9B88A"},{name:"Oak",hex:"#B98B5A"},{name:"Walnut",hex:"#6B4A32"},{name:"Grey wash",hex:"#9A948C"}],tile:[{name:"White",hex:"#E9E7E2"},{name:"Grey",hex:"#8E8E8A"},{name:"Black",hex:"#2E2E30"},{name:"Terracotta",hex:"#B4664A"}],stone:[{name:"Light",hex:"#C9C3B8"},{name:"Sand",hex:"#B8A98E"},{name:"Slate",hex:"#5E6468"}],carpet:[{name:"Grey",hex:"#8E8E93"},{name:"Beige",hex:"#CBB9A0"},{name:"Navy",hex:"#2E4A7D"},{name:"Green",hex:"#4F6B4A"}],plain:[{name:"White",hex:"#E9E7E2"},{name:"Grey",hex:"#8E8E8A"},{name:"Black",hex:"#2E2E30"}]},wr=[{name:"White",hex:"#F2F0EB"},{name:"Warm white",hex:"#EDE6D8"},{name:"Greige",hex:"#CFC6B8"},{name:"Sage",hex:"#A3B09A"},{name:"Blue grey",hex:"#8C9AA6"},{name:"Charcoal",hex:"#3E4044"}];function Hn(s){let e=s.mixed===!0,t=e?void 0:s.now?.toUpperCase(),o=t!==void 0&&!s.presets.some(n=>n.hex===t);return m`<div class="hme-r top"><span class="hme-l">${s.word}</span>
+      stroke-dasharray=${r.hidden===!0?"4 3":"none"} stroke-linejoin="round" /></g>`}if(i.outline.length<3)return b;let a=i.outline.map(r=>Ta(o(r))).join(" ");return k`<g class="hme-hover" pointer-events="none"><polygon points=${a} fill=${br} stroke=${wn} stroke-width="1.5" stroke-linejoin="round" /></g>`}var $n;function so(){return $n??=import("./scene3d-LOK6JPHR.js").catch(s=>{throw $n=void 0,s}),$n}function xn(s){return new URL("furniture/",s).href}var Ia={wood:"Wood",tile:"Tile",stone:"Stone",carpet:"Carpet",plain:"Plain"},vr={wood:[{name:"Light oak",hex:"#D9B88A"},{name:"Oak",hex:"#B98B5A"},{name:"Walnut",hex:"#6B4A32"},{name:"Grey wash",hex:"#9A948C"}],tile:[{name:"White",hex:"#E9E7E2"},{name:"Grey",hex:"#8E8E8A"},{name:"Black",hex:"#2E2E30"},{name:"Terracotta",hex:"#B4664A"}],stone:[{name:"Light",hex:"#C9C3B8"},{name:"Sand",hex:"#B8A98E"},{name:"Slate",hex:"#5E6468"}],carpet:[{name:"Grey",hex:"#8E8E93"},{name:"Beige",hex:"#CBB9A0"},{name:"Navy",hex:"#2E4A7D"},{name:"Green",hex:"#4F6B4A"}],plain:[{name:"White",hex:"#E9E7E2"},{name:"Grey",hex:"#8E8E8A"},{name:"Black",hex:"#2E2E30"}]},wr=[{name:"White",hex:"#F2F0EB"},{name:"Warm white",hex:"#EDE6D8"},{name:"Greige",hex:"#CFC6B8"},{name:"Sage",hex:"#A3B09A"},{name:"Blue grey",hex:"#8C9AA6"},{name:"Charcoal",hex:"#3E4044"}];function Hn(s){let e=s.mixed===!0,t=e?void 0:s.now?.toUpperCase(),o=t!==void 0&&!s.presets.some(n=>n.hex===t);return m`<div class="hme-r top"><span class="hme-l">${s.word}</span>
     <div class="hme-chips hme-colours" role="group" aria-label=${`${s.word} colour`}>
       <button type="button" class="hme-chip sel ${t===void 0&&!e?"on":""}" aria-pressed=${t===void 0&&!e?"true":"false"}
         title=${s.defaultTitle} @click=${()=>s.set(void 0)}>Default</button>
@@ -799,10 +799,19 @@ import{a as De}from"./chunk-PHLRY3PT.js";import{a as Jo,b as Qo,c as Re,d as dt,
   .hme-tb.danger { color: var(--wa-need); }
   .hme-tb.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
   .hme-tb.primary.danger-fill { background: var(--wa-need); color: #fff; }
-  /* The bar's Add, the editor's one way in for devices and furniture, in the
-   * picked blue so it is the first thing a new user finds. */
-  .hme-tb.hme-add-btn { background: var(--hme-sel); color: #fff; font-weight: 600; padding: 0 14px; }
-  .hme-tb.hme-add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); color: #fff; }
+  /* The Add button, the editor's one way in for devices and furniture,
+   * floating in the plan's top left corner in the picked blue so it is the
+   * first thing a new user finds. */
+  .hme-add-btn {
+    position: absolute; left: 14px; top: 14px; z-index: 4;
+    height: 40px; padding: 0 16px 0 12px; border: 0; border-radius: 12px;
+    background: var(--hme-sel); color: #fff; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .hme-add-btn span { font-size: 18px; font-weight: 500; }
+  .hme-add-btn:hover { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); }
+  .hme-add-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .hme-tb.hme-icon { width: 30px; padding: 0; font-size: 15px; }
   .hme-tb.hme-wide { width: 100%; height: 36px; }
   .hme-tb.push { margin-left: auto; }
@@ -1455,8 +1464,6 @@ import{a as De}from"./chunk-PHLRY3PT.js";import{a as Jo,b as Qo,c as Re,d as dt,
         ${this.floorMenu?this.renderFloorMenu(t,n):b}
       </div>
       <span class="hme-flex"></span>
-      <button type="button" class="hme-tb primary hme-add-btn" aria-haspopup="dialog" aria-expanded=${this.addOpen===void 0?"false":"true"}
-        title="Add a device or a piece of furniture (A)" @click=${()=>this.openAdd()}>＋ Add</button>
       <div class="hme-seg" role="group" aria-label="View">
         <button type="button" class=${this.viewKind==="flat"?"on":""} aria-pressed=${this.viewKind==="flat"?"true":"false"} @click=${()=>{this.viewKind="flat"}}>Flat</button>
         <button type="button" class=${this.viewKind==="model"?"on":""} aria-pressed=${this.viewKind==="model"?"true":"false"} @click=${()=>{this.viewKind="model"}}>Model</button>
@@ -1493,6 +1500,7 @@ import{a as De}from"./chunk-PHLRY3PT.js";import{a as Jo,b as Qo,c as Re,d as dt,
       ${this.renderModelDock(!1)}
     </div>`:b;if(a&&u)return m`<div class="hme-stage model hme-3d">
         ${this.render3d(t)}
+        ${this.renderAddButton()}
         ${this.renderDock(t)}
       </div>`;let g=this.walls!==void 0&&!a;return m`<div class="hme-stage ${a?"model":""} ${r?"hme-split-l":""} ${g?"walls":""}" style=${a?`background:${we(this.modelLookNow())}`:""}>
       <svg class="hme-svg" width="100%" height="100%" viewBox=${`0 0 ${Math.max(n,1)} ${Math.max(i,1)}`} style=${`cursor:${p}`}
@@ -1516,8 +1524,11 @@ import{a as De}from"./chunk-PHLRY3PT.js";import{a as Jo,b as Qo,c as Re,d as dt,
       ${h&&!a&&!o.arrange.draw.active?m`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
         <span>Draw one by hand, or scan this floor with the iPhone.</span>
         <button type="button" class="hme-tb" @click=${()=>{let c=this.context();c&&o.startDrawing(c)}}>＋ Draw a room by hand</button></div>`:b}
+      ${g?b:this.renderAddButton()}
       ${this.renderDock(t)}
-    </div>${f}`}onModelDown(t){this.dialog!==void 0||t.button!==0||(this.stageEl=t.currentTarget,this.floorMenu=!1,this.dockMenu=void 0,this.turnModel(t))}renderPlan(t,o,n){let i=this.view;if(i===void 0||o<=0)return b;let a=this.planArt(t.floor,o,n,this.page.drawsPins?.(t)===!0?"none":"all"),r=i.scale/(this.artScale||i.scale);return k`${this.background(i,o,n)}
+    </div>${f}`}renderAddButton(){return m`<button type="button" class="hme-add-btn" aria-haspopup="dialog" aria-expanded=${this.addOpen===void 0?"false":"true"}
+      title="Add a device or a piece of furniture (A)" @click=${()=>this.openAdd()}>
+      <span aria-hidden="true">＋</span>Add device or furniture</button>`}onModelDown(t){this.dialog!==void 0||t.button!==0||(this.stageEl=t.currentTarget,this.floorMenu=!1,this.dockMenu=void 0,this.turnModel(t))}renderPlan(t,o,n){let i=this.view;if(i===void 0||o<=0)return b;let a=this.planArt(t.floor,o,n,this.page.drawsPins?.(t)===!0?"none":"all"),r=i.scale/(this.artScale||i.scale);return k`${this.background(i,o,n)}
       <g class="hme-art" transform=${`translate(${i.ox.toFixed(2)} ${i.oy.toFixed(2)}) scale(${r.toFixed(5)})`} pointer-events="none">${a}</g>
       ${t.walls===void 0?Sa(t.floor,this.hover,this.selection,t.toScreen):b}
       <g class="hme-labels" pointer-events="none">${this.labels(t)}</g>
