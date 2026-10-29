@@ -607,8 +607,8 @@ describe("the Home map editor", () => {
     // One undo takes the whole pick back.
     el.undo();
     expect(view3d().floor.rooms[0]!.objects[0]!.fabric).toBeUndefined();
-    // A light's glow colour moved and then left with no change: the
-    // preview ends, nothing is saved.
+    // A light's glow colour moved and then clicked away from, with no
+    // change sent: the click away saves it, once.
     await settle();
     const saves = ha.saves().length;
     press([0.8, 3.1]);
@@ -617,8 +617,17 @@ describe("the Home map editor", () => {
     expect(view3d().floor.pins.find((p) => p.id === READING)!.glowColor).toBe("#00ff00");
     handler(el.render(), "Pick the glow's color", "@blur=")({ target: glow });
     await settle();
-    expect(view3d().floor.pins.find((p) => p.id === READING)!.glowColor).toBeUndefined();
-    expect(ha.saves()).toHaveLength(saves);
+    expect(view3d().floor.pins.find((p) => p.id === READING)!.glowColor?.toLowerCase()).toBe("#00ff00");
+    expect(ha.saves()).toHaveLength(saves + 1);
+    // Moved and brought back to where it started, then left: nothing saved.
+    const start = view3d().floor.pins.find((p) => p.id === READING)!.glowColor!.toLowerCase();
+    const back = { value: "#123456" };
+    handler(el.render(), "Pick the glow's color", "@input=")({ target: back });
+    back.value = start;
+    handler(el.render(), "Pick the glow's color", "@input=")({ target: back });
+    handler(el.render(), "Pick the glow's color", "@blur=")({ target: back });
+    await settle();
+    expect(ha.saves()).toHaveLength(saves + 1);
   });
 
   it("draws the pins itself, picks and drags one, saved once, and sets a light's glow by its ring's handle", async () => {

@@ -147,17 +147,30 @@ export function hmeNumber(o: {
  * each with the colour it had before (lower case), to tell a move back to
  * it. */
 const colourPreviews = new WeakMap<HTMLInputElement, string>();
+/** The colour each input last saved (lower case), so a change arriving
+ * after the blur that saved it saves nothing twice. */
+const colourSaved = new WeakMap<HTMLInputElement, string>();
 
 /**
  * A colour input (the browser's own picker) that shows its colour live:
- * each move of the picker (`input`) goes to `preview`, never saved, and the
- * picker closing or a click away with a new colour (`change`) ends the
- * preview and goes to `set` once, as one edit. A move back to the colour it
- * had, or leaving it without a change, ends the preview
- * (`preview(undefined)`), so nothing stays on show that was not saved.
+ * each move of the picker (`input`) goes to `preview`, never saved. The
+ * picker closing (`change`) or the input losing focus, a click away, ends
+ * the preview and saves the colour shown once with `set`, as one edit:
+ * Chromium does not always send `change` for a click away, so the blur
+ * saves too, and whichever comes first does it. A colour back where it
+ * started (a move back, or Escape in the picker) saves nothing.
  */
 export function hmeColourInput(o: { value: string; label: string; preview: (hex: string | undefined) => void; set: (hex: string) => void }): TemplateResult {
   const value = o.value.toLowerCase();
+  const finish = (el: HTMLInputElement) => {
+    const was = colourPreviews.get(el);
+    if (was === undefined) return;
+    colourPreviews.delete(el);
+    o.preview(undefined);
+    if (el.value.toLowerCase() === was) return;
+    colourSaved.set(el, el.value.toLowerCase());
+    o.set(el.value);
+  };
   return html`<input type="color" .value=${live(value)} aria-label=${o.label}
     @input=${(e: Event) => {
       const el = e.target as HTMLInputElement;
@@ -168,17 +181,11 @@ export function hmeColourInput(o: { value: string; label: string; preview: (hex:
     }}
     @change=${(e: Event) => {
       const el = e.target as HTMLInputElement;
-      colourPreviews.delete(el);
-      o.preview(undefined);
-      o.set(el.value);
+      const v = el.value.toLowerCase();
+      if (colourPreviews.has(el)) finish(el);
+      else if (v !== value && v !== colourSaved.get(el)) o.set(el.value);
     }}
-    @blur=${(e: Event) => {
-      const el = e.target as HTMLInputElement;
-      // A change may follow the blur in the same moment: let it land first.
-      setTimeout(() => {
-        if (colourPreviews.delete(el)) o.preview(undefined);
-      }, 0);
-    }} />`;
+    @blur=${(e: Event) => finish(e.target as HTMLInputElement)} />`;
 }
 
 /** Number fields side by side in equal columns. */

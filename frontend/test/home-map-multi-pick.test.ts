@@ -708,26 +708,34 @@ describe("a colour picker that shows its colour live", () => {
     expect(p.saved).toEqual(["#223344"]);
   });
 
-  it("ends the preview when moved back to its own colour, or left with no change", async () => {
+  it("ends the preview when moved back to its own colour, and saves nothing when left there", () => {
     const p = picker();
     const el = { value: "#112233" };
     p.on("@input=")({ target: el });
     el.value = "#8e8e93";
     p.on("@input=")({ target: el });
     expect(p.calls).toEqual(["#112233", undefined]);
-    el.value = "#445566";
+    p.on("@blur=")({ target: el });
+    expect(p.calls).toEqual(["#112233", undefined, undefined]);
+    expect(p.saved).toEqual([]);
+  });
+
+  it("saves the colour shown on a click away, which Chromium may send without a change", () => {
+    const p = picker();
+    const el = { value: "#445566" };
     p.on("@input=")({ target: el });
     p.on("@blur=")({ target: el });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(p.calls).toEqual(["#112233", undefined, "#445566", undefined]);
-    expect(p.saved).toEqual([]);
-    // A blur after a change ends nothing more.
+    expect(p.calls).toEqual(["#445566", undefined]);
+    expect(p.saved).toEqual(["#445566"]);
+    // The change that comes after the blur saves it no second time.
+    p.on("@change=")({ target: el });
+    expect(p.saved).toEqual(["#445566"]);
+    // A blur after a change saves nothing more.
     const q = picker();
     const other = { value: "#000000" };
     q.on("@input=")({ target: other });
     q.on("@change=")({ target: other });
     q.on("@blur=")({ target: other });
-    await new Promise((r) => setTimeout(r, 0));
     expect(q.calls).toEqual(["#000000", undefined]);
     expect(q.saved).toEqual(["#000000"]);
   });
