@@ -3,9 +3,9 @@
 // tint makes its lit part follow the light's real colour and brightness.
 // Everything here is pure, the same numbers the watch and the iPhone use:
 //
-// - the glow mask `W`, made once per photo from the Off photo and the On
-//   photo (where the light makes the photo brighter), which the photo store
-//   turns into a mask image (`page-photo-store.ts`);
+// - the glow mask `W`, made once per photo from the On photo's bright, lit
+//   parts, which the photo store turns into a mask image
+//   (`page-photo-store.ts`);
 // - the tint colour `C` and the level `k` from the light's live state,
 //   which also colour and scale the Clear look's glow (`render.ts`).
 //
@@ -18,14 +18,14 @@
 
 import { type OneLookLightMask, type OneLookLightPixels, oneLookBoxBlur, oneLookSmoothstep } from "./glow.js";
 
-/** The tint's numbers: the glow mask's smoothstep edges on the luma
- * difference and its blur radius against the photo's long side; the
- * colour temperature the On photo is taken at; how much of the light's
- * colour the tint keeps; and the level's floor and span. */
+/** The tint's numbers: the glow mask's smoothstep edges on the On photo's
+ * luma and its blur radius against the photo's long side; the colour
+ * temperature the On photo is taken at; how much of the light's colour the
+ * tint keeps; and the level's floor and span. */
 export const ONE_LOOK_TINT = Object.freeze({
-  maskLow: 0.06,
-  maskHigh: 0.35,
-  blurShare: 0.015,
+  maskLow: 0.38,
+  maskHigh: 0.8,
+  blurShare: 0.04,
   whiteKelvin: 4000,
   saturation: 0.85,
   levelFloor: 0.35,
@@ -37,30 +37,32 @@ export function oneLookTintLuma(r: number, g: number, b: number): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** The blur radius of a photo's glow mask, in pixels: 1.5% of its long
- * side, rounded, at least 1. */
+/** The blur radius of a photo's glow mask, in pixels: 4% of its long side,
+ * rounded, at least 1. */
 export function oneLookOnMaskRadius(width: number, height: number): number {
   return Math.max(1, Math.round(ONE_LOOK_TINT.blurShare * Math.max(width, height)));
 }
 
 /**
- * The glow mask `W` from the Off photo and the On photo (same size,
- * straight RGBA): per pixel `smoothstep(0.06, 0.35, lumaOn − lumaOff)`
- * times the On photo's alpha, then box blurred (three passes each way, the
- * edge pixels repeating) with radius `oneLookOnMaskRadius`, clamped 0 to 1.
- * Undefined when the two are not the same size.
+ * The glow mask `W` from the On photo alone (straight RGBA; contract
+ * revision 2): per pixel `smoothstep(0.38, 0.80, lumaOn)` times its alpha,
+ * then box blurred (three passes each way, the edge pixels repeating) with
+ * radius `oneLookOnMaskRadius`, clamped 0 to 1. Every bright, lit part of
+ * the lamp takes the colour evenly; dark parts (a black base, a metal
+ * stem) keep their own. The Off photo is not read: the camera exposes it on
+ * its own, so a shade is already bright in it and a difference found only
+ * the hot spot. Undefined when the pixels are short of the size.
  */
-export function oneLookOnGlowMask(off: OneLookLightPixels, on: OneLookLightPixels): OneLookLightMask | undefined {
+export function oneLookOnGlowMask(on: OneLookLightPixels): OneLookLightMask | undefined {
   const { width, height } = on;
-  if (off.width !== width || off.height !== height || off.data.length < width * height * 4 || on.data.length < width * height * 4) return undefined;
+  if (on.data.length < width * height * 4) return undefined;
   const raw = new Float32Array(width * height);
   for (let i = 0; i < raw.length; i++) {
     const o = i * 4;
     const alpha = on.data[o + 3]! / 255;
     if (alpha === 0) continue;
-    const lumaOn = oneLookTintLuma(on.data[o]! / 255, on.data[o + 1]! / 255, on.data[o + 2]! / 255);
-    const lumaOff = oneLookTintLuma(off.data[o]! / 255, off.data[o + 1]! / 255, off.data[o + 2]! / 255);
-    raw[i] = oneLookSmoothstep(ONE_LOOK_TINT.maskLow, ONE_LOOK_TINT.maskHigh, lumaOn - lumaOff) * alpha;
+    const luma = oneLookTintLuma(on.data[o]! / 255, on.data[o + 1]! / 255, on.data[o + 2]! / 255);
+    raw[i] = oneLookSmoothstep(ONE_LOOK_TINT.maskLow, ONE_LOOK_TINT.maskHigh, luma) * alpha;
   }
   const blurred = oneLookBoxBlur({ width, height, data: raw }, oneLookOnMaskRadius(width, height), "repeat");
   for (let i = 0; i < blurred.data.length; i++) blurred.data[i] = Math.min(1, Math.max(0, blurred.data[i]!));
@@ -69,11 +71,11 @@ export function oneLookOnGlowMask(off: OneLookLightPixels, on: OneLookLightPixel
 
 /**
  * The mask the tint layer is drawn through: `W` clipped to the On photo's
- * alpha, which is `W` times that alpha per pixel. Baking the clip in keeps
- * the layer to one mask image. Undefined when the two are not the same size.
+ * alpha, which is `W` times that alpha per pixel (the blur reaches past the
+ * lamp's edge). Baking the clip in keeps the layer to one mask image.
  */
-export function oneLookOnTintMask(off: OneLookLightPixels, on: OneLookLightPixels): OneLookLightMask | undefined {
-  const w = oneLookOnGlowMask(off, on);
+export function oneLookOnTintMask(on: OneLookLightPixels): OneLookLightMask | undefined {
+  const w = oneLookOnGlowMask(on);
   if (w === undefined) return undefined;
   for (let i = 0; i < w.data.length; i++) w.data[i] = w.data[i]! * (on.data[i * 4 + 3]! / 255);
   return w;

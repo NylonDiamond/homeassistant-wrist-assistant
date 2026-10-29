@@ -205,9 +205,16 @@ describe("the Clear look", () => {
     expect(ONE_LOOK_CLEAR).toMatchObject({ washOpacity: 0.025, borderOpacity: 0.06 });
   });
 
-  it("keeps the user's pattern and border", () => {
-    const out = html(renderOneLookTile(face(lamp({ backgroundPattern: "dots", borderThickness: "thick", borderColor: "#FF0000" }), lampOn)));
-    expect(out).toContain(`class="wp-under"`);
+  it("draws no pattern or animation behind the photo, and keeps the user's border", () => {
+    const tile = lamp({ backgroundPattern: "sunburst", tileAnimation: "pulse", borderStyle: "line", borderThickness: "thick", borderColor: "#FF0000" });
+    const out = html(renderOneLookTile(face(tile, lampOn)));
+    expect(out).not.toContain(`class="wp-under"`);
+    // The border draws as it does on the same tile in the normal look.
+    const normal = html(renderOneLookTile(face({ ...tile, iconPhotoLook: undefined }, lampOn)));
+    expect(normal).toContain(`class="wp-under"`);
+    const border = (o: string) => o.slice(o.lastIndexOf("</span>") + 7).replace(/\s+/g, " ").trim();
+    expect(border(out)).toContain(`class="wp-rim"`);
+    expect(border(out)).toBe(border(normal));
   });
 
   it("puts the photo in a box min(0.62 h, 0.8 w), centred across, its top 5% down, fitted, no rounding", () => {

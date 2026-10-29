@@ -1,6 +1,7 @@
 // On photo tint (app repo docs/photo_tiles_plan_2026-10.md, "On photo
-// tint"): the glow mask W from a photo's Off and On pixels, made once in the
-// photo store; the tint colour C and level k from a light's live state; a
+// tint", revision 2): the glow mask W from the On photo's bright, lit
+// pixels, made once in the photo store; the tint colour C and level k from a
+// light's live state; a
 // light's On photo drawn as the Off photo, the On photo at k and C multiply
 // blended through W at k, in the normal look and the Clear look; and the
 // Clear look's clean glow, screen blended. The numbers are shared with the
@@ -48,25 +49,20 @@ function grey(w: number, h: number, v: number, alpha = 255, at?: (x: number, y: 
 const maxOf = (d: Float32Array) => d.reduce((m, v) => Math.max(m, v), 0);
 const minOf = (d: Float32Array) => d.reduce((m, v) => Math.min(m, v), 1);
 
-describe("the glow mask W", () => {
-  it("equal photos give 0 everywhere", () => {
-    const off = grey(40, 30, 120);
-    const w = oneLookOnGlowMask(off, grey(40, 30, 120))!;
-    expect(w.width).toBe(40);
-    expect(w.height).toBe(30);
-    expect(maxOf(w.data)).toBe(0);
-    // Darker in the On photo counts for nothing either.
-    expect(maxOf(oneLookOnGlowMask(off, grey(40, 30, 60))!.data)).toBe(0);
+describe("the glow mask W (from the On photo alone)", () => {
+  it("a dark On photo gives 0 everywhere; a bright one gives 1", () => {
+    // Luma 0.2 is under the 0.38 edge, 0.9 over the 0.80 one.
+    const dark = oneLookOnGlowMask(grey(40, 30, 51))!;
+    expect(dark.width).toBe(40);
+    expect(dark.height).toBe(30);
+    expect(maxOf(dark.data)).toBe(0);
+    expect(minOf(oneLookOnGlowMask(grey(20, 20, 230))!.data)).toBeCloseTo(1, 6);
   });
 
-  it("an On photo brighter by 0.5 gives 1, and 1 inside a lit patch", () => {
-    // 0.2 to 0.7: a luma difference of 0.5, past the 0.35 edge.
-    const all = oneLookOnGlowMask(grey(20, 20, 51), grey(20, 20, 179))!;
-    expect(minOf(all.data)).toBeCloseTo(1, 6);
-    // Brighter only in a 40 by 40 patch of a 100 by 100 photo: 1 deep inside,
-    // 0 far outside, soft between.
-    const patch = (x: number, y: number) => (x >= 30 && x < 70 && y >= 30 && y < 70 ? 179 : undefined);
-    const w = oneLookOnGlowMask(grey(100, 100, 51), grey(100, 100, 51, 255, patch))!;
+  it("a bright patch gives 1 deep inside, 0 far outside, soft between", () => {
+    // A 40 by 40 bright patch in a dark 100 by 100 photo (blur radius 4).
+    const patch = (x: number, y: number) => (x >= 30 && x < 70 && y >= 30 && y < 70 ? 230 : undefined);
+    const w = oneLookOnGlowMask(grey(100, 100, 51, 255, patch))!;
     expect(w.data[50 * 100 + 50]).toBeCloseTo(1, 6);
     expect(w.data[5 * 100 + 5]).toBe(0);
     const edge = w.data[50 * 100 + 30]!;
@@ -74,30 +70,29 @@ describe("the glow mask W", () => {
     expect(edge).toBeLessThan(1);
   });
 
-  it("follows smoothstep(0.06, 0.35, d) between the edges", () => {
-    // d of 0.2 on 8 bit greys: 51 to 102.
-    const d = (oneLookLumaOf(102) - oneLookLumaOf(51));
-    const t = (d - 0.06) / (0.35 - 0.06);
-    const w = oneLookOnGlowMask(grey(10, 10, 51), grey(10, 10, 102))!;
+  it("follows smoothstep(0.38, 0.80, luma) between the edges", () => {
+    const t = (oneLookLumaOf(150) - 0.38) / (0.8 - 0.38);
+    const w = oneLookOnGlowMask(grey(10, 10, 150))!;
     expect(w.data[55]).toBeCloseTo(t * t * (3 - 2 * t), 5);
+    expect(ONE_LOOK_TINT).toMatchObject({ maskLow: 0.38, maskHigh: 0.8 });
   });
 
-  it("an On photo's alpha 0 gives 0, and its alpha scales W", () => {
-    expect(maxOf(oneLookOnGlowMask(grey(20, 20, 51), grey(20, 20, 179, 0))!.data)).toBe(0);
-    expect(maxOf(oneLookOnTintMask(grey(20, 20, 51), grey(20, 20, 179, 0))!.data)).toBe(0);
-    const half = oneLookOnGlowMask(grey(20, 20, 51), grey(20, 20, 179, 128))!;
+  it("alpha 0 gives 0, and its alpha scales W", () => {
+    expect(maxOf(oneLookOnGlowMask(grey(20, 20, 230, 0))!.data)).toBe(0);
+    expect(maxOf(oneLookOnTintMask(grey(20, 20, 230, 0))!.data)).toBe(0);
+    const half = oneLookOnGlowMask(grey(20, 20, 230, 128))!;
     expect(half.data[210]).toBeCloseTo(128 / 255, 5);
     // The tint layer's mask is W clipped to the On photo's alpha.
-    expect(oneLookOnTintMask(grey(20, 20, 51), grey(20, 20, 179, 128))!.data[210]).toBeCloseTo((128 / 255) ** 2, 5);
+    expect(oneLookOnTintMask(grey(20, 20, 230, 128))!.data[210]).toBeCloseTo((128 / 255) ** 2, 5);
   });
 
-  it("is blurred by 1.5% of the long side (at least 1 pixel) and needs the same size", () => {
-    expect(oneLookOnMaskRadius(256, 384)).toBe(6);
-    expect(oneLookOnMaskRadius(100, 100)).toBe(2);
-    expect(oneLookOnMaskRadius(40, 20)).toBe(1);
-    expect(ONE_LOOK_TINT.blurShare).toBe(0.015);
-    expect(oneLookOnGlowMask(grey(20, 20, 51), grey(20, 21, 179))).toBeUndefined();
-    expect(oneLookOnTintMask(grey(21, 20, 51), grey(20, 20, 179))).toBeUndefined();
+  it("is blurred by 4% of the long side (at least 1 pixel); pixels short of the size give none", () => {
+    expect(oneLookOnMaskRadius(256, 384)).toBe(15);
+    expect(oneLookOnMaskRadius(100, 100)).toBe(4);
+    expect(oneLookOnMaskRadius(40, 20)).toBe(2);
+    expect(oneLookOnMaskRadius(10, 10)).toBe(1);
+    expect(ONE_LOOK_TINT.blurShare).toBe(0.04);
+    expect(oneLookOnGlowMask({ width: 20, height: 20, data: new Uint8ClampedArray(10) })).toBeUndefined();
   });
 });
 
@@ -294,13 +289,17 @@ describe("a light's On photo, tinted", () => {
     expect(glow).toContain(`rgba(255, 38, 38, ${a4(0.42 * k)}) 0%, rgba(255, 38, 38, ${a4(0.18 * k)}) 45%, rgba(255, 38, 38, 0) 100%`);
     expect(glow).toContain("mix-blend-mode:screen");
     expect(out.indexOf("ol-clear-glow")).toBeLessThan(out.indexOf("ol-cutout"));
+    // The state line in C too, so the words and the lamp agree.
+    expect(all(out, "ol-clear-state")[0]!.style).toContain("color:rgba(255, 38, 38, 1)");
   });
 
-  it("Clear look glow: the tile's colour for a light whose colour is unknown, still scaled by k; full for another kind", () => {
+  it("Clear look glow and state: the tile's colour for a light whose colour is unknown (glow still scaled by k); full for another kind", () => {
     const light = html(renderOneLookTile(face(lamp({ iconPhotoLook: "clear", color: "#30A0FF" }), "light.lamp", "on", { brightness: 0 })));
     expect(all(light, "ol-layer ol-clear-glow")[0]!.style).toContain("rgba(48, 160, 255, 0.147) 0%, rgba(48, 160, 255, 0.063) 45%");
+    expect(all(light, "ol-clear-state")[0]!.style).toContain("color:rgba(48, 160, 255, 1)");
     const cover = html(renderOneLookTile(face(lamp({ entityId: "cover.blind", iconPhotoLook: "clear", color: "#30A0FF" }), "cover.blind", "open", { current_position: 100 })));
     expect(all(cover, "ol-layer ol-clear-glow")[0]!.style).toContain("rgba(48, 160, 255, 0.42) 0%");
+    expect(all(cover, "ol-clear-state")[0]!.style).toContain("color:rgba(48, 160, 255, 1)");
     expect(ONE_LOOK_CLEAR).toMatchObject({ glowCentreOpacity: 0.42, glowMidOpacity: 0.18, glowMidStop: 0.45, glowRadiusShare: 0.7 });
     expect(oneLookClearGlowColour({ hue: [1, 2, 3] }, undefined)).toEqual([1, 2, 3]);
     expect(oneLookClearGlowColour({ hue: [1, 2, 3] }, { colour: [1, 1, 1], known: true, level: 1 })).toEqual([255, 255, 255]);
@@ -345,14 +344,14 @@ describe("the photo store and the tint mask", () => {
   const inner = png(40, 20, chunk("IDAT", [7]));
   const outer = png(40, 20, chunk("IDAT", [1, 2]), chunk("waOn", [...inner]));
 
-  it("makes it once with the On photo, from the Off and On bytes, then redraws once", async () => {
-    const made: [number[], number[]][] = [];
+  it("makes it once with the On photo, from the On photo's bytes alone, then redraws once", async () => {
+    const made: number[][] = [];
     let changed = 0;
     const store = new PagePhotoStore(() => hassAnswering(outer), () => changed++, {
       makeUrl: () => "blob:off",
       makeOn: async () => ({ url: "blob:on", width: 40, height: 20 }),
-      makeOnMask: async (off, on) => {
-        made.push([[...off], [...on]]);
+      makeOnMask: async (on) => {
+        made.push([...on]);
         return "blob:mask";
       },
     });
@@ -362,7 +361,7 @@ describe("the photo store and the tint mask", () => {
     expect(changed).toBe(1);
     expect(store.onUrl(ID)).toBe("blob:on");
     expect(store.onMask(ID.toLowerCase())).toBe("blob:mask");
-    expect(made).toEqual([[[...outer], [...inner]]]);
+    expect(made).toEqual([[...inner]]);
     // A second store reads the same memory and makes nothing again.
     const other = new PagePhotoStore(() => hassAnswering(outer), () => {}, { makeOnMask: async () => { throw new Error("again"); } });
     expect(other.onMask(ID)).toBe("blob:mask");

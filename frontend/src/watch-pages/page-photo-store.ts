@@ -7,8 +7,8 @@
 // (`icon-photo-tidy.ts`). A PNG's bytes are read once as they come in, for
 // its size, the On photo the iPhone may have put in it and the look it may
 // have saved in it (Light Look, `one-look/glow.ts`). An On photo gets its
-// own URL then, once its size is checked, and its tint mask from the two
-// photos (`one-look/tint.ts`), once; a photo with a look and no On
+// own URL then, once its size is checked, and its tint mask from its own
+// pixels (`one-look/tint.ts`), once; a photo with a look and no On
 // photo has its three masks made then, once, as images a picture can mask
 // with, never while drawing.
 //
@@ -69,9 +69,9 @@ export type PhotoLightMaker = (bytes: Uint8Array, recipe: OneLookLightRecipe) =>
  * to, or undefined when it does not decode. */
 export type PhotoOnMaker = (bytes: Uint8Array) => Promise<{ url: string; width: number; height: number } | undefined>;
 
-/** Makes an On photo's tint mask as an image URL from the Off photo's and
- * the On photo's PNG bytes, or undefined where it cannot. */
-export type PhotoOnMaskMaker = (off: Uint8Array, on: Uint8Array) => Promise<string | undefined>;
+/** Makes an On photo's tint mask as an image URL from the On photo's PNG
+ * bytes, or undefined where it cannot. */
+export type PhotoOnMaskMaker = (on: Uint8Array) => Promise<string | undefined>;
 
 /** The makers a photo's bytes go through as they come in, and the way back
  * from a URL made for nothing. */
@@ -158,16 +158,16 @@ async function straightPixels(bytes: Uint8Array): Promise<OneLookLightPixels | u
 }
 
 /**
- * An On photo's tint mask as the browser makes it: both PNGs decoded to
- * their straight pixels, the glow mask `W` clipped to the On photo's alpha
+ * An On photo's tint mask as the browser makes it: the On photo's PNG
+ * decoded to its straight pixels, the glow mask `W` clipped to its alpha
  * (`oneLookOnTintMask`), written as a PNG blob URL. Undefined where the
- * browser cannot (no canvas), either does not decode, or their sizes differ.
+ * browser cannot (no canvas) or it does not decode.
  */
-export async function makePhotoOnMask(off: Uint8Array, on: Uint8Array): Promise<string | undefined> {
+export async function makePhotoOnMask(on: Uint8Array): Promise<string | undefined> {
   if (typeof createImageBitmap !== "function" || typeof document === "undefined" || typeof URL.createObjectURL !== "function") return undefined;
-  const [offPixels, onPixels] = await Promise.all([straightPixels(off), straightPixels(on)]);
-  if (offPixels === undefined || onPixels === undefined) return undefined;
-  const mask = oneLookOnTintMask(offPixels, onPixels);
+  const pixels = await straightPixels(on);
+  if (pixels === undefined) return undefined;
+  const mask = oneLookOnTintMask(pixels);
   return mask === undefined ? undefined : maskUrl(mask);
 }
 
@@ -228,7 +228,7 @@ function takeBytes(entry: Held, url: string, base64: string, contentType: string
       entry.on = onAt;
       // The tint mask, made once with the On photo's URL; none where it
       // cannot be made (the On photo then draws untinted).
-      return make.onMask(bytes, on).then(
+      return make.onMask(on).then(
         (mask) => {
           if (mask !== undefined) entry.onMask = mask;
         },
@@ -419,7 +419,7 @@ export interface PagePhotoStoreOptions {
   /** An On photo's URL and decoded size from its PNG bytes; `makePhotoOn`
    * by default. */
   makeOn?: PhotoOnMaker;
-  /** An On photo's tint mask URL from the Off and On PNG bytes;
+  /** An On photo's tint mask URL from its PNG bytes;
    * `makePhotoOnMask` by default. */
   makeOnMask?: PhotoOnMaskMaker;
   /** Lets go of a URL `makeOn` made; `URL.revokeObjectURL` by default. */

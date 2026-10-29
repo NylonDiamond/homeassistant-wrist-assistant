@@ -1018,8 +1018,8 @@ function clearFitSize(measurer: TextMeasurer, text: string, size: number, weight
  * tint colour when its colour is known, else the tile's, scaled by a
  * light's level; `oneLookClearGlowCss`), and the name and state centred
  * under it in the room left, each on one line, shrinking to 70% before
- * truncating. Lit (its thing on, not wrist down): the state in the tile's
- * colour, the On photo in the photo's place (a light's tinted,
+ * truncating. Lit (its thing on, not wrist down): the state in the glow's
+ * colour (a light's own when known, else the tile's), the On photo in the photo's place (a light's tinted,
  * `oneLookTintedOn`), else the Light Look's layers as on any tile. Not lit:
  * the Off filter and the grey state.
  */
@@ -1073,7 +1073,9 @@ function clearLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, cutout:
   if (state !== undefined) {
     const own = nameSize * ONE_LOOK_CLEAR.stateShare;
     const at = clearFitSize(measurer, state, own, "semibold", "standard", 0, width);
-    const ink = lit ? rgba(colour, 1) : `rgba(255, 255, 255, ${ONE_LOOK_CLEAR.offStateOpacity})`;
+    // Lit, in the same colour as the glow: a light's tint colour when its
+    // colour is known, so the words and the lamp agree; else the tile's.
+    const ink = lit ? rgba(oneLookClearGlowColour({ hue: colour }, model.tint), 1) : `rgba(255, 255, 255, ${ONE_LOOK_CLEAR.offStateOpacity})`;
     lines.push(html`<span class="ol-clear-state" style=${`font:600 ${r2(at * s)}px/${r2(at * 1.2 * s)}px ${family.standard};color:${ink}`}>${state}</span>`);
   }
   const top = box.y + box.height;
@@ -1258,12 +1260,11 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const fade = f.stub ? 0.7 : 1;
   if (oneLookDrawsClear(model) && model.cutout !== undefined) {
     // The Clear look: the wash and the hairline in place of the fill, its
-    // sheen, the rim and the under-glow; the user's pattern, animation and
-    // border stay.
+    // sheen, the rim and the under-glow. No pattern or animation behind the
+    // photo either (contract revision 2); the user's border stays.
     return html`<div class="wp-tile ol-tile clear" data-ol-mode="clear"
       style=${`${f.box}border-radius:${r2(radius * s)}px;background:rgba(255, 255, 255, ${ONE_LOOK_CLEAR.washOpacity});box-shadow:inset 0 0 0 1px rgba(255, 255, 255, ${ONE_LOOK_CLEAR.borderOpacity})${fade < 1 ? `;opacity:${fade}` : ""}`}
       title=${f.hint ?? nothing}>
-      ${model.decorated ? tileUnderlay(f.tile, input, active, { width: f.width, height: f.height }, s) : nothing}
       <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>${clearLayer(model, f, model.cutout)}</span>
       ${borderLayer(model, f, active, radius)}
     </div>`;
