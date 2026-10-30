@@ -4628,7 +4628,7 @@ export class WaPageEditor extends LitElement {
     const detail = refusal ?? WATCH_MAP_PAGE_WORDS.switchDetail;
     const asking = this.mapAsk !== undefined && sameWatchId(this.mapAsk, watchPageId(page));
     return html`<label class="pe-switch pe-ow-row pe-map-switch">
-        <span class="pe-ow-t"><span class="pe-ow-l">${WATCH_MAP_PAGE_WORDS.kind}${betaPill()}</span><span class="pe-ow-d">${detail}</span></span>
+        <span class="pe-ow-t"><span class="pe-ow-l">${WATCH_MAP_PAGE_WORDS.kind}${betaPill("ALPHA")}</span><span class="pe-ow-d">${detail}</span></span>
         <input type="checkbox" role="switch" .checked=${live(map)} ?disabled=${off}
           @change=${(e: Event) => this.mapSwitchPressed(page, (e.target as HTMLInputElement).checked)} />
       </label>

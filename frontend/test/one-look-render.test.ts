@@ -104,10 +104,11 @@ function onWatch(t: WatchPageTile, states: Record<string, HassEntityState>, icon
 }
 
 describe("which look a picture draws", () => {
-  it("is One Look unless the picture says otherwise, while no version gates it", () => {
+  it("is One Look unless the picture says otherwise or the app is older than 3.2.0", () => {
     expect(previewOneLook({})).toBe("watch");
     expect(previewOneLook({ phone })).toBe("phone");
-    expect(previewOneLook({ appVersion: "1.0.0" })).toBe("watch");
+    expect(previewOneLook({ appVersion: "3.2.0" })).toBe("watch");
+    expect(previewOneLook({ appVersion: "1.0.0" })).toBeUndefined();
     expect(previewOneLook({ oneLook: false })).toBeUndefined();
   });
 

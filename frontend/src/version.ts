@@ -55,7 +55,7 @@ export function watchSupportsPhoneTiles(appVersion: string | null | undefined): 
  * Look. Set it at release so an older app keeps the old look in the preview
  * and the old settings. Not a gate on what is stored: a tile keeps every key
  * whichever look draws it. */
-export const MIN_VERSION_FOR_ONE_LOOK: string | null = null;
+export const MIN_VERSION_FOR_ONE_LOOK: string | null = "3.2.0";
 
 /** Whether an app at this version draws One Look, by `MIN_VERSION_FOR_ONE_LOOK`.
  * A version not yet reported reads as new enough, as `deviceSupportsControls`
@@ -82,7 +82,7 @@ export function oneLookAtVersion(appVersion: string | null | undefined, minimum:
  * is: until then no device carries the note, so a development build of the
  * app (still reporting the last release's version) is not told to update.
  * Set it at release. */
-export const MIN_VERSION_FOR_ARRANGEMENT: string | null = null;
+export const MIN_VERSION_FOR_ARRANGEMENT: string | null = "3.2.0";
 
 /** Whether an app at this version draws a tile's Arrangement. Not yet
  * reported reads as new enough, as `deviceSupportsControls` does, and so does
@@ -114,7 +114,7 @@ export function arrangementUpdateNote(
  * older app ignores the key and draws the tile's icon, so the Photo rows stay
  * usable and only carry a note. null until the app release that draws it is
  * cut, as `MIN_VERSION_FOR_ARRANGEMENT` is. Set it at release. */
-export const MIN_VERSION_FOR_PHOTO_TILES: string | null = null;
+export const MIN_VERSION_FOR_PHOTO_TILES: string | null = "3.2.0";
 
 /** Whether an app at this version draws a tile's icon photo. Not yet
  * reported reads as new enough, and so does every version while no minimum

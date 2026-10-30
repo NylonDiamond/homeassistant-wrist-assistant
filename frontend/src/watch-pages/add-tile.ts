@@ -615,7 +615,7 @@ function kindChip(host: AddTileHost, key: KindKey, icon: string | undefined): Te
 function kindButton(
   host: AddTileHost,
   key: KindKey,
-  words: { label: string; icon: string | undefined; hint: string; beta?: boolean },
+  words: { label: string; icon: string | undefined; hint: string; beta?: boolean; alpha?: boolean },
   options: { disabled: boolean; onClick: () => void; expanded?: boolean; why?: string; whyId?: string },
 ): TemplateResult {
   const { expanded } = options;
@@ -626,7 +626,7 @@ function kindButton(
     @click=${options.onClick}>
     ${kindChip(host, key, words.icon)}
     <span class="at-kind-text">
-      <span class="at-kind-name">${words.label}${words.beta === true ? betaPill() : nothing}</span>
+      <span class="at-kind-name">${words.label}${words.alpha === true ? betaPill("ALPHA") : words.beta === true ? betaPill() : nothing}</span>
       <span class="at-kind-hint">${words.hint}</span>
     </span>
     ${expanded === undefined ? nothing : uiIcon("chevron")}
@@ -694,14 +694,14 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
   // The Home map tile, once the home's map has a floor with a room: one
   // floor adds at once, several open the floors under App tiles.
   const floors = watchHomeMapAddFloors(host.homeMap);
-  const homeMapWords = { label: WATCH_HOME_MAP_ADD_WORDS.label, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_HOME_MAP_ADD_WORDS.hint, beta: true };
+  const homeMapWords = { label: WATCH_HOME_MAP_ADD_WORDS.label, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_HOME_MAP_ADD_WORDS.hint, alpha: true };
   const homeMapButtons: TemplateResult[] = floors.length === 0 ? [] : [floors.length === 1
     ? kindButton(host, "homeMap", homeMapWords, { disabled: busy, onClick: () => addHomeMap(host, view, floors[0]!, 1) })
     : kindButton(host, "homeMap", homeMapWords, { disabled: false, expanded: view.links === "homeMap", onClick: () => toggleLinks("homeMap") })];
   // Map page beside it: the whole page becomes the map, so a page with
   // tiles asks first. A page that cannot be one (system, smart) has none.
   const canMapPage = watchMapPageAddRemovedCount(host.document, host.pageId) !== undefined;
-  const mapPageWords = { label: WATCH_MAP_PAGE_WORDS.addLabel, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_MAP_PAGE_WORDS.addHint, beta: true };
+  const mapPageWords = { label: WATCH_MAP_PAGE_WORDS.addLabel, icon: WATCH_TILE_APP.homeMap.add.icon, hint: WATCH_MAP_PAGE_WORDS.addHint, alpha: true };
   if (floors.length > 0 && canMapPage) {
     homeMapButtons.push(floors.length === 1
       ? kindButton(host, "mapPage", mapPageWords, { disabled: busy, onClick: () => pickMapPage(host, view, floors[0]!) })

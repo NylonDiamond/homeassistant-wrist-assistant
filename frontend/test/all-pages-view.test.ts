@@ -337,7 +337,7 @@ describe("the Pages tab", () => {
     let dialog = dialogOf();
     expect(dialog).toContain("Which kind");
     expect(dialog).toContain("Map page");
-    expect(dialog).toContain("BETA");
+    expect(dialog).toContain("ALPHA");
     expect(dialog).toContain("Scan a room in the iPhone app first.");
     expect(dialog).toMatch(/new-step-num" aria-hidden="true">3<\/span>\s*<span class="new-step-title">Preview on/);
     try {

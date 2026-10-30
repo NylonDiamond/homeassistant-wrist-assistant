@@ -250,10 +250,11 @@ describe("One Look draws the arrangement", () => {
 // ── the version note ─────────────────────────────────────────────────────
 
 describe("the version note", () => {
-  it("is unset until the release, so every device reads as new enough", () => {
-    expect(MIN_VERSION_FOR_ARRANGEMENT).toBeNull();
-    expect(arrangementFor("3.1.0")).toBe(true);
-    expect(arrangementUpdateNote(["Chen Watch"])).toBeUndefined();
+  it("is set to 3.2.0, the release that draws it", () => {
+    expect(MIN_VERSION_FOR_ARRANGEMENT).toBe("3.2.0");
+    expect(arrangementFor("3.1.0")).toBe(false);
+    expect(arrangementFor("3.2.0")).toBe(true);
+    expect(arrangementUpdateNote([])).toBeUndefined();
   });
 
   it("with a minimum set, an older version does not draw it and an unreported one does", () => {
@@ -457,9 +458,10 @@ describe("the Arrangement card", () => {
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
   });
 
-  it("notes no device as too old while the release has not set a minimum", () => {
+  it("notes only the devices older than the 3.2.0 release", () => {
     const old = text(card(tileHost(KITCHEN, { pickers: [{ name: "Chen Watch", version: "3.1.4" }, { name: "Jesse iPhone", version: "3.2.0" }] }).host));
-    expect(old).not.toContain("Needs Wrist Assistant");
+    expect(old).toContain("Needs Wrist Assistant 3.2 on Chen Watch.");
+    expect(old).not.toContain("Jesse iPhone");
   });
 
   it("shares the part picked with the stage through the editor's view state", () => {

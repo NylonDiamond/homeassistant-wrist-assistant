@@ -145,7 +145,7 @@ describe("a map page in the inspector", () => {
   it("offers the Map page switch in iPhone view only, with no Smart page switch on a map page", () => {
     const map = editor({ mapPage: true, items: [mapTile()] }).cards();
     expect(map).toContain("pe-map-switch");
-    expect(map).toContain("BETA");
+    expect(map).toContain("ALPHA");
     expect(map).toContain(WATCH_MAP_PAGE_WORDS.switchDetail);
     expect(map).not.toContain("Fills itself from its rules");
     const plain = editor({ items: [lampTile()] }).cards();

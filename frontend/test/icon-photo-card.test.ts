@@ -323,9 +323,10 @@ describe("the Icon part with a photo", () => {
 
 describe("the version note", () => {
   it("names the devices too old once a minimum is set, none before", () => {
-    expect(MIN_VERSION_FOR_PHOTO_TILES).toBeNull();
-    expect(photoTilesFor("1.0.0")).toBe(true);
-    expect(photoTilesUpdateNote(["Chen Watch"])).toBeUndefined();
+    expect(MIN_VERSION_FOR_PHOTO_TILES).toBe("3.2.0");
+    expect(photoTilesFor("1.0.0")).toBe(false);
+    expect(photoTilesFor("1.0.0", null)).toBe(true);
+    expect(photoTilesUpdateNote(["Chen Watch"], null)).toBeUndefined();
     expect(photoTilesFor("3.1.0", "3.2.0")).toBe(false);
     expect(photoTilesFor(undefined, "3.2.0")).toBe(true);
     expect(photoTilesUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the icon.");

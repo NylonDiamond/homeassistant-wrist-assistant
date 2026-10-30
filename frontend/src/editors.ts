@@ -979,10 +979,11 @@ export function groupedSelectField<T extends string>(label: string, value: T, gr
  * change length, stay a `selectField`: a row of seven buttons is a menu that
  * forgot to fold.
  */
-/** A small BETA pill after a name, for a feature still being tried out. Its
- * look is inline so it draws the same in every shadow root. */
-export function betaPill(): TemplateResult {
-  return html`<span class="beta-pill" style="display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid currentColor;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.06em;line-height:12px;opacity:0.7;vertical-align:middle">BETA</span>`;
+/** A small BETA pill after a name, for a feature still being tried out, or
+ * ALPHA for one at an earlier stage (the Home map). Its look is inline so it
+ * draws the same in every shadow root. */
+export function betaPill(text: "BETA" | "ALPHA" = "BETA"): TemplateResult {
+  return html`<span class="beta-pill" style="display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid currentColor;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.06em;line-height:12px;opacity:0.7;vertical-align:middle">${text}</span>`;
 }
 
 export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; def?: T; disabled?: Partial<Record<T, boolean>>; reselect?: boolean; beta?: Partial<Record<T, boolean>> } = {}) {

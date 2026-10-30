@@ -20110,7 +20110,7 @@ export class WristAssistantPanel extends LitElement {
           title=${watchScreenSentence(screen)} style=${`--h:${look.hue}`}
           @click=${(e: MouseEvent) => { if (!isPlainClick(e)) return; e.preventDefault(); this.goTo(path); }}>
           <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon(look.icon)}</span>
-          <span class="hb-row-t"><span class="hb-row-name">${screen.label}${screen.beta === true ? betaPill() : nothing}</span><span class="hb-row-sub">${HOME_SHARED_SUB[screen.id] ?? ""}</span></span>
+          <span class="hb-row-t"><span class="hb-row-name">${screen.label}${screen.beta === "alpha" ? betaPill("ALPHA") : screen.beta === true ? betaPill() : nothing}</span><span class="hb-row-sub">${HOME_SHARED_SUB[screen.id] ?? ""}</span></span>
         </a>`;
       })}
     </section>`;

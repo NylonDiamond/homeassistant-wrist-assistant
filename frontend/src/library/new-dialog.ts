@@ -167,7 +167,7 @@ export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previe
           ${stepHead(2, "Which kind", named ? "A page of tiles, or your home's map over the whole page." : "Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Kind of page">
             ${card(!map, "Page", pageKindNote(false), pageKindArt(false), () => h.onMapPage?.(false), form.busy)}
-            ${card(map, html`Map page${betaPill()}`, pageKindNote(true, mapPage), pageKindArt(true), () => h.onMapPage?.(true), form.busy || mapPage.refusal !== undefined)}
+            ${card(map, html`Map page${betaPill("ALPHA")}`, pageKindNote(true, mapPage), pageKindArt(true), () => h.onMapPage?.(true), form.busy || mapPage.refusal !== undefined)}
           </div>
         </section>`;
   return html`<dialog class="new-dialog lib-new" aria-label=${newItemTitle(kind)} @close=${() => h.onClose()}
