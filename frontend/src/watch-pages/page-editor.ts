@@ -916,6 +916,8 @@ export class WaPageEditor extends LitElement {
   private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
   /** The On photo a tile's icon photo carries (photo tiles plan, "On photo"). */
   private readonly photoOn = (id: string): string | undefined => this.photos.onUrl(id);
+  /** That On photo's tint mask (photo tiles plan, "On photo tint"). */
+  private readonly photoOnMask = (id: string): string | undefined => this.photos.onMask(id);
   /** The modules' view state (`WatchPagesEditorHost.uiState`). */
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */
@@ -3629,7 +3631,7 @@ export class WaPageEditor extends LitElement {
     const homeMap = this.homeMapDoc();
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
-      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn,
+      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn, photoOnMask: this.photoOnMask,
       appVersion: this.previewAppVersion(undefined),
       ...(phone === undefined ? {} : { phone }),
       ...(homeMap === undefined ? {} : { homeMap }),
@@ -3889,6 +3891,7 @@ export class WaPageEditor extends LitElement {
       photoSize: this.photoSize,
       photoGlow: this.photoGlow,
       photoOn: this.photoOn,
+      photoOnMask: this.photoOnMask,
     };
     // The home's map, for its Home map tiles.
     const homeMap = this.homeMapDoc();

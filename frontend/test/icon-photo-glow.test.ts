@@ -441,14 +441,17 @@ describe("a look on a One Look tile", () => {
     expect(off).toBe(html(renderOneLookTile(face(lamp(), "off", lit(undefined)))));
   });
 
-  it("a switch that keeps its colour is bright but not lit: none of it", () => {
+  it("a switch that is on glows as a light does; off, none of it", () => {
     const f = face(lamp({ entityId: "switch.fan", color: "#3B82F6" }), "on", lit(LIGHT()));
     f.input.states = { "switch.fan": { entity_id: "switch.fan", state: "on", attributes: {}, last_changed: "", last_updated: "" } };
     const drawn = html(renderOneLookTile(f));
-    expect(drawn).not.toContain("ol-light");
-    expect(drawn).toContain("ol-cutout");
+    for (const l of LAYERS) expect(drawn).toContain(l);
+    f.input.states = { "switch.fan": { entity_id: "switch.fan", state: "off", attributes: {}, last_changed: "", last_updated: "" } };
+    const off = html(renderOneLookTile(f));
+    expect(off).not.toContain("ol-light");
+    expect(off).toContain("ol-cutout");
     f.input.photoGlow = () => undefined;
-    expect(drawn).toBe(html(renderOneLookTile(f)));
+    expect(off).toBe(html(renderOneLookTile(f)));
   });
 
   it("dimmed (wrist down) or not lit: no look", () => {
@@ -457,6 +460,10 @@ describe("a look on a One Look tile", () => {
     expect(oneLookCutoutGlows(p("coloured", true, true), true)).toBe(false);
     expect(oneLookCutoutGlows(p("graphite", false), true)).toBe(false);
     expect(oneLookCutoutGlows(p("coloured", false), false)).toBe(false);
+    // Another kind that is on glows, coloured or graphite; not wrist down.
+    expect(oneLookCutoutGlows(p("coloured", false), false, true)).toBe(true);
+    expect(oneLookCutoutGlows(p("graphite", false), false, true)).toBe(true);
+    expect(oneLookCutoutGlows(p("graphite", false, true), false, true)).toBe(false);
   });
 
   it("no look in the photo: drawn exactly as before", () => {
@@ -519,12 +526,16 @@ describe("an On photo on a One Look tile", () => {
     expect(out).toBe(html(renderOneLookTile(face(lamp(), "off", lit(undefined)))));
   });
 
-  it("a switch that keeps its colour is bright but not lit: the Off photo, bright", () => {
+  it("a switch that is on shows its On photo; off and keeping its colour, the Off photo, bright", () => {
     const f = face(lamp({ entityId: "switch.fan", color: "#3B82F6" }), "on", withOn());
     f.input.states = { "switch.fan": { entity_id: "switch.fan", state: "on", attributes: {}, last_changed: "", last_updated: "" } };
-    const out = html(renderOneLookTile(f));
-    expect(src(out)).toBe("blob:lamp");
-    expect(styleOf(out, "ol-cutout")).not.toContain("filter");
+    const on = html(renderOneLookTile(f));
+    expect(src(on)).toBe("blob:on");
+    expect(styleOf(on, "ol-cutout")).not.toContain("filter");
+    f.input.states = { "switch.fan": { entity_id: "switch.fan", state: "off", attributes: {}, last_changed: "", last_updated: "" } };
+    const off = html(renderOneLookTile(f));
+    expect(src(off)).toBe("blob:lamp");
+    expect(styleOf(off, "ol-cutout")).not.toContain("filter");
   });
 
   it("draws in a library row's picture when the row has the photos", () => {

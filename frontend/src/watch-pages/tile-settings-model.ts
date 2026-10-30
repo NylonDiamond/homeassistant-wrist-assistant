@@ -608,9 +608,34 @@ export function setWatchTileIconPhoto(
   id: string | undefined,
 ): WatchPagesDocument {
   const value = id === undefined || id.trim() === "" ? undefined : id.trim().toUpperCase();
-  return setKey(document, pageId, tileId, "iconPhotoId", (tile) => {
-    if (value === undefined) return Object.hasOwn(tile, "iconPhotoId") ? REMOVE : undefined;
-    return value;
+  // No photo takes the photo's look with it.
+  if (value === undefined) return editTile(document, pageId, tileId, (tile) => withoutKey(withoutKey(tile, "iconPhotoId"), "iconPhotoLook"));
+  return setKey(document, pageId, tileId, "iconPhotoId", () => value);
+}
+
+/** The photo's looks the panel offers: Colour (the normal look, no key) and
+ * Clear (`iconPhotoLook` "clear"). */
+export type WatchTileIconPhotoLook = "colour" | "clear";
+
+/** The tile's photo look as the apps read it: "clear" is Clear, anything
+ * else (absent included) the normal look. */
+export function watchTileIconPhotoLook(tile: WatchPageTile): WatchTileIconPhotoLook {
+  return tile.iconPhotoLook === "clear" ? "clear" : "colour";
+}
+
+/** Set the photo's look: Clear writes "clear", Colour removes the key. Only
+ * on a tile with a photo, since the look counts only beside one; a tile
+ * with none is left as it is. */
+export function setWatchTileIconPhotoLook(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  look: WatchTileIconPhotoLook,
+): WatchPagesDocument {
+  return setKey(document, pageId, tileId, "iconPhotoLook", (tile) => {
+    if (look === "colour") return Object.hasOwn(tile, "iconPhotoLook") ? REMOVE : undefined;
+    if (watchTileIconPhotoId(tile) === undefined || tile.iconPhotoLook === "clear") return undefined;
+    return "clear";
   });
 }
 

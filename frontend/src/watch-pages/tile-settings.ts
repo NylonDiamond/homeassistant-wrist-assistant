@@ -245,6 +245,7 @@ import {
   watchTileArrange,
   watchTileIconGlow,
   watchTileIconPhotoId,
+  watchTileIconPhotoLook,
   watchTileIconSettings,
   watchTileTextSettings,
 } from "./tile-settings-model.js";
@@ -1121,7 +1122,7 @@ function partResetEdit(host: TileSettingsHost, part: TileInspectorPart): ((d: Wa
 /** The tile keys each split part of Icon and color edits, beside the icon
  * and color themselves, and what its rows read of them. */
 const PART_KEYS: Readonly<Partial<Record<TileInspectorPart, readonly string[]>>> = {
-  icon: ["iconPhotoId", "iconSizeOverride", "iconShadow", "stateIcons", "stateColors"],
+  icon: ["iconPhotoId", "iconPhotoLook", "iconSizeOverride", "iconShadow", "stateIcons", "stateColors"],
   glow: ["iconGlow"],
   whenOff: ["dimWhenOff", "activeIconAnimationEnabled"],
   tapAnimation: ["iconTapAnimation"],
@@ -1131,7 +1132,7 @@ const PART_READS: Readonly<Partial<Record<TileInspectorPart, (tile: WatchPageTil
   icon: (t) => {
     const s = watchTileIconSettings(t);
     const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
-    return [watchTileIconPhotoId(t), s.iconSize, s.iconShadow, map(t.stateIcons), map(t.stateColors)];
+    return [watchTileIconPhotoId(t), watchTileIconPhotoLook(t), s.iconSize, s.iconShadow, map(t.stateIcons), map(t.stateColors)];
   },
   glow: (t) => encodeOneLookGlyphGlow(watchTileIconGlow(t)),
   whenOff: (t) => {
@@ -1350,7 +1351,7 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
  * arrangement. The name, whether it shows, the size, the tap and Show tile
  * stay. */
 const RESET_LOOK_KEYS: readonly string[] = [
-  "iconPhotoId", "iconSizeOverride", "iconShadow", "iconGlow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors",
+  "iconPhotoId", "iconPhotoLook", "iconSizeOverride", "iconShadow", "iconGlow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors",
   "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex", "arrange",
 ];
 

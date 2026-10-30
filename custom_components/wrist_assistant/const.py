@@ -461,6 +461,10 @@ PAGE_IMAGES_CAPABILITY = "page_images"
 # iconPhotoId counts as a use of its photo. The phone sends a tile's photo,
 # and the panel offers photos for tiles, only when it sees this.
 TILE_PHOTOS_CAPABILITY = "tile_photos"
+# The signed page_image_list op: the home's icon photos with their label and
+# entity id, so the phone can tell which things already have a photo. The
+# phone asks only when it sees this.
+TILE_PHOTO_LIST_CAPABILITY = "tile_photo_list"
 # The home map (app repo docs/home_map_plan_2026-10.md), see
 # home_map_store.py: one document for the home, the floors, rooms and device
 # pins, and a rev that goes up by one on each save.

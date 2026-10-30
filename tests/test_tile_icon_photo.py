@@ -2,7 +2,8 @@
 drawn in place of its icon (app repo docs/photo_tiles_plan_2026-10.md, "Tile
 key"), checked at the tile level of a panel save or a restore
 (``_check_items`` and ``_check_icon_photo`` in watch_config_store.py) and
-never on a device save.
+never on a device save. Its ``iconPhotoLook`` (``"clear"`` for the Clear
+look) is checked there too: any string saves, anything else is refused.
 
 Nothing here talks to a live Home Assistant.
 """
@@ -96,3 +97,40 @@ def test_a_device_save_skips_the_photo_guard(mod) -> None:  # noqa: F811
     with pytest.raises(mod.WatchConfigValidationError):
         store.panel_save(OWNER, "pages", broken, base_revision=1)
     assert store.get(OWNER, "pages").revision == 1
+
+
+# ── iconPhotoLook ────────────────────────────────────────────────────────
+
+LOOK_AT = f'document.pages[0] (id "{PAGE}").items[0].iconPhotoLook'
+
+
+@pytest.mark.parametrize("look", ["clear", "Clear", "", "glass", None])
+def test_any_string_look_saves_as_sent(mod, look) -> None:  # noqa: F811
+    # "clear" is the Clear look; any other string reads as the normal look on
+    # the devices, so it is no reason to refuse a save. Null is no look.
+    sent = _pages(_tile(iconPhotoId=PHOTO, iconPhotoLook=look))
+    mod.validate_document("pages", sent, check_items=True)
+    store = _new(mod)
+    store.put(OWNER, "pages", _pages(_tile()), document_hash="a" * 64, base_revision=0, updated_by=OWNER)
+    record = store.panel_save(OWNER, "pages", copy.deepcopy(sent), base_revision=1)
+    assert record.document["pages"][0]["items"][0]["iconPhotoLook"] == look
+
+
+def test_a_look_without_a_photo_is_not_refused(mod) -> None:  # noqa: F811
+    # The look counts only beside a photo; alone it is ignored, not refused.
+    mod.validate_document("pages", _pages(_tile(iconPhotoLook="clear")), check_items=True)
+
+
+@pytest.mark.parametrize("look", [7, True, ["clear"], {"look": "clear"}])
+def test_a_look_that_is_not_a_string_is_refused(mod, look) -> None:  # noqa: F811
+    with pytest.raises(mod.WatchConfigValidationError) as err:
+        mod.validate_document("pages", _pages(_tile(iconPhotoId=PHOTO, iconPhotoLook=look)), check_items=True)
+    assert err.value.message == f"{LOOK_AT} must be a string"
+
+
+def test_a_device_save_skips_the_look_guard(mod) -> None:  # noqa: F811
+    broken = _pages(_tile(iconPhotoId=PHOTO, iconPhotoLook=7))
+    assert mod.validate_document("pages", broken) > 0
+    store = _new(mod)
+    record = store.put(OWNER, "pages", broken, document_hash="a" * 64, base_revision=0, updated_by=OWNER)
+    assert record.document == broken

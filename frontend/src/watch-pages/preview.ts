@@ -176,6 +176,10 @@ export interface WatchPagePreviewInput {
    * plan, "On photo") once its bytes are in and its size checked, else
    * undefined; without it the photo is drawn as it is when lit. */
   photoOn?: (id: string) => string | undefined;
+  /** The URL of an On photo's tint mask (`one-look/tint.ts`) once it is
+   * made with the On photo, else undefined; without it a light's On photo
+   * is drawn untinted. */
+  photoOnMask?: (id: string) => string | undefined;
   /** The page is an iPhone's: `screen` is its pages area, and the picture
    * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
    * look the layout carries (`phonePagesLayout` with `look`). */
@@ -4273,12 +4277,26 @@ export const watchPagePreviewStyles = css`
   /* A tile's icon photo: a cut-out on nothing, fitted whole, its corners
      rounded by the box (render.ts, cutoutLayer). */
   .ol-cutout { position: absolute; display: block; box-sizing: border-box; object-fit: contain; pointer-events: none; }
+  /* A photo's Clear look (render.ts, clearLayer): the name and the state
+     centred in the room under the photo, each one line, already shrunk as
+     far as it may, then truncated. */
+  .ol-clear-text { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+  .ol-clear-name, .ol-clear-state { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
   /* Light Look: the light's aura, beam and emission with an icon photo,
      each the light's colour through its own mask stretched over the span,
      screen blended over what is under it (render.ts, lightSpan). */
   .ol-light {
     position: absolute; display: block; pointer-events: none; mix-blend-mode: screen;
     -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  }
+  /* On photo tint: a light's colour over its On photo, through the photo's
+     tint mask fitted as the photo is, multiply blended (render.ts,
+     oneLookTintedOn). */
+  .ol-tint {
+    position: absolute; display: block; pointer-events: none; mix-blend-mode: multiply;
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-position: center; mask-position: center;
     -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   }
   .ol-glyph { position: absolute; display: flex; align-items: center; justify-content: center; }

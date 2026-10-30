@@ -805,10 +805,10 @@ def test_setup_builds_the_store_attaches_it_and_advertises() -> None:
     assert 'HOME_MAP_CAPABILITY = "home_map"' in const
     assert 'HOME_MAP_STORAGE_KEY = "wrist_assistant.home_map"' in const
     assert "home_map_store: HomeMapStore" in const
-    # Registered right beside tile_photos.
+    # Registered right after the photo capabilities, tile_photo_list last.
     lines = [line.strip() for line in init.splitlines() if "register_capability(" in line]
     assert lines.index("coordinator.register_capability(HOME_MAP_CAPABILITY)") == lines.index(
-        "coordinator.register_capability(TILE_PHOTOS_CAPABILITY)"
+        "coordinator.register_capability(TILE_PHOTO_LIST_CAPABILITY)"
     ) + 1
     # The scans, advertised right after the map.
     assert 'HOME_MAP_SCANS_CAPABILITY = "home_map_scans"' in const

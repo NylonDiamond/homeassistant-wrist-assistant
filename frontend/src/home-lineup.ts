@@ -91,6 +91,7 @@ export class WaHomeLineup extends LitElement {
   private readonly photoSize = (id: string): { width: number; height: number } | undefined => this.photos.size(id);
   private readonly photoGlow = (id: string): OneLookPhotoLight | undefined => this.photos.glow(id);
   private readonly photoOn = (id: string): string | undefined => this.photos.onUrl(id);
+  private readonly photoOnMask = (id: string): string | undefined => this.photos.onMask(id);
 
   get hass(): HassLike | undefined {
     return this.hassNow;
@@ -121,6 +122,7 @@ export class WaHomeLineup extends LitElement {
       photoSize: this.photoSize,
       photoGlow: this.photoGlow,
       photoOn: this.photoOn,
+      photoOnMask: this.photoOnMask,
       photoTick: this.photoTick,
       pageWidth: this.pageW,
       waitsForIphone: this.waitsForIphone,
@@ -412,10 +414,12 @@ export interface LineupDraw {
   /** A tile's icon photo's URL by its id once its bytes are in, and a
    * value that moves as more come in. */
   photo?: (id: string) => string | undefined;
-  /** Its size, the light saved in it (Light Look) and its On photo. */
+  /** Its size, the light saved in it (Light Look), its On photo and that
+   * photo's tint mask. */
   photoSize?: (id: string) => { width: number; height: number } | undefined;
   photoGlow?: (id: string) => OneLookPhotoLight | undefined;
   photoOn?: (id: string) => string | undefined;
+  photoOnMask?: (id: string) => string | undefined;
   photoTick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
@@ -464,6 +468,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       ...(draw.photoSize === undefined ? {} : { photoSize: draw.photoSize }),
       ...(draw.photoGlow === undefined ? {} : { photoGlow: draw.photoGlow }),
       ...(draw.photoOn === undefined ? {} : { photoOn: draw.photoOn }),
+      ...(draw.photoOnMask === undefined ? {} : { photoOnMask: draw.photoOnMask }),
       ...(draw.photoTick === undefined ? {} : { photoTick: draw.photoTick }),
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("pages", pick.id) },

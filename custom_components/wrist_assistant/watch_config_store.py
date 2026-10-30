@@ -826,7 +826,8 @@ def _check_pages(pages: list[Any], *, check_items: bool) -> None:
     ``iconGlow`` (the glow behind its icon) has the shape the apps read
     (:func:`_check_icon_glow`), and so has its ``arrange`` (where its parts
     sit, :func:`_check_arrange`), and its ``iconPhotoId`` is a UUID
-    (:func:`_check_icon_photo`). A device save skips this level on purpose: a phone refused for a fault in its own old
+    (:func:`_check_icon_photo`) and its ``iconPhotoLook`` a string
+    (:func:`_check_icon_photo_look`). A device save skips this level on purpose: a phone refused for a fault in its own old
     tiles could never upload again, while the panel can always fix what it
     sends.
 
@@ -887,6 +888,9 @@ def _check_items(page: dict[str, Any], where: str) -> None:
         # A null photo is no photo, as for the glow.
         if item.get(_ICON_PHOTO_KEY) is not None:
             _check_icon_photo(item[_ICON_PHOTO_KEY], at)
+        # A null look is the normal look, as for the photo.
+        if item.get(_ICON_PHOTO_LOOK_KEY) is not None:
+            _check_icon_photo_look(item[_ICON_PHOTO_LOOK_KEY], at)
 
 
 # A tile's photo (app repo docs/photo_tiles_plan_2026-10.md, "Tile key"): the
@@ -910,6 +914,25 @@ def _check_icon_photo(photo_id: Any, at: str) -> None:
     """
     if not isinstance(photo_id, str) or not _UUID_RE.fullmatch(photo_id):
         raise WatchConfigValidationError(f"{at}.{_ICON_PHOTO_KEY} must be a photo's UUID")
+
+
+# How a tile with a photo draws (app repo docs/photo_tiles_plan_2026-10.md,
+# "Clear look"): "clear" is the Clear look, no fill and the photo over the
+# name. Absent is the normal look, and so is any other string, so a look a
+# later app adds never stops a save.
+_ICON_PHOTO_LOOK_KEY = "iconPhotoLook"
+
+
+def _check_icon_photo_look(look: Any, at: str) -> None:
+    """The tile level's guard for one tile's ``iconPhotoLook``, run only where
+    :func:`_check_items` runs: a panel save or a restore, never a device save.
+    ``at`` names the tile by page and index.
+
+    The look is a string. Its value is not checked: the apps read anything
+    but ``"clear"`` as the normal look.
+    """
+    if not isinstance(look, str):
+        raise WatchConfigValidationError(f"{at}.{_ICON_PHOTO_LOOK_KEY} must be a string")
 
 
 # The glow behind a tile's icon (app repo docs/tile_layers_contract_2026-10.md,

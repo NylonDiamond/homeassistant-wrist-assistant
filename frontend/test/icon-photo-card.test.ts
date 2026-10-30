@@ -19,7 +19,12 @@ import { NO_ICONS, type TilePick, type TileSettingsHost, extendHost } from "../s
 import { ICON_PHOTO_FROM_PHONE, iconPhotoChoices, iconPhotoShown, renderIconPhoto, renderIconSource } from "../src/watch-pages/icon-photo-card.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { PagePhotoStore, forgetPagePhotos } from "../src/watch-pages/page-photo-store.js";
-import { setWatchTileIconPhoto, watchTileIconPhotoId } from "../src/watch-pages/tile-settings-model.js";
+import {
+  setWatchTileIconPhoto,
+  setWatchTileIconPhotoLook,
+  watchTileIconPhotoId,
+  watchTileIconPhotoLook,
+} from "../src/watch-pages/tile-settings-model.js";
 import { watchTileInspectorPartChanged, watchTileInspectorPartReset } from "../src/watch-pages/tile-settings.js";
 import pageKeys from "../src/watch-pages/page-keys.json";
 
@@ -230,7 +235,8 @@ describe("the Photo row", () => {
     const { host, tileOf } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP }), tile(B, "fan.ceiling")], [A, B]);
     const text = flat(renderIconPhoto(host));
     expect(text).toContain("Mixed");
-    expect(text).not.toContain("aria-checked=true");
+    // No photo on (the Look under the photos has its own choice on).
+    expect(text.split(">Look<")[0]).not.toContain("aria-checked=true");
     click(renderIconPhoto(host), `data-photo=${FAN}`);
     expect([tileOf(A)!.iconPhotoId, tileOf(B)!.iconPhotoId]).toEqual([FAN, FAN]);
     const same = flat(renderIconPhoto(host));
@@ -325,5 +331,68 @@ describe("the version note", () => {
     expect(photoTilesUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the icon.");
     expect(photoTilesUpdateNote(["A", "B"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on A and B. Until then they draw the icon.");
     expect(photoTilesUpdateNote([], "3.2.0")).toBeUndefined();
+  });
+});
+
+// ── Look: Colour or Clear ────────────────────────────────────────────────
+
+const lookOn = (text: string) => /aria-checked="?true"?[^>]*>\s*(Colour|Clear)</.exec(text)?.[1];
+
+describe("Look, Colour or Clear", () => {
+  it("is an optional string key on a tile, with a note", () => {
+    const keys = (pageKeys as { types: { tile: { keys: Record<string, unknown> } } }).types.tile.keys;
+    expect(keys.iconPhotoLook).toEqual({ type: "string", required: false });
+    expect((pageKeys as { notes: { keys: Record<string, string> } }).notes.keys.iconPhotoLook).toContain("\"clear\"");
+  });
+
+  it("shows only once the tile has a photo, Colour by default", async () => {
+    const none = await setup([tile(A, "light.desk")], [A]);
+    click(renderIconSource(none.host), "Photo");
+    expect(flat(renderIconPhoto(none.host))).not.toContain("Clear");
+    const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP })], [A]);
+    const text = flat(renderIconPhoto(host));
+    expect(text).toContain(">Look<");
+    expect(lookOn(text)).toBe("Colour");
+  });
+
+  it("Clear writes \"clear\", Colour removes the key", async () => {
+    const { host, tileOf } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP })], [A]);
+    click(renderIconPhoto(host), "Clear");
+    expect(tileOf(A)!.iconPhotoLook).toBe("clear");
+    expect(lookOn(flat(renderIconPhoto(host)))).toBe("Clear");
+    expect(watchTileInspectorPartChanged(host, "icon")).toBe(true);
+    click(renderIconPhoto(host), "Colour");
+    expect(Object.hasOwn(tileOf(A)!, "iconPhotoLook")).toBe(false);
+  });
+
+  it("Show Icon takes the look off with the photo, and so does the part's Reset", async () => {
+    const { host, tileOf, draft } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear" })], [A]);
+    const reset = watchTileInspectorPartReset(host, "icon")!(draft.document);
+    const reread = ((reset.pages as WatchPage[])[0]!.items as WatchPageTile[])[0]!;
+    expect([Object.hasOwn(reread, "iconPhotoId"), Object.hasOwn(reread, "iconPhotoLook")]).toEqual([false, false]);
+    click(renderIconSource(host), "Icon");
+    expect([Object.hasOwn(tileOf(A)!, "iconPhotoId"), Object.hasOwn(tileOf(A)!, "iconPhotoLook")]).toEqual([false, false]);
+  });
+
+  it("several tiles picked: Clear goes on every one with a photo, never on one without", async () => {
+    const { host, tileOf } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP }), tile(B, "fan.ceiling")], [A, B]);
+    click(renderIconPhoto(host), "Clear");
+    expect(tileOf(A)!.iconPhotoLook).toBe("clear");
+    expect(Object.hasOwn(tileOf(B)!, "iconPhotoLook")).toBe(false);
+  });
+
+  it("the setter: only beside a photo, an unknown value reads as Colour", () => {
+    const doc = (t: WatchPageTile): WatchPagesDocument => ({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "P", items: [t] }] });
+    const first = (d: WatchPagesDocument) => ((d.pages as WatchPage[])[0]!.items as WatchPageTile[])[0]!;
+    const bare = doc(tile(A, "light.desk"));
+    expect(setWatchTileIconPhotoLook(bare, PAGE_ID, A, "clear")).toBe(bare);
+    const set = setWatchTileIconPhotoLook(doc(tile(A, "light.desk", { iconPhotoId: LAMP })), PAGE_ID, A, "clear");
+    expect(first(set).iconPhotoLook).toBe("clear");
+    expect(setWatchTileIconPhotoLook(set, PAGE_ID, A, "clear")).toBe(set);
+    expect(watchTileIconPhotoLook(tile(A, "light.desk", { iconPhotoLook: "glass" }))).toBe("colour");
+    expect(watchTileIconPhotoLook(tile(A, "light.desk", { iconPhotoLook: "clear" }))).toBe("clear");
+    // A photo swapped for another keeps its look; none removes it.
+    expect(first(setWatchTileIconPhoto(set, PAGE_ID, A, FAN)).iconPhotoLook).toBe("clear");
+    expect(Object.hasOwn(first(setWatchTileIconPhoto(set, PAGE_ID, A, undefined)), "iconPhotoLook")).toBe(false);
   });
 });

@@ -10,7 +10,8 @@
 // for the tile (`PagePhotoStore.uploadIcon`). A pick is one commit of the
 // tile key `iconPhotoId` (`setWatchTileIconPhoto`). With several tiles
 // picked, a photo is on only when every one has it, and the title says
-// Mixed when they differ.
+// Mixed when they differ. Under the photos, once a tile has one, Look:
+// Colour or Clear (`iconPhotoLook`, `renderIconPhotoLook`).
 //
 // One Look draws the photo in the icon's place (`one-look/render.ts`,
 // `cutoutLayer`); the old look keeps the icon, so the row is greyed there.
@@ -30,7 +31,13 @@ import { mixedWord } from "./picture-choice.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
 import { pickedMixed, somePicked } from "./multi-pick.js";
-import { setWatchTileIconPhoto, watchTileIconPhotoId } from "./tile-settings-model.js";
+import {
+  type WatchTileIconPhotoLook,
+  setWatchTileIconPhoto,
+  setWatchTileIconPhotoLook,
+  watchTileIconPhotoId,
+  watchTileIconPhotoLook,
+} from "./tile-settings-model.js";
 import { watchTileFallbackName } from "./tile-settings-options.js";
 import { commit, linkButton } from "./tile-settings.js";
 
@@ -109,6 +116,20 @@ export function iconPhotoChoices(
 function pick(host: TileSettingsHost, id: string | undefined): void {
   host.endCoalesce();
   commit(host, "iconPhoto", (d) => setWatchTileIconPhoto(d, host.pageId, host.tileId, id));
+}
+
+/**
+ * Look, under the photos once a picked tile has one: Colour (the normal
+ * look, no key) or Clear (`iconPhotoLook` "clear": no fill, the photo over
+ * the name, photo tiles plan "Clear look"). A pick is one commit on every
+ * picked tile that has a photo; Show Icon takes the look off with the photo.
+ */
+export function renderIconPhotoLook(host: TileSettingsHost): TemplateResult | typeof nothing {
+  if (!somePicked(host, () => watchTileIconPhotoId(host.tile) !== undefined)) return nothing;
+  return segField<WatchTileIconPhotoLook>("Look", watchTileIconPhotoLook(host.tile), [["colour", "Colour"], ["clear", "Clear"]], (v) => {
+    host.endCoalesce();
+    commit(host, "iconPhotoLook", (d) => setWatchTileIconPhotoLook(d, host.pageId, host.tileId, v));
+  }, { def: "colour", titles: { colour: "The photo on the tile's colour", clear: "No fill: the photo over the name, glowing in the tile's colour when on" } });
 }
 
 async function addPhoto(host: TileSettingsHost, photos: PagePhotoStore, input: HTMLInputElement): Promise<void> {
@@ -193,6 +214,7 @@ export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
   </div>`;
   return html`<div class="ts-ph">
     ${row}
+    ${renderIconPhotoLook(host)}
     ${noStore ? html`<div class="hint warn ts-under">Photo icons need a newer version of the integration.</div>` : nothing}
     ${photos?.listState === "failed" ? html`<div class="hint warn ts-under">Home Assistant did not list its photos. ${linkButton("Try again", "Read the photo list again", () => void photos.refreshList())}</div>` : nothing}
     ${askedChoice !== undefined && photos !== undefined ? html`<div class="ts-ph-ask" role="alert">
