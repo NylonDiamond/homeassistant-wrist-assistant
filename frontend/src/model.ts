@@ -2754,6 +2754,37 @@ export interface TapElement extends Omit<ElementBase, "colorSlot"> {
    * boxes turn the same point value into different fractions. Undefined means
    * "adopt whatever frame the document has for this tap". */
   outset?: TapOutset;
+  /** "Ask before running": the first tap on a widget or watch face only arms
+   * the layer (it shows "Tap again" for 5 seconds), the second tap runs the
+   * action. Only means something for actions that run in the background
+   * (`tapActionCanConfirm`). A key of the layer, not of its action, so the
+   * Control Center control and the document's tapAction never carry it.
+   * Encoded only when true. */
+  confirm?: boolean;
+}
+
+/** Actions "Ask before running" applies to: the ones that run something in
+ * the background. Refresh, page and open actions do nothing a second look
+ * would guard, and an open action leaves the widget for the app anyway. */
+export function tapActionCanConfirm(action: TapAction): boolean {
+  switch (action.type) {
+    case "toggleEntity":
+    case "runScene":
+    case "runScript":
+    case "callService":
+    case "runHTTPAction":
+    case "timerStartPause":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** Sets or clears "Ask before running". Off removes the key rather than
+ * storing false, so the document says nothing it does not need to. */
+export function setTapConfirm(tap: TapElement, on: boolean): void {
+  if (on) tap.confirm = true;
+  else delete tap.confirm;
 }
 
 /** Points past the owner's edge on each side of an attached tap. */
@@ -5106,6 +5137,7 @@ function parseElementKind(raw: unknown): Element {
       // Element ids are uppercased on the way in, so the owner id has to be
       // too or nothing would ever match it.
       if (typeof p.attachedTo === "string") el.attachedTo = p.attachedTo.toUpperCase();
+      if (p.confirm === true) el.confirm = true;
       // `grow` (a uniform inflation, retired 2026-09-04) is not read: the frames
       // already carry its result, and syncAttachedTaps recovers the outset from
       // them. It stays in the key audit so an older document still opens.
@@ -7094,6 +7126,7 @@ function encodeElementKind(el: Element): J {
       if (p.openPageId !== undefined) o.openPageId = p.openPageId;
       if (p.openPageName !== undefined) o.openPageName = p.openPageName;
       if (p.attachedTo !== undefined) o.attachedTo = p.attachedTo;
+      if (p.confirm === true) o.confirm = true;
       o.rules = encodeRules(p.rules);
       o.frame = encodeFrame(p.frame);
       o.isHidden = p.isHidden;
@@ -8067,7 +8100,7 @@ const K = {
   // box on 2026-09-04). Listed so a document saved while it existed still
   // opens; nothing decodes it, and it leaves the wire on that document's next
   // save. The tap's frames already carry what it did.
-  tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
+  tap: ["action", "openPageId", "openPageName", "attachedTo", "grow", "confirm"],
   chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes",
     "fontWeight", "fontDesign", "fontWidth", "italic", "monospacedDigits"],
   chartDots: ["chart", "dots", "size", "colorHex"],
