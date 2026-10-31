@@ -17,19 +17,29 @@ import { libraryOf } from "../src/library/model.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { arrangePickedPart, setArrangeFreePicked, setArrangePickedPart } from "../src/watch-pages/arrange-model.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
-import { giveWatchTileId } from "../src/watch-pages/edit.js";
+import { firstFreeWatchCell, giveWatchTileId } from "../src/watch-pages/edit.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { pageDevicesText, stageHiddenReason, stageHiddenText, watchPageCopy } from "../src/watch-pages/page-editor.js";
 import {
+  PAGE_INSPECTOR_MIN,
+  PAGE_STAGE_MIN,
   PAGE_ZOOM_STEPS,
   STAGE_ZOOM_KEY,
+  cellRectPx,
   stageFitZoom,
+  stageGrid,
   stageZoomIn,
   stageZoomLabel,
   stageZoomOut,
 } from "../src/watch-pages/stage.js";
+import { WATCH_TILE_DEFAULTS } from "../src/watch-pages/tile-new.js";
+
+/** What the edit screen's grid is built from, as the last draw left it. */
+function gridArgs(el: Record<string, unknown>): [number, number, number, number] {
+  return [(el.stageScreen as { width: number }).width, el.stageTopInset as number, el.stageScale as number, el.stageSideInset as number];
+}
 
 function sheet(): string {
   const element = customElements.get("wa-page-editor") as unknown as { styles: unknown };
@@ -573,30 +583,150 @@ describe("the stage's quiet tiles", () => {
     expect(giveWatchTileId(doc, "P-OLD", { entityId: "x.y" } as WatchPageTile).id).toBeUndefined();
   });
 
-  it("puts + Add tile first in the stage's dock, opening the Add tile dialog; once side by side; none on a smart page", () => {
+  it("puts a big + Add tile at the top of the stage, opening the Add tile dialog; none in the dock; once side by side; none on a smart page", () => {
     const { el, body, owners } = editor();
     stubBrowser(el);
     const text = body();
-    const dock = text.slice(text.indexOf(`<div class="stage-tools pe-dock"`));
-    expect(dock.indexOf(`class="pe-stage-add"`)).toBeGreaterThan(-1);
-    expect(dock.indexOf(`class="pe-stage-add"`)).toBeLessThan(dock.indexOf(`aria-label="Zoom"`));
-    // Not under the device any more.
-    expect(text.slice(text.indexOf(`<div class="lib-duo`), text.indexOf(`<div class="pe-dock-area">`))).not.toContain("pe-stage-add");
+    // In the stage's head, over the device, and no longer in the dock.
+    const top = text.slice(text.indexOf(`<div class="pe-stage-top">`), text.indexOf(`<div class="pe-stage-body">`));
+    expect(top).toContain(`class="pe-stage-add"`);
+    expect(text.slice(text.indexOf(`<div class="stage-tools pe-dock"`))).not.toContain("pe-stage-add");
     expect(text.match(/class="pe-stage-add"/g)).toHaveLength(1);
     const drawn = (el.renderBody as (w: unknown) => unknown).call(el, owners);
     const add = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-stage-add"`));
     listener(add!, "click")({} as Event);
     expect(el.addTileOpen).toBe(true);
     el.addTileOpen = false;
-    // Side by side: still one, in the dock under both.
+    // Big and blue, with a glow of its own color.
+    const css = rule(sheet(), ".pe-stage-add");
+    expect(css).toContain("font-size: 14px");
+    expect(css).toContain("padding: 9px 20px 9px 16px");
+    expect(css).toMatch(/box-shadow: 0 4px 18px color-mix\(in srgb, var\(--wa-hue-blue\) 40%/);
+    // Side by side: still one, over both.
     el.phones = true;
     el.sideBySide = true;
     const both = body();
     expect(both.match(/class="pe-stage-add"/g)).toHaveLength(1);
-    expect(both.indexOf(`class="pe-stage-add"`)).toBeGreaterThan(both.indexOf(`class="lib-duo-other"`));
+    expect(both.indexOf(`class="pe-stage-add"`)).toBeLessThan(both.indexOf(`class="lib-duo-other"`));
     // A smart page fills itself.
     const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
     expect(smart.body()).not.toContain("pe-stage-add");
+  });
+
+  it("draws a dashed + Add tile spot where a new tile lands, which opens the dialog and is no tile", () => {
+    const { el, body, owners, draft } = editor();
+    stubBrowser(el);
+    const before = draft().document;
+    const text = body();
+    const slot = text.match(/<button type="button" class="pe-add-slot"[^>]*>/)?.[0];
+    expect(slot).toBeDefined();
+    expect(text.match(/class="pe-add-slot"/g)).toHaveLength(1);
+    // A new 6 by 4 tile lands at row 3, column 4 of Hall (beside Bottom):
+    // the spot sits on that cell, after the tiles in the screen's markup.
+    const { colSpan, rowSpan } = WATCH_TILE_DEFAULTS.tile;
+    expect(firstFreeWatchCell((HALL.pages as WatchPage[])[0]!, colSpan, rowSpan)).toEqual({ row: 3, col: 4 });
+    const grid = stageGrid(...gridArgs(el));
+    const box = cellRectPx(grid, { row: 3, col: 4, colSpan, rowSpan });
+    expect(slot).toContain(`left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`);
+    expect(text.indexOf(`class="pe-add-slot"`)).toBeGreaterThan(text.indexOf(`data-tile=T-LEFT`));
+    // No tile: no data-tile, no pressed state, nothing a drag or a pick reads.
+    expect(slot).not.toContain("data-tile");
+    expect(slot).not.toContain("aria-pressed");
+    expect(slot).not.toContain("pe-tile");
+    // A click opens the dialog and leaves the pick and the page alone; a
+    // press never reaches the screen.
+    el.selectedTileId = "T-RIGHT";
+    const drawn = (el.renderBody as (w: unknown) => unknown).call(el, owners);
+    const spot = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-add-slot"`))!;
+    let stopped = 0;
+    listener(spot, "pointerdown")({ stopPropagation: () => { stopped += 1; } } as unknown as Event);
+    listener(spot, "click")({ stopPropagation: () => { stopped += 1; } } as unknown as Event);
+    expect(stopped).toBe(2);
+    expect(el.addTileOpen).toBe(true);
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    expect(draft().document).toBe(before);
+    el.addTileOpen = false;
+    // An empty page draws it in the first cell.
+    const empty = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-NONE", name: "None", items: [] }] } as unknown as WatchPagesDocument);
+    const emptyText = empty.body();
+    const first = cellRectPx(stageGrid(...gridArgs(empty.el)), { row: 0, col: 0, colSpan, rowSpan });
+    expect(emptyText.match(/<button type="button" class="pe-add-slot"[^>]*>/)?.[0]).toContain(`left:${first.left}px;top:${first.top}px;`);
+    // None while a save runs, or on a smart page, which fills itself.
+    const saving = editor();
+    Object.defineProperty(saving.el, "saving", { get: () => true, configurable: true });
+    expect(saving.body()).not.toContain("pe-add-slot");
+    const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
+    expect(smart.body()).not.toContain("pe-add-slot");
+    // Side by side, only the edited device has it: the other is a picture.
+    el.phones = true;
+    el.sideBySide = true;
+    expect(body().match(/class="pe-add-slot"/g)).toHaveLength(1);
+    // Hidden while a tile moves.
+    expect(sheet()).toMatch(/\.pe-screen\.moving \.pe-add-slot\s*\{\s*visibility: hidden/);
+    expect(rule(sheet(), ".pe-add-slot")).toMatch(/border: 2px dashed/);
+  });
+
+  it("keeps the spot's rows on the stage, so the device grows to hold a spot below the last row", () => {
+    // One full-width tile three rows tall leaves the spot on row 3.
+    const doc = { schemaVersion: 1, pages: [{ id: "P-ONE", name: "One", items: [
+      { id: "T-ONE", entityId: "light.one", gridRow: 0, gridCol: 0, colSpan: 12, rowSpan: 30 },
+    ] }] } as unknown as WatchPagesDocument;
+    const { el } = editor(undefined, doc);
+    const page = (doc.pages as WatchPage[])[0]!;
+    const stage = (el.editStage as (p: WatchPage, i: unknown) => { rows: number; slot?: { row: number; rowSpan: number } }).call(el, page, {
+      page, pages: [page], screen: { width: 205, height: 251 }, scale: 1, states: {},
+    });
+    expect(stage.slot).toEqual({ col: 0, row: 30, colSpan: WATCH_TILE_DEFAULTS.tile.colSpan, rowSpan: WATCH_TILE_DEFAULTS.tile.rowSpan });
+    expect(stage.rows).toBeGreaterThanOrEqual(30 + WATCH_TILE_DEFAULTS.tile.rowSpan);
+  });
+
+  it("puts Preview on under the device, over the states to try and the dock", () => {
+    const { body } = editor("T-RIGHT");
+    const text = body();
+    const at = text.indexOf(`aria-label="Preview on"`);
+    expect(at).toBeGreaterThan(text.indexOf(`<div class="pe-stage-body">`));
+    expect(at).toBeGreaterThan(text.indexOf(`<div class="pe-dock-area">`));
+    expect(at).toBeLessThan(text.indexOf(`<div class="pe-try-slot">`));
+    expect(text.indexOf(`<div class="pe-try-slot">`)).toBeLessThan(text.indexOf(`<div class="stage-tools pe-dock"`));
+    expect(text.slice(text.indexOf(`<div class="pe-stage-top">`), text.indexOf(`<div class="pe-stage-body">`))).not.toContain("Preview on");
+    expect(rule(sheet(), ".pe-dock-area")).toContain("flex-direction: column");
+  });
+
+  it("gives the stage the device's own width and the settings the rest, until the gutter is dragged", () => {
+    const { el, body, call } = editor();
+    body();
+    // Before the stage is measured: the stylesheet's default width.
+    expect(call("inspectorColumnStyle")).toBe("");
+    // Measured, the stage fills its height at 200%: it is as wide as the
+    // watch at that zoom with room round it, and the settings take the rest.
+    (el.stageFit as { heightZoom: () => number | undefined }).heightZoom = () => 2;
+    const drawing = call("stageDrawing") as { width: number; fixedWidth: number };
+    const stage = call("stageWidthFor") as number;
+    expect(stage).toBeGreaterThan(drawing.width * 2 + drawing.fixedWidth);
+    expect(stage).toBeLessThan(drawing.width * 2 + drawing.fixedWidth + 120);
+    const most = `calc(100% - ${PAGE_STAGE_MIN + 8}px)`;
+    const style = `--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, calc(100% - ${Math.max(PAGE_STAGE_MIN, stage) + 8}px), ${most})`;
+    expect(call("inspectorColumnStyle")).toBe(style);
+    expect(body()).toContain(style);
+    // A small zoom never makes the stage narrower than its least.
+    (el.stageFit as { heightZoom: () => number | undefined }).heightZoom = () => 0.5;
+    expect(call("inspectorColumnStyle")).toBe(`--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, calc(100% - ${PAGE_STAGE_MIN + 8}px), ${most})`);
+    // A dragged width wins, as it always has.
+    el.inspectorWidth = 600;
+    expect(call("inspectorColumnStyle")).toBe(`--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, 600px, ${most})`);
+    // A stacked editor has one column and no width at all.
+    el.inspectorWidth = undefined;
+    el.hostWidth = 1000;
+    expect(el.stacked).toBe(true);
+    expect(call("inspectorColumnStyle")).toBe("");
+    el.hostWidth = 1200;
+    expect(el.stacked).toBe(false);
+  });
+
+  it("stacks the stage over the settings under 1100px, by the editor's own width", () => {
+    const css = sheet();
+    expect(css).toMatch(/@container \(max-width: 1100px\)\s*\{\s*\.layout\.pe-layout \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+    expect(css).not.toMatch(/@container \(max-width: 820px\)\s*\{\s*\.layout\.pe-layout/);
   });
 
   it("shows how to use the stage only while Help is on; an empty page and Watch view say so whatever Help says", () => {
@@ -1156,8 +1286,12 @@ describe("the Live strip", () => {
     for (const gone of ["vb-live", "vb-head", "All on", "Show live", "Show all on", "Back to live", "Testing"]) expect(strip, gone).not.toContain(gone);
     // A spacer has no entity to try a state on.
     expect(editor("T-GAP").body()).not.toContain(`class="pe-try"`);
-    // It floats over the stage's foot, never pushing the device up.
-    expect(rule(sheet(), ".pe-dock-area > .pe-try")).toContain("position: absolute");
+    // It floats in a row of its own that keeps its height with no tile
+    // picked, so picking one never moves or refits the device.
+    expect(text.indexOf(`<div class="pe-try"`)).toBeGreaterThan(text.indexOf(`<div class="pe-try-slot">`));
+    expect(rule(sheet(), ".pe-try-slot > .pe-try")).toContain("position: absolute");
+    expect(rule(sheet(), ".pe-try-slot")).toContain("height: 32px");
+    expect(editor().body()).toContain(`<div class="pe-try-slot">`);
   });
 
   it("previews a hovered state, keeps a clicked one, never in Home Assistant's states, and leaves Live preview alone", () => {
@@ -1226,8 +1360,21 @@ describe("the Live preview switch", () => {
   it("lets its hint hang out of the dock", () => {
     const css = sheet();
     expect(rule(css, ".pe-dock-area > .stage-tools.pe-dock")).toContain("overflow: visible");
-    expect(css).toMatch(/\.pe-state-chips\s*\{[^}]*flex-wrap: wrap/);
     expect(css).toMatch(/button\.pe-state-chip\.on\s*\{[^}]*var\(--wa-testing\) 18%/);
+  });
+
+  it("keeps the states strip to one line, so a tile of many states never covers Preview on above it", () => {
+    const css = sheet();
+    // The chips scroll sideways in a pill as tall as its row, rather than
+    // wrap to a second line that rises out of the row.
+    expect(css).toMatch(/\.pe-state-chips\s*\{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto/);
+    expect(css).not.toMatch(/\.pe-state-chips\s*\{[^}]*flex-wrap: wrap/);
+    expect(rule(css, ".vchip.vpill.pe-states")).toContain("height: 32px");
+    expect(rule(css, ".pe-try-slot")).toContain("height: 32px");
+    expect(rule(css, "button.pe-state-chip")).toContain("flex: none");
+    // A mouse wheel scrolls the chips across while they overflow.
+    const text = editor("T-RIGHT").body();
+    expect(text).toMatch(/<div class="pe-state-chips" role="group" aria-label=[^>]*@wheel=/);
   });
 });
 

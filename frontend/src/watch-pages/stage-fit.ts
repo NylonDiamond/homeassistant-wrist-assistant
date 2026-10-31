@@ -120,6 +120,22 @@ export class StageFitWatch implements ReactiveController {
     return this.last;
   }
 
+  /**
+   * The zoom at which the drawing fills the box's height alone, as `filled`
+   * works it out but with no width to hold it back, or undefined when this
+   * stage does not fill or its box is not measured yet. The page editor
+   * sizes its stage's width from this, so the stage is as wide as the
+   * device it draws: the width never feeds back into this zoom, which reads
+   * only the box's height and the drawing's measured height, and so a
+   * stage sized by it settles in one draw.
+   */
+  heightZoom(): number | undefined {
+    if (this.fill === undefined || this.room.height <= 0) return undefined;
+    const drawing = this.fill();
+    if (drawing === undefined) return undefined;
+    return stageFillZoom({ width: Number.POSITIVE_INFINITY, height: this.room.height }, { ...drawing, height: Math.max(drawing.height, this.drawn) }, STAGE_FILL_FLOOR);
+  }
+
   /** Ask the host to draw again for a measurement, unless measuring alone
    * has asked `CHAIN_MAX` times in a row. */
   private again(): void {

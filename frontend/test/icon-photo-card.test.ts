@@ -16,7 +16,7 @@ import { SymbolBrowser } from "../src/symbols.js";
 import { MIN_VERSION_FOR_PHOTO_TILES, photoTilesFor, photoTilesUpdateNote } from "../src/version.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TilePick, type TileSettingsHost, extendHost } from "../src/watch-pages/editor-host.js";
-import { ICON_PHOTO_FROM_PHONE, iconPhotoChoices, iconPhotoShown, renderIconPhoto, renderIconSource } from "../src/watch-pages/icon-photo-card.js";
+import { ICON_PHOTO_FROM_PHONE, ICON_PHOTO_OLD_LOOK_NOTE, iconPhotoChoices, iconPhotoShown, renderIconPhoto, renderIconSource } from "../src/watch-pages/icon-photo-card.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { PagePhotoStore, forgetPagePhotos } from "../src/watch-pages/page-photo-store.js";
 import {
@@ -332,6 +332,18 @@ describe("the version note", () => {
     expect(photoTilesUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the icon.");
     expect(photoTilesUpdateNote(["A", "B"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on A and B. Until then they draw the icon.");
     expect(photoTilesUpdateNote([], "3.2.0")).toBeUndefined();
+  });
+
+  it("is the (i) beside the Photo title, with the old look's line, never a line under the row", async () => {
+    const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP })], [A]);
+    const old = extendHost(host, { pickers: () => [{ name: "Chen Watch", version: "3.1.0" }], oneLook: () => false }) as TileSettingsHost;
+    const text = flat(renderIconPhoto(old));
+    const words = `${photoTilesUpdateNote(["Chen Watch"])} ${ICON_PHOTO_OLD_LOOK_NOTE}`;
+    expect(text).toContain(`<span>Photo<i class="pc-info" role="img" tabindex="0" title=${words} aria-label=${words}>i</i></span>`);
+    expect(text).not.toContain(`<div class="hint warn ts-under" role="status">${photoTilesUpdateNote(["Chen Watch"])}`);
+    expect(text).not.toContain(`<div class="hint keep ts-under">${ICON_PHOTO_OLD_LOOK_NOTE}`);
+    // Nothing to explain: no (i).
+    expect(flat(renderIconPhoto(host))).not.toContain("pc-info");
   });
 });
 

@@ -1,5 +1,6 @@
 // The selected tile's settings. The page editor's inspector stands them in
-// four group panels under its head strip, Look, Text, Tap and Layout, each
+// four group panels under its head strip (`tile-head.ts`), Color and icon,
+// Text, Surface and rules and What it does, each
 // section under a calm heading (`renderTileInspector`); a smart page rule's
 // style draws them as folding section cards (`renderTileSettings`,
 // `sectionCard`, editor-chrome.ts). Place and size (rows the page editor
@@ -227,7 +228,6 @@ import {
   setWatchTileIconGlow,
   setWatchTileIconShadow,
   setWatchTileIconSize,
-  setWatchTileLabel,
   setWatchTileLabelColor,
   setWatchTilePeekSkipAnimation,
   setWatchTileShowLabel,
@@ -255,13 +255,14 @@ import {
   PATTERN_GROUND,
   barSample,
   borderSample,
-  designSample,
+  designStyle,
   endTileTry,
   lineStyleLine,
   mixedWord,
   patternSwatch,
   pictureChoice,
   pictureChoiceStyles,
+  segChoice,
   thicknessLine,
   tilePictures,
   tileTrial,
@@ -269,13 +270,14 @@ import {
   tryTileEdit,
   valueSample,
   watchTileIn,
-  weightSample,
+  weightStyle,
 } from "./picture-choice.js";
 import { arrangeResetEdit, renderArrangeSection } from "./arrange-card.js";
 import { iconPhotoShown, renderIconPhoto, renderIconSource } from "./icon-photo-card.js";
 import { arrangeFreeOn, arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
+  type WatchHoldSlideRow,
   type WatchMenu,
   type WatchMenuOption,
   type WatchSkipChoice,
@@ -309,7 +311,6 @@ import {
   watchLibraryTargetMenu,
   watchIconSizeHint,
   watchIconSizeRefusal,
-  watchLabelNote,
   watchLinkTargetMenu,
   watchSingleTapMenu,
   watchSkipChoice,
@@ -609,6 +610,86 @@ export function linkButton(text: string, title: string, action: () => void): Tem
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
 }
 
+// ── rare rows behind More ────────────────────────────────────────────────
+
+/** The fold memory's module for the More lines (`fold-memory.ts`). Every
+ * More starts closed, so only an opened one is stored, per section. */
+export const MORE_FOLD_MODULE = "tile-settings-more";
+
+/** One rare row as its section's More line names it: its words and what it
+ * holds now ("Font size", "Auto"); no value where the name says enough. */
+export interface RareRowWords {
+  name: string;
+  value?: string;
+}
+
+/** Whether a section's More is open, this visit or an earlier one. */
+function moreOpen(host: TileSettingsHost, section: string): boolean {
+  return sectionOpen(host.uiState, MORE_FOLD_MODULE, section, true);
+}
+
+/**
+ * A rare row of a section, folded behind the section's More line while the
+ * inspector stands fewer than four columns (pure CSS, `.ts-rare`). It is
+ * shown while the More is open, and always while it holds a value of its
+ * own (`changed`): a changed row never folds. The wrapper is drawn either
+ * way, so a row that turns changed while it is typed in keeps its field,
+ * and a row whose box is typed in counts as changed until the box is left
+ * (`rareTyped`), so one cleared back to its default keeps its field too.
+ */
+function rareRow(host: TileSettingsHost, section: string, changed: boolean, body: TemplateResult | typeof nothing): TemplateResult {
+  return html`<div class="ts-rare" ?data-shown=${changed || moreOpen(host, section)}>${body}</div>`;
+}
+
+/**
+ * The More line at the foot of a section: "More" and the folded rows' names
+ * with their values, "Fewer" while it is open. Nothing when no row of the
+ * section folds (every rare row changed, or none drawn). Shown only while
+ * the inspector stands fewer than four columns (CSS); its open state is kept
+ * per section across tiles and reloads (`fold-memory.ts`).
+ */
+function moreLine(host: TileSettingsHost, section: string, folded: readonly RareRowWords[]): TemplateResult | typeof nothing {
+  if (folded.length === 0) return nothing;
+  const open = moreOpen(host, section);
+  const words = folded.map((r) => (r.value === undefined ? r.name : `${r.name}: ${r.value}`)).join(", ");
+  return html`<button type="button" class="ts-more" data-more=${section} aria-expanded=${open ? "true" : "false"}
+    title=${open ? "Fold these rows away again" : `Show ${words}`}
+    @click=${() => { setSectionOpen(host.uiState, MORE_FOLD_MODULE, section, !open, true); host.requestUpdate(); }}>
+    <span class="ts-more-w">${open ? "Fewer" : "More"}</span>${open ? nothing : html`<span class="ts-more-v">${words}</span>`}</button>`;
+}
+
+/** A switch's value in a More line. */
+function onOffWord(on: boolean): string {
+  return on ? "on" : "off";
+}
+
+/** A point size's value in a More line: Auto while none is set. */
+function sizeWord(size: number | undefined): string {
+  return size === undefined ? "Auto" : `${size} pt`;
+}
+
+/** A row's value in a More line, Mixed while the picked tiles differ. */
+function rareValue(host: TileSettingsHost, read: (tile: WatchPageTile) => unknown, word: string): string {
+  return pickedMixed(host, read) ? MIXED_WORD : word;
+}
+
+/** Whether a row's key holds a value of its own on any picked tile: stored,
+ * and read other than its absence would be (`readsOtherThanDefault`). */
+function rareChanged(host: TileSettingsHost, keys: readonly string[], read: (tile: WatchPageTile) => unknown): boolean {
+  return somePicked(host, () => readsOtherThanDefault(host.tile, keys, read));
+}
+
+/**
+ * Whether a rare row's box is being typed in: its typed text is kept from
+ * the first keystroke until the box loses focus (`typingField`). Such a row
+ * counts as changed, so it stays shown while its value goes back to the
+ * default (a size box backspaced empty on the way to a new number), and the
+ * box never folds away under the caret. It folds when the box is left.
+ */
+function rareTyped(host: TileSettingsHost, setting: string): boolean {
+  return typed(host, setting) !== undefined;
+}
+
 // ── several tiles picked ─────────────────────────────────────────────────
 
 /** A menu's value while the picked tiles differ: a stored choice, so a pick
@@ -713,8 +794,8 @@ export interface TileSettingsExtras {
   sections?: readonly WatchTileSettingsSection[];
   size?: { summary: () => string; body: () => TemplateResult; changed?: () => boolean };
   arrangePicture?: () => TemplateResult | typeof nothing;
-  /** The tile's head (`renderTileHead`), at the top of the first column,
-   * over Look, so Text, Tap and Layout start at the top beside it. */
+  /** The tile's head (`renderTileHead`), across the inspector's whole width
+   * over the group columns, which all start at the same top under it. */
   head?: TemplateResult;
 }
 
@@ -956,69 +1037,72 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
 // ── the tile inspector's groups ──────────────────────────────────────────
 
 /** The four groups the tile inspector stands its settings in, always in
- * this order. */
-export type TileInspectorGroup = "look" | "text" | "tap" | "layout";
+ * this order: Color and icon, Text, Surface and rules, What it does. */
+export type TileInspectorGroup = "color" | "text" | "surface" | "does";
+
+/** The groups in their order. */
+export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["color", "text", "surface", "does"];
 
 /**
  * One section of the tile inspector, under one heading. Most are a settings
  * section as it is; the Icon and color section is split into its parts so
- * each stands under its own heading and its Tap animation goes to Tap:
- * `color`, `icon` (the symbol, the state icons, the icon's size and shadow),
- * `glow`, `whenOff` (Dim when off, Animate while on) and `tapAnimation`.
- * One is no settings section: `arrange`, the tile's Arrangement
- * (`arrange-card.ts`), in Layout after Size.
+ * each stands under its own heading and its Tap animation goes to What it
+ * does: `color`, `icon` (the symbol, the state icons, the icon's size and
+ * shadow), `glow`, `whenOff` (Dim when off, Animate while on) and
+ * `tapAnimation`. One is no settings section: `arrange`, the tile's
+ * Arrangement (`arrange-card.ts`), in Surface and rules after Shows when.
  */
 export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation" | "arrange";
 
 /**
- * Where each part goes, as one table, in reading order. What a kind's own
- * task makes the tile show (a header's look, an iPhone tile's task, a
- * special task, an iPhone key) leads Look, before the color; a removed
- * kind's one line leads it too, standing for everything else. The iPhone
- * extras of a watch's editor close Look, as the aside they are. What a tap
- * does is Tap: a link's page, an HTTP action or status page and the reply
- * of its request, then the action, the tap's animation and Show tile.
- * Layout is the tile's size and place, then where its parts sit in it.
+ * Where each part goes, as one table, in reading order. Color and icon is
+ * the tile's fill, its icon or photo and how it looks while off; a removed
+ * kind's one line leads it, standing for everything else, and a header's
+ * look comes first too, as the look it is. Text is the name and the state.
+ * Surface and rules is when the tile shows, where its parts sit, a smart
+ * rule's size, its background and border, and the iPhone extras of a
+ * watch's editor last, as the aside they are. What it does starts with
+ * what the tile's own kind holds (`TILE_KIND_PARTS`: an iPhone tile's task,
+ * a special task, an iPhone key, a home map's or a library tile's target, a
+ * link's page, the reply of a request), then the tap and its animation.
  */
 export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
-  ["removed", "look"],
-  ["header", "look"],
-  ["phoneTile", "look"],
-  ["special", "look"],
-  ["phone", "look"],
-  ["color", "look"],
-  ["icon", "look"],
-  ["glow", "look"],
-  ["whenOff", "look"],
-  ["background", "look"],
-  ["border", "look"],
-  ["phoneExtras", "look"],
+  ["removed", "color"],
+  ["header", "color"],
+  ["color", "color"],
+  ["icon", "color"],
+  ["glow", "color"],
+  ["whenOff", "color"],
   ["text", "text"],
   ["state", "text"],
-  ["opens", "tap"],
-  ["target", "tap"],
-  ["request", "tap"],
-  ["action", "tap"],
-  ["tapAnimation", "tap"],
-  ["visibility", "tap"],
-  ["size", "layout"],
-  ["arrange", "layout"],
+  ["visibility", "surface"],
+  ["arrange", "surface"],
+  ["size", "surface"],
+  ["background", "surface"],
+  ["border", "surface"],
+  ["phoneExtras", "surface"],
+  ["phoneTile", "does"],
+  ["special", "does"],
+  ["phone", "does"],
+  ["target", "does"],
+  ["opens", "does"],
+  ["request", "does"],
+  ["action", "does"],
+  ["tapAnimation", "does"],
 ];
+
+/** The parts of What it does that are the tile's own kind's, drawn together
+ * as one card titled by the kind (`renderKindCard`) at the top of the
+ * group. */
+export const TILE_KIND_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>(["phoneTile", "special", "phone", "target", "opens", "request"]);
 
 /** Each group's title and its one grey line. */
 export const TILE_INSPECTOR_GROUP_WORDS: Readonly<Record<TileInspectorGroup, { title: string; description: string }>> = {
-  look: { title: "Look", description: "Color, icon, glow, background, border" },
+  color: { title: "Color and icon", description: "Fill, icon or photo, off look" },
   text: { title: "Text", description: "Name, state, state bar" },
-  tap: { title: "Tap", description: "What it does, when it shows" },
-  layout: { title: "Layout", description: "Size, arrangement" },
+  surface: { title: "Surface and rules", description: "Background, border, when it shows" },
+  does: { title: "What it does", description: "Tap, hold, the tile's own content" },
 };
-
-/** Layout's grey line for the parts it holds: "Size, arrangement",
- * "Arrangement" or "Size". */
-function layoutWords(parts: readonly string[]): string {
-  const words = [parts.includes("size") ? "size" : "", parts.includes("arrange") ? "arrangement" : ""].filter((w) => w !== "").join(", ");
-  return words === "" ? TILE_INSPECTOR_GROUP_WORDS.layout.description : words[0]!.toUpperCase() + words.slice(1);
-}
 
 /** The heading of each part that is not titled by its kind. */
 const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
@@ -1028,7 +1112,7 @@ const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
   whenOff: "When it is off",
   tapAnimation: "Tap animation",
   text: "Name",
-  visibility: "Show tile",
+  visibility: "Shows when",
   arrange: "Arrangement",
 };
 
@@ -1053,8 +1137,7 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
         return sections.includes(part);
     }
   };
-  const groups: TileInspectorGroup[] = ["look", "text", "tap", "layout"];
-  return groups
+  return TILE_INSPECTOR_GROUPS
     .map((group) => ({ group, parts: TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && has(p)).map(([p]) => p) }))
     .filter((g) => g.parts.length > 0);
 }
@@ -1100,7 +1183,7 @@ export function pickedInspectorParts(host: TileSettingsHost): {
     && each.every((t) => t.parts.includes(part) && !t.off(part));
   const groups: { group: TileInspectorGroup; parts: TileInspectorPart[] }[] = [];
   const hidden = new Map<TileInspectorGroup, TileInspectorPart[]>();
-  for (const group of ["look", "text", "tap", "layout"] as const) {
+  for (const group of TILE_INSPECTOR_GROUPS) {
     const any = TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && each.some((t) => t.parts.includes(p))).map(([p]) => p);
     const parts = any.filter(shared);
     if (parts.length > 0) groups.push({ group, parts });
@@ -1232,7 +1315,7 @@ export function watchTileInspectorPartReset(host: TileSettingsHost, part: TileIn
 }
 
 /** A part's heading words. */
-function partTitle(host: TileSettingsHost, part: TileInspectorPart): string {
+export function partTitle(host: TileSettingsHost, part: TileInspectorPart): string {
   if (part === "special") return watchSpecialSectionTitle(host);
   if (part === "phone") {
     const key = watchPhoneKeysOf(host.tile, host.hass.states)[0];
@@ -1255,8 +1338,17 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
       // Show, Icon or Photo, leads (a rule's style holds no photo), then the
       // icon's rows or the Photo row, never both; state icons and colors are
       // per state of one entity: one tile's.
-      if (host.domainStyle === true) return html`${renderIconGlyph(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
-      return html`${renderIconSource(host)}${iconPhotoShown(host) ? renderIconPhoto(host) : renderIconGlyph(host)}${host.picked !== undefined ? renderStateIconsOff(host) : renderStateIcons(host)}<div class="ts-group">${renderIconLook(host)}</div>`;
+      // The state icons, the icon's size and its shadow are rare rows: they
+      // fold behind the section's More line (`moreLine`) while at their
+      // defaults.
+      const look = iconLookParts(host);
+      if (host.domainStyle === true) return html`${renderIconGlyph(host)}<div class="ts-group">${look.body}</div>${moreLine(host, "icon", look.folded)}`;
+      const states = host.picked === undefined ? stateIconsCard(host) : undefined;
+      const statesChanged = states?.any === true;
+      const folded = [...(states === undefined || statesChanged ? [] : [{ name: "State icons and colors" }]), ...look.folded];
+      return html`${renderIconSource(host)}${iconPhotoShown(host) ? renderIconPhoto(host) : renderIconGlyph(host)}${host.picked !== undefined
+        ? renderStateIconsOff(host)
+        : states === undefined ? nothing : rareRow(host, "icon", statesChanged, renderStateIcons(host))}<div class="ts-group">${look.body}</div>${moreLine(host, "icon", folded)}`;
     }
     case "glow":
       return renderGlowPart(host);
@@ -1273,45 +1365,109 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
   }
 }
 
-/** One part: its heading in sentence case, the blue dot and Reset while it
- * holds a value of its own, then its rows, always open. */
-function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: boolean, extras: TileSettingsExtras): TemplateResult {
+/** Whether a part is one only the iPhone reads, for the small iPhone tag. */
+function phonePart(part: TileInspectorPart): boolean {
+  return part === "phone" || part === "phoneExtras" || part === "phoneTile";
+}
+
+/** The blue dot and Reset a part's heading carries while it holds a value
+ * of its own. */
+function partMarks(host: TileSettingsHost, part: TileInspectorPart, changed: boolean, title: string): TemplateResult {
+  const reset = changed ? partResetEdit(host, part) : undefined;
+  return html`${changed ? html`<span class="ts-dot" title="Not the default"></span>` : nothing}${reset === undefined
+    ? nothing
+    : html`<button type="button" class="ts-sec-reset" title=${`Put ${title.toLowerCase()} back to its defaults`} ?disabled=${host.busy}
+        @click=${() => { host.endCoalesce(); commit(host, `reset:${part}`, reset); }}>Reset</button>`}`;
+}
+
+/**
+ * One part: its heading in sentence case, the blue dot and Reset while it
+ * holds a value of its own, then its rows, always open. Inside the kind's
+ * card (`renderKindCard`) a part's heading is a smaller one under the
+ * card's (`sub`), or none where the card's own heading names it (`none`).
+ */
+function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: boolean, extras: TileSettingsExtras, heading: "main" | "sub" | "none" = "main"): TemplateResult {
   // A webhook inbox and a removed kind are one line, with no heading.
   if (part === "removed") return renderRemovedLine();
   if (part === "special" && inboxLine(host, part)) return renderInboxLine(host);
   const title = partTitle(host, part);
-  const reset = changed ? partResetEdit(host, part) : undefined;
-  const phone = part === "phone" || part === "phoneExtras" || part === "phoneTile";
-  return html`<section class="ts-sec" data-part=${part} aria-label=${title}>
-    <div class="ts-sec-h"><h4>${title}</h4>${phone ? phoneTag() : nothing}${changed ? html`<span class="ts-dot" title="Not the default"></span>` : nothing}${reset === undefined
-      ? nothing
-      : html`<button type="button" class="ts-sec-reset" title=${`Put ${title.toLowerCase()} back to its defaults`} ?disabled=${host.busy}
-          @click=${() => { host.endCoalesce(); commit(host, `reset:${part}`, reset); }}>Reset</button>`}</div>
+  const tag = phonePart(part) ? phoneTag() : nothing;
+  const head = heading === "none" ? nothing
+    : heading === "sub" ? html`<div class="ts-sec-h ts-sec-sub"><h5>${title}</h5>${tag}${partMarks(host, part, changed, title)}</div>`
+    : html`<div class="ts-sec-h"><h4>${title}</h4>${tag}${partMarks(host, part, changed, title)}</div>`;
+  const section = html`<section class="ts-sec" data-part=${part} aria-label=${title}>
+    ${head}
     <div class="sec-b ts-sec-b"><fieldset class="ts-body" id=${`ts-body-${part}`} ?disabled=${host.busy} aria-label=${title}>
       ${part === "phoneExtras" ? html`<p class="hint">${WATCH_PHONE_EXTRAS_HINT}</p>` : nothing}
       ${partBody(host, part, extras)}
     </fieldset></div>
   </section>`;
+  // Tap animation is one rare row under a heading of its own: the whole part
+  // folds behind a More line at the foot of the tap's rows while at its
+  // default, so no heading stands over nothing.
+  if (part !== "tapAnimation" || heading !== "main") return section;
+  return html`${rareRow(host, part, changed, section)}${changed ? nothing : moreLine(host, part, [{ name: title, value: tapAnimationWord(host) }])}`;
+}
+
+/** The Tap animation's choice in words, Mixed while the picked tiles differ. */
+function tapAnimationWord(host: TileSettingsHost): string {
+  const menu = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, watchTileIconSettings(host.tile).tapAnimation);
+  return rareValue(host, (t) => watchTileIconSettings(t).tapAnimation, menu.options.find((o) => o.value === menu.selected)?.label ?? menu.selected);
+}
+
+/** The kind card's title: the tile's kind by name ("Home map", "Camera",
+ * "HTTP action"), or the first part's own title on a tile with no entity. */
+function kindCardTitle(host: TileSettingsHost, parts: readonly TileInspectorPart[]): string {
+  const kind = tileKind(tileEntityId(host.tile));
+  return kind === "" ? partTitle(host, parts[0]!) : tileKindLabel(kind);
+}
+
+/** The words of the tag the kind card carries beside its title. */
+export const TILE_KIND_TAG = "This tile";
+
+/**
+ * What the tile's own kind holds (`TILE_KIND_PARTS`), as one card at the top
+ * of What it does: titled by the kind, a small "This tile" tag beside the
+ * title, on a faint wash of the group's hue. One part stands under the
+ * card's heading alone, its dot, Reset and iPhone tag on the card's heading;
+ * with several, the one the kind's name already says (a camera's Camera)
+ * does so, and each other keeps a smaller heading of its own. So a home
+ * map's Floor, Room, Look, Turn and Devices sit in the Home map card, not
+ * under Tap.
+ */
+function renderKindCard(host: TileSettingsHost, parts: readonly TileInspectorPart[], changed: readonly boolean[], extras: TileSettingsExtras): TemplateResult {
+  const title = kindCardTitle(host, parts);
+  const lead = parts.length === 1 ? 0 : parts.findIndex((p) => partTitle(host, p).toLowerCase() === title.toLowerCase());
+  const leadPart = lead < 0 ? undefined : parts[lead]!;
+  const marks = leadPart === undefined ? nothing
+    : html`${phonePart(leadPart) ? phoneTag() : nothing}${partMarks(host, leadPart, changed[lead]!, partTitle(host, leadPart))}`;
+  return html`<section class="ts-kind" data-kind=${tileKind(tileEntityId(host.tile))} aria-label=${title}>
+    <div class="ts-sec-h ts-kind-h"><h4>${title}</h4><span class="ts-kind-tag">${TILE_KIND_TAG}</span>${marks}</div>
+    ${parts.map((p, i) => renderPart(host, p, changed[i]!, extras, i === lead ? "none" : "sub"))}
+  </section>`;
 }
 
 /**
  * The selected tile's settings as the page editor's inspector stands them:
- * four group panels, Look, Text, Tap and Layout, each with its title, its
- * grey line and how many of its parts hold a value of their own, then its
- * parts under calm headings, always open. The columns are pure CSS by the
- * inspector's own width (`@container insp`): four at 1560 px and up (Look,
- * Text, Tap, Layout), three at 1080 (Tap over Layout in the third), two at
- * 760 (Text, Tap and Layout down the second), else one. The nesting is what
- * lets one markup make all four: `.ts-g2` holds Text and `.ts-g3`, which
- * holds Tap and Layout, and each wrapper turns to `display: contents` where
- * its children take columns of their own. `.ts-g1` holds the head
- * (`extras.head`) over Look, so the head takes one column's width and the
- * other groups start at the top beside it.
+ * the head (`extras.head`) across the inspector's whole width, then four
+ * group columns, Color and icon, Text, Surface and rules and What it does,
+ * each with its own hue, its title, its grey line and how many of its parts
+ * hold a value of their own, then its parts under calm headings, always
+ * open. What it does leads with the tile's own kind's card
+ * (`renderKindCard`). The columns are pure CSS by the inspector's own width
+ * (`@container insp`): four side by side from 1580 px, each as tall as the
+ * inspector and scrolling on its own, two from 680 px with the inspector
+ * scrolling as one, else one.
  */
 export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
   // With several tiles picked, only the parts they share (`pickedInspectorParts`).
-  const { groups: all, hidden } = pickedInspectorParts(host);
+  const { groups: all, hidden: found } = pickedInspectorParts(host);
+  // Size is drawn only where the caller hands its rows in, so a grey line
+  // never names it where one tile alone would not show it either.
+  const hidden = new Map([...found]
+    .map(([id, parts]) => [id, parts.filter((p) => p !== "size" || extras.size !== undefined)] as const)
+    .filter(([, parts]) => parts.length > 0));
   const groups = all
     .map((g) => ({ ...g, parts: g.parts.filter((p) => p !== "size" || extras.size !== undefined) }))
     .filter((g) => g.parts.length > 0 || hidden.has(g.group));
@@ -1325,21 +1481,24 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     const changed = g.parts.map((p) => somePicked(host, () => watchTileInspectorPartChanged(host, p, p === "size" && extras.size?.changed?.() === true)));
     const n = changed.filter(Boolean).length;
     const words = TILE_INSPECTOR_GROUP_WORDS[id];
-    // Layout's line names what it holds: a page tile's Size went on
-    // 2026-10-26 (the stage drags and sizes it), a smart rule keeps its own.
-    const description = id === "layout" ? layoutWords(g.parts) : words.description;
     const left = hidden.get(id);
+    // What the tile's own kind holds leads What it does, as one card.
+    const kind = id === "does" ? g.parts.flatMap((p, i) => (TILE_KIND_PARTS.has(p) ? [i] : [])) : [];
+    const rest = g.parts.flatMap((p, i) => (kind.includes(i) ? [] : [i]));
     return html`<section class="ts-grp" data-group=${id} aria-label=${words.title}>
-      <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${description}</span>${n === 0
+      <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${words.description}</span>${n === 0
         ? nothing
         : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`}</div>
-      ${g.parts.map((p, i) => renderPart(host, p, changed[i]!, extras))}
+      ${kind.length === 0 ? nothing : renderKindCard(host, kind.map((i) => g.parts[i]!), kind.map((i) => changed[i]!), extras)}
+      ${rest.map((i) => renderPart(host, g.parts[i]!, changed[i]!, extras))}
       ${left === undefined ? nothing : html`<p class="hint keep ts-picked-off">${PICKED_HIDDEN_NOTE}: ${left.map((p) => partTitle(host, p)).join(", ")}.</p>`}
     </section>`;
   };
-  return html`<div class="ts-root ts-groups">
-    <div class="ts-g1">${extras.head ?? nothing}${group("look")}</div>
-    <div class="ts-g2">${group("text")}<div class="ts-g3">${group("tap")}${group("layout")}</div></div>
+  // The head spans the inspector over the columns; the columns are as many
+  // as there are groups to draw, at most four (`--ts-n`).
+  return html`<div class="ts-root ts-insp">
+    ${extras.head === undefined ? nothing : html`<div class="ts-insp-head">${extras.head}</div>`}
+    <div class="ts-groups" style=${`--ts-n:${groups.length}`}>${TILE_INSPECTOR_GROUPS.map(group)}</div>
   </div>`;
 }
 
@@ -1390,73 +1549,12 @@ export function tileHeadHasEntity(tile: WatchPageTile): boolean {
   return entityId.includes(".") && kind !== "spacer" && kind !== "divider" && !isVirtualTileKind(kind);
 }
 
-/** What the page editor hands the head: what only it draws or does. */
-export interface TileHeadParts {
-  /** The strip's start: the path back to the page and the live tiles. */
-  lead: TemplateResult | typeof nothing;
-  /** The actions before Reset (Duplicate, Hide). */
-  actions: TemplateResult | typeof nothing;
-  /** The action after Reset (Delete). */
-  remove: TemplateResult | typeof nothing;
-  /** Under Shows: the group line, while the tile is in a group. */
-  below?: TemplateResult | typeof nothing;
-  /** Change beside what the tile shows, where the tile has another way to
-   * say it (a library tile's Target). */
-  change?: { title: string; go: () => void };
-}
+// The head itself, its facts and the parts of its large tile are in
+// `tile-head.ts`.
 
-/**
- * The tile inspector's head, one strip across the inspector that wraps on a
- * narrow one: at its start what the page editor draws (the path and the
- * live tiles), in the middle the tile's Name (for a tile with a Text
- * section; empty shows the name the watch falls back to and stores no
- * label) and Shows, its entity, then at its end the actions with Reset
- * among them and the Find a setting field. Inside a `.ts-root`, so the
- * editor lets the name's box go when the selection moves.
- */
-export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts): TemplateResult {
-  const host = tileWordsHost(watchHost);
-  const tile = host.tile;
-  const entityId = tileEntityId(tile);
-  const kind = tileKind(entityId);
-  const hasEntity = tileHeadHasEntity(tile);
-  const named = host.domainStyle !== true && watchTileSettingsSections(tile, host.hass.states).includes("text");
-  let name: TemplateResult | typeof nothing = nothing;
-  if (named) {
-    const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
-    const label = typed(host, "label") ?? watchTileTextSettings(tile).label ?? "";
-    const set = (v: string) =>
-      commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });
-    name = html`<div class="ts-head-f ts-head-name"><span class="ts-head-lab">Name</span>${typingField(host, "label", html`<input type="text" aria-label="Name" .value=${label}
-      placeholder=${fallback} title=${watchLabelNote(tile, hostDevice(host))} ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`)}</div>`;
-  }
-  const shown = hasEntity
-    ? html`<code class="ts-head-entity" title=${entityId}>${entityId}</code>`
-    : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "No entity" : tileKindLabel(kind)}</span>`;
-  const change = parts.change === undefined ? nothing
-    : html`<button type="button" class="link ts-head-change" title=${parts.change.title} @click=${parts.change.go}>Change</button>`;
-  const resettable = watchTileResettable(host);
-  return html`<section class="ts-head ts-root" aria-label="Tile">
-    <div class="ts-head-lead">${parts.lead}</div>
-    <div class="ts-head-mid">
-      ${name}
-      <div class="ts-head-f ts-head-shows"><span class="ts-head-lab">Shows</span><div class="ts-head-ent">${shown}${change}</div></div>
-      ${parts.below ?? nothing}
-    </div>
-    <div class="ts-head-side">
-      <div class="ts-head-acts" role="group" aria-label="Tile actions">
-        ${parts.actions}
-        <button type="button" class="ghost ts-reset-btn" ?disabled=${!resettable || host.busy}
-          title=${resettable ? "Put the icon, color, text, state, border, background and arrangement back to their defaults. The name, size, tap and Show tile stay. Undo brings them back." : "The tile's look is at its defaults"}
-          @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>${uiIcon("undo")}<span>Reset</span></button>
-        ${parts.remove}
-      </div>
-    </div>
-  </section>`;
-}
-
-/** What a folded section's heading says it holds. */
-function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSection): string {
+/** What a folded section's heading says it holds, and the head's facts
+ * (`tile-head.ts`). */
+export function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSection): string {
   const tile = host.tile;
   switch (section) {
     case "opens": {
@@ -2103,12 +2201,30 @@ export const NO_ICON_GLOW_NOTE = "No icon, so there is nothing to glow.";
 
 /** The icon's size and shadow, or the line that says why they are gone. */
 function renderIconLook(host: TileSettingsHost): TemplateResult {
-  if (everyPicked(host, () => watchTileDrawsNoIcon(host.tile))) return html`<div class="hint keep ts-gone">${NO_ICON_NOTE}</div>`;
+  return iconLookParts(host).body;
+}
+
+/** What the icon's size and shadow read, for their changed test. */
+const ICON_SIZE_READ = (t: WatchPageTile) => watchTileIconSettings(t).iconSize;
+const ICON_SHADOW_READ = (t: WatchPageTile) => watchTileIconSettings(t).iconShadow;
+
+/** The icon's size and shadow, each a rare row of the Icon section, with
+ * the words its More line gives the ones folded. */
+function iconLookParts(host: TileSettingsHost): { body: TemplateResult; folded: RareRowWords[] } {
+  if (everyPicked(host, () => watchTileDrawsNoIcon(host.tile))) return { body: html`<div class="hint keep ts-gone">${NO_ICON_NOTE}</div>`, folded: [] };
   const s = watchTileIconSettings(host.tile);
-  return html`
-    ${renderIconSize(host)}
-    ${checkRow("Icon shadow", s.iconShadow, pickedMixed(host, (t) => watchTileIconSettings(t).iconShadow),
-      (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`;
+  const sizeChanged = rareChanged(host, ["iconSizeOverride"], ICON_SIZE_READ) || rareTyped(host, "iconSize");
+  const shadowChanged = rareChanged(host, ["iconShadow"], ICON_SHADOW_READ);
+  const folded: RareRowWords[] = [];
+  if (!sizeChanged) folded.push({ name: "Icon size", value: rareValue(host, ICON_SIZE_READ, sizeWord(s.iconSize)) });
+  if (!shadowChanged) folded.push({ name: "Icon shadow", value: rareValue(host, ICON_SHADOW_READ, onOffWord(s.iconShadow)) });
+  return {
+    body: html`
+      ${rareRow(host, "icon", sizeChanged, renderIconSize(host))}
+      ${rareRow(host, "icon", shadowChanged, checkRow("Icon shadow", s.iconShadow, pickedMixed(host, ICON_SHADOW_READ),
+        (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on))))}`,
+    folded,
+  };
 }
 
 /** Whether the Glow rows are offered: One Look draws the glow, and a rule's
@@ -2135,12 +2251,18 @@ function renderWhenOff(host: TileSettingsHost): TemplateResult {
   // With several tiles picked, a row only where every one of them has it.
   const dims = everyPicked(host, () => watchTileIconSettings(host.tile).dimWhenOff.applies);
   const animates = everyPicked(host, () => watchTileIconSettings(host.tile).activeAnimation.shown && !watchTileDrawsNoIcon(host.tile));
+  // Animate while on is a rare row: it folds behind the More line while at
+  // the kind's default.
+  const animateRead = (t: WatchPageTile) => watchTileIconSettings(t).activeAnimation.value;
+  const animateChanged = animates && rareChanged(host, ["activeIconAnimationEnabled"], animateRead);
   return html`
     ${dims && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
-    ${!animates ? nothing
+    ${!animates ? nothing : rareRow(host, "whenOff", animateChanged,
       // One Look never moves the icon for being on: the switch is greyed.
-      : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
-      : renderActiveAnimation(host, s.activeAnimation.stored)}`;
+      oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
+      : renderActiveAnimation(host, s.activeAnimation.stored))}
+    ${!animates || animateChanged ? nothing
+      : moreLine(host, "whenOff", [{ name: "Animate while on", value: rareValue(host, animateRead, onOffWord(s.activeAnimation.value)) }])}`;
 }
 
 /** Tap animation: how the icon moves when the tile is tapped. */
@@ -2392,22 +2514,23 @@ function renderText(host: TileSettingsHost): TemplateResult {
   // entity's own name and have none.
   const show = checkRow("Show label", t.showLabel, mixed((s) => s.showLabel), (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)));
   if (everyPicked(host, () => !watchTileLabelDrawn(host.tile))) return html`${show}<div class="hint keep ts-gone">${LABEL_HIDDEN_NOTE}</div>`;
+  // Font size and Text shadow are rare rows, last, folded behind the More
+  // line while at their defaults (`moreLine`).
+  const sizeRead = (x: WatchPageTile) => watchTileTextSettings(x).fontSize;
+  const shadowRead = (x: WatchPageTile) => watchTileTextSettings(x).textShadow;
+  const sizeChanged = rareChanged(host, ["labelFontSizeOverride"], sizeRead) || rareTyped(host, "fontSize");
+  const shadowChanged = rareChanged(host, ["labelShadow"], shadowRead);
+  const folded: RareRowWords[] = [
+    ...(sizeChanged ? [] : [{ name: "Font size", value: rareValue(host, sizeRead, sizeWord(t.fontSize)) }]),
+    ...(shadowChanged ? [] : [{ name: "Text shadow", value: rareValue(host, shadowRead, onOffWord(t.textShadow)) }]),
+  ];
   return html`
     ${show}
-    ${typingField(host, "fontSize", html`<div class="ts-with-link">
-      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: sizeMixed ? MIXED_WORD : "Auto", unit: "pt", rawTyping: true })}
-      ${!somePicked(host, () => watchTileTextSettings(host.tile).fontSize !== undefined) ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the label to the tile`, () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
-    </div>`, t.fontSize)}
-    <div class="hint ts-under">${oneLook(host)
-      ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
-      : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>
-    ${aaField(host, "Weight", watchFontWeightMenu(t.fontWeight), weightSample, mixed((s) => s.fontWeight),
+    ${aaField(host, "Weight", watchFontWeightMenu(t.fontWeight), weightStyle, mixed((s) => s.fontWeight),
       (v) => (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v), "fontWeight")}
     ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_WEIGHT_NOTE}</div>` : nothing}
-    ${aaField(host, "Design", watchFontDesignMenu(t.fontDesign), designSample, mixed((s) => s.fontDesign),
+    ${aaField(host, "Design", watchFontDesignMenu(t.fontDesign), designStyle, mixed((s) => s.fontDesign),
       (v) => (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v), "fontDesign")}
-    ${checkRow("Text shadow", t.textShadow, mixed((s) => s.textShadow), (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
-    ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}
     ${colorPickerView({
       label: "Label color",
       color: t.labelColor,
@@ -2419,7 +2542,17 @@ function renderText(host: TileSettingsHost): TemplateResult {
       mixed: colorMixed,
       trial: colorTrial(host, "Label color", { swatch: labelColorEdit, default: labelColorEdit(null) }),
       wrap: (body) => typingField(host, "labelColor", body),
-    })}`;
+    })}
+    ${rareRow(host, "text", sizeChanged, html`${typingField(host, "fontSize", html`<div class="ts-with-link">
+      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: sizeMixed ? MIXED_WORD : "Auto", unit: "pt", rawTyping: true })}
+      ${!somePicked(host, () => watchTileTextSettings(host.tile).fontSize !== undefined) ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the label to the tile`, () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
+    </div>`, t.fontSize)}
+    <div class="hint ts-under">${oneLook(host)
+      ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
+      : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>`)}
+    ${rareRow(host, "text", shadowChanged, html`${checkRow("Text shadow", t.textShadow, mixed((s) => s.textShadow), (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
+    ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}`)}
+    ${moreLine(host, "text", folded)}`;
 }
 
 /** The one line that stands where the label's own rows were. */
@@ -2436,23 +2569,27 @@ export function watchTileLabelDrawn(tile: WatchPageTile): boolean {
   return watchTileTextSettings(tile).showLabel;
 }
 
-/** A label's Weight or Design as "Aa" chips, each in its own weight or
- * design; a stored value the panel does not offer keeps the menu, which
- * shows it. */
+/** The short words a Weight or Design button carries where the full name
+ * would not fit five to a row; the full name is its tooltip. */
+const AA_SHORT: Readonly<Record<string, string>> = { regular: "Reg", medium: "Med", semibold: "Semi" };
+
+/** A label's Weight or Design as one segmented row that never wraps, each
+ * button's words drawn in its own weight or design (`style`); a stored
+ * value the panel does not offer keeps the menu, which shows it. */
 function aaField(
   host: TileSettingsHost,
   label: string,
   menu: WatchMenu,
-  sample: (value: string) => TemplateResult,
+  style: (value: string) => string,
   mixed: boolean,
   edit: (value: string) => (d: WatchPagesDocument) => WatchPagesDocument,
   setting: string,
 ): TemplateResult {
   const pick = (v: string) => commit(host, setting, edit(v));
   if (menu.note !== undefined) return menuField(label, mixedMenu(menu, mixed), pick);
-  return pictureChoice(label, menu.selected, menu.options.map((o) => ({ value: o.value, label: o.label, picture: () => sample(o.value) })), pick, {
-    size: "small", mixed, trial: tileTrial(host, `Label ${label.toLowerCase()}`, edit),
-  });
+  return segChoice(label, menu.selected, menu.options.map((o) => ({
+    value: o.value, label: o.label, style: style(o.value), ...(AA_SHORT[o.value] === undefined ? {} : { short: AA_SHORT[o.value]! }),
+  })), pick, { mixed, trial: tileTrial(host, `Label ${label.toLowerCase()}`, edit) });
 }
 
 // ── action ───────────────────────────────────────────────────────────────
@@ -2512,8 +2649,8 @@ function shownShowTileMode(host: TileSettingsHost): { mode: WatchShowTileMode; p
 }
 
 /** The Visibility card's line while folded: the choice, with the entity of
- * Only When. Nothing for Always. */
-function showTileSummary(host: TileSettingsHost): string {
+ * Only When. Nothing for Always. The head's Shows fact too. */
+export function showTileSummary(host: TileSettingsHost): string {
   switch (watchShowTileMode(host.tile)) {
     case "always":
       return "";
@@ -2678,6 +2815,10 @@ function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateRes
 
 function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<typeof watchHoldSlideMenus>>): TemplateResult {
   const setDirection = (direction: WatchSlideDirection, value: string) => {
+    // The direction edited stays the one shown: the pad opened on the first
+    // that does something, and setting it to None must not swap the detail
+    // box under the pointer for another direction's.
+    host.uiState.set(slidePadKey(host), direction);
     // An HTTP action's entry sets the action and its target in one edit,
     // so no direction is ever saved as Run HTTP Action with nothing to run.
     const http = watchHTTPSlideChoice(value);
@@ -2687,7 +2828,12 @@ function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<
     }
     commit(host, `slide:${direction}`, (d) => setWatchTileHoldSlide(d, host.pageId, host.tileId, direction, value === WATCH_DEFAULT_CHOICE ? null : value));
   };
-  return html`<div class="ts-sub">
+  const selected = slidePadDirection(host, slides.rows);
+  const at = (direction: WatchSlideDirection) => {
+    const row = slides.rows.find((r) => r.direction === direction);
+    return row === undefined ? html`<span></span>` : slideArrow(host, row, row.direction === selected);
+  };
+  return html`<div class="ts-sub ts-slide">
     <div class="ts-sub-h">
       <span>Hold and slide</span>
       ${slides.anyStored && slides.readable
@@ -2697,15 +2843,74 @@ function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<
     ${slides.readable
       ? nothing
       : html`<div class="hint warn">This tile's hold and slide settings could not be read here. They are kept as they are.</div>`}
+    <div class="ts-pad" role="group" aria-label="Hold and slide directions">
+      <span></span>${at("up")}<span></span>
+      ${at("left")}${slidePadTile(host)}${at("right")}
+      <span></span>${at("down")}<span></span>
+    </div>
     <fieldset class="ts-plain" ?disabled=${!slides.readable}>
-      ${slides.rows.map((row) => html`
-        ${menuField(row.title, row, (v) => setDirection(row.direction, v))}
+      ${slides.rows.map((row) => html`<div class="ts-slide-detail" id=${slideDetailId(host, row.direction)} data-direction=${row.direction}
+          role="region" aria-label=${`Slide ${row.title.toLowerCase()}`} ?hidden=${row.direction !== selected}>
+        ${menuField(`Slide ${row.title.toLowerCase()}`, row, (v) => setDirection(row.direction, v))}
         ${row.trigger === undefined ? nothing : renderTrigger(host, row.direction, row.trigger)}
         ${row.http === undefined ? nothing : renderSlideBanner(host, row.direction, row.http)}
-        ${fieldNote(host, `slide:${row.direction}`)}`)}
+        ${fieldNote(host, `slide:${row.direction}`)}</div>`)}
     </fieldset>
-    <div class="hint ts-under">Hold the tile, then slide. None turns a default off.</div>
+    <div class="hint ts-under">Hold the tile, then slide. Pick a direction to set what it does. None turns a default off.</div>
   </div>`;
+}
+
+/** Where the arrow pad's picked direction is kept, per tile. */
+function slidePadKey(host: Pick<TileSettingsHost, "tileId">): string {
+  return `${KEY}:slidePad:${host.tileId.toUpperCase()}`;
+}
+
+/** The id of a direction's detail box, which its arrow controls. */
+function slideDetailId(host: TileSettingsHost, direction: WatchSlideDirection): string {
+  return `ts-slide-${host.tileId.toUpperCase()}-${direction}`;
+}
+
+/** The direction the arrow pad shows the rows of: the one picked on this
+ * tile, else the first that does something, else Up. */
+export function slidePadDirection(host: Pick<TileSettingsHost, "uiState" | "tileId">, rows: readonly WatchHoldSlideRow[]): WatchSlideDirection {
+  const held = host.uiState.get(slidePadKey(host));
+  if (typeof held === "string" && rows.some((r) => r.direction === held)) return held as WatchSlideDirection;
+  return rows.find((r) => r.resolved !== "none")?.direction ?? rows.find((r) => r.direction === "up")?.direction ?? rows[0]?.direction ?? "up";
+}
+
+/** A direction's short words on its arrow: its HTTP action's name, the
+ * action it runs, or Nothing. */
+export function slideArrowWords(row: WatchHoldSlideRow): string {
+  if (row.resolved === "none") return "Nothing";
+  return row.http?.entry?.name ?? row.resolvedLabel;
+}
+
+/** The arrows' glyphs, before or after the direction's word. */
+const SLIDE_ARROWS: Readonly<Record<WatchSlideDirection, string>> = { up: "↑", down: "↓", left: "←", right: "→" };
+
+/** One arrow of the pad: the direction and what it does, quiet while it
+ * does nothing; a press shows its rows under the pad. */
+function slideArrow(host: TileSettingsHost, row: WatchHoldSlideRow, on: boolean): TemplateResult {
+  const words = slideArrowWords(row);
+  const set = row.resolved !== "none";
+  const glyph = SLIDE_ARROWS[row.direction];
+  const classes = ["ts-slide-arr", ...(set ? ["set"] : []), ...(on ? ["on"] : [])].join(" ");
+  return html`<button type="button" class="${classes}" data-direction=${row.direction}
+    aria-pressed=${on ? "true" : "false"} aria-controls=${slideDetailId(host, row.direction)} aria-label=${`Slide ${row.title.toLowerCase()}: ${words}`}
+    title=${`Slide ${row.title.toLowerCase()}: ${words}`}
+    @click=${() => { host.uiState.set(slidePadKey(host), row.direction); host.requestUpdate(); }}>
+    <b>${row.direction === "right" ? `${row.title} ${glyph}` : `${glyph} ${row.title}`}</b><span>${words}</span></button>`;
+}
+
+/** The small tile in the middle of the pad: its name on its color. */
+function slidePadTile(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const n = host.picked?.ids.length ?? 1;
+  const text = watchTileTextSettings(tile);
+  const name = n > 1 ? `${n} tiles` : text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+  const ends = watchColorEnds(watchTileIconSettings(tile).color ?? kindDefaults(host).color);
+  const ground = ends === undefined ? "var(--wa-card-2, #2a2c31)" : `linear-gradient(160deg, ${ends.from}, ${ends.to})`;
+  return html`<div class="ts-pad-tile" aria-hidden="true" style=${`--pad-ground:${ground}`}><span>${name}</span></div>`;
 }
 
 /** A Run HTTP Action direction's banner: on or off, and for how long. */
@@ -3220,16 +3425,58 @@ function renderState(host: TileSettingsHost): TemplateResult {
     .map((card) => (domain ? { ...card, rows: card.rows.filter((row) => !NO_DOMAIN_STATE_ROWS.has(row.key)) } : card))
     .filter((card) => !domain || card.rows.length > 0);
   if (cards.length === 0) return html`<p class="hint keep">${watchStateEmptyText()}</p>`;
+  // The rare rows fold behind the More line while at their defaults: a card
+  // of nothing else (State text) folds whole, with its heading.
+  const changed = new Map(cards.flatMap((c) => c.rows).filter((r) => STATE_RARE_ROWS.has(r.key))
+    .map((r) => [r.key, stateRowChanged(host, r.key) || rareTyped(host, r.key)] as const));
+  const folded: RareRowWords[] = [];
+  for (const [key, isChanged] of changed) if (!isChanged) folded.push(stateRareWords(host, key));
   return html`
     ${cards.map((card) => {
       const subtitle = (look ? oneLookCardSubtitle(card.id, kind) : undefined) ?? card.subtitle;
-      return html`<div class="ts-group">
+      const rare = card.rows.length > 0 && card.rows.every((r) => changed.has(r.key));
+      const rows = rare ? stateRows(host, card.rows)
+        : card.rows.map((row) => (changed.has(row.key) ? rareRow(host, "state", changed.get(row.key)!, renderStateRow(host, row)) : renderStateRow(host, row)));
+      const body = html`<div class="ts-group">
       <div class="ts-sub-h"><span>${card.title}</span></div>
       ${subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${subtitle}.</div>`}
-      ${stateRows(host, card.rows)}
+      ${rows}
       ${look ? stateCardNote(host, card.id) : nothing}</div>`;
+      return rare ? rareRow(host, "state", card.rows.some((r) => changed.get(r.key) === true), body) : body;
     })}
+    ${moreLine(host, "state", folded)}
     ${resetRow(host, "state", "State")}`;
+}
+
+/** The State rows that fold behind the More line while at their defaults,
+ * with the words the line names them by. */
+const STATE_RARE_ROWS: ReadonlyMap<string, string> = new Map([
+  ["badgeFontSizeOverride", "Text size"],
+  ["statusTextShadow", "Text shadow"],
+  ["stateBarBorder", "Bar border"],
+  ["stateBarShadow", "Bar shadow"],
+]);
+
+/**
+ * Whether a State row holds a value of its own on any picked tile: on a
+ * tile, it reads other than the task's Reset would leave it (the phone's
+ * values, as the section's own changed dot counts); on a rule's style, its
+ * key is held.
+ */
+function stateRowChanged(host: TileSettingsHost, key: string): boolean {
+  return somePicked(host, () => {
+    if (host.domainStyle === true) return Object.hasOwn(host.tile, key);
+    const reset = watchTileIn(resetWatchTileTask(host.document, host.pageId, host.tileId, "state"), host.pageId, host.tileId);
+    return reset === undefined || JSON.stringify(stateRowOf(host.tile, key)) !== JSON.stringify(stateRowOf(reset, key));
+  });
+}
+
+/** A folded State row's words in the More line: Text size in points or
+ * Auto, the switches on or off. */
+function stateRareWords(host: TileSettingsHost, key: string): RareRowWords {
+  const value = stateRowOf(host.tile, key);
+  const word = key === "badgeFontSizeOverride" ? sizeWord(typeof value === "number" ? value : undefined) : onOffWord(value === true);
+  return { name: STATE_RARE_ROWS.get(key) ?? key, value: rareValue(host, (t) => stateRowOf(t, key), word) };
 }
 
 /** One Look's line under a card for a tile the iPhone draws as a picture or
@@ -3253,13 +3500,18 @@ function stateEditKey(host: TileSettingsHost): string {
   return `${KEY}:stateEdit:${host.tileId.toUpperCase()}`;
 }
 
+/** The State icons and colors card's rows for the tile, narrowed by the
+ * entity's live attributes; undefined for a domain with no states. */
+function stateIconsCard(host: TileSettingsHost): ReturnType<typeof watchTileStateIcons> {
+  const card = watchTileStateIcons(host.tile, host.hass.states[tileEntityId(host.tile)]?.attributes);
+  return card === undefined || card.rows.length === 0 ? undefined : card;
+}
+
 /** The card under Icon and color: one row per state of the domain, narrowed
  * by the entity's live attributes. Nothing for a domain with no states. */
 function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothing {
-  const entityId = tileEntityId(host.tile);
-  const attributes = host.hass.states[entityId]?.attributes;
-  const card = watchTileStateIcons(host.tile, attributes);
-  if (card === undefined || card.rows.length === 0) return nothing;
+  const card = stateIconsCard(host);
+  if (card === undefined) return nothing;
   const raw = host.uiState.get(stateEditKey(host));
   const editing = typeof raw === "object" && raw !== null ? (raw as StateEditing) : undefined;
   const tileColor = watchTileIconSettings(host.tile).color;
@@ -3654,47 +3906,8 @@ export const tileSettingsStyles = css`
   .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
 
-  /* The inspector's head (\`renderTileHead\`): one strip across the
-     inspector, wrapping on a narrow one. The path and the live tiles at its
-     start, Name and Shows in the middle (labels over their boxes), the
-     actions and Find a setting at its end. A row, said outright: the head
-     also wears .ts-root, which stands its children in a column, and in a
-     column the parts' flex bases (280px, 300px) became heights, so the head
-     stood 800px tall with each part on its own line. */
-  .ts-head {
-    display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 16px 28px;
-    margin: 0; padding: 16px 20px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card);
-  }
-  .ts-head-lead { display: flex; flex-direction: column; gap: 10px; flex: 0 1 auto; min-width: 0; }
-  .ts-head-mid { display: flex; flex-direction: column; gap: 8px; flex: 1 1 280px; min-width: 240px; max-width: 440px; }
-  .ts-head-side {
-    display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
-    flex: 1 1 300px; min-width: 260px; align-self: stretch;
-  }
-  .ts-head-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .ts-head-lab { font-size: 12.5px; color: var(--wa-muted); }
-  .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
-  .ts-head .ts-head-f input[type=text] {
-    width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px; font-size: 14px; font-weight: 500; border-radius: 8px;
-    border-color: var(--wa-line-strong); background-color: var(--wa-field);
-  }
-  .ts-head-ent {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; height: 36px; padding: 0 10px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field);
-  }
-  .ts-head-entity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--wa-soft, var(--wa-ink)); }
-  .ts-head-none { font-size: 12.5px; color: var(--wa-muted); }
-  button.link.ts-head-change { flex: none; padding: 2px 4px; border: 0; background: none; font: inherit; font-size: 12px; color: var(--ts-blue, var(--wa-accent)); cursor: pointer; }
-  button.link.ts-head-change:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; }
-  .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 30px; padding: 0 10px; font-size: 13px; }
-  .ts-head-acts > button svg.ui-icon { width: 15px; height: 15px; }
-  button.ghost.ts-reset-btn:disabled { opacity: .45; }
-  /* In the first column (\`.ts-g1\`), the head stands its parts one under
-     the other: the tile, Name and Shows, then the actions. */
-  .ts-g1 .ts-head { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px 18px; }
-  .ts-g1 .ts-head-mid, .ts-g1 .ts-head-side { flex: none; min-width: 0; max-width: none; }
-  .ts-g1 .ts-head-acts { justify-content: flex-start; }
+  /* The inspector's head has its own rules, \`tileHeadStyles\` in
+     tile-head.ts. */
 
   ${pictureChoiceStyles}
 
@@ -3709,47 +3922,76 @@ export const tileSettingsStyles = css`
   .ts-mixed-f input[type=range] { opacity: .45; }
   .ts-picked-off { margin: 6px 0 2px; font-size: 12px; color: var(--wa-hint, var(--wa-muted)); }
 
-  /* The tile inspector's groups (\`renderTileInspector\`): Look, Text, Tap
-     and Layout in one to four columns by the inspector's own width, pure
-     CSS. \`.ts-g2\` holds Text and \`.ts-g3\`, which holds Tap and Layout;
-     a wrapper turns to display: contents where its children take columns
-     of their own. The inspector body is the one scroll. */
+  /* The tile inspector (\`renderTileInspector\`): the head across the whole
+     inspector, then the four group columns under it, by the inspector's own
+     width, pure CSS: four side by side from 1580px (each as tall as the
+     inspector and scrolling on its own, the page editor's rules), two from
+     680px with the inspector scrolling as one, else one. A pair of groups on
+     one row are as tall as each other, so no column ends ragged. */
+  .ts-insp { gap: 14px; min-width: 0; }
+  .ts-insp-head { min-width: 0; }
   .ts-groups {
-    display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 14px;
-    --ts-gap: 12px; --ts-blue: var(--wa-hue-blue, #4c8dff);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0;
+    --ts-gap: 12px; --ts-lab: 104px; --ts-blue: var(--wa-hue-blue, #4c8dff);
   }
-  .ts-g1, .ts-g2, .ts-g3 { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  @container insp (min-width: 760px) {
-    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .ts-g3 { display: contents; }
+  @container insp (min-width: 680px) {
+    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
   }
-  @container insp (min-width: 1080px) {
-    .ts-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .ts-g2 { display: contents; }
-    .ts-g3 { display: flex; }
+  @container insp (min-width: 1580px) {
+    .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); }
   }
-  @container insp (min-width: 1560px) {
-    .ts-groups { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .ts-g3 { display: contents; }
+  /* Each group has its own hue, kept clear of the blue that marks what
+     changed: amber, violet, teal and coral. */
+  .ts-grp { --ts-hue: 150, 150, 160; min-width: 0; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card); }
+  .ts-grp[data-group="color"] { --ts-hue: 236, 186, 82; }
+  .ts-grp[data-group="text"] { --ts-hue: 176, 150, 255; }
+  .ts-grp[data-group="surface"] { --ts-hue: 72, 206, 190; }
+  .ts-grp[data-group="does"] { --ts-hue: 255, 138, 118; }
+  /* The group's title on a band of its hue, a line of it along the top. */
+  .ts-grp-h {
+    display: flex; align-items: baseline; gap: 8px; padding: 14px 18px 11px; border-radius: 13px 13px 0 0;
+    border-bottom: 1px solid rgba(var(--ts-hue), .32); box-shadow: inset 0 3px 0 rgb(var(--ts-hue));
+    background: linear-gradient(rgba(var(--ts-hue), .13), rgba(var(--ts-hue), .13)), var(--wa-card);
   }
-  .ts-grp { min-width: 0; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card); }
-  .ts-grp-h { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid var(--wa-line); }
   /* Sentence case said outright: the panel's heading rules set uppercase. */
-  .ts-grp-t { margin: 0; flex: none; font-size: 15px; font-weight: 600; color: var(--wa-ink); text-transform: none; letter-spacing: normal; }
-  .ts-grp-d { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ts-grp-n { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ts-blue); white-space: nowrap; }
+  .ts-grp-t { margin: 0; flex: none; font-size: 15px; font-weight: 600; color: rgb(var(--ts-hue)); white-space: nowrap; text-transform: none; letter-spacing: normal; }
+  .ts-grp-d { flex: 1; min-width: 0; font-size: 11.5px; color: rgba(var(--ts-hue), .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ts-grp-n { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 11.5px; color: var(--ts-blue); white-space: nowrap; }
   .ts-grp-n > i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--ts-blue); }
   /* A removed kind's or an inbox's one line, where a group's sections would be. */
-  .ts-grp > :not(.ts-grp-h):not(.ts-sec) { margin: 12px 18px; }
+  .ts-grp > :not(.ts-grp-h):not(.ts-sec):not(.ts-kind):not(.ts-more):not(.ts-rare) { margin: 12px 18px; }
 
-  /* One heading style for every section: sentence case, 13px semibold, no
+  /* One heading style for every section: sentence case, 13.5px semibold, a
+     short bar of the group's hue before it on a faint wash of that hue, no
      badge and no fold, the blue dot and Reset while it holds a value of its
      own. */
   .ts-sec { min-width: 0; padding: 14px 18px 16px; border-bottom: 1px solid var(--wa-line); }
   .ts-sec:last-child { border-bottom: 0; }
-  .ts-sec-h { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-bottom: 8px; }
-  .ts-sec-h h4 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--wa-ink); }
+  .ts-sec-h {
+    display: flex; align-items: center; gap: 8px; min-height: 27px; margin: -6px -18px 8px; padding: 4px 18px;
+    background: linear-gradient(90deg, rgba(var(--ts-hue, 150, 150, 160), .10), transparent 75%);
+  }
+  .ts-sec-h::before { content: ""; display: block; flex: none; width: 3px; height: 15px; margin-right: -1px; border-radius: 2px; background: rgb(var(--ts-hue, 150, 150, 160)); }
+  .ts-sec-h h4 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--wa-ink); }
   .ts-sec-h > .ts-dev-tag { margin-left: 0; }
+  /* A part's own heading inside the kind's card: smaller, under the card's. */
+  .ts-sec-h.ts-sec-sub { min-height: 20px; margin: 0 0 6px; padding: 0; background: none; }
+  .ts-sec-h.ts-sec-sub::before { display: none; }
+  .ts-sec-sub h5 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--wa-muted); }
+  /* The tile's own kind's card at the top of What it does: titled by the
+     kind, a small tag saying it is this tile's, on a faint wash of the hue. */
+  .ts-kind {
+    min-width: 0; padding: 14px 18px 0; border-bottom: 1px solid var(--wa-line);
+    background: linear-gradient(180deg, rgba(var(--ts-hue), .10), transparent 70%);
+  }
+  .ts-kind:last-child { border-bottom: 0; }
+  .ts-kind-tag {
+    flex: none; padding: 1px 5px; border: 1px solid rgba(var(--ts-hue), .45); border-radius: 5px;
+    font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: rgb(var(--ts-hue));
+  }
+  .ts-kind > .ts-sec { padding: 2px 0 14px; border-bottom: 0; }
+  .ts-kind > .ts-sec + .ts-sec { padding-top: 12px; border-top: 1px solid var(--wa-line); }
+  .ts-kind > :not(.ts-sec-h):not(.ts-sec) { margin: 2px 0 14px; }
   .ts-dot { display: block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ts-blue); }
   button.ts-sec-reset {
     margin-left: auto; padding: 2px 4px; border: 0; border-radius: 6px; background: none; cursor: pointer;
@@ -3759,10 +4001,13 @@ export const tileSettingsStyles = css`
   button.ts-sec-reset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.ts-sec-reset:disabled { opacity: .45; cursor: default; }
   .ts-sec-b { padding: 0; }
-  /* One title column in every section: 100px, the control 12px after it,
-     rows at least 32px. A row whose control needs the width (pictures, the
-     pattern gallery, a choice of four) keeps its title in that column too. */
-  .ts-groups fieldset.ts-body { --wa-lab: 100px; gap: 4px; padding: 0; }
+  /* One title column for every row of the inspector (\`--ts-lab\`), the
+     control 12px after it, rows at least 32px. A row whose control needs
+     the width (pictures, the pattern gallery, a choice of four) keeps its
+     title in that column too, and a nested run of rows, set in by its
+     line, keeps its controls on the same edge. */
+  .ts-groups fieldset.ts-body { --wa-lab: var(--ts-lab); gap: 4px; padding: 0; }
+  .ts-groups .ts-nested { --wa-lab: calc(var(--ts-lab) - 24px); }
   .ts-groups .field { column-gap: var(--ts-gap); min-height: 32px; }
   .ts-groups .field.pc-field { display: grid; grid-template-columns: var(--wa-lab) minmax(0, 1fr); align-items: start; column-gap: var(--ts-gap); }
   .ts-groups .field.pc-field > span:first-child { padding-top: 8px; }
@@ -3772,6 +4017,64 @@ export const tileSettingsStyles = css`
   /* A styling section's own Reset at the foot of its rows is the heading's
      Reset in the groups, so it is not drawn twice. */
   .ts-groups .ts-reset { display: none; }
+
+  /* Rare rows (\`rareRow\`) and each section's More line (\`moreLine\`). In
+     the four column layout, and outside the tile inspector (a smart rule's
+     cards), every row is open and no More line is drawn. Under four columns
+     a rare row at its default folds away until its section's More is
+     opened; a changed one is always shown (\`data-shown\`). Pure CSS by the
+     inspector's width, as the columns are. */
+  .ts-rare { display: contents; }
+  button.ts-more { display: none; }
+  .ts-group + .ts-rare > .ts-group, .ts-rare + .ts-group { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+  @container insp (width < 1580px) {
+    .ts-groups .ts-rare:not([data-shown]) { display: none; }
+    .ts-groups button.ts-more {
+      display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; margin: 4px 0 0; padding: 8px 2px 2px;
+      border: 0; border-top: 1px dashed var(--wa-line); border-radius: 0; background: none; cursor: pointer;
+      font: inherit; font-size: 12px; text-align: left; color: var(--wa-muted);
+    }
+    .ts-groups button.ts-more:hover { color: var(--wa-ink); }
+    .ts-groups button.ts-more:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    /* Tap animation's More stands for a whole part, between sections. */
+    .ts-grp > button.ts-more { margin: 0; padding: 10px 18px 12px; border-top: 0; }
+  }
+  /* Hold and slide as one arrow pad (\`renderHoldSlide\`): the four
+     directions around a small tile on its color, each with what it does,
+     quiet while it does nothing and blue while it does something; the
+     picked one ringed, and its rows in one box under the pad. */
+  .ts-pad {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr); gap: 6px;
+    align-items: center; justify-items: center; padding: 6px 0 4px;
+  }
+  .ts-pad-tile {
+    display: flex; align-items: center; justify-content: center; width: 84px; max-width: 100%; height: 56px; padding: 4px; box-sizing: border-box;
+    border-radius: 12px; background: var(--pad-ground); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+    font-size: 10.5px; font-weight: 600; line-height: 1.2; color: #fff; text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  }
+  .ts-pad-tile > span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  /* Its own class names, not .ts-arr: that one is the Arrangement card's,
+     whose column rule would reach the arrows. */
+  button.ts-slide-arr {
+    width: 100%; max-width: 150px; min-width: 0; padding: 6px 8px; border: 1px solid var(--wa-line); border-radius: 8px;
+    background: var(--wa-bg, rgba(0, 0, 0, .25)); cursor: pointer; font: inherit; font-size: 11.5px; line-height: 1.25;
+    color: var(--wa-muted); text-align: center; overflow-wrap: anywhere;
+  }
+  button.ts-slide-arr > b { display: block; margin-bottom: 1px; font-size: 10.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap; }
+  button.ts-slide-arr.set { color: var(--wa-ink); border-color: rgba(120, 160, 255, .38); }
+  button.ts-slide-arr.set > b { color: #9fbcff; }
+  button.ts-slide-arr.on { border-color: var(--ts-blue, #4c8dff); box-shadow: 0 0 0 1px var(--ts-blue, #4c8dff); }
+  button.ts-slide-arr:hover:not(:disabled) { border-color: var(--ts-blue, #4c8dff); }
+  button.ts-slide-arr:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ts-slide-detail { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 6px 10px; border: 1px solid var(--wa-line); border-radius: 9px; background: rgba(0, 0, 0, .18); }
+  .ts-slide-detail[hidden] { display: none; }
+  .ts-groups .ts-slide-detail { --wa-lab: calc(var(--ts-lab) - 22px); }
+  @container insp (width < 420px) {
+    .ts-pad-tile { width: 64px; height: 44px; }
+    button.ts-slide-arr { padding: 5px 4px; }
+  }
+  .ts-more-w { flex: none; font-weight: 500; color: var(--ts-blue); }
+  .ts-more-v { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The line that stands where rows that do nothing were. */
   .ts-body .hint.ts-gone { margin: 2px 0 0; color: var(--wa-muted); font-style: normal; }
 `;

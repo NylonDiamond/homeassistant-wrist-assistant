@@ -155,6 +155,23 @@ describe("the page editor's Fit, filling the stage", () => {
     expect(fit.fit(1.5)).toBe(kept);
   });
 
+  it("gives the zoom that fills the box's height alone, which the page editor sizes its stage's width by", () => {
+    const { fit } = filling(400, 800, WATCH);
+    // Not measured yet: no answer, so the stage keeps its CSS width.
+    expect(fit.heightZoom()).toBeUndefined();
+    fit.hostUpdated();
+    // The box is narrow, so Fit is held by the width, but the height's own
+    // zoom ignores the width: a stage widened to it fits at this zoom.
+    const down = stageFillZoom({ width: Number.POSITIVE_INFINITY, height: 800 }, WATCH, STAGE_FILL_FLOOR);
+    expect(fit.heightZoom()).toBe(down);
+    expect(fit.fit(1.5)).toBeLessThan(down);
+    expect(stageFillZoom({ width: WATCH.width * down + WATCH.fixedWidth, height: 800 }, WATCH, STAGE_FILL_FLOOR)).toBe(down);
+    // A stage that does not fill (a stacked editor) has none.
+    const stacked = filling(400, 800, undefined);
+    stacked.fit.hostUpdated();
+    expect(stacked.fit.heightZoom()).toBeUndefined();
+  });
+
   it("fits the width alone, as before, when the host says no (a stacked editor)", () => {
     const { fit, asked } = filling(300, 2000, undefined);
     // The first pass measures the box and asks to draw again; the draw after

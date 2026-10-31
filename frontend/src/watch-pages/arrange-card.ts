@@ -1,5 +1,6 @@
 // Where a tile's own parts sit: the Arrangement section of the tile
-// inspector's Layout group, after Size (`renderArrangeSection`). Arrange
+// inspector's Surface and rules group, after Shows when
+// (`renderArrangeSection`). Arrange
 // (Default or Free) and, in Free, a large live tile the parts are dragged
 // on, the Part being placed, its Spot on a 3 by 3 grid of the tile's content
 // box (or its native place), its Size, Shown or Hidden, a small move across

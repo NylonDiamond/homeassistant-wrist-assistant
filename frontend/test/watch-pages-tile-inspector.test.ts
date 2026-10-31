@@ -95,6 +95,7 @@ const tile = (entityId: string, extra: Record<string, unknown> = {}): WatchPageT
 const STATES = {
   "light.desk": { entity_id: "light.desk", state: "on", attributes: { friendly_name: "Desk", brightness: 128 } },
   "switch.fan": { entity_id: "switch.fan", state: "on", attributes: { friendly_name: "Fan" } },
+  "camera.porch": { entity_id: "camera.porch", state: "idle", attributes: { friendly_name: "Porch" } },
 };
 
 /** A tile host as the page editor builds one, One Look on. */
@@ -141,6 +142,37 @@ function part(text: string, id: string): string {
 
 const changed = (t: WatchPageTile, p: TileInspectorPart) => watchTileInspectorPartChanged(tileHost(t).host, p);
 
+// ── the kind's card ──────────────────────────────────────────────────────
+
+describe("the tile's own kind's card", () => {
+  /** The kind card of a markup, to the first section after it. */
+  const kindCard = (text: string): string => {
+    const at = text.indexOf(`<section class="ts-kind" `);
+    if (at < 0) throw new Error("no kind card");
+    const end = text.indexOf(`<section class="ts-sec" data-part=action `, at);
+    return text.slice(at, end < 0 ? undefined : end);
+  };
+
+  it("leads What it does on a camera, titled Camera and tagged, its iPhone key under a smaller heading of its own", () => {
+    const { host } = tileHost(tile("camera.porch"));
+    const iphone = Object.create(host, { device: { value: "iphone" } }) as TileSettingsHost;
+    const text = flat(renderTileInspector(iphone));
+    const does = text.slice(text.indexOf(`<section class="ts-grp" data-group=does `));
+    const card = kindCard(does);
+    expect(card).toMatch(/^<section class="ts-kind" data-kind=camera aria-label=Camera>\s*<div class="ts-sec-h ts-kind-h"><h4>Camera<\/h4><span class="ts-kind-tag">This tile<\/span>/);
+    // The Camera task stands under the card's own heading; the iPhone key
+    // keeps a smaller one, with its iPhone tag.
+    expect(card).toMatch(/<section class="ts-sec" data-part=special aria-label=Camera>\s*<div class="sec-b ts-sec-b">/);
+    expect(card).toMatch(/<section class="ts-sec" data-part=phone aria-label=[^>]+>\s*<div class="ts-sec-h ts-sec-sub"><h5>[^<]+<\/h5><span class="ts-dev-tag"/);
+    expect(does.indexOf("<h4>Action</h4>")).toBeGreaterThan(does.indexOf(`class="ts-kind"`));
+    expect(does.indexOf("<h4>Tap animation</h4>")).toBeGreaterThan(does.indexOf("<h4>Action</h4>"));
+  });
+
+  it("is left out where the tile's kind holds nothing of its own", () => {
+    expect(flat(renderTileInspector(tileHost(tile("light.desk")).host))).not.toContain(`class="ts-kind"`);
+  });
+});
+
 // ── what reads as changed ────────────────────────────────────────────────
 
 describe("a section that differs from its defaults", () => {
@@ -179,8 +211,10 @@ describe("a section that differs from its defaults", () => {
     expect(part(text, "color")).toContain(`<h4>Color</h4><span class="ts-dot"`);
     expect(part(text, "border")).toContain(`>Reset</button>`);
     expect(part(text, "icon")).not.toContain("ts-dot");
-    expect(text).toMatch(/data-group=look [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>2 changed<\/span>/);
-    expect(text).toMatch(/data-group=tap [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
+    expect(text).toMatch(/data-group=color [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
+    expect(text).toMatch(/data-group=surface [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
+    expect(text).toMatch(/data-group=does [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
+    expect(text).not.toMatch(/data-group=text [^]*?<span class="ts-grp-n">[^]*?data-group=surface/);
     // The border's own Reset at the foot of its rows is the heading's now.
     expect(part(text, "border")).toContain(`class="ts-after ts-reset"`);
   });

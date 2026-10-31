@@ -27,7 +27,7 @@ import type { PageImageEntry } from "../ha-api.js";
 import { photoTilesFor, photoTilesUpdateNote } from "../version.js";
 import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
 import { isVirtualTileKind, tileEntityId, tileKind, watchPagesOf } from "./model.js";
-import { mixedWord } from "./picture-choice.js";
+import { infoTip, mixedWord } from "./picture-choice.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
 import { pickedMixed, somePicked } from "./multi-pick.js";
@@ -46,7 +46,7 @@ const KEY = "ts-photo";
 /** The words under a photo made for the tile's own entity. */
 export const ICON_PHOTO_FROM_PHONE = "For this tile";
 
-/** The line under the row while the old look draws the page's tiles. */
+/** The Photo row's (i) while the old look draws the page's tiles. */
 export const ICON_PHOTO_OLD_LOOK_NOTE = "Only the new tile look draws a photo. This page draws the icon.";
 
 /** Photo pressed before a photo is picked, by tile. */
@@ -175,10 +175,11 @@ function addedWords(at: string | undefined): string {
 
 /**
  * The Photo row: the icon photos (those made for the tile's
- * entity first, "For this tile" under them), then "Add photo". The notes under
- * it: no photo store in this integration, a list that failed, a photo the
- * store does not have, the devices too old to draw one, the old look, and
- * the last upload's or delete's refusal.
+ * entity first, "For this tile" under them), then "Add photo". The (i)
+ * beside the title explains the row: the devices too old to draw a photo,
+ * and the old look. The notes under it: no photo store in this
+ * integration, a list that failed, a photo the store does not have, and the
+ * last upload's or delete's refusal.
  */
 export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
   const photos = host.photos;
@@ -195,7 +196,11 @@ export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
   const missing = current !== undefined && photos?.status(current) === "missing";
   const old = photoTilesUpdateNote((host.pickers ?? []).filter((p) => !photoTilesFor(p.version ?? null)).map((p) => p.name));
   const noStore = photos === undefined || photos.listState === "none";
-  const row = html`<div class="field ts-ph-field"><span>Photo${mixed ? html` ${mixedWord()}` : nothing}</span>
+  // What explains the row (devices too old to draw a photo, a page on the
+  // old look) is the (i) beside its title, not lines under it.
+  const about = [old === undefined || (current === undefined && !many) ? undefined : old, host.oneLook === true ? undefined : ICON_PHOTO_OLD_LOOK_NOTE]
+    .filter((n): n is string => n !== undefined).join(" ");
+  const row = html`<div class="field ts-ph-field"><span>Photo${mixed ? html` ${mixedWord()}` : nothing}${about === "" ? nothing : infoTip(about)}</span>
     <div class="ts-ph-group" role="radiogroup" aria-label="Photo">
       ${photos === undefined ? nothing : choices.map((c) => {
         const on = !mixed && samePagePhotoId(current, c.id);
@@ -229,7 +234,5 @@ export function renderIconPhoto(host: TileSettingsHost): TemplateResult {
     ${add}
     ${photos?.error !== undefined ? html`<div class="hint warn ts-under" role="status">${photos.error}</div>` : nothing}
     ${missing ? html`<div class="hint warn ts-under">Photo missing. Home Assistant does not have it, so the ${hostDeviceNoun(host)} draws the icon. Pick another, or Icon.</div>` : nothing}
-    ${old === undefined || (current === undefined && !many) ? nothing : html`<div class="hint warn ts-under" role="status">${old}</div>`}
-    ${host.oneLook === true ? nothing : html`<div class="hint keep ts-under">${ICON_PHOTO_OLD_LOOK_NOTE}</div>`}
   </div>`;
 }

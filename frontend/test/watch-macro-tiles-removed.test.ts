@@ -7,7 +7,7 @@
 // direction is kept too, read as removed and offered nowhere.
 
 import { nothing } from "lit";
-import type { TileHeadParts } from "../src/watch-pages/tile-settings.js";
+import { type TileHeadParts, renderTileHead } from "../src/watch-pages/tile-head.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,7 +42,7 @@ import tileDefaults from "../src/watch-pages/tile-defaults.json";
 import menuKeys from "../src/watch-menus/menu-keys.json";
 import { watchMenuDomain } from "../src/watch-menus/model.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileHead, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileSettings } from "../src/watch-pages/tile-settings.js";
 
 // These pin the old tile look, which a device below One Look's version
 // still draws; One Look's own are in one-look-render.test.ts.

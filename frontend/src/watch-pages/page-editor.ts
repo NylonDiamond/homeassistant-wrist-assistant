@@ -172,6 +172,7 @@ import {
   deleteWatchTile,
   dropWatchTile,
   findWatchPage,
+  firstFreeWatchCell,
   giveWatchTileId,
   listedWatchPages,
   moveWatchTilesBy,
@@ -251,7 +252,7 @@ import {
   watchTileSymbol,
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
-import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
+import { WATCH_TILE_DEFAULTS, addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
 import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
 import { WATCH_BEZEL_RATIO, WATCH_CROWN_RATIO, WATCH_RIM_RATIO, watchFrameStyles } from "../watch-frame.js";
 import {
@@ -272,12 +273,20 @@ import {
   forgetTileSettingsNotes,
   renderHomeMapLooks,
   renderHomeMapPlace,
-  renderTileHead,
   renderTileInspector,
   tileHeadHasEntity,
   tileInspectorParts,
   tileSettingsStyles,
 } from "./tile-settings.js";
+import {
+  TILE_HEAD_BOX_PARTS,
+  TILE_HEAD_GOES_TO,
+  type TileHeadPart,
+  renderTileHead,
+  tileHeadPartAt,
+  tileHeadPartRects,
+  tileHeadStyles,
+} from "./tile-head.js";
 import { forgetTileTry, watchTriedTile, watchTryLabel } from "./picture-choice.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
@@ -368,10 +377,17 @@ const SCRUB_HELD_KEYS: ReadonlySet<string> = new Set(["Escape", "Delete", "Backs
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
-/** At or below this content width the stage and the settings stack and the
- * top bar takes two rows (the `@container` rules on `.layout.pe-layout` say
- * the same). */
-const PE_STACK_WIDTH = 820;
+/** At or below this content width the stage stacks over the settings, the
+ * editor scrolls as one page and the top bar wraps onto more rows (the
+ * `@container` rules on `.layout.pe-layout` say the same). Under it a stage
+ * beside the settings left both too narrow to use. */
+const PE_STACK_WIDTH = 1100;
+
+/** Room the stage keeps round the device(s) it draws, CSS px, when its width
+ * follows the drawing (`stageWidthFor`): the stage area's padding (12 each
+ * side), the stage body's (4 each side), the card's edge, and a margin so the
+ * device never touches the stage's sides. */
+const STAGE_SIDE_ROOM = 24 + 8 + 2 + 48;
 
 /** The picked tiles' row thumbnails' box, CSS px: the complication editor's
  * layer thumbs. */
@@ -389,16 +405,21 @@ const CARD_THUMB_W = 76;
 const PAGE_THUMB_MAX_RATIO = 1.4;
 /** The inspector head's live tile is drawn as large as fits this box, CSS
  * px, and never past this scale, so a small tile does not read as a big
- * one. A wide tile (12 by 4) comes out about 320 by 110. */
-const HEAD_TILE_W = 320;
-const HEAD_TILE_H = 160;
+ * one. A wide tile (12 by 4) comes out about 210 by 72. On a narrow
+ * inspector the head draws it smaller (`HEAD_TILE_ZOOM`). */
+const HEAD_TILE_W = 210;
+const HEAD_TILE_H = 140;
 const HEAD_TILE_MAX_SCALE = 3;
+/** The head's live tile at 150 px wide under a 680 px inspector and 120 px
+ * under 520 px, as shares of `HEAD_TILE_W`. */
+const HEAD_TILE_ZOOM = { narrow: 150 / HEAD_TILE_W, small: 120 / HEAD_TILE_W } as const;
 /** The Arrangement section's live tile, which the parts are dragged on, is
  * larger: as large as fits this box. */
 const ARRANGE_TILE_W = 300;
 const ARRANGE_TILE_H = 190;
-/** How long a setting gone to with Find a setting keeps its blue wash, ms. */
-const FIND_FLASH_MS = 1500;
+/** How long a section gone to from the head (a fact, a part of its tile,
+ * Hide, Change) keeps its amber wash, ms. */
+const FIND_FLASH_MS = 1100;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
@@ -865,9 +886,14 @@ export class WaPageEditor extends LitElement {
    * strip: the previews draw its entity in that state, over any pinned test
    * state, until the pointer leaves. */
   @state() private hoverState?: { entityId: string; state: string };
-  /** The section Hide or Change took the inspector to, washed blue for a
-   * moment, and the timer that lets it go. */
+  /** The section the head took the inspector to (a fact, a part of its
+   * tile, Hide or Change), washed amber for a moment, and the timer that
+   * lets it go. */
   private findFlash?: { el: HTMLElement; timer: ReturnType<typeof setTimeout> };
+  /** The part of the head's tile lit for the settings row under the
+   * pointer, set straight on the tile's box (`onInspectorHover`), so a
+   * hover never redraws the editor. */
+  private headLit?: TileHeadPart;
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
@@ -3420,10 +3446,11 @@ export class WaPageEditor extends LitElement {
     // tall and each column scrolls in its own box. Every page is reached
     // from the picker and every tile on the stage: there is no list beside
     // them. The inspector keeps one width whatever it shows, until the
-    // gutter between the two is dragged.
-    const width = this.inspectorWidth;
+    // gutter between the two is dragged. Never dragged, the stage is as
+    // wide as the device it draws and the inspector takes the rest
+    // (`stageWidthFor`).
     return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}"
-      style=${width === undefined ? "" : `--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, ${width}px, calc(100% - ${PAGE_STAGE_MIN + 8}px))`}>
+      style=${this.inspectorColumnStyle()}>
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
@@ -3570,15 +3597,28 @@ export class WaPageEditor extends LitElement {
       title=${this.saving ? SAVING_TEXT : "Add a tile to this page"} @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add a tile</span></button>`;
   }
 
-  /** "+ Add tile" first in the stage's dock, which opens the Add tile
-   * dialog. None on a smart page, which fills itself; greyed on a map page,
-   * which holds its Home map tile alone, saying so. */
+  /** Why the Add tile dialog would not open now, or undefined when it
+   * would: a map page holds its Home map tile alone, a save is running, or
+   * Watch view is on. A smart page fills itself and has no Add tile at all.
+   * The stage's button and its dashed spot both read it, so they agree with
+   * `openAddTile`. */
+  private addTileRefusal(page: WatchPage): string | undefined {
+    if (isMapWatchPage(page)) return watchAddRefusalText("mapPage");
+    if (this.saving) return SAVING_TEXT;
+    if (this.editingOff(page)) return `Turn off ${this.viewName} to add a tile.`;
+    if (this.busy) return "Finish the drag first.";
+    return undefined;
+  }
+
+  /** The big blue "+ Add tile" at the top of the stage, the stage's one
+   * loud button, which opens the Add tile dialog. None on a smart page,
+   * which fills itself; greyed on a map page, which holds its Home map tile
+   * alone, saying so. */
   private renderStageAddTile(page: WatchPage): TemplateResult | typeof nothing {
     if (isSmartWatchPage(page)) return nothing;
-    const map = isMapWatchPage(page);
-    const off = this.busy || this.editingOff(page) || map;
-    const title = map ? watchAddRefusalText("mapPage") : this.saving ? SAVING_TEXT : this.editingOff(page) ? `Turn off ${this.viewName} to add a tile.` : "Add a tile to this page";
-    return html`<button type="button" class="pe-stage-add" aria-haspopup="dialog" ?disabled=${off} title=${title}
+    const refusal = this.addTileRefusal(page);
+    return html`<button type="button" class="pe-stage-add" aria-haspopup="dialog" ?disabled=${refusal !== undefined}
+      title=${refusal ?? "Add a tile to this page. It lands at the first free place."}
       @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add tile</span></button>`;
   }
 
@@ -3694,6 +3734,45 @@ export class WaPageEditor extends LitElement {
     return html`<span class="thumb pe-thumb pe-tile-thumb" style=${box} aria-hidden="true">
       <span class="pe-thumb-tile" style=${`left:${(THUMB_W - w) / 2}px;top:${(TILE_THUMB_H - h) / 2}px;width:${w}px;height:${h}px`}>${renderWatchTileFace(tile, { width: placed.width, height: placed.height }, input, unit)}</span>
     </span>`;
+  }
+
+  /**
+   * The settings column's width, as `--pe-insp-col` on the layout: the
+   * width last dragged, held between the inspector's least and the stage's
+   * least; else, once the stage is measured, all but the stage's own width
+   * (`stageWidthFor`), held the same way; else nothing, and the stylesheet's
+   * default stands until the first measurement. A stacked editor has one
+   * column and no width.
+   */
+  private inspectorColumnStyle(): string {
+    if (this.stacked) return "";
+    const most = `calc(100% - ${PAGE_STAGE_MIN + 8}px)`;
+    const dragged = this.inspectorWidth;
+    if (dragged !== undefined) return `--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, ${dragged}px, ${most})`;
+    const stage = this.stageWidthFor();
+    if (stage === undefined) return "";
+    return `--pe-insp-col:clamp(${PAGE_INSPECTOR_MIN}px, calc(100% - ${Math.max(PAGE_STAGE_MIN, stage) + 8}px), ${most})`;
+  }
+
+  /**
+   * How wide the stage is by default, CSS px: the device, or both devices
+   * side by side, at the zoom that fills the stage's height
+   * (`StageFitWatch.heightZoom`), with `STAGE_SIDE_ROOM` round it. The
+   * settings take the rest of the width, so a laptop's stage is no longer a
+   * wide dark well with a watch in its middle. Undefined until the stage is
+   * measured, and on a stacked editor.
+   *
+   * This feeds no loop: the zoom it reads comes from the stage's height and
+   * the drawing's measured height, never its width, so a stage given this
+   * width fits at that same zoom, and the next draw asks for the same width.
+   * A zoom step past Fit leaves the width alone and the stage scrolls, as it
+   * always has, so the inspector never jumps under a zoom button.
+   */
+  private stageWidthFor(): number | undefined {
+    const drawing = this.stageDrawing();
+    const zoom = this.stageFit.heightZoom();
+    if (drawing === undefined || zoom === undefined) return undefined;
+    return Math.ceil(drawing.width * zoom + drawing.fixedWidth + STAGE_SIDE_ROOM);
   }
 
   /** The gutter between the stage and the settings: dragged, it sets the
@@ -3847,12 +3926,14 @@ export class WaPageEditor extends LitElement {
   /**
    * The canvas card: the stage alone, with no head (the editor bar over it
    * holds the page's name, devices, Undo and Redo, and its ··· menu the
-   * page's facts and the tile's Duplicate and Delete). At its top Preview
-   * on, centred (`renderPreviewOn`), and under it the help while Help is on;
-   * in the middle the device, as large as the stage holds (`stageDrawing`);
-   * at its foot the dock (`renderStageTools`: Add tile, the zoom, Fit, Live
-   * preview) with the picked tile's states to try over it
-   * (`renderLiveStrip`).
+   * page's facts and the tile's Duplicate and Delete). At its top the big
+   * blue + Add tile (`renderStageAddTile`), and under it the help while Help
+   * is on; in the middle the device, as large as the stage holds
+   * (`stageDrawing`), with a dashed + Add tile spot where a new tile lands
+   * (`renderAddSlot`); at its foot Preview on (`renderPreviewOn`: Watch,
+   * iPhone, Both), the picked tile's states to try (`renderLiveStrip`) in a
+   * row of their own, and the dock (`renderStageTools`: the zoom, Fit, Live
+   * preview).
    */
   private renderStage(
     page: WatchPage,
@@ -3935,7 +4016,7 @@ export class WaPageEditor extends LitElement {
     const fold = scrolls && this.helpOn;
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       <div class="stage-area pe-stage-area">
-        <div class="pe-stage-top">${this.renderPreviewOn()}${this.renderTryPill()}</div>
+        <div class="pe-stage-top">${this.renderStageAddTile(page)}${this.renderTryPill()}</div>
         ${status !== undefined || help !== undefined || fold ? html`<div class="under pe-under">
           ${status !== undefined ? html`<span class="tail">${status}</span>` : nothing}
           ${help !== undefined ? html`<span class="tail pe-hint">${help}</span>` : nothing}
@@ -3945,8 +4026,9 @@ export class WaPageEditor extends LitElement {
           ${this.renderLibraryStage(page, pages, input, smart || map || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
         </div>
         <div class="pe-dock-area">
-          ${this.renderLiveStrip(page, tile)}
-          ${this.renderStageTools(page, headers, smart, phone)}
+          ${this.renderPreviewOn()}
+          <div class="pe-try-slot">${this.renderLiveStrip(page, tile)}</div>
+          ${this.renderStageTools(headers, smart, phone)}
         </div>
       </div>
     </div>`;
@@ -3954,7 +4036,7 @@ export class WaPageEditor extends LitElement {
 
   /**
    * While a choice is tried in the inspector (`tryTileEdit`), a pill under
-   * Preview on naming it: "Previewing Glow: Always · click to keep". It
+   * the stage's + Add tile naming it: "Previewing Glow: Always · click to keep". It
    * floats over the stage, so the device never moves for it, and lets the
    * pointer through.
    */
@@ -3964,7 +4046,8 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * Preview on, centred at the top of the stage: Watch, iPhone and, on a
+   * Preview on, centred under the device at the stage's foot, over the
+   * states to try and the dock: Watch, iPhone and, on a
    * home that keeps iPhone pages, Both (Side by side: the other kind drawn
    * beside the edited one, a click on it edits there). A pick changes what
    * the page is drawn on and nothing else.
@@ -4072,14 +4155,14 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The stage's dock, one floating pill centred at its foot: + Add tile (in
-   * the accent, the stage's one loud button), the zoom (out, the percent,
-   * in, and Fit), Watch view on a page with headers, and the Live preview
+   * The stage's dock, one floating pill centred at its foot: the zoom (out,
+   * the percent, in, and Fit), Watch view on a page with headers, and the
+   * Live preview
    * switch (with an instant hint saying what off and on draw). Fit is the
    * default and fills the stage (`stageDrawing`); a step holds until Fit or
    * the editor closes.
    */
-  private renderStageTools(page: WatchPage, headers: boolean, smart: boolean, phone = false): TemplateResult {
+  private renderStageTools(headers: boolean, smart: boolean, phone = false): TemplateResult {
     const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
     const scale = this.stageScale;
     const fitting = this.zoom === undefined;
@@ -4088,9 +4171,7 @@ export class WaPageEditor extends LitElement {
     // `PHONE_STAGE_ZOOM` of the watch's zoom.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     const device = phone ? "iPhone" : "watch";
-    const add = this.renderStageAddTile(page);
     return html`<div class="stage-tools pe-dock" role="toolbar" aria-label="Stage tools">
-      ${add === nothing ? nothing : html`${add}${sep}`}
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale, PAGE_ZOOM_STEPS)} aria-label="Zoom out" title="Zoom out"
           @click=${() => this.setZoom(stageZoomOut(scale, PAGE_ZOOM_STEPS))}>−</button>
@@ -4158,7 +4239,7 @@ export class WaPageEditor extends LitElement {
   }
 
   /** Every state an entity with a known set of words can take, as a row of
-   * chips. The chip the pointer rests on (or that holds focus) shows in the
+   * chips on one line, scrolled sideways when they outgrow the pill. The chip the pointer rests on (or that holds focus) shows in the
    * previews while it is there; a click keeps it, and a click on the kept
    * chip lets it go. A dot marks Home Assistant's state now. */
   private renderStateChips(
@@ -4178,7 +4259,15 @@ export class WaPageEditor extends LitElement {
         this.hoverState = undefined;
       } else this.setTestValue(id, state);
     };
-    return html`<div class="pe-state-chips" role="group" aria-label=${`States to try for ${name}`}>
+    // The chips stay on one line and scroll sideways past the pill's width;
+    // a mouse's wheel only scrolls up and down, so it scrolls them across.
+    const across = (e: WheelEvent): void => {
+      const row = e.currentTarget as HTMLElement;
+      if (row.scrollWidth <= row.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      row.scrollLeft += e.deltaY;
+    };
+    return html`<div class="pe-state-chips" role="group" aria-label=${`States to try for ${name}`} @wheel=${across}>
       ${options.map((o) => {
         const isLive = o === real;
         const on = o === pinned;
@@ -4244,19 +4333,63 @@ export class WaPageEditor extends LitElement {
     const reach = move?.cell && move.group !== undefined
       ? Math.max(...move.group.map((m) => m.rect.row + moveDelta(move, move.cell!).drows + m.rect.rowSpan))
       : move?.cell ? move.cell.row + move.rect.rowSpan : resize?.preview ? resize.preview.rect.row + resize.preview.rect.rowSpan : 0;
+    // The Add tile spot, at the place a new tile would land on the stored
+    // page. Its rows are kept whether or not it is drawn just now (it hides
+    // while a tile moves or a save runs), so the device never changes height
+    // under the pointer.
+    const slot = this.addSlotRect(page);
     // Never more rows than an edit may reach: a tile stored past the last
     // row would otherwise draw a million of them.
-    const rows = Math.min(WATCH_EDITOR_MAX_ROWS, stageRows(watchPageExtent(shown), rowsOnScreen(grid, screen.height * s), reach));
+    const rows = Math.min(WATCH_EDITOR_MAX_ROWS, stageRows(watchPageExtent(shown), rowsOnScreen(grid, screen.height * s), Math.max(reach, slot === undefined ? 0 : slot.row + slot.rowSpan)));
     const gridHeight = rows * grid.step - grid.spacing;
     const height = Math.max(screen.height * s, grid.top + gridHeight);
-    return { s, screen, move, resize, shown, grid, rows, gridHeight, height, scrolls: height > screen.height * s + 0.5 };
+    return { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot, scrolls: height > screen.height * s + 0.5 };
+  }
+
+  /**
+   * Where the stage's dashed "+ Add tile" spot sits: one plain tile's size
+   * (the app's own new tile, `WATCH_TILE_DEFAULTS.tile`) at the first free
+   * place for it (`firstFreeWatchCell`), which is where `addWatchTile` puts a
+   * new tile of that size, so the spot shows where the dialog's tile lands.
+   * On a page with no gaps that is just after its last tile. Undefined where
+   * a tile cannot be added: a smart page, a map page, Watch view on, or
+   * past the last row an edit may reach.
+   */
+  private addSlotRect(page: WatchPage): WatchRect | undefined {
+    if (isSmartWatchPage(page) || isMapWatchPage(page) || this.editingOff(page)) return undefined;
+    const { colSpan, rowSpan } = WATCH_TILE_DEFAULTS.tile;
+    const cell = firstFreeWatchCell(page, colSpan, rowSpan);
+    if (cell.row + rowSpan > WATCH_EDITOR_MAX_ROWS) return undefined;
+    return { col: cell.col, row: cell.row, colSpan, rowSpan };
+  }
+
+  /**
+   * The dashed "+ Add tile" spot on the edit screen (`addSlotRect`): one
+   * tile's cell drawn in the accent, which opens the Add tile dialog as the
+   * stage's button does. It is no tile: nothing on the page holds it, so it
+   * is never picked, dragged, counted, saved or dropped on, and a press on
+   * it never starts a drag or clears the pick. Not drawn while the dialog
+   * would not open (`addTileRefusal`: a save running) or while a tile,
+   * an edge or a part is dragged, though its rows stay (`editStage`). A
+   * press on a tile that has not moved yet leaves it, so a plain click on a
+   * tile never makes it blink.
+   */
+  private renderAddSlot(grid: StageGrid, slot: WatchRect | undefined): TemplateResult | typeof nothing {
+    // A smart page, a map page and Watch view have no spot (`addSlotRect`).
+    if (slot === undefined || this.saving || this.gesture?.started === true) return nothing;
+    const box = cellRectPx(grid, slot);
+    const radius = Math.min(box.width, box.height) * 0.18;
+    return html`<button type="button" class="pe-add-slot" aria-haspopup="dialog" title="Add a tile here"
+      style=${`left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px;border-radius:${radius}px;font-size:${Math.max(10, Math.min(15, box.height * 0.16))}px`}
+      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+      @click=${(e: MouseEvent) => { e.stopPropagation(); this.openAddTile(); }}><b aria-hidden="true">+</b><span>Add tile</span></button>`;
   }
 
   private renderEditScreen(
     page: WatchPage,
     input: WatchPagePreviewInput,
   ): TemplateResult {
-    const { s, screen, move, resize, shown, grid, rows, gridHeight, height } = this.editStage(page, input);
+    const { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot } = this.editStage(page, input);
     // The preview's own layout on the flat grid: the same side safe area and
     // unit as the watch, so each tile sits where `cellRectPx` puts its cells.
     const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
@@ -4297,6 +4430,7 @@ export class WaPageEditor extends LitElement {
       ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}
       ${move ? this.renderMoveGhosts(move, shown, grid) : nothing}
       ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move))}
+      ${this.renderAddSlot(grid, slot)}
       ${selBox ? html`<div class="pe-sel ${resize?.preview?.overlaps ? "no" : ""}" aria-hidden="true"
           style=${`left:${selBox.left}px;top:${selBox.top}px;width:${selBox.width}px;height:${selBox.height}px;${handleSizes(selBox)}`}>
           ${repeat(shownHandles(selBox, grid, resize?.handle), (h) => h, (h) => html`<span class="pe-handle ${h}" title=${this.saving ? SAVING_TEXT : "Drag to resize"}
@@ -4486,8 +4620,8 @@ export class WaPageEditor extends LitElement {
    * a sticky head with the breadcrumb (the page's kind chip and name) and
    * Collapse all, then the page's own cards (`renderPageCards`). With one
    * tile: the tile's head strip (`renderTileStrip`: the path back to the
-   * page, the live tiles, Name, Shows, the actions and Find a setting),
-   * then its four groups (`renderTileCard`), which never fold. Help is the
+   * page, the live tile, Name, Shows, the facts and the actions), then its
+   * four groups (`renderTileCard`), which never fold. Help is the
    * editor bar's alone.
    */
   private renderInspector(page: WatchPage, tile: WatchPageTile | undefined, pages: readonly WatchPage[]): TemplateResult {
@@ -4891,20 +5025,74 @@ export class WaPageEditor extends LitElement {
    */
   private renderTileCard(page: WatchPage, tile: WatchPageTile, head: TemplateResult): TemplateResult {
     const host = this.tileSettingsHost(page, tile);
-    // The four groups (Look, Text, Tap, Layout) lay themselves out by the
-    // inspector's width, the head over Look in the first column.
-    return html`<div class="pe-tile-insp">
+    // The four groups (Color and icon, Text, Surface and rules, What it
+    // does) lay themselves out by the inspector's width, the head across
+    // the top over all of them. A settings row under the pointer lights its
+    // part of the head's tile.
+    return html`<div class="pe-tile-insp" @pointerover=${this.onInspectorHover} @pointerleave=${this.onInspectorLeave}>
       ${host === undefined ? head : renderTileInspector(host, { arrangePicture: () => this.renderArrangePicture(page, tile), head })}
     </div>`;
+  }
+
+  /** The head's tile box, where its lit part is marked (`data-lit`). */
+  private headPicEl(): HTMLElement | null {
+    return this.renderRoot?.querySelector<HTMLElement>(".pe-tile-insp .pe-head-pic") ?? null;
+  }
+
+  /** Light `part` of the head's tile, or none: an attribute on its box the
+   * template never binds, so the next draw keeps it and nothing redraws. */
+  private lightHeadPart(part: TileHeadPart | undefined): void {
+    if (part === this.headLit && (part === undefined || this.headPicEl()?.dataset["lit"] === part)) return;
+    this.headLit = part;
+    const pic = this.headPicEl();
+    if (pic === null) return;
+    if (part === undefined) delete pic.dataset["lit"];
+    else pic.dataset["lit"] = part;
+  }
+
+  /** The pointer moved onto something in the tile inspector: the part of the
+   * head's tile its settings row stands for lights (`tileHeadPartAt`), none
+   * outside the groups. */
+  private onInspectorHover = (e: PointerEvent): void => {
+    this.lightHeadPart(tileHeadPartAt(e.target instanceof Element ? e.target : null));
+  };
+
+  private onInspectorLeave = (): void => {
+    this.lightHeadPart(undefined);
+  };
+
+  /** A press on a part of the head's tile: its section, gone to and washed
+   * (`TILE_HEAD_GOES_TO`), the first one of them the tile has. */
+  private goToHeadPart(part: TileHeadPart): void {
+    const to = TILE_HEAD_GOES_TO[part];
+    const groups = this.inspectorGroupsEl();
+    const section = to.sections.find((s) => groups?.querySelector(`.ts-sec[data-part="${s}"]`) != null);
+    if (section !== undefined) this.goToSetting(section, to.within);
+  }
+
+  /** Which pages a change in the inspector reaches, by the kinds of device
+   * the page is on: "Changes apply to the Watch and iPhone pages". Undefined
+   * while the library is not read or the page is on no device yet. */
+  private headAppliesText(page: WatchPage): string | undefined {
+    const lib = this.lib.library;
+    if (lib === undefined) return undefined;
+    const owners = devicesFor(lib, "pages", this.libraryItem?.id ?? watchPageId(page));
+    const kinds = new Set(owners.map((o) => this.linkDevices.find((d) => sameId(d.ownerId, o))?.kind).filter((k) => k !== undefined));
+    const words = (["watch", "iphone"] as const).filter((k) => kinds.has(k)).map((k) => (k === "watch" ? "Watch" : "iPhone"));
+    if (words.length === 0) return undefined;
+    return `Changes apply to the ${words.join(" and ")} ${words.length === 1 ? "page" : "pages"}`;
   }
 
   /**
    * The selected tile's head: the path, Page (back to the page's own
    * settings) then the tile's name, and under it the tile, large
-   * (`renderHeadTile`); Name and Shows, with the group line while the tile
-   * is in a group; Duplicate, Hide, Reset and Delete. It stands over Look in
-   * the first column (`renderTileCard`), so the other groups start at the
-   * top beside it. With no host (no draft yet), the path and the tile alone.
+   * (`renderHeadTile`); Name and Shows, the facts under them, each going
+   * to its section, which pages a change reaches, and the group line while
+   * the tile is in a group; Duplicate, Hide and Delete, with how many parts
+   * are changed and Reset all under them (`tile-head.ts`). It spans the
+   * inspector over the group columns (`renderTileCard`), which all start at
+   * the same top under it. With no host (no draft yet), the path and the
+   * tile alone.
    */
   private renderTileStrip(page: WatchPage, tile: WatchPageTile, pages: readonly WatchPage[]): TemplateResult {
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
@@ -4924,17 +5112,20 @@ export class WaPageEditor extends LitElement {
     const actions = html`
       <button type="button" class="ghost pe-strip-dup" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? "Duplicate the tile"}
         @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>
-      ${parts.includes("visibility") ? html`<button type="button" class="ghost pe-strip-hide" title="Hide the tile while it is off, or when another entity says so: Show tile, under Tap"
+      ${parts.includes("visibility") ? html`<button type="button" class="ghost pe-strip-hide" title="Hide the tile while it is off, or when another entity says so: Shows when, under Surface and rules"
         @click=${() => this.goToSetting("visibility")}>${uiIcon("hide")}<span>Hide</span></button>` : nothing}`;
     const remove = html`<button type="button" class="ghost pe-strip-del" ?disabled=${acts.delRefusal !== undefined}
       title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile()}>${uiIcon("delete")}<span>Delete</span></button>`;
+    const applies = this.headAppliesText(page);
     return html`<div class="pe-strip">${renderTileHead(host, {
       lead,
       actions,
       remove,
       below: this.editingOff(page) ? nothing : renderTileGroupLine(host, this.groupActions),
-      // A library tile says what it shows by its Target, under Tap.
-      ...(parts.includes("target") ? { change: { title: "Pick what the tile shows: Target, under Tap", go: () => this.goToSetting("target") } } : {}),
+      // A library tile says what it shows by its Target, in What it does.
+      ...(parts.includes("target") ? { change: { title: "Pick what the tile shows: Target, in What it does", go: () => this.goToSetting("target") } } : {}),
+      go: (part) => this.goToSetting(part),
+      ...(applies === undefined ? {} : { applies }),
     })}</div>`;
   }
 
@@ -4982,7 +5173,28 @@ export class WaPageEditor extends LitElement {
     const input: WatchPagePreviewInput = { ...base, stateMode: "live", ...(states === undefined ? {} : { states }) };
     const cell = { width: placed.width, height: placed.height };
     return html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
-      renderWatchTileFace(drawn, cell, input, layout.unit)}</span>`;
+      renderWatchTileFace(drawn, cell, input, layout.unit)}${this.renderHeadParts(drawn, cell, input, layout.unit, s)}</span>`;
+  }
+
+  /**
+   * The head's tile's parts as boxes over it, to light and to press: the
+   * whole tile first, then its bar, icon, name and state where One Look
+   * lays them out (`tileHeadPartRects`). A tile it does not lay out that way
+   * gets the whole tile's box alone. A press goes to the part's section
+   * (`goToHeadPart`); a settings row under the pointer lights its box
+   * (`onInspectorHover`).
+   */
+  private renderHeadParts(tile: WatchPageTile, cell: { width: number; height: number }, input: WatchPagePreviewInput, unit: number, s: number): TemplateResult {
+    const rects = tileHeadPartRects(tile, cell, input, unit);
+    const px = (v: number) => Math.round(v * s * 100) / 100;
+    const box = (part: TileHeadPart, style: string, words: string) => html`<span class="pe-hp" data-head-part=${part} aria-hidden="true" title=${`Go to the ${words}'s settings`}
+      style=${style} @click=${(e: MouseEvent) => { e.stopPropagation(); this.goToHeadPart(part); }}></span>`;
+    const words: Record<TileHeadPart, string> = { tile: "tile", icon: "icon", name: "name", state: "state", bar: "state bar" };
+    return html`${box("tile", "inset:0", words.tile)}${rects === undefined ? nothing : TILE_HEAD_BOX_PARTS.map((part) => {
+      const r = rects.parts[part];
+      return r === undefined ? nothing
+        : box(part, `left:${px(rects.inset + r.x)}px;top:${px(rects.inset + r.y)}px;width:${px(r.width)}px;height:${px(r.height)}px`, words[part]);
+    })}`;
   }
 
   /**
@@ -5024,15 +5236,17 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * Go to the section Hide or Change name: the
-   * section scrolled into view inside the inspector's own scroll, washed
-   * blue for a moment (not
-   * with reduced motion), and the section's first control focused.
+   * Go to the section the head names (a fact, a part of its tile, Hide,
+   * Change): the section scrolled into view inside the inspector's own
+   * scroll, washed amber for a moment (not with reduced motion), and the
+   * section's first control focused. With `within`, the element of the
+   * section it picks (the State section's bar card) is the one gone to.
    */
-  private goToSetting(part: string): void {
+  private goToSetting(part: string, within?: (section: HTMLElement) => HTMLElement | null): void {
     const groups = this.inspectorGroupsEl();
-    const section = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${part}"]`) ?? null;
-    if (groups === null || section === null) return;
+    const found = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${part}"]`) ?? null;
+    if (groups === null || found === null) return;
+    const section = within?.(found) ?? found;
     const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     section.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
     if (this.findFlash !== undefined) {
@@ -5316,7 +5530,10 @@ export class WaPageEditor extends LitElement {
        columns as that width holds, by container queries on the column. On
        a screen about 3800px wide that is 2200px, room for a tile's four
        groups side by side (1560px and up), and the stage, which fits the
-       device to its height, keeps about 1500px. */
+       device to its height, keeps about 1500px. That is only the first
+       draw's width: once the stage is measured, --pe-insp-col on the layout
+       gives the stage the device's own width and the settings all the rest
+       (stageWidthFor), and a dragged width wins over both. */
     .layout.pe-layout { padding: 0; align-items: stretch; }
     .layout.pe-layout.pe-wide {
       grid-template-columns: minmax(0, 1fr) 8px var(--pe-insp-col, clamp(340px, max(38%, min(62%, 100% - 640px)), 2200px)); column-gap: 0;
@@ -5336,11 +5553,13 @@ export class WaPageEditor extends LitElement {
     .pe-layout.pe-wide .pe-stage-area { flex: 1 1 0; min-height: 0; }
     .pe-layout.pe-wide .pe-stage-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
     .pe-layout.pe-wide .pe-stage-area > :not(.pe-stage-body) { flex: none; }
-    /* One column under 820px: the page and its tiles, then the settings.
-       Nothing sticks there: a sticky inspector slid over what was under it
-       and took its clicks. The selectors are as strong as the wide rules, so
-       they win; .cols-1 is the same width as the element measures it. */
-    @container (max-width: 820px) {
+    /* One column under 1100px (PE_STACK_WIDTH): the stage, then the
+       settings, and the editor scrolls as one page. Beside each other there
+       the stage and four groups of settings were both too narrow. Nothing
+       sticks there: a sticky inspector slid over what was under it and took
+       its clicks. The selectors are as strong as the wide rules, so they win;
+       .cols-1 is the same width as the element measures it. */
+    @container (max-width: 1100px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
       .pe-layout > .column.canvas, .pe-layout > .column.inspector {
         grid-column: auto; position: static; max-height: none; overflow: visible;
@@ -5461,18 +5680,19 @@ export class WaPageEditor extends LitElement {
     /* Under the pointer, or reached by keyboard. Not after a click: the
        switch keeps focus then, and the hint stayed up until a click away. */
     .pe-tip:hover::after, .pe-tip:has(:focus-visible)::after { opacity: 1; visibility: visible; }
-    /* The stage, top to bottom: Preview on centred, the help while Help is
-       on, the device in the middle at the size Fit gives it (filling the
-       box, stage-fit.ts), and the dock at the foot with the picked tile's
-       states floating over it. */
+    /* The stage, top to bottom: the big + Add tile centred, the help while
+       Help is on, the device in the middle at the size Fit gives it
+       (filling the box, stage-fit.ts), then at the foot Preview on, the
+       picked tile's states and the dock. */
     .canvas-card.lit .stage-area.pe-stage-area { position: relative; padding: 14px 12px 14px; gap: 8px; }
     /* A phone: the watch at its fit size needs every pixel of the width. */
     @container (max-width: 460px) {
       .canvas-card.lit .stage-area.pe-stage-area { padding-inline: 4px; }
     }
-    .pe-stage-top { position: relative; display: flex; justify-content: center; flex: none; }
-    /* What a choice pointed at in the inspector tries, under Preview on:
-       over the stage, out of the flow and the pointer's way. */
+    .pe-stage-top { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; flex: none; min-width: 0; }
+    /* What a choice pointed at in the inspector tries, under the + Add tile
+       at the stage's top: over the stage, out of the flow and the pointer's
+       way. */
     .pe-try-pill {
       position: absolute; top: calc(100% + 8px); left: 50%; z-index: 9; transform: translateX(-50%);
       display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; max-width: calc(100% - 16px);
@@ -5496,20 +5716,28 @@ export class WaPageEditor extends LitElement {
        bigger than the stage (a step past Fit, or a long page). "safe": a
        watch wider or taller than the stage starts at its top left edge, so
        all of it can be scrolled to, instead of hanging off both sides. The
-       foot's padding is room for the watch's reflection and for the tile's
-       states, which float over it; Fit counts it out (stage-fit.ts). */
+       foot's padding is room for the watch's reflection (the tile's states
+       have their own row under Preview on); Fit counts it out
+       (stage-fit.ts). */
     .pe-stage-body {
       display: flex; justify-content: safe center; align-items: safe center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden;
     }
-    .canvas-card.lit .stage-area > .pe-stage-body { padding-bottom: 56px; margin-bottom: 0; }
+    .canvas-card.lit .stage-area > .pe-stage-body { padding-bottom: 34px; margin-bottom: 0; }
     .pe-stage-area > .under.pe-under {
       display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; align-self: center; max-width: 520px;
       font-size: 12px; font-weight: 400; line-height: 16px; text-align: center; color: var(--wa-hint, var(--wa-muted));
     }
-    /* The dock: one floating pill centred at the stage's foot, in the flow
-       so it never covers the device, with the states to try floating just
-       over it. */
-    .pe-dock-area { position: relative; display: flex; justify-content: center; flex: none; min-width: 0; }
+    /* The stage's foot, top to bottom: Preview on (Watch, iPhone, Both)
+       just under the device, the row the picked tile's states float in, and
+       the dock, one pill. All in the flow, so none of them covers the
+       device. */
+    .pe-dock-area { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; min-width: 0; }
+    .pe-dock-area > .pe-seg { flex: none; max-width: 100%; }
+    /* The states' row keeps its height whether a tile is picked or not, so
+       picking one never moves the device or refits it. The strip floats in
+       it and stays one line (its chips scroll sideways, \`.pe-state-chips\`),
+       so it never rises over Preview on above it. */
+    .pe-try-slot { position: relative; align-self: stretch; height: 32px; flex: none; }
     .pe-dock-area > .stage-tools.pe-dock {
       position: relative; top: auto; z-index: 8; margin: 0; height: auto; min-height: 46px; width: max-content; max-width: calc(100% - 8px);
       display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; padding: 6px; overflow: visible;
@@ -5517,8 +5745,8 @@ export class WaPageEditor extends LitElement {
       box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
     }
     .pe-dock .pe-zoom-pct { min-width: 50px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--wa-ink); }
-    .pe-dock-area > .pe-try {
-      position: absolute; left: 50%; bottom: calc(100% + 10px); z-index: 9; transform: translateX(-50%);
+    .pe-try-slot > .pe-try {
+      position: absolute; left: 50%; bottom: 0; z-index: 9; transform: translateX(-50%);
       width: max-content; max-width: calc(100% - 16px);
     }
     .pe-try > .vchip.vpill { background: var(--wa-card); box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop)); }
@@ -5548,12 +5776,18 @@ export class WaPageEditor extends LitElement {
     .vchip.vpill .test-ctl input[type=range] { margin: 0; accent-color: var(--wa-testing); cursor: pointer; }
     .vchip.vpill button.val { background: none; border: 0; padding: 0; cursor: text; }
     /* A state with a known set of words: the name, then every state as a
-       chip in a row that wraps, the pill growing to hold it. */
-    .vchip.vpill.pe-states { height: auto; min-height: 30px; padding-top: 4px; padding-bottom: 4px; }
+       chip in one line. The pill is as tall as its row under Preview on, and
+       chips past its width scroll sideways (a mouse wheel scrolls them too,
+       \`renderStateChips\`) rather than wrap to a line over Preview on. */
+    .vchip.vpill.pe-states { height: 32px; padding-top: 4px; padding-bottom: 4px; }
     .vchip.vpill.pe-states b { flex: 0 1 auto; max-width: 180px; }
-    .pe-state-chips { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+    .pe-state-chips {
+      display: flex; flex: 1 1 auto; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0;
+      overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain;
+    }
+    .pe-state-chips::-webkit-scrollbar { display: none; }
     button.pe-state-chip {
-      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
+      display: inline-flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
       background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 11.5px; white-space: nowrap; cursor: pointer;
     }
     button.pe-state-chip:hover { background: var(--wa-panel); }
@@ -5640,16 +5874,33 @@ export class WaPageEditor extends LitElement {
       padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .22);
       background: rgba(0, 0, 0, .78); color: #fff; font-size: 10px; font-weight: 600; line-height: 14px;
     }
-    /* + Add tile, first in the dock: the stage's one loud button, in blue. */
+    /* + Add tile at the top of the stage: the stage's one loud button, big
+       and in blue with a soft glow of its own color, so it is found first. */
     .pe-stage-add {
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 32px;
-      margin: 0; padding: 0 14px 0 11px; border: 0; border-radius: 9px;
-      background: var(--wa-hue-blue); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: none;
+      margin: 0; padding: 9px 20px 9px 16px; border: 0; border-radius: 10px;
+      background: var(--wa-hue-blue); color: #fff; font: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer;
+      box-shadow: 0 4px 18px color-mix(in srgb, var(--wa-hue-blue) 40%, transparent);
     }
     .pe-stage-add:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 86%, #fff); }
-    .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pe-stage-add:disabled { opacity: .5; cursor: default; }
-    .pe-stage-add svg.ui-icon { width: 15px; height: 15px; }
+    .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring), 0 4px 18px color-mix(in srgb, var(--wa-hue-blue) 40%, transparent); }
+    .pe-stage-add:disabled { opacity: .5; cursor: default; box-shadow: none; }
+    .pe-stage-add svg.ui-icon { width: 16px; height: 16px; }
+    /* The dashed + Add tile spot on the device, one tile's cell where a new
+       tile lands: no fill, a dashed edge and words in the accent, tinted
+       under the pointer. Over the screen's own drawing, under the selection
+       and the drag ghosts. A press on it is its own, never a tile's. */
+    .pe-add-slot {
+      position: absolute; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      margin: 0; padding: 0; overflow: hidden; box-sizing: border-box;
+      border: 2px dashed color-mix(in srgb, var(--wa-hue-blue) 60%, transparent); background: transparent;
+      color: color-mix(in srgb, var(--wa-hue-blue) 55%, #fff); font: inherit; font-weight: 600; line-height: 1.1; white-space: nowrap; cursor: pointer;
+      touch-action: manipulation;
+    }
+    .pe-add-slot > b { font-size: 1.8em; font-weight: 400; line-height: 1; }
+    .pe-add-slot:hover { background: color-mix(in srgb, var(--wa-hue-blue) 12%, transparent); border-color: var(--wa-hue-blue); }
+    .pe-add-slot:focus-visible { outline: none; border-style: solid; border-color: var(--wa-hue-blue); }
+    .pe-screen.moving .pe-add-slot { visibility: hidden; }
     /* The inspector's card for a pick of several: the picked tiles as rows
        (no buttons of their own), then Duplicate and Delete for all. */
     .pe-picked-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
@@ -5723,8 +5974,8 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-direction: column; }
     /* A tile's inspector: the head strip (\`renderTileStrip\`, its own rules
-       in \`tileSettingsStyles\` under .ts-head), then the four groups, which
-       lay themselves out by the inspector's width. */
+       in \`tileHeadStyles\`, tile-head.ts), then the four groups, which lay
+       themselves out by the inspector's width. */
     .pe-tile-insp { container: pe-tile / inline-size; display: flex; flex-direction: column; min-width: 0; }
     /* Several tiles picked: what a change does and the Name they share, over
        the groups; the list of them and their actions under. */
@@ -5732,9 +5983,29 @@ export class WaPageEditor extends LitElement {
     .pe-picked-head .hint { margin: 0; }
     .pe-picked-name input[readonly] { color: var(--wa-muted); cursor: default; }
     .pe-picked-insp > .sec.pe-picked { margin-top: 12px; }
-    /* The strip is the first column's head, over Look (\`renderTileCard\`):
-       it scrolls with the groups. */
+    /* The strip spans the inspector over the group columns
+       (\`renderTileCard\`). */
     .pe-strip { position: relative; min-width: 0; }
+    /* Duplicate, Hide and Delete as small outlined buttons, Delete in red. */
+    .pe-strip .ts-head-acts > button { border: 1px solid var(--wa-line-strong); border-radius: 7px; }
+    .pe-strip .ts-head-acts > button.pe-strip-del:not(:disabled) { color: var(--wa-need); }
+    /* Four columns side by side (the inspector 1580px and wider, in the wide
+       layout, which is one screen tall): the tile's body fills the
+       inspector, the head keeps its height, and each group column fills the
+       rest, all starting at the same top, each scrolling on its own under
+       its title, which stays put. Narrower, or with several tiles picked
+       (their list and Group card come under the groups), the inspector
+       scrolls as one. On a screen too short for the columns to be any use
+       (under 360px for them) the inspector scrolls as one too. */
+    @container insp (min-width: 1580px) {
+      .pe-layout.pe-wide > .column.inspector > .insp-body.pe-tile-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding-bottom: 0; }
+      .pe-layout.pe-wide .pe-tile-body > .pe-tile-insp { flex: 1 1 0; min-height: 0; }
+      .pe-layout.pe-wide .pe-tile-body > .pe-tile-insp > .ts-insp { flex: 1 1 0; min-height: 0; }
+      .pe-layout.pe-wide .pe-tile-body .ts-insp > .ts-insp-head { flex: none; }
+      .pe-layout.pe-wide .pe-tile-body .ts-insp > .ts-groups { flex: 1 1 0; min-height: 360px; grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
+      .pe-layout.pe-wide .pe-tile-body .ts-groups > .ts-grp { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+      .pe-layout.pe-wide .pe-tile-body .ts-grp > .ts-grp-h { position: sticky; top: 0; z-index: 2; }
+    }
     .ts-groups .ts-sec { scroll-margin-top: 12px; }
     /* The path over the live tiles: Page, back to the page's settings, then
        the tile's name. */
@@ -5748,16 +6019,37 @@ export class WaPageEditor extends LitElement {
     .pe-path-sep { display: inline-flex; flex: none; opacity: .7; }
     .pe-path-sep svg.ui-icon { width: 12px; height: 12px; }
     .pe-path-nm { min-width: 0; font-weight: 500; color: var(--wa-ink); overflow-wrap: anywhere; }
-    /* The live tile, large, under the path. */
-    .pe-head-pic { display: grid; place-items: center start; min-height: ${HEAD_TILE_H}px; }
-    /* The section Hide or Change went to: a soft blue wash that fades. None with
-       reduced motion (the script does not add it then either). */
-    .ts-groups .ts-sec.pe-found { animation: pe-found ${FIND_FLASH_MS}ms ease-out; }
-    @keyframes pe-found {
-      from { background: color-mix(in srgb, var(--ts-blue, var(--wa-accent)) 18%, transparent); }
-      to { background: transparent; }
+    /* The live tile, large, under the path; smaller on a narrow inspector,
+       its part boxes with it. */
+    .pe-head-pic { --pe-amber: 255, 179, 64; display: grid; place-items: center start; min-height: ${HEAD_TILE_H}px; }
+    @container insp (max-width: 680px) { .pe-head-pic { zoom: ${Math.round(HEAD_TILE_ZOOM.narrow * 1000) / 1000}; } }
+    @container insp (max-width: 520px) { .pe-head-pic { zoom: ${Math.round(HEAD_TILE_ZOOM.small * 1000) / 1000}; } }
+    /* The tile's parts (\`renderHeadParts\`): a press goes to the part's
+       section; the part a settings row under the pointer stands for wears
+       an amber ring (\`data-lit\`, set by \`lightHeadPart\`). */
+    .pe-head-tile > .pe-hp {
+      position: absolute; border-radius: 6px; pointer-events: auto; cursor: pointer;
+      transition: box-shadow .15s ease-out, background-color .15s ease-out;
     }
-    @media (prefers-reduced-motion: reduce) { .ts-groups .ts-sec.pe-found { animation: none; } }
+    .pe-head-tile > .pe-hp[data-head-part="tile"] { border-radius: 12px; }
+    .pe-head-tile > .pe-hp:hover { box-shadow: 0 0 0 1px rgba(var(--pe-amber), .55); }
+    .pe-head-pic[data-lit="tile"] .pe-hp[data-head-part="tile"],
+    .pe-head-pic[data-lit="icon"] .pe-hp[data-head-part="icon"],
+    .pe-head-pic[data-lit="name"] .pe-hp[data-head-part="name"],
+    .pe-head-pic[data-lit="state"] .pe-hp[data-head-part="state"],
+    .pe-head-pic[data-lit="bar"] .pe-hp[data-head-part="bar"] {
+      box-shadow: 0 0 0 2px rgb(var(--pe-amber)); background-color: rgba(var(--pe-amber), .18);
+    }
+    .pe-head-pic[data-lit="tile"] .pe-hp[data-head-part="tile"] { background-color: rgba(var(--pe-amber), .08); }
+    @media (prefers-reduced-motion: reduce) { .pe-head-tile > .pe-hp { transition: none; } }
+    /* The section the head went to: an amber wash that fades. None with
+       reduced motion (the script does not add it then either). */
+    .ts-groups .pe-found { animation: pe-found ${FIND_FLASH_MS}ms ease-out; }
+    @keyframes pe-found {
+      0%, 55% { background-color: rgba(255, 179, 64, .22); }
+      100% { background-color: transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) { .ts-groups .pe-found { animation: none; } }
     /* The page's own cards in one to three columns by the inspector's own
        width, pure CSS: a column balances by height and keeps the cards in
        reading order, top to bottom then across, and never splits a card. */
@@ -5885,7 +6177,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, headBarStyles];
+  `, tileSettingsStyles, tileHeadStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

@@ -82,7 +82,8 @@ import {
 } from "../src/watch-pages/preview.js";
 import { type WatchPhoneAddKind, addNewWatchTile, newWatchTile, watchAddEntityId, watchEntityAddFromHass } from "../src/watch-pages/tile-new.js";
 import { watchTileSectionsFor } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileHead, renderTileSettings, tileInspectorSections, tileWordsHost } from "../src/watch-pages/tile-settings.js";
+import { renderTileSettings, tileInspectorSections, tileWordsHost } from "../src/watch-pages/tile-settings.js";
+import { renderTileHead } from "../src/watch-pages/tile-head.js";
 
 // These pin the old tile look, which a device below One Look's version
 // still draws; One Look's own are in one-look-render.test.ts.

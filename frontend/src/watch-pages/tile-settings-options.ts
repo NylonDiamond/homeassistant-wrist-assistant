@@ -471,6 +471,10 @@ export interface WatchHTTPSlideRow {
 export interface WatchHoldSlideRow extends WatchMenu {
   direction: WatchSlideDirection;
   title: string;
+  /** What the slide does now, default or stored (`"none"` for nothing),
+   * and its words, for the arrow pad. */
+  resolved: string;
+  resolvedLabel: string;
   trigger: WatchTriggerRow | undefined;
   /** Set while the direction is stored as Run HTTP Action. */
   http: WatchHTTPSlideRow | undefined;
@@ -619,6 +623,8 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog,
     return {
       direction: d.direction,
       title: WATCH_SLIDE_DIRECTION_TITLES[d.direction],
+      resolved: d.resolved,
+      resolvedLabel: d.resolvedLabel,
       options,
       selected,
       ...(note === undefined ? {} : { note }),

@@ -63,7 +63,7 @@ import {
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, VIRTUAL_TILE_KINDS, tileClass, tileDevices, tileKindLabel } from "../src/watch-pages/model.js";
 import { renderWatchTileFace } from "../src/watch-pages/preview.js";
 import { WATCH_TILE_APP, addNewWatchTile, newWatchTile, watchAddEntityId } from "../src/watch-pages/tile-new.js";
-import { renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
+import { TILE_KIND_TAG, renderTileInspector, renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
@@ -288,6 +288,28 @@ describe("the Add tile dialog", () => {
 describe("the Home map tile's settings", () => {
   it("are its Floor first, then the look and when it shows, with no Action", () => {
     expect(watchTileSettingsSections({ entityId: `home_map.${FLOOR}` })).toEqual(["target", "icon", "text", "border", "visibility", "background"]);
+  });
+
+  it("stand in the inspector as one Home map card at the top of What it does, not under the tap", () => {
+    const { host } = tileHost(`home_map.${FLOOR}`, twoFloors());
+    const text = flatten(renderTileInspector(host));
+    const does = text.slice(text.indexOf(`<section class="ts-grp" data-group=does `));
+    // The card is the group's first thing after its title, titled by the
+    // kind, tagged as this tile's, and the Map part under it has no heading
+    // of its own.
+    const at = does.indexOf(`<section class="ts-kind" data-kind=home_map aria-label=Home map>`);
+    expect(at).toBeGreaterThan(does.indexOf(`<h3 class="ts-grp-t">What it does</h3>`));
+    expect(at).toBeLessThan(does.indexOf(`<section class="ts-sec"`));
+    expect(does).toContain(`<div class="ts-sec-h ts-kind-h"><h4>Home map</h4><span class="ts-kind-tag">${TILE_KIND_TAG}</span>`);
+    const card = does.slice(0, does.indexOf(`</section>\n  </section>`));
+    expect(card).toContain(`<section class="ts-sec" data-part=target aria-label=Map>`);
+    expect(card).not.toContain("<h4>Map</h4>");
+    expect(card).not.toContain("<h5>");
+    for (const row of ["<span>Floor</span>", "<span>Room</span>", "Devices", "Room names"]) expect(card, row).toContain(row);
+    // The tap's own sections come after it.
+    expect(does.indexOf("<h4>Tap animation</h4>")).toBeGreaterThan(does.indexOf("<span>Floor</span>"));
+    // Nowhere else.
+    expect(text.slice(0, text.indexOf(`data-group=does `))).not.toContain("<span>Floor</span>");
   });
 
   it("pick the floor from the map's floors with a room, and move the tile to it", () => {

@@ -22,7 +22,7 @@ import {
   setWatchTileIconGlow,
   watchTileIconGlow,
 } from "../src/watch-pages/tile-settings-model.js";
-import { TILE_INSPECTOR_PARTS, renderTileInspector, renderTileSettings, tileInspectorParts } from "../src/watch-pages/tile-settings.js";
+import { TILE_INSPECTOR_GROUPS, TILE_INSPECTOR_PARTS, TILE_KIND_PARTS, renderTileInspector, renderTileSettings, tileInspectorParts } from "../src/watch-pages/tile-settings.js";
 import { WATCH_TILE_SETTINGS_SECTION_TITLES, type WatchTileSettingsSection } from "../src/watch-pages/tile-settings-options.js";
 import { pictureChoice, tilePictures, watchTriedTile } from "../src/watch-pages/picture-choice.js";
 import { watchTileStatesAs } from "../src/watch-pages/preview.js";
@@ -136,7 +136,9 @@ type Setter = (d: WatchPagesDocument, pageId: string, tileId: string, value: nev
 // ── picture choices write what the old controls wrote ────────────────────
 
 describe("picture choices", () => {
-  const cases: { name: string; tile: WatchPageTile; value: string; expect: (d: WatchPagesDocument, t: WatchPageTile) => WatchPagesDocument }[] = [
+  // Weight and Design are one segmented row each (`segChoice`): each
+  // button names its choice in full as its accessible name.
+  const cases: { name: string; tile: WatchPageTile; value: string; seg?: string; expect: (d: WatchPagesDocument, t: WatchPageTile) => WatchPagesDocument }[] = [
     { name: "When it is off: Keep color", tile: tile("light.desk"), value: "keep",
       expect: (d) => setWatchTileDimWhenOff(d, PAGE_ID, TILE_ID, false) },
     { name: "When it is off: Dim", tile: tile("light.desk", { dimWhenOff: false }), value: "dim",
@@ -153,9 +155,9 @@ describe("picture choices", () => {
       expect: (d) => setWatchTileBorderLineStyle(d, PAGE_ID, TILE_ID, "dashed") },
     { name: "Pattern Dots", tile: tile("light.desk"), value: "dots",
       expect: (d) => setWatchTilePattern(d, PAGE_ID, TILE_ID, "dots") },
-    { name: "Text weight Bold", tile: tile("light.desk"), value: "bold",
+    { name: "Text weight Bold", tile: tile("light.desk"), value: "bold", seg: "Bold",
       expect: (d) => setWatchTileFontWeight(d, PAGE_ID, TILE_ID, "bold") },
-    { name: "Text design Serif", tile: tile("light.desk"), value: "serif",
+    { name: "Text design Serif", tile: tile("light.desk"), value: "serif", seg: "Serif",
       expect: (d) => setWatchTileFontDesign(d, PAGE_ID, TILE_ID, "serif") },
   ];
 
@@ -166,7 +168,9 @@ describe("picture choices", () => {
       const expected = c.expect(before, host.tile);
       expect(expected).not.toBe(before);
       const drawn = renderTileSettings(host);
-      const button = `role="radio" class="pc-opt " aria-checked=false\n          data-value=${c.value} `;
+      const button = c.seg === undefined
+        ? `role="radio" class="pc-opt " aria-checked=false\n          data-value=${c.value} `
+        : `role="radio" class="pc-opt pc-seg-opt " aria-checked=false\n          aria-label=${c.seg} data-value=${c.value} `;
       expect(flat(drawn)).toContain(button);
       fire(drawn, button);
       expect(draft.document).toEqual(expected);
@@ -207,12 +211,21 @@ describe("picture choices", () => {
     expect(draft.document).toEqual(setWatchTileIconGlow(before, PAGE_ID, TILE_ID, { ...glow, mode: "auto" }));
   });
 
-  it("draws the pattern gallery as swatches, weight and design as Aa, thickness and line style as lines", () => {
+  it("draws the pattern gallery as swatches, weight and design as one segmented row each, thickness and line style as lines", () => {
     const text = flat(renderTileSettings(tileHost(tile("light.desk", { borderStyle: "line" })).host));
     expect(text).toContain(`class="field pc-field pc-size-swatch"`);
     expect(text.match(/class="pc-swatch"/g)!.length).toBeGreaterThan(15);
-    expect(text).toMatch(/aria-label=Weight[\s\S]*?<span class="pc-aa" style=font-family:[^;]*;font-weight:700>Aa<\/span>/);
-    expect(text).toMatch(/aria-label=Design[\s\S]*?<span class="pc-aa" style=font-family:ui-serif/);
+    // Weight and Design: one row of buttons each, no "Aa" chips, each
+    // button's words in what it picks, short where the name is long, the
+    // full name its tooltip and accessible name.
+    expect(text).not.toContain(`class="pc-aa"`);
+    const weight = text.slice(text.indexOf(`aria-label=Weight`), text.indexOf(`aria-label=Design`));
+    expect([...weight.matchAll(/aria-label=([A-Za-z]+) data-value/g)].map((m) => m[1])).toEqual(["Light", "Regular", "Medium", "Semibold", "Bold"]);
+    expect([...weight.matchAll(/<span class="pc-seg-w" style=[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Light", "Reg", "Med", "Semi", "Bold"]);
+    expect(weight).toMatch(/aria-label=Bold data-value=bold title=Bold[\s\S]*?<span class="pc-seg-w" style=font-family:[^;]*;font-weight:700>Bold<\/span>/);
+    const design = text.slice(text.indexOf(`aria-label=Design`));
+    expect(design).toMatch(/aria-label=Serif data-value=serif title=Serif[\s\S]*?<span class="pc-seg-w" style=font-family:ui-serif/);
+    expect([...design.matchAll(/<span class="pc-seg-w" style=[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Default", "Rounded", "Mono", "Serif"]);
     expect(text).toContain(`<span class="pc-line" style=border-top:4px solid currentColor></span>`);
     expect(text).toContain(`<span class="pc-line" style=border-top:2px dashed currentColor></span>`);
   });
@@ -329,28 +342,38 @@ describe("the inspector's groups", () => {
     for (const s of all.filter((x) => x !== "icon")) expect(parts, s).toContain(s);
     for (const p of ["color", "icon", "glow", "whenOff", "tapAnimation"] as const) expect(parts).toContain(p);
     const of = (g: string) => TILE_INSPECTOR_PARTS.filter(([, x]) => x === g).map(([p]) => p);
-    // What a kind's own task shows leads Look; what a tap does is Tap.
-    expect(of("look")).toEqual(["removed", "header", "phoneTile", "special", "phone", "color", "icon", "glow", "whenOff", "background", "border", "phoneExtras"]);
+    // Color and icon is the fill, the icon or photo and the off look, a
+    // removed kind's line and a header's look leading it; Surface and rules
+    // is when it shows, where its parts sit, a rule's size, the background
+    // and border, the iPhone extras last; What it does leads with what the
+    // tile's own kind holds, then the tap.
+    expect(of("color")).toEqual(["removed", "header", "color", "icon", "glow", "whenOff"]);
     expect(of("text")).toEqual(["text", "state"]);
-    expect(of("tap")).toEqual(["opens", "target", "request", "action", "tapAnimation", "visibility"]);
-    expect(of("layout")).toEqual(["size", "arrange"]);
+    expect(of("surface")).toEqual(["visibility", "arrange", "size", "background", "border", "phoneExtras"]);
+    expect(of("does")).toEqual(["phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
+    expect([...TILE_KIND_PARTS]).toEqual(["phoneTile", "special", "phone", "target", "opens", "request"]);
+    expect(TILE_INSPECTOR_GROUPS).toEqual(["color", "text", "surface", "does"]);
   });
 
   it("give a light its groups in order and leave out a group with nothing in it", () => {
     const { host } = tileHost(tile("light.desk"));
     expect(tileInspectorParts(host)).toEqual([
-      { group: "look", parts: ["color", "icon", "glow", "whenOff", "background", "border"] },
+      { group: "color", parts: ["color", "icon", "glow", "whenOff"] },
       { group: "text", parts: ["text", "state"] },
-      { group: "tap", parts: ["action", "tapAnimation", "visibility"] },
-      { group: "layout", parts: ["size", "arrange"] },
+      { group: "surface", parts: ["visibility", "arrange", "size", "background", "border"] },
+      { group: "does", parts: ["action", "tapAnimation"] },
     ]);
-    // Size is the page editor's: without its rows Layout holds the
-    // Arrangement alone.
+    // Size is the page editor's: without its rows it is not drawn.
     const text = flat(renderTileInspector(host));
-    expect([...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "Text", "Tap", "Layout"]);
-    expect(text).toContain(`<span class="ts-grp-d">What it does, when it shows</span>`);
-    expect(text).toContain(`<h3 class="ts-grp-t">Layout</h3><span class="ts-grp-d">Arrangement</span>`);
+    expect([...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Color and icon", "Text", "Surface and rules", "What it does"]);
+    expect(text).toContain(`<h3 class="ts-grp-t">Color and icon</h3><span class="ts-grp-d">Fill, icon or photo, off look</span>`);
+    expect(text).toContain(`<h3 class="ts-grp-t">Text</h3><span class="ts-grp-d">Name, state, state bar</span>`);
+    expect(text).toContain(`<h3 class="ts-grp-t">Surface and rules</h3><span class="ts-grp-d">Background, border, when it shows</span>`);
+    expect(text).toContain(`<h3 class="ts-grp-t">What it does</h3><span class="ts-grp-d">Tap, hold, the tile's own content</span>`);
     expect(text).not.toContain("data-part=size");
     expect(text).toContain("<h4>Arrangement</h4>");
+    expect(text).toContain("<h4>Shows when</h4>");
+    // A light has nothing of its own kind: no kind card.
+    expect(text).not.toContain(`class="ts-kind"`);
   });
 });
