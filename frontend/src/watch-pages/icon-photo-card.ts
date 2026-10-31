@@ -120,16 +120,17 @@ function pick(host: TileSettingsHost, id: string | undefined): void {
 
 /**
  * Look, under the photos once a picked tile has one: Colour (the normal
- * look, no key) or Clear (`iconPhotoLook` "clear": no fill, the photo over
- * the name, photo tiles plan "Clear look"). A pick is one commit on every
- * picked tile that has a photo; Show Icon takes the look off with the photo.
+ * look, no key) or Clear (`iconPhotoLook` "clear": the photo in the icon's
+ * place on a dark graphite tile, photo tiles plan "Clear look"). A pick is
+ * one commit on every picked tile that has a photo; Show Icon takes the
+ * look off with the photo.
  */
 export function renderIconPhotoLook(host: TileSettingsHost): TemplateResult | typeof nothing {
   if (!somePicked(host, () => watchTileIconPhotoId(host.tile) !== undefined)) return nothing;
   return segField<WatchTileIconPhotoLook>("Look", watchTileIconPhotoLook(host.tile), [["colour", "Colour"], ["clear", "Clear"]], (v) => {
     host.endCoalesce();
     commit(host, "iconPhotoLook", (d) => setWatchTileIconPhotoLook(d, host.pageId, host.tileId, v));
-  }, { def: "colour", titles: { colour: "The photo on the tile's colour", clear: "No fill: the photo over the name, glowing in the tile's colour when on" } });
+  }, { def: "colour", titles: { colour: "The photo on the tile's colour", clear: "The photo on a dark tile, glowing in the tile's colour when on" } });
 }
 
 async function addPhoto(host: TileSettingsHost, photos: PagePhotoStore, input: HTMLInputElement): Promise<void> {

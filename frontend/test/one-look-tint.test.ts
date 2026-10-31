@@ -4,7 +4,7 @@
 // light's live state; a
 // light's On photo drawn as the Off photo, the On photo at k and C multiply
 // blended through W at k, in the normal look and the Clear look; and the
-// Clear look's clean glow, screen blended. The numbers are shared with the
+// Clear look's clean glow, screen blended, and its lit rim. The numbers are shared with the
 // watch and the iPhone, which check theirs the same way.
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -277,7 +277,7 @@ describe("a light's On photo, tinted", () => {
     expect(oneLookPreviewModel(sw)!.tint).toBeUndefined();
   });
 
-  it("Clear look: the same three layers, and the glow in the light's colour scaled by k", () => {
+  it("Clear look: the same three layers, and the glow and the rim in the light's colour scaled by k", () => {
     const out = html(renderOneLookTile(face(lamp({ iconPhotoLook: "clear", color: "#30A0FF" }), "light.lamp", "on", RED_HALF)));
     const photos = all(out, "ol-cutout clear");
     expect(photos.map((p) => p.src)).toEqual(["blob:off", "blob:on"]);
@@ -286,29 +286,30 @@ describe("a light's On photo, tinted", () => {
     const glow = all(out, "ol-layer ol-clear-glow")[0]!.style;
     const a4 = (v: number) => Math.round(v * 10000) / 10000;
     const k = 0.35 + 0.65 * (128 / 255);
-    expect(glow).toContain(`rgba(255, 38, 38, ${a4(0.42 * k)}) 0%, rgba(255, 38, 38, ${a4(0.18 * k)}) 45%, rgba(255, 38, 38, 0) 100%`);
+    expect(glow).toContain(`rgba(255, 38, 38, ${a4(0.6 * k)}) 0%, rgba(255, 38, 38, ${a4(0.26 * k)}) 45%, rgba(255, 38, 38, 0) 100%`);
     expect(glow).toContain("mix-blend-mode:screen");
     expect(out.indexOf("ol-clear-glow")).toBeLessThan(out.indexOf("ol-cutout"));
-    // The state line in C too, so the words and the lamp agree.
-    expect(all(out, "ol-clear-state")[0]!.style).toContain("color:rgba(255, 38, 38, 1)");
+    // The rim in C too, so the tile and the lamp agree.
+    expect(all(out, "ol-layer ol-clear-rim")[0]!.style).toContain(`rgba(255, 38, 38, ${a4(0.3 * k)})`);
   });
 
-  it("Clear look glow and state: the tile's colour for a light whose colour is unknown (glow still scaled by k); full for another kind", () => {
+  it("Clear look glow and rim: the tile's colour for a light whose colour is unknown (still scaled by k); full for another kind", () => {
     const light = html(renderOneLookTile(face(lamp({ iconPhotoLook: "clear", color: "#30A0FF" }), "light.lamp", "on", { brightness: 0 })));
-    expect(all(light, "ol-layer ol-clear-glow")[0]!.style).toContain("rgba(48, 160, 255, 0.147) 0%, rgba(48, 160, 255, 0.063) 45%");
-    expect(all(light, "ol-clear-state")[0]!.style).toContain("color:rgba(48, 160, 255, 1)");
+    expect(all(light, "ol-layer ol-clear-glow")[0]!.style).toContain("rgba(48, 160, 255, 0.21) 0%, rgba(48, 160, 255, 0.091) 45%");
+    expect(all(light, "ol-layer ol-clear-rim")[0]!.style).toContain("rgba(48, 160, 255, 0.105)");
     const cover = html(renderOneLookTile(face(lamp({ entityId: "cover.blind", iconPhotoLook: "clear", color: "#30A0FF" }), "cover.blind", "open", { current_position: 100 })));
-    expect(all(cover, "ol-layer ol-clear-glow")[0]!.style).toContain("rgba(48, 160, 255, 0.42) 0%");
-    expect(all(cover, "ol-clear-state")[0]!.style).toContain("color:rgba(48, 160, 255, 1)");
-    expect(ONE_LOOK_CLEAR).toMatchObject({ glowCentreOpacity: 0.42, glowMidOpacity: 0.18, glowMidStop: 0.45, glowRadiusShare: 0.7 });
+    expect(all(cover, "ol-layer ol-clear-glow")[0]!.style).toContain("rgba(48, 160, 255, 0.6) 0%");
+    expect(all(cover, "ol-layer ol-clear-rim")[0]!.style).toContain("rgba(48, 160, 255, 0.3)");
+    expect(ONE_LOOK_CLEAR).toMatchObject({ glowCentreOpacity: 0.6, glowMidOpacity: 0.26, glowMidStop: 0.45, glowRadiusShare: 0.9, rimOpacity: 0.3, rimWidth: 1 });
     expect(oneLookClearGlowColour({ hue: [1, 2, 3] }, undefined)).toEqual([1, 2, 3]);
     expect(oneLookClearGlowColour({ hue: [1, 2, 3] }, { colour: [1, 1, 1], known: true, level: 1 })).toEqual([255, 255, 255]);
     expect(oneLookClearGlowColour({ hue: [1, 2, 3] }, { colour: [1, 1, 1], known: false, level: 1 })).toEqual([1, 2, 3]);
   });
 
-  it("Clear look, off or wrist down: no glow, the Off photo alone", () => {
+  it("Clear look, off or wrist down: no glow, no rim, the Off photo alone", () => {
     const out = html(renderOneLookTile(face(lamp({ iconPhotoLook: "clear" }), "light.lamp", "off", {})));
     expect(out).not.toContain("ol-clear-glow");
+    expect(out).not.toContain("ol-clear-rim");
     expect(all(out, "ol-cutout clear").map((p) => p.src)).toEqual(["blob:off"]);
   });
 });
