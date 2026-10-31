@@ -88,6 +88,9 @@ export const ONE_LOOK_HATCH_OPACITY = 0.04;
 export const ONE_LOOK_AOD_VEIL = 0.52;
 /** An off light's disc: its hue at this opacity. */
 export const ONE_LOOK_OFF_BULB_DISC_OPACITY = 0.2;
+/** An off light's glyph (and a calm tile's), its outline bulb ink at this
+ * opacity, so it sits quieter than a lit tile's (2026-10-31). */
+export const ONE_LOOK_OFF_BULB_GLYPH_OPACITY = 0.7;
 /** A camera's glass disc. */
 export const ONE_LOOK_GLASS_DISC: OneLookRGB = [0x10, 0x10, 0x12];
 
@@ -520,7 +523,7 @@ function makePalette(key: PaletteKey): OneLookPalette {
       if (!key.role.on && key.dimWhenOff) {
         // Off: graphite, the outline bulb in the light's own hue.
         const hue = stops?.[0] ?? ONE_LOOK_AMBER;
-        return graphite(key, { ink2: white(0.6), disc: ink(hue, ONE_LOOK_OFF_BULB_DISC_OPACITY), glyph: ink(oneLookOffBulb(hue)), rim: 0.2, hue });
+        return graphite(key, { ink2: white(0.6), disc: ink(hue, ONE_LOOK_OFF_BULB_DISC_OPACITY), glyph: ink(oneLookOffBulb(hue), ONE_LOOK_OFF_BULB_GLYPH_OPACITY), accessoryGlyph: ink(oneLookOffBulb(hue)), rim: 0.2, hue });
       }
       lit = key.role.on;
       if (key.role.on) brightness = Math.max(0, Math.min(1, key.role.brightness ?? 1));
@@ -536,7 +539,7 @@ function makePalette(key: PaletteKey): OneLookPalette {
   // Calm: an idle plain or media tile, graphite with its icon in its hue.
   const first = stops?.[0];
   if (key.calm && !isLight && !lit && key.dimWhenOff && stateHue === undefined && !key.pressed && first !== undefined) {
-    return graphite(key, { ink2: white(0.6), disc: ink(first, ONE_LOOK_OFF_BULB_DISC_OPACITY), glyph: ink(oneLookOffBulb(first)), rim: 0.2, hue: first });
+    return graphite(key, { ink2: white(0.6), disc: ink(first, ONE_LOOK_OFF_BULB_DISC_OPACITY), glyph: ink(oneLookOffBulb(first), ONE_LOOK_OFF_BULB_GLYPH_OPACITY), accessoryGlyph: ink(oneLookOffBulb(first)), rim: 0.2, hue: first });
   }
 
   // "On" wins over "no colour".
@@ -596,7 +599,7 @@ function makePalette(key: PaletteKey): OneLookPalette {
 /** A graphite (or camera) palette with its disc and glyph. */
 function graphite(
   key: PaletteKey,
-  o: { ink2: OneLookInk; disc: OneLookInk; glyph: OneLookInk; rim: number; hatch?: boolean; quiet?: boolean; hue?: OneLookRGB; surface?: "graphite" | "camera" },
+  o: { ink2: OneLookInk; disc: OneLookInk; glyph: OneLookInk; accessoryGlyph?: OneLookInk; rim: number; hatch?: boolean; quiet?: boolean; hue?: OneLookRGB; surface?: "graphite" | "camera" },
 ): OneLookPalette {
   const aod = key.aod;
   const camera = o.surface === "camera";
@@ -622,7 +625,7 @@ function graphite(
     disc: o.disc,
     glyph: o.glyph,
     accessoryDisc: o.disc,
-    accessoryGlyph: o.glyph,
+    accessoryGlyph: o.accessoryGlyph ?? o.glyph,
     isLit: false,
     pearlGlow: false,
     glow: undefined,

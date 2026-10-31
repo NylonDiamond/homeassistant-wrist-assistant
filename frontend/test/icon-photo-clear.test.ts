@@ -7,11 +7,15 @@
 // lock unlocked); a camera never. Then the On photo and the Light Look draw,
 // and a graphite tile (no colour) keeps its photo bright.
 //
-// Clear: no fill, a white wash at 2.5% and a hairline at 6%, the photo in a
-// square box min(0.62 h, 0.8 w) centred across with its top 5% down, no
-// rounding; the name and state centred under it; lit, the state in the
-// tile's colour (else One Look amber) and a glow of it behind the photo;
-// not lit or wrist down, the Off filter and a grey state.
+// Clear ("a photo is an icon", 2026-10-31): the same layout an icon tile
+// has, the state top left, the photo in the icon's place (the normal look's
+// box) and the name at the bottom, with the accessory, the bar and the big
+// value; on the graphite fill an off tile has and a hairline at 6%, never the
+// tile's colour, pattern or animation. Lit, a glow behind the photo and a
+// thin rim inside the edge, in a light's own colour, else the tile's, else
+// One Look amber; not lit or wrist down, the Off filter, no glow, no rim.
+//
+// Every tile: an off light's glyph at 70%, a ring round a person's photo.
 
 import { describe, expect, it } from "vitest";
 
@@ -23,16 +27,19 @@ import {
   type OneLookTileFaceInput,
   ONE_LOOK_CLEAR,
   ONE_LOOK_CUTOUT_OFF_FILTER,
-  oneLookClearBox,
   oneLookClearColour,
   oneLookClearDimmed,
   oneLookCutoutActive,
   oneLookCutoutDimmed,
+  oneLookCutoutAspect,
+  oneLookCutoutBoxSide,
   oneLookCutoutOf,
+  oneLookCutoutPlace,
+  oneLookCutoutRect,
   oneLookPreviewModel,
   renderOneLookTile,
 } from "../src/watch-pages/one-look/render.js";
-import type { WatchPagePreviewInput } from "../src/watch-pages/preview.js";
+import type { WatchPagePreviewInput, WatchSpecialLook } from "../src/watch-pages/preview.js";
 
 function html(t: unknown): string {
   if (typeof t === "symbol" || t === null || t === undefined) return "";
@@ -187,22 +194,26 @@ describe("the Clear look", () => {
     // No photo yet: the icon, as today.
     const waiting = html(renderOneLookTile(face(lamp(), lampOn, { photo: () => undefined })));
     expect(waiting).not.toContain("ol-cutout");
-    expect(waiting).not.toContain("data-ol-mode=\"clear\"");
+    expect(waiting).not.toContain("data-ol-look=");
     expect(waiting).toContain("data-symbol=");
   });
 
-  it("has no fill, sheen, rim or under-glow: a white wash at 2.5% and a one pixel hairline at 6%", () => {
-    const out = html(renderOneLookTile(face(lamp(), lampOn, PHOTOS, "phone")));
-    const style = tileStyle(out);
-    expect(style).toContain("background:rgba(255, 255, 255, 0.025)");
-    expect(style).toContain("box-shadow:inset 0 0 0 1px rgba(255, 255, 255, 0.06)");
-    expect(style).toContain("border-radius:");
-    expect(out).not.toContain(`class="ol-rim"`);
-    expect(out).not.toContain(`class="ol-fill"`);
-    expect(out).not.toContain(`class="ol-halo"`);
-    expect(out).not.toContain(`class="ol-name"`);
-    expect(out).not.toContain(`class="ol-state`);
-    expect(ONE_LOOK_CLEAR).toMatchObject({ washOpacity: 0.025, borderOpacity: 0.06 });
+  it("draws the graphite fill an off tile has, its sheen and a one pixel hairline at 6%, never the tile's colour, rim light or under-glow", () => {
+    for (const color of [undefined, "#30A0FF"]) {
+      const out = html(renderOneLookTile(face(lamp(color === undefined ? {} : { color }), lampOn, PHOTOS, "phone")));
+      const style = tileStyle(out);
+      expect(style, color).toContain("linear-gradient(135deg, #2D2E33 0%, #202125 55%, #191A1D 100%)");
+      expect(style, color).toContain("radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 55%)");
+      expect(style, color).toContain("box-shadow:inset 0 0 0 1px rgba(255, 255, 255, 0.06)");
+      expect(style, color).not.toContain("0 12px 30px");
+      expect(style, color).toContain("border-radius:");
+      expect(out, color).not.toContain(`class="ol-rim"`);
+      expect(out, color).not.toContain(`class="ol-fill"`);
+    }
+    // The same ground whether the thing is on or off.
+    const ground = (o: string) => /background:([^;]*)/.exec(tileStyle(o))?.[1];
+    expect(ground(html(renderOneLookTile(face(lamp(), lampOff))))).toBe(ground(html(renderOneLookTile(face(lamp({ color: "#30A0FF" }), lampOn)))));
+    expect(ONE_LOOK_CLEAR.borderOpacity).toBe(0.06);
   });
 
   it("draws no pattern or animation behind the photo, and keeps the user's border", () => {
@@ -217,87 +228,103 @@ describe("the Clear look", () => {
     expect(border(out)).toBe(border(normal));
   });
 
-  it("puts the photo in a box min(0.62 h, 0.8 w), centred across, its top 5% down, fitted, no rounding", () => {
-    expect(oneLookClearBox({ width: 100, height: 100 })).toEqual({ x: 19, y: 5, width: 62, height: 62 });
-    // A short wide tile: 62% of the height.
-    expect(oneLookClearBox({ width: 200, height: 50 })).toEqual({ x: 84.5, y: 2.5, width: 31, height: 31 });
-    // A tall narrow one: 80% of the width.
-    expect(oneLookClearBox({ width: 50, height: 200 })).toEqual({ x: 5, y: 10, width: 40, height: 40 });
+  it("puts the photo in the icon's place, in the box the normal look gives it", () => {
     const f = face(lamp(), lampOn);
     const out = html(renderOneLookTile(f));
-    const size = oneLookPreviewModel(f)!.layout.size;
-    const box = oneLookClearBox(size);
+    const normal = html(renderOneLookTile(face(thing("light.lamp"), lampOn)));
+    expect(place(styleOf(out, "ol-cutout"))).toEqual(place(styleOf(normal, "ol-cutout")));
+    const layout = oneLookPreviewModel(f)!.layout;
+    const { box } = oneLookCutoutPlace(layout, 2);
     const at = place(styleOf(out, "ol-cutout"));
-    // 2:1, so as wide as the box and half as high, on its centre.
+    // 2:1, so as wide as the box and half as high, on its centre: the
+    // glyph's ink square (0.86 of the glyph box) on the glyph's centre.
+    expect(box.width).toBeCloseTo(layout.glyphSize * 0.86, 6);
     expect(at.w).toBeCloseTo(box.width, 1);
     expect(at.h).toBeCloseTo(box.width / 2, 1);
-    expect(at.x + at.w / 2).toBeCloseTo(size.width / 2, 1);
+    expect(at.x + at.w / 2).toBeCloseTo(box.x + box.width / 2, 1);
     expect(at.y + at.h / 2).toBeCloseTo(box.y + box.height / 2, 1);
-    expect(styleOf(out, "ol-cutout")).not.toContain("border-radius");
   });
 
-  it("puts the name and the state centred under the photo, the state at 0.82 of the name, both semibold", () => {
-    const f = face(lamp(), lampOn);
+  it("keeps the state top left, the name at the bottom and the bar where an icon tile has them, in white", () => {
+    const f = face(lamp({ color: "#30A0FF" }), entity("light.lamp", "on", { brightness: 128 }));
     const out = html(renderOneLookTile(f));
-    const model = oneLookPreviewModel(f)!;
-    const box = oneLookClearBox(model.layout.size);
-    const text = place(styleOf(out, "ol-clear-text"));
-    expect(text.y).toBeCloseTo(box.y + box.height, 1);
-    expect(text.y + text.h).toBeCloseTo(model.layout.size.height, 1);
-    expect(text.x).toBeCloseTo(model.layout.insetH, 1);
+    const normal = html(renderOneLookTile(face(thing("light.lamp", { color: "#30A0FF" }), entity("light.lamp", "on", { brightness: 128 }))));
+    for (const part of ["ol-state", "ol-text centred", "ol-bar"]) {
+      expect(styleOf(normal, part), part).toBeDefined();
+      expect(styleOf(out, part), part).toBe(styleOf(normal, part));
+    }
     expect(out).toContain(">Thing</span>");
-    const nameFont = /font:600 ([\d.]+)px/.exec(styleOf(out, "ol-clear-name") ?? "");
-    const stateFont = /font:600 ([\d.]+)px/.exec(styleOf(out, "ol-clear-state") ?? "");
-    expect(Number(nameFont?.[1])).toBeCloseTo(model.layout.name.size, 1);
-    expect(Number(stateFont?.[1])).toBeCloseTo(model.layout.name.size * 0.82, 1);
-    expect(ONE_LOOK_CLEAR.textMinimumScale).toBe(0.7);
+    expect(styleOf(out, "ol-name")).toContain("color:#FFFFFF");
+    expect(out).toContain("data-ol-mode=centred");
+    expect(out).toContain("data-ol-look=\"clear\"");
+    expect(out).not.toContain("ol-clear-text");
   });
 
-  it("shrinks a long name to 70% at most, then truncates", () => {
-    const f = face(lamp({ customLabel: "A very long name for a small tile that never fits" }), lampOn);
-    f.measurer = { width: (text, size) => text.length * size * 0.6 };
+  it("keeps the accessory as an icon tile has it", () => {
+    const state = entity("media_player.speaker", "playing");
+    const out = html(renderOneLookTile(face(thing("media_player.speaker", { iconPhotoLook: "clear" }), state)));
+    const normal = html(renderOneLookTile(face(thing("media_player.speaker"), state)));
+    expect(styleOf(normal, "ol-acc")).toBeDefined();
+    expect(styleOf(out, "ol-acc")).toBe(styleOf(normal, "ol-acc"));
+  });
+
+  it("follows the tile's Arrangement, the glow with the photo", () => {
+    const arrange = { v: 1, parts: { icon: { spot: "tl" } } };
+    const f = face(lamp({ arrange }), lampOn);
     const out = html(renderOneLookTile(f));
-    const model = oneLookPreviewModel(f)!;
-    const size = Number(/font:600 ([\d.]+)px/.exec(styleOf(out, "ol-clear-name") ?? "")?.[1]);
-    expect(size).toBeCloseTo(model.layout.name.size * 0.7, 1);
+    const normal = html(renderOneLookTile(face(thing("light.lamp", { arrange }), lampOn)));
+    const home = html(renderOneLookTile(face(lamp(), lampOn)));
+    expect(place(styleOf(out, "ol-cutout"))).toEqual(place(styleOf(normal, "ol-cutout")));
+    expect(place(styleOf(out, "ol-cutout"))).not.toEqual(place(styleOf(home, "ol-cutout")));
+    const at = place(styleOf(out, "ol-cutout"));
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    expect(styleOf(out, "ol-layer ol-clear-glow")).toContain(`at ${r2(at.x + at.w / 2)}px ${r2(at.y + at.h / 2)}px`);
   });
 
-  it("lit: the On photo, the state in the tile's colour and a glow of it behind the photo", () => {
+  it("lit: the On photo, a glow of the tile's colour behind it and a rim inside the edge, no halo", () => {
     const out = html(renderOneLookTile(face(lamp({ color: "#30A0FF" }), lampOn)));
     expect(src(out)).toBe("blob:on");
     expect(styleOf(out, "ol-cutout")).not.toContain("filter");
-    expect(styleOf(out, "ol-clear-state")).toContain("color:rgba(48, 160, 255, 1)");
     const glow = styleOf(out, "ol-layer ol-clear-glow") ?? "";
-    // On photo tint's clean glow: 0.42 at the centre, 0.18 at 45%, screen
-    // blended; the tile's colour, as the light's colour is not known.
-    expect(glow).toContain("rgba(48, 160, 255, 0.42) 0%, rgba(48, 160, 255, 0.18) 45%, rgba(48, 160, 255, 0) 100%");
+    // 0.60 at the centre, 0.26 at 45%, screen blended; the tile's colour,
+    // as the light's colour is not known.
+    expect(glow).toContain("rgba(48, 160, 255, 0.6) 0%, rgba(48, 160, 255, 0.26) 45%, rgba(48, 160, 255, 0) 100%");
     expect(glow).toContain("mix-blend-mode:screen");
     expect(out.indexOf("ol-clear-glow")).toBeLessThan(out.indexOf("ol-cutout"));
+    // The rim: 1 pt inside the edge, at the tile's corners, at 30%.
+    expect(styleOf(out, "ol-layer ol-clear-rim")).toBe("box-shadow:inset 0 0 0 1px rgba(48, 160, 255, 0.3)");
+    // The bare glyph's halo and the pearl glow give way to the glow.
+    const normal = html(renderOneLookTile(face(thing("light.lamp", { color: "#30A0FF" }), lampOn)));
+    expect(normal).toContain(`class="ol-halo"`);
+    expect(out).not.toContain(`class="ol-halo"`);
+    expect(out).not.toContain("ol-cutout-glow");
   });
 
-  it("the glow sits on the photo box's centre and is gone at 70% of the tile's width", () => {
+  it("the glow sits on the photo box's centre and is gone at 90% of the tile's width", () => {
     const f = face(lamp(), lampOn);
-    const size = oneLookPreviewModel(f)!.layout.size;
-    const box = oneLookClearBox(size);
+    const model = oneLookPreviewModel(f)!;
+    const size = model.layout.size;
+    const { box } = oneLookCutoutPlace(model.layout, 2);
     const glow = styleOf(html(renderOneLookTile(f)), "ol-layer ol-clear-glow") ?? "";
     const r2 = (v: number) => Math.round(v * 100) / 100;
-    expect(glow).toContain(`radial-gradient(circle ${r2(size.width * 0.7)}px at ${r2(size.width / 2)}px ${r2(box.y + box.height / 2)}px`);
+    expect(glow).toContain(`radial-gradient(circle ${r2(size.width * 0.9)}px at ${r2(box.x + box.width / 2)}px ${r2(box.y + box.height / 2)}px`);
   });
 
   it("lit with no colour: One Look amber", () => {
     const out = html(renderOneLookTile(face(thing("switch.kettle", { iconPhotoLook: "clear" }), entity("switch.kettle", "on"))));
     const [r, g, b] = ONE_LOOK_AMBER;
-    expect(styleOf(out, "ol-clear-state")).toContain(`color:rgba(${r}, ${g}, ${b}, 1)`);
+    expect(styleOf(out, "ol-layer ol-clear-glow")).toContain(`rgba(${r}, ${g}, ${b}, 0.6) 0%`);
+    expect(styleOf(out, "ol-layer ol-clear-rim")).toContain(`rgba(${r}, ${g}, ${b}, 0.3)`);
     expect(oneLookClearColour({ hue: undefined } as unknown as OneLookPalette)).toEqual(ONE_LOOK_AMBER);
   });
 
-  it("not lit: the Off photo with the Off filter, a grey state, no glow, whatever its colour", () => {
+  it("not lit: the Off photo with the Off filter, no glow, no rim, whatever its colour", () => {
     for (const [id, state, color] of [["light.lamp", "off", "#30A0FF"], ["switch.kettle", "off", "#30A0FF"], ["cover.blind", "closed", undefined]] as const) {
       const out = html(renderOneLookTile(face(thing(id, { iconPhotoLook: "clear", ...(color === undefined ? {} : { color }) }), entity(id, state))));
       expect(src(out), id).toBe("blob:off");
       expect(styleOf(out, "ol-cutout"), id).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
-      expect(styleOf(out, "ol-clear-state"), id).toContain("color:rgba(255, 255, 255, 0.6)");
       expect(out, id).not.toContain("ol-clear-glow");
+      expect(out, id).not.toContain("ol-clear-rim");
     }
     expect(oneLookClearDimmed(true, false)).toBe(false);
     expect(oneLookClearDimmed(false, false)).toBe(true);
@@ -308,6 +335,7 @@ describe("the Clear look", () => {
     const out = html(renderOneLookTile(face(thing("cover.blind", { iconPhotoLook: "clear", color: "#30A0FF" }), entity("cover.blind", "open", { current_position: 100 }))));
     expect(src(out)).toBe("blob:on");
     expect(out).toContain("ol-clear-glow");
+    expect(out).toContain("ol-clear-rim");
   });
 
   it("draws the Light Look's layers as on any tile when there is no On photo", () => {
@@ -324,7 +352,121 @@ describe("the Clear look", () => {
     const out = html(renderOneLookTile(f));
     expect(out).not.toContain("ol-cutout");
     expect(out).not.toContain("ol-clear-glow");
-    expect(out).not.toContain("ol-clear-name");
-    expect(out).toContain("ol-clear-state");
+    expect(out).not.toContain(`class="ol-name"`);
+    expect(out).toContain(`class="ol-state`);
+  });
+});
+
+// ── every tile ───────────────────────────────────────────────────────────
+
+describe("every tile", () => {
+  it("sizes the photo box by the photo's aspect, 1 to 1.35 times the disc, so the photo is never taller than the disc", () => {
+    const disc = { x: 10, y: 20, width: 40, height: 40 };
+    const centre = (r: { x: number; y: number; width: number; height: number }) => [r.x + r.width / 2, r.y + r.height / 2];
+    // A wide lamp, 384 by 322: a 1.19 times box, exactly disc tall.
+    const wide = oneLookCutoutRect(disc, 384 / 322);
+    expect(wide.box.width).toBeCloseTo(40 * (384 / 322), 6);
+    expect(wide.box.height).toBeCloseTo(wide.box.width, 6);
+    expect(wide.photo.height).toBeCloseTo(40, 6);
+    expect(wide.radius).toBeCloseTo(wide.box.width * 0.22, 6);
+    // Wider than 1.35: held there, the photo shorter than the disc.
+    const wider = oneLookCutoutRect(disc, 2);
+    expect(wider.box.width).toBeCloseTo(54, 6);
+    expect(wider.photo).toEqual({ x: 3, y: 26.5, width: 54, height: 27 });
+    // Square and tall: the disc's own side.
+    expect(oneLookCutoutRect(disc, 1).box).toEqual(disc);
+    const tall = oneLookCutoutRect(disc, 0.5);
+    expect(tall.box).toEqual(disc);
+    expect(tall.photo).toEqual({ x: 20, y: 20, width: 20, height: 40 });
+    // Unknown, 0 or not a number: the disc's own side, the photo filling it.
+    for (const a of [undefined, 0, Number.NaN, -1]) {
+      const r = oneLookCutoutRect(disc, a);
+      expect(r.box, String(a)).toEqual(disc);
+      expect(r.photo, String(a)).toEqual(disc);
+      expect(r.radius, String(a)).toBeCloseTo(40 * 0.22, 6);
+    }
+    // Always on the disc's centre.
+    for (const a of [384 / 322, 2, 1, 0.5, undefined]) expect(centre(oneLookCutoutRect(disc, a).box)).toEqual([30, 40]);
+    expect(oneLookCutoutBoxSide(40, 1.1)).toBeCloseTo(44, 6);
+  });
+
+  it("keeps the disc rule only where a disc is drawn; the centred layout uses the glyph's ink square", () => {
+    const disc = { x: 10, y: 20, width: 40, height: 40 };
+    const withDisc = oneLookCutoutPlace({ drawsDisc: true, discRect: disc, glyphSize: 30 }, 384 / 322);
+    expect(withDisc).toEqual(oneLookCutoutRect(disc, 384 / 322));
+    // No disc: 0.86 of the glyph box, on its centre, whatever the aspect.
+    for (const a of [384 / 322, 2, 1, 0.5, undefined, 0, Number.NaN]) {
+      const r = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, a);
+      expect(r.box.width, String(a)).toBeCloseTo(43, 6);
+      expect(r.box.height, String(a)).toBeCloseTo(43, 6);
+      expect(r.box.x + r.box.width / 2, String(a)).toBeCloseTo(30, 6);
+      expect(r.box.y + r.box.height / 2, String(a)).toBeCloseTo(40, 6);
+      expect(r.radius, String(a)).toBeCloseTo(43 * 0.22, 6);
+    }
+    // Fitted with its aspect kept, as the layout's ink rect: side x min(1, a)
+    // across, side / max(1, a) high.
+    const wide = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, 2).photo;
+    expect(wide.width).toBeCloseTo(43, 6);
+    expect(wide.height).toBeCloseTo(21.5, 6);
+    const tall = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, 0.5).photo;
+    expect(tall.width).toBeCloseTo(21.5, 6);
+    expect(tall.height).toBeCloseTo(43, 6);
+    expect(oneLookCutoutAspect(undefined)).toBe(1);
+    expect(oneLookCutoutAspect(0)).toBe(1);
+    expect(oneLookCutoutAspect(Number.NaN)).toBe(1);
+    expect(oneLookCutoutAspect(1.5)).toBe(1.5);
+  });
+
+  it("lays a centred tile out by the photo's aspect beside 100%, the text where the icon's is", () => {
+    const wide = { ...PHOTOS, photoSize: () => ({ width: 384, height: 322 }) };
+    const iconFace = face(thing("light.lamp", { iconPhotoId: undefined }), lampOn);
+    const iconOut = html(renderOneLookTile(iconFace));
+    expect(iconOut).toContain("100%");
+    const gap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+      Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width), b.y - (a.y + a.height), a.y - (b.y + b.height));
+    for (const look of [undefined, "clear"] as const) {
+      const f = face(thing("light.lamp", look === undefined ? {} : { iconPhotoLook: look }), lampOn, wide);
+      const model = oneLookPreviewModel(f)!;
+      const layout = model.layout;
+      expect(layout.mode, look).toBe("centred");
+      // The ink the layout keeps clear has the photo's shape, and clears
+      // the state, the bar and the name.
+      const ink = layout.glyphInk!;
+      expect(ink.width / ink.height, look).toBeCloseTo(384 / 322, 6);
+      expect(gap(ink, layout.stateRect!), look).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(gap(ink, layout.barRect!), look).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(ink.y + ink.height, look).toBeLessThanOrEqual(layout.textOrigin.y - 1 + 1e-9);
+      const out = html(renderOneLookTile(f));
+      for (const part of ["ol-state", "ol-text centred", "ol-bar"]) expect(styleOf(out, part), `${look} ${part}`).toBe(styleOf(iconOut, part));
+      // The photo fills the glyph's ink square across, on the glyph's centre.
+      const at = place(styleOf(out, "ol-cutout"));
+      const side = model.layout.glyphSize * 0.86;
+      const d = model.layout.discRect;
+      expect(at.w, look).toBeCloseTo(side, 1);
+      expect(at.h, look).toBeCloseTo(side / (384 / 322), 1);
+      expect(at.x + at.w / 2, look).toBeCloseTo(d.x + d.width / 2, 1);
+      expect(at.y + at.h / 2, look).toBeCloseTo(d.y + d.height / 2, 1);
+    }
+  });
+
+  it("draws an off light's bulb at 70%", () => {
+    const glyph = (o: string) => /class="ol-glyph" data-symbol=[^ ]* style=([^>]*)>/.exec(o)?.[1] ?? "";
+    const off = html(renderOneLookTile(face({ id: "T", entityId: "light.lamp", customLabel: "Lamp", colSpan: 6, rowSpan: 4, color: "#30A0FF" }, lampOff)));
+    expect(glyph(off)).toContain(";opacity:0.7");
+    const on = html(renderOneLookTile(face({ id: "T", entityId: "light.lamp", customLabel: "Lamp", colSpan: 6, rowSpan: 4, color: "#30A0FF" }, lampOn)));
+    expect(glyph(on)).not.toContain("opacity");
+  });
+
+  it("rings a person's round photo: white at 28%, 1 pt on the watch, 1.5 pt on the iPhone", () => {
+    for (const [device, width] of [["watch", "1px"], ["phone", "1.5px"]] as const) {
+      const f = face({ id: "T", entityId: "person.jesse", customLabel: "Jesse", colSpan: 6, rowSpan: 4 }, entity("person.jesse", "home"), {}, device);
+      f.look = { symbol: undefined, filled: false, ink: { kind: "solid", hex: "#FFFFFF" }, opacity: 1, photo: "blob:person", active: true } as unknown as WatchSpecialLook;
+      const out = html(renderOneLookTile(f));
+      const photoAt = place(styleOf(out, "ol-photo"));
+      const ring = styleOf(out, "ol-photo-ring") ?? "";
+      expect(place(ring), device).toEqual(photoAt);
+      expect(ring, device).toContain(`box-shadow:inset 0 0 0 ${width} rgba(255, 255, 255, 0.28)`);
+      expect(out.indexOf("ol-photo-ring"), device).toBeGreaterThan(out.indexOf(`class="ol-photo"`));
+    }
   });
 });

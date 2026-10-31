@@ -4274,14 +4274,12 @@ export const watchPagePreviewStyles = css`
   .ol-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
   .ol-disc, .ol-halo, .ol-acc { position: absolute; display: block; border-radius: 50%; }
   .ol-photo { position: absolute; display: block; box-sizing: border-box; border-radius: 50%; object-fit: cover; background: #000; }
+  /* The faint white ring inside a person's round photo (render.ts,
+     discLayer), over the photo, which an inset shadow alone would not be. */
+  .ol-photo-ring { position: absolute; display: block; border-radius: 50%; pointer-events: none; }
   /* A tile's icon photo: a cut-out on nothing, fitted whole, its corners
      rounded by the box (render.ts, cutoutLayer). */
   .ol-cutout { position: absolute; display: block; box-sizing: border-box; object-fit: contain; pointer-events: none; }
-  /* A photo's Clear look (render.ts, clearLayer): the name and the state
-     centred in the room under the photo, each one line, already shrunk as
-     far as it may, then truncated. */
-  .ol-clear-text { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
-  .ol-clear-name, .ol-clear-state { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
   /* Light Look: the light's aura, beam and emission with an icon photo,
      each the light's colour through its own mask stretched over the span,
      screen blended over what is under it (render.ts, lightSpan). */

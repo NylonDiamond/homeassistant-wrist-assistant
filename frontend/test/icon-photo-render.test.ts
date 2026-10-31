@@ -1,6 +1,7 @@
 // A tile's icon photo as One Look draws it (one-look/render.ts,
-// `cutoutLayer`): in the icon's place with no disc fill, a box 1.35 times
-// the disc on its centre with the photo fitted in it and its corners
+// `cutoutLayer`): in the icon's place with no disc fill, a square box on the
+// disc's centre, the disc times the photo's aspect held to 1 to 1.35, with
+// the photo fitted in it (never taller than the disc) and its corners
 // rounded by 22% of the box, the halo behind it while lit, gray and dark
 // while not, the icon while the bytes are not in, and moved by the tile's
 // Arrangement like the icon (app repo docs/photo_tiles_plan_2026-10.md,
@@ -108,13 +109,14 @@ describe("an icon photo on a One Look tile", () => {
     expect(oneLookCutoutOf(lamp({ iconPhotoId: ID.toLowerCase() }), { photo: (id) => `u:${id}` })).toEqual({ url: `u:${ID.toLowerCase()}` });
   });
 
-  it("sits in a box 1.35 times the disc on its centre, corners 22% of the box", () => {
+  it("sits in the glyph's ink square on its centre in the centred layout, corners 22% of the box", () => {
     const f = face(lamp(), "on", have);
     const model = oneLookPreviewModel(f)!;
     const disc = model.layout.discRect;
     const html = text(renderOneLookTile(f));
     const at = place(styleOf(html, "ol-cutout"));
-    const side = disc.width * 1.35;
+    expect(model.layout.drawsDisc).toBe(false);
+    const side = model.layout.glyphSize * 0.86;
     expect(at.w).toBeCloseTo(side, 1);
     expect(at.h).toBeCloseTo(side, 1);
     expect(at.x + at.w / 2).toBeCloseTo(disc.x + disc.width / 2, 1);
@@ -130,8 +132,9 @@ describe("an icon photo on a One Look tile", () => {
     expect(wide.photo).toEqual({ x: 3, y: 26.5, width: 54, height: 27 });
     expect(wide.radius).toBeCloseTo(54 * 0.22, 10);
     const tall = oneLookCutoutRect(rect, 0.5);
-    expect(tall.photo).toEqual({ x: 16.5, y: 13, width: 27, height: 54 });
-    expect(oneLookCutoutRect(rect, undefined).photo).toEqual(wide.box);
+    expect(tall.box).toEqual(rect);
+    expect(tall.photo).toEqual({ x: 20, y: 20, width: 20, height: 40 });
+    expect(oneLookCutoutRect(rect, undefined).photo).toEqual(rect);
     // The size comes from the list when the picture has it.
     const sized = face(lamp(), "on", { ...have, photoSize: () => ({ width: 300, height: 150 }) });
     expect(oneLookPreviewModel(sized)!.cutout).toEqual({ url: "blob:lamp", aspect: 2 });
@@ -143,12 +146,15 @@ describe("an icon photo on a One Look tile", () => {
     const arrange = { v: 1, parts: { icon: { spot: "tl" } } };
     const plain = place(styleOf(text(renderOneLookTile(face(lamp(), "on", have))), "ol-cutout"));
     const f = face(lamp({ arrange }), "on", have);
-    const placed = oneLookPreviewModel(f)!.arrange?.icon?.rect;
+    const model = oneLookPreviewModel(f)!;
+    const placed = model.arrange?.icon;
     expect(placed).toBeDefined();
     const at = place(styleOf(text(renderOneLookTile(f)), "ol-cutout"));
     expect(at.x).not.toBeCloseTo(plain.x, 0);
-    expect(at.x + at.w / 2).toBeCloseTo(placed!.x + placed!.width / 2, 1);
-    expect(at.w).toBeCloseTo(placed!.width * 1.35, 1);
+    expect(at.x + at.w / 2).toBeCloseTo(placed!.rect.x + placed!.rect.width / 2, 1);
+    // The aspect is unknown here, so the photo fills the placed glyph's ink
+    // square.
+    expect(at.w).toBeCloseTo(model.layout.glyphSize * placed!.scale * 0.86, 1);
     // Hidden by the Arrangement: gone with the icon.
     const hidden = text(renderOneLookTile(face(lamp({ arrange: { v: 1, parts: { icon: { hidden: true } } } }), "on", have)));
     expect(hidden).not.toContain("ol-cutout");

@@ -109,6 +109,16 @@ describe("the pearl disc's glyph and the off bulb", () => {
     expect(oneLookHex(oneLookOffBulb(rgb("#8F7BEA")))).toBe("#AB9CEF");
     expect(oneLookHex(oneLookOffBulb(ONE_LOOK_AMBER))).toBe("#F5C27A");
   });
+
+  it("draws an off light's glyph, and a calm tile's, at 70%, its disc still at 20% and its accessory full", () => {
+    const off = palette({ role: { kind: "light", on: false }, hue: "#8F7BEA" });
+    expect(off.glyph).toEqual({ rgb: oneLookOffBulb(rgb("#8F7BEA")), opacity: 0.7 });
+    expect(off.disc.opacity).toBe(0.2);
+    expect(off.accessoryGlyph).toEqual({ rgb: oneLookOffBulb(rgb("#8F7BEA")), opacity: 1 });
+    const calm = palette({ role: { kind: "plain" }, hue: "#8F7BEA", calm: true, calmWhenIdle: true });
+    expect(calm.glyph).toEqual({ rgb: oneLookOffBulb(rgb("#8F7BEA")), opacity: 0.7 });
+    expect(calm.accessoryGlyph.opacity).toBe(1);
+  });
 });
 
 describe("the helpers", () => {

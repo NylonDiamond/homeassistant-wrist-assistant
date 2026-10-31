@@ -920,6 +920,8 @@ describe("the watch's tile layout", () => {
     expect(watchGearCentre({ width: 162, height: 197 })).toEqual({ x: 105, y: 15 });
     expect(clock).toContain("left:131px;top:12.5px;width:26px;height:26px");
     expect(clock.indexOf("wp-gear")).toBeLessThan(clock.indexOf("10:09"));
+    // The healthy green, muted to 0.55 by its class.
+    expect(clock).toContain("#30D158");
     expect(text(renderWatchClock({ width: 208, height: 248 }, 1, 0, undefined))).toBe("");
   });
 
