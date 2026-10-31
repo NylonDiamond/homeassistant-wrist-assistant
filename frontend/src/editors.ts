@@ -10552,7 +10552,8 @@ export function cornerBezelEditor(host: EditorHost): TemplateResult {
       ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, label: "Label", key: "fam-corner-bezel" })}
       ${countdownFields(host, layout.bezelCountdown === true, layout.bezelText, (v) => upd((l) => {
         if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
-      }))}` : nothing}
+      }))}
+      <div class="hint keep">The watch always shows this label in capitals, as Apple's own corners do, so its Case setting has no effect here. The curved text keeps the case you pick.</div>` : nothing}
     ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}
     <div class="hint keep">The outer edge of the corner. It shows over curved text and over layers.</div>`,
     { color: SECTION_COLOR.content, icon: "content", alwaysOpen: true });
