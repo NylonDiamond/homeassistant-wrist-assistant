@@ -347,7 +347,7 @@ describe("the inspector's groups", () => {
     // is when it shows, where its parts sit, a rule's size, the background
     // and border, the iPhone extras last; What it does leads with what the
     // tile's own kind holds, then the tap.
-    expect(of("color")).toEqual(["removed", "header", "color", "icon", "glow", "whenOff"]);
+    expect(of("color")).toEqual(["removed", "header", "icon", "color", "glow", "whenOff"]);
     expect(of("text")).toEqual(["text", "state"]);
     expect(of("surface")).toEqual(["visibility", "arrange", "size", "background", "border", "phoneExtras"]);
     expect(of("does")).toEqual(["phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
@@ -358,7 +358,7 @@ describe("the inspector's groups", () => {
   it("give a light its groups in order and leave out a group with nothing in it", () => {
     const { host } = tileHost(tile("light.desk"));
     expect(tileInspectorParts(host)).toEqual([
-      { group: "color", parts: ["color", "icon", "glow", "whenOff"] },
+      { group: "color", parts: ["icon", "color", "glow", "whenOff"] },
       { group: "text", parts: ["text", "state"] },
       { group: "surface", parts: ["visibility", "arrange", "size", "background", "border"] },
       { group: "does", parts: ["action", "tapAnimation"] },

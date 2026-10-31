@@ -1069,8 +1069,8 @@ export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "col
 export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
   ["removed", "color"],
   ["header", "color"],
-  ["color", "color"],
   ["icon", "color"],
+  ["color", "color"],
   ["glow", "color"],
   ["whenOff", "color"],
   ["text", "text"],
@@ -1326,6 +1326,7 @@ export function partTitle(host: TileSettingsHost, part: TileInspectorPart): stri
     if (kind !== undefined) return watchPhoneTileTitle(kind);
   }
   if (part === "target" && isWatchHomeMapTile(host.tile)) return HOME_MAP_TARGET_TITLE;
+  if (part === "color" && clearPhotoTile(host)) return CLEAR_GLOW_COLOR_TITLE;
   return PART_TITLES[part] ?? WATCH_TILE_SETTINGS_SECTION_TITLES[part as WatchTileSettingsSection];
 }
 
@@ -2406,11 +2407,42 @@ function renderActiveAnimation(host: TileSettingsHost, stored: boolean | undefin
 }
 
 /** The tile's color. */
+/** The Color part's heading on a Clear photo tile: the tile is graphite
+ * there, and its color only lights the glow and the rim while it is on. */
+export const CLEAR_GLOW_COLOR_TITLE = "Glow color";
+
+/** Under the Glow color of a Clear photo light: a light that says its color
+ * glows in it (the apps' `PhotoTint.knowsColour`), so this color counts only
+ * while it is white or says none. */
+export const CLEAR_GLOW_LIGHT_NOTE = "A color light glows in its own color. This color is used when it is white or not a light.";
+
+/** Under the Glow color of a Clear photo tile that is not a light. */
+export const CLEAR_GLOW_NOTE = "The tile glows in this color while it is on.";
+
+/** Under the Glow color while it holds a gradient: one glow color, the first. */
+export const CLEAR_GLOW_GRADIENT_NOTE = "A gradient glows in its first color.";
+
+/**
+ * Whether every picked tile draws its photo in the Clear look: One Look, a
+ * photo, and the Clear look. There the tile's fill is graphite, and its
+ * color is only the glow and the rim (`OneLookPhotoClear.colour` in the
+ * apps), so the Color part reads as Glow color.
+ */
+export function clearPhotoTile(host: TileSettingsHost): boolean {
+  return oneLook(host)
+    && everyPicked(host, () => watchTileIconPhotoId(host.tile) !== undefined && watchTileIconPhotoLook(host.tile) === "clear");
+}
+
 function renderTileColor(host: TileSettingsHost, defaultColor: string | undefined): TemplateResult {
   const color = watchTileIconSettings(host.tile).color;
   const mode = watchColorModeChoice(color);
+  const clear = clearPhotoTile(host);
   const theme = watchAddThemeOf(host.page);
-  const gradient = watchSwatchesInGradient(color, watchAddUsesGradient(host.page));
+  // A Clear photo tile glows in one color: solid swatches even where the
+  // page adds tiles in gradients, unless the tile holds a gradient now.
+  const gradient = clear
+    ? mode === "gradient" || mode === "rainbow"
+    : watchSwatchesInGradient(color, watchAddUsesGradient(host.page));
   const swatches = watchThemeSwatches(theme, gradient);
   const fallback = defaultColor ?? swatches[0];
   /** The tile's color when the edit is made, not when it was drawn. */
@@ -2446,7 +2478,14 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   // heading of its own.
   // One Look fills the tile with its color, and a still rainbow; a tile
   // with none draws its kind's color on the watch, graphite on the iPhone.
-  const lookNote = oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
+  // On a Clear photo tile the color is one glow color: the Solid and
+  // Gradient switch and the rainbow show only while the tile holds one of
+  // those already, so it can be put back.
+  const held = mode === "gradient" || mode === "rainbow";
+  const lights = everyPicked(host, () => tileKind(tileEntityId(host.tile)) === "light");
+  const clearNote = [lights ? CLEAR_GLOW_LIGHT_NOTE : CLEAR_GLOW_NOTE, held ? CLEAR_GLOW_GRADIENT_NOTE : ""].filter((s) => s !== "").join(" ");
+  const lookNote = clear ? clearNote : oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
+  const rainbowNote = oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.`;
   return html`${colorPickerView({
     color: differ ? undefined : color,
     swatches,
@@ -2459,8 +2498,8 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
       on: atDefault,
       pick: resetColor,
     },
-    form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
-    rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
+    form: clear && !held ? undefined : { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
+    rainbow: clear && !held ? undefined : { note: rainbowNote },
     custom: { shown: typed(host, "color") ?? (differ ? undefined : watchCustomBoxColor(color)), pick: custom },
     wrap: (body) => typingField(host, "color", body),
   })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;

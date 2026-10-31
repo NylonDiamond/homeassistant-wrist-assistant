@@ -365,7 +365,7 @@ describe("the tile's cards", () => {
     // sections.
     expect(groupTitles(body)).toEqual(["Color and icon", "Text", "Surface and rules", "What it does"]);
     expect(group(body, "color")).toContain(`<h3 class="ts-grp-t">Color and icon</h3><span class="ts-grp-d">Fill, icon or photo, off look</span>`);
-    expect(titles(group(body, "color"))).toEqual(["Color", "Icon", "Glow", "When it is off"]);
+    expect(titles(group(body, "color"))).toEqual(["Icon", "Color", "Glow", "When it is off"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
     // No Size: dragging the tile or its corner on the stage moves and sizes it.
     expect(titles(group(body, "surface"))).toEqual(["Shows when", "Arrangement", "Background", "Border"]);

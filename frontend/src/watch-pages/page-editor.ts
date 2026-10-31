@@ -3930,10 +3930,10 @@ export class WaPageEditor extends LitElement {
    * blue + Add tile (`renderStageAddTile`), and under it the help while Help
    * is on; in the middle the device, as large as the stage holds
    * (`stageDrawing`), with a dashed + Add tile spot where a new tile lands
-   * (`renderAddSlot`); at its foot Preview on (`renderPreviewOn`: Watch,
-   * iPhone, Both), the picked tile's states to try (`renderLiveStrip`) in a
-   * row of their own, and the dock (`renderStageTools`: the zoom, Fit, Live
-   * preview).
+   * (`renderAddSlot`); at its foot the picked tile's states to try
+   * (`renderLiveStrip`) in a row of their own, and the dock
+   * (`renderStageTools`: the zoom, Fit, Live preview, then Preview on:
+   * Watch, iPhone, Both).
    */
   private renderStage(
     page: WatchPage,
@@ -4026,7 +4026,6 @@ export class WaPageEditor extends LitElement {
           ${this.renderLibraryStage(page, pages, input, smart || map || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
         </div>
         <div class="pe-dock-area">
-          ${this.renderPreviewOn()}
           <div class="pe-try-slot">${this.renderLiveStrip(page, tile)}</div>
           ${this.renderStageTools(headers, smart, phone)}
         </div>
@@ -4046,8 +4045,8 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * Preview on, centred under the device at the stage's foot, over the
-   * states to try and the dock: Watch, iPhone and, on a
+   * Preview on, last in the stage's dock beside Live preview: Watch,
+   * iPhone and, on a
    * home that keeps iPhone pages, Both (Side by side: the other kind drawn
    * beside the edited one, a click on it edits there). A pick changes what
    * the page is drawn on and nothing else.
@@ -4156,9 +4155,9 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The stage's dock, one floating pill centred at its foot: the zoom (out,
-   * the percent, in, and Fit), Watch view on a page with headers, and the
-   * Live preview
-   * switch (with an instant hint saying what off and on draw). Fit is the
+   * the percent, in, and Fit), Watch view on a page with headers, the Live
+   * preview switch (with an instant hint saying what off and on draw), and
+   * Preview on (`renderPreviewOn`). Fit is the
    * default and fills the stage (`stageDrawing`); a step holds until Fit or
    * the editor closes.
    */
@@ -4193,6 +4192,7 @@ export class WaPageEditor extends LitElement {
             @change=${(e: Event) => this.setLive((e.target as HTMLInputElement).checked)} />
           <span class="word keep">Live preview</span>
         </label>`}
+      ${sep}${this.renderPreviewOn()}
     </div>`;
   }
 
@@ -5727,16 +5727,16 @@ export class WaPageEditor extends LitElement {
       display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; align-self: center; max-width: 520px;
       font-size: 12px; font-weight: 400; line-height: 16px; text-align: center; color: var(--wa-hint, var(--wa-muted));
     }
-    /* The stage's foot, top to bottom: Preview on (Watch, iPhone, Both)
-       just under the device, the row the picked tile's states float in, and
-       the dock, one pill. All in the flow, so none of them covers the
-       device. */
+    /* The stage's foot, top to bottom: the row the picked tile's states
+       float in, and the dock, one pill that ends with Preview on (Watch,
+       iPhone, Both) beside Live preview. All in the flow, so none of them
+       covers the device. */
     .pe-dock-area { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; min-width: 0; }
-    .pe-dock-area > .pe-seg { flex: none; max-width: 100%; }
+    .pe-dock > .pe-seg { flex: none; max-width: 100%; }
     /* The states' row keeps its height whether a tile is picked or not, so
        picking one never moves the device or refits it. The strip floats in
        it and stays one line (its chips scroll sideways, \`.pe-state-chips\`),
-       so it never rises over Preview on above it. */
+       so it never rises over the device above it. */
     .pe-try-slot { position: relative; align-self: stretch; height: 32px; flex: none; }
     .pe-dock-area > .stage-tools.pe-dock {
       position: relative; top: auto; z-index: 8; margin: 0; height: auto; min-height: 46px; width: max-content; max-width: calc(100% - 8px);
@@ -5776,9 +5776,9 @@ export class WaPageEditor extends LitElement {
     .vchip.vpill .test-ctl input[type=range] { margin: 0; accent-color: var(--wa-testing); cursor: pointer; }
     .vchip.vpill button.val { background: none; border: 0; padding: 0; cursor: text; }
     /* A state with a known set of words: the name, then every state as a
-       chip in one line. The pill is as tall as its row under Preview on, and
+       chip in one line. The pill is as tall as its row under the device, and
        chips past its width scroll sideways (a mouse wheel scrolls them too,
-       \`renderStateChips\`) rather than wrap to a line over Preview on. */
+       \`renderStateChips\`) rather than wrap to a line over the device. */
     .vchip.vpill.pe-states { height: 32px; padding-top: 4px; padding-bottom: 4px; }
     .vchip.vpill.pe-states b { flex: 0 1 auto; max-width: 180px; }
     .pe-state-chips {
