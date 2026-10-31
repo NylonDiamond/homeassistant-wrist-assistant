@@ -24,6 +24,10 @@ Covered:
   (``not_allowed``) each get a signed 403 naming the reason.
 * A remote hold that is preempted by a second ``hold_start`` leaves the new
   hold in place, so ``hold_stop`` still stops it.
+* A ``service`` call Home Assistant refuses for the user's rights is a
+  signed 409 ``not_permitted``, blocking or not (409, because apps before
+  3.2 read a 403 on a call as a failed sign-in); a slow call is answered
+  ``ok`` and its later failure is logged.
 * ``snapshot`` clamps a NaN, infinite or huge viewport instead of answering
   500, and ``camera_batch`` skips a ``cameras`` entry that is not an object
   instead of failing the whole batch.
@@ -675,6 +679,263 @@ def test_a_hold_that_runs_out_removes_its_own_entry() -> None:
         assert sent == ["up", "up"]
 
     asyncio.run(scenario())
+
+
+# ── service calls Home Assistant refuses ─────────────────────────────────
+
+
+class _HomeAssistantError(Exception):
+    pass
+
+
+class _Unauthorized(_HomeAssistantError):
+    pass
+
+
+class _ServiceNotFound(_HomeAssistantError):
+    pass
+
+
+class _ServiceValidationError(_HomeAssistantError):
+    pass
+
+
+class _Invalid(Exception):
+    pass
+
+
+class _ServiceCtx:
+    def __init__(self, hass: Any, payload: dict) -> None:
+        self.hass = hass
+        self.payload = payload
+        self.watch_id = "SIMULATOR"
+        self.op = "service"
+        self.version = 2
+        self.algo = "hmac-sha256"
+        self.secret_bytes = b"k" * 32
+
+    def new_context(self) -> str:
+        return "context-of-alice"
+
+    def signed_json(self, payload: dict, status: int = 200) -> _Response:
+        return _Response(status=status, body=payload)
+
+
+class _SignedResp:
+    def __init__(self, *, body, status, content_type, headers) -> None:
+        self.body, self.status = body, status
+        self.content_type, self.headers = content_type, headers
+
+
+def _service_env(handler: Any, window: float = 0.05) -> tuple[Any, Any, list, list]:
+    """``_op_service`` with a stand-in ``hass`` whose ``async_call`` notes
+    each call and then runs ``handler`` (an async callable) in its place."""
+    signed: list = []
+
+    def sign_response(secret, op, watch_id, ts, body, *, version, algo):
+        signed.append((secret, op, watch_id, body, version, algo))
+        return "sig"
+
+    namespace = _extract(
+        {
+            "_op_service",
+            "_async_call_service_briefly",
+            "_log_service_failure",
+            "_log_late_service_failure",
+            "_not_permitted_response",
+            "_signed_refusal_response",
+            "NOT_PERMITTED_ERROR",
+            "NOT_PERMITTED_MESSAGE",
+            "NOT_PERMITTED_STATUS",
+            "SERVICE_REFUSAL_WINDOW_SECONDS",
+            "_SERVICE_ERRORS_ANSWERED",
+        },
+        {
+            "asyncio": asyncio,
+            "functools": __import__("functools"),
+            "Any": Any,
+            "Response": _SignedResp,
+            "HomeAssistant": object,
+            "Context": object,
+            "ServiceResponse": object,
+            "_OpContext": object,
+            "HomeAssistantError": _HomeAssistantError,
+            "Unauthorized": _Unauthorized,
+            "ServiceNotFound": _ServiceNotFound,
+            "ServiceValidationError": _ServiceValidationError,
+            "vol": types.SimpleNamespace(Invalid=_Invalid),
+            "orjson": types.SimpleNamespace(
+                dumps=lambda obj: json.dumps(obj, separators=(",", ":")).encode()
+            ),
+            "time": types.SimpleNamespace(time=lambda: 1_790_000_000),
+            "sign_response": sign_response,
+            "_LOGGER": logging.getLogger("test_service_refusal"),
+        },
+    )
+    namespace["SERVICE_REFUSAL_WINDOW_SECONDS"] = window
+    calls: list[dict] = []
+
+    async def async_call(domain, service, data, blocking=False, context=None, **kwargs):
+        calls.append(
+            {"domain": domain, "service": service, "blocking": blocking, "context": context, **kwargs}
+        )
+        return await handler()
+
+    tasks: list[asyncio.Task] = []
+
+    def async_create_task(coro, name=None):
+        task = asyncio.get_running_loop().create_task(coro, name=name)
+        tasks.append(task)
+        return task
+
+    hass = types.SimpleNamespace(
+        services=types.SimpleNamespace(async_call=async_call),
+        async_create_task=async_create_task,
+    )
+    hass.tasks = tasks
+    return namespace, hass, calls, signed
+
+
+_TAP = {"domain": "homeassistant", "service": "restart"}
+
+
+def test_a_refused_call_inside_the_window_is_a_signed_409_not_permitted(caplog) -> None:
+    async def refuse() -> None:
+        raise _Unauthorized("no")
+
+    namespace, hass, calls, signed = _service_env(refuse)
+    with caplog.at_level(logging.DEBUG, logger="test_service_refusal"):
+        reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
+    assert reply.status == 409
+    assert json.loads(reply.body) == {
+        "ok": False,
+        "error": "not_permitted",
+        "message": "Your Home Assistant user may not do this. Ask a Home Assistant admin.",
+    }
+    assert signed == [
+        (b"k" * 32, "service", "SIMULATOR", reply.body, 2, "hmac-sha256")
+    ]
+    # Run as the user, blocking, so the refusal comes back at all.
+    assert calls == [
+        {
+            "domain": "homeassistant",
+            "service": "restart",
+            "blocking": True,
+            "context": "context-of-alice",
+        }
+    ]
+    # One line for the refusal, not a second for a "failed" call.
+    logged = [r for r in caplog.records if r.name == "test_service_refusal"]
+    assert len(logged) == 1 and logged[0].levelno == logging.WARNING
+
+
+def test_a_blocking_call_refused_for_the_user_s_rights_is_the_same_409() -> None:
+    async def refuse() -> None:
+        raise _Unauthorized("no")
+
+    namespace, hass, calls, _signed = _service_env(refuse)
+    payload = {**_TAP, "return_response": True}
+    reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, payload)))
+    assert reply.status == 409
+    assert json.loads(reply.body)["error"] == "not_permitted"
+    assert calls[0]["return_response"] is True and calls[0]["blocking"] is True
+
+
+def test_a_slow_call_is_answered_ok_and_its_later_failure_is_logged(caplog) -> None:
+    async def scenario() -> tuple[Any, Any]:
+        done = asyncio.Event()
+
+        async def slow() -> None:
+            try:
+                await asyncio.sleep(0.2)
+                raise RuntimeError("the light went away")
+            finally:
+                done.set()
+
+        namespace, hass, _calls, _signed = _service_env(slow)
+        loop = asyncio.get_running_loop()
+        unretrieved: list = []
+        loop.set_exception_handler(lambda _loop, context: unretrieved.append(context))
+        started = loop.time()
+        reply = await namespace["_op_service"](_ServiceCtx(hass, dict(_TAP)))
+        elapsed = loop.time() - started
+        assert not hass.tasks[0].done(), "the call should still be running"
+        await done.wait()
+        await _settle()
+        assert unretrieved == []
+        return reply, elapsed
+
+    with caplog.at_level(logging.DEBUG, logger="test_service_refusal"):
+        reply, elapsed = asyncio.run(scenario())
+    assert reply.status == 200 and reply.body == {"ok": True}
+    assert elapsed < 0.15
+    errors = [
+        r for r in caplog.records
+        if r.name == "test_service_refusal" and r.levelno == logging.ERROR
+    ]
+    assert len(errors) == 1
+    assert "homeassistant.restart" in errors[0].getMessage()
+    assert isinstance(errors[0].exc_info[1], RuntimeError)
+
+
+def test_a_slow_call_refused_after_the_window_is_logged_as_home_assistant_does(caplog) -> None:
+    async def scenario() -> Any:
+        async def late_refusal() -> None:
+            await asyncio.sleep(0.1)
+            raise _Unauthorized("no")
+
+        namespace, hass, _calls, _signed = _service_env(late_refusal)
+        reply = await namespace["_op_service"](_ServiceCtx(hass, dict(_TAP)))
+        await asyncio.wait(hass.tasks)
+        await _settle()
+        return reply
+
+    with caplog.at_level(logging.DEBUG, logger="test_service_refusal"):
+        reply = asyncio.run(scenario())
+    assert reply.status == 200
+    warned = [r for r in caplog.records if r.name == "test_service_refusal"]
+    assert [r.getMessage() for r in warned] == [
+        "Unauthorized service called homeassistant/restart"
+    ]
+
+
+def test_a_quick_failure_of_the_handler_is_still_ok_but_logged(caplog) -> None:
+    async def broken() -> None:
+        raise RuntimeError("bad device")
+
+    namespace, hass, _calls, _signed = _service_env(broken)
+    with caplog.at_level(logging.DEBUG, logger="test_service_refusal"):
+        reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
+    assert reply.status == 200 and reply.body == {"ok": True}
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (_ServiceNotFound("homeassistant.nope"), 404),
+        (_Invalid("extra keys not allowed"), 400),
+        (_ServiceValidationError("needs return_response"), 502),
+    ],
+)
+def test_home_assistant_s_checks_before_the_handler_keep_their_answers(error, status) -> None:
+    async def reject() -> None:
+        raise error
+
+    namespace, hass, _calls, _signed = _service_env(reject)
+    reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
+    assert reply.status == status
+    assert reply.body["ok"] is False
+
+
+def test_a_quick_success_is_ok() -> None:
+    async def fine() -> None:
+        return None
+
+    namespace, hass, _calls, _signed = _service_env(fine)
+    reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
+    assert reply.status == 200 and reply.body == {"ok": True}
 
 
 # ── camera stream tokens ─────────────────────────────────────────────────
