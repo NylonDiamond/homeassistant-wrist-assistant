@@ -2706,9 +2706,9 @@ export function watchGearCentre(screen: { width: number; height: number }): { x:
 /** The time the picture shows. */
 const CLOCK_TIME = "10:09";
 
-/** The settings gear's color: white, muted to 0.55 by its class so it does
- * not compete with the time (`settingsCogColor`). */
-const GEAR_INK = "#FFFFFF";
+/** The settings gear's color: the app's healthy green, muted to 0.55 so it
+ * does not compete with the time (`settingsCogColor`). */
+const GEAR_INK = "#30D158";
 
 /** An outline gear `px` across, for a provider without `gearshape`: eight
  * square teeth round a ring, in a light line. */
@@ -2727,9 +2727,9 @@ function gearGlyph(px: number, ink: string): TemplateResult {
  * The clock in the top band as the watch shows it: the system time (16
  * points, medium, white, tabular figures), its digits centred on the
  * device's clock line and ending at the device's right margin, and the
- * app's settings gear (`gearshape`, 11 points, light, white at 0.55) where
- * `WatchHomeView` parks it (`watchGearCentre`), which does not move with the
- * width of the time. None on a full screen page.
+ * app's settings gear (`gearshape`, 11 points, light, the healthy green at
+ * 0.55) where `WatchHomeView` parks it (`watchGearCentre`), which does not
+ * move with the width of the time. None on a full screen page.
  */
 export function renderWatchClock(screen: { width: number; height: number }, s: number, topInset: number, icons: IconProvider | undefined): TemplateResult | typeof nothing {
   if (topInset <= 0) return nothing;
