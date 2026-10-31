@@ -2764,10 +2764,13 @@ export interface TapElement extends Omit<ElementBase, "colorSlot"> {
 }
 
 /** Actions "Ask before running" applies to: the ones that run something in
- * the background. Refresh, page and open actions do nothing a second look
- * would guard, and an open action leaves the widget for the app anyway. */
+ * the background, refresh included, since a refresh can fetch from Home
+ * Assistant and redraw the tile. Page and open actions do nothing a second
+ * look would guard, and an open action leaves the widget for the app anyway. */
 export function tapActionCanConfirm(action: TapAction): boolean {
   switch (action.type) {
+    case "refresh":
+    case "refreshAll":
     case "toggleEntity":
     case "runScene":
     case "runScript":

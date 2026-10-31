@@ -98,10 +98,11 @@ describe("which actions can ask first", () => {
     { type: "runHTTPAction", ...ref },
     { type: "timerStartPause" },
     { type: "callService", serviceDomain: "light", serviceName: "turn_on" } as TapAction,
+    { type: "refresh" } as TapAction,
+    { type: "refreshAll" } as TapAction,
   ];
   const no: TapAction[] = [
     { type: "none" },
-    { type: "refresh" } as TapAction,
     { type: "openApp" },
     { type: "openPage" },
     { type: "nextPage" },
@@ -113,7 +114,7 @@ describe("which actions can ask first", () => {
     for (const a of yes) expect(tapActionCanConfirm(a), a.type).toBe(true);
   });
 
-  it("hides it for refresh, page and open actions", () => {
+  it("hides it for page and open actions", () => {
     for (const a of no) expect(tapActionCanConfirm(a), a.type).toBe(false);
   });
 
