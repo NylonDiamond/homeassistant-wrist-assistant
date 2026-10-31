@@ -431,6 +431,14 @@ export function setWatchPageFullScreen(document: WatchPagesDocument, pageId: str
   return setPageKey(document, pageId, "fullScreen", () => (on ? true : null));
 }
 
+/** Fit to screen, read only by the iPhone: the page's tiles shrink, kept
+ * square and centred, until every row shows without scrolling. Off removes
+ * the key, which the iPhone reads as off. */
+export function setWatchPageFitToScreen(document: WatchPagesDocument, pageId: string, on: boolean): WatchPagesDocument {
+  if (typeof on !== "boolean") return document;
+  return setPageKey(document, pageId, "fitToScreen", () => (on ? true : null));
+}
+
 /** The setter of each Page row, by the key it writes. */
 export const WATCH_PAGE_STYLING_SETTERS: Readonly<Record<string, (document: WatchPagesDocument, pageId: string, value: never) => WatchPagesDocument>> = {
   backgroundColor: setWatchPageBackgroundColor,

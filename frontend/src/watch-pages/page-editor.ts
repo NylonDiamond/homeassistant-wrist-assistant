@@ -227,6 +227,7 @@ import {
   watchPagesOf,
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
+import { setWatchPageFitToScreen } from "./page-settings-model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
@@ -4728,7 +4729,8 @@ export class WaPageEditor extends LitElement {
     const hidden = isHiddenWatchPage(page);
     const smart = isSmartWatchPage(page);
     const map = isMapWatchPage(page);
-    const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : []), ...(map ? ["map page"] : [])].join(", ");
+    const fits = this.onPhone && !map && page.fitToScreen === true;
+    const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : []), ...(map ? ["map page"] : []), ...(fits ? ["fit to screen"] : [])].join(", ");
     return sectionCard({
       color: SECTION_COLOR.place,
       icon: uiIcon(this.onPhone ? "phone" : "watch"),
@@ -4742,8 +4744,39 @@ export class WaPageEditor extends LitElement {
       ${host === undefined ? nothing : html`
         ${map ? nothing : renderSmartPageSwitch(host, { detail: "Fills itself from its rules with what is on right now." })}
         ${renderSmartPageBody(host)}
-        ${this.renderMapPageSwitch(page)}`}
+        ${this.renderMapPageSwitch(page)}
+        ${this.renderFitToScreenSwitch(page)}`}
     </div>` : html``);
+  }
+
+  /**
+   * The Fit to screen switch, a row of the On the iPhone card: on, the
+   * iPhone shrinks the page's tiles, kept square and centred, until every
+   * row shows without scrolling (`fitToScreen`). Only in iPhone view, and
+   * never on a map page, which is one map and no grid.
+   */
+  private renderFitToScreenSwitch(page: WatchPage): TemplateResult | typeof nothing {
+    if (!this.onPhone || isMapWatchPage(page)) return nothing;
+    return html`<label class="pe-switch pe-ow-row">
+      <span class="pe-ow-t"><span class="pe-ow-l">Fit to screen</span><span class="pe-ow-d">Shrinks the tiles so every row shows without scrolling. A page that needs them smaller than 60% scrolls as normal.</span></span>
+      <input type="checkbox" role="switch" .checked=${live(page.fitToScreen === true)} ?disabled=${this.busy}
+        @change=${(e: Event) => this.applyFitToScreen(watchPageId(page), (e.target as HTMLInputElement).checked)} />
+    </label>`;
+  }
+
+  /** Turn Fit to screen on or off, as one undo step. */
+  private applyFitToScreen(pageId: string, on: boolean): void {
+    const document = this.draft?.document;
+    if (document === undefined || this.busy) {
+      this.requestUpdate();
+      return;
+    }
+    const next = setWatchPageFitToScreen(document, pageId, on);
+    if (next === document) {
+      this.requestUpdate();
+      return;
+    }
+    this.edit(next);
   }
 
   /**
