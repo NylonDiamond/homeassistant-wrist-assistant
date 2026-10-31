@@ -306,18 +306,53 @@ export function isHomeMapAreaId(value: unknown): value is string {
   return typeof value === "string" && AREA_ID_RE.test(value);
 }
 
-/** Why a map cannot be saved: `invalid` with where it leaves the contract,
- * or `too_large`, in the store's own words. */
-export type HomeMapCheck = { ok: true; doc: HomeMapDocument } | { ok: false; code: "invalid" | "too_large"; message: string };
+/** How many characters a name has as the store counts them: by code point,
+ * as Python's `len` does, so an emoji is one character, not the two UTF-16
+ * units `String.length` counts. */
+export function homeMapNameLength(name: string): number {
+  let count = 0;
+  for (const _ of name) count += 1;
+  return count;
+}
+
+/** A name as the map keeps it: trimmed and cut to at most `most` characters
+ * by code point, so a cut never splits an emoji in half and the store,
+ * counting the same way, never refuses it. */
+export function homeMapTrimName(name: string, most = HOME_MAP_MAX_NAME): string {
+  const trimmed = name.trim();
+  if (trimmed.length <= most) return trimmed;
+  return Array.from(trimmed).slice(0, most).join("").trimEnd();
+}
+
+/**
+ * Why a map cannot be saved: `invalid` with where it leaves the contract,
+ * or `too_large`. `message` is in the store's own words, with the path to
+ * the key (`doc.floors[0].rooms[2].name is at most 100 characters`), for
+ * the browser console, so a bug can be traced; `text` is the same in plain
+ * words that name the thing by its name, for the page.
+ */
+export type HomeMapCheck = { ok: true; doc: HomeMapDocument } | { ok: false; code: "invalid" | "too_large"; message: string; text: string };
+
+/** What kind of refusal a check made, which picks the plain words: a name
+ * too long, a name left empty, a list holding too many, or anything else
+ * (`shape`), which only a bug would send. */
+export type HomeMapProblem = "long" | "empty" | "many" | "shape";
 
 class CheckError extends Error {
-  constructor(readonly code: "invalid" | "too_large", message: string) {
+  /** `text` is set when the plain words are known where it is thrown. */
+  constructor(
+    readonly code: "invalid" | "too_large",
+    message: string,
+    readonly path = "doc",
+    readonly problem: HomeMapProblem = "shape",
+    readonly text?: string,
+  ) {
     super(message);
   }
 }
 
-function fail(path: string, what: string): never {
-  throw new CheckError("invalid", `${path} ${what}`);
+function fail(path: string, what: string, problem: HomeMapProblem = "shape"): never {
+  throw new CheckError("invalid", `${path} ${what}`, path, problem);
 }
 
 type Raw = Record<string, unknown>;
@@ -334,7 +369,7 @@ function object(raw: unknown, path: string, required: readonly string[], optiona
 
 function list(raw: unknown, path: string, most: number, least = 0): unknown[] {
   if (!Array.isArray(raw)) fail(path, "must be a list");
-  if (raw.length > most) fail(path, `holds at most ${most}`);
+  if (raw.length > most) fail(path, `holds at most ${most}`, "many");
   if (raw.length < least) fail(path, `needs at least ${least}`);
   return raw;
 }
@@ -360,7 +395,8 @@ function point<N extends 2 | 3>(raw: unknown, path: string, size: N): N extends 
 
 function text(raw: unknown, path: string): string {
   if (typeof raw !== "string") fail(path, "must be text");
-  if (raw.length > HOME_MAP_MAX_NAME) fail(path, `is at most ${HOME_MAP_MAX_NAME} characters`);
+  // By code point, as the store counts (`_text`), so an emoji is one.
+  if (homeMapNameLength(raw) > HOME_MAP_MAX_NAME) fail(path, `is at most ${HOME_MAP_MAX_NAME} characters`, "long");
   return raw;
 }
 
@@ -529,7 +565,7 @@ function checkPin(raw: unknown, path: string, ids: Ids, roomIds: ReadonlySet<str
   out.at = point(pin.at, `${path}.at`, 3);
   if (Object.hasOwn(pin, "name")) {
     const name = text(pin.name, `${path}.name`);
-    if (name === "") fail(`${path}.name`, "must not be empty");
+    if (name === "") fail(`${path}.name`, "must not be empty", "empty");
     out.name = name;
   }
   if (Object.hasOwn(pin, "icon")) out.icon = oneOf(pin.icon, `${path}.icon`, HOME_MAP_PIN_ICONS);
@@ -580,11 +616,11 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
       const place = Object.hasOwn(floor, "place") ? checkFloorPlace(floor.place, `${path}.place`) : undefined;
       const rawRooms = list(floor.rooms, `${path}.rooms`, HOME_MAP_MAX_ROOMS);
       rooms += rawRooms.length;
-      if (rooms > HOME_MAP_MAX_ROOMS) throw new CheckError("invalid", `the home map holds at most ${HOME_MAP_MAX_ROOMS} rooms`);
+      if (rooms > HOME_MAP_MAX_ROOMS) throw new CheckError("invalid", `the home map holds at most ${HOME_MAP_MAX_ROOMS} rooms`, "doc.rooms", "many");
       const checkedRooms = rawRooms.map((r, j) => checkRoom(r, `${path}.rooms[${j}]`, ids));
       const rawPins = list(floor.pins, `${path}.pins`, HOME_MAP_MAX_PINS);
       pins += rawPins.length;
-      if (pins > HOME_MAP_MAX_PINS) throw new CheckError("invalid", `the home map holds at most ${HOME_MAP_MAX_PINS} pins`);
+      if (pins > HOME_MAP_MAX_PINS) throw new CheckError("invalid", `the home map holds at most ${HOME_MAP_MAX_PINS} pins`, "doc.pins", "many");
       const roomIds = new Set(checkedRooms.map((r) => r.id));
       const checkedPins = rawPins.map((p, j) => checkPin(p, `${path}.pins[${j}]`, ids, roomIds));
       return { id, name, story, ...(place === undefined ? {} : { place }), rooms: checkedRooms, pins: checkedPins };
@@ -592,13 +628,116 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
     const checked: HomeMapDocument = Object.keys(style).length > 0 ? { v: HOME_MAP_VERSION, style, floors } : { v: HOME_MAP_VERSION, floors };
     const size = homeMapBytes(checked);
     if (size > HOME_MAP_MAX_BYTES) {
-      throw new CheckError("too_large", `a home map is at most ${HOME_MAP_MAX_BYTES / 1024} KiB; this one is ${Math.ceil(size / 1024)} KiB`);
+      throw new CheckError(
+        "too_large",
+        `a home map is at most ${HOME_MAP_MAX_BYTES / 1024} KiB; this one is ${Math.ceil(size / 1024)} KiB`,
+        "doc",
+        "many",
+        `The map is too big to save: ${Math.ceil(size / 1024)} KB, and the most is ${HOME_MAP_MAX_BYTES / 1024} KB. Take out some rooms or things.`,
+      );
     }
     return { ok: true, doc: checked };
   } catch (err) {
-    if (err instanceof CheckError) return { ok: false, code: err.code, message: err.message };
+    if (err instanceof CheckError) {
+      return { ok: false, code: err.code, message: err.message, text: err.text ?? homeMapProblemText(raw, err.path, err.problem) };
+    }
     throw err;
   }
+}
+
+// ── the checks in plain words ────────────────────────────────────────────
+
+/** A name as a message quotes it: at most 24 characters, by code point,
+ * since a name refused as too long is longer than a sentence wants. */
+function quoted(name: string): string {
+  const chars = Array.from(name.trim());
+  return chars.length <= 24 ? chars.join("") : `${chars.slice(0, 24).join("").trimEnd()}...`;
+}
+
+/** A RoomPlan kind as words: `diningTable` is `dining table`. */
+function kindWords(kind: unknown): string {
+  return typeof kind === "string" && kind !== "" ? kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase() : "thing";
+}
+
+function at(raw: unknown, key: string, index?: number): unknown {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const value = (raw as Raw)[key];
+  if (index === undefined) return value;
+  return Array.isArray(value) ? value[index] : undefined;
+}
+
+function nameIn(raw: unknown): string | undefined {
+  const name = at(raw, "name");
+  return typeof name === "string" && name.trim() !== "" ? quoted(name) : undefined;
+}
+
+/**
+ * A check's refusal in plain words, naming what it is about by its name in
+ * `raw`, the map that was checked: `path` is where the check stopped, in the
+ * store's spelling (`doc.floors[0].rooms[2].name`), and `problem` what kind
+ * of refusal it was. The store's own message, with the path, is for the
+ * console; this is for the page. Also used for a store's `invalid` refusal,
+ * whose message starts with the same path.
+ */
+export function homeMapProblemText(raw: unknown, path: string, problem: HomeMapProblem): string {
+  const steps = [...path.matchAll(/\.([A-Za-z]+)(?:\[(\d+)\])?/g)].map((m) => ({ key: m[1]!, index: m[2] === undefined ? undefined : Number(m[2]) }));
+  const step = (key: string) => steps.find((s) => s.key === key);
+  const last = steps[steps.length - 1];
+  const floorStep = step("floors");
+  const floor = floorStep?.index === undefined ? undefined : at(raw, "floors", floorStep.index);
+  const roomStep = step("rooms");
+  const room = roomStep?.index === undefined ? undefined : at(floor, "rooms", roomStep.index);
+  const pinStep = step("pins");
+  const pin = pinStep?.index === undefined ? undefined : at(floor, "pins", pinStep.index);
+  const objectStep = step("objects");
+  const thing = objectStep?.index === undefined ? undefined : at(room, "objects", objectStep.index);
+  const floorName = floorStep?.index === undefined ? undefined : nameIn(floor) === undefined ? `floor ${floorStep.index + 1}` : `the floor ${nameIn(floor)}`;
+  const roomName = room === undefined ? undefined : (nameIn(room) === undefined ? "a room with no name" : `the room ${nameIn(room)}`);
+  const pinEntity = at(pin, "entityId");
+  const pinName = pin === undefined ? undefined : nameIn(pin) ?? (typeof pinEntity === "string" ? pinEntity : "a device");
+
+  if (problem === "long" && last?.key === "name") {
+    const subject = pin !== undefined ? "device" : room !== undefined ? "room" : "floor";
+    const name = nameIn(pin ?? room ?? floor);
+    return `The ${subject} name${name === undefined ? "" : ` ${name}`} is too long. Use ${HOME_MAP_MAX_NAME} letters or fewer.`;
+  }
+  if (problem === "empty" && last?.key === "name") {
+    return `The name of ${typeof pinEntity === "string" ? pinEntity : "a device"} cannot be empty.`;
+  }
+  if (problem === "many" && last !== undefined) {
+    const inRoom = roomName === undefined ? "A room" : roomName.charAt(0).toUpperCase() + roomName.slice(1);
+    switch (last.key) {
+      case "floors": return `A home map holds at most ${HOME_MAP_MAX_FLOORS} floors.`;
+      case "rooms": return `A home map holds at most ${HOME_MAP_MAX_ROOMS} rooms.`;
+      case "pins": return `A home map holds at most ${HOME_MAP_MAX_PINS} devices.`;
+      case "outline": return `${inRoom} has too many corners. Use ${MAX_OUTLINE_POINTS} or fewer.`;
+      case "walls": return `${inRoom} has too many walls. Use ${MAX_WALLS} or fewer.`;
+      case "openings": return `${inRoom} has too many doors and windows. Use ${MAX_OPENINGS} or fewer.`;
+      case "objects": return `${inRoom} has too many things in it. Use ${MAX_OBJECTS} or fewer.`;
+    }
+  }
+  // Anything else is a map the editor should never make: say where, by
+  // name, and how to get back to a map that saves.
+  const where =
+    thing !== undefined ? `a ${kindWords(at(thing, "kind"))} in ${roomName ?? "a room"}`
+    : pinName !== undefined ? `the device ${pinName}`
+    : roomName !== undefined ? roomName
+    : step("style") !== undefined ? "the home style"
+    : floorName ?? "the map";
+  return `Something about ${where} cannot be saved. Undo the last change and try again.`;
+}
+
+/** What a store's `invalid` message says, read back into a path and the
+ * kind of refusal, for `homeMapProblemText`. The store words its refusals
+ * as the checks here do (`_fail`). */
+export function homeMapProblemOf(message: string): { path: string; problem: HomeMapProblem } {
+  const rooms = /holds at most \d+ rooms/.test(message);
+  const pins = /holds at most \d+ pins/.test(message);
+  if (rooms || pins) return { path: rooms ? "doc.rooms" : "doc.pins", problem: "many" };
+  const path = /^doc[\w.[\]]*/.exec(message)?.[0] ?? "doc";
+  const what = message.slice(path.length);
+  const problem: HomeMapProblem = /is at most \d+ characters/.test(what) ? "long" : /must not be empty/.test(what) ? "empty" : /holds at most/.test(what) ? "many" : "shape";
+  return { path, problem };
 }
 
 /** The map when `raw` is one the store would keep, else undefined: how a
@@ -982,10 +1121,10 @@ function editPin(doc: HomeMapDocument, pinId: string, change: (pin: HomeMapPin, 
   return undefined;
 }
 
-/** A name as a room keeps it: trimmed, at most 100 characters, and none
- * when blank. */
+/** A name as a room keeps it: trimmed, at most 100 characters by code
+ * point, and none when blank. */
 function roomNameOf(name: string): string | undefined {
-  const trimmed = name.trim().slice(0, HOME_MAP_MAX_NAME);
+  const trimmed = homeMapTrimName(name);
   return trimmed === "" ? undefined : trimmed;
 }
 

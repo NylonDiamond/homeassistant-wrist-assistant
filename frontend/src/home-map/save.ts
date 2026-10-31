@@ -24,7 +24,17 @@
 import type { HassLike } from "../ha-api.js";
 import { fetchHomeMap, saveHomeMap } from "../ha-api.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { type HomeMapDocument, type HomeMapEdit, type HomeMapRead, HOME_MAP_VERSION, applyHomeMapEdit, checkHomeMap, readHomeMap } from "./model.js";
+import {
+  type HomeMapDocument,
+  type HomeMapEdit,
+  type HomeMapRead,
+  HOME_MAP_VERSION,
+  applyHomeMapEdit,
+  checkHomeMap,
+  homeMapProblemOf,
+  homeMapProblemText,
+  readHomeMap,
+} from "./model.js";
 
 /** The two commands a save uses, so a test can stand them in. */
 export interface HomeMapApi {
@@ -92,6 +102,61 @@ export function homeMapSaveCanRetry(err: unknown): boolean {
   return code === undefined || RETRY_CODES.has(code);
 }
 
+/**
+ * A refusal from Home Assistant in plain words, for the page, starting "Not
+ * saved." The code and the store's own message, with its path into the map,
+ * go to the console, so a bug can still be traced. `doc` is the map that
+ * was sent, by which an `invalid` refusal names the room or device it is
+ * about. The codes are the store's (`invalid`, `too_large`, `conflict`,
+ * `unavailable`), the socket API's for a connection with no user
+ * (`unauthorized`) and for a message it could not read (`invalid_format`),
+ * `unknown_command` from an integration too old to save maps, and Home
+ * Assistant's own catch-alls.
+ */
+export function homeMapRefusalText(err: unknown, doc?: HomeMapDocument): string {
+  const { code, message } = watchCommandError(err);
+  console.warn(`Home map: Home Assistant refused the save (${code ?? "no code"}): ${message}`);
+  switch (code) {
+    case "invalid": {
+      const { path, problem } = homeMapProblemOf(message);
+      return `Not saved. ${homeMapProblemText(doc, path, problem)}`;
+    }
+    case "too_large":
+      return "Not saved. The map is too big to save. Take out some rooms or things.";
+    case "conflict":
+      return HOME_MAP_AGAIN_TEXT;
+    case "unauthorized":
+      return "Not saved. Home Assistant did not let this login save the map. Sign in again and try once more.";
+    case "invalid_format":
+      return "Not saved. Home Assistant could not read the map sent. Reload the page and try again.";
+    case "unknown_command":
+      return "Not saved. Update the Wrist Assistant integration to save the map here.";
+    case "unavailable":
+    case "timeout":
+      return "Not saved. Home Assistant could not be reached. Try again in a moment.";
+    default:
+      return "Not saved. Home Assistant did not take the change. Try again.";
+  }
+}
+
+/** Why the map could not be read, in plain words, as `homeMapRefusalText`
+ * says why it could not be saved, the code and message going to the
+ * console. */
+export function homeMapReadFailText(err: unknown): string {
+  const { code, message } = watchCommandError(err);
+  console.warn(`Home map: the map could not be read (${code ?? "no code"}): ${message}`);
+  switch (code) {
+    case "unauthorized":
+      return "Home Assistant did not let this login read it. Sign in again.";
+    case "unavailable":
+      return "Wrist Assistant is still starting. Try again in a moment.";
+    case undefined:
+      return "Home Assistant could not be reached. Check the connection and try again.";
+    default:
+      return "Home Assistant could not send it. Try again.";
+  }
+}
+
 function read(raw: HomeMapRead): HomeMapRead {
   return { doc: readHomeMap(raw?.doc) ?? null, rev: typeof raw?.rev === "number" ? raw.rev : 0 };
 }
@@ -134,7 +199,9 @@ function edited(doc: HomeMapDocument, edit: HomeMapChange): { doc: HomeMapDocume
   const next = typeof edit === "function" ? edit(doc) : applyHomeMapEdit(doc, edit);
   if (next === undefined) return undefined;
   const checked = checkHomeMap(next);
-  return checked.ok ? { doc: checked.doc } : { text: `Not saved. ${checked.message}.` };
+  if (checked.ok) return { doc: checked.doc };
+  console.warn(`Home map: not saved, as the store would refuse it: ${checked.message}`);
+  return { text: `Not saved. ${checked.text}` };
 }
 
 /** Save one edit made on `from` (the empty map before the first save), with
@@ -150,15 +217,14 @@ export async function saveHomeMapEdit(api: HomeMapApi, from: HomeMapRead, edit: 
     return { ok: true, read: { doc: first.doc, rev: reply.rev }, merged: false };
   } catch (err) {
     if (homeMapSaveCanRetry(err)) return { ok: false, retry: true, text: HOME_MAP_RETRY_TEXT, sent: first.doc };
-    const { code, message } = watchCommandError(err);
-    if (code !== "conflict") return { ok: false, text: `Not saved. ${message}` };
+    if (watchCommandError(err).code !== "conflict") return { ok: false, text: homeMapRefusalText(err, first.doc) };
   }
   let now: HomeMapRead;
   try {
     now = read(await timed(api.get()));
   } catch (err) {
     if (homeMapSaveCanRetry(err)) return { ok: false, retry: true, text: HOME_MAP_RETRY_TEXT, sent: sent ?? first.doc };
-    return { ok: false, text: `Not saved. The map changed on another device and could not be read again: ${watchCommandError(err).message}` };
+    return { ok: false, text: `Not saved. The map changed on another device and could not be read again. ${homeMapReadFailText(err)}` };
   }
   // The earlier try that never heard back did land: this edit is in the map
   // already, as it was sent.
@@ -175,7 +241,6 @@ export async function saveHomeMapEdit(api: HomeMapApi, from: HomeMapRead, edit: 
     return { ok: true, read: { doc: again.doc, rev: reply.rev }, merged: true };
   } catch (err) {
     if (homeMapSaveCanRetry(err)) return { ok: false, retry: true, text: HOME_MAP_RETRY_TEXT, sent: again.doc };
-    const { code, message } = watchCommandError(err);
-    return { ok: false, text: code === "conflict" ? HOME_MAP_AGAIN_TEXT : `Not saved. ${message}`, read: now };
+    return { ok: false, text: homeMapRefusalText(err, again.doc), read: now };
   }
 }

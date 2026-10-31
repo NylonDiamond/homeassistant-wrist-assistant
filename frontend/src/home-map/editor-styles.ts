@@ -433,6 +433,7 @@ export const editorStyles = css`
   .hme-dock-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--hme-sel); }
   .hme-dock-item.on { color: #fff; }
   .hme-check { width: 16px; flex: none; text-align: center; color: var(--hme-sel); font-weight: 700; }
+  .hme-dock-head { padding: 8px 10px 2px 30px; color: #8e8e93; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; border-top: 1px solid #3a3a3c; margin-top: 3px; }
   .hme-dock .hme-caret { color: #98989d; }
   .hme-pill-name { padding: 0 10px; display: inline-flex; align-items: center; font-weight: 600; color: #fff; }
   .hme-pill .hme-tb, .hme-dock .hme-tb, .hme-pill .hme-menu, .hme-stage-empty .hme-tb { background: #161617; border-color: #2c2c2e; color: #d1d1d6; }
@@ -457,6 +458,10 @@ export const editorStyles = css`
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 12px;
     background: rgba(28, 28, 30, 0.9); border: 1px solid #3a3a3c; color: #d1d1d6; font-size: 13px; pointer-events: none;
   }
+  /* The browser took the 3D context away: a quiet line at the top, its
+     button the only part that takes a click. */
+  .hme-3d-note.hme-3d-paused { top: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 12px; font-size: 12px; }
+  .hme-3d-paused .hme-link { pointer-events: auto; }
 
   /* ── shared by Devices and Style ──────────────────────────────────── */
   .hme-pad { padding: 4px 6px; }
@@ -672,4 +677,16 @@ export const editorStyles = css`
   .hme-first-line { color: var(--wa-faint); font-size: 12.5px; line-height: 1.45; max-width: 360px; }
   .hme-first-note { font-size: 12.5px; line-height: 1.45; color: var(--hme-amber); }
   .hme-first-note.err { color: var(--wa-need); }
+  /* The keys overlay, opened with ? or the bar's ? button: every shortcut
+     by group, in columns where the page is wide enough. */
+  .hme-keys-box {
+    width: min(720px, 100%); max-height: min(640px, calc(100vh - 32px)); overflow: auto; padding: 18px 20px 20px; border-radius: 16px;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  }
+  .hme-keys-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .hme-keys-top h3 { font-size: 16px; margin: 0; }
+  .hme-keys-top .hme-flex { flex: 1; }
+  .hme-keys-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 24px; }
+  .hme-keys-group h4 { margin: 12px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--wa-muted); }
+  .hme-keys-group .hme-keys { margin-top: 6px; }
 `;

@@ -53,7 +53,7 @@ import { homeMapPickOf, homeMapPickedPins } from "./devices-model.js";
 import { homeMapHeldPins } from "./edit-ops.js";
 import type { HomeMapEditorContext, HomeMapPart, HomeMapViewItem } from "./editor-mode.js";
 import { hmeCard } from "./editor-parts.js";
-import { homeMapCount, homeMapShortcut, homeMapUndoKey } from "./editor-view.js";
+import { homeMapCount, homeMapOnMac, homeMapShortcut } from "./editor-view.js";
 import { homeMapPiece } from "./furniture.js";
 import { homeRoomUnder } from "./geometry.js";
 import { ArrangeMode } from "./mode-arrange.js";
@@ -362,9 +362,10 @@ export class HomeMapEditPage implements HomeMapPart {
           <p class="hme-text">Click picks what is on top: a device, then a thing (a sofa, a TV, a desk), then the room under them. Drag it to move it.</p>
           <p class="hme-text dim">A dragged room lines up with the walls of the rooms round it. Drag the round handle above it to turn it, or a square handle on its box to resize it. Double-click a room to edit its walls, doors and windows.</p>
           <p class="hme-text dim">Shift, Cmd or Ctrl and a click picks several devices; Cmd or Ctrl and a click picks several things, to colour or hide them together. Drag a device from Add onto the plan to place it.</p>
+          <p class="hme-text dim">Press <kbd>?</kbd> or the ? button in the bar for every key.</p>
           <dl class="hme-keys">
-            ${KEYS.map(([k, what]) => html`<dt><kbd>${k}</kbd></dt><dd>${what}</dd>`)}
-            <dt><kbd>${homeMapUndoKey()}</kbd></dt><dd>Undo</dd>
+            ${homeMapKeyGroups(homeMapOnMac()).filter((g) => g.title !== "Mouse" && g.title !== "A room's walls")
+              .flatMap((g) => g.keys).map(([k, what]) => html`<dt><kbd>${k}</kbd></dt><dd>${what}</dd>`)}
           </dl>
         </details>
       </section>`;
@@ -393,21 +394,57 @@ export class HomeMapEditPage implements HomeMapPart {
 }
 
 /** The keys Keys and tips lists, after the tools' own. */
-const KEYS: readonly [string, string][] = [
-  ["V", "Pick and move"],
-  ["R", "Draw a room"],
-  ["W", "Inner wall"],
-  ["D", "Door"],
-  ["N", "Window"],
-  ["M", "Measure"],
-  ["F", "Add furniture"],
-  ["Delete", "Remove what is picked"],
-  ["Arrows", "Nudge it (Shift for bigger steps)"],
-  ["Esc", "Back out: a tool, a thing to its room, a room's walls"],
-  ["Space", "Hold and drag to pan"],
-  ["+ −", "Zoom"],
-  ["0", "Fit the floor"],
-];
+/** One group of the editor's keys: its heading, and each key with what it
+ * does. */
+export interface HomeMapKeyGroup {
+  title: string;
+  keys: readonly (readonly [string, string])[];
+}
+
+/**
+ * Every key the map editor knows, by group, as the keys overlay (? or the
+ * bar's ? button) lists them, and the clicks that go with them. The tools'
+ * keys come from the tool lists, so a tool with a new key is listed with
+ * it. `mac` writes Cmd as ⌘, else Ctrl.
+ */
+export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
+  const cmd = mac ? "⌘" : "Ctrl";
+  return [
+    { title: "Tools", keys: HOME_MAP_EDIT_TOOLS.map((t) => [t.key.toUpperCase(), t.label] as const) },
+    { title: "Add", keys: [["A", "Add a device or furniture"], ["F", "Add furniture"]] },
+    {
+      title: "Edit",
+      keys: [
+        ["Delete", "Remove what is picked"],
+        ["Arrows", "Nudge it 1 cm, with Shift 10 cm"],
+        ["Enter", "Close the room being drawn"],
+        ["Backspace", "Take back the last corner drawn"],
+        ["Esc", "Back out: a tool, a thing to its room, a room's walls"],
+        [mac ? "⌘Z" : "Ctrl+Z", "Undo"],
+        [mac ? "⇧⌘Z" : "Ctrl+Shift+Z or Ctrl+Y", "Redo"],
+      ],
+    },
+    {
+      title: "A room's walls",
+      keys: [...HOME_MAP_SHAPE_TOOLS.map((t) => [t.key.toUpperCase(), t.label] as const), ["M", "Measure"], ["Esc", "Done with the walls"]],
+    },
+    {
+      title: "View",
+      keys: [["Space", "Hold and drag to pan"], ["+ −", "Zoom in and out"], ["0", "Fit the floor"], ["?", "Show or hide these keys"]],
+    },
+    {
+      title: "Mouse",
+      keys: [
+        ["Click", "Pick what is on top: a device, a thing, then the room"],
+        ["Double-click", "Edit a room's walls, doors and windows"],
+        [`Shift or ${cmd} click`, "Pick several devices"],
+        [`${cmd} click`, "Pick several things"],
+        ["Shift drag", "Pick every device in a box"],
+        ["Drag in 3D", "Turn the model; scroll to zoom"],
+      ],
+    },
+  ];
+}
 
 /** A tool's small picture on the tool rail. */
 function toolIcon(tool: HomeMapEditTool | HomeMapShapeTool): TemplateResult {

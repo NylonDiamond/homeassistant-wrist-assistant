@@ -102,10 +102,10 @@ describe("a pin's glowSpill", () => {
     expect(dropped.ok && "glowSpill" in dropped.doc.floors[0]!.pins[0]!).toBe(false);
 
     pin.glowSpill = "yes";
-    expect(checkHomeMap(doc)).toEqual({ ok: false, code: "invalid", message: "doc.floors[0].pins[0].glowSpill must be true or false" });
+    expect(checkHomeMap(doc)).toMatchObject({ ok: false, code: "invalid", message: "doc.floors[0].pins[0].glowSpill must be true or false" });
     delete pin.glowSpill;
     pin.glowSpell = true;
-    expect(checkHomeMap(doc)).toEqual({ ok: false, code: "invalid", message: "doc.floors[0].pins[0].glowSpell is not a key the home map has" });
+    expect(checkHomeMap(doc)).toMatchObject({ ok: false, code: "invalid", message: "doc.floors[0].pins[0].glowSpell is not a key the home map has" });
   });
 
   it("keeps its place in a pin written out, and only ever as true", () => {

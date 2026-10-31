@@ -36,6 +36,14 @@
 // its corners and under its things (ambient occlusion) and its bulbs glow
 // past their edges. The numbers were tuned by eye on a real scanned room.
 //
+// All of that is High. Low (`quality.ts`, the View menu's 3D quality, Auto
+// picking it on weak hardware) leaves out the occlusion and the glow,
+// smooths edges less, draws fewer pixels and fewer shadows; a view switches
+// between them as it runs (`setQuality`). When the browser takes the
+// drawing context away, a tablet's background tab for one, the view stands
+// still and tells the page (`onContextLost`), and when it is given back the
+// page makes a new view where this one's camera was (`onContextRestored`).
+//
 // Nothing here reads `import.meta`: the furniture folder's address is handed
 // in (`base`), from the panel's entry.
 
@@ -59,6 +67,7 @@ import { homeMapHeldPins } from "./edit-ops.js";
 import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeWallsOf } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
+import { type HomeMapQuality, type HomeMapQualitySettings, HOME_MAP_SLOW_FRAME_MS, homeMapMedianFrame, homeMapQualitySettings } from "./quality.js";
 
 /** What the 3D look draws. */
 export interface HomeMap3DInput {
@@ -151,23 +160,25 @@ const SPOT_PENUMBRA = 0.6;
  * light a real ceiling and its shade spill round the fitting: without it the
  * walls above the cone are black. */
 const SPOT_FILL = 0.15;
-/** What the lit lights' shadows may cost, in shadow maps drawn, the
- * brightest light first: a ceiling light's shadow is one map, a lamp's six
- * (one for each way it shines). The maps are drawn again only when the
- * scene changes, a thing dragged on the plan for one, never when the view
- * turns, so this is what that drag pays each frame; 24 is what the four
- * shadowed lamps of before cost, now shared so that four ceiling lights and
- * three lamps all cast. */
-const SHADOW_BUDGET = 24;
-/** And at most this many lit lights cast, each one more shadow map every
- * lit surface reads each frame, and one more of the few textures a material
- * may read. */
-const SHADOW_LIGHTS = 8;
+// What the lit lights' shadows may cost, in shadow maps drawn, the
+// brightest light first, is the quality's (`homeMapQualitySettings`): a
+// ceiling light's shadow is one map, a lamp's six (one for each way it
+// shines). The maps are drawn again only when the scene changes, a thing
+// dragged on the plan for one, never when the view turns, so this is what
+// that drag pays each frame; High's 24 is what the four shadowed lamps of
+// before cost, now shared so that four ceiling lights and three lamps all
+// cast. And only so many lit lights cast, each one more shadow map every lit
+// surface reads each frame, and one more of the few textures a material may
+// read.
 /** How far a lamp's shadow edge spreads, in shadow map texels: a real shade
  * is a hand wide, so its shadows fade over a few centimetres, never a cut. */
 const SHADOW_SOFTNESS = 5;
 /** A wall seen from outside its room is this see through. */
 const FADED = 0.1;
+/** Auto's check of a new view's speed: the frames left out first, while
+ * shaders compile and models load, and the frames timed after them. */
+const SPEED_SKIP = 6;
+const SPEED_FRAMES = 9;
 
 /** A colour temperature as a bulb's colour, close enough for a bulb. */
 export function homeMapKelvinColor(kelvin: number): [number, number, number] {
@@ -561,6 +572,15 @@ const BULB_GLOW = 1.5;
  * which measured more than half the frame. */
 class SmoothScenePass extends Pass {
   private readonly target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+
+  /** Smooth with `samples` a pixel from the next frame on (`quality.ts`):
+   * the target is let go, and three makes it again at its next use, since
+   * a target's samples are fixed once it is made. */
+  setSamples(samples: number): void {
+    if (this.target.samples === samples) return;
+    this.target.samples = samples;
+    this.target.dispose();
+  }
   private readonly copy = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.clone(CopyShader.uniforms),
     vertexShader: CopyShader.vertexShader,
@@ -652,8 +672,20 @@ export class HomeMapScene3D {
    * over it, its bulbs glowing (`bloom`), and last tone mapped into the
    * page's colours (`OutputPass`), which the renderer did itself before. */
   private readonly composer: EffectComposer;
+  private readonly smooth: SmoothScenePass;
   private readonly ao: RoomAO;
   private readonly bloom: UnrealBloomPass;
+  /** What the quality turns on (`quality.ts`). */
+  private quality: HomeMapQuality;
+  private settings: HomeMapQualitySettings;
+  /** The first frames' times, while Auto asks whether this hardware keeps
+   * up with High: frames to skip first (shaders compiling, models loading),
+   * the times gathered, and when the last frame that asked for the next one
+   * began. */
+  private speed?: { skip: number; times: number[]; last?: number };
+  /** The browser took the drawing context away (a tab in the background on
+   * a tablet, the graphics chip reset): nothing draws until it is back. */
+  private lost = false;
   private readonly camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
   private readonly controls: OrbitControls;
   private readonly pmrem: THREE.PMREMGenerator;
@@ -698,14 +730,33 @@ export class HomeMapScene3D {
    * or while a press orbits the view. Found at most once a frame, and told
    * only when it changes. */
   onHover?: (pick: HomeMap3DPick | undefined) => void;
+  /** The browser took the drawing context away: the view stands still,
+   * and the page says so. */
+  onContextLost?: () => void;
+  /** The browser gave the drawing context back. Everything the chip held is
+   * gone with the old one (the environment's light, every model's buffers),
+   * so the page makes a new view from the map and this one's camera
+   * (`view`) rather than this one drawing again. */
+  onContextRestored?: () => void;
+  /** Auto's check found this hardware too slow for High: its first frames
+   * came under 20 a second. Told once. */
+  onSlow?: () => void;
 
-  /** `base` is the furniture folder's address, ending in a slash. */
-  constructor(private readonly base: string) {
+  /**
+   * `base` is the furniture folder's address, ending in a slash; `quality`
+   * what to draw at (`setQuality` changes it); `checkSpeed` asks the view
+   * to time its first frames and say when they come slowly (`onSlow`), for
+   * Auto. Throws when the browser cannot make a WebGL context.
+   */
+  constructor(private readonly base: string, quality: HomeMapQuality = "high", checkSpeed = false) {
+    this.quality = quality;
+    this.settings = homeMapQualitySettings(quality, window.devicePixelRatio || 1);
+    if (checkSpeed && quality === "high") this.speed = { skip: SPEED_SKIP, times: [] };
     // No antialiasing of the canvas itself: the scene is drawn smoothed into
     // a target of its own (`SmoothScenePass`), and the canvas only takes the
     // finished picture.
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(this.settings.pixelRatio);
     this.renderer.shadowMap.enabled = true;
     // Plain PCF rather than PCFSoft: PCFSoft ignores a shadow's radius for
     // the sun and the downlights, and its fixed edge left a plant's shadow
@@ -720,6 +771,22 @@ export class HomeMapScene3D {
     this.canvas.style.width = "100%";
     this.canvas.style.height = "100%";
     this.canvas.style.touchAction = "none";
+    // A tablet takes a background tab's context away, and a graphics chip
+    // that resets takes every page's. Kept from the default (the canvas
+    // left black for good) by asking for it back, as three does too.
+    this.canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      if (this.disposed) return;
+      this.lost = true;
+      if (this.frame !== 0) cancelAnimationFrame(this.frame);
+      this.frame = 0;
+      this.speed = undefined;
+      this.onContextLost?.();
+    });
+    this.canvas.addEventListener("webglcontextrestored", () => {
+      if (this.disposed) return;
+      this.onContextRestored?.();
+    });
     this.scene.background = new THREE.Color(NIGHT_SKY);
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     const room = new RoomEnvironment();
@@ -727,15 +794,18 @@ export class HomeMapScene3D {
     room.dispose();
     this.scene.environment = this.environment;
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(this.settings.sunShadow, this.settings.sunShadow);
     this.sun.shadow.bias = -0.0005;
     this.sun.shadow.radius = 3;
     this.scene.add(this.sky, this.sun, this.sun.target);
     // Half floats keep a bulb's light brighter than white until the end, so
     // the glow finds it and the tone mapping rolls it off as before.
     this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }));
-    this.composer.addPass(new SmoothScenePass(this.scene, this.camera));
+    this.smooth = new SmoothScenePass(this.scene, this.camera);
+    this.smooth.setSamples(this.settings.samples);
+    this.composer.addPass(this.smooth);
     this.ao = new RoomAO(this.scene, this.camera, 1, 1);
+    this.ao.enabled = this.settings.ao;
     // Twice three's own scale and thickness: at its own the corners of a lit
     // room barely darkened, tuned by eye on a real scanned room.
     this.ao.updateGtaoMaterial({ radius: AO_RADIUS, distanceExponent: 1, thickness: 2, scale: 2, samples: 16 });
@@ -745,6 +815,7 @@ export class HomeMapScene3D {
     overlay.clear = false;
     this.composer.addPass(overlay);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
+    this.bloom.enabled = this.settings.bloom;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.controls = new OrbitControls(this.camera, this.canvas);
@@ -916,6 +987,8 @@ export class HomeMapScene3D {
     }
     this.resize();
     if (moved) this.frameFloor(this.framedTurn);
+    // Long enough for Auto's check to time its frames on a slow chip too.
+    if (this.speed !== undefined) this.wake(1500);
   }
 
   private resize(): void {
@@ -965,6 +1038,52 @@ export class HomeMapScene3D {
     }
     if (moved) this.renderer.shadowMap.needsUpdate = true;
     if (changed) this.wake();
+  }
+
+  /** Draw at `quality` from the next frame on, nothing loaded again: the
+   * effects turned on or off, the canvas's pixels, the edge smoothing, the
+   * sun's shadow map and which lights cast. */
+  setQuality(quality: HomeMapQuality): void {
+    if (this.disposed || quality === this.quality) return;
+    this.quality = quality;
+    const s = homeMapQualitySettings(quality, window.devicePixelRatio || 1);
+    this.settings = s;
+    // Asked for High again by hand: no more timing, the person chose.
+    this.speed = undefined;
+    this.renderer.setPixelRatio(s.pixelRatio);
+    this.composer.setPixelRatio(s.pixelRatio);
+    this.smooth.setSamples(s.samples);
+    this.ao.enabled = s.ao;
+    this.bloom.enabled = s.bloom;
+    if (this.sun.shadow.mapSize.x !== s.sunShadow) {
+      // A shadow map's size is fixed once made: let it go, to be made again
+      // at the new size on the next shadow draw.
+      this.sun.shadow.mapSize.set(s.sunShadow, s.sunShadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    const input = this.input;
+    if (input !== undefined) this.light(input.floor, input.states);
+    this.renderer.shadowMap.needsUpdate = true;
+    this.resize();
+  }
+
+  /** Where the camera is and what it looks at, for a new view to take
+   * over (`setView`) after the context came back. */
+  view(): { position: [number, number, number]; target: [number, number, number] } {
+    const p = this.camera.position;
+    const t = this.controls.target;
+    return { position: [p.x, p.y, p.z], target: [t.x, t.y, t.z] };
+  }
+
+  /** Put the camera where `view` says, after the first `update` has framed
+   * the floor. */
+  setView(view: { position: readonly number[]; target: readonly number[] }): void {
+    if (this.disposed || view.position.length !== 3 || view.target.length !== 3) return;
+    this.camera.position.set(view.position[0]!, view.position[1]!, view.position[2]!);
+    this.controls.target.set(view.target[0]!, view.target[1]!, view.target[2]!);
+    this.controls.update();
+    this.wake();
   }
 
   /** Show the whole floor again from `turn` degrees round. */
@@ -1174,10 +1293,10 @@ export class HomeMapScene3D {
     }
     lit.sort((a, b) => b.level - a.level);
     const casting = new Set<Lamp>();
-    let budget = SHADOW_BUDGET;
+    let budget = this.settings.shadowBudget;
     for (const { lamp } of lit) {
       const cost = lamp.down ? 1 : 6;
-      if (casting.size >= SHADOW_LIGHTS || cost > budget) continue;
+      if (casting.size >= this.settings.shadowLights || cost > budget) continue;
       casting.add(lamp);
       budget -= cost;
     }
@@ -1326,14 +1445,36 @@ export class HomeMapScene3D {
   /** Keep drawing for a moment: the camera easing to rest, a light easing
    * to its new brightness. */
   wake(ms = 400): void {
-    if (this.disposed) return;
+    if (this.disposed || this.lost) return;
     this.awakeUntil = Math.max(this.awakeUntil, performance.now() + ms);
     if (this.frame === 0 && typeof requestAnimationFrame === "function") this.frame = requestAnimationFrame(this.tick);
   }
 
+  /** One more frame's time for Auto's check: the time since the last
+   * frame, when that one asked for this one, so a view at rest is never
+   * timed. The middle of `SPEED_FRAMES` of them over
+   * `HOME_MAP_SLOW_FRAME_MS` is slow, told once. */
+  private timeFrame(now: number): void {
+    const speed = this.speed;
+    if (speed === undefined) return;
+    const last = speed.last;
+    speed.last = undefined;
+    if (last === undefined) return;
+    if (speed.skip > 0) {
+      speed.skip -= 1;
+      return;
+    }
+    speed.times.push(now - last);
+    if (speed.times.length < SPEED_FRAMES) return;
+    this.speed = undefined;
+    if (homeMapMedianFrame(speed.times) > HOME_MAP_SLOW_FRAME_MS) this.onSlow?.();
+  }
+
   private readonly tick = (): void => {
     this.frame = 0;
-    if (this.disposed) return;
+    if (this.disposed || this.lost) return;
+    const started = performance.now();
+    this.timeFrame(started);
     const moving = this.controls.update();
     let easing = false;
     for (const lamp of this.lamps.values()) {
@@ -1368,7 +1509,10 @@ export class HomeMapScene3D {
     // inside this tick, which may have asked for the next frame already;
     // asking again would draw the view twice a frame, then four times, and
     // so on for as long as the easing lasts.
-    if (this.frame === 0 && (moving || easing || performance.now() < this.awakeUntil)) this.frame = requestAnimationFrame(this.tick);
+    if (this.frame === 0 && (moving || easing || performance.now() < this.awakeUntil)) {
+      this.frame = requestAnimationFrame(this.tick);
+      if (this.speed !== undefined) this.speed.last = started;
+    }
   };
 
   /** Fade the walls between the camera and their room, like a doll's
@@ -1409,7 +1553,8 @@ export class HomeMapScene3D {
     this.environment.dispose();
     this.pmrem.dispose();
     this.renderer.dispose();
-    this.renderer.forceContextLoss();
+    // A context the browser took already cannot be let go again.
+    if (!this.renderer.getContext().isContextLost()) this.renderer.forceContextLoss();
     this.canvas.remove();
     this.rooms.clear();
     this.things.clear();

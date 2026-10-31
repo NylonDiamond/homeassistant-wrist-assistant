@@ -213,7 +213,10 @@ export class HomeMapSession {
     if (next === undefined) return undefined;
     const checked = checkHomeMap(next);
     if (!checked.ok) {
-      this.note = { kind: "err", text: `That cannot be saved. ${checked.message}.` };
+      // The plain words for the page, the store's path for the console, so
+      // a map the editor should never have made can still be traced.
+      console.warn(`Home map: an edit was not made, as the store would refuse it: ${checked.message}`);
+      this.note = { kind: "err", text: checked.text };
       this.changed();
       return undefined;
     }

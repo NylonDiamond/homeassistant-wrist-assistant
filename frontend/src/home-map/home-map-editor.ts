@@ -16,7 +16,9 @@
 //   style panel (`mode-style.ts`) over the page, closed by ✕, Escape or a
 //   click outside it, Undo and Redo (also Cmd or Ctrl Z, Shift for redo,
 //   whenever no text field has focus; every other key does nothing while
-//   any control of a form has focus) and whether the map is saved;
+//   any control of a form has focus), whether the map is saved, and ?,
+//   which opens the list of every key by group (also the key ?, ignored
+//   while typing; closed by Escape, ?, Done or a press outside it);
 // - the side panel on the left, the page's;
 // - the stage, which fills all the space the side panel leaves and grows
 //   with the window: the floor drawn as the plan look of `tile-art.ts` (floors by
@@ -40,7 +42,10 @@
 //   the whole floor drawn for real by three.js (`scene3d.ts`, loaded only
 //   when first picked) with the catalog's furniture and each light lit as
 //   Home Assistant says, orbited by dragging and zoomed by scrolling, at
-//   night (Lights) or by day (Daylight);
+//   night (Lights) or by day (Daylight), at the 3D quality the View menu
+//   and the Look menu pick (`quality.ts`: Auto, High or Low, kept in this
+//   browser), paused with a quiet note while the browser holds back its
+//   drawing context and made again where its camera was when it is back;
 // - the hover (`ctx.hover`), as the complication editor's: the pointer
 //   resting on the plan or the 3D view, or on a list row, names what a
 //   click there would pick (`plan-pick.ts` finds it on the plan, as the
@@ -94,7 +99,7 @@ import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { type HomeMapOp, addFloor, deleteFloor, homeMapFirstFloor, homeMapThingOfPin, homeStyleOf, renameFloor, startHomeMap } from "./edit-ops.js";
-import { HomeMapEditPage } from "./edit-page.js";
+import { HomeMapEditPage, homeMapKeyGroups } from "./edit-page.js";
 import { type HomeMapAddTab, HomeMapAddDialog, homeMapAddDialogStyles } from "./add-dialog.js";
 import {
   type HomeMapApplyOptions,
@@ -147,9 +152,17 @@ import {
   sameHomeMapId,
 } from "./model.js";
 import { homeMapClickPick, homeMapHoverMark, homeMapLiveHover } from "./plan-pick.js";
-import { homeMapApi } from "./save.js";
+import { homeMapApi, homeMapReadFailText } from "./save.js";
 import type { HomeMap3DInput, HomeMap3DPick, HomeMapScene3D } from "./scene3d.js";
 import { homeMapFurnitureBase, homeMapLoad3D } from "./scene3d-load.js";
+import {
+  type HomeMapQuality,
+  type HomeMapQualityChoice,
+  homeMapDeviceHints,
+  homeMapQualityOf,
+  homeMapReadQualityChoice,
+  homeMapWriteQualityChoice,
+} from "./quality.js";
 import { homeMapPlanLook } from "./furniture.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
@@ -196,6 +209,10 @@ interface HomeMapDockItem {
   label: string;
   on: boolean;
   title?: string | undefined;
+  /** A heading over the first item of a run with the same group. */
+  group?: string;
+  /** One of a group's choices, whatever the menu's own items are. */
+  radio?: boolean;
   pick(): void;
 }
 
@@ -289,7 +306,20 @@ export class WaHomeMapEditor extends LitElement {
    * GPU, as soon as it is not. */
   private scene3d?: HomeMapScene3D;
   private loading3d = false;
-  private failed3d = false;
+  /** Why there is no 3D look: no WebGL to be had, or its chunk would not
+   * load. */
+  private failed3d?: "webgl" | "load";
+  /** The View menu's 3D quality, as kept in this browser. */
+  @state() private quality3d: HomeMapQualityChoice = homeMapReadQualityChoice();
+  /** The 3D look's first frames came slowly here, so Auto is Low for as
+   * long as the page is open. */
+  private slow3d = false;
+  /** The browser took the 3D look's context away; it stands still. */
+  @state() private lost3d = false;
+  /** The camera a 3D view made again takes over. */
+  private view3d?: { position: [number, number, number]; target: [number, number, number] };
+  /** The keys overlay is open. */
+  @state() private keysOpen = false;
   /** The connection `home_map/subscribe` and the reconnect listener are on,
    * and the subscription's end. */
   private listenedTo?: unknown;
@@ -397,9 +427,15 @@ export class WaHomeMapEditor extends LitElement {
       this.scene3d.attach(host);
       this.scene3d.update(input, this.modelTurnNow());
       this.scene3d.setHover(this.hoverFor3d());
+      // A view made again after the context came back takes the old one's
+      // camera, once the floor is framed.
+      if (this.view3d !== undefined) {
+        this.scene3d.setView(this.view3d);
+        this.view3d = undefined;
+      }
       return;
     }
-    if (this.loading3d || this.failed3d) return;
+    if (this.loading3d || this.failed3d !== undefined) return;
     this.loading3d = true;
     const base = homeMapFurnitureBase(this.bundleUrl);
     void homeMapLoad3D().then(
@@ -407,21 +443,60 @@ export class WaHomeMapEditor extends LitElement {
         this.loading3d = false;
         if (!this.isConnected) return;
         try {
-          this.scene3d ??= new m.HomeMapScene3D(base);
-          this.scene3d.onPick = (pick, keys) => this.pick3d(pick, keys);
-          this.scene3d.onHover = (pick) => this.hover3d(pick);
+          if (this.scene3d === undefined) {
+            const quality = this.quality3dNow();
+            // Auto times the first frames at High, and drops to Low when
+            // they come slowly.
+            const scene = new m.HomeMapScene3D(base, quality, this.quality3d === "auto" && quality === "high");
+            scene.onPick = (pick, keys) => this.pick3d(pick, keys);
+            scene.onHover = (pick) => this.hover3d(pick);
+            scene.onContextLost = () => { this.lost3d = true; };
+            scene.onContextRestored = () => this.restart3d();
+            scene.onSlow = () => {
+              this.slow3d = true;
+              if (this.quality3d === "auto") this.scene3d?.setQuality(this.quality3dNow());
+              this.tick++;
+            };
+            this.scene3d = scene;
+          }
         } catch {
-          // No WebGL here.
-          this.failed3d = true;
+          // No WebGL here: the browser has it turned off, or the chip has
+          // none to give.
+          this.failed3d = "webgl";
         }
         this.tick++;
       },
       () => {
         this.loading3d = false;
-        this.failed3d = true;
+        this.failed3d = "load";
         this.tick++;
       },
     );
+  }
+
+  /** What the 3D look draws at now: the View menu's choice, Auto read for
+   * this device and what its first frames showed. */
+  private quality3dNow(): HomeMapQuality {
+    return homeMapQualityOf(this.quality3d, homeMapDeviceHints(this.slow3d));
+  }
+
+  /** The View menu's 3D quality: kept in this browser, and the view on
+   * screen switched to it as it runs. */
+  setQuality3d(choice: HomeMapQualityChoice): void {
+    this.quality3d = choice;
+    homeMapWriteQualityChoice(choice);
+    this.scene3d?.setQuality(this.quality3dNow());
+  }
+
+  /** A new 3D view in place of one whose context was lost: made from the
+   * map shown, with the old one's camera, by the next draw (`sync3d`). Also
+   * the 3D paused note's Start again, for a browser that never gives the
+   * context back. */
+  restart3d(): void {
+    if (this.scene3d !== undefined) this.view3d = this.scene3d.view();
+    this.drop3d();
+    this.lost3d = false;
+    this.tick++;
   }
 
   /** A click on the 3D look picks what it found, as a click on the plan
@@ -455,6 +530,7 @@ export class WaHomeMapEditor extends LitElement {
   private drop3d(): void {
     this.scene3d?.dispose();
     this.scene3d = undefined;
+    this.lost3d = false;
   }
 
   // ── the hover ──────────────────────────────────────────────────────────
@@ -528,9 +604,9 @@ export class WaHomeMapEditor extends LitElement {
       void this.loadScans();
     } catch (err) {
       if (seq !== this.loadSeq) return;
-      const { code, message } = watchCommandError(err);
+      const { code } = watchCommandError(err);
       if (code === "unknown_command") this.unsupported = true;
-      else if (!quiet || this.session === undefined) this.loadError = message;
+      else if (!quiet || this.session === undefined) this.loadError = homeMapReadFailText(err);
     }
     this.loading = false;
   }
@@ -1210,6 +1286,15 @@ export class WaHomeMapEditor extends LitElement {
     const target = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
     if (homeMapIsTypingTarget(target)) return;
     const shortcut = homeMapShortcut(e, false);
+    // The keys overlay takes every key while open: Escape or ? closes it,
+    // and nothing else reaches the map behind it.
+    if (this.keysOpen) {
+      if (e.key === "Escape" || shortcut === "help") {
+        e.preventDefault?.();
+        this.closeKeys();
+      }
+      return;
+    }
     if (shortcut === "undo" || shortcut === "redo") {
       e.preventDefault?.();
       if (shortcut === "undo") this.undo();
@@ -1221,6 +1306,11 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     if (homeMapIsFormControl(target)) return;
+    if (shortcut === "help") {
+      e.preventDefault?.();
+      this.openKeys();
+      return;
+    }
     if (this.dockMenu !== undefined && e.key === "Escape") {
       this.dockMenu = undefined;
       return;
@@ -1264,6 +1354,42 @@ export class WaHomeMapEditor extends LitElement {
     if (e.key === " ") this.spaceHeld = false;
   };
 
+  // ── the keys overlay ───────────────────────────────────────────────────
+
+  /** Open the list of every key, closing any menu that was open; its Done
+   * button takes the focus, so Enter or Space closes it too. */
+  openKeys(): void {
+    this.floorMenu = false;
+    this.dockMenu = undefined;
+    this.spaceHeld = false;
+    this.keysOpen = true;
+    void this.updateComplete.then(() => {
+      ((this.renderRoot as ParentNode | undefined)?.querySelector?.(".hme-keys-box .hme-keys-done") as HTMLElement | null | undefined)?.focus?.();
+    });
+  }
+
+  closeKeys(): void {
+    this.keysOpen = false;
+  }
+
+  /** The keys overlay: every shortcut by group (`homeMapKeyGroups`). It
+   * closes with Escape, ?, its Done button, the bar's ? button or a press
+   * outside it. */
+  private renderKeys(): TemplateResult | typeof nothing {
+    if (!this.keysOpen) return nothing;
+    const groups = homeMapKeyGroups(homeMapOnMac());
+    return html`<div class="hme-scrim" @pointerdown=${(e: Event) => { if (e.target === e.currentTarget) this.closeKeys(); }}>
+      <div class="hme-keys-box" role="dialog" aria-modal="true" aria-labelledby="hme-keys-title">
+        <div class="hme-keys-top"><h3 id="hme-keys-title">Keys</h3><span class="hme-flex"></span>
+          <button type="button" class="hme-tb hme-keys-done" @click=${() => this.closeKeys()}>Done</button></div>
+        <div class="hme-keys-groups">
+          ${groups.map((g) => html`<section class="hme-keys-group" aria-label=${g.title}><h4>${g.title}</h4>
+            <dl class="hme-keys">${g.keys.map(([k, what]) => html`<dt><kbd>${k}</kbd></dt><dd>${what}</dd>`)}</dl></section>`)}
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ── the Home style panel ───────────────────────────────────────────────
 
   /** Open or close the Home style panel. */
@@ -1287,7 +1413,7 @@ export class WaHomeMapEditor extends LitElement {
     void this.tick;
     if (!this.capable || this.unsupported) return this.calm(html`<b>${HOME_MAP_UPDATE_TEXT}</b>`);
     if (this.loadError !== undefined) {
-      return this.calm(html`<span>Could not read the home map: ${this.loadError}</span>
+      return this.calm(html`<span>Could not read the home map. ${this.loadError}</span>
         <button class="hme-tb" @click=${() => void this.load()}>Try again</button>`);
     }
     if (this.loading || this.session === undefined) return this.calm(html`Loading…`);
@@ -1306,6 +1432,7 @@ export class WaHomeMapEditor extends LitElement {
       ${this.page.sheet?.(ctx) ?? nothing}
       ${this.renderDialog()}
       ${this.addOpen === undefined ? nothing : this.addDialog.render(ctx, () => this.closeAdd())}
+      ${this.renderKeys()}
     </div>`;
   }
 
@@ -1384,7 +1511,14 @@ export class WaHomeMapEditor extends LitElement {
       <button type="button" class="hme-tb hme-icon" aria-label="Undo" title=${`Undo (${mac ? "⌘Z" : "Ctrl+Z"})`} ?disabled=${!ctx.canUndo} @click=${() => this.undo()}>↶</button>
       <button type="button" class="hme-tb hme-icon" aria-label="Redo" title=${`Redo (${mac ? "⇧⌘Z" : "Ctrl+Shift+Z"})`} ?disabled=${!ctx.canRedo} @click=${() => this.redo()}>↷</button>
       <span class="hme-status ${state.kind}" role="status" title=${state.kind === "error" ? state.text : nothing}><span class="hme-status-dot"></span>${homeMapSaveWords(state)}</span>
+      ${this.renderKeysButton()}
     </header>`;
+  }
+
+  /** The bar's ?, which opens the keys overlay or closes it. */
+  private renderKeysButton(): TemplateResult {
+    return html`<button type="button" class="hme-tb hme-icon hme-keys-btn ${this.keysOpen ? "on" : ""}" aria-label="Keys" aria-haspopup="dialog"
+      aria-expanded=${this.keysOpen ? "true" : "false"} title="Every key (?)" @click=${() => (this.keysOpen ? this.closeKeys() : this.openKeys())}>?</button>`;
   }
 
   /** Home style, with a swatch of the home style's look: opens its panel. */
@@ -1636,9 +1770,25 @@ export class WaHomeMapEditor extends LitElement {
   /** The 3D look's place: the scene's canvas goes in it after the draw
    * (`sync3d`), with a word while it loads or when it cannot. */
   private render3d(ctx: HomeMapEditorContext): TemplateResult {
-    const words = this.failed3d ? "The 3D view needs WebGL, which this browser has turned off." : this.scene3d === undefined ? "Loading the 3D view…" : undefined;
+    const words = this.failed3d === "webgl" ? "The 3D view is not available on this device. The plan still works."
+      : this.failed3d === "load" ? "The 3D view could not be loaded. Reload the page to try again. The plan still works."
+      : this.scene3d === undefined ? "Loading the 3D view…" : undefined;
     return html`<div class="hme-3d-host" role="img" aria-label=${`3D model of ${homeMapFloorName(ctx.floor)}. Drag to turn it, scroll to zoom, click a thing to pick it.`}></div>
-      ${words === undefined ? nothing : html`<div class="hme-3d-note">${words}</div>`}`;
+      ${words === undefined ? nothing : html`<div class="hme-3d-note">${words}</div>`}
+      ${!this.lost3d ? nothing : html`<div class="hme-3d-note hme-3d-paused" role="status"><span>3D paused</span>
+        <button type="button" class="hme-link" title="Make the 3D view again now" @click=${() => this.restart3d()}>Start again</button></div>`}`;
+  }
+
+  /** The 3D quality choices, for the View menu and the Look menu: Auto
+   * says what it picked here. */
+  private qualityItems(): HomeMapDockItem[] {
+    const now = this.quality3dNow() === "low" ? "Low" : "High";
+    const pick = (choice: HomeMapQualityChoice) => () => this.setQuality3d(choice);
+    return [
+      { group: "3D quality", radio: true, label: this.quality3d === "auto" ? `Auto (${now} here)` : "Auto", on: this.quality3d === "auto", title: "High on a strong computer, Low on a tablet or slower hardware", pick: pick("auto") },
+      { group: "3D quality", radio: true, label: "High", on: this.quality3d === "high", title: "Soft shading in the corners, glowing bulbs and every shadow", pick: pick("high") },
+      { group: "3D quality", radio: true, label: "Low", on: this.quality3d === "low", title: "Fewer effects and shadows, for a smoother view on slower hardware", pick: pick("low") },
+    ];
   }
 
   /** The model's dock: Lights or Daylight in 3D, the Look menu (the tiles'
@@ -1656,6 +1806,7 @@ export class WaHomeMapEditor extends LitElement {
     if (this.bundleUrl !== undefined) {
       looks.push({ label: "3D", on: real, title: "The floor in real 3D, with its furniture and each light lit as it is now", pick: () => { this.model3d = true; this.dockMenu = undefined; } });
     }
+    if (real) looks.push(...this.qualityItems());
     return html`<div class="hme-dock">
       ${real ? html`<button type="button" class="hme-tb ${this.daylight ? "" : "on"}" aria-pressed=${pressed(!this.daylight)} title="Night: only the lights that are on light the rooms"
           @click=${() => { this.daylight = false; }}>Lights</button>
@@ -1682,12 +1833,16 @@ export class WaHomeMapEditor extends LitElement {
     const items: HomeMapDockItem[] = [
       ...(this.page.viewItems?.(ctx) ?? []).map((v) => ({ label: v.label, on: v.on, title: v.title, pick: () => v.flip() })),
       { label: "Live states", on: this.toggles.live, title: liveTitle, pick: flipLive },
+      // The 3D look's quality is a View setting, so it is here whatever the
+      // view; the model's Look menu has it too while the model is in 3D,
+      // as Model shows no View menu.
+      ...(this.bundleUrl === undefined ? [] : this.qualityItems()),
     ];
     return html`<div class="hme-dock">
-      <button type="button" class="hme-tb hme-icon" aria-label="Zoom out" @click=${() => this.zoomBy(1 / HOME_MAP_ZOOM_STEP)}>−</button>
+      <button type="button" class="hme-tb hme-icon" aria-label="Zoom out" title="Zoom out (−)" @click=${() => this.zoomBy(1 / HOME_MAP_ZOOM_STEP)}>−</button>
       <span class="hme-zoom mono">${percent}%</span>
-      <button type="button" class="hme-tb hme-icon" aria-label="Zoom in" @click=${() => this.zoomBy(HOME_MAP_ZOOM_STEP)}>＋</button>
-      <button type="button" class="hme-tb" @click=${() => this.fit()}>Fit</button>
+      <button type="button" class="hme-tb hme-icon" aria-label="Zoom in" title="Zoom in (+)" @click=${() => this.zoomBy(HOME_MAP_ZOOM_STEP)}>＋</button>
+      <button type="button" class="hme-tb" title="Fit the floor (0)" @click=${() => this.fit()}>Fit</button>
       <span class="hme-vsep"></span>
       ${this.page.dock?.(ctx) ?? nothing}
       ${this.dockMenuButton("view", "View", "What the plan shows: the grid, names, live states and more")}
@@ -1707,7 +1862,9 @@ export class WaHomeMapEditor extends LitElement {
   private dockMenuList(which: "view" | "look", label: string, items: readonly HomeMapDockItem[], role: "menuitemcheckbox" | "menuitemradio"): TemplateResult | typeof nothing {
     if (this.dockMenu !== which) return nothing;
     return html`<div class="hme-dock-pop" role="menu" aria-label=${label}>
-      ${items.map((it) => html`<button type="button" role=${role} aria-checked=${it.on ? "true" : "false"} class="hme-dock-item ${it.on ? "on" : ""}"
+      ${items.map((it, i) => html`${it.group !== undefined && it.group !== items[i - 1]?.group
+          ? html`<div class="hme-dock-head" role="presentation">${it.group}</div>` : nothing}
+        <button type="button" role=${it.radio === true ? "menuitemradio" : role} aria-checked=${it.on ? "true" : "false"} class="hme-dock-item ${it.on ? "on" : ""}"
         title=${it.title ?? it.label} @click=${() => it.pick()}><span class="hme-check" aria-hidden="true">${it.on ? "✓" : ""}</span>${it.label}</button>`)}
     </div>`;
   }

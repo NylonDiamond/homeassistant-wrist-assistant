@@ -121,7 +121,7 @@ describe("saveHomeMapEdit", () => {
       get: vi.fn(),
       save: vi.fn(async () => { throw refusal("too_large", "a home map is at most 256 KiB"); }),
     };
-    expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, move)).toEqual({ ok: false, text: "Not saved. a home map is at most 256 KiB" });
+    expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, move)).toEqual({ ok: false, text: "Not saved. The map is too big to save. Take out some rooms or things." });
     expect(api.get).not.toHaveBeenCalled();
     expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, { kind: "removePin", pinId: LIVING })).toEqual({ ok: false, text: "That is no longer on the map." });
     // Before the first map, an edit is made on the empty map, where a pin

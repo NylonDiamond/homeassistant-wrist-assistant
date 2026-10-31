@@ -116,6 +116,7 @@ export type HomeMapShortcut =
   | "zoomIn"
   | "zoomOut"
   | "fit"
+  | "help"
   | { letter: string }
   | { nudge: HomePoint };
 
@@ -132,9 +133,9 @@ export interface HomeMapKey {
  * What a key press means, or undefined when it means nothing here or the
  * press is typing (`typing`, from `homeMapIsTypingTarget`): Cmd or Ctrl and
  * Z undoes, with Shift (or Ctrl Y) redoes; Escape cancels; Delete and
- * Backspace delete; Enter finishes; plus, minus and 0 zoom and fit; the
- * arrow keys nudge by a centimetre, ten with Shift; a lone letter is the
- * mode's.
+ * Backspace delete; Enter finishes; plus, minus and 0 zoom and fit; ? shows
+ * the keys; the arrow keys nudge by a centimetre, ten with Shift; a lone
+ * letter is the mode's.
  */
 export function homeMapShortcut(e: HomeMapKey, typing: boolean): HomeMapShortcut | undefined {
   if (typing) return undefined;
@@ -155,6 +156,8 @@ export function homeMapShortcut(e: HomeMapKey, typing: boolean): HomeMapShortcut
     case "=": return "zoomIn";
     case "-": return "zoomOut";
     case "0": return "fit";
+    // Shift and / on most keyboards, whatever Shift says.
+    case "?": return "help";
   }
   const step = e.shiftKey === true ? 0.1 : 0.01;
   if (key === "ArrowLeft") return { nudge: [-step, 0] };

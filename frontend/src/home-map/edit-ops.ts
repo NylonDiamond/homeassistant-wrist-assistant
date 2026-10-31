@@ -104,7 +104,6 @@ import {
   HOME_MAP_GLOW_LOW,
   HOME_MAP_LOOKS,
   HOME_MAP_MAX_FLOORS,
-  HOME_MAP_MAX_NAME,
   HOME_MAP_MAX_PINS,
   HOME_MAP_MAX_ROOMS,
   HOME_MAP_PIN_ICONS,
@@ -116,6 +115,7 @@ import {
   homeMapRoomName,
   homeMapRound,
   homeMapScanOf,
+  homeMapTrimName,
   isHomeMapAreaId,
   isHomeMapEntityId,
   isHomeMapGlowColor,
@@ -220,10 +220,10 @@ function pinCount(doc: HomeMapDocument): number {
   return doc.floors.reduce((n, f) => n + f.pins.length, 0);
 }
 
-/** Text as the map keeps a name: trimmed, at most 100 characters, none
- * when blank. */
+/** Text as the map keeps a name: trimmed, at most 100 characters by code
+ * point, none when blank. */
 function nameOf(name: string | undefined): string | undefined {
-  const trimmed = (name ?? "").trim().slice(0, HOME_MAP_MAX_NAME);
+  const trimmed = homeMapTrimName(name ?? "");
   return trimmed === "" ? undefined : trimmed;
 }
 
@@ -843,7 +843,7 @@ export interface HomeMapNewFloor {
 function checkedNewFloor(doc: HomeMapDocument, floor: HomeMapNewFloor): HomeMapFloor | undefined {
   if (!isHomeMapId(floor.id) || idTaken(doc, floor.id) || doc.floors.length >= HOME_MAP_MAX_FLOORS) return undefined;
   if (!Number.isInteger(floor.story) || floor.story < -100 || floor.story > 100) return undefined;
-  return { id: floor.id, name: floor.name.trim().slice(0, HOME_MAP_MAX_NAME), story: floor.story, rooms: [], pins: [] };
+  return { id: floor.id, name: homeMapTrimName(floor.name), story: floor.story, rooms: [], pins: [] };
 }
 
 /** A new empty floor at the end of the map. */
@@ -874,7 +874,7 @@ export function homeMapFirstFloor(floors: Readonly<Record<string, { name?: strin
     .sort((a, b) => (a.level ?? Infinity) - (b.level ?? Infinity) || a.name.localeCompare(b.name));
   const lowest = named[0];
   if (lowest === undefined) return { name: HOME_MAP_FIRST_FLOOR_NAME, story: 0 };
-  return { name: lowest.name.slice(0, HOME_MAP_MAX_NAME), story: Math.max(-100, Math.min(100, lowest.level ?? 0)) };
+  return { name: homeMapTrimName(lowest.name), story: Math.max(-100, Math.min(100, lowest.level ?? 0)) };
 }
 
 /** A map with no floors given its first: undefined on a map that has a
@@ -891,7 +891,7 @@ export function renameFloor(doc: HomeMapDocument, floorId: string, name: string,
   if (fi < 0) return undefined;
   if (story !== undefined && (!Number.isInteger(story) || story < -100 || story > 100)) return undefined;
   const floor = doc.floors[fi]!;
-  return withFloor(doc, fi, { ...floor, name: name.trim().slice(0, HOME_MAP_MAX_NAME), story: story ?? floor.story });
+  return withFloor(doc, fi, { ...floor, name: homeMapTrimName(name), story: story ?? floor.story });
 }
 
 /** The map without a floor, its rooms and its pins. */

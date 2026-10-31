@@ -428,7 +428,7 @@ describe("the editor's session", () => {
     const s = new HomeMapSession(ha.api, { doc: fixture(), rev: 1 });
     s.apply((d) => renameRoom(d, KITCHEN, "Galley"));
     await s.idle();
-    expect(s.state).toEqual({ kind: "error", text: "Not saved. a home map is at most 256 KiB" });
+    expect(s.state).toEqual({ kind: "error", text: "Not saved. The map is too big to save. Take out some rooms or things." });
     expect(s.doc!.floors[0]!.rooms[1]!.name).toBe("Kitchen");
     expect(s.canUndo).toBe(false);
     expect(s.busy).toBe(false);

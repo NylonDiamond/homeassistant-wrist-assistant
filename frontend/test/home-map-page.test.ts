@@ -866,6 +866,47 @@ describe("the Home map editor", () => {
     expect(ha.saves()).toHaveLength(3);
   });
 
+  it("lists every key with ? or the bar's ? button, never while typing, closed by Escape, ?, Done or a press outside", async () => {
+    const { el, key, click, text } = await page();
+    expect(text()).not.toContain("hme-keys-box");
+    // Typing a ? in a field types it.
+    el.onKey({ key: "?", shiftKey: true, preventDefault: () => undefined, composedPath: () => [{ tagName: "INPUT", type: "text" }] } as unknown as KeyboardEvent);
+    expect(text()).not.toContain("hme-keys-box");
+    key("?", { shiftKey: true });
+    const shown = text();
+    expect(shown).toContain("hme-keys-box");
+    for (const group of ["Tools", "Add", "Edit", "A room's walls", "View", "Mouse"]) expect(shown).toContain(`<h4>${group}</h4>`);
+    expect(shown).toContain("<kbd>R</kbd></dt><dd>Draw a room</dd>");
+    // While it is open no key reaches the map: R picks no tool.
+    key("r");
+    expect(el.page.tool(el.context()!)).toBe("pick");
+    key("Escape");
+    expect(text()).not.toContain("hme-keys-box");
+    // The bar's button opens and closes it.
+    click("Every key (?)");
+    expect(text()).toContain("hme-keys-box");
+    key("?", { shiftKey: true });
+    expect(text()).not.toContain("hme-keys-box");
+    click("Every key (?)");
+    click(">Done</button>");
+    expect(text()).not.toContain("hme-keys-box");
+    // A press on the scrim round it closes it; one inside it does not.
+    click("Every key (?)");
+    const scrim = { tag: "scrim" };
+    handler(el.render(), "hme-keys-box", "@pointerdown=")({ target: { tag: "box" }, currentTarget: scrim });
+    expect(text()).toContain("hme-keys-box");
+    handler(el.render(), "hme-keys-box", "@pointerdown=")({ target: scrim, currentTarget: scrim });
+    expect(text()).not.toContain("hme-keys-box");
+  });
+
+  it("names each tool's and the zoom's key in its title", async () => {
+    const { text } = await page();
+    const shown = text();
+    for (const t of ["Pick and move (V)", "Draw a room (R)", "Inner wall (W)", "Door (D)", "Window (N)", "Measure (M)", "Zoom in (+)", "Zoom out (−)", "Fit the floor (0)"]) {
+      expect(shown).toContain(t);
+    }
+  });
+
   it("leaves a focused slider its arrow keys, so they never nudge the picked pin", async () => {
     const { el, ha, press, key } = await page();
     press([0.8, 3.1]);
