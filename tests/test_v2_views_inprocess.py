@@ -20,6 +20,8 @@ Covered:
 * A signed request whose bound user is local only is refused the way Home
   Assistant refuses that user's own token from outside the home, and both
   signed views hand the request to that check.
+* A deleted bound user (``user_gone``) and one who may not sign in
+  (``not_allowed``) each get a signed 403 naming the reason.
 * A remote hold that is preempted by a second ``hold_start`` leaves the new
   hold in place, so ``hold_stop`` still stops it.
 * ``snapshot`` clamps a NaN, infinite or huge viewport instead of answering
@@ -362,7 +364,12 @@ def bound_user():
 
     check = _AuthCheck()
     namespace = _extract(
-        {"_async_bound_user_ok", "_async_bound_user_refusal", "USER_GONE_ERROR"},
+        {
+            "_async_bound_user_ok",
+            "_async_bound_user_refusal",
+            "USER_GONE_ERROR",
+            "NOT_ALLOWED_ERROR",
+        },
         {
             "HomeAssistant": object,
             "Request": object,
@@ -432,7 +439,15 @@ def _user_gone_namespace(signed: list) -> dict[str, Any]:
             self.content_type, self.headers = content_type, headers
 
     return _extract(
-        {"_user_gone_response", "USER_GONE_ERROR", "USER_GONE_MESSAGE"},
+        {
+            "_user_gone_response",
+            "_not_allowed_response",
+            "_signed_refusal_response",
+            "USER_GONE_ERROR",
+            "USER_GONE_MESSAGE",
+            "NOT_ALLOWED_ERROR",
+            "NOT_ALLOWED_MESSAGE",
+        },
         {
             "Any": Any,
             "Response": _Resp,
@@ -474,6 +489,33 @@ def test_a_device_whose_user_was_deleted_gets_a_signed_403(caplog) -> None:
     assert len(logged) == 1 and logged[0].levelno == logging.INFO
 
 
+def test_a_device_whose_user_may_not_sign_in_gets_a_signed_403(caplog) -> None:
+    """A disabled user, or a local-only one from outside the home, is told
+    apart from a bad key: a signed 403 the device can trust, not the plain
+    401 a device reads as a key Home Assistant has forgotten."""
+    signed: list = []
+    namespace = _user_gone_namespace(signed)
+    validated = types.SimpleNamespace(
+        watch_id="SIMULATOR", op="action", version=2, algo="hmac-sha256"
+    )
+    with caplog.at_level(logging.INFO, logger="test_user_gone"):
+        reply = namespace["_not_allowed_response"](validated, b"k" * 32)
+    assert reply.status == 403
+    assert reply.content_type == "application/json"
+    assert json.loads(reply.body) == {
+        "ok": False,
+        "error": "not_allowed",
+        "message": "The Home Assistant user this device was paired to is turned "
+        "off, or may only sign in at home. Ask a Home Assistant admin.",
+    }
+    assert signed == [
+        (b"k" * 32, "action", "SIMULATOR", 1_790_000_000, reply.body, 2, "hmac-sha256")
+    ]
+    assert reply.headers == {"X-WA-Ts": "1790000000", "X-WA-Sig": "sig"}
+    # Not the deleted user's INFO line: the views log this one at debug.
+    assert [r for r in caplog.records if r.name == "test_user_gone"] == []
+
+
 @pytest.mark.parametrize("view", ["WAActionView", "WADeltaView"])
 def test_both_signed_views_pass_the_request_to_the_user_check(view) -> None:
     tree = ast.parse(_MODULE.read_text(), filename=str(_MODULE))
@@ -488,15 +530,19 @@ def test_both_signed_views_pass_the_request_to_the_user_check(view) -> None:
     assert len(calls) == 1
     args = calls[0].args
     assert len(args) == 3 and isinstance(args[2], ast.Name) and args[2].id == "request"
-    # A deleted user gets the signed 403; anything else the plain 401.
-    gone = [
-        node
-        for node in ast.walk(cls)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_user_gone_response"
-    ]
-    assert len(gone) == 1
+    # A deleted user and a user who may not sign in each get their signed
+    # 403; neither falls through to the plain 401 of a bad key.
+    def called(name: str) -> int:
+        return sum(
+            1
+            for node in ast.walk(cls)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == name
+        )
+
+    assert called("_user_gone_response") == 1
+    assert called("_not_allowed_response") == 1
 
 
 @pytest.mark.parametrize("view", ["WAActionView", "WADeltaView"])
@@ -690,6 +736,7 @@ def stream_views():
             "_async_bound_user_ok",
             "_async_bound_user_refusal",
             "USER_GONE_ERROR",
+            "NOT_ALLOWED_ERROR",
         },
         {
             "Any": Any,

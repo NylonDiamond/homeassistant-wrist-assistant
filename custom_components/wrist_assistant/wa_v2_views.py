@@ -389,6 +389,17 @@ USER_GONE_MESSAGE = (
     "Pair it again."
 )
 
+# The same signed 403 when the bound user still exists but may not sign in
+# on this request: disabled, or local only and the request came from outside
+# the home. The key is fine and pairing again cannot help, so the device must
+# keep its key and say who can fix it, rather than read a plain 401 as a key
+# Home Assistant no longer knows.
+NOT_ALLOWED_ERROR = "not_allowed"
+NOT_ALLOWED_MESSAGE = (
+    "The Home Assistant user this device was paired to is turned off, or may "
+    "only sign in at home. Ask a Home Assistant admin."
+)
+
 # Devices already logged as refused for a deleted user, so the INFO line is
 # written once per device per run rather than on every poll.
 _USER_GONE_LOGGED: set[str] = set()
@@ -399,7 +410,7 @@ async def _async_bound_user_refusal(
 ) -> str | None:
     """Why the user a secret is bound to may not act on this request, or
     None when they may (see ``_async_bound_user_ok``). ``USER_GONE_ERROR``
-    when Home Assistant has no such user any more, ``"not_allowed"`` when
+    when Home Assistant has no such user any more, ``NOT_ALLOWED_ERROR`` when
     the user is disabled or local only on a remote request."""
     if user_id is None:
         return None
@@ -407,7 +418,7 @@ async def _async_bound_user_refusal(
     if user is None:
         return USER_GONE_ERROR
     if async_user_not_allowed_do_auth(hass, user, request) is not None:
-        return "not_allowed"
+        return NOT_ALLOWED_ERROR
     return None
 
 
@@ -425,9 +436,26 @@ def _user_gone_response(
             view,
             validated.watch_id,
         )
-    json_bytes = orjson.dumps(
-        {"ok": False, "error": USER_GONE_ERROR, "message": USER_GONE_MESSAGE}
+    return _signed_refusal_response(
+        validated, secret_bytes, USER_GONE_ERROR, USER_GONE_MESSAGE
     )
+
+
+def _not_allowed_response(validated: Any, secret_bytes: bytes) -> Response:
+    """The signed 403 for a device whose bound user is disabled, or local
+    only on a request from outside the home."""
+    return _signed_refusal_response(
+        validated, secret_bytes, NOT_ALLOWED_ERROR, NOT_ALLOWED_MESSAGE
+    )
+
+
+def _signed_refusal_response(
+    validated: Any, secret_bytes: bytes, error: str, message: str
+) -> Response:
+    """A signed 403 ``{"ok": false, "error", "message"}`` for a good
+    signature whose bound user may not act, signed with the device's own key
+    over the request's op so the device can trust the reason."""
+    json_bytes = orjson.dumps({"ok": False, "error": error, "message": message})
     ts = int(time.time())
     sig = sign_response(
         secret_bytes,
@@ -544,7 +572,10 @@ class WAActionView(HomeAssistantView):
     exception: a good signature from a device whose bound Home Assistant
     user was deleted gets a signed 403 ``{"ok": false, "error":
     "user_gone", "message"}`` (``_user_gone_response``), as the delta view
-    does, so the device can say that pairing again is the way back.
+    does, so the device can say that pairing again is the way back. A bound
+    user that is disabled, or local only on a remote request, gets the same
+    signed 403 with ``"not_allowed"`` (``_not_allowed_response``), so the
+    device keeps its key instead of reading a 401 as a forgotten one.
     """
 
     url = "/api/wrist_assistant/v2/action"
@@ -603,7 +634,7 @@ class WAActionView(HomeAssistantView):
                 "or local only on a remote request",
                 validated.watch_id,
             )
-            return Response(status=401, text="Unauthorized")
+            return _not_allowed_response(validated, secret_entry.secret_bytes)
 
         # Audio upload sends raw bytes; everything else is JSON.
         if validated.op == "audio_upload":
@@ -839,7 +870,7 @@ class WADeltaView(HomeAssistantView):
                 "or local only on a remote request",
                 validated.watch_id,
             )
-            return Response(status=401, text="Unauthorized")
+            return _not_allowed_response(validated, secret_entry.secret_bytes)
 
         try:
             payload = orjson.loads(body) if body else {}
