@@ -1069,8 +1069,8 @@ export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "col
 export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
   ["removed", "color"],
   ["header", "color"],
-  ["color", "color"],
   ["icon", "color"],
+  ["color", "color"],
   ["glow", "color"],
   ["whenOff", "color"],
   ["text", "text"],

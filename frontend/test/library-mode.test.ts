@@ -226,15 +226,13 @@ describe("the page editor in library mode", () => {
     expect(flat(e.call("renderPageCards", e.page(), undefined))).not.toContain("pe-bar-on");
     const body = e.body();
     expect(body).not.toContain("pe-bar-on");
-    // Preview on is its own control centred under the device, at the
-    // stage's foot over the dock: Watch, iPhone and Both. The dock has the
-    // zoom, and no size label.
+    // Preview on (Watch, iPhone and Both) ends the dock, after the zoom and
+    // Live preview. The dock has no size label.
     const preview = flat(e.call("renderPreviewOn"));
     expect(preview).toMatch(/aria-label="Preview on"[\s\S]*class="pe-seg-btn on"[^>]*>Watch<[\s\S]*class="pe-seg-btn "[^>]*>iPhone</);
     const tools = flat(e.call("renderStageTools", false, false));
-    expect(tools).toMatch(/class="stage-tools pe-dock"[\s\S]*aria-label="Zoom"[\s\S]*>Fit</);
+    expect(tools).toMatch(/class="stage-tools pe-dock"[\s\S]*aria-label="Zoom"[\s\S]*>Fit<[\s\S]*Live preview[\s\S]*aria-label="Preview on"/);
     expect(tools).not.toContain("46 mm");
-    expect(tools).not.toContain("Preview on");
     // The iPhone thumbnail draws the page on the home's iPhone; with the
     // watch thumbnail it is the watch again.
     e.call("pickPreview", "iphone");

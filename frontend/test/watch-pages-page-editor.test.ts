@@ -680,14 +680,14 @@ describe("the stage's quiet tiles", () => {
     expect(stage.rows).toBeGreaterThanOrEqual(30 + WATCH_TILE_DEFAULTS.tile.rowSpan);
   });
 
-  it("puts Preview on under the device, over the states to try and the dock", () => {
+  it("puts Preview on in the dock beside Live preview, under the states to try", () => {
     const { body } = editor("T-RIGHT");
     const text = body();
     const at = text.indexOf(`aria-label="Preview on"`);
     expect(at).toBeGreaterThan(text.indexOf(`<div class="pe-stage-body">`));
-    expect(at).toBeGreaterThan(text.indexOf(`<div class="pe-dock-area">`));
-    expect(at).toBeLessThan(text.indexOf(`<div class="pe-try-slot">`));
     expect(text.indexOf(`<div class="pe-try-slot">`)).toBeLessThan(text.indexOf(`<div class="stage-tools pe-dock"`));
+    expect(at).toBeGreaterThan(text.indexOf(`<div class="stage-tools pe-dock"`));
+    expect(at).toBeGreaterThan(text.indexOf("Live preview"));
     expect(text.slice(text.indexOf(`<div class="pe-stage-top">`), text.indexOf(`<div class="pe-stage-body">`))).not.toContain("Preview on");
     expect(rule(sheet(), ".pe-dock-area")).toContain("flex-direction: column");
   });
