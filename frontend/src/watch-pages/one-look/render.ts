@@ -234,10 +234,21 @@ export function oneLookCutoutOf(tile: WatchPageTile, input: Pick<WatchPagePrevie
   };
 }
 
-/** The icon photo's box against the disc's diameter, and its corner
- * radius against the box's side (photo tiles plan, "Drawing"). */
+/** The most the icon photo's box grows past the disc's diameter (for a
+ * photo 1.35 or more times as wide as it is tall), and its corner radius
+ * against the box's side (photo tiles plan, "Drawing"). */
 export const ONE_LOOK_CUTOUT_BOX = 1.35;
 export const ONE_LOOK_CUTOUT_CORNER = 0.22;
+
+/** The icon photo's box side for a disc `disc` across and a photo of
+ * `aspect` (width over height), the apps' `OneLookCutout.boxSide(disc:aspect:)`:
+ * the disc times the aspect held to 1 to 1.35, so the fitted photo is never
+ * taller than the disc. A square or tall photo, and an unknown aspect (not
+ * loaded, 0 or not a number), get the disc's own side. */
+export function oneLookCutoutBoxSide(disc: number, aspect: number | undefined): number {
+  const a = aspect !== undefined && Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  return disc * Math.min(ONE_LOOK_CUTOUT_BOX, Math.max(1, a));
+}
 
 /** The CSS filter of an icon photo that is not lit (and of every one wrist
  * down): grayscale 85%, brightness 62%, as the apps' `.saturation(0.15)`
@@ -245,13 +256,15 @@ export const ONE_LOOK_CUTOUT_CORNER = 0.22;
 export const ONE_LOOK_CUTOUT_OFF_FILTER = "grayscale(.85) brightness(.62)";
 
 /**
- * Where an icon photo is drawn for a disc `rect`: a square box 1.35 times
- * the disc's diameter on the disc's centre, the photo fitted inside it with
- * its aspect kept (the whole box while the aspect is unknown), and the
- * corner radius 22% of the box's side.
+ * Where an icon photo is drawn for a disc `rect`: a square box on the
+ * disc's centre, its side `oneLookCutoutBoxSide` (the disc times the
+ * photo's aspect held to 1 to 1.35), the photo fitted inside it with its
+ * aspect kept (the whole box while the aspect is unknown), and the corner
+ * radius 22% of the box's side. The photo is never taller than the disc, so
+ * it keeps clear of the state, the bar and the name.
  */
 export function oneLookCutoutRect(rect: OneLookRect, aspect: number | undefined): { box: OneLookRect; photo: OneLookRect; radius: number } {
-  const side = rect.width * ONE_LOOK_CUTOUT_BOX;
+  const side = oneLookCutoutBoxSide(rect.width, aspect);
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
   const box = { x: cx - side / 2, y: cy - side / 2, width: side, height: side };
@@ -960,8 +973,10 @@ export function oneLookTintedOn(cutout: Pick<OneLookCutout, "url" | "on" | "onMa
 
 /**
  * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
- * no disc fill, the photo fitted in a box 1.35 times the disc on its centre,
- * its corners rounded by 22% of the box. Lit (and not wrist down): the pearl
+ * no disc fill, the photo fitted in a square box on the disc's centre, as
+ * wide as the photo's aspect lets it be up to 1.35 times the disc and never
+ * taller than the disc (`oneLookCutoutRect`), its corners rounded by 22% of
+ * the box. Lit (and not wrist down): the pearl
  * halo behind it as a glyph has it, the pearl disc's white glow in the disc
  * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
  * 62% when `oneLookCutoutDimmed` says so. Lit and bright

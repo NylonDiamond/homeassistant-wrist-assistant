@@ -31,6 +31,7 @@ import {
   oneLookClearDimmed,
   oneLookCutoutActive,
   oneLookCutoutDimmed,
+  oneLookCutoutBoxSide,
   oneLookCutoutOf,
   oneLookCutoutRect,
   oneLookPreviewModel,
@@ -355,6 +356,47 @@ describe("the Clear look", () => {
 // ── every tile ───────────────────────────────────────────────────────────
 
 describe("every tile", () => {
+  it("sizes the photo box by the photo's aspect, 1 to 1.35 times the disc, so the photo is never taller than the disc", () => {
+    const disc = { x: 10, y: 20, width: 40, height: 40 };
+    const centre = (r: { x: number; y: number; width: number; height: number }) => [r.x + r.width / 2, r.y + r.height / 2];
+    // A wide lamp, 384 by 322: a 1.19 times box, exactly disc tall.
+    const wide = oneLookCutoutRect(disc, 384 / 322);
+    expect(wide.box.width).toBeCloseTo(40 * (384 / 322), 6);
+    expect(wide.box.height).toBeCloseTo(wide.box.width, 6);
+    expect(wide.photo.height).toBeCloseTo(40, 6);
+    expect(wide.radius).toBeCloseTo(wide.box.width * 0.22, 6);
+    // Wider than 1.35: held there, the photo shorter than the disc.
+    const wider = oneLookCutoutRect(disc, 2);
+    expect(wider.box.width).toBeCloseTo(54, 6);
+    expect(wider.photo).toEqual({ x: 3, y: 26.5, width: 54, height: 27 });
+    // Square and tall: the disc's own side.
+    expect(oneLookCutoutRect(disc, 1).box).toEqual(disc);
+    const tall = oneLookCutoutRect(disc, 0.5);
+    expect(tall.box).toEqual(disc);
+    expect(tall.photo).toEqual({ x: 20, y: 20, width: 20, height: 40 });
+    // Unknown, 0 or not a number: the disc's own side, the photo filling it.
+    for (const a of [undefined, 0, Number.NaN, -1]) {
+      const r = oneLookCutoutRect(disc, a);
+      expect(r.box, String(a)).toEqual(disc);
+      expect(r.photo, String(a)).toEqual(disc);
+      expect(r.radius, String(a)).toBeCloseTo(40 * 0.22, 6);
+    }
+    // Always on the disc's centre.
+    for (const a of [384 / 322, 2, 1, 0.5, undefined]) expect(centre(oneLookCutoutRect(disc, a).box)).toEqual([30, 40]);
+    expect(oneLookCutoutBoxSide(40, 1.1)).toBeCloseTo(44, 6);
+  });
+
+  it("draws a tile's photo no taller than its disc, in both looks", () => {
+    for (const look of [undefined, "clear"] as const) {
+      const f = face(thing("light.lamp", look === undefined ? {} : { iconPhotoLook: look }), lampOn, { ...PHOTOS, photoSize: () => ({ width: 384, height: 322 }) });
+      const disc = oneLookPreviewModel(f)!.layout.discRect;
+      const at = place(styleOf(html(renderOneLookTile(f)), "ol-cutout"));
+      expect(at.h, look).toBeCloseTo(disc.height, 1);
+      expect(at.w, look).toBeCloseTo(disc.width * (384 / 322), 1);
+      expect(at.y + at.h / 2, look).toBeCloseTo(disc.y + disc.height / 2, 1);
+    }
+  });
+
   it("draws an off light's bulb at 70%", () => {
     const glyph = (o: string) => /class="ol-glyph" data-symbol=[^ ]* style=([^>]*)>/.exec(o)?.[1] ?? "";
     const off = html(renderOneLookTile(face({ id: "T", entityId: "light.lamp", customLabel: "Lamp", colSpan: 6, rowSpan: 4, color: "#30A0FF" }, lampOff)));
