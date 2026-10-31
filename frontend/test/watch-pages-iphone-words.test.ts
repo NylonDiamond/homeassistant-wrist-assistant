@@ -36,7 +36,8 @@ import {
   watchLabelNote,
   watchLibraryTargetMenu,
 } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileHead, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileHead } from "../src/watch-pages/tile-head.js";
 import { PAGES_PHONE_TILES_TEXT } from "../src/help-sheet.js";
 import { tickSkipsText, tickSkipsTitle } from "../src/library/ticks.js";
 import { WATCH_PHONE_SETTING_KEYS, watchPhoneKeyKinds } from "../src/watch-pages/phone-keys-model.js";

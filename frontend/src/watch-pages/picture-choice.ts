@@ -145,6 +145,57 @@ export function pictureChoice<T extends string>(
   </div>`;
 }
 
+/** One option of a segmented choice (`segChoice`). */
+export interface SegOption<T extends string> {
+  value: T;
+  /** The option's full name: its tooltip, its accessible name and the
+   * stage's pill while it is tried. */
+  label: string;
+  /** The words on the button, when shorter than the name ("Semi"). */
+  short?: string;
+  /** Inline CSS for the button's words, to draw them in what the option
+   * picks (a weight, a font). */
+  style?: string;
+  disabled?: boolean;
+}
+
+/**
+ * A short choice as one segmented row that never wraps, its title in the
+ * row's column as every other row has it: each button's words drawn in what
+ * it picks, its full name as its tooltip. It behaves as `pictureChoice`
+ * does: a click on a choice that is not on picks it, the arrow keys move
+ * between the choices, Mixed leaves every choice off, and with a `trial`
+ * pointing at a choice tries it on the tile.
+ */
+export function segChoice<T extends string>(
+  label: string,
+  value: T | undefined,
+  options: readonly SegOption<T>[],
+  pick: (v: T) => void,
+  opts: Omit<PictureChoiceOptions<T>, "size"> = {},
+): TemplateResult {
+  const name = (v: T) => options.find((o) => o.value === v)?.label ?? v;
+  const mixed = opts.mixed === true;
+  const shown = mixed ? undefined : value;
+  const title = mixed ? html`<span>${label} ${mixedWord()}</span>`
+    : shown === undefined ? html`<span>${label}</span>` : settingTitle(label, shown, opts.def, (v: T) => pick(v), name);
+  const trial = opts.trial;
+  const leave = trial === undefined ? nothing : leaveRow(() => trial.end());
+  return html`<div class="field pc-seg-field">${title}
+    <div class="pc-seg" role="radiogroup" aria-label=${label} @keydown=${moveBetweenChoices}
+      @pointerleave=${leave} @focusout=${leave}>
+      ${options.map((o) => {
+        const on = o.value === shown;
+        const tryIt = trial === undefined || o.disabled === true ? nothing : () => trial.try(o.value, o.label);
+        return html`<button type="button" role="radio" class="pc-opt pc-seg-opt ${on ? "on" : ""}" aria-checked=${on ? "true" : "false"}
+          aria-label=${o.label} data-value=${o.value} title=${o.label} ?disabled=${o.disabled === true}
+          @pointerenter=${tryIt} @focus=${tryIt}
+          @click=${() => { if (!on) pick(o.value); trial?.end(); }}><span class="pc-seg-w" style=${o.style ?? nothing}>${o.short ?? o.label}</span></button>`;
+      })}
+    </div>
+  </div>`;
+}
+
 /** The arrow keys, Home and End move the focus between a group's choices
  * (skipping greyed ones); they pick nothing, so a run of arrows is not a
  * run of edits. */
@@ -429,9 +480,29 @@ export function weightSample(weight: string): TemplateResult {
 
 /** "Aa" in a label design. */
 export function designSample(design: string): TemplateResult {
+  return html`<span class="pc-aa" style=${designStyle(design)}>Aa</span>`;
+}
+
+/** The inline CSS that draws words in a label weight, in the watch's own
+ * font: a Weight button's words. */
+export function weightStyle(weight: string): string {
+  return `font-family:${ONE_LOOK_FONT_FAMILIES.watch.standard};font-weight:${WEIGHT_CSS[weight] ?? 400}`;
+}
+
+/** The inline CSS that draws words in a label design: a Design button's
+ * words. */
+export function designStyle(design: string): string {
   const families = ONE_LOOK_FONT_FAMILIES.watch;
   const family = design === "rounded" ? families.rounded : design === "monospaced" ? families.monospaced : design === "serif" ? families.serif : families.standard;
-  return html`<span class="pc-aa" style=${`font-family:${family}`}>Aa</span>`;
+  return `font-family:${family}`;
+}
+
+/** A small (i) beside a row's title holding a line that explains the row
+ * (a device too old to draw it, a look that does not), as its tooltip and
+ * its accessible name, so the row itself stays one line. Never for a line
+ * that says why something cannot be done. */
+export function infoTip(text: string): TemplateResult {
+  return html`<i class="pc-info" role="img" tabindex="0" title=${text} aria-label=${text}>i</i>`;
 }
 
 // ── the neutral samples ──────────────────────────────────────────────────
@@ -546,6 +617,26 @@ export const pictureChoiceStyles = css`
   .pc-size-map .pc-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(106px, 1fr)); }
   .pc-size-map .pc-pic { width: 96px; height: 64px; overflow: hidden; background: #111; }
   .pc-size-map .pc-pic svg { display: block; }
+  /* A segmented choice (\`segChoice\`): one row of equal buttons that never
+     wraps, each one's words cut short rather than pushed to a second line. */
+  .pc-seg {
+    display: flex; flex-wrap: nowrap; gap: 2px; min-width: 0; padding: 2px;
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field, transparent);
+  }
+  .pc-opt.pc-seg-opt {
+    flex: 1 1 0; flex-direction: row; justify-content: center; min-width: 0; min-height: 26px; padding: 3px 6px;
+    border: 0; border-radius: 6px; font-size: 12px;
+  }
+  .pc-opt.pc-seg-opt.on { background: var(--wa-sel-bg, var(--wa-panel)); box-shadow: inset 0 0 0 1px var(--wa-sel-ring, var(--wa-accent)); }
+  .pc-seg-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The (i) beside a row's title (\`infoTip\`). */
+  .pc-info {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 15px; height: 15px; margin-left: 5px;
+    vertical-align: -2px; border: 1px solid var(--wa-line-strong); border-radius: 50%;
+    color: var(--wa-muted); font-size: 10px; font-style: normal; font-weight: 600; line-height: 1; cursor: help;
+  }
+  .pc-info:hover { color: var(--wa-ink); }
+  .pc-info:focus-visible { outline: none; box-shadow: var(--wa-ring); }
 
   .field.pc-menu-field { align-items: start; }
   .field.pc-menu-field > span:first-child { padding-top: 7px; }

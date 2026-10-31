@@ -264,9 +264,13 @@ describe("the inspector over several tiles", () => {
     const parts = groups.flatMap((g) => g.parts);
     for (const p of ["color", "icon", "glow", "background", "border", "text", "state", "tapAnimation"] as const) expect(parts).toContain(p);
     for (const p of ["action", "visibility", "size"] as const) expect(parts).not.toContain(p);
-    expect(hidden.get("tap")).toEqual(["action", "visibility"]);
+    expect(hidden.get("does")).toEqual(["action"]);
+    expect(hidden.get("surface")).toEqual(["visibility", "arrange", "size"]);
     const text = flat(renderTileInspector(host));
-    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Action, Show tile.</p>`);
+    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Action.</p>`);
+    // Size is not drawn for a page's tile even alone (the stage sizes it),
+    // so the line never names it.
+    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Shows when, Arrangement.</p>`);
     // State icons and colors are per state of one entity.
     expect(text).toContain("State icons and colors: shown when one tile is picked.");
     expect(text).not.toContain(`class="ts-state-row`);

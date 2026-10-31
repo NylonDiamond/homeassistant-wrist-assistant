@@ -9,7 +9,10 @@
 //
 // A module may start a section folded instead (`folded`). For those the
 // store keeps the other choice: a section opened is stored as `false`, and
-// folding it again drops it.
+// folding it again drops it. The tile inspector's More lines, which fold a
+// section's rare rows away under four columns, are such a module
+// (`tile-settings-more`): each starts folded, and one opened is kept open
+// for that section on every tile.
 
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 

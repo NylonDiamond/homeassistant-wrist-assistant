@@ -321,14 +321,15 @@ describe("Collapse all", () => {
 // ── the cards ────────────────────────────────────────────────────────────
 
 describe("the tile's cards", () => {
-  it("start with the head over Look in the first column, then four groups: Look, Text, Tap and Layout, each with its sections", () => {
+  it("start with the head across the inspector, then four groups: Color and icon, Text, Surface and rules and What it does, each with its sections", () => {
     const el = editor(hallPage(), DIMMER);
     const text = flat(inspector(el));
-    // The head at the top of the first column, over Look: the path and the
-    // live tile, Name and Shows, then the actions. Text, Tap and Layout
-    // start at the top beside it.
-    expect(text).toContain(`<div class="ts-root ts-groups">\n    <div class="ts-g1"><div class="pe-strip">`);
-    expect(text.indexOf(`<div class="pe-strip">`)).toBeLessThan(text.indexOf(`data-group=look`));
+    // The head across the top, over every column: the path and the live
+    // tile, Name and Shows, then the actions. The groups all start at the
+    // same top under it.
+    expect(text).toContain(`<div class="ts-root ts-insp">\n    <div class="ts-insp-head"><div class="pe-strip">`);
+    expect(text.indexOf(`<div class="pe-strip">`)).toBeLessThan(text.indexOf(`<div class="ts-groups"`));
+    expect(text.indexOf(`<div class="ts-groups"`)).toBeLessThan(text.indexOf(`data-group=color`));
     const head = text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<section class="ts-grp"`));
     expect(head).not.toContain("<h4>");
     const lead = head.slice(head.indexOf(`<div class="ts-head-lead">`), head.indexOf(`<div class="ts-head-mid">`));
@@ -337,17 +338,24 @@ describe("the tile's cards", () => {
     const mid = head.slice(head.indexOf(`<div class="ts-head-mid">`), head.indexOf(`<div class="ts-head-side">`));
     expect(mid).toContain(`<span class="ts-head-lab">Name</span>`);
     expect(mid).toContain(`aria-label="Name"`);
-    expect(mid).toContain(`<span class="ts-head-lab">Shows</span><div class="ts-head-ent"><code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code>`);
+    // Shows names the entity by its friendly name, then in grey its id.
+    expect(mid).toMatch(/<span class="ts-head-lab">Shows<\/span><div class="ts-head-ent"><span class="ts-head-ent-nm">.*<b title=Smart Plug Dimmer>Smart Plug Dimmer<\/b><small><code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer<\/code><\/small><\/span>/s);
+    // The facts under Name and Shows, each a button to its section.
+    const pills = [...mid.matchAll(/<button type="button" class="ts-pill" data-goes=(\w+)[^>]*>([^<]+)<b>([^<]+)<\/b><\/button>/g)].map((m) => `${m[1]} ${m[2]}${m[3]}`);
+    expect(pills).toContain("visibility Shows: Always");
+    expect(pills.some((p) => p.startsWith("action Tap: "))).toBe(true);
     // A light says what it shows by its entity: no Change, which is a library tile's.
     expect(mid).not.toContain("ts-head-change");
     const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
     const acts = [...side.matchAll(/<span>(Duplicate|Hide|Reset|Delete)<\/span>/g)].map((m) => m[1]);
-    expect(acts).toEqual(["Duplicate", "Hide", "Reset", "Delete"]);
+    expect(acts).toEqual(["Duplicate", "Hide", "Delete"]);
+    // Under them how many parts hold a value of their own, then Reset all.
+    expect(side).toMatch(/<div class="ts-head-changed">.*<button type="button" class="link ts-reset-btn"[^>]*>Reset all<\/button>/s);
     // No Find a setting: Jesse took it out on 2026-10-26.
     expect(text).not.toContain("Find a setting");
     expect(text).not.toContain("Preview as");
     expect(text).not.toContain("Delete tile");
-    const body = text.slice(text.indexOf(`<section class="ts-grp"`));
+    const body = text.slice(text.indexOf(`<div class="ts-groups"`));
     // No Name card any more, and the name's box is the head's alone.
     expect(body).not.toContain("name-sec");
     expect(body).not.toContain(`aria-label="Name"`);
@@ -355,14 +363,16 @@ describe("the tile's cards", () => {
     expect(card(body, "Name")).not.toContain(`aria-label="Label"`);
     // The groups, in their order, each with its title, its line and its
     // sections.
-    expect(groupTitles(body)).toEqual(["Look", "Text", "Tap", "Layout"]);
-    expect(group(body, "look")).toContain(`<h3 class="ts-grp-t">Look</h3><span class="ts-grp-d">Color, icon, glow, background, border</span>`);
-    expect(titles(group(body, "look"))).toEqual(["Color", "Icon", "Glow", "When it is off", "Background", "Border"]);
+    expect(groupTitles(body)).toEqual(["Color and icon", "Text", "Surface and rules", "What it does"]);
+    expect(group(body, "color")).toContain(`<h3 class="ts-grp-t">Color and icon</h3><span class="ts-grp-d">Fill, icon or photo, off look</span>`);
+    expect(titles(group(body, "color"))).toEqual(["Color", "Icon", "Glow", "When it is off"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
-    expect(titles(group(body, "tap"))).toEqual(["Action", "Tap animation", "Show tile"]);
     // No Size: dragging the tile or its corner on the stage moves and sizes it.
-    expect(titles(group(body, "layout"))).toEqual(["Arrangement"]);
-    expect(group(body, "layout")).toContain(`<span class="ts-grp-d">Arrangement</span>`);
+    expect(titles(group(body, "surface"))).toEqual(["Shows when", "Arrangement", "Background", "Border"]);
+    expect(group(body, "surface")).toContain(`<span class="ts-grp-d">Background, border, when it shows</span>`);
+    // A light has nothing of its own kind, so What it does is the tap alone.
+    expect(titles(group(body, "does"))).toEqual(["Action", "Tap animation"]);
+    expect(body).not.toContain(`class="ts-kind"`);
     // The Arrangement: Default or Free, with no large tile until Free.
     const arrangement = card(body, "Arrangement");
     expect(arrangement).toMatch(/aria-label=Arrange>/);
@@ -371,28 +381,52 @@ describe("the tile's cards", () => {
     expect(text).not.toContain("pe-size-more");
   });
 
-  it("stand the groups in one to four columns by the inspector's own width, in CSS alone, and the inspector keeps one width with or without a tile", () => {
+  it("stand the groups in one, two or four columns by the inspector's own width, in CSS alone, and the inspector keeps one width with or without a tile", () => {
     const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
     const css = sheet((customElements.get("wa-page-editor") as unknown as { styles: unknown }).styles).replace(/\s+/g, " ");
-    // Text and the third wrapper nest so that one markup makes every count.
+    // The four groups side by side in one grid, in their order, as many
+    // columns as there are groups to draw.
     const text = flat(inspector(editor(hallPage(), DIMMER)));
-    const groups = text.slice(text.indexOf(`<div class="ts-root ts-groups">`));
-    expect(groups.indexOf(`data-group=look`)).toBeGreaterThan(groups.indexOf(`<div class="ts-g1">`));
-    expect(groups.indexOf(`<div class="ts-g2">`)).toBeGreaterThan(groups.indexOf(`data-group=look`));
-    expect(groups.indexOf(`data-group=text`)).toBeGreaterThan(groups.indexOf(`<div class="ts-g2">`));
-    expect(groups.indexOf(`<div class="ts-g3">`)).toBeGreaterThan(groups.indexOf(`data-group=text`));
-    expect(groups.indexOf(`data-group=tap`)).toBeGreaterThan(groups.indexOf(`<div class="ts-g3">`));
-    expect(groups.indexOf(`data-group=layout`)).toBeGreaterThan(groups.indexOf(`data-group=tap`));
+    const groups = text.slice(text.indexOf(`<div class="ts-groups" style=--ts-n:4>`));
+    const at = ["color", "text", "surface", "does"].map((g) => groups.indexOf(`<section class="ts-grp" data-group=${g} `));
+    expect(at.every((i) => i > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(text).not.toContain("ts-g1");
     expect(text).not.toContain("pe-insp-col");
     expect(text).not.toContain("data-col=");
-    expect(css).toContain("@container insp (min-width: 760px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ts-g3 { display: contents; } }");
-    expect(css).toContain("@container insp (min-width: 1080px) { .ts-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ts-g2 { display: contents; } .ts-g3 { display: flex; } }");
-    expect(css).toContain("@container insp (min-width: 1560px) { .ts-groups { grid-template-columns: repeat(4, minmax(0, 1fr)); } .ts-g3 { display: contents; } }");
+    expect(css).toContain("@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }");
+    expect(css).toContain("@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); } }");
+    expect(css).not.toContain(".ts-g3");
+    // Four across: each column fills the inspector's height and scrolls on
+    // its own under a title that stays put.
+    const wide = css.slice(css.indexOf("@container insp (min-width: 1580px) { .pe-layout.pe-wide"));
+    expect(wide).toContain(".pe-layout.pe-wide .pe-tile-body .ts-groups > .ts-grp { min-height: 0; overflow-y: auto;");
+    expect(wide).toContain(".pe-layout.pe-wide .pe-tile-body .ts-grp > .ts-grp-h { position: sticky; top: 0;");
+    expect(wide).toContain("grid-template-rows: minmax(0, 1fr);");
     expect(css).not.toContain("pe-tile-on");
     // Until the gutter is dragged (--pe-insp-col), one width with or without a tile.
     expect(css).toMatch(/\.layout\.pe-layout\.pe-wide \{\s*grid-template-columns: minmax\(0, 1fr\) 8px var\(--pe-insp-col, clamp\(340px, max\(38%, min\(62%, 100% - 640px\)\), 2200px\)\);/);
-    // The head is the first column's, and scrolls with the groups.
+    // The head spans the inspector over the columns and never sticks.
     expect(css).not.toMatch(/\.pe-strip \{[^}]*sticky/);
+  });
+
+  it("give each group its own hue, clear of the blue that marks a change, on its title band and its section headings", () => {
+    const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
+    const css = sheet((customElements.get("wa-page-editor") as unknown as { styles: unknown }).styles).replace(/\s+/g, " ");
+    expect(css).toContain(`.ts-grp[data-group="color"] { --ts-hue: 236, 186, 82; }`);
+    expect(css).toContain(`.ts-grp[data-group="text"] { --ts-hue: 176, 150, 255; }`);
+    expect(css).toContain(`.ts-grp[data-group="surface"] { --ts-hue: 72, 206, 190; }`);
+    expect(css).toContain(`.ts-grp[data-group="does"] { --ts-hue: 255, 138, 118; }`);
+    expect(css).toContain("box-shadow: inset 0 3px 0 rgb(var(--ts-hue));");
+    expect(css).toContain("background: linear-gradient(rgba(var(--ts-hue), .13), rgba(var(--ts-hue), .13)), var(--wa-card);");
+    expect(css).toMatch(/\.ts-grp-t \{[^}]*font-size: 15px;[^}]*color: rgb\(var\(--ts-hue\)\);/);
+    expect(css).toMatch(/\.ts-sec-h::before \{[^}]*width: 3px; height: 15px;/);
+    // Blue stays for what changed alone.
+    expect(css).toMatch(/\.ts-grp-n \{[^}]*color: var\(--ts-blue\);/);
+    expect(css).toMatch(/\.ts-dot \{[^}]*background: var\(--ts-blue\);/);
+    // One title column for every row.
+    expect(css).toContain(".ts-groups fieldset.ts-body { --wa-lab: var(--ts-lab);");
+    expect(css).toContain(".ts-groups .ts-nested { --wa-lab: calc(var(--ts-lab) - 24px); }");
   });
 
   it("draw the tile once in the head, large and on, never pinning a state", () => {
@@ -423,8 +457,11 @@ describe("the tile's cards", () => {
       iconShadow: true, labelShadow: false, iconTapAnimation: "slide",
     }, SPACER_TILE] });
     const el = editor(page, DIMMER);
-    expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=false[^>]*>.*<span>Reset<\/span><\/button>/s);
-    click(inspector(el), "<span>Reset</span></button>");
+    expect(flat(inspector(el))).toMatch(/<button type="button" class="link ts-reset-btn" \?disabled=false[^>]*>Reset all<\/button>/s);
+    // Five parts hold a value of their own, the count the groups add up to:
+    // Icon, Name, Background, Border and Tap animation.
+    expect(flat(inspector(el))).toContain(`<i aria-hidden="true"></i><span>5 changed</span>`);
+    click(inspector(el), ">Reset all</button>");
     const tile = (el.currentPage()!.items as WatchPageTile[]).find((t) => t.id === DIMMER)!;
     // The keys the phone and the watch require go back to their defaults,
     // never away: without one, both refuse the whole page (2026-10-26).
@@ -437,7 +474,7 @@ describe("the tile's cards", () => {
     expect(tile.labelFontWeight).toBeUndefined();
     expect(tile.customLabel).toBe("Smart Plug Dimmer");
     expect([tile.colSpan, tile.rowSpan]).toEqual([6, 4]);
-    expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=true/);
+    expect(flat(inspector(el))).toMatch(/<button type="button" class="link ts-reset-btn" \?disabled=true/);
   });
 
   it("says why a drag on the stage was refused in the line under the bar", () => {
@@ -448,8 +485,8 @@ describe("the tile's cards", () => {
 
   it("head every section the same calm way: its title in sentence case, no badge, no fold", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
-    const body = text.slice(text.indexOf(`<div class="ts-root ts-groups">`));
-    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Action", "Tap animation", "Show tile", "Arrangement"]) {
+    const body = text.slice(text.indexOf(`<div class="ts-groups"`));
+    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Action", "Tap animation", "Shows when", "Arrangement"]) {
       const c = card(body, title);
       expect(c, title).toMatch(new RegExp(`^<section class="ts-sec" data-part=\\w+ aria-label=${title}>\\s*<div class="ts-sec-h"><h4>${title}</h4>`));
       expect(c, title).not.toContain(`class="swatch"`);
@@ -458,7 +495,7 @@ describe("the tile's cards", () => {
     }
     const sheet = (st: unknown): string => (Array.isArray(st) ? st.map(sheet).join("\n") : String((st as { cssText?: string } | undefined)?.cssText ?? ""));
     const css = sheet((customElements.get("wa-page-editor") as unknown as { styles: unknown }).styles).replace(/\s+/g, " ");
-    expect(css).toContain(".ts-sec-h h4 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none;");
+    expect(css).toContain(".ts-sec-h h4 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none;");
   });
 
   it("keep one badge table: Content for what the tile is about, Look, Extras, States, Tap and Position", () => {
@@ -481,10 +518,12 @@ describe("the tile's cards", () => {
     expect(text).not.toContain(`aria-label="Name"`);
     expect(text).not.toContain(`class="pe-st `);
     expect(text).toContain(`<span class="ts-head-none">No entity</span>`);
-    // Look only: a group with nothing in it is not drawn, and a spacer has
-    // no Arrangement (it has no parts) and no Size (the stage sizes it).
-    expect(groupTitles(text)).toEqual(["Look"]);
-    expect(titles(group(text, "look"))).toEqual(["Background", "Border"]);
+    // Surface and rules only: a group with nothing in it is not drawn, and
+    // a spacer has no Arrangement (it has no parts) and no Size (the stage
+    // sizes it).
+    expect(groupTitles(text)).toEqual(["Surface and rules"]);
+    expect(titles(group(text, "surface"))).toEqual(["Background", "Border"]);
+    expect(text).toContain(`<div class="ts-groups" style=--ts-n:1>`);
   });
 });
 
@@ -593,9 +632,12 @@ describe("the inspector with several tiles picked", () => {
     expect(picked).toContain("<span>Duplicate 2 tiles</span>");
     expect(picked).toMatch(/class="pe-btn pe-danger pe-picked-del" \?disabled=false/);
     expect(picked).toContain("<span>Delete 2 tiles</span>");
-    // Not the size, which is one tile's: the group's grey line names it.
+    // Not the size, which the stage sets, and not what is one tile's, which
+    // the group's grey line names; the line never names Size, which one
+    // tile alone does not show either.
     expect(text).not.toContain("<h4>Size");
-    expect(text).toMatch(/<p class="hint keep ts-picked-off">Shown when one tile is picked: Size[^<]*\.<\/p>/);
+    expect(text).toMatch(/<p class="hint keep ts-picked-off">Shown when one tile is picked: Shows when[^<]*\.<\/p>/);
+    expect(text).not.toMatch(/ts-picked-off">[^<]*Size/);
   });
 
   it("deletes both from its Delete, and goes back to the page from Page", () => {
@@ -808,7 +850,7 @@ describe("the changed dot", () => {
     expect(card(text, "Icon")).not.toContain("ts-dot");
     expect(card(text, "Icon")).not.toContain("ts-sec-reset");
     expect(group(text, "text")).toContain(`<span class="ts-grp-n"><i aria-hidden="true"></i>1 changed</span>`);
-    expect(group(text, "look")).not.toContain("ts-grp-n");
+    expect(group(text, "color")).not.toContain("ts-grp-n");
   });
 
   it("puts only that section back from its Reset, in one undo step", () => {
