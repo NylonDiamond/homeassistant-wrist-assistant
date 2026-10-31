@@ -182,6 +182,7 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         # after the pairing store has heard about it.
         "_async_bound_user_refusal": _bound_user_refused,
         "USER_GONE_ERROR": "user_gone",
+        "_not_allowed_response": lambda *_a, **_k: _Response(status=403),
         "log_hmac_failure": log_hmac_failure,
         # A fixed clock, so the replies' `server_time` is known.
         "time": types.SimpleNamespace(time=lambda: SERVER_NOW),
@@ -610,7 +611,10 @@ def test_a_signed_request_with_the_new_key_lets_the_device_pair_again(env) -> No
     assert _start(env, _sealed_body()).status == 409
 
     env.action.post.__globals__["validate_wa_request"] = _ValidSignature("watch-code-1")
-    asyncio.run(env.action.post(_SignedRequest("watch-code-1")))
+    reply = asyncio.run(env.action.post(_SignedRequest("watch-code-1")))
+    # Its bound user may not sign in here, which is the signed 403, not the
+    # 401 of a bad key.
+    assert reply.status == 403
     assert _status(env, {"watch_id": "watch-code-1"}).body["state"] == "expired"
 
     env.clock.now += 60

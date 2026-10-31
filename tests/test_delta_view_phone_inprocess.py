@@ -171,6 +171,7 @@ def delta():
             "_log_signed_request_rejected": lambda *a, **k: None,
             "_note_signed_use": lambda *a, **k: None,
             "_user_gone_response": lambda *a, **k: _Response(status=403),
+            "_not_allowed_response": lambda *a, **k: _Response(status=403),
             "log_push_token_registered": lambda *a, **k: None,
             "_prebind_relay_token": lambda _hass, _data, watch_id, platform: prebound.append(
                 (watch_id, platform)
