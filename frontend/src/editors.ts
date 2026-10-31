@@ -149,6 +149,8 @@ import {
   tapActionNote,
   tapNeedsEntity,
   tapPointSize,
+  tapActionCanConfirm,
+  setTapConfirm,
   attachTap,
   attachedTapsOf,
   clockTime,
@@ -8993,6 +8995,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "tap": {
       content = html`
         ${tapActionEditor(host, el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k), key)}
+        ${tapConfirmField(el.payload, (on) => upd((e) => { if (e.kind === "tap") setTapConfirm(e.payload, on); }, "confirm"))}
         <div class="hint">An invisible area: a tap inside this frame runs this action, and the layer highest in the list wins where two overlap.</div>
         <div class="hint">To make one layer tappable, tick Tappable on that layer instead.</div>`;
       break;
@@ -9331,7 +9334,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   timeline: ["value", "historyMinutes"],
   shape: ["kind", "cornerRadius"],
   image: ["entity", "source"],
-  tap: ["action", "openPageName"],
+  tap: ["action", "openPageName", "confirm"],
   chartTimes: [],
   chartDots: [],
   chartGrid: [],
@@ -10115,6 +10118,17 @@ function markerReadingFields(
     </div>`;
 }
 
+/** "Ask before running" for a tap layer, attached or free-standing. A widget
+ * cannot show a question, so the first tap arms the layer and the second runs
+ * it. Offered only for actions that run something in the background; for the
+ * rest the key stays where it is and the app ignores it. */
+export function tapConfirmField(tap: TapElement, set: (on: boolean) => void): TemplateResult | typeof nothing {
+  if (!tapActionCanConfirm(tap.action)) return nothing;
+  return html`
+    ${checkField("Ask before running", tap.confirm === true, set, false)}
+    <div class="hint">Tap once to arm, tap again within 5 seconds to run.</div>`;
+}
+
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {
   // A tap has no tap, and a free-standing tap layer is edited on its own.
   if (el.kind === "tap") return nothing;
@@ -10133,6 +10147,7 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
     ${attached
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
+          ${tapConfirmField(attached.payload as TapElement, (on) => updTap((p) => setTapConfirm(p, on)))}
           <div class="field"><span>Tap zone</span>
             <div class="chips">
               <button class="pick ${host.tapAreaShown ? "on" : ""}" aria-pressed=${host.tapAreaShown ? "true" : "false"}

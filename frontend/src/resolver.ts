@@ -807,6 +807,9 @@ export interface ResolvedTap extends ResolvedBase {
   /** The layer this tap belongs to, if any. Carried only so the editor's
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
+  /** "Ask before running", carried as the app's `ResolvedTap.confirm` is so
+   * the shared fixtures can pin it. Present only when true. */
+  confirm?: boolean;
 }
 export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes | ResolvedChartDots | ResolvedChartGrid | ResolvedImageTime | ResolvedList;
 
@@ -2672,6 +2675,7 @@ export class Resolver {
         };
         if (el.payload.openPageId !== undefined) out.openPageId = el.payload.openPageId;
         if (el.payload.attachedTo !== undefined) out.attachedTo = el.payload.attachedTo;
+        if (el.payload.confirm === true) out.confirm = true;
         return out;
       }
       case "chartTimes": {
