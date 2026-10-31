@@ -25,7 +25,17 @@ import {
   watchTileIconPhotoId,
   watchTileIconPhotoLook,
 } from "../src/watch-pages/tile-settings-model.js";
-import { watchTileInspectorPartChanged, watchTileInspectorPartReset } from "../src/watch-pages/tile-settings.js";
+import {
+  CLEAR_GLOW_COLOR_TITLE,
+  CLEAR_GLOW_GRADIENT_NOTE,
+  CLEAR_GLOW_LIGHT_NOTE,
+  CLEAR_GLOW_NOTE,
+  clearPhotoTile,
+  partTitle,
+  renderTileInspector,
+  watchTileInspectorPartChanged,
+  watchTileInspectorPartReset,
+} from "../src/watch-pages/tile-settings.js";
 import pageKeys from "../src/watch-pages/page-keys.json";
 
 (globalThis as { document?: unknown }).document ??= { activeElement: null };
@@ -407,5 +417,57 @@ describe("Look, Colour or Clear", () => {
     // A photo swapped for another keeps its look; none removes it.
     expect(first(setWatchTileIconPhoto(set, PAGE_ID, A, FAN)).iconPhotoLook).toBe("clear");
     expect(Object.hasOwn(first(setWatchTileIconPhoto(set, PAGE_ID, A, undefined)), "iconPhotoLook")).toBe(false);
+  });
+});
+
+// ── the Clear look's glow color ──────────────────────────────────────────
+
+describe("the Clear look's Color", () => {
+  /** The Color part's text: from its heading to the next part's. */
+  const colorPart = (text: string) => {
+    const start = Math.max(text.indexOf(`>${CLEAR_GLOW_COLOR_TITLE}<`), text.indexOf(">Color<"));
+    const end = text.indexOf("When it is off", start);
+    return text.slice(start, end > start ? end : undefined);
+  };
+
+  it("reads as Glow color with one glow color, and says when a light's own color wins", async () => {
+    const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear" })], [A]);
+    expect(clearPhotoTile(host)).toBe(true);
+    expect(partTitle(host, "color")).toBe(CLEAR_GLOW_COLOR_TITLE);
+    const text = colorPart(flat(renderTileInspector(host)));
+    expect(text).toContain(CLEAR_GLOW_LIGHT_NOTE);
+    expect(text).not.toContain(">Gradient<");
+    expect(text).not.toContain(CLEAR_GLOW_GRADIENT_NOTE);
+  });
+
+  it("keeps the Solid and Gradient switch while the tile holds a gradient, and says what it glows in", async () => {
+    const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear", color: "GRADIENT|#FF0000|#0000FF" })], [A]);
+    const text = colorPart(flat(renderTileInspector(host)));
+    expect(text).toContain(">Gradient<");
+    expect(text).toContain(CLEAR_GLOW_GRADIENT_NOTE);
+  });
+
+  it("says the plain glow line on a tile that is not a light", async () => {
+    const { host } = await setup([tile(A, "fan.ceiling", { iconPhotoId: FAN, iconPhotoLook: "clear" })], [A]);
+    const text = colorPart(flat(renderTileInspector(host)));
+    expect(text).toContain(CLEAR_GLOW_NOTE);
+    expect(text).not.toContain(CLEAR_GLOW_LIGHT_NOTE);
+  });
+
+  it("stays Color with the Colour look, without a photo, or before One Look", async () => {
+    const colour = await setup([tile(A, "light.desk", { iconPhotoId: LAMP })], [A]);
+    expect(partTitle(colour.host, "color")).toBe("Color");
+    const none = await setup([tile(A, "light.desk", { iconPhotoLook: "clear" })], [A]);
+    expect(clearPhotoTile(none.host)).toBe(false);
+    const clear = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear" })], [A]);
+    const old = extendHost(clear.host, { oneLook: () => false }) as TileSettingsHost;
+    expect(clearPhotoTile(old)).toBe(false);
+  });
+
+  it("is Glow color for several picked tiles only when every one is Clear", async () => {
+    const both = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear" }), tile(B, "light.desk", { iconPhotoId: FAN, iconPhotoLook: "clear" })], [A, B]);
+    expect(clearPhotoTile(both.host)).toBe(true);
+    const one = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear" }), tile(B, "light.desk", { iconPhotoId: FAN })], [A, B]);
+    expect(clearPhotoTile(one.host)).toBe(false);
   });
 });
