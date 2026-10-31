@@ -9,12 +9,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { type HassLike, fetchHomeMap, saveHomeMap } from "../src/ha-api.js";
+import { type HassLike, fetchHomeMap, fetchHomeMapIfChanged, saveHomeMap, subscribeHomeMap } from "../src/ha-api.js";
+import { moveRoom, startHomeMap } from "../src/home-map/edit-ops.js";
 import { type HomeMapDocument, type HomeMapEdit, applyHomeMapEdit } from "../src/home-map/model.js";
 import {
   HOME_MAP_AGAIN_TEXT,
   HOME_MAP_GONE_TEXT,
+  HOME_MAP_RETRY_TEXT,
+  HOME_MAP_SAVE_TIMEOUT_MS,
   type HomeMapApi,
+  homeMapSaveCanRetry,
   saveHomeMapEdit,
 } from "../src/home-map/save.js";
 import {
@@ -34,6 +38,7 @@ const LIVING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000010";
 const KITCHEN = "7B1E0C2A-5D3F-4A8B-9C6D-000000000011";
 const READING = "7B1E0C2A-5D3F-4A8B-9C6D-000000000100";
 const SIDE_DOOR = "7B1E0C2A-5D3F-4A8B-9C6D-000000000102";
+const FIRST_FLOOR = "0a1b2c3d-0000-4000-8000-000000000001";
 
 const refusal = (code: string, message: string) => Object.assign(new Error(message), { code });
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -105,7 +110,7 @@ describe("saveHomeMapEdit", () => {
     const store = fakeStore(fixture(), 3, [touch, (d) => d]);
     const outcome = await saveHomeMapEdit(store.api, { doc: fixture(), rev: 3 }, move);
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    if (outcome.ok || outcome.retry === true) throw new Error("not a refusal");
     expect(outcome.text).toBe(HOME_MAP_AGAIN_TEXT);
     expect(outcome.read?.rev).toBe(4);
     expect(store.saves.map((s) => s.baseRev)).toEqual([3, 4]);
@@ -114,13 +119,74 @@ describe("saveHomeMapEdit", () => {
   it("passes on any other refusal, and checks the edit before sending it", async () => {
     const api: HomeMapApi = {
       get: vi.fn(),
-      save: vi.fn(async () => { throw refusal("unavailable", "the stored home map could not be read"); }),
+      save: vi.fn(async () => { throw refusal("too_large", "a home map is at most 256 KiB"); }),
     };
-    expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, move)).toEqual({ ok: false, text: "Not saved. the stored home map could not be read" });
+    expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, move)).toEqual({ ok: false, text: "Not saved. a home map is at most 256 KiB" });
     expect(api.get).not.toHaveBeenCalled();
     expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, { kind: "removePin", pinId: LIVING })).toEqual({ ok: false, text: "That is no longer on the map." });
-    expect(await saveHomeMapEdit(api, { doc: null, rev: 0 }, move)).toEqual({ ok: false, text: "There is no map to change yet." });
+    // Before the first map, an edit is made on the empty map, where a pin
+    // is not.
+    expect(await saveHomeMapEdit(api, { doc: null, rev: 0 }, move)).toEqual({ ok: false, text: "That is no longer on the map." });
     expect(api.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves the home's first map from rev 0, made on the empty map", async () => {
+    const saves: { doc: HomeMapDocument; baseRev: number }[] = [];
+    const api: HomeMapApi = {
+      get: vi.fn(),
+      save: async (doc, baseRev) => {
+        saves.push({ doc, baseRev });
+        return { rev: 1 };
+      },
+    };
+    const start = (d: HomeMapDocument) => startHomeMap(d, { id: FIRST_FLOOR, name: "Ground floor", story: 0 });
+    const outcome = await saveHomeMapEdit(api, { doc: null, rev: 0 }, start);
+    expect(outcome).toEqual({ ok: true, read: { doc: { v: 1, floors: [{ id: FIRST_FLOOR, name: "Ground floor", story: 0, rooms: [], pins: [] }] }, rev: 1 }, merged: false });
+    expect(saves).toEqual([{ doc: { v: 1, floors: [{ id: FIRST_FLOOR, name: "Ground floor", story: 0, rooms: [], pins: [] }] }, baseRev: 0 }]);
+    // A start never stands on a map with a floor.
+    expect(await saveHomeMapEdit(api, { doc: fixture(), rev: 3 }, start)).toEqual({ ok: false, text: "That is no longer on the map." });
+  });
+
+  it("says to try again when Home Assistant could not be reached, and never takes it for a refusal", async () => {
+    for (const failure of [
+      { type: "result", success: false, error: { code: 3, message: "Connection lost" } },
+      new Error("WebSocket is closed"),
+      refusal("unavailable", "integration not ready"),
+      refusal("timeout", "Home Assistant did not answer."),
+    ]) {
+      expect(homeMapSaveCanRetry(failure)).toBe(true);
+      const api: HomeMapApi = { get: vi.fn(), save: vi.fn(async () => { throw failure; }) };
+      const outcome = await saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, move);
+      expect(outcome).toEqual({ ok: false, retry: true, text: HOME_MAP_RETRY_TEXT, sent: applyHomeMapEdit(fixture(), move) });
+      expect(api.get).not.toHaveBeenCalled();
+    }
+    for (const code of ["conflict", "invalid", "too_large", "unauthorized", "unknown_command"]) expect(homeMapSaveCanRetry(refusal(code, "x"))).toBe(false);
+  });
+
+  it("gives up waiting for an answer after a while, as a save to try again", async () => {
+    vi.useFakeTimers();
+    try {
+      const api: HomeMapApi = { get: vi.fn(), save: () => new Promise(() => undefined) };
+      const pending = saveHomeMapEdit(api, { doc: fixture(), rev: 1 }, move);
+      await vi.advanceTimersByTimeAsync(HOME_MAP_SAVE_TIMEOUT_MS);
+      expect(await pending).toMatchObject({ ok: false, retry: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("knows a try that never heard back but did land, and does not make the edit twice", async () => {
+    // A room moved a metre must not move two: the first try was stored, its
+    // answer lost; the second, from the old rev, is refused `conflict`, and
+    // the map read again is the one the first try sent.
+    const shift = (d: HomeMapDocument) => moveRoom(d, KITCHEN, 1, 0);
+    const sent = (await saveHomeMapEdit({ get: vi.fn(), save: async () => { throw new Error("Connection lost"); } }, { doc: fixture(), rev: 3 }, shift));
+    if (sent.ok || sent.retry !== true) throw new Error("not a retry");
+    const store = fakeStore(fixture(), 3, [() => sent.sent!]);
+    const outcome = await saveHomeMapEdit(store.api, { doc: fixture(), rev: 3 }, shift, sent.sent);
+    expect(outcome).toEqual({ ok: true, read: { doc: sent.sent, rev: 4 }, merged: false });
+    expect(store.saves).toHaveLength(1);
+    expect(store.now().doc.floors[0]!.rooms[1]!.outline[0]).toEqual([7, 0]);
   });
 });
 
@@ -150,6 +216,38 @@ describe("the panel's commands", () => {
     expect(await fetchHomeMap(hass)).toEqual({ doc: null, rev: 0 });
     expect(await saveHomeMap(hass, fixture(), 0)).toEqual({ rev: 9 });
     expect(sent).toEqual([{ type: "wrist_assistant/home_map/get" }, { type: "wrist_assistant/home_map/save", doc: fixture(), base_rev: 0 }]);
+  });
+
+  it("checks with the rev held, reading nothing when it is still the one stored", async () => {
+    const { hass, sent } = fakeHass({ not_modified: true, rev: 4 });
+    expect(await fetchHomeMapIfChanged(hass, 4)).toBeUndefined();
+    expect(sent).toEqual([{ type: "wrist_assistant/home_map/get", rev: 4 }]);
+    const changed = fakeHass({ doc: fixture(), rev: 5 });
+    expect(await fetchHomeMapIfChanged(changed.hass, 4)).toEqual({ doc: fixture(), rev: 5 });
+  });
+
+  it("subscribes with home_map/subscribe and hands on each rev", async () => {
+    const heard: number[] = [];
+    let message: Record<string, unknown> | undefined;
+    let deliver: ((event: unknown) => void) | undefined;
+    const hass = {
+      states: {},
+      connection: {
+        sendMessagePromise: vi.fn(),
+        async subscribeMessage(callback: (event: unknown) => void, msg: Record<string, unknown>) {
+          message = msg;
+          deliver = callback;
+          return async () => undefined;
+        },
+      },
+    } as unknown as HassLike;
+    await subscribeHomeMap(hass, (rev) => heard.push(rev));
+    expect(message).toEqual({ type: "wrist_assistant/home_map/subscribe" });
+    deliver!({ rev: 0 });
+    deliver!({ rev: 3 });
+    deliver!({ rev: "4" });
+    deliver!(null);
+    expect(heard).toEqual([0, 3]);
   });
 });
 

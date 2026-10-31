@@ -424,6 +424,7 @@ def _unload_namespace(journal: _Journal, relay: types.ModuleType) -> dict[str, A
         "WATCH_CONFIG": relay.WATCH_CONFIG,
         "WATCH_CONFIG_DELIVERY": relay.WATCH_CONFIG_DELIVERY,
         "HTTP_ACTIONS_DELIVERY": relay.HTTP_ACTIONS_DELIVERY,
+        "HOME_MAP": relay.HOME_MAP,
     }
     return _from_init(namespace, "async_unload_entry", "_async_shutdown_stores", "_DEBOUNCED_STORES")
 
@@ -450,6 +451,7 @@ def test_unload_writes_every_store_and_lets_go_of_the_stores() -> None:
     relay.listener_relay(hass, relay.WATCH_CONFIG).follow(followed)
     relay.listener_relay(hass, relay.WATCH_CONFIG_DELIVERY).follow(followed)
     relay.listener_relay(hass, relay.HTTP_ACTIONS_DELIVERY).follow(followed)
+    relay.listener_relay(hass, relay.HOME_MAP).follow(followed)
 
     assert asyncio.run(namespace["async_unload_entry"](hass, object())) is True
     shut = [line.split(".")[0] for line in journal if line.endswith(".async_shutdown")]
@@ -457,7 +459,7 @@ def test_unload_writes_every_store_and_lets_go_of_the_stores() -> None:
         "http_action_runner",
         "coordinator",
     }
-    assert journal.count("detached") == 4
+    assert journal.count("detached") == 5
     assert DOMAIN not in hass.data
 
 

@@ -16,7 +16,10 @@ up by one on each save. A save names the ``rev`` it was made from
 change on top and saves again. The iPhone and the panel can both move pins,
 so this keeps one from silently undoing the other. Every delta reply names
 the ``rev`` as ``home_map_rev`` while a map is stored, which is how a watch
-learns to fetch the map again.
+learns to fetch the map again; every accepted save wakes the parked polls,
+so the new rev goes out at once, and tells each open panel
+(``home_map/subscribe``), so a panel shows a save made elsewhere without a
+reload.
 
 Every save is checked whole by :func:`check_document`, and any failure
 refuses the whole save: the shape below, the limits (256 KiB for the whole
@@ -157,7 +160,7 @@ import json
 import logging
 import math
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from typing import Any, NoReturn
 
@@ -174,6 +177,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
+
+# Called with the new rev after every accepted save, whoever made it.
+ChangeListener = Callable[[int], None]
 
 DOCUMENT_VERSION = 1
 MAX_DOCUMENT_BYTES = 256 * 1024
@@ -701,6 +707,7 @@ class HomeMapStore:
         self._scans: dict[str, dict[str, Any]] = {}
         self._scans_failed = False
         self._scans_save_pending = False
+        self._listeners: list[ChangeListener] = []
 
     # ── persistence ────────────────────────────────────────────────────
 
@@ -832,6 +839,30 @@ class HomeMapStore:
             if room["id"].upper() in records
         }
 
+    # ── listeners ──────────────────────────────────────────────────────
+
+    def async_add_listener(self, listener: ChangeListener) -> Callable[[], None]:
+        """Call ``listener(rev)`` after every accepted save: the iPhone's
+        ``home_map_put`` and the panel's ``home_map/save`` alike. Setup adds
+        the delta coordinator's (every parked watch poll wakes and names the
+        new rev), and ``home_map/subscribe`` adds the open panels' through
+        the relay. Returns the function that removes it."""
+        self._listeners.append(listener)
+
+        def _remove() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return _remove
+
+    def _notify(self) -> None:
+        rev = self._rev
+        for listener in list(self._listeners):
+            try:
+                listener(rev)
+            except Exception:
+                _LOGGER.exception("Home map listener failed")
+
     # ── writes ─────────────────────────────────────────────────────────
 
     def save(self, raw_doc: Any, base_rev: Any, scanned: Any = None) -> int:
@@ -869,6 +900,8 @@ class HomeMapStore:
         except Exception:  # The map is saved: a record never undoes that.
             _LOGGER.exception("The home map's scans could not be kept after a save")
         _LOGGER.debug("Saved the home map at revision %d", self._rev)
+        # After the scans, so a listener that reads them sees this save's.
+        self._notify()
         return self._rev
 
     def _keep_scans(self, rooms: dict[str, dict[str, Any]], scanned: list[str] | None) -> None:

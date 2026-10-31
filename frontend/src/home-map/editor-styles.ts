@@ -160,6 +160,8 @@ export const editorStyles = css`
   .hme-style-sw { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--wa-line-strong); flex: none; }
   .hme-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #30d158; }
   .hme-status.saving .hme-status-dot { background: var(--hme-amber); }
+  .hme-status.waiting { color: var(--hme-amber); }
+  .hme-status.waiting .hme-status-dot { background: var(--hme-amber); }
   .hme-status.error { color: var(--wa-need); }
   .hme-status.error .hme-status-dot { background: var(--wa-need); }
   .hme-pop {
@@ -665,4 +667,9 @@ export const editorStyles = css`
     padding: 28px 24px; border: 1px solid var(--wa-line); border-radius: 16px; background: var(--wa-card);
   }
   .hme-empty > b { font-size: 15px; }
+  .hme-first { gap: 14px; padding: 32px 28px; }
+  .hme-first .hme-start-btn { height: 38px; padding: 0 18px; font-size: 14px; font-weight: 600; }
+  .hme-first-line { color: var(--wa-faint); font-size: 12.5px; line-height: 1.45; max-width: 360px; }
+  .hme-first-note { font-size: 12.5px; line-height: 1.45; color: var(--hme-amber); }
+  .hme-first-note.err { color: var(--wa-need); }
 `;

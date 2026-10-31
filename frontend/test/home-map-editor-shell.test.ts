@@ -15,9 +15,9 @@ import { describe, expect, it } from "vitest";
 
 import { HOME_MAP_ARRANGE_GRID, homeMapSnapPoint } from "../src/home-map/draw-tool.js";
 import { HOME_MAP_EDIT_TOOLS, homeMapEditToolFor, homeMapOpeningsWords } from "../src/home-map/edit-page.js";
-import { addOpening, moveRoom, renameRoom, setRoomFinish } from "../src/home-map/edit-ops.js";
+import { addOpening, homeMapFirstFloor, moveRoom, renameRoom, setRoomFinish, startHomeMap } from "../src/home-map/edit-ops.js";
 import { homeMapSelectionRoom, homeMapSelectionThere, sameHomeMapSelection } from "../src/home-map/editor-mode.js";
-import { HomeMapSession, sameHomeMapDocument } from "../src/home-map/editor-session.js";
+import { HomeMapSession, homeMapRetryDelay, homeMapUnsaved, sameHomeMapDocument } from "../src/home-map/editor-session.js";
 import {
   homeMapFitView,
   homeMapIsFormControl,
@@ -44,7 +44,7 @@ import { homeMapSaveWords } from "../src/home-map/home-map-editor.js";
 import { homeMapDeleteRoomText } from "../src/home-map/mode-arrange.js";
 import { HOME_MAP_SHAPE_TOOLS, homeMapFixAllLabel, homeMapShapeToolFor } from "../src/home-map/mode-shape.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapRead } from "../src/home-map/model.js";
-import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT, type HomeMapApi } from "../src/home-map/save.js";
+import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT, HOME_MAP_RETRY_TEXT, type HomeMapApi } from "../src/home-map/save.js";
 import { HOME_TILE_MODEL_LOOKS, type HomeTileLook, homeTileArt } from "../src/home-map/tile-art.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
@@ -383,7 +383,94 @@ describe("the editor's session", () => {
     expect(s.confirmed.rev).toBe(9);
     expect(s.canUndo).toBe(false);
   });
+
+  it("keeps every edit and the undo stack when a save goes unanswered, and sends it again", async () => {
+    const ha = slowApi({ doc: fixture(), rev: 1 });
+    const save = ha.api.save;
+    let down = 2;
+    ha.api.save = async (doc, baseRev) => {
+      if (down > 0) {
+        down -= 1;
+        throw { type: "result", success: false, error: { code: 3, message: "Connection lost" } };
+      }
+      return save(doc, baseRev);
+    };
+    const s = new HomeMapSession(ha.api, { doc: fixture(), rev: 1 });
+    s.apply((d) => renameRoom(d, KITCHEN, "Galley"));
+    await until(() => s.state.kind === "waiting");
+    expect(s.state).toEqual({ kind: "waiting", text: HOME_MAP_RETRY_TEXT });
+    expect(homeMapSaveWords(s.state)).toBe(HOME_MAP_RETRY_TEXT);
+    expect(s.note).toBeUndefined();
+    expect(s.doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
+    expect(s.canUndo).toBe(true);
+    expect(s.busy).toBe(true);
+    expect(homeMapUnsaved()).toBe(true);
+    // Edits made meanwhile queue behind the waiting save.
+    s.apply((d) => setRoomFinish(d, KITCHEN, "wood"));
+    s.retryNow();
+    await until(() => down === 0);
+    s.retryNow();
+    await s.idle();
+    expect(s.state.kind).toBe("saved");
+    expect(ha.now().doc!.floors[0]!.rooms[1]).toMatchObject({ name: "Galley", finish: "wood" });
+    expect(ha.now().rev).toBe(3);
+    expect(s.canUndo).toBe(true);
+    expect(homeMapUnsaved()).toBe(false);
+  });
+
+  it("waits longer after each unanswered try, at most half a minute", () => {
+    expect([1, 2, 3, 4, 5, 6, 9].map(homeMapRetryDelay)).toEqual([1000, 2000, 4000, 8000, 16_000, 30_000, 30_000]);
+  });
+
+  it("still drops the queue and shows Home Assistant's map on a real refusal", async () => {
+    const ha = slowApi({ doc: fixture(), rev: 1 });
+    ha.api.save = async () => { throw Object.assign(new Error("a home map is at most 256 KiB"), { code: "too_large" }); };
+    const s = new HomeMapSession(ha.api, { doc: fixture(), rev: 1 });
+    s.apply((d) => renameRoom(d, KITCHEN, "Galley"));
+    await s.idle();
+    expect(s.state).toEqual({ kind: "error", text: "Not saved. a home map is at most 256 KiB" });
+    expect(s.doc!.floors[0]!.rooms[1]!.name).toBe("Kitchen");
+    expect(s.canUndo).toBe(false);
+    expect(s.busy).toBe(false);
+    expect(homeMapUnsaved()).toBe(false);
+  });
+
+  it("starts the home's first map from none, saved from rev 0", async () => {
+    const ha = slowApi({ doc: null, rev: 0 });
+    ha.api.save = async (doc, baseRev) => {
+      expect(baseRev).toBe(0);
+      return { rev: 1 };
+    };
+    const s = new HomeMapSession(ha.api, { doc: null, rev: 0 });
+    const floor = { id: "0a1b2c3d-0000-4000-8000-000000000001", name: "Home", story: 0 };
+    expect(s.apply((d) => startHomeMap(d, floor))).toBe(false);
+    expect(s.begin((d) => startHomeMap(d, floor))).toBe(true);
+    expect(s.doc!.floors.map((f) => f.name)).toEqual(["Home"]);
+    expect(s.canUndo).toBe(false);
+    await s.idle();
+    expect(s.confirmed).toEqual({ doc: { v: 1, floors: [{ ...floor, rooms: [], pins: [] }] }, rev: 1 });
+    // Only once: the map has a floor now.
+    expect(s.begin((d) => startHomeMap(d, floor))).toBe(false);
+  });
+
+  it("names the first floor after the home's lowest Home Assistant floor, else Home", () => {
+    expect(homeMapFirstFloor(undefined)).toEqual({ name: "Home", story: 0 });
+    expect(homeMapFirstFloor({})).toEqual({ name: "Home", story: 0 });
+    expect(homeMapFirstFloor({
+      loft: { name: "Loft", level: null },
+      first: { name: "First floor", level: 1 },
+      basement: { name: " Basement ", level: -1 },
+      blank: { name: "  ", level: -2 },
+    })).toEqual({ name: "Basement", story: -1 });
+    expect(homeMapFirstFloor({ b: { name: "Upstairs" }, a: { name: "Downstairs" } })).toEqual({ name: "Downstairs", story: 0 });
+  });
 });
+
+/** Wait for `ready`, a few turns of the event loop at most. */
+async function until(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 50 && !ready(); i++) await new Promise((r) => setTimeout(r, 0));
+  expect(ready()).toBe(true);
+}
 
 describe("the plan on the stage", () => {
   const floor = fixture().floors[0]!;

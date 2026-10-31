@@ -1290,6 +1290,25 @@ export async function fetchHomeMap(hass: HassLike) {
   return hass.connection.sendMessagePromise<HomeMapRead>({ type: `${HOME_MAP}/get` });
 }
 
+/** The map, read only when Home Assistant holds another rev than `rev`:
+ * undefined when it still holds that one (`not_modified`), which costs no
+ * map. For the editor's checks when its tab is shown again or its socket
+ * reconnects. */
+export async function fetchHomeMapIfChanged(hass: HassLike, rev: number): Promise<HomeMapRead | undefined> {
+  const reply = await hass.connection.sendMessagePromise<HomeMapRead & { not_modified?: boolean }>({ type: `${HOME_MAP}/get`, rev });
+  return reply?.not_modified === true ? undefined : reply;
+}
+
+/** Hear each save of the home's map, by anyone: `onRev` with the rev, once
+ * at once with the rev now and after every save (`home_map/subscribe`).
+ * Open to every signed in user. Resolves to the unsubscribe. Refused
+ * `unknown_command` by an integration older than it. */
+export async function subscribeHomeMap(hass: HassLike, onRev: (rev: number) => void) {
+  return hass.connection.subscribeMessage<{ rev?: unknown }>((event) => {
+    if (typeof event?.rev === "number") onRev(event.rev);
+  }, { type: `${HOME_MAP}/subscribe` });
+}
+
 /** Save the whole map, made from the map read at `baseRev` (0 for the first
  * map). The reply names the new rev. Refusals: `invalid` (the message says
  * where the map leaves the contract), `too_large`, `unavailable`, and

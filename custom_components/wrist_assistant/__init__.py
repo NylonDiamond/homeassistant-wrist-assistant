@@ -93,6 +93,7 @@ from .http_actions_ws import async_register_http_actions_commands
 from .library import rename_complication
 from .listener_relay import (
     COMPLICATIONS,
+    HOME_MAP,
     HTTP_ACTIONS_DELIVERY,
     WATCH_CONFIG,
     WATCH_CONFIG_DELIVERY,
@@ -953,10 +954,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
     # The home's map (home_map_store.py): saved by the iPhone and the panel,
     # read by every device, its rev on every delta reply as `home_map_rev`.
-    # An unreadable file is left alone and refused.
+    # Any save wakes every parked poll, so each watch hears the new rev at
+    # once and fetches the map. An unreadable file is left alone and refused.
     home_map_store = HomeMapStore(hass)
     await home_map_store.async_load()
     coordinator.attach_home_map_store(home_map_store)
+    entry.async_on_unload(home_map_store.async_add_listener(coordinator.home_map_changed))
     # Each Home Assistant user's client certificate (link removal, step 4): a
     # phone hands it over sealed, every device of that user fetches it sealed,
     # and the user's revision rides the poll. A change wakes the parked polls
@@ -1193,6 +1196,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     listener_relay(hass, WATCH_CONFIG).follow(watch_config_store)
     listener_relay(hass, WATCH_CONFIG_DELIVERY).follow(watch_config_store)
     listener_relay(hass, HTTP_ACTIONS_DELIVERY).follow(http_actions_store)
+    listener_relay(hass, HOME_MAP).follow(home_map_store)
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
         # The panel is open to every signed-in user; who may do what is
@@ -1525,6 +1529,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             listener_relay(hass, WATCH_CONFIG).release()
             listener_relay(hass, WATCH_CONFIG_DELIVERY).release()
             listener_relay(hass, HTTP_ACTIONS_DELIVERY).release()
+            listener_relay(hass, HOME_MAP).release()
     return unload_ok
 
 

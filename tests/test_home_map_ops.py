@@ -249,6 +249,7 @@ def env():
             require_admin=lambda func: func,
             websocket_command=lambda schema: (lambda func: func),
             async_response=lambda func: func,
+            event_message=lambda msg_id, event: {"id": msg_id, "type": "event", "event": event},
         )
         sys.modules["homeassistant.components"].websocket_api = sys.modules[
             "homeassistant.components.websocket_api"
@@ -258,6 +259,7 @@ def env():
         )
         areas = loaded.load("home_areas")
         loaded.load("panel_access")
+        relay = loaded.load("listener_relay")
         ws = loaded.load("home_map_ws")
         store = loaded.store_mod.HomeMapStore(object())
         asyncio.run(store.async_load())
@@ -271,6 +273,7 @@ def env():
             hass=hass,
             registries=registries,
             areas=areas,
+            relay=relay,
             ws=ws,
             ops=_ops(loaded.store_mod, areas),
         )
@@ -621,12 +624,18 @@ class _Connection:
         self.user = types.SimpleNamespace(id="user-1", is_admin=False) if user == "default" else user
         self.results: dict[int, Any] = {}
         self.errors: list[tuple[int, str, str]] = []
+        self.events: list[tuple[int, Any]] = []
+        self.subscriptions: dict[int, Any] = {}
 
     def send_result(self, msg_id: int, payload: Any) -> None:
         self.results[msg_id] = json.loads(json.dumps(payload))
 
     def send_error(self, msg_id: int, code: str, message: str) -> None:
         self.errors.append((msg_id, code, message))
+
+    def send_message(self, message: dict) -> None:
+        assert message["type"] == "event"
+        self.events.append((message["id"], json.loads(json.dumps(message["event"]))))
 
 
 def ws_call(env, command, connection: _Connection | None = None, **msg) -> _Connection:
@@ -719,6 +728,58 @@ def test_ws_scans_is_unavailable_while_the_scans_cannot_be_read(env) -> None:
     assert code == "unavailable"
 
 
+def test_ws_get_answers_not_modified_for_the_rev_held(env) -> None:
+    assert ws_call(env, env.ws.ws_home_map_get, rev=0).results[1] == {"not_modified": True, "rev": 0}
+    ws_call(env, env.ws.ws_home_map_save, doc=basic(), base_rev=0)
+    assert ws_call(env, env.ws.ws_home_map_get, rev=0).results[1] == {"doc": basic(), "rev": 1}
+    assert ws_call(env, env.ws.ws_home_map_get, rev=1).results[1] == {"not_modified": True, "rev": 1}
+    for rev in (-1, True):
+        [(_, code, _m)] = ws_call(env, env.ws.ws_home_map_get, rev=rev).errors
+        assert code == "invalid"
+
+
+def test_ws_subscribe_names_the_rev_now_and_after_every_save_from_anyone(env) -> None:
+    panel = ws_call(env, env.ws.ws_home_map_subscribe)
+    assert panel.results[1] is None and panel.errors == []
+    assert panel.events == [(1, {"rev": 0})]
+    # The iPhone's save, then a panel's.
+    put(env, basic(), 0)
+    ws_call(env, env.ws.ws_home_map_save, doc=basic(), base_rev=1)
+    assert panel.events == [(1, {"rev": 0}), (1, {"rev": 1}), (1, {"rev": 2})]
+    # A refused save says nothing.
+    ws_call(env, env.ws.ws_home_map_save, doc=basic(), base_rev=0)
+    put(env, {"v": 2, "floors": []}, 2)
+    assert len(panel.events) == 3
+    # Closed: nothing more.
+    panel.subscriptions[1]()
+    put(env, basic(), 2)
+    assert len(panel.events) == 3
+
+
+def test_ws_subscribe_follows_the_store_of_a_reload(env) -> None:
+    panel = ws_call(env, env.ws.ws_home_map_subscribe)
+    relay = env.relay
+    # A reload: the old store let go, a new one followed by setup.
+    relay.listener_relay(env.hass, relay.HOME_MAP).release()
+    fresh = env.mod.HomeMapStore(object())
+    asyncio.run(fresh.async_load())
+    env.domain.home_map_store = fresh
+    relay.listener_relay(env.hass, relay.HOME_MAP).follow(fresh)
+    fresh.save(basic(), 0)
+    assert panel.events[-1] == (1, {"rev": 1})
+
+
+def test_ws_subscribe_is_open_to_every_signed_in_user_and_no_one_else(env) -> None:
+    member = ws_call(env, env.ws.ws_home_map_subscribe, _Connection())
+    assert member.errors == [] and member.events == [(1, {"rev": 0})]
+    stranger = ws_call(env, env.ws.ws_home_map_subscribe, _Connection(None))
+    [(_, code, _m)] = stranger.errors
+    assert code == "unauthorized" and stranger.events == [] and stranger.subscriptions == {}
+    env.hass.data = {}
+    [(_, code, _m)] = ws_call(env, env.ws.ws_home_map_subscribe).errors
+    assert code == "unavailable"
+
+
 # ── home_map_rev on the delta reply ──────────────────────────────────────
 
 
@@ -749,6 +810,51 @@ def test_the_delta_reply_names_the_map_rev_only_once_a_map_is_stored(coordinator
 
         asyncio.run(run())
         assert coord.home_map_revision() == 2
+
+
+def test_a_save_releases_every_parked_poll_once_with_the_new_rev(coordinator) -> None:  # noqa: F811
+    """Any save, the home's first map included, wakes every parked poll,
+    which answers at once naming the new rev; told once, the next poll
+    parks again."""
+    _module, hass, coord = coordinator
+    hass.states.set("light.x", "off")
+    with loaded_package() as loaded:
+        store = loaded.store_mod.HomeMapStore(object())
+        asyncio.run(store.async_load())
+        coord.attach_home_map_store(store)
+        store.async_add_listener(coord.home_map_changed)
+
+        async def run() -> None:
+            _s, body = await _poll(coord, watch_id="w1", entities=["light.x"])
+            c1 = body["next_cursor"]
+            _s, body = await _poll(coord, watch_id="w2", entities=["light.x"])
+            c2 = body["next_cursor"]
+            for doc, base_rev in ((basic(), 0), (basic(), 1)):
+                held = [
+                    asyncio.create_task(_poll(coord, watch_id="w1", since=c1, entities=["light.x"], timeout=10)),
+                    asyncio.create_task(_poll(coord, watch_id="w2", since=c2, entities=["light.x"], timeout=10)),
+                ]
+                await asyncio.sleep(0.05)
+                assert {"w1", "w2"} <= set(coord._waiters)
+                started = hass.loop.time()
+                store.save(doc, base_rev)
+                for task in held:
+                    status, body = await asyncio.wait_for(task, timeout=2)
+                    assert status == 200 and body["events"] == []
+                    assert body["home_map_rev"] == base_rev + 1
+                assert hass.loop.time() - started < 1.0
+            status, body = await asyncio.wait_for(
+                _poll(coord, watch_id="w1", since=c1, entities=["light.x"], timeout=1), timeout=3
+            )
+            assert status == 204 and body is None
+            # A save between polls is answered by the next poll at once.
+            store.save(basic(), 2)
+            status, body = await asyncio.wait_for(
+                _poll(coord, watch_id="w1", since=c1, entities=["light.x"], timeout=10), timeout=2
+            )
+            assert status == 200 and body["home_map_rev"] == 3
+
+        asyncio.run(run())
 
 
 def test_an_unreadable_map_leaves_the_field_out(coordinator) -> None:  # noqa: F811
@@ -795,6 +901,9 @@ def test_setup_builds_the_store_attaches_it_and_advertises() -> None:
         "home_map_store = HomeMapStore(hass)",
         "await home_map_store.async_load()",
         "coordinator.attach_home_map_store(home_map_store)",
+        "entry.async_on_unload(home_map_store.async_add_listener(coordinator.home_map_changed))",
+        "listener_relay(hass, HOME_MAP).follow(home_map_store)",
+        "listener_relay(hass, HOME_MAP).release()",
         "home_map_store=home_map_store,",
         "register_capability(HOME_MAP_CAPABILITY)",
         "async_register_home_map_commands(hass)",
@@ -825,5 +934,5 @@ def test_the_panel_commands_use_the_library_guard() -> None:
     """The map is the home's: the rule of a save in the home's library,
     every signed-in user, checked before anything is read or written."""
     source = (_PKG_DIR / "home_map_ws.py").read_text()
-    assert source.count("require_owner(hass, connection, msg, LIBRARY_OWNER_ID)") == 3
+    assert source.count("require_owner(hass, connection, msg, LIBRARY_OWNER_ID)") == 4
     assert "require_admin" not in source

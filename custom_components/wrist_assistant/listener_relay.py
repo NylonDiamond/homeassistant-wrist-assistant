@@ -31,6 +31,7 @@ _HASS_KEY = "wrist_assistant_listener_relays"
 # The relay of each store that live subscriptions follow.
 COMPLICATIONS = "complications"
 WATCH_CONFIG = "watch_config"
+HOME_MAP = "home_map"
 # The deliveries of the watch config store and the HTTP action library,
 # which are not changes and have listeners of their own.
 WATCH_CONFIG_DELIVERY = "watch_config_delivery"
@@ -99,8 +100,8 @@ class ListenerRelay(Generic[_ChangeT]):
 
 
 def listener_relay(hass: Any, name: str) -> ListenerRelay[Any]:
-    """The relay ``name`` (``COMPLICATIONS``, ``WATCH_CONFIG`` or one of the
-    two delivery relays), made on first use."""
+    """The relay ``name`` (``COMPLICATIONS``, ``WATCH_CONFIG``, ``HOME_MAP``
+    or one of the two delivery relays), made on first use."""
     relays: dict[str, ListenerRelay[Any]] = hass.data.setdefault(_HASS_KEY, {})
     relay = relays.get(name)
     if relay is None:

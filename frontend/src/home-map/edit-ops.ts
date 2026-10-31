@@ -852,6 +852,38 @@ export function addFloor(doc: HomeMapDocument, floor: HomeMapNewFloor): HomeMapD
   return made === undefined ? undefined : orderedDocument({ ...doc, floors: [...doc.floors, made] });
 }
 
+/** What a map started by hand names its floor when Home Assistant has no
+ * floors. */
+export const HOME_MAP_FIRST_FLOOR_NAME = "Home";
+
+/**
+ * The floor Start a map by hand makes: the home's lowest Home Assistant
+ * floor (by level, a floor with no level after every one with, then by
+ * name, as `areas_get` lists them), by its name and with its level as the
+ * story, or "Home" at story 0 when Home Assistant has none. The iPhone
+ * takes a map floor for the Home Assistant floor of the same name
+ * (`HomeMapRoomEdits.haFloor(named:)`), so naming it so links the two: a
+ * scan of that floor joins it, and its areas come first in a room's Area.
+ */
+export function homeMapFirstFloor(floors: Readonly<Record<string, { name?: string | null; level?: number | null } | undefined>> | undefined): { name: string; story: number } {
+  const named = Object.values(floors ?? {})
+    .flatMap((f) => {
+      const name = typeof f?.name === "string" ? f.name.trim() : "";
+      return name === "" ? [] : [{ name, level: typeof f?.level === "number" && Number.isInteger(f.level) ? f.level : undefined }];
+    })
+    .sort((a, b) => (a.level ?? Infinity) - (b.level ?? Infinity) || a.name.localeCompare(b.name));
+  const lowest = named[0];
+  if (lowest === undefined) return { name: HOME_MAP_FIRST_FLOOR_NAME, story: 0 };
+  return { name: lowest.name.slice(0, HOME_MAP_MAX_NAME), story: Math.max(-100, Math.min(100, lowest.level ?? 0)) };
+}
+
+/** A map with no floors given its first: undefined on a map that has a
+ * floor already, since a start never stands on top of a map someone made
+ * meanwhile. */
+export function startHomeMap(doc: HomeMapDocument, floor: HomeMapNewFloor): HomeMapDocument | undefined {
+  return doc.floors.length > 0 ? undefined : addFloor(doc, floor);
+}
+
 /** A floor renamed (trimmed, at most 100 characters), its story too when
  * given. */
 export function renameFloor(doc: HomeMapDocument, floorId: string, name: string, story?: number): HomeMapDocument | undefined {

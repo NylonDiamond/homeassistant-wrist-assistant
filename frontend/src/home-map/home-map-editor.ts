@@ -63,6 +63,23 @@
 // edited (the plan then leaves them out), puts its tool rail and the side
 // view over the stage, and takes a device dragged onto the plan.
 //
+// With no map yet, or a map with no floors, the page is its first run: Start
+// a map by hand makes one floor (named after the home's lowest Home
+// Assistant floor, which links the two by name as the iPhone does) and
+// opens the editor on it with the draw-room tool out; a scan from the iPhone
+// fills it as well.
+//
+// The page follows saves made anywhere else while it is open: it listens on
+// `home_map/subscribe`, which names the rev of every save, and checks with
+// `home_map/get` (naming the rev it holds, so an unchanged map costs
+// nothing) when the tab is shown again or the socket reconnects. With no
+// edit of its own waiting, the new map is swapped in quietly, the floor,
+// the view and the pick kept where they still exist; with one, the save's
+// own conflict path puts the edit on top of the new map. A save that could
+// not reach Home Assistant is sent again (`editor-session.ts`) at once when
+// the socket is back or the tab is shown, and while any edit is unsaved,
+// leaving the page asks first.
+//
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/home-map` (`hook.ts`). Nothing it imports may import `icons.ts`.
 
@@ -70,13 +87,13 @@ import { LitElement, type PropertyValues, type TemplateResult, html, nothing, sv
 import { property, state } from "lit/decorators.js";
 import { chromeTokens } from "../editor-chrome.js";
 import { formStyles } from "../form-styles.js";
-import { type HassLike, fetchHomeMap } from "../ha-api.js";
+import { type HassLike, fetchHomeMap, fetchHomeMapIfChanged, subscribeHomeMap } from "../ha-api.js";
 import { fetchLibrarySummary } from "../library/client.js";
 import { libraryItems, libraryOf } from "../library/model.js";
 import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { type HomeMapOp, addFloor, deleteFloor, homeMapThingOfPin, homeStyleOf, renameFloor } from "./edit-ops.js";
+import { type HomeMapOp, addFloor, deleteFloor, homeMapFirstFloor, homeMapThingOfPin, homeStyleOf, renameFloor, startHomeMap } from "./edit-ops.js";
 import { HomeMapEditPage } from "./edit-page.js";
 import { type HomeMapAddTab, HomeMapAddDialog, homeMapAddDialogStyles } from "./add-dialog.js";
 import {
@@ -96,7 +113,7 @@ import {
 } from "./editor-mode.js";
 import { homeMapTogglePick } from "./devices-model.js";
 import { hmeFloorThumb } from "./editor-parts.js";
-import { type HomeMapSaveState, HomeMapSession } from "./editor-session.js";
+import { type HomeMapSaveState, HomeMapSession, homeMapUnsaved } from "./editor-session.js";
 import { editorStyles } from "./editor-styles.js";
 import {
   type HomeMapView,
@@ -138,7 +155,10 @@ import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
 export const HOME_MAP_UPDATE_TEXT = "Update the Wrist Assistant integration to see the home map here.";
-export const HOME_MAP_EMPTY_TEXT = "No home map yet. Scan your rooms with the Wrist Assistant app on an iPhone or iPad with LiDAR (the Pro models). The map shows here once it is saved.";
+/** The first run: the title, the main button and the line under it. */
+export const HOME_MAP_EMPTY_TEXT = "No home map yet";
+export const HOME_MAP_START_TEXT = "Start a map by hand";
+export const HOME_MAP_SCAN_TEXT = "You can also scan your rooms with the Wrist Assistant app on an iPhone or iPad Pro with LiDAR.";
 
 /** A drag shorter than this, in screen pixels, is a click. */
 export const HOME_MAP_DRAG_SLOP = 4;
@@ -148,7 +168,25 @@ const REDRAW_AFTER_ZOOM_MS = 140;
 
 /** The words for where the saves stand. */
 export function homeMapSaveWords(state: HomeMapSaveState): string {
-  return state.kind === "saving" ? "Saving…" : state.kind === "error" ? "Not saved" : "Saved";
+  return state.kind === "saving" ? "Saving…" : state.kind === "waiting" ? state.text : state.kind === "error" ? "Not saved" : "Saved";
+}
+
+// Leaving the page (closing the tab, a reload) with an edit Home Assistant
+// does not hold yet asks first, as Home Assistant's own editors do. Moving
+// to another screen of the panel or of Home Assistant keeps the page alive,
+// and its saves go on trying.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (e: BeforeUnloadEvent) => {
+    if (!homeMapUnsaved()) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+}
+
+/** What `connection` offers to hear it come back, where it does. */
+interface HassConnectionEvents {
+  addEventListener?(type: "ready", listener: () => void): void;
+  removeEventListener?(type: "ready", listener: () => void): void;
 }
 
 const MODEL_LOOK_NAMES: Readonly<Record<string, string>> = { night: "Night", warm: "Warm", lines: "Lines", clay: "Clay", blueprint: "Blueprint" };
@@ -252,18 +290,34 @@ export class WaHomeMapEditor extends LitElement {
   private scene3d?: HomeMapScene3D;
   private loading3d = false;
   private failed3d = false;
+  /** The connection `home_map/subscribe` and the reconnect listener are on,
+   * and the subscription's end. */
+  private listenedTo?: unknown;
+  private readyConnection?: HassConnectionEvents;
+  private unsubscribe?: Promise<(() => Promise<void>) | undefined>;
+  /** The rev a save elsewhere was last heard at, until the map at it is
+   * read or a save of this page's own brings it. */
+  private heardRev?: number;
+  /** A check for a newer map is out. */
+  private checking = false;
 
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKey);
     window.addEventListener("keyup", this.onKeyUp);
-    if (this.askedOnce) void this.load(true);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisible);
+    if (this.askedOnce) {
+      void this.load(true);
+      this.listen();
+    }
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKey);
     window.removeEventListener("keyup", this.onKeyUp);
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisible);
+    this.stopListening();
     this.endDrag?.();
     this.observer?.disconnect();
     this.observed = undefined;
@@ -278,6 +332,9 @@ export class WaHomeMapEditor extends LitElement {
       void this.load();
       void this.loadPages();
     }
+    // Once per connection: a new one (Home Assistant hands the panel a new
+    // `hass` after a reload of the frontend) is listened on afresh.
+    if (this.askedOnce) this.listen();
     const floor = this.baseFloor();
     if (this.needFit && floor !== undefined && this.stageSize.width > 0) this.fit();
   }
@@ -509,7 +566,10 @@ export class WaHomeMapEditor extends LitElement {
     const hass = this.hass;
     if (hass) keepHomeMap(hass, read);
     if (this.session === undefined) {
-      this.session = new HomeMapSession(homeMapApi(this.hassOrThrow()), read, () => this.afterChange(), (saved) => {
+      this.session = new HomeMapSession(homeMapApi(this.hassOrThrow()), read, () => {
+        this.afterChange();
+        this.catchUp();
+      }, (saved) => {
         if (this.hass) keepHomeMap(this.hass, saved);
       });
       this.needFit = true;
@@ -517,6 +577,113 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     this.afterChange();
+  }
+
+  // ── saves made elsewhere ───────────────────────────────────────────────
+
+  /** Listen on the current connection, once: `home_map/subscribe` for each
+   * save made anywhere, and the socket's `ready` for its coming back. Only
+   * while on the page. An integration older than the subscription refuses
+   * it, and the page then hears of a save when the tab is shown again. */
+  private listen(): void {
+    const hass = this.hass;
+    const connection = hass?.connection;
+    if (hass === undefined || connection === undefined || !this.capable || !this.isConnected) return;
+    if (connection === this.listenedTo) return;
+    this.stopListening();
+    this.listenedTo = connection;
+    const events = connection as unknown as HassConnectionEvents;
+    if (typeof events.addEventListener === "function") {
+      events.addEventListener("ready", this.onReconnect);
+      this.readyConnection = events;
+    }
+    if (typeof connection.subscribeMessage !== "function") return;
+    this.unsubscribe = subscribeHomeMap(hass, (rev) => this.heard(rev)).catch(() => undefined);
+  }
+
+  private stopListening(): void {
+    this.readyConnection?.removeEventListener?.("ready", this.onReconnect);
+    this.readyConnection = undefined;
+    this.listenedTo = undefined;
+    const unsubscribe = this.unsubscribe;
+    this.unsubscribe = undefined;
+    // A socket already closed has nothing left to end.
+    void unsubscribe?.then((off) => off?.()).catch(() => undefined);
+  }
+
+  /** The socket is back: send a save that waits at once, and look for a map
+   * saved elsewhere meanwhile. */
+  private readonly onReconnect = (): void => {
+    this.session?.retryNow();
+    void this.recheck();
+  };
+
+  /** The tab is shown again: the same as the socket coming back, since a
+   * hidden tab's socket may have been closed and its timers held back. */
+  private readonly onVisible = (): void => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    this.session?.retryNow();
+    void this.recheck();
+  };
+
+  /** `home_map/subscribe` named a rev: the map is read again when it is not
+   * the one shown, unless an edit of this page waits to be saved, whose
+   * save meets the new map on its own (a conflict, then the edit made again
+   * on top of it). A save of this page's own is heard too, before its
+   * answer, and is not read again: by then the session holds its rev. */
+  heard(rev: number): void {
+    this.heardRev = rev;
+    this.catchUp();
+  }
+
+  /** Read the map a heard rev names, once nothing of this page's is waiting
+   * to be saved. Called again each time the session changes. */
+  private catchUp(): void {
+    const session = this.session;
+    const rev = this.heardRev;
+    if (session === undefined || rev === undefined || session.busy || this.checking) return;
+    if (rev === session.confirmed.rev) {
+      this.heardRev = undefined;
+      return;
+    }
+    void this.recheck();
+  }
+
+  /**
+   * Ask Home Assistant for the map unless it still holds the rev shown
+   * (`not_modified`), and swap a newer one in quietly: the floor, the view,
+   * the room whose walls are edited and the pick stay while they are still
+   * on it (`afterChange`). Nothing while an edit of this page waits to be
+   * saved. A failed check changes nothing; the next save heard, the socket
+   * coming back or the tab shown tries again.
+   */
+  async recheck(): Promise<void> {
+    const hass = this.hass;
+    const session = this.session;
+    if (hass === undefined || session === undefined || !this.capable || session.busy || this.checking) return;
+    this.checking = true;
+    const asked = this.heardRev;
+    let answered = false;
+    try {
+      const reply = await fetchHomeMapIfChanged(hass, session.confirmed.rev);
+      answered = true;
+      if (reply !== undefined && this.session === session && !session.busy) {
+        this.previewDoc = undefined;
+        this.show({ doc: readHomeMap(reply.doc) ?? null, rev: typeof reply.rev === "number" ? reply.rev : 0 });
+        void this.loadScans();
+      }
+    } catch {
+      // Kept as shown; tried again on the next save heard.
+    } finally {
+      this.checking = false;
+    }
+    // Home Assistant answered with the map it holds now, so the rev heard
+    // before asking is dealt with; one heard while the check was out may
+    // name a newer map still. A check that failed is not tried again here,
+    // or a dropped socket would be asked in a loop.
+    if (!answered) return;
+    if (this.heardRev === asked) this.heardRev = undefined;
+    else this.catchUp();
   }
 
   private hassOrThrow(): HassLike {
@@ -1125,7 +1292,7 @@ export class WaHomeMapEditor extends LitElement {
     }
     if (this.loading || this.session === undefined) return this.calm(html`Loading…`);
     const doc = this.doc;
-    if (doc === null || doc.floors.length === 0) return this.calm(html`<b>${HOME_MAP_EMPTY_TEXT}</b>`);
+    if (doc === null || doc.floors.length === 0) return this.renderFirstRun();
     const ctx = this.context()!;
     const note = this.session.note;
     return html`<div class="hme">
@@ -1144,6 +1311,43 @@ export class WaHomeMapEditor extends LitElement {
 
   private calm(body: TemplateResult): TemplateResult {
     return html`<div class="hme-calm"><div class="hme-empty">${body}</div></div>`;
+  }
+
+  /** No map yet, or one with no floors: one button that starts a map by
+   * hand, and the line that a scan makes one too. A note from a start that
+   * was refused (a map saved elsewhere meanwhile) shows above it. */
+  private renderFirstRun(): TemplateResult {
+    const note = this.session?.note;
+    return html`<div class="hme-calm"><div class="hme-empty hme-first">
+      <b>${HOME_MAP_EMPTY_TEXT}</b>
+      ${note === undefined ? nothing : html`<span class="hme-first-note ${note.kind}" role="status">${note.text}</span>`}
+      <button type="button" class="hme-tb primary hme-start-btn" @click=${() => this.startByHand()}>${HOME_MAP_START_TEXT}</button>
+      <span class="hme-first-line">${HOME_MAP_SCAN_TEXT}</span>
+      ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-link" @click=${() => this.onHome?.()}>‹ Home</button>`}
+    </div></div>`;
+  }
+
+  /**
+   * Start a map by hand: one floor, named after the home's lowest Home
+   * Assistant floor (`homeMapFirstFloor`), saved as the home's first map,
+   * and the editor open on it with the draw-room tool out. Nothing when the
+   * map has a floor already.
+   */
+  startByHand(): void {
+    const session = this.session;
+    if (session === undefined) return;
+    const id = randomWatchId();
+    const first = homeMapFirstFloor(this.hass?.floors);
+    if (!session.begin((d) => startHomeMap(d, { id, name: first.name, story: first.story }))) return;
+    session.note = undefined;
+    this.floorId = id;
+    this.walls = undefined;
+    this.selection = undefined;
+    this.needFit = true;
+    this.userMoved = false;
+    this.afterChange();
+    const ctx = this.context();
+    if (ctx !== undefined) this.page.startDrawing(ctx);
   }
 
   private renderBar(doc: HomeMapDocument, ctx: HomeMapEditorContext): TemplateResult {

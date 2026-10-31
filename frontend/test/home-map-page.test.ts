@@ -21,12 +21,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HassLike } from "../src/ha-api.js";
 import { homeMapDevices, homeMapTray } from "../src/home-map/devices-model.js";
 import { HOME_PLAN_COLORS, homePinGlowRadius, homePinPaint, homePlan, homePlanViewBox, homeWallPieces } from "../src/home-map/draw.js";
-import { HOME_MAP_EMPTY_TEXT, HOME_MAP_UPDATE_TEXT, WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
+import { HOME_MAP_EMPTY_TEXT, HOME_MAP_SCAN_TEXT, HOME_MAP_START_TEXT, HOME_MAP_UPDATE_TEXT, WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
+import { homeMapUnsaved } from "../src/home-map/editor-session.js";
 import { HOME_MAP_PATH, isHomeMapRoute, renderHomeMapView } from "../src/home-map/hook.js";
 import { type HomeMapDocument, type HomeMapStates, applyHomeMapEdit } from "../src/home-map/model.js";
 import { addLampLight, renameRoom, setHomeStyle } from "../src/home-map/edit-ops.js";
 import { homeMapStartSteps } from "../src/home-map/edit-page.js";
-import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT } from "../src/home-map/save.js";
+import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT, HOME_MAP_RETRY_TEXT } from "../src/home-map/save.js";
 import { forgetHomeMap, homeMapRead, setHomeMapCapable } from "../src/home-map/store.js";
 import { NO_ICONS } from "../src/watch-pages/editor-host.js";
 
@@ -183,6 +184,7 @@ describe("the plan", () => {
  * two areas and a few states. */
 function fakeHass(start: { doc: HomeMapDocument | null; rev: number }) {
   let stored = start;
+  let dropped = 0;
   const sent: Record<string, any>[] = [];
   const hass = {
     states: {
@@ -195,6 +197,11 @@ function fakeHass(start: { doc: HomeMapDocument | null; rev: number }) {
         sent.push(msg);
         if (msg.type === "wrist_assistant/home_map/get") return structuredClone(stored);
         if (msg.type === "wrist_assistant/home_map/save") {
+          if (dropped > 0) {
+            // The socket library's own failure: a number for a code.
+            dropped -= 1;
+            throw { type: "result", success: false, error: { code: 3, message: "Connection lost" } };
+          }
           if (msg.base_rev !== stored.rev) throw refusal("conflict", `stored revision is ${stored.rev}, save was based on ${msg.base_rev}`);
           stored = { doc: msg.doc as HomeMapDocument, rev: stored.rev + 1 };
           return { rev: stored.rev };
@@ -220,6 +227,10 @@ function fakeHass(start: { doc: HomeMapDocument | null; rev: number }) {
     /** Another device saves meanwhile. */
     elsewhere: (change: (doc: HomeMapDocument) => HomeMapDocument) => {
       stored = { doc: change(stored.doc!), rev: stored.rev + 1 };
+    },
+    /** The next `n` saves are lost with the socket. */
+    drop: (n: number) => {
+      dropped = n;
     },
   };
 }
@@ -1165,5 +1176,92 @@ describe("the map editor's side panel", () => {
     expect(ringedRow(text())).toBe("climate.thermostat");
     el.context()!.setHover(undefined);
     expect(ringedRow(text())).toBeUndefined();
+  });
+});
+
+describe("the map editor with no map, and saves made elsewhere", () => {
+  beforeEach(() => {
+    setHomeMapCapable(true);
+  });
+  afterEach(() => {
+    forgetHomeMap();
+  });
+
+  it("starts a map by hand, named after the lowest Home Assistant floor, the draw tool out, saved from rev 0", async () => {
+    const { el, ha, inside, press, key, click, text } = await page({ doc: null, rev: 0 });
+    (ha.hass as { floors?: unknown }).floors = {
+      ground: { floor_id: "ground", name: "Ground floor", level: 0 },
+      basement: { floor_id: "basement", name: "Basement", level: -1 },
+    };
+    const shown = text();
+    expect(shown).toContain(HOME_MAP_EMPTY_TEXT);
+    expect(shown).toContain(HOME_MAP_START_TEXT);
+    expect(shown).toContain(HOME_MAP_SCAN_TEXT);
+    click(HOME_MAP_START_TEXT);
+    expect(text()).toContain("Click to put down the first corner");
+    await el.session!.idle();
+    const [first] = ha.saves();
+    expect(first!.base_rev).toBe(0);
+    expect(first!.doc).toEqual({ v: 1, floors: [{ id: inside.floorId, name: "Basement", story: -1, rooms: [], pins: [] }] });
+    // A room drawn on it is the next save, on top of the first.
+    el.resizeStage(1000, 600);
+    inside.willUpdate(new Map());
+    for (const p of [[0, 0], [4, 0], [4, 3], [0, 3]] as [number, number][]) press(p);
+    key("Enter");
+    inside.dialog!.done("Den");
+    await settle();
+    await el.session!.idle();
+    expect(ha.saves().map((s) => s.base_rev)).toEqual([0, 1]);
+    const room = ha.now().doc!.floors[0]!.rooms[0]!;
+    expect(room).toMatchObject({ name: "Den", openings: [], objects: [] });
+    expect(room.walls).toHaveLength(4);
+    expect(text()).toContain("Saved");
+  });
+
+  it("swaps in a map saved elsewhere quietly, keeping the floor, the view and the pick", async () => {
+    const { el, ha, inside } = await page();
+    el.select({ kind: "room", roomId: KITCHEN });
+    const view = inside.view;
+    ha.elsewhere((d) => renameRoom(d, LIVING, "Lounge")!);
+    el.heard(5);
+    await settle();
+    expect(ha.sent.filter((m) => m.type === "wrist_assistant/home_map/get").at(-1)).toEqual({ type: "wrist_assistant/home_map/get", rev: 4 });
+    expect(el.session!.confirmed.rev).toBe(5);
+    expect(el.session!.doc!.floors[0]!.rooms[0]!.name).toBe("Lounge");
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
+    expect(inside.view).toEqual(view);
+    // The rev it holds is not read again.
+    const reads = ha.sent.length;
+    el.heard(5);
+    await settle();
+    expect(ha.sent.length).toBe(reads);
+  });
+
+  it("leaves a map saved elsewhere to the save of an edit still out, and hears its own save without reading", async () => {
+    const { el, ha } = await page();
+    expect(el.apply((d) => renameRoom(d, KITCHEN, "Galley"))).toBe(true);
+    // Its own save, heard before the answer: nothing read.
+    el.heard(5);
+    await el.session!.idle();
+    await settle();
+    expect(ha.sent.filter((m) => m.type === "wrist_assistant/home_map/get" && m.rev !== undefined)).toEqual([]);
+    expect(el.session!.confirmed.rev).toBe(5);
+  });
+
+  it("keeps the edit and the undo when the socket drops, says so, and sends it again when it is back", async () => {
+    const { el, ha, text } = await page();
+    ha.drop(1);
+    expect(el.apply((d) => renameRoom(d, KITCHEN, "Galley"))).toBe(true);
+    for (let i = 0; i < 20 && el.session!.state.kind !== "waiting"; i++) await settle();
+    expect(text()).toContain(HOME_MAP_RETRY_TEXT);
+    expect(text()).not.toContain(HOME_MAP_GONE_TEXT);
+    expect(el.session!.doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
+    expect(el.context()!.canUndo).toBe(true);
+    expect(homeMapUnsaved()).toBe(true);
+    (el as unknown as { onReconnect: () => void }).onReconnect();
+    await el.session!.idle();
+    expect(ha.now().doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
+    expect(text()).toContain("Saved");
+    expect(homeMapUnsaved()).toBe(false);
   });
 });

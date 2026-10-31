@@ -439,10 +439,15 @@ class DeltaCoordinator:
         # kept like _watch_config_sent so a woken poll can tell news.
         self._http_actions_sent: dict[str, int] = {}
         # The home map's rev rides every reply with a body as `home_map_rev`
-        # while a map is stored (see home_map_revision). A save wakes no poll:
-        # the number reaches a watch on its next reply with a body. None
-        # until setup attaches the store (attach_home_map_store).
+        # while a map is stored (see home_map_revision), and any save wakes
+        # every parked poll (see home_map_changed), wherever it was made:
+        # the iPhone, the panel. None until setup attaches the store
+        # (attach_home_map_store).
         self._home_map_store: Any | None = None
+        # watch_id → the map rev its last reply with a body carried (0 noted
+        # before it parks while no map is stored), kept like
+        # _http_actions_sent so a woken poll can tell news.
+        self._home_map_sent: dict[str, int] = {}
         # The bound user's client certificate rides the poll the same way:
         # every reply with a body names that user's revision as
         # `client_certificate` once the user has a record, and a change wakes
@@ -621,6 +626,7 @@ class DeltaCoordinator:
         self._token_notified_at.pop(watch_id, None)
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
+        self._home_map_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
         self._addresses_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
@@ -800,25 +806,30 @@ class DeltaCoordinator:
         )
 
     def _config_behind(self, watch_id: str, held: HeldConfig | None = None) -> bool:
-        """The watch's own config, the home's library, its user's client
-        certificate or its addresses moved since it was last told, or its own
-        report on this poll says it does not have them: any of them earns an
-        empty reply carrying the new values."""
+        """The watch's own config, the home's library, the home map, its
+        user's client certificate or its addresses moved since it was last
+        told, or its own report on this poll says it does not have them: any
+        of them earns an empty reply carrying the new values."""
         return (
             self._watch_config_behind(watch_id, held)
             or self._http_actions_behind(watch_id, held)
+            or self._home_map_behind(watch_id)
             or self._client_certificate_behind(watch_id, held)
             or self._addresses_behind(watch_id, held)
         )
 
     def _note_config_baseline(self, watch_id: str) -> None:
         """_note_watch_config_baseline, and the same for the library, the
-        client certificate and the addresses."""
+        home map, the client certificate and the addresses."""
         self._note_watch_config_baseline(watch_id)
         if watch_id not in self._http_actions_sent:
             current = self.http_actions_revision()
             if current is not None:
                 self._http_actions_sent[watch_id] = current
+        if watch_id not in self._home_map_sent:
+            current = self._home_map_baseline()
+            if current is not None:
+                self._home_map_sent[watch_id] = current
         if watch_id not in self._client_certificate_sent:
             current = self._client_certificate_baseline(watch_id)
             if current is not None:
@@ -842,7 +853,8 @@ class DeltaCoordinator:
     @callback
     def attach_home_map_store(self, store: Any) -> None:
         """Wire the home map store in for reading: its rev goes out on every
-        reply with a body as ``home_map_rev``."""
+        reply with a body as ``home_map_rev``. The wake on a save is wired
+        by setup, which adds home_map_changed as a store listener."""
         self._home_map_store = store
 
     def home_map_revision(self) -> int | None:
@@ -853,6 +865,36 @@ class DeltaCoordinator:
         if store is None or not store.has_map:
             return None
         return int(store.rev)
+
+    def _home_map_baseline(self) -> int | None:
+        """What to note for a watch before it parks: the rev, or 0 while no
+        map is stored, so that the home's first map counts as news. None
+        with no store or an unreadable file, which notes nothing."""
+        store = self._home_map_store
+        if store is None or not store.available:
+            return None
+        return int(store.rev) if store.has_map else 0
+
+    def _home_map_behind(self, watch_id: str) -> bool:
+        """True when the map's rev moved since the last reply this watch was
+        handed with a body (or the baseline noted before it parked). The
+        poll does not report the rev a watch holds, so this is once per
+        save: a watch whose fetch fails hears again on its next reply with a
+        body, which carries the rev anyway."""
+        current = self.home_map_revision()
+        if current is None:
+            return False
+        sent = self._home_map_sent.get(watch_id)
+        return sent is not None and current != sent
+
+    @callback
+    def home_map_changed(self, _rev: int) -> None:
+        """Store listener: the map is the home's, so any save (the iPhone's,
+        the panel's) wakes every parked poll, each of which answers at once
+        with the new ``home_map_rev``. Waking leaves the waiters in place:
+        the polls deliver, they are not superseded."""
+        for watch_id in list(self._waiters):
+            self.wake_watch(watch_id, renotify=False)
 
     # ── the bound user's client certificate on the poll ───────────────
 
@@ -1213,6 +1255,7 @@ class DeltaCoordinator:
         self._just_paired.discard(watch_id)
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
+        self._home_map_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
         self._addresses_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
@@ -1273,9 +1316,10 @@ class DeltaCoordinator:
         ``home_map_rev``: the map's rev, the ``rev`` the signed
         ``home_map_get`` returns. A watch fetches the map again when it is
         not the one it holds. Left out while no map is stored or its file
-        could not be read. A save wakes no parked poll: the new number rides
-        the next reply with a body. A lean reply carries it whole, since the
-        poll does not report it. Older watches ignore the key.
+        could not be read. Any save wakes every parked poll, which answers at
+        once with the new number, once per save. A lean reply carries it
+        whole, since the poll does not report it. Older watches ignore the
+        key.
 
         An entity removed from Home Assistant (deleted, or renamed to another
         id) is an event like any other change: ``state`` ``unavailable``, the
@@ -1402,10 +1446,12 @@ class DeltaCoordinator:
                 body["watch_config_hashes"] = hashes
         # The home map's rev, which comes with the pages: the watch fetches
         # the map with home_map_get when it is not the one it holds. Left out
-        # while no map is stored. Not recorded: a save wakes no poll.
+        # while no map is stored. Recorded, so a poll woken by a save can
+        # tell the rev is news (_home_map_behind).
         map_revision = self.home_map_revision()
         if map_revision is not None:
             body["home_map_rev"] = map_revision
+            self._home_map_sent[watch_id] = map_revision
         library_revision = self.http_actions_revision()
         if library_revision is not None:
             body["http_actions"] = library_revision
@@ -1852,9 +1898,10 @@ class DeltaCoordinator:
                 if events:
                     return 200, reply(events, next_cursor)
                 # Woken by a complication commit (or a panel nudge) or a
-                # watch config save or an HTTP action library change rather
-                # than an entity: nothing to deliver but the token and the
-                # revisions, which the wrapper stamps on this empty reply.
+                # watch config save, an HTTP action library change or a home
+                # map save rather than an entity: nothing to deliver but the
+                # token and the revisions, which the wrapper stamps on this
+                # empty reply.
                 if behind():
                     return 200, reply([], next_cursor)
                 # Nothing this watch has not seen (every change was a no-op
@@ -2329,6 +2376,7 @@ class DeltaCoordinator:
             # body carries them again and records them afresh.
             self._watch_config_sent.pop(watch_id, None)
             self._http_actions_sent.pop(watch_id, None)
+            self._home_map_sent.pop(watch_id, None)
             self._client_certificate_sent.pop(watch_id, None)
             self._addresses_sent.pop(watch_id, None)
             self._held_repeated.pop(watch_id, None)

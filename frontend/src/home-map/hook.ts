@@ -7,9 +7,11 @@
 // ignored. It is one of the whole home's screens ("On every device"), shown
 // only once the integration lists `home_map` (`store.ts`). Every edit is
 // saved a moment after it is made, so the page keeps no draft for the
-// panel's leave guards. Only
-// this file is in the panel's first download; the page arrives the first
-// time the route is opened.
+// panel's leave guards: a save that could not reach Home Assistant keeps
+// trying after the page is left for another screen, and only closing or
+// reloading the tab would lose it, which the page's own `beforeunload`
+// warns of (`home-map-editor.ts`). Only this file is in the panel's first
+// download; the page arrives the first time the route is opened.
 
 import { html, type TemplateResult } from "lit";
 import type { HassLike } from "../ha-api.js";
