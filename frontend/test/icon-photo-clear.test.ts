@@ -31,8 +31,10 @@ import {
   oneLookClearDimmed,
   oneLookCutoutActive,
   oneLookCutoutDimmed,
+  oneLookCutoutAspect,
   oneLookCutoutBoxSide,
   oneLookCutoutOf,
+  oneLookCutoutPlace,
   oneLookCutoutRect,
   oneLookPreviewModel,
   renderOneLookTile,
@@ -231,10 +233,12 @@ describe("the Clear look", () => {
     const out = html(renderOneLookTile(f));
     const normal = html(renderOneLookTile(face(thing("light.lamp"), lampOn)));
     expect(place(styleOf(out, "ol-cutout"))).toEqual(place(styleOf(normal, "ol-cutout")));
-    const { box } = oneLookCutoutRect(oneLookPreviewModel(f)!.layout.discRect, 2);
+    const layout = oneLookPreviewModel(f)!.layout;
+    const { box } = oneLookCutoutPlace(layout, 2);
     const at = place(styleOf(out, "ol-cutout"));
-    // 2:1, so as wide as the box and half as high, on its centre: 1.35 times
-    // the disc, on the disc's centre.
+    // 2:1, so as wide as the box and half as high, on its centre: the
+    // glyph's ink square (0.86 of the glyph box) on the glyph's centre.
+    expect(box.width).toBeCloseTo(layout.glyphSize * 0.86, 6);
     expect(at.w).toBeCloseTo(box.width, 1);
     expect(at.h).toBeCloseTo(box.width / 2, 1);
     expect(at.x + at.w / 2).toBeCloseTo(box.x + box.width / 2, 1);
@@ -300,7 +304,7 @@ describe("the Clear look", () => {
     const f = face(lamp(), lampOn);
     const model = oneLookPreviewModel(f)!;
     const size = model.layout.size;
-    const { box } = oneLookCutoutRect(model.layout.discRect, 2);
+    const { box } = oneLookCutoutPlace(model.layout, 2);
     const glow = styleOf(html(renderOneLookTile(f)), "ol-layer ol-clear-glow") ?? "";
     const r2 = (v: number) => Math.round(v * 100) / 100;
     expect(glow).toContain(`radial-gradient(circle ${r2(size.width * 0.9)}px at ${r2(box.x + box.width / 2)}px ${r2(box.y + box.height / 2)}px`);
@@ -386,14 +390,62 @@ describe("every tile", () => {
     expect(oneLookCutoutBoxSide(40, 1.1)).toBeCloseTo(44, 6);
   });
 
-  it("draws a tile's photo no taller than its disc, in both looks", () => {
+  it("keeps the disc rule only where a disc is drawn; the centred layout uses the glyph's ink square", () => {
+    const disc = { x: 10, y: 20, width: 40, height: 40 };
+    const withDisc = oneLookCutoutPlace({ drawsDisc: true, discRect: disc, glyphSize: 30 }, 384 / 322);
+    expect(withDisc).toEqual(oneLookCutoutRect(disc, 384 / 322));
+    // No disc: 0.86 of the glyph box, on its centre, whatever the aspect.
+    for (const a of [384 / 322, 2, 1, 0.5, undefined, 0, Number.NaN]) {
+      const r = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, a);
+      expect(r.box.width, String(a)).toBeCloseTo(43, 6);
+      expect(r.box.height, String(a)).toBeCloseTo(43, 6);
+      expect(r.box.x + r.box.width / 2, String(a)).toBeCloseTo(30, 6);
+      expect(r.box.y + r.box.height / 2, String(a)).toBeCloseTo(40, 6);
+      expect(r.radius, String(a)).toBeCloseTo(43 * 0.22, 6);
+    }
+    // Fitted with its aspect kept, as the layout's ink rect: side x min(1, a)
+    // across, side / max(1, a) high.
+    const wide = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, 2).photo;
+    expect(wide.width).toBeCloseTo(43, 6);
+    expect(wide.height).toBeCloseTo(21.5, 6);
+    const tall = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, 0.5).photo;
+    expect(tall.width).toBeCloseTo(21.5, 6);
+    expect(tall.height).toBeCloseTo(43, 6);
+    expect(oneLookCutoutAspect(undefined)).toBe(1);
+    expect(oneLookCutoutAspect(0)).toBe(1);
+    expect(oneLookCutoutAspect(Number.NaN)).toBe(1);
+    expect(oneLookCutoutAspect(1.5)).toBe(1.5);
+  });
+
+  it("lays a centred tile out by the photo's aspect beside 100%, the text where the icon's is", () => {
+    const wide = { ...PHOTOS, photoSize: () => ({ width: 384, height: 322 }) };
+    const iconFace = face(thing("light.lamp", { iconPhotoId: undefined }), lampOn);
+    const iconOut = html(renderOneLookTile(iconFace));
+    expect(iconOut).toContain("100%");
+    const gap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+      Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width), b.y - (a.y + a.height), a.y - (b.y + b.height));
     for (const look of [undefined, "clear"] as const) {
-      const f = face(thing("light.lamp", look === undefined ? {} : { iconPhotoLook: look }), lampOn, { ...PHOTOS, photoSize: () => ({ width: 384, height: 322 }) });
-      const disc = oneLookPreviewModel(f)!.layout.discRect;
-      const at = place(styleOf(html(renderOneLookTile(f)), "ol-cutout"));
-      expect(at.h, look).toBeCloseTo(disc.height, 1);
-      expect(at.w, look).toBeCloseTo(disc.width * (384 / 322), 1);
-      expect(at.y + at.h / 2, look).toBeCloseTo(disc.y + disc.height / 2, 1);
+      const f = face(thing("light.lamp", look === undefined ? {} : { iconPhotoLook: look }), lampOn, wide);
+      const model = oneLookPreviewModel(f)!;
+      const layout = model.layout;
+      expect(layout.mode, look).toBe("centred");
+      // The ink the layout keeps clear has the photo's shape, and clears
+      // the state, the bar and the name.
+      const ink = layout.glyphInk!;
+      expect(ink.width / ink.height, look).toBeCloseTo(384 / 322, 6);
+      expect(gap(ink, layout.stateRect!), look).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(gap(ink, layout.barRect!), look).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(ink.y + ink.height, look).toBeLessThanOrEqual(layout.textOrigin.y - 1 + 1e-9);
+      const out = html(renderOneLookTile(f));
+      for (const part of ["ol-state", "ol-text centred", "ol-bar"]) expect(styleOf(out, part), `${look} ${part}`).toBe(styleOf(iconOut, part));
+      // The photo fills the glyph's ink square across, on the glyph's centre.
+      const at = place(styleOf(out, "ol-cutout"));
+      const side = model.layout.glyphSize * 0.86;
+      const d = model.layout.discRect;
+      expect(at.w, look).toBeCloseTo(side, 1);
+      expect(at.h, look).toBeCloseTo(side / (384 / 322), 1);
+      expect(at.x + at.w / 2, look).toBeCloseTo(d.x + d.width / 2, 1);
+      expect(at.y + at.h / 2, look).toBeCloseTo(d.y + d.height / 2, 1);
     }
   });
 

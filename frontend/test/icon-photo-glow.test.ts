@@ -42,7 +42,7 @@ import {
   ONE_LOOK_CUTOUT_OFF_FILTER,
   oneLookCutoutGlows,
   oneLookCutoutOf,
-  oneLookCutoutRect,
+  oneLookCutoutPlace,
   oneLookPreviewModel,
   renderOneLookTile,
 } from "../src/watch-pages/one-look/render.js";
@@ -370,7 +370,7 @@ describe("a look on a One Look tile", () => {
   it("places and colours each layer: the emission on the photo, the aura and beam reaching the padding past it", () => {
     const f = face(lamp(), "on", lit(LIGHT()));
     const model = oneLookPreviewModel(f)!;
-    const rect = oneLookCutoutRect(model.layout.discRect, 2).photo;
+    const rect = oneLookCutoutPlace(model.layout, 2).photo;
     const out = html(renderOneLookTile(f));
     const emit = place(styleOf(out, "ol-light ol-light-emit"));
     expect(emit.x).toBeCloseTo(rect.x, 1);

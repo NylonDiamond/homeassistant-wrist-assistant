@@ -246,8 +246,31 @@ export const ONE_LOOK_CUTOUT_CORNER = 0.22;
  * taller than the disc. A square or tall photo, and an unknown aspect (not
  * loaded, 0 or not a number), get the disc's own side. */
 export function oneLookCutoutBoxSide(disc: number, aspect: number | undefined): number {
-  const a = aspect !== undefined && Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
-  return disc * Math.min(ONE_LOOK_CUTOUT_BOX, Math.max(1, a));
+  return disc * Math.min(ONE_LOOK_CUTOUT_BOX, Math.max(1, oneLookCutoutAspect(aspect)));
+}
+
+/** A photo's aspect as the layout and the box read it: 1 while unknown, 0,
+ * negative or not a number. */
+export function oneLookCutoutAspect(aspect: number | undefined): number {
+  return aspect !== undefined && Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+}
+
+/**
+ * Where an icon photo is drawn in a tile's layout (the apps'
+ * `OneLookCutout`): with a disc drawn, `oneLookCutoutRect` on the disc;
+ * with none (the centred layout), the glyph's ink square, its side the
+ * glyph box times the glyph ink share (0.86) on the glyph box's centre,
+ * which is the ink the layout already keeps clear of the state, the bar and
+ * the name. The photo is fitted in it, aspect kept, corners 22% of the box.
+ */
+export function oneLookCutoutPlace(layout: Pick<OneLookLayout, "drawsDisc" | "discRect" | "glyphSize">, aspect: number | undefined): { box: OneLookRect; photo: OneLookRect; radius: number } {
+  if (layout.drawsDisc) return oneLookCutoutRect(layout.discRect, aspect);
+  const rect = layout.discRect;
+  const side = layout.glyphSize * ONE_LOOK_GLYPH_INK_SHARE;
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const box = { x: cx - side / 2, y: cy - side / 2, width: side, height: side };
+  return { box, photo: fittedPhoto(box, aspect), radius: side * ONE_LOOK_CUTOUT_CORNER };
 }
 
 /** The CSS filter of an icon photo that is not lit (and of every one wrist
@@ -287,7 +310,7 @@ function fittedPhoto(box: OneLookRect, aspect: number | undefined): OneLookRect 
 
 // "A photo is an icon" (2026-10-31): a Clear tile is laid out as any tile
 // is, the state top left, the photo in the icon's place (the box
-// `oneLookCutoutRect` gives) and the name at the bottom, with the accessory,
+// `oneLookCutoutPlace` gives) and the name at the bottom, with the accessory,
 // the bar and the big value. Only its surface and its lit glow differ.
 
 /** The Clear look's numbers, the apps' `OneLookPhotoClear`: the white
@@ -691,7 +714,9 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     ...(ks.bigValue === undefined ? {} : { bigValue: ks.bigValue }),
     centred,
     topBar: centred && reservesBar,
-    glyphAspect: centred ? glyphAspectOf(measurer, base) : 1,
+    // A cut-out photo is laid out by its own aspect, not the icon's (a wide
+    // photo must not rise beside the state as a narrow bulb may).
+    glyphAspect: !centred ? 1 : cutout !== undefined ? oneLookCutoutAspect(cutout.aspect) : glyphAspectOf(measurer, base),
     glyphExtent: centred ? glyphExtentOf(measurer, base) : 1.25,
     glyphIsPhoto: centred && photo !== undefined,
     style,
@@ -973,10 +998,10 @@ export function oneLookTintedOn(cutout: Pick<OneLookCutout, "url" | "on" | "onMa
 
 /**
  * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
- * no disc fill, the photo fitted in a square box on the disc's centre, as
- * wide as the photo's aspect lets it be up to 1.35 times the disc and never
- * taller than the disc (`oneLookCutoutRect`), its corners rounded by 22% of
- * the box. Lit (and not wrist down): the pearl
+ * no disc fill, the photo fitted in a square box on the glyph's centre
+ * (`oneLookCutoutPlace`: the glyph's ink square in the centred layout, the
+ * disc times the aspect held to 1 to 1.35 where a disc is drawn), its
+ * corners rounded by 22% of the box. Lit (and not wrist down): the pearl
  * halo behind it as a glyph has it, the pearl disc's white glow in the disc
  * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
  * 62% when `oneLookCutoutDimmed` says so. Lit and bright
@@ -996,7 +1021,7 @@ function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: 
   const { palette, device } = model;
   const rect = layout.discRect;
   const lit = palette.isLit && !palette.aod;
-  const { box, photo, radius } = oneLookCutoutRect(rect, cutout.aspect);
+  const { box, photo, radius } = oneLookCutoutPlace(layout, cutout.aspect);
   const light = model.kind.role.kind === "light";
   const active = oneLookCutoutActive(model.kind, palette);
   const clear = oneLookDrawsClear(model);

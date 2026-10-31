@@ -109,13 +109,14 @@ describe("an icon photo on a One Look tile", () => {
     expect(oneLookCutoutOf(lamp({ iconPhotoId: ID.toLowerCase() }), { photo: (id) => `u:${id}` })).toEqual({ url: `u:${ID.toLowerCase()}` });
   });
 
-  it("sits in a box on the disc's centre, the disc's own side while the aspect is unknown, corners 22% of the box", () => {
+  it("sits in the glyph's ink square on its centre in the centred layout, corners 22% of the box", () => {
     const f = face(lamp(), "on", have);
     const model = oneLookPreviewModel(f)!;
     const disc = model.layout.discRect;
     const html = text(renderOneLookTile(f));
     const at = place(styleOf(html, "ol-cutout"));
-    const side = disc.width;
+    expect(model.layout.drawsDisc).toBe(false);
+    const side = model.layout.glyphSize * 0.86;
     expect(at.w).toBeCloseTo(side, 1);
     expect(at.h).toBeCloseTo(side, 1);
     expect(at.x + at.w / 2).toBeCloseTo(disc.x + disc.width / 2, 1);
@@ -145,13 +146,15 @@ describe("an icon photo on a One Look tile", () => {
     const arrange = { v: 1, parts: { icon: { spot: "tl" } } };
     const plain = place(styleOf(text(renderOneLookTile(face(lamp(), "on", have))), "ol-cutout"));
     const f = face(lamp({ arrange }), "on", have);
-    const placed = oneLookPreviewModel(f)!.arrange?.icon?.rect;
+    const model = oneLookPreviewModel(f)!;
+    const placed = model.arrange?.icon;
     expect(placed).toBeDefined();
     const at = place(styleOf(text(renderOneLookTile(f)), "ol-cutout"));
     expect(at.x).not.toBeCloseTo(plain.x, 0);
-    expect(at.x + at.w / 2).toBeCloseTo(placed!.x + placed!.width / 2, 1);
-    // The aspect is unknown here, so the box is the placed disc's side.
-    expect(at.w).toBeCloseTo(placed!.width, 1);
+    expect(at.x + at.w / 2).toBeCloseTo(placed!.rect.x + placed!.rect.width / 2, 1);
+    // The aspect is unknown here, so the photo fills the placed glyph's ink
+    // square.
+    expect(at.w).toBeCloseTo(model.layout.glyphSize * placed!.scale * 0.86, 1);
     // Hidden by the Arrangement: gone with the icon.
     const hidden = text(renderOneLookTile(face(lamp({ arrange: { v: 1, parts: { icon: { hidden: true } } } }), "on", have)));
     expect(hidden).not.toContain("ol-cutout");
