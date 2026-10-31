@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 import gzip
 import json
 import logging
@@ -70,7 +71,12 @@ from homeassistant import loader
 from homeassistant.components.camera import async_get_image
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import Context, HomeAssistant, ServiceResponse
-from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
+from homeassistant.exceptions import (
+    HomeAssistantError,
+    ServiceNotFound,
+    ServiceValidationError,
+    Unauthorized,
+)
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import instance_id as ha_instance_id
 
@@ -450,11 +456,16 @@ def _not_allowed_response(validated: Any, secret_bytes: bytes) -> Response:
 
 
 def _signed_refusal_response(
-    validated: Any, secret_bytes: bytes, error: str, message: str
+    validated: Any,
+    secret_bytes: bytes,
+    error: str,
+    message: str,
+    status: int = 403,
 ) -> Response:
-    """A signed 403 ``{"ok": false, "error", "message"}`` for a good
-    signature whose bound user may not act, signed with the device's own key
-    over the request's op so the device can trust the reason."""
+    """A signed ``{"ok": false, "error", "message"}`` refusal (403 unless
+    `status` says otherwise) for a good signature whose bound user may not
+    act, signed with the device's own key over the request's op so the device
+    can trust the reason."""
     json_bytes = orjson.dumps({"ok": False, "error": error, "message": message})
     ts = int(time.time())
     sig = sign_response(
@@ -468,7 +479,7 @@ def _signed_refusal_response(
     )
     return Response(
         body=json_bytes,
-        status=403,
+        status=status,
         content_type="application/json",
         headers={"X-WA-Ts": str(ts), "X-WA-Sig": sig},
     )
@@ -1143,6 +1154,126 @@ class WADeltaView(HomeAssistantView):
 # ── op handlers ──────────────────────────────────────────────────────────
 
 
+# The signed refusal for a service call Home Assistant refused for the bound
+# user's rights: an admin-only service (`async_register_admin_service`) or an
+# entity a group policy does not let them control. Only this call was
+# refused, so it is its own code, not `not_allowed`: a device reads that one
+# as the whole user turned off and says so on its connection status.
+NOT_PERMITTED_ERROR = "not_permitted"
+NOT_PERMITTED_MESSAGE = (
+    "Your Home Assistant user may not do this. Ask a Home Assistant admin."
+)
+# 409, not 403: apps before 3.2 read any 403 on a call as a failed sign-in,
+# go offline and retry a queued widget tap for ten minutes. A 409 is a plain
+# failed call to them. Current apps read `not_permitted` at any 4xx.
+NOT_PERMITTED_STATUS = 409
+
+# How long a service call that answers without its response may run before
+# the device is told it was sent. Home Assistant checks the user's rights at
+# the very start of the handler, before any device I/O, so a refusal lands
+# well inside this; a call still running after it is answered `ok` and runs
+# on, as a non-blocking call always has.
+SERVICE_REFUSAL_WINDOW_SECONDS = 0.3
+
+# What a call that ended inside the window raises to `_op_service` rather
+# than answer `ok`. The first three are Home Assistant's own checks before
+# the handler runs (no such service, a wrong response request, data the
+# schema rejects), which a non-blocking call always raised at once; the last
+# is the user's rights.
+_SERVICE_ERRORS_ANSWERED = (
+    ServiceNotFound,
+    ServiceValidationError,
+    vol.Invalid,
+    Unauthorized,
+)
+
+
+def _log_service_failure(domain: str, service: str, err: BaseException) -> None:
+    """Log a service call that failed after its device was answered, the way
+    Home Assistant logs a failed non-blocking call."""
+    if isinstance(err, Unauthorized):
+        _LOGGER.warning("Unauthorized service called %s/%s", domain, service)
+    else:
+        _LOGGER.error(
+            "Error executing service %s.%s", domain, service, exc_info=err
+        )
+
+
+def _log_late_service_failure(
+    domain: str, service: str, task: asyncio.Task
+) -> None:
+    """Done callback of a call that outlived the window. Retrieves the
+    exception, so asyncio never warns that it was never retrieved."""
+    if task.cancelled():
+        _LOGGER.debug("Service call %s.%s was cancelled", domain, service)
+        return
+    err = task.exception()
+    if err is not None:
+        _log_service_failure(domain, service, err)
+
+
+async def _async_call_service_briefly(
+    hass: HomeAssistant,
+    domain: str,
+    service: str,
+    service_data: dict[str, Any],
+    context: Context,
+) -> None:
+    """A service call that answers without its response, but not blind.
+
+    A non-blocking `async_call` runs the handler in Home Assistant's own
+    background task, so a refusal of the user (`Unauthorized`) is only
+    logged and the device is told it worked. This runs the blocking call in
+    a task and waits for it at most `SERVICE_REFUSAL_WINDOW_SECONDS`. An
+    error in `_SERVICE_ERRORS_ANSWERED` raised inside the window is raised
+    here for `_op_service` to answer; any other is logged and the call
+    counts as sent, as before. A call still running is left to run on, kept
+    by Home Assistant's task set like its own non-blocking calls, with a
+    done callback that logs whatever it ends with.
+    """
+    task = hass.async_create_task(
+        hass.services.async_call(
+            domain, service, service_data, blocking=True, context=context
+        ),
+        name=f"wrist_assistant_service_{domain}.{service}",
+    )
+    on_done = functools.partial(_log_late_service_failure, domain, service)
+    try:
+        await asyncio.wait({task}, timeout=SERVICE_REFUSAL_WINDOW_SECONDS)
+    except asyncio.CancelledError:
+        # The request went away; the call does not.
+        task.add_done_callback(on_done)
+        raise
+    if not task.done():
+        task.add_done_callback(on_done)
+        return
+    if task.cancelled():
+        return
+    err = task.exception()
+    if err is None:
+        return
+    if isinstance(err, _SERVICE_ERRORS_ANSWERED):
+        raise err
+    _log_service_failure(domain, service, err)
+
+
+def _not_permitted_response(ctx: _OpContext, domain: str, service: str) -> Response:
+    """The signed refusal for a service call refused for the user's rights."""
+    _LOGGER.warning(
+        "Refused %s.%s for %s: its Home Assistant user may not call it",
+        domain,
+        service,
+        ctx.watch_id,
+    )
+    return _signed_refusal_response(
+        ctx,
+        ctx.secret_bytes,
+        NOT_PERMITTED_ERROR,
+        NOT_PERMITTED_MESSAGE,
+        status=NOT_PERMITTED_STATUS,
+    )
+
+
 async def _op_service(ctx: _OpContext) -> Response:
     """Generic service call. Optionally returns the service response.
 
@@ -1158,6 +1289,11 @@ async def _op_service(ctx: _OpContext) -> Response:
     All non-direct-state ops route through this — todo/calendar/weather/
     notify/tts/conversation/assist_satellite/mass_search/etc. The watch sends
     the same shape it would have sent to /api/services/<domain>/<service>.
+
+    Reply: {"ok": true, "response"?: ...}. A call the bound user may not make
+    is a signed 409 {"ok": false, "error": "not_permitted", "message"}; the
+    other failures are a signed 404 (no such service), 400 (data the schema
+    rejects) or 502 {"ok": false, "error": <message>}.
     """
     domain = ctx.payload.get("domain")
     service = ctx.payload.get("service")
@@ -1183,7 +1319,8 @@ async def _op_service(ctx: _OpContext) -> Response:
     # Home Assistant apply its admin-only check (`async_register_admin_service`
     # only checks when the context names a user) and what puts the person's
     # name in the logbook. No allow-list here: Home Assistant's own rules for
-    # that user are the rules.
+    # that user are the rules, and a refusal under them is answered as one
+    # (`not_permitted`), not as a call that worked or a failed one.
     context = ctx.new_context()
     try:
         if return_response:
@@ -1197,10 +1334,13 @@ async def _op_service(ctx: _OpContext) -> Response:
             )
             return ctx.signed_json({"ok": True, "response": response_data})
         else:
-            await ctx.hass.services.async_call(
-                domain, service, service_data, blocking=False, context=context
+            await _async_call_service_briefly(
+                ctx.hass, domain, service, service_data, context
             )
             return ctx.signed_json({"ok": True})
+    except Unauthorized:
+        # Before `HomeAssistantError`, which it is.
+        return _not_permitted_response(ctx, domain, service)
     except ServiceNotFound as err:
         return ctx.signed_json(
             {"ok": False, "error": f"Service not found: {err}"}, status=404
