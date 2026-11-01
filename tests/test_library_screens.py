@@ -391,6 +391,79 @@ def test_deleting_a_page_with_its_tiles_drops_them_from_the_screens() -> None:
     assert "P1" not in held["screens"]["watch"] and "P1" not in held["screens"]["iphone"]
 
 
+def test_an_old_panel_s_save_without_screens_never_loses_an_arrangement() -> None:
+    # A panel bundle from before the screens never sends the key. On a page
+    # arranged apart that save is refused, rather than putting both screens
+    # back to the tile fields; the new panel says it knows the screens.
+    library = _library(_split_page())
+    content = {k: v for k, v in _split_page().items() if k != "screens"}
+    with pytest.raises(lib.LibraryError) as err:
+        lib.replace_item(library, "pages", PAGE, content)
+    assert err.value.code == "invalid" and "reload the panel" in err.value.message
+    change = lib.replace_item(library, "pages", PAGE, content, knows_screens=True)
+    assert "screens" not in change.library["pages"][PAGE]
+
+
+def test_an_old_panel_s_save_of_a_page_no_one_arranged_apart_is_taken() -> None:
+    raw = _library(_lights_page())
+    raw["version"] = 1
+    library = lib.fill_screens(lib.validate_library(raw))
+    assert "screens" in library["pages"][PAGE], "the fill wrote the tile fields as screens"
+    content = _lights_page()
+    content["name"] = "Lamps"
+    change = lib.replace_item(library, "pages", PAGE, content)
+    assert change.library["pages"][PAGE]["name"] == "Lamps"
+    assert lib.page_screens(change.library["pages"][PAGE]) == lib.page_screens(library["pages"][PAGE])
+
+
+# ── a tile with no id ────────────────────────────────────────────────────
+
+
+def _page_with_a_tile_with_no_id() -> dict:
+    page = _split_page()
+    page["items"].insert(1, {"colSpan": 6, "entityId": "light.old", "gridCol": 0, "gridRow": 8, "rowSpan": 4})
+    return page
+
+
+def test_a_panel_save_keeps_a_tile_with_no_id() -> None:
+    library = _library(_page_with_a_tile_with_no_id())
+    assert len(library["pages"][PAGE]["items"]) == 4, "validate keeps it"
+    content = _page_with_a_tile_with_no_id()
+    content["screens"]["watch"]["T1"] = _at(0, 4)
+    change = lib.replace_item(library, "pages", PAGE, content, knows_screens=True)
+    items = change.library["pages"][PAGE]["items"]
+    assert [t.get("id") for t in items] == ["T1", None, "T2", "M1"]
+
+
+def test_each_device_draws_a_tile_with_no_id_from_its_own_fields() -> None:
+    library = _library(_page_with_a_tile_with_no_id())
+    for owner in (WATCH, PHONE):
+        old = [t for t in _built(library, owner)["items"] if "id" not in t]
+        assert old == [{"colSpan": 6, "entityId": "light.old", "gridCol": 0, "gridRow": 8, "rowSpan": 4}], owner
+
+
+def test_a_device_save_keeps_a_tile_with_no_id_as_it_sent_it() -> None:
+    library = _library(_page_with_a_tile_with_no_id())
+    for owner in (WATCH, PHONE):
+        sent = _built(library, owner)
+        old = next(t for t in sent["items"] if "id" not in t)
+        old["gridRow"] = 12
+        item = _save(library, owner, sent)["pages"][PAGE]
+        kept = [t for t in item["items"] if "id" not in t]
+        assert [t["gridRow"] for t in kept] == [12], owner
+        assert set(item["screens"]["iphone"]) == {"T1", "T2", "M1"}, owner
+
+
+def test_a_watch_save_keeps_a_tile_with_no_id_the_watch_never_drew() -> None:
+    page = _split_page()
+    page["items"].append({"colSpan": 12, "entityId": "map.old", "gridCol": 0, "gridRow": 8, "rowSpan": 4})
+    library = _library(page)
+    sent = _built(library, WATCH)
+    assert all(t.get("entityId") != "map.old" for t in sent["items"])
+    item = _save(library, WATCH, sent)["pages"][PAGE]
+    assert [t.get("entityId") for t in item["items"] if "id" not in t] == ["map.old"]
+
+
 # ── the one-time fill ────────────────────────────────────────────────────
 
 

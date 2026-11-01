@@ -471,7 +471,9 @@ def _with_checked_screens(page: Mapping[str, Any], *, strict: bool) -> dict[str,
     """``page`` with its ``screens`` checked: two maps of tile id to a place
     and size (:func:`_valid_geometry`), each id one of the page's tiles and
     spelled as the tile spells it. A tile in neither map is taken off the
-    page (logged). Without ``strict`` what does not fit is dropped: an entry
+    page (logged). A tile with no id stays: no map can name it, so it reads
+    from its own fields on every screen that draws it, as the panel draws
+    it. Without ``strict`` what does not fit is dropped: an entry
     that is not one, or for no tile on the page, and the whole key when it
     holds no map at all (the page then reads as one without it). With
     ``strict`` (a save) a key or entry of the wrong shape is ``invalid``;
@@ -512,7 +514,11 @@ def _with_checked_screens(page: Mapping[str, Any], *, strict: bool) -> dict[str,
     on = {_key(tile_id) for entries in screens.values() for tile_id in entries}
     tiles = page.get("items")
     if isinstance(tiles, list):
-        kept = [t for t in tiles if isinstance(t, dict) and _key(t.get("id")) in on]
+        kept = [
+            t
+            for t in tiles
+            if isinstance(t, dict) and ((key := _key(t.get("id"))) is None or key in on)
+        ]
         if len(kept) != len(tiles):
             _LOGGER.info(
                 "Took %d tile(s) on no screen off page %s",
@@ -541,8 +547,10 @@ def stamp_page(page: Mapping[str, Any], screen: str) -> dict[str, Any]:
     With ``screens``, each tile on that screen takes the screen's place and
     size into ``gridCol``, ``gridRow``, ``colSpan`` and ``rowSpan``, the
     tiles off it are left out, and the list is in the screen's order, row
-    then column (the watch packs in that order). Without it, the tiles stay
-    as they are, less the kinds the watch skips on the watch. A copy."""
+    then column (the watch packs in that order). A tile with no id, which no
+    screen can name, keeps its own fields there. Without it, the tiles stay
+    as they are. Either way the watch's copy lacks the kinds the watch
+    skips. A copy."""
     _check_screen(screen)
     out = {k: copy.deepcopy(v) for k, v in page.items() if k != SCREENS_KEY}
     tiles = out.get("items")
@@ -561,7 +569,13 @@ def stamp_page(page: Mapping[str, Any], screen: str) -> dict[str, Any]:
     places = {_key(tile_id): geometry for tile_id, geometry in entries.items()}
     placed: list[tuple[dict[str, int], dict[str, Any]]] = []
     for tile in tiles:
-        geometry = places.get(_key(tile.get("id"))) if isinstance(tile, dict) else None
+        if not isinstance(tile, dict):
+            continue
+        if (key := _key(tile.get("id"))) is None:
+            if not (screen == WATCH_SCREEN and _tile_kind(tile) in WATCH_SKIPPED_TILE_KINDS):
+                placed.append((_tile_geometry(tile), tile))
+            continue
+        geometry = places.get(key)
         if geometry is not None:
             placed.append((geometry, _set_geometry(tile, geometry)))
     placed.sort(key=lambda pair: (pair[0]["row"], pair[0]["col"]))
@@ -584,8 +598,9 @@ def _merge_saved_page(
     the item goes on this screen where the save put it and at the bottom of
     the other one, unless that is the watch and it does not draw the kind.
     Each tile's own fields are then the watch screen's (the iPhone's for one
-    off the watch). An item that had no ``screens`` gets none while the
-    result still reads the same without them."""
+    off the watch). A tile with no id is the device's, as it sent it
+    (:func:`_with_idless_tiles`). An item that had no ``screens`` gets none
+    while the result still reads the same without them."""
     if SCREENS_KEY in saved:
         return _with_checked_screens(saved, strict=True)
     other = IPHONE_SCREEN if screen == WATCH_SCREEN else WATCH_SCREEN
@@ -630,7 +645,11 @@ def _merge_saved_page(
         if _key(tile_id) in spelled
     }
     on = {_key(t) for entries in screens.values() for t in entries}
-    tiles = [t for t in tiles if _key(t["id"]) in on]
+    tiles = _with_idless_tiles(
+        [t for t in tiles if _key(t["id"]) in on],
+        saved.get("items"),
+        item.get("items") if screen == WATCH_SCREEN else None,
+    )
     out = {k: copy.deepcopy(v) for k, v in saved.items() if k != "items"}
     if "items" in saved or "items" in item:
         out = _with_key(out, "items", tiles)
@@ -639,9 +658,43 @@ def _merge_saved_page(
     watch = {_key(t): g for t, g in screens[WATCH_SCREEN].items()}
     iphone = {_key(t): g for t, g in screens[IPHONE_SCREEN].items()}
     out["items"] = [
-        _set_geometry(t, watch.get(_key(t["id"])) or iphone[_key(t["id"])]) for t in tiles
+        t if (key := _key(t.get("id"))) is None else _set_geometry(t, watch.get(key) or iphone[key])
+        for t in tiles
     ]
     return _with_key(out, SCREENS_KEY, screens)
+
+
+def _with_idless_tiles(
+    tiles: list[dict[str, Any]], saved: Any, item: Any
+) -> list[dict[str, Any]]:
+    """``tiles`` (each with an id) with the tiles that have none put back
+    among them: every one the save sent, as it sent it, and of ``item``
+    (the item's list on a watch's save, else None) the kinds the watch
+    skips, which the watch's copy never had. No screen can name such a
+    tile, so the device's copy is the tile. Each follows the tile with an
+    id it followed in its own list, or goes at the end when that one is
+    gone."""
+    followers: dict[str | None, list[dict[str, Any]]] = {}
+
+    def follow(raw: Any, wanted: Any) -> None:
+        anchor: str | None = None
+        for tile in raw if isinstance(raw, list) else []:
+            if not isinstance(tile, dict):
+                continue
+            if (key := _key(tile.get("id"))) is not None:
+                anchor = key
+            elif wanted(tile):
+                followers.setdefault(anchor, []).append(copy.deepcopy(tile))
+
+    follow(saved, lambda _tile: True)
+    follow(item, lambda tile: _tile_kind(tile) in WATCH_SKIPPED_TILE_KINDS)
+    out = list(followers.pop(None, []))
+    for tile in tiles:
+        out.append(tile)
+        out += followers.pop(_key(tile["id"]), [])
+    for rest in followers.values():
+        out += rest
+    return out
 
 
 def _drop_from_screens(page: dict[str, Any]) -> None:
