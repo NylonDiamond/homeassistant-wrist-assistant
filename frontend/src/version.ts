@@ -150,6 +150,20 @@ export function oneLookForEvery(
   return appVersions.length === 0 ? oneLookAtVersion(undefined, minimum) : appVersions.every((v) => oneLookAtVersion(v, minimum));
 }
 
+/** The newest of these reported app versions, as a picture of several
+ * devices draws: the look of the newest one there. A version not reported, or
+ * one that does not parse, reads as new enough (as `oneLookFor` reads it), so
+ * it wins and comes back as it is. Undefined for no devices. */
+export function newestAppVersion(appVersions: readonly (string | null | undefined)[]): string | null | undefined {
+  let best: { raw: string; at: Version } | undefined;
+  for (const raw of appVersions) {
+    const at = parseVersion(raw);
+    if (at === undefined) return raw;
+    if (best === undefined || compareVersions(at, best.at) > 0) best = { raw: raw!, at };
+  }
+  return best?.raw;
+}
+
 /** First iPhone app version that draws custom complications on the lock
  * screen. The phone is an owner in its own right from that release: it signs
  * with its own identity, pulls its own records and renders them in the iOS

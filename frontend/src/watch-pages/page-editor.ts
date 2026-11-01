@@ -70,7 +70,7 @@ import { homeMapRead } from "../home-map/store.js";
 import { beginColumnDrag } from "../column-split.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
-import { oneLookForEvery } from "../version.js";
+import { newestAppVersion, oneLookForEvery } from "../version.js";
 import { LibraryController } from "../library/store.js";
 import { SHOWN_ON_TEXT, type TickChip, libraryTicksStyles, renderTickChip, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
@@ -3762,17 +3762,42 @@ export class WaPageEditor extends LitElement {
 
   /** The grid's room each side in points, as the stage draws it
    * (`watchPreviewSideInset`): the watch's side safe area, none in an
-   * iPhone's pages area, or One Look's own grid padding when the preview
-   * device draws it. */
+   * iPhone's pages area, or One Look's own grid padding when the edited
+   * picture draws it (`screenLookVersion`), so a drag lands where it is
+   * drawn. */
   private get gridSideInset(): number {
     const phone = this.phoneLayoutOf(undefined);
-    return watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), appVersion: this.previewAppVersion(undefined) });
+    return watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), appVersion: this.screenLookVersion(this.previewKind) });
   }
 
   /** The app version the preview device reported, which decides whether
    * its tiles draw One Look (`previewOneLook`). */
   private previewAppVersion(owner: OwnerSummary | undefined): string | null | undefined {
     return (owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId))?.app_version;
+  }
+
+  /**
+   * The app version a picture of `screen` is drawn at, which decides its
+   * look (One Look or the old one): the newest of the devices of that kind
+   * that show the page (`newestAppVersion`), the devices named under the
+   * picture, so a 3.1 watch picked in Preview on never draws the old look
+   * over a 3.2 watch that shows the page too. With none of that kind
+   * showing it, the home's first device of the kind; with none of the kind
+   * at all, the Preview on device. Until the library is read, the device the
+   * picture is drawn on (`stageOwnerOf`). Only the look follows this: the
+   * catalog, the behaviour, the cameras and the screen size stay the Preview
+   * on device's.
+   */
+  private screenLookVersion(screen: WatchScreen): string | null | undefined {
+    const ref = this.libraryItem;
+    const owners = ref === undefined ? undefined : libraryOwners(this.lib.library, ref);
+    if (owners === undefined) return this.previewAppVersion(this.stageOwnerOf(screen));
+    const versionOf = (ownerId: string) => this.ownerList.find((o) => sameId(o.owner_watch_id, ownerId))?.app_version;
+    const ofKind = this.linkDevices.filter((d) => d.kind === screen);
+    const showing = ofKind.filter((d) => owners.some((o) => sameId(o, d.ownerId)));
+    if (showing.length > 0) return newestAppVersion(showing.map((d) => versionOf(d.ownerId)));
+    const first = ofKind[0];
+    return first !== undefined ? versionOf(first.ownerId) : this.previewAppVersion(undefined);
   }
 
   /** On an iPhone, where its pages screen lays itself out (`phone-frame.ts`),
@@ -3800,7 +3825,7 @@ export class WaPageEditor extends LitElement {
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn, photoOnMask: this.photoOnMask,
-      appVersion: this.previewAppVersion(undefined),
+      appVersion: this.screenLookVersion(this.previewKind),
       ...(phone === undefined ? {} : { phone }),
       ...(homeMap === undefined ? {} : { homeMap }),
     };
@@ -4089,7 +4114,8 @@ export class WaPageEditor extends LitElement {
       page, pages, screen, states, icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
-      appVersion: this.previewAppVersion(owner),
+      // The look of the newest device of the kind that shows the page.
+      appVersion: this.screenLookVersion(this.previewKind),
       ...(phoneLayout === undefined ? {} : { phone: phoneLayout }),
       // Live off: every tile lit, as the page looks in use, but for a state
       // being tried in the Live strip. A smart page is always live.
@@ -4334,8 +4360,8 @@ export class WaPageEditor extends LitElement {
     delete rest.phone;
     delete rest.liveCameras;
     delete rest.smart;
-    // Its own device's version, which decides its look.
-    rest.appVersion = owner?.app_version;
+    // The look of the newest device of its kind that shows the page.
+    rest.appVersion = this.screenLookVersion(kind);
     if (kind === "iphone") {
       const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) });
       return { ...rest, page, pages, behavior: undefined, phone, screen: phonePagesScreen(phone), scale: this.stageScale * PHONE_STAGE_ZOOM };
