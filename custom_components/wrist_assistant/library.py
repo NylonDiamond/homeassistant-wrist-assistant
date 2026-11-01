@@ -1975,6 +1975,45 @@ def _slot_words(sections: Mapping[str, Any], key: str) -> list[str]:
     return list(words)
 
 
+# Entity id kinds whose part after the dot is an id of the tile's own
+# (``spacer.<id>``, ``template.<id>``): a copy takes a new one, as the
+# panel's ``OWN_ID_KINDS`` in ``edit.ts``.
+_OWN_ID_KINDS = frozenset({"spacer", "template", "music_hub", "point_control", "multicam"})
+
+
+def _with_new_tile_ids(page: Mapping[str, Any]) -> dict[str, Any]:
+    """A copy of ``page`` whose tiles have ids of their own, as the panel's
+    Duplicate makes one (``watchPageCopy``): each tile with an id gets a new
+    one, its places in ``screens`` with it, and a kind with an own id in its
+    entity id gets a new own id, so a device that shows both pages never
+    meets one tile twice (a template's text is held by its own id). A tile
+    with no id keeps none, since no screen names it. Groups stay: a tile
+    names its group, not the other way round."""
+    out = copy.deepcopy(dict(page))
+    tiles = out.get("items")
+    if not isinstance(tiles, list):
+        return out
+    renamed: dict[str, str] = {}
+    for tile in tiles:
+        if not isinstance(tile, dict):
+            continue
+        if (key := _key(tile.get("id"))) is not None:
+            renamed.setdefault(key, new_item_id())
+            tile["id"] = renamed[key]
+        entity_id = tile.get("entityId")
+        if isinstance(entity_id, str) and _tile_kind(tile) in _OWN_ID_KINDS and "." in entity_id:
+            tile["entityId"] = f"{_tile_kind(tile)}.{new_item_id()}"
+    held = out.get(SCREENS_KEY)
+    if isinstance(held, dict):
+        for screen, entries in held.items():
+            if isinstance(entries, dict):
+                held[screen] = {
+                    renamed.get(_key(tile_id) or "", tile_id): geometry
+                    for tile_id, geometry in entries.items()
+                }
+    return out
+
+
 def fork_page(
     library: Mapping[str, Any],
     item_id: str,
@@ -1989,7 +2028,8 @@ def fork_page(
     its id and stays on every other device.
 
     * The copy is a new page with the original's content, ``screens`` too,
-      under a new id, named ``name`` when one is given.
+      under a new id, named ``name`` when one is given, its tiles with ids
+      of their own (:func:`_with_new_tile_ids`).
     * Each of ``owner_ids`` uses the copy in the original's place, at the
       same spot in its order, hidden or not as it was.
     * On those devices, what opened the original opens the copy. A Go to
@@ -2026,7 +2066,7 @@ def fork_page(
             raise LibraryError("invalid", f"{owner} does not use page {stored}")
     lib = copy.deepcopy(dict(library))
     new_id = new_item_id()
-    content = copy.deepcopy(lib["pages"][stored])
+    content = _with_new_tile_ids(lib["pages"][stored])
     content["id"] = new_id
     if name is not None:
         content["name"] = _check_name(name)

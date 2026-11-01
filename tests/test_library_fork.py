@@ -120,10 +120,50 @@ def _what(forked: lib.Forked, owner: str, key: str = "rewritten") -> list[str]:
 def test_the_copy_holds_the_same_content_and_screens_under_a_new_id() -> None:
     forked = _fork(_library(), [PHONE])
     copy_page = forked.library["pages"][forked.id]
+    original = forked.library["pages"][LIGHTS]
     assert forked.id != LIGHTS and forked.id == forked.id.upper()
-    assert copy_page == {**forked.library["pages"][LIGHTS], "id": forked.id}
-    assert copy_page["screens"] == SCREENS
+    (tile,) = copy_page["items"]
+    assert tile["id"] != "T1" and tile["id"] == tile["id"].upper(), "the tile has an id of its own"
+    renamed = {
+        **original,
+        "id": forked.id,
+        "items": [{**original["items"][0], "id": tile["id"]}],
+        "screens": {screen: {tile["id"]: g["T1"]} for screen, g in SCREENS.items()},
+    }
+    assert copy_page == renamed
+    assert original["screens"] == SCREENS, "the original keeps its tile ids"
     assert forked.library["item_revisions"]["pages"][forked.id] == 1
+
+
+def test_the_copy_s_tiles_take_new_own_ids_as_the_panel_s_duplicate_does() -> None:
+    library = _library()
+    page = library["pages"][LIGHTS]
+    page["items"] = [
+        {"id": "T1", "entityId": "light.a"},
+        {"id": "T2", "entityId": "template.ABC", "template": "{{ 1 }}"},
+        {"id": "T3", "entityId": "spacer.DEF"},
+        {"entityId": "multicam.GHI"},
+    ]
+    page["screens"] = {
+        "watch": {"T1": {"col": 0, "row": 0, "colSpan": 6, "rowSpan": 4}, "t2": {"col": 6, "row": 0, "colSpan": 6, "rowSpan": 4}},
+        "iphone": {"T3": {"col": 0, "row": 0, "colSpan": 3, "rowSpan": 3}},
+    }
+    library = lib.validate_library(library)
+    forked = _fork(library, [PHONE])
+    tiles = forked.library["pages"][forked.id]["items"]
+    old = forked.library["pages"][LIGHTS]["items"]
+    assert [t["entityId"] for t in old] == ["light.a", "template.ABC", "spacer.DEF", "multicam.GHI"]
+    assert tiles[0]["entityId"] == "light.a", "a real entity keeps its id"
+    for tile, kind, before in zip(tiles[1:], ("template", "spacer", "multicam"), old[1:]):
+        assert tile["entityId"].startswith(f"{kind}.") and tile["entityId"] != before["entityId"]
+    assert "id" not in tiles[3], "a tile with no id keeps none: no screen names it"
+    assert tiles[1]["template"] == "{{ 1 }}"
+    ids = [t["id"] for t in tiles[:3]]
+    assert not {"T1", "T2", "T3"} & set(ids) and len(set(ids)) == 3
+    screens = forked.library["pages"][forked.id]["screens"]
+    assert set(screens["watch"]) == {ids[0], ids[1]}
+    assert set(screens["iphone"]) == {ids[2]}
+    assert screens["watch"][ids[1]] == {"col": 6, "row": 0, "colSpan": 6, "rowSpan": 4}
 
 
 def test_a_name_names_the_copy_and_an_empty_one_is_refused() -> None:
