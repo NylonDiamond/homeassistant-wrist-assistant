@@ -27,7 +27,7 @@
 import pageKeys from "./page-keys.json";
 import tileApp from "./tile-app.json";
 import tileDefaults from "./tile-defaults.json";
-import { type WatchEditOptions, firstFreeWatchCell, randomWatchId, sameWatchId } from "./edit.js";
+import { type WatchEditOptions, placeNewWatchTile, randomWatchId, sameWatchId } from "./edit.js";
 import {
   type JsonObject,
   type WatchPage,
@@ -1148,22 +1148,21 @@ export function watchAddRefusal(document: WatchPagesDocument, pageId: string, en
 }
 
 /**
- * Add a built tile to a page: at the first free place for its size
- * (`firstFreeWatchCell`, which writes `gridRow` and `gridCol`), appended to
- * `items` (made when the page has none). Refused, returning the very
+ * Add a built tile to a page: on each screen that draws it at the first
+ * free place for its size (`placeNewWatchTile`, which writes `gridRow` and
+ * `gridCol`, and the page's `screens` when the two screens differ), appended
+ * to `items` (made when the page has none). Refused, returning the very
  * document it was given, for every reason of `watchAddRefusal`. Only the
- * document, `pages`, the page and its `items` are new objects.
+ * document, `pages`, the page and its `items` (and `screens`) are new
+ * objects.
  */
 export function addWatchTile(document: WatchPagesDocument, pageId: string, tile: WatchPageTile): WatchPagesDocument {
   if (watchAddRefusal(document, pageId, tileEntityId(tile)) !== undefined) return document;
   const pages = document.pages as unknown[];
   const index = pageIndex(document, pageId);
   const page = pages[index] as WatchPage;
-  const items = Array.isArray(page.items) ? page.items : [];
-  const cell = firstFreeWatchCell(page, Number(tile.colSpan ?? 1), Number(tile.rowSpan ?? 1));
-  const placed: WatchPageTile = { ...tile, gridCol: cell.col, gridRow: cell.row };
   const nextPages = pages.slice();
-  nextPages[index] = { ...page, items: [...items, placed] };
+  nextPages[index] = placeNewWatchTile(page, tile);
   return { ...document, pages: nextPages };
 }
 

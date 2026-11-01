@@ -43,9 +43,11 @@ import {
   WATCH_GRID_SIDE_INSET,
   WATCH_GRID_TOP_INSET,
   type WatchPageTile,
+  type WatchScreen,
   type WatchTileColor,
   WATCH_KIND_FALLBACK_LABELS,
   dividerParts,
+  hasWatchPageScreens,
   isMapWatchPage,
   isSmartWatchPage,
   parseTileColor,
@@ -66,8 +68,8 @@ import {
   isVirtualTileKind,
   watchPageLayout,
   watchPageName,
+  watchScreenPage,
 } from "./model.js";
-import type { SettingDevice } from "../watch-settings.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
@@ -449,14 +451,22 @@ export function watchTileHidden(
  * A tile `device` does not draw (`tileDrawsOn`, an iPhone only kind on the
  * watch) is gone the same way (`GridItemConfig.drawsOn`), with or without
  * states. Without states nothing else is hidden.
+ *
+ * `device` is also the screen drawn: a page with `screens` is first laid
+ * out as that screen has it (`watchScreenPage`), its tiles Off there simply
+ * not on it, as Home Assistant leaves them out of the device's record; the
+ * page that comes back then has that screen's places in its tile fields and
+ * no `screens`. A page without `screens` is the tile fields on both, and
+ * its kinds the watch skips are hidden and packed round as above.
  */
 export function watchReflowPage(
   page: WatchPage,
   states: Readonly<Record<string, HassEntityState>> | undefined,
   columns = WATCH_GRID_COLUMNS,
   templates?: ReadonlyMap<string, WatchTemplateRender>,
-  device: SettingDevice = "watch",
+  device: WatchScreen = "watch",
 ): WatchPage {
+  page = watchScreenPage(page, device);
   const items = watchPageTiles(page);
   const hidden = new Set(items.filter((t) => !tileDrawsOn(t, device) || (states !== undefined && watchTileHidden(t, states, templates))));
   if (hidden.size === 0) return page;
@@ -3884,7 +3894,9 @@ export function watchSkippedTilesLayout(
   screen: { width: number; height: number },
   input: Pick<WatchPagePreviewInput, "phone" | "states" | "templates" | "stateMode">,
 ): PlacedWatchTile[] {
-  if (watchPageTiles(page).every((t) => tileDrawsOn(t, "watch"))) return [];
+  // A page with `screens` has no watch place for a tile Off there; its
+  // chips under the picture name it instead.
+  if (hasWatchPageScreens(page) || watchPageTiles(page).every((t) => tileDrawsOn(t, "watch"))) return [];
   const states = input.stateMode === "all-on" ? undefined : input.states;
   return watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) }).tiles
     .filter((t) => !tileDrawsOn(t.tile, "watch") && (states === undefined || !watchTileHidden(t.tile, states, input.templates)));
@@ -4025,8 +4037,9 @@ export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPho
  * `phone`, an iPhone's pages area. */
 export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number; height: number }, phone = false): boolean {
   if (isSmartWatchPage(page) || (phone && isMapWatchPage(page))) return false;
-  if (!phone) return watchPreviewLayout(page, screen).height > screen.height + 0.5;
-  return watchPreviewHeight(watchPreviewLayout(page, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET }), true) > screen.height + 0.5;
+  const shown = watchScreenPage(page, phone ? "iphone" : "watch");
+  if (!phone) return watchPreviewLayout(shown, screen).height > screen.height + 0.5;
+  return watchPreviewHeight(watchPreviewLayout(shown, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET }), true) > screen.height + 0.5;
 }
 
 /** The picture's own rules. The screen is dark in both of the panel's skins,

@@ -12,7 +12,7 @@ import { phoneModelForScreenSize, phonePageLookOf, phonePagesLayout, phonePagesS
 import type { SettingDevice } from "../watch-settings.js";
 import type { WatchCatalog } from "./catalog.js";
 import { sameWatchId } from "./edit.js";
-import { type WatchPage, type WatchPageTile, isWatchRemovedTileKind, tileEntityId, tileKind } from "./model.js";
+import { type WatchPage, type WatchPageTile, isWatchRemovedTileKind, tileEntityId, tileKind, watchScreenPage } from "./model.js";
 import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
@@ -65,15 +65,18 @@ export interface ArrangeFrame {
 export function arrangeFrame(source: ArrangeFrameSource, tile: WatchPageTile): ArrangeFrame | undefined {
   const phone = source.device === "iphone" ? phonePagesLayout(phoneModelForScreenSize(undefined), { look: phonePageLookOf(source.behavior) }) : undefined;
   const screen = phone === undefined ? REFERENCE_CASE.screen : phonePagesScreen(phone);
+  // The device's own screen of the page: the tile's cell there, or none when
+  // it is Off on that screen.
+  const page = watchScreenPage(source.page, source.device);
   const input: WatchPagePreviewInput = {
-    page: source.page, pages: source.pages, screen, scale: 1, oneLook: true, stateMode: source.stateMode ?? "all-on",
+    page, pages: source.pages, screen, scale: 1, oneLook: true, stateMode: source.stateMode ?? "all-on",
     ...(source.states === undefined ? {} : { states: source.states }),
     ...(source.icons === undefined ? {} : { icons: source.icons }),
     ...(source.catalog === undefined ? {} : { catalog: source.catalog }),
     ...(source.behavior === undefined ? {} : { behavior: source.behavior }),
     ...(phone === undefined ? {} : { phone }),
   };
-  const layout = watchPreviewLayout(source.page, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input), flat: true });
+  const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input), flat: true });
   const placed = layout.tiles.find((t) => sameWatchId(t.tile.id, tile.id));
   if (placed === undefined || !(placed.width > 0 && placed.height > 0)) return undefined;
   const cell = { width: placed.width, height: placed.height };

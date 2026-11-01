@@ -180,6 +180,7 @@ import {
   nudgeWatchTile,
   previewWatchTileResize,
   randomWatchId,
+  renameWatchScreenTiles,
   resizeWatchTile,
   sameWatchId,
   setWatchPageName,
@@ -483,13 +484,20 @@ function withNewIds(tile: WatchPageTile): WatchPageTile {
 
 /** A copy of a page for the library, as Duplicate in the page picker makes
  * it: `id` and `name` its own, and every tile with ids of its own
- * (`withNewIds`), keeping its groups. */
+ * (`withNewIds`), keeping its groups and both screens' arrangements. */
 export function watchPageCopy(page: WatchPage, id: string, name: string): WatchPage {
   const copy = structuredClone(page) as WatchPage;
   copy.id = id.toUpperCase();
   copy.name = name;
-  if (Array.isArray(copy.items)) copy.items = copy.items.map((t) => (isJsonObject(t) ? withNewIds(t as WatchPageTile) : t));
-  return copy;
+  if (!Array.isArray(copy.items)) return copy;
+  const renamed = new Map<string, string>();
+  copy.items = copy.items.map((t) => {
+    if (!isJsonObject(t)) return t;
+    const next = withNewIds(t as WatchPageTile);
+    if (typeof t.id === "string" && t.id !== "") renamed.set(t.id.toUpperCase(), next.id as string);
+    return next;
+  });
+  return renameWatchScreenTiles(copy, renamed);
 }
 
 export { pageDevicesText };

@@ -24,10 +24,22 @@
 import pageKeys from "./page-keys.json";
 import tileSpecial from "./tile-special.json";
 import settingsCatalog from "../watch-settings-catalog.json";
-import { type WatchEditOptions, deleteWatchTile, findWatchPage, firstFreeWatchCell, previewWatchTileResize, randomWatchId, resizeWatchTile, sameWatchId, watchTileRect } from "./edit.js";
+import {
+  type WatchEditOptions,
+  deleteWatchTile,
+  findWatchPage,
+  firstFreeWatchCell,
+  placeNewWatchTile,
+  previewWatchTileResize,
+  randomWatchId,
+  resizeWatchTile,
+  sameWatchId,
+  watchScreenTileRect,
+  watchTileRect,
+} from "./edit.js";
 import { REMOVE, editTile, isBool, sameValue, setKey, withField, withKey, withoutKey } from "./tile-settings-model.js";
 import { WATCH_TILE_DEFAULTS, watchCalendarColor, watchCapitalized, watchEntityDefaults, watchFreshTile, watchThemeSwatches } from "./tile-new.js";
-import { type WatchPage, type WatchPageTile, type WatchPagesDocument, VIRTUAL_TILE_KINDS, WATCH_GRID_COLUMNS, isJsonObject, isSmartWatchPage, isVirtualTileKind, tileEntityId, tileKind, tileTarget } from "./model.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, type WatchScreen, VIRTUAL_TILE_KINDS, WATCH_GRID_COLUMNS, isJsonObject, isSmartWatchPage, isVirtualTileKind, tileEntityId, tileKind, tileTarget } from "./model.js";
 
 // ── the table ────────────────────────────────────────────────────────────
 
@@ -316,13 +328,15 @@ function tileOn(page: WatchPage, tileId: string): WatchPageTile | undefined {
   return (page.items as unknown[]).find((t): t is WatchPageTile => isJsonObject(t) && sameWatchId(t.id, tileId));
 }
 
-/** The document with a tile appended to a page's `items` as it is. */
+/** The document with a tile appended to a page's `items`, placed on each
+ * screen that draws it (`placeNewWatchTile`; on the watch that is the place
+ * the callers already gave it). */
 function appendTile(document: WatchPagesDocument, pageId: string, tile: WatchPageTile): WatchPagesDocument {
   const pages = document.pages as unknown[];
   const index = pages.findIndex((p) => isJsonObject(p) && sameWatchId(p.id, pageId));
   const page = pages[index] as WatchPage;
   const nextPages = pages.slice();
-  nextPages[index] = { ...page, items: [...(page.items as unknown[]), tile] };
+  nextPages[index] = placeNewWatchTile(page, tile);
   return { ...document, pages: nextPages };
 }
 
@@ -351,6 +365,17 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 function overlappedIds(page: WatchPage, tileId: string, rect: Rect): string[] {
   return (page.items as unknown[])
     .filter((t): t is WatchPageTile => isJsonObject(t) && !sameWatchId(t.id, tileId) && rectsOverlap(rect, watchTileRect(t)))
+    .map((t) => String(t.id).toUpperCase());
+}
+
+/** `overlappedIds` on one screen's places: tiles Off there overlap nothing. */
+function overlappedIdsOn(page: WatchPage, tileId: string, rect: Rect, screen: WatchScreen): string[] {
+  return (page.items as unknown[])
+    .filter((t): t is WatchPageTile => isJsonObject(t) && !sameWatchId(t.id, tileId))
+    .filter((t) => {
+      const there = watchScreenTileRect(page, t, screen);
+      return there !== undefined && rectsOverlap(rect, there);
+    })
     .map((t) => String(t.id).toUpperCase());
 }
 
@@ -391,7 +416,34 @@ function changeAndResize(
   const beforeTile = before === undefined ? undefined : tileOn(before, tileId);
   const already = before === undefined || beforeTile === undefined ? [] : overlappedIds(before, tileId, watchTileRect(beforeTile));
   if (preview.overlaps && overlappedIds(preview.page, tileId, preview.rect).some((id) => !already.includes(id))) return { document, refused: "overlap" };
-  return { document: resizeWatchTile(keyed, pageId, tileId, rect, { keepOverlapsWith: already }) };
+  const sized = resizeWatchTile(keyed, pageId, tileId, rect, { keepOverlapsWith: already });
+  return { document: alsoOnIphone(sized, document, pageId, tileId, size) };
+}
+
+/**
+ * A size a tile's settings ask for is the tile's on every screen, as its
+ * settings are: after the watch's resize, the iPhone's screen takes the same
+ * size at its own place, pushing its own tiles down. When the iPhone cannot
+ * (a new overlap there, or past the last row), it keeps the size it had.
+ * Nothing more for a tile Off on the iPhone.
+ */
+function alsoOnIphone(
+  document: WatchPagesDocument,
+  before: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  size: { colSpan?: number; rowSpan: number | undefined },
+): WatchPagesDocument {
+  const page = editablePage(document, pageId);
+  const tile = page === undefined ? undefined : tileOn(page, tileId);
+  const now = page === undefined || tile === undefined ? undefined : watchScreenTileRect(page, tile, "iphone");
+  if (page === undefined || now === undefined) return document;
+  const rect = { col: now.col, row: now.row, colSpan: size.colSpan ?? now.colSpan, rowSpan: size.rowSpan ?? now.rowSpan };
+  const old = editablePage(before, pageId);
+  const oldTile = old === undefined ? undefined : tileOn(old, tileId);
+  const oldRect = old === undefined || oldTile === undefined ? undefined : watchScreenTileRect(old, oldTile, "iphone");
+  const already = old === undefined || oldRect === undefined ? [] : overlappedIdsOn(old, tileId, oldRect, "iphone");
+  return resizeWatchTile(document, pageId, tileId, rect, { keepOverlapsWith: already, screen: "iphone" });
 }
 
 /** A resize to a size, through the push down (a suggested size). */

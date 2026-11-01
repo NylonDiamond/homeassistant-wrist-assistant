@@ -25,17 +25,26 @@ import {
   type WatchPage,
   type WatchPageTile,
   type WatchPagesDocument,
+  type WatchScreen,
   WATCH_GRID_COLUMNS,
+  WATCH_SCREENS,
+  WATCH_SCREENS_KEY,
+  hasWatchPageScreens,
   isJsonObject,
   isMapWatchPage,
   isSmartWatchPage,
   isSystemWatchPage,
+  otherWatchScreen,
+  screenGeometry,
+  tileDrawsOn,
   tileEntityId,
   tileGeometry,
   tileKind,
   tileTarget,
   watchPageName,
   watchPagesOf,
+  watchScreenKey,
+  watchScreenMap,
 } from "./model.js";
 
 const COLUMNS = WATCH_GRID_COLUMNS;
@@ -71,6 +80,17 @@ export type WatchIdGenerator = () => string;
 export interface WatchEditOptions {
   /** Where new ids come from. Defaults to `randomWatchId`. */
   newId?: WatchIdGenerator;
+  /** The screen a tile edit arranges (`screens` in `model.ts`): it reads and
+   * writes that screen's places only, and the other screen does not move.
+   * Defaults to the watch. */
+  // TODO: the editor chrome passes the frame's screen; until then every edit
+  // arranges the watch.
+  screen?: WatchScreen;
+}
+
+/** The screen an edit arranges: `options.screen`, else the watch. */
+function screenOf(options: WatchEditOptions | undefined): WatchScreen {
+  return options?.screen ?? "watch";
 }
 
 /**
@@ -250,9 +270,9 @@ export function deleteWatchPage(
     pages = pages.map((p) => {
       if (!isJsonObject(p) || isSystemWatchPage(p) || isSmartWatchPage(p)) return p;
       const work = openWork(p);
-      const removed = removeTiles(work, (t) => linkTarget(t.tile) === target);
-      if (removed.length === 0) return p;
-      repairGroups(work, groupKeysOf(removed), options);
+      const removed = removeTiles(work, (tile) => linkTarget(tile) === target);
+      if (removed.count === 0) return p;
+      repairGroups(work, removed.groupKeys, options);
       return closeWork(work);
     });
   }
@@ -389,9 +409,93 @@ export interface WatchRect {
  * `gridCol` 0 to `12 - colSpan`, `rowSpan` and `gridRow` from 1 and 0).
  */
 export function watchTileRect(tile: WatchPageTile): WatchRect {
-  const g = tileGeometry(tile);
+  return clampedRect(tileGeometry(tile));
+}
+
+function clampedRect(g: WatchRect): WatchRect {
   const colSpan = Math.min(COLUMNS, g.colSpan);
   return { col: Math.min(g.col, COLUMNS - colSpan), row: g.row, colSpan, rowSpan: g.rowSpan };
+}
+
+/** Where the editor takes a tile to be on one screen (`screenGeometry`,
+ * clamped as `watchTileRect` clamps), or undefined when it is Off there. */
+export function watchScreenTileRect(page: WatchPage, tile: WatchPageTile, screen: WatchScreen): WatchRect | undefined {
+  const g = screenGeometry(page, tile, screen);
+  return g === undefined ? undefined : clampedRect(g);
+}
+
+// ── the two screens' maps ────────────────────────────────────────────────
+
+type ScreenMaps = Record<WatchScreen, JsonObject>;
+
+/** A place as `screens` stores it. */
+function screenEntry(r: WatchRect): JsonObject {
+  return { col: r.col, row: r.row, colSpan: r.colSpan, rowSpan: r.rowSpan };
+}
+
+/** Both screens' maps as copies to change: the stored ones, or for a page
+ * without `screens` the reading of its tile fields (every tile on both but
+ * the kinds the watch cannot draw), so a first edit of one screen leaves
+ * the other as it was drawn. A tile with no id has no entry. */
+function screenMapsOf(page: WatchPage): ScreenMaps {
+  const maps: ScreenMaps = { watch: {}, iphone: {} };
+  for (const screen of WATCH_SCREENS) {
+    const stored = watchScreenMap(page, screen);
+    if (stored !== undefined) {
+      maps[screen] = { ...stored };
+      continue;
+    }
+    for (const tile of workTilesOf(page)) {
+      if (idKey(tile.id) === undefined) continue;
+      const rect = watchScreenTileRect(page, tile, screen);
+      if (rect !== undefined) maps[screen][tile.id as string] = screenEntry(rect);
+    }
+  }
+  return maps;
+}
+
+/** Set a tile's place in a map, under the key it already has there. */
+function setScreenPlace(map: JsonObject, tileId: string, rect: WatchRect): void {
+  map[watchScreenKey(map, tileId) ?? tileId] = screenEntry(rect);
+}
+
+function deleteScreenPlace(map: JsonObject, tileId: unknown): void {
+  const key = watchScreenKey(map, tileId);
+  if (key !== undefined) delete map[key];
+}
+
+/** Whether two maps hold the same tiles (ids without regard to case) at the
+ * same places. */
+function sameScreenMap(a: JsonObject, b: JsonObject): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((k) => {
+    const other = watchScreenKey(b, k);
+    if (other === undefined) return false;
+    const x = a[k];
+    const y = b[other];
+    if (!isJsonObject(x) || !isJsonObject(y)) return false;
+    return x.col === y.col && x.row === y.row && x.colSpan === y.colSpan && x.rowSpan === y.rowSpan;
+  });
+}
+
+/**
+ * The page with these maps as its `screens` (other keys of a stored
+ * `screens` kept), the key at the phone's sorted place when it is new. When
+ * the maps say no more than the tile fields do (`screenMapsOf` of the page
+ * without the key: every tile on both at its own place, the kinds the watch
+ * cannot draw Off there), the page goes without the key instead, as a page
+ * no screen was ever arranged apart on: the same reading, and the same
+ * bytes as before a change undone.
+ */
+function withScreenMaps(page: WatchPage, maps: ScreenMaps): WatchPage {
+  const stored = page[WATCH_SCREENS_KEY];
+  const extra = isJsonObject(stored) && Object.keys(stored).some((k) => k !== "watch" && k !== "iphone");
+  const { [WATCH_SCREENS_KEY]: _screens, ...bare } = page;
+  const plain = screenMapsOf(bare);
+  if (!extra && WATCH_SCREENS.every((s) => sameScreenMap(maps[s], plain[s]))) return bare;
+  const screens = { ...(isJsonObject(stored) ? stored : {}), watch: maps.watch, iphone: maps.iphone };
+  return withSortedField(page, WATCH_SCREENS_KEY, screens);
 }
 
 function overlaps(a: WatchRect, b: WatchRect): boolean {
@@ -410,10 +514,16 @@ interface WorkTile extends WatchRect {
   groupIdChanged: boolean;
 }
 
+/** An edit at work on one screen of a page. `tiles` are the tiles on that
+ * screen, at its places; a tile Off there is in `off` instead, so no move,
+ * resize or placement sees it or makes room for it, while a group's
+ * membership, which both screens share, still reaches it. */
 interface Work {
   page: WatchPage;
+  screen: WatchScreen;
   items: unknown[];
   tiles: WorkTile[];
+  off: WorkTile[];
   removed: Set<number>;
   groups: unknown[] | undefined;
   groupsChanged: boolean;
@@ -423,13 +533,15 @@ function workTilesOf(page: WatchPage): WatchPageTile[] {
   return Array.isArray(page.items) ? page.items.filter(isJsonObject) : [];
 }
 
-function openWork(page: WatchPage): Work {
+function openWork(page: WatchPage, screen: WatchScreen = "watch"): Work {
   const items = Array.isArray(page.items) ? page.items : [];
   const tiles: WorkTile[] = [];
+  const off: WorkTile[] = [];
   items.forEach((raw, index) => {
     if (!isJsonObject(raw)) return;
-    const read = watchTileRect(raw);
-    tiles.push({
+    const on = watchScreenTileRect(page, raw, screen);
+    const read = on ?? watchTileRect(raw);
+    (on === undefined ? off : tiles).push({
       ...read,
       read,
       key: idKey(raw.id) ?? `\u0000${index}`,
@@ -441,8 +553,10 @@ function openWork(page: WatchPage): Work {
   });
   return {
     page,
+    screen,
     items,
     tiles,
+    off,
     removed: new Set(),
     groups: Array.isArray(page.groups) ? page.groups.slice() : undefined,
     groupsChanged: false,
@@ -460,17 +574,24 @@ function movedPastEnd(work: Work): boolean {
   return work.tiles.some((t) => moved(t) && !withinPage(t));
 }
 
-/** The page with the work written back: a tile that moved gets all four
- * geometry keys, a tile whose group changed gets `groupId` set or removed.
- * The page itself when nothing changed. */
+/** The page with the work written back: a tile that moved gets its place
+ * in `screens` for the work's screen, and on the watch screen all four
+ * geometry keys of its own too (the watch screen's copy); a tile whose
+ * group changed gets `groupId` set or removed; a tile taken out leaves
+ * both screens. A page without `screens` gets them on its first move or
+ * resize, both read from the tile fields before the edit, so the other
+ * screen stays as it was drawn. A tile with no id cannot be named in
+ * `screens`, so its move is written to its own fields on any screen (and
+ * shows on both). The page itself when nothing changed. */
 function closeWork(work: Work): WatchPage {
-  const byIndex = new Map(work.tiles.map((t) => [t.index, t]));
+  const byIndex = new Map([...work.tiles, ...work.off].map((t) => [t.index, t]));
+  const ownFields = (t: WorkTile) => work.screen === "watch" || idKey(t.tile.id) === undefined;
   let itemsChanged = work.removed.size > 0;
   const items: unknown[] = [];
   work.items.forEach((raw, index) => {
     if (work.removed.has(index)) return;
     const t = byIndex.get(index);
-    const geometry = t !== undefined && moved(t);
+    const geometry = t !== undefined && moved(t) && ownFields(t);
     if (t === undefined || (!geometry && !t.groupIdChanged)) {
       items.push(raw);
       return;
@@ -490,20 +611,41 @@ function closeWork(work: Work): WatchPage {
     }
     items.push(next);
   });
-  if (!itemsChanged && !work.groupsChanged) return work.page;
-  const page: WatchPage = { ...work.page };
+  const placed = work.tiles.filter((t) => moved(t) && idKey(t.tile.id) !== undefined);
+  const gone = [...work.removed].map((i) => work.items[i]).filter(isJsonObject).map((t) => t.id);
+  const screensChanged = placed.length > 0 || (gone.length > 0 && hasWatchPageScreens(work.page));
+  if (!itemsChanged && !work.groupsChanged && !screensChanged) return work.page;
+  let page: WatchPage = { ...work.page };
   if (itemsChanged) page.items = items;
   if (work.groupsChanged) page.groups = work.groups;
+  if (screensChanged) {
+    const maps = screenMapsOf(work.page);
+    for (const t of placed) setScreenPlace(maps[work.screen], t.tile.id as string, t);
+    for (const id of gone) for (const screen of WATCH_SCREENS) deleteScreenPlace(maps[screen], id);
+    page = withScreenMaps(page, maps);
+  }
   return page;
 }
 
-/** Take out every tile the test picks; returns them. */
-function removeTiles(work: Work, pick: (t: WorkTile) => boolean): WorkTile[] {
-  const removed = work.tiles.filter(pick);
-  if (removed.length === 0) return removed;
-  for (const t of removed) work.removed.add(t.index);
-  work.tiles = work.tiles.filter((t) => !pick(t));
-  return removed;
+/** Take out every tile the test picks, on every screen: a tile Off on the
+ * work's screen goes too. `key` is the tile's id key, or a key of its own
+ * for a tile with no id. Returns how many went and the groups they were
+ * in. */
+function removeTiles(work: Work, pick: (tile: WatchPageTile, key: string) => boolean): { count: number; groupKeys: string[] } {
+  const groupKeys: string[] = [];
+  let count = 0;
+  work.items.forEach((raw, index) => {
+    if (!isJsonObject(raw) || work.removed.has(index) || !pick(raw, idKey(raw.id) ?? `\u0000${index}`)) return;
+    work.removed.add(index);
+    count += 1;
+    const groupKey = idKey(raw.groupId);
+    if (groupKey !== undefined && !groupKeys.includes(groupKey)) groupKeys.push(groupKey);
+  });
+  if (count > 0) {
+    work.tiles = work.tiles.filter((t) => !work.removed.has(t.index));
+    work.off = work.off.filter((t) => !work.removed.has(t.index));
+  }
+  return { count, groupKeys };
 }
 
 function findTile(work: Work, tileId: string): number {
@@ -744,9 +886,10 @@ function removeGroupEntries(work: Work, groupKey: string): void {
   work.groupsChanged = true;
 }
 
-/** `dissolveGroup`: every tile leaves the group and the group is removed. */
+/** `dissolveGroup`: every tile leaves the group, on every screen, and the
+ * group is removed. */
 function dissolveGroup(work: Work, groupKey: string): void {
-  for (const t of work.tiles) if (t.groupId === groupKey) setGroupId(t, undefined);
+  for (const t of [...work.tiles, ...work.off]) if (t.groupId === groupKey) setGroupId(t, undefined);
   removeGroupEntries(work, groupKey);
 }
 
@@ -826,7 +969,7 @@ export function repairWatchTileGroups(
 ): WatchPagesDocument {
   const slot = tileSlot(document, pageId);
   if (slot === undefined) return document;
-  const work = openWork(slot.page);
+  const work = openWork(slot.page, screenOf(options));
   const keys: string[] = [];
   for (const id of groupIds) {
     const key = idKey(id);
@@ -838,10 +981,11 @@ export function repairWatchTileGroups(
 
 /** The regions of one group on a page as the repair sees them
  * (`findConnectedComponents`): one list of tile ids (upper case) per
- * region, in the order the repair takes them. For tests and tools. */
-export function watchGroupRegions(page: WatchPage, groupId: string): string[][] {
+ * region, in the order the repair takes them, on one screen. For tests
+ * and tools. */
+export function watchGroupRegions(page: WatchPage, groupId: string, screen: WatchScreen = "watch"): string[][] {
   const key = idKey(groupId);
-  return key === undefined ? [] : groupComponents(openWork(page), key);
+  return key === undefined ? [] : groupComponents(openWork(page, screen), key);
 }
 
 // ── making and leaving groups ────────────────────────────────────────────
@@ -887,12 +1031,13 @@ export function newWatchTileGroup(id: string): JsonObject {
  * covers is reached from the first one's top left cell by steps up, down,
  * left and right through cells they cover. An id the page lacks is skipped,
  * as the phone skips it. Cut into blocks at every tile edge, as
- * `groupComponents` is, so a tall tile costs nothing.
+ * `groupComponents` is, so a tall tile costs nothing. Asked of one screen's
+ * places; a tile Off there is skipped as a missing id is.
  */
-export function watchTilesAdjacent(page: WatchPage, tileIds: readonly string[]): boolean {
+export function watchTilesAdjacent(page: WatchPage, tileIds: readonly string[], screen: WatchScreen = "watch"): boolean {
   const keys = new Set(tileIds.map(idKey).filter((k): k is string => k !== undefined));
   if (keys.size < 2) return false;
-  const rects = openWork(page).tiles.filter((t) => keys.has(t.key));
+  const rects = openWork(page, screen).tiles.filter((t) => keys.has(t.key));
   if (rects.length < 2) return false;
   const rows = cuts(rects.flatMap((t) => [t.row, t.row + t.rowSpan]));
   const cols = cuts(rects.flatMap((t) => [t.col, t.col + t.colSpan]));
@@ -949,8 +1094,9 @@ export function makeWatchTileGroup(
 ): { document: WatchPagesDocument; groupId: string | undefined } {
   const refused = { document, groupId: undefined };
   const slot = tileSlot(document, pageId);
-  if (slot === undefined || !watchTilesAdjacent(slot.page, tileIds)) return refused;
-  const work = openWork(slot.page);
+  const screen = screenOf(options);
+  if (slot === undefined || !watchTilesAdjacent(slot.page, tileIds, screen)) return refused;
+  const work = openWork(slot.page, screen);
   const keys = new Set(tileIds.map(idKey).filter((k): k is string => k !== undefined));
   const members = work.tiles.filter((t) => keys.has(t.key));
   const shared = members[0]?.groupId;
@@ -1025,13 +1171,14 @@ export function leaveWatchTileGroup(
   const slot = tileSlot(document, pageId);
   const key = idKey(tileId);
   if (slot === undefined || key === undefined) return document;
-  const work = openWork(slot.page);
-  const leaving = work.tiles.filter((t) => t.key === key && t.groupId !== undefined);
+  const work = openWork(slot.page, screenOf(options));
+  const everyTile = [...work.tiles, ...work.off];
+  const leaving = everyTile.filter((t) => t.key === key && t.groupId !== undefined);
   if (leaving.length === 0) return document;
   const groupKeys = groupKeysOf(leaving);
   for (const t of leaving) setGroupId(t, undefined);
   for (const groupKey of groupKeys) {
-    const remaining = work.tiles.filter((t) => t.groupId === groupKey);
+    const remaining = everyTile.filter((t) => t.groupId === groupKey);
     if (remaining.length <= 1) {
       const group = groupEntry(work, groupKey);
       if (group !== undefined) for (const t of remaining) t.tile = tileWithGroupLook(t.tile, group);
@@ -1045,10 +1192,13 @@ export function leaveWatchTileGroup(
 
 // ── tile queries ─────────────────────────────────────────────────────────
 
+// Each query below is asked of one screen's places (the watch's unless
+// `screen` says otherwise): a tile Off on that screen is not there.
+
 /** The first tile in `items` order that covers the cell, as the phone's
  * `itemAt` finds it. */
-export function watchTileAtCell(page: WatchPage, cell: WatchCell): WatchPageTile | undefined {
-  const work = openWork(page);
+export function watchTileAtCell(page: WatchPage, cell: WatchCell, screen: WatchScreen = "watch"): WatchPageTile | undefined {
+  const work = openWork(page, screen);
   const at = itemAt(work.tiles, cell.row, cell.col);
   return at < 0 ? undefined : work.tiles[at]!.tile;
 }
@@ -1060,11 +1210,16 @@ export function watchTileAtCell(page: WatchPage, cell: WatchCell): WatchPageTile
  * Overlaps already in the page beyond that first tile are not seen, as on
  * the phone.
  */
-export function canPlaceWatchTile(page: WatchPage, rect: WatchRect, excludingTileIds: readonly string[] = []): boolean {
+export function canPlaceWatchTile(
+  page: WatchPage,
+  rect: WatchRect,
+  excludingTileIds: readonly string[] = [],
+  screen: WatchScreen = "watch",
+): boolean {
   if (![rect.col, rect.row, rect.colSpan, rect.rowSpan].every(Number.isInteger)) return false;
   if (rect.colSpan < 1 || rect.rowSpan < 1) return false;
   const excluding = excludingTileIds.map((id) => idKey(id)).filter((k): k is string => k !== undefined);
-  return canPlaceIgnoring(openWork(page).tiles, rect.colSpan, rect.rowSpan, rect.row, rect.col, excluding);
+  return canPlaceIgnoring(openWork(page, screen).tiles, rect.colSpan, rect.rowSpan, rect.row, rect.col, excluding);
 }
 
 /**
@@ -1078,10 +1233,13 @@ export function canPlaceWatchTile(page: WatchPage, rect: WatchRect, excludingTil
  * higher too, unless a tile ends right there), so only those are tried, and
  * a page with a tile stored far down costs no more than any other.
  */
-export function firstFreeWatchCell(page: WatchPage, colSpan: number, rowSpan: number): WatchCell {
+export function firstFreeWatchCell(page: WatchPage, colSpan: number, rowSpan: number, screen: WatchScreen = "watch"): WatchCell {
+  return firstFreeCellAmong(openWork(page, screen).tiles, colSpan, rowSpan);
+}
+
+function firstFreeCellAmong(tiles: readonly WatchRect[], colSpan: number, rowSpan: number): WatchCell {
   const cs = Math.max(1, Math.min(COLUMNS, Number.isFinite(colSpan) ? Math.trunc(colSpan) : 1));
   const rs = Math.max(1, Number.isFinite(rowSpan) ? Math.trunc(rowSpan) : 1);
-  const tiles = openWork(page).tiles;
   for (const row of cuts([0, ...tiles.map((t) => t.row + t.rowSpan)])) {
     for (let col = 0; col + cs <= COLUMNS; col++) {
       const rect = { row, col, rowSpan: rs, colSpan: cs };
@@ -1158,8 +1316,9 @@ export function watchDropOutcome(
   tileId: string,
   cell: WatchCell,
   pointerTileId?: string,
+  screen: WatchScreen = "watch",
 ): WatchDropOutcome {
-  const work = openWork(page);
+  const work = openWork(page, screen);
   const si = isSystemWatchPage(page) || isSmartWatchPage(page) ? -1 : findTile(work, tileId);
   if (si < 0) return { kind: "none", cell: { row: cell.row, col: cell.col } };
   const { target: _target, ...outcome } = planDrop(work.tiles, si, cell, pointerTileId);
@@ -1178,7 +1337,7 @@ export function dropWatchTile(
 ): WatchPagesDocument {
   const slot = tileSlot(document, pageId);
   if (slot === undefined) return document;
-  const work = openWork(slot.page);
+  const work = openWork(slot.page, screenOf(options));
   const si = findTile(work, tileId);
   if (si < 0) return document;
   const plan = planDrop(work.tiles, si, cell, pointerTileId);
@@ -1284,7 +1443,7 @@ export function nudgeWatchTile(
 ): WatchPagesDocument {
   const slot = tileSlot(document, pageId);
   if (slot === undefined) return document;
-  const work = openWork(slot.page);
+  const work = openWork(slot.page, screenOf(options));
   const si = findTile(work, tileId);
   if (si < 0) return document;
   applyNudge(work.tiles, si, direction);
@@ -1299,10 +1458,11 @@ export function canNudgeWatchTile(
   pageId: string,
   tileId: string,
   direction: WatchNudgeDirection,
+  screen: WatchScreen = "watch",
 ): boolean {
   const slot = tileSlot(document, pageId);
   if (slot === undefined) return false;
-  const work = openWork(slot.page);
+  const work = openWork(slot.page, screen);
   const si = findTile(work, tileId);
   if (si < 0) return false;
   applyNudge(work.tiles, si, direction);
@@ -1359,7 +1519,7 @@ export function moveWatchTilesBy(
 ): WatchPagesDocument | undefined {
   const slot = tileSlot(document, pageId);
   if (slot === undefined) return undefined;
-  const work = openWork(slot.page);
+  const work = openWork(slot.page, screenOf(options));
   if (!shiftTiles(work, ids, dcols, drows)) return undefined;
   if (dcols === 0 && drows === 0) return document;
   repairMovedGroups(work, options);
@@ -1374,10 +1534,11 @@ export function canMoveWatchTilesBy(
   ids: readonly string[],
   dcols: number,
   drows: number,
+  screen: WatchScreen = "watch",
 ): boolean {
   if (dcols === 0 && drows === 0) return false;
   const slot = tileSlot(document, pageId);
-  return slot !== undefined && shiftTiles(openWork(slot.page), ids, dcols, drows);
+  return slot !== undefined && shiftTiles(openWork(slot.page, screen), ids, dcols, drows);
 }
 
 // ── resize ───────────────────────────────────────────────────────────────
@@ -1504,10 +1665,10 @@ function applyResize(tiles: WorkTile[], si: number, rect: WatchRect, baseline: M
 /** Each tile's place by id, as the phone fills `resizeOriginalPositions`: in
  * `items` order, so of two tiles with one id the later one's place wins, and
  * both go back to it. */
-function baselineOf(page: WatchPage | undefined): Map<string, WatchCell> | undefined {
+function baselineOf(page: WatchPage | undefined, screen: WatchScreen): Map<string, WatchCell> | undefined {
   if (page === undefined) return undefined;
   const map = new Map<string, WatchCell>();
-  for (const t of openWork(page).tiles) map.set(t.key, { row: t.row, col: t.col });
+  for (const t of openWork(page, screen).tiles) map.set(t.key, { row: t.row, col: t.col });
   return map;
 }
 
@@ -1539,8 +1700,9 @@ export function previewWatchTileResize(
   tileId: string,
   rect: WatchRect,
   baseline?: WatchPage,
+  screen: WatchScreen = "watch",
 ): WatchResizePreview {
-  const work = openWork(page);
+  const work = openWork(page, screen);
   const si = isSystemWatchPage(page) || isSmartWatchPage(page) ? -1 : findTile(work, tileId);
   const whole = wholeRect(rect);
   if (si < 0 || "refused" in whole) {
@@ -1548,7 +1710,7 @@ export function previewWatchTileResize(
     const refused = "refused" in whole ? whole.refused : undefined;
     return { page, rect: t === undefined ? { ...rect } : { ...t.read }, overlaps: false, ...(refused === undefined ? {} : { refused }) };
   }
-  applyResize(work.tiles, si, whole.rect, baselineOf(baseline));
+  applyResize(work.tiles, si, whole.rect, baselineOf(baseline, screen));
   const item = work.tiles[si]!;
   const result: WatchRect = { col: item.col, row: item.row, colSpan: item.colSpan, rowSpan: item.rowSpan };
   return {
@@ -1581,10 +1743,11 @@ export function resizeWatchTile(
   const slot = tileSlot(document, pageId);
   const whole = wholeRect(rect);
   if (slot === undefined || "refused" in whole) return document;
-  const work = openWork(slot.page);
+  const screen = screenOf(options);
+  const work = openWork(slot.page, screen);
   const si = findTile(work, tileId);
   if (si < 0) return document;
-  applyResize(work.tiles, si, whole.rect, baselineOf(options?.baseline));
+  applyResize(work.tiles, si, whole.rect, baselineOf(options?.baseline, screen));
   const item = work.tiles[si]!;
   const kept = new Set((options?.keepOverlapsWith ?? []).map((id) => idKey(id)).filter((k): k is string => k !== undefined));
   if (work.tiles.some((t, i) => i !== si && !kept.has(t.key) && overlaps(item, t))) return document;
@@ -1595,8 +1758,9 @@ export function resizeWatchTile(
 
 // ── delete ───────────────────────────────────────────────────────────────
 
-/** Remove a tile (every tile with that id, as the phone's `removeAll`).
- * Nothing closes the gap. The groups it was in are repaired. */
+/** Remove a tile (every tile with that id, as the phone's `removeAll`) from
+ * the page's list and from every screen, Off or not. Nothing closes the
+ * gap. The groups it was in are repaired on `options.screen`. */
 export function deleteWatchTile(
   document: WatchPagesDocument,
   pageId: string,
@@ -1606,11 +1770,203 @@ export function deleteWatchTile(
   const slot = tileSlot(document, pageId);
   const key = idKey(tileId);
   if (slot === undefined || key === undefined) return document;
-  const work = openWork(slot.page);
-  const removed = removeTiles(work, (t) => t.key === key);
-  if (removed.length === 0) return document;
-  repairGroups(work, groupKeysOf(removed), options);
+  const work = openWork(slot.page, screenOf(options));
+  const removed = removeTiles(work, (_tile, k) => k === key);
+  if (removed.count === 0) return document;
+  repairGroups(work, removed.groupKeys, options);
   return withPage(document, slot, closeWork(work));
+}
+
+/** Delete a tile from every device: the page's list and both screens
+ * (`deleteWatchTile`). What "Delete tile" and a last screen switched off
+ * do. */
+export const deleteTile = deleteWatchTile;
+
+// ── screens: on and off, and one screen's order from the other ───────────
+
+/** The page with one tile's own geometry fields set to `rect`, the watch
+ * screen's copy. */
+function withTileFields(page: WatchPage, key: string, rect: WatchRect): WatchPage {
+  if (!Array.isArray(page.items)) return page;
+  const items = page.items.map((raw) =>
+    isJsonObject(raw) && idKey(raw.id) === key
+      ? { ...raw, gridCol: rect.col, gridRow: rect.row, colSpan: rect.colSpan, rowSpan: rect.rowSpan }
+      : raw,
+  );
+  return { ...page, items };
+}
+
+/** Whether switching this tile Off on `screen` would leave it on no screen,
+ * so the panel asks to delete it instead (`setTileOnScreen` refuses). */
+export function tileOnlyOnScreen(page: WatchPage, tile: WatchPageTile, screen: WatchScreen): boolean {
+  return watchScreenTileRect(page, tile, screen) !== undefined && watchScreenTileRect(page, tile, otherWatchScreen(screen)) === undefined;
+}
+
+/**
+ * Switch a tile On or Off on one screen; the other screen does not move.
+ *
+ * Off takes the tile out of that screen's map, leaving its place empty; a
+ * tile in a group leaves the group too, since a group has the same members
+ * on both screens. Refused (the document comes back as it is) when it is
+ * the tile's last screen: a tile is always on at least one, and the panel
+ * asks "Delete this tile?" instead (`tileOnlyOnScreen`, `deleteTile`).
+ *
+ * On puts the tile at the screen's first free place for the size it has on
+ * the other screen (`nearestScreenSize`), and on the watch writes that place
+ * to its own fields too. Refused for a kind the screen cannot draw (a map
+ * on the watch), and when the place would end past row 200. A page without
+ * `screens` gets them, read from the tile fields first. A tile already in
+ * the state asked for, or not on the page, changes nothing.
+ */
+export function setTileOnScreen(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  screen: WatchScreen,
+  on: boolean,
+  options?: WatchEditOptions,
+): WatchPagesDocument {
+  const slot = tileSlot(document, pageId);
+  const key = idKey(tileId);
+  if (slot === undefined || key === undefined) return document;
+  const page = slot.page;
+  const tile = workTilesOf(page).find((t) => idKey(t.id) === key);
+  if (tile === undefined || (watchScreenTileRect(page, tile, screen) !== undefined) === on) return document;
+  const there = watchScreenTileRect(page, tile, otherWatchScreen(screen));
+  const maps = screenMapsOf(page);
+  if (!on) {
+    if (there === undefined) return document;
+    deleteScreenPlace(maps[screen], tile.id);
+    const next = withPage(document, slot, withScreenMaps(page, maps));
+    return idKey(tile.groupId) === undefined ? next : leaveWatchTileGroup(next, pageId, tileId, { ...options, screen });
+  }
+  if (!tileDrawsOn(tile, screen)) return document;
+  const size = nearestScreenSize(there ?? watchTileRect(tile), screen);
+  const cell = firstFreeWatchCell(page, size.colSpan, size.rowSpan, screen);
+  const rect = { ...cell, ...size };
+  if (!withinPage(rect)) return document;
+  setScreenPlace(maps[screen], tile.id as string, rect);
+  let next = withScreenMaps(page, maps);
+  if (screen === "watch") next = withTileFields(next, key, rect);
+  return withPage(document, slot, next);
+}
+
+/**
+ * The size a screen gives a tile that has `size` on the other screen. Both
+ * screens are 12 columns (`WATCH_GRID_COLUMNS`), so a size copies as it
+ * is, kept to 1 to 12 columns and 1 row or more; this is the one place a
+ * screen with its own sizes would round to them.
+ */
+export function nearestScreenSize(size: { colSpan: number; rowSpan: number }, _screen: WatchScreen): { colSpan: number; rowSpan: number } {
+  const whole = (v: number) => (Number.isFinite(v) ? Math.trunc(v) : 1);
+  return { colSpan: Math.max(1, Math.min(COLUMNS, whole(size.colSpan))), rowSpan: Math.max(1, whole(size.rowSpan)) };
+}
+
+/** Tiles in reading order: by row, then column, then place in `items`. */
+function readingOrder<T extends WatchRect & { index: number }>(tiles: readonly T[]): T[] {
+  return [...tiles].sort((a, b) => a.row - b.row || a.col - b.col || a.index - b.index);
+}
+
+/**
+ * Place rectangles of these sizes one after another, keeping their order
+ * as reading order: each goes to the first free place after the one
+ * before it (further right on that one's row, or any column of a row
+ * below), so the packed page reads in the order given. The first free row
+ * is only ever the previous tile's row, the one under it, or a row just
+ * under a placed tile, so only those are tried.
+ */
+function packInOrder(sizes: readonly { colSpan: number; rowSpan: number }[]): WatchRect[] {
+  const placed: WatchRect[] = [];
+  let row = 0;
+  let col = 0;
+  for (const size of sizes) {
+    const cs = Math.min(COLUMNS, size.colSpan);
+    const rows = cuts([row, row + 1, ...placed.map((p) => p.row + p.rowSpan).filter((r) => r >= row)]);
+    let at: WatchRect | undefined;
+    for (const r of rows) {
+      for (let c = r === row ? col : 0; c + cs <= COLUMNS && at === undefined; c++) {
+        const rect = { row: r, col: c, colSpan: cs, rowSpan: size.rowSpan };
+        if (!placed.some((p) => overlaps(rect, p))) at = rect;
+      }
+      if (at !== undefined) break;
+    }
+    // The row under every placed tile is always free; never reached.
+    at ??= { row: Math.max(row + 1, ...placed.map((p) => p.row + p.rowSpan)), col: 0, colSpan: cs, rowSpan: size.rowSpan };
+    placed.push(at);
+    row = at.row;
+    col = at.col + at.colSpan;
+  }
+  return placed;
+}
+
+/**
+ * "Use the iPhone's order" (or the watch's): arrange `screen` the way the
+ * other screen reads. The tiles on both screens take the other screen's
+ * reading order and the nearest size this screen allows
+ * (`nearestScreenSize`); the tiles only on this screen follow, in their own
+ * order and size; everything is then packed from the top in that order.
+ * Tiles Off on this screen stay Off, and the other screen does not move.
+ * Refused when the packed page would end past row 200; a page already
+ * arranged that way comes back as it is. The groups of moved tiles are
+ * repaired.
+ */
+export function useOtherScreensOrder(
+  document: WatchPagesDocument,
+  pageId: string,
+  screen: WatchScreen,
+  options?: WatchEditOptions,
+): WatchPagesDocument {
+  const slot = tileSlot(document, pageId);
+  if (slot === undefined) return document;
+  const work = openWork(slot.page, screen);
+  const from = openWork(slot.page, otherWatchScreen(screen));
+  const here = new Map(work.tiles.map((t) => [t.key, t]));
+  const ordered: { tile: WorkTile; size: { colSpan: number; rowSpan: number } }[] = [];
+  for (const t of readingOrder(from.tiles)) {
+    const mine = here.get(t.key);
+    if (mine === undefined || ordered.some((o) => o.tile === mine)) continue;
+    ordered.push({ tile: mine, size: nearestScreenSize(t, screen) });
+  }
+  for (const t of readingOrder(work.tiles)) {
+    if (!ordered.some((o) => o.tile === t)) ordered.push({ tile: t, size: { colSpan: t.colSpan, rowSpan: t.rowSpan } });
+  }
+  const rects = packInOrder(ordered.map((o) => o.size));
+  ordered.forEach((o, i) => Object.assign(o.tile, rects[i]!));
+  if (movedPastEnd(work)) return document;
+  repairMovedGroups(work, options);
+  return withPage(document, slot, closeWork(work));
+}
+
+// ── adding ───────────────────────────────────────────────────────────────
+
+/**
+ * A new tile appended to a page and placed on every screen that draws it, at
+ * that screen's first free place for its size (`firstFreeWatchCell`): a kind
+ * the watch cannot draw lands on the iPhone only. Its own `gridCol` and
+ * `gridRow` take the watch's place (the iPhone's for an iPhone only kind).
+ * A page without `screens` gets none when the two places agree, since the
+ * tile fields then say both; else it gets them, read from the tile fields
+ * before the add. A tile with no id is placed by its fields alone.
+ */
+export function placeNewWatchTile(page: WatchPage, tile: WatchPageTile): WatchPage {
+  const items = Array.isArray(page.items) ? page.items : [];
+  const size = nearestScreenSize({ colSpan: Number(tile.colSpan ?? 1), rowSpan: Number(tile.rowSpan ?? 1) }, "watch");
+  const cells: Partial<Record<WatchScreen, WatchCell>> = {};
+  for (const screen of WATCH_SCREENS) {
+    if (tileDrawsOn(tile, screen)) cells[screen] = firstFreeWatchCell(page, size.colSpan, size.rowSpan, screen);
+  }
+  const own = cells.watch ?? cells.iphone ?? firstFreeWatchCell(page, size.colSpan, size.rowSpan);
+  const next: WatchPage = { ...page, items: [...items, { ...tile, gridCol: own.col, gridRow: own.row }] };
+  const id = typeof tile.id === "string" && tile.id !== "" ? tile.id : undefined;
+  const agree = cells.watch === undefined || cells.iphone === undefined
+    || (cells.watch.row === cells.iphone.row && cells.watch.col === cells.iphone.col);
+  if (id === undefined || (!hasWatchPageScreens(page) && agree)) return next;
+  const maps = screenMapsOf(page);
+  for (const screen of WATCH_SCREENS) {
+    const cell = cells[screen];
+    if (cell !== undefined) setScreenPlace(maps[screen], id, { ...cell, ...size });
+  }
+  return withScreenMaps(next, maps);
 }
 
 // ── a tile with no id ────────────────────────────────────────────────────
@@ -1638,5 +1994,35 @@ export function giveWatchTileId(
   const id = newIdFrom(options);
   const next = items.slice();
   next[index] = { ...tile, id };
-  return { document: withPage(document, slot, { ...slot.page, items: next }), id };
+  let page: WatchPage = { ...slot.page, items: next };
+  // A tile with no id read its own fields on every screen; named now, it
+  // keeps them there, or it would be on no screen at all.
+  if (hasWatchPageScreens(slot.page)) {
+    const maps = screenMapsOf(slot.page);
+    for (const screen of WATCH_SCREENS) {
+      const rect = watchScreenTileRect(slot.page, tile, screen);
+      if (rect !== undefined) setScreenPlace(maps[screen], id, rect);
+    }
+    page = withScreenMaps(page, maps);
+  }
+  return { document: withPage(document, slot, page), id };
+}
+
+/**
+ * The page with its `screens` keyed by new tile ids: each key whose id is
+ * in `renamed` (old id in upper case to new id) is written under the new
+ * one, in its place; a key not in it stays. What a copy of a page that
+ * gives every tile a new id needs, or each tile would be on no screen.
+ * The page itself when it has no `screens`.
+ */
+export function renameWatchScreenTiles(page: WatchPage, renamed: ReadonlyMap<string, string>): WatchPage {
+  const stored = page[WATCH_SCREENS_KEY];
+  if (!isJsonObject(stored)) return page;
+  const screens: JsonObject = { ...stored };
+  for (const screen of WATCH_SCREENS) {
+    const map = stored[screen];
+    if (!isJsonObject(map)) continue;
+    screens[screen] = Object.fromEntries(Object.entries(map).map(([k, v]) => [renamed.get(k.toUpperCase()) ?? k, v]));
+  }
+  return { ...page, [WATCH_SCREENS_KEY]: screens };
 }

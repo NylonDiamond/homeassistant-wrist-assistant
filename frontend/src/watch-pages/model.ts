@@ -720,8 +720,11 @@ function whole(value: unknown, fallback: number, min: number): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.trunc(value)) : fallback;
 }
 
-/** Where a tile sits in grid units. Placement is absolute: nothing stops two
- * tiles from overlapping, and the later one is drawn on top. */
+/** Where a tile sits in grid units, by its own fields. Placement is absolute:
+ * nothing stops two tiles from overlapping, and the later one is drawn on
+ * top. The fields are the watch screen's copy; a page with `screens` keeps
+ * each screen's place there, so read one screen through `screenGeometry`,
+ * or lay out `watchScreenPage`, whose tile fields are that screen's. */
 export function tileGeometry(tile: WatchPageTile): { col: number; row: number; colSpan: number; rowSpan: number } {
   return {
     col: whole(tile.gridCol, 0, 0),
@@ -731,13 +734,181 @@ export function tileGeometry(tile: WatchPageTile): { col: number; row: number; c
   };
 }
 
+// ── screens ──────────────────────────────────────────────────────────────
+//
+// A page is one list of tiles, and the watch and the iPhone each arrange
+// it their own way (app repo docs/pages_two_screens_plan_2026-11.md). The
+// page key `screens` holds the two arrangements, by tile id:
+//
+//   "screens": {"watch": {"<tileId>": {"col": 0, "row": 0, "colSpan": 6, "rowSpan": 4}},
+//               "iphone": {...}}
+//
+// A tile absent from a screen's map is Off on that screen. Only the panel
+// writes the key; Home Assistant stamps each device's screen into the tile
+// fields of the record it sends, so the apps never read it. A page without
+// the key reads as both screens equal to the tile fields, every tile on,
+// but the kinds the watch cannot draw, which are Off on the watch. The tile
+// fields stay the watch screen's copy, written in step with it, so a
+// reader that ignores `screens` still sees a sane page.
+
+/** A screen: how every device of one kind arranges a page. */
+export type WatchScreen = "watch" | "iphone";
+
+/** Both screens, the watch first. */
+export const WATCH_SCREENS: readonly WatchScreen[] = ["watch", "iphone"];
+
+/** The page key that holds the two arrangements. */
+export const WATCH_SCREENS_KEY = "screens";
+
+/** A tile's place and size on one screen, in grid units. */
+export interface WatchScreenRect {
+  col: number;
+  row: number;
+  colSpan: number;
+  rowSpan: number;
+}
+
+/** The other screen. */
+export function otherWatchScreen(screen: WatchScreen): WatchScreen {
+  return screen === "watch" ? "iphone" : "watch";
+}
+
+/** Whether a page carries its own `screens`. Without it every screen reads
+ * from the tile fields. */
+export function hasWatchPageScreens(page: WatchPage): boolean {
+  return isJsonObject(page[WATCH_SCREENS_KEY]);
+}
+
+/** One screen's map of a page, as stored: tile id to place. Empty when the
+ * page has `screens` but not this screen (every tile Off there), undefined
+ * when the page has no `screens` at all. */
+export function watchScreenMap(page: WatchPage, screen: WatchScreen): JsonObject | undefined {
+  const screens = page[WATCH_SCREENS_KEY];
+  if (!isJsonObject(screens)) return undefined;
+  const map = screens[screen];
+  return isJsonObject(map) ? map : {};
+}
+
+/** The key a tile has in a screen's map, without regard to case, or
+ * undefined when the map does not hold it. */
+export function watchScreenKey(map: JsonObject, tileId: unknown): string | undefined {
+  if (typeof tileId !== "string" || tileId === "") return undefined;
+  if (Object.hasOwn(map, tileId)) return tileId;
+  const want = tileId.toUpperCase();
+  return Object.keys(map).find((k) => k.toUpperCase() === want);
+}
+
+/** A stored place read as whole numbers, as `tileGeometry` reads the tile
+ * fields; undefined for anything that is not an object. */
+function screenRectOf(value: unknown): WatchScreenRect | undefined {
+  if (!isJsonObject(value)) return undefined;
+  return {
+    col: whole(value.col, 0, 0),
+    row: whole(value.row, 0, 0),
+    colSpan: whole(value.colSpan, 1, 1),
+    rowSpan: whole(value.rowSpan, 1, 1),
+  };
+}
+
+/**
+ * Where a tile sits on one screen, or undefined when it is Off there. From
+ * the page's `screens` when it has them, else from the tile fields, with a
+ * kind the watch cannot draw Off on the watch. A kind the watch cannot draw
+ * is Off on the watch whatever `screens` holds. A tile with no id cannot be
+ * named in `screens`, so it reads from its own fields on every screen that
+ * draws it.
+ */
+export function screenGeometry(page: WatchPage, tile: WatchPageTile, screen: WatchScreen): WatchScreenRect | undefined {
+  if (!tileDrawsOn(tile, screen)) return undefined;
+  const map = watchScreenMap(page, screen);
+  if (map === undefined || typeof tile.id !== "string" || tile.id === "") return tileGeometry(tile);
+  const key = watchScreenKey(map, tile.id);
+  return key === undefined ? undefined : screenRectOf(map[key]);
+}
+
+/** Whether a tile shows on a screen (`screenGeometry` has a place for it). */
+export function tileOnScreen(page: WatchPage, tile: WatchPageTile, screen: WatchScreen): boolean {
+  return screenGeometry(page, tile, screen) !== undefined;
+}
+
+/** The tiles on a screen in its reading order: by row, then column, then
+ * place in `items`. */
+export function watchScreenTiles(page: WatchPage, screen: WatchScreen): WatchPageTile[] {
+  return watchPageTiles(page)
+    .map((tile, index) => ({ tile, index, g: screenGeometry(page, tile, screen) }))
+    .filter((t): t is { tile: WatchPageTile; index: number; g: WatchScreenRect } => t.g !== undefined)
+    .sort((a, b) => a.g.row - b.g.row || a.g.col - b.g.col || a.index - b.index)
+    .map((t) => t.tile);
+}
+
+/** The tiles Off on a screen, in `items` order: what its "Not on the
+ * watch" chips list. */
+export function watchTilesOffScreen(page: WatchPage, screen: WatchScreen): WatchPageTile[] {
+  return watchPageTiles(page).filter((t) => !tileOnScreen(page, t, screen));
+}
+
+/** Whether the two screens are arranged alike: the tiles on both read in
+ * the same order on each, at the same sizes. Tiles on only one screen do
+ * not count (they are the Off chips, not the arrangement). What "Same order
+ * as the iPhone" says. */
+export function watchScreensAlike(page: WatchPage): boolean {
+  const onBoth = (t: WatchPageTile) => tileOnScreen(page, t, "watch") && tileOnScreen(page, t, "iphone");
+  const watch = watchScreenTiles(page, "watch").filter(onBoth);
+  const iphone = watchScreenTiles(page, "iphone").filter(onBoth);
+  return watch.every((t, i) => {
+    if (iphone[i] !== t) return false;
+    const a = screenGeometry(page, t, "watch")!;
+    const b = screenGeometry(page, t, "iphone")!;
+    return a.colSpan === b.colSpan && a.rowSpan === b.rowSpan;
+  });
+}
+
+/** Whether a page's screens differ, for the pages list's "Screens differ":
+ * arranged apart (`watchScreensAlike`), or a tile Off on either. */
+export function watchScreensDiffer(page: WatchPage): boolean {
+  return !watchScreensAlike(page) || WATCH_SCREENS.some((s) => watchTilesOffScreen(page, s).length > 0);
+}
+
+/**
+ * The page as one screen draws it, the way Home Assistant stamps a device's
+ * record: each tile on the screen with that screen's place in its own
+ * fields, each tile Off there left out, and no `screens` key. Tiles keep
+ * their order in `items`. A tile already at its place is the very object
+ * that came in, so a layout of this page hands back the page's own tiles.
+ * A page without `screens` comes back itself: its tile fields are both
+ * screens already, and a drawing skips the kinds the watch cannot draw as
+ * it always has (`tileDrawsOn`).
+ */
+export function watchScreenPage(page: WatchPage, screen: WatchScreen): WatchPage {
+  if (!hasWatchPageScreens(page)) return page;
+  const items = Array.isArray(page.items) ? page.items : [];
+  const out: unknown[] = [];
+  for (const raw of items) {
+    if (!isJsonObject(raw)) {
+      out.push(raw);
+      continue;
+    }
+    const g = screenGeometry(page, raw, screen);
+    if (g === undefined) continue;
+    const own = tileGeometry(raw);
+    if (own.col === g.col && own.row === g.row && own.colSpan === g.colSpan && own.rowSpan === g.rowSpan) {
+      out.push(raw);
+      continue;
+    }
+    out.push({ ...raw, gridCol: g.col, gridRow: g.row, colSpan: g.colSpan, rowSpan: g.rowSpan });
+  }
+  const { [WATCH_SCREENS_KEY]: _screens, ...rest } = page;
+  return Array.isArray(page.items) ? { ...rest, items: out } : rest;
+}
+
 /** The rows a page uses: one past the bottom of its lowest tile. 0 for a page
- * with no tiles. */
-export function watchPageExtent(page: WatchPage): number {
+ * with no tiles. With `screen`, the rows that screen uses, from its own
+ * places and its tiles that show; without, the tile fields of every tile. */
+export function watchPageExtent(page: WatchPage, screen?: WatchScreen): number {
   let rows = 0;
   for (const tile of watchPageTiles(page)) {
-    const g = tileGeometry(tile);
-    rows = Math.max(rows, g.row + g.rowSpan);
+    const g = screen === undefined ? tileGeometry(tile) : screenGeometry(page, tile, screen);
+    if (g !== undefined) rows = Math.max(rows, g.row + g.rowSpan);
   }
   return rows;
 }

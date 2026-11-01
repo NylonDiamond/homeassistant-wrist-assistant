@@ -21,7 +21,7 @@ import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS } from "../watch-pages/editor-host.js";
 import type { HomeMapDocument } from "../home-map/model.js";
-import { type WatchPage, isMapWatchPage, isSmartWatchPage } from "../watch-pages/model.js";
+import { type WatchPage, isMapWatchPage, isSmartWatchPage, watchScreenPage } from "../watch-pages/model.js";
 import type { OneLookPhotoLight } from "../watch-pages/one-look/glow.js";
 import {
   type WatchPagePreviewInput,
@@ -162,7 +162,8 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
   if (phone !== undefined && input.homeMap !== undefined && isMapWatchPage(page)) {
     return html`<span class="lr-pic ph" style=${box} aria-hidden="true">${renderMapPageArt({ ...preview, homeMap: input.homeMap }, screen.width, height / s, s)}</span>`;
   }
-  const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
+  // Each picture is its own screen's arrangement (`screens`).
+  const layout = watchPreviewLayout(watchScreenPage(page, iphone ? "iphone" : "watch"), screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.
   const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < height);
   const back = previewScreenLayers(preview, page, s, screen, undefined);
