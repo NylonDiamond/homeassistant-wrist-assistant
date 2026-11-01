@@ -1340,7 +1340,7 @@ export class WaVoiceEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : watchVoiceBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "voice settings", historyState: this.historyState });
-    return renderConfigSyncPill(status, draft?.dirty ?? false);
+    return renderConfigSyncPill(status, draft?.dirty ?? false, this.barHost !== undefined);
   }
 
   /** Whether this watch's iPhone may still move this kind here, so the

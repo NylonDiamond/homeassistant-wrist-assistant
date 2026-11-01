@@ -236,6 +236,10 @@ describe("the sync pill", () => {
     const rejected = status(record({ revision: 8, delivered_revision: 7, rejected_revision: 8 }));
     expect(rejected.tone).toBe("err");
     expect(flat(renderConfigSyncPill(rejected, false))).toContain(`class="tb-sync err"`);
+    // A device page's tab row keeps only what needs reading.
+    expect(renderConfigSyncPill(status(record()), false, true)).toBe(nothing);
+    expect(flat(renderConfigSyncPill(status(record({ delivered_revision: 6 })), false, true))).toContain(`class="tb-sync warn"`);
+    expect(flat(renderConfigSyncPill(rejected, false, true))).toContain(`class="tb-sync err"`);
     // Unsaved edits: "Synced" would be about a copy that is about to change.
     expect(renderConfigSyncPill(status(record()), true)).toBe(nothing);
     expect(renderConfigSyncPill(status(record({ delivered_revision: 6 })), true)).toBe(nothing);

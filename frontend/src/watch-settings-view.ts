@@ -1671,7 +1671,7 @@ export class WatchSettings implements ReactiveController {
             device: this.device,
             newWords: this.onlyStyleIsNew ? { status: STYLE_NOT_SAVED_STATUS, title: styleNotSavedText(this.device) } : undefined,
           })}
-        ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery() : nothing}`
+        ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery(true) : nothing}`
       : changes > 0
         ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
         : elsewhere ? nothing
@@ -1697,8 +1697,10 @@ export class WatchSettings implements ReactiveController {
 
   /** The header's sync pill, saying whether a device has collected the
    * revisions shown, the settings' and the notification style's: green once
-   * every one held has been, amber while a save of either waits. */
-  private renderDelivery() {
+   * every one held has been, amber while a save of either waits. In a device
+   * page's tab row (`inTabRow`) only the amber speaks: the device's header
+   * says how the whole device stands. */
+  private renderDelivery(inTabRow = false) {
     const held = [
       { what: "Settings", record: this.record },
       { what: "Notification style", record: this.styleUnsupported ? undefined : this.styleRecord },
@@ -1709,6 +1711,7 @@ export class WatchSettings implements ReactiveController {
     if (held.length === 0) return nothing;
     const waiting = held.filter((h) => h.state === "waiting");
     if (waiting.length === 0) {
+      if (inTabRow) return nothing;
       const title = held.map((h) => `The ${this.noun} has ${h.what} revision ${h.revision}.`).join(" ");
       return html`<span class="tb-sync ok" title=${title}>
         <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${COLLECTED_PILL_TEXT}</span>

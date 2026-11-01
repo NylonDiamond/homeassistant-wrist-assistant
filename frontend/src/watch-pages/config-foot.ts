@@ -131,9 +131,13 @@ export function configFootStatus(i: {
  * copy: green once collected, amber while it waits, red when a device could
  * not read the save. With unsaved edits on screen "Synced" would describe a
  * copy that is about to change, so the pill steps aside until the save,
- * unless a device could not read the last one. */
-export function renderConfigSyncPill(status: ConfigFootStatus, dirty: boolean): TemplateResult | typeof nothing {
+ * unless a device could not read the last one. In a device page's tab row
+ * (`inTabRow`) a plain "Synced" says nothing: the device's header says how the
+ * whole device stands, and this tab's copy alone beside it read as a conflict.
+ * It only speaks up there when this tab's copy is waiting or was refused. */
+export function renderConfigSyncPill(status: ConfigFootStatus, dirty: boolean, inTabRow = false): TemplateResult | typeof nothing {
   if (dirty && status.tone !== "err") return nothing;
+  if (inTabRow && status.tone === "ok") return nothing;
   return html`<span class="tb-sync ${status.tone}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
     </span>`;

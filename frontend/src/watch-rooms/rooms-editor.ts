@@ -965,7 +965,7 @@ export class WaRoomsEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || draft === undefined) return nothing;
     const budget = roomsBudget(draft.effective, this.kind);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: this.noun, historyState: this.historyState, device: this.device });
-    return renderConfigSyncPill(status, draft.dirty);
+    return renderConfigSyncPill(status, draft.dirty, this.barHost !== undefined);
   }
 
   private renderTopMenu(draft: RoomsDraft | undefined): TemplateResult | typeof nothing {
