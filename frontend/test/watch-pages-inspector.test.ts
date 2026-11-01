@@ -355,18 +355,25 @@ describe("the tile's cards", () => {
     expect(mid).not.toContain("ts-head-change");
     const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
     const acts = [...side.matchAll(/<span>(Duplicate|Hide|Reset|Delete)<\/span>/g)].map((m) => m[1]);
-    // No Hide: the On Watch and On iPhone switches and the chips under each
+    // No Hide: the Tile on chips under the Name and the chips under each
     // picture say where it shows. Delete is the inspector's foot.
     expect(acts).toEqual(["Duplicate"]);
-    expect(head).toContain(`<p class="ts-head-applies">Same on every device.</p>`);
-    expect([...head.matchAll(/<span>(On Watch|On iPhone)<\/span>/g)].map((m) => m[1])).toEqual(["On Watch", "On iPhone"]);
+    expect(head).not.toContain("Same on every device");
+    expect(head).not.toContain("pe-screen-sw");
+    const tileOn = mid.slice(mid.indexOf(`<div class="pe-tile-screens"`), mid.indexOf(`<div class="ts-head-pills">`));
+    expect(tileOn).toContain(`<span class="lt-lead">Tile on</span>`);
+    expect([...tileOn.matchAll(/<span class="lt-name">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Watch", "iPhone"]);
+    // Both ticked: a light shows on the watch and on the iPhone.
+    expect(tileOn.match(/aria-checked=true/g)?.length).toBe(2);
     // Under them how many parts hold a value of their own, then Reset all.
     expect(side).toMatch(/<div class="ts-head-changed">.*<button type="button" class="link ts-reset-btn"[^>]*>Reset all<\/button>/s);
     // No Find a setting: Jesse took it out on 2026-10-26.
     expect(text).not.toContain("Find a setting");
     expect(text).not.toContain("Preview as");
     const foot = text.slice(text.indexOf(`<div class="pe-tile-foot">`));
-    expect(foot).toMatch(/<span>Take off the watch<\/span>/);
+    // Taking it off one screen is the chips: the foot only deletes.
+    expect(foot).not.toContain("Take off");
+    expect(foot).not.toContain("pe-take-off");
     expect(foot).toMatch(/<span>Delete tile<\/span><small>from every device<\/small>/);
     const body = text.slice(text.indexOf(`<div class="ts-groups"`));
     // No Name card any more, and the name's box is the head's alone.

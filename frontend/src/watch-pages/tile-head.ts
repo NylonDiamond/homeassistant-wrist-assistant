@@ -230,22 +230,22 @@ export interface TileHeadParts {
   actions: TemplateResult | typeof nothing;
   /** The last action (Delete). */
   remove: TemplateResult | typeof nothing;
+  /** Right under the Name, over the facts: the page editor's "Tile on"
+   * Watch and iPhone chips, or the question that stands in for them. */
+  screens?: TemplateResult | typeof nothing;
   /** Under the facts: the group line, while the tile is in a group. */
   below?: TemplateResult | typeof nothing;
   /** Go to a section, for a press on one of the facts. Without it the facts
    * are words only. */
   go?: (part: TileInspectorPart) => void;
-  /** The grey line under the facts: which pages a change reaches ("Changes
-   * apply to the Watch and iPhone pages"). */
-  applies?: string;
 }
 
 /**
  * The tile inspector's head: the path back to the page; the large tile with
  * the tile's Name beside it (for a tile with a Text section; empty shows the
- * name the watch falls back to and stores no label); the facts as links to
- * their settings (`tileHeadPills`, an arrow on each says it goes somewhere);
- * which pages a change reaches; then the actions, with how many parts are
+ * name the watch falls back to and stores no label) and the screens it is on
+ * under the Name; the facts as links to their settings (`tileHeadPills`, an
+ * arrow on each says it goes somewhere); then the actions, with how many parts are
  * changed and Reset all at their end. A tile with no entity says what it is
  * where a Name would not be. Inside a `.ts-root`, so the editor lets the
  * name's box go when the selection moves.
@@ -281,10 +281,9 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
     ${parts.path === undefined ? nothing : html`<div class="ts-head-path">${parts.path}</div>`}
     <div class="ts-head-row">
       <div class="ts-head-lead">${parts.lead}</div>
-      <div class="ts-head-mid">${name}${what}</div>
+      <div class="ts-head-mid">${name}${what}${parts.screens ?? nothing}</div>
     </div>
     ${facts}
-    ${parts.applies === undefined ? nothing : html`<p class="ts-head-applies">${parts.applies}</p>`}
     ${parts.below ?? nothing}
     <div class="ts-head-side">
       <div class="ts-head-acts" role="group" aria-label="Tile actions">
@@ -301,8 +300,8 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
 }
 
 /* The head's rules: one column of rows over the groups. The path; the large
-   tile with the Name beside it; the facts; which pages a change reaches; the
-   actions with Reset all at their end. */
+   tile with the Name and the screens beside it; the facts; the actions with
+   Reset all at their end. */
 export const tileHeadStyles = css`
   .ts-head {
     gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card);
@@ -351,7 +350,6 @@ export const tileHeadStyles = css`
   button.ts-pill-link > b { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 50%, transparent); text-underline-offset: 3px; }
   button.ts-pill-link:hover { background: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 16%, transparent); }
   button.ts-pill-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ts-head-applies { margin: 0; font-size: 12px; color: var(--wa-muted); }
   .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 30px; padding: 0 10px; font-size: 12.5px; }
   .ts-head-acts > button svg.ui-icon { width: 15px; height: 15px; }

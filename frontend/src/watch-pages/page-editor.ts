@@ -72,7 +72,7 @@ import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
 import { oneLookForEvery } from "../version.js";
 import { LibraryController } from "../library/store.js";
-import { SHOWN_ON_TEXT, libraryTicksStyles, renderTicks } from "../library/ticks.js";
+import { SHOWN_ON_TEXT, type TickChip, libraryTicksStyles, renderTickChip, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
   fetchLibraryRecord,
@@ -97,7 +97,19 @@ import {
 import { followDeliveries, onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
 import { changeDevicePicks } from "./all-pages-picks.js";
 import { picksIO } from "./all-pages-io.js";
-import { SAME_ON_EVERY_DEVICE_TEXT, screenOffChips, screenOffLead, screenStatus, screenTitleText, screenWord, takeScreenMoveToast } from "./device-differences.js";
+import {
+  TILE_ON_TEXT,
+  screenOffChips,
+  screenOffLead,
+  screenOnlyText,
+  screenOnlyTileIds,
+  screenStatus,
+  screenTitleText,
+  screenTitleWord,
+  screenWord,
+  takeScreenMoveToast,
+  tileOnChipTitle,
+} from "./device-differences.js";
 import { dirtyElsewhereText, unsavedTicksText } from "./library-editing.js";
 import { type UntickAsk, askUntick, clearComplicationTaps, tickItem } from "./library-editing-io.js";
 import {
@@ -988,15 +1000,15 @@ export class WaPageEditor extends LitElement {
    * without the fade. */
   private drawnScales: Partial<Record<WatchScreen, number>> = {};
   /** The picture a tile was last pressed or clicked on: where the handles
-   * show, what the arrow keys move and which screen the inspector's Take off
-   * names. Undefined until the first press, when the edited kind stands in
-   * (`clickedScreen`). */
+   * show, what the arrow keys move and which picture's status line holds
+   * "Use the iPhone's order". Undefined until the first press, when the
+   * edited kind stands in (`clickedScreen`). */
   @state() private editScreen?: WatchScreen;
   /** The one toast of a first drag or resize (`takeScreenMoveToast`). */
   @state() private screenToast?: string;
   private screenToastTimer?: ReturnType<typeof setTimeout>;
-  /** A tile switched off on its last screen: the inspector asks "Delete this
-   * tile?" in place of the switch. */
+  /** A tile taken off its last screen: the inspector asks "Delete this
+   * tile?" in place of the Tile on chips. */
   @state() private screenOffAsk?: { tileId: string; screen: WatchScreen };
   private scrollFrame?: number;
   private windowArmed = false;
@@ -4218,8 +4230,9 @@ export class WaPageEditor extends LitElement {
   /**
    * The lines under one picture: the title, the kind and the devices of it
    * that show the page; the status line, "Same order as the iPhone" or
-   * "Arranged differently" with "Use the iPhone's order" (one edit, so Undo
-   * takes it back), said while the other kind is drawn or shows the page;
+   * "Arranged differently", with "Use the iPhone's order" (one edit, so Undo
+   * takes it back) under the picture last pressed on only, said while the
+   * other kind is drawn or shows the page;
    * and "Not on the
    * watch:" with a chip per tile Off there, a click on which puts it on, or,
    * for a kind the screen cannot draw, a grey chip saying which draws it.
@@ -4229,6 +4242,10 @@ export class WaPageEditor extends LitElement {
     // Said while the other kind is drawn too, or shows the page somewhere;
     // a map page's line, how this kind draws it, always.
     const status = both || isMapWatchPage(page) || this.screenNames(otherWatchScreen(screen)).length > 0 ? screenStatus(page, screen) : undefined;
+    // One button for the two pictures: "Use the iPhone's order" sits under
+    // the picture last pressed or dragged on (`clickedScreen`, the watch's
+    // until then); the other says "Arranged differently" alone.
+    const useWords = screen === this.clickedScreen ? status?.useOther : undefined;
     const chips = screenOffChips(page, screen);
     const off = this.busy || this.editingOff(page);
     const pageId = watchPageId(page);
@@ -4247,8 +4264,8 @@ export class WaPageEditor extends LitElement {
     };
     return html`<div class="pe-screen-lines">
       <span class="lib-duo-l pe-screen-title" title=${title}>${title}</span>
-      ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${status.useOther === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
-        title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${status.useOther}</button>`}</span>`}
+      ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${useWords === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
+        title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${useWords}</button>`}</span>`}
       ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen)}>
         <span class="pe-screen-off-l">${screenOffLead(screen)}:</span>
         ${chips.map((c) => {
@@ -4603,6 +4620,8 @@ export class WaPageEditor extends LitElement {
     // every glow and shadow grows at once.
     const still = this.gesture?.started !== true && !this.scrub.active && this.drawnScales[on] === s;
     this.drawnScales[on] = s;
+    // The tiles the other screen does not show wear this screen's badge.
+    const only = screenOnlyTileIds(page, on);
     // The grid's cells show only while a tile is moved or resized.
     return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""} ${still ? "pe-fades" : ""}" tabindex="-1" role="group"
       data-screen=${on} aria-label=${`${phone ? "iPhone" : "Watch"} layout of ${watchPageName(page)}`}
@@ -4615,7 +4634,7 @@ export class WaPageEditor extends LitElement {
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
       ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}
       ${move ? this.renderMoveGhosts(move, shown, grid) : nothing}
-      ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move, on, handles))}
+      ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move, on, handles, only))}
       ${this.renderAddSlot(grid, slot)}
       ${selBox ? html`<div class="pe-sel ${resize?.preview?.overlaps ? "no" : ""}" aria-hidden="true"
           style=${`left:${selBox.left}px;top:${selBox.top}px;width:${selBox.width}px;height:${selBox.height}px;${handleSizes(selBox)}`}>
@@ -4634,6 +4653,7 @@ export class WaPageEditor extends LitElement {
     move: MoveGesture | undefined,
     on: WatchScreen,
     handles: boolean,
+    only: ReadonlySet<string> = new Set(),
   ): TemplateResult {
     const s = grid.scale;
     const { tile } = placed;
@@ -4691,7 +4711,12 @@ export class WaPageEditor extends LitElement {
     // A spacer draws next to nothing on the watch: a dashed outline and its
     // word show where it is.
     const word = spacer ? html`<span class="pe-spacer-word" aria-hidden="true">Spacer</span>` : nothing;
-    const names = [label, kindLabel, tileEntityId(tile), hiddenBy === undefined ? "" : stageHiddenText(hiddenBy)];
+    // A tile the other screen does not show: a small badge in its top-right
+    // corner naming this screen, "Watch only" (`screenOnlyTileIds`).
+    const alone = id !== "" && only.has(id.toUpperCase()) ? screenOnlyText(on) : undefined;
+    const badge = alone === undefined ? nothing
+      : html`<span class="pe-only" data-only=${on} title=${alone} aria-hidden="true">${uiIcon(on === "watch" ? "watch" : "phone")}</span>`;
+    const names = [label, kindLabel, tileEntityId(tile), hiddenBy === undefined ? "" : stageHiddenText(hiddenBy), alone ?? ""];
     const looks = `${spacer ? "spacer" : ""} ${hiddenBy === undefined ? "" : "faded"}`;
     if (id === "") {
       // A tile stored with no id: no edit can name it until it has one, which
@@ -4717,7 +4742,7 @@ export class WaPageEditor extends LitElement {
         }
         if (this.takePressedPart(id, e)) return;
         this.clickTile(id, e);
-      }}>${face}${parts}${word}${tag}</button>`;
+      }}>${face}${parts}${word}${tag}${badge}</button>`;
   }
 
   /**
@@ -5299,23 +5324,51 @@ export class WaPageEditor extends LitElement {
     if (section !== undefined) this.goToSetting(section, to.within);
   }
 
-  /** The one line over the tile's settings: a tile is the same on every
-   * device, and only where it sits and whether it shows differ per screen
-   * (the pictures and the On Watch / On iPhone switches). Undefined on a
-   * smart or a map page, which have no screens of their own. */
-  private headAppliesText(page: WatchPage): string | undefined {
-    return isSmartWatchPage(page) || isMapWatchPage(page) ? undefined : SAME_ON_EVERY_DEVICE_TEXT;
+  /**
+   * The color of a screen's chip: the one its kind's device wears in the
+   * device strip over the stage (`device-colors.ts`), the first device of
+   * the kind that shows the page, else the first of the kind in the home.
+   * None in a home with no device of the kind.
+   */
+  private screenColor(screen: WatchScreen): string | undefined {
+    const devices = this.linkDevices.filter((d) => d.kind === screen);
+    const ref = this.libraryItem;
+    const owners = ref === undefined ? [] : (libraryOwners(this.lib.library, ref) ?? []);
+    const device = devices.find((d) => owners.some((o) => sameId(o, d.ownerId))) ?? devices[0];
+    return device === undefined ? undefined : this.colorOf(device.ownerId);
+  }
+
+  /** The inspector's Watch and iPhone chips (`renderTileScreens`), as the
+   * device strip's chips: ticked in the kind's color where the tile shows,
+   * hollow and grey where it does not, and locked for a kind the screen
+   * cannot draw. */
+  private tileScreenChips(page: WatchPage, tile: WatchPageTile): TickChip[] {
+    return WATCH_SCREENS.map((screen): TickChip => {
+      const draws = tileDrawsOn(tile, screen);
+      const on = watchScreenTileRect(page, tile, screen) !== undefined;
+      const title = tileOnChipTitle(screen, on, draws);
+      const word = screenTitleWord(screen);
+      const color = on ? this.screenColor(screen) : undefined;
+      return {
+        ownerId: screen, name: word, device: screen, color, shape: "square", on, hidden: false,
+        busy: this.busy, add: false, label: word, title,
+        next: !draws || this.busy ? undefined : !on,
+        ...(draws ? {} : { stuck: title }),
+      };
+    });
   }
 
   /**
-   * The tile's On Watch and On iPhone switches, under the head. A tile is
-   * always on at least one screen: switching the last one off asks "Delete
-   * this tile?" in its place (`screenOffAsk`), and a yes deletes it from
-   * every device. A kind a screen cannot draw has that switch off and
-   * locked, saying which kind draws it. Nothing on a smart or a map page,
-   * or while Watch view is on.
+   * The tile's "Tile on" line, right under its Name: a Watch chip and an
+   * iPhone chip, ticked where the tile shows, each click putting it on that
+   * screen or taking it off. A tile is always on at least one screen:
+   * taking it off the last one asks "Delete this tile?" in the line's place
+   * (`screenOffAsk`), and a yes deletes it from every device. A kind a
+   * screen cannot draw has that chip off and locked, its tooltip saying
+   * which kind draws it. Nothing on a smart or a map page, or while Watch
+   * view is on.
    */
-  private renderScreenSwitches(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+  private renderTileScreens(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
     const id = typeof tile.id === "string" ? tile.id : "";
     if (id === "" || isSmartWatchPage(page) || isMapWatchPage(page) || this.editingOff(page)) return nothing;
     const ask = this.screenOffAsk !== undefined && sameWatchId(this.screenOffAsk.tileId, id) ? this.screenOffAsk : undefined;
@@ -5326,18 +5379,10 @@ export class WaPageEditor extends LitElement {
         <button type="button" class="pe-btn" @click=${() => { this.screenOffAsk = undefined; }}>Keep</button>
       </div>`;
     }
-    const row = (screen: WatchScreen) => {
-      const draws = tileDrawsOn(tile, screen);
-      const on = watchScreenTileRect(page, tile, screen) !== undefined;
-      const label = screen === "watch" ? "On Watch" : "On iPhone";
-      const why = draws ? undefined : `The ${screenWord(screen)} cannot draw this kind of tile`;
-      return html`<label class="pe-screen-sw ${draws ? "" : "locked"}" title=${why ?? `Show this tile on the ${screenWord(screen)}`}>
-        <input type="checkbox" role="switch" .checked=${on} ?disabled=${!draws || this.busy}
-          @change=${(e: Event) => { const box = e.target as HTMLInputElement; box.checked = on; this.setTileScreen(id, screen, !on); }} />
-        <span>${label}</span>${draws ? nothing : html`<em>${screen === "watch" ? "iPhone only" : "Watch only"}</em>`}
-      </label>`;
-    };
-    return html`<div class="pe-screen-sws" role="group" aria-label="Screens">${WATCH_SCREENS.map(row)}</div>`;
+    const pick = (screen: string, on: boolean) => this.setTileScreen(id, screen as WatchScreen, on);
+    return html`<div class="pe-tile-screens" role="group" aria-label=${TILE_ON_TEXT}>
+      <span class="lt-lead">${TILE_ON_TEXT}</span>${this.tileScreenChips(page, tile).map((c) => renderTickChip(c, pick))}
+    </div>`;
   }
 
   /** Switch a tile on or off on one screen; off on its last screen asks to
@@ -5355,19 +5400,13 @@ export class WaPageEditor extends LitElement {
     this.edit(setTileOnScreen(document, watchPageId(page), tileId, screen, on));
   }
 
-  /** The inspector's foot: "Take off the watch" (named for the picture the
-   * tile was last pressed on) and "Delete tile", from every device. */
+  /** The inspector's foot: "Delete tile", from every device. Taking it off
+   * one screen is the chips under its Name (`renderTileScreens`). */
   private renderTileFoot(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
     const id = typeof tile.id === "string" ? tile.id : "";
     if (id === "") return nothing;
     const acts = this.tileActs(page, tile);
-    const screen = this.clickedScreen;
-    const screens = !isSmartWatchPage(page) && !isMapWatchPage(page) && !this.editingOff(page);
-    const on = watchScreenTileRect(page, tile, screen) !== undefined;
     return html`<div class="pe-tile-foot">
-      ${screens ? html`<button type="button" class="pe-btn pe-take-off" ?disabled=${!on || this.busy}
-        title=${on ? `Switch this tile off on the ${screenWord(screen)}. The ${screenWord(otherWatchScreen(screen))} keeps it.` : `This tile is not on the ${screenWord(screen)}`}
-        @click=${() => this.setTileScreen(id, screen, false)}>${uiIcon("hide")}<span>Take off the ${screenWord(screen)}</span></button>` : nothing}
       <button type="button" class="pe-btn pe-danger pe-del-tile" ?disabled=${acts.delRefusal !== undefined}
         title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile(id)}>${uiIcon("delete")}<span class="pe-del-words"><span>Delete tile</span><small>from every device</small></span></button>
     </div>`;
@@ -5376,10 +5415,10 @@ export class WaPageEditor extends LitElement {
   /**
    * The selected tile's head: the path, Page (back to the page's own
    * settings) then the tile's name, and under it the tile, large
-   * (`renderHeadTile`), with its Name beside it; the facts, each a link to
-   * its section, "Same on every device.", the On Watch and On iPhone
-   * switches (`renderScreenSwitches`) and the group line while the tile is
-   * in a group; Duplicate, with how many parts are changed and Reset all at
+   * (`renderHeadTile`), with its Name beside it and the Tile on Watch and
+   * iPhone chips under the Name (`renderTileScreens`); the facts, each a
+   * link to its section, and the group line while the tile is in a group;
+   * Duplicate, with how many parts are changed and Reset all at
    * their end (`tile-head.ts`). It spans the
    * inspector over the groups (`renderTileCard`), which all start at the
    * same top under it. With no host (no draft yet), the path and the tile
@@ -5397,21 +5436,21 @@ export class WaPageEditor extends LitElement {
     const host = this.tileSettingsHost(page, tile);
     if (host === undefined) return html`<div class="pe-strip"><section class="ts-head ts-root" aria-label="Tile"><div class="ts-head-path">${path}</div><div class="ts-head-lead">${lead}</div></section></div>`;
     const acts = this.tileActs(page, tile);
-    // No Hide here: whether the tile shows on each screen is the switches
-    // under the head and the chips under each picture, and when it shows is
-    // Show tile's. Delete is the inspector's foot (`renderTileFoot`).
+    // No Hide here: whether the tile shows on each screen is the Tile on
+    // chips under the Name and the chips under each picture, and when it
+    // shows is Show tile's. Delete is the inspector's foot (`renderTileFoot`).
     const actions = html`
       <button type="button" class="ghost pe-strip-dup" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? "Duplicate the tile"}
         @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>`;
-    const applies = this.headAppliesText(page);
+    const off = this.editingOff(page);
     return html`<div class="pe-strip">${renderTileHead(host, {
       path,
       lead,
       actions,
       remove: nothing,
-      below: this.editingOff(page) ? nothing : html`${this.renderScreenSwitches(page, tile)}${renderTileGroupLine(host, this.groupActions)}`,
+      screens: off ? nothing : this.renderTileScreens(page, tile),
+      below: off ? nothing : renderTileGroupLine(host, this.groupActions),
       go: (part) => this.goToSetting(part),
-      ...(applies === undefined ? {} : { applies }),
     })}</div>`;
   }
 
@@ -5907,16 +5946,24 @@ export class WaPageEditor extends LitElement {
     }
     .pe-screen-toast-x { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
     .pe-screen-toast-x svg.ui-icon { width: 13px; height: 13px; }
-    /* The inspector's On Watch and On iPhone switches, and the question
-       that stands in for them when the last one is switched off. */
-    .pe-screen-sws { display: flex; flex-wrap: wrap; gap: 6px 16px; }
-    .pe-screen-sw { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
-    .pe-screen-sw.locked { color: var(--wa-muted); cursor: default; }
-    .pe-screen-sw > em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); }
+    /* The inspector's "Tile on" line under the Name: the words, then the
+       Watch and iPhone chips, drawn by the device strip's own chip
+       (renderTickChip, libraryTicksStyles), and the question that stands in
+       for them when the last one is taken off. */
+    .pe-tile-screens { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
     .pe-screen-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; }
     .pe-screen-ask > span { flex: 1 1 100%; }
-    /* The inspector's foot: Take off the watch, and Delete tile from every
-       device. */
+    /* The badge in the top-right corner of a tile on one picture that the
+       other screen does not show: that screen's glyph, small and half
+       clear. Inside the tile's button, so a press on it still drags the
+       tile; under the selection's handles, which are drawn over the tiles. */
+    .pe-only {
+      position: absolute; top: 3px; right: 3px; z-index: 2; display: inline-grid; place-items: center;
+      width: 14px; height: 14px; border-radius: 4px; box-sizing: border-box;
+      background: rgba(0, 0, 0, .45); color: #fff; opacity: .8;
+    }
+    .pe-only svg.ui-icon { width: 11px; height: 11px; stroke-width: 2.2; }
+    /* The inspector's foot: Delete tile from every device. */
     .pe-tile-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 4px; }
     .pe-tile-foot > .pe-btn { flex: 1 1 0; min-width: 0; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 12.5px; }
     .pe-tile-foot > .pe-btn svg.ui-icon { flex: none; width: 14px; height: 14px; }

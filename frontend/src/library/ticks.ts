@@ -306,23 +306,7 @@ export interface TickChipsOptions {
  * round box: a device uses one menu of each kind.
  */
 export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptions, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
-  const chip = (c: TickChip) => html`<button type="button" role="checkbox"
-      class="lt-chip ${c.on ? "on" : "off"} ${c.shape === "round" ? "rd" : ""} ${c.add ? "add" : ""} ${c.busy ? "busy" : ""} ${c.stuck === undefined ? "" : "stuck"} ${c.hidden ? "dim" : ""} ${c.viewing === true ? "viewing" : ""}"
-      style=${c.color === undefined ? nothing : `--dc:${c.color}`} title=${c.viewing === true ? `${c.title} You came here from ${c.name}.` : c.title}
-      aria-checked=${c.on ? "true" : "false"} aria-disabled=${c.next === undefined ? "true" : "false"}
-      @click=${(e: Event) => {
-        e.stopPropagation();
-        if (c.next !== undefined) onPick(c.ownerId, c.next);
-      }}
-      @contextmenu=${opts.onCopy === undefined || !c.on || c.busy ? nothing : (e: Event) => {
-        e.preventDefault();
-        e.stopPropagation();
-        opts.onCopy?.(c.ownerId);
-      }}><span class="lt-box" aria-hidden="true">${c.on && c.shape !== "round" ? TICK_MARK : nothing}</span><span class="lt-name">${c.label}</span>${c.hidden
-        ? html`<em>hidden</em>`
-        : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}${c.skips === undefined
-        ? nothing
-        : html`<em class="lt-skips" title=${c.skips.title}>${c.skips.text}</em>`}${c.viewing === true ? html`<em class="lt-viewing">viewing</em>` : nothing}</button>`;
+  const chip = (c: TickChip) => renderTickChip(c, onPick, opts.onCopy);
   // The dashed "Add to this watch" chip is already the way in, so it never
   // folds and never asks for a fold of its own.
   const folds = chips.some((c) => !c.on && !c.add);
@@ -344,6 +328,34 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
       ? html`<p class="lt-note ok" role="status">${opts.note}</p>`
       : html`<p class="lt-note" role="alert">${opts.note}</p>`}
   </div>`;
+}
+
+/**
+ * One chip of a row, alone: the checkbox in its device's color that
+ * `renderTickChips` lines up. A host with a short row of its own (the page
+ * editor's "Tile on" Watch and iPhone chips) draws its chips with this, so
+ * they look exactly like the device strip's. A click asks `onPick(ownerId,
+ * next)` unless the chip is busy or stuck; a right click on a ticked chip
+ * asks `onCopy`, when given.
+ */
+export function renderTickChip(c: TickChip, onPick: (ownerId: string, on: boolean) => void, onCopy?: (ownerId: string) => void): TemplateResult {
+  return html`<button type="button" role="checkbox"
+      class="lt-chip ${c.on ? "on" : "off"} ${c.shape === "round" ? "rd" : ""} ${c.add ? "add" : ""} ${c.busy ? "busy" : ""} ${c.stuck === undefined ? "" : "stuck"} ${c.hidden ? "dim" : ""} ${c.viewing === true ? "viewing" : ""}"
+      style=${c.color === undefined ? nothing : `--dc:${c.color}`} title=${c.viewing === true ? `${c.title} You came here from ${c.name}.` : c.title}
+      aria-checked=${c.on ? "true" : "false"} aria-disabled=${c.next === undefined ? "true" : "false"}
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        if (c.next !== undefined) onPick(c.ownerId, c.next);
+      }}
+      @contextmenu=${onCopy === undefined || !c.on || c.busy ? nothing : (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onCopy(c.ownerId);
+      }}><span class="lt-box" aria-hidden="true">${c.on && c.shape !== "round" ? TICK_MARK : nothing}</span><span class="lt-name">${c.label}</span>${c.hidden
+        ? html`<em>hidden</em>`
+        : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}${c.skips === undefined
+        ? nothing
+        : html`<em class="lt-skips" title=${c.skips.title}>${c.skips.text}</em>`}${c.viewing === true ? html`<em class="lt-viewing">viewing</em>` : nothing}</button>`;
 }
 
 /** The tick in a chip's box, and in a board's. */

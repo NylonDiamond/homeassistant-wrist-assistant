@@ -8,6 +8,7 @@
 // No DOM: the page editor's `renderInspector` is drawn to its Lit template
 // and read as text; the few DOM reads are answered by small stand-ins.
 
+import { nothing } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import type { TileSettingsHost } from "../src/watch-pages/editor-host.js";
@@ -222,12 +223,25 @@ describe("the head's facts", () => {
     expect(flashed).toEqual(["pe-found"]);
   });
 
-  it("end with one line saying a tile is the same on every device, on a page with screens of its own", () => {
+  it("come after the Tile on chips, which sit right under the Name, with no line saying a tile is the same on every device", () => {
     const el = editor(hallPage(), DIMMER);
-    const applies = el["headAppliesText"] as (this: unknown, page: WatchPage) => string | undefined;
-    expect(applies.call(el, hallPage())).toBe("Same on every device.");
-    // A smart page fills itself, a map page is drawn whole: no line.
-    expect(applies.call(el, { ...hallPage(), dynamicConfig: { rules: [] } } as WatchPage)).toBeUndefined();
+    const text = head(el);
+    const name = text.indexOf(`aria-label="Name"`);
+    const on = text.indexOf(`<div class="pe-tile-screens" role="group" aria-label=Tile on>`);
+    expect(name).toBeGreaterThan(-1);
+    expect(on).toBeGreaterThan(name);
+    // In the Name's column, over the facts.
+    expect(on).toBeGreaterThan(text.indexOf(`<div class="ts-head-mid">`));
+    expect(on).toBeLessThan(text.indexOf(`<div class="ts-head-pills">`));
+    const line = text.slice(on, text.indexOf(`<div class="ts-head-pills">`));
+    expect(line).toContain(`<span class="lt-lead">Tile on</span>`);
+    expect([...line.matchAll(/<span class="lt-name">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Watch", "iPhone"]);
+    expect(text).not.toContain("Same on every device");
+    expect(text).not.toContain("ts-head-applies");
+    // A smart page fills itself, a map page is drawn whole: no chips.
+    const screens = el["renderTileScreens"] as (this: unknown, page: WatchPage, tile: WatchPageTile) => unknown;
+    const smart = { ...hallPage(), dynamicConfig: { rules: [] } } as WatchPage;
+    expect(screens.call(el, smart, (smart.items as WatchPageTile[])[0]!)).toBe(nothing);
   });
 });
 

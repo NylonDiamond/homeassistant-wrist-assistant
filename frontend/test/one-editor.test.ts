@@ -12,16 +12,20 @@ import { previewLabel, previewOwner, renderPreviewPicker, renderStripSaved, star
 import { DELIVERY_SETTLE_MS, followDeliveries, onEachDeviceLines, ordinal, placeText, syncText } from "../src/library/on-each-device.js";
 import {
   SCREEN_TOAST_KEY,
+  TILE_ON_TEXT,
   screenMoveToastText,
   screenOffChips,
   screenOffLead,
+  screenOnlyText,
+  screenOnlyTileIds,
   screenStatus,
   screenTitleText,
   screenToastShown,
   takeScreenMoveToast,
+  tileOnChipTitle,
 } from "../src/watch-pages/device-differences.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
-import { renderTicks } from "../src/library/ticks.js";
+import { type TickChip, renderTickChip, renderTickChips, renderTicks } from "../src/library/ticks.js";
 import { NO_RECORD_TEXT, changeDevicePicks, changedPicks } from "../src/watch-pages/all-pages-picks.js";
 import { duplicateMenuTitle, duplicatedMenuText } from "../src/watch-menus/all-menus-model.js";
 import { CHEN, DEVICES, JESSE, LIGHTS, LONELY, PAGE1, PHONE, STARTER, summary } from "./library-fixture.js";
@@ -173,6 +177,41 @@ describe("the lines under each picture", () => {
     // With screens a tile the watch draws, switched off there, can go back on.
     expect(screenOffChips(split, "watch").map((c) => [c.id, c.canPutOn, c.tag])).toEqual([["b", false, "iPhone only"], ["c", false, "iPhone only"], ["e", true, undefined]]);
     expect(screenOffChips(split, "iphone")).toEqual([]);
+  });
+
+  it("badges the tiles the other screen does not show, a kind the watch cannot draw included, and no tile without an id", () => {
+    expect(screenOnlyText("watch")).toBe("Watch only");
+    expect(screenOnlyText("iphone")).toBe("iPhone only");
+    // Without screens only the kinds the watch cannot draw are the iPhone's alone.
+    expect([...screenOnlyTileIds(plain, "iphone")]).toEqual(["B", "C"]);
+    expect([...screenOnlyTileIds(plain, "watch")]).toEqual([]);
+    // With screens a tile switched off on the watch is the iPhone's alone too.
+    expect([...screenOnlyTileIds(split, "iphone")]).toEqual(["B", "C", "E"]);
+    expect([...screenOnlyTileIds(split, "watch")]).toEqual([]);
+    const watchOnly: WatchPage = { ...split, screens: { watch: { a: at(0, 0), d: at(6, 0), e: at(0, 4) }, iphone: { d: at(0, 0), b: at(0, 4) } } };
+    expect([...screenOnlyTileIds(watchOnly, "watch")]).toEqual(["A", "E"]);
+    expect([...screenOnlyTileIds(watchOnly, "iphone")]).toEqual(["B"]);
+    // A smart page fills itself and a map page is drawn whole: no badges.
+    expect(screenOnlyTileIds({ ...plain, dynamicConfig: { rules: [] } } as unknown as WatchPage, "iphone").size).toBe(0);
+    expect(screenOnlyTileIds(undefined, "iphone").size).toBe(0);
+  });
+
+  it("titles the inspector's Tile on chips by what a click does, and a kind the screen cannot draw by the kind that does", () => {
+    expect(TILE_ON_TEXT).toBe("Tile on");
+    expect(tileOnChipTitle("watch", true, true)).toBe("On the watch. Click to take it off the watch.");
+    expect(tileOnChipTitle("iphone", false, true)).toBe("Not on the iPhone. Click to put it there.");
+    expect(tileOnChipTitle("watch", false, false)).toBe("iPhone only. The watch cannot draw this kind of tile.");
+  });
+
+  it("draws one tick chip alone exactly as a row of them draws it", () => {
+    const chip: TickChip = {
+      ownerId: "watch", name: "Watch", device: "watch", color: "var(--wa-person-2)", shape: "square", on: true, hidden: false,
+      busy: false, add: false, label: "Watch", title: "On the watch.", next: false,
+    };
+    const alone = flat(renderTickChip(chip, () => undefined));
+    expect(alone).toContain(`class="lt-chip on`);
+    expect(alone).toContain(`<span class="lt-name">Watch</span>`);
+    expect(flat(renderTickChips([chip], { foldLabel: "Add" }, () => undefined))).toContain(alone);
   });
 
   it("shows the toast once per user, naming each device of the kind when there are several", () => {

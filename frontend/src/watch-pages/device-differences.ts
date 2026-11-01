@@ -1,9 +1,11 @@
 // The lines under each picture of the page editor (app repo
 // docs/pages_two_screens_plan_2026-11.md, step 2.4): the title, the status
 // line and the "Not on the watch" chips, and the one toast a first drag or
-// resize shows. Each says one of the three things the two screens model
-// says (a page is one list of tiles; each kind of device arranges it its own
-// way; a tile can be off on one), and nothing else.
+// resize shows; the inspector's "Tile on" Watch and iPhone chips; and the
+// "Watch only" badge on a tile of a picture that the other screen does not
+// show. Each says one of the three things the two screens model says (a page
+// is one list of tiles; each kind of device arranges it its own way; a tile
+// can be off on one), and nothing else.
 //
 // The status line took the place of the old differences line ("Skips Map
 // and Web. Cameras show a still picture."): what a kind leaves out is now
@@ -18,22 +20,57 @@ import {
   isMapWatchPage,
   isSmartWatchPage,
   tileDrawsOn,
+  tileOnScreen,
   watchScreensAlike,
   watchTilesOffScreen,
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS } from "./map-page.js";
-
-/** The one line over a tile's settings in the inspector. */
-export const SAME_ON_EVERY_DEVICE_TEXT = "Same on every device.";
 
 /** "watch" or "iPhone", as a sentence names the kind. */
 export function screenWord(screen: WatchScreen | PreviewKind): string {
   return screen === "watch" ? "watch" : "iPhone";
 }
 
-/** "Watch" or "iPhone", as a title starts. */
-function screenTitleWord(screen: WatchScreen): string {
+/** "Watch" or "iPhone", as a title starts, and as the inspector's chip for
+ * the screen is named. */
+export function screenTitleWord(screen: WatchScreen): string {
   return screen === "watch" ? "Watch" : "iPhone";
+}
+
+/** The words in front of the inspector's Watch and iPhone chips. */
+export const TILE_ON_TEXT = "Tile on";
+
+/** "Watch only" or "iPhone only": a tile on that screen alone, as its badge
+ * on the picture and a locked chip's tooltip say it. */
+export function screenOnlyText(screen: WatchScreen): string {
+  return `${screenTitleWord(screen)} only`;
+}
+
+/**
+ * The tooltip of the inspector's chip for one screen: a click puts the tile
+ * there or takes it off; a kind the screen cannot draw says which kind
+ * draws it ("iPhone only") and why the chip does nothing.
+ */
+export function tileOnChipTitle(screen: WatchScreen, on: boolean, draws: boolean): string {
+  const word = screenWord(screen);
+  if (!draws) return `${screenOnlyText(screen === "watch" ? "iphone" : "watch")}. The ${word} cannot draw this kind of tile.`;
+  return on ? `On the ${word}. Click to take it off the ${word}.` : `Not on the ${word}. Click to put it there.`;
+}
+
+/**
+ * The ids (upper-cased) of the tiles on `screen` that are off on the other
+ * one, a kind the other cannot draw included: each wears a small badge
+ * naming `screen` on its picture ("Watch only"). Empty for a smart page and
+ * a map page, which have no screens of their own. A tile with no id has no
+ * badge.
+ */
+export function screenOnlyTileIds(page: WatchPage | undefined, screen: WatchScreen): Set<string> {
+  const out = new Set<string>();
+  if (page === undefined || isSmartWatchPage(page) || isMapWatchPage(page)) return out;
+  for (const tile of watchTilesOffScreen(page, screen === "watch" ? "iphone" : "watch")) {
+    if (typeof tile.id === "string" && tile.id !== "" && tileOnScreen(page, tile, screen)) out.add(tile.id.toUpperCase());
+  }
+  return out;
 }
 
 /** The title under a picture: the kind, then the devices of that kind that

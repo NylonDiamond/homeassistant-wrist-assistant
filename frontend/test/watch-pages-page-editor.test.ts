@@ -14,6 +14,7 @@ import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js
 import type { LibrarySummary } from "../src/library/client.js";
 import { libraryDraftKey } from "../src/library/item-mode.js";
 import { libraryOf } from "../src/library/model.js";
+import type { TickChip } from "../src/library/ticks.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { arrangePickedPart, setArrangeFreePicked, setArrangePickedPart } from "../src/watch-pages/arrange-model.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
@@ -1792,6 +1793,11 @@ describe("the two pictures", () => {
     const text = body();
     expect(text).toContain("pe-screen-toast");
     expect(text).toMatch(/Arranged differently · <button type="button" class="link pe-screen-use"[^>]*>Use the watch's order<\/button>/);
+    // One button: under the picture dragged on last, the iPhone's; the
+    // watch's line says Arranged differently alone.
+    expect(text).toContain(`<span class="pe-screen-status">Arranged differently</span>`);
+    expect(text.match(/class="link pe-screen-use"/g)?.length).toBe(1);
+    expect(text).not.toContain("Use the iPhone's order");
     // Use the watch's order: the iPhone reads as the watch does again.
     const moved = draft().document;
     clickOn("pe-screen-use");
@@ -1799,6 +1805,12 @@ describe("the two pictures", () => {
     expect(body()).toContain(`<span class="pe-screen-status">Same order as the watch`);
     draft().undo();
     expect(draft().document).toBe(moved);
+    // Before any picture is pressed the button sits under the watch's.
+    el.editScreen = undefined;
+    const fresh = body();
+    expect(fresh.match(/class="link pe-screen-use"/g)?.length).toBe(1);
+    expect(fresh).toMatch(/Arranged differently · <button type="button" class="link pe-screen-use"[^>]*>Use the iPhone's order<\/button>/);
+    expect(fresh).not.toContain("Use the watch's order");
     // Once per user: the next move says nothing.
     el.screenToast = undefined;
     press("T-BOTTOM", "watch");
@@ -1832,5 +1844,97 @@ describe("the two pictures", () => {
     expect((page().items as WatchPageTile[]).some((t) => t.id === "T-RIGHT")).toBe(true);
     call("deleteTile", "T-RIGHT");
     expect((page().items as WatchPageTile[]).some((t) => t.id === "T-RIGHT")).toBe(false);
+  });
+
+  /** The tile `id` as the page holds it now. */
+  const tileIn = (page: WatchPage, id: string) => (page.items as WatchPageTile[]).find((t) => t.id === id);
+  /** The chip named `name` in a drawn Tile on line. */
+  const chipIn = (line: unknown, name: string) =>
+    findTemplate(line, (t) => t.strings.some((s) => s.includes(`class="lt-chip`)) && flat(t).includes(`<span class="lt-name">${name}</span>`))!;
+  /** Every `@click` a template binds, in order. */
+  const clicksOf = (t: Tpl) => t.strings.flatMap((s, i) => (s.trimEnd().endsWith("@click=") ? [t.values[i] as (e?: unknown) => void] : []));
+  const pressChip = (line: unknown, name: string) => listener(chipIn(line, name), "click")({ stopPropagation() {} } as unknown as Event);
+
+  it("puts a tile on or off one screen from the Tile on chips under its Name, and asks Delete or Keep before taking it off the last", () => {
+    const { el, page, screens, call } = both("T-RIGHT");
+    const line = () => call("renderTileScreens", page(), tileIn(page(), "T-RIGHT"));
+    const first = flat(line());
+    expect(first).toContain(`<span class="lt-lead">Tile on</span>`);
+    expect([...first.matchAll(/<span class="lt-name">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Watch", "iPhone"]);
+    // Both ticked, the watch's in its device's color, as the device strip draws it.
+    expect(first.match(/aria-checked=true/g)?.length).toBe(2);
+    expect(flat(chipIn(line(), "Watch"))).toContain("--dc:var(--wa-person-");
+    pressChip(line(), "Watch");
+    expect(Object.keys(screens()!.watch)).not.toContain("T-RIGHT");
+    expect(Object.keys(screens()!.iphone)).toContain("T-RIGHT");
+    // Off: hollow and grey, with no device color, and a click puts it back.
+    const off = flat(chipIn(line(), "Watch"));
+    expect(off).toContain(`class="lt-chip off`);
+    expect(off).toContain("aria-checked=false");
+    expect(off).not.toContain("--dc:");
+    expect(off).toContain("title=Not on the watch. Click to put it there.");
+    // The iPhone is its last screen: a click asks first, in the chips' place.
+    pressChip(line(), "iPhone");
+    expect(el.screenOffAsk).toEqual({ tileId: "T-RIGHT", screen: "iphone" });
+    const ask = () => findTemplate(line(), (t) => t.strings.some((s) => s.includes("pe-screen-ask")))!;
+    expect(flat(line())).not.toContain("lt-chip");
+    expect(flat(ask())).toContain("Delete this tile? It is on no other screen.");
+    expect([...flat(ask()).matchAll(/>(Delete|Keep)<\/button>/g)].map((m) => m[1])).toEqual(["Delete", "Keep"]);
+    // Keep: nothing changes and the chips come back.
+    clicksOf(ask())[1]!();
+    expect(el.screenOffAsk).toBeUndefined();
+    expect(tileIn(page(), "T-RIGHT")).toBeDefined();
+    expect(Object.keys(screens()!.iphone)).toContain("T-RIGHT");
+    // Delete: gone from every device.
+    pressChip(line(), "iPhone");
+    clicksOf(ask())[0]!();
+    expect(el.screenOffAsk).toBeUndefined();
+    expect(tileIn(page(), "T-RIGHT")).toBeUndefined();
+  });
+
+  it("locks the Watch chip of a kind the watch cannot draw, its tooltip saying iPhone only", () => {
+    const { page, call } = both();
+    const map = { id: "T-MAP", entityId: "map.5A17E000-0000-4000-8000-0000000000BB", gridRow: 9, gridCol: 0, colSpan: 6, rowSpan: 3 } as WatchPageTile;
+    const withMap = { ...page(), items: [...(page().items as WatchPageTile[]), map] } as WatchPage;
+    const chips = call("tileScreenChips", withMap, map) as TickChip[];
+    expect(chips.map((c) => [c.label, c.on, c.next, c.stuck])).toEqual([
+      ["Watch", false, undefined, "iPhone only. The watch cannot draw this kind of tile."],
+      ["iPhone", true, false, undefined],
+    ]);
+    const watch = flat(chipIn(call("renderTileScreens", withMap, map), "Watch"));
+    expect(watch).toContain("stuck");
+    expect(watch).toContain("aria-disabled=true");
+    expect(watch).toContain("title=iPhone only. The watch cannot draw this kind of tile.");
+  });
+
+  it("badges a tile the other screen does not show in its top-right corner, on the picture that shows it, with that screen's glyph", () => {
+    const { body, call } = both("T-RIGHT");
+    expect(body()).not.toContain("pe-only");
+    call("setTileScreen", "T-RIGHT", "watch", false);
+    call("setTileScreen", "T-LEFT", "iphone", false);
+    const text = body();
+    const watchPic = text.slice(text.indexOf("data-screen=watch"), text.indexOf("data-screen=iphone"));
+    const phonePic = text.slice(text.indexOf("data-screen=iphone"));
+    /** One tile's button in a picture, up to the next tile's. */
+    const button = (pic: string, id: string) => {
+      const at = pic.indexOf(`data-tile=${id}`);
+      const next = pic.indexOf("data-tile=", at + 1);
+      return pic.slice(at, next < 0 ? undefined : next);
+    };
+    expect(watchPic.match(/class="pe-only"/g)?.length).toBe(1);
+    expect(phonePic.match(/class="pe-only"/g)?.length).toBe(1);
+    // Inside the tile's own button, so a press on it still drags the tile.
+    const left = button(watchPic, "T-LEFT");
+    expect(left).toMatch(/<span class="pe-only" data-only=watch title=Watch only aria-hidden="true"><svg class="ui-icon"[^]*?<\/svg><\/span><\/button>/);
+    expect(left).toContain("M9 6.5L9.6 3H14.4L15 6.5");
+    expect(left).toMatch(/title=[^@]*Watch only/);
+    const right = button(phonePic, "T-RIGHT");
+    expect(right).toContain(`<span class="pe-only" data-only=iphone title=iPhone only aria-hidden="true">`);
+    expect(right).toContain("M10.5 5.5H13.5");
+    // Small and half clear.
+    const css = rule(sheet(), ".pe-only");
+    expect(css).toContain("width: 14px");
+    expect(css).toContain("height: 14px");
+    expect(css).toMatch(/opacity: \.8/);
   });
 });
