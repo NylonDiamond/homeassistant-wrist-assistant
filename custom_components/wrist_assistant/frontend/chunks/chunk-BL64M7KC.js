@@ -1,5 +1,5 @@
-import{A as $}from"./chunk-OZ57ICDP.js";import{$ as y,X as h,fa as k}from"./chunk-X2S7BEPN.js";import{j as b}from"./chunk-UCO5DASE.js";import{Sg as f,b as c,d as a,e as v,g as s,xh as d}from"./chunk-G7AAB2LI.js";import{O as m}from"./chunk-4T3N2GVV.js";function j(e,n,t,o,i){if(e===void 0)return[];let p=y(e,n,t)?.owners??[];return o.flatMap(r=>{if(!p.some(l=>h(l,r.ownerId)))return[];let u=k(e,r.ownerId,n),g=u.findIndex(l=>h(l.id,t));if(g<0)return[];let w={ownerId:r.ownerId,name:r.name,kind:r.kind,place:g+1,count:u.length,hidden:u[g].hidden},L=i===void 0?void 0:Object.entries(i.owners).find(([l])=>h(l,r.ownerId))?.[1];return i!==void 0&&(w.sync=m(L?.[n])),[w]})}var S=400;function M(e,n,t){let o=!1,i,p;return Promise.resolve().then(()=>f(e,r=>{o||r.kind!==n||(i!==void 0&&clearTimeout(i),i=setTimeout(()=>{i=void 0,o||t()},S))})).then(r=>{o?r().catch(()=>{}):p=r},()=>{}),()=>{o=!0,i!==void 0&&clearTimeout(i),i=void 0,p?.().catch(()=>{}),p=void 0}}function P(e){let n=e%100,t=n>=11&&n<=13?"th":e%10===1?"st":e%10===2?"nd":e%10===3?"rd":"th";return`${e}${t}`}function D(e,n){let t=n==="status_pages"?"status page":"page";return e.count<=1?`Its only ${t}`:`${P(e.place)} of ${e.count} ${t}s`}function O(e){return e.sync==="delivered"?"Synced":e.sync==="waiting"?`Waiting for the ${e.kind==="iphone"?"iPhone":"watch"}`:""}function U(e){return e.lines.length===0?a`<div class="oed"><p class="oed-none">On no device yet. Tick a device over the preview to put it there.</p></div>`:a`<div class="oed" role="list">
-    ${e.lines.map(n=>{let t=e.colorOf(n.ownerId),o=O(n),i=D(n,e.kind);return a`<div class="oed-row ${n.hidden?"hidden":""}" role="listitem" style=${t===void 0?"":`--dc:${t}`}>
+import{A as $}from"./chunk-FH6ZDFKI.js";import{$ as y,X as h,fa as k}from"./chunk-X2S7BEPN.js";import{j as g}from"./chunk-UCO5DASE.js";import{Sg as f,b as c,d as a,e as v,g as s,xh as d}from"./chunk-G7AAB2LI.js";import{O as m}from"./chunk-4T3N2GVV.js";function j(e,n,t,o,i){if(e===void 0)return[];let p=y(e,n,t)?.owners??[];return o.flatMap(r=>{if(!p.some(l=>h(l,r.ownerId)))return[];let u=k(e,r.ownerId,n),b=u.findIndex(l=>h(l.id,t));if(b<0)return[];let x={ownerId:r.ownerId,name:r.name,kind:r.kind,place:b+1,count:u.length,hidden:u[b].hidden},L=i===void 0?void 0:Object.entries(i.owners).find(([l])=>h(l,r.ownerId))?.[1];return i!==void 0&&(x.sync=m(L?.[n])),[x]})}var S=400;function M(e,n,t){let o=!1,i,p;return Promise.resolve().then(()=>f(e,r=>{o||r.kind!==n||(i!==void 0&&clearTimeout(i),i=setTimeout(()=>{i=void 0,o||t()},S))})).then(r=>{o?r().catch(()=>{}):p=r},()=>{}),()=>{o=!0,i!==void 0&&clearTimeout(i),i=void 0,p?.().catch(()=>{}),p=void 0}}function O(e){let n=e%100,t=n>=11&&n<=13?"th":e%10===1?"st":e%10===2?"nd":e%10===3?"rd":"th";return`${e}${t}`}function P(e,n){let t=n==="status_pages"?"status page":"page";return e.count<=1?`Its only ${t}`:`${O(e.place)} of ${e.count} ${t}s`}function D(e){return e.sync==="delivered"?"Synced":e.sync==="waiting"?`Waiting for the ${e.kind==="iphone"?"iPhone":"watch"}`:""}function U(e){return e.lines.length===0?a`<div class="oed"><p class="oed-none">On no device yet. Tick a device over the preview to put it there.</p></div>`:a`<div class="oed" role="list">
+    ${e.lines.map(n=>{let t=e.colorOf(n.ownerId),o=D(n),i=P(n,e.kind);return a`<div class="oed-row ${n.hidden?"hidden":""}" role="listitem" style=${t===void 0?"":`--dc:${t}`}>
         <span class="oed-name"><span class="oed-glyph" aria-hidden="true">${d(n.kind==="iphone"?"phone":"watch")}</span><span class="oed-n" title=${n.name}>${n.name}</span></span>
         ${e.onOpenBoard===void 0?a`<span class="oed-place">${i}</span>`:a`<button type="button" class="oed-place link" title=${`Open ${n.name}'s board to change the order`}
               @click=${()=>e.onOpenBoard(n.ownerId)}>${i}</button>`}
@@ -33,13 +33,13 @@ import{A as $}from"./chunk-OZ57ICDP.js";import{$ as y,X as h,fa as k}from"./chun
   .oed-hide { grid-area: hide; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wa-muted); cursor: pointer; white-space: nowrap; }
 `;var T=typeof navigator<"u"&&/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent),I=T?"\u2318":"Ctrl+";function z(e){return n=>{let t=n.target;n.key==="Enter"?(n.preventDefault(),e.onCommit(),t.blur()):n.key==="Escape"&&(n.preventDefault(),n.stopPropagation(),e.onCancel(),t.blur())}}var E=v`<path d="M10.8 2.7l2.5 2.5L5.6 12.9l-3.1.6.6-3.1 7.7-7.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;function V(e){let n=e.typed??e.name;return a`<span class="pe-name" data-size=${n===""?e.placeholder:n}>
     <input type="text" class="pe-name-in" size="1" aria-label=${e.label} title=${`${e.label}. Click to rename.`} placeholder=${e.placeholder}
-      spellcheck="false" autocomplete="off" .value=${b(n)} ?disabled=${e.disabled}
+      spellcheck="false" autocomplete="off" .value=${g(n)} ?disabled=${e.disabled}
       @input=${t=>e.onInput(t.target.value)}
       @keydown=${z(e)}
       @blur=${()=>e.onCommit()} />
     <svg class="pe-name-pen" viewBox="0 0 16 16" aria-hidden="true">${E}</svg>
   </span>`}function Z(e){let n=e.typed??e.name;return a`<label class="field pe-page-name"><span>Name</span>
-    <input type="text" aria-label=${e.label} placeholder=${e.placeholder} autocomplete="off" .value=${b(n)} ?disabled=${e.disabled}
+    <input type="text" aria-label=${e.label} placeholder=${e.placeholder} autocomplete="off" .value=${g(n)} ?disabled=${e.disabled}
       @input=${t=>e.onInput(t.target.value)}
       @keydown=${z(e)}
       @blur=${()=>e.onCommit()} /></label>`}var R="On no device yet";function X(e){return e.length===0?R:e.length<=2?`On ${e.join(" and ")}`:`On ${e.length} devices`}function G(e){return a`<button type="button" class="pe-pp" aria-haspopup="dialog" aria-expanded=${e.open?"true":"false"}
@@ -50,7 +50,7 @@ import{A as $}from"./chunk-OZ57ICDP.js";import{$ as y,X as h,fa as k}from"./chun
       @click=${e.onRedo}>${d("redo")}</button>
   </span>`}function ee(e){return!e.dirty&&!e.saving?a`<span class="pe-saved" role="status" title=${`Everything here is saved. ${e.reach}`}>${d("check")}<span>Saved</span></span>`:a`${e.saving?s:a`<span class="pe-unsaved" role="status" title="Not saved yet"><i class="pe-unsaved-dot" aria-hidden="true"></i><span>Unsaved changes</span></span>`}
     <button type="button" class="primary save dirty pe-save" ?disabled=${e.saving}
-      title=${`Save (${I}S). ${e.reach}`} @click=${e.onSave}>${e.saving?"Saving\u2026":"Save"}</button>`}var x="wa-page-editor-help";function ne(){try{return globalThis.localStorage.getItem(x)==="1"}catch{return!1}}function te(e){try{e?globalThis.localStorage.setItem(x,"1"):globalThis.localStorage.removeItem(x)}catch{}}function ae(e,n){return a`<button type="button" class="tb-btn pe-bar-help ${e?"on":""}" aria-pressed=${e?"true":"false"} title=${e?"Hide the hints on the stage and under the settings":"Show the hints on the stage and under the settings"}
+      title=${`Save (${I}S). ${e.reach}`} @click=${e.onSave}>${e.saving?"Saving\u2026":"Save"}</button>`}var w="wa-page-editor-help";function ne(){try{return globalThis.localStorage.getItem(w)==="1"}catch{return!1}}function te(e){try{e?globalThis.localStorage.setItem(w,"1"):globalThis.localStorage.removeItem(w)}catch{}}function ae(e,n){return a`<button type="button" class="tb-btn pe-bar-help ${e?"on":""}" aria-pressed=${e?"true":"false"} title=${e?"Hide the hints on the stage and under the settings":"Show the hints on the stage and under the settings"}
     @click=${n}>Hints</button>`}function ie(e){let n=(t,o)=>{let i=e.kind===t&&!e.duo;return a`<button type="button" class="pe-seg-btn ${i?"on":""}" aria-pressed=${i?"true":"false"}
       title=${t==="watch"?"Preview on a watch":"Preview on an iPhone"}
       @click=${()=>{i||($(t),e.onPick(t))}}>${o}</button>`};return a`<div class="pe-seg" role="group" aria-label="Preview on" title="What the page is drawn on. Nothing is changed on any device.">
@@ -129,6 +129,20 @@ import{A as $}from"./chunk-OZ57ICDP.js";import{$ as y,X as h,fa as k}from"./chun
   .pe-bar-on :is(.lt-ask, .lt-note) { position: absolute; top: calc(100% + 10px); left: 0; z-index: 45; width: max-content; max-width: min(460px, 80vw); }
   .pe-bar-on .lt-note { padding: 7px 10px; border-radius: 8px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop); }
   .pe-bar-on .pe-lib-hint { max-width: 280px; font-size: 12px; line-height: 1.3; color: var(--wa-muted); }
+  /* The ring says which device the editor came from; the chip's tooltip says
+     it in words. */
+  .pe-bar-on .lt-chip em.lt-viewing { display: none; }
+  /* One line wherever it can fit: a long device name gives way first, then
+     the two quiet words. Only a phone-sized editor wraps. */
+  @container (min-width: 760px) {
+    .wa-bar.pe-bar { flex-wrap: nowrap; }
+    .pe-bar-on .lt-ticks, .pe-bar-on .lt-chipline, .pe-bar-on wa-chip-row { flex-wrap: nowrap; min-width: 0; }
+    .pe-bar-on wa-chip-row > .lt-chip { flex: 0 1 auto; min-width: 46px; }
+    .pe-bar-on wa-chip-row > .lt-fold { flex: none; }
+  }
+  @container (max-width: 1040px) {
+    .pe-bar .pe-bar-meta, .pe-bar-on .lt-saves { display: none; }
+  }
 
   /* The page switcher's small grid button, beside the name it used to hide
      behind. */

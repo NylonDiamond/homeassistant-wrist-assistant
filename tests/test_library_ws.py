@@ -312,6 +312,16 @@ def test_create_answers_unavailable_before_the_integration_is_ready(ctx) -> None
 # ── library/menus/copy, rename, delete ───────────────────────────────────
 
 
+def test_clear_takes_a_device_back_to_no_menus(ctx) -> None:
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    shared = _menu_of(ctx, WATCH)
+    revision = ctx.store.library_pick(PHONE, "menus", shared, unit="anywhere")["revisions"][PHONE]["menus"]
+    assert _codes(ctx, ctx.ws.ws_library_menus_clear, owner_id=PHONE, revision=revision - 1) == ["stale"]
+    assert _ok(ctx, ctx.ws.ws_library_menus_clear, owner_id=PHONE, revision=revision) == {"revisions": {}}
+    assert "menus" not in ctx.store.library_summary()["picks"].get(PHONE, {})
+    assert _menu_of(ctx, WATCH) == shared, "the other device keeps it"
+
+
 def test_copy_rename_and_delete_a_menu(ctx) -> None:
     ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
     shared = _menu_of(ctx, WATCH)

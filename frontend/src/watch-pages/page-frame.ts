@@ -267,6 +267,20 @@ export const pageFrameStyles = css`
   .pe-bar-on :is(.lt-ask, .lt-note) { position: absolute; top: calc(100% + 10px); left: 0; z-index: 45; width: max-content; max-width: min(460px, 80vw); }
   .pe-bar-on .lt-note { padding: 7px 10px; border-radius: 8px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop); }
   .pe-bar-on .pe-lib-hint { max-width: 280px; font-size: 12px; line-height: 1.3; color: var(--wa-muted); }
+  /* The ring says which device the editor came from; the chip's tooltip says
+     it in words. */
+  .pe-bar-on .lt-chip em.lt-viewing { display: none; }
+  /* One line wherever it can fit: a long device name gives way first, then
+     the two quiet words. Only a phone-sized editor wraps. */
+  @container (min-width: 760px) {
+    .wa-bar.pe-bar { flex-wrap: nowrap; }
+    .pe-bar-on .lt-ticks, .pe-bar-on .lt-chipline, .pe-bar-on wa-chip-row { flex-wrap: nowrap; min-width: 0; }
+    .pe-bar-on wa-chip-row > .lt-chip { flex: 0 1 auto; min-width: 46px; }
+    .pe-bar-on wa-chip-row > .lt-fold { flex: none; }
+  }
+  @container (max-width: 1040px) {
+    .pe-bar .pe-bar-meta, .pe-bar-on .lt-saves { display: none; }
+  }
 
   /* The page switcher's small grid button, beside the name it used to hide
      behind. */

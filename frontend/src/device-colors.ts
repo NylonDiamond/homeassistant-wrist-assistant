@@ -14,8 +14,8 @@
 // Per device rather than per person: one person's watch and iPhone are the
 // two devices most often told apart.
 //
-// The six are purple, mint, teal blue, slate, sky and pink violet (the
-// 2026-10-31 review's palette, set in the panel's sheet for each skin): no
+// The six are purple, mint, blue, slate, pink and magenta (set in the panel's
+// sheet for each skin), far enough apart to tell two devices by color: no
 // red, amber or green, which mean destructive, waiting and synced. The color
 // is the panel's own drawing: it is worked out here from the owners list
 // and never stored, and the watch and iPhone apps do not read it.
@@ -33,10 +33,10 @@ export const DEVICE_COLORS = 6;
 export const DEVICE_PALETTE: readonly { name: string; dark: string; light: string }[] = [
   { name: "Purple", dark: "#a78bfa", light: "#6d28d9" },
   { name: "Mint", dark: "#5eead4", light: "#0f766e" },
-  { name: "Teal blue", dark: "#22b8cf", light: "#0e7490" },
+  { name: "Blue", dark: "#60a5fa", light: "#1d4ed8" },
   { name: "Slate", dark: "#94a3b8", light: "#475569" },
-  { name: "Sky", dark: "#38bdf8", light: "#0369a1" },
-  { name: "Pink violet", dark: "#e879f9", light: "#a21caf" },
+  { name: "Pink", dark: "#f9a8d4", light: "#c2188a" },
+  { name: "Magenta", dark: "#d946ef", light: "#a21caf" },
 ];
 
 /** The color at one place in the order. */

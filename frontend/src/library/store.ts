@@ -40,10 +40,9 @@
 // - a Duplicate: the device goes back to the menu it used, and the copy made
 //   for it is deleted.
 //
-// A first menu has no way back. A device with no menus record gets one from
-// the pick, and Home Assistant has no op to take a device's menus record away
-// again (`library/pick` always names a menu; `library/delete` refuses a menu
-// in use). So that pick says what it did and offers no Undo.
+// - a first menu pick: the device goes back to no menus (`library/menus/clear`),
+//   and a menu the pick made for it is deleted. Home Assistant refuses that
+//   once the device's menus have changed again, so a later edit is never lost.
 //
 // Plan: app repo docs/one_library_plan_2026-10.md.
 
@@ -61,6 +60,7 @@ import {
   type LibraryPickReply,
   type LibrarySummary,
   type MenuUnit,
+  clearLibraryMenus,
   copyLibraryMenu,
   createLibraryItem,
   createLibraryMenu,
@@ -107,9 +107,18 @@ export function menuDoneText(device: string, menu: string): string {
   return `${device} now uses ${menu}.`;
 }
 
-/** The same for a device's first menu, which has no way back. */
-export function firstMenuDoneText(device: string, menu: string): string {
-  return `${menuDoneText(device, menu)} It had no menu before, and Home Assistant cannot take a device back to no menu.`;
+/** The menus record's revision a pick wrote for a device. */
+function revisionIn(reply: LibraryPickReply, ownerId: string): number | undefined {
+  const owner = Object.keys(reply.revisions).find((id) => sameId(id, ownerId));
+  return owner === undefined ? undefined : reply.revisions[owner]?.menus;
+}
+
+/** The menus in `now` that `before` did not hold and no device uses: what a
+ * first menu pick made, once the device is back to no menus. */
+export function menusMadeSince(before: Library, now: Library): string[] {
+  return now.menus
+    .filter((menu) => menu.owners.length === 0 && libraryMenu(before, menu.id) === undefined)
+    .map((menu) => menu.id);
 }
 
 /** Why an Undo did not finish, in the toast. */
@@ -384,20 +393,43 @@ export class LibraryStore {
     if (result.ok && offer !== undefined) {
       const name = this.read === undefined ? undefined : libraryMenu(this.read, menuId)?.name;
       const used = before === undefined ? undefined : menuFor(before, ownerId, unit);
-      this.offerMenuUndo(ownerId, unit, used?.id, name ?? "this menu", offer.device, menuId, undefined, offer.onUndone);
+      if (used === undefined) this.offerFirstMenuUndo(before, ownerId, result.reply, name ?? "this menu", offer);
+      else this.offerMenuUndo(ownerId, unit, used.id, name ?? "this menu", offer.device, menuId, undefined, offer.onUndone);
     }
     return result;
   }
 
-  /** The toast after a device moved to a menu: Undo moves it back to
-   * `used`. With no menu to go back to there is no way back to offer. The
-   * same menu asked again has nothing to undo, so it says nothing. */
-  private offerMenuUndo(ownerId: string, unit: MenuUnit, used: string | undefined, name: string, device: string, menuId: string, drop?: string, onUndone?: () => void): void {
-    if (used !== undefined && sameId(used, menuId)) return;
-    if (used === undefined) {
-      sayDone(firstMenuDoneText(device, name));
+  /** The toast after a device's first menu: Undo takes it back to no menus
+   * and deletes the menus the pick made for it, the ones the library did not
+   * hold before. With no way to tell either, it only says what it did. */
+  private offerFirstMenuUndo(before: Library | undefined, ownerId: string, reply: LibraryPickReply, name: string, offer: UndoOffer): void {
+    const text = menuDoneText(offer.device, name);
+    const revision = revisionIn(reply, ownerId);
+    if (before === undefined || revision === undefined) {
+      sayDone(text);
       return;
     }
+    offerUndo({
+      text,
+      undo: async () => {
+        const back = await this.write(undefined, undefined, undefined, () => clearLibraryMenus(this.hass, ownerId, revision));
+        if (!back.ok) return notUndoneText(back.text);
+        offer.onUndone?.();
+        const made = this.read === undefined ? [] : menusMadeSince(before, this.read);
+        for (const id of made) {
+          const gone = await this.deleteItem("menus", id);
+          if (!gone.ok) return `Moved back, but the copy stays. ${gone.text}`;
+        }
+        return undefined;
+      },
+    });
+  }
+
+  /** The toast after a device moved to a menu: Undo moves it back to
+   * `used`. The same menu asked again has nothing to undo, so it says
+   * nothing. */
+  private offerMenuUndo(ownerId: string, unit: MenuUnit, used: string, name: string, device: string, menuId: string, drop?: string, onUndone?: () => void): void {
+    if (sameId(used, menuId)) return;
     offerUndo({
       text: menuDoneText(device, name),
       undo: async () => {
@@ -432,7 +464,7 @@ export class LibraryStore {
     const result = await this.write(undefined, undefined, undefined, () => copyLibraryMenu(this.hass, ownerId, unit, name));
     if (result.ok && offer !== undefined) {
       const used = before === undefined ? undefined : menuFor(before, ownerId, unit);
-      this.offerMenuUndo(ownerId, unit, used?.id, name, offer.device, result.reply.id, result.reply.id, offer.onUndone);
+      if (used !== undefined) this.offerMenuUndo(ownerId, unit, used.id, name, offer.device, result.reply.id, result.reply.id, offer.onUndone);
     }
     return result;
   }

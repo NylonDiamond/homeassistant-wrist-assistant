@@ -191,6 +191,14 @@ export async function deleteLibraryMenu(hass: HassLike, menuId: string) {
   return hass.connection.sendMessagePromise<LibraryDeleteReply>({ type: `${LIB}/menus/delete`, item_id: menuId });
 }
 
+/** Take a device back to no menus: the Undo of its first menu pick.
+ * `revision` is its menus record's as that pick left it. Refusals: `stale`
+ * (the record moved on since), `unknown_device`, `not_for_iphone`,
+ * `unauthorized`. */
+export async function clearLibraryMenus(hass: HassLike, ownerId: string, revision: number) {
+  return hass.connection.sendMessagePromise<LibraryPickReply>({ type: `${LIB}/menus/clear`, owner_id: ownerId, revision });
+}
+
 /** Delete a page, status page or menu from the library. A page or status
  * page goes from every device that has it, with every menu slot and tile
  * that opened it, everywhere; complication taps that opened it are not

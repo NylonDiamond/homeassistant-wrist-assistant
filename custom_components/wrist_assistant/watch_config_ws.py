@@ -41,6 +41,7 @@ Commands:
     wrist_assistant/library/menus/copy          {owner_id, unit, name}
     wrist_assistant/library/menus/rename        {item_id, name}
     wrist_assistant/library/menus/delete        {item_id}
+    wrist_assistant/library/menus/clear         {owner_id, revision}
     wrist_assistant/library/delete              {kind, item_id}
     wrist_assistant/library/summary             {}
     wrist_assistant/library/item                {kind, item_id}
@@ -132,6 +133,7 @@ _CMD_LIBRARY_MENUS_CREATE = f"{DOMAIN}/library/menus/create"
 _CMD_LIBRARY_MENUS_COPY = f"{DOMAIN}/library/menus/copy"
 _CMD_LIBRARY_MENUS_RENAME = f"{DOMAIN}/library/menus/rename"
 _CMD_LIBRARY_MENUS_DELETE = f"{DOMAIN}/library/menus/delete"
+_CMD_LIBRARY_MENUS_CLEAR = f"{DOMAIN}/library/menus/clear"
 _CMD_LIBRARY_DELETE = f"{DOMAIN}/library/delete"
 _CMD_LIBRARY_SUMMARY = f"{DOMAIN}/library/summary"
 _CMD_LIBRARY_ITEM = f"{DOMAIN}/library/item"
@@ -223,6 +225,7 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_library_menus_copy)
     websocket_api.async_register_command(hass, ws_library_menus_rename)
     websocket_api.async_register_command(hass, ws_library_menus_delete)
+    websocket_api.async_register_command(hass, ws_library_menus_clear)
     websocket_api.async_register_command(hass, ws_library_delete)
     websocket_api.async_register_command(hass, ws_library_summary)
     websocket_api.async_register_command(hass, ws_library_item)
@@ -1239,6 +1242,40 @@ def ws_library_menus_delete(
     if not _may_change_item(hass, connection, msg, store, "menus", msg["item_id"]):
         return
     _send_delete(hass, connection, msg, store, "menus")
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_MENUS_CLEAR,
+        vol.Required("owner_id"): str,
+        vol.Required("revision"): int,
+    }
+)
+@callback
+def ws_library_menus_clear(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Take a device back to no menus: the Undo of its first menu pick.
+
+    Result: {"revisions": {}}
+
+    ``revision`` is the menus record's revision as that pick left it. Refused
+    ``stale`` when the record moved on since, ``unknown_device``,
+    ``not_for_iphone``, and ``unauthorized`` for a device the caller may not
+    manage (``WatchConfigStore.library_clear_menus``).
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["owner_id"]):
+        return
+    try:
+        result = store.library_clear_menus(msg["owner_id"], msg["revision"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(

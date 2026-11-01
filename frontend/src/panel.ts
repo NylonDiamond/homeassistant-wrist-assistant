@@ -471,7 +471,7 @@ import {
   type BarTab, DEVICES_ALL, SHARED_PATH, barTabOfScreen, designPath, designRouteOf, devicePath, libraryItemPath, libraryRouteOf, panelUrl, redirectPath, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderDeviceOwnRow, renderWatchRow, rowHasScreen, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
+import { ROW_OWN_SCREENS, WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderDeviceOwnRow, renderWatchRow, rowHasScreen, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
 import { headBarStyles } from "./head-bar.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
@@ -505,6 +505,12 @@ function readGalleryNickname(): string {
   } catch {
     return "";
   }
+}
+
+/** A device page's tab other than Overview, and the device. */
+interface DevicePageTab {
+  screen: WatchScreen;
+  owner: string;
 }
 
 function writeGalleryNickname(name: string): void {
@@ -2803,9 +2809,9 @@ export class WristAssistantPanel extends LitElement {
          Purple, mint, teal blue, slate, sky, pink violet. */
       --wa-person-1: #6d28d9;
       --wa-person-2: #0f766e;
-      --wa-person-3: #0e7490;
+      --wa-person-3: #1d4ed8;
       --wa-person-4: #475569;
-      --wa-person-5: #0369a1;
+      --wa-person-5: #c2188a;
       --wa-person-6: #a21caf;
       /* One hue per shape, for the box each shape's cards sit in. The same
          hue wherever that shape appears, on every device and in every list:
@@ -2932,10 +2938,10 @@ export class WristAssistantPanel extends LitElement {
       /* The same six hues, lifted for the dark ground. */
       --wa-person-1: #a78bfa;
       --wa-person-2: #5eead4;
-      --wa-person-3: #22b8cf;
+      --wa-person-3: #60a5fa;
       --wa-person-4: #94a3b8;
-      --wa-person-5: #38bdf8;
-      --wa-person-6: #e879f9;
+      --wa-person-5: #f9a8d4;
+      --wa-person-6: #d946ef;
       /* The same shape hues, lifted for the dark ground. */
       --wa-shape-rectangular: #38bdf8;
       --wa-shape-circular: #5eead4;
@@ -11803,6 +11809,35 @@ export class WristAssistantPanel extends LitElement {
     return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, inHead: true });
   }
 
+  /** The route's screen when it is a device's own (Settings, Rooms, Voice),
+   * which the device page draws. */
+  private ownScreenOfRoute(): WatchScreen | undefined {
+    const screen = watchScreenOf(this.route) ?? iphoneScreenOf(this.route);
+    return screen !== undefined && (ROW_OWN_SCREENS as readonly string[]).includes(screen.id) ? screen : undefined;
+  }
+
+  /** The device page's tab and device on such a route, or undefined with no
+   * device for it: a home with no watch, or an iPhone with no phone pages,
+   * keeps the row and its way to pair one. */
+  private deviceOwnScreen(): DevicePageTab | undefined {
+    const screen = this.ownScreenOfRoute();
+    if (screen === undefined) return undefined;
+    const owner = watchScreenOf(this.route) !== undefined ? this.sharedWatch : this.phonePages ? this.sharedPhone : undefined;
+    if (owner === undefined || !homeDeviceRows(this.homeDevices(), this.watchAppSyncs).some((d) => d.id === owner)) return undefined;
+    return { screen, owner };
+  }
+
+  /** The same tab on another device, where it has it (an iPhone has no
+   * Voice): else its Settings, and with no phone pages its Overview. */
+  private ownScreenPathOn(ownerId: string, shown: WatchScreen): string {
+    const iphone = isPhoneId(this.owners, ownerId);
+    if (iphone && !this.phonePages) return devicePath(ownerId);
+    const kind = iphone ? "iphone" : "watch";
+    if (iphone) this.rememberPhone(ownerId);
+    else this.rememberWatch(ownerId);
+    return deviceScreenPath(kind, rowHasScreen(shown, kind) ? shown : WATCH_SETTINGS_SCREEN, ownerId);
+  }
+
   /** A device's Settings, Rooms or Voice, from a list tab's focused
    * device. */
   private openOwnScreen(ownerId: string, kind: "watch" | "iphone", id: ListOwnScreen) {
@@ -11981,6 +12016,12 @@ export class WristAssistantPanel extends LitElement {
         onOpen: (path) => this.goTo(path),
         onLoaded: () => this.requestUpdate(),
       });
+    }
+    // A device's Settings, Rooms or Voice is its device page with that tab on
+    // show, under the device list.
+    if (this.ownScreenOfRoute() !== undefined) {
+      const own = this.deviceOwnScreen();
+      if (own !== undefined || (!this.linkReady && this.owners.length === 0)) return this.renderHome(own);
     }
     // The iPhone app: its row, then the screen on the shared iPhone.
     if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());
@@ -20590,7 +20631,7 @@ export class WristAssistantPanel extends LitElement {
    * that has devices, and a device list that would not load says so and
    * offers Try again (`renderNotReady`).
    */
-  private renderHome() {
+  private renderHome(own?: DevicePageTab) {
     const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
     const loading = !this.linkReady && this.owners.length === 0;
     const groups = homeGroups(this.people(), devices);
@@ -20611,10 +20652,11 @@ export class WristAssistantPanel extends LitElement {
         </div></div>
         ${pair}`;
     }
-    const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));
+    const pick = own?.owner ?? homePickOf(devices, this.homePick, (id) => this.ownerOf(id));
     const row = devices.find((d) => d.id === pick) ?? devices[0]!;
+    const all = this.homeAll && own === undefined;
     return html`${error}
-      <div class="home hb">
+      <div class="home hb ${own === undefined ? "" : "own"}">
         <aside class="hb-side" aria-label="Devices">
           <div class="hb-head">
             <div class="hb-head-top"><h1>Devices</h1>
@@ -20623,10 +20665,10 @@ export class WristAssistantPanel extends LitElement {
             ${lead}${scope}
           </div>
           ${this.renderHomeAllRow(devices.length)}
-          ${groups.map((g) => this.renderHomeGroup(g, this.homeAll ? "" : row.id, elapsed))}
+          ${groups.map((g) => this.renderHomeGroup(g, all ? "" : row.id, elapsed))}
         </aside>
-        <section class="hb-main" aria-label=${this.homeAll ? "Overview" : row.name}>
-          ${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}
+        <section class="hb-main" aria-label=${all ? "Overview" : row.name}>
+          ${all ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed, own)}
         </section>
       </div>
       ${pair}`;
@@ -20993,9 +21035,12 @@ export class WristAssistantPanel extends LitElement {
     }
     this.homeCompSaid = undefined;
     await this.compBoardTick(it, place, true, false);
-    this.homeCompSaid = this.saveError !== undefined
-      ? { ownerId, tone: "err", text: `Not put back on ${device}. ${this.saveError}` }
-      : { ownerId, tone: "ok", text: `Put ${name} back on ${device}.` };
+    if (this.saveError !== undefined) {
+      this.homeCompSaid = { ownerId, tone: "err", text: `Not put back on ${device}. ${this.saveError}` };
+      return;
+    }
+    // Back as it was: a toast that goes, not a line that stays on the page.
+    sayDone(`${name} is back on ${device}.`);
   }
 
   /** Edit on a complication's line: open it in the editor on the
@@ -21142,7 +21187,12 @@ export class WristAssistantPanel extends LitElement {
   private settleHomeAddress() {
     // Home Assistant may keep a hidden panel a while, still updating: it must
     // not rewrite the address of the page now on screen.
-    if (!this.isConnected || this.route === undefined || tabOfRoute(this.route) !== "home") return;
+    if (!this.isConnected || this.route === undefined) return;
+    // A device's Settings, Rooms or Voice is its device page: the pick follows
+    // that address too, so Overview and the Devices tab open the same device.
+    const own = this.deviceOwnScreen();
+    if (own !== undefined && (own.owner !== this.homePick || this.homeAll)) this.openHomeDevice(own.owner, false, false);
+    if (tabOfRoute(this.route) !== "home") return;
     const rows = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
     const next = homeAddress(this.route, rows, { pick: this.homePick, all: this.homeAll }, (id) => this.ownerOf(id));
     if (next.pick !== undefined && (next.pick !== this.homePick || (this.homeAll && !next.all))) this.openHomeDevice(next.pick, false, false);
@@ -21155,7 +21205,9 @@ export class WristAssistantPanel extends LitElement {
    * address follows with a history step of its own (`move`), so Back returns
    * to the device before; the address's own pick has already moved. */
   private openHomeDevice(ownerId: string, forget = false, move = true) {
-    if (move && tabOfRoute(this.route) === "home") this.goTo(devicePath(ownerId));
+    const shown = move ? this.deviceOwnScreen()?.screen : undefined;
+    if (shown !== undefined) this.goTo(forget ? devicePath(ownerId) : this.ownScreenPathOn(ownerId, shown));
+    else if (move && tabOfRoute(this.route) === "home") this.goTo(devicePath(ownerId));
     this.devicePaired = undefined;
     this.deviceForgetAsk = forget;
     this.deviceForgetError = undefined;
@@ -21246,7 +21298,8 @@ export class WristAssistantPanel extends LitElement {
    * item 3). One header line: the device small, its name, whose it is and its
    * facts, its sync word with when it was last seen, then the arrows to the
    * device before and after it and a ··· menu. Under that, Overview and its
-   * own screens (`renderDeviceOwnRow`), its addresses, and what is on it.
+   * own screens (`renderDeviceOwnRow`), then the tab on show: Overview is its
+   * addresses and what is on it, and `own` names Settings, Rooms or Voice.
    *
    * Anyone can rename it (the name is Home Assistant's own device name, set
    * through the integration's own command since Home Assistant keeps its
@@ -21255,7 +21308,7 @@ export class WristAssistantPanel extends LitElement {
    * Copy device address. A device whose user was deleted says so and offers
    * Remove alone.
    */
-  private renderHomeDetail(row: HomeDeviceRow, devices: readonly HomeDeviceRow[], groups: readonly { person?: Person; index: number; rows: HomeDeviceRow[] }[], elapsed: number) {
+  private renderHomeDetail(row: HomeDeviceRow, devices: readonly HomeDeviceRow[], groups: readonly { person?: Person; index: number; rows: HomeDeviceRow[] }[], elapsed: number, own?: DevicePageTab) {
     const ownerId = row.id;
     const owner = this.ownerOf(ownerId);
     const group = groups.find((g) => g.rows.some((r) => r.id === ownerId));
@@ -21311,7 +21364,11 @@ export class WristAssistantPanel extends LitElement {
       ${this.deviceRenameError ? html`<p class="dev-err" title=${errTitle(this.deviceRenameError) ?? nothing}>${this.deviceRenameError}</p>` : nothing}
     </div>`;
     // A watch's and an iPhone's alike: Home Assistant keeps both their records.
-    const addresses = !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind) : nothing;
+    const addresses = own === undefined && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind) : nothing;
+    // The tab on show's own save controls: the Settings page's, which the
+    // panel draws, or the box an editor draws its own into.
+    const ownEnd = own === undefined ? nothing
+      : html`${own.screen.id === "settings" ? this.watchSettings.renderHeadBar(this.owners) : nothing}${this.watchBarHost}`;
     const askRemove = () => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); };
     const goneNote = html`<div class="hb-ask"><p><b>${USER_GONE_TEXT}.</b> Home Assistant refuses everything ${row.name} sends. Remove it here, or pair it again for someone who has a user.</p>
       <div class="dev-acts"><button class="danger" @click=${askRemove}>${uiIcon("delete")}<span>Remove device…</span></button></div></div>`;
@@ -21340,8 +21397,9 @@ export class WristAssistantPanel extends LitElement {
               <button type="button" class="row danger" role="menuitem" title=${`Remove ${row.name} from this Home Assistant`} @click=${moreRun(askRemove)}>${uiIcon("delete")}<span>Remove device…</span></button>`}
         </div>` : nothing}
       </span>`;
-    return html`<div class="hb-detail" data-pick=${ownerId} style=${`--c:${color}`}>
+    return html`<div class="hb-detail ${own === undefined ? "" : "own"}" data-pick=${ownerId} style=${`--c:${color}`}>
       <div class="hb-bar">
+        ${own === undefined ? nothing : html`<button type="button" class="ghost hb-back" @click=${() => this.goTo(tabPath("home"))}>${uiIcon("left")}<span>Devices</span></button>`}
         <div class="hb-hero">
           <div class="hb-stage"><div class="hb-device" style=${`--c:${color}`} aria-hidden="true">${art}</div></div>
           <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2>
@@ -21359,6 +21417,8 @@ export class WristAssistantPanel extends LitElement {
         route: this.route, ownerId, kind: row.kind, phones: this.phonePages,
         titleOf: (screen) => ownScreenBlurb(screen.id, row.kind),
         onGo: (path) => { this.pickWatch(ownerId); this.goTo(path); },
+        unsaved: own === undefined ? [] : this.unsavedNow,
+        end: ownEnd,
       })}
       ${this.devicePaired === ownerId || renaming || this.deviceForgetAsk || gone ? html`<div class="hb-info">
           ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
@@ -21366,7 +21426,9 @@ export class WristAssistantPanel extends LitElement {
           ${this.deviceForgetAsk ? ask : gone ? goneNote : nothing}
         </div>` : nothing}
       ${addresses}
-      ${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}
+      ${this.deviceForgetAsk || gone ? nothing
+        : own === undefined ? this.renderHomeLineup(row)
+          : html`<div class="hb-own">${this.renderWatchScreen(own.screen.id, own.owner)}</div>`}
     </div>`;
   }
 

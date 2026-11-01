@@ -263,7 +263,7 @@ describe("links into the Watch app carry the shared watch", () => {
   });
 
   it("the Shared tab opens the whole home's screens, and Home's side bar no longer lists them", () => {
-    expect(method("  private renderHome() {")).not.toContain("renderHomeShared");
+    expect(method("  private renderHome(own?: DevicePageTab) {")).not.toContain("renderHomeShared");
     expect(SOURCE).not.toContain("private renderHomeShared");
     const tab = method("  private renderTab() {");
     expect(tab).toContain(`if (tab === "shared") {`);
@@ -282,7 +282,7 @@ describe("links into the Watch app carry the shared watch", () => {
   it("on Home's picked device, whose own screens open on that device's own watch or iPhone", () => {
     const detail = method("  private renderHomeDetail(");
     expect(detail).toContain("route: this.route, ownerId, kind: row.kind, phones: this.phonePages,");
-    expect(method("  private renderHome() {")).not.toContain("watchSettings.");
+    expect(method("  private renderHome(own?: DevicePageTab) {")).not.toContain("watchSettings.");
   });
 });
 

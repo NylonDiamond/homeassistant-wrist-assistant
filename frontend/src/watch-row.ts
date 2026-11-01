@@ -140,13 +140,6 @@ export function watchRowLinks(route: PanelRoute | undefined, watch: string | und
   }));
 }
 
-/** Beside the row of a device's own screens on the Devices tab. */
-export function deviceOwnRowHint(kind: RowKind): string {
-  return kind === "iphone"
-    ? "This iPhone's own screens. No Voice: the iPhone has no voice settings."
-    : "This watch's own screens. Each one has its own address.";
-}
-
 export interface DeviceOwnRowInput {
   route: PanelRoute | undefined;
   ownerId: string;
@@ -158,32 +151,40 @@ export interface DeviceOwnRowInput {
   titleOf: (screen: WatchScreen) => string | undefined;
   /** A plain click on a screen: its path inside the panel. */
   onGo: (path: string) => void;
+  /** The screens with unsaved work: a dot on each, and the line under the
+   * row that says where. */
+  unsaved?: readonly WatchScreen[];
+  /** At the row's right end: the screen on show's own save controls. */
+  end?: unknown;
 }
 
 /**
- * Under a device's header on the Devices tab: Overview (the page on show),
- * then the device's own screens in the row style those screens already wear
- * (mock-home item 3). It only lists screens the device has, so an iPhone has
- * no Voice. Nothing when the device has none of them.
+ * Under a device's header on the Devices tab: Overview, then the device's
+ * own screens, whichever is on show drawn in the device page below. It only
+ * lists screens the device has, so an iPhone has no Voice. Nothing when the
+ * device has none of them.
  */
 export function renderDeviceOwnRow(input: DeviceOwnRowInput): TemplateResult | typeof nothing {
   const links = input.kind === "iphone" && !input.phones ? [] : watchRowLinks(input.route, input.ownerId, input.kind);
   if (links.length === 0) return nothing;
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const word = input.kind === "iphone" ? "iPhone" : "watch";
+  const overview = !links.some((l) => l.on);
+  const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
+  const go = (path: string, on: boolean) => (e: MouseEvent) => {
+    if (!isPlainClick(e)) return;
+    e.preventDefault();
+    if (!on) input.onGo(path);
+  };
   return html`<div class="hb-subnav">
     <nav class="wa-wr-links" aria-label=${`This ${word}'s own`}>
-      <a class="wa-wr-link on" href=${href(devicePath(input.ownerId))} aria-current="page" style="--h: var(--wa-label)"
-        @click=${(e: MouseEvent) => { if (isPlainClick(e)) e.preventDefault(); }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon("grid")}</span>Overview</a>
-      ${links.map((l) => html`<a class="wa-wr-link" href=${href(l.path)} title=${input.titleOf(l.screen) ?? nothing} style=${`--h: ${WATCH_SCREEN_LOOK[l.screen.id].hue}`}
-        @click=${(e: MouseEvent) => {
-          if (!isPlainClick(e)) return;
-          e.preventDefault();
-          input.onGo(l.path);
-        }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(WATCH_SCREEN_LOOK[l.screen.id].icon)}</span>${l.screen.label}</a>`)}
+      <a class="wa-wr-link ${overview ? "on" : ""}" href=${href(devicePath(input.ownerId))} aria-current=${overview ? "page" : "false"} style="--h: var(--wa-label)"
+        @click=${go(devicePath(input.ownerId), overview)}><span class="wa-wr-ic" aria-hidden="true">${uiIcon("grid")}</span>Overview</a>
+      ${links.map((l) => html`<a class="wa-wr-link ${l.on ? "on" : ""}" href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${input.titleOf(l.screen) ?? nothing} style=${`--h: ${WATCH_SCREEN_LOOK[l.screen.id].hue}`}
+        @click=${go(l.path, l.on)}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(WATCH_SCREEN_LOOK[l.screen.id].icon)}</span>${l.screen.label}${unsaved.has(l.screen.id) ? unsavedDot() : nothing}</a>`)}
     </nav>
-    <span class="hb-subnav-hint">${deviceOwnRowHint(input.kind)}</span>
-  </div>`;
+    ${input.end === undefined || input.end === nothing ? nothing : html`<div class="wa-wr-end hb-subnav-end">${input.end}</div>`}
+  </div>${renderUnsavedBar({ route: input.route, watch: input.ownerId, unsaved: input.unsaved ?? [], onGo: input.onGo }, href, input.kind)}`;
 }
 
 /** The row's last link: the Pages board, focused on the device. */
@@ -474,7 +475,7 @@ function closeRowTip(): void {
 
 /** The bar under the row while another screen holds unsaved work. Each other
  * screen it names is a link there, on the shared watch. */
-function renderUnsavedBar(input: WatchRowInput, href: (path: string) => string, kind: RowKind = "watch") {
+function renderUnsavedBar(input: Pick<WatchRowInput, "route" | "watch" | "unsaved" | "onGo">, href: (path: string) => string, kind: RowKind = "watch") {
   const shown = kind === "iphone" ? iphoneScreenOf(input.route)?.id : watchScreenOf(input.route)?.id;
   const pieces = unsavedNotice(input.unsaved ?? [], shown);
   if (pieces === undefined) return nothing;

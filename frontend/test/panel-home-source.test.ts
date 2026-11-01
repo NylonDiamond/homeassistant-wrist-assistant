@@ -26,7 +26,7 @@ function between(text: string, from: string, to: string): string {
   return text.slice(at, end);
 }
 
-const home = method("  private renderHome() {");
+const home = method("  private renderHome(own?: DevicePageTab) {");
 const group = method("  private renderHomeGroup(");
 const row = method("  private renderHomeRow(");
 const detail = method("  private renderHomeDetail(");
@@ -43,8 +43,8 @@ describe("Home's page", () => {
 
   it("is a device browser: the side bar of devices, and the picked device beside it", () => {
     expect(home).toContain(`<aside class="hb-side" aria-label="Devices">`);
-    expect(home).toContain("const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));");
-    expect(home).toContain("${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}");
+    expect(home).toContain("const pick = own?.owner ?? homePickOf(devices, this.homePick, (id) => this.ownerOf(id));");
+    expect(home).toContain("${all ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed, own)}");
     // Overview leads the side bar, under the title and + Pair (plan step 6).
     expect(home.indexOf("${this.renderHomeAllRow(devices.length)}")).toBeLessThan(home.indexOf("${groups.map("));
     expect(home.indexOf("<span>Pair</span>")).toBeLessThan(home.indexOf("${this.renderHomeAllRow(devices.length)}"));
@@ -190,7 +190,7 @@ describe("Home's picked device", () => {
   });
 
   it("lists what is on the device in its order, each line with Edit and each group with Open in (plan step 6)", () => {
-    expect(detail).toContain("${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}");
+    expect(detail).toContain("own === undefined ? this.renderHomeLineup(row)");
     expect(detail).not.toContain("hb-doors");
     const lineup = method("  private renderHomeLineup(row: HomeDeviceRow) {");
     expect(lineup).toContain("onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),");
@@ -282,7 +282,8 @@ describe("each device's own address", () => {
     // After the leave question, which may put the address back.
     expect(will.indexOf("this.settleHomeAddress()")).toBeGreaterThan(will.indexOf("this.leaveScreenFor(this.route, from)"));
     // Never from a hidden panel, whose address is another page's now.
-    expect(settle).toContain(`if (!this.isConnected || this.route === undefined || tabOfRoute(this.route) !== "home") return;`);
+    expect(settle).toContain("if (!this.isConnected || this.route === undefined) return;");
+    expect(settle).toContain(`if (tabOfRoute(this.route) !== "home") return;`);
     expect(settle).toContain("if (next.rewrite !== undefined) this.goTo(next.rewrite, true);");
   });
 

@@ -730,10 +730,21 @@ export const homeStyles = css`
   .hb-menu .row svg.ui-icon { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
   .hb-menu .row.danger svg.ui-icon { color: inherit; }
   /* A device's own screens, under its bar: the Settings screen's own row
-     style, as wide as its tabs, then a quiet line on what they are. */
+     style, as wide as its tabs, then at the right the save controls of the
+     one on show. */
   .hb-subnav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .hb-subnav nav.wa-wr-links { flex: 0 1 auto; order: 0; }
-  .hb-subnav-hint { min-width: 0; font-size: 12px; line-height: 1.35; color: var(--wa-faint); }
+  .hb-subnav-end { margin-left: auto; }
+  /* Settings, Rooms or Voice on show: the screen is the device's page, as wide
+     as the page has room for, under the same header and tabs as Overview. */
+  .hb-detail.own { max-width: none; }
+  .hb-own { min-width: 0; }
+  /* The way back to the list, only where the list does not fit beside it. */
+  button.hb-back { display: none; }
+  @container hb (max-width: 819px) {
+    .home.hb.own .hb-side { display: none; }
+    button.hb-back { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  }
   /* The device at the top of its page, small, so its pages and the rest it
      holds below are the page: a stage a hand wide beside its name, its sync
      state and its two counts. The stage is the device standing in a soft

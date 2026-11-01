@@ -313,7 +313,7 @@ describe("the panel's wiring", () => {
   };
 
   it("no longer draws a welcome card on Home: a home with no devices gets the welcome instead", () => {
-    const home = method("  private renderHome() {");
+    const home = method("  private renderHome(own?: DevicePageTab) {");
     expect(SOURCE).not.toContain("renderWelcome()");
     expect(home).toContain("if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;");
   });

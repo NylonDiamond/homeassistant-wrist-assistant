@@ -1113,6 +1113,44 @@ def test_a_new_menu_ticked_onto_a_device_with_no_menus_starts_from_start(env, un
     assert summary["picks"][WATCH]["menus"] == theirs, "the first watch keeps its menus"
 
 
+def test_clearing_menus_takes_a_first_pick_back_to_no_record(env) -> None:
+    """The Undo of a first menu pick: no record, no picks, listeners told 0;
+    the other device and the menus themselves stay."""
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    theirs = store.library_summary()["picks"][WATCH]["menus"]
+    defaults = _panel_defaults()
+    made = store.library_create_menu("entity", "Guest menu", {"entityRadial": defaults["entityRadial"]})
+    revision = store.library_pick(WATCH_2, "menus", made["id"], unit="entity", start=defaults)["revisions"][WATCH_2]["menus"]
+    menus = set(store.library_summary()["menus"])
+
+    assert store.library_clear_menus(WATCH_2, revision) == {"revisions": {}}
+
+    assert _doc(env, WATCH_2, "menus") is None
+    summary = store.library_summary()
+    assert "menus" not in summary["picks"].get(WATCH_2, {})
+    assert summary["picks"][WATCH]["menus"] == theirs
+    assert set(summary["menus"]) == menus, "the menus stay, for the panel to delete"
+    assert store.library_clear_menus(WATCH_2, revision) == {"revisions": {}}, "nothing left to take back"
+
+    again = store.library_pick(WATCH_2, "menus", made["id"], unit="entity", start=defaults)["revisions"][WATCH_2]["menus"]
+    assert again > revision, "a later first record never reuses the number"
+
+
+def test_clearing_menus_never_throws_away_a_later_edit(env) -> None:
+    store = env.store_now()
+    defaults = _panel_defaults()
+    made = store.library_create_menu("entity", "Guest menu", {"entityRadial": defaults["entityRadial"]})
+    revision = store.library_pick(WATCH, "menus", made["id"], unit="entity", start=defaults)["revisions"][WATCH]["menus"]
+    before = _doc(env, WATCH, "menus")
+
+    with pytest.raises(env.mod.WatchConfigLinkError) as err:
+        store.library_clear_menus(WATCH, revision - 1)
+
+    assert err.value.code == "stale"
+    assert _doc(env, WATCH, "menus") == before
+
+
 def test_a_first_menus_pick_names_the_other_menu_plainly_when_it_is_the_only_one(env) -> None:
     store = env.store_now()
     defaults = _panel_defaults()

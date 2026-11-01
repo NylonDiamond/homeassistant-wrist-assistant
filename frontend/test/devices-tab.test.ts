@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { homeAddress, homeGroupSummary, ownScreenBlurb } from "../src/home.js";
 import { asleepRowWords } from "../src/sync-pill.js";
-import { deviceOwnRowHint, deviceRowChoices, renderDeviceOwnRow, watchChipSub } from "../src/watch-row.js";
+import { WATCH_SETTINGS_SCREEN } from "../src/shell.js";
+import { deviceRowChoices, renderDeviceOwnRow, watchChipSub } from "../src/watch-row.js";
 import { flat } from "./library-editor-home.js";
 
 const at = (path: string) => ({ prefix: "/wrist-assistant", path });
@@ -109,8 +110,19 @@ describe("the row of a device's own screens", () => {
     expect(text).toContain("/wrist-assistant/settings/w1");
     expect(text).toContain("/wrist-assistant/rooms/w1");
     expect(text).toContain("/wrist-assistant/voice/w1");
-    expect(text).toContain(`aria-current="page"`);
-    expect(text).toContain(deviceOwnRowHint("watch"));
+    expect(text.match(/wa-wr-link on/g)?.length).toBe(1);
+    expect(text).not.toContain("own screens");
+  });
+
+  it("lights the tab on show, and holds its save controls and unsaved dots", () => {
+    const settings = WATCH_SETTINGS_SCREEN;
+    const text = flat(renderDeviceOwnRow({
+      route: at("/settings/w1"), ownerId: "w1", kind: "watch", phones: true,
+      titleOf: () => undefined, onGo: () => undefined, unsaved: [settings], end: "SAVE-CONTROLS",
+    }));
+    expect(text).toContain("SAVE-CONTROLS");
+    expect(text.match(/wa-wr-link on/g)?.length).toBe(1);
+    expect(text).toContain("wa-wr-end");
   });
 
   it("leaves Voice off an iPhone, whose screens are the iPhone app's", () => {
@@ -118,7 +130,6 @@ describe("the row of a device's own screens", () => {
     expect(text).not.toContain(">Voice");
     expect(text).toContain("/wrist-assistant/iphone/settings/w1");
     expect(text).toContain("/wrist-assistant/iphone/rooms/w1");
-    expect(text).toContain("No Voice: the iPhone has no voice settings.");
   });
 
   it("draws nothing for an iPhone in a home with no phone pages, which has none of them", () => {

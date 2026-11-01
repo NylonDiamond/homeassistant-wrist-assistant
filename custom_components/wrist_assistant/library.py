@@ -1588,6 +1588,24 @@ def move_picks(
     return _change(library, lib)
 
 
+def clear_menus(library: Mapping[str, Any], owner_id: str) -> Change:
+    """The library with the owner using no menus, as before its first menu
+    pick. The menus stay, and no other owner's records change."""
+    lib = copy.deepcopy(dict(library))
+    picks = lib["picks"].get(owner_id)
+    if picks is not None:
+        picks.pop("menus", None)
+        if not picks:
+            lib["picks"].pop(owner_id)
+    for notes in ("hashes", "revisions"):
+        held = lib.get(notes, {}).get(owner_id)
+        if held is not None:
+            held.pop("menus", None)
+            if not held:
+                lib[notes].pop(owner_id)
+    return _change(library, lib)
+
+
 def forget(library: Mapping[str, Any], owner_id: str) -> Change:
     """The library without an owner's picks. Its items stay, and no other
     owner's records change."""

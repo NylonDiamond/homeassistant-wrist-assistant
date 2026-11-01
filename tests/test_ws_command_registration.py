@@ -117,6 +117,7 @@ _OWNER = {
         # delete names an item, and the caller must manage every device
         # that has it (an item no device has is an administrator's).
         "ws_library_pick": "require_owner",
+        "ws_library_menus_clear": "require_owner",
         "ws_library_menus_copy": "require_owner",
         "ws_library_menus_rename": "_may_change_item",
         "ws_library_menus_delete": "_may_change_item",

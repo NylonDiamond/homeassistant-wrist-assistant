@@ -22,8 +22,8 @@ import {
 } from "../src/delete-later.js";
 import type { HassLike } from "../src/ha-api.js";
 import type { LibrarySummary } from "../src/library/client.js";
-import { hasItem, isHiddenOn, itemsFor, menuFor } from "../src/library/model.js";
-import { LibraryStore, firstMenuDoneText, menuDoneText, placeBefore, tickDoneText } from "../src/library/store.js";
+import { hasItem, isHiddenOn, itemsFor, libraryOf, menuFor } from "../src/library/model.js";
+import { LibraryStore, menuDoneText, menusMadeSince, placeBefore, tickDoneText } from "../src/library/store.js";
 import { tickItem } from "../src/watch-pages/library-editing-io.js";
 import { CAMERA, CHEN, CHEN_MENU, DOORS, HOME_MENU, JESSE, LIGHTS, PAGE1, PHONE, QUICK, SMART, STARTER, summary } from "./library-fixture.js";
 
@@ -341,7 +341,7 @@ describe("a menu pick's Undo", () => {
     expect(laterToast()).toBeUndefined();
   });
 
-  it("offers no Undo on a device's first menu, and says why", async () => {
+  it("says what a first menu did, with no Undo when the reply names no revision", async () => {
     const base = summary();
     delete base.picks[PHONE]!.menus;
     base.menus[HOME_MENU]!.owners = [JESSE];
@@ -349,8 +349,17 @@ describe("a menu pick's Undo", () => {
     const h = home(base);
     const store = await storeOn(h);
     await store.pickMenu(PHONE, "anywhere", HOME_MENU, { device: "iPhone 15 Pro" });
-    expect(laterToast()).toEqual({ text: firstMenuDoneText("iPhone 15 Pro", "Home menu"), tone: "ok", undo: false, done: true });
+    expect(laterToast()).toEqual({ text: menuDoneText("iPhone 15 Pro", "Home menu"), tone: "ok", undo: false, done: true });
     expect(laterWaiting()).toBe(false);
+  });
+
+  it("finds the menus a first pick made: new, and used by no device", () => {
+    const before = libraryOf(summary());
+    const later = summary();
+    later.menus["MADE"] = { name: "iPhone's menu", kind: "entity", owners: [], revision: 1, sections: {} };
+    later.menus["USED"] = { name: "In use", kind: "entity", owners: [CHEN], revision: 1, sections: {} };
+    expect(menusMadeSince(before, libraryOf(later))).toEqual(["MADE"]);
+    expect(menusMadeSince(before, before)).toEqual([]);
   });
 
   it("says nothing when the device already used the menu", async () => {

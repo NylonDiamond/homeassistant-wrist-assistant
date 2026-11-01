@@ -229,6 +229,7 @@ from .library import (
     stored_item_id,
     validate_library,
 )
+from .library import clear_menus as library_clear_menus
 from .library import forget as library_forget
 from .library import reach as library_reach
 from .page_links import (
@@ -406,7 +407,8 @@ class WatchConfigLinkError(WatchConfigStoreError):
     ``code`` is the reason: ``unknown_device`` for a device that is not a
     paired one, ``not_found`` for an item the library does not hold (or a
     source with no voice settings), ``in_use`` for a menu a device still
-    uses, ``unit_taken`` for a target with its own phrase library
+    uses, ``stale`` for an Undo of a menus record that has moved on since,
+    ``unit_taken`` for a target with its own phrase library
     (:meth:`WatchConfigStore.link_units`), ``awaiting_move`` for a watch
     whose iPhone may still move its own setup here (the write would make the
     first record that move skips).
@@ -3785,6 +3787,40 @@ class WatchConfigStore:
             made = create_menu(lib, other, name, {key: seed[key] for key in keys})
             lib = pick_menu(made.library, owner_watch_id, other, made.id).library
         return lib, seed
+
+    def library_clear_menus(self, owner_watch_id: Any, revision: Any) -> dict[str, Any]:
+        """Take a device back to no menus record (``library/menus/clear``):
+        the Undo of its first menu pick, the one write ``library/pick`` cannot
+        take back since it always names a menu.
+
+        ``revision`` is the record's revision as that pick left it. Refused
+        ``stale`` when the record has moved on since, so an Undo never throws
+        away a later edit. A device with no record has nothing to take back.
+        The menus stay in the library, and no other device changes.
+
+        Listeners hear revision 0, as for a forgotten device. The revision
+        floor rises past the one removed, so a later first record never reuses
+        its number for different content.
+
+        Returns ``{"revisions": {}}``: no record is written."""
+        self._check_library()
+        owner_watch_id = self._check_link_owner(owner_watch_id)
+        self._check_owner_kind(owner_watch_id, "menus")
+        self._check_available(owner_watch_id)
+        record = self._records.get(owner_watch_id, {}).get("menus")
+        if record is None:
+            return {"revisions": {}}
+        if record.revision != revision:
+            raise WatchConfigLinkError(
+                "stale", "the device's menus changed after that pick, so it stays as it is"
+            )
+        self._set_library(library_clear_menus(self._library, owner_watch_id).library)
+        del self._records[owner_watch_id]["menus"]
+        self._revision_floor = max(self._revision_floor, record.revision)
+        self._schedule_index_save()
+        self._schedule_owner_save(owner_watch_id)
+        self._notify(owner_watch_id, "menus", 0)
+        return {"revisions": {}}
 
     def library_copy_menu(
         self,
