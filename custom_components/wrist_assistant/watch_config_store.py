@@ -3613,6 +3613,7 @@ class WatchConfigStore:
         document: Any,
         *,
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+        knows_screens: bool = False,
     ) -> dict[str, Any]:
         """Save one library item edited in the library itself
         (``library/item/save``), compare and swap on the item's revision.
@@ -3643,6 +3644,8 @@ class WatchConfigStore:
         or Status page slot brings that page, with what it reaches, to every
         device using the menu that lacks it, as a record save brings it to
         the other devices. An item no device picks writes no record.
+        ``knows_screens`` is a panel that sends a page's ``screens`` and
+        leaves the key out only to mean none (:func:`replace_item`).
 
         Refused ``invalid``, ``not_found`` or ``conflict``. Returns
         ``{"revision": <the item's revision>}``."""
@@ -3669,7 +3672,9 @@ class WatchConfigStore:
                 )
             content = pages[0]
         try:
-            change = replace_item(self._library, kind, stored, content)
+            change = replace_item(
+                self._library, kind, stored, content, knows_screens=knows_screens
+            )
         except LibraryError as err:
             raise WatchConfigValidationError(err.message) from err
         if item_revision(change.library, kind, stored) == current:

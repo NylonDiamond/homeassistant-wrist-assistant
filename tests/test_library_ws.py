@@ -496,6 +496,33 @@ def test_item_answers_a_document_of_its_kind_and_its_revision(ctx) -> None:
     assert _codes(ctx, ctx.ws.ws_library_item, kind="voice", item_id=LIGHTS) == ["invalid"]
 
 
+def test_item_save_without_screens_needs_a_panel_that_knows_them(ctx) -> None:
+    tile = {"colSpan": 6, "entityId": "light.a", "gridCol": 0, "gridRow": 0, "id": "T1", "rowSpan": 4}
+    page = {
+        "id": LIGHTS,
+        "name": "Lights",
+        "items": [tile],
+        "screens": {"watch": {"T1": {"col": 0, "row": 0, "colSpan": 6, "rowSpan": 4}}, "iphone": {}},
+    }
+    item = _ok(ctx, ctx.ws.ws_library_item, kind="pages", item_id=LIGHTS)
+    saved = _ok(
+        ctx,
+        ctx.ws.ws_library_item_save,
+        kind="pages",
+        item_id=LIGHTS,
+        base_revision=item["revision"],
+        document={"schemaVersion": 1, "pages": [page]},
+        knows_screens=True,
+    )
+    bare = {"schemaVersion": 1, "pages": [{k: v for k, v in page.items() if k != "screens"}]}
+    args = {"kind": "pages", "item_id": LIGHTS, "base_revision": saved["revision"], "document": bare}
+    # An older panel never sends knows_screens: its save would put the
+    # iPhone back, so it is refused.
+    assert _codes(ctx, ctx.ws.ws_library_item_save, **args) == ["invalid"]
+    after = _ok(ctx, ctx.ws.ws_library_item_save, **args, knows_screens=True)
+    assert after["revision"] == saved["revision"] + 1
+
+
 def test_item_save_answers_the_new_revision_and_writes_the_pickers(ctx) -> None:
     ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=True)
     before = {o: ctx.store.get(o, "pages").revision for o in (WATCH, WATCH_2)}

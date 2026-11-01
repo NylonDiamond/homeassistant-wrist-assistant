@@ -240,10 +240,14 @@ export async function fetchLibraryItem(hass: HassLike, kind: LibraryKind, itemId
  * other unit's are ignored). Every device that picks it is written again.
  * Refusals: `conflict` (the item moved past `baseRevision`; the message
  * says "stored revision is N", as a record save's does), `invalid` (a bad
- * document, another item's id in it), `not_found`, `unauthorized`. */
+ * document, another item's id in it), `not_found`, `unauthorized`.
+ * `knows_screens` tells Home Assistant this panel reads a page's `screens`,
+ * so a page sent without the key means one with none; a save from a panel
+ * older than the screens, which never sends it, is refused on a page
+ * arranged apart instead of losing that arrangement. */
 export async function saveLibraryItem(hass: HassLike, kind: LibraryKind, itemId: string, baseRevision: number, document: LibraryObject) {
   return hass.connection.sendMessagePromise<LibraryItemSaveReply>({
-    type: `${LIB}/item/save`, kind, item_id: itemId, base_revision: baseRevision, document,
+    type: `${LIB}/item/save`, kind, item_id: itemId, base_revision: baseRevision, document, knows_screens: true,
   });
 }
 

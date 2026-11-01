@@ -2056,8 +2056,20 @@ def rename_menu(library: Mapping[str, Any], menu_id: str, name: str) -> dict[str
     return stamp_item_revisions(library, lib)
 
 
+def _arranged_apart(page: Mapping[str, Any]) -> bool:
+    """Whether a page's ``screens`` say more than its tiles do: they are
+    not what the page reads as without them (:func:`_fallback_screens`)."""
+    held = page.get(SCREENS_KEY)
+    return isinstance(held, Mapping) and page_screens(page) != _fallback_screens(page)
+
+
 def replace_item(
-    library: Mapping[str, Any], kind: str, item_id: str, content: Mapping[str, Any]
+    library: Mapping[str, Any],
+    kind: str,
+    item_id: str,
+    content: Mapping[str, Any],
+    *,
+    knows_screens: bool = False,
 ) -> Change:
     """The library with one item's content replaced, as an edit of the item
     in the library itself (the panel's library mode), and what that changes
@@ -2069,7 +2081,13 @@ def replace_item(
       drops them. A system page is never an item. The page is taken whole,
       ``screens`` too: the panel sends both screens, and a page without the
       key reads as one (:func:`page_screens`). A ``screens`` of the wrong
-      shape is ``invalid``; a tile on neither screen is dropped.
+      shape is ``invalid``; a tile on neither screen is dropped. Only a
+      panel that ``knows_screens`` may leave the key out of a page arranged
+      apart (:func:`_arranged_apart`) to put both screens back to the tile
+      fields: from an older panel, which never sends it, that save is
+      ``invalid``, since taking it would lose the iPhone's arrangement and
+      every tile Off. A page whose screens say no more than its tiles takes
+      such a save as before.
     * Menus: ``content`` is the menu's sections, exactly the keys of its
       unit (:data:`MENU_UNITS`), each an object. The name stays.
 
@@ -2097,7 +2115,18 @@ def replace_item(
         raise LibraryError("invalid", f"the page is not {kind} item {stored}")
     if kind == "pages" and _is_system_page(content):
         raise LibraryError("invalid", "a system page is never a library item")
-    lib[kind][stored] = {k: (stored if k == "id" else v) for k, v in _content(content).items()}
+    if (
+        kind == "pages"
+        and not knows_screens
+        and SCREENS_KEY not in content
+        and _arranged_apart(lib[kind][stored])
+    ):
+        raise LibraryError(
+            "invalid",
+            "this page is arranged apart on the watch and the iPhone, and this "
+            "panel is older than that: reload the panel to save it",
+        )
+    lib[kind][stored] ={k: (stored if k == "id" else v) for k, v in _content(content).items()}
     if kind == "pages":
         lib[kind][stored] = _with_checked_screens(lib[kind][stored], strict=True)
     return _change(library, lib)

@@ -46,7 +46,7 @@ Commands:
     wrist_assistant/library/summary             {}
     wrist_assistant/library/item                {kind, item_id}
     wrist_assistant/library/item/save           {kind, item_id, base_revision,
-                                                 document}
+                                                 document, knows_screens?}
     wrist_assistant/library/item/create         {kind, document}
     wrist_assistant/library/fork_page           {item_id, owner_ids, name?}
 
@@ -1115,6 +1115,7 @@ def ws_library_item(
         vol.Required("item_id"): str,
         vol.Required("base_revision"): int,
         vol.Required("document"): dict,
+        vol.Optional("knows_screens", default=False): bool,
     }
 )
 @callback
@@ -1124,7 +1125,7 @@ def ws_library_item_save(
     """Save one library item edited in the library itself, compare and swap
     on the item's revision.
 
-    Request: {kind, item_id, base_revision, document}
+    Request: {kind, item_id, base_revision, document, knows_screens?}
     Result:  {"revision": <the item's revision>,
               "template_budget"?: {"used", "limit", "scope": "page"}}
 
@@ -1139,6 +1140,11 @@ def ws_library_item_save(
     item a device the caller may not manage has (or that no device has, for
     anyone but an administrator), since the save writes every one of them.
 
+    ``knows_screens`` is true from a panel that reads a page's ``screens``:
+    only such a panel may leave the key out of a page arranged apart on the
+    watch and the iPhone. From an older panel that save is ``invalid``
+    rather than losing the arrangement (``replace_item``).
+
     ``template_budget``, for a page only, is the record save's count
     (:func:`ws_watch_config_save`) for the saved page alone: each device that
     picks it adds its other pages' templates to it.
@@ -1151,7 +1157,11 @@ def ws_library_item_save(
         return
     try:
         result = store.library_save_item(
-            msg["kind"], msg["item_id"], msg["base_revision"], msg["document"]
+            msg["kind"],
+            msg["item_id"],
+            msg["base_revision"],
+            msg["document"],
+            knows_screens=msg.get("knows_screens", False),
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
