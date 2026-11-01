@@ -195,13 +195,12 @@ export function saveCompView(storage: () => Storage, view: CompListView): void {
 /** The board's own bits on the Complications tab; the table is
  * `boardStyles`. A board page is as wide as the list tabs' boards. */
 export const compBoardStyles = css`
-  .cl-page.cl-board .cl-wrap { gap: 14px; }
   /* The device heads stick right under the tab bar (\`.bd-pin\`), reaching
-     back over the page's top padding as the Cards toolbar does. */
+     back over the page's top padding as the Cards toolbar does, so on the
+     board the toolbar scrolls away. */
   .cl-page { --bd-pin-top: calc(-1 * var(--cl-top, 0px)); }
+  .pk-surface.pk-page.on-board > .pk-pin { position: static; }
   .cl-acts { align-items: center; }
-  .cb-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .cb-tools .pk-search { flex: 0 1 320px; }
   .cb-pic { display: inline-flex; flex: none; align-items: center; justify-content: center; max-height: 96px; overflow: hidden; border-radius: 6px; }
   .cb-pic > * { width: 100%; height: 100%; }
   .bd-peek .cb-pic { max-height: none; }

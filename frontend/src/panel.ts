@@ -15085,7 +15085,7 @@ export class WristAssistantPanel extends LitElement {
     const focus = this.compFocus();
     const view = phoneView("complications", this.compView);
     const board = focus !== undefined || view === "board";
-    return html`<div class="cl-page ${board ? "cl-board" : ""}"><div class="cl-wrap">
+    return html`<div class="cl-page"><div class="cl-wrap">
       <div class="cl-head">
         <div class="cl-head-text">
           <h1>Complications</h1>
@@ -15164,15 +15164,21 @@ export class WristAssistantPanel extends LitElement {
     const query = this.pickerQuery.trim().toLocaleLowerCase();
     const items = this.compBoardItems(query);
     const columns = this.compBoardColumns(devices);
-    const search = html`<div class="cb-tools">
-      ${focus === undefined ? renderViewSwitch(phoneView("complications", this.compView), (v) => this.setCompView(v), "complications") : nothing}
-      ${renderDensitySwitch(boardDensity(), (d) => { setBoardDensity(d); this.requestUpdate(); })}
-      <label class="pk-search">
-        ${uiIcon("search")}
-        <input type="search" class="pk-search-input" .value=${this.pickerQuery} placeholder=${COMP_SEARCH_PLACEHOLDER} aria-label="Search complications"
-          @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
-      </label></div>`;
-    if (devices.length === 0) return html`${search}<p class="cb-empty">No watch or iPhone has connected yet. Pair one on the Devices tab to put complications on it.</p>`;
+    // The Cards view's box and toolbar row, as the Pages tab's two views share
+    // one, so switching view moves nothing but what is inside.
+    const surface = (body: unknown) => html`<div class="pk-surface pk-page on-board" role="region" aria-label="Your complications">
+      <div class="pk-pin"><div class="pk-head">
+        ${focus === undefined ? renderViewSwitch(phoneView("complications", this.compView), (v) => this.setCompView(v), "complications") : nothing}
+        ${renderDensitySwitch(boardDensity(), (d) => { setBoardDensity(d); this.requestUpdate(); })}
+        <label class="pk-search">
+          ${uiIcon("search")}
+          <input type="search" class="pk-search-input" .value=${this.pickerQuery} placeholder=${COMP_SEARCH_PLACEHOLDER} aria-label="Search complications"
+            @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
+        </label>
+      </div></div>
+      <div class="pk-body">${body}</div>
+    </div>`;
+    if (devices.length === 0) return surface(html`<p class="cb-empty">No watch or iPhone has connected yet. Pair one on the Devices tab to put complications on it.</p>`);
     const byOrder = compItemOrder;
     const emptyText = query !== "" ? `Nothing matches "${this.pickerQuery.trim()}".` : "No complications yet.";
     const device = focus === undefined ? undefined : devices.find((d) => d.ownerId === focus);
@@ -15205,8 +15211,7 @@ export class WristAssistantPanel extends LitElement {
       const left = compLeftOutText(device.kind, leftOut);
       foot = left === undefined ? nothing : html`<p class="lt-line bd-foot-line">${left}</p>`;
     }
-    return html`${device === undefined ? nothing : this.renderCompFocusHead(device, columns.find((c) => c.device.ownerId === device.ownerId)?.count ?? 0)}
-      ${search}
+    return surface(html`${device === undefined ? nothing : this.renderCompFocusHead(device, columns.find((c) => c.device.ownerId === device.ownerId)?.count ?? 0)}
       ${renderBoard({
         label: "Complications on each device",
         thing: "Complication",
@@ -15221,7 +15226,7 @@ export class WristAssistantPanel extends LitElement {
           ...(device === undefined ? {} : { eye: "hide but keep it on the device" }),
         },
       })}
-      ${foot}`;
+      ${foot}`);
   }
 
   /** A section with its one line for its greyed columns, when it has any

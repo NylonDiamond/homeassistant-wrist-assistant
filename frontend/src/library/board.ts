@@ -886,7 +886,6 @@ export const boardStyles = css`
     --bd-col-w: 96px; --bd-min-first: 320px;
     --bd-first-track: 320px; --bd-col-track: minmax(var(--bd-col-w), 1fr);
     --bd-first-w: 320px; --bd-cell-w: auto;
-    --bd-width-max: calc(var(--bd-first-w) + var(--bd-n, 0) * 200px);
   }
   @media (max-width: 1100px) {
     .bd-frame.compact { --bd-min-first: 240px; --bd-first-track: 240px; --bd-first-w: 240px; }
