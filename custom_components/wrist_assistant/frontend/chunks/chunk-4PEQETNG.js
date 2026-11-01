@@ -1,34 +1,34 @@
-import{c as h}from"./chunk-NCCXD265.js";import{b as p,d as i,g as t,xh as o}from"./chunk-G7AAB2LI.js";var g="Hidden here",m="Not shared";function w(e){return i`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
+import{c as h}from"./chunk-NM77EPB4.js";import{b as p,d as n,g as t,xh as o}from"./chunk-G7AAB2LI.js";var g="Hidden here",m="Not shared";function w(e){return n`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
     <div class="hl-head">
       <span class="hl-chip" aria-hidden="true">${o(e.icon)}</span>
       <h3 class="hl-title">${e.title}</h3>
-      ${e.noCount===!0?t:i`<span class="hl-n">${e.lines.length}</span>`}
-      ${e.sub===void 0?t:i`<span class="hl-sub">${e.sub}</span>`}
-      ${e.change===void 0?t:i`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>${e.change.label}${o("right")}</button>`}
+      ${e.noCount===!0?t:n`<span class="hl-n">${e.lines.length}</span>`}
+      ${e.sub===void 0?t:n`<span class="hl-sub">${e.sub}</span>`}
+      ${e.change===void 0?t:n`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>${e.change.label}${o("right")}</button>`}
     </div>
     ${e.under??t}
-    ${e.lines.length===0?i`<div class="hl-empty hl-box"><p>${e.empty}</p>${e.add===void 0?t:i`<button type="button" class="hl-add" title=${e.add.title} @click=${e.add.onClick}>${o("plus")}${e.add.label}</button>`}</div>`:i`<ol class="hl-lines ${e.strip===!0?"strip":""}" style=${e.cell===void 0?"":`--hl-cell:${e.cell}px`}
+    ${e.lines.length===0?n`<div class="hl-empty hl-box"><p>${e.empty}</p>${e.add===void 0?t:n`<button type="button" class="hl-add" title=${e.add.title} @click=${e.add.onClick}>${o("plus")}${e.add.label}</button>`}</div>`:n`<ol class="hl-lines ${e.strip===!0?"strip":""}" style=${`${e.cell===void 0?"":`--hl-cell:${e.cell}px;`}${e.pictureBox===void 0?"":`--hl-pic-h:${e.pictureBox}px;`}`}
           @dragover=${a=>e.zone?.onOver(a)} @drop=${a=>e.zone?.onDrop(a)}
-          >${h(e.lines,a=>a.key,(a,s)=>x(a,s,e.strip===!0&&e.numbered!==!1))}</ol>`}
-  </section>`}function x(e,a,s){let l=e.action,r=e.drag,d=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
-    @dragstart=${n=>r?.onStart(n)} @dragover=${n=>r?.onOver(n)}
-    @drop=${n=>r?.onDrop(n)} @dragend=${()=>r?.onEnd()}>
-    ${s?i`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
-    ${r===void 0?t:i`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
+          >${h(e.lines,a=>a.key,(a,s)=>u(a,s,e.strip===!0&&e.numbered!==!1))}</ol>`}
+  </section>`}function u(e,a,s){let l=e.action,r=e.drag,d=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(i=>i!=="").join(" ");return n`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
+    @dragstart=${i=>r?.onStart(i)} @dragover=${i=>r?.onOver(i)}
+    @drop=${i=>r?.onDrop(i)} @dragend=${()=>r?.onEnd()}>
+    ${s?n`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
+    ${r===void 0?t:n`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
       aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${r.on?"Drag to change the order":""}
-      @keydown=${n=>r.onKey(n)}>${o("grip")}</span>`}
-    ${d===void 0?t:i`<button type="button" class="hl-rm" title=${d.title} aria-label=${d.title} ?disabled=${d.busy===!0}
-      @click=${n=>{n.stopPropagation(),d.onClick()}}>${o("close")}</button>`}
-    ${e.picture===void 0?t:i`<span class="hl-pic">${e.picture}</span>`}
+      @keydown=${i=>r.onKey(i)}>${o("grip")}</span>`}
+    ${d===void 0?t:n`<button type="button" class="hl-rm" title=${d.title} aria-label=${d.title} ?disabled=${d.busy===!0}
+      @click=${i=>{i.stopPropagation(),d.onClick()}}>${o("close")}</button>`}
+    ${e.picture===void 0?t:n`<span class="hl-pic">${e.picture}</span>`}
     <span class="hl-t">
       <b class="hl-name">${e.name}</b>
-      ${e.detail===void 0&&e.hidden!==!0&&e.tag===void 0?t:i`<small class="hl-detail">
-        ${e.hidden===!0?i`<em class="hl-tag">${g}</em>`:t}
-        ${e.tag===void 0?t:i`<em class="hl-tag own">${e.tag}</em>`}
+      ${e.detail===void 0&&e.hidden!==!0&&e.tag===void 0?t:n`<small class="hl-detail">
+        ${e.hidden===!0?n`<em class="hl-tag">${g}</em>`:t}
+        ${e.tag===void 0?t:n`<em class="hl-tag own">${e.tag}</em>`}
         ${e.detail??t}</small>`}
     </span>
-    ${l===void 0?t:l.href!==void 0?i`<a class="hl-edit" href=${l.href} title=${l.title}
-          @click=${n=>{n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey||(n.preventDefault(),l.onClick())}}>${l.label}</a>`:i`<button type="button" class="hl-edit" title=${l.title} @click=${l.onClick}>${l.label}</button>`}
+    ${l===void 0?t:l.href!==void 0?n`<a class="hl-edit" href=${l.href} title=${l.title}
+          @click=${i=>{i.button!==0||i.metaKey||i.ctrlKey||i.shiftKey||i.altKey||(i.preventDefault(),l.onClick())}}>${l.label}</a>`:n`<button type="button" class="hl-edit" title=${l.title} @click=${l.onClick}>${l.label}</button>`}
   </li>`}var b=p`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -67,7 +67,9 @@ import{c as h}from"./chunk-NCCXD265.js";import{b as p,d as i,g as t,xh as o}from
     border: 1px solid var(--wa-line); background: var(--wa-card);
   }
   .hl-lines.strip .hl-line { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; position: relative; }
-  .hl-lines.strip .hl-pic { align-self: center; }
+  /* --hl-pic-h: every picture in the strip stands in a box this tall, so the
+     names under them line up whatever each shape's proportions. */
+  .hl-lines.strip .hl-pic { align-self: center; min-height: var(--hl-pic-h, 0); }
   .hl-line.hid .hl-pic, .hl-line.hid .hl-name { opacity: 0.5; }
   .hl-i { position: absolute; top: 6px; left: 8px; font-size: 11px; font-weight: 600; color: var(--wa-muted); }
   .hl-pic { display: inline-flex; flex: none; align-items: center; justify-content: center; }

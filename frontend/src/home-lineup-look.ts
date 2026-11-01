@@ -73,8 +73,10 @@ export interface LineupGroup {
    * means nothing on the device. */
   numbered?: boolean;
   /** A strip's narrowest card, in px, when its pictures are wider than a
-   * page's (complications grow with the room). */
+   * page's (complications). */
   cell?: number;
+  /** The height of the box each picture in a strip stands in, in px. */
+  pictureBox?: number;
   /** Drawn under the head: a question before a remove, or what one did. */
   under?: TemplateResult;
   /** The list's own drop target, so a line let go between two lines lands. */
@@ -100,7 +102,7 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
     ${g.lines.length === 0
       ? html`<div class="hl-empty hl-box"><p>${g.empty}</p>${g.add === undefined ? nothing
           : html`<button type="button" class="hl-add" title=${g.add.title} @click=${g.add.onClick}>${uiIcon("plus")}${g.add.label}</button>`}</div>`
-      : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}" style=${g.cell === undefined ? "" : `--hl-cell:${g.cell}px`}
+      : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}" style=${`${g.cell === undefined ? "" : `--hl-cell:${g.cell}px;`}${g.pictureBox === undefined ? "" : `--hl-pic-h:${g.pictureBox}px;`}`}
           @dragover=${(e: DragEvent) => g.zone?.onOver(e)} @drop=${(e: DragEvent) => g.zone?.onDrop(e)}
           >${repeat(g.lines, (line) => line.key, (line, i) => renderLine(line, i, g.strip === true && g.numbered !== false))}</ol>`}
   </section>`;
@@ -181,7 +183,9 @@ export const homeLineupStyles = css`
     border: 1px solid var(--wa-line); background: var(--wa-card);
   }
   .hl-lines.strip .hl-line { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; position: relative; }
-  .hl-lines.strip .hl-pic { align-self: center; }
+  /* --hl-pic-h: every picture in the strip stands in a box this tall, so the
+     names under them line up whatever each shape's proportions. */
+  .hl-lines.strip .hl-pic { align-self: center; min-height: var(--hl-pic-h, 0); }
   .hl-line.hid .hl-pic, .hl-line.hid .hl-name { opacity: 0.5; }
   .hl-i { position: absolute; top: 6px; left: 8px; font-size: 11px; font-weight: 600; color: var(--wa-muted); }
   .hl-pic { display: inline-flex; flex: none; align-items: center; justify-content: center; }

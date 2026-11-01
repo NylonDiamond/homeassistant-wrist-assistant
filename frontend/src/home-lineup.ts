@@ -9,8 +9,8 @@ import { property, state } from "lit/decorators.js";
 import type { HassLike } from "./ha-api.js";
 import { type LineupDrag, type LineupGroup, type LineupLine, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
 import type { LibraryKind, MenuUnit } from "./library/client.js";
-import { MENU_UNIT_TITLES, holdsRecord, itemsFor, menuFor, sameId, type Library, type LibraryPick } from "./library/model.js";
-import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
+import { MENU_UNIT_TITLES, holdsRecord, itemsFor, menuFor, pagesDocumentFor, sameId, type Library, type LibraryPick } from "./library/model.js";
+import { renderMenuRowPicture, renderPageRowPicture, renderStatusRowPicture, rowPictureStyles, watchPictureHeight } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
 import { PagePhotoStore } from "./watch-pages/page-photo-store.js";
 import type { OneLookPhotoLight } from "./watch-pages/one-look/glow.js";
@@ -126,6 +126,7 @@ export class WaHomeLineup extends LitElement {
       photoOnMask: this.photoOnMask,
       photoTick: this.photoTick,
       pageWidth: this.pageW,
+      onMenuPictureReady: () => this.requestUpdate(),
       waitsForIphone: this.waitsForIphone,
       ...(this.appVersion === undefined ? {} : { appVersion: this.appVersion }),
       arrange: {
@@ -425,6 +426,9 @@ export interface LineupDraw {
   photoTick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
+  /** Called once the menu pictures' code is in, to draw again. With none, a
+   * menu's card has no picture. */
+  onMenuPictureReady?: () => void;
   arrange?: LineupArrange;
   /** The watch's iPhone may still move its setup here (`noRecordStart` is
    * `wait`): a kind Home Assistant holds no record of says it waits for
@@ -505,7 +509,18 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     if (menu === undefined) return [];
     return [{
       key: unit,
-      name: `${MENU_UNIT_TITLES[unit]}: ${menu.name}`,
+      name: menu.name,
+      detail: MENU_UNIT_TITLES[unit],
+      ...(draw.onMenuPictureReady === undefined ? {} : {
+        // As tall as a page's picture beside it. Only the Anywhere menu's
+        // page switcher names pages.
+        picture: renderMenuRowPicture({
+          menu, hass: draw.hass, icons: draw.icons, onReady: draw.onMenuPictureReady,
+          height: watchPictureHeight(watchW),
+          ...(draw.tick === undefined ? {} : { tick: draw.tick }),
+          ...(unit === "anywhere" ? { pages: pagesDocumentFor(library, ownerId) } : {}),
+        }),
+      }),
       action: { label: "Edit", title: `Edit ${menu.name}`, onClick: () => draw.onEdit("menus", menu.id) },
     }];
   });
@@ -529,7 +544,8 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     },
     {
       key: "menus", title: "Menus", icon: "radial", hue: "var(--wa-hue-orange)",
-      lines: menuLines, empty: empty("menus", "menus", `This ${word} uses no menu yet.`),
+      // Cards like the status pages': a menu's order means nothing.
+      lines: menuLines, strip: true, numbered: false, empty: empty("menus", "menus", `This ${word} uses no menu yet.`),
       change: { label: "Open in Menus", title: `Pick the menus this ${word} uses, on the Menus tab`, onClick: () => draw.onChange("menus") },
       ...add("menus", "Pick a menu", `Open the Menus tab, focused on this ${word}`),
     },

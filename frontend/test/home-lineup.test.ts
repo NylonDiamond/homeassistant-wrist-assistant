@@ -31,7 +31,9 @@ describe("a device's lineup on Home", () => {
     expect(out.map((g) => g.title)).toEqual(["Pages", "Status pages", "Menus"]);
     expect(out[0]!.lines.map((l) => l.name)).toEqual(["Camera", "Lights"]);
     expect(out[1]!.lines.map((l) => l.name)).toEqual(["Lights"]);
-    expect(out[2]!.lines.map((l) => l.name)).toEqual(["Anywhere menu: Chen's menu", "Entity quick menu: Entity quick menu"]);
+    expect(out[2]!.lines.map((l) => l.name)).toEqual(["Chen's menu", "Entity quick menu"]);
+    expect(out[2]!.lines.map((l) => l.detail)).toEqual(["Anywhere menu", "Entity quick menu"]);
+    expect(out[2]!.strip).toBe(true);
   });
 
   it("fades a page hidden on the device, and leaves out the watch's own system pages", () => {

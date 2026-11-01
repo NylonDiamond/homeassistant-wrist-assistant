@@ -60,6 +60,9 @@ function heightFor(width: number): number {
   return Math.round((width * WATCH_SCREEN.height) / WATCH_SCREEN.width);
 }
 
+/** How tall a watch screen is drawn at `width`, for a picture beside one. */
+export const watchPictureHeight = heightFor;
+
 export interface PageRowPictureInput {
   page: WatchPage;
   /** The device's pages, so a tile that opens a page can be named after

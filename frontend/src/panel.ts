@@ -548,6 +548,11 @@ const PUBLIC_FOLD_AT = 6;
 
 /** The widest a complication's picture on the board grows, in CSS pixels. */
 const COMP_BOARD_PICTURE_MAX = 190;
+/** The widest proportions a shape's picture is sized by, when its height is
+ * what is set. */
+const COMPACT_WIDEST = 2.375;
+/** A complication's picture's height on a device's Overview. */
+const HOME_COMP_PICTURE_H = 80;
 /** How wide a Compact row's big picture of a design is, on hover. */
 const COMP_BOARD_PEEK_W = 200;
 
@@ -15377,7 +15382,7 @@ export class WristAssistantPanel extends LitElement {
     // A complication is wide already: it grows with the room, to a point. In
     // Compact it stands as tall as a row's other pictures, as wide as its shape.
     const width = at ?? (boardDensity() === "compact"
-      ? Math.round(COMPACT_PICTURE_PX * Math.min(well ?? 1, 2.375))
+      ? Math.round(COMPACT_PICTURE_PX * Math.min(well ?? 1, COMPACT_WIDEST))
       : Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(device === "iphone" && it.family !== undefined && isHomeFamily(it.family) ? 64 : 76)));
     let live: LiveShapes = {};
     if (copy.item.kind === "record") {
@@ -20983,7 +20988,9 @@ export class WristAssistantPanel extends LitElement {
         key: r.key,
         name: r.name,
         detail: it.locked !== undefined ? `${shape} · ${it.locked.badge}` : shape,
-        picture: this.compBoardPicture(it, copy),
+        // Whatever the board's density: here the picture is the point. All
+        // stand as tall, and a wide shape fills its card.
+        picture: this.compBoardPicture(it, copy, Math.round(HOME_COMP_PICTURE_H * Math.min(shapeWell(it.family, this.cardDevice(deviceKindOf(this.ownerOf(copy.ownerId)), it.family)) ?? 1, COMPACT_WIDEST))),
         ...(record !== undefined && this.rowHidden(record) ? { hidden: true } : {}),
         ...(record === undefined ? {} : { action: { label: "Edit", title: `Edit ${r.name}`, onClick: () => void this.openFromHome(r, copy) } }),
       };
@@ -20994,9 +21001,8 @@ export class WristAssistantPanel extends LitElement {
         ${said.undo === undefined ? nothing : html`<button type="button" ?disabled=${this.saving || this.compBoardBusy !== undefined} @click=${said.undo}>Undo</button>`}</p>` }),
       key: "complications", title: row.kind === "watch" ? "Complications" : "Widgets", icon: row.kind === "watch" ? "gauge" : "grid",
       hue: "var(--wa-hue-blue)", lines, empty: `No ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} yet.`,
-      // Cards like the pages', each as wide as the widest picture: a picture
-      // grows with the room, and in a row it pushed the name out.
-      strip: true, numbered: false, cell: Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(76)) + 18,
+      // Cards like the pages', each as wide as the widest picture.
+      strip: true, numbered: false, cell: Math.round(HOME_COMP_PICTURE_H * COMPACT_WIDEST) + 18, pictureBox: HOME_COMP_PICTURE_H,
       change: { label: "Open in Complications", title: `Put ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} or take them off, on the Complications tab`, onClick: () => void this.openDeviceList(ownerId, "all") },
       add: { label: row.kind === "watch" ? "Add complications" : "Add widgets", title: `Open the Complications tab, focused on this ${word}`, onClick: () => void this.openDeviceList(ownerId, "all") },
     };
