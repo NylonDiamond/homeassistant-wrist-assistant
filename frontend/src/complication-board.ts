@@ -195,7 +195,7 @@ export function saveCompView(storage: () => Storage, view: CompListView): void {
 /** The board's own bits on the Complications tab; the table is
  * `boardStyles`. A board page is as wide as the list tabs' boards. */
 export const compBoardStyles = css`
-  .cl-page.cl-board .cl-wrap { width: min(2200px, 100%); gap: 14px; }
+  .cl-page.cl-board .cl-wrap { gap: 14px; }
   /* The device heads stick right under the tab bar (\`.bd-pin\`), reaching
      back over the page's top padding as the Cards toolbar does. */
   .cl-page { --bd-pin-top: calc(-1 * var(--cl-top, 0px)); }
