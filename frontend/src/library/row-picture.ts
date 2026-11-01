@@ -80,6 +80,10 @@ export interface PageRowPictureInput {
   /** In CSS pixels; `ROW_PICTURE_W` (or `ROW_PICTURE_PHONE_W`) when not
    * given. */
   width?: number;
+  /** The tallest it is drawn, in CSS pixels, for an iPhone beside a watch
+   * picture of this height; a watch screen's height at its width (or at
+   * `ROW_PICTURE_W`) when not given. Never more than its own screen. */
+  maxHeight?: number;
   /** The device's app version, which decides whether its tiles draw One
    * Look (`previewOneLook`); absent for a page drawn for no device, which
    * draws it. */
@@ -133,7 +137,7 @@ export function renderPageRowPicture(input: PageRowPictureInput): TemplateResult
   const stamp = [input.states, input.icons, input.tick, input.pages, input.photoTick, input.homeMap];
   const look = input.look ?? "iphone";
   const tiles = previewOneLook({ appVersion: input.appVersion }) === undefined ? "old" : "one";
-  return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}:${tiles}`, stamp, () => drawPage(input, width, iphone, look));
+  return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}:${input.maxHeight ?? ""}:${tiles}`, stamp, () => drawPage(input, width, iphone, look));
 }
 
 function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, look: PhonePageLook): TemplateResult {
@@ -141,7 +145,7 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
   const phone = iphone ? phonePagesLayout(undefined, { look }) : undefined;
   const screen = phone === undefined ? WATCH_SCREEN : phonePagesScreen(phone);
   const s = width / screen.width;
-  const height = Math.min(Math.round(screen.height * s), heightFor(Math.max(width, ROW_PICTURE_W)));
+  const height = Math.min(Math.round(screen.height * s), input.maxHeight ?? heightFor(Math.max(width, ROW_PICTURE_W)));
   const box = `width:${width}px;height:${height}px`;
   if (isSmartWatchPage(page)) {
     return html`<span class="lr-pic lr-smart ${iphone ? "ph" : ""}" style=${`${box};background:${watchScreenColor(page)}`} aria-hidden="true">${uiIcon("states")}</span>`;

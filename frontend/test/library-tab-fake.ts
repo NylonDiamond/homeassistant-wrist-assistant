@@ -248,6 +248,24 @@ export function fakeHome(admin = true) {
       held.set(at, { ...now, revision: (now?.revision ?? 0) + 1, document: msg.document as JsonObject });
       return { revision: (now?.revision ?? 0) + 1 };
     }
+    if (type === "wrist_assistant/library/fork_page") {
+      // Make a copy: the copy takes the page's place on each device named,
+      // and one line says what on each now opens it.
+      const key = itemKeyOf("pages", msg.item_id as string);
+      if (key === undefined) throw { code: "not_found", message: "no such item" };
+      const owners = msg.owner_ids as string[];
+      if (!Array.isArray(owners) || owners.length === 0) throw { code: "invalid", message: "name at least one device for the copy" };
+      const id = `FACE0000-0000-4000-8000-${String(n).padStart(6, "0")}${String(Object.keys(lib.pages).length).padStart(6, "0")}`;
+      const from = lib.pages[key]!;
+      lib.pages[id] = { item: { ...structuredClone(from.item), id, ...(typeof msg.name === "string" ? { name: msg.name } : {}) }, owners: sortOwners(owners) };
+      from.owners = from.owners.filter((o) => !owners.includes(o));
+      for (const owner of owners) {
+        const list = lib.picks[owner]?.pages ?? [];
+        for (const p of list) if (p.page === undefined && up(p.id) === up(key)) p.id = id;
+      }
+      for (const o of Object.keys(lib.picks)) materialise(o);
+      return { item_id: id, rewritten: owners.map((o) => ({ owner_id: o, what: "menu slot Up in Anywhere menu" })), kept: [], revisions: {}, link_failures: [] };
+    }
     if (type === "wrist_assistant/complications/list") return { records: complications.get(msg.owner_watch_id as string) ?? [] };
     if (type === "wrist_assistant/complications/save") {
       const list = complications.get(msg.owner_watch_id as string) ?? [];

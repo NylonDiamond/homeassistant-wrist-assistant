@@ -20,6 +20,14 @@
 // (`/all-pages/<owner>`), never in storage, so a reload keeps it and a new
 // visit starts on every device.
 //
+// A page is one list of tiles that the watch and the iPhone each arrange
+// (`screens`), so a row or a card draws both pictures side by side and one
+// line about them (`all-pages-screens.ts`), and the head's Screens differ
+// keeps the pages arranged apart. New page is one sheet with the devices
+// and where it starts (`new-page-sheet.ts`); a row's "..." and a card's copy
+// button open Make a copy (`make-copy.ts`). Plan: app repo
+// docs/pages_two_screens_plan_2026-11.md, step 3.
+//
 // Multi select (or Cmd/Ctrl+click on a card or a row) turns the cards and
 // rows into tick boxes, and a bar under the head, as on the Complications
 // list, deletes the
@@ -110,7 +118,7 @@ import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, d
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
-import { type WatchPage, isSmartWatchPage, watchPageTiles, watchPagesOf } from "./model.js";
+import { type WatchPage, isSmartWatchPage, watchPageTiles, watchPagesOf, watchScreenPage } from "./model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
 import { newMapWatchPage, watchMapPageFloorId, watchMapPageRefusal } from "./map-page.js";
@@ -122,16 +130,49 @@ import { type NewItemForm, type NewPreview, newItemDialogStyles, openNewItemDial
 import { newStatusPage, nextStatusPageName } from "../watch-status-pages/model.js";
 import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage, watchSkippedTilesLayout } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
+import {
+  NO_SCREENS_DIFFER_TEXT,
+  type PagesScreensFilter,
+  SCREENS_DIFFER_TEXT,
+  TWO_SCREENS_CARD_TEXT,
+  dismissTwoScreensCard,
+  keepsPage,
+  pageScreensLine,
+  twoScreensCardDismissed,
+} from "./all-pages-screens.js";
+import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newCopyForm, openCopyDialog, renderCopyDialog, runCopy, tickCopyForm } from "./make-copy.js";
+import {
+  type NewPageForm,
+  keepNewPageDevices,
+  lastNewPageDevices,
+  newPageDocument,
+  newPageForm,
+  newPageOwners,
+  newPageRefusal,
+  newPageSheetStyles,
+  openNewPageSheet,
+  renderNewPageSheet,
+  tickNewPageDevice,
+  tickRoomEntity,
+  roomEntities,
+} from "./new-page-sheet.js";
 
 /** How wide a card's picture of its page is, in CSS pixels. */
 const PIC_W = 200;
 /** The tallest a picture grows before it is cut, in CSS pixels. */
 const PIC_MAX_H = 320;
+/** A card's two pictures, side by side: the watch's and the iPhone's, in
+ * CSS pixels, and the iPhone's alone in a home with no watch. */
+const CARD_WATCH_W = 120;
+const CARD_PHONE_W = 80;
+const CARD_PHONE_ALONE_W = 150;
+const CARD_PHONE_ALONE_H = 280;
 /** The room kept above the top tile and under the lowest, in points. */
 const PIC_PAD_PT = 6;
 
-/** A page is one page on every device, so its picture is the page alone:
- * no watch case, no iPhone, laid out on one screen for every card. */
+/** A card's watch picture is the page alone, as the watch arranges it: no
+ * watch case, laid out on one screen for every card. Its iPhone picture
+ * sits beside it (`renderThumbs`). */
 const PIC_SCREEN = REFERENCE_CASE.screen;
 
 /**
@@ -244,6 +285,13 @@ export class WaAllPages extends LitElement {
   /** New page's dialog, open: a name for a page the library gets and no
    * device has yet, and the device kind its editor opens on. */
   @state() private newForm?: NewItemForm;
+  /** New page's sheet on the Pages tab, open (`new-page-sheet.ts`): the
+   * name, the devices and where it starts. */
+  @state() private pageForm?: NewPageForm;
+  /** Make a copy's dialog, open on one page (`make-copy.ts`). */
+  @state() private copyForm?: CopyForm;
+  /** The Pages tab's filter: every page, or Screens differ. */
+  @state() private screensFilter: PagesScreensFilter = "all";
   /** Select mode: a click picks a card instead of opening it. */
   @state() private selecting = false;
   /** The picked cards, by `itemKey`. Only those shown count. */
@@ -348,6 +396,9 @@ export class WaAllPages extends LitElement {
     this.search = "";
     this.endSelect(true);
     this.newForm = undefined;
+    this.pageForm = undefined;
+    this.copyForm = undefined;
+    this.screensFilter = "all";
     this.picksNote = undefined;
     this.tickNotes = new Map();
     this.untickAsk = undefined;
@@ -466,13 +517,131 @@ export class WaAllPages extends LitElement {
   /** Open New page's dialog, named as the app names the next page and set
    * to preview on a watch, or close it. */
   private toggleNew(): void {
-    if (this.newForm?.busy) return;
-    if (this.newForm !== undefined) {
+    if (this.newForm?.busy || this.pageForm?.busy) return;
+    if (this.newForm !== undefined || this.pageForm !== undefined) {
       this.newForm = undefined;
+      this.pageForm = undefined;
+      return;
+    }
+    if (this.kind === "pages") {
+      // The Pages tab's sheet: the devices ticked as the last new page.
+      const library = this.lib.library;
+      const waiting = library === undefined ? new Set<string>() : this.waiting(library);
+      this.pageForm = newPageForm(this.nextCardName(), newPageOwners(this.devices, lastNewPageDevices(), (id) => waiting.has(id)));
+      void this.updateComplete.then(() => openNewPageSheet(this.renderRoot));
       return;
     }
     this.newForm = { name: this.nextCardName(), busy: false, preview: previewKinds(this.devices)[0] };
     void this.updateComplete.then(() => openNewItemDialog(this.renderRoot));
+  }
+
+  /** What New page's sheet reads: Home Assistant's rooms, the library's
+   * pages and the home's map. */
+  private pageSheetContext() {
+    const library = this.lib.library;
+    const doc = this.homeMapDoc();
+    const floorId = watchMapPageFloorId(doc);
+    const refusal = watchMapPageRefusal(doc);
+    const pages = library === undefined ? [] : libraryItems(library, "pages").map((e) => e.item as WatchPage);
+    return {
+      ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
+      pages,
+      ...(floorId === undefined ? {} : { mapFloorId: floorId }),
+      ...(refusal === undefined ? {} : { mapRefusal: refusal }),
+    };
+  }
+
+  /**
+   * New page from the sheet: the page made in the library from where it
+   * starts (`newPageDocument`), then put on each ticked device, then open in
+   * the one editor. The ticks are remembered for the next new page, and the
+   * editor first draws the kind of the first device ticked.
+   */
+  private async makePage(): Promise<void> {
+    const form = this.pageForm;
+    const store = this.lib.store;
+    if (form === undefined || form.busy || store === undefined) return;
+    const ctx = this.pageSheetContext();
+    const refusal = newPageRefusal(form, ctx);
+    if (refusal !== undefined) {
+      this.pageForm = { ...form, note: { kind: "warn", text: form.name.trim() === "" ? `Give the ${cardNoun(this.kind)} a name.` : refusal } };
+      return;
+    }
+    const document = newPageDocument(form, ctx, newId());
+    if (document === undefined) return;
+    const { note: _dropped, ...asked } = form;
+    this.pageForm = { ...asked, busy: true };
+    const made = await store.createItem("pages", document);
+    if (!made.ok) {
+      this.pageForm = { ...form, busy: false, note: { kind: "err", text: `Not made. ${made.text}` } };
+      return;
+    }
+    keepNewPageDevices(form.owners);
+    for (const ownerId of form.owners) await store.pick(ownerId, "pages", made.reply.id, true);
+    this.pageForm = undefined;
+    const first = this.devices.find((d) => form.owners.some((o) => sameId(o, d.ownerId)));
+    rememberPreview(first?.kind ?? previewKinds(this.devices)[0] ?? "watch");
+    this.onOpenLibrary?.("pages", made.reply.id);
+  }
+
+  /** Make a copy's dialog for a page, with `ticked` ticked (a device chip's
+   * device), or closed. */
+  private openCopy(entry: LibraryItem, ticked: readonly string[] = []): void {
+    if (entry.kind !== "pages") return;
+    this.copyForm = newCopyForm(entry.id, entry.name, copyDevices(entry.owners, this.devices), ticked);
+    void this.updateComplete.then(() => openCopyDialog(this.renderRoot));
+  }
+
+  /** The devices the open copy dialog offers: those that show the page. */
+  private copyHolders(form: CopyForm): LinkDevice[] {
+    const library = this.lib.library;
+    const entry = library === undefined ? undefined : libraryItems(library, "pages").find((e) => sameId(e.id, form.itemId));
+    return copyDevices(entry?.owners ?? [], this.devices);
+  }
+
+  private async makeCopy(): Promise<void> {
+    const form = this.copyForm;
+    const store = this.lib.store;
+    if (form === undefined || form.busy || store === undefined) return;
+    const holders = this.copyHolders(form);
+    this.copyForm = { ...form, busy: true };
+    const next = await runCopy(store, form, holders, this.devices);
+    if (this.copyForm?.itemId === form.itemId) this.copyForm = next;
+  }
+
+  private renderCopy(form: CopyForm): TemplateResult {
+    const holders = this.copyHolders(form);
+    return renderCopyDialog(form, holders, {
+      onTick: (ownerId, on) => { if (this.copyForm !== undefined) this.copyForm = tickCopyForm(this.copyForm, holders, ownerId, on); },
+      onName: (name) => { if (this.copyForm !== undefined) this.copyForm = { ...this.copyForm, copyName: name, named: true }; },
+      onMake: () => void this.makeCopy(),
+      onOpen: (itemId) => { this.copyForm = undefined; this.onOpenLibrary?.("pages", itemId); },
+      onClose: () => { if (!this.copyForm?.busy) this.copyForm = undefined; },
+    });
+  }
+
+  /** New page's sheet, drawn from the tab's form. */
+  private renderPageSheet(form: NewPageForm, devices: readonly LinkDevice[]): TemplateResult {
+    const library = this.lib.library;
+    const waiting = library === undefined ? new Set<string>() : this.waiting(library);
+    const set = (next: NewPageForm) => { this.pageForm = next; };
+    const ctx = this.pageSheetContext();
+    return renderNewPageSheet(form, {
+      ...ctx, devices,
+      locked: (ownerId) => (waiting.has(ownerId) ? devicesWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion) : undefined),
+    }, {
+      onName: (name) => set({ ...form, name }),
+      onDevice: (ownerId, on) => set(tickNewPageDevice(form, devices, ownerId, on)),
+      onStart: (start) => set({ ...form, start }),
+      onArea: (areaId) => {
+        const { picked: _picked, ...rest } = form;
+        set({ ...rest, areaId });
+      },
+      onEntity: (entityId, on) => set(tickRoomEntity(form, roomEntities(ctx.hass, form.areaId), entityId, on)),
+      onFromPage: (pageId) => set({ ...form, fromPage: pageId }),
+      onMake: () => void this.makePage(),
+      onClose: () => { if (!form.busy) this.pageForm = undefined; },
+    });
   }
 
   /** "New Page N", counting the library's pages as the app counts a
@@ -651,7 +820,22 @@ export class WaAllPages extends LitElement {
   /** The cards or rows shown now on every device, under the search. */
   private shownNow(): LibraryItem[] {
     const library = this.lib.library;
-    return library === undefined ? [] : shownItems(library, this.kind, this.search);
+    return library === undefined ? [] : this.shownOf(library);
+  }
+
+  /** The library's items under the search and, on the Pages tab, its
+   * Screens differ filter. */
+  private shownOf(library: Library): LibraryItem[] {
+    const shown = shownItems(library, this.kind, this.search);
+    if (this.kind !== "pages" || this.screensFilter === "all") return shown;
+    return shown.filter((e) => keepsPage(this.screensFilter, e.item as WatchPage));
+  }
+
+  /** What the list says with nothing shown: Screens differ's own words when
+   * it is what left nothing. */
+  private emptyHere(devices: readonly LinkDevice[]): string {
+    if (this.kind === "pages" && this.screensFilter !== "all" && this.search.trim() === "") return NO_SCREENS_DIFFER_TEXT;
+    return emptyText(devices, this.search, this.kind);
   }
 
   /** The picked cards among those shown, in the order shown. */
@@ -830,7 +1014,10 @@ export class WaAllPages extends LitElement {
         ${devices.length === 0 ? nothing : this.renderNew(device, devices)}
       </div>
       ${this.newForm === undefined ? nothing : this.renderNewDialog(this.newForm, devices)}
+      ${this.pageForm === undefined ? nothing : this.renderPageSheet(this.pageForm, devices)}
+      ${this.copyForm === undefined ? nothing : this.renderCopy(this.copyForm)}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
+      ${this.renderTwoScreensCard(library)}
       <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label=${`Your ${many}`}>
         <div class="pk-pin">
           ${this.renderHead(library, device, view)}
@@ -845,6 +1032,18 @@ export class WaAllPages extends LitElement {
         <div class="pk-foot"><span class="pk-foot-hint">${footText(what, device, this.selecting && device === undefined, view)}</span></div>
       </div>
     </div></div>`;
+  }
+
+  /** The one card after the update that gave each page a watch screen and
+   * an iPhone screen, on the Pages tab of a home that has pages, until it
+   * is dismissed in this browser. */
+  private renderTwoScreensCard(library: Library | undefined): TemplateResult | typeof nothing {
+    if (this.kind !== "pages" || library === undefined || libraryItems(library, "pages").length === 0 || twoScreensCardDismissed()) return nothing;
+    return html`<div class="ap-upgrade" role="note">
+      ${uiIcon("info")}<span>${TWO_SCREENS_CARD_TEXT}</span>
+      <button type="button" class="ap-upgrade-x" title="Dismiss" aria-label="Dismiss"
+        @click=${() => { dismissTwoScreensCard(); this.requestUpdate(); }}>${uiIcon("close")}</button>
+    </div>`;
   }
 
   /** Inside Home's "All devices": the board on every device, a box a
@@ -869,8 +1068,8 @@ export class WaAllPages extends LitElement {
   private renderAll(library: Library, devices: readonly LinkDevice[]): TemplateResult {
     const empty = this.renderEmptyLibrary(library, devices);
     if (empty !== undefined) return empty;
-    const shown = shownItems(library, this.kind, this.search);
-    if (shown.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, this.kind)}</p>`;
+    const shown = this.shownOf(library);
+    if (shown.length === 0) return html`<p class="ap-empty">${this.emptyHere(devices)}</p>`;
     const waiting = this.waiting(library);
     return html`<div class="ap-grid" role="list">${shown.map((entry) => this.renderCard(library, entry, devices, waiting))}</div>`;
   }
@@ -909,12 +1108,24 @@ export class WaAllPages extends LitElement {
         ?disabled=${busy || library === undefined} @click=${() => (on ? this.endSelect() : this.startSelect())}>
         ${uiIcon("checklist")}<span>Multi select</span></button>` : nothing}
       ${this.saved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
+      ${this.kind === "pages" && device === undefined ? this.renderScreensFilter() : nothing}
       <label class="pk-search">
         ${uiIcon("search")}
         <input type="search" class="pk-search-input" .value=${this.search} placeholder="Search by name" aria-label=${`Search ${many}`}
           @input=${(e: InputEvent) => this.setSearch((e.target as HTMLInputElement).value)} />
       </label>
     </div>`;
+  }
+
+  /** The Pages tab's filters: All, or Screens differ (the pages arranged
+   * apart on the watch and the iPhone, or with a tile off on one). */
+  private renderScreensFilter(): TemplateResult {
+    const opt = (filter: PagesScreensFilter, label: string, title: string) => html`<button type="button" class="ap-filter-opt ${this.screensFilter === filter ? "on" : ""}"
+      role="radio" aria-checked=${this.screensFilter === filter ? "true" : "false"} data-filter=${filter} title=${title}
+      @click=${() => { this.screensFilter = filter; this.pruneSelected(); }}>${label}</button>`;
+    return html`<span class="ap-filter" role="radiogroup" aria-label="Show">
+      ${opt("all", "All", "Every page")}${opt("differ", SCREENS_DIFFER_TEXT, "The pages the watch and the iPhone arrange apart, or with a tile off on one")}
+    </span>`;
   }
 
   /**
@@ -934,10 +1145,10 @@ export class WaAllPages extends LitElement {
       </div>`;
     }
     const may = this.mayMake;
-    const open = this.newForm !== undefined;
+    const open = this.newForm !== undefined || this.pageForm !== undefined;
     return html`<div class="ap-new">
       <button type="button" class="ap-new-btn ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-        ?disabled=${!may || this.newForm?.busy === true}
+        ?disabled=${!may || this.newForm?.busy === true || this.pageForm?.busy === true}
         title=${may ? `Make ${aCard(this.kind)} no device has yet` : newCardAdminText(this.kind)}
         @click=${() => this.toggleNew()}>
         ${uiIcon("plus")}<span>${label}</span></button>
@@ -1021,14 +1232,29 @@ export class WaAllPages extends LitElement {
           <b class="ap-name">${entry.name}</b>
           <small class="ap-detail">${cardDetail(entry)}</small>
         </button>
+        ${selecting || entry.kind !== "pages" ? nothing : this.renderCopyButton(entry)}
         ${selecting ? nothing : this.renderItemDelete(entry, "ap-del")}
       </div>
+      ${this.screensLineOf(entry, devices) === undefined ? nothing : html`<small class="ap-screens">${this.screensLineOf(entry, devices)}</small>`}
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
-        ${entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderThumb(library, entry, opensOn)}
+        ${entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderThumbs(library, entry, opensOn, devices)}
       </button>
       ${this.renderCardTicks(library, entry, devices, waiting)}
       ${asking ? this.renderItemAsk(entry, devices) : nothing}
     </div>`;
+  }
+
+  /** The one line a page wears about its two screens (`pageScreensLine`),
+   * or undefined; never for a status page. */
+  private screensLineOf(entry: LibraryItem, devices: readonly LinkDevice[]): string | undefined {
+    return entry.kind === "pages" ? pageScreensLine(entry.item as WatchPage, entry.owners, devices) : undefined;
+  }
+
+  /** A card's Make a copy, beside its Delete. */
+  private renderCopyButton(entry: LibraryItem): TemplateResult {
+    return html`<button type="button" class="ap-del ap-copy" title=${entry.owners.length < 2 ? COPY_NEEDS_TWO_TEXT : `Make a copy of ${entry.name} for some devices`} aria-label=${`Make a copy of ${entry.name}`}
+      ?disabled=${entry.owners.length < 2}
+      @click=${(e: Event) => { e.stopPropagation(); this.openCopy(entry); }}>${uiIcon("duplicate")}</button>`;
   }
 
   /** What a card's or a row's name says it opens: Pick in Multi select,
@@ -1059,10 +1285,10 @@ export class WaAllPages extends LitElement {
     if (empty !== undefined) return empty;
     if (devices.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, this.kind)}</p>`;
     const waiting = this.waiting(library);
-    const shown = shownItems(library, this.kind, this.search);
+    const shown = this.shownOf(library);
     return this.renderBoardOf(library, devices, [{
       key: "all", rows: shown.map((entry) => this.boardRow(library, entry, devices, waiting)),
-      empty: emptyText(devices, this.search, this.kind),
+      empty: this.emptyHere(devices),
     }]);
   }
 
@@ -1077,11 +1303,11 @@ export class WaAllPages extends LitElement {
       onFocus: (ownerId) => this.setFocus(ownerId),
       wide: this.roomy.wide,
       ordered: true,
-      focusTitle: (d) => `Show ${d.name}'s ${many} first, in its order`,
+      focusTitle: (d) => `See ${d.name}'s ${many} in its order, and drag to change it`,
       sections,
       ...(this.embedded ? {} : {
         legend: {
-          tick: "on that device", focus: `a device to order its ${many}`, saves: "Ticks save at once, with Undo",
+          tick: "on that device", focus: `in a device's header to see and drag its order`, saves: "Ticks save at once, with Undo",
           ...(this.kind === "pages" ? { eye: "hide but keep its place" } : {}),
         },
       }),
@@ -1131,8 +1357,10 @@ export class WaAllPages extends LitElement {
     });
     const selecting = this.selecting && focus === undefined;
     const key = itemKey(entry);
+    const line = this.screensLineOf(entry, devices);
     const row: BoardRow = {
-      key, name: entry.name, detail: cardDetail(entry), picture: this.rowPicture(entry, focus?.pick !== undefined ? focus.device : undefined),
+      key, name: entry.name, detail: line === undefined ? cardDetail(entry) : `${cardDetail(entry)} · ${line}`,
+      picture: this.rowPictures(entry, devices, focus?.pick !== undefined ? focus.device : undefined),
       openTitle: focus?.pick !== undefined ? `${libraryEditTitle(entry.name)}. Alt+Up or Alt+Down moves it.` : this.openTitle(entry),
       onOpen: (e) => {
         if (focus?.pick !== undefined && !e.metaKey && !e.ctrlKey) {
@@ -1147,7 +1375,7 @@ export class WaAllPages extends LitElement {
       ...(input.ask === undefined ? {} : { ask: input.ask }),
       ...(input.note === undefined ? {} : { note: { text: input.note, kind: input.noteKind ?? "warn" } }),
       peek: () => ({
-        picture: entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderThumb(library, entry, openDevice(entry, devices)),
+        picture: entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderThumbs(library, entry, openDevice(entry, devices), devices),
         where: peekWhereText(entry, devices, focus?.order === undefined ? undefined : { device: focus.device, at: focus.order.at }),
       }),
     };
@@ -1165,6 +1393,13 @@ export class WaAllPages extends LitElement {
    * drag makes hard, and on every device a way into Multi select. */
   private rowMore(entry: LibraryItem, focus?: { device: LinkDevice; order?: { at: number; ids: readonly string[] } }): BoardMenuItem[] {
     const items: BoardMenuItem[] = [{ label: "Open", onPick: () => this.open(entry) }];
+    if (entry.kind === "pages") {
+      items.push({
+        label: "Make a copy…", disabled: entry.owners.length < 2,
+        title: entry.owners.length < 2 ? COPY_NEEDS_TWO_TEXT : `Make a copy of ${entry.name} for some of its devices`,
+        onPick: () => this.openCopy(entry, focus === undefined ? [] : [focus.device.ownerId]),
+      });
+    }
     const order = focus?.order;
     if (focus !== undefined && order !== undefined) {
       // No ids while a search narrows the list or a move is out: no moves.
@@ -1178,16 +1413,34 @@ export class WaAllPages extends LitElement {
     return items;
   }
 
-  /** A row's small picture: the page as a watch draws it, or as the
-   * focused iPhone does. Compact draws them all one small size. */
-  private rowPicture(entry: LibraryItem, device: LinkDevice | undefined): TemplateResult {
+  /** A row's small pictures: a page as the watch arranges it and as the
+   * iPhone does, side by side, for each kind of device the home has; a
+   * status page as the watch draws it. A focused device's own picture is
+   * drawn for it (its look). */
+  private rowPictures(entry: LibraryItem, devices: readonly LinkDevice[], focused: LinkDevice | undefined): TemplateResult {
+    if (entry.kind === "status_pages") return this.rowPicture(entry, focused);
+    const kinds = previewKinds(devices);
+    const shown = kinds.length === 0 ? (["watch"] as const) : kinds;
+    const holder = (kind: LinkDevice["kind"]) => (focused?.kind === kind ? focused : devices.find((d) => d.kind === kind && entry.owners.some((o) => sameId(o, d.ownerId))));
+    return html`<span class="ap-pics">${shown.map((kind) => this.rowPicture(entry, holder(kind), kind))}</span>`;
+  }
+
+  /** A row's small picture: the page as a watch draws it, or as an iPhone
+   * does (`kind`, else the device's). Compact draws them all one small
+   * size. */
+  private rowPicture(entry: LibraryItem, device: LinkDevice | undefined, screenKind?: LinkDevice["kind"]): TemplateResult {
     const compact = boardDensity() === "compact";
     if (entry.kind === "status_pages") {
       return renderStatusRowPicture({ page: entry.item, hass: this.hassNow, width: compact ? COMPACT_PICTURE_PX : this.roomy.size(BOARD_PICTURE_W), tick: this.iconsTick, ...(this.icons === undefined ? {} : { icons: this.icons }) });
     }
     const appVersion = this.appVersionOf(device);
+    const iphone = (screenKind ?? device?.kind) === "iphone";
+    // An iPhone is narrower for the same height, so a row keeps one height.
+    const width = compact
+      ? (iphone ? Math.round((COMPACT_PICTURE_PX * BOARD_PHONE_PICTURE_W) / BOARD_PICTURE_W) : COMPACT_PICTURE_PX)
+      : this.roomy.size(iphone ? BOARD_PHONE_PICTURE_W : BOARD_PICTURE_W);
     return renderPageRowPicture({
-      page: entry.item as WatchPage, width: compact ? COMPACT_PICTURE_PX : this.roomy.size(device?.kind === "iphone" ? BOARD_PHONE_PICTURE_W : BOARD_PICTURE_W), tick: this.iconsTick, iphone: device?.kind === "iphone",
+      page: entry.item as WatchPage, width, tick: this.iconsTick, iphone,
       ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       ...(appVersion === undefined ? {} : { appVersion }),
@@ -1197,7 +1450,7 @@ export class WaAllPages extends LitElement {
       photoOn: this.photoOn,
       photoOnMask: this.photoOnMask,
       photoTick: this.photoTick,
-      ...(device?.kind === "iphone" ? { homeMap: this.homeMapDoc() } : {}),
+      ...(iphone ? { homeMap: this.homeMapDoc() } : {}),
     });
   }
 
@@ -1352,25 +1605,60 @@ export class WaAllPages extends LitElement {
    * (`pageCrop`), and cut with a fade past `PIC_MAX_H`. The tiles that open
    * a page are named from the pages of the device it opens on.
    */
-  private renderThumb(library: Library, entry: LibraryItem, on: LinkDevice | undefined): TemplateResult {
-    const page = entry.item as WatchPage;
+  private renderThumb(library: Library, entry: LibraryItem, on: LinkDevice | undefined, width = PIC_W): TemplateResult {
+    // The watch's own arrangement: its places, and no tile it has off.
+    const page = watchScreenPage(entry.item as WatchPage, "watch");
     const listed = on === undefined ? [] : watchPagesOf(pagesDocumentFor(library, on.ownerId));
     const pages = listed.length === 0 ? [page] : listed;
     const states = this.hassNow?.states;
     const icons = this.icons;
-    const scale = PIC_W / PIC_SCREEN.width;
-    const crop = pageCrop(page, states, icons);
-    const tall = crop.height * scale;
+    const scale = width / PIC_SCREEN.width;
+    const tall = this.thumbHeight(page, width);
     const cut = tall > PIC_MAX_H;
+    const crop = pageCrop(page, states, icons);
     const px = (n: number) => `${Math.round(n * 100) / 100}px`;
     // A watch picture: drawn in the look of the watch it opens on, if any.
     const appVersion = on?.kind === "watch" ? this.appVersionOf(on) : undefined;
-    return html`<span class="ap-pic ${cut ? "cut" : ""}" style=${`width:${px(PIC_W)};height:${px(Math.min(tall, PIC_MAX_H))}`}>
+    return html`<span class="ap-pic ${cut ? "cut" : ""}" style=${`width:${px(width)};height:${px(Math.min(tall, PIC_MAX_H))}`}>
       <span class="ap-pic-in" style=${`transform:translateY(${px(-crop.top * scale)})`}>${renderWatchPagePreview({
         page, pages, screen: PIC_SCREEN, scale,
         ...(states === undefined ? {} : { states }), ...(icons === undefined ? {} : { icons }),
         ...(appVersion === undefined ? {} : { appVersion }),
       })}</span>
+    </span>`;
+  }
+
+  /** How tall a card's watch picture of `page` is at `width`, before the
+   * cut at `PIC_MAX_H`. */
+  private thumbHeight(page: WatchPage, width: number): number {
+    return pageCrop(page, this.hassNow?.states, this.icons).height * (width / PIC_SCREEN.width);
+  }
+
+  /**
+   * A page's card pictures: the watch's arrangement and the iPhone's, side
+   * by side and one height, for each kind of device the home has. A home of
+   * watches alone, or of iPhones alone, shows that one picture.
+   */
+  private renderThumbs(library: Library, entry: LibraryItem, on: LinkDevice | undefined, devices: readonly LinkDevice[]): TemplateResult {
+    const kinds = previewKinds(devices);
+    if (!kinds.includes("iphone")) return this.renderThumb(library, entry, on);
+    const phone = devices.find((d) => d.kind === "iphone" && entry.owners.some((o) => sameId(o, d.ownerId)));
+    const watchOn = on?.kind === "watch" ? on : undefined;
+    const both = kinds.includes("watch");
+    const watchW = both ? CARD_WATCH_W : 0;
+    const height = both ? Math.min(this.thumbHeight(watchScreenPage(entry.item as WatchPage, "watch"), watchW), PIC_MAX_H) : CARD_PHONE_ALONE_H;
+    const appVersion = this.appVersionOf(phone);
+    const iphone = renderPageRowPicture({
+      page: entry.item as WatchPage, width: both ? CARD_PHONE_W : CARD_PHONE_ALONE_W, maxHeight: Math.max(1, Math.round(height)), tick: this.iconsTick, iphone: true,
+      ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
+      ...(this.icons === undefined ? {} : { icons: this.icons }),
+      ...(appVersion === undefined ? {} : { appVersion }),
+      photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn, photoOnMask: this.photoOnMask, photoTick: this.photoTick,
+      homeMap: this.homeMapDoc(),
+    });
+    return html`<span class="ap-pics ap-card-pics">
+      ${both ? this.renderThumb(library, entry, watchOn, watchW) : nothing}
+      <span class="ap-pic ap-pic-phone">${iphone}</span>
     </span>`;
   }
 
@@ -1398,8 +1686,41 @@ export class WaAllPages extends LitElement {
    * this tab's own: New page, Multi select and its bar, and a page's
    * picture. */
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
-    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, css`
+    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, copyDialogStyles, boardStyles, boardStackStyles, css`
     .ap-embed-saved { position: absolute; right: 0; top: -26px; }
+    /* A page's two pictures, the watch's and the iPhone's, side by side. */
+    .ap-pics { display: inline-flex; align-items: flex-start; gap: 4px; }
+    .ap-card-pics { gap: 8px; }
+    .ap-pic.ap-pic-phone { box-shadow: none; border-radius: 0; }
+    /* The one line about a page's two screens, under its name. */
+    .ap-screens { display: block; margin: -2px 0 6px; font-size: 11.5px; color: var(--wa-muted); }
+    /* All, or Screens differ. */
+    .ap-filter { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 8px; background: var(--wa-field); border: 1px solid var(--wa-line); }
+    .ap-filter-opt {
+      font: inherit; font-size: 12px; font-weight: 600; height: 24px; padding: 0 9px; border-radius: 6px; cursor: pointer;
+      border: 0; background: transparent; color: var(--wa-muted);
+    }
+    .ap-filter-opt.on { background: var(--wa-seg-on); color: var(--wa-ink); }
+    .ap-filter-opt:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* The one card after the update, over the list until dismissed. */
+    .ap-upgrade {
+      display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px;
+      font-size: 13px; line-height: 1.4; color: var(--wa-ink);
+      background: color-mix(in srgb, var(--wa-accent) 12%, var(--wa-card));
+      border: 1px solid color-mix(in srgb, var(--wa-accent) 32%, var(--wa-line));
+    }
+    .ap-upgrade > svg { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
+    .ap-upgrade > span { flex: 1; min-width: 0; }
+    .ap-upgrade-x {
+      display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; border-radius: 7px;
+      border: 1px solid transparent; background: transparent; color: var(--wa-muted); cursor: pointer;
+    }
+    .ap-upgrade-x:hover { background: var(--wa-hover); color: var(--wa-ink); }
+    .ap-upgrade-x:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .ap-upgrade-x svg { width: 13px; height: 13px; }
+    /* Make a copy, beside Delete: the same small button, not red. */
+    .ap-del.ap-copy:hover:not(:disabled) { color: var(--wa-ink); border-color: var(--wa-line-strong); }
+    .ap-card .ap-del.ap-copy:disabled { opacity: .35; }
     :host([embedded]) { position: relative; }
     /* On the board the device heads are what stays on screen, right under
        the tab bar, so the toolbar scrolls away (\`.bd-pin\`). */

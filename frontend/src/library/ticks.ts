@@ -71,7 +71,13 @@ export interface TicksInput {
   /** The hint after the chips on that line (`SAVES_AT_ONCE_TEXT`), saying a
    * click does not wait for Save. */
   saves?: string;
+  /** Pages: a right click on a ticked chip asks for Make a copy for that
+   * device (`make-copy.ts`), and its tooltip says so. None when not given. */
+  onCopy?: (ownerId: string) => void;
 }
+
+/** What a ticked page chip's tooltip adds when it can make a copy. */
+export const CHIP_COPY_HINT = "Right-click to make a copy of the page for it.";
 
 /** The words a chip group wears before its chips. */
 export const SHOWN_ON_TEXT = "Shown on";
@@ -212,7 +218,8 @@ function plainTickChips(input: TicksInput): TickChip[] {
  * there). Clicks stop at the row, so a card that opens on click does not.
  */
 export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
-  const chips = tickChips(input);
+  const copy = input.kind === "pages" ? input.onCopy : undefined;
+  const chips = copy === undefined ? tickChips(input) : tickChips(input).map((c) => (c.on && !c.busy ? { ...c, title: `${c.title} ${CHIP_COPY_HINT}` } : c));
   const hint = input.kind === "menus" && input.hint !== false ? (input.hint ?? "Used by") : undefined;
   return renderTickChips(chips, {
     foldLabel: "Add to a device",
@@ -222,6 +229,7 @@ export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boo
     ...(input.ask === undefined ? {} : { ask: input.ask }),
     ...(input.lead === undefined ? {} : { lead: input.lead }),
     ...(input.saves === undefined ? {} : { saves: input.saves }),
+    ...(copy === undefined ? {} : { onCopy: copy }),
   }, onPick);
 }
 
@@ -273,6 +281,8 @@ export interface TickChipsOptions {
   noteKind?: TickNoteKind;
   /** An untick asking first, under the row. */
   ask?: TickAsk;
+  /** A right click on a ticked chip (`TicksInput.onCopy`). */
+  onCopy?: (ownerId: string) => void;
 }
 
 /**
@@ -303,6 +313,11 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
       @click=${(e: Event) => {
         e.stopPropagation();
         if (c.next !== undefined) onPick(c.ownerId, c.next);
+      }}
+      @contextmenu=${opts.onCopy === undefined || !c.on || c.busy ? nothing : (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        opts.onCopy?.(c.ownerId);
       }}><span class="lt-box" aria-hidden="true">${c.on && c.shape !== "round" ? TICK_MARK : nothing}</span><span class="lt-name">${c.label}</span>${c.hidden
         ? html`<em>hidden</em>`
         : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}${c.skips === undefined

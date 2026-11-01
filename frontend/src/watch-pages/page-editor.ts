@@ -142,6 +142,8 @@ import {
   watchRecordUnreadable,
 } from "../watch-settings.js";
 import { type LinkDevice, deviceWord, linkDevicesOf } from "./devices.js";
+import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newCopyForm, openCopyDialog, renderCopyDialog, runCopy, tickCopyForm } from "./make-copy.js";
+import { newItemDialogStyles } from "../library/new-dialog.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import { type WatchPhoneTilesGroup, type WatchPhoneTilesPicker, watchAddRefusalText, watchPhoneTilesGroup } from "./add-tile-list.js";
 import {
@@ -178,8 +180,9 @@ import {
   nudgeWatchTile,
   previewWatchTileResize,
   randomWatchId,
-  renameWatchScreenTiles,
   resizeWatchTile,
+  watchPageCopy,
+  withNewTileIds,
   sameWatchId,
   setTileOnScreen,
   setWatchPageName,
@@ -446,10 +449,6 @@ const ARRANGE_TILE_H = 190;
  * Hide, Change) keeps its amber wash, ms. */
 const FIND_FLASH_MS = 1100;
 
-/** Entity id kinds whose part after the dot is an id of the tile's own
- * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
-const OWN_ID_KINDS: ReadonlySet<string> = new Set(["spacer", "template", "music_hub", "point_control", "multicam"]);
-
 /** Why the watch leaves a tile out right now, for the stage's tag: "off" for
  * a tile set to hide while its own entity is off, "rule" for a Show tile
  * condition or template; undefined while it shows. */
@@ -476,34 +475,10 @@ export function stageHiddenText(reason: StageHiddenReason): string {
   return reason === "off" ? "Hidden while off" : "Hidden by a rule";
 }
 
-/** A copy of a tile with ids of its own: a new id, and a new own id in its
- * entity id for the kinds that carry one. */
-function withNewIds(tile: WatchPageTile): WatchPageTile {
-  const copy = structuredClone(tile) as WatchPageTile;
-  copy.id = randomWatchId().toUpperCase();
-  const entityId = tileEntityId(tile);
-  const kind = tileKind(entityId);
-  if (OWN_ID_KINDS.has(kind) && entityId.includes(".")) copy.entityId = `${kind}.${randomWatchId().toUpperCase()}`;
-  return copy;
-}
+/** A copy of a tile with ids of its own (`withNewTileIds` in `edit.ts`). */
+const withNewIds = withNewTileIds;
 
-/** A copy of a page for the library, as Duplicate in the page picker makes
- * it: `id` and `name` its own, and every tile with ids of its own
- * (`withNewIds`), keeping its groups and both screens' arrangements. */
-export function watchPageCopy(page: WatchPage, id: string, name: string): WatchPage {
-  const copy = structuredClone(page) as WatchPage;
-  copy.id = id.toUpperCase();
-  copy.name = name;
-  if (!Array.isArray(copy.items)) return copy;
-  const renamed = new Map<string, string>();
-  copy.items = copy.items.map((t) => {
-    if (!isJsonObject(t)) return t;
-    const next = withNewIds(t as WatchPageTile);
-    if (typeof t.id === "string" && t.id !== "") renamed.set(t.id.toUpperCase(), next.id as string);
-    return next;
-  });
-  return renameWatchScreenTiles(copy, renamed);
-}
+export { watchPageCopy };
 
 export { pageDevicesText };
 
@@ -930,6 +905,8 @@ export class WaPageEditor extends LitElement {
   private drawnScale?: number;
   /** The top bar's ··· menu is open. */
   @state() private topMenuOpen = false;
+  /** Make a copy's dialog, open on the page (`make-copy.ts`). */
+  @state() private copyForm?: CopyForm;
   /** The note a refused drag or resize on the stage put in the line under
    * the bar, so the next edit can take it away again. */
   private stageRefusal?: Note;
@@ -3269,6 +3246,8 @@ export class WaPageEditor extends LitElement {
       ...(note === undefined ? {} : { note }),
       ...(admin === undefined ? {} : { admin }),
       locked: (ownerId) => this.pageTickLocked(entry.id, ownerId),
+      // A right click on a ticked chip: Make a copy for that device.
+      ...(entry.owners.length < 2 ? {} : { onCopy: (ownerId: string) => this.openCopy([ownerId]) }),
       ...(ask === undefined ? {} : {
         ask: { ownerId: ask.ownerId, text: ask.text, onRemove: () => void this.untickNow(ask), onCancel: () => { this.untickAsk = undefined; } },
       }),
@@ -3321,7 +3300,65 @@ export class WaPageEditor extends LitElement {
       ${this.libraryDeleteAsk !== undefined && draft ? this.renderLibraryDeleteAsk(this.libraryDeleteAsk, draft.document) : nothing}
       ${this.saveAsk && draft ? this.renderSaveAsk(draft.document, draft.base) : nothing}
       ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
+      ${this.copyForm === undefined ? nothing : this.renderCopy(this.copyForm)}
     `;
+  }
+
+  // ── make a copy ────────────────────────────────────────────────────────
+
+  /** The library's entry for the page, which Make a copy forks; undefined
+   * for a system page or one the library does not list yet. */
+  private copyEntry(page: WatchPage): LibraryItem | undefined {
+    const lib = this.lib.library;
+    if (lib === undefined || isSystemWatchPage(page)) return undefined;
+    return libraryItem(lib, "pages", watchPageId(page));
+  }
+
+  /** Make a copy's dialog for the open page, with `ticked` ticked (a
+   * device chip's device). The copy is made from the page Home Assistant
+   * holds, so unsaved edits are saved first. */
+  private openCopy(ticked: readonly string[] = []): void {
+    const page = this.currentPage();
+    const entry = page === undefined ? undefined : this.copyEntry(page);
+    if (entry === undefined) return;
+    if (this.draft?.dirty === true) {
+      this.note = { kind: "warn", text: "Save first: a copy is made from the saved page." };
+      return;
+    }
+    if (entry.owners.length < 2) {
+      this.note = { kind: "warn", text: COPY_NEEDS_TWO_TEXT };
+      return;
+    }
+    this.copyForm = newCopyForm(entry.id, entry.name, copyDevices(entry.owners, this.linkDevices), ticked);
+    void this.updateComplete.then(() => openCopyDialog(this.renderRoot));
+  }
+
+  /** The devices the open copy dialog offers: those that show the page. */
+  private copyHolders(form: CopyForm): LinkDevice[] {
+    const lib = this.lib.library;
+    const entry = lib === undefined ? undefined : libraryItem(lib, "pages", form.itemId);
+    return copyDevices(entry?.owners ?? [], this.linkDevices);
+  }
+
+  private async makeCopy(): Promise<void> {
+    const form = this.copyForm;
+    const store = this.lib.store;
+    if (form === undefined || form.busy || store === undefined) return;
+    const holders = this.copyHolders(form);
+    this.copyForm = { ...form, busy: true };
+    const next = await runCopy(store, form, holders, this.linkDevices);
+    if (this.copyForm?.itemId === form.itemId) this.copyForm = next;
+  }
+
+  private renderCopy(form: CopyForm): TemplateResult {
+    const holders = this.copyHolders(form);
+    return renderCopyDialog(form, holders, {
+      onTick: (ownerId, on) => { if (this.copyForm !== undefined) this.copyForm = tickCopyForm(this.copyForm, holders, ownerId, on); },
+      onName: (name) => { if (this.copyForm !== undefined) this.copyForm = { ...this.copyForm, copyName: name, named: true }; },
+      onMake: () => void this.makeCopy(),
+      ...(this.onOpenItem === undefined ? {} : { onOpen: (itemId: string) => { this.copyForm = undefined; this.onOpenItem?.(itemId); } }),
+      onClose: () => { if (!this.copyForm?.busy) this.copyForm = undefined; },
+    });
   }
 
   /** Whether the editor is one column: the measured width, or Home
@@ -3417,6 +3454,10 @@ export class WaPageEditor extends LitElement {
           <button class="row pe-menu-del" role="menuitem" ?disabled=${acts.delRefusal !== undefined}
             title=${acts.delRefusal ?? `${acts.delLabel} (Delete or Backspace)`}
             @click=${run(() => this.deleteTile())}>${acts.delLabel}</button>`}
+        ${page === undefined || this.copyEntry(page) === undefined ? nothing : html`<button class="row pe-menu-copy" role="menuitem"
+          ?disabled=${(this.copyEntry(page)?.owners.length ?? 0) < 2}
+          title=${(this.copyEntry(page)?.owners.length ?? 0) < 2 ? COPY_NEEDS_TWO_TEXT : "Make a copy of this page for some of its devices, to change on its own"}
+          @click=${run(() => this.openCopy())}>Make a copy…</button>`}
         <button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>
@@ -5663,7 +5704,7 @@ export class WaPageEditor extends LitElement {
   // after and win the ties. The two modules' rules come last, so a module can
   // size its own parts of this element (its dialog, say) without outranking
   // anything.
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, libraryTicksStyles, pageFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, libraryTicksStyles, pageFrameStyles, newItemDialogStyles, copyDialogStyles, css`
     /* A column; --cf-pad is the padding the sticky top reaches through to
        sit edge to edge. */
     :host {

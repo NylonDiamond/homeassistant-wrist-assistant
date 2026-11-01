@@ -154,9 +154,9 @@ describe("the tab's words", () => {
   });
 
   it("say in the foot what a click and a tick do, as the mock does", () => {
-    expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a box to show the page on that device. Press Focus on a device to order its pages.");
-    expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a box to put it on that device. Press Focus on a device to order its status pages.");
-    expect(footText("pages", undefined, false, "cards")).toBe("Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.");
+    expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a box to show the page on that device. Click Focus in a device's column header to see and drag its order.");
+    expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a box to put it on that device. Click Focus in a device's column header to see and drag its order.");
+    expect(footText("pages", undefined, false, "cards")).toBe("Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.");
     expect(footText("status_pages", undefined, false, "cards")).toBe("Click a status page to edit it. Tick a device to put it there.");
     expect(footText("pages", JESSE_D)).toContain("Hide here");
     expect(footText("status_pages", JESSE_D)).not.toContain("Hide here");

@@ -25,6 +25,9 @@ import { CAMERA, CHEN, CHEN_MENU, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SM
 import { type Msg, OWNERS, fakeHome, settle, standUp } from "./library-tab-fake.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { waitingEmptyText, waitingLibraryText } from "../src/watch-pages/devices.js";
+import { resetNewPageDevicesForTest } from "../src/watch-pages/new-page-sheet.js";
+import { TWO_SCREENS_CARD_TEXT, dismissTwoScreensCard, resetTwoScreensCardForTest } from "../src/watch-pages/all-pages-screens.js";
+import { COPY_WARNING_TEXT } from "../src/watch-pages/make-copy.js";
 
 function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
   const home = fakeHome(admin);
@@ -54,6 +57,8 @@ function showCards(t: ReturnType<typeof tab>) {
 }
 
 afterEach(() => {
+  resetNewPageDevicesForTest();
+  resetTwoScreensCardForTest();
   try {
     window.localStorage.clear();
   } catch {
@@ -76,7 +81,7 @@ describe("the Pages tab", () => {
     expect(text).not.toContain(">Order<");
     expect(text).toContain(">Board<");
     expect(text).toContain(">Cards<");
-    expect(text).toContain("Click a page to edit it. Tick a box to show the page on that device. Press Focus on a device to order its pages.");
+    expect(text).toContain("Click a page to edit it. Tick a box to show the page on that device. Click Focus in a device's column header to see and drag its order.");
     for (const gone of ["pk-tab", ">Device<", "Watches (", "Link", "Not linked", "Same as"]) expect(text).not.toContain(gone);
   });
 
@@ -120,7 +125,7 @@ describe("the Pages tab", () => {
     expect(text).toContain("<em>hidden</em>");
     expect(text).toContain("Multi select");
     expect(text).toContain("Search by name");
-    expect(text).toContain("Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.");
+    expect(text).toContain("Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.");
     for (const gone of ["ap-dev-open", ">Devices<", "Link", "Not linked", "Same as", "Add to…", "Remove from…", "Add all"]) expect(text).not.toContain(gone);
   });
 
@@ -266,22 +271,25 @@ describe("the Pages tab", () => {
     const was = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
     Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => held.set(k, v) } });
     t.call("toggleNew");
-    const form = t.el.newForm as { name: string; busy: boolean; preview?: string };
+    const form = t.el.pageForm as { name: string; busy: boolean; owners: string[]; start: string };
     expect(form.name).toBe("New Page 2"); // the library's pages are counted as a device's are
-    expect(form.preview).toBe("watch");
-    // The New complication dialog's shape: a name, then where to preview it,
-    // since the home has a watch and an iPhone. No device is asked for.
+    // The first new page: every device ticked, starting Empty.
+    expect(form.owners).toEqual([CHEN, JESSE, PHONE]);
+    expect(form.start).toBe("empty");
+    // One sheet: a name, a tick per device, then where it starts.
     const whole = t.whole();
-    const dialog = whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new"`), whole.indexOf("</dialog>"));
+    const dialog = whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new lib-new-page"`), whole.indexOf("</dialog>"));
     expect(dialog).toContain("<h2>New page</h2>");
-    expect(dialog).toContain("Name it");
-    expect(dialog).toContain("Preview on");
-    expect(dialog).toContain("Nothing is put on a device; the ticks do that.");
-    expect(dialog).toContain("New Page 2, a page on no device yet. Tick a device any time.");
-    expect(dialog).not.toContain("Apple Watch");
-    t.el.newForm = { ...form, name: " Garage ", preview: "iphone" };
-    expect(t.whole()).toContain("Garage, a page on no device yet.");
-    await t.call("makeCard");
+    expect(dialog).toContain("Show on");
+    expect(dialog).toContain("Ticked like your last new page.");
+    expect(dialog).toContain("Jesse Apple Watch");
+    expect(dialog).toContain("iPhone 15 Pro");
+    for (const start of ["Empty", "From a room", "From a page", "Home map"]) expect(dialog).toContain(start);
+    expect(dialog).toContain("New Page 2, a page on 3 devices.");
+    // Only the iPhone: the page goes there, and the editor draws an iPhone.
+    t.el.pageForm = { ...form, name: " Garage ", owners: [PHONE] };
+    expect(t.whole()).toContain("Garage, a page on iPhone 15 Pro.");
+    await t.call("makePage");
     const sent = t.sentOf("library/item/create");
     expect(sent).toHaveLength(1);
     expect(sent[0]!.kind).toBe("pages");
@@ -289,11 +297,15 @@ describe("the Pages tab", () => {
     expect(page.name).toBe("Garage");
     expect(page.id).toMatch(/^[0-9A-F-]{36}$/);
     expect(page.items).toEqual([]);
-    expect(t.el.newForm).toBeUndefined();
+    expect(t.sentOf("library/pick").map((m) => [m.owner_id, m.item_id, m.on])).toEqual([[PHONE, page.id, true]]);
+    expect(t.el.pageForm).toBeUndefined();
     expect(t.library).toEqual([["pages", page.id]]);
     expect(t.opened).toHaveLength(0);
-    // Preview on iPhone: the editor opens drawing on an iPhone.
     expect(held.get(LIBRARY_PREVIEW_KEY)).toBe("iphone");
+    // The next new page is ticked like this one.
+    t.call("toggleNew");
+    expect((t.el.pageForm as { owners: string[] }).owners).toEqual([PHONE]);
+    t.call("toggleNew");
     if (was) Object.defineProperty(globalThis, "sessionStorage", was);
     else delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
     // On a focused device: a page saved last on that device's own record,
@@ -315,9 +327,9 @@ describe("the Pages tab", () => {
     showTab(t, "all");
     await t.ready();
     t.call("toggleNew");
-    t.el.newForm = { name: "  ", busy: false };
+    t.el.pageForm = { name: "  ", busy: false, owners: [], start: "empty" };
     expect(t.whole()).toContain("Type a name to start.");
-    await t.call("makeCard");
+    await t.call("makePage");
     expect(t.sentOf("library/item/create")).toHaveLength(0);
     expect(t.whole()).toContain("Give the page a name.");
     const other = tab("pages", false);
@@ -326,32 +338,31 @@ describe("the Pages tab", () => {
     expect(other.whole()).toContain("Only a Home Assistant administrator can make a new page.");
   });
 
-  it("New page offers a Map page, refused until the home has a map, which makes a map page on the map's first floor", async () => {
+  it("New page starts from the home's map, refused until the home has a map, which makes a map page on the map's first floor", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
     t.call("toggleNew");
-    const form = t.el.newForm as { name: string; busy: boolean; preview?: string; mapPage?: boolean };
+    const form = t.el.pageForm as { name: string; busy: boolean; owners: string[]; start: string };
     const dialogOf = () => {
       const whole = t.whole();
-      return whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new"`), whole.indexOf("</dialog>"));
+      return whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new lib-new-page"`), whole.indexOf("</dialog>"));
     };
-    // No map: the card is there, greyed, saying why; Preview on is step 3.
+    // No map: the choice is there, greyed, saying why.
     let dialog = dialogOf();
-    expect(dialog).toContain("Which kind");
-    expect(dialog).toContain("Map page");
+    expect(dialog).toContain("Home map");
     expect(dialog).toContain("ALPHA");
     expect(dialog).toContain("Scan a room in the iPhone app first.");
-    expect(dialog).toMatch(/new-step-num" aria-hidden="true">3<\/span>\s*<span class="new-step-title">Preview on/);
+    expect(dialog).toMatch(/data-start=map \?disabled=true/);
     try {
       setHomeMapCapable(true);
       keepHomeMap(t.home.hass as never, { doc: JSON.parse(readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8")) as HomeMapDocument, rev: 1 });
       dialog = dialogOf();
       expect(dialog).not.toContain("Scan a room in the iPhone app first.");
       expect(dialog).toContain("On the iPhone the whole page is your home's live map.");
-      t.el.newForm = { ...form, name: "House", mapPage: true };
+      t.el.pageForm = { ...form, name: "House", start: "map", owners: [] };
       expect(t.whole()).toContain("House, a map page on no device yet.");
-      await t.call("makeCard");
+      await t.call("makePage");
       const sent = t.sentOf("library/item/create");
       expect(sent).toHaveLength(1);
       const page = (sent[0]!.document as { pages: JsonObject[] }).pages[0]!;
@@ -362,6 +373,150 @@ describe("the Pages tab", () => {
     } finally {
       forgetHomeMap();
     }
+  });
+
+  it("New page from a room ticks the room's controls, leaves the rest under More in this room, and makes a tile of each ticked", async () => {
+    const t = tab();
+    const hass = t.home.hass as unknown as Record<string, unknown>;
+    hass.areas = { kitchen: { name: "Kitchen" }, empty: { name: "Attic" } };
+    hass.devices = { d1: { area_id: "kitchen" } };
+    hass.entities = {
+      "light.kitchen": { area_id: "kitchen" },
+      "switch.kettle": { device_id: "d1" },
+      "sensor.kitchen_temp": { area_id: "kitchen" },
+      "sensor.kitchen_battery": { area_id: "kitchen", entity_category: "diagnostic" },
+      "light.hall": {},
+    };
+    hass.states = {
+      "light.kitchen": { state: "on", attributes: { friendly_name: "Kitchen light" } },
+      "switch.kettle": { state: "off", attributes: { friendly_name: "Kettle" } },
+      "sensor.kitchen_temp": { state: "21", attributes: { friendly_name: "Kitchen temperature" } },
+      "sensor.kitchen_battery": { state: "80", attributes: {} },
+      "light.hall": { state: "off", attributes: {} },
+    };
+    showTab(t, "all");
+    await t.ready();
+    t.call("toggleNew");
+    const form = t.el.pageForm as { name: string; busy: boolean; owners: string[]; start: string };
+    t.el.pageForm = { ...form, name: "Kitchen", owners: [CHEN], start: "room" };
+    expect(t.whole()).toContain("Pick a room.");
+    // Only rooms with something in them are offered.
+    expect(t.whole()).toContain(">Kitchen</option>");
+    expect(t.whole()).not.toContain(">Attic</option>");
+    t.el.pageForm = { ...(t.el.pageForm as object), areaId: "kitchen" };
+    const dialog = t.whole();
+    expect(dialog).toContain("Kettle");
+    expect(dialog).toContain("Kitchen light");
+    expect(dialog).toContain("More in this room");
+    expect(dialog.indexOf("Kitchen temperature")).toBeGreaterThan(dialog.indexOf("More in this room"));
+    expect(dialog).not.toContain("sensor.kitchen_battery");
+    expect(dialog).toContain("Kitchen, 2 tiles, on Chen Watch.");
+    await t.call("makePage");
+    const page = (t.sentOf("library/item/create")[0]!.document as { pages: JsonObject[] }).pages[0]!;
+    expect((page.items as JsonObject[]).map((i) => i.entityId)).toEqual(["switch.kettle", "light.kitchen"]);
+    expect(t.sentOf("library/pick").map((m) => m.owner_id)).toEqual([CHEN]);
+  });
+
+  it("New page from a page copies its tiles under new ids", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    t.call("toggleNew");
+    const form = t.el.pageForm as { name: string; busy: boolean; owners: string[]; start: string };
+    t.el.pageForm = { ...form, name: "More lights", owners: [], start: "page" };
+    expect(t.whole()).toContain("Pick a page to start from.");
+    t.el.pageForm = { ...(t.el.pageForm as object), fromPage: LIGHTS };
+    await t.call("makePage");
+    const page = (t.sentOf("library/item/create")[0]!.document as { pages: JsonObject[] }).pages[0]!;
+    expect(page.name).toBe("More lights");
+    expect(page.id).not.toBe(LIGHTS);
+    const items = page.items as JsonObject[];
+    expect(items).toHaveLength(11);
+    expect(items.every((i) => i.entityId === "light.hall" && i.id !== "t0")).toBe(true);
+    expect(t.sentOf("library/pick")).toHaveLength(0);
+  });
+
+  it("gives each page a watch and an iPhone picture and one line about its screens, and filters to Screens differ", async () => {
+    const t = tab();
+    const item = t.home.lib.pages[PAGE1]!.item;
+    item.screens = { watch: { t0: { col: 0, row: 0, colSpan: 6, rowSpan: 2 } }, iphone: { t0: { col: 0, row: 0, colSpan: 12, rowSpan: 4 } } };
+    showTab(t, "all");
+    await t.ready();
+    let board = t.whole();
+    const row = (id: string) => board.slice(board.indexOf(`data-row=${id.toUpperCase()}`)).slice(0, board.slice(board.indexOf(`data-row=${id.toUpperCase()}`)).indexOf("</th>"));
+    expect(row(PAGE1)).toContain("1 tile · iPhone arranged differently");
+    expect(row(PAGE1)).toContain(`<span class="ap-pics">`);
+    expect(row(PAGE1).split("lr-pic").length - 1).toBeGreaterThanOrEqual(2);
+    expect(row(LIGHTS)).toContain("Watch only");
+    expect(board).toContain(">Screens differ</button>");
+    t.el.screensFilter = "differ";
+    board = t.whole();
+    expect(board.split(`<tr class=bd-row `).length - 1).toBe(1);
+    expect(board).toContain(`data-row=${PAGE1.toUpperCase()}`);
+    // Cards: both pictures, and the line under the name.
+    showCards(t);
+    t.el.screensFilter = "all";
+    const cards = t.whole();
+    const card = cards.slice(cards.indexOf(`data-card=${PAGE1}`));
+    expect(card.slice(0, card.indexOf("lt-ticks"))).toContain("ap-card-pics");
+    expect(card.slice(0, card.indexOf("lt-ticks"))).toContain(`<small class="ap-screens">iPhone arranged differently</small>`);
+  });
+
+  it("shows the update card once, until it is dismissed", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    expect(t.whole()).toContain(TWO_SCREENS_CARD_TEXT);
+    dismissTwoScreensCard();
+    expect(t.whole()).not.toContain(TWO_SCREENS_CARD_TEXT);
+    // The Status pages tab never shows it.
+    resetTwoScreensCardForTest();
+    const s = tab("status_pages");
+    showTab(s, "all");
+    await s.ready();
+    expect(s.whole()).not.toContain(TWO_SCREENS_CARD_TEXT);
+  });
+
+  it("makes a copy of a page for some of its devices and lists what now opens the copy", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    const lib = (t.el.lib as { library: { pages: { id: string; name: string; kind: string; owners: string[] }[] } }).library;
+    const entry = lib.pages.find((e) => e.id === PAGE1)!;
+    t.call("openCopy", entry, [PHONE]);
+    const form = t.el.copyForm as { owners: string[]; copyName: string };
+    expect(form.owners).toEqual([PHONE]);
+    expect(form.copyName).toBe("New Page 1 (iPhone)");
+    let dialog = t.whole();
+    expect(dialog).toContain("For which devices?");
+    expect(dialog).toContain(COPY_WARNING_TEXT);
+    expect(dialog).toContain("Watches");
+    expect(dialog).toContain("iPhones");
+    // Every device ticked is no copy at all.
+    t.el.copyForm = { ...(t.el.copyForm as object), owners: [JESSE, PHONE] };
+    expect(t.whole()).toContain("Leave New Page 1 on at least one device.");
+    t.el.copyForm = { ...(t.el.copyForm as object), owners: [PHONE] };
+    await t.call("makeCopy");
+    const sent = t.sentOf("library/fork_page");
+    expect(sent).toEqual([expect.objectContaining({ item_id: PAGE1, owner_ids: [PHONE], name: "New Page 1 (iPhone)" })]);
+    dialog = t.whole();
+    expect(dialog).toContain("New Page 1 (iPhone) is on iPhone 15 Pro now. New Page 1 stays on the other devices.");
+    expect(dialog).toContain("<li>iPhone 15 Pro: menu slot Up in Anywhere menu</li>");
+    expect(dialog).toContain("Open the copy");
+    const done = (t.el.copyForm as { done: { itemId: string } }).done;
+    expect(t.home.lib.pages[done.itemId]?.owners).toEqual([PHONE]);
+    expect(t.home.lib.pages[PAGE1]?.owners).toEqual([JESSE]);
+  });
+
+  it("says Make a copy needs a newer integration on one without it", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    t.home.refuse.set("wrist_assistant/library/fork_page", { code: "unknown_command", message: "Unknown command." });
+    const lib = (t.el.lib as { library: { pages: { id: string }[] } }).library;
+    t.call("openCopy", lib.pages.find((e) => e.id === PAGE1)!, [PHONE]);
+    await t.call("makeCopy");
+    expect(t.whole()).toContain("Not copied. This version of the integration cannot make a copy yet. Update it first.");
   });
 
   it("New status page makes a status page in the library the same way", async () => {

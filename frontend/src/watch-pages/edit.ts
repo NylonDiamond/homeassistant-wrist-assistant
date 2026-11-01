@@ -2049,3 +2049,37 @@ export function renameWatchScreenTiles(page: WatchPage, renamed: ReadonlyMap<str
   }
   return { ...page, [WATCH_SCREENS_KEY]: screens };
 }
+
+/** Entity id kinds whose part after the dot is an id of the tile's own
+ * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
+export const OWN_ID_KINDS: ReadonlySet<string> = new Set(["spacer", "template", "music_hub", "point_control", "multicam"]);
+
+/** A copy of a tile with ids of its own: a new id, and a new own id in its
+ * entity id for the kinds that carry one. */
+export function withNewTileIds(tile: WatchPageTile): WatchPageTile {
+  const copy = structuredClone(tile) as WatchPageTile;
+  copy.id = randomWatchId().toUpperCase();
+  const entityId = tileEntityId(tile);
+  const kind = tileKind(entityId);
+  if (OWN_ID_KINDS.has(kind) && entityId.includes(".")) copy.entityId = `${kind}.${randomWatchId().toUpperCase()}`;
+  return copy;
+}
+
+/** A copy of a page for the library, as Duplicate in the page picker and
+ * New page's From a page make it: `id` and `name` its own, and every tile
+ * with ids of its own (`withNewTileIds`), keeping its groups and both
+ * screens' arrangements. */
+export function watchPageCopy(page: WatchPage, id: string, name: string): WatchPage {
+  const copy = structuredClone(page) as WatchPage;
+  copy.id = id.toUpperCase();
+  copy.name = name;
+  if (!Array.isArray(copy.items)) return copy;
+  const renamed = new Map<string, string>();
+  copy.items = copy.items.map((t) => {
+    if (!isJsonObject(t)) return t;
+    const next = withNewTileIds(t as WatchPageTile);
+    if (typeof t.id === "string" && t.id !== "") renamed.set(t.id.toUpperCase(), next.id as string);
+    return next;
+  });
+  return renameWatchScreenTiles(copy, renamed);
+}

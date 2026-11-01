@@ -78,12 +78,12 @@ export function footText(kind: CardKind, device: LinkDevice | undefined, selecti
   }
   if (view === "board") {
     return kind === "status_pages"
-      ? "Click a status page to edit it. Tick a box to put it on that device. Press Focus on a device to order its status pages."
-      : "Click a page to edit it. Tick a box to show the page on that device. Press Focus on a device to order its pages.";
+      ? "Click a status page to edit it. Tick a box to put it on that device. Click Focus in a device's column header to see and drag its order."
+      : "Click a page to edit it. Tick a box to show the page on that device. Click Focus in a device's column header to see and drag its order.";
   }
   return kind === "status_pages"
     ? "Click a status page to edit it. Tick a device to put it there."
-    : "Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.";
+    : "Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.";
 }
 
 /** The line under a card's name: "11 tiles", "Smart page", "1 row · starter". */

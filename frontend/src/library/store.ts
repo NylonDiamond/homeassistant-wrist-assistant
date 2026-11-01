@@ -49,6 +49,7 @@
 import { type HassLike, fetchWatchConfig, saveWatchConfig, subscribeWatchConfig } from "../ha-api.js";
 import {
   type LibraryDeleteReply,
+  type LibraryForkReply,
   type LibraryItemCreateReply,
   type LibraryKind,
   type LibraryListKind,
@@ -64,8 +65,10 @@ import {
   copyLibraryMenu,
   createLibraryItem,
   createLibraryMenu,
+  FORK_UNSUPPORTED_TEXT,
   deleteLibraryItem,
   fetchLibrarySummary,
+  forkLibraryPage,
   libraryErrorCode,
   libraryErrorText,
   pickLibraryItem,
@@ -454,6 +457,15 @@ export class LibraryStore {
    * device has until one is ticked. */
   createItem(kind: LibraryListKind, document: LibraryObject): Promise<LibraryWrite<LibraryItemCreateReply>> {
     return this.write(undefined, undefined, undefined, () => createLibraryItem(this.hass, kind, document));
+  }
+
+  /** Make a copy of a page for some of the devices that have it
+   * (`forkLibraryPage`): they use the copy from now on, and what opened the
+   * page on them opens the copy. An integration older than it says so in
+   * its own words. */
+  async forkPage(itemId: string, ownerIds: readonly string[], name?: string): Promise<LibraryWrite<LibraryForkReply>> {
+    const result = await this.write(undefined, undefined, undefined, () => forkLibraryPage(this.hass, itemId, ownerIds, name));
+    return !result.ok && result.code === "unknown_command" ? { ...result, text: FORK_UNSUPPORTED_TEXT } : result;
   }
 
   /** "Make a copy for this watch": a new menu from the one the device uses

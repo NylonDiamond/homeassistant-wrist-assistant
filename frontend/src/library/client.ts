@@ -265,6 +265,41 @@ export async function createLibraryItem(hass: HassLike, kind: LibraryListKind, d
   return hass.connection.sendMessagePromise<LibraryItemCreateReply>({ type: `${LIB}/item/create`, kind, document });
 }
 
+/** One thing on a device that opened the original page and now opens its
+ * copy, in Home Assistant's words: "menu slot Up in Anywhere menu". */
+export interface LibraryForkLine {
+  owner_id: string;
+  what: string;
+}
+
+/** What `library/fork_page` answers: the copy's id, what on the devices
+ * now opens it, and what stayed on the original (a link on a page another
+ * device shares). Integrations without `kept` answer only `rewritten`. */
+export interface LibraryForkReply {
+  item_id: string;
+  rewritten: LibraryForkLine[];
+  kept?: LibraryForkLine[];
+  revisions?: LibraryRevisions;
+}
+
+/** Make a copy: a new library page with the content and both screens of
+ * `itemId`, which the devices `ownerIds` use in its place from now on, each
+ * at the same spot in its order. What opened the original on them (menu
+ * slots, page links, rooms, complications) opens the copy; a menu shared
+ * with another device is copied for them. The original keeps its id and
+ * stays on every other device. `name` names the copy; without it the copy
+ * keeps the original's name. Refusals: `invalid` (no devices, a device that
+ * does not use the page, an empty name), `unknown_device`, `not_found`,
+ * `unauthorized`, and `unknown_command` from an integration older than it. */
+export async function forkLibraryPage(hass: HassLike, itemId: string, ownerIds: readonly string[], name?: string) {
+  return hass.connection.sendMessagePromise<LibraryForkReply>({
+    type: `${LIB}/fork_page`, item_id: itemId, owner_ids: [...ownerIds], ...(name === undefined ? {} : { name }),
+  });
+}
+
+/** What Make a copy says on an integration older than it. */
+export const FORK_UNSUPPORTED_TEXT = "This version of the integration cannot make a copy yet. Update it first.";
+
 /** What the tabs say on an integration older than the library. */
 export const LIBRARY_UNSUPPORTED_TEXT = "This version of the integration has no library yet. Update it first.";
 
