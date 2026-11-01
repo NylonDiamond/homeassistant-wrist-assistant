@@ -10,8 +10,8 @@
 // its pages here or is on the free plan.
 
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
-import { deviceKindOf } from "../version.js";
-import { WAIT_FOR_IPHONE_TEXT, noRecordStart, watchAppDevices, watchName } from "../watch-settings.js";
+import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, setupMoveNeedsUpdate, versionForCopy } from "../version.js";
+import { noRecordStart, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
 
 /** One device as the lists and editors name it. */
 export interface LinkDevice {
@@ -19,6 +19,9 @@ export interface LinkDevice {
   /** The name the editor shows for it, "Jesse's iPhone". */
   name: string;
   kind: "watch" | "iphone";
+  /** The Wrist Assistant version it last reported, for the wait lines
+   * (`waitForIphoneText`). Absent when not known. */
+  appVersion?: string | null;
 }
 
 /** Every device a page can be on: the Watch app's devices (the watches
@@ -26,7 +29,12 @@ export interface LinkDevice {
  * names them. */
 export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean): LinkDevice[] {
   const devices = watchAppDevices(owners, phones);
-  return devices.map((o) => ({ ownerId: o.owner_watch_id, name: watchName(o, devices), kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch" }));
+  return devices.map((o) => ({
+    ownerId: o.owner_watch_id,
+    name: watchName(o, devices),
+    kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch",
+    ...(o.app_version === undefined ? {} : { appVersion: o.app_version }),
+  }));
 }
 
 /** "iPhone" or "watch", as the lines name the device on screen. */
@@ -92,20 +100,38 @@ export function pagesRecordFacts(record: Pick<WatchConfigRecord, "revision" | "m
 }
 
 /** A watch that waits for its iPhone, in the page editor's own wait words. */
-export const DEVICES_WAIT_TEXT = `${WAIT_FOR_IPHONE_TEXT} Pages can go on this watch after that.`;
+export const DEVICES_WAIT_TEXT = devicesWaitText(undefined);
+
+/** `DEVICES_WAIT_TEXT` for a watch reporting `appVersion`, in the wait
+ * words for its version (`waitForIphoneText`). */
+export function devicesWaitText(appVersion: string | null | undefined): string {
+  return `${waitForIphoneText(appVersion)} Pages can go on this watch after that.`;
+}
 
 /** What a watch's empty list says while it waits for its iPhone to move
  * its setup here, as its Settings screen says it of the settings: "No pages
  * from this watch yet. Waiting for your iPhone. …". `what` is the list's
- * noun, `device` the watch as the line names it. */
-export function waitingEmptyText(what: string, device = "this watch"): string {
-  return `No ${what} from ${device} yet. ${WAIT_FOR_IPHONE_TEXT}`;
+ * noun, `device` the watch as the line names it, `appVersion` the version
+ * it reported. */
+export function waitingEmptyText(what: string, device = "this watch", appVersion?: string | null): string {
+  return `No ${what} from ${device} yet. ${waitForIphoneText(appVersion)}`;
 }
 
 /** What an empty tab adds while a watch waits for its iPhone, as the HTTP
- * actions tab says it of its actions. */
-export function waitingLibraryText(what: string): string {
+ * actions tab says it of its actions. `needsUpdate` when a waiting watch's
+ * app is too old for the move (`setupMoveNeedsUpdate`), so the line names
+ * the release rather than only "open it once". */
+export function waitingLibraryText(what: string, needsUpdate = false): string {
+  if (needsUpdate) {
+    return `Needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Once your iPhone has it, open the app once and its ${what} move here by themselves.`;
+  }
   return `Update Wrist Assistant on your iPhone and open it once. Its ${what} move here by themselves.`;
+}
+
+/** Whether any of these waiting devices is too old for the move, for
+ * `waitingLibraryText`. */
+export function anyNeedsUpdate(devices: readonly LinkDevice[], waiting: ReadonlySet<string>): boolean {
+  return devices.some((d) => waiting.has(d.ownerId) && setupMoveNeedsUpdate(d.appVersion));
 }
 
 /**

@@ -25,6 +25,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 4 build
 // contract", rules 10 and 11).
 
+import { waitingLibraryText } from "../watch-pages/devices.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
@@ -989,8 +990,13 @@ export const HTTP_ACTIONS_EMPTY_TITLE = "No HTTP actions yet.";
 
 export const HTTP_ACTIONS_ADD_BUTTON = "Add an action";
 
-export const HTTP_ACTIONS_PHONE_TEXT =
-  "Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.";
+export const HTTP_ACTIONS_PHONE_TEXT = httpActionsPhoneText(false);
+
+/** `HTTP_ACTIONS_PHONE_TEXT`, naming the release while a device of the home
+ * is too old for the setup move (`waitingLibraryText`). */
+export function httpActionsPhoneText(needsUpdate: boolean): string {
+  return waitingLibraryText("HTTP actions", needsUpdate);
+}
 
 export const HTTP_ACTIONS_UPDATE_TEXT = "Update the integration to edit HTTP actions here.";
 

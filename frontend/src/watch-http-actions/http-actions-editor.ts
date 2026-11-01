@@ -39,7 +39,7 @@ import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { deviceKindOf } from "../version.js";
+import { deviceKindOf, setupMoveNeedsUpdate } from "../version.js";
 import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type HttpActionsDraft,
@@ -56,13 +56,13 @@ import {
   HTTP_ACTIONS_ADD_BUTTON,
   HTTP_ACTIONS_CLIENT_CERT_TEXT,
   HTTP_ACTIONS_EMPTY_TITLE,
-  HTTP_ACTIONS_PHONE_TEXT,
   HTTP_ACTIONS_SHARED_TEXT,
   HTTP_ACTIONS_UPDATE_TEXT,
   type HttpActionsDoc,
   asHttpActionsDoc,
   httpActionList,
   httpActionsBudget,
+  httpActionsPhoneText,
   httpActionsReadMeansUnsupported,
   newHttpId,
   tidyHttpActionsForSave,
@@ -161,6 +161,12 @@ export function httpActionsSavedBy(record: Pick<HttpActionsRecord, "updated_by">
  * of its own, or a watch paired to one. */
 export function homeHasPhone(owners: readonly OwnerSummary[]): boolean {
   return owners.some((o) => !o.is_orphan && (deviceKindOf(o) === "iphone" || (o.paired_iphone_name ?? "") !== ""));
+}
+
+/** Whether a device of the home is too old for the setup move
+ * (`setupMoveNeedsUpdate`), so the phone line names the release. */
+export function homeNeedsUpdate(owners: readonly OwnerSummary[]): boolean {
+  return owners.some((o) => !o.is_orphan && deviceKindOf(o) !== "library" && setupMoveNeedsUpdate(o.app_version));
 }
 
 export class WaHttpActionsEditor extends LitElement {
@@ -669,7 +675,7 @@ export class WaHttpActionsEditor extends LitElement {
       return html`<div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
         <span>An HTTP action is a web request a watch asks Home Assistant to send. ${HTTP_ACTIONS_SHARED_TEXT}</span>
         <span class="ha-start"><button class="pe-btn pe-primary" @click=${() => this.startLibrary()}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button></span>
-        ${homeHasPhone(this.allOwners) ? html`<span class="pe-muted">${HTTP_ACTIONS_PHONE_TEXT}</span>` : nothing}
+        ${homeHasPhone(this.allOwners) ? html`<span class="pe-muted">${httpActionsPhoneText(homeNeedsUpdate(this.allOwners))}</span>` : nothing}
       </div></div>`;
     }
     const certs = httpActionList(draft.document).filter((a) => a.presentsClientCertificate === true).length;

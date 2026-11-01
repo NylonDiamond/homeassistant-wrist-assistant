@@ -36,6 +36,7 @@
 
 import type { HttpActionsDelivery, WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
+import { SETUP_MOVE_PUBLIC_VERSION, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
 import { type SettingDevice, deliveryState, rejectedNow } from "./watch-settings.js";
 
 /** One watch app record, named the way Home's note names it. */
@@ -186,6 +187,16 @@ export async function readWatchAppSync(read: (kind: WatchConfigPanelKind) => Pro
  * "Waiting for your iPhone", as the watch's Settings screen says it. */
 export const IPHONE_MOVE_LABEL = "your iPhone";
 
+/** The same wait while the watch's app is too old for the move
+ * (`setupMoveNeedsUpdate`): "Waiting for Wrist Assistant 3.2", since
+ * opening the iPhone app would not help before then. */
+export const IPHONE_UPDATE_LABEL = `Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)}`;
+
+/** The wait label for a watch reporting `appVersion`. */
+export function iphoneMoveLabel(appVersion: string | null | undefined): string {
+  return setupMoveNeedsUpdate(appVersion) ? IPHONE_UPDATE_LABEL : IPHONE_MOVE_LABEL;
+}
+
 /** One device's verdict on Home: the worse of its complications and its
  * watch app records (an iPhone's own, on a home with phone pages), with
  * what it is waiting for. */
@@ -211,13 +222,20 @@ export interface DeviceVerdict {
  * the watch editors' `noRecordStart` rule) while Home Assistant holds none
  * of it yet waits for that iPhone, whatever its complications say: its
  * pages, menus and settings are still on the iPhone, so "Synced" would
- * claim more than it has (`IPHONE_MOVE_LABEL`).
+ * claim more than it has (`IPHONE_MOVE_LABEL`). While the watch's app is
+ * too old for that move, it waits for the update instead
+ * (`iphoneMoveLabel`).
  */
-export function deviceVerdict(complications: DeviceSync, watchApp: WatchAppSync | undefined, waitsForIphone = false): DeviceVerdict {
+export function deviceVerdict(
+  complications: DeviceSync,
+  watchApp: WatchAppSync | undefined,
+  waitsForIphone = false,
+  appVersion?: string | null,
+): DeviceVerdict {
   const waitingFor = [
     ...(complications === "waiting" ? ["complications"] : []),
     ...(watchApp?.waiting ?? []),
-    ...(waitsForIphone && watchApp?.noRecord === true ? [IPHONE_MOVE_LABEL] : []),
+    ...(waitsForIphone && watchApp?.noRecord === true ? [iphoneMoveLabel(appVersion)] : []),
   ];
   const rejected = watchApp?.rejected ?? [];
   const sync: DeviceSync = waitingFor.length > 0 ? "waiting"

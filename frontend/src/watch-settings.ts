@@ -24,7 +24,7 @@
 
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
-import { deviceKindOf, phoneShowsPages } from "./version.js";
+import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, phoneShowsPages, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
 
 /**
  * The wrist twists' row as the form holds it: the three maps behind the
@@ -677,12 +677,35 @@ export function noRecordStart(owner: Pick<OwnerSummary, "has_iphone"> | undefine
 export const WAIT_FOR_IPHONE_TEXT =
   "Waiting for your iPhone. Update Wrist Assistant on your iPhone and open it once. Your watch setup moves here by itself.";
 
+/** The no-record line while the watch's app is too old for the move
+ * (`setupMoveNeedsUpdate`): no iPhone below that release ever sends it, so
+ * "open it once" would not help. Worded to stay true before and after the
+ * release reaches the App Store. */
+export const WAIT_FOR_UPDATE_TEXT =
+  `Needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.`;
+
+/** The no-record line for this watch: `WAIT_FOR_UPDATE_TEXT` while its app
+ * is too old for the move, else `WAIT_FOR_IPHONE_TEXT`. Every wait line the
+ * watch screens and lists show goes through this. */
+export function waitForIphoneText(appVersion: string | null | undefined): string {
+  return setupMoveNeedsUpdate(appVersion) ? WAIT_FOR_UPDATE_TEXT : WAIT_FOR_IPHONE_TEXT;
+}
+
 /** The small link that opens the editor anyway while the move may still
  * come. */
 export const START_FRESH_BUTTON = "Start fresh instead";
 
 /** What the link asks before it opens the editor. */
-export const START_FRESH_CONFIRM_TEXT = "Your iPhone's setup will not move. Start fresh?";
+export const START_FRESH_CONFIRM_TEXT =
+  "Your first Save replaces the setup on your watch, and your iPhone's setup will not move here. Start fresh?";
+
+/** Whether "Start fresh instead" is offered for this watch while it waits.
+ * Not while its app is too old for the move: a start there would make the
+ * move skip that kind for good once the update arrives, and the watch's own
+ * setup would be lost. */
+export function offersStartFresh(owner: Pick<OwnerSummary, "app_version"> | undefined): boolean {
+  return !setupMoveNeedsUpdate(owner?.app_version);
+}
 
 
 /** Whether a start may go ahead. While waiting it asks first, with the one

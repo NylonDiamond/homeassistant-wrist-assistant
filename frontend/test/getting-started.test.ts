@@ -104,6 +104,25 @@ describe("gettingStarted", () => {
   });
 });
 
+describe("gettingStarted for a long time user", () => {
+  // The integration ships before app 3.2: a watch on 3.0 keeps its pages on
+  // the iPhone, and one whose iPhone may still move them here is not new
+  // either. Neither is told to make a first page.
+  it("does not mark the page step Next while the watch's pages are on their way", () => {
+    for (const w of [owner({ app_version: "3.0.1" }), owner({ app_version: "3.2.0", has_iphone: true })]) {
+      const gs = gettingStarted([w], new Set());
+      expect(gs.steps.map((s) => [s.id, s.done])).toEqual([["app", true], ["pair", true], ["page", false]]);
+      expect(gs.next).toBeUndefined();
+    }
+  });
+
+  it("still marks it Next for a new watch on a current app, or with any new one beside an old one", () => {
+    expect(gettingStarted([owner({ app_version: "3.2.0", has_iphone: false })], new Set()).next).toBe("page");
+    const both = [owner({ app_version: "3.0.1" }), owner({ owner_watch_id: "w2", app_version: "3.2.0" })];
+    expect(gettingStarted(both, new Set()).next).toBe("page");
+  });
+});
+
 describe("watchesWithPages", () => {
   const delivery = (items?: number) => ({ revision: 1, delivered_revision: 1, rejected_revision: 0, ...(items === undefined ? {} : { items }) });
   const summary = (owners: WatchConfigSummary["owners"]): WatchConfigSummary => ({ owners });

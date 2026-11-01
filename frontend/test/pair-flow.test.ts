@@ -2,9 +2,12 @@
 // what each answer opens, the words of each step, and what next once a
 // watch is paired.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  OLD_APP_PAIR_NOTE,
   PAIR_CHOICES,
   PAIR_CHOICE_TITLE,
   PAIR_NEXT_OPEN,
@@ -101,6 +104,27 @@ describe("what next, once a watch is paired", () => {
 
   it("links to the setup guide on the docs site", () => {
     expect(PAIR_SETUP_GUIDE_URL).toBe("https://docs.wrist-assistant.com/getting-started/setup/");
+  });
+});
+
+describe("pairing from the 3.0 app", () => {
+  // 3.0 has neither the watch's code nor the iPhone's QR code; its iPhone
+  // app signs in instead (/v2/register_secret, still served).
+  it("is named under both choices: the welcome's and the dialog's", () => {
+    expect(OLD_APP_PAIR_NOTE).toBe("On Wrist Assistant 3.0, sign in to Home Assistant from the iPhone app instead.");
+    const panel = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
+    const welcome = panel.slice(panel.indexOf("  private renderHomeWelcome("));
+    expect(welcome.slice(0, welcome.indexOf("\n  }\n"))).toContain("<span>${OLD_APP_PAIR_NOTE}</span>");
+    const card = readFileSync(join(__dirname, "..", "src", "watch-pair-view.ts"), "utf8");
+    const choice = card.slice(card.indexOf("  private renderChoice() {"));
+    expect(choice.slice(0, choice.indexOf("\n  }\n"))).toContain("${OLD_APP_PAIR_NOTE}");
+  });
+
+  it("is in the config flow's words too", () => {
+    for (const file of ["strings.json", join("translations", "en.json")]) {
+      const json = JSON.parse(readFileSync(join(__dirname, "..", "..", "custom_components", "wrist_assistant", file), "utf8")) as { config: { step: { user: { description: string } } } };
+      expect(json.config.step.user.description).toContain("On Wrist Assistant 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.");
+    }
   });
 });
 

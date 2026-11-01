@@ -44,6 +44,7 @@ _NAMES = (
     "_op_notifications_register",
     "_op_notifications_status",
     "_op_send_test_notification",
+    "_op_watch_secret_status",
 )
 
 
@@ -343,7 +344,14 @@ def _companion_ops(env, signer: str, companion: str) -> dict[str, int]:
         "notifications_register": _register(env, signer, "TOKEN", **payload).status,
         "notifications_status": env.call("notifications_status", signer, payload).status,
         "send_test_notification": env.call("send_test_notification", signer, payload).status,
+        "watch_secret_status": env.call("watch_secret_status", signer, payload).status,
     }
+
+
+def test_an_old_app_reads_whether_its_watch_key_is_registered(env) -> None:
+    """Kept for app 3.0.x: its iPhone's Watch Integration Key row."""
+    reply = env.call("watch_secret_status", "p1", {"companion_watch_id": "w1"})
+    assert (reply.status, reply.body) == (200, {"ok": True, "registered": True})
 
 
 def test_an_unbound_caller_cannot_reach_another_user_s_code_paired_watch(env) -> None:

@@ -433,9 +433,9 @@ import {
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
-import { type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
+import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
-import { hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
+import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
   formButtonStyles,
@@ -11490,8 +11490,8 @@ export class WristAssistantPanel extends LitElement {
     if (phone === undefined && hasPhoneAwaitingUpdate(this.owners)) {
       return html`<div class="wa-ip-empty">
         <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
-        <h2>Update the iPhone app</h2>
-        <p>Your iPhone is paired, but its Wrist Assistant app is too old to show pages of its own. Update Wrist Assistant on the iPhone to the latest version (the TestFlight beta for now), then open its Pages tab. The iPhone shows up here once it does.</p>
+        <h2>${PHONE_PAGES_UPDATE_TITLE}</h2>
+        <p>${PHONE_PAGES_UPDATE_TEXT}</p>
       </div>`;
     }
     if (phone === undefined || screen === undefined) {
@@ -20062,6 +20062,7 @@ export class WristAssistantPanel extends LitElement {
               <div class="hw-pair-foot">
                 <span>Stuck? <a href=${TROUBLESHOOTING_URL} target="_blank" rel="noreferrer">Something is not working</a></span>
                 <span>${pairChoiceNote(this.hass?.user?.is_admin === true)}</span>
+                <span>${OLD_APP_PAIR_NOTE}</span>
               </div>
             </section>`)}
         </ol>

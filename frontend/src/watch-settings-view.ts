@@ -97,8 +97,9 @@ import {
   SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_UNREADABLE_TEXT,
   START_FRESH_BUTTON,
-  WAIT_FOR_IPHONE_TEXT,
   WATCH_SETTINGS_CATALOG,
+  offersStartFresh,
+  waitForIphoneText,
   buildSaveDocument,
   catalogFor,
   conflictRevision,
@@ -812,7 +813,7 @@ export class WatchSettings implements ReactiveController {
    * defaults. Nothing is saved until Save. */
   private askStartFresh(): void {
     const id = this.ownerId;
-    if (id === undefined || !mayStart(noRecordStart(this.shownOwner))) return;
+    if (id === undefined || !offersStartFresh(this.shownOwner) || !mayStart(noRecordStart(this.shownOwner))) return;
     startSettingsFresh(id);
     this.note = undefined;
     this.changed();
@@ -1233,10 +1234,10 @@ export class WatchSettings implements ReactiveController {
     if (this.behaviorDocument !== undefined) return undefined;
     // While the iPhone's move may still come it waits, and a small link that
     // asks first opens the cards anyway.
-    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${WAIT_FOR_IPHONE_TEXT}</span></div>
-      <button class="link start-fresh ws-start" ?disabled=${this.saving}
+    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${waitForIphoneText(this.shownOwner?.app_version)}</span></div>
+      ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ws-start" ?disabled=${this.saving}
         title="Open the settings on the app's defaults. Nothing is saved until you press Save."
-        @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>`;
+        @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}`;
   }
 
   /** One catalog section as an inspector card that is always open: the
@@ -1492,10 +1493,10 @@ export class WatchSettings implements ReactiveController {
     // No record and nothing to wait for: the cards open on the defaults.
     // Else the page waits for the iPhone's move, with the same small link.
     if (this.styleDocument === undefined) {
-      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${WAIT_FOR_IPHONE_TEXT}</span></div>
-        <button class="link start-fresh ns-start" ?disabled=${this.saving}
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${waitForIphoneText(this.shownOwner?.app_version)}</span></div>
+        ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ns-start" ?disabled=${this.saving}
           title="Open the notification style on the app's defaults. Nothing is saved until you press Save."
-          @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>`);
+          @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}`);
     }
     return undefined;
   }

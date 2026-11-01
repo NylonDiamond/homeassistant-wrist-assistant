@@ -85,13 +85,14 @@ import { restoredText } from "../revision-words.js";
 import {
   type SettingDevice,
   START_FRESH_BUTTON,
-  WAIT_FOR_IPHONE_TEXT,
   deliveryState,
   deviceNoun,
   followWatch,
   mayStart,
   noRecordStart,
   noRecordTitle,
+  offersStartFresh,
+  waitForIphoneText,
   savedByLine,
   watchAppDevices,
   watchBehaviorDefaults,
@@ -119,8 +120,8 @@ import {
   HOME_ROOMS_UPDATE_TEXT,
   ROOMS_NO_RECORD_TITLE,
   ROOMS_UNREADABLE_TEXT,
-  ROOMS_WAIT_TEXT,
   ROOM_HISTORY_HOURS,
+  roomsWaitText,
   areasFromHass,
   areasFromReply,
   floorsFromReply,
@@ -360,7 +361,8 @@ export class WaRoomsEditor extends LitElement {
   private startFresh(): void {
     const watchId = this.watchId;
     if (watchId === undefined) return;
-    if (!mayStart(noRecordStart(this.watches.find((w) => w.owner_watch_id === watchId)))) return;
+    const shown = this.watches.find((w) => w.owner_watch_id === watchId);
+    if (!offersStartFresh(shown) || !mayStart(noRecordStart(shown))) return;
     chooseStartFresh(this.kind, watchId);
     this.note = undefined;
     this.requestUpdate();
@@ -1037,9 +1039,10 @@ export class WaRoomsEditor extends LitElement {
       // may still bring the settings (on the main house) or this home's
       // rooms, so it waits, and "Start fresh instead" is a small link that
       // asks first.
+      const shown = watches.find((w) => w.owner_watch_id === this.watchId);
       return html`<div class="pe-empty"><b>${this.device === "iphone" ? noRecordTitle("rooms", "iphone") : home ? HOME_ROOMS_NO_RECORD_TITLE : ROOMS_NO_RECORD_TITLE}</b>
-        <span>${home ? WAIT_FOR_IPHONE_TEXT : ROOMS_WAIT_TEXT}</span>
-        <button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>
+        <span>${home ? waitForIphoneText(shown?.app_version) : roomsWaitText(shown?.app_version)}</span>
+        ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>`;
     }
     const draft = this.draft;

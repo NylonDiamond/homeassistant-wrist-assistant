@@ -104,7 +104,7 @@ import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { keptWatchPagesDraft } from "./kept.js";
-import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
+import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
@@ -879,10 +879,11 @@ export class WaAllPages extends LitElement {
   private renderEmptyLibrary(library: Library, devices: readonly LinkDevice[]): TemplateResult | undefined {
     if (devices.length === 0 || libraryItems(library, this.kind).length > 0) return undefined;
     const may = this.mayMake;
-    const waiting = this.waiting(library).size > 0;
+    const waitingIds = this.waiting(library);
+    const waiting = waitingIds.size > 0;
     return html`<div class="ap-empty-lib">
       <p>${emptyLibraryText(this.kind, may)}</p>
-      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2))}</p>` : nothing}
+      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds))}</p>` : nothing}
       ${may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
         ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing}
     </div>`;
@@ -984,7 +985,7 @@ export class WaAllPages extends LitElement {
       locked: (ownerId) => {
         const on = hasItem(library, ownerId, entry.kind, entry.id);
         if (on && dirtyHere(ownerId, entry.kind)) return picksDirtyText(entry.kind, devices.find((d) => d.ownerId === ownerId)?.name ?? "This device");
-        if (!on && waiting.has(ownerId)) return DEVICES_WAIT_TEXT;
+        if (!on && waiting.has(ownerId)) return devicesWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion);
         return undefined;
       },
     };
@@ -1188,7 +1189,7 @@ export class WaAllPages extends LitElement {
         {
           key: "on", title: onDeviceTitle(device), count: total, hint: orderHint(device), rows,
           empty: waiting.has(device.ownerId) && this.search.trim() === ""
-            ? waitingEmptyText(many, device.name)
+            ? waitingEmptyText(many, device.name, device.appVersion)
             : noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake),
         },
         // A home with nothing in it has no rest to list.

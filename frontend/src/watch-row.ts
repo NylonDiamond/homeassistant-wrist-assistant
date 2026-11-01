@@ -49,6 +49,7 @@ import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { ALL_PAGES_PATH, type ListOwnScreen, listFocusPath } from "./watch-pages/all-pages-hook.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 import { settingsWatches, watchName } from "./watch-settings.js";
+import { MIN_IPHONE_VERSION_FOR_PAGES, versionForCopy } from "./version.js";
 
 /** Which app's row: the Watch app's, or the iPhone app's. */
 export type RowKind = "watch" | "iphone";
@@ -209,7 +210,7 @@ export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set 
 export const IPHONE_ROW_NONE_NOTE = "No iPhone has connected yet. Pair one to set up its pages, menus and the rest.";
 /** Beside the pairing button in a home whose iPhones all run an app too old
  * for pages of their own (`hasPhoneAwaitingUpdate`). */
-export const IPHONE_ROW_UPDATE_NOTE = "Update the Wrist Assistant app on your iPhone to set up its pages, menus and the rest.";
+export const IPHONE_ROW_UPDATE_NOTE = `Needs Wrist Assistant ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later on your iPhone to set up its pages, menus and the rest.`;
 
 export interface WatchRowInput {
   route: PanelRoute | undefined;

@@ -18,7 +18,7 @@ import base64
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from homeassistant.core import HomeAssistant
@@ -140,6 +140,15 @@ class WidgetSecretEntry:
     False for every watch. Kept on disk only while True. Not secret
     material, so a `register()` keeps it."""
 
+    phone_pages_at: datetime | None = None
+    """When this integration first heard the iPhone poll as itself
+    (`note_phone_pages`), UTC. The app that does so is the one that moves a
+    watch's setup here on its first launch, so once it has polled for
+    `MOVE_GRACE` that move has had its chance (`watch_move_may_still_come`).
+    None for every watch, for a phone that never polled, and for a phone
+    marked before this field until its next poll stamps it. Kept on disk only
+    while set. Not secret material, so a `register()` keeps it."""
+
     local_url: str | None = None
     """The home network address this device should use (watch_addresses.py):
     None to follow Home Assistant's Network settings (``auto``), ``""`` for
@@ -224,6 +233,7 @@ class WidgetSecretStore:
                     user_id=entry.get("user_id"),
                     main_house=entry.get("main_house") is not False,
                     phone_pages=entry.get("phone_pages") is True,
+                    phone_pages_at=_stored_time(entry.get("phone_pages_at")),
                     local_url=_stored_address(entry.get("local_url")),
                     remote_url=_stored_address(entry.get("remote_url")),
                 )
@@ -268,6 +278,11 @@ class WidgetSecretStore:
                     # said otherwise is the one it always was.
                     **({} if entry.main_house else {"main_house": False}),
                     **({"phone_pages": True} if entry.phone_pages else {}),
+                    **(
+                        {"phone_pages_at": entry.phone_pages_at.isoformat()}
+                        if entry.phone_pages_at is not None
+                        else {}
+                    ),
                     # Only while not auto, so the file of a device that never
                     # had an address set is the one it always was.
                     **(
@@ -359,6 +374,7 @@ class WidgetSecretStore:
             user_id=user_id,
             main_house=existing.main_house if existing is not None else True,
             phone_pages=existing.phone_pages if existing is not None else False,
+            phone_pages_at=existing.phone_pages_at if existing is not None else None,
             local_url=existing.local_url if existing is not None else None,
             remote_url=existing.remote_url if existing is not None else None,
         )
@@ -507,10 +523,13 @@ class WidgetSecretStore:
 
     def may_await_move(self, watch_id: str) -> bool:
         """Whether an iPhone may still move this watch's setup here
-        (:func:`watch_has_iphone`, the owner list's ``has_iphone``). The
-        watch config store asks this before a link makes a watch's first
-        record of a kind, which would leave that move nothing to send."""
-        return watch_has_iphone(self._secrets, watch_id)
+        (:func:`watch_move_may_still_come`). The watch config store asks this
+        before a link or the watch's own seed makes a watch's first record of
+        a kind, which would leave that move nothing to send. Narrower than
+        the owner list's ``has_iphone`` (:func:`watch_has_iphone`): the panel
+        keeps waiting, while the watch may fill an empty record with its own
+        copy once the move has had its chance."""
+        return watch_move_may_still_come(self._secrets, watch_id, dt_util.utcnow())
 
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:
         """Record whether this Home Assistant is `watch_id`'s main house.
@@ -536,17 +555,25 @@ class WidgetSecretStore:
         """Record that `watch_id`'s app shows its own pages.
 
         Called on every ``/v2/delta`` poll an iPhone signs as itself. Returns
-        whether it changed: once True it stays True. A watch, or an id with
-        no entry, changes nothing. No listeners are told: the device entities
-        do not show it, and the panel reads it with the owners.
+        whether it changed: once True it stays True. The first poll also
+        stamps ``phone_pages_at``, and so does the first poll of a phone
+        marked before that field, which is what starts the move's grace
+        (`watch_move_may_still_come`). A watch, or an id with no entry,
+        changes nothing. No listeners are told: the device entities do not
+        show it, and the panel reads it with the owners.
         """
         entry = self._secrets.get(watch_id)
-        if entry is None or entry.phone_pages or entry.device_kind != DEVICE_KIND_IPHONE:
+        if entry is None or entry.device_kind != DEVICE_KIND_IPHONE:
             return False
+        if entry.phone_pages and entry.phone_pages_at is not None:
+            return False
+        changed = not entry.phone_pages
         entry.phone_pages = True
+        entry.phone_pages_at = dt_util.utcnow()
         self._schedule_save()
-        _LOGGER.info("watch_id=%s runs an iPhone app that shows its own pages", watch_id)
-        return True
+        if changed:
+            _LOGGER.info("watch_id=%s runs an iPhone app that shows its own pages", watch_id)
+        return changed
 
     def set_addresses(
         self, watch_id: str, changes: Mapping[str, str | None]
@@ -671,6 +698,54 @@ def _stored_address(raw: object) -> str | None:
     or None for auto, which anything else reads as. The value is cleaned
     again whenever it is resolved (watch_addresses.effective_addresses)."""
     return raw if isinstance(raw, str) else None
+
+
+def _stored_time(raw: object) -> datetime | None:
+    """A time as read from the file, None for anything that is not one."""
+    if not isinstance(raw, str):
+        return None
+    return dt_util.parse_datetime(raw)
+
+
+# How long after the watch's iPhone first polls as itself (`phone_pages_at`)
+# its one-time move still counts as coming. That app moves the watch's setup
+# on its first launch, seconds after the poll, and a failed move tries again
+# on every launch, foreground and reconnect. A day is ample for that, and short
+# enough that a phone which holds no copy of the watch's key (restored,
+# replaced in place, or never linked) stops holding the watch's own copy out.
+MOVE_GRACE = timedelta(hours=24)
+
+
+def watch_move_may_still_come(
+    entries: Mapping[str, WidgetSecretEntry], watch_id: str, now: datetime
+) -> bool:
+    """Whether the watch's iPhone may still move its setup here, for a write
+    that would make the watch's first record of a kind (a link, or the
+    watch's own seed).
+
+    A watch with no such iPhone (:func:`watch_has_iphone` is False) waits for
+    nothing. Otherwise the move counts as coming until the iPhone that paired
+    the watch (``owner_iphone_id``) has polled as itself for `MOVE_GRACE`:
+    only the app that moves does that, and it moves on its first launch. So a
+    kind still without a record after that is one this iPhone cannot send,
+    and the watch's own copy is the best there is. Until then, and for good
+    while that iPhone has no entry here or still runs an app that never
+    polled as itself (3.0.1 and older, whose move comes once it updates),
+    it counts as coming: the iPhone holds the uncut setup, and a free
+    plan's watch may hold only one page of it.
+
+    Pure over the entries and the time, so it is tested without Home
+    Assistant.
+    """
+    if not watch_has_iphone(entries, watch_id):
+        return False
+    owner = entries[watch_id].owner_iphone_id or ""
+    phone = entries.get(owner)
+    if phone is None or phone.device_kind != DEVICE_KIND_IPHONE:
+        return True
+    if not phone.phone_pages or phone.phone_pages_at is None:
+        return True
+    return now - phone.phone_pages_at < MOVE_GRACE
 
 
 def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) -> bool:

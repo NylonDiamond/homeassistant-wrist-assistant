@@ -37,7 +37,7 @@
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "../watch-pages/save-note.js";
-import { WAIT_FOR_IPHONE_TEXT, takesSettingsFromAnotherHome } from "../watch-settings.js";
+import { takesSettingsFromAnotherHome, waitForIphoneText } from "../watch-settings.js";
 import {
   type PointRooms,
   type PointZone,
@@ -693,7 +693,13 @@ export function roomsDocumentOf(record: WatchConfigRecord | undefined): Behavior
 export const ROOMS_NO_RECORD_TITLE = "No watch settings from this watch yet.";
 
 /** The wait line on the main house, whose rooms ride in the settings. */
-export const ROOMS_WAIT_TEXT = `Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`;
+export const ROOMS_WAIT_TEXT = roomsWaitText(undefined);
+
+/** `ROOMS_WAIT_TEXT` for a watch reporting `appVersion`, in the wait words
+ * for its version (`waitForIphoneText`). */
+export function roomsWaitText(appVersion: string | null | undefined): string {
+  return `Rooms are part of the watch's settings. ${waitForIphoneText(appVersion)}`;
+}
 export const ROOMS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
 export const ZONES_UNREADABLE_TEXT = "The point control targets stored for this watch cannot be read, so they are shown as none and left as they are. Update the integration to change them here.";
 

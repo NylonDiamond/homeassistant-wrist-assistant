@@ -10,9 +10,9 @@ applies no matter which watch or phone opened the stream. Most setups want
 ``0`` (unlimited, fastest). A user whose NVR dropped frames or returned 503s
 under a snapshot stampede could lower it from the iPhone's old Camera Settings.
 
-Read only now: the phone's ``set_snapshot_concurrency`` op is gone and nothing
-else writes it, so a value saved earlier keeps applying and every other
-install stays at the default.
+Only app 3.0.x writes it now, through the ``set_snapshot_concurrency`` op kept
+for it (``async_set_concurrency``). A value saved earlier keeps applying, and
+every other install stays at the default.
 """
 
 from __future__ import annotations
@@ -72,4 +72,10 @@ class BatchSnapshotSettingsStore:
     @property
     def concurrency(self) -> int:
         """Parallel-grab concurrency (0 = unlimited)."""
+        return self._concurrency
+
+    async def async_set_concurrency(self, value: object) -> int:
+        """Clamp, keep and save a new concurrency at once. Returns the value set."""
+        self._concurrency = clamp_concurrency(value)
+        await self._store.async_save({"concurrency": self._concurrency})
         return self._concurrency

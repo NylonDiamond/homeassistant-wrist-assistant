@@ -2,6 +2,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  MIN_VERSION_FOR_SETUP_MOVE,
+  SETUP_MOVE_PUBLIC_VERSION,
+  setupMoveNeedsUpdate,
   LIBRARY_OWNER_ID,
   MIN_IPHONE_VERSION_FOR_LOCK_SCREEN,
   MIN_VERSION_FOR_CONTROL_CENTER,
@@ -74,6 +77,29 @@ describe("watchVersionNote", () => {
     expect(watchVersionNote(undefined, "2.9.0")).toBeUndefined();
     expect(watchVersionNote(null, "2.9.0")).toBeUndefined();
     expect(watchVersionNote("beta", "2.9.0")).toBeUndefined();
+  });
+});
+
+describe("watchVersionNote for an iPhone", () => {
+  it("names the iPhone when asked to", () => {
+    expect(watchVersionNote("3.0.1", "3.2.0", "iPhone")).toBe("Needs Wrist Assistant 3.2 or later on your iPhone.");
+  });
+});
+
+describe("setupMoveNeedsUpdate", () => {
+  it("gates at the 3.1 builds that move the setup, while the words name 3.2", () => {
+    expect(MIN_VERSION_FOR_SETUP_MOVE).toBe("3.1.0");
+    expect(SETUP_MOVE_PUBLIC_VERSION).toBe("3.2.0");
+    expect(setupMoveNeedsUpdate("3.0.1")).toBe(true);
+    expect(setupMoveNeedsUpdate("2.8.0")).toBe(true);
+    expect(setupMoveNeedsUpdate("3.1.0")).toBe(false);
+    expect(setupMoveNeedsUpdate("3.2.0 (4)")).toBe(false);
+  });
+
+  it("does not guess for a device that has not reported", () => {
+    expect(setupMoveNeedsUpdate(undefined)).toBe(false);
+    expect(setupMoveNeedsUpdate(null)).toBe(false);
+    expect(setupMoveNeedsUpdate("beta")).toBe(false);
   });
 });
 

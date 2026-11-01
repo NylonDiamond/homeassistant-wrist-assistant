@@ -57,6 +57,11 @@ export function pairChoiceNote(isAdmin: boolean): string {
     : "A device you pair belongs to you. An administrator can pair one for someone else.";
 }
 
+/** Under the choice, for a device still on the 3.0 app: it has neither the
+ * watch's code nor the iPhone's QR code, only the iPhone app's own sign in
+ * (`/v2/register_secret`, still served). True before and after 3.2 ships. */
+export const OLD_APP_PAIR_NOTE = "On Wrist Assistant 3.0, sign in to Home Assistant from the iPhone app instead.";
+
 /** The line under the dialog's title, for the step on screen. */
 export function pairSubtitle(choosing: boolean, mode: PairMode, device: PairChoice | undefined): string {
   if (choosing) return "A watch or an iPhone, to this Home Assistant";

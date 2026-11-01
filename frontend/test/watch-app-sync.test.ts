@@ -9,12 +9,14 @@ import { deviceSyncLabel, homeSync } from "../src/send-state.js";
 import {
   HTTP_ACTIONS_PART_LABEL,
   IPHONE_MOVE_LABEL,
+  IPHONE_UPDATE_LABEL,
   PHONE_APP_PARTS,
   PHONE_REJECTED_SAVE_TEXT,
   REJECTED_SAVE_TEXT,
   WATCH_APP_PARTS,
   type WatchAppSync,
   deviceVerdict,
+  iphoneMoveLabel,
   httpActionsDeliveryFor,
   phoneAppSync,
   readWatchAppSync,
@@ -249,11 +251,11 @@ describe("Home's rows with the watch app", () => {
     // Complications are synced, Home Assistant holds no watch app record,
     // and the watch's own iPhone may still move them (`has_iphone`).
     const owners = [
-      owner({ owner_watch_id: "w1", device_name: "Old watch", has_iphone: true }),
+      owner({ owner_watch_id: "w1", device_name: "Old watch", app_version: "3.2.0", has_iphone: true }),
       // A new watch paired by code with nothing made yet: nothing is coming.
-      owner({ owner_watch_id: "w2", device_name: "New watch", has_iphone: false }),
+      owner({ owner_watch_id: "w2", device_name: "New watch", app_version: "3.2.0", has_iphone: false }),
       // The move landed: its pages are here.
-      owner({ owner_watch_id: "w3", device_name: "Moved watch", has_iphone: true }),
+      owner({ owner_watch_id: "w3", device_name: "Moved watch", app_version: "3.2.0", has_iphone: true }),
     ];
     const syncs = summaryWatchAppSyncs({ owners: { w3: { pages: { revision: 1, delivered_revision: 1, rejected_revision: 0 } } } }, ["w1", "w2", "w3"]);
     const rows = homeDeviceRows(devices(owners), syncs);
@@ -264,6 +266,28 @@ describe("Home's rows with the watch app", () => {
     ]);
     expect(homeDeviceLabel(rows[0]!)).toBe("Waiting");
     expect(attentionText(rows[0]!, undefined)).toBe("Waiting for your iPhone");
+  });
+
+  it("waits for Wrist Assistant 3.2 instead while the watch's app is older than the move", () => {
+    // The integration ships weeks before the app: a watch still on 3.0.1
+    // has no iPhone that will ever move its setup until the update.
+    const owners = [
+      owner({ owner_watch_id: "w1", device_name: "Watch on 3.0", app_version: "3.0.1", has_iphone: true }),
+      // A 3.1 TestFlight build already moves it.
+      owner({ owner_watch_id: "w2", device_name: "Beta watch", app_version: "3.1.0", has_iphone: true }),
+      // No version reported yet reads as new enough.
+      owner({ owner_watch_id: "w3", device_name: "Quiet watch", app_version: null, has_iphone: true }),
+    ];
+    const rows = homeDeviceRows(devices(owners), summaryWatchAppSyncs({ owners: {} }, ["w1", "w2", "w3"]));
+    expect(rows.map((r) => [r.id, r.waitingFor])).toEqual([
+      ["w1", [IPHONE_UPDATE_LABEL]],
+      ["w2", [IPHONE_MOVE_LABEL]],
+      ["w3", [IPHONE_MOVE_LABEL]],
+    ]);
+    expect(attentionText(rows[0]!, undefined)).toBe("Waiting for Wrist Assistant 3.2");
+    expect(iphoneMoveLabel("3.0.1")).toBe("Wrist Assistant 3.2");
+    expect(iphoneMoveLabel("3.2.0")).toBe("your iPhone");
+    expect(deviceVerdict("synced", { waiting: [], delivered: false, noRecord: true }, true, "3.0.1").waitingFor).toEqual([IPHONE_UPDATE_LABEL]);
   });
 
   it("judges on complications alone without a reading, as before", () => {

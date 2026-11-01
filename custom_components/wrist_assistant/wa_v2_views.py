@@ -99,7 +99,7 @@ from .bundle_ops import (
     async_template_result,
     normalize_bundle_request,
 )
-from .camera_devices import build_camera_device_groups
+from .camera_devices import build_camera_device_groups, resolve_stream_sibling
 from .camera_stream import (
     _UNSET,
     DEFAULT_FPS,
@@ -2496,6 +2496,187 @@ async def _op_camera_devices(ctx: _OpContext) -> Response:
     """Camera devices grouped by physical device."""
     devices = build_camera_device_groups(ctx.hass)
     return ctx.signed_json({"devices": devices})
+
+
+# ── camera framing ops, kept for app 3.0.x ───────────────────────────────
+#
+# Kept for app 3.0.x: its iPhone Camera Framing screen and Camera Settings
+# still call these, and the integration ships weeks before the app that
+# drops them. Camera framing lives in the panel now (`camera_framing_ws`),
+# over the same stores, so a crop saved from either place is the one alerts
+# use. Same request and reply shapes as v3.0.0. Remove them once no 3.0.x
+# app is left.
+
+# The most camera ids one framing write takes. A phone sends the variants of
+# one camera, a handful; this only stops a paired device filling the store.
+_LEGACY_FRAMING_MAX_IDS = 64
+
+
+def _legacy_camera_ids(payload: dict[str, Any]) -> list[str]:
+    """Camera ids from `entity_ids` (a list) or `entity_id` (one), de-duplicated."""
+    raw = payload.get("entity_ids")
+    if isinstance(raw, list):
+        ids = [e for e in raw if isinstance(e, str) and e.startswith("camera.")]
+    else:
+        single = payload.get("entity_id")
+        ids = [single] if isinstance(single, str) and single.startswith("camera.") else []
+    return list(dict.fromkeys(ids))
+
+
+def _legacy_camera_ids_refusal(entity_ids: list[str]) -> Response | None:
+    if not entity_ids:
+        return Response(status=400, text="entity_id(s) required and must be cameras")
+    if len(entity_ids) > _LEGACY_FRAMING_MAX_IDS:
+        return Response(status=400, text="too many entity_ids")
+    return None
+
+
+async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. Save a camera's alert framing to each of its variants.
+
+    Body: {"entity_ids": [...] | "entity_id", "viewport": {x, y, w|width,
+    h|height}, "open_zoomed"?: bool}. A full frame clears the crop. Each id's
+    cached aspect is dropped so the next alert measures the new shape.
+    Reply: {"ok": true, "count": n}.
+    """
+    entity_ids = _legacy_camera_ids(ctx.payload)
+    refusal = _legacy_camera_ids_refusal(entity_ids)
+    if refusal is not None:
+        return refusal
+    viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
+    raw_open_zoomed = ctx.payload.get("open_zoomed")
+    open_zoomed = raw_open_zoomed if isinstance(raw_open_zoomed, bool) else None
+    crop_store = ctx.domain_data.snapshot_crop_store
+    aspect_store = ctx.domain_data.snapshot_aspect_store
+    for entity_id in entity_ids:
+        crop_store.set(entity_id, viewport)
+        # After set(), so the crop exists for the store's "true only with a
+        # crop" rule. Left alone when not sent (3.0.x never sends it).
+        if open_zoomed is not None:
+            crop_store.set_open_zoomed(entity_id, open_zoomed)
+        aspect_store.delete(entity_id)
+    return ctx.signed_json({"ok": True, "count": len(entity_ids)})
+
+
+async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. A camera's saved crop.
+
+    Body: {"entity_id": "camera.x"}.
+    Reply: {"viewport": {x, y, w, h} | null, "open_zoomed": bool}, null for
+    the full frame.
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return Response(status=400, text="entity_id required and must be a camera")
+    store = ctx.domain_data.snapshot_crop_store
+    crop = store.get(entity_id)
+    viewport = (
+        {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h} if crop is not None else None
+    )
+    return ctx.signed_json(
+        {"viewport": viewport, "open_zoomed": store.get_open_zoomed(entity_id)}
+    )
+
+
+async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. Which of the named cameras have a saved crop.
+
+    Body: {"entity_ids": [...]}. Reply: {"framed": [...]}, in the order asked.
+    """
+    raw = ctx.payload.get("entity_ids")
+    ids = [e for e in raw if isinstance(e, str)] if isinstance(raw, list) else []
+    store = ctx.domain_data.snapshot_crop_store
+    return ctx.signed_json({"framed": [e for e in ids if store.get(e) is not None]})
+
+
+async def _op_set_stream_entity(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. Save or clear the live stream a tapped alert opens.
+
+    Body: {"entity_ids": [...] | "entity_id", "stream_entity"?: "camera.y"}.
+    A missing, null or non-camera `stream_entity` clears the override (3.0.x
+    leaves it out to go back to auto). Reply: {"ok": true, "count": n}.
+    """
+    entity_ids = _legacy_camera_ids(ctx.payload)
+    refusal = _legacy_camera_ids_refusal(entity_ids)
+    if refusal is not None:
+        return refusal
+    raw = ctx.payload.get("stream_entity")
+    stream_entity = raw if isinstance(raw, str) and raw.startswith("camera.") else None
+    store = ctx.domain_data.snapshot_stream_store
+    for entity_id in entity_ids:
+        if stream_entity:
+            store.set(entity_id, stream_entity)
+        else:
+            store.delete(entity_id)
+    return ctx.signed_json({"ok": True, "count": len(entity_ids)})
+
+
+async def _op_get_stream_entity(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. A camera's live stream override and the auto pick.
+
+    Body: {"entity_id": "camera.x"}.
+    Reply: {"override": "camera.y" | null, "auto": "camera.z" | null}.
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return Response(status=400, text="entity_id required and must be a camera")
+    return ctx.signed_json(
+        {
+            "override": ctx.domain_data.snapshot_stream_store.get(entity_id),
+            "auto": resolve_stream_sibling(ctx.hass, entity_id),
+        }
+    )
+
+
+async def _op_get_snapshot_concurrency(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. How many cameras a batch snapshot stream grabs at
+    once, 0 for unlimited. Reply: {"concurrency": n}."""
+    store = ctx.domain_data.batch_snapshot_settings_store
+    return ctx.signed_json({"concurrency": store.concurrency})
+
+
+async def _op_set_snapshot_concurrency(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x. Set the batch snapshot concurrency for the home.
+
+    Body: {"concurrency": n}, clamped to 0 (unlimited) through
+    MAX_BATCH_SNAPSHOT_CONCURRENCY; anything not a number is 0.
+    Reply: {"ok": true, "concurrency": stored}, the clamped value.
+
+    The value applies to the next stream and is saved to disk at once, so a
+    reload right after leaves nothing pending.
+    """
+    store = ctx.domain_data.batch_snapshot_settings_store
+    value = await store.async_set_concurrency(ctx.payload.get("concurrency"))
+    return ctx.signed_json({"ok": True, "concurrency": value})
+
+
+async def _op_watch_secret_status(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x: whether a watch's key is registered here.
+
+    The 3.0.x iPhone fills its "Watch Integration Key" row with it, for a
+    home where it holds no copy of the watch's key. An iPhone signs as itself
+    and names its watch with ``companion_watch_id`` (``notifications_status``
+    targets the same way). The reply is a boolean, never the key.
+    Reply: {"ok": true, "registered": <bool>}
+    """
+    store = ctx.domain_data.widget_secret_store
+    target_watch_id, denied = _resolve_companion_target(ctx)
+    if denied is not None:
+        return denied
+    return ctx.signed_json({"ok": True, "registered": store.get(target_watch_id) is not None})
+
+
+async def _op_webhook_provision(ctx: _OpContext) -> Response:
+    """Kept for app 3.0.x: Wrist Webhooks were retired (cb37c003).
+
+    3.0.x turns an unknown op into "the integration doesn't support webhooks
+    yet, update it", which is wrong now. This refusal reads there as "Webhook
+    setup failed: Wrist Webhooks were retired". The feature was Debug builds
+    only in 3.0.1, so no shipped app reaches it.
+    """
+    return ctx.signed_json(
+        {"ok": False, "error": "Wrist Webhooks were retired"}, status=410
+    )
 
 
 # ── camera stream lifecycle ──────────────────────────────────────────────
@@ -5616,6 +5797,18 @@ _OP_HANDLERS: dict[str, Any] = {
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
+    # Kept for app 3.0.x (its iPhone Camera Framing and Camera Settings).
+    "set_snapshot_crop": _op_set_snapshot_crop,
+    "get_snapshot_crop": _op_get_snapshot_crop,
+    "snapshot_crops_status": _op_snapshot_crops_status,
+    "get_snapshot_concurrency": _op_get_snapshot_concurrency,
+    "set_snapshot_concurrency": _op_set_snapshot_concurrency,
+    "set_stream_entity": _op_set_stream_entity,
+    "get_stream_entity": _op_get_stream_entity,
+    # Kept for app 3.0.x: a clear refusal in place of "update the integration".
+    "webhook_provision": _op_webhook_provision,
+    # Kept for app 3.0.x (its iPhone's Watch Integration Key row).
+    "watch_secret_status": _op_watch_secret_status,
     "notification_snapshot": _op_notification_snapshot,
     "template": _op_template,
     "services_list": _op_services_list,

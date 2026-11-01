@@ -9,8 +9,8 @@
 // drawing the sheet.
 
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
-import { deviceKindOf } from "./version.js";
-import { PAIR_CODE_LENGTH, settingsWatches, watchName } from "./watch-settings.js";
+import { deviceKindOf, setupMoveNeedsUpdate } from "./version.js";
+import { PAIR_CODE_LENGTH, noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
 
 /** Wrist Assistant's App Store page, the one the README and the website link. */
 export const APP_STORE_URL = "https://apps.apple.com/us/app/wrist-assistant/id6759152098";
@@ -56,6 +56,13 @@ export interface GettingStarted {
  *
  * The Library row and orphans are not devices and count for nothing.
  * `pages` is undefined until the panel has read it.
+ *
+ * The page step is never marked Next while every watch without pages here
+ * already has some on the way: its app is older than the setup move
+ * (`setupMoveNeedsUpdate`), so its pages still live on the iPhone, or its
+ * iPhone may still move them here (`noRecordStart` is `wait`). A long time
+ * user is not new, and a first page made now would make the move skip
+ * theirs. The step itself stays not done.
  */
 export function gettingStarted(
   owners: readonly OwnerSummary[],
@@ -65,6 +72,8 @@ export function gettingStarted(
   const devices = owners.filter((o) => deviceKindOf(o) !== "library" && !o.is_orphan);
   const watches = settingsWatches(owners);
   const page = pages !== undefined && watches.some((w) => pages.has(w.owner_watch_id));
+  const pagesComing = watches.length > 0
+    && watches.every((w) => setupMoveNeedsUpdate(w.app_version) || noRecordStart(w) === "wait");
   const steps: GettingStartedStep[] = [
     { id: "app", done: devices.length > 0 },
     { id: "pair", done: watches.length > 0 },
@@ -77,7 +86,7 @@ export function gettingStarted(
     watchNames: watches.map((w) => watchName(w, watches)),
     known: pages !== undefined || watches.length === 0,
   };
-  const next = steps.find((s) => !s.done)?.id;
+  const next = steps.find((s) => !s.done && !(s.id === "page" && pagesComing))?.id;
   if (next !== undefined) out.next = next;
   if (watch !== undefined) out.watch = watch;
   return out;

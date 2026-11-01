@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
-import { HTTP_ACTIONS_PHONE_TEXT } from "../src/watch-http-actions/model.js";
+import { HTTP_ACTIONS_PHONE_TEXT, httpActionsPhoneText } from "../src/watch-http-actions/model.js";
 import type { HassLike } from "../src/ha-api.js";
 import { dropAllWatchMenus } from "../src/watch-menus/draft.js";
 import { WATCH_MENUS_NO_RECORD_TITLE } from "../src/watch-menus/model.js";
@@ -26,7 +26,7 @@ import {
   saveBlockedText,
 } from "../src/watch-menus/new-watch.js";
 import { forgetRoomsDraft } from "../src/watch-rooms/draft.js";
-import { ROOMS_NO_RECORD_TITLE, ROOMS_WAIT_TEXT } from "../src/watch-rooms/model.js";
+import { ROOMS_NO_RECORD_TITLE, ROOMS_WAIT_TEXT, roomsWaitText } from "../src/watch-rooms/model.js";
 import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
 import {
   NEW_WATCH_TEXT,
@@ -35,9 +35,12 @@ import {
   START_FRESH_BUTTON,
   START_FRESH_CONFIRM_TEXT,
   WAIT_FOR_IPHONE_TEXT,
+  WAIT_FOR_UPDATE_TEXT,
   mayStart,
   newDeviceText,
   noRecordStart,
+  offersStartFresh,
+  waitForIphoneText,
 } from "../src/watch-settings.js";
 import { dropAllStatusPages } from "../src/watch-status-pages/draft.js";
 import { STATUS_PAGES_NO_RECORD_TITLE } from "../src/watch-status-pages/model.js";
@@ -121,7 +124,9 @@ describe("the no-record words", () => {
       "Waiting for your iPhone. Update Wrist Assistant on your iPhone and open it once. Your watch setup moves here by itself.",
     );
     expect(START_FRESH_BUTTON).toBe("Start fresh instead");
-    expect(START_FRESH_CONFIRM_TEXT).toBe("Your iPhone's setup will not move. Start fresh?");
+    expect(START_FRESH_CONFIRM_TEXT).toBe(
+      "Your first Save replaces the setup on your watch, and your iPhone's setup will not move here. Start fresh?",
+    );
   });
 
   it("give the rooms and HTTP actions their own wait lines", () => {
@@ -131,7 +136,8 @@ describe("the no-record words", () => {
 
   it("never name the iPhone switch the app no longer has, nor break a sentence with a dash", () => {
     for (const text of [
-      WAIT_FOR_IPHONE_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT,
+      WAIT_FOR_IPHONE_TEXT, WAIT_FOR_UPDATE_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT, roomsWaitText("3.0.1"),
+      httpActionsPhoneText(true),
       WATCH_MENUS_NO_RECORD_TITLE, WATCH_VOICE_NO_RECORD_TITLE,
       STATUS_PAGES_NO_RECORD_TITLE,
       ROOMS_NO_RECORD_TITLE, ROOMS_WAIT_TEXT, HTTP_ACTIONS_PHONE_TEXT, NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT,
@@ -301,6 +307,77 @@ describe("the rooms editor with no record", () => {
     expect(waiting).toContain(ROOMS_WAIT_TEXT);
     expect(waiting).toContain(START_FRESH_BUTTON);
     expect(waiting).not.toContain(NEW_WATCH_TEXT);
+  });
+});
+
+// ── a watch whose app is older than the move ─────────────────────────────
+//
+// The integration ships weeks before app 3.2. A watch still on 3.0.1 has no
+// iPhone that will move its setup until then, so every wait line names the
+// release, and "Start fresh instead" is not offered: a start would make the
+// move skip that kind for good and lose the watch's own setup.
+
+describe("a watch on an app older than the move", () => {
+  afterEach(dropDrafts);
+
+  it("names the release in the wait words, and only below the move's build", () => {
+    expect(WAIT_FOR_UPDATE_TEXT).toBe(
+      "Needs Wrist Assistant 3.2 or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.",
+    );
+    expect(waitForIphoneText("3.0.1")).toBe(WAIT_FOR_UPDATE_TEXT);
+    expect(waitForIphoneText("3.0")).toBe(WAIT_FOR_UPDATE_TEXT);
+    // The 3.1 TestFlight builds already move the setup.
+    expect(waitForIphoneText("3.1.0")).toBe(WAIT_FOR_IPHONE_TEXT);
+    expect(waitForIphoneText("3.2.0")).toBe(WAIT_FOR_IPHONE_TEXT);
+    // Not reported yet: no guess.
+    expect(waitForIphoneText(null)).toBe(WAIT_FOR_IPHONE_TEXT);
+    expect(waitForIphoneText(undefined)).toBe(WAIT_FOR_IPHONE_TEXT);
+    expect(roomsWaitText("3.0.1")).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_UPDATE_TEXT}`);
+    expect(httpActionsPhoneText(true)).toBe("Needs Wrist Assistant 3.2 or later. Once your iPhone has it, open the app once and its HTTP actions move here by themselves.");
+    expect(httpActionsPhoneText(false)).toBe(HTTP_ACTIONS_PHONE_TEXT);
+  });
+
+  it("offers Start fresh only once the app can move the setup", () => {
+    expect(offersStartFresh(owner("w", { app_version: "3.0.1" }))).toBe(false);
+    expect(offersStartFresh(owner("w", { app_version: "3.1.0" }))).toBe(true);
+    expect(offersStartFresh(owner("w", { app_version: null }))).toBe(true);
+    expect(offersStartFresh(undefined)).toBe(true);
+  });
+
+  it("waits with the update words and no Start fresh in the voice editor, and a start does nothing", () => {
+    const el = new WaVoiceEditor() as unknown as EditorInside;
+    el.hass = HASS;
+    el.owners = [owner("w1", { has_iphone: true, app_version: "3.0.1" })];
+    el.watchId = "w1";
+    el.record = empty("voice");
+    const text = flatten(el.renderBody(el.owners));
+    expect(text).toContain(WAIT_FOR_UPDATE_TEXT);
+    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(text).not.toContain(START_FRESH_BUTTON);
+    expect(flatten(el.renderTopBar(el.draft, el.owners))).not.toContain(START_FRESH_BUTTON);
+    const ask = vi.fn(() => true);
+    vi.stubGlobal("window", { confirm: ask });
+    el.startFresh();
+    expect(ask).not.toHaveBeenCalled();
+    expect(el.draft).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("waits with the update words and no Start fresh in the rooms editor", () => {
+    const el = new WaRoomsEditor() as unknown as EditorInside;
+    el.hass = HASS;
+    const watches = [owner("w1", { has_iphone: true, app_version: "3.0.1" })];
+    el.owners = watches;
+    el.watchId = "w1";
+    el.record = empty("behavior");
+    const text = flatten(el.renderBody(watches));
+    expect(text).toContain(roomsWaitText("3.0.1"));
+    expect(text).not.toContain(START_FRESH_BUTTON);
+    const ask = vi.fn(() => true);
+    vi.stubGlobal("window", { confirm: ask });
+    el.startFresh();
+    expect(ask).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { moveKindMatches } from "../src/layouts.js";
-import { PHONE_PAGES_CAPABILITY, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "../src/phone-pages.js";
+import { PHONE_PAGES_CAPABILITY, PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "../src/phone-pages.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, screenTakesPhone } from "../src/shell.js";
 import { IPHONE_PICK_KEY, WATCH_PICK_KEY, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick } from "../src/watch-pick.js";
 import { httpActionsSaveNote } from "../src/watch-http-actions/save-note.js";
@@ -18,7 +18,7 @@ import { watchMenusSaveNote } from "../src/watch-menus/save-note.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
 import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
-import { IPHONE_ROW_NONE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
+import { IPHONE_ROW_NONE_NOTE, IPHONE_ROW_UPDATE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
 import { WATCH_SETTINGS_CATALOG, catalogFor, formValues, isShown, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
 import { watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
@@ -155,16 +155,22 @@ describe("the iPhone app's pick", () => {
     expect(hasPhoneAwaitingUpdate(OWNERS)).toBe(false);
   });
 
-  // No App Store build has phone pages yet, so the update screen names no
-  // store: the beta testers who see it get the app from TestFlight.
-  it("asks for an update of the iPhone app without sending anyone to the App Store", () => {
+  // The integration ships weeks before the app release with phone pages, so
+  // the update screen names that release, which stays true before and after
+  // it reaches the App Store. No TestFlight (the public has none) and no
+  // Pages tab (the iPhone app has had one screen since 2026-10-20).
+  it("names the release the iPhone needs, with no TestFlight and no Pages tab", () => {
     const source = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
     const at = source.indexOf("  private renderIphoneScreen()");
     const screen = source.slice(at, source.indexOf("\n  }\n", at));
-    const update = screen.slice(screen.indexOf("<h2>Update the iPhone app</h2>"));
-    const words = update.slice(0, update.indexOf("</p>"));
-    expect(words).toContain("Update Wrist Assistant on the iPhone to the latest version (the TestFlight beta for now)");
-    expect(words).not.toContain("App Store");
+    expect(screen).toContain("<h2>${PHONE_PAGES_UPDATE_TITLE}</h2>");
+    expect(screen).toContain("<p>${PHONE_PAGES_UPDATE_TEXT}</p>");
+    expect(PHONE_PAGES_UPDATE_TEXT).toContain("iPhone pages need Wrist Assistant 3.2 or later.");
+    for (const words of [PHONE_PAGES_UPDATE_TITLE, PHONE_PAGES_UPDATE_TEXT, IPHONE_ROW_UPDATE_NOTE]) {
+      expect(words).not.toMatch(/TestFlight|Pages tab|latest version/);
+      expect(words).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
+    }
+    expect(IPHONE_ROW_UPDATE_NOTE).toBe("Needs Wrist Assistant 3.2 or later on your iPhone to set up its pages, menus and the rest.");
   });
 
   it("takes the iPhone the address names, else the one remembered, else the first", () => {

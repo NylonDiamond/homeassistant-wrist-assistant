@@ -101,7 +101,9 @@ PANEL_KINDS = frozenset(
 PHONE_KINDS = frozenset({"pages", "status_pages", "menus", "rooms", "behavior"})
 # The kinds a watch may seed (its own copy, once, when none is stored). Kept
 # equal to const.py by test_the_kinds_match_const below.
-SEED_KINDS = frozenset({"behavior", "notification_style"})
+SEED_KINDS = frozenset(
+    {"behavior", "notification_style", "pages", "menus", "voice", "status_pages", "control_center"}
+)
 # The phone's settings and the keys the app needs to decode a behavior
 # document, read out of const.py; test_phone_behavior_keys.py holds them to
 # the panel's catalog.

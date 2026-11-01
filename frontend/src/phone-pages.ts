@@ -15,7 +15,7 @@
 import type { OwnerSummary } from "./ha-api.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 import { IPHONE_PATH, screenTakesPhone, watchScreenOf } from "./shell.js";
-import { deviceKindOf, phoneShowsPages } from "./version.js";
+import { MIN_IPHONE_VERSION_FOR_PAGES, deviceKindOf, phoneShowsPages, versionForCopy } from "./version.js";
 import { watchRouteOwner } from "./watch-pick.js";
 
 /** What the integration advertises once it keeps a phone's own pages. */
@@ -43,6 +43,16 @@ export function iphoneDevices(owners: readonly OwnerSummary[]): OwnerSummary[] {
 export function hasPhoneAwaitingUpdate(owners: readonly OwnerSummary[]): boolean {
   return owners.some((o) => deviceKindOf(o) === "iphone" && !o.is_orphan && !phoneShowsPages(o));
 }
+
+/** The iPhone app screen's heading while `hasPhoneAwaitingUpdate`. */
+export const PHONE_PAGES_UPDATE_TITLE = "Needs a newer iPhone app";
+
+/** Its line. Names the release rather than "the latest version", so it
+ * stays true while the integration is out and the app release is not, and
+ * after both: an App Store update, no TestFlight, no Pages tab (the iPhone
+ * app has had one screen and no tab bar since 2026-10-20). */
+export const PHONE_PAGES_UPDATE_TEXT =
+  `Your iPhone is paired, but its Wrist Assistant app is too old to show pages of its own. iPhone pages need Wrist Assistant ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later. Once the iPhone has it, open the app once and the iPhone shows up here.`;
 
 /**
  * Where a Watch app address that names one of the home's iPhones goes now:

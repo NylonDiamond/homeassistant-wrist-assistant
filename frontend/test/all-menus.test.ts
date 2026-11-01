@@ -20,11 +20,13 @@ import {
   MENUS_BOARD_FOOT,
   MENUS_BOARD_HINT,
   MENUS_FOOT,
+  MENUS_WAIT_TEXT,
   allMenusLead,
   menuDetail,
   menuSections,
   menusDeviceFoot,
   menusEmptyText,
+  menusWaitText,
   noMenuText,
   NEW_MENU_ADMIN_TEXT,
   menuInUseText,
@@ -39,7 +41,7 @@ import {
 import { shownMenu, showMenuSettings, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "../src/watch-menus/model.js";
 import { libraryEditTitle } from "../src/watch-pages/all-pages-model.js";
-import { WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
+import { WAIT_FOR_IPHONE_TEXT, WAIT_FOR_UPDATE_TEXT } from "../src/watch-settings.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, PHONE, QUICK, SPARE, summary } from "./library-fixture.js";
 import { fakeHome, standUp } from "./library-tab-fake.js";
 
@@ -133,6 +135,15 @@ describe("the tab's words", () => {
     expect(noMenuText(JESSE_D, "", false)).toBe(`${JESSE_D.name} uses no menu yet.`);
     expect(noMenuText(JESSE_D, "zz", true)).toBe(`No menu ${JESSE_D.name} uses has that name.`);
     expect(menusEmptyText(DEVICES, "", true)).not.toMatch(/[–—]| - /);
+    // A waiting watch still on 3.0: its iPhone moves nothing until 3.2.
+    const old = { ...JESSE_D, appVersion: "3.0.1" };
+    const withOld = [DEVICES[0]!, old, PHONE_D];
+    expect(menusEmptyText(withOld, "", new Set([old.ownerId])))
+      .toBe("None yet. Needs Wrist Assistant 3.2 or later. Once your iPhone has it, open the app once and its menus move here by themselves.");
+    expect(menusEmptyText(withOld, "", new Set([DEVICES[0]!.ownerId]))).toBe(menusEmptyText(DEVICES, "", true));
+    expect(noMenuText(old, "", true)).toBe(`No menus from ${old.name} yet. ${WAIT_FOR_UPDATE_TEXT}`);
+    expect(menusWaitText("3.0.1")).toBe(`${WAIT_FOR_UPDATE_TEXT} Its menus can change after that.`);
+    expect(menusWaitText("3.2.0")).toBe(MENUS_WAIT_TEXT);
     for (const text of [allMenusLead(2), MENUS_FOOT, MENUS_BOARD_FOOT, MENUS_BOARD_HINT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/[Ll]ink|Same as/);

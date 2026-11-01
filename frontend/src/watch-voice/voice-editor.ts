@@ -96,7 +96,7 @@ import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailure
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
-import { START_FRESH_BUTTON, type NoRecordStart, WAIT_FOR_IPHONE_TEXT, deliveryState, followWatch, mayStart, noRecordStart, settingsWatches, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, offersStartFresh, settingsWatches, waitForIphoneText, watchName } from "../watch-settings.js";
 import {
   chooseStartFresh,
   firstSaveNote,
@@ -905,7 +905,7 @@ export class WaVoiceEditor extends LitElement {
    * opens on, the defaults unsaved. Nothing is written until Save. */
   private startFresh(): void {
     const watchId = this.watchId;
-    if (watchId === undefined || !mayStart(this.noRecordState())) return;
+    if (watchId === undefined || !offersStartFresh(this.shownWatch()) || !mayStart(this.noRecordState())) return;
     chooseStartFresh("voice", watchId);
     this.note = undefined;
     this.requestUpdate();
@@ -1346,7 +1346,12 @@ export class WaVoiceEditor extends LitElement {
   /** Whether this watch's iPhone may still move this kind here, so the
    * screen waits and "Start fresh instead" asks first (`noRecordStart`). */
   private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
-    return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
+    return noRecordStart(this.shownWatch(watches));
+  }
+
+  /** The watch on screen, as the owners list names it. */
+  private shownWatch(watches: readonly OwnerSummary[] = this.watches): OwnerSummary | undefined {
+    return watches.find((w) => w.owner_watch_id === this.watchId);
   }
 
   /** With no voice settings here, whether the screen opens ready
@@ -1359,7 +1364,7 @@ export class WaVoiceEditor extends LitElement {
    * for this watch, the integration keeps them, and the screen waits for
    * the iPhone. */
   private canStartFresh(): boolean {
-    return this.watchId !== undefined && this.newWatch && !this.opensReady();
+    return this.watchId !== undefined && this.newWatch && !this.opensReady() && offersStartFresh(this.shownWatch());
   }
 
   /** The ··· menu: Discard edits; on a watch with saved voice settings,
@@ -1518,8 +1523,9 @@ export class WaVoiceEditor extends LitElement {
       // No voice settings here and the screen does not open ready: the
       // iPhone's move may still come, so it waits, and "Start fresh instead"
       // is a small link that asks first.
-      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${WAIT_FOR_IPHONE_TEXT}</span>
-        <button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>
+      const shown = this.shownWatch();
+      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${waitForIphoneText(shown?.app_version)}</span>
+        ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when voice settings are here again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchVoiceDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;

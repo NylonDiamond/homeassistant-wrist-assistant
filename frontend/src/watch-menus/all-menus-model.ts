@@ -18,8 +18,8 @@
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
 import { matchesSearch } from "../watch-pages/all-pages-model.js";
-import { type LinkDevice, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
-import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
+import { type LinkDevice, anyNeedsUpdate, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
+import { waitForIphoneText } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "./model.js";
 
@@ -53,7 +53,13 @@ export const MENU_SECTION_TITLES: Readonly<Record<MenuUnit, string>> = {
 
 /** A device whose menus cannot move yet: its iPhone may still move them
  * here, and Home Assistant holds none for it. */
-export const MENUS_WAIT_TEXT = `${WAIT_FOR_IPHONE_TEXT} Its menus can change after that.`;
+export const MENUS_WAIT_TEXT = menusWaitText(undefined);
+
+/** `MENUS_WAIT_TEXT` for a device reporting `appVersion`, in the wait words
+ * for its version (`waitForIphoneText`). */
+export function menusWaitText(appVersion: string | null | undefined): string {
+  return `${waitForIphoneText(appVersion)} Its menus can change after that.`;
+}
 
 /** A device whose menu editor holds unsaved edits: moving it to another
  * menu would land those edits on that menu. */
@@ -135,18 +141,22 @@ export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchM
 }
 
 /** What the tab says with no menu to show. `waiting`: a watch waits for its
- * iPhone to move its menus here (`awaitingMove`), so they are on their way. */
-export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting = false): string {
+ * iPhone to move its menus here (`awaitingMove`), so they are on their way.
+ * Given as the set of waiting ids, a waiting watch too old for the move
+ * names the release (`waitingLibraryText`). */
+export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting: boolean | ReadonlySet<string> = false): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
   if (search.trim() !== "") return "No menu or device has that name.";
-  return waiting ? `None yet. ${waitingLibraryText("menus")}` : "None yet.";
+  const any = typeof waiting === "boolean" ? waiting : waiting.size > 0;
+  const needsUpdate = typeof waiting !== "boolean" && anyNeedsUpdate(devices, waiting);
+  return any ? `None yet. ${waitingLibraryText("menus", needsUpdate)}` : "None yet.";
 }
 
 /** What a focused device says while it uses no menu: that its iPhone's
  * move is still to come when it waits for one, else that it uses none. */
 export function noMenuText(device: LinkDevice, search: string, waiting: boolean): string {
   if (search.trim() !== "") return `No menu ${device.name} uses has that name.`;
-  return waiting ? waitingEmptyText("menus", device.name) : `${device.name} uses no menu yet.`;
+  return waiting ? waitingEmptyText("menus", device.name, device.appVersion) : `${device.name} uses no menu yet.`;
 }
 
 /** The Duplicate button's tooltip on a focused device's shared menu. */

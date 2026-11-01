@@ -47,7 +47,6 @@ import {
   MENUS_BOARD_FOOT,
   MENUS_BOARD_HINT,
   MENUS_FOOT,
-  MENUS_WAIT_TEXT,
   NEW_MENU_ADMIN_TEXT,
   allMenusLead,
   duplicateMenuTitle,
@@ -58,6 +57,7 @@ import {
   menusDeviceFoot,
   menusDirtyText,
   menusEmptyText,
+  menusWaitText,
   noMenuText,
   menuInUseText,
   newMenuMadeText,
@@ -433,7 +433,7 @@ export class WaAllMenus extends LitElement {
       <div class="am-section-head">
         <h2 class="am-section-title" id=${`am-section-${unit}`}>${MENU_SECTION_TITLES[unit]} <span class="am-section-n">${menus.length}</span></h2>
       </div>
-      ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, waiting.size > 0)}</p>`
+      ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, waiting)}</p>`
         : html`<div class="ap-grid" role="list">${menus.map((menu) => this.renderCard(library, menu, devices, waiting))}</div>`}
     </section>`)}`;
   }
@@ -486,7 +486,7 @@ export class WaAllMenus extends LitElement {
       locked: (ownerId) => {
         if (hasItem(library, ownerId, "menus", menu.id)) return undefined;
         if (dirtyHere(ownerId)) return menusDirtyText(devices.find((d) => d.ownerId === ownerId)?.name ?? "This device");
-        if (waiting.has(ownerId)) return MENUS_WAIT_TEXT;
+        if (waiting.has(ownerId)) return menusWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion);
         return undefined;
       },
     };
@@ -585,7 +585,7 @@ export class WaAllMenus extends LitElement {
     return this.renderBoardOf(library, devices, menuSections(shown).map(({ unit, menus }) => ({
       key: unit, title: MENU_SECTION_TITLES[unit], count: menus.length, hint: MENUS_BOARD_HINT,
       rows: menus.map((menu) => this.boardRow(library, menu, devices, waiting)),
-      empty: menusEmptyText(devices, this.search, waiting.size > 0),
+      empty: menusEmptyText(devices, this.search, waiting),
     })));
   }
 

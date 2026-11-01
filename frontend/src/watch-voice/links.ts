@@ -24,7 +24,7 @@ import type { WatchConfigRecord, WatchUnitPlace } from "../ha-api.js";
 import { type LinkDevice, type PageDevicePlace, joinWords } from "../watch-pages/devices.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
+import { WAIT_FOR_IPHONE_TEXT, waitForIphoneText } from "../watch-settings.js";
 import { type VoiceDocument, asWatchVoiceDocument, watchVoiceDefaults, watchVoicePhrases, withVoiceKey, withoutVoiceKey } from "./model.js";
 
 /** The top-level key Home Assistant writes the link ids under. */
@@ -81,7 +81,13 @@ export function voicePhrasesHolders(document: VoiceDocument | undefined, here: s
 /** The switch of the watch the editor is on, which never goes off. */
 export const VOICE_DEVICES_HERE_TEXT = "These are this watch's phrases. Switch off another watch to unlink it.";
 /** A watch that waits for its iPhone. */
-export const VOICE_DEVICES_WAIT_TEXT = `${WAIT_FOR_IPHONE_TEXT} Phrases can go on this watch after that.`;
+export const VOICE_DEVICES_WAIT_TEXT = voiceDevicesWaitText(undefined);
+
+/** `VOICE_DEVICES_WAIT_TEXT` for a watch reporting `appVersion`, in the
+ * wait words for its version (`waitForIphoneText`). */
+export function voiceDevicesWaitText(appVersion: string | null | undefined): string {
+  return `${waitForIphoneText(appVersion)} Phrases can go on this watch after that.`;
+}
 export const VOICE_DEVICES_WAIT_TAG = "waiting for iPhone";
 
 /** The Devices menu's head and foot. */
@@ -114,7 +120,7 @@ export function voiceDevicePlaces(
     const isHere = device.ownerId === here;
     const on = holders.has(device.ownerId);
     if (isHere) return { device, on: true, here: true, stuck: VOICE_DEVICES_HERE_TEXT };
-    if (!on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: VOICE_DEVICES_WAIT_TEXT, tag: VOICE_DEVICES_WAIT_TAG };
+    if (!on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: voiceDevicesWaitText(device.appVersion), tag: VOICE_DEVICES_WAIT_TAG };
     return { device, on, here: false };
   });
 }

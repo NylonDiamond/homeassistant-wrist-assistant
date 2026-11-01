@@ -487,7 +487,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
   }));
   /** A kind's empty line: its iPhone's move still to come, or none yet. */
   const empty = (k: LibraryKind, what: string, none: string): string =>
-    draw.waitsForIphone === true && !holdsRecord(library, ownerId, k) ? waitingEmptyText(what, `this ${word}`) : none;
+    draw.waitsForIphone === true && !holdsRecord(library, ownerId, k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion) : none;
   const underPages = arrange?.under?.("pages");
   const zonePages = arrange?.zone?.("pages");
   const underStatus = arrange?.under?.("status_pages");

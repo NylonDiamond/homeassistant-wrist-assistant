@@ -21,6 +21,9 @@ export interface IdHomeDevice extends HomeDevice {
   /** Its iPhone may still move the watch's setup here (`noRecordStart` is
    * `wait`), so a watch with no record yet waits for it (`deviceVerdict`). */
   waitsForIphone?: boolean;
+  /** The Wrist Assistant version it reported, which picks that wait's
+   * words (`iphoneMoveLabel`). */
+  appVersion?: string | null;
 }
 
 /**
@@ -44,6 +47,7 @@ export function homeDevices(
     count: o.complication_count,
     orphan: o.is_orphan,
     waitsForIphone: noRecordStart(o) === "wait",
+    appVersion: o.app_version,
   }));
 }
 
@@ -112,7 +116,7 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
     if (complications === undefined) continue;
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
-    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id), kind === "watch" && d.waitsForIphone === true);
+    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id), kind === "watch" && d.waitsForIphone === true, d.appVersion);
     rows.push(rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];

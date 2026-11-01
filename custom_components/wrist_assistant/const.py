@@ -240,10 +240,25 @@ WATCH_CONFIG_PHONE_KINDS = frozenset(
         "behavior",
     }
 )
-# The kinds a watch may seed: its own copy of the two records its main house
-# keeps for the whole watch, sent once with `seed: true` on watch_config_put
-# while Home Assistant holds no record of the kind (WatchConfigStore.put).
-WATCH_CONFIG_SEED_KINDS = frozenset({"behavior", "notification_style"})
+# The kinds a watch may seed: its own copy of a record, sent once with
+# `seed: true` on watch_config_put while Home Assistant holds no record of the
+# kind (WatchConfigStore.put). The two its main house keeps for the whole
+# watch (`watch_config_seed`), and its own setup of each home: pages, menus,
+# voice, status pages and the Control Center list
+# (`watch_config_seed_setup`). Every seed is refused `awaiting_move` while the
+# watch's iPhone may still move its setup here
+# (widget_secret_store.watch_move_may_still_come).
+WATCH_CONFIG_SEED_KINDS = frozenset(
+    {
+        "behavior",
+        "notification_style",
+        "pages",
+        "menus",
+        "voice",
+        "status_pages",
+        "control_center",
+    }
+)
 # The settings an iPhone's `behavior` record keeps: every key the panel's
 # catalog (frontend/src/watch-settings-catalog.json) marks with
 # `"devices": ["watch", "iphone"]`. A behavior write for an iPhone owner keeps
@@ -409,6 +424,12 @@ WATCH_CONFIG_ROOMS_CAPABILITY = "watch_config_rooms"
 # move its setup here. The watch seeds only when it sees this, so an older
 # integration, which would take the seed over that move, is never sent one.
 WATCH_CONFIG_SEED_CAPABILITY = "watch_config_seed"
+# What the integration advertises once a seed may also carry the watch's own
+# setup of a home: its pages, menus, voice, status pages and Control Center
+# list (WATCH_CONFIG_SEED_KINDS), into an empty record only, and only once the
+# watch's iPhone can no longer move its setup here. The watch seeds those only
+# when it sees this; an older integration refuses them as malformed.
+WATCH_CONFIG_SEED_SETUP_CAPABILITY = "watch_config_seed_setup"
 # What the integration advertises once every /v2/delta reply with a body names
 # the signer's own `watch_config: {"pages": rev, "behavior": rev}` (0 for a
 # kind with no record) and a save of either kind wakes that owner's parked

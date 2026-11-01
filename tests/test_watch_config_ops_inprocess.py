@@ -33,6 +33,7 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import copy
 import types
 from pathlib import Path
 from typing import Any
@@ -1235,7 +1236,8 @@ def test_a_seed_is_refused_while_the_iphone_may_still_move_the_setup(env) -> Non
 @pytest.mark.parametrize(
     ("change", "word"),
     [
-        ({"kind": "pages", "document": _doc()}, "does not seed"),
+        ({"kind": "rooms", "document": _rooms()}, "does not seed"),
+        ({"kind": "catalog", "document": _catalog()}, "does not seed"),
         ({"base_revision": 1}, "first record"),
         ({"force": True}, "first record"),
     ],
@@ -1271,6 +1273,91 @@ def test_the_seed_capability_is_advertised() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     assert "register_capability(WATCH_CONFIG_SEED_CAPABILITY)" in init
     assert 'WATCH_CONFIG_SEED_CAPABILITY = "watch_config_seed"' in const
+
+
+# ── the watch's seed of its own setup (watch_config_seed_setup) ──────────
+
+
+def _setup_document(kind: str) -> dict:
+    return {
+        "pages": _doc("Watch's own"),
+        "menus": _menus(),
+        "voice": _batch_2("voice"),
+        "status_pages": _batch_2("status_pages"),
+        "control_center": _control_center(),
+    }[kind]
+
+
+def _setup_seed_body(kind: str) -> dict:
+    body = _put_body(_setup_document(kind), kind=kind)
+    body["seed"] = True
+    return body
+
+
+SETUP_KINDS = ["pages", "menus", "voice", "status_pages", "control_center"]
+
+
+@pytest.mark.parametrize("kind", SETUP_KINDS)
+def test_a_watch_with_no_move_coming_seeds_its_own_setup_into_an_empty_record(env, kind) -> None:
+    """A watch its iPhone cannot move (no watch key, a phone replaced, a pair
+    by code): its own pages, menus, voice, status pages and Control Center
+    list become the first record, so the panel shows them instead of none."""
+    reply = _put(env, _setup_seed_body(kind))
+    assert reply.status == 200, reply.body
+    assert reply.body["ok"] is True
+    record = env.store.get(WATCH, kind)
+    assert record is not None
+    assert record.updated_by == WATCH
+    got = _get(env, {"kind": kind})
+    assert got.body["kind"] == kind
+    assert got.body["revision"] == record.revision
+
+
+@pytest.mark.parametrize("kind", SETUP_KINDS)
+def test_a_setup_seed_never_goes_over_a_record(env, kind) -> None:
+    """Whatever made the first record (the phone's move, the panel) wins: the
+    seed is the usual conflict and the record stays as it was."""
+    first = _put(env, _put_body(_setup_document(kind), kind=kind, digest=HASH_2))
+    assert first.body["ok"] is True
+    before = env.store.get(WATCH, kind)
+    revision, document = before.revision, copy.deepcopy(before.document)
+    reply = _put(env, _setup_seed_body(kind))
+    assert reply.status == 409
+    assert reply.body["error"] == "conflict"
+    after = env.store.get(WATCH, kind)
+    assert (after.revision, after.document) == (revision, document)
+
+
+@pytest.mark.parametrize("kind", SETUP_KINDS)
+def test_a_setup_seed_waits_while_the_iphone_may_still_move(env, kind) -> None:
+    """The phone holds the uncut setup (a free plan's watch may hold one page
+    of it), so while its move may still come the watch's copy is refused, and
+    the move itself still lands afterwards."""
+    env.store = env.mod.WatchConfigStore(_Hass(), may_await_move=lambda owner: owner == WATCH)
+    asyncio.run(env.store.async_load())
+    reply = _put(env, _setup_seed_body(kind))
+    assert reply.status == 400
+    assert reply.body["error"] == "awaiting_move"
+    assert env.store.get(WATCH, kind) is None
+    move = _put(env, _put_body(_setup_document(kind), kind=kind))
+    assert move.body["ok"] is True
+
+
+def test_an_iphone_never_seeds_setup_either(env) -> None:
+    env.store = env.mod.WatchConfigStore(_Hass(), is_iphone=lambda owner: owner == PHONE)
+    asyncio.run(env.store.async_load())
+    reply = _put(env, _setup_seed_body("pages"), watch_id=PHONE)
+    assert reply.status == 400
+    assert env.store.get(PHONE, "pages") is None
+
+
+def test_the_setup_seed_capability_is_advertised() -> None:
+    """The watch seeds its setup only when it sees this, so an older
+    integration, which refuses those kinds, is never sent one."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_SEED_SETUP_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_SEED_SETUP_CAPABILITY = "watch_config_seed_setup"' in const
 
 
 # ── static: dispatch and capability ──────────────────────────────────────

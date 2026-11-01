@@ -425,7 +425,7 @@ import {
 import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext, type ResolvedControl } from "./resolver.js";
 import { familyNote, isHomeFamily } from "./layouts.js";
 import { isPlaceholderId } from "./transfer.js";
-import { type DeviceKind, deviceSupportsControls, watchVersionNote } from "./version.js";
+import { type DeviceKind, MIN_VERSION_FOR_TAP_CONFIRM, deviceSupportsControls, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { goToWatchHttpActions } from "./shell.js";
 import type { WatchCatalogHTTPAction } from "./watch-pages/catalog.js";
@@ -8995,7 +8995,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "tap": {
       content = html`
         ${tapActionEditor(host, el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k), key)}
-        ${tapConfirmField(el.payload, (on) => upd((e) => { if (e.kind === "tap") setTapConfirm(e.payload, on); }, "confirm"))}
+        ${tapConfirmField(el.payload, (on) => upd((e) => { if (e.kind === "tap") setTapConfirm(e.payload, on); }, "confirm"), host)}
         <div class="hint">An invisible area: a tap inside this frame runs this action, and the layer highest in the list wins where two overlap.</div>
         <div class="hint">To make one layer tappable, tick Tappable on that layer instead.</div>`;
       break;
@@ -10121,12 +10121,23 @@ function markerReadingFields(
 /** "Ask before running" for a tap layer, attached or free-standing. A widget
  * cannot show a question, so the first tap arms the layer and the second runs
  * it. Offered only for actions that run something in the background; for the
- * rest the key stays where it is and the app ignores it. */
-export function tapConfirmField(tap: TapElement, set: (on: boolean) => void): TemplateResult | typeof nothing {
+ * rest the key stays where it is and the app ignores it. An app older than
+ * `MIN_VERSION_FOR_TAP_CONFIRM` runs the action on the first tap, so the
+ * option carries the Needs line for the edited device (`tapConfirmNote`). */
+export function tapConfirmField(tap: TapElement, set: (on: boolean) => void, host?: Pick<EditorHost, "watchAppVersion" | "deviceKind">): TemplateResult | typeof nothing {
   if (!tapActionCanConfirm(tap.action)) return nothing;
+  const note = host === undefined ? undefined : tapConfirmNote(host);
   return html`
     ${checkField("Ask before running", tap.confirm === true, set, false)}
-    <div class="hint">Tap once to arm, tap again within 5 seconds to run.</div>`;
+    <div class="hint">Tap once to arm, tap again within 5 seconds to run.</div>
+    ${note === undefined ? nothing : html`<div class="hint keep">${note}</div>`}`;
+}
+
+/** "Needs Wrist Assistant 3.2 or later on your watch." (or iPhone) under
+ * "Ask before running" while the edited device's app is older than the
+ * release that asks. Nothing when it is new enough or has not reported. */
+export function tapConfirmNote(host: Pick<EditorHost, "watchAppVersion" | "deviceKind">): string | undefined {
+  return watchVersionNote(host.watchAppVersion, MIN_VERSION_FOR_TAP_CONFIRM, host.deviceKind === "iphone" ? "iPhone" : "watch");
 }
 
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {
@@ -10147,7 +10158,7 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
     ${attached
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
-          ${tapConfirmField(attached.payload as TapElement, (on) => updTap((p) => setTapConfirm(p, on)))}
+          ${tapConfirmField(attached.payload as TapElement, (on) => updTap((p) => setTapConfirm(p, on)), host)}
           <div class="field"><span>Tap zone</span>
             <div class="chips">
               <button class="pick ${host.tapAreaShown ? "on" : ""}" aria-pressed=${host.tapAreaShown ? "true" : "false"}

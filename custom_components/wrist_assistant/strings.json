@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Wrist Assistant",
-        "description": "This turns on Wrist Assistant. Next, open **Wrist Assistant** in the sidebar and choose **Pair a device** on the Home tab. With the iPhone app, choose **Show a QR code**. On a watch without an iPhone, choose **Pair with Home Assistant** on the watch, then type the code it shows under **Type a code**.\n\n[Setup guide]({docs_url})"
+        "description": "This turns on Wrist Assistant. Next, open **Wrist Assistant** in the sidebar and choose **Pair a device** on the Home tab. With the iPhone app, choose **Show a QR code**. On a watch without an iPhone, choose **Pair with Home Assistant** on the watch, then type the code it shows under **Type a code**. On Wrist Assistant 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.\n\n[Setup guide]({docs_url})"
       }
     },
     "abort": {

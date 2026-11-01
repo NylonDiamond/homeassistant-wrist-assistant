@@ -35,9 +35,9 @@ export const MIN_WATCH_VERSION_FOR_CHART_LOOKS: string | null = null;
 export const MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER: string | null = null;
 
 /** First watch app version that skips the iPhone only tile kinds (map,
- * chart, text_field, web) instead of drawing them as grey placeholders.
- * Confirmed at release time: bump it if the release that ships the skip is
- * not 3.2.0. */
+ * chart, text_field, web) instead of drawing them as grey placeholders: the
+ * 3.2 release. Set ahead of that release on purpose, since the integration
+ * ships first and the 3.0 watches it meets meanwhile need the note. */
 export const MIN_WATCH_VERSION_FOR_PHONE_TILES = "3.2.0";
 
 /** Whether a watch app at this version skips the iPhone only kinds. A
@@ -50,11 +50,11 @@ export function watchSupportsPhoneTiles(appVersion: string | null | undefined): 
 }
 
 /** First app version, on either device, that draws every tile in One Look,
- * the shared tile look of the iPhone and the watch. null until the app
- * release that draws One Look is cut; until then every device previews One
- * Look. Set it at release so an older app keeps the old look in the preview
- * and the old settings. Not a gate on what is stored: a tile keeps every key
- * whichever look draws it. */
+ * the shared tile look of the iPhone and the watch: the 3.2 release, set
+ * ahead of it because the integration ships first. An older app keeps the
+ * old look in the preview and the old settings. null would mean every
+ * device previews One Look. Not a gate on what is stored: a tile keeps every
+ * key whichever look draws it. */
 export const MIN_VERSION_FOR_ONE_LOOK: string | null = "3.2.0";
 
 /** Whether an app at this version draws One Look, by `MIN_VERSION_FOR_ONE_LOOK`.
@@ -78,10 +78,9 @@ export function oneLookAtVersion(appVersion: string | null | undefined, minimum:
 /** First app version, on either device, that draws a tile's Arrangement
  * (`arrange`). Not a gate: an older app ignores the key and draws the tile's
  * Default arrangement, so the card stays usable and only carries a note.
- * null until the app release that draws it is cut, as `MIN_VERSION_FOR_ONE_LOOK`
- * is: until then no device carries the note, so a development build of the
- * app (still reporting the last release's version) is not told to update.
- * Set it at release. */
+ * The 3.2 release, set ahead of it as `MIN_VERSION_FOR_ONE_LOOK` is. A
+ * development build of the app that still reports 3.0.x carries the note
+ * too; null would carry it on no device. */
 export const MIN_VERSION_FOR_ARRANGEMENT: string | null = "3.2.0";
 
 /** Whether an app at this version draws a tile's Arrangement. Not yet
@@ -112,8 +111,8 @@ export function arrangementUpdateNote(
 /** First app version, on either device, that draws a tile's icon photo
  * (`iconPhotoId`, app repo docs/photo_tiles_plan_2026-10.md). Not a gate: an
  * older app ignores the key and draws the tile's icon, so the Photo rows stay
- * usable and only carry a note. null until the app release that draws it is
- * cut, as `MIN_VERSION_FOR_ARRANGEMENT` is. Set it at release. */
+ * usable and only carry a note. The 3.2 release, set ahead of it as
+ * `MIN_VERSION_FOR_ARRANGEMENT` is. */
 export const MIN_VERSION_FOR_PHOTO_TILES: string | null = "3.2.0";
 
 /** Whether an app at this version draws a tile's icon photo. Not yet
@@ -251,10 +250,15 @@ export function deviceKindOf(owner: DeviceOwnerLike | null | undefined): DeviceK
   return owner?.device_kind === "iphone" ? "iphone" : "watch";
 }
 
+/** First iPhone app version with pages of its own, for the words only: the
+ * panel tells a phone that has them by `phone_pages`, not by version
+ * (`phoneShowsPages`). The 3.2 release. */
+export const MIN_IPHONE_VERSION_FOR_PAGES = "3.2.0";
+
 /** Whether the panel offers this owner for pages as an iPhone: an iPhone
  * whose app has polled Home Assistant as itself, which only an app with phone
- * pages does. An iPhone on an older app has no Pages tab to show them on, so
- * it is left out until it updates. */
+ * pages does. An iPhone on an older app has no pages to show, so it is left
+ * out until it updates. */
 export function phoneShowsPages(owner: DeviceOwnerLike | null | undefined): boolean {
   return deviceKindOf(owner) === "iphone" && owner?.phone_pages === true;
 }
@@ -307,13 +311,47 @@ export function watchSupportsShapes(appVersion: string | null | undefined, minim
 export function watchVersionNote(
   appVersion: string | null | undefined,
   minimum: string | null = MIN_WATCH_VERSION_FOR_CHART_LOOKS,
+  device: "watch" | "iPhone" = "watch",
 ): string | undefined {
   if (minimum === null) return undefined;
   const have = parseVersion(appVersion);
   const need = parseVersion(minimum);
   if (!have || !need || compareVersions(have, need) >= 0) return undefined;
   const named = need[2] === 0 ? `${need[0]}.${need[1]}` : need.join(".");
-  return `Needs Wrist Assistant ${named} or later on your watch.`;
+  return `Needs Wrist Assistant ${named} or later on your ${device}.`;
+}
+
+/** First app version that honours a tap layer's "Ask before running"
+ * (`confirm`). An older app has no such key on its tap and runs the action on
+ * the first tap, so the option carries the `watchVersionNote` line. */
+export const MIN_VERSION_FOR_TAP_CONFIRM = "3.2.0";
+
+/** First app version whose iPhone moves a watch's setup (pages, menus,
+ * settings and the rest) into Home Assistant, the one time it opens. Below
+ * it nothing will ever move, so the panel names the update rather than
+ * telling the person to open the app.
+ *
+ * The move shipped in the 3.1.0 TestFlight builds (app repo fc734f08,
+ * 2026-10-08), and 3.1 never reached the App Store: the gate is 3.1.0 so a
+ * tester still on one is not told to update, while the words name the first
+ * release anyone can install (`SETUP_MOVE_PUBLIC_VERSION`), as the 2.8.0
+ * gates name 3.0. */
+export const MIN_VERSION_FOR_SETUP_MOVE = "3.1.0";
+
+/** The first App Store release with the setup move, as the words name it. */
+export const SETUP_MOVE_PUBLIC_VERSION = "3.2.0";
+
+/** Whether a device reporting `appVersion` is too old for the setup move.
+ * Unknown or unparseable reads as no, as `watchVersionNote` does: a guess
+ * would tell a device that has not reported to update. */
+export function setupMoveNeedsUpdate(
+  appVersion: string | null | undefined,
+  minimum: string = MIN_VERSION_FOR_SETUP_MOVE,
+): boolean {
+  const have = parseVersion(appVersion);
+  const need = parseVersion(minimum);
+  if (!have || !need) return false;
+  return compareVersions(have, need) < 0;
 }
 
 /** The first version anyone outside TestFlight can install. The per-shape

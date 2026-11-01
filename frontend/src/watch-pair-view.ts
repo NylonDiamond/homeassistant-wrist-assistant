@@ -44,6 +44,7 @@ import {
 } from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
 import {
+  OLD_APP_PAIR_NOTE,
   PAIR_BACK_TEXT,
   PAIR_CHOICES,
   PAIR_CHOICE_TITLE,
@@ -654,7 +655,8 @@ export class PairWatchCard {
             @click=${() => this.choose(c.choice)}>
             ${uiIcon(c.choice === "iphone" ? "phone" : "watch")}<b>${c.label}</b><span>${c.line}</span></button>`)}
       </div>
-      <p class="hint keep ws-pair-note">${pairChoiceNote(mayPairForOthers(this.hass?.user))}</p>`;
+      <p class="hint keep ws-pair-note">${pairChoiceNote(mayPairForOthers(this.hass?.user))}</p>
+      <p class="hint keep ws-pair-note">${OLD_APP_PAIR_NOTE}</p>`;
   }
 
   /** The foot under a mode: Back to the choice when the card opened on it,
