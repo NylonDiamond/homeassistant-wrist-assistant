@@ -172,7 +172,7 @@ describe("rare rows at their defaults", () => {
     expect(moreWords(part(text, "whenOff"))).toBe("More Animate while on: off");
     // Tap animation is a part of one rare row: the whole part folds, and its
     // More line follows it.
-    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=color`));
+    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=text`));
     expect(tap).toMatch(/^<div class="ts-rare" \?data-shown=false><section class="ts-sec" data-part=tapAnimation /);
     expect(moreWords(tap)).toMatch(/^More Tap animation: \S/);
   });
@@ -213,7 +213,7 @@ describe("a rare row that holds a value of its own", () => {
     expect(moreWords(part(text, "text"))).toBeUndefined();
     expect(moreWords(part(text, "whenOff"))).toBeUndefined();
     // A changed Tap animation stands as an open part with no More after it.
-    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=color`));
+    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=text`));
     expect(tap).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
     expect(moreWords(tap)).toBeUndefined();
   });

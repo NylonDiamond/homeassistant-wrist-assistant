@@ -324,7 +324,7 @@ describe("Collapse all", () => {
 // ── the cards ────────────────────────────────────────────────────────────
 
 describe("the tile's cards", () => {
-  it("start with the head across the inspector, then four groups: Color and icon, Text, Surface and rules and What it does, each with its sections", () => {
+  it("start with the head across the inspector, then four groups: Color and icon, What it does, Text and Surface and rules, each with its sections", () => {
     const el = editor(hallPage(), DIMMER);
     const text = flat(inspector(el));
     // The head across the top, over every column: the path and the live
@@ -383,7 +383,7 @@ describe("the tile's cards", () => {
     expect(card(body, "Name")).not.toContain(`aria-label="Label"`);
     // The groups, in their order, each with its title, its line and its
     // sections.
-    expect(groupTitles(body)).toEqual(["What it does", "Color and icon", "Text", "Surface and rules"]);
+    expect(groupTitles(body)).toEqual(["Color and icon", "What it does", "Text", "Surface and rules"]);
     expect(group(body, "color")).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
     expect(titles(group(body, "color"))).toEqual(["Icon", "Color", "Glow", "When it is off"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
@@ -408,14 +408,16 @@ describe("the tile's cards", () => {
     // columns as there are groups to draw.
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const groups = text.slice(text.indexOf(`<div class="ts-groups" style=--ts-n:4>`));
-    const at = ["does", "color", "text", "surface"].map((g) => groups.indexOf(`<section class="ts-grp" data-group=${g} `));
+    const at = ["color", "does", "text", "surface"].map((g) => groups.indexOf(`<section class="ts-grp" data-group=${g} `));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(text).not.toContain("ts-g1");
     expect(text).not.toContain("pe-insp-col");
     expect(text).not.toContain("data-col=");
-    expect(css).toContain("@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }");
-    expect(css).toContain("@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); } .ts-grp-rest { display: contents; }");
+    // Two across: Color and icon in the first cell with the other rows under
+    // it, What it does in the second beside them all.
+    expect(css).toContain(`@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; row-gap: 6px; } .ts-groups > :not([data-group="does"]) { grid-column: 1; } .ts-groups > .ts-grp[data-group="does"] { grid-column: 2; grid-row: 1 / span 2; } }`);
+    expect(css).toContain(`@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); grid-template-rows: none; row-gap: 10px; } .ts-groups > :not([data-group="does"]) { grid-column: auto; } .ts-groups > .ts-grp[data-group="does"] { grid-column: auto; grid-row: auto; } .ts-grp-rest { display: contents; }`);
     expect(css).not.toContain(".ts-g3");
     // Four across: each column fills the inspector's height and scrolls on
     // its own under a title that stays put.

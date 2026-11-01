@@ -353,20 +353,20 @@ describe("the inspector's groups", () => {
     expect(of("surface")).toEqual(["visibility", "arrange", "size", "background", "border", "phoneExtras"]);
     expect(of("does")).toEqual(["entity", "phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
     expect([...TILE_KIND_PARTS]).toEqual(["phoneTile", "special", "phone", "target", "opens", "request"]);
-    expect(TILE_INSPECTOR_GROUPS).toEqual(["does", "color", "text", "surface"]);
+    expect(TILE_INSPECTOR_GROUPS).toEqual(["color", "does", "text", "surface"]);
   });
 
   it("give a light its groups in order and leave out a group with nothing in it", () => {
     const { host } = tileHost(tile("light.desk"));
     expect(tileInspectorParts(host)).toEqual([
-      { group: "does", parts: ["entity", "action", "tapAnimation"] },
       { group: "color", parts: ["icon", "color", "glow", "whenOff"] },
+      { group: "does", parts: ["entity", "action", "tapAnimation"] },
       { group: "text", parts: ["text", "state"] },
       { group: "surface", parts: ["visibility", "arrange", "size", "background", "border"] },
     ]);
     // Size is the page editor's: without its rows it is not drawn.
     const text = flat(renderTileInspector(host));
-    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["What it does", "Color and icon", "Text", "Surface and rules"]);
+    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Color and icon", "What it does", "Text", "Surface and rules"]);
     expect(text).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
     expect(text).toMatch(/<span class="ts-grp-t">Text<\/span>\s*<span class="ts-grp-d">Name, state, state bar<\/span>/);
     expect(text).toMatch(/<span class="ts-grp-t">Surface and rules<\/span>\s*<span class="ts-grp-d">Background, border, when it shows<\/span>/);

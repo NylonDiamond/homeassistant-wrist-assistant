@@ -362,9 +362,12 @@ describe("the groups' rows (mock-pages, view 2, items 6 and 7)", () => {
     return host;
   };
 
-  it("leads with What it does, open, then one row each for the others, with the line under them", () => {
+  it("leads with the Color and icon row, then What it does, open, then one row each for the others, with the line under them", () => {
     const text = flat(renderTileInspector(fresh(tile("lock.front_door"))));
-    expect(text.indexOf("data-group=does")).toBeLessThan(text.indexOf("data-group=color"));
+    expect(text.indexOf("data-group=color")).toBeLessThan(text.indexOf("data-group=does"));
+    expect(text.indexOf("data-group=does")).toBeLessThan(text.indexOf("data-group=text"));
+    expect(text.indexOf("data-group=text")).toBeLessThan(text.indexOf("data-group=surface"));
+    expect(text.indexOf("data-group=surface")).toBeLessThan(text.indexOf(TILE_GROUPS_FOOT));
     expect(text).toContain(`<div class="ts-grp-h"><h3 class="ts-grp-t">What it does</h3>`);
     expect(text).toContain("<h4>Entity</h4>");
     expect(text).toContain("<h4>Tap</h4>");

@@ -1037,12 +1037,13 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
 // ── the tile inspector's groups ──────────────────────────────────────────
 
 /** The four groups the tile inspector stands its settings in, always in
- * this order: What it does, the first question, then the looks: Color and
- * icon, Text, Surface and rules. */
+ * this order: Color and icon, then What it does, then the other looks:
+ * Text, Surface and rules (Jesse moved Color and icon ahead of What it does
+ * on 2026-11-01). */
 export type TileInspectorGroup = "color" | "text" | "surface" | "does";
 
 /** The groups in their order. */
-export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["does", "color", "text", "surface"];
+export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["color", "does", "text", "surface"];
 
 /**
  * One section of the tile inspector, under one heading. Most are a settings
@@ -1060,14 +1061,14 @@ export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "col
  * Where each part goes, as one table, in reading order. Color and icon is
  * the tile's fill, its icon or photo and how it looks while off; a removed
  * kind's one line leads it, standing for everything else, and a header's
- * look comes first too, as the look it is. Text is the name and the state.
- * Surface and rules is when the tile shows, where its parts sit, a smart
- * rule's size, its background and border, and the iPhone extras of a
- * watch's editor last, as the aside they are. What it does starts with the
+ * look comes first too, as the look it is. What it does starts with the
  * entity the tile shows, then what the tile's own kind holds
  * (`TILE_KIND_PARTS`: an iPhone tile's task, a special task, an iPhone key, a
  * home map's or a library tile's target, a link's page, the reply of a
- * request), then the tap and its animation.
+ * request), then the tap and its animation. Text is the name and the state.
+ * Surface and rules is when the tile shows, where its parts sit, a smart
+ * rule's size, its background and border, and the iPhone extras of a
+ * watch's editor last, as the aside they are.
  */
 export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
   ["removed", "color"],
@@ -1076,14 +1077,6 @@ export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileIn
   ["color", "color"],
   ["glow", "color"],
   ["whenOff", "color"],
-  ["text", "text"],
-  ["state", "text"],
-  ["visibility", "surface"],
-  ["arrange", "surface"],
-  ["size", "surface"],
-  ["background", "surface"],
-  ["border", "surface"],
-  ["phoneExtras", "surface"],
   ["entity", "does"],
   ["phoneTile", "does"],
   ["special", "does"],
@@ -1093,6 +1086,14 @@ export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileIn
   ["request", "does"],
   ["action", "does"],
   ["tapAnimation", "does"],
+  ["text", "text"],
+  ["state", "text"],
+  ["visibility", "surface"],
+  ["arrange", "surface"],
+  ["size", "surface"],
+  ["background", "surface"],
+  ["border", "surface"],
+  ["phoneExtras", "surface"],
 ];
 
 /** The parts of What it does that are the tile's own kind's, drawn together
@@ -1579,17 +1580,17 @@ function renderKindCard(host: TileSettingsHost, parts: readonly TileInspectorPar
 
 /**
  * The selected tile's settings as the page editor's inspector stands them:
- * the head (`extras.head`) across the inspector's whole width, then What it
- * does, always open, since what a tile does is the first question: the
- * entity, then the tile's own kind's card (`renderKindCard`), then the tap.
- * Each of the other groups (Color and icon, Text, Surface and rules) folds to
- * one summary row with its current choice (`tileGroupSummary`) and a blue dot
- * while it holds a value of its own; open, it shows its parts under calm
- * headings, as What it does does. Each has its own hue. The columns are pure
- * CSS by the inspector's own width (`@container insp`): four side by side
- * from 1580 px, each as tall as the inspector and scrolling on its own, What
- * it does beside the rows from 680 px with the inspector scrolling as one,
- * else one.
+ * the head (`extras.head`) across the inspector's whole width, then Color
+ * and icon, then What it does, always open: the entity, then the tile's own
+ * kind's card (`renderKindCard`), then the tap, then Text and Surface and
+ * rules. Each of the groups but What it does folds to one summary row with
+ * its current choice (`tileGroupSummary`) and a blue dot while it holds a
+ * value of its own; open, it shows its parts under calm headings, as What it
+ * does does. Each has its own hue. The columns are pure CSS by the
+ * inspector's own width (`@container insp`): four side by side from 1580 px,
+ * each as tall as the inspector and scrolling on its own; from 680 px Color
+ * and icon in the first cell with the other rows under it and What it does
+ * beside them, the inspector scrolling as one; else one.
  */
 export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
@@ -1638,15 +1639,18 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     </section>`;
   };
   // The head spans the inspector over the columns; the columns are as many
-  // as there are groups to draw, at most four (`--ts-n`). The rows stand
-  // together, under or beside What it does.
-  const looks = TILE_INSPECTOR_GROUPS.filter((id) => id !== "does" && groups.some((g) => g.group === id));
+  // as there are groups to draw, at most four (`--ts-n`). Color and icon
+  // comes first, then What it does, then the other rows, which stand
+  // together under Color and icon, the line under them.
+  const looks = groups.some((g) => g.group !== "does");
+  const rows = TILE_INSPECTOR_GROUPS.filter((id) => id !== "color" && id !== "does" && groups.some((g) => g.group === id));
   return html`<div class="ts-root ts-insp">
     ${extras.head === undefined ? nothing : html`<div class="ts-insp-head">${extras.head}</div>`}
     <div class="ts-groups" style=${`--ts-n:${groups.length}`}>
+      ${group("color")}
       ${group("does")}
-      ${looks.length === 0 ? nothing : html`<div class="ts-grp-rest">
-        ${looks.map(group)}
+      ${!looks ? nothing : html`<div class="ts-grp-rest">
+        ${rows.map(group)}
         <p class="ts-grp-foot">${TILE_GROUPS_FOOT}</p>
       </div>`}
     </div>
@@ -4112,11 +4116,14 @@ export const tileSettingsStyles = css`
   .ts-picked-off { margin: 6px 0 2px; font-size: 12px; color: var(--wa-hint, var(--wa-muted)); }
 
   /* The tile inspector (\`renderTileInspector\`): the head across the whole
-     inspector, then What it does and the rows of the other groups, by the
-     inspector's own width, pure CSS: four columns side by side from 1580px
-     (each as tall as the inspector and scrolling on its own, the page
-     editor's rules), What it does beside the rows from 680px with the
-     inspector scrolling as one, else all in one column. */
+     inspector, then Color and icon, What it does and the rows of the other
+     groups, by the inspector's own width, pure CSS: four columns side by
+     side from 1580px (each as tall as the inspector and scrolling on its
+     own, the page editor's rules), from 680px Color and icon in the first
+     cell with the other rows under it and What it does beside them all,
+     the inspector scrolling as one, else all in one column. The second row
+     takes what What it does needs past the first, so the rows stay close
+     under Color and icon. */
   .ts-insp { gap: 14px; min-width: 0; }
   .ts-insp-head { min-width: 0; }
   .ts-groups {
@@ -4126,10 +4133,14 @@ export const tileSettingsStyles = css`
   .ts-grp-rest { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .ts-grp-foot { margin: 2px 4px 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   @container insp (min-width: 680px) {
-    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; row-gap: 6px; }
+    .ts-groups > :not([data-group="does"]) { grid-column: 1; }
+    .ts-groups > .ts-grp[data-group="does"] { grid-column: 2; grid-row: 1 / span 2; }
   }
   @container insp (min-width: 1580px) {
-    .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); }
+    .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); grid-template-rows: none; row-gap: 10px; }
+    .ts-groups > :not([data-group="does"]) { grid-column: auto; }
+    .ts-groups > .ts-grp[data-group="does"] { grid-column: auto; grid-row: auto; }
     .ts-grp-rest { display: contents; }
     .ts-grp-foot { display: none; }
     .ts-grp.ts-grp-row { align-self: start; }
