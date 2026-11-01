@@ -326,12 +326,17 @@ PHONE_BEHAVIOR_DECODE_KEYS = frozenset(
 # (frontend/src/watch-pages/tile-devices.json) gives `["iphone"]`.
 # tests/test_tile_devices.py keeps them equal to it.
 #
-# The server strips nothing with them. A page lives once in the library and
-# `materialise` copies it whole to every device that picks it; a watch record
-# saved without the phone's tiles would map back to the library without them
-# and delete them for the iPhone too. So every device gets every tile, and a
-# watch skips a kind it does not draw and ignores a key it does not read. The
-# lists are here for the day the server needs to name them to a device.
+# A page lives once in the library with a watch screen and an iPhone screen
+# (its `screens` key, app repo docs/pages_two_screens_plan_2026-11.md), and
+# `library.materialise` stamps each device's own screen into its record. A
+# page without `screens` reads with these kinds off on the watch, so a watch
+# record leaves them out, and a watch's save keeps them for the iPhone
+# (`library.WATCH_SKIPPED_TILE_KINDS` repeats the kinds; tests/test_library.py
+# keeps the two equal). The keys are never stripped: a watch ignores a key it
+# does not read.
+#
+# `screens` is the one page key the server knows by name: only the panel
+# writes it, and no record ever carries it.
 PHONE_ONLY_TILE_KINDS = frozenset({"map", "chart", "text_field", "web"})
 PHONE_ONLY_TILE_KEYS = frozenset(
     {

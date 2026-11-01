@@ -322,12 +322,14 @@ async def _get_ha_instance_uuid(hass: HomeAssistant) -> str | None:
 
 def _rename_complication_pages(
     complication_store: ComplicationStore, owner: str, renames: dict[str, str]
-) -> None:
+) -> list[str]:
     """Point one owner's complication taps at pages the library gave new
     ids (``{old: new}``): the tap of a design and of each of its tap layers
     (``library.rename_complication``), each design saved as its next
     revision. A design the store refuses is logged and left as it was; its
-    tap then opens the page it named, which the device no longer lists."""
+    tap then opens the page it named, which the device no longer lists.
+    Answers the names of the designs saved, for a Make a copy to list."""
+    saved: list[str] = []
     for record in complication_store.list(owner):
         document = rename_complication(record.document, renames)
         if document is None:
@@ -343,6 +345,10 @@ def _rename_complication_pages(
                 owner,
                 err,
             )
+            continue
+        name = document.get("name")
+        saved.append(name.strip() if isinstance(name, str) and name.strip() else "Untitled")
+    return saved
 
 
 def _device_label(
@@ -888,8 +894,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             return None
         return paired_device_name(dr.async_get(hass), secret_entry, owner)
 
-    def _rename_pages(owner: str, renames: dict[str, str]) -> None:
-        _rename_complication_pages(complication_store, owner, renames)
+    def _rename_pages(owner: str, renames: dict[str, str]) -> list[str]:
+        return _rename_complication_pages(complication_store, owner, renames)
 
     watch_config_store = WatchConfigStore(
         hass,

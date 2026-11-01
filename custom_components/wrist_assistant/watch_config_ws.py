@@ -48,6 +48,7 @@ Commands:
     wrist_assistant/library/item/save           {kind, item_id, base_revision,
                                                  document}
     wrist_assistant/library/item/create         {kind, document}
+    wrist_assistant/library/fork_page           {item_id, owner_ids, name?}
 
 (The item is ``item_id``, where the plan says ``id``: a WebSocket message's
 own ``id`` is its message number.)
@@ -59,7 +60,8 @@ on devices, make, copy, rename and delete menus, delete items, list the
 whole library with who picks what, and read and save one item in the
 library itself (``library/item``, ``library/item/save``: an item's own
 revision, compare and swap like a record save, for an item no device
-picks as much as for one many do). Only a watch's voice settings still link
+picks as much as for one many do), and make a copy of a page for some of
+the devices that use it (``library/fork_page``). Only a watch's voice settings still link
 watch to watch, copy by copy (``page_links.py``): ``watch_pages/link`` and
 ``watch_pages/places`` serve kind ``voice`` alone and refuse pages, status
 pages and menus ``invalid``. A link's refusals add ``unknown_device``,
@@ -139,6 +141,7 @@ _CMD_LIBRARY_SUMMARY = f"{DOMAIN}/library/summary"
 _CMD_LIBRARY_ITEM = f"{DOMAIN}/library/item"
 _CMD_LIBRARY_ITEM_SAVE = f"{DOMAIN}/library/item/save"
 _CMD_LIBRARY_ITEM_CREATE = f"{DOMAIN}/library/item/create"
+_CMD_LIBRARY_FORK_PAGE = f"{DOMAIN}/library/fork_page"
 
 
 # The kinds whose documents are a list of items, and the key holding it.
@@ -231,6 +234,7 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_library_item)
     websocket_api.async_register_command(hass, ws_library_item_save)
     websocket_api.async_register_command(hass, ws_library_item_create)
+    websocket_api.async_register_command(hass, ws_library_fork_page)
 
 
 @websocket_api.websocket_command(
@@ -1191,6 +1195,51 @@ def ws_library_item_create(
         return
     try:
         result = store.library_create_item(msg["kind"], msg["document"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_FORK_PAGE,
+        vol.Required("item_id"): str,
+        vol.Required("owner_ids"): [str],
+        vol.Optional("name"): str,
+    }
+)
+@callback
+def ws_library_fork_page(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make a copy of a page for some of the devices that use it (the page
+    menu's Make a copy). Those devices use the copy in its place, and what
+    opened the page on them (menu slots, page links, rooms, complications)
+    opens the copy; a menu shared with another device is copied for them.
+    The original keeps its id and stays on every other device.
+
+    Request: {item_id, owner_ids: [device id, ...], name?}
+    Result:  {"item_id": <the copy's id>,
+              "rewritten": [{"owner_id": ..., "what": "menu slot Top left in Anywhere menu"}, ...],
+              "kept": [{"owner_id": ..., "what": ...}, ...],
+              "revisions": {<owner id>: {<kind>: <revision>}},
+              "link_failures": [owner ids]}
+
+    ``kept`` names the page links left on the original because the page
+    holding them is shared with another device. Every device named must be
+    the caller's (``WatchConfigStore.library_fork_page``). Refused
+    ``invalid`` (no devices, a device that does not use the page, an empty
+    name), ``unknown_device``, ``not_found`` and ``unauthorized``.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, *msg["owner_ids"]):
+        return
+    try:
+        result = store.library_fork_page(msg["item_id"], msg["owner_ids"], msg.get("name"))
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return

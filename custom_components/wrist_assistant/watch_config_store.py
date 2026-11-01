@@ -200,8 +200,11 @@ from .const import (
     WATCH_LIBRARY_STORAGE_VERSION,
 )
 from .library import (
+    IPHONE_SCREEN,
     LIBRARY_KINDS,
+    LIBRARY_VERSION,
     MENU_UNITS,
+    WATCH_SCREEN,
     LibraryError,
     changed_owners,
     copy_menu,
@@ -210,6 +213,8 @@ from .library import (
     create_menu,
     delete_item,
     empty_library,
+    fill_screens,
+    fork_page,
     held_renames,
     hold_renames,
     item_revision,
@@ -225,6 +230,7 @@ from .library import (
     rename_menu,
     rename_refs,
     replace_item,
+    room_words,
     stamp_item_revisions,
     stored_item_id,
     validate_library,
@@ -1515,7 +1521,7 @@ class WatchConfigStore:
         is_iphone: PairedCheck | None = None,
         may_await_move: PairedCheck | None = None,
         device_name: Callable[[str], str | None] | None = None,
-        rename_pages: Callable[[str, dict[str, str]], None] | None = None,
+        rename_pages: Callable[[str, dict[str, str]], list[str] | None] | None = None,
     ) -> None:
         """``is_paired`` answers whether an owner id is a paired watch in the
         secret store (an iPhone entry does not count). Setup passes
@@ -1542,7 +1548,8 @@ class WatchConfigStore:
         of an owner's pages a new id (the first start's migration, or a
         device's first upload of a page under an id another page holds), so
         setup can point that owner's complication taps at the new id; they
-        live in another store."""
+        live in another store. It may answer the names of the designs it
+        pointed there, which a Make a copy lists."""
         self._hass = hass
         self._is_paired = is_paired
         self._is_iphone = is_iphone
@@ -1756,6 +1763,12 @@ class WatchConfigStore:
             self._migrate_library()
         else:
             self._library = validate_library(raw)
+            if self._library["version"] < LIBRARY_VERSION:
+                # Once: every page gets its watch and iPhone screen, read
+                # from its tiles as it was drawn until now. What each device
+                # reads changes only where the watch skipped a tile kind it
+                # never drew, which its record now leaves out.
+                self._library = fill_screens(self._library)
             self._reconcile_library()
         # A home with nothing to put in a library writes no file yet.
         changed = raw != self._library if raw is not None else self._library != empty_library()
@@ -1830,7 +1843,8 @@ class WatchConfigStore:
             if owner not in self._failed_owners
         }
         names = {owner: self._owner_name(owner) for owner in records}
-        result = migrate(records, self._index_order, names)
+        screens = {owner: self._screen_of(owner) for owner in records}
+        result = migrate(records, self._index_order, names, screens)
         self._library = result.library
         for owner, renamed in sorted(result.renamed.items()):
             self._library = hold_renames(self._library, owner, renamed)
@@ -1902,6 +1916,7 @@ class WatchConfigStore:
                         document,
                         fork_conflicts=first,
                         owner_name=self._owner_name(owner),
+                        screen=self._screen_of(owner),
                     )
                 except LibraryError as err:
                     _LOGGER.warning("Could not fold %s of %s into the library: %s", kind, owner, err)
@@ -1924,15 +1939,18 @@ class WatchConfigStore:
                 record = self._records[owner].get(kind)
                 if record is None:
                     continue
-                document = materialise(self._library, owner, kind, record.document)
+                document = materialise(
+                    self._library, owner, kind, record.document, self._screen_of(owner)
+                )
                 if document is not None and document != record.document:
                     self._write_quietly(owner, kind, document, updated_by)
                 self._note_hash(owner, kind, save=False)
 
     def _write_quietly(
         self, owner_watch_id: str, kind: str, document: dict[str, Any], updated_by: str
-    ) -> None:
-        """:meth:`_write`, with a refusal (a cap) logged rather than raised."""
+    ) -> bool:
+        """:meth:`_write`, with a refusal (a cap) logged rather than raised.
+        Whether the record was written."""
         try:
             self._write(owner_watch_id, kind, document, updated_by)
         except WatchConfigStoreError as err:
@@ -1942,6 +1960,8 @@ class WatchConfigStore:
                 owner_watch_id,
                 err.message,
             )
+            return False
+        return True
 
     def _serialize_library(self) -> dict[str, Any]:
         return self._library
@@ -1992,34 +2012,44 @@ class WatchConfigStore:
                 return name.strip()
         return owner_watch_id
 
-    def _tell_page_renames(self, owner_watch_id: str, pages: dict[str, str]) -> None:
+    def _tell_page_renames(self, owner_watch_id: str, pages: dict[str, str]) -> list[str]:
+        """Point the owner's complications at renamed pages, and answer the
+        names of the designs that moved (none when setup does not say)."""
         if not pages or self._rename_pages is None:
-            return
+            return []
         try:
-            self._rename_pages(owner_watch_id, dict(pages))
+            names = self._rename_pages(owner_watch_id, dict(pages))
         except Exception:
             _LOGGER.exception("Could not point the complications of %s at renamed pages", owner_watch_id)
+            return []
+        return [name for name in names or [] if isinstance(name, str)]
 
     def _follow_renames(
         self, owner_watch_id: str, renamed: dict[str, dict[str, str]], updated_by: str
-    ) -> None:
+    ) -> list[str]:
         """After a save gave some of an owner's pages or status pages new ids:
         point its rooms (the ``rooms`` record, or a watch's ``behavior``) and
         its complications at the new ids. The library remembers them for the
         owner's later first records (``renames``, :func:`library.hold_renames`),
-        which its caller has already done."""
+        which its caller has already done. Answers, in plain words, what now
+        opens the new ids (:func:`library.room_words`, then "complication
+        <name>" for each design)."""
         pages = renamed.get("pages", {})
         status = renamed.get("status_pages", {})
         if not pages and not status:
-            return
+            return []
+        words: list[str] = []
         for kind in ("rooms", "behavior"):
             document = self._document(owner_watch_id, kind)
             if document is None:
                 continue
             renamed_doc = rename_refs(kind, document, pages, status)
-            if renamed_doc != document:
-                self._write_quietly(owner_watch_id, kind, renamed_doc, updated_by)
-        self._tell_page_renames(owner_watch_id, pages)
+            if renamed_doc != document and self._write_quietly(
+                owner_watch_id, kind, renamed_doc, updated_by
+            ):
+                words +=[w for w in room_words(document, renamed_doc) if w not in words]
+        names = self._tell_page_renames(owner_watch_id, pages)
+        return words + [f"complication {name}" for name in names]
 
     def _apply_library(
         self,
@@ -2055,7 +2085,9 @@ class WatchConfigStore:
         from, when the store's already holds it (a move). Returns ``(records
         written, failed owners)``.
         """
-        touched = changed_owners(self._library if base is None else base, library)
+        touched = changed_owners(
+            self._library if base is None else base, library, screen_of=self._screen_of
+        )
         order = ([first] if first in touched else []) + sorted(o for o in touched if o != first)
         writes: list[tuple[str, str, dict[str, Any]]] = []
         for owner in order:
@@ -2066,7 +2098,7 @@ class WatchConfigStore:
                     continue
                 record = self._records.get(owner, {}).get(kind)
                 template = record.document if record is not None else (seeds or {}).get((owner, kind))
-                document = materialise(library, owner, kind, template)
+                document = materialise(library, owner, kind, template, self._screen_of(owner))
                 if document is None or (record is not None and record.document == document):
                     continue
                 if record is None and self._awaits_move(owner, kind):
@@ -2656,6 +2688,7 @@ class WatchConfigStore:
         half made."""
         self._check_library()
         before_doc = existing.document if existing is not None else None
+        screen = self._screen_of(owner_watch_id)
         sent: dict[str, Any] = document
         if existing is None or restored:
             renames = held_renames(self._library, owner_watch_id)
@@ -2675,6 +2708,7 @@ class WatchConfigStore:
                 sent,
                 fork_conflicts=existing is None,
                 owner_name=self._owner_name(owner_watch_id),
+                screen=screen,
             )
             lib = result.library
             if result.renamed:
@@ -2683,7 +2717,7 @@ class WatchConfigStore:
                 lib = self._with_slot_pages(lib, owner_watch_id, before_doc, sent)
         except LibraryError as err:
             raise WatchConfigValidationError(err.message) from err
-        stored = materialise(lib, owner_watch_id, kind, sent)
+        stored = materialise(lib, owner_watch_id, kind, sent, screen)
         if stored is None:  # map_back always leaves picks of the kind
             stored = sent
         kept = stored == document
@@ -2692,11 +2726,14 @@ class WatchConfigStore:
         # what the library changes is ids, and stale link keys dropped,
         # never tiles.
         size = validate_document(kind, final, check_items=panel)
-        for other in changed_owners(self._library, lib).get(owner_watch_id, []):
+        touched = changed_owners(self._library, lib, screen_of=self._screen_of)
+        for other in touched.get(owner_watch_id, []):
             if other == kind:
                 continue
             record = self._records.get(owner_watch_id, {}).get(other)
-            built = materialise(lib, owner_watch_id, other, record.document if record else None)
+            built = materialise(
+                lib, owner_watch_id, other, record.document if record else None, screen
+            )
             if built is not None:
                 validate_document(other, built)
         # Ids the device cannot know were rewritten (a fork of this save, or
@@ -2887,6 +2924,12 @@ class WatchConfigStore:
         """Whether the secret store knows the owner as an iPhone. False when
         no check was handed in (see ``__init__``)."""
         return self._is_iphone is not None and bool(self._is_iphone(owner_watch_id))
+
+    def _screen_of(self, owner_watch_id: str) -> str:
+        """The screen of a page the owner's records carry
+        (``library.SCREENS``): the iPhone's for an owner the secret store
+        knows as an iPhone, the watch's for any other, an unknown one too."""
+        return IPHONE_SCREEN if self._owner_is_iphone(owner_watch_id) else WATCH_SCREEN
 
     def _check_owner_kind(self, owner_watch_id: str, kind: str) -> None:
         """Refuse a kind an iPhone may not own, for an iPhone owner."""
@@ -3875,6 +3918,59 @@ class WatchConfigStore:
         self._set_library(created.library)
         _LOGGER.info("Made %s %s in the library", kind, created.id)
         return {"id": created.id, "revision": item_revision(self._library, kind, created.id)}
+
+    def library_fork_page(
+        self,
+        item_id: Any,
+        owner_ids: Any,
+        name: Any = None,
+        *,
+        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+    ) -> dict[str, Any]:
+        """Make a copy of a page for some of the devices that use it (the
+        page menu's Make a copy, ``library/fork_page``): those devices use
+        the copy in its place, and what opened the page on them opens the
+        copy (:func:`library.fork_page`), their rooms and complications too.
+        The original keeps its id and stays on every other device. Every
+        record that changes is written.
+
+        Refused ``invalid`` (no devices, a device that does not use the
+        page, an empty ``name``), ``unknown_device`` and ``not_found`` (a
+        page the library does not hold).
+
+        Returns ``{"item_id": <the copy's id>, "rewritten": [{"owner_id",
+        "what"}, ...], "kept": [...], "revisions": {owner: {kind:
+        revision}}, "link_failures": [owners whose record could not take
+        it]}``. ``rewritten`` names in plain words what opens the copy now,
+        device by device in the order named: menu slots, page links, rooms,
+        complications. ``kept`` names the page links left on the original
+        because the page holding them is shared with another device."""
+        self._check_library()
+        if not isinstance(item_id, str) or not item_id:
+            raise WatchConfigValidationError("item_id is required")
+        if not isinstance(owner_ids, list) or not owner_ids:
+            raise WatchConfigValidationError("owner_ids must name at least one device")
+        owners = list(dict.fromkeys(self._check_link_owner(owner) for owner in owner_ids))
+        names = {owner: self._owner_name(owner) for owner in owners}
+        try:
+            old_id = stored_item_id(self._library, "pages", item_id)
+            forked = fork_page(self._library, item_id, owners, name=name, names=names)
+        except LibraryError as err:
+            raise WatchConfigLinkError(err.code, err.message) from err
+        written, failed = self._apply_library(forked.library, updated_by, strict=True)
+        rewritten: list[dict[str, str]] = []
+        for owner in owners:
+            rewritten += [entry for entry in forked.rewritten if entry["owner_id"] == owner]
+            moved = self._follow_renames(owner, {"pages": {old_id: forked.id}}, updated_by)
+            rewritten += [{"owner_id": owner, "what": what} for what in moved]
+        _LOGGER.info("Made page %s a copy of %s for %s", forked.id, old_id, ", ".join(owners))
+        return {
+            "item_id": forked.id,
+            "rewritten": rewritten,
+            "kept": forked.kept,
+            "revisions": self._revisions_of(written),
+            "link_failures": failed,
+        }
 
     def library_create_menu(self, unit: Any, name: Any, sections: Any) -> dict[str, Any]:
         """A new library menu that no device uses yet (the Menus tab's New

@@ -1,8 +1,8 @@
 """In-process tests for the library's WebSocket commands:
 ``wrist_assistant/library/pick``, ``library/menus/create``,
 ``library/menus/copy``, ``library/menus/rename``, ``library/menus/delete``,
-``library/delete``, ``library/summary``, ``library/item`` and
-``library/item/save``.
+``library/delete``, ``library/summary``, ``library/item``,
+``library/item/save``, ``library/item/create`` and ``library/fork_page``.
 
 Run as ``test_watch_pages_link_ws.py`` runs the link commands, over a real
 ``WatchConfigStore`` whose pairing checks know two watches and an iPhone
@@ -307,6 +307,63 @@ def test_create_answers_unavailable_before_the_integration_is_ready(ctx) -> None
 # Administrators only: ``@websocket_api.require_admin``, which Home Assistant
 # runs before the handler (a no-op stand-in here), is pinned by
 # test_ws_command_registration.py.
+
+
+# ── library/fork_page ────────────────────────────────────────────────────
+
+
+def test_fork_page_makes_a_copy_for_the_named_device_and_says_what_moved(ctx) -> None:
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    shared = _menu_of(ctx, WATCH)
+    ctx.store.library_pick(PHONE, "pages", LIGHTS, on=True)
+    ctx.store.library_pick(PHONE, "menus", shared, unit="anywhere")
+    watch = ctx.store.get(WATCH, "pages").revision
+    result = _ok(
+        ctx,
+        ctx.ws.ws_library_fork_page,
+        ALICE,
+        item_id=LIGHTS,
+        owner_ids=[PHONE],
+        name="Lights (iPhone)",
+    )
+    new = result["item_id"]
+    phone = ctx.store.get(PHONE, "pages")
+    assert [p["id"] for p in phone.document["pages"]] == [new]
+    assert phone.document["pages"][0]["name"] == "Lights (iPhone)"
+    menus = ctx.store.get(PHONE, "menus")
+    assert menus.document["quickAction"]["slots"][0]["action"]["pageId"] == new
+    assert result == {
+        "item_id": new,
+        "rewritten": [
+            {"owner_id": PHONE, "what": f"menu slot Top left in {PHONE}'s menu, a copy of Anywhere menu"}
+        ],
+        "kept": [],
+        "revisions": {PHONE: {"pages": phone.revision, "menus": menus.revision}},
+        "link_failures": [],
+    }
+    assert ctx.store.get(WATCH, "pages").revision == watch
+    assert _menu_of(ctx, WATCH) == shared
+
+
+@pytest.mark.parametrize(
+    ("user", "msg", "code"),
+    [
+        (ROOT, {"item_id": "nope", "owner_ids": [WATCH]}, "not_found"),
+        (ROOT, {"item_id": LIGHTS, "owner_ids": []}, "invalid"),
+        (ROOT, {"item_id": LIGHTS, "owner_ids": [PHONE]}, "invalid"),
+        (ROOT, {"item_id": LIGHTS, "owner_ids": ["ghost"]}, "unknown_device"),
+        (ALICE, {"item_id": LIGHTS, "owner_ids": [WATCH, WATCH_2]}, "unauthorized"),
+        (BOB, {"item_id": LIGHTS, "owner_ids": [WATCH]}, "unauthorized"),
+    ],
+)
+def test_fork_page_refusals_carry_the_store_s_code(ctx, user, msg, code) -> None:
+    assert _codes(ctx, ctx.ws.ws_library_fork_page, user, **msg) == [code]
+
+
+def test_fork_page_answers_unavailable_before_the_integration_is_ready(ctx) -> None:
+    ctx.hass.data = {}
+    msg = {"item_id": LIGHTS, "owner_ids": [WATCH]}
+    assert _codes(ctx, ctx.ws.ws_library_fork_page, **msg) == ["unavailable"]
 
 
 # ── library/menus/copy, rename, delete ───────────────────────────────────
