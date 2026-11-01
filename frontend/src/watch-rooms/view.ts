@@ -767,10 +767,11 @@ export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
 
 export const roomsViewStyles = css`
   /* A main column of rules and a sticky stage beside it, the page no wider
-     than 1240px and centred. Under 1000px one column: the stage goes under
-     the rules, before point control, and scrolls with the page. */
+     than 1240px, at the left under the device's tabs. Under 1000px one column:
+     the stage goes under the rules, before point control, and scrolls with
+     the page. */
   .rm-layout {
-    width: 100%; max-width: 1240px; margin: 0 auto 14px;
+    width: 100%; max-width: 1240px; margin: 0 0 14px;
     display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto 1fr;
     column-gap: 16px; row-gap: 14px; align-items: start;
   }
@@ -778,7 +779,7 @@ export const roomsViewStyles = css`
   .rm-cell-status { grid-column: 1; grid-row: 1; }
   .rm-cell-rules { grid-column: 1; grid-row: 2; }
   .rm-cell-point { grid-column: 1; grid-row: 3; }
-  .rm-side { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 12px; min-width: 0; }
+  .rm-side { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: var(--rm-side-top, 12px); min-width: 0; }
   @container (max-width: 1000px) {
     .rm-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
     .rm-cell-status, .rm-cell-rules, .rm-cell-point, .rm-side { grid-column: 1; grid-row: auto; }

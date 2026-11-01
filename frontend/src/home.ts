@@ -739,6 +739,17 @@ export const homeStyles = css`
      as the page has room for, under the same header and tabs as Overview. */
   .hb-detail.own { max-width: none; }
   .hb-own { min-width: 0; }
+  /* Settings here scrolls with the device page, not in a box of its own, and
+     starts at the tabs' left edge. Its side list sticks under the device's
+     header, and only once the page has scrolled that far: measured from its
+     own box it would start out pushed down on any long group. */
+  .hb-own .ws-page { overflow: visible; }
+  .hb-own .ws-split { padding: 16px 0 48px; }
+  .hb-own .ws-nav { top: 76px; }
+  /* Rooms and Voice start at the tabs' left edge too. Rooms' stage sticks
+     under the header, with the page. */
+  .hb-own :is(wa-rooms-editor, wa-voice-editor) { padding-left: 0; padding-right: 0; }
+  .hb-own wa-rooms-editor { overflow: visible; --rm-side-top: 76px; }
   /* The way back to the list, only where the list does not fit beside it. */
   button.hb-back { display: none; }
   @container hb (max-width: 819px) {
