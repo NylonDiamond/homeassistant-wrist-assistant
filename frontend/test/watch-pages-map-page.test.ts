@@ -27,7 +27,7 @@ import { type WatchPage, type WatchPagesDocument, WATCH_MAP_PAGE_KEY, isMapWatch
 import { encodeWatchPageKeys, setWatchPageFullScreen } from "../src/watch-pages/page-settings-model.js";
 import { convertToSmartPage } from "../src/watch-pages/smart-model.js";
 import { addNewWatchTile, watchAddRefusal } from "../src/watch-pages/tile-new.js";
-import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
+import { screenOffChips, screenStatus } from "../src/watch-pages/device-differences.js";
 import { type WatchPagePreviewInput, renderMapPageArt, renderWatchPagePreview, watchPagePreviewScrolls } from "../src/watch-pages/preview.js";
 import { phonePagesLayout, phonePagesScreen } from "../src/phone-frame.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
@@ -350,9 +350,10 @@ describe("the preview", () => {
     expect(itemDetail("pages", pageOf(doc({ items: [mapTile()] })))).toBe("1 tile");
   });
 
-  it("says how each device draws it under Side by side", () => {
-    expect(deviceDifferenceText(page(), "watch")).toBe("The watch shows the Home map tile.");
-    expect(deviceDifferenceText(page(), "iphone")).toBe("The whole page is the live 3D map.");
-    expect(deviceDifferenceText(pageOf(doc({ items: [mapTile()] })), "watch")).toBe("");
+  it("says how each device draws it under each picture, with no order button", () => {
+    expect(screenStatus(page(), "watch")).toEqual({ text: "The watch shows the Home map tile." });
+    expect(screenStatus(page(), "iphone")).toEqual({ text: "The whole page is the live 3D map." });
+    expect(screenOffChips(page(), "watch")).toEqual([]);
+    expect(screenStatus(pageOf(doc({ items: [mapTile()] })), "watch")?.text).toBe("Same order as the iPhone");
   });
 });

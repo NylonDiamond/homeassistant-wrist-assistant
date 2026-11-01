@@ -222,16 +222,12 @@ describe("the head's facts", () => {
     expect(flashed).toEqual(["pe-found"]);
   });
 
-  it("end with which pages a change reaches, by the kinds of device the page is on", () => {
+  it("end with one line saying a tile is the same on every device, on a page with screens of its own", () => {
     const el = editor(hallPage(), DIMMER);
     const applies = el["headAppliesText"] as (this: unknown, page: WatchPage) => string | undefined;
-    const lib = (owners: string[]) => ({ index: { pages: new Map([[PAGE.toUpperCase(), { owners }]]) } });
-    const devices = [{ ownerId: "W1", name: "Watch", kind: "watch" }, { ownerId: "P1", name: "iPhone", kind: "iphone" }];
-    const as = (owners: string[]) => applies.call({ lib: { library: lib(owners) }, libraryItem: { kind: "pages", id: PAGE }, linkDevices: devices }, hallPage());
-    expect(as(["W1", "P1"])).toBe("Changes apply to the Watch and iPhone pages");
-    expect(as(["P1"])).toBe("Changes apply to the iPhone page");
-    expect(as([])).toBeUndefined();
-    expect(applies.call({ lib: { library: undefined }, libraryItem: undefined, linkDevices: devices }, hallPage())).toBeUndefined();
+    expect(applies.call(el, hallPage())).toBe("Same on every device.");
+    // A smart page fills itself, a map page is drawn whole: no line.
+    expect(applies.call(el, { ...hallPage(), dynamicConfig: { rules: [] } } as WatchPage)).toBeUndefined();
   });
 });
 

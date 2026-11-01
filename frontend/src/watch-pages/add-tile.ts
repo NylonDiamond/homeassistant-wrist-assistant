@@ -48,7 +48,9 @@ import {
   WATCH_ADD_ROWS,
   WATCH_APP_ADD_BUTTONS,
   WATCH_PHONE_ADD_BUTTONS,
+  WATCH_PHONE_ADDED_TEXT,
   WATCH_PHONE_GREYED_TEXT,
+  WATCH_PHONE_LANDS_TEXT,
   WATCH_PHONE_GROUP_TITLE,
   WatchAddListCache,
   watchAppAdd,
@@ -219,7 +221,9 @@ function commit(host: AddTileHost, view: AddTileView, add: WatchTileAdd, done: s
     host.requestUpdate();
     return false;
   }
-  const result = addNewWatchTile(host.document, host.pageId, add);
+  // Last on every screen that draws it, as the stage's + Add tile spot
+  // shows; both pictures scroll to it once it is selected.
+  const result = addNewWatchTile(host.document, host.pageId, add, { last: true });
   if (result.refusal !== undefined) {
     view.note = { tone: "err", text: watchAddRefusalText(result.refusal, name) };
     host.requestUpdate();
@@ -423,7 +427,7 @@ function addPhone(host: AddTileHost, view: AddTileView, button: WatchPhoneAddBut
     host.requestUpdate();
     return;
   }
-  commit(host, view, watchPhoneAdd(button.key), button.done);
+  commit(host, view, watchPhoneAdd(button.key), `${button.done} ${WATCH_PHONE_ADDED_TEXT}`);
 }
 
 /** The "iPhone only" group, last, titled with the phone glyph, its buttons
@@ -437,6 +441,7 @@ function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult 
   const blocked = greyed ? undefined : watchAppAddBlockedText(WATCH_PHONE_ADD_BUTTONS[0]!.key, host.musicAssistant, group.oldWatch);
   const off = greyed || blocked !== undefined;
   const why = greyed ? WATCH_PHONE_GREYED_TEXT : blocked;
+  const note = why ?? WATCH_PHONE_LANDS_TEXT;
   return html`<div class="at-phone ${off ? "greyed" : ""}">
     <div class="at-sub at-phone-h">${uiIcon("phone")}<span>${WATCH_PHONE_GROUP_TITLE}</span></div>
     <div class="at-kind-grid" role="group" aria-label=${WATCH_PHONE_GROUP_TITLE}>
@@ -447,7 +452,7 @@ function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult 
         onClick: () => addPhone(host, view, b),
       }))}
     </div>
-    ${why === undefined ? nothing : html`<div class="at-muted" id="at-phone-why">${why}</div>`}
+    <div class="at-muted" id="at-phone-why">${note}</div>
   </div>`;
 }
 

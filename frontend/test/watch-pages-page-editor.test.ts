@@ -17,7 +17,7 @@ import { libraryOf } from "../src/library/model.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { arrangePickedPart, setArrangeFreePicked, setArrangePickedPart } from "../src/watch-pages/arrange-model.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
-import { firstFreeWatchCell, giveWatchTileId } from "../src/watch-pages/edit.js";
+import { firstFreeWatchCell, giveWatchTileId, lastFreeWatchCell } from "../src/watch-pages/edit.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -38,8 +38,10 @@ import {
 import { WATCH_TILE_DEFAULTS } from "../src/watch-pages/tile-new.js";
 
 /** What the edit screen's grid is built from, as the last draw left it. */
+/** The watch picture's grid as the stage last drew it. */
 function gridArgs(el: Record<string, unknown>): [number, number, number, number] {
-  return [(el.stageScreen as { width: number }).width, el.stageTopInset as number, el.stageScale as number, el.stageSideInset as number];
+  const geom = (el.stageGeom as Record<string, { screen: { width: number }; topInset: number; sideInset: number }>).watch!;
+  return [geom.screen.width, geom.topInset, el.stageScale as number, geom.sideInset];
 }
 
 function sheet(): string {
@@ -267,7 +269,7 @@ describe("the editor bar", () => {
     }
   });
 
-  it("draws a grid button for the switcher, then the name as a field in place, then the tile count and Shared", () => {
+  it("draws a grid button for the switcher, then the name as a field in place, then the tile count, with no Shared", () => {
     const { whole } = editor();
     const text = whole();
     const button = text.slice(text.indexOf(`<button type="button" class="pe-pp"`), text.indexOf("</button>", text.indexOf(`class="pe-pp"`)));
@@ -275,11 +277,12 @@ describe("the editor bar", () => {
     expect(button).toContain("aria-label=Switch page. Editing Hall");
     expect(button).toContain("title=Pick a page to edit, or make one");
     expect(text).toMatch(/<span class="pe-name" data-size=Hall>\s*<input type="text" class="pe-name-in" size="1" aria-label=Page name/);
-    expect(text).toMatch(/<span class="pe-bar-meta">4 tiles · <span title=[^>]*>Shared<\/span><\/span>/);
+    expect(text).toContain(`<span class="pe-bar-meta">4 tiles</span>`);
+    expect(text).not.toContain(">Shared<");
     expect(text).not.toContain("pe-pp-pop");
   });
 
-  it("puts Shown on after the name, ticked devices inline as checkboxes, the rest always folded, then saves at once", () => {
+  it("puts Shown on after the name, ticked devices inline as checkboxes, the rest always folded, with no saves at once", () => {
     const { whole, owners } = withLibrary();
     const bar = barOf(whole());
     expect(bar).toMatch(/<div class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>/);
@@ -287,7 +290,7 @@ describe("the editor bar", () => {
     expect(bar).toContain(`role="checkbox"`);
     expect(bar).toContain(owners[0]!.device_name);
     expect(bar).toContain("+ Add to a device");
-    expect(bar).toContain(`<span class="lt-saves">saves at once</span>`);
+    expect(bar).not.toContain("saves at once");
     const css = sheet();
     expect(rule(css, ".pe-bar-on wa-chip-row > .lt-chip.off:not(.add)")).toContain("display: none");
     expect(rule(css, ".pe-bar-on wa-chip-row > .lt-fold")).toContain("display: inline-flex");
@@ -640,7 +643,7 @@ describe("the stage's quiet tiles", () => {
     el.sideBySide = true;
     const both = body();
     expect(both.match(/class="pe-stage-add"/g)).toHaveLength(1);
-    expect(both.indexOf(`class="pe-stage-add"`)).toBeLessThan(both.indexOf(`class="lib-duo-other"`));
+    expect(both.indexOf(`class="pe-stage-add"`)).toBeLessThan(both.indexOf(`data-screen=iphone`));
     // A smart page fills itself.
     const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
     expect(smart.body()).not.toContain("pe-stage-add");
@@ -654,12 +657,14 @@ describe("the stage's quiet tiles", () => {
     const slot = text.match(/<button type="button" class="pe-add-slot"[^>]*>/)?.[0];
     expect(slot).toBeDefined();
     expect(text.match(/class="pe-add-slot"/g)).toHaveLength(1);
-    // A new 6 by 4 tile lands at row 3, column 4 of Hall (beside Bottom):
-    // the spot sits on that cell, after the tiles in the screen's markup.
+    // A new 6 by 4 tile lands last, at row 6, column 2 of Hall (after Gap,
+    // the last tile), never in the gap beside Bottom: the spot sits on that
+    // cell, after the tiles in the screen's markup.
     const { colSpan, rowSpan } = WATCH_TILE_DEFAULTS.tile;
     expect(firstFreeWatchCell((HALL.pages as WatchPage[])[0]!, colSpan, rowSpan)).toEqual({ row: 3, col: 4 });
+    expect(lastFreeWatchCell((HALL.pages as WatchPage[])[0]!, colSpan, rowSpan)).toEqual({ row: 6, col: 2 });
     const grid = stageGrid(...gridArgs(el));
-    const box = cellRectPx(grid, { row: 3, col: 4, colSpan, rowSpan });
+    const box = cellRectPx(grid, { row: 6, col: 2, colSpan, rowSpan });
     expect(slot).toContain(`left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`);
     expect(text.indexOf(`class="pe-add-slot"`)).toBeGreaterThan(text.indexOf(`data-tile=T-LEFT`));
     // No tile: no data-tile, no pressed state, nothing a drag or a pick reads.
@@ -690,10 +695,10 @@ describe("the stage's quiet tiles", () => {
     expect(saving.body()).not.toContain("pe-add-slot");
     const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
     expect(smart.body()).not.toContain("pe-add-slot");
-    // Side by side, only the edited device has it: the other is a picture.
+    // Side by side, both pictures are edited, and each has its own.
     el.phones = true;
     el.sideBySide = true;
-    expect(body().match(/class="pe-add-slot"/g)).toHaveLength(1);
+    expect(body().match(/class="pe-add-slot"/g)).toHaveLength(2);
     // Hidden while a tile moves.
     expect(sheet()).toMatch(/\.pe-screen\.moving \.pe-add-slot\s*\{\s*visibility: hidden/);
     expect(rule(sheet(), ".pe-add-slot")).toMatch(/border: 2px dashed/);
@@ -1095,7 +1100,7 @@ describe("picking several tiles", () => {
         made.call("onTilePointerDown", {
           button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType, pointerId: 7, clientX: 5, clientY: 5,
           currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
-        }, id);
+        }, id, "watch");
       const gesture = () => el.gesture as Move | undefined;
       /** The pointer has travelled: the grabbed tile is aimed at `cell`. */
       const aim = (cell: { col: number; row: number }) => {
@@ -1542,7 +1547,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     const pressTile = (tileId = selected) => made.call("onTilePointerDown", {
       button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
       currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
-    }, tileId);
+    }, tileId, "watch");
     const move = (dx: number, dy: number) => made.call("onPointerMove", { pointerId: 7, clientX: 100 + dx, clientY: 100 + dy, preventDefault: () => undefined });
     const up = () => made.call("onPointerUp", { pointerId: 7 });
     const key = (name: string, mods: Record<string, boolean> = {}) => {
@@ -1714,5 +1719,118 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     strip.key("ArrowRight");
     expect(Object.hasOwn(strip.tileOf("T-STRIP"), "arrange")).toBe(false);
     expect(strip.tileOf("T-STRIP").gridCol).toBe(1);
+  });
+});
+
+describe("the two pictures", () => {
+  type Draft = { document: WatchPagesDocument; canUndo: boolean; undo(): boolean };
+  type Rect = { col: number; row: number; colSpan: number; rowSpan: number };
+  type Screens = Record<"watch" | "iphone", Record<string, Rect>>;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The editor with both pictures drawn, a fresh browser storage for the
+   * toast, and no screen to measure or pointer to capture. */
+  function both(selectedTileId?: string) {
+    const made = editor(selectedTileId);
+    const { el } = made;
+    stubBrowser(el);
+    const kept = new Map<string, string>();
+    vi.stubGlobal("localStorage", { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) });
+    el.phones = true;
+    el.sideBySide = true;
+    el.screenEl = () => null;
+    el.capture = () => undefined;
+    const draft = () => (el as unknown as { draft: Draft }).draft;
+    const page = () => (draft().document.pages as WatchPage[])[0]!;
+    const screens = () => page().screens as unknown as Screens | undefined;
+    const press = (id: string, on: "watch" | "iphone") => made.call("onTilePointerDown", {
+      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 9, clientX: 5, clientY: 5,
+      currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    }, id, on);
+    /** Drop the pressed tile at `cell`, as a drag that travelled there. */
+    const drop = (cell: { col: number; row: number }) => {
+      const g = el.gesture as { started: boolean; cell?: object; outcome?: object };
+      g.started = true;
+      g.cell = cell;
+      g.outcome = { kind: "move", cell };
+      made.call("onPointerUp", { pointerId: 9 });
+    };
+    const clickOn = (cls: string) => {
+      const drawn = (el.renderBody as (w: unknown) => unknown).call(el, made.owners);
+      listener(findTemplate(drawn, (t) => t.strings.some((s) => s.includes(cls)))!, "click")({} as Event);
+    };
+    return { ...made, kept, draft, page, screens, press, drop, clickOn };
+  }
+
+  it("draws an edit screen for each kind, the watch first, with a title and a status line, and no editing or preview labels", () => {
+    const { body } = both();
+    const text = body();
+    expect(text.indexOf(`data-screen=watch`)).toBeGreaterThan(-1);
+    expect(text.indexOf(`data-screen=watch`)).toBeLessThan(text.indexOf(`data-screen=iphone`));
+    expect(text).not.toContain("lib-duo-other");
+    expect(text).not.toContain("lib-duo-tag");
+    expect(text).toMatch(/<span class="lib-duo-l pe-screen-title"[^>]*>Watch<\/span>/);
+    expect(text).toContain(`<span class="pe-screen-status">Same order as the iPhone`);
+    expect(text).toContain(`<span class="pe-screen-status">Same order as the watch`);
+  });
+
+  it("moves a tile on the iPhone picture only, with the toast the first time ever, and takes the watch's order back in one undo step", () => {
+    const { el, body, draft, page, screens, press, drop, kept, clickOn } = both();
+    press("T-BOTTOM", "iphone");
+    expect((el.gesture as { screen: string }).screen).toBe("iphone");
+    // Past Gap, so the iPhone reads Bottom last.
+    drop({ col: 2, row: 6 });
+    expect(screens()!.iphone["T-BOTTOM"]).toEqual({ col: 2, row: 6, colSpan: 4, rowSpan: 3 });
+    expect(screens()!.watch["T-BOTTOM"]).toEqual({ col: 0, row: 3, colSpan: 4, rowSpan: 3 });
+    const bottom = (page().items as WatchPageTile[]).find((t) => t.id === "T-BOTTOM")!;
+    expect([bottom.gridCol, bottom.gridRow]).toEqual([0, 3]);
+    expect(el.screenToast).toBe("Moved on the iPhone only. The watch stays as it is.");
+    expect(kept.size).toBe(1);
+    const text = body();
+    expect(text).toContain("pe-screen-toast");
+    expect(text).toMatch(/Arranged differently · <button type="button" class="link pe-screen-use"[^>]*>Use the watch's order<\/button>/);
+    // Use the watch's order: the iPhone reads as the watch does again.
+    const moved = draft().document;
+    clickOn("pe-screen-use");
+    expect(draft().document).not.toBe(moved);
+    expect(body()).toContain(`<span class="pe-screen-status">Same order as the watch`);
+    draft().undo();
+    expect(draft().document).toBe(moved);
+    // Once per user: the next move says nothing.
+    el.screenToast = undefined;
+    press("T-BOTTOM", "watch");
+    drop({ col: 2, row: 6 });
+    expect(el.screenToast).toBeUndefined();
+    // Both screens read alike again, so the page keeps no screens.
+    expect(screens()).toBeUndefined();
+    const moved2 = (page().items as WatchPageTile[]).find((t) => t.id === "T-BOTTOM")!;
+    expect([moved2.gridCol, moved2.gridRow]).toEqual([2, 6]);
+  });
+
+  it("lists a tile switched off on the watch as a chip there, which puts it back on", () => {
+    const { body, screens, call, clickOn } = both("T-RIGHT");
+    call("setTileScreen", "T-RIGHT", "watch", false);
+    expect(Object.keys(screens()!.watch)).not.toContain("T-RIGHT");
+    expect(Object.keys(screens()!.iphone)).toContain("T-RIGHT");
+    const text = body();
+    expect(text).toContain(`<span class="pe-screen-off-l">Not on the watch:</span>`);
+    expect(text).toMatch(/<button type="button" class="pe-off-chip"[^>]*data-off-tile=T-RIGHT/);
+    clickOn(`class="pe-off-chip"`);
+    expect(screens()?.watch["T-RIGHT"] ?? "no screens left").toBeDefined();
+    expect(body()).not.toContain("pe-off-chip");
+  });
+
+  it("asks before switching a tile off its last screen, and deletes it from every device on yes", () => {
+    const { el, page, call } = both("T-RIGHT");
+    call("setTileScreen", "T-RIGHT", "watch", false);
+    expect(el.screenOffAsk).toBeUndefined();
+    call("setTileScreen", "T-RIGHT", "iphone", false);
+    expect(el.screenOffAsk).toEqual({ tileId: "T-RIGHT", screen: "iphone" });
+    expect((page().items as WatchPageTile[]).some((t) => t.id === "T-RIGHT")).toBe(true);
+    call("deleteTile", "T-RIGHT");
+    expect((page().items as WatchPageTile[]).some((t) => t.id === "T-RIGHT")).toBe(false);
   });
 });

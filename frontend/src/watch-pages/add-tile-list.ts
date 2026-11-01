@@ -372,6 +372,13 @@ export const WATCH_PHONE_GROUP_TITLE = "iPhone only";
 /** What each of its rows says on a watch's editor, where it is greyed. */
 export const WATCH_PHONE_GREYED_TEXT = "Shown on the iPhone only";
 
+/** What the open group says under its rows: such a tile goes on the
+ * iPhone's screen alone, Off on the watch's. */
+export const WATCH_PHONE_LANDS_TEXT = "Lands on the iPhone only. The watch cannot draw it.";
+
+/** What follows the line after an add of one of them. */
+export const WATCH_PHONE_ADDED_TEXT = "It is on the iPhone only.";
+
 /** One button of the group: the kind, its words, the SF Symbol its new tile
  * carries, its one line and the line after an add. */
 export interface WatchPhoneAddButton {

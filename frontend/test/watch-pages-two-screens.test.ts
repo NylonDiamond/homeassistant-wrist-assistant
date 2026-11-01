@@ -18,6 +18,7 @@ import {
   dropWatchTile,
   firstFreeWatchCell,
   giveWatchTileId,
+  lastFreeWatchCell,
   leaveWatchTileGroup,
   makeWatchTileGroup,
   moveWatchTilesBy,
@@ -59,7 +60,7 @@ import {
   watchTilesOffScreen,
 } from "../src/watch-pages/model.js";
 import { watchReflowPage, watchSkippedTilesLayout } from "../src/watch-pages/preview.js";
-import { addWatchTile } from "../src/watch-pages/tile-new.js";
+import { addNewWatchTile, addWatchTile } from "../src/watch-pages/tile-new.js";
 import pageKeys from "../src/watch-pages/page-keys.json";
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -430,6 +431,22 @@ describe("adding a tile", () => {
     expect(places(next, "watch")).toEqual(["0001 0,0 6x4", "0002 6,0 6x4"]);
     expect(places(next, "iphone")).toEqual(["0001 0,0 12x4", "0002 0,4 6x4"]);
     expect(fields(next, B)).toBe("6,0 6x4");
+  });
+
+  it("from the editor's Add tile lands last on each screen, never in a gap above", () => {
+    // A gap at the top right of the watch; the iPhone has A across.
+    const gapped = doc(tile(A, 0, 0, 6, 4), tile(C, 0, 4, 6, 4));
+    expect(firstFreeWatchCell(pageOf(gapped), 6, 4)).toEqual({ row: 0, col: 6 });
+    expect(lastFreeWatchCell(pageOf(gapped), 6, 4)).toEqual({ row: 4, col: 6 });
+    expect(lastFreeWatchCell(pageOf(gapped), 12, 4)).toEqual({ row: 8, col: 0 });
+    expect(lastFreeWatchCell({ id: P, name: "Empty", items: [] }, 6, 4)).toEqual({ row: 0, col: 0 });
+    const apart = resizeWatchTile(gapped, P, A, { col: 0, row: 0, colSpan: 12, rowSpan: 4 }, { screen: "iphone" });
+    const next = addNewWatchTile(apart, P, { kind: "entity", entityId: "light.b" }, { last: true, newId: () => B }).document;
+    expect(places(next, "watch").at(-1)).toMatch(/^0002 6,4 /);
+    expect(places(next, "iphone").at(-1)).toMatch(/^0002 6,4 /);
+    // Without `last` the dialog's old rule: the first free place.
+    const first = addNewWatchTile(apart, P, { kind: "entity", entityId: "light.b" }, { newId: () => B }).document;
+    expect(places(first, "watch").at(-1)).toMatch(/^0002 6,0 /);
   });
 
   it("of a kind the watch cannot draw lands on the iPhone only", () => {

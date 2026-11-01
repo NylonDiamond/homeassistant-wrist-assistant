@@ -120,7 +120,7 @@ describe("a map page in the inspector", () => {
   it("is named Map page in the breadcrumb and the page picker", () => {
     const t = editor({ mapPage: true, items: [mapTile()] });
     expect(t.inspector()).toContain(`>${WATCH_MAP_PAGE_WORDS.kind}</span>`);
-    expect(flat(t.call("renderPagePicker", t.pageNow(), [t.pageNow()], undefined))).toContain("Map page ·");
+    expect(flat(t.call("renderPagePicker", t.pageNow(), [t.pageNow()], undefined))).toContain(`<span class="pe-bar-meta">Map page</span>`);
   });
 
   it("has a Map card with the tile's floor and room, and its look keys under On the watch, without Tap lights", () => {

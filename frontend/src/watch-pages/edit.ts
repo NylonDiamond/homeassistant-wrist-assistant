@@ -83,8 +83,7 @@ export interface WatchEditOptions {
   /** The screen a tile edit arranges (`screens` in `model.ts`): it reads and
    * writes that screen's places only, and the other screen does not move.
    * Defaults to the watch. */
-  // TODO: the editor chrome passes the frame's screen; until then every edit
-  // arranges the watch.
+  // The editor passes the screen of the picture the edit was made on.
   screen?: WatchScreen;
 }
 
@@ -1237,17 +1236,38 @@ export function firstFreeWatchCell(page: WatchPage, colSpan: number, rowSpan: nu
   return firstFreeCellAmong(openWork(page, screen).tiles, colSpan, rowSpan);
 }
 
-function firstFreeCellAmong(tiles: readonly WatchRect[], colSpan: number, rowSpan: number): WatchCell {
+/**
+ * Where a new tile lands: the first free place for its size after the last
+ * tile in reading order (further right on that tile's row, else the first
+ * free place on a row below it), so an added tile always comes last on the
+ * screen and never drops into a gap above. An empty screen starts at the
+ * top left. Spans are taken as `firstFreeWatchCell` takes them.
+ */
+export function lastFreeWatchCell(page: WatchPage, colSpan: number, rowSpan: number, screen: WatchScreen = "watch"): WatchCell {
+  const tiles = openWork(page, screen).tiles;
+  let last: WatchRect | undefined;
+  for (const t of tiles) {
+    if (last === undefined || t.row > last.row || (t.row === last.row && t.col > last.col)) last = t;
+  }
+  if (last === undefined) return { row: 0, col: 0 };
+  return firstFreeCellAmong(tiles, colSpan, rowSpan, { row: last.row, col: last.col + last.colSpan });
+}
+
+function firstFreeCellAmong(tiles: readonly WatchRect[], colSpan: number, rowSpan: number, after?: WatchCell): WatchCell {
   const cs = Math.max(1, Math.min(COLUMNS, Number.isFinite(colSpan) ? Math.trunc(colSpan) : 1));
   const rs = Math.max(1, Number.isFinite(rowSpan) ? Math.trunc(rowSpan) : 1);
-  for (const row of cuts([0, ...tiles.map((t) => t.row + t.rowSpan)])) {
-    for (let col = 0; col + cs <= COLUMNS; col++) {
+  // After a tile, its own row (right of it) and the one under it are tried
+  // too, as `packInOrder` tries them.
+  const top = after?.row ?? 0;
+  const ends = tiles.map((t) => t.row + t.rowSpan).filter((r) => r >= top);
+  for (const row of cuts(after === undefined ? [0, ...ends] : [top, top + 1, ...ends])) {
+    for (let col = after !== undefined && row === top ? after.col : 0; col + cs <= COLUMNS; col++) {
       const rect = { row, col, rowSpan: rs, colSpan: cs };
       if (!tiles.some((t) => overlaps(rect, t))) return { row, col };
     }
   }
   // The row under the lowest tile is always free; this is never reached.
-  return { row: Math.max(0, ...tiles.map((t) => t.row + t.rowSpan)), col: 0 };
+  return { row: Math.max(top + (after === undefined ? 0 : 1), ...tiles.map((t) => t.row + t.rowSpan)), col: 0 };
 }
 
 // ── drop ─────────────────────────────────────────────────────────────────
@@ -1940,22 +1960,25 @@ export function useOtherScreensOrder(
 // ── adding ───────────────────────────────────────────────────────────────
 
 /**
- * A new tile appended to a page and placed on every screen that draws it, at
- * that screen's first free place for its size (`firstFreeWatchCell`): a kind
- * the watch cannot draw lands on the iPhone only. Its own `gridCol` and
+ * A new tile appended to a page and placed on every screen that draws it,
+ * at that screen's first free place for its size (`firstFreeWatchCell`), or
+ * with `last` after that screen's last tile (`lastFreeWatchCell`, what the
+ * editor's Add tile does): a kind the watch cannot draw lands on the iPhone
+ * only. Its own `gridCol` and
  * `gridRow` take the watch's place (the iPhone's for an iPhone only kind).
  * A page without `screens` gets none when the two places agree, since the
  * tile fields then say both; else it gets them, read from the tile fields
  * before the add. A tile with no id is placed by its fields alone.
  */
-export function placeNewWatchTile(page: WatchPage, tile: WatchPageTile): WatchPage {
+export function placeNewWatchTile(page: WatchPage, tile: WatchPageTile, last = false): WatchPage {
+  const place = last ? lastFreeWatchCell : firstFreeWatchCell;
   const items = Array.isArray(page.items) ? page.items : [];
   const size = nearestScreenSize({ colSpan: Number(tile.colSpan ?? 1), rowSpan: Number(tile.rowSpan ?? 1) }, "watch");
   const cells: Partial<Record<WatchScreen, WatchCell>> = {};
   for (const screen of WATCH_SCREENS) {
-    if (tileDrawsOn(tile, screen)) cells[screen] = firstFreeWatchCell(page, size.colSpan, size.rowSpan, screen);
+    if (tileDrawsOn(tile, screen)) cells[screen] = place(page, size.colSpan, size.rowSpan, screen);
   }
-  const own = cells.watch ?? cells.iphone ?? firstFreeWatchCell(page, size.colSpan, size.rowSpan);
+  const own = cells.watch ?? cells.iphone ?? place(page, size.colSpan, size.rowSpan);
   const next: WatchPage = { ...page, items: [...items, { ...tile, gridCol: own.col, gridRow: own.row }] };
   const id = typeof tile.id === "string" && tile.id !== "" ? tile.id : undefined;
   const agree = cells.watch === undefined || cells.iphone === undefined

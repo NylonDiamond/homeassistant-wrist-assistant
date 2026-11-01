@@ -113,9 +113,12 @@ export function renderSwitcherButton(o: { open: boolean; title: string; label: s
     aria-label=${o.label} title=${o.title} @click=${o.onClick}>${uiIcon("grid")}</button>`;
 }
 
-/** What the page holds beside its name: "9 tiles · Shared". */
-export function renderBarMeta(what: string, sharedTitle: string): TemplateResult {
-  return html`<span class="pe-bar-meta">${what} · <span title=${sharedTitle}>Shared</span></span>`;
+/** What the item holds beside its name: "9 rows · Shared", or with no
+ * `sharedTitle` the count alone ("9 tiles"), as the pages editor has it. */
+export function renderBarMeta(what: string, sharedTitle?: string): TemplateResult {
+  return sharedTitle === undefined
+    ? html`<span class="pe-bar-meta">${what}</span>`
+    : html`<span class="pe-bar-meta">${what} · <span title=${sharedTitle}>Shared</span></span>`;
 }
 
 // ── the right cluster ────────────────────────────────────────────────────

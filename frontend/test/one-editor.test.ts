@@ -10,7 +10,16 @@ import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { libraryOf } from "../src/library/model.js";
 import { previewLabel, previewOwner, renderPreviewPicker, renderStripSaved, startPreviewKind, startSideBySide } from "../src/library/item-mode.js";
 import { DELIVERY_SETTLE_MS, followDeliveries, onEachDeviceLines, ordinal, placeText, syncText } from "../src/library/on-each-device.js";
-import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
+import {
+  SCREEN_TOAST_KEY,
+  screenMoveToastText,
+  screenOffChips,
+  screenOffLead,
+  screenStatus,
+  screenTitleText,
+  screenToastShown,
+  takeScreenMoveToast,
+} from "../src/watch-pages/device-differences.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
 import { renderTicks } from "../src/library/ticks.js";
 import { NO_RECORD_TEXT, changeDevicePicks, changedPicks } from "../src/watch-pages/all-pages-picks.js";
@@ -116,28 +125,67 @@ describe("Side by side", () => {
   });
 });
 
-describe("the differences line under each preview", () => {
-  const page: WatchPage = {
+describe("the lines under each picture", () => {
+  const at = (col: number, row: number) => ({ col, row, colSpan: 6, rowSpan: 4 });
+  const items = [
+    { id: "a", entityId: "light.desk", gridCol: 0, gridRow: 0, colSpan: 6, rowSpan: 4 },
+    { id: "b", entityId: "map.AAAA0000-0000-4000-8000-0000000000A1", gridCol: 6, gridRow: 0, colSpan: 6, rowSpan: 4 },
+    { id: "c", entityId: "web.AAAA0000-0000-4000-8000-0000000000A2", customLabel: "Garden cam", gridCol: 0, gridRow: 4, colSpan: 6, rowSpan: 4 },
+    { id: "d", entityId: "camera.door", cameraTileLive: true, gridCol: 6, gridRow: 4, colSpan: 6, rowSpan: 4 },
+    { id: "e", entityId: "sensor.temp", sensorChart: "24h", gridCol: 0, gridRow: 8, colSpan: 6, rowSpan: 4 },
+    { entityId: "light.lost", gridCol: 6, gridRow: 8, colSpan: 6, rowSpan: 4 },
+  ];
+  const plain: WatchPage = { id: "P", name: "Living", items };
+  const split: WatchPage = {
     id: "P",
     name: "Living",
-    items: [
-      { id: "a", entityId: "light.desk" },
-      { id: "b", entityId: "map.AAAA0000-0000-4000-8000-0000000000A1" },
-      { id: "c", entityId: "web.AAAA0000-0000-4000-8000-0000000000A2", customLabel: "Garden cam" },
-      { id: "d", entityId: "camera.door", cameraTileLive: true },
-      { id: "e", entityId: "sensor.temp", sensorChart: "24h" },
-    ],
+    items,
+    screens: {
+      watch: { a: at(0, 0), d: at(6, 0) },
+      iphone: { d: at(0, 0), a: at(6, 0), b: at(0, 4), c: at(6, 4), e: at(0, 8) },
+    },
   };
 
-  it("says only what each kind does otherwise", () => {
-    expect(deviceDifferenceText(page, "watch")).toBe("Skips Map and Garden cam. The camera shows a still picture. The sensor shows no chart.");
-    expect(deviceDifferenceText(page, "iphone")).toBe("Also shows Map and Garden cam. The camera plays live. The sensor shows a chart.");
+  it("names the kind and the devices of that kind that show the page", () => {
+    expect(screenTitleText("watch", ["Jesse's Watch", "Chen's Watch"])).toBe("Watch · Jesse's Watch, Chen's Watch");
+    expect(screenTitleText("iphone", ["Jesse's iPhone"])).toBe("iPhone · Jesse's iPhone");
+    expect(screenTitleText("iphone", [])).toBe("iPhone");
   });
 
-  it("has no line for a page both kinds draw the same", () => {
-    const plain: WatchPage = { id: "Q", name: "Lights", items: [{ id: "a", entityId: "light.desk" }, { id: "b", entityId: "camera.door" }] };
-    expect(deviceDifferenceText(plain, "watch")).toBe("");
-    expect(deviceDifferenceText(plain, "iphone")).toBe("");
+  it("says the screens read alike, or offers the other screen's order", () => {
+    expect(screenStatus(plain, "watch")).toEqual({ text: "Same order as the iPhone" });
+    expect(screenStatus(plain, "iphone")).toEqual({ text: "Same order as the watch" });
+    expect(screenStatus(split, "watch")).toEqual({ text: "Arranged differently", useOther: "Use the iPhone's order" });
+    expect(screenStatus(split, "iphone")).toEqual({ text: "Arranged differently", useOther: "Use the watch's order" });
+    // A tile Off on one screen is a chip, not a difference of order.
+    const off: WatchPage = { ...split, screens: { watch: { a: at(0, 0), d: at(6, 0) }, iphone: { a: at(0, 0), d: at(6, 0), e: at(0, 4) } } };
+    expect(screenStatus(off, "watch")?.text).toBe("Same order as the iPhone");
+    // A smart page fills itself: no line.
+    expect(screenStatus({ id: "S", name: "Smart", dynamicConfig: { rules: [] } } as unknown as WatchPage, "watch")).toBeUndefined();
+  });
+
+  it("lists the tiles off on each screen, a kind the watch cannot draw grey with iPhone only", () => {
+    expect(screenOffLead("watch")).toBe("Not on the watch");
+    expect(screenOffLead("iphone")).toBe("Not on the iPhone");
+    // Without screens the watch leaves out only what it cannot draw.
+    expect(screenOffChips(plain, "watch").map((c) => [c.id, c.canPutOn, c.tag])).toEqual([["b", false, "iPhone only"], ["c", false, "iPhone only"]]);
+    expect(screenOffChips(plain, "iphone")).toEqual([]);
+    // With screens a tile the watch draws, switched off there, can go back on.
+    expect(screenOffChips(split, "watch").map((c) => [c.id, c.canPutOn, c.tag])).toEqual([["b", false, "iPhone only"], ["c", false, "iPhone only"], ["e", true, undefined]]);
+    expect(screenOffChips(split, "iphone")).toEqual([]);
+  });
+
+  it("shows the toast once per user, naming each device of the kind when there are several", () => {
+    expect(screenMoveToastText("watch", ["Jesse's Watch"])).toBe("Moved on the watch only. The iPhone stays as it is.");
+    expect(screenMoveToastText("iphone", [])).toBe("Moved on the iPhone only. The watch stays as it is.");
+    expect(screenMoveToastText("watch", ["Jesse's Watch", "Chen's Watch"])).toBe("Moved on Jesse's Watch and Chen's Watch only. The iPhone stays as it is.");
+    const kept = new Map<string, string>();
+    const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
+    expect(screenToastShown(storage)).toBe(false);
+    expect(takeScreenMoveToast("iphone", ["Jesse's iPhone"], storage)).toBe("Moved on the iPhone only. The watch stays as it is.");
+    expect(kept.get(SCREEN_TOAST_KEY)).toBe("1");
+    expect(screenToastShown(storage)).toBe(true);
+    expect(takeScreenMoveToast("watch", [], storage)).toBeUndefined();
   });
 });
 

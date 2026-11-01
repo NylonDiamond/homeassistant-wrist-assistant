@@ -72,7 +72,7 @@ import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
 import { oneLookForEvery } from "../version.js";
 import { LibraryController } from "../library/store.js";
-import { SAVES_AT_ONCE_TEXT, SHOWN_ON_TEXT, libraryTicksStyles, renderTicks } from "../library/ticks.js";
+import { SHOWN_ON_TEXT, libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
   fetchLibraryRecord,
@@ -85,9 +85,7 @@ import {
   type LibraryItemRef,
   libraryModeStyles,
   libraryOwners,
-  otherPreviewKind,
   type PreviewKind,
-  previewLabel,
   onDevicesQuestion,
   previewOwner,
   renderStripSaved,
@@ -99,7 +97,7 @@ import {
 import { followDeliveries, onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
 import { changeDevicePicks } from "./all-pages-picks.js";
 import { picksIO } from "./all-pages-io.js";
-import { deviceDifferenceText } from "./device-differences.js";
+import { SAME_ON_EVERY_DEVICE_TEXT, screenOffChips, screenOffLead, screenStatus, screenTitleText, screenWord, takeScreenMoveToast } from "./device-differences.js";
 import { dirtyElsewhereText, unsavedTicksText } from "./library-editing.js";
 import { type UntickAsk, askUntick, clearComplicationTaps, tickItem } from "./library-editing-io.js";
 import {
@@ -171,8 +169,8 @@ import {
   deleteWatchTile,
   dropWatchTile,
   findWatchPage,
-  firstFreeWatchCell,
   giveWatchTileId,
+  lastFreeWatchCell,
   listedWatchPages,
   moveWatchTilesBy,
   newWatchPage,
@@ -183,9 +181,13 @@ import {
   renameWatchScreenTiles,
   resizeWatchTile,
   sameWatchId,
+  setTileOnScreen,
   setWatchPageName,
+  tileOnlyOnScreen,
+  useOtherScreensOrder,
   watchDropOutcome,
   watchResizeHandleRect,
+  watchScreenTileRect,
   watchTileAtCell,
   watchTileRect,
 } from "./edit.js";
@@ -207,8 +209,6 @@ import {
   type WatchPageTile,
   type WatchPagesDocument,
   WATCH_GRID_COLUMNS,
-  WATCH_GRID_SIDE_INSET,
-  WATCH_GRID_TOP_INSET,
   asWatchPagesDocument,
   isHiddenWatchPage,
   isJsonObject,
@@ -216,6 +216,10 @@ import {
   isSmartWatchPage,
   isSystemWatchPage,
   isVirtualTileKind,
+  type WatchScreen,
+  WATCH_SCREENS,
+  otherWatchScreen,
+  tileDrawsOn,
   tileEntityId,
   tileKind,
   tileKindLabel,
@@ -227,6 +231,7 @@ import {
   watchMapPageTile,
   watchPageTiles,
   watchPagesOf,
+  watchScreenPage,
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
 import { setWatchPageFitToScreen } from "./page-settings-model.js";
@@ -532,6 +537,9 @@ interface GestureBase {
   clientX: number;
   clientY: number;
   started: boolean;
+  /** The picture the press began on: the screen the gesture arranges, and
+   * the only one that draws it. */
+  screen: WatchScreen;
   captured?: Element;
   /** The draft's `baseVersion` when the press began. A base that moves
    * under a gesture (a merge) makes its baseline wrong, so it is cancelled. */
@@ -592,6 +600,18 @@ interface PartGesture extends GestureBase {
 }
 
 type Gesture = MoveGesture | ResizeGesture | PartGesture;
+
+/** The page as one picture of the stage draws it: that screen's places in
+ * the tile fields (`watchScreenPage`), and only the tiles on that screen, so
+ * a kind the watch cannot draw is left out of the watch's picture (its chip
+ * names it) on a page without `screens` too. A tile that needs no change is
+ * the page's own object, so a click on one with no id still finds it. */
+function screenDrawnPage(page: WatchPage, screen: WatchScreen): WatchPage {
+  const drawn = watchScreenPage(page, screen);
+  if (!Array.isArray(drawn.items)) return drawn;
+  const items = drawn.items.filter((raw) => !isJsonObject(raw) || tileDrawsOn(raw, screen));
+  return items.length === drawn.items.length ? drawn : { ...drawn, items };
+}
 
 /** `tile` drawn with `arrange` in place of its own (Default removes it). */
 function withArrange(tile: WatchPageTile, arrange: TileArrange | undefined): WatchPageTile {
@@ -982,14 +1002,25 @@ export class WaPageEditor extends LitElement {
    * with picks that part in the Arrangement section's Part row, unless it
    * became a drag. */
   private pressedPart?: { tileId: string; part: ArrangePart };
-  /** The grid's side room in points, as last drawn: the watch's side safe
-   * area, none on an iPhone. */
-  private stageSideInset = WATCH_GRID_SIDE_INSET;
-  /** The grid's room above in points, as last drawn, on a page that is not
-   * full screen: the watch's 34 for its clock, the iPhone's 4. */
-  private stageTopInset = WATCH_GRID_TOP_INSET;
-  /** The watch's screen in points, as last drawn, for the pointer arithmetic. */
-  private stageScreen = REFERENCE_CASE.screen;
+  /** Each picture's grid as last drawn, for the pointer arithmetic: its
+   * screen in points, its side room (the watch's side safe area, none on an
+   * iPhone) and its room above on a page that is not full screen (the
+   * watch's 34 for its clock, the iPhone's 4). */
+  private stageGeom: Partial<Record<WatchScreen, { screen: { width: number; height: number }; sideInset: number; topInset: number }>> = {};
+  /** The scale each picture was drawn at last, so a scale change draws once
+   * without the fade. */
+  private drawnScales: Partial<Record<WatchScreen, number>> = {};
+  /** The picture a tile was last pressed or clicked on: where the handles
+   * show, what the arrow keys move and which screen the inspector's Take off
+   * names. Undefined until the first press, when the edited kind stands in
+   * (`clickedScreen`). */
+  @state() private editScreen?: WatchScreen;
+  /** The one toast of a first drag or resize (`takeScreenMoveToast`). */
+  @state() private screenToast?: string;
+  private screenToastTimer?: ReturnType<typeof setTimeout>;
+  /** A tile switched off on its last screen: the inspector asks "Delete this
+   * tile?" in place of the switch. */
+  @state() private screenOffAsk?: { tileId: string; screen: WatchScreen };
   private scrollFrame?: number;
   private windowArmed = false;
   private shownDialog?: HTMLDialogElement;
@@ -1209,8 +1240,10 @@ export class WaPageEditor extends LitElement {
     this.observeTop();
     if (this.revealTile) {
       this.revealTile = false;
-      const tile = this.selectedTileId === undefined ? undefined : this.tileButton(this.selectedTileId);
-      tile?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      // On every picture that draws it: an added tile lands last on both.
+      const id = this.selectedTileId;
+      const tiles = id === undefined ? [] : this.renderRoot.querySelectorAll<HTMLElement>(`.pe-tile[data-tile="${CSS.escape(id)}"]`);
+      for (const tile of tiles) tile.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   }
 
@@ -1408,11 +1441,17 @@ export class WaPageEditor extends LitElement {
     forgetTileSettingsNotes(this.uiState);
     // A choice tried on the old tiles is not one for the new.
     forgetTileTry(this.uiState);
+    // So is a question about switching the old tile off.
+    this.screenOffAsk = undefined;
     this.endScrub();
   }
 
+  /** A tile's button, on the picture it was last pressed on where it is
+   * drawn there, else on the first picture that draws it. */
   private tileButton(tileId: string): HTMLElement | null {
-    return this.renderRoot.querySelector<HTMLElement>(`.pe-tile[data-tile="${CSS.escape(tileId)}"]`);
+    const tile = `.pe-tile[data-tile="${CSS.escape(tileId)}"]`;
+    return this.renderRoot.querySelector<HTMLElement>(`.pe-screen[data-screen="${this.clickedScreen}"] ${tile}`)
+      ?? this.renderRoot.querySelector<HTMLElement>(tile);
   }
 
   // ── library mode ───────────────────────────────────────────────────────
@@ -2349,7 +2388,7 @@ export class WaPageEditor extends LitElement {
       if (next !== undefined && this.edit(next)) this.revealTile = true;
       return;
     }
-    if (this.edit(nudgeWatchTile(document, pageId, tileId, direction))) this.revealTile = true;
+    if (this.edit(nudgeWatchTile(document, pageId, tileId, direction, { screen: this.clickedScreen }))) this.revealTile = true;
   }
 
   /** Every picked tile one step, all or nothing (`moveWatchTilesBy`): the
@@ -2359,7 +2398,7 @@ export class WaPageEditor extends LitElement {
   private nudgeAll(document: WatchPagesDocument, pageId: string, ids: readonly string[], direction: WatchNudgeDirection): WatchPagesDocument | undefined {
     const dcols = direction === "left" ? -1 : direction === "right" ? 1 : 0;
     const drows = direction === "up" ? -1 : direction === "down" ? 1 : 0;
-    return moveWatchTilesBy(document, pageId, ids, dcols, drows);
+    return moveWatchTilesBy(document, pageId, ids, dcols, drows, { screen: this.clickedScreen });
   }
 
   /** Delete the one tile named, or else every picked tile, in one edit (one
@@ -2585,19 +2624,58 @@ export class WaPageEditor extends LitElement {
 
   // ── pointer gestures ───────────────────────────────────────────────────
 
-  private screenEl(): HTMLElement | null {
-    return this.renderRoot.querySelector<HTMLElement>(".pe-screen");
+  /** One picture's edit screen. */
+  private screenEl(screen: WatchScreen): HTMLElement | null {
+    return this.renderRoot.querySelector<HTMLElement>(`.pe-screen[data-screen="${screen}"]`);
   }
 
-  /** The grid as drawn now, measured, so a zoom or a scale change is still
-   * read right. */
-  private measuredGrid(screen: HTMLElement): { grid: StageGrid; rect: DOMRect } | undefined {
-    const rect = screen.getBoundingClientRect();
+  /** The grid of one picture as drawn now, measured, so a zoom or a scale
+   * change is still read right. */
+  private measuredGrid(el: HTMLElement, screen: WatchScreen): { grid: StageGrid; rect: DOMRect } | undefined {
+    const rect = el.getBoundingClientRect();
     const page = this.currentPage();
-    if (rect.width <= 0 || page === undefined) return undefined;
-    const scale = rect.width / this.stageScreen.width;
-    const topInset = page.fullScreen === true ? 0 : this.stageTopInset;
-    return { grid: stageGrid(this.stageScreen.width, topInset, scale, this.stageSideInset), rect };
+    const geom = this.stageGeom[screen];
+    if (rect.width <= 0 || page === undefined || geom === undefined) return undefined;
+    const scale = rect.width / geom.screen.width;
+    const topInset = page.fullScreen === true ? 0 : geom.topInset;
+    return { grid: stageGrid(geom.screen.width, topInset, scale, geom.sideInset), rect };
+  }
+
+  /** The picture the handles and the arrow keys are on: the one a tile was
+   * last pressed on while it is drawn, else the edited kind's. */
+  private get clickedScreen(): WatchScreen {
+    const shown = this.shownScreens(this.currentPage());
+    return this.editScreen !== undefined && shown.includes(this.editScreen) ? this.editScreen : (shown[0] ?? this.previewKind);
+  }
+
+  /** The names of the devices of a kind that show the page. */
+  private screenNames(screen: WatchScreen): string[] {
+    return this.libraryNamesOf(screen);
+  }
+
+  /**
+   * The pictures the stage draws, the watch first: the kind Preview on
+   * picks, or both with Both. A kind no device shows the page on gets no
+   * picture while the other kind's devices do (a link to add one stands in,
+   * `renderAddKindLink`); a page on no device yet draws what is picked.
+   */
+  private shownScreens(page: WatchPage | undefined): WatchScreen[] {
+    const picked: WatchScreen[] = this.sideBySide ? [...WATCH_SCREENS] : [this.previewKind];
+    if (page === undefined || this.libraryItem === undefined || this.lib.library === undefined) return picked;
+    const has = (k: WatchScreen) => this.screenNames(k).length > 0;
+    if (!WATCH_SCREENS.some(has)) return picked;
+    const kept = picked.filter(has);
+    return kept.length > 0 ? kept : WATCH_SCREENS.filter(has);
+  }
+
+  /** After a drag or a resize that changed the page: the toast, the first
+   * time ever (`takeScreenMoveToast`), naming the devices of the kind. */
+  private toastScreenMove(screen: WatchScreen): void {
+    const text = takeScreenMoveToast(screen, this.screenNames(screen));
+    if (text === undefined) return;
+    this.screenToast = text;
+    if (this.screenToastTimer !== undefined) clearTimeout(this.screenToastTimer);
+    this.screenToastTimer = setTimeout(() => { this.screenToast = undefined; }, 7000);
   }
 
   private armWindow(): void {
@@ -2641,8 +2719,9 @@ export class WaPageEditor extends LitElement {
    * pressed on one of a pick of several, it drags the whole pick. A finger
    * drags only a selected or picked tile (the only ones with `touch-action:
    * none`); on any other tile it scrolls the page, and a tap selects. */
-  private onTilePointerDown(e: PointerEvent, tileId: string): void {
+  private onTilePointerDown(e: PointerEvent, tileId: string, on: WatchScreen): void {
     if (e.button !== 0 || !e.isPrimary || this.gesture || this.editingOff()) return;
+    this.editScreen = on;
     // Shift, Cmd or Ctrl held: no drag, the click picks (`clickTile`).
     if (e.metaKey || e.ctrlKey || e.shiftKey) return;
     // No drag while a save is out: a conflict merges under the save, and a
@@ -2663,14 +2742,18 @@ export class WaPageEditor extends LitElement {
     const button = e.currentTarget as HTMLElement;
     if (page === undefined || tile === undefined) return;
     if (!selected) this.selectTile(tileId);
+    const rectOn = (t: WatchPageTile) => watchScreenTileRect(page, t, on);
+    const own = rectOn(tile);
+    if (own === undefined) return;
     const members = group
       ? this.pickedIds(page).flatMap((id) => {
         const t = this.tileOn(page, id);
-        return t === undefined ? [] : [{ id, rect: watchTileRect(t) }];
+        const rect = t === undefined ? undefined : rectOn(t);
+        return rect === undefined ? [] : [{ id, rect }];
       })
       : [];
     const box = button.getBoundingClientRect();
-    const screen = this.screenEl()?.getBoundingClientRect();
+    const screen = this.screenEl(on)?.getBoundingClientRect();
     this.gesture = {
       kind: "move",
       pointerId: e.pointerId,
@@ -2681,8 +2764,9 @@ export class WaPageEditor extends LitElement {
       clientX: e.clientX,
       clientY: e.clientY,
       started: false,
+      screen: on,
       grab: { x: e.clientX - box.left, y: e.clientY - box.top },
-      rect: watchTileRect(tile),
+      rect: own,
       left: screen ? box.left - screen.left : 0,
       top: screen ? box.top - screen.top : 0,
       captured: this.capture(button, e.pointerId),
@@ -2760,6 +2844,7 @@ export class WaPageEditor extends LitElement {
       clientX: e.clientX,
       clientY: e.clientY,
       started: false,
+      screen: this.clickedScreen,
       part,
       from,
       arrange: from,
@@ -2783,7 +2868,7 @@ export class WaPageEditor extends LitElement {
     return true;
   }
 
-  private onHandlePointerDown(e: PointerEvent, handle: WatchResizeHandle): void {
+  private onHandlePointerDown(e: PointerEvent, handle: WatchResizeHandle, on: WatchScreen): void {
     e.stopPropagation();
     if (e.button !== 0 || !e.isPrimary || this.gesture || this.editingOff()) return;
     e.preventDefault();
@@ -2792,10 +2877,11 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     const tileId = this.selectedTileId;
     const tile = page === undefined || tileId === undefined ? undefined : this.tileOn(page, tileId);
-    const screen = this.screenEl();
+    const screen = this.screenEl(on);
     if (page === undefined || tileId === undefined || tile === undefined || !screen) return;
     const rect = screen.getBoundingClientRect();
-    const startRect = watchTileRect(tile);
+    const startRect = watchScreenTileRect(page, tile, on);
+    if (startRect === undefined) return;
     this.gesture = {
       kind: "resize",
       pointerId: e.pointerId,
@@ -2806,6 +2892,7 @@ export class WaPageEditor extends LitElement {
       clientX: e.clientX,
       clientY: e.clientY,
       started: false,
+      screen: on,
       handle,
       startRect,
       basePage: page,
@@ -2893,10 +2980,11 @@ export class WaPageEditor extends LitElement {
       this.requestUpdate();
       return;
     }
-    const screen = this.screenEl();
+    if (!g) return;
+    const screen = this.screenEl(g.screen);
     const page = this.currentPage();
-    const measured = screen ? this.measuredGrid(screen) : undefined;
-    if (!g || !measured || page === undefined) return;
+    const measured = screen ? this.measuredGrid(screen, g.screen) : undefined;
+    if (!measured || page === undefined) return;
     const { grid, rect } = measured;
     const local = { x: g.clientX - rect.left, y: g.clientY - rect.top };
     if (g.kind === "move") {
@@ -2917,16 +3005,16 @@ export class WaPageEditor extends LitElement {
         this.requestUpdate();
         return;
       }
-      const under = watchTileAtCell(page, cellAtPx(grid, local.x, local.y));
+      const under = watchTileAtCell(page, cellAtPx(grid, local.x, local.y), g.screen);
       const underId = under === undefined ? "" : tileIdOf(under);
       g.pointerTileId = underId !== "" && !sameWatchId(underId, g.tileId) ? underId : undefined;
-      g.outcome = watchDropOutcome(page, g.tileId, g.cell, g.pointerTileId);
+      g.outcome = watchDropOutcome(page, g.tileId, g.cell, g.pointerTileId, g.screen);
     } else {
       const delta = cellDelta(grid, local.x - g.startLocal.x, local.y - g.startLocal.y);
       const asked = watchResizeHandleRect(g.startRect, g.handle, delta) ?? g.rect;
       if (g.preview === undefined || !sameRect(asked, g.rect)) {
         g.rect = asked;
-        g.preview = previewWatchTileResize(g.basePage, g.tileId, asked, g.basePage);
+        g.preview = previewWatchTileResize(g.basePage, g.tileId, asked, g.basePage, g.screen);
       }
     }
     this.requestUpdate();
@@ -2947,7 +3035,7 @@ export class WaPageEditor extends LitElement {
         return;
       }
       if (g.outcome.kind === "move" || g.outcome.kind === "swap") {
-        this.edit(dropWatchTile(document, g.pageId, g.tileId, g.cell, g.pointerTileId));
+        if (this.edit(dropWatchTile(document, g.pageId, g.tileId, g.cell, g.pointerTileId, { screen: g.screen }))) this.toastScreenMove(g.screen);
       } else if (g.outcome.kind === "none" && g.cell.row + g.rect.rowSpan > WATCH_EDITOR_MAX_ROWS) {
         this.refuseGesture(`${PAGE_END_TEXT} A tile this high cannot go that far down.`);
       }
@@ -2963,7 +3051,7 @@ export class WaPageEditor extends LitElement {
       this.refuseGesture("That size would cover a tile above or beside it, so the tile kept its size.");
       return;
     }
-    this.edit(resizeWatchTile(document, g.pageId, g.tileId, g.rect, { baseline: g.basePage }));
+    if (this.edit(resizeWatchTile(document, g.pageId, g.tileId, g.rect, { baseline: g.basePage, screen: g.screen }))) this.toastScreenMove(g.screen);
   }
 
   /** What dropping a pick of several would do: `same` with no delta, `move`
@@ -2974,7 +3062,7 @@ export class WaPageEditor extends LitElement {
     if (dcols === 0 && drows === 0) return { kind: "same", cell };
     const document = this.draft?.document;
     const ids = (g.group ?? []).map((m) => m.id);
-    const ok = document !== undefined && canMoveWatchTilesBy(document, g.pageId, ids, dcols, drows);
+    const ok = document !== undefined && canMoveWatchTilesBy(document, g.pageId, ids, dcols, drows, g.screen);
     return { kind: ok ? "move" : "none", cell };
   }
 
@@ -2984,7 +3072,7 @@ export class WaPageEditor extends LitElement {
   private finishGroupMove(document: WatchPagesDocument, g: MoveGesture, cell: WatchCell, group: readonly { id: string; rect: WatchRect }[]): void {
     const { dcols, drows } = moveDelta(g, cell);
     if (dcols === 0 && drows === 0) return;
-    const next = moveWatchTilesBy(document, g.pageId, group.map((m) => m.id), dcols, drows);
+    const next = moveWatchTilesBy(document, g.pageId, group.map((m) => m.id), dcols, drows, { screen: g.screen });
     if (next === undefined) {
       if (group.some((m) => m.rect.row + drows + m.rect.rowSpan > WATCH_EDITOR_MAX_ROWS)) {
         this.refuseGesture(`${PAGE_END_TEXT} These tiles cannot go that far down.`);
@@ -2992,6 +3080,7 @@ export class WaPageEditor extends LitElement {
       return;
     }
     if (!this.edit(next)) return;
+    this.toastScreenMove(g.screen);
     if (this.isPicked(g.tileId)) this.selectedTileId = g.tileId;
     this.revealTile = true;
   }
@@ -3129,8 +3218,8 @@ export class WaPageEditor extends LitElement {
    * The page's devices in the editor bar, after the name and a divider:
    * "Shown on", then a checkbox chip per device the page is on, each in its
    * device's color, then the dashed "+ Add to a device" holding the others
-   * (and the ticked ones again, to take one off), then "saves at once", since
-   * these skip Save. Ticking puts the page, as saved, on that device
+   * (and the ticked ones again, to take one off); a tick skips Save.
+   * Ticking puts the page, as saved, on that device
    * (`library/pick`) at once; unticking takes it off there. Unsaved edits
    * here reach it with the next save, since it is one page. The ticks are the
    * tick row's own (`renderTicks`): the bar only always folds the unticked
@@ -3171,7 +3260,6 @@ export class WaPageEditor extends LitElement {
       itemId: entry.id,
       devices,
       lead: entry.owners.length === 0 ? ON_NO_DEVICE_TEXT : SHOWN_ON_TEXT,
-      saves: SAVES_AT_ONCE_TEXT,
       ...(this.libraryItem?.from === undefined ? {} : { viewing: this.libraryItem.from }),
       colorOf: (ownerId) => this.colorOf(ownerId),
       // The page as edited here, so a map added a moment ago counts on the
@@ -3481,9 +3569,8 @@ export class WaPageEditor extends LitElement {
    * The page's head in the editor bar: the small grid button that opens the
    * switcher's popover (`renderPickerPopover`: every page in the library as a
    * card with its picture, to open another in this editor or copy this one),
-   * the page's name as a text field in place (`renderNameInPlace`), and what
-   * it holds with "Shared" (one page for every device that has it; which ones
-   * is the chips beside it).
+   * the page's name as a text field in place (`renderNameInPlace`), and how
+   * many tiles it holds (which devices show it is the chips beside it).
    */
   private renderPagePicker(page: WatchPage, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
     const name = watchPageName(page);
@@ -3495,7 +3582,7 @@ export class WaPageEditor extends LitElement {
         ${open ? this.renderPickerPopover(page, pages, owner) : nothing}
       </div>
       ${renderNameInPlace(this.nameField(page))}
-      ${renderBarMeta(what, "One page for every device that has it. A save reaches all of them.")}`;
+      ${renderBarMeta(what)}`;
   }
 
   /**
@@ -3830,11 +3917,11 @@ export class WaPageEditor extends LitElement {
     if (this.stacked) return undefined;
     const page = this.currentPage();
     if (page === undefined) return undefined;
-    const kinds: PreviewKind[] = this.sideBySide ? [this.previewKind, otherPreviewKind(this.previewKind)] : [this.previewKind];
+    const kinds: PreviewKind[] = this.shownScreens(page);
     let width = 0;
     let height = 0;
     let fixedWidth = 16 + (kinds.length - 1) * 28;
-    let diffs = false;
+    let chips = false;
     for (const kind of kinds) {
       const owner = this.stageOwnerOf(kind);
       if (kind === "iphone") {
@@ -3848,11 +3935,11 @@ export class WaPageEditor extends LitElement {
         width += screen.width * (1 + 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO) + WATCH_CROWN_RATIO);
         height = Math.max(height, screen.height + screen.width * 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO));
       }
-      if (deviceDifferenceText(page, kind) !== "") diffs = true;
+      if (screenOffChips(page, kind).length > 0) chips = true;
     }
-    // The label over each device (one line and its gap), and the
-    // differences line under it, two lines at most, when either has one.
-    const fixedHeight = 30 + (diffs ? 44 : 0);
+    // Under each device: the title and the status line (a line and a gap
+    // each), and the chips' row when either has one.
+    const fixedHeight = 52 + (chips ? 30 : 0);
     const max = kinds.includes("watch") ? STAGE_FILL_MAX : STAGE_FILL_MAX / PHONE_STAGE_ZOOM;
     return { width, height, fixedWidth, fixedHeight, max };
   }
@@ -3983,13 +4070,11 @@ export class WaPageEditor extends LitElement {
         },
       };
     }
-    this.stageScreen = screen;
     // Set again by the selected tile, if the edit screen draws one Free.
     this.stageArrange = undefined;
     this.layoutArrange = undefined;
-    this.stageSideInset = this.gridSideInset;
-    this.stageTopInset = watchPreviewTopInset(input);
-    const scrolls = !smart && (asOnWatch || map ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
+    const kind: WatchScreen = phone ? "iphone" : "watch";
+    const scrolls = !smart && (asOnWatch || map ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input, kind).scrolls);
     const empty = !smart && !map && !asOnWatch && tiles === 0;
     // Watch view and an empty page are statuses, said whatever Help says;
     // how to use the stage and where the screen ends are help, said only
@@ -4011,8 +4096,12 @@ export class WaPageEditor extends LitElement {
           ${fold ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
         </div>` : nothing}
         <div class="pe-stage-body">
-          ${this.renderLibraryStage(page, pages, input, smart || map || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))}
+          ${this.renderLibraryStage(page, pages, input, kind, (at, on) => smart || map || asOnWatch ? renderWatchPagePreview(at) : this.renderEditScreen(page, at, on))}
         </div>
+        ${this.screenToast === undefined ? nothing : html`<div class="pe-screen-toast" role="status">
+          <span>${this.screenToast}</span>
+          <button type="button" class="pe-screen-toast-x" aria-label="Close" title="Close" @click=${() => { this.screenToast = undefined; }}>${uiIcon("close")}</button>
+        </div>`}
         <div class="pe-dock-area">
           <div class="pe-try-slot">${this.renderLiveStrip(page, tile)}</div>
           ${this.renderStageTools(headers, smart, phone)}
@@ -4053,35 +4142,102 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The stage's body: the edited preview, labelled with the devices of
-   * its kind that have the page and with the line of what that kind does
-   * otherwise; with Side by side, the other kind's preview beside it the
-   * same way. The other one is a picture only: a click on it edits on that
-   * kind instead. Watch first, iPhone second, whichever is edited.
+   * The stage's body: a picture per kind of device the page shows on
+   * (`shownScreens`), the watch first, each one editable: a drag or a resize
+   * on a picture arranges that screen only. The edited kind's picture is
+   * drawn with `input`; the other's on the first device of its kind
+   * (`companionInput`). Under each picture its lines (`renderScreenLines`),
+   * and, where a kind shows no picture because no device of it shows the
+   * page, a link to add one (`renderAddKindLink`).
    */
   private renderLibraryStage(
     page: WatchPage,
     pages: readonly WatchPage[],
     input: WatchPagePreviewInput,
-    edited: TemplateResult,
+    edited: WatchScreen,
+    draw: (input: WatchPagePreviewInput, screen: WatchScreen) => TemplateResult,
   ): TemplateResult {
-    const kind = this.previewKind;
-    const side = (k: PreviewKind, body: TemplateResult, tag: string) => {
-      const diff = deviceDifferenceText(page, k);
-      return html`<div class="lib-duo-side ${k}">
-        <span class="lib-duo-l" title=${previewLabel(k, this.libraryNamesOf(k))}>${previewLabel(k, this.libraryNamesOf(k))}<span class="lib-duo-tag">${tag}</span></span>
-        ${body}
-        ${diff === "" ? nothing : html`<span class="lib-diff">${diff}</span>`}
+    const shown = this.shownScreens(page);
+    // A kind no device of which shows the page; one Preview on hides is not.
+    const missing = this.lib.library === undefined || this.libraryItem === undefined ? []
+      : WATCH_SCREENS.filter((k) => !shown.includes(k) && this.screenNames(k).length === 0);
+    const side = (k: WatchScreen, last: boolean) => {
+      // A picture that is no edit screen (Watch view, a smart or a map page)
+      // draws the tile being tried in the inspector too.
+      const at = k === edited ? input : this.companionInput(this.withTriedTiles(page), pages, input, k);
+      return html`<div class="lib-duo-side ${k}" data-screen-side=${k}>
+        ${draw(at, k)}
+        ${this.renderScreenLines(page, at, k, shown.length > 1)}
+        ${last ? missing.map((m) => this.renderAddKindLink(m)) : nothing}
       </div>`;
     };
-    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
-    const other = otherPreviewKind(kind);
-    const word = other === "watch" ? "watch" : "iPhone";
-    return html`<div class="lib-duo">
-      ${side(kind, edited, "editing")}
-      ${side(other, html`<button type="button" class="lib-duo-other" title=${`Click to edit on the ${word}`} aria-label=${`Edit on the ${word}`}
-        @click=${() => this.pickPreview(other, true)}>${renderWatchPagePreview(this.companionInput(this.withTriedTiles(page), pages, input, other))}</button>`, "preview")}
+    return html`<div class="lib-duo">${shown.map((k, i) => side(k, i === shown.length - 1))}</div>`;
+  }
+
+  /**
+   * The lines under one picture: the title, the kind and the devices of it
+   * that show the page; the status line, "Same order as the iPhone" or
+   * "Arranged differently" with "Use the iPhone's order" (one edit, so Undo
+   * takes it back), said while the other kind is drawn or shows the page;
+   * and "Not on the
+   * watch:" with a chip per tile Off there, a click on which puts it on, or,
+   * for a kind the screen cannot draw, a grey chip saying which draws it.
+   */
+  private renderScreenLines(page: WatchPage, input: WatchPagePreviewInput, screen: WatchScreen, both: boolean): TemplateResult {
+    const title = screenTitleText(screen, this.screenNames(screen));
+    // Said while the other kind is drawn too, or shows the page somewhere;
+    // a map page's line, how this kind draws it, always.
+    const status = both || isMapWatchPage(page) || this.screenNames(otherWatchScreen(screen)).length > 0 ? screenStatus(page, screen) : undefined;
+    const chips = screenOffChips(page, screen);
+    const off = this.busy || this.editingOff(page);
+    const pageId = watchPageId(page);
+    const putOn = (tileId: string) => {
+      const document = this.draft?.document;
+      if (document === undefined || off) return;
+      if (this.edit(setTileOnScreen(document, pageId, tileId, screen, true))) {
+        this.editScreen = screen;
+        this.selectTile(tileId);
+        this.revealTile = true;
+      }
+    };
+    const useOther = () => {
+      const document = this.draft?.document;
+      if (document !== undefined && !off) this.edit(useOtherScreensOrder(document, pageId, screen));
+    };
+    return html`<div class="pe-screen-lines">
+      <span class="lib-duo-l pe-screen-title" title=${title}>${title}</span>
+      ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${status.useOther === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
+        title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${status.useOther}</button>`}</span>`}
+      ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen)}>
+        <span class="pe-screen-off-l">${screenOffLead(screen)}:</span>
+        ${chips.map((c) => {
+          const name = watchPreviewTileLabel(c.tile, input) || tileKindLabel(tileKind(tileEntityId(c.tile)));
+          return c.canPutOn
+            ? html`<button type="button" class="pe-off-chip" ?disabled=${off} data-off-tile=${c.id} title=${`Put ${name} on the ${screenWord(screen)}`}
+              @click=${() => putOn(c.id)}>${name}</button>`
+            : html`<span class="pe-off-chip grey" data-off-tile=${c.id} title=${`The ${screenWord(screen)} cannot draw this kind of tile`}>${name}<em>${c.tag}</em></span>`;
+        })}
+      </div>`}
     </div>`;
+  }
+
+  /** "+ Add an iPhone" (or "+ Add a watch") where a kind shows no picture
+   * because no device of it shows the page: it opens the bar's "+ Add to a
+   * device", where the device is ticked. Nothing in a home with no device of
+   * that kind. */
+  private renderAddKindLink(screen: WatchScreen): TemplateResult | typeof nothing {
+    if (!this.linkDevices.some((d) => d.kind === screen)) return nothing;
+    const words = screen === "watch" ? "+ Add a watch" : "+ Add an iPhone";
+    return html`<button type="button" class="link pe-add-kind" data-add-kind=${screen} title="Show this page on another device"
+      @click=${() => this.openAddDevice()}>${words}</button>`;
+  }
+
+  /** Open the bar's "+ Add to a device" popover. */
+  private openAddDevice(): void {
+    const fold = this.renderRoot.querySelector<HTMLDetailsElement>(".pe-bar-on details.lt-fold");
+    if (fold === null) return;
+    fold.open = true;
+    fold.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   /**
@@ -4297,13 +4453,15 @@ export class WaPageEditor extends LitElement {
    * live. */
   /** What the edit screen draws: the page (the resize's preview while a
    * handle is dragged), its grid, and how many rows and pixels it takes. */
-  private editStage(page: WatchPage, input: WatchPagePreviewInput) {
+  private editStage(page: WatchPage, input: WatchPagePreviewInput, on: WatchScreen) {
     const s = input.scale ?? 1.5;
     const screen = input.screen;
-    const g = this.gesture?.started ? this.gesture : undefined;
+    // A gesture is drawn on the picture it began on only.
+    const g = this.gesture?.started && this.gesture.screen === on ? this.gesture : undefined;
     const move = g?.kind === "move" ? g : undefined;
     const resize = g?.kind === "resize" ? g : undefined;
-    const shown = resize?.preview?.page ?? page;
+    const raw = resize?.preview?.page ?? page;
+    const shown = screenDrawnPage(raw, on);
     const topInset = page.fullScreen === true ? 0 : watchPreviewTopInset(input);
     const grid = stageGrid(screen.width, topInset, s, watchPreviewSideInset(input));
     // A pick of several reaches as deep as its lowest tile moved.
@@ -4314,28 +4472,27 @@ export class WaPageEditor extends LitElement {
     // page. Its rows are kept whether or not it is drawn just now (it hides
     // while a tile moves or a save runs), so the device never changes height
     // under the pointer.
-    const slot = this.addSlotRect(page);
+    const slot = this.addSlotRect(page, on);
     // Never more rows than an edit may reach: a tile stored past the last
     // row would otherwise draw a million of them.
-    const rows = Math.min(WATCH_EDITOR_MAX_ROWS, stageRows(watchPageExtent(shown), rowsOnScreen(grid, screen.height * s), Math.max(reach, slot === undefined ? 0 : slot.row + slot.rowSpan)));
+    const rows = Math.min(WATCH_EDITOR_MAX_ROWS, stageRows(watchPageExtent(raw, on), rowsOnScreen(grid, screen.height * s), Math.max(reach, slot === undefined ? 0 : slot.row + slot.rowSpan)));
     const gridHeight = rows * grid.step - grid.spacing;
     const height = Math.max(screen.height * s, grid.top + gridHeight);
     return { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot, scrolls: height > screen.height * s + 0.5 };
   }
 
   /**
-   * Where the stage's dashed "+ Add tile" spot sits: one plain tile's size
-   * (the app's own new tile, `WATCH_TILE_DEFAULTS.tile`) at the first free
-   * place for it (`firstFreeWatchCell`), which is where `addWatchTile` puts a
-   * new tile of that size, so the spot shows where the dialog's tile lands.
-   * On a page with no gaps that is just after its last tile. Undefined where
-   * a tile cannot be added: a smart page, a map page, Watch view on, or
-   * past the last row an edit may reach.
+   * Where a picture's dashed "+ Add tile" spot sits: one plain tile's size
+   * (the app's own new tile, `WATCH_TILE_DEFAULTS.tile`) after the screen's
+   * last tile (`lastFreeWatchCell`), which is where `addWatchTile` puts a
+   * new tile of that size on that screen, so the spot shows where the
+   * dialog's tile lands. Undefined where a tile cannot be added: a smart
+   * page, a map page, Watch view on, or past the last row an edit may reach.
    */
-  private addSlotRect(page: WatchPage): WatchRect | undefined {
+  private addSlotRect(page: WatchPage, on: WatchScreen): WatchRect | undefined {
     if (isSmartWatchPage(page) || isMapWatchPage(page) || this.editingOff(page)) return undefined;
     const { colSpan, rowSpan } = WATCH_TILE_DEFAULTS.tile;
-    const cell = firstFreeWatchCell(page, colSpan, rowSpan);
+    const cell = lastFreeWatchCell(page, colSpan, rowSpan, on);
     if (cell.row + rowSpan > WATCH_EDITOR_MAX_ROWS) return undefined;
     return { col: cell.col, row: cell.row, colSpan, rowSpan };
   }
@@ -4362,17 +4519,27 @@ export class WaPageEditor extends LitElement {
       @click=${(e: MouseEvent) => { e.stopPropagation(); this.openAddTile(); }}><b aria-hidden="true">+</b><span>Add tile</span></button>`;
   }
 
+  /**
+   * One picture's edit screen, for screen `on`: the page as that screen
+   * arranges it (`screenDrawnPage`), every tile pressable and draggable
+   * there. A picked tile is ringed on every picture; its handles and its
+   * parts show on the picture it was pressed on (`clickedScreen`) only.
+   */
   private renderEditScreen(
     page: WatchPage,
     input: WatchPagePreviewInput,
+    on: WatchScreen,
   ): TemplateResult {
-    const { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot } = this.editStage(page, input);
+    const { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot } = this.editStage(page, input, on);
+    // The pointer arithmetic reads the grid as this picture drew it.
+    this.stageGeom[on] = { screen, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) };
     // The preview's own layout on the flat grid: the same side safe area and
     // unit as the watch, so each tile sits where `cellRectPx` puts its cells.
     const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
     const phone = input.phone !== undefined;
     const width = screen.width * s;
-    const selected = this.selectedTileId;
+    const handles = on === this.clickedScreen;
+    const selected = handles ? this.selectedTileId : undefined;
     const seen = new Set<string>();
     const keyOf = (placed: PlacedWatchTile): string => {
       const id = tileIdOf(placed.tile).toUpperCase();
@@ -4393,10 +4560,11 @@ export class WaPageEditor extends LitElement {
     // part or a number, where the fade would trail the pointer; nor on the
     // draw that changes the scale (a Fit after a resize, a zoom step), where
     // every glow and shadow grows at once.
-    const still = this.gesture?.started !== true && !this.scrub.active && this.drawnScale === s;
-    this.drawnScale = s;
+    const still = this.gesture?.started !== true && !this.scrub.active && this.drawnScales[on] === s;
+    this.drawnScales[on] = s;
     // The grid's cells show only while a tile is moved or resized.
-    return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""} ${still ? "pe-fades" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
+    return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""} ${still ? "pe-fades" : ""}" tabindex="-1" role="group"
+      data-screen=${on} aria-label=${`${phone ? "iPhone" : "Watch"} layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}
       @click=${() => this.selectTile(undefined)}>
       ${back.layers}
@@ -4406,12 +4574,12 @@ export class WaPageEditor extends LitElement {
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
       ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}
       ${move ? this.renderMoveGhosts(move, shown, grid) : nothing}
-      ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move))}
+      ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move, on, handles))}
       ${this.renderAddSlot(grid, slot)}
       ${selBox ? html`<div class="pe-sel ${resize?.preview?.overlaps ? "no" : ""}" aria-hidden="true"
           style=${`left:${selBox.left}px;top:${selBox.top}px;width:${selBox.width}px;height:${selBox.height}px;${handleSizes(selBox)}`}>
           ${repeat(shownHandles(selBox, grid, resize?.handle), (h) => h, (h) => html`<span class="pe-handle ${h}" title=${this.saving ? SAVING_TEXT : "Drag to resize"}
-            @pointerdown=${(e: PointerEvent) => this.onHandlePointerDown(e, h)}
+            @pointerdown=${(e: PointerEvent) => this.onHandlePointerDown(e, h, on)}
             @click=${(e: Event) => e.stopPropagation()}></span>`)}
         </div>` : nothing}
     </div>`, `${phone ? "iPhone" : "Watch"} showing ${watchPageName(page)}`);
@@ -4423,6 +4591,8 @@ export class WaPageEditor extends LitElement {
     unit: number,
     grid: StageGrid,
     move: MoveGesture | undefined,
+    on: WatchScreen,
+    handles: boolean,
   ): TemplateResult {
     const s = grid.scale;
     const { tile } = placed;
@@ -4465,7 +4635,7 @@ export class WaPageEditor extends LitElement {
     const drawnTile = partDrag === undefined ? (watchTriedTile(this.uiState, id, this.draft?.document) ?? tile) : withArrange(tile, partDrag.arrange);
     const cell = { width: width / s, height: height / s };
     const face = renderWatchTileFace(drawnTile, cell, input, unit);
-    const parts = selected && !inMulti && id !== "" ? this.renderStageParts(drawnTile, id, cell, input, unit, s) : nothing;
+    const parts = selected && handles && !inMulti && id !== "" ? this.renderStageParts(drawnTile, id, cell, input, unit, s) : nothing;
     // The ring of a selected tile follows the tile's own corners, which are
     // the watch's, or 22 points in an iPhone's iPhone look
     // (`previewTileCornerRadius`).
@@ -4488,17 +4658,18 @@ export class WaPageEditor extends LitElement {
       return html`<button type="button" class="pe-tile noid ${looks}" style=${box}
         aria-label=${`${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}, with no id`}
         title=${[...names, "This tile has no id yet. Click it to give it one and edit it."].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
-        @click=${(e: MouseEvent) => { e.stopPropagation(); this.pickTileWithNoId(tile); }}>${face}${word}${tag}</button>`;
+        @click=${(e: MouseEvent) => { e.stopPropagation(); this.editScreen = on; this.pickTileWithNoId(tile); }}>${face}${word}${tag}</button>`;
     }
     return html`<button type="button" class="pe-tile ${looks} ${selected ? "sel" : ""} ${hovered ? "hov" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""} ${inMulti ? "multi" : ""}"
       data-tile=${id} style=${box}
       aria-label=${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel} aria-pressed=${selected ? "true" : "false"}
       title=${[...names, this.saving ? SAVING_TEXT : ""].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
-      @pointerdown=${(e: PointerEvent) => this.onTilePointerDown(e, id)}
+      @pointerdown=${(e: PointerEvent) => this.onTilePointerDown(e, id, on)}
       @pointerenter=${() => this.peekStageTile(id, true)}
       @pointerleave=${() => this.peekStageTile(id, false)}
       @click=${(e: MouseEvent) => {
         e.stopPropagation();
+        this.editScreen = on;
         if (this.swallowTileClick) {
           this.swallowTileClick = false;
           return;
@@ -5042,6 +5213,7 @@ export class WaPageEditor extends LitElement {
     // part of the head's tile.
     return html`<div class="pe-tile-insp" @pointerover=${this.onInspectorHover} @pointerleave=${this.onInspectorLeave}>
       ${host === undefined ? head : renderTileInspector(host, { arrangePicture: () => this.renderArrangePicture(page, tile), head })}
+      ${host === undefined ? nothing : this.renderTileFoot(page, tile)}
     </div>`;
   }
 
@@ -5086,26 +5258,88 @@ export class WaPageEditor extends LitElement {
     if (section !== undefined) this.goToSetting(section, to.within);
   }
 
-  /** Which pages a change in the inspector reaches, by the kinds of device
-   * the page is on: "Changes apply to the Watch and iPhone pages". Undefined
-   * while the library is not read or the page is on no device yet. */
+  /** The one line over the tile's settings: a tile is the same on every
+   * device, and only where it sits and whether it shows differ per screen
+   * (the pictures and the On Watch / On iPhone switches). Undefined on a
+   * smart or a map page, which have no screens of their own. */
   private headAppliesText(page: WatchPage): string | undefined {
-    const lib = this.lib.library;
-    if (lib === undefined) return undefined;
-    const owners = devicesFor(lib, "pages", this.libraryItem?.id ?? watchPageId(page));
-    const kinds = new Set(owners.map((o) => this.linkDevices.find((d) => sameId(d.ownerId, o))?.kind).filter((k) => k !== undefined));
-    const words = (["watch", "iphone"] as const).filter((k) => kinds.has(k)).map((k) => (k === "watch" ? "Watch" : "iPhone"));
-    if (words.length === 0) return undefined;
-    return `Changes apply to the ${words.join(" and ")} ${words.length === 1 ? "page" : "pages"}`;
+    return isSmartWatchPage(page) || isMapWatchPage(page) ? undefined : SAME_ON_EVERY_DEVICE_TEXT;
+  }
+
+  /**
+   * The tile's On Watch and On iPhone switches, under the head. A tile is
+   * always on at least one screen: switching the last one off asks "Delete
+   * this tile?" in its place (`screenOffAsk`), and a yes deletes it from
+   * every device. A kind a screen cannot draw has that switch off and
+   * locked, saying which kind draws it. Nothing on a smart or a map page,
+   * or while Watch view is on.
+   */
+  private renderScreenSwitches(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    const id = typeof tile.id === "string" ? tile.id : "";
+    if (id === "" || isSmartWatchPage(page) || isMapWatchPage(page) || this.editingOff(page)) return nothing;
+    const ask = this.screenOffAsk !== undefined && sameWatchId(this.screenOffAsk.tileId, id) ? this.screenOffAsk : undefined;
+    if (ask !== undefined) {
+      return html`<div class="pe-screen-ask" role="alertdialog" aria-label="Delete this tile?">
+        <span>Delete this tile? It is on no other screen.</span>
+        <button type="button" class="pe-btn pe-danger" ?disabled=${this.busy} @click=${() => { this.screenOffAsk = undefined; this.deleteTile(id); }}>Delete</button>
+        <button type="button" class="pe-btn" @click=${() => { this.screenOffAsk = undefined; }}>Keep</button>
+      </div>`;
+    }
+    const row = (screen: WatchScreen) => {
+      const draws = tileDrawsOn(tile, screen);
+      const on = watchScreenTileRect(page, tile, screen) !== undefined;
+      const label = screen === "watch" ? "On Watch" : "On iPhone";
+      const why = draws ? undefined : `The ${screenWord(screen)} cannot draw this kind of tile`;
+      return html`<label class="pe-screen-sw ${draws ? "" : "locked"}" title=${why ?? `Show this tile on the ${screenWord(screen)}`}>
+        <input type="checkbox" role="switch" .checked=${on} ?disabled=${!draws || this.busy}
+          @change=${(e: Event) => { const box = e.target as HTMLInputElement; box.checked = on; this.setTileScreen(id, screen, !on); }} />
+        <span>${label}</span>${draws ? nothing : html`<em>${screen === "watch" ? "iPhone only" : "Watch only"}</em>`}
+      </label>`;
+    };
+    return html`<div class="pe-screen-sws" role="group" aria-label="Screens">${WATCH_SCREENS.map(row)}</div>`;
+  }
+
+  /** Switch a tile on or off on one screen; off on its last screen asks to
+   * delete it instead (`tileOnlyOnScreen`). */
+  private setTileScreen(tileId: string, screen: WatchScreen, on: boolean): void {
+    const document = this.draft?.document;
+    const page = this.currentPage();
+    const tile = page === undefined ? undefined : this.tileOn(page, tileId);
+    if (document === undefined || page === undefined || tile === undefined || this.busy) return;
+    if (!on && tileOnlyOnScreen(page, tile, screen)) {
+      this.screenOffAsk = { tileId, screen };
+      return;
+    }
+    this.screenOffAsk = undefined;
+    this.edit(setTileOnScreen(document, watchPageId(page), tileId, screen, on));
+  }
+
+  /** The inspector's foot: "Take off the watch" (named for the picture the
+   * tile was last pressed on) and "Delete tile", from every device. */
+  private renderTileFoot(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    const id = typeof tile.id === "string" ? tile.id : "";
+    if (id === "") return nothing;
+    const acts = this.tileActs(page, tile);
+    const screen = this.clickedScreen;
+    const screens = !isSmartWatchPage(page) && !isMapWatchPage(page) && !this.editingOff(page);
+    const on = watchScreenTileRect(page, tile, screen) !== undefined;
+    return html`<div class="pe-tile-foot">
+      ${screens ? html`<button type="button" class="pe-btn pe-take-off" ?disabled=${!on || this.busy}
+        title=${on ? `Switch this tile off on the ${screenWord(screen)}. The ${screenWord(otherWatchScreen(screen))} keeps it.` : `This tile is not on the ${screenWord(screen)}`}
+        @click=${() => this.setTileScreen(id, screen, false)}>${uiIcon("hide")}<span>Take off the ${screenWord(screen)}</span></button>` : nothing}
+      <button type="button" class="pe-btn pe-danger pe-del-tile" ?disabled=${acts.delRefusal !== undefined}
+        title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile(id)}>${uiIcon("delete")}<span class="pe-del-words"><span>Delete tile</span><small>from every device</small></span></button>
+    </div>`;
   }
 
   /**
    * The selected tile's head: the path, Page (back to the page's own
    * settings) then the tile's name, and under it the tile, large
    * (`renderHeadTile`), with its Name beside it; the facts, each a link to
-   * its section, which pages a change reaches, and the group line while the
-   * tile is in a group; Duplicate, Hide and Delete, with how many parts are
-   * changed and Reset all at their end (`tile-head.ts`). It spans the
+   * its section, "Same on every device.", the On Watch and On iPhone
+   * switches (`renderScreenSwitches`) and the group line while the tile is
+   * in a group; Duplicate, with how many parts are changed and Reset all at
+   * their end (`tile-head.ts`). It spans the
    * inspector over the groups (`renderTileCard`), which all start at the
    * same top under it. With no host (no draft yet), the path and the tile
    * alone.
@@ -5121,24 +5355,20 @@ export class WaPageEditor extends LitElement {
     const lead = this.renderHeadTile(page, tile);
     const host = this.tileSettingsHost(page, tile);
     if (host === undefined) return html`<div class="pe-strip"><section class="ts-head ts-root" aria-label="Tile"><div class="ts-head-path">${path}</div><div class="ts-head-lead">${lead}</div></section></div>`;
-    const parts = tileInspectorParts(host).flatMap((g) => g.parts);
     const acts = this.tileActs(page, tile);
-    // Hide is Show tile's: the tile shows always, only while on, only when
-    // another entity says so, or by a template. It goes there.
+    // No Hide here: whether the tile shows on each screen is the switches
+    // under the head and the chips under each picture, and when it shows is
+    // Show tile's. Delete is the inspector's foot (`renderTileFoot`).
     const actions = html`
       <button type="button" class="ghost pe-strip-dup" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? "Duplicate the tile"}
-        @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>
-      ${parts.includes("visibility") ? html`<button type="button" class="ghost pe-strip-hide" title="Hide the tile while it is off, or when another entity says so: Shows when, under Surface and rules"
-        @click=${() => this.goToSetting("visibility")}>${uiIcon("hide")}<span>Hide</span></button>` : nothing}`;
-    const remove = html`<button type="button" class="ghost pe-strip-del" ?disabled=${acts.delRefusal !== undefined}
-      title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile()}>${uiIcon("delete")}<span>Delete</span></button>`;
+        @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>`;
     const applies = this.headAppliesText(page);
     return html`<div class="pe-strip">${renderTileHead(host, {
       path,
       lead,
       actions,
-      remove,
-      below: this.editingOff(page) ? nothing : renderTileGroupLine(host, this.groupActions),
+      remove: nothing,
+      below: this.editingOff(page) ? nothing : html`${this.renderScreenSwitches(page, tile)}${renderTileGroupLine(host, this.groupActions)}`,
       go: (part) => this.goToSetting(part),
       ...(applies === undefined ? {} : { applies }),
     })}</div>`;
@@ -5346,7 +5576,13 @@ export class WaPageEditor extends LitElement {
    * version it reported, for the version gate.
    */
   private phoneTilesGroup(pageId: string): WatchPhoneTilesGroup {
-    return watchPhoneTilesGroup(this.device, this.pagePickers(pageId));
+    // Such a tile lands on the iPhone's screen whichever picture is edited,
+    // so the group is open while the iPhone's picture is drawn or an iPhone
+    // shows the page.
+    const pickers = this.pagePickers(pageId);
+    const page = this.currentPage();
+    const iphone = pickers.some((p) => p.kind === "iphone") || (page !== undefined && sameWatchId(watchPageId(page), pageId) && this.shownScreens(page).includes("iphone"));
+    return watchPhoneTilesGroup(iphone ? "iphone" : this.device, pickers);
   }
 
   /** The devices that pick a page, as the library has them, each with the
@@ -5603,6 +5839,50 @@ export class WaPageEditor extends LitElement {
     }
     .pe-try-pill > span { overflow: hidden; text-overflow: ellipsis; }
     .pe-try-pill > svg { flex: none; width: 13px; height: 13px; }
+    /* Under each picture: the title, the status line with its one button,
+       and "Not on the watch:" with a chip per tile Off there; then, under
+       the last picture, the link that adds a kind no device shows. */
+    .pe-screen-lines { display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 360px; text-align: center; }
+    .pe-screen-status { font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
+    .pe-screen-status button.link.pe-screen-use { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--wa-accent); cursor: pointer; }
+    .pe-screen-status button.link.pe-screen-use:disabled { opacity: .5; cursor: default; }
+    .pe-screen-off { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 5px; margin-top: 2px; font-size: 12px; }
+    .pe-screen-off-l { color: var(--wa-muted); }
+    .pe-off-chip {
+      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px dashed var(--wa-line-strong); border-radius: 12px;
+      background: transparent; color: var(--wa-ink); font: inherit; font-size: 12px; cursor: pointer;
+    }
+    button.pe-off-chip:hover:not(:disabled) { border-style: solid; background: var(--wa-hover); }
+    button.pe-off-chip:disabled { opacity: .5; cursor: default; }
+    .pe-off-chip.grey { color: var(--wa-muted); cursor: default; border-style: solid; border-color: var(--wa-line); background: var(--wa-hover); }
+    .pe-off-chip > em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); }
+    button.link.pe-add-kind { margin-top: 2px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-accent); cursor: pointer; }
+    /* The one toast of a first drag or resize, over the foot of the stage. */
+    .pe-screen-toast {
+      position: absolute; left: 50%; bottom: 72px; z-index: 12; transform: translateX(-50%);
+      display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 8px 8px 8px 14px;
+      border-radius: 10px; background: var(--wa-ink); color: var(--wa-card); box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+      font-size: 12.5px; line-height: 1.35;
+    }
+    .pe-screen-toast-x { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+    .pe-screen-toast-x svg.ui-icon { width: 13px; height: 13px; }
+    /* The inspector's On Watch and On iPhone switches, and the question
+       that stands in for them when the last one is switched off. */
+    .pe-screen-sws { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+    .pe-screen-sw { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+    .pe-screen-sw.locked { color: var(--wa-muted); cursor: default; }
+    .pe-screen-sw > em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); }
+    .pe-screen-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; }
+    .pe-screen-ask > span { flex: 1 1 100%; }
+    /* The inspector's foot: Take off the watch, and Delete tile from every
+       device. */
+    .pe-tile-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 4px; }
+    .pe-tile-foot > .pe-btn { flex: 1 1 0; min-width: 0; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 12.5px; }
+    .pe-tile-foot > .pe-btn svg.ui-icon { flex: none; width: 14px; height: 14px; }
+    .pe-tile-foot > .pe-btn.pe-danger { border-color: color-mix(in srgb, var(--wa-need) 55%, var(--wa-line-strong)); background: transparent; }
+    .pe-tile-foot > .pe-btn.pe-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-need) 10%, transparent); }
+    .pe-del-words { display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+    .pe-del-words > small { font-size: 10.5px; color: var(--wa-muted); }
     /* The picture keeps its size and the stage scrolls under it when it is
        bigger than the stage (a step past Fit, or a long page). "safe": a
        watch wider or taller than the stage starts at its top left edge, so

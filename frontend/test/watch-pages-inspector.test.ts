@@ -355,13 +355,19 @@ describe("the tile's cards", () => {
     expect(mid).not.toContain("ts-head-change");
     const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
     const acts = [...side.matchAll(/<span>(Duplicate|Hide|Reset|Delete)<\/span>/g)].map((m) => m[1]);
-    expect(acts).toEqual(["Duplicate", "Hide", "Delete"]);
+    // No Hide: the On Watch and On iPhone switches and the chips under each
+    // picture say where it shows. Delete is the inspector's foot.
+    expect(acts).toEqual(["Duplicate"]);
+    expect(head).toContain(`<p class="ts-head-applies">Same on every device.</p>`);
+    expect([...head.matchAll(/<span>(On Watch|On iPhone)<\/span>/g)].map((m) => m[1])).toEqual(["On Watch", "On iPhone"]);
     // Under them how many parts hold a value of their own, then Reset all.
     expect(side).toMatch(/<div class="ts-head-changed">.*<button type="button" class="link ts-reset-btn"[^>]*>Reset all<\/button>/s);
     // No Find a setting: Jesse took it out on 2026-10-26.
     expect(text).not.toContain("Find a setting");
     expect(text).not.toContain("Preview as");
-    expect(text).not.toContain("Delete tile");
+    const foot = text.slice(text.indexOf(`<div class="pe-tile-foot">`));
+    expect(foot).toMatch(/<span>Take off the watch<\/span>/);
+    expect(foot).toMatch(/<span>Delete tile<\/span><small>from every device<\/small>/);
     const body = text.slice(text.indexOf(`<div class="ts-groups"`));
     // No Name card any more, and the name's box is the head's alone.
     expect(body).not.toContain("name-sec");

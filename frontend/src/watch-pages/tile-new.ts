@@ -1149,21 +1149,29 @@ export function watchAddRefusal(document: WatchPagesDocument, pageId: string, en
 
 /**
  * Add a built tile to a page: on each screen that draws it at the first
- * free place for its size (`placeNewWatchTile`, which writes `gridRow` and
+ * free place for its size, or with `last` after the screen's last tile
+ * (`placeNewWatchTile`, which writes `gridRow` and
  * `gridCol`, and the page's `screens` when the two screens differ), appended
  * to `items` (made when the page has none). Refused, returning the very
  * document it was given, for every reason of `watchAddRefusal`. Only the
  * document, `pages`, the page and its `items` (and `screens`) are new
  * objects.
  */
-export function addWatchTile(document: WatchPagesDocument, pageId: string, tile: WatchPageTile): WatchPagesDocument {
+export function addWatchTile(document: WatchPagesDocument, pageId: string, tile: WatchPageTile, last = false): WatchPagesDocument {
   if (watchAddRefusal(document, pageId, tileEntityId(tile)) !== undefined) return document;
   const pages = document.pages as unknown[];
   const index = pageIndex(document, pageId);
   const page = pages[index] as WatchPage;
   const nextPages = pages.slice();
-  nextPages[index] = placeNewWatchTile(page, tile);
+  nextPages[index] = placeNewWatchTile(page, tile, last);
   return { ...document, pages: nextPages };
+}
+
+/** How `addNewWatchTile` adds. */
+export interface WatchTileAddOptions extends WatchEditOptions {
+  /** Place the tile after each screen's last tile, as the editor's Add
+   * tile does, not at the first free place. */
+  last?: boolean;
 }
 
 export interface WatchTileAddResult {
@@ -1182,12 +1190,12 @@ export function addNewWatchTile(
   document: WatchPagesDocument,
   pageId: string,
   add: WatchTileAdd,
-  options?: WatchEditOptions,
+  options?: WatchTileAddOptions,
 ): WatchTileAddResult {
   const refusal = watchAddRefusal(document, pageId, watchAddEntityId(add));
   if (refusal !== undefined) return { document, refusal };
   const page = (document.pages as unknown[])[pageIndex(document, pageId)] as WatchPage;
-  const next = addWatchTile(document, pageId, newWatchTile(add, page, options));
+  const next = addWatchTile(document, pageId, newWatchTile(add, page, options), options?.last === true);
   const placedOn = (next.pages as unknown[])[pageIndex(next, pageId)] as WatchPage;
   const tiles = placedOn.items as unknown[];
   return { document: next, tile: tiles[tiles.length - 1] as WatchPageTile };
