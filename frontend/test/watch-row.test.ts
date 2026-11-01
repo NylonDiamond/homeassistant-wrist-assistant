@@ -284,7 +284,7 @@ describe("the row as drawn", () => {
     expect(text).toContain(SHARED_ROW_LABEL);
     expect(text).not.toContain("wa-wr-picker");
     expect(text).toContain(">HTTP actions</a>");
-    expect(text).toContain(">Cameras</a>");
+    expect(text).toContain(">Camera framing</a>");
     expect(text).not.toContain(">Pages</a>");
     expect(text).not.toContain(">Settings</a>");
   });

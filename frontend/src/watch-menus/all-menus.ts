@@ -16,8 +16,8 @@
 // The tab draws the Pages tab's board (`library/board.ts`): a row per menu,
 // in two sections, a column per device and a round dot where the device uses
 // the menu. Picking another dot moves the device to that menu, like a radio
-// button. "Cards" shows the big pictures instead. A click on a device's
-// name focuses its column: the menus it uses first, then the rest, dimmed.
+// button. "Cards" shows the big pictures instead. A device's Focus pill
+// focuses its column: the menus it uses first, then the rest.
 // The focus is in the address (`/all-menus/<owner>`). The panel loads this
 // file the first time the tab opens (`all-menus-hook.ts`).
 
@@ -32,15 +32,15 @@ import { type Library, type LibraryMenu, hasItem, holdsRecord, libraryMenus, men
 import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
-import { type BoardCell, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "../library/board.js";
+import { type BoardCell, type BoardMenuItem, type BoardRow, type BoardSection, COMPACT_PICTURE_PX, type DeviceOwnScreen, type ListView,
+  WideWatch, boardColumnBlock, boardDensity, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderDensitySwitch, renderFocusBanner, renderViewSwitch, setBoardDensity } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { ALL_FILTER, type PagesFilter, libraryEditTitle, onDeviceTitle, resolveFilter, restTitle } from "../watch-pages/all-pages-model.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
-import { type LinkDevice, type PagesRecordFacts, awaitingMove, deviceWord, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
+import { type LinkDevice, type PagesRecordFacts, awaitingMove, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
 import type { WatchPagesNote } from "../watch-pages/save-note.js";
 import {
   MENU_SECTION_TITLES,
@@ -130,6 +130,12 @@ interface NewForm {
   note?: WatchPagesNote;
 }
 
+/** Who uses a menu, under a Compact row's big picture. */
+function usedByText(menu: LibraryMenu, devices: readonly LinkDevice[]): string {
+  const names = devices.filter((d) => menu.owners.some((o) => sameId(o, d.ownerId))).map((d) => d.name);
+  return names.length === 0 ? "No device uses it yet" : `Used by ${joinWords(names)}`;
+}
+
 /** Each menu's document for its card picture, made once per menu object. */
 const cardDocs = new WeakMap<object, MenusDocument>();
 
@@ -162,11 +168,8 @@ export class WaAllMenus extends LitElement {
   @state() private newNote?: WatchPagesNote;
   /** The menu whose delete is being asked about. */
   @state() private deleteAsk?: string;
-  /** "Saved" beside the head, for a moment after a dot's write lands. */
-  @state() private saved = false;
   /** The menu a Duplicate is copying, while it is out. */
   @state() private copying?: string;
-  private savedTimer: ReturnType<typeof setTimeout> | undefined;
 
   private hassNow?: HassLike;
   private hassDrawnAt = 0;
@@ -198,7 +201,6 @@ export class WaAllMenus extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKeyDown);
-    clearTimeout(this.savedTimer);
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -258,13 +260,6 @@ export class WaAllMenus extends LitElement {
     this.requestUpdate();
   }
 
-  /** "Saved", beside the head, for a moment. */
-  private flashSaved(): void {
-    clearTimeout(this.savedTimer);
-    this.saved = true;
-    this.savedTimer = setTimeout(() => { this.saved = false; }, SAVED_FLASH_MS);
-  }
-
   /** Open a menu in the one editor, the library's, whichever devices use
    * it (plan step 4). From a focused board the device goes along, so the
    * editor rings it and Back comes back to that board. */
@@ -280,18 +275,25 @@ export class WaAllMenus extends LitElement {
     const name = copyMenuName(device.name);
     this.copying = menu.id;
     this.newNote = undefined;
-    const result = await store.copyMenu(device.ownerId, menu.unit, name);
+    let said: WatchPagesNote | undefined;
+    const result = await store.copyMenu(device.ownerId, menu.unit, name, {
+      device: device.name,
+      // Undo takes the copy back: the line saying it was made goes with it.
+      onUndone: () => { if (this.newNote === said) this.newNote = undefined; },
+    });
     this.copying = undefined;
-    this.newNote = result.ok ? { kind: "ok", text: duplicatedMenuText(name, device.name) } : { kind: "err", text: `Not copied. ${result.text}` };
-    if (result.ok) this.flashSaved();
+    said = result.ok ? { kind: "ok", text: duplicatedMenuText(name, device.name) } : { kind: "err", text: `Not copied. ${result.text}` };
+    this.newNote = said;
   }
 
   /** A tick, or a pick in a device's menu: the device uses this menu for
-   * its unit from now on. */
+   * its unit from now on. It saves at once, so the toast offers Undo, back
+   * to the menu the device used (`LibraryStore.pickMenu`). */
   private use(menu: LibraryMenu, ownerId: string): void {
     const store = this.lib.store;
     if (store === undefined) return;
-    void store.pickMenu(ownerId, menu.unit, menu.id).then((result) => { if (result.ok) this.flashSaved(); });
+    const device = this.devices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "The device";
+    void store.pickMenu(ownerId, menu.unit, menu.id, { device });
   }
 
   /** Whether this Home Assistant user may make a menu: an administrator.
@@ -396,7 +398,7 @@ export class WaAllMenus extends LitElement {
       ${this.newForm === undefined ? nothing : this.renderNewDialog(this.newForm)}
       ${this.newNote === undefined ? nothing : html`<p class="lt-line ${this.newNote.kind}" role="status">${this.newNote.text}</p>`}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
-      <div class="pk-surface pk-page" role="region" aria-label="Your menus">
+      <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label="Your menus">
         <div class="pk-pin">${this.renderHead(view)}</div>
         <div class="pk-body">
           ${library === undefined ? html`<p class="ap-empty">${lead}</p>`
@@ -411,7 +413,7 @@ export class WaAllMenus extends LitElement {
   }
 
   /** Inside Home's "All devices": the board on every device, a dot a
-   * pick as on the tab, with "Saved" over it for a moment after a write. */
+   * pick as on the tab. */
   private renderEmbedded(): TemplateResult {
     const library = this.lib.library;
     const devices = this.devices;
@@ -421,7 +423,7 @@ export class WaAllMenus extends LitElement {
       return html`<p class="ap-empty">${why}</p>`;
     }
     if (devices.length === 0) return html`<p class="ap-empty">No device can have menus.</p>`;
-    return html`${this.saved ? html`<span class="bd-saved ap-embed-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}${this.renderBoardAll(library, devices)}`;
+    return this.renderBoardAll(library, devices);
   }
 
   /** Cards: the menus in two sections, Anywhere menus first, each under its
@@ -459,12 +461,12 @@ export class WaAllMenus extends LitElement {
     });
   }
 
-  /** The head: Board or Cards, "Saved" for a moment after a dot's write,
-   * then the search at the right. */
+  /** The head: Board or Cards, Compact or Large on the board, then the search
+   * at the right. */
   private renderHead(view: ListView): TemplateResult {
     return html`<div class="pk-head">
       ${renderViewSwitch(view, (v) => this.setView(v), "menus")}
-      ${this.saved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
+      ${view === "board" ? renderDensitySwitch(boardDensity(), (d) => { setBoardDensity(d); this.requestUpdate(); }) : nothing}
       <label class="pk-search">
         ${uiIcon("search")}
         <input type="search" class="pk-search-input" .value=${this.search} placeholder="Search by menu or device" aria-label="Search menus"
@@ -561,19 +563,23 @@ export class WaAllMenus extends LitElement {
   // ── the board ──────────────────────────────────────────────────────────
 
   private renderBoardOf(library: Library, devices: readonly LinkDevice[], sections: BoardSection[], focus?: string): TemplateResult {
+    const waiting = this.waiting(library);
     return renderBoard({
       label: "Menus on each device",
       thing: "Menu",
       columns: devices.map((device) => ({
         device, color: this.colorOf(device.ownerId),
         count: MENU_UNITS.filter((u) => menuFor(library, device.ownerId, u) !== undefined).length,
+        ...(waiting.has(device.ownerId) ? { blocked: boardColumnBlock(device.appVersion, menusWaitText(device.appVersion)) } : {}),
       })),
       ...(focus === undefined ? {} : { focus }),
       onFocus: (ownerId) => this.setFocus(ownerId),
       wide: this.roomy.wide,
-      focusWord: "Its menus",
       focusTitle: (d) => `Show the menus ${d.name} uses first`,
       sections,
+      ...(this.embedded ? {} : {
+        legend: { round: true, tick: "the menu that device uses", focus: "a device to see its menus first", saves: "Picks save at once, with Undo" },
+      }),
     });
   }
 
@@ -597,15 +603,18 @@ export class WaAllMenus extends LitElement {
   private boardRow(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>, focus?: LinkDevice): BoardRow {
     const input = this.ticksInput(library, menu, devices, waiting);
     const cells = tickChips(input).map((chip): BoardCell => {
+      // A watch that cannot move yet: a dash, not a dot that reads as free.
+      if (!chip.on && !chip.busy && waiting.has(chip.ownerId)) return { dashTitle: chip.title };
       const now = chip.on ? undefined : menuFor(library, chip.ownerId, menu.unit);
       const title = now === undefined || chip.next === undefined ? chip.title : `${chip.title.replace(/\.$/, "")}. Replaces ${now.name} there.`;
       return { chip: { ...chip, title }, onPick: () => this.use(menu, chip.ownerId) };
     });
     const opensOn = focus !== undefined && menu.owners.some((o) => sameId(o, focus.ownerId)) ? focus : openMenuDevice(menu, devices);
+    const compact = boardDensity() === "compact";
     const row: BoardRow = {
       key: menu.id, name: menu.name, detail: menuDetail(menu),
       picture: renderMenuRowPicture({
-        menu, hass: this.hassNow, icons: this.icons, tick: this.iconsTick, onReady: () => this.requestUpdate(), height: this.roomy.size(BOARD_PICTURE_H),
+        menu, hass: this.hassNow, icons: this.icons, tick: this.iconsTick, onReady: () => this.requestUpdate(), height: compact ? COMPACT_PICTURE_PX : this.roomy.size(BOARD_PICTURE_H),
         ...(menu.unit === "anywhere" && opensOn !== undefined ? { pages: pagesDocumentFor(library, opensOn.ownerId) } : {}),
       }),
       openTitle: libraryEditTitle(menu.name),
@@ -613,19 +622,22 @@ export class WaAllMenus extends LitElement {
       cells,
       ...(focus !== undefined && !menu.owners.some((o) => sameId(o, focus.ownerId)) ? { dim: true } : {}),
       ...(input.note === undefined ? {} : { note: { text: input.note, kind: "warn" as const } }),
+      peek: () => ({ picture: this.renderThumb(library, menu, opensOn, PIC_H), where: usedByText(menu, devices) }),
     };
+    const more: BoardMenuItem[] = [{ label: "Open", onPick: () => this.open(menu) }];
     // Duplicate, on a focused device sharing this menu with another: a copy
     // only it uses from now on (`library/menus/copy`). It was the device
     // Menus screen's "Duplicate" (plan step 4).
     const shared = focus !== undefined && menu.owners.some((o) => sameId(o, focus.ownerId)) && menu.owners.some((o) => !sameId(o, focus.ownerId));
     if (shared && focus !== undefined) {
       const busy = this.copying !== undefined;
-      row.actions = html`<button type="button" class="bd-act" ?disabled=${busy}
-        title=${busy ? "Duplicating…" : duplicateMenuTitle(menu.name, focus.name)} aria-label=${duplicateMenuTitle(menu.name, focus.name)}
-        @click=${(e: Event) => { e.stopPropagation(); void this.duplicate(menu, focus); }}>${uiIcon("duplicate")}</button>`;
+      more.push({
+        label: busy ? "Duplicating…" : `Duplicate for ${focus.name}`, disabled: busy, title: duplicateMenuTitle(menu.name, focus.name),
+        onPick: () => void this.duplicate(menu, focus),
+      });
     }
-    const del = this.renderDeleteButton(menu, "bd-act danger");
-    row.actions = row.actions === undefined ? del : html`${row.actions}${del}`;
+    row.more = more;
+    row.actions = this.renderDeleteButton(menu, "bd-act danger");
     if (this.deleteAsk === menu.id) row.under = this.renderDeleteAsk(menu, devices);
     return row;
   }
@@ -639,17 +651,13 @@ export class WaAllMenus extends LitElement {
     const waiting = this.waiting(library);
     const used = MENU_UNITS.map((u) => menuFor(library, device.ownerId, u)).filter((m): m is LibraryMenu => m !== undefined && menuMatches(m, this.search, devices));
     const rest = restMenus(library, device.ownerId, this.search, devices);
-    const word = deviceWord(device.kind);
-    const own: DeviceOwnScreen[] = device.kind === "watch" ? ["settings", "rooms", "voice"] : ["settings", "rooms"];
-    const color = this.colorOf(device.ownerId);
     const names = MENU_UNITS.map((u) => menuFor(library, device.ownerId, u)?.name).filter((n): n is string => n !== undefined);
-    return html`<div class="bd-focus" style=${color === undefined ? nothing : `--dc:${color}`}>
-        <span class="bd-focus-glyph" aria-hidden="true">${uiIcon(device.kind === "iphone" ? "phone" : "watch")}</span>
-        <span class="bd-focus-t"><b>${device.name}</b> <span>${names.length === 0 ? "uses no menu yet" : `uses ${joinWords(names)}`}</span></span>
-        ${this.onOpenScreen === undefined ? nothing : html`<span class="bd-focus-own">Also on this ${word}:
-          ${own.map((screen) => html`<button type="button" class="bd-link" @click=${() => this.onOpenScreen?.(device.ownerId, device.kind, screen)}>${DEVICE_OWN_LABELS[screen]}</button>`)}</span>`}
-        <button type="button" class="bd-focus-all" @click=${() => this.setFocus(undefined)}>${uiIcon("grid")}<span>All devices</span></button>
-      </div>
+    return html`${renderFocusBanner({
+        device, color: this.colorOf(device.ownerId),
+        text: names.length === 0 ? "uses no menu yet" : `uses ${joinWords(names)}`,
+        ...(this.onOpenScreen === undefined ? {} : { onOwn: (screen: DeviceOwnScreen) => this.onOpenScreen?.(device.ownerId, device.kind, screen) }),
+        onAll: () => this.setFocus(undefined),
+      })}
       ${this.renderBoardOf(library, devices, [
         { key: "on", title: onDeviceTitle(device), count: used.length, hint: `One of each kind. Pick a dot to switch.`,
           rows: used.map((menu) => this.boardRow(library, menu, devices, waiting, device)),
@@ -661,8 +669,11 @@ export class WaAllMenus extends LitElement {
   }
 
   static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, css`
-    .ap-embed-saved { position: absolute; right: 0; top: -26px; }
     :host([embedded]) { position: relative; }
+    /* On the board the device heads are what stays on screen, right under
+       the tab bar, so the toolbar scrolls away (\`.bd-pin\`). */
+    .ap-page { --bd-pin-top: calc(-1 * var(--ap-top, 0px)); }
+    .pk-surface.pk-page.on-board > .pk-pin { position: static; }
     /* The menu's picture: the watch screen alone, as the Pages tab's cards
        draw a page. */
     .ap-thumb wa-menu-thumbs { flex: none; width: 100%; }

@@ -38,9 +38,26 @@ describe("the panel's shell wiring", () => {
     expect(bar).not.toMatch(/renderWatch\w*Button/);
     expect(bar).not.toContain("watchSettings.renderButton");
     expect(bar).not.toContain("tb-menu");
-    for (const kept of ["renderPicker()", "renderNewButton()", "renderImportButton()", "renderShareButton()", "renderSendPill()", "renderTopMenu()", "primary save", "button class=\"help\""]) {
+    for (const kept of ["renderBackToList()", "renderCrumb(", "renderBarUndo(", "renderShareButton()", "renderTopMenu()", "primary save"]) {
       expect(bar, kept).toContain(kept);
     }
+    // Help is the tab bar's, on every screen; Browse, New and Import are the ···.
+    expect(bar).not.toContain('button class="help"');
+    // Sync is the top bar's one pill on every screen, never this bar's own.
+    expect(bar).not.toContain("tb-sync");
+    expect(SOURCE).not.toContain("renderSendPill");
+  });
+
+  it("draws the one sync pill in the tab bar on every screen", () => {
+    const render = method("  override render() {");
+    expect(render).toContain("sync: this.renderGlobalSync(),");
+    expect(method("  private renderGlobalSync() {")).toContain("renderSyncPill({");
+  });
+
+  it("rewrites an old address that moved, with no step for Back", () => {
+    const will = method("  protected override willUpdate(changed");
+    expect(will).toContain("const moved = redirectPath(this.route);");
+    expect(will).toContain("if (moved !== undefined) this.goTo(moved, true);");
   });
 
   it("hands Home Assistant's menu to the tab bar, not to each watch screen", () => {

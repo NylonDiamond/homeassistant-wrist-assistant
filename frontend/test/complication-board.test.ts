@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type CompCellFacts, COMP_VIEW_STORE_KEY, compCell, compLeftOutText, compNoun, compRowOrder, compWhere, readCompView, saveCompView } from "../src/complication-board.js";
+import { type CompCellFacts, COMP_VIEW_STORE_KEY, compCell, compGreyNote, compLeftOutText, compNoun, compRowOrder, compWhere, readCompView, saveCompView } from "../src/complication-board.js";
 import { readFileSync } from "node:fs";
 
 const PANEL = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
@@ -41,31 +41,39 @@ describe("where a design sits on the Complications board", () => {
 
 describe("one box on the Complications board", () => {
   it("ticks a device the design is on, and a click takes it off, keeping the last copy under Not on a device", () => {
-    expect(compCell(facts({ on: true }))).toEqual({ on: true, next: false, title: "Take it off Chen Watch. A face or widget already using it keeps it." });
-    expect(compCell(facts({ on: true, last: true })).title).toBe("Take it off Chen Watch. It stays in your list, under Not on a device.");
+    expect(compCell(facts({ on: true }))).toEqual({ on: true, next: false, title: "Take off Chen Watch. A face or widget already using it keeps it." });
+    expect(compCell(facts({ on: true, last: true })).title).toBe("Take off Chen Watch. It stays in your list, under Not on a device.");
   });
 
   it("puts it on a device that draws the shape, on an iPhone's Lock Screen for a design on no device", () => {
-    expect(compCell(facts())).toEqual({ on: false, next: true, title: "Put it on Chen Watch." });
-    expect(compCell(facts({ designKind: "library", deviceKind: "iphone", deviceName: "Jesse iPhone" })).title).toBe("Put it on Jesse iPhone's Lock Screen.");
-    expect(compCell(facts({ designKind: "library", deviceKind: "iphone", lockShape: false })).title).toBe("Put it on Chen Watch.");
+    expect(compCell(facts())).toEqual({ on: false, next: true, title: "Put on Chen Watch" });
+    expect(compCell(facts({ designKind: "library", deviceKind: "iphone", deviceName: "Jesse iPhone" })).title).toBe("Put on Jesse iPhone's Lock Screen");
+    expect(compCell(facts({ designKind: "library", deviceKind: "iphone", lockShape: false })).title).toBe("Put on Chen Watch");
   });
 
-  it("draws a dash for the other kind of device, saying Duplicate as is the way there", () => {
+  it("greys the other kind of device, saying in its tooltip that Duplicate as is the way there", () => {
     const watchDesign = compCell(facts({ listed: false, deviceKind: "iphone", deviceName: "Jesse iPhone" }));
     expect(watchDesign.dash).toBe("A watch complication. To have it on Jesse iPhone, open it and use Duplicate as.");
+    expect(watchDesign.grey).toBe(true);
     expect(watchDesign.next).toBeUndefined();
     expect(compCell(facts({ listed: false, designKind: "iphone" })).dash).toBe("An iPhone widget. To have it on Chen Watch, open it and use Duplicate as.");
   });
 
-  it("says full, or update app, where a tick cannot land, and draws a dash where the app never draws the shape", () => {
+  it("says once, under a section's heading, why its columns are greyed", () => {
+    expect(compGreyNote({ watchGrey: false, iphoneGrey: true })).toBe("Watch designs cannot go on an iPhone.");
+    expect(compGreyNote({ watchGrey: true, iphoneGrey: false })).toBe("iPhone designs cannot go on a watch.");
+    expect(compGreyNote({ watchGrey: true, iphoneGrey: true })).toBe("Watch designs cannot go on an iPhone, nor iPhone designs on a watch.");
+    expect(compGreyNote({ watchGrey: false, iphoneGrey: false })).toBeUndefined();
+  });
+
+  it("says full where a tick cannot land, and draws a dash where the app is too old or never draws the shape", () => {
     const full = compCell(facts({ full: true }));
     expect(full).toMatchObject({ on: false, note: "full", noteWarn: true });
     expect(full.next).toBeUndefined();
     const old = compCell(facts({ draws: false, tooOld: "Update the app on this watch." }));
-    expect(old).toMatchObject({ note: "update app", noteWarn: true, title: "Update the app on this watch." });
-    expect(old.next).toBeUndefined();
+    expect(old).toEqual({ on: false, dash: "Update the app on this watch.", title: "" });
     expect(compCell(facts({ draws: false })).dash).toBe("Chen Watch does not draw this shape.");
+    expect(compCell(facts({ draws: false })).grey).toBeUndefined();
   });
 });
 

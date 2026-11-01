@@ -85,6 +85,21 @@ export function anyWatchPagesDirty(): boolean {
   return false;
 }
 
+/** Whether any kept draft holds edits with no save on its way: what a leave
+ * guard that cannot wait for a save has to ask about. */
+export function anyWatchPagesUnsent(): boolean {
+  for (const draft of drafts.values()) if (draft.dirty && !draft.saving) return true;
+  return false;
+}
+
+/** The saves out now, settling when every one has ended; undefined when none
+ * is. A draft stays dirty until its save lands, so a move away waits for this
+ * rather than asking about edits that are on their way. */
+export function watchPagesSavesDone(): Promise<unknown> | undefined {
+  const running = [...drafts.values()].flatMap((draft) => draft.saveDone ?? []);
+  return running.length === 0 ? undefined : Promise.allSettled(running);
+}
+
 /** Drop every kept draft, as when the person agreed to leave the panel. */
 export function dropAllWatchPages(): void {
   drafts.clear();

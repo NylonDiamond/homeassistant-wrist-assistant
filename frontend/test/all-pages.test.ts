@@ -108,8 +108,8 @@ describe("a focused device", () => {
     expect(onDeviceTitle(JESSE_D)).toBe("On Jesse Apple Watch");
     expect(orderHint(JESSE_D)).toBe("Drag to order. The order is this watch's own.");
     expect(orderHint(PHONE_D)).toBe("Drag to order. The order is this iPhone's own.");
-    expect(restTitle(JESSE_D)).toBe("Not on this watch");
-    expect(restTitle(PHONE_D)).toBe("Not on this iPhone");
+    expect(restTitle(JESSE_D)).toBe("Not on Jesse Apple Watch");
+    expect(restTitle(PHONE_D)).toBe(`Not on ${PHONE_D.name}`);
     // An empty home lists no rest: "every page is on it" says nothing there.
     expect(showsRest(0, 0, "")).toBe(false);
     expect(showsRest(2, 0, "")).toBe(true);
@@ -154,8 +154,8 @@ describe("the tab's words", () => {
   });
 
   it("say in the foot what a click and a tick do, as the mock does", () => {
-    expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.");
-    expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a box to put it on that device. Click a device's name to order its status pages.");
+    expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a box to show the page on that device. Press Focus on a device to order its pages.");
+    expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a box to put it on that device. Press Focus on a device to order its status pages.");
     expect(footText("pages", undefined, false, "cards")).toBe("Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.");
     expect(footText("status_pages", undefined, false, "cards")).toBe("Click a status page to edit it. Tick a device to put it there.");
     expect(footText("pages", JESSE_D)).toContain("Hide here");
@@ -164,7 +164,7 @@ describe("the tab's words", () => {
   });
 
   it("say why there is nothing to show", () => {
-    expect(emptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
+    expect(emptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Devices tab.");
     expect(emptyText(DEVICES, "")).toBe("Your home has no pages yet. Use New page to make one.");
     expect(emptyText(DEVICES, "zz")).toBe("No page has that name.");
     expect(emptyText(DEVICES, "", "status_pages")).toBe("Your home has no status pages yet. Use New status page to make one.");

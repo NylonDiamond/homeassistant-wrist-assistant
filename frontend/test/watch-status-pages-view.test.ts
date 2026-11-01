@@ -1,7 +1,7 @@
 // The status page editor's views, flattened to text: the old route, the
-// Status pages and Rows cards, the watch preview drawn from
-// the states, the inspector's cards for a page, a row and an add, and the
-// edits their buttons make.
+// stage's + Add row and its rows to pick and drag, the watch preview drawn
+// from the states, the inspector's cards for a page, a row and an add, and
+// the edits their buttons make.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -14,16 +14,15 @@ import {
   isWatchStatusPagesRoute,
   watchStatusPagesRouteOwner,
 } from "../src/watch-status-pages/hook.js";
-import { type StatusPagesDocument, findStatusPage, statusPageRows, statusPagesOf } from "../src/watch-status-pages/model.js";
+import { type StatusPagesDocument, addStatusPage, findStatusPage, statusPageRows, statusPagesOf } from "../src/watch-status-pages/model.js";
 import {
   type StatusPagesViewHost,
-  addPage,
   deselectStatusRow,
   openStatusAddRow,
-  renderPagesCard,
-  renderRowsCard,
+  renderAddRowButton,
   renderStatusInspector,
   renderStatusPageScreen,
+  renderUndrawnRows,
   selectStatusPage,
   selectStatusRow,
   selectedStatusRow,
@@ -97,36 +96,45 @@ describe("the route", () => {
   });
 });
 
-describe("the cards", () => {
-  it("list the pages and the shown page's rows with the phone's subtitles", () => {
+describe("the stage's rows", () => {
+  it("has one + Add row, which opens the Add a row card", () => {
     const h = host(CONFIGURED);
-    const pages = flat(renderPagesCard(h));
-    expect(pages).toContain("House");
-    expect(pages).toContain("Lights");
-    expect(pages).toContain("starter");
-    expect(pages).toContain("One of the app's starter pages. It is edited and put on devices like any other.");
-    expect(pages).not.toContain("Every device has its own");
-    const rows = flat(renderRowsCard(h));
-    expect(rows).toContain("Security");
-    expect(rows).toContain("section header");
-    expect(rows).toContain("3 entities · group count");
-    expect(rows).toContain("all door/window sensors · dynamic list");
-    expect(rows).toContain("hidden");
+    const button = renderAddRowButton(h);
+    expect(flat(button)).toContain("<span>Add row</span>");
+    expect(flat(button)).toContain(`aria-label="Add row"`);
+    expect(flat(renderStatusInspector(h))).not.toContain("Add a row");
+    openStatusAddRow(h);
+    expect(flat(renderStatusInspector(h))).toContain("Add a row");
   });
 
-  it("mark a status page other devices have too with the device it is also on, and say an edit shows there too", () => {
+  it("draws a row as a focusable control with a drag, and a picture with neither", () => {
     const h = host(CONFIGURED);
-    expect(flat(renderPagesCard(h))).not.toContain("sp-linked");
-    const linked: StatusPagesViewHost = {
-      ...h,
-      document: h.document,
-      linkBadge: (page) => (page.id === HOUSE ? "Also on Jesse's iPhone" : undefined),
-      sharedLine: "1 of these status pages is also on Jesse's iPhone. An edit here shows there too.",
-    };
-    const pages = flat(renderPagesCard(linked));
-    expect(pages.match(/class="badge sp-linked"/g)).toHaveLength(1);
-    expect(pages).toContain(">Also on Jesse's iPhone</span>");
-    expect(pages).toContain(`<div class="lc-note sp-shared-note" role="note">1 of these status pages is also on Jesse's iPhone. An edit here shows there too.</div>`);
+    const stage = flat(renderStatusPageScreen(h));
+    expect(stage).toMatch(/class="sp-w-(row|cell) "[^>]*role=button tabindex=0 draggable=true/);
+    const still = flat(renderStatusPageScreen({ ...h, still: true }));
+    expect(still).not.toContain("role=button");
+    expect(still).not.toContain("draggable=true");
+  });
+
+  it("names the rows it cannot draw now, and a press picks one, since nothing on the device stands for it", () => {
+    const h = host(CONFIGURED);
+    const undrawn = flat(renderUndrawnRows(h));
+    expect(undrawn).toContain("Not on the screen now:");
+    expect(undrawn).toContain("(hidden)");
+    expect(undrawn).not.toContain(">Batteries");
+  });
+
+  it("moves a picked row up or down from its card, one undo step each, for the keyboard", () => {
+    const h = host(CONFIGURED);
+    const ids = () => statusPageRows(findStatusPage(h.document, HOUSE)!).map((r) => r.id);
+    const before = ids();
+    selectStatusRow(h, before[1] as string);
+    const card = flat(renderStatusInspector(h));
+    expect(card).toContain("<span>Move up</span>");
+    expect(card).toContain("<span>Move down</span>");
+    expect(card).toContain("<span>Remove</span>");
+    selectStatusRow(h, before[0] as string);
+    expect(flat(renderStatusInspector(h))).toMatch(/class="pe-btn sp-row-up" \?disabled=true/);
   });
 
     it("subtitles follow the phone's words", () => {
@@ -134,14 +142,6 @@ describe("the cards", () => {
     expect(statusRowSubtitle({ rowType: "dynamicList", dynamicMode: "all", domain: "person" })).toBe("all people · dynamic list");
     expect(statusRowSubtitle({ rowType: "dynamicList", dynamicMode: "all", domain: "cover", deviceClassFilter: ["garage"] })).toBe("all garage doors · dynamic list");
     expect(statusRowSubtitle({ rowType: "dynamicList", groupEntityIds: ["a"] })).toBe("1 entity · dynamic list");
-  });
-
-  it("add a page as New Page N and pick it", () => {
-    const h = host(CONFIGURED);
-    addPage(h);
-    const pages = statusPagesOf(h.document);
-    expect(pages[pages.length - 1]!.name).toBe("New Page 1");
-    expect(shownStatusPage(h)).toBe(pages[pages.length - 1]);
   });
 });
 
@@ -163,13 +163,19 @@ describe("the watch preview", () => {
 
   it("says Add entities on a page with no rows", () => {
     const h = host(CONFIGURED);
-    addPage(h);
+    let id = "";
+    h.edit((d) => {
+      const made = addStatusPage(d);
+      id = made.id;
+      return made.document;
+    });
+    selectStatusPage(h, id);
     expect(flat(renderStatusPageScreen(h))).toContain("Add entities");
   });
 });
 
 describe("the inspector", () => {
-  it("shows the page's Page card and its look cards with nothing picked", () => {
+  it("shows the page's own settings and its look cards with nothing picked", () => {
     const h = host(CONFIGURED);
     const text = flat(renderStatusInspector(h));
     expect(text).toContain("Page");
@@ -180,8 +186,9 @@ describe("the inspector", () => {
     expect(text).toContain("aria-pressed");
     // The rest keep the phone's controls.
     for (const label of ["Background", "Dividers", "Round Numbers", "Spacing", "Padding"]) expect(text).toContain(label);
-    expect(statusInspectorFolds(h).map((f) => f.section)).toEqual(["page", "look-rows", "look-text", "look-more"]);
-    expect(text).toContain("Select a row to edit it, or add one.");
+    expect(statusInspectorFolds(h).map((f) => f.section)).toEqual(["look-rows", "look-text", "look-more", "devices"]);
+    expect(text).toContain("Click a row on the stage to edit it, or drag it to reorder.");
+    expect(text).toContain("<span>Delete page</span>");
   });
 
   it("shows a picked row's settings, the phone's controls by row type", () => {

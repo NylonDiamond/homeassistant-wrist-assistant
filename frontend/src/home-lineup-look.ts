@@ -1,9 +1,10 @@
 // Home's lineup for one device (plan: app repo
 // docs/panel_one_board_plan_2026-10.md, step 6): what is on it, in its
 // order, a group per kind. Each line opens its thing in its tab's one
-// editor (Edit); each group has one Change, which opens that tab's board
-// focused on the device. Home itself ticks, drags and switches nothing, so
-// each change has one place.
+// editor (Edit); each group has one "Open in Pages" (and the like), which
+// opens that tab's board focused on the device, and an empty group one
+// button that does the same. Home itself ticks and switches nothing, so each
+// change has one place.
 //
 // The groups are drawn by two hosts: the pages, status pages and menus by
 // `wa-home-lineup` (its own chunk, since it reads the library), the
@@ -61,8 +62,11 @@ export interface LineupGroup {
   lines: readonly LineupLine[];
   /** What it says with no lines. */
   empty: string;
-  /** Change: that tab's board, focused on the device. */
-  change?: { title: string; onClick: () => void };
+  /** "Open in Pages": that tab's board, focused on the device. */
+  change?: { label: string; title: string; onClick: () => void };
+  /** The one button in an empty box ("Add pages", "Pick a menu"): the same
+   * board. Left out, the box only says why it is empty. */
+  add?: { label: string; title: string; onClick: () => void };
   /** Drawn as a strip of small cards rather than a list (pages). */
   strip?: boolean;
   /** A strip's cards wear their place in it; false for one whose order
@@ -90,11 +94,12 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
       <h3 class="hl-title">${g.title}</h3>
       ${g.noCount === true ? nothing : html`<span class="hl-n">${g.lines.length}</span>`}
       ${g.sub === undefined ? nothing : html`<span class="hl-sub">${g.sub}</span>`}
-      ${g.change === undefined ? nothing : html`<button type="button" class="hl-change" title=${g.change.title} @click=${g.change.onClick}>Change${uiIcon("right")}</button>`}
+      ${g.change === undefined ? nothing : html`<button type="button" class="hl-change" title=${g.change.title} @click=${g.change.onClick}>${g.change.label}${uiIcon("right")}</button>`}
     </div>
     ${g.under ?? nothing}
     ${g.lines.length === 0
-      ? html`<p class="hl-empty">${g.empty}</p>`
+      ? html`<div class="hl-empty hl-box"><p>${g.empty}</p>${g.add === undefined ? nothing
+          : html`<button type="button" class="hl-add" title=${g.add.title} @click=${g.add.onClick}>${uiIcon("plus")}${g.add.label}</button>`}</div>`
       : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}" style=${g.cell === undefined ? "" : `--hl-cell:${g.cell}px`}
           @dragover=${(e: DragEvent) => g.zone?.onOver(e)} @drop=${(e: DragEvent) => g.zone?.onDrop(e)}
           >${repeat(g.lines, (line) => line.key, (line, i) => renderLine(line, i, g.strip === true && g.numbered !== false))}</ol>`}
@@ -151,13 +156,24 @@ export const homeLineupStyles = css`
   .hl-n { font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
   .hl-sub { font-size: 12px; color: var(--wa-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hl-change {
-    display: inline-flex; align-items: center; gap: 2px; margin-left: auto; flex: none; height: 26px; padding: 0 6px 0 10px;
-    border-radius: 7px; border: 1px solid var(--wa-line); background: none; color: var(--wa-ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; height: 28px; padding: 0 8px 0 11px;
+    border-radius: 7px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
-  .hl-change svg { width: 12px; height: 12px; }
+  .hl-change svg { width: 13px; height: 13px; }
   .hl-change:hover { background: var(--wa-hover); }
   .hl-change:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hl-empty { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
+  /* An empty box: what is missing and, centered under it, the one button that
+     goes to set it up. */
+  .hl-box { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 14px; text-align: center; }
+  .hl-box p { margin: 0; }
+  .hl-add {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 7px;
+    border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .hl-add svg { width: 13px; height: 13px; }
+  .hl-add:hover { background: var(--wa-hover); }
+  .hl-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hl-lines { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
   .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(var(--hl-cell, 150px), 1fr)); gap: 8px; }
   .hl-line {
@@ -225,7 +241,7 @@ export const homeLineupStyles = css`
   .hl-edit:focus-visible { outline: none; box-shadow: var(--wa-ring); }
 `;
 
-/** Home's "All devices" (plan step 6): its head and search, then a part per
+/** The Devices tab's Overview (plan step 6): its head and search, then a part per
  * kind, each a board; the parts' tables share one device column width, so
  * their device columns line up (`boardStackStyles`). */
 export const homeAllStyles = css`
@@ -238,7 +254,6 @@ export const homeAllStyles = css`
   .ha-part { display: flex; flex-direction: column; gap: 8px; min-width: 0; position: relative; }
   .ha-part-head { display: flex; align-items: center; gap: 8px; }
   .ha-part-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--wa-ink); }
-  .ha-col { display: inline-flex; align-items: center; gap: 6px; padding: 8px 6px; font-weight: 600; color: var(--wa-ink); }
   .ha-ic {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 8px;
     border: 1px solid var(--h, var(--wa-line)); color: var(--wa-ink);

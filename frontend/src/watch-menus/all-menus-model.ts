@@ -35,7 +35,7 @@ export function allMenusLead(total: number): string {
 export const MENUS_FOOT = "Click a menu to edit it. Tick a device on a card and that device uses this menu from now on. New menu starts on no device yet.";
 
 /** The foot on the board. */
-export const MENUS_BOARD_FOOT = "Click a menu to edit it. Pick a dot and that device uses this menu from now on. Click a device's name to see its menus first.";
+export const MENUS_BOARD_FOOT = "Click a menu to edit it. Pick a dot and that device uses this menu from now on. Press Focus on a device to see its menus first.";
 
 /** The words at each board section's right: the rule a dot follows. */
 export const MENUS_BOARD_HINT = "Each device uses one of each kind. Pick a dot to switch.";
@@ -145,7 +145,7 @@ export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchM
  * Given as the set of waiting ids, a waiting watch too old for the move
  * names the release (`waitingLibraryText`). */
 export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting: boolean | ReadonlySet<string> = false): string {
-  if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
+  if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Devices tab.";
   if (search.trim() !== "") return "No menu or device has that name.";
   const any = typeof waiting === "boolean" ? waiting : waiting.size > 0;
   const needsUpdate = typeof waiting !== "boolean" && anyNeedsUpdate(devices, waiting);

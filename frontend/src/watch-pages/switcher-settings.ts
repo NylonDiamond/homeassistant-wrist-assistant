@@ -63,6 +63,13 @@ export interface SwitcherSettingsHost {
 /** The card's title, in the menu editor's inspector. */
 export const SWITCHER_SECTION_TITLE = "In the page switcher";
 
+/** The switcher's own text for a page: it only overrides what the switcher
+ * says, so it does not call itself the page's name. */
+export const SWITCHER_LABEL_TITLE = "Switcher label (optional)";
+
+/** The line under it. */
+export const SWITCHER_LABEL_HINT = "Defaults to the page name";
+
 /** A page's keys for the page switcher. */
 export const SWITCHER_KEYS = ["switcherIcon", "switcherColor", "switcherText", "switcherDisplayMode", "hideFromSwitcher"] as const;
 
@@ -188,7 +195,7 @@ function typingRow(host: SwitcherSettingsHost, setting: string, body: TemplateRe
 
 /**
  * The page's rows for the page switcher: Hidden, Show as Name or Icon, the
- * name, Automatic icon, the icon, the color (the cards' one picker,
+ * switcher label, Automatic icon, the icon, the color (the cards' one picker,
  * `colorPickerView`, Default leaving it to the watch), and the hint.
  * Each left empty is chosen by the watch, as on the iPhone. Typed text left
  * over from a field no longer focused is dropped first.
@@ -209,8 +216,9 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
     ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the ${device}. Only the switcher leaves it out.</div>` : nothing}
     ${segField("Show as", modes.some(([m]) => m === mode) ? mode : "text", modes, (v) =>
       write(host, (d) => setWatchPageSwitcherDisplayMode(d, host.pageId, v)))}
-    ${typingRow(host, "switcherText", textField("Name", typed(host, "switcherText") ?? s.switcherText ?? "", (v) =>
+    ${typingRow(host, "switcherText", textField(SWITCHER_LABEL_TITLE, typed(host, "switcherText") ?? s.switcherText ?? "", (v) =>
       write(host, (d) => setWatchPageSwitcherText(d, host.pageId, v), true), { placeholder: name }))}
+    <div class="hint keep ts-under">${SWITCHER_LABEL_HINT}</div>
     <div class="ts-chips" role="group" aria-label="Switcher icon">
       <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
         title=${`The ${device} picks one from the page's first tile`} @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
@@ -227,5 +235,5 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
       custom: { shown: typed(host, "switcherColor") ?? watchCustomBoxColor(s.switcherColor), pick: (v) => { if (v !== undefined) setColor(v, true); } },
       wrap: (body) => typingRow(host, "switcherColor", body),
     })}
-    <div class="hint ts-under">Left empty, the ${device} shows the page's name and picks the icon and color itself.</div>`;
+    <div class="hint ts-under">Left empty, the ${device} picks the icon and color itself.</div>`;
 }

@@ -269,9 +269,10 @@ function renderTheme(sh: TileSettingsHost): TemplateResult {
           <span class="ps-theme-pic" aria-hidden="true"><i></i><i></i><i></i></span><span class="ps-theme-nm">${name}</span></button>`;
       })}
     </div>
-    <div class="ps-roles" aria-label="The theme's colors">
-      ${watchPageRoleSwatches().map(({ role, label }) => html`<span class="ps-role" title=${`${label}: ${roles[role] ?? ""}`}>
-        <span class="ps-role-sw" style=${`background:${roles[role] ?? "transparent"}`}></span><span>${label}</span></span>`)}
+    <div class="ps-cap">This theme colours:</div>
+    <div class="ps-roles" role="list" aria-label="The theme's colors">
+      ${watchPageRoleSwatches().map(({ role, label }) => html`<span class="ps-role" role="listitem" title=${`${label}: ${roles[role] ?? ""}`}>
+        <i class="ps-role-sw" style=${`background:${roles[role] ?? "transparent"}`}></i><span>${label}</span></span>`)}
     </div>
     ${segField("Colors", s.gradient ? "gradient" : "solid", [["solid", "Solid"], ["gradient", "Gradient"]] as ["solid" | "gradient", string][], (v) =>
       commit(sh, "gradient", (d) => setWatchPageGradientColors(d, sh.pageId, v === "gradient")))}
@@ -649,9 +650,13 @@ export const pageSettingsStyles = css`
   .ps-theme-pic > i:nth-child(2) { background: var(--ps-b); }
   .ps-theme-pic > i:nth-child(3) { background: var(--ps-c); }
   .ps-theme-nm { overflow-wrap: anywhere; }
-  .ps-roles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; padding: 2px 0 8px; }
-  .ps-role { display: flex; flex-direction: column; align-items: stretch; gap: 2px; font-size: 9.5px; color: var(--wa-muted); text-align: center; min-width: 0; }
-  .ps-role-sw { height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
+  /* The theme's roles: a key to the theme above, small dots with their
+     words, so they never read as choices to click. */
+  .ps-cap { margin: 10px 0 7px; font-size: 12px; font-weight: 600; color: var(--wa-muted); }
+  .ps-roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px 6px; padding: 0 0 8px; }
+  .ps-role { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11.5px; color: var(--wa-label, var(--wa-muted)); }
+  .ps-role > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-role-sw { display: block; flex: none; width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .25); }
   /* The Image decoration's photos: a grid of small squares, each a radio. */
   .ps-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 8px 6px; padding: 4px 0 6px; }
   .ps-photo-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }

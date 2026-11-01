@@ -50,7 +50,8 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) iconsTick = 0;
   /** Edit: open the thing in its tab's one editor, from this device. */
   @property({ attribute: false }) onEdit?: (kind: LibraryKind, id: string) => void;
-  /** Change: that tab's board, focused on this device. */
+  /** "Open in Pages" and the empty boxes' buttons: that tab's board, focused
+   * on this device. */
   @property({ attribute: false }) onChange?: (kind: LibraryKind) => void;
   /** The device's name, for what a move or a remove says. */
   @property({ attribute: false }) deviceName = "";
@@ -303,7 +304,8 @@ export class WaHomeLineup extends LitElement {
     this.ask = undefined;
     const names = { item: pick.entry.name, device: this.device };
     try {
-      this.ask = await askUntick(this.hassNow, store, this.ownerId, kind, pick.id, names);
+      // The line under the lineup offers its own Undo (`saidRemoved`).
+      this.ask = await askUntick(this.hassNow, store, this.ownerId, kind, pick.id, names, { undo: false });
       if (this.ask === undefined) this.saidRemoved(kind, pick.id, names.item, next, store.noteFor(kind, pick.id));
     } finally {
       this.busy = undefined;
@@ -318,7 +320,7 @@ export class WaHomeLineup extends LitElement {
     const kind = ask.kind as OrderedKind;
     this.busy = ask.itemId;
     try {
-      const result = await tickItem(this.hassNow, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names);
+      const result = await tickItem(this.hassNow, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names, { undo: false });
       if (!result.ok) this.said = { kind, tone: "err", text: result.text };
       else if (result.note !== undefined) this.said = { kind, tone: result.note.kind === "ok" ? "ok" : "warn", text: result.note.text };
       else this.saidRemoved(kind, ask.itemId, ask.names.item, null, undefined);
@@ -485,9 +487,15 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("status_pages", pick.id) },
   }));
+  /** Whether a kind is empty only for now: this watch's iPhone may still move
+   * its setup here. Its box says so and offers no button to start another. */
+  const moving = (k: LibraryKind): boolean => draw.waitsForIphone === true && !holdsRecord(library, ownerId, k);
   /** A kind's empty line: its iPhone's move still to come, or none yet. */
   const empty = (k: LibraryKind, what: string, none: string): string =>
-    draw.waitsForIphone === true && !holdsRecord(library, ownerId, k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion) : none;
+    moving(k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion) : none;
+  /** A kind's button in its empty box: its board, on this device. */
+  const add = (k: LibraryKind, label: string, title: string): Pick<LineupGroup, "add"> =>
+    moving(k) ? {} : { add: { label, title, onClick: () => draw.onChange(k) } };
   const underPages = arrange?.under?.("pages");
   const zonePages = arrange?.zone?.("pages");
   const underStatus = arrange?.under?.("status_pages");
@@ -505,7 +513,8 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     {
       key: "pages", title: "Pages", icon: "pages", hue: "var(--wa-hue-green)", sub: `in the order the ${word} swipes them`,
       lines: pageLines, strip: true, empty: empty("pages", "pages", `No pages on this ${word} yet.`),
-      change: { title: `Add, order and hide pages on this ${word}`, onClick: () => draw.onChange("pages") },
+      change: { label: "Open in Pages", title: `Add, order and hide pages on this ${word}, on the Pages tab`, onClick: () => draw.onChange("pages") },
+      ...add("pages", "Add pages", `Open the Pages tab, focused on this ${word}`),
       ...(underPages === undefined ? {} : { under: underPages }),
       ...(zonePages === undefined ? {} : { zone: zonePages }),
     },
@@ -515,12 +524,14 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       // status page's order shows nowhere on the device.
       lines: statusLines, strip: true, numbered: false, empty: empty("status_pages", "status pages", `No status pages on this ${word} yet.`),
       ...(underStatus === undefined ? {} : { under: underStatus }),
-      change: { title: `Add, order and hide status pages on this ${word}`, onClick: () => draw.onChange("status_pages") },
+      change: { label: "Open in Status pages", title: `Add, order and hide status pages on this ${word}, on the Status pages tab`, onClick: () => draw.onChange("status_pages") },
+      ...add("status_pages", "Add status pages", `Open the Status pages tab, focused on this ${word}`),
     },
     {
       key: "menus", title: "Menus", icon: "radial", hue: "var(--wa-hue-orange)",
       lines: menuLines, empty: empty("menus", "menus", `This ${word} uses no menu yet.`),
-      change: { title: `Pick the menus this ${word} uses`, onClick: () => draw.onChange("menus") },
+      change: { label: "Open in Menus", title: `Pick the menus this ${word} uses, on the Menus tab`, onClick: () => draw.onChange("menus") },
+      ...add("menus", "Pick a menu", `Open the Menus tab, focused on this ${word}`),
     },
   ];
 }

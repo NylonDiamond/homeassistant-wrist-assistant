@@ -5354,13 +5354,15 @@ export function nameChangedFromWatch(savedName: string | undefined, name: string
 /**
  * The Complication card: the settings that belong to the whole document.
  *
- * `nameOnly` is for the Control Center tab, where three of the four rows would
- * be about something the view is not showing. Refresh, the tap action and the
- * flash are what a shape does on the face; a control has its own action row and
- * is drawn from the last sync whatever Refresh says. The name is shared, and it
- * is the title a new control borrows, so it stays.
+ * `shapeOnly` is for the Control Center tab, where the other rows would be about
+ * something the view is not showing. Refresh, the tap action and the flash are
+ * what a shape does on the face; a control has its own action row and is drawn
+ * from the last sync whatever Refresh says.
+ *
+ * No Name row: the name has one home, the editor's bar. Its rename warning stays
+ * here, where the rest of what reaches the watch is.
  */
-export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean; shape?: { line: string; note?: string } } = {}): TemplateResult {
+export function generalEditor(host: EditorHost, opts: { shapeOnly?: boolean; shape?: { line: string; note?: string; family?: FamilyKind } } = {}): TemplateResult {
   const cfg = host.config;
   // The watch face picker caches each complication's name per widget kind and
   // does not refresh it after a rename. Warn once the name actually differs
@@ -5375,27 +5377,21 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean; shap
   const renamedNote = renamed
     ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>`
     : nothing;
-  // What this complication is and where it lives, as a line to read rather
-  // than a setting: one shape on one device is fixed once it is made.
+  // What this complication is, as a line to read rather than a setting: one
+  // shape on one device is fixed once it is made.
+  const family = opts.shape?.family;
   const shapeLine = opts.shape === undefined ? nothing
     : html`<div class="field readout shape-line" title=${opts.shape.note ?? nothing}><span>Shape</span>
-        <span class="readout-v">${opts.shape.line}</span></div>`;
-  if (opts.nameOnly === true) {
+        <span class="readout-v" style=${family === undefined ? nothing : `--sh:var(--wa-shape-${family})`}>${family === undefined ? nothing : html`<i class="tb-shape-dot" aria-hidden="true"></i>`}${opts.shape.line}</span></div>`;
+  if (opts.shapeOnly === true) {
     return html`
-      <div class="gen-row">
-        ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-        ${shapeLine}
-      </div>
+      ${shapeLine}
       ${renamedNote}`;
   }
-  // One row each: name, shape, tap action, refresh, flash. Anything a tap
-  // action needs beyond its type (an entity, a page, a service) follows the
-  // tap row.
+  // One row each: shape, tap action, refresh, flash. Anything a tap action
+  // needs beyond its type (an entity, a page, a service) follows the tap row.
   return html`
-    <div class="gen-row">
-      ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-      ${shapeLine}
-    </div>
+    ${shapeLine}
     ${renamedNote}
     ${docTapFields(host)}
     <div class="gen-row">

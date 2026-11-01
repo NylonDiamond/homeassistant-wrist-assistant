@@ -1180,7 +1180,10 @@ export class WaMenuEditor extends LitElement {
       ...(admin === undefined ? {} : { admin }),
       ...(inBar ? { hint: false as const } : {}),
       locked: (ownerId) => this.menuTickLocked(ownerId),
-    }, (ownerId) => { void store.pickMenu(ownerId, used.unit, used.id); });
+    }, (ownerId) => {
+      const device = this.linkDevices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "The device";
+      void store.pickMenu(ownerId, used.unit, used.id, { device });
+    });
   }
 
   /** The menu's devices, in the strip under the canvas head where every

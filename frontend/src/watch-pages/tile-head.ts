@@ -1,10 +1,8 @@
-// The tile inspector's head: one strip across the inspector over the four
-// group columns. At its start the large live tile the page editor draws
-// (with the path back to the page over it), then the tile's Name and what
-// it Shows side by side, a row of short facts under them (what a tap does,
-// when the tile shows, the kind's own target), and at its end Duplicate,
-// Hide and Delete with how many parts hold a value of their own and Reset
-// all under them.
+// The tile inspector's head, over the groups: the path back to the page, the
+// large live tile the page editor draws with the tile's Name beside it, a row
+// of short facts as links to their settings (what a tap does, what the tile
+// shows, the kind's own target), then Duplicate, Hide and Delete with how many
+// parts hold a value of their own and Reset all at their end.
 //
 // The head and the settings talk to each other. Each settings section
 // stands for a part of the tile (`TILE_HEAD_PART_OF`): hovering it lights
@@ -16,12 +14,11 @@
 // `tileSettingsStyles`.
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { areaLookup } from "../editors.js";
+import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, hostDevice } from "./editor-host.js";
 import { tileEntityId, tileKind, tileKindLabel, watchPagesOf } from "./model.js";
 import { setWatchTileLabel, watchHoldSlideSettings, watchSingleTapSettings, watchTileIconSettings, watchTileTextSettings } from "./tile-settings-model.js";
 import { watchLabelNote, watchTileFallbackName, watchTileSettingsSections } from "./tile-settings-options.js";
-import { type WatchHassView, watchEntityAddFromHass, watchEntityDefaults } from "./tile-new.js";
 import {
   TILE_KIND_PARTS,
   type TileInspectorPart,
@@ -79,6 +76,7 @@ export const TILE_HEAD_PART_OF: Readonly<Record<TileInspectorPart, TileHeadPart>
   phoneTile: "tile",
   special: "tile",
   phone: "tile",
+  entity: "tile",
   target: "tile",
   opens: "tile",
   request: "tile",
@@ -165,11 +163,13 @@ export interface TileHeadPill {
 }
 
 /**
- * The facts the head lists under Name and Shows, each from the summary its
- * own section already makes: the kind's own card first ("Map: Upstairs"),
- * then what a single tap does, each hold and slide direction that holds an
- * action of its own, when the tile shows, how it looks while off, and its
- * background and border while they hold one.
+ * The facts the head lists under Name, each a link to its setting, each from
+ * the summary its own section already makes: the kind's own card first ("Map:
+ * Upstairs"), then what a single tap does, each hold and slide direction that
+ * holds an action of its own, the entity the tile shows, when it shows if not
+ * always, how a light looks while off (only a light has an off look worth
+ * naming, so a lock is not told about it), and its background and border while
+ * they hold one.
  */
 export function tileHeadPills(watchHost: TileSettingsHost): TileHeadPill[] {
   const host = tileWordsHost(watchHost);
@@ -192,8 +192,12 @@ export function tileHeadPills(watchHost: TileSettingsHost): TileHeadPill[] {
       }
     }
   }
-  if (parts.includes("visibility")) out.push({ label: "Shows", value: showTileSummary(host) || "Always", part: "visibility" });
-  if (parts.includes("whenOff") && host.domainStyle !== true) {
+  if (parts.includes("entity")) out.push({ label: "Shows", value: tileEntityId(tile), part: "entity" });
+  if (parts.includes("visibility")) {
+    const rule = showTileSummary(host);
+    if (rule !== "") out.push({ label: "Shows when", value: rule, part: "visibility" });
+  }
+  if (parts.includes("whenOff") && host.domainStyle !== true && tileKind(tileEntityId(tile)) === "light") {
     const dim = watchTileIconSettings(tile).dimWhenOff;
     if (dim.applies) out.push({ label: "Off look", value: dim.value ? "Dim" : "Keep color", part: "whenOff" });
   }
@@ -218,7 +222,9 @@ export function tileHeadChangedCount(watchHost: TileSettingsHost): number {
 
 /** What the page editor hands the head: what only it draws or does. */
 export interface TileHeadParts {
-  /** The strip's start: the path back to the page and the large tile. */
+  /** The first line: the path back to the page. */
+  path?: TemplateResult | typeof nothing;
+  /** The large tile, beside the Name. */
   lead: TemplateResult | typeof nothing;
   /** The actions before Delete (Duplicate, Hide). */
   actions: TemplateResult | typeof nothing;
@@ -226,41 +232,23 @@ export interface TileHeadParts {
   remove: TemplateResult | typeof nothing;
   /** Under the facts: the group line, while the tile is in a group. */
   below?: TemplateResult | typeof nothing;
-  /** Change beside what the tile shows, where the tile has another way to
-   * say it (a library tile's Target). */
-  change?: { title: string; go: () => void };
   /** Go to a section, for a press on one of the facts. Without it the facts
    * are words only. */
   go?: (part: TileInspectorPart) => void;
-  /** The grey line at the end of the facts: which pages a change reaches
-   * ("Changes apply to the Watch and iPhone pages"). */
+  /** The grey line under the facts: which pages a change reaches ("Changes
+   * apply to the Watch and iPhone pages"). */
   applies?: string;
 }
 
-/** What Shows says for a tile of Home Assistant's entity: the kind's icon,
- * the entity's friendly name, then in grey its area and its id. */
-function renderEntityShown(host: TileSettingsHost, entityId: string): TemplateResult {
-  const friendly = host.hass.states[entityId]?.attributes?.["friendly_name"];
-  const name = typeof friendly === "string" && friendly.trim() !== "" ? friendly.trim() : undefined;
-  const area = areaLookup(host.hass)?.(entityId);
-  const icon = watchEntityDefaults(watchEntityAddFromHass(host.hass as unknown as WatchHassView, entityId), host.page).icon;
-  const glyph = icon === undefined ? undefined : host.icons.render(icon, 16, "#a1a1aa");
-  return html`<span class="ts-head-ent-nm">${glyph === undefined
-    ? nothing
-    : html`<svg class="ts-head-ent-ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">${glyph}</svg>`}${name === undefined
-    ? nothing
-    : html`<b title=${name}>${name}</b>`}<small>${area === undefined ? nothing : html`${area} · `}<code class="ts-head-entity" title=${entityId}>${entityId}</code></small></span>`;
-}
-
 /**
- * The tile inspector's head, one strip across the inspector that wraps on a
- * narrow one: at its start what the page editor draws (the path and the
- * large tile), in the middle the tile's Name (for a tile with a Text
- * section; empty shows the name the watch falls back to and stores no
- * label) and Shows (its entity by name, area and id), the facts under them
- * (`tileHeadPills`), and at its end the actions with how many parts are
- * changed and Reset all under them. Inside a `.ts-root`, so the editor lets
- * the name's box go when the selection moves.
+ * The tile inspector's head: the path back to the page; the large tile with
+ * the tile's Name beside it (for a tile with a Text section; empty shows the
+ * name the watch falls back to and stores no label); the facts as links to
+ * their settings (`tileHeadPills`, an arrow on each says it goes somewhere);
+ * which pages a change reaches; then the actions, with how many parts are
+ * changed and Reset all at their end. A tile with no entity says what it is
+ * where a Name would not be. Inside a `.ts-root`, so the editor lets the
+ * name's box go when the selection moves.
  */
 export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts): TemplateResult {
   const host = tileWordsHost(watchHost);
@@ -277,33 +265,33 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
     name = html`<div class="ts-head-f ts-head-name"><span class="ts-head-lab">Name</span>${typingField(host, "label", html`<input type="text" aria-label="Name" .value=${label}
       placeholder=${fallback} title=${watchLabelNote(tile, hostDevice(host))} ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`)}</div>`;
   }
-  const shown = tileHeadHasEntity(tile)
-    ? renderEntityShown(host, entityId)
-    : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "No entity" : tileKindLabel(kind)}</span>`;
-  const change = parts.change === undefined ? nothing
-    : html`<button type="button" class="link ts-head-change" title=${parts.change.title} @click=${parts.change.go}>Change</button>`;
+  const what = tileHeadHasEntity(tile) ? nothing
+    : html`<div class="ts-head-f ts-head-shows"><span class="ts-head-lab">Shows</span><span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "No entity" : tileKindLabel(kind)}</span></div>`;
   const go = parts.go;
-  const pills = tileHeadPills(host).map((p) => go === undefined
-    ? html`<span class="ts-pill">${p.label}: <b>${p.value}</b></span>`
-    : html`<button type="button" class="ts-pill" data-goes=${p.part} title=${`Go to ${partTitle(host, p.part)}`} @click=${() => go(p.part)}>${p.label}: <b>${p.value}</b></button>`);
-  const facts = pills.length === 0 && parts.applies === undefined ? nothing
-    : html`<div class="ts-head-pills">${pills}${parts.applies === undefined ? nothing : html`<span class="ts-head-applies">${parts.applies}</span>`}</div>`;
+  const pills = tileHeadPills(host).map((p) => {
+    const value = p.part === "entity" ? html`<b class="ts-pill-id">${p.value}</b>` : html`<b>${p.value}</b>`;
+    return go === undefined
+      ? html`<span class="ts-pill">${p.label}: ${value}</span>`
+      : html`<button type="button" class="ts-pill ts-pill-link" data-goes=${p.part} title=${`Go to ${partTitle(host, p.part)}`} @click=${() => go(p.part)}>${p.label}: ${value}${uiIcon("arrow")}</button>`;
+  });
+  const facts = pills.length === 0 ? nothing : html`<div class="ts-head-pills">${pills}</div>`;
   const resettable = watchTileResettable(host);
   const n = tileHeadChangedCount(host);
   return html`<section class="ts-head ts-root" aria-label="Tile">
-    <div class="ts-head-lead">${parts.lead}</div>
-    <div class="ts-head-mid">
-      ${name}
-      <div class="ts-head-f ts-head-shows"><span class="ts-head-lab">Shows</span><div class="ts-head-ent">${shown}${change}</div></div>
-      ${facts}
-      ${parts.below ?? nothing}
+    ${parts.path === undefined ? nothing : html`<div class="ts-head-path">${parts.path}</div>`}
+    <div class="ts-head-row">
+      <div class="ts-head-lead">${parts.lead}</div>
+      <div class="ts-head-mid">${name}${what}</div>
     </div>
+    ${facts}
+    ${parts.applies === undefined ? nothing : html`<p class="ts-head-applies">${parts.applies}</p>`}
+    ${parts.below ?? nothing}
     <div class="ts-head-side">
       <div class="ts-head-acts" role="group" aria-label="Tile actions">
         ${parts.actions}
         ${parts.remove}
       </div>
-      <div class="ts-head-changed">${n === 0 ? html`<span>Default look</span>` : html`<i aria-hidden="true"></i><span>${n} changed</span>`}
+      <div class="ts-head-changed">${n === 0 ? nothing : html`<i aria-hidden="true"></i><span>${n} changed</span>`}
         <button type="button" class="link ts-reset-btn" ?disabled=${!resettable || host.busy}
           title=${resettable ? "Put the icon, color, text, state, border, background and arrangement back to their defaults. The name, size, tap and when it shows stay. Undo brings them back." : "The tile's look is at its defaults"}
           @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>Reset all</button>
@@ -312,25 +300,18 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
   </section>`;
 }
 
-/* The head's rules. A row, said outright: the head also wears .ts-root,
-   which stands its children in a column, and in a column the parts' flex
-   bases became heights. The large tile at its start, Name and Shows side
-   by side with the facts across both under them, the actions at its end;
-   on a narrow inspector the fields stand one over the other and the
-   actions go under them in a row. */
+/* The head's rules: one column of rows over the groups. The path; the large
+   tile with the Name beside it; the facts; which pages a change reaches; the
+   actions with Reset all at their end. */
 export const tileHeadStyles = css`
   .ts-head {
-    display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: 14px 18px;
-    margin: 0; padding: 14px 18px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card);
+    gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card);
   }
-  .ts-head-lead { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; min-width: 0; max-width: 240px; }
-  .ts-head-mid {
-    display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr); gap: 8px 14px; align-content: start;
-    flex: 1 1 360px; min-width: 0;
-  }
-  .ts-head-mid > :not(.ts-head-f) { grid-column: 1 / -1; }
-  .ts-head-mid > .ts-head-shows:first-child { grid-column: 1 / -1; }
-  .ts-head-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; flex: 0 0 auto; }
+  .ts-head-path { min-width: 0; }
+  .ts-head-row { display: flex; align-items: flex-end; gap: 12px; min-width: 0; }
+  .ts-head-lead { flex: none; min-width: 0; max-width: 240px; }
+  .ts-head-mid { display: flex; flex-direction: column; gap: 8px; flex: 1 1 0; min-width: 0; max-width: 420px; }
+  .ts-head-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
   .ts-head-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .ts-head-lab { font-size: 11.5px; color: var(--wa-muted); }
   .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
@@ -351,21 +332,27 @@ export const tileHeadStyles = css`
   }
   .ts-head-entity { font-size: 11.5px; color: inherit; }
   .ts-head-none { font-size: 12.5px; color: var(--wa-muted); }
-  button.link.ts-head-change { flex: none; padding: 2px 4px; border: 0; background: none; font: inherit; font-size: 12px; color: var(--ts-blue, var(--wa-accent)); cursor: pointer; }
-  button.link.ts-head-change:hover { text-decoration: underline; text-underline-offset: 3px; }
-  /* The facts: one pill each, a press goes to its section. */
-  .ts-head-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; min-width: 0; }
+  /* The facts: one link each, in the panel's link blue with its value
+     underlined and an arrow, since a press jumps to its setting. */
+  .ts-head-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
   .ts-pill {
-    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 10px;
-    border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-field);
+    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 26px; padding: 0 9px;
+    border: 1px solid var(--wa-line-strong); border-radius: 13px; background: var(--wa-field);
     font: inherit; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .ts-pill > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--wa-ink); }
-  button.ts-pill { cursor: pointer; }
-  button.ts-pill:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
-  button.ts-pill:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ts-head-applies { margin-left: auto; font-size: 11.5px; color: var(--wa-hint, var(--wa-muted)); }
-  .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+  .ts-pill > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--wa-ink); }
+  .ts-pill > b.ts-pill-id { font-family: monospace; font-size: 11.5px; }
+  .ts-pill > svg.ui-icon { flex: none; width: 12px; height: 12px; }
+  button.ts-pill-link {
+    border-color: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 40%, transparent);
+    background: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 9%, transparent);
+    color: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 70%, var(--wa-ink)); cursor: pointer;
+  }
+  button.ts-pill-link > b { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 50%, transparent); text-underline-offset: 3px; }
+  button.ts-pill-link:hover { background: color-mix(in srgb, var(--wa-hue-blue, #4c8dff) 16%, transparent); }
+  button.ts-pill-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ts-head-applies { margin: 0; font-size: 12px; color: var(--wa-muted); }
+  .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 30px; padding: 0 10px; font-size: 12.5px; }
   .ts-head-acts > button svg.ui-icon { width: 15px; height: 15px; }
   .ts-head-changed { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
@@ -376,14 +363,4 @@ export const tileHeadStyles = css`
   }
   button.link.ts-reset-btn:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
   button.link.ts-reset-btn:disabled { opacity: .45; cursor: default; }
-  @container insp (max-width: 680px) {
-    .ts-head { gap: 12px; padding: 12px; }
-    .ts-head-mid { grid-template-columns: minmax(0, 1fr); flex-basis: 200px; }
-    .ts-head-mid > .ts-head-f { grid-column: 1 / -1; }
-    .ts-head-side { flex-direction: row; flex-wrap: wrap; align-items: center; flex-basis: 100%; }
-    .ts-head-applies { margin-left: 0; width: 100%; }
-  }
-  @container insp (max-width: 520px) {
-    .ts-head-mid { flex-basis: 100%; }
-  }
 `;

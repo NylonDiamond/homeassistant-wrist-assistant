@@ -1,15 +1,21 @@
-// The panel's shell: the tabs across the top (Home, Pages, Status pages,
-// Menus, Complications; `BAR_TABS`), which address each screen lives at, and
-// the bar that moves between them. A watch's or an iPhone's own screens have no
-// tab: Home's doors open them, and they count as Home in the bar.
+// The panel's shell: the tabs across the top (Devices, Pages, Status pages,
+// Menus, Complications, Shared; `BAR_TABS`), which address each screen lives
+// at, and the bar that moves between them. A watch's or an iPhone's own
+// screens have no tab: each lights the tab it belongs to (`barTabOfScreen`).
 //
 // The tab is never stored. It is read from the route Home Assistant hands the
 // panel, so a reload, a bookmark and the browser's Back button all agree with
 // what is on screen:
 //
-//   ""                  Home
+//   "", /devices        the Devices tab (once Home; its id is still "home")
+//   /devices/<owner_watch_id>, /devices/all
+//                       one device's page, or every device (`devicePath`)
+//   /shared             the Shared tab's landing page: one card for each
+//                       thing the whole home keeps (`SHARED_PATH`)
 //   /complications      the complication list, and the editor once a design
 //                       is open (the open draft decides, not the address)
+//   /complications/design/<owner>/<id>
+//                       one design open in the editor (`designPath`)
 //   /pages, /menus, /voice, /status-pages, /control-center, /rooms, each with
 //   an optional /<owner_watch_id>
 //                       the Watch app, as before
@@ -56,7 +62,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { LibraryKind } from "./library/client.js";
 import type { LibraryItemRef } from "./library/item-mode.js";
-import { uiIcon } from "./ui-icons.js";
+import { type UiIconName, uiIcon } from "./ui-icons.js";
 
 export type { LibraryItemRef };
 import { HOME_MAP_PATH, isHomeMapRoute } from "./home-map/hook.js";
@@ -74,25 +80,45 @@ import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
 
-/** Home is the panel's own address, with nothing after it. */
+/** The panel's own address, with nothing after it: the sidebar's link. It
+ * shows the Devices tab, as `DEVICES_PATH` does. */
 export const HOME_PATH = "";
+/** The Devices tab (the old Home): `/devices`, then one device's page at
+ * `/devices/<owner_watch_id>` and every device at `/devices/all`
+ * (`devicePath`, `deviceRouteOf`). Its tab id stays "home". */
+export const DEVICES_PATH = "/devices";
+/** `/devices/all`: every device at once, in place of one. */
+export const DEVICES_ALL = "all";
+/** The Shared tab's landing page: what the whole home keeps once (HTTP
+ * actions, Camera framing, the Home map), each a card that opens its
+ * screen. */
+export const SHARED_PATH = "/shared";
 export const COMPLICATIONS_PATH = "/complications";
+/** One complication open in the editor: `/complications/design/<owner>/<id>`
+ * (`designPath`, `designRouteOf`). */
+export const DESIGN_SEGMENT = "design";
 /** The iPhone app's addresses all start with this. */
 export const IPHONE_PATH = "/iphone";
 
 /**
- * The tabs across the top, in the bar's order: each one's id, its name, and
- * the address it opens on. A route at that address or under it is that tab
- * (`tabOfRoute`), Home's empty address aside. A new tab is one line here,
- * then its screen in the panel's `renderTab`.
+ * The tabs across the top, in the bar's order: each one's id, its name, the
+ * address it opens on and its glyph. A route at that address or under it is
+ * that tab (`tabOfRoute`), and so is the panel's bare address (`HOME_PATH`),
+ * which is Devices. A new tab is one line here, then its screen in the
+ * panel's `renderTab`.
+ *
+ * The Devices tab keeps the id "home" it had as Home, so the panel's many
+ * "on Home" checks read the same; only its name and address changed.
+ * Shared sits apart after a hairline: it holds what no one device owns.
  */
 export const BAR_TABS = [
-  { id: "home", label: "Home", path: HOME_PATH },
-  { id: "pages", label: "Pages", path: ALL_PAGES_PATH },
-  { id: "status-pages", label: "Status pages", path: ALL_STATUS_PAGES_PATH },
-  { id: "menus", label: "Menus", path: ALL_MENUS_PATH },
-  { id: "complications", label: "Complications", path: COMPLICATIONS_PATH },
-] as const satisfies readonly { id: string; label: string; path: string }[];
+  { id: "home", label: "Devices", path: DEVICES_PATH, icon: "watch" },
+  { id: "pages", label: "Pages", path: ALL_PAGES_PATH, icon: "pages" },
+  { id: "status-pages", label: "Status pages", path: ALL_STATUS_PAGES_PATH, icon: "checklist" },
+  { id: "menus", label: "Menus", path: ALL_MENUS_PATH, icon: "radial" },
+  { id: "complications", label: "Complications", path: COMPLICATIONS_PATH, icon: "gauge" },
+  { id: "shared", label: "Shared", path: SHARED_PATH, icon: "layers" },
+] as const satisfies readonly { id: string; label: string; path: string; icon: UiIconName }[];
 
 /** A tab of the bar. */
 export type BarTab = (typeof BAR_TABS)[number]["id"];
@@ -100,6 +126,9 @@ export type BarTab = (typeof BAR_TABS)[number]["id"];
 /** Which part of the panel a route shows: a tab of the bar, or a watch's or
  * an iPhone's own screens, which have no tab. */
 export type PanelTab = BarTab | "watch" | "iphone";
+
+/** A bar tab's glyph (`uiIcon`). */
+export const TAB_ICON: Record<BarTab, UiIconName> = Object.fromEntries(BAR_TABS.map((t) => [t.id, t.icon])) as Record<BarTab, UiIconName>;
 
 export const TAB_LABEL: Record<PanelTab, string> = {
   ...(Object.fromEntries(BAR_TABS.map((t) => [t.id, t.label])) as Record<BarTab, string>),
@@ -144,8 +173,11 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
   { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
-  { id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
-  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: HOME_MAP_CAPABILITY },
+  // "Camera framing", not "Cameras": Settings has a Cameras group of its
+  // own, and this screen only sets how each picture is cut in alerts.
+  { id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
+  // One pre-release word for the Home map everywhere: BETA, read from here.
+  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: true, capability: HOME_MAP_CAPABILITY },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the
@@ -294,7 +326,7 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
   const item = libraryRouteOf(route);
   if (item !== undefined) return libraryTabOf(item);
   const path = route?.path ?? "";
-  const tab = BAR_TABS.find((t) => t.path !== HOME_PATH && (path === t.path || path.startsWith(`${t.path}/`)));
+  const tab = BAR_TABS.find((t) => path === t.path || path.startsWith(`${t.path}/`));
   return tab?.id ?? "home";
 }
 
@@ -302,7 +334,7 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
  * kept apart from the device screen of the same name: the Pages tab is
  * "all-pages", never the page editor's "pages", the Status pages tab
  * "all-status-pages" and the Menus tab "all-menus". */
-type ListScreenId = `all-${Exclude<BarTab, "home" | "complications">}`;
+type ListScreenId = `all-${Exclude<BarTab, "home" | "complications" | "shared">}`;
 
 /** The screen a route shows, as the leave question counts screens: one of
  * the Watch app's screens, Home, Complications, or a tab that lists things
@@ -312,13 +344,13 @@ type ListScreenId = `all-${Exclude<BarTab, "home" | "complications">}`;
  * names, and anything after it, is not part of it. A library item's address
  * counts as its kind's editor too, whose drafts it keeps beside the
  * devices'. */
-export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" | ListScreenId {
+export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" | "shared" | ListScreenId {
   const item = libraryRouteOf(route);
   if (item !== undefined) return LIBRARY_SEGMENTS.find((s) => s.kind === item.kind)!.screen;
   const id = watchScreenOf(route)?.id ?? iphoneScreenOf(route)?.id;
   if (id !== undefined) return id;
   const tab = barTabOf(route);
-  return tab === "home" || tab === "complications" ? tab : `all-${tab}`;
+  return tab === "home" || tab === "complications" || tab === "shared" ? tab : `all-${tab}`;
 }
 
 /** Where a click on a tab goes. The Watch app opens on Pages, on the shared
@@ -332,18 +364,113 @@ export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string 
 
 /** The tabs across the top, in order (`BAR_TABS`). Every signed in person
  * gets them all: the server lists each person only the devices they may
- * manage. The Watch app and the iPhone app have no tab of their own: a
- * device's screens open from its doors on Home, and the bar marks Home while
- * one is on show (`barTabOf`). */
+ * manage. The Watch app and the iPhone app have no tab of their own: each
+ * of their screens lights the tab it belongs to (`barTabOfScreen`). */
 export const PANEL_TABS: readonly BarTab[] = BAR_TABS.map((t) => t.id);
 
-/** The tab the bar marks for a route: a watch's or an iPhone's screens,
- * reached from Home, mark Home. A device's own Status pages
- * (`/status-pages/<id>`) or Menus (`/menus/<id>`) is one of those, never the
- * Status pages tab or the Menus tab. */
+/**
+ * The tab a watch or iPhone screen lights, so the bar always says where you
+ * are (the review found Home lit on 7 of 12 screens): a device's Pages,
+ * Status pages and Menus editors light their kind's tab, its Complications
+ * (and the retired Control Center, which moved there) light Complications,
+ * what the whole home keeps (HTTP actions, Camera framing, the Home map)
+ * lights Shared, and the device's very own screens (Settings, Rooms, Voice)
+ * light Devices, where the device's page opens them.
+ */
+export function barTabOfScreen(id: WatchScreen["id"]): BarTab {
+  switch (id) {
+    case "pages": return "pages";
+    case "status-pages": return "status-pages";
+    case "menus": return "menus";
+    case "watch-complications":
+    case "control-center": return "complications";
+    case "http-actions":
+    case "cameras":
+    case "home-map": return "shared";
+    case "rooms":
+    case "voice":
+    case "settings": return "home";
+  }
+}
+
+/** The tab the bar marks for a route: its own tab, or for a watch's or an
+ * iPhone's screen the tab that screen belongs to (`barTabOfScreen`). */
 export function barTabOf(route: PanelRoute | undefined): BarTab {
   const tab = tabOfRoute(route);
-  return tab === "watch" || tab === "iphone" ? "home" : tab;
+  if (tab !== "watch" && tab !== "iphone") return tab;
+  const screen = tab === "watch" ? watchScreenOf(route) : iphoneScreenOf(route);
+  return screen === undefined ? "home" : barTabOfScreen(screen.id);
+}
+
+// ── addresses of the redesign (2026-10-31 review, fix 4) ─────────────────
+
+/** Where one device's page is: `/devices/<owner>`, every device with
+ * "all" (`DEVICES_ALL`), or the Devices tab with no device named. */
+export function devicePath(owner?: string): string {
+  if (owner === undefined || owner === "") return DEVICES_PATH;
+  return `${DEVICES_PATH}/${owner === DEVICES_ALL ? DEVICES_ALL : encodeURIComponent(owner)}`;
+}
+
+/** What a Devices address names: one device (`{ owner }`), every device
+ * (`{ all: true }`), or nothing (the bare tab, `/devices` or the panel's
+ * own address), which is undefined. Undefined on every other tab too. A
+ * device id spelt "all" cannot be told from every device; ids are UUIDs. */
+export type DeviceRoute = { owner: string } | { all: true };
+
+export function deviceRouteOf(route: PanelRoute | undefined): DeviceRoute | undefined {
+  const path = route?.path ?? "";
+  if (!path.startsWith(`${DEVICES_PATH}/`)) return undefined;
+  const [raw] = path.slice(DEVICES_PATH.length + 1).split("/");
+  if (raw === undefined || raw === "") return undefined;
+  if (raw === DEVICES_ALL) return { all: true };
+  try {
+    return { owner: decodeURIComponent(raw) };
+  } catch {
+    return undefined;
+  }
+}
+
+/** One complication's address in the editor:
+ * `/complications/design/<owner>/<id>`. Push it when a design opens, so
+ * Back returns to the list and a reload or a shared link reopens it. */
+export function designPath(owner: string, id: string): string {
+  return `${COMPLICATIONS_PATH}/${DESIGN_SEGMENT}/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`;
+}
+
+/** The design a Complications address names, or undefined. */
+export function designRouteOf(route: PanelRoute | undefined): { owner: string; id: string } | undefined {
+  const path = route?.path ?? "";
+  const head = `${COMPLICATIONS_PATH}/${DESIGN_SEGMENT}/`;
+  if (!path.startsWith(head)) return undefined;
+  const [owner, id, ...rest] = path.slice(head.length).split("/");
+  if (owner === undefined || owner === "" || id === undefined || id === "" || rest.some((p) => p !== "")) return undefined;
+  try {
+    return { owner: decodeURIComponent(owner), id: decodeURIComponent(id) };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a route is the Shared tab's own landing page (not one of the
+ * shared screens it opens, which keep their own addresses). */
+export function isSharedRoute(route: PanelRoute | undefined): boolean {
+  const path = route?.path ?? "";
+  return path === SHARED_PATH || path === `${SHARED_PATH}/`;
+}
+
+/**
+ * An old address that now lives elsewhere, rewritten in place (no new
+ * history step) so old bookmarks keep working. Undefined: it stands.
+ *
+ *   /library, /library/   the bare library, which landed silently on Home;
+ *                         its landing page is Shared now
+ *   /devices/             the bare Devices tab with a trailing slash
+ */
+export function redirectPath(route: PanelRoute | undefined): string | undefined {
+  const path = route?.path ?? "";
+  if (path === LIBRARY_PATH || path === `${LIBRARY_PATH}/`) return SHARED_PATH;
+  if (path === `${DEVICES_PATH}/`) return DEVICES_PATH;
+  return undefined;
 }
 
 /** Every tab's sub-path, as one pattern anchored at the end of an address:
@@ -351,7 +478,7 @@ export function barTabOf(route: PanelRoute | undefined): BarTab {
  * it, so `/all-status-pages` is never read as `/all` and then
  * `/status-pages`. */
 const SUB_PATH = new RegExp(`(${[
-  ...BAR_TABS.map((t) => t.path).filter((p) => p !== HOME_PATH),
+  ...BAR_TABS.map((t) => t.path),
   LIBRARY_PATH, IPHONE_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
   WATCH_COMPLICATIONS_PATH, HOME_MAP_PATH,
@@ -456,12 +583,17 @@ export interface TabBarInput {
   /** Open the Help sheet (`help-sheet.ts`). The Help button sits at the
    * bar's right end, on every tab; without this there is none. */
   onHelp?: () => void;
-  /** Whether any watch or iPhone screen holds unsaved work: the Home tab,
-   * where those screens open from, then carries an orange dot, seen from
-   * every other tab too. The Pages, Status pages and Menus tabs carry none
-   * of their own: the edits they guard are in a device's page editor,
-   * status pages editor or menu editor, which is Home's. */
+  /** Whether any watch or iPhone screen holds unsaved work, when the panel
+   * cannot say which: the Devices tab then carries an orange dot. Prefer
+   * `unsavedTabs`. */
   watchUnsaved?: boolean;
+  /** The tabs whose screens hold unsaved work, each marked with an orange
+   * dot seen from every other tab too (`barTabOfScreen` names the tab of a
+   * device screen). */
+  unsavedTabs?: ReadonlySet<BarTab>;
+  /** The home's sync pill (`sync-pill.ts`), drawn before Help on every
+   * screen. */
+  sync?: TemplateResult | typeof nothing;
 }
 
 /** A question mark in a circle, the Help button's sign, drawn at the stroke
@@ -470,24 +602,27 @@ const HELP_ICON = html`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stro
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" />
   <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" /><path d="M12 17V17.2" /></svg>`;
 
-/** The tabs, above whatever the tab draws. Each is a real link, so a middle
- * click opens it in a new browser tab; a plain click moves in place. */
+/** The tabs, above whatever the tab draws: one segmented group with a glyph
+ * on each, Shared after a hairline, then the sync pill and Help at the
+ * right. Each tab is a real link, so a middle click opens it in a new
+ * browser tab; a plain click moves in place. */
 export function renderTabBar(input: TabBarInput): TemplateResult {
   const current = barTabOf(input.route);
   const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab), globalThis.location?.pathname ?? "");
+  const unsaved = (tab: BarTab) => input.unsavedTabs?.has(tab) === true || (tab === "home" && input.watchUnsaved === true);
   return html`<nav class="wa-tabs" aria-label="Wrist Assistant">
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
     <span class="wa-tabs-name">Wrist Assistant</span>
-    <span class="wa-tabs-list">${PANEL_TABS.map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
+    <span class="wa-tabs-list">${PANEL_TABS.map((tab) => html`${tab === "shared" ? html`<span class="wa-tabs-sep" aria-hidden="true"></span>` : nothing}<a class="wa-tab ${tab === current ? "on" : ""}"
       href=${href(tab)} aria-current=${tab === current ? "page" : "false"}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;
         e.preventDefault();
         input.onTab(tab);
-      }}>${TAB_LABEL[tab]}${tab === "home" && input.watchUnsaved === true ? unsavedDot() : nothing}</a>`)}</span>
-    ${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-label="Help" aria-haspopup="dialog"
-      @click=${input.onHelp}>${HELP_ICON}<span>Help</span></button>` : nothing}
+      }}>${uiIcon(TAB_ICON[tab])}${TAB_LABEL[tab]}${unsaved(tab) ? unsavedDot() : nothing}</a>`)}</span>
+    <span class="wa-tabs-end">${input.sync ?? nothing}${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-label="Help" aria-haspopup="dialog"
+      @click=${input.onHelp}>${HELP_ICON}<span>Help</span></button>` : nothing}</span>
   </nav>`;
 }
 
@@ -509,18 +644,28 @@ export const shellStyles = css`
     position: relative; z-index: 21;
   }
   .wa-tabs-name { font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
-  .wa-tabs-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-  a.wa-tab {
-    display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 6px;
-    font-size: 13px; font-weight: 500; color: var(--wa-muted); text-decoration: none; white-space: nowrap;
-    border: 1px solid var(--wa-line-strong); background: transparent;
+  /* One segmented group, the panel's own switch look: a field with a one
+     pixel inset outline, and the tab on screen raised in the switch's "on"
+     fill with a light rim, so it reads at a glance. */
+  .wa-tabs-list {
+    display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; padding: 2px;
+    border-radius: 8px; background: var(--wa-field, var(--wa-panel)); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
   }
+  a.wa-tab {
+    display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 6px;
+    font-size: 13px; font-weight: 500; color: var(--wa-muted); text-decoration: none; white-space: nowrap;
+    background: transparent;
+  }
+  a.wa-tab svg.ui-icon { width: 13px; height: 13px; flex: none; }
   a.wa-tab:hover { color: var(--wa-ink); background: var(--wa-hover); }
   a.wa-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   a.wa-tab.on {
-    color: var(--wa-ink); font-weight: 600;
-    background: color-mix(in srgb, var(--wa-ink) 10%, transparent);
+    color: var(--wa-ink); font-weight: 600; background: var(--wa-seg-on);
+    outline: 1px solid color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); outline-offset: -1px;
   }
+  .wa-tabs-sep { width: 1px; height: 16px; margin: 0 4px; background: var(--wa-line-strong); flex: none; }
+  /* The sync pill and Help, together at the bar's right end. */
+  .wa-tabs-end { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
   button.wa-tabs-menu {
     display: grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-left: -4px; border-radius: 6px; cursor: pointer;
     color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
@@ -530,7 +675,7 @@ export const shellStyles = css`
   button.wa-tabs-menu svg.ui-icon { width: 16px; height: 16px; }
   /* Help, neutral and outlined like a tab, pushed to the bar's right end. */
   button.wa-tabs-help {
-    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 9px; margin-left: auto; border-radius: 6px;
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 9px; border-radius: 6px;
     font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
     color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
   }
@@ -547,15 +692,16 @@ export const shellStyles = css`
     nav.wa-tabs { row-gap: 0; padding-block: 3px; }
     nav.wa-tabs > * { margin-block: 3px; }
     nav.wa-tabs::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
-    .wa-tabs-list, button.wa-tabs-help { order: 2; }
-    .wa-tabs-list { flex: 1 1 0; min-width: 0; flex-wrap: wrap; gap: 6px; }
-    button.wa-tabs-help { align-self: flex-start; }
-    a.wa-tab { flex: none; padding: 0 10px; }
+    .wa-tabs-list { order: 2; }
+    .wa-tabs-list { flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
+    a.wa-tab { flex: none; padding: 0 8px; }
+    a.wa-tab svg.ui-icon { display: none; }
+    .wa-tabs-sep { display: none; }
     button.wa-tabs-help { width: 28px; padding: 0; justify-content: center; flex: none; }
     button.wa-tabs-help > span { display: none; }
   }
   @media (max-width: 380px) {
-    a.wa-tab { padding: 0 8px; font-size: 12.5px; }
+    a.wa-tab { padding: 0 7px; font-size: 12.5px; }
   }
   /* Orange, the one hue in the tabs and the row: it says "not saved yet",
      so it never stands for the tab or the screen on show. */

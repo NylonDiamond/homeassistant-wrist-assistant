@@ -46,6 +46,7 @@ import {
   renderTemplates,
   saveCardPreview,
   saveRecord,
+  type SaveResult,
   subscribeChanges,
   subscribeDeliveries,
 } from "./ha-api.js";
@@ -145,15 +146,18 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRowSub, homeStep, homeTotals, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
+import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { HOME_PATH } from "./shell.js";
-import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
-import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
+import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, watchAppSyncKey } from "./watch-app-sync.js";
+import { type PickerForm, type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
+import { COMP_SEARCH_PLACEHOLDER, EMPTY_DESIGN_TEXT, type DesignSearchText, deleteEmptyAsk, deleteEmptyDone, designSearchText, designTextMatches, deviceStripNote, foldShelf, isEmptyDesign, queueAfterFailure, queueDeviceTick, queueOrder, shelfFoldCount, splitPickerTabs } from "./complication-cards.js";
 import { compile, elementKeys, keyFor, mergeSplitRenders, parseValueDocument, splitDocuments, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -233,15 +237,16 @@ import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, libraryModeStyles } from "./library/item-mode.js";
-import { UNDO_AFTER_TEXT, deleteLater, dismissLater, holdLater, laterHidden, laterKey, laterToast, laterWaiting, onLaterChange, sendLaterNow, undoKeyTakesDelete, undoLater } from "./delete-later.js";
+import { UNDO_AFTER_TEXT, deleteLater, dismissLater, holdLater, laterHidden, laterKey, laterToast, laterWaiting, offerUndo, onLaterChange, sayDone, sendLaterNow, undoKeyTakesDelete, undoLater } from "./delete-later.js";
 import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
-import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
-  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "./library/board.js";
-import type { LinkDevice } from "./watch-pages/devices.js";
+import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, COMPACT_PICTURE_PX, type DeviceOwnScreen,
+  SAVED_FLASH_MS, WideWatch, boardDensity, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderDensitySwitch, renderFocusBanner, renderPlainBoard, renderViewSwitch, setBoardDensity } from "./library/board.js";
+import { tickDoneText } from "./library/store.js";
+import { type LinkDevice, joinWords } from "./watch-pages/devices.js";
 import { LINEUP_OWN_TAG, type LineupGroup, type LineupLine, homeAllStyles, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
 import { renderHomeLineup } from "./home-lineup-hook.js";
 import { COMP_WHERE_HINTS, COMP_WHERE_ORDER, COMP_WHERE_TITLES, type CompListView, type CompWhere, compCell, compLeftOutText, compNoun,
-  compBoardStyles, compRowOrder, compWhere, readCompView, saveCompView } from "./complication-board.js";
+  compBoardStyles, compGreyNote, compRowOrder, compWhere, readCompView, saveCompView } from "./complication-board.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -449,12 +454,12 @@ import {
 } from "./form-styles.js";
 import { watchPagePreviewStyles } from "./watch-pages/preview.js";
 import { watchFrameStyles } from "./watch-frame.js";
-import { type PanelRoute, dropWatchPagesDrafts, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesSavesDone, watchPagesUnsent } from "./watch-pages/hook.js";
 import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, type ListOwnScreen, allPagesHookStyles, listFocusOf, listFocusPath, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
 import { ALL_MENUS_PATH, renderAllMenusView } from "./watch-menus/all-menus-hook.js";
 import { dropWatchMenusDrafts, renderWatchMenusView, watchMenusDirty } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, renderWatchVoiceView, watchVoiceDirty } from "./watch-voice/hook.js";
-import { dropWatchStatusPagesDrafts, renderWatchStatusPagesView, watchStatusPagesDirty } from "./watch-status-pages/hook.js";
+import { dropWatchStatusPagesDrafts, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesSavesDone, watchStatusPagesUnsent } from "./watch-status-pages/hook.js";
 import { dropWatchRoomsDrafts, renderWatchRoomsView, watchRoomsDirty } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import { dropWatchCamerasDrafts, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
@@ -463,10 +468,10 @@ import { homeMapOn, setHomeMapCapable } from "./home-map/store.js";
 import {
   COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceListPath, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
-  barTabOf, libraryItemPath, libraryRouteOf, panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
+  type BarTab, DEVICES_ALL, SHARED_PATH, barTabOfScreen, designPath, designRouteOf, devicePath, libraryItemPath, libraryRouteOf, panelUrl, redirectPath, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderWatchRow, rowHasScreen, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
+import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderDeviceOwnRow, renderWatchRow, rowHasScreen, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
 import { headBarStyles } from "./head-bar.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
@@ -537,6 +542,8 @@ const PUBLIC_FOLD_AT = 6;
 
 /** The widest a complication's picture on the board grows, in CSS pixels. */
 const COMP_BOARD_PICTURE_MAX = 190;
+/** How wide a Compact row's big picture of a design is, on hover. */
+const COMP_BOARD_PEEK_W = 200;
 
 /** Which kind of public name a row is: its key's prefix, or the read-only
  * group it came from. */
@@ -700,6 +707,16 @@ function compItemOrder(a: CompBoardItem, b: CompBoardItem): number {
 /** One row of the Complications board (`renderCompBoard`): the design, its
  * shape, the kind of device it stands on, its section, and its place list.
  * A locked copy (an iPhone app preset, another home's) has no places. */
+/** A record a board tick gave its first link: what its Undo needs to take that
+ * link off again, and the revision that says nothing has written to it since. */
+interface LinkedByTick {
+  ownerId: string;
+  id: string;
+  revision: number;
+  linkId: string;
+  document: Record<string, unknown>;
+}
+
 interface CompBoardItem {
   row: PickerRow;
   family: FamilyKind | undefined;
@@ -986,9 +1003,22 @@ const FOLD_STORE_MAX = 500;
 
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
 
+/** The Layers card's multi-select tip was put away: shown once, it teaches. */
+const LAYERS_TIP_STORE_KEY = "wrist-assistant-panel.layers-tip.v1";
+
+function readLayersTipSeen(): boolean {
+  try {
+    return window.localStorage.getItem(LAYERS_TIP_STORE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** The complication open in this tab, so a reload opens it again. Session
  * storage, because it is about this tab: a second tab opens on its own. */
-const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";/** How tall the slot a dragged row opens is, CSS px. */
+const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";
+
+/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 
 /** The Shared values list is never dragged shorter than about one row. */
@@ -1224,7 +1254,7 @@ export function layerListRows(
 /** The top bar's and the left column's own menus: the bar's ···, the Pages
  * card's ··· and the Layers card's ···. Kept apart from the preview bar's
  * menus, which have a close rule of their own. */
-type SideMenu = "top" | "pages";
+type SideMenu = "top" | "pages" | "device";
 
 /** The Add sheet's three tabs. */
 type AddTab = "all" | "elements" | "presets" | "parts";
@@ -1690,8 +1720,8 @@ export class WristAssistantPanel extends LitElement {
    * Status pages, Rooms and Settings edit a phone's own records. */
   @state() private phonePages = false;
   /** The integration keeps the home's map (`home-map/store.ts`), from the
-   * owners reply's capabilities: Home's "On every device" lists the Home
-   * map, and the page editor offers the Home map tile. */
+   * owners reply's capabilities: the Shared tab lists the Home map, and the
+   * page editor offers the Home map tile. */
   @state() private homeMap = false;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
@@ -1765,8 +1795,33 @@ export class WristAssistantPanel extends LitElement {
   @state() private templateFetchedAt?: number;
   @state() private forced: ForcedBranches = new Map();
   @state() private showRaw = false;
-  /** Whether the footer's Raw configuration view is open. */
+  /** Whether the Raw configuration dialog is open, from the editor's ···. */
   @state() private rawOpen = false;
+  /** The device ticks in the editor's strip waiting for Save, by device: ticked
+   * or unticked while the draft held unsaved work (`queueDeviceTick`). */
+  @state() private deviceQueue: ReadonlyMap<string, boolean> = new Map();
+  /** A queued tick failed: the queue waits for the next Save, which is offered
+   * even with nothing else to save. */
+  @state() private deviceQueueHeld = false;
+  /** Whether the one-time multi-select tip in the Layers card was put away. */
+  @state() private layersTipSeen = readLayersTipSeen();
+  /** Whether the All tab's "Not on a device" row is open. */
+  @state() private pickerShelfOpen = false;
+  /** "Delete empty…" is asking first. */
+  @state() private pickerEmptyAsk = false;
+  /** The open saved design as last seen by `syncDesignAddress`, to tell an
+   * opening from a draw that only moved the address. */
+  private designKey = "";
+  /** The list address the open design was reached from: a focused board's
+   * address is worth coming back to. */
+  private listReturn?: string;
+  /** How far down the list page was when a card opened, for the way back. */
+  private listScroll = 0;
+  private listScrollDue = false;
+  /** Each record's search text, per revision (`designSearchText`). */
+  private searchTexts = new Map<string, { revision: number; text: DesignSearchText }>();
+  /** Whether each record is empty, per revision (`isEmptyDesign`). */
+  private emptyDesigns = new Map<string, { revision: number; empty: boolean }>();
   @state() private inspect: Inspect = { kind: "general" };
   /** The inspector cards that are open. Reset to the default two (Content and
    * Look) whenever something else is selected (willUpdate). */
@@ -1806,6 +1861,11 @@ export class WristAssistantPanel extends LitElement {
   @state() private compView: CompListView = readCompView(() => window.localStorage);
   /** The board box whose write is out, as `<row key>|<owner>`. */
   @state() private compBoardBusy?: string;
+  /** The record a write last put on a device, and the one it last put on the
+   * shelf: what a board tick's Undo takes away again. */
+  private compLastPlaced?: string;
+  private compLastShelved?: string;
+  private compLastLinked?: LinkedByTick;
   /** What Home's last complication remove did, under that device's group. */
   @state() private homeCompSaid?: { ownerId: string; tone: "ok" | "warn" | "err"; text: string; undo?: () => void };
   /** "Saved" beside the head, for a moment after a box's write lands. */
@@ -2002,7 +2062,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap" | "tabs";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -2737,13 +2797,16 @@ export class WristAssistantPanel extends LitElement {
          household list. Six hues far enough apart to be told apart at the
          size of a tab glyph, each dark enough here to clear 4.5:1 on a white
          card; the dark skin sets its own lighter six, since no single value
-         can clear that bar against white and against near-black at once. */
+         can clear that bar against white and against near-black at once.
+         No red, amber or green (2026-10-31 review): those mean destructive,
+         waiting and synced, so a device ring never reads as a status.
+         Purple, mint, teal blue, slate, sky, pink violet. */
       --wa-person-1: #6d28d9;
       --wa-person-2: #0f766e;
-      --wa-person-3: #9a5b00;
-      --wa-person-4: #be123c;
+      --wa-person-3: #0e7490;
+      --wa-person-4: #475569;
       --wa-person-5: #0369a1;
-      --wa-person-6: #4d7c0f;
+      --wa-person-6: #a21caf;
       /* One hue per shape, for the box each shape's cards sit in. The same
          hue wherever that shape appears, on every device and in every list:
          the colour is the shape's, not the box's, so a household learns
@@ -2869,10 +2932,10 @@ export class WristAssistantPanel extends LitElement {
       /* The same six hues, lifted for the dark ground. */
       --wa-person-1: #a78bfa;
       --wa-person-2: #5eead4;
-      --wa-person-3: #fbbf24;
-      --wa-person-4: #fb7185;
+      --wa-person-3: #22b8cf;
+      --wa-person-4: #94a3b8;
       --wa-person-5: #38bdf8;
-      --wa-person-6: #a3e635;
+      --wa-person-6: #e879f9;
       /* The same shape hues, lifted for the dark ground. */
       --wa-shape-rectangular: #38bdf8;
       --wa-shape-circular: #5eead4;
@@ -2936,15 +2999,39 @@ export class WristAssistantPanel extends LitElement {
        half of them behind a bar nobody thinks to drag: the whole point of the
        row is that the home is visible at a glance. */
     .pk-tabs {
-      display: flex; align-items: stretch; flex-wrap: wrap; gap: 2px; flex: none;
-      padding: 0 12px; border-bottom: 1px solid var(--wa-line);
+      display: flex; align-items: stretch; flex-wrap: wrap; gap: 0 2px; flex: none;
+      padding: 0 8px; border-bottom: 1px solid var(--wa-line);
     }
+    /* A hairline between things of two kinds: the view from the preview in
+       the head, the devices from Not on a device in the tabs. */
+    .pk-vsep { width: 1px; height: 20px; flex: none; align-self: center; margin: 0 6px; background: var(--wa-line-strong); }
+    /* Not on a device is a state, not a device, so it is a chip and no tab. */
+    .pk-tab.chip {
+      align-self: center; height: 28px; box-sizing: border-box; padding: 0 11px; margin: 4px 0; gap: 6px;
+      border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-card); color: var(--wa-soft, var(--wa-ink));
+    }
+    .pk-tab.chip.on { border-color: var(--wa-ink); color: var(--wa-ink); }
+    .pk-tab.chip:focus-visible { border-radius: 999px; }
+    /* "+2 more": the devices holding nothing, a click away. */
+    .pk-more { position: relative; display: inline-flex; align-items: center; flex: none; margin: 0 2px; }
+    .pk-more-btn {
+      display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px; cursor: pointer;
+      font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted);
+      border: 1px dashed var(--wa-line-strong); border-radius: 999px; background: transparent;
+    }
+    .pk-more-btn:hover, .pk-more-btn[aria-expanded="true"] { color: var(--wa-ink); border-color: var(--wa-muted); }
+    .pk-more-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-more-btn svg { width: 11px; height: 11px; }
+    .pop-menu.pk-more-menu { top: calc(100% + 6px); left: 0; right: auto; width: max-content; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); z-index: 6; }
+    .pk-more-menu .row { display: flex; align-items: center; gap: 7px; width: 100%; }
+    .pk-more-menu .pk-tab-glyph svg { width: 14px; height: 14px; }
+    .pk-more-menu .pk-tab-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Every tab alike but for its device's color (\`--dc\`, \`device-colors.ts\`)
        on the glyph and the selected one's underline, as on the Pages tab. */
     .pk-tab {
       display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
       font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap;
-      padding: 9px 12px; border: 0; background: transparent;
+      padding: 10px 7px; border: 0; background: transparent;
       border-bottom: 2px solid transparent; margin-bottom: -1px;
     }
     .pk-tab:hover { color: var(--wa-ink); }
@@ -2978,7 +3065,9 @@ export class WristAssistantPanel extends LitElement {
       display: flex; flex-direction: column; overflow: hidden;
     }
     dialog.pk-dialog::backdrop { background: rgba(0,0,0,.6); }
-    .pk-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
+    .pk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; flex: none; padding: 10px 14px; border-bottom: 1px solid var(--wa-line); }
+    .pk-look { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+    .pk-look-lead { font-size: 12.5px; font-weight: 500; color: var(--wa-muted); }
     .pk-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 16px; font-weight: 600; }
     /* How many the home holds, beside the title: the tabs say how they are
        split up, and this says how many there are to split. */
@@ -3062,29 +3151,49 @@ export class WristAssistantPanel extends LitElement {
        saved the line but read as a spine bolted to the side of the grid. The
        caption is set small and spaced instead, so it reads as a label on the
        box rather than as one more thing competing with the cards' own names. */
-    .pk-boxes { display: flex; flex-direction: column; gap: 16px; }
-    /* A light frame round each shape, so one shape's cards do not run into
-       the next one's. On the All tab the frame takes a hue for where the
-       shape is used (\`--bx\`): orange for the watch only, blue for the
-       iPhone only, and none for both. */
-    .pk-box {
-      display: flex; flex-direction: column; min-width: 0; padding: 10px 12px 12px;
-      border: 1px solid color-mix(in srgb, var(--bx, var(--wa-ink)) 22%, transparent); border-radius: 12px;
-      background: color-mix(in srgb, var(--bx, var(--wa-ink)) 4%, transparent);
-    }
-    .pk-box[data-where="watch"] { --bx: var(--wa-hue-orange); }
-    .pk-box[data-where="phone"] { --bx: var(--wa-hue-blue); }
-    .pk-box[data-where] .pk-box-name::before { background: var(--bx, var(--wa-muted)); }
-    .pk-box[data-where] .pk-box-where { border-color: color-mix(in srgb, var(--bx, var(--wa-ink)) 40%, transparent); }
-    .pk-box[data-where] .pk-box-where-ic { color: var(--bx, var(--wa-muted)); }
-    .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 10px 2px; }
+    .pk-boxes { display: flex; flex-direction: column; gap: 18px; }
+    /* Each shape's cards under a heading, in the shape's own hue. A heading,
+       not a third box inside the page's card and around each card. */
+    .pk-box { display: flex; flex-direction: column; min-width: 0; }
+    .pk-box-top { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 0 10px 2px; }
     .pk-box-name {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 10.5px; font-weight: 500; letter-spacing: .11em; text-transform: uppercase;
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
       color: var(--wa-ink); white-space: nowrap;
     }
-    .pk-box-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--wa-muted); }
-    .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
+    .pk-box-name::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--sh, var(--wa-muted)); }
+    .pk-box-count { font-size: 11.5px; font-weight: 500; color: var(--wa-muted); }
+    /* The closed row the designs on no device fold into, after the real work. */
+    .pk-fold {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; box-sizing: border-box; margin: 14px 0 0; padding: 4px 8px 4px 4px;
+      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card);
+    }
+    .pk-fold + .pk-boxes { margin-top: 14px; }
+    .pk-sec-note.lone + .pk-fold { margin-top: 0; }
+    .pk-fold-head {
+      display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px; border: 0; border-radius: 6px;
+      font: inherit; font-size: 13px; color: var(--wa-ink); background: transparent; text-align: left;
+    }
+    button.pk-fold-head { cursor: pointer; }
+    button.pk-fold-head:hover { background: var(--wa-hover); }
+    button.pk-fold-head:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.pk-fold-head svg { width: 13px; height: 13px; color: var(--wa-muted); transform: rotate(-90deg); transition: transform .12s ease-out; }
+    button.pk-fold-head[aria-expanded="true"] svg { transform: none; }
+    .pk-fold-t { font-weight: 650; }
+    .pk-fold-m { font-size: 12.5px; color: var(--wa-muted); }
+    .pk-fold-acts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+    .pk-fold-acts svg { width: 13px; height: 13px; }
+    .pk-fold-acts button { display: inline-flex; align-items: center; gap: 5px; }
+    .pk-fold-ask { font-size: 12.5px; color: var(--wa-ink); }
+    /* An empty design: a dashed slot where a picture would be, because a grey
+       block read as a picture that failed to load. */
+    .pk-card.blank, .pk-card.blank.shelved { border-style: solid; border-color: var(--wa-line); align-self: start; }
+    .pk-card.blank .pk-card-name { font-weight: 600; color: var(--wa-soft, var(--wa-ink)); }
+    .pk-card.blank .pk-card-top { margin-bottom: 6px; }
+    .pk-card-slot {
+      display: flex; align-items: center; justify-content: center; min-height: 34px; box-sizing: border-box; padding: 4px 8px;
+      border: 1.5px dashed var(--wa-line-strong); border-radius: 6px; font-size: 11.5px; color: var(--wa-muted); text-align: center;
+    }
     .pk-box-where {
       display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; padding: 1px 7px 1px 5px; border-radius: 999px;
       font-size: 10.5px; font-weight: 500; color: var(--wa-muted); border: 1px solid var(--wa-line); white-space: nowrap;
@@ -3107,13 +3216,10 @@ export class WristAssistantPanel extends LitElement {
     .pk-sec-note { margin: 0; font-size: 12px; font-weight: 400; color: var(--wa-muted); min-width: 0; overflow-wrap: anywhere; }
     .pk-sec-note.lone { margin: 0 0 12px; }
     .pk-sec-empty { font-size: 12px; color: var(--wa-muted); }
-    .pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
-    /* Fewer columns on a narrow window: a crop of a device stops being
-       readable well before the dialog runs out of width. */
-    /* The dialog grows with the window, so a wide one takes a fifth column
-       rather than stretching four cards past the point where a crop reads. */
-    @media (min-width: 1600px) { .pk-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-    @media (max-width: 900px) { .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    /* As many columns as fit: the width this grid gets depends on Home
+       Assistant's sidebar as much as on the window, and a crop of a device
+       stops being readable under about this much. */
+    .pk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; align-items: stretch; }
     @media (max-width: 640px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     /* The Shape view is for somebody with a lot of them. A device window has
        to stay wide enough to read a watch in; a shape on its own does not, so
@@ -3330,18 +3436,10 @@ export class WristAssistantPanel extends LitElement {
     .pk-card-name:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
     /* Devices: the one control on this surface that writes anything. */
     .pk-dup { position: relative; flex: none; }
-    .pk-dup-open {
-      display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11px; font-weight: 600;
-      padding: 3px 7px; border-radius: 7px; cursor: pointer; color: var(--wa-ink);
-      border: 1px solid var(--wa-line); background: var(--wa-card);
-    }
-    .pk-dup-open:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    .pk-dup-open { cursor: pointer; color: var(--wa-ink); }
     .pk-dup-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-dup-open:disabled { opacity: .45; cursor: not-allowed; }
-    .pk-dup-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
-    .pk-dup-open svg { width: 10px; height: 10px; }
-    /* The glyph stands in for the word only where cards are small. */
-    .pk-dup-ic { display: none; }
+    .pk-card-acts button.pk-dup-open.on { background: var(--wa-sel-bg); color: var(--wa-accent); }
     /* As wide as the picture, and never thinner than its rows need: on a
        small card it runs past the card, and fitPickerDupMenu keeps it inside
        the list. */
@@ -3360,7 +3458,11 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop); font-size: 13px;
     }
     .wa-toast.err { border-color: var(--error-color, #db4437); }
+    /* The words stay in the ink: green is the tick's alone. */
+    .wa-toast.ok { color: var(--wa-ink); }
     .wa-toast > span { flex: 1; min-width: 0; }
+    .wa-toast > span.wa-toast-tick { flex: none; display: inline-flex; color: var(--wa-green); }
+    .wa-toast-tick svg { width: 14px; height: 14px; }
     .wa-toast button {
       flex: none; font: inherit; cursor: pointer; border-radius: 7px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
@@ -3419,39 +3521,27 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-dup-done:hover { filter: brightness(1.1); }
     .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* Devices, hide and delete, on the name's row at its right end. Only on
-       hover, or while the keyboard is in the card, or while a menu or a
-       confirm is open: a wall of cards with three buttons on every one of
-       them is a wall of buttons. They used to sit in the picture's corner,
-       over the very thing the card is there to show. Laid over the name's
-       tail rather than beside it, so a hidden set of buttons does not cut
-       every name in the grid short; the card's colour behind them, faded in
-       from the left, keeps the letters under them from showing through. */
+    /* Devices, hide and delete, as small icons in the picture's top-right, so
+       the name stays readable while you pick one. Only on hover, or while the
+       keyboard is in the card, or while a menu or a confirm is open: a wall of
+       cards with three buttons on every one of them is a wall of buttons. */
     .pk-card-acts {
-      position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-      display: flex; align-items: center; gap: 3px; padding-left: 18px;
-      background: linear-gradient(to right, transparent, var(--wa-card) 16px);
+      position: absolute; top: 4px; right: 4px; z-index: 2;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; padding: 2px; max-width: calc(100% - 8px); box-sizing: border-box;
+      border: 1px solid var(--wa-line-strong); border-radius: 8px;
+      background: color-mix(in srgb, var(--wa-card) 88%, transparent); backdrop-filter: blur(6px);
       opacity: 0; pointer-events: none; transition: opacity .12s ease-out;
     }
     .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts,
     .pk-card.dup-on .pk-card-acts, .pk-card-acts.asking { opacity: 1; pointer-events: auto; }
-    /* A touch screen has no hover, so there is no way to bring these out:
-       they stay, beside the name rather than over it. */
+    /* A touch screen has no hover, so there is no way to bring these out. */
     @media (hover: none) {
-      .pk-card-acts { position: static; transform: none; padding-left: 0; background: none; opacity: 1; pointer-events: auto; }
+      .pk-card-acts { opacity: 1; pointer-events: auto; }
     }
-    /* A small card (a round shape's, or any card on a phone): Devices is its
-       glyph, and the buttons lie across the name's whole row, inside the
-       card, rather than running out past its left edge. */
     .pk-grid .pk-card { container: pkcard / inline-size; }
-    @container pkcard (max-width: 230px) {
-      .pk-dup-l { display: none; }
-      .pk-dup-ic { display: inline-flex; }
-      .pk-dup-ic svg { width: 13px; height: 13px; }
-      .pk-dup-open { padding: 3px 5px; }
-      .pk-card-acts { left: 0; justify-content: flex-end; padding-left: 0; background: var(--wa-card); }
-    }
-    .pk-card-acts button.icon { width: 26px; height: 26px; background: var(--wa-card); }
+    .pk-card-acts button.icon { width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; background: transparent; }
+    .pk-card-acts button.icon:hover:not(:disabled) { background: var(--wa-hover); }
+    .pk-card-acts button.icon svg { width: 13px; height: 13px; }
     .pk-card-acts button.small { min-height: 24px; padding: 0 7px; background: var(--wa-card); }
     .pk-card .pk-note { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); margin-top: 8px; }
     .pk-card .pk-badge { flex: none; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
@@ -3492,15 +3582,7 @@ export class WristAssistantPanel extends LitElement {
       .pk-shape select { max-width: 130px; }
       .pk-foot { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; justify-content: flex-end; }
       .pk-foot-hint, .pk-foot-said { flex: 1 1 100%; }
-      /* One line of device tabs that scrolls sideways. Wrapped, a home of
-         two people took three lines of the screen before the first card. The
-         fade at the right edge says there is more along. */
-      .pk-tabs {
-        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 4px;
-        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-        mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-      }
-      .pk-tabs::-webkit-scrollbar { display: none; }
+      .pk-tabs { padding: 0 4px; }
       .pk-tab { padding: 9px 10px; }
       /* Less padding round the grid, so the two columns of cards get the
          width instead of the frame round them. */
@@ -3511,15 +3593,6 @@ export class WristAssistantPanel extends LitElement {
       /* A device with nothing on it: its heading, with its 0, is enough. */
       .pk-sec.none .pk-sec-body { display: none; }
       .pk-sec.none .pk-sec-top { margin-bottom: 0; }
-      /* A card's buttons on a line of their own under its name: a card two
-         to a row has no room for both on one. Devices at the left, hide and
-         delete at the right. */
-      .pk-card-top { flex-wrap: wrap; row-gap: 6px; }
-      .pk-card-acts {
-        position: static; transform: none; padding-left: 0; background: none; opacity: 1; pointer-events: auto;
-        flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; gap: 4px;
-      }
-      .pk-card-acts > .pk-dup { margin-right: auto; }
       .pk-card-acts button.small { font-size: 12px; padding: 0 6px; }
     }
 
@@ -3765,6 +3838,8 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column;
     }
+    /* The display above would otherwise draw a shut dialog in the page. */
+    dialog.xf:not([open]) { display: none; }
     dialog.xf::backdrop { background: rgba(0,0,0,.45); }
     /* On a phone the dialog takes the screen, less a small margin. The body
        scrolls between the head and the foot, so both stay in view. The
@@ -4318,6 +4393,53 @@ export class WristAssistantPanel extends LitElement {
     .side-pop .row small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .side-pop .row:disabled { opacity: .45; cursor: default; }
     .side-pop .row.danger { color: var(--error-color, #e5484d); }
+    /* The editor's ··· menu: an icon and a word to a row, parted into groups. */
+    .side-pop .row.mi { flex-direction: row; align-items: center; gap: 9px; }
+    .side-pop .row.mi svg { width: 13px; height: 13px; flex: none; color: var(--wa-muted); }
+    .side-pop .row.mi.danger svg { color: currentColor; }
+    .side-pop .pop-sep { height: 1px; margin: 5px 4px; background: var(--wa-line-strong); }
+    /* The one place the name is edited, then the shape, in the editor's bar. */
+    .tb-crumb { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
+    .tb-crumb-dot { color: var(--wa-muted); }
+    .tb-crumb-page { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
+    .tb-crumb .shape-seg { padding: 2px; gap: 2px; border-radius: 9px; flex-wrap: nowrap; }
+    .tb-crumb .shape-seg button.tab { height: 24px; padding: 0 10px; font-size: 12px; }
+    .tb-shape {
+      display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; flex: none;
+      border: 1px solid var(--wa-line-strong); border-radius: 999px; font-size: 12px; color: var(--wa-soft); white-space: nowrap;
+    }
+    .tb-shape-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--sh, var(--wa-muted)); }
+    /* Stacked, Save stays with Share and ··· on the second row rather than
+       taking a row of its own. */
+    header.stacked > .tb-crumb ~ button.save { order: 2; }
+    .tb-undo { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+    header .tb-undo button.cv-act { background: transparent; }
+    button.tb-btn.tb-share { display: inline-flex; align-items: center; gap: 6px; }
+    button.tb-btn.tb-share svg { width: 13px; height: 13px; }
+    /* Whether the work is saved, in words: a tick once it is. */
+    .tb-saved.ok { color: var(--wa-muted); font-weight: 500; }
+    .tb-saved.ok svg { width: 13px; height: 13px; flex: none; }
+    .tb-saved.flash { color: var(--wa-green); }
+    /* The one-time tip in the Layers card, with its way to go. */
+    .one-tip {
+      display: flex; align-items: flex-start; gap: 8px; flex: none; margin: 2px 10px 8px; padding: 8px 9px; border-radius: 8px;
+      background: var(--wa-raised); border: 1px solid var(--wa-line-strong); color: var(--wa-soft); font-size: 12px; line-height: 1.4;
+    }
+    .one-tip > svg { width: 13px; height: 13px; flex: none; margin-top: 2px; color: var(--wa-muted); }
+    .one-tip > span { flex: 1; min-width: 0; }
+    .one-tip > button { flex: none; }
+    /* The stage toolbar's words (Demo, Snap, Layers 3D) stay until the stage
+       is really too narrow for them: icons alone were guesswork. */
+    @container (max-width: 680px) {
+      .stage-tools.words .word:not(.keep) { display: inline; }
+      .stage-tools.words button.tb { padding: 0 6px; gap: 4px; font-size: 12px; }
+      .stage-tools.words button.tb.icon { padding: 0 6px; }
+      .stage-tools.words button.tb.pct { min-width: 30px; padding: 0 2px; }
+      .stage-tools.words .tb-sep { margin: 0 3px; }
+    }
+    @container (max-width: 480px) {
+      .stage-tools.words .word:not(.keep) { display: none; }
+    }
     .side-pop .row.danger.armed { background: var(--error-color, #e5484d); color: #fff; }
     .pop-sep { display: block; height: 1px; margin: 4px 2px; background: var(--wa-line); }
     .pop-label { padding: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
@@ -5209,8 +5331,8 @@ export class WristAssistantPanel extends LitElement {
     .color-mode-row > .seg.wide button { padding: 0 8px; white-space: nowrap; }
     /* The Complication card's Shape row reads like a field that cannot be typed into. */
     .field.shape-line > .readout-v {
-      padding: 4px 8px; border-radius: 6px; background: var(--wa-field); color: var(--wa-muted);
-      font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center; gap: 8px; min-height: 22px; color: var(--wa-ink);
+      font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .how-card {
       margin: 8px 0 0; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--wa-line);
@@ -5219,25 +5341,15 @@ export class WristAssistantPanel extends LitElement {
     .how-card b { color: var(--wa-ink); }
     .how-card ol { margin: 2px 0 4px; padding-left: 18px; }
     .how-card a { color: var(--wa-accent); }
-    /* Status and the raw document: one thin bar pinned across the foot of the
-       editor, the same dark as the top bar, with Raw configuration opening
-       the rest above it. The columns take whatever height it leaves. */
-    .foot {
-      flex: none; position: relative; z-index: 6; margin-top: 6px;
-      background: var(--wa-top); border-top: 1px solid var(--wa-line);
-    }
-    .foot-row { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 10px; font-size: 12px; color: var(--wa-muted); }
-    .foot-fill { flex: 1; }
-    .foot-raw {
-      flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft); cursor: pointer;
-      background: transparent; border: 0; padding: 0 4px; min-height: 20px; border-radius: 5px;
-    }
-    .foot-raw:hover, .foot[data-open="true"] .foot-raw[aria-expanded="true"] { color: var(--wa-ink); text-decoration: underline; text-underline-offset: 2px; }
-    .foot-raw:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .foot-raw:disabled { opacity: .4; cursor: default; background: transparent; color: var(--wa-muted); text-decoration: none; }
-    .foot-body { padding: 10px 12px 4px; max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--wa-line); }
-    .foot-body .hint { margin: 8px 0; }
-    .foot-body pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    /* The Raw configuration dialog, from the editor's ···. */
+    .raw-body { padding: 12px 16px 16px; overflow: auto; }
+    .raw-body .hint { margin: 8px 0; }
+    .raw-body pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    /* The editor's device strip: the question and the line about saving on
+       the first row, the checkboxes under them. */
+    .lib-on.over-stage.comp-on { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+    .lib-on.over-stage.comp-on .lib-on-n { font-weight: 500; color: var(--wa-muted); }
+    .lib-on.over-stage.comp-on .lt-ticks { flex: 1 1 100%; }
     /* The picked layers, read only: the Layers list's color coding without
        its controls, so the eye can check the pick without leaving the form. */
     .picked { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
@@ -6164,7 +6276,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, addressStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, syncPillStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, addressStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6526,8 +6638,9 @@ export class WristAssistantPanel extends LitElement {
    */
   private leaveGuard = (e: MouseEvent) => {
     // The watch screens' drafts count too, Watch settings' included: they
-    // outlive their routes.
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
+    // outlive their routes. A save on its way needs no question: this move
+    // cannot wait for it, and it carries on without the panel.
+    if (!this.draft?.dirty && !watchPagesUnsent() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesUnsent() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const path = e.composedPath();
     if (path.includes(this)) return;
@@ -6553,17 +6666,20 @@ export class WristAssistantPanel extends LitElement {
   /** The unsaved work of the screen a route shows, and how to drop it. Home
    * keeps none. A watch screen's drafts are every watch's: the watch picked
    * in the row changes the address and not the screen. */
-  private screenDraft(route: PanelRoute | undefined): { dirty: boolean; drop: () => void } | undefined {
+  private screenDraft(route: PanelRoute | undefined): { dirty: boolean; drop: () => void; saves?: Promise<unknown> | undefined } | undefined {
     switch (screenIdOf(route)) {
-      case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts };
+      // A name typed in the bar saves as the field lets go of it, so these two
+      // can be dirty only because that save has not landed yet.
+      case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts, saves: watchPagesSavesDone() };
       case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };
-      case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts };
+      case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts, saves: watchStatusPagesSavesDone() };
       case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };
       case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };
       case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };
       case "cameras": return { dirty: watchCamerasDirty(), drop: dropWatchCamerasDrafts };
       case "settings": return { dirty: anyWatchSettingsDirty(), drop: () => this.watchSettings.dropKept() };
-      case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.selectNone() };
+      // The move underway is the address's next step, so this one writes none.
+      case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.dropDesign() };
       default: return undefined;
     }
   }
@@ -6582,6 +6698,28 @@ export class WristAssistantPanel extends LitElement {
     kept.drop();
     return true;
   }
+
+  /** The save a move off a screen has to wait for: never asking about edits on
+   * their way, and asking as usual if that save fails. */
+  private saveToWaitFor(to: PanelRoute | undefined, from: PanelRoute | undefined = this.route): Promise<unknown> | undefined {
+    if (screenIdOf(from) === screenIdOf(to)) return undefined;
+    const kept = this.screenDraft(from);
+    return kept?.dirty === true ? kept.saves : undefined;
+  }
+
+  /** Make a move once `running` has ended. The newest press wins. */
+  private goToAfterSave(path: string, running: Promise<unknown>) {
+    const waiting = this.moveAfterSave !== undefined;
+    this.moveAfterSave = path;
+    if (waiting) return;
+    const go = () => {
+      const to = this.moveAfterSave;
+      this.moveAfterSave = undefined;
+      if (to !== undefined && this.isConnected) this.goTo(to);
+    };
+    void running.then(go, go);
+  }
+  private moveAfterSave?: string;
 
   /** One-second re-render while any preview shows a live countdown, so the
    * remaining time ticks like it does on the watch. Cleared as soon as no
@@ -6617,14 +6755,32 @@ export class WristAssistantPanel extends LitElement {
       const to = landingPath(this.route, { shareLink: this.pendingLink !== undefined });
       if (to !== undefined) this.goTo(to, true);
       else if (!reopensDesign(this.route)) this.restoreOpen = undefined;
+      // A design's own address opens that design, whatever this tab last had.
+      const named = designRouteOf(this.route);
+      if (named !== undefined) this.restoreOpen = named;
+    }
+    // An old address that moved (`redirectPath`): rewritten in place, so an
+    // old bookmark lands on the new screen and Back never bounces off it.
+    if (changed.has("route")) {
+      const moved = redirectPath(this.route);
+      if (moved !== undefined) this.goTo(moved, true);
     }
     // A move the panel did not make itself (the browser's Back, a link from
     // inside an editor): `goTo` has already asked for its own. A no puts the
     // address back where it was.
     if (changed.has("route") && changed.get("route") !== undefined) {
       const from = changed.get("route") as PanelRoute;
-      if (!this.leaveScreenFor(this.route, from)) this.route = navigatePanel(this.route, from.path, true) ?? from;
+      const running = this.saveToWaitFor(this.route, from);
+      if (running !== undefined && this.route !== undefined) {
+        const to = this.route.path;
+        this.route = navigatePanel(this.route, from.path, true) ?? from;
+        this.goToAfterSave(to, running);
+      } else if (!this.leaveScreenFor(this.route, from)) {
+        this.route = navigatePanel(this.route, from.path, true) ?? from;
+      }
     }
+    this.syncDesignAddress(changed);
+    if (changed.has("rawOpen") && this.rawOpen && !this.draft) this.rawOpen = false;
     // The list page coming into view or going, and the Browse dialog, which
     // only ever stands over an open design on the Complications tab: gone
     // from under it by another route, it is shut in state too, since the
@@ -6690,6 +6846,9 @@ export class WristAssistantPanel extends LitElement {
       const phone = adoptRouteWatch(this.phonePick, iphoneRouteOwner(this.route), this.rowPhones);
       if (phone !== undefined && phone !== this.phonePick) this.rememberPhone(phone);
     }
+    // The Devices tab follows its address, Back and a reload included, and
+    // the address names what it shows, once the device list is in.
+    if ((changed.has("route") || changed.has("owners")) && listed) this.settleHomeAddress();
     if (changed.has("route") && tabOfRoute(this.route) === "home" && changed.get("route") !== undefined
       && tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home" && this.owners.length > 0) {
       void this.loadOtherLists();
@@ -6699,7 +6858,8 @@ export class WristAssistantPanel extends LitElement {
     // still to collect: read once the devices are known, and again whenever
     // the watches themselves change. A device's screens sit under Home and
     // their row's chip gives the same verdict, so they read it too.
-    if (changed.has("owners") && barTabOf(this.route) === "home") void this.loadWatchAppSync(false);
+    // The top bar's sync pill gives the same verdict on every screen.
+    if (changed.has("owners")) void this.loadWatchAppSync(false);
     if (changed.has("faceHover")) {
       if (this.faceHover) {
         window.clearTimeout(this.listFaceTimer);
@@ -6834,6 +6994,21 @@ export class WristAssistantPanel extends LitElement {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.del-dialog");
       if (dialog && !dialog.open) dialog.showModal();
     }
+    if (changed.has("rawOpen") && this.rawOpen) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.raw-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    }
+    // Back on the list: where it was left, tab, filter and scroll.
+    if (this.listScrollDue) {
+      const page = this.renderRoot.querySelector<HTMLElement>(".cl-page");
+      if (page) {
+        this.listScrollDue = false;
+        page.scrollTop = this.listScroll;
+      }
+    }
+    // A draft back to clean with ticks still held (Undo to where it was): there
+    // is no Save left to wait for.
+    this.flushDeviceQueue();
     // A push that lands inside the demo's refetch window is the fetch the tap
     // asked for, so the frozen picture is retaken. Outside the window nothing
     // is taken, and the comparison below still re-renders the same face.
@@ -7346,17 +7521,26 @@ export class WristAssistantPanel extends LitElement {
       } else if (this.draft && this.selectedId && this.draft.baseRevision !== null) {
         // Deleted under us. Keep an unsaved draft; drop a clean one.
         if (this.draft.dirty) this.remoteRevision = -1;
-        else this.selectNone();
+        else {
+          this.complicationsSurfacesGone();
+          this.selectNone();
+        }
       } else if (!this.draft) {
         // A reload opens what was open before it. Nothing open leaves the
-        // stage's pick-one card: the picker never opens unasked.
+        // stage's pick-one card: the picker never opens unasked. Nor does a
+        // design waiting on its delete toast come back.
         const restore = this.restoreOpen;
         this.restoreOpen = undefined;
-        const record = restore?.owner === this.ownerId
+        const record = restore?.owner === this.ownerId && !laterHidden().has(laterKey("complications", restore.id, restore.owner))
           ? this.records.find((r) => r.id === restore.id)
           : undefined;
         if (record) this.openRecord(record);
-        else this.selectNone();
+        else {
+          this.dropDesign();
+          // Its address named a design this home does not have (any more).
+          const named = designRouteOf(this.route);
+          if (restore !== undefined && named?.owner === restore.owner && named.id === restore.id) this.designGone();
+        }
       }
     } catch (err) {
       if (this.ownerId === ownerId && run === this.recordsLoadRun) this.loadError = `Could not load complications: ${errText(err)}`;
@@ -7414,11 +7598,112 @@ export class WristAssistantPanel extends LitElement {
    * on load and after a delete, so a reload silently put a complication on
    * screen nobody had asked for. Now the stage says how to pick one. */
   private selectNone() {
+    this.dropDesign();
+    this.leaveDesignAddress();
+  }
+
+  /** Nothing open, and the address left to whoever is moving it. */
+  private dropDesign() {
     this.selectedId = undefined;
     this.clearDraft();
   }
 
+  /** The open design is gone, so a design's address has nothing to show: back
+   * to the list it was reached from. */
+  private leaveDesignAddress() {
+    if (designRouteOf(this.route) === undefined) return;
+    const back = this.listReturn ?? COMPLICATIONS_PATH;
+    this.listReturn = undefined;
+    this.goTo(back);
+  }
+
+  /**
+   * One open design, one address (`designAddressStep`). Called on every draw,
+   * before the list page is told whether it is showing.
+   */
+  private syncDesignAddress(changed: PropertyValues) {
+    const d = this.draft;
+    const unsaved = d?.baseRevision === null;
+    const open = !unsaved && this.ownerId !== undefined && this.selectedId !== undefined
+      ? { owner: this.ownerId, id: this.selectedId }
+      : undefined;
+    const key = unsaved ? "new" : open === undefined ? "" : `${open.owner}|${open.id}`;
+    const opened = key !== "" && key !== this.designKey;
+    this.designKey = key;
+    const previous = changed.has("route") ? changed.get("route") as PanelRoute | undefined : undefined;
+    const step = designAddressStep({ route: this.route, previous, open, unsaved, opened });
+    if (step.kind === "write") {
+      if (!step.replace) this.listReturn = designRouteOf(this.route) === undefined ? this.route?.path : this.listReturn;
+      this.goTo(step.path, step.replace);
+    } else if (step.kind === "open") {
+      void this.openDesignAddress({ owner: step.owner, id: step.id });
+    } else if (step.kind === "close") {
+      void this.closeFromAddress(previous);
+    }
+  }
+
+  /** Back or a link named a design: open it, after the usual question when the
+   * editor holds unsaved work. A no puts the address back. */
+  private async openDesignAddress(want: { owner: string; id: string }) {
+    const saved = this.draft?.baseRevision !== null && this.ownerId !== undefined && this.selectedId !== undefined;
+    const keep = saved ? designPath(this.ownerId!, this.selectedId!) : COMPLICATIONS_PATH;
+    // Spoken for, so a list reply landing first opens it rather than closing
+    // an editor it thinks has nothing to do.
+    this.restoreOpen = want;
+    await this.draftSave;
+    if (want.owner !== this.ownerId) {
+      if (!this.linkReady) return;
+      if (this.ownerOf(want.owner) === undefined) {
+        this.restoreOpen = undefined;
+        this.designGone();
+        return;
+      }
+      await this.selectOwner(want.owner);
+      if (this.ownerId !== want.owner) {
+        this.restoreOpen = undefined;
+        this.goTo(keep, true);
+      } else {
+        this.complicationsSurfacesGone();
+      }
+      return;
+    }
+    if (this.ownerBusy) return;
+    this.restoreOpen = undefined;
+    const record = this.records.find((r) => r.id === want.id);
+    // A record waiting on the delete toast is gone from every list, and it has
+    // no way back into the editor while that delete is still armed.
+    if (record === undefined || laterHidden().has(laterKey("complications", want.id, want.owner))) {
+      this.designGone();
+      return;
+    }
+    this.selectRecord(record);
+    if (this.selectedId !== want.id) this.goTo(keep, true);
+    else this.complicationsSurfacesGone();
+  }
+
+  /** Back from a design to the list: closes it, after the usual question. A no
+   * puts the design's address back. */
+  private async closeFromAddress(previous: PanelRoute | undefined) {
+    await this.draftSave;
+    if (this.draft?.dirty && !this.confirmDiscard()) {
+      if (previous !== undefined) this.goTo(previous.path, true);
+      return;
+    }
+    // Back brings no press, so nothing that stood over the design has shut.
+    this.complicationsSurfacesGone();
+    this.listReturn = undefined;
+    this.dropDesign();
+  }
+
+  /** A design's address that names nothing here any more: the list, and why. */
+  private designGone() {
+    this.linkNote = "That complication is not here any more.";
+    this.goTo(COMPLICATIONS_PATH, true);
+  }
+
   private clearDraft() {
+    if (this.deviceQueue.size > 0) this.deviceQueue = new Map();
+    this.deviceQueueHeld = false;
     // A different document starts on its first page, with nothing playing: the
     // page is a reading of the document on screen, not a setting of the panel.
     this.stopTour();
@@ -8514,7 +8799,48 @@ export class WristAssistantPanel extends LitElement {
     } finally {
       if (this.draftSave === run) this.draftSave = undefined;
     }
+    this.deviceQueueHeld = false;
+    this.flushDeviceQueue();
   }
+
+  /**
+   * The device ticks that waited for Save, once the draft is clean: each goes
+   * through the same write a tick on a clean draft makes, one at a time, since
+   * each reads the lists again first. The first failure stops the run: that
+   * tick and the rest stay queued under the words it put up, and wait for the
+   * next Save (`deviceQueueHeld`) rather than the next draw.
+   */
+  private flushDeviceQueue() {
+    if (this.deviceQueue.size === 0 || this.queueRunning || this.deviceQueueHeld) return;
+    if (!this.draft || this.draft.dirty || this.saving || this.draftSave) return;
+    const todo = queueOrder(this.deviceQueue);
+    this.deviceQueue = new Map();
+    this.queueRunning = true;
+    void (async () => {
+      try {
+        for (const [i, [ownerId, on]] of todo.entries()) {
+          const cfg = this.draft?.config;
+          const row = this.openRow();
+          if (!cfg || !row) return;
+          const place = this.rowPlaces(row, supportedFamilies(cfg)[0]).find((p) => p.owner.ownerId === ownerId);
+          if (!place || place.on === on) continue;
+          const said = this.copyStatus;
+          if (on) await this.addRowTo(row, place.owner, true);
+          else await this.removeRowFrom(row, place, true, true);
+          // A failed removal has only `copyStatus` to say so. A move to another
+          // copy clears those words, which is no failure.
+          if (this.saveError !== undefined || (this.copyStatus !== undefined && this.copyStatus !== said)) {
+            this.deviceQueue = queueAfterFailure(todo, i);
+            this.deviceQueueHeld = true;
+            return;
+          }
+        }
+      } finally {
+        this.queueRunning = false;
+      }
+    })();
+  }
+  private queueRunning = false;
 
   private async saveDraft(asNew: boolean) {
     if (!this.draft || !this.ownerId || !this.canEdit || this.saving) return;
@@ -8651,10 +8977,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private deleteRecordsLater(text: string, records: readonly { ownerId: string; id: string; revision: number }[]) {
     if (records.length === 0) return;
-    if (records.some((r) => r.ownerId === this.ownerId && r.id === this.selectedId)) {
-      this.clearDraft();
-      this.selectedId = undefined;
-    }
+    if (records.some((r) => r.ownerId === this.ownerId && r.id === this.selectedId)) this.selectNone();
     this.confirmDelete = false;
     this.pickerConfirmDelete = undefined;
     deleteLater({
@@ -9175,12 +9498,11 @@ export class WristAssistantPanel extends LitElement {
       ? html`<i class="tint-dot" style=${`--sw:${tint.current.hex}`}></i>`
       : html`<i class="tint-dot ${tint.lockWhite ? "" : "full"}" style=${tint.lockWhite ? "--sw:#FFFFFF" : nothing}></i>`;
     const pickTint = (hex: string | undefined) => { this.toggleMenu("case", false); this.previewTint = hex; };
-    return html`<div class="stage-tools" role="toolbar" aria-label="Canvas tools">
+    return html`<div class="stage-tools words" role="toolbar" aria-label="Canvas tools">
       ${drawable ? html`
         <button class="tb" ?disabled=${off}
           title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
-          @click=${() => this.openDemo()}>${glyph(svg`<path d="M3 1.8L11 6.5L3 11.2Z" />`, true)}<span class="word">Demo</span></button>
-        ${sep}` : nothing}
+          @click=${() => this.openDemo()}>${glyph(svg`<path d="M3 1.8L11 6.5L3 11.2Z" />`, true)}<span class="word">Demo</span></button>` : nothing}
       <span class="case-tool preview-tool" data-menu="case">
         <button class="tb ${tint.on !== undefined ? "lit" : ""}" aria-haspopup="menu" aria-expanded=${caseOpen ? "true" : "false"}
           aria-label=${drawable ? `Preview as ${deviceCase.label}, ${tintWord.toLowerCase()}` : `Preview as ${deviceCase.label}`}
@@ -9201,7 +9523,10 @@ export class WristAssistantPanel extends LitElement {
               @click=${() => pickTint(c.hex)}><i class="tint-dot" style=${`--sw:${c.hex}`}></i>${c.label} ${tint.word}</button>`)}` : nothing}
         </div>` : nothing}
       </span>
-      ${drawable ? html`${sep}${this.renderSnapMenu()}
+      ${drawable ? html`${this.renderSnapMenu()}
+      <button class="tb" ?disabled=${off}
+        title="Layers in 3D: the face taken apart, every layer on its own sheet floating over the one under it. Drag to turn it."
+        @click=${() => this.openStack()}><svg class="tb-glyph" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5 12.5 4.25 7 7 1.5 4.25Z" /><path d="M1.5 7 7 9.75 12.5 7" /><path d="M1.5 9.75 7 12.5 12.5 9.75" /></svg><span class="word">Layers 3D</span></button>
       ${sep}${this.renderZoomTools()}` : nothing}
     </div>`;
   }
@@ -9373,10 +9698,6 @@ export class WristAssistantPanel extends LitElement {
     const z = this.canvasZoom;
     const off = !this.draft || this.parseError !== undefined;
     return html`<span class="tb-zoom" role="group" aria-label="Zoom">
-      <button class="tb icon" ?disabled=${off} aria-label="Layers in 3D"
-        title="Layers in 3D: the face taken apart, every layer on its own sheet floating over the one under it. Drag to turn it."
-        @click=${() => this.openStack()}><svg class="tb-glyph" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5 12.5 4.25 7 7 1.5 4.25Z" /><path d="M1.5 7 7 9.75 12.5 7" /><path d="M1.5 9.75 7 12.5 12.5 9.75" /></svg></button>
-      <span class="tb-sep" aria-hidden="true"></span>
       <button class="tb icon" ?disabled=${off || z <= ZOOM_MIN} aria-label="Zoom out" title="Zoom out"
         @click=${() => { this.canvasZoom = zoomOut(this.canvasZoom); }}>−</button>
       <button class="tb pct" ?disabled=${off} aria-label=${`Zoom ${zoomLabel(z)}. Back to Fit`}
@@ -9384,7 +9705,6 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.canvasZoom = ZOOM_FIT; }}>${zoomLabel(z)}</button>
       <button class="tb icon" ?disabled=${off || z >= ZOOM_MAX} aria-label="Zoom in" title="Zoom in"
         @click=${() => { this.canvasZoom = zoomIn(this.canvasZoom); }}>+</button>
-      <span class="tb-sep" aria-hidden="true"></span>
       <button class="tb icon" ?disabled=${off} aria-label="Full screen"
         title="Full screen: the face as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
         @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>
@@ -10075,21 +10395,22 @@ export class WristAssistantPanel extends LitElement {
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Nothing saves by itself.`],
       [UNASSIGNED_LABEL, `A new design starts under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you tick a device in the strip over the preview.`],
-      ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. After a save it also says whether the watch has it. The footer says whether there are unsaved changes."],
+      ["Saved", "Beside Save, in words: Unsaved changes in amber, Saved with a tick, or Not saved yet. Rest on Saved to see when it was and who by."],
       ["Reaching the watch", "Open Wrist Assistant on the watch and it pulls every save by itself. There is no separate send step."],
       ["On the face", onTheFaceStep(undefined)],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
-      ["Synced", "Green. Every watch and iPhone in this home has applied every change."],
-      ["Waiting: Watch, iPhone", "Amber. The devices named have not applied the latest changes yet. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu beside it on the Complications tab, tries to wake the open device. Home lists every device on its own."],
+      ["Synced", "The pill at the top of every screen, green. Every watch and iPhone that is awake has applied every change."],
+      ["Waiting", "The same pill, amber, with how many. Press it to see each device and what it waits for. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu on the Complications tab, tries to wake the open device."],
+      ["Asleep", "Grey in that list: a device not seen for a week or more. Its changes wait safely and it catches up when it next connects, so it does not count as waiting."],
     ];
     const sharing: [string, string][] = [
       ["Share", "In the bar over an open complication, on the Complications tab. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
-      ["Import", "Beside New complication, on the Complications tab: at the top of the list, and in the bar over an open complication. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
-      ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore saves it again as the newest version, so the design you restored over joins the list and you can come straight back and undo it."],
+      ["Import", "On the Complications tab: at the top of the list, and in the ··· menu over an open complication. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["History", "In the ··· menu over an open complication. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore saves it again as the newest version, so the design you restored over joins the list and you can come straight back and undo it."],
       ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; the Saved parts tab of + Add, in the Layers card, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
@@ -11060,22 +11381,44 @@ export class WristAssistantPanel extends LitElement {
       onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
       onTab: (tab) => this.openTab(tab),
       onHelp: () => this.openHelpSheet(),
-      watchUnsaved: this.unsavedNow.length > 0,
+      unsavedTabs: new Set<BarTab>(this.unsavedNow.map((s) => barTabOfScreen(s.id))),
+      sync: this.renderGlobalSync(),
     });
     return html`${bar}${this.renderTab()}${this.helpSheetOpen ? this.renderHelpSheet() : nothing}${this.renderDeleteToast()}`;
   }
 
-  /** The toast of a delete with Undo (`delete-later.ts`), at the foot of
-   * every screen: what was deleted and Undo while it waits, or why it
-   * failed, with a close button. A pointer over it holds the wait. */
+  /** The top bar's sync pill, on every screen (`sync-pill.ts`): every device,
+   * in Home's order by person, each row a link to that device's page. */
+  private renderGlobalSync() {
+    const groups = homeGroups(this.people(), homeDeviceRows(this.homeDevices(), this.watchAppSyncs));
+    const persons = new Map(groups.flatMap((g) => g.rows.map((r) => [r.id, g.person?.label] as const)));
+    const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
+    return renderSyncPill({
+      devices: syncPillDevices(groups.flatMap((g) => g.rows), (id) => this.ownerOf(id), elapsed, {
+        personOf: (id) => persons.get(id),
+        colorOf: (id) => this.deviceColorOf(id),
+      }),
+      deviceHref: (id) => panelUrl(this.route, devicePath(id), globalThis.location?.pathname ?? ""),
+      onOpenDevice: (id) => {
+        this.openHomeDevice(id);
+        this.goTo(devicePath(id));
+      },
+    });
+  }
+
+  /** The toast of a delete with Undo, or of a write that saved at once
+   * (`delete-later.ts`), at the foot of every screen: what happened and Undo
+   * while it can still be taken back, or why it failed, with a close button.
+   * A pointer over it holds the wait. */
   private renderDeleteToast() {
     const toast = laterToast();
     if (toast === undefined) return nothing;
     return html`<div class="wa-toast ${toast.tone}" role=${toast.tone === "err" ? "alert" : "status"}
       @pointerenter=${() => holdLater(true)} @pointerleave=${() => holdLater(false)}>
-      <span>${toast.text}</span>
+      ${toast.done === true ? html`<span class="wa-toast-tick" aria-hidden="true">${uiIcon("check")}</span>` : nothing}<span>${toast.text}</span>
       ${toast.undo
         ? html`<button type="button" class="wa-toast-undo" title=${`Undo (${KEY_MOD}Z)`} @click=${() => undoLater()}>Undo</button>`
+        : toast.busy === true ? nothing
         : html`<button type="button" class="wa-toast-close" aria-label="Close" @click=${() => dismissLater()}>${uiIcon("close")}</button>`}
     </div>`;
   }
@@ -11145,6 +11488,8 @@ export class WristAssistantPanel extends LitElement {
   private showAllComplications() {
     this.setTabMemory(pickTab(this.tabMemory, ALL_DEVICES));
     this.pickerFilter = "all";
+    this.listReturn = undefined;
+    this.listScroll = 0;
     const d = this.draft;
     if (d !== undefined && !d.dirty && d.baseRevision !== null) void this.closeToList();
   }
@@ -11314,7 +11659,8 @@ export class WristAssistantPanel extends LitElement {
       onPick: (deviceId) => this.pickRowDevice(deviceId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       syncs: this.rowSyncs(),
-      onHome: () => this.backToHome(watchScreenOf(this.route)?.shared === true ? undefined : this.sharedWatch),
+      asleep: this.rowAsleep(),
+      onHome: () => (watchScreenOf(this.route)?.shared === true ? this.goTo(SHARED_PATH) : this.backToHome(this.sharedWatch)),
       unsaved: this.unsavedNow,
       people: this.people(),
       end: html`${settings}${this.watchBarHost}`,
@@ -11341,6 +11687,7 @@ export class WristAssistantPanel extends LitElement {
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       onPair: () => this.openPairDialog(),
       syncs: this.rowSyncs(),
+      asleep: this.rowAsleep(),
       onHome: () => this.backToHome(this.sharedPhone),
       people: this.people(),
       end: html`${settings}${this.watchBarHost}`,
@@ -11466,7 +11813,16 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private goTo(path: string, replace = false) {
-    if (!replace && !this.leaveScreenFor({ prefix: this.route?.prefix ?? "", path })) return;
+    if (!replace) {
+      const to = { prefix: this.route?.prefix ?? "", path };
+      const running = this.saveToWaitFor(to);
+      if (running !== undefined) {
+        this.goToAfterSave(path, running);
+        return;
+      }
+      this.moveAfterSave = undefined;
+      if (!this.leaveScreenFor(to)) return;
+    }
     const next = navigatePanel(this.route, path, replace);
     if (next) this.route = next;
   }
@@ -11580,7 +11936,7 @@ export class WristAssistantPanel extends LitElement {
         // it. Only the entry may read import.meta.
         bundleUrl: import.meta.url,
         capable: this.homeMap,
-        onHome: () => this.backToHome(undefined),
+        onHome: () => this.goTo(SHARED_PATH),
         onOpenPage: (pageId: string) => this.goTo(libraryItemPath("pages", pageId)),
         onLoaded: () => this.requestUpdate(),
       });
@@ -11616,6 +11972,16 @@ export class WristAssistantPanel extends LitElement {
     if (item !== undefined) return this.renderLibraryItem(item);
     const tab = tabOfRoute(this.route);
     if (tab === "home") return this.renderHome();
+    // The Shared tab's landing page: a card for each thing the whole home
+    // keeps. The screens it opens sit under the shared row, as before.
+    if (tab === "shared") {
+      return renderSharedTabView({
+        hass: this.hass, owners: this.owners,
+        hrefOf: (path) => panelUrl(this.route, path, globalThis.location?.pathname ?? ""),
+        onOpen: (path) => this.goTo(path),
+        onLoaded: () => this.requestUpdate(),
+      });
+    }
     // The iPhone app: its row, then the screen on the shared iPhone.
     if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());
     // The Pages tab, on `/all-pages`, and the Status pages tab, on
@@ -11657,6 +12023,8 @@ export class WristAssistantPanel extends LitElement {
     // follows it.
     const screen = watchScreenOf(this.route);
     if (screen !== undefined) return this.withWatchRow(this.renderWatchScreen(screen.id, this.sharedWatch));
+    // Worked out again on this draw: the bar and the stage share the one reading.
+    this.frameLayout = undefined;
     const d = this.draft;
     // A complication that was never saved is work to save as it stands: its
     // baseline is the config it was made from, so nothing else says so.
@@ -11707,19 +12075,9 @@ export class WristAssistantPanel extends LitElement {
             <div class="column inspector card ${this.slotViaValueOnly() ? "slot-via-value" : ""}">${this.renderInspector()}</div>
           </div>`
         : this.renderWatchGate()}
-      ${this.watchSupported ? this.renderFooter() : nothing}`;
+      ${this.rawOpen ? this.renderRawDialog() : nothing}`;
   }
 
-  /**
-   * The top bar, left to right: Browse, New, Import and Share together at the
-   * left, then where the complication has got to, the ··· menu, Save and the
-   * help at the right.
-   *
-   * Save is always there. It used to turn into the word "Saved", which read as
-   * a label rather than a button and moved everything to its right each time it
-   * changed. It is dimmed now while there is nothing to save, and the caption
-   * beside it says when the last save was.
-   */
   /** Share, or Update share once a design in the gallery has changed since
    * its last send. */
   private renderShareButton() {
@@ -11728,18 +12086,27 @@ export class WristAssistantPanel extends LitElement {
       title=${changed
         ? "Changed since you posted it to the online gallery. Send the new version from Share"
         : "Share or back up this complication as text, a file or a link"}
-      @click=${() => this.openShareDialog()}>${changed ? "Update share" : "Share"}</button>`;
+      @click=${() => this.openShareDialog()}>${uiIcon("share")}<span>${changed ? "Update share" : "Share"}</span></button>`;
   }
 
+  /**
+   * The editor's bar, left to right: the way back to the list, what is open
+   * (name and shape), then Undo and Redo, the save status in words, Save (the
+   * one filled button on the screen), Share, and ··· for everything else.
+   */
+
   private renderTopBar(stacked: boolean, dirty: boolean) {
+    // The list page has its own head: this bar is the editor's alone.
+    const open = this.designOpen;
+    if (!open) return nothing;
     const d = this.draft;
     const rec = this.records.find((r) => r.id === this.selectedId);
     // Work that cannot be written says why on the button, the line beside it
     // saying the same, rather than a live Save that only answers with an error.
     const refusal = d && dirty ? saveRefusal(d.config, this.layerNamer()) : undefined;
-    // The one place that says whether the work is saved: when and by whom,
-    // "Unsaved changes", or an error. The footer used to say it too, and the
-    // two read as three statuses beside the sync pill.
+    // The one place that says whether the work is saved, in words: amber
+    // "Unsaved changes", "Saved" with a tick, or an error. When and by whom a
+    // save was is its tooltip.
     const status = d ? footerStatus({
       revision: rec?.revision ?? null,
       dirty,
@@ -11750,41 +12117,76 @@ export class WristAssistantPanel extends LitElement {
       ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
     }) : undefined;
     const raw = errTitle(this.saveError);
-    // Home Assistant's menu button is the tab bar's, above this one. The
-    // watch screens and Watch settings are reached from Home and the Watch
-    // app tab, so this bar holds only what is about complications.
-    // With nothing open the page under it is the list, with its own New and
-    // Import, so the bar keeps the sync pill, the ··· menu and the help. With
-    // a design open it leads with the way back to that list, then Browse,
-    // which opens the same list over the editor.
-    const open = this.designOpen;
-    const barClass = [stacked ? "stacked" : "", open ? "" : "bar-list"].filter((c) => c !== "").join(" ");
-    return html`<header class=${barClass === "" ? nothing : barClass}>
-      ${open ? this.renderBackToList() : nothing}
-      ${open ? this.renderPicker() : nothing}
-      ${open ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
-      ${open ? this.renderNewButton() : nothing}
-      ${open ? this.renderImportButton() : nothing}
-      ${d ? this.renderShareButton() : nothing}
+    return html`<header class=${stacked ? "stacked" : nothing}>
+      ${this.renderBackToList()}
+      ${this.pickerOpen ? this.renderPickerDialog() : nothing}
+      <span class="tb-div" aria-hidden="true"></span>
+      ${d ? this.renderCrumb(d.config) : nothing}
       <span class="spacer"></span>
-      ${this.renderSendPill()}
-      ${this.renderTopMenu()}
-      ${d ? html`${status && status.tone !== "ok" ? html`<span class="tb-saved ${status.tone}" role="status"
-          title=${status.title ?? (raw !== undefined && status.tone === "err" ? raw : status.text)}>${status.tone === "warn" || status.tone === "err"
-            ? html`<i class="tb-saved-dot" aria-hidden="true"></i>` : nothing}<span class="tb-saved-l">${status.text}</span></span>` : nothing}
-        <button class="primary save ${dirty ? "dirty" : ""} ${this.savedFlash && !dirty ? "flash" : ""}" @click=${() => void this.save()}
-          ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
-          title=${refusal !== undefined ? refusal : dirty ? `Save (${KEY_MOD}S)` : `Nothing to save. ${status?.text ?? ""}`.trim()}>${this.saving
-            ? "Saving…" : this.savedFlash && !dirty ? html`<span aria-hidden="true">✓</span> Saved` : "Save"}</button>
+      ${d ? html`${this.renderBarUndo(d)}
+        ${status ? html`<span class="tb-saved ${status.tone} ${this.savedFlash && !dirty ? "flash" : ""}" role="status"
+          title=${status.tone === "ok" ? `${status.text}. ${status.title ?? ""}`.trim() : status.title ?? (raw !== undefined && status.tone === "err" ? raw : status.text)}>${status.tone === "ok"
+            ? html`${uiIcon("check")}<span class="tb-saved-l">Saved</span>`
+            : html`${status.tone === "warn" || status.tone === "err" ? html`<i class="tb-saved-dot" aria-hidden="true"></i>` : nothing}<span class="tb-saved-l">${status.text}</span>`}</span>` : nothing}
+        <button class="primary save ${dirty || this.deviceQueueHeld ? "dirty" : ""}" @click=${() => void this.save()}
+          ?disabled=${!this.canEdit || (!dirty && !this.deviceQueueHeld) || this.saving || !this.slotChosen || refusal !== undefined}
+          title=${refusal !== undefined ? refusal : dirty ? `Save (${KEY_MOD}S)` : this.deviceQueueHeld ? `Try the device changes again (${KEY_MOD}S)` : `Nothing to save. ${status?.text ?? ""}`.trim()}>${this.saving ? "Saving…" : "Save"}</button>
+        ${this.renderShareButton()}
         ${this.renderAfterSave()}` : nothing}
-      <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
+      ${this.renderTopMenu()}
     </header>`;
   }
 
   /**
-   * The complication's name, typed over where it stands at the head of the
-   * canvas. It commits on Enter or on leaving the box, through the same write
-   * the Complication card's Name field makes, so the two stay one setting and
+   * What the bar is about: the name, the one place it is edited, then the
+   * shape. A document that still holds a shape and a Control Center control
+   * keeps its switch here, in place of the shape's name, and a shape with
+   * something to warn about says so after it.
+   */
+  private renderCrumb(cfg: CustomComplicationConfig) {
+    const shown = this.canvasConfig() ?? cfg;
+    const f = supportedFamilies(shown)[0];
+    const seg = this.hasControlTab(shown);
+    const paged = usesPages(shown) && !this.inControlView;
+    const pagePart = paged ? `page ${this.shownPage()} of ${pagesSpecOf(shown).count}` : "";
+    const layouts = seg || f !== undefined ? this.frameLayouts(shown) : undefined;
+    return html`<span class="tb-crumb">
+      ${this.renderNameField(cfg)}
+      <span class="tb-crumb-dot" aria-hidden="true">·</span>
+      ${seg && layouts
+        ? this.renderShapeSwitch(shown, layouts)
+        : f === undefined
+          ? html`<span class="tb-shape">Control Center</span>`
+          : html`<span class="tb-shape" style=${`--sh:var(--wa-shape-${f})`}><i class="tb-shape-dot" aria-hidden="true"></i>${this.shapeTitle(f)}</span>`}
+      ${pagePart ? html`<span class="tb-crumb-page">${pagePart}</span>` : nothing}
+      ${f !== undefined && layouts ? html`<span class="cv-shape">${this.shapeNotes(shown, layouts, f)}</span>` : nothing}
+    </span>`;
+  }
+
+  /** The layouts of what this draw is showing, worked out once: the bar and
+   * the stage both read them, and this runs on every drag. */
+  private frameLayouts(cfg: CustomComplicationConfig): ResolvedAll {
+    if (this.frameLayout?.cfg === cfg) return this.frameLayout.layouts;
+    const layouts = resolveAll(cfg, this.buildContext(), this.forced);
+    this.frameLayout = { cfg, layouts };
+    return layouts;
+  }
+  private frameLayout?: { cfg: CustomComplicationConfig; layouts: ResolvedAll };
+
+  /** Undo and Redo, left of the save status: they take back whatever is not
+   * yet saved, inspector edits too. */
+  private renderBarUndo(d: Draft) {
+    if (!this.canEdit) return nothing;
+    return html`<span class="tb-undo">
+      <button class="cv-act icon undo" @click=${() => this.undo()} ?disabled=${!d.canUndo} title=${`Undo (${KEY_MOD}Z)`} aria-label="Undo">${uiIcon("undo")}</button>
+      <button class="cv-act icon undo" @click=${() => this.redo()} ?disabled=${!d.canRedo} title=${`Redo (${KEY_SHIFT}${KEY_MOD}Z)`} aria-label="Redo">${uiIcon("redo")}</button>
+    </span>
+    <span class="tb-div" aria-hidden="true"></span>`;
+  }
+
+  /**
+   * The complication's name, typed over where it stands in the editor's bar,
+   * the one place it is edited. It commits on Enter or on leaving the box, as
    * one undo step. Escape puts the name back.
    */
   private renderNameField(cfg: CustomComplicationConfig) {
@@ -11827,20 +12229,6 @@ export class WristAssistantPanel extends LitElement {
     // the library's own list says, so the pill waits for the first save.
     if (s.kind === "library" && this.draft?.baseRevision === null) return undefined;
     return { s, d: describeSend(s) };
-  }
-
-  /** Whether every device of the home has what is saved here, as a pill: a
-   * dot and the words from `send-state.ts`. Green when all are in sync, amber
-   * naming the ones that are not. Names are the bare device names unless two
-   * waiting devices share one, which then take their paired phone too. Resend
-   * and Refresh now, for the open device, live in the ··· menu beside it.
-   * An open design on no device turns a green pill amber (see `homePill`). */
-  private renderSendPill() {
-    const d = homePill(homeSync(this.homeDevices()), this.openOnNoDevice);
-    if (!d) return nothing;
-    return html`<span class="tb-sync ${d.tone}" title=${d.title}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>
-    </span>`;
   }
 
   /** Whether a design is open and it sits in Unassigned, on no device. */
@@ -11956,13 +12344,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Read again what each device has picked up: its complication tokens
-   * for the pill, and on Home where each watch's watch app records have got
-   * to. Asked on every complication change and every delivery
-   * (`listenToHome`), and, for an integration that cannot say deliveries,
-   * on the status clock and when the tab comes back into view. */
+   * and where each watch's watch app records have got to, for the top bar's
+   * sync pill, on every screen. Asked on every complication change and every
+   * delivery (`listenToHome`), and, for an integration that cannot say
+   * deliveries, on the status clock and when the tab comes back into view. */
   private async refreshHomeSync() {
     await this.refreshOwnerTokens();
-    if (barTabOf(this.route) === "home") await this.loadWatchAppSync(true);
+    await this.loadWatchAppSync(true);
   }
 
   private homeVisible = () => {
@@ -11998,44 +12386,39 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** New, beside Browse: making one should not need the list opened first.
-   * The picker's foot keeps its own New too. A full device keeps the button
-   * but disables it, and the tooltip says why. */
-  private renderNewButton() {
-    const full = this.freeSlot() < 0;
-    return html`<button class="tb-btn tb-new" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
-      title=${full ? `${capFirst(this.placePhrase)} is full. Delete a complication first.` : "Make a new complication"}
-      @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>`;
-  }
-
-  /** Import, beside New. A full device keeps the button but disables it, and
-   * the tooltip says why. */
-  private renderImportButton() {
-    const full = this.freeSlot() < 0;
-    return html`<button class="tb-btn tb-import" aria-haspopup="dialog" ?disabled=${full}
-      title=${full ? `${capFirst(this.placePhrase)} is full. Delete a complication first.` : "Paste a complication somebody shared"}
-      @click=${() => this.openImportDialog()}>Import</button>`;
-  }
-
   /**
-   * The ··· menu: the two nudges that ask a device to pull again. Only one
-   * applies at a time; with neither there is no menu at all rather than an
-   * empty one.
+   * The bar's ··· menu: every secondary action in one known place. Browse, New
+   * and Import; then History and the raw document; the nudge that asks the open
+   * device to pull again, when one applies; then Duplicate and Delete.
    */
   private renderTopMenu() {
+    const d = this.draft;
     const info = this.sendInfo();
-    if (!info?.d.resend && !info?.d.refresh) return nothing;
     const open = this.sideMenu === "top";
     const run = (fn: () => void) => () => { this.toggleSideMenu("top", false); fn(); };
-    return html`<span class="side-menu" data-side-menu="top">
+    const full = this.freeSlot() < 0;
+    const fullWhy = `${capFirst(this.placePhrase)} is full. Delete a complication first.`;
+    const never = d?.baseRevision === null;
+    const row = (icon: UiIconName, label: string, opts: { title?: string; off?: boolean; danger?: boolean; dialog?: boolean }, fn: () => void) => html`<button
+      class="row mi ${opts.danger === true ? "danger" : ""}" role="menuitem" aria-haspopup=${opts.dialog === false ? nothing : "dialog"}
+      title=${opts.title ?? nothing} ?disabled=${opts.off === true} @click=${run(fn)}>${uiIcon(icon)}<span>${label}</span></button>`;
+    const sep = html`<div class="pop-sep" role="separator"></div>`;
+    return html`<span class="side-menu" data-side-menu="top"
+      @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); this.toggleSideMenu("top", false); } }}>
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
         @click=${() => this.toggleSideMenu("top")}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
-        ${info?.d.resend ? html`<button class="row" role="menuitem" title="Wake the watch again"
-          @click=${run(() => void this.sendToWatch())}>Resend to the watch</button>` : nothing}
-        ${info?.d.refresh ? html`<button class="row" role="menuitem"
-          title="Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once."
-          @click=${run(() => void this.sendToWatch())}>Refresh now</button>` : nothing}
+        ${row("compact", "Browse complications", {}, () => this.browseAll())}
+        ${row("plus", "New complication", { off: full || this.ownerBusy, title: full ? fullWhy : "Make a new complication" }, () => this.openNewDialog())}
+        ${row("download", "Import", { off: full, title: full ? fullWhy : "Paste a complication somebody shared" }, () => this.openImportDialog())}
+        ${d ? html`${sep}
+          ${this.canEdit ? row("clock", "History", { off: never, title: never ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication" }, () => void this.openHistoryDialog()) : nothing}
+          ${row("braces", "View raw configuration", {}, () => { this.rawOpen = true; })}` : nothing}
+        ${info?.d.resend ? html`${sep}${row("arrow", "Resend to the watch", { title: "Wake the watch again", dialog: false }, () => void this.sendToWatch())}` : nothing}
+        ${info?.d.refresh ? html`${sep}${row("arrow", "Refresh now", { title: "Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once.", dialog: false }, () => void this.sendToWatch())}` : nothing}
+        ${d && this.canEdit ? html`${sep}
+          ${row("duplicate", "Duplicate", { title: "Make this design again as another shape, or on another device" }, () => this.openDuplicateAs(d.config, this.ownerId ?? ""))}
+          ${row("delete", "Delete design…", { danger: true, title: "Delete this complication. It asks first." }, () => { this.confirmDelete = true; })}` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -12044,14 +12427,16 @@ export class WristAssistantPanel extends LitElement {
    * Slide any open menu back inside the window. Each one hangs off its button
    * by a fixed edge, which is right on a wide screen and wrong on a phone:
    * the top bar's ··· wraps to the left of a stacked bar, and its menu, hung
-   * by its right edge, opened 170px off the left of the screen.
+   * by its right edge, opened 170px off the left of the screen. A menu inside
+   * a dialog stays inside that dialog, which cuts off whatever passes its edge.
    */
   private keepMenusOnScreen() {
     const width = window.innerWidth;
     for (const menu of this.renderRoot.querySelectorAll<HTMLElement>(".pop-menu")) {
       menu.style.translate = "";
       const r = menu.getBoundingClientRect();
-      const dx = menuShift(r.left, r.right, width);
+      const box = menu.closest("dialog")?.getBoundingClientRect();
+      const dx = box === undefined ? menuShift(r.left, r.right, width) : menuShift(r.left - box.left, r.right - box.left, box.width);
       if (dx !== 0) menu.style.translate = `${dx}px 0`;
     }
   }
@@ -12671,14 +13056,30 @@ export class WristAssistantPanel extends LitElement {
    * and stay neutral.
    */
   private renderPickerTabs(tabs: readonly PickerTab[], current: string) {
+    const row = splitPickerTabs(tabs, current);
+    const open = this.openMenu === "tabs";
+    const tabButton = (tab: PickerTab, extra = "") => html`<button type="button" role="tab" class="pk-tab ${extra} ${tab.key === current ? "on" : ""}"
+        style=${this.deviceStyle(tab.key)} id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
+        aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
+        <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
+        <span class="pk-tab-name">${tab.label}</span>
+        <span class="pk-tab-count">${tab.count}</span>
+      </button>`;
     return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
-      ${tabs.map((tab) => html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
-          style=${this.deviceStyle(tab.key)} id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
-          aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
-          <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
-          <span class="pk-tab-name">${tab.label}</span>
-          <span class="pk-tab-count">${tab.count}</span>
-        </button>`)}
+      ${row.all === undefined ? nothing : tabButton(row.all)}
+      ${row.shown.map((tab) => tabButton(tab))}
+      ${row.more.length === 0 ? nothing : html`<span class="pk-more" data-menu="tabs" role="presentation"
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); this.toggleMenu("tabs", false); } }}>
+        <button type="button" class="pk-more-btn" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+          title="The devices with nothing on them" @click=${() => this.toggleMenu("tabs")}>+${row.more.length} more${uiIcon("chevron")}</button>
+        ${open ? html`<div class="pop-menu pk-more-menu" role="menu" aria-label="The devices with nothing on them">
+          ${row.more.map((tab) => html`<button type="button" class="row" role="menuitem" style=${this.deviceStyle(tab.key)}
+            @click=${() => { this.toggleMenu("tabs", false); this.pickPickerTab(tab.key); }}>
+            <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
+            <span class="pk-tab-name">${tab.label}</span><span class="pk-tab-count">${tab.count}</span></button>`)}
+        </div>` : nothing}
+      </span>`}
+      ${row.shelf === undefined ? nothing : html`<span class="pk-vsep" aria-hidden="true"></span>${tabButton(row.shelf, "chip")}`}
     </div>`;
   }
 
@@ -12782,8 +13183,16 @@ export class WristAssistantPanel extends LitElement {
   private pickerMatches(row: PickerRow, query: string, people: readonly Person[]): boolean {
     if (query === "") return true;
     if (row.name.toLocaleLowerCase().includes(query)) return true;
-    return rowWhoText(row.copies.map((c) => c.ownerId), this.pickerPeople(people))
-      .toLocaleLowerCase().includes(query);
+    if (rowWhoText(row.copies.map((c) => c.ownerId), this.pickerPeople(people)).toLocaleLowerCase().includes(query)) return true;
+    // What it reads: an entity's id or name, or a template. Read from the
+    // row's one document; every copy of a link is the same one.
+    const copy = row.open;
+    if (copy.item.kind !== "record") return false;
+    const states = this.hass?.states;
+    return designTextMatches(this.searchTextOf(copy.item.record), query, (id) => {
+      const name = states?.[id]?.attributes?.friendly_name;
+      return typeof name === "string" ? name : undefined;
+    });
   }
 
   /** The household as the who-line reads it: a name and the kinds of that
@@ -12826,6 +13235,9 @@ export class WristAssistantPanel extends LitElement {
     if (copy.item.kind !== "record") return;
     const record = copy.item.record;
     const target = copy.ownerId;
+    // Where the page was, for the way back to it.
+    const page = this.renderRoot.querySelector<HTMLElement>(".cl-page");
+    if (page) this.listScroll = page.scrollTop;
     // The dialog shuts first. From the list page, or a recent card on Home,
     // there is no dialog to shut.
     if (this.pickerOpen) this.togglePicker(false);
@@ -12846,27 +13258,6 @@ export class WristAssistantPanel extends LitElement {
   private newFromPicker() {
     if (this.pickerOpen) this.togglePicker(false);
     this.openNewDialog();
-  }
-
-  /**
-   * Browse: the way to every complication in the home. The name it used to
-   * carry is the field beside it now, where it can be typed over, and the
-   * shape and the device are the pill after that, so the button is only the
-   * way out to the list.
-   *
-   * Only drawn while a design is open (`renderTopBar`), and the dialog with
-   * it, so the dialog and the list page are never on screen together. With
-   * nothing open, the page is the list.
-   */
-  private renderPicker() {
-    return html`<div class="picker">
-      <button id="wa-picker" class="pk-open tb-browse" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
-        title="Browse all complications" aria-label="Browse all complications"
-        @click=${() => this.pickerOpen ? this.togglePicker(false) : this.browseAll()}>
-        ${uiIcon("compact")}<span class="tb-browse-l">Browse complications</span>${uiIcon("chevron")}
-      </button>
-      ${this.pickerOpen ? this.renderPickerDialog() : nothing}
-    </div>`;
   }
 
   /**
@@ -12891,7 +13282,9 @@ export class WristAssistantPanel extends LitElement {
    *
    * The same surface is the Complications tab's list page while no design is
    * open (`renderPickerSurface("page")`). Over an open design it is this
-   * dialog, which the editor's Browse button opens.
+   * dialog, which Browse complications in the editor's ··· menu opens. Only
+   * drawn while a design is open (`renderTopBar`), so the dialog and the list
+   * page are never on screen together.
    */
   private renderPickerDialog() {
     return this.renderPickerSurface("dialog");
@@ -12930,8 +13323,10 @@ export class WristAssistantPanel extends LitElement {
     const unsaved = d && d.baseRevision === null ? d : undefined;
     // What the grid is about to draw, for the bar's "Pick all shown". On a
     // device tab a card is that device's record; on the All tab a card is
-    // the design, so it picks the design's record on every device.
-    this.pickerShown = rows.flatMap((row) => this.pickKeysOf(row, tab));
+    // the design, so it picks the design's record on every device. A closed
+    // "Not on a device" row draws none of its cards.
+    const drawn = tab === ALL_DEVICES && !this.shelfShownOpen(query, rows) ? rows.filter((row) => !isShelvedRow(row)) : rows;
+    this.pickerShown = drawn.flatMap((row) => this.pickKeysOf(row, tab));
     this.pickerShownAt = tab;
     // What an empty grid is empty of. The search wins when something has been
     // typed, because that is the last thing the author did; then the shape;
@@ -12945,13 +13340,15 @@ export class WristAssistantPanel extends LitElement {
           : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all");
     const top = html`<div class="pk-head">
         ${page ? nothing : html`<h2>Your complications <span class="pk-head-count">${all.length}</span></h2>`}
+        ${page ? html`${renderViewSwitch(phoneView("complications", this.compView), (v) => this.setCompView(v), "complications")}
+          <span class="pk-vsep" aria-hidden="true"></span>` : nothing}
         ${this.ownerBusy ? nothing : this.renderPickerLook()}
         ${this.ownerBusy ? nothing : this.renderPickerSelect()}
         ${this.ownerBusy ? nothing : this.renderPickerShapes(searched, this.tabFamilies(tab))}
         <label class="pk-search">
           ${uiIcon("search")}
           <input type="search" class="pk-search-input" .value=${this.pickerQuery}
-            placeholder=${this.narrow ? "Search" : "Search by name or person"} aria-label="Search complications"
+            placeholder=${this.narrow ? "Search" : COMP_SEARCH_PLACEHOLDER} aria-label="Search complications"
             @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
         </label>
         ${page ? nothing : html`<button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>`}
@@ -13004,7 +13401,102 @@ export class WristAssistantPanel extends LitElement {
     emptyOf: string,
   ) {
     if (rows.length === 0 && unsaved === undefined) return html`<div class="empty">${emptyOf}</div>`;
-    return this.renderPickerGroups(sortPickerRows(rows, devices), ALL_DEVICES, unsaved);
+    const fold = foldShelf(sortPickerRows(rows, devices), (row) => this.rowIsEmpty(row));
+    const open = this.shelfShownOpen(this.pickerQuery.trim(), rows);
+    return html`${fold.placed.length > 0 || unsaved !== undefined ? this.renderPickerGroups(fold.placed, ALL_DEVICES, unsaved) : nothing}
+      ${fold.shelved.length === 0 ? nothing : html`${this.renderShelfRow(fold.shelved.length, fold.empty, open, fold.placed.length > 0)}
+        ${open ? this.renderPickerGroups(fold.shelved, ALL_DEVICES, undefined) : nothing}`}`;
+  }
+
+  /** Whether the All tab draws the designs on no device: opened by hand, or
+   * because a search must not hide what it found, or because there is nothing
+   * else to show. */
+  private shelfShownOpen(query: string, rows: readonly PickerRow[]): boolean {
+    return this.pickerShelfOpen || query !== "" || rows.every((row) => isShelvedRow(row));
+  }
+
+  /** A record's search text, kept per revision. */
+  private searchTextOf(record: ComplicationRecord): DesignSearchText {
+    const hit = this.searchTexts.get(record.id);
+    if (hit?.revision === record.revision) return hit.text;
+    const text = designSearchText(record.document);
+    this.searchTexts.set(record.id, { revision: record.revision, text });
+    return text;
+  }
+
+  /** Whether a record holds nothing anyone made. A document this panel cannot
+   * read is never empty: nothing here may offer to clear it away. */
+  private recordIsEmpty(record: ComplicationRecord): boolean {
+    const hit = this.emptyDesigns.get(record.id);
+    if (hit?.revision === record.revision) return hit.empty;
+    let empty = false;
+    try {
+      empty = isEmptyDesign(parseConfig(record.document));
+    } catch {
+      empty = false;
+    }
+    this.emptyDesigns.set(record.id, { revision: record.revision, empty });
+    return empty;
+  }
+
+  /** Whether a row's design is empty, read from its first copy: every copy of a
+   * link is the same document. A locked slot is the app's, never empty. */
+  private rowIsEmpty(row: PickerRow): boolean {
+    const copy = row.open;
+    return copy.item.kind === "record" && this.recordIsEmpty(copy.item.record);
+  }
+
+  /**
+   * The "Not on a device" row: how many, how many of those are empty, and the
+   * one deliberate way to clear the empty ones. Real work comes first; this
+   * sits after it, closed, on the All tab. On the Not on a device chip's own
+   * page the designs are what was asked for, so it heads them, with no fold.
+   *
+   * Delete empty… asks in place, and the delete waits behind its toast with
+   * Undo, like every other delete here (`deleteRecordsLater`).
+   */
+  private renderShelfRow(count: number, empty: readonly PickerRow[], open: boolean, folds: boolean) {
+    const keys = empty.flatMap((row) => this.pickKeysOf(row, ALL_DEVICES));
+    const asking = this.pickerEmptyAsk && empty.length > 0;
+    const words = html`<span class="pk-fold-t">${UNASSIGNED_LABEL}</span><span class="pk-fold-m">${shelfFoldCount(count, empty.length)}</span>`;
+    return html`<div class="pk-fold ${open ? "open" : ""}">
+      ${folds
+        ? html`<button type="button" class="pk-fold-head" aria-expanded=${open ? "true" : "false"} title=${open ? "Fold these away" : "Show these"}
+            @click=${() => { this.pickerShelfOpen = !this.pickerShelfOpen; }}>${uiIcon("chevron")}${words}</button>`
+        : html`<span class="pk-fold-head still">${words}</span>`}
+      ${empty.length === 0 ? nothing : asking
+        ? html`<span class="pk-fold-acts">
+            <span class="pk-fold-ask" role="status">${deleteEmptyAsk(empty.length)}</span>
+            <button type="button" class="danger small" ?disabled=${this.saving} @click=${() => this.deleteEmpty(empty)}>Really delete</button>
+            <button type="button" class="small" @click=${() => { this.pickerEmptyAsk = false; }}>Cancel</button>
+          </span>`
+        : html`<span class="pk-fold-acts">
+            <button type="button" class="small" ?disabled=${this.saving}
+              title="Pick every empty design here, to act on them together"
+              @click=${() => this.pickAllEmpty(keys)}>${uiIcon("checklist")}<span>Select all empty</span></button>
+            <button type="button" class="danger small" ?disabled=${this.saving} aria-haspopup="true"
+              title="Delete every empty design here. It asks first, and Undo brings them back."
+              @click=${() => { this.pickerEmptyAsk = true; }}>${uiIcon("delete")}<span>Delete empty…</span></button>
+          </span>`}
+    </div>`;
+  }
+
+  /** Select all empty: picking on, every empty design picked, and the row open
+   * so what was picked can be seen. */
+  private pickAllEmpty(keys: readonly string[]) {
+    if (!this.pickerSelecting) this.setPickerSelecting(true);
+    this.pickerShelfOpen = true;
+    this.pickMany(keys, true);
+  }
+
+  /** Delete empty…, answered yes: gone behind the toast, with Undo. */
+  private deleteEmpty(rows: readonly PickerRow[]) {
+    this.pickerEmptyAsk = false;
+    const records = rows.flatMap((row) => row.copies.flatMap((copy) => {
+      const record = copy.item.kind === "record" ? this.recordAt(copy.ownerId, copy.id) : undefined;
+      return record === undefined ? [] : [{ ownerId: copy.ownerId, id: record.id, revision: record.revision }];
+    }));
+    this.deleteRecordsLater(deleteEmptyDone(rows.length), records);
   }
 
   /** After a shape box's name on the All tab: which devices use that shape. */
@@ -13039,14 +13531,16 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderPickerLook() {
     const bare = this.pickerBare;
-    return html`<div class="pk-seg" role="group" aria-label="How a card draws its complication">
-      <button type="button" class="pk-seg-btn ${bare ? "" : "on"}" aria-pressed=${bare ? "false" : "true"}
-        title="Draw each complication on the device it sits on"
-        @click=${() => this.setPickerBare(false)}>${uiIcon("watch")}<span>On device</span></button>
-      <button type="button" class="pk-seg-btn ${bare ? "on" : ""}" aria-pressed=${bare ? "true" : "false"}
-        title="Draw the complication on its own, with no device round it"
-        @click=${() => this.setPickerBare(true)}>${uiIcon("shape")}<span>Shape only</span></button>
-    </div>`;
+    return html`<span class="pk-look"><span class="pk-look-lead">Preview</span>
+      <div class="pk-seg" role="group" aria-label="Preview">
+        <button type="button" class="pk-seg-btn ${bare ? "" : "on"}" aria-pressed=${bare ? "false" : "true"}
+          title="Draw each complication where it sits on its device"
+          @click=${() => this.setPickerBare(false)}>${uiIcon("watch")}<span>In a face</span></button>
+        <button type="button" class="pk-seg-btn ${bare ? "on" : ""}" aria-pressed=${bare ? "true" : "false"}
+          title="Draw the complication on its own, large, with no device round it"
+          @click=${() => this.setPickerBare(true)}><span>Close up</span></button>
+      </div>
+    </span>`;
   }
 
   /** Turn the device round a card's picture off, or on again, and remember it. */
@@ -13092,7 +13586,12 @@ export class WristAssistantPanel extends LitElement {
     const kind = deviceKindOf(this.ownerOf(tab));
     const note = kind === "library" ? html`<p class="pk-sec-note lone">${LIBRARY_NOTE}</p>` : nothing;
     if (rows.length === 0 && mine === undefined) return html`${note}<div class="empty">${emptyOf}</div>`;
-    return html`${note}${this.renderPickerGroups(sortPickerRows(rows, devices, tab), tab, mine)}`;
+    const sorted = sortPickerRows(rows, devices, tab);
+    if (kind !== "library") return html`${note}${this.renderPickerGroups(sorted, tab, mine)}`;
+    // The chip's own page: the same row as the All tab's, heading the designs.
+    const fold = foldShelf(sorted, (row) => this.rowIsEmpty(row));
+    return html`${note}${this.renderShelfRow(fold.shelved.length, fold.empty, true, false)}
+      ${this.renderPickerGroups(fold.shelved, tab, mine)}`;
   }
 
   /**
@@ -13132,8 +13631,8 @@ export class WristAssistantPanel extends LitElement {
         data-where=${at === ALL_DEVICES ? shapeDevicesTag(group.key)?.where ?? nothing : nothing}>
         <div class="pk-box-top">
           ${this.renderShapePick(group.rows, at)}
-          <span class="pk-box-name">${group.label}</span>
-          <span class="pk-box-count">(${group.rows.length + (group.unsaved ? 1 : 0)})</span>
+          <span class="pk-box-name" style=${group.key === "app" || group.key === "none" ? nothing : `--sh:var(--wa-shape-${group.key})`}>${group.label}</span>
+          <span class="pk-box-count">${group.rows.length + (group.unsaved ? 1 : 0)}</span>
           ${at === ALL_DEVICES ? this.renderShapeDevicesTag(group.key) : nothing}
         </div>
         <div class="pk-grid" data-shape=${group.key}>
@@ -13236,8 +13735,8 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="pk-foot">
       ${said === undefined
         ? html`<span class="pk-foot-hint">${this.touch
-          ? "Tap a card to open it. By its name: Devices, hide and delete."
-          : "Click a card to open it. Hover a card for Devices, hide and delete by its name."}</span>`
+          ? "Tap a card to open it. On its picture: Devices, hide and delete."
+          : "Click a card to open it. Hover a card for Devices, hide and delete on its picture."}</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}" title=${errTitle(this.saveError) ?? nothing}>${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
@@ -13623,8 +14122,11 @@ export class WristAssistantPanel extends LitElement {
     // called for the cards the tab, the shape and the search left in.
     // A card with a picture of this revision shows it and resolves nothing.
     // The open one draws live, since the stage is showing the same thing.
-    const pictured = open ? undefined : this.cardFromPreview(copy.ownerId, drawn, family, device);
-    const preview = pictured ? undefined : this.recordPreview(drawn);
+    // A design with nothing on it has no picture to fetch or draw: a dashed
+    // slot says so, where a grey block read as a picture that failed to load.
+    const blank = !open && this.recordIsEmpty(drawn);
+    const pictured = open || blank ? undefined : this.cardFromPreview(copy.ownerId, drawn, family, device);
+    const preview = pictured || blank ? undefined : this.recordPreview(drawn);
     const live = preview ? this.cardLive(preview.config, preview.entities) : undefined;
     if (!open && preview && !pictured) this.queueCardPreview(copy.ownerId, drawn, preview.config);
     const menu = this.pickerDupFor === cardKey;
@@ -13645,7 +14147,7 @@ export class WristAssistantPanel extends LitElement {
     const togglePick = () => this.pickMany(pickKeys, !picked);
     const hit = () => { if (picking) togglePick(); else void this.openFromPicker(row, actOn); };
     const doing = picking ? (picked ? `Let ${recName} go` : `Pick ${recName}`) : "Open this complication";
-    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "dup-on" : ""} ${shelved ? "shelved" : ""}
+    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "dup-on" : ""} ${shelved ? "shelved" : ""} ${blank ? "blank" : ""}
       ${picking ? "picking" : ""} ${picked ? "picked" : ""}"
       aria-current=${open ? "true" : "false"}>
       <div class="pk-card-top">
@@ -13655,6 +14157,15 @@ export class WristAssistantPanel extends LitElement {
           : nothing}
         <button type="button" class="pk-card-name" title=${doing} @click=${hit}>${recName}</button>
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">Not in its list</span>` : nothing}
+      </div>
+      <div class="pk-card-pic">
+        <button type="button" class="pk-card-open" title=${doing}
+          aria-label=${doing} @click=${hit}>
+          ${blank
+            ? html`<span class="pk-card-slot">${EMPTY_DESIGN_TEXT}</span>`
+            : this.cardArt(family, device,
+              pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}
+        </button>
         <span class="pk-card-acts ${confirming ? "asking" : ""} ${picking ? "away" : ""}">
           ${confirming
             ? linked
@@ -13672,20 +14183,13 @@ export class WristAssistantPanel extends LitElement {
               ${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
                 title=${hidden ? `Hidden from ${listOf}. Show it there again.` : `Hide from ${listOf}. Faces already using it keep it.`}
                 aria-label=${hidden ? `Show ${recName} in ${listOf}` : `Hide ${recName} from ${listOf}`}
-                @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "hide" : "show")}</button>
+                @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "show" : "hide")}</button>
               <button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
                 ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
         </span>
-      </div>
-      <div class="pk-card-pic">
-        <button type="button" class="pk-card-open" title=${doing}
-          aria-label=${doing} @click=${hit}>
-          ${this.cardArt(family, device,
-            pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}
-        </button>
         ${menu ? this.renderPickerDupMenu(row, family, cardKey) : nothing}
       </div>
-      ${all ? this.renderPickerCardDevices(row) : nothing}
+      ${all && !(blank && shelved) ? this.renderPickerCardDevices(row) : nothing}
     </div>`;
   }
 
@@ -13710,10 +14214,9 @@ export class WristAssistantPanel extends LitElement {
   private renderPickerDup(row: PickerRow, open: boolean, cardKey: string) {
     if (row.open.item.kind !== "record") return nothing;
     return html`<span class="pk-dup" data-dup=${cardKey}>
-      <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-        title="Pick the devices this design is on" ?disabled=${this.saving}
-        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(cardKey); }}
-        ><span class="pk-dup-ic">${uiIcon("watch")}</span><span class="pk-dup-l">Devices</span>${uiIcon("chevron")}</button>
+      <button type="button" class="icon pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+        title="Devices" aria-label=${`Devices for ${row.name}`} ?disabled=${this.saving}
+        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(cardKey); }}>${uiIcon("watch")}</button>
     </span>`;
   }
 
@@ -13998,6 +14501,7 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = `${row.name} could not be taken off ${this.ownerName(copy.ownerId)}, so it is still there: ${outText(out, "the save failed")}`;
         return;
       }
+      this.compLastShelved = kept.id;
       const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
       // A half-done move is news wherever it is pressed: the design is now in
       // two places and one of them was not asked for.
@@ -14118,6 +14622,11 @@ export class WristAssistantPanel extends LitElement {
           return;
         }
         moved.set(from.id, out.record.revision);
+        // A shelf record this write takes away comes back through its own
+        // snapshot, so only a record that stays needs this.
+        if (!fromShelf && record.document) {
+          this.compLastLinked = { ownerId: from.ownerId, id: from.id, revision: out.record.revision, linkId: link, document: record.document as Record<string, unknown> };
+        }
         // The editor's clean copy of it takes the link too, so its next save
         // does not write the link away again.
         if (mine && this.draft) {
@@ -14131,6 +14640,7 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = outText(out, "Save failed");
         return;
       }
+      this.compLastPlaced = copy.id;
       // A design on a device is not unassigned any more, so the shelf's copy
       // goes. It goes after the device's is written, never before: until
       // the device has one, the shelf's is the only copy there is.
@@ -14322,7 +14832,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap" | "tabs", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -14422,6 +14932,7 @@ export class WristAssistantPanel extends LitElement {
   private pickerForget() {
     this.pickerNote = undefined;
     this.pickerConfirmDelete = undefined;
+    this.pickerEmptyAsk = false;
     this.closePickerDup();
     if (this.pickerSelecting) this.setPickerSelecting(false);
   }
@@ -14450,6 +14961,7 @@ export class WristAssistantPanel extends LitElement {
   private enterListPage() {
     if (this.pickerOpen) this.pickerOpen = false;
     else this.setTabMemory(restoreTab(this.tabMemory));
+    this.listScrollDue = this.listScroll > 0;
     if (this.owners.length > 0) {
       // Spoken for, so the start-page refresh in `updated` does not read the
       // same lists a second time.
@@ -14535,15 +15047,14 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <div class="cl-acts">
           ${this.compBoardSaved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
-          ${focus === undefined ? renderViewSwitch(view, (v) => this.setCompView(v), "complications") : nothing}
+          <button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
+            title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
+            @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
           <a class="cl-btn cl-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
             title="Ready-made complications from other people">${uiIcon("globe")}<span>Online gallery</span></a>
           <button class="cl-btn cl-import" ?disabled=${full}
             title=${full ? "Every device is full. Delete a complication first." : "Paste a complication somebody shared"}
-            @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>
-          <button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
-            title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
-            @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
+            @click=${() => this.openImportDialog()}>${uiIcon("download")}<span>Import</span></button>
         </div>
       </div>
       ${state === "loading" ? html`<p class="cl-loading">Loading…</p>` : board ? this.renderCompBoard(focus) : this.renderPickerSurface("page")}
@@ -14607,12 +15118,15 @@ export class WristAssistantPanel extends LitElement {
     const query = this.pickerQuery.trim().toLocaleLowerCase();
     const items = this.compBoardItems(query);
     const columns = this.compBoardColumns(devices);
-    const search = html`<div class="cb-tools"><label class="pk-search">
+    const search = html`<div class="cb-tools">
+      ${focus === undefined ? renderViewSwitch(phoneView("complications", this.compView), (v) => this.setCompView(v), "complications") : nothing}
+      ${renderDensitySwitch(boardDensity(), (d) => { setBoardDensity(d); this.requestUpdate(); })}
+      <label class="pk-search">
         ${uiIcon("search")}
-        <input type="search" class="pk-search-input" .value=${this.pickerQuery} placeholder="Search by name or person" aria-label="Search complications"
+        <input type="search" class="pk-search-input" .value=${this.pickerQuery} placeholder=${COMP_SEARCH_PLACEHOLDER} aria-label="Search complications"
           @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
       </label></div>`;
-    if (devices.length === 0) return html`${search}<p class="cb-empty">No watch or iPhone has connected yet. Pair one on Home to put complications on it.</p>`;
+    if (devices.length === 0) return html`${search}<p class="cb-empty">No watch or iPhone has connected yet. Pair one on the Devices tab to put complications on it.</p>`;
     const byOrder = compItemOrder;
     const emptyText = query !== "" ? `Nothing matches "${this.pickerQuery.trim()}".` : "No complications yet.";
     const device = focus === undefined ? undefined : devices.find((d) => d.ownerId === focus);
@@ -14631,16 +15145,16 @@ export class WristAssistantPanel extends LitElement {
       const leftOut = items.filter((it) => !here(it) && !fits(it)).length;
       const noun = compNoun(device.kind, 2);
       sections = [
-        {
+        this.withGreyNote({
           key: "on", title: `On ${device.name}`, count: on.length, hint: "Untick a box to take it off.",
           rows: on.map((it) => this.compBoardRow(it, devices, device)),
           empty: query !== "" ? emptyText : `No ${noun} on ${device.name} yet.`,
-        },
-        {
+        }, devices),
+        this.withGreyNote({
           key: "rest", title: `Not on ${device.name}`, count: rest.length, hint: `Tick its box under ${device.name} to add it.`,
           rows: rest.map((it) => this.compBoardRow(it, devices, device, true)),
           empty: query !== "" ? emptyText : `Every ${compNoun(device.kind, 1)} that fits is on ${device.name}.`,
-        },
+        }, devices),
       ];
       const left = compLeftOutText(device.kind, leftOut);
       foot = left === undefined ? nothing : html`<p class="lt-line bd-foot-line">${left}</p>`;
@@ -14654,11 +15168,22 @@ export class WristAssistantPanel extends LitElement {
         ...(device === undefined ? {} : { focus: device.ownerId }),
         onFocus: (ownerId) => this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId)),
         wide: this.compRoomy.wide,
-        focusWord: "Focus",
         focusTitle: (d) => `Show ${d.name}'s ${compNoun(d.kind, 2)} first`,
         sections,
+        legend: {
+          tick: "on that device", focus: "a device to see its complications first", saves: "Ticks save at once, with Undo",
+          ...(device === undefined ? {} : { eye: "hide but keep it on the device" }),
+        },
       })}
       ${foot}`;
+  }
+
+  /** A section with its one line for its greyed columns, when it has any
+   * (`compGreyNote`), in place of a column of dashes. */
+  private withGreyNote(section: BoardSection, devices: readonly LinkDevice[]): BoardSection {
+    const grey = (kind: "watch" | "iphone") => section.rows.some((row) => row.cells.some((cell, i) => cell.grey === true && devices[i]?.kind === kind));
+    const words = compGreyNote({ watchGrey: grey("watch"), iphoneGrey: grey("iphone") });
+    return words === undefined ? section : { ...section, note: html`${words} Use <b>Duplicate as</b>.` };
   }
 
   /** The board's rows: every design, those a search leaves. */
@@ -14670,16 +15195,22 @@ export class WristAssistantPanel extends LitElement {
   /** The board's columns, each with how many designs that device has. */
   private compBoardColumns(devices: readonly LinkDevice[]): BoardColumn[] {
     const rows = this.pickerRows();
-    return devices.map((device) => ({
-      device, color: this.deviceColorOf(device.ownerId), count: rows.filter((r) => r.copies.some((c) => c.ownerId === device.ownerId)).length,
-    }));
+    return devices.map((device) => {
+      const owner = this.ownerOf(device.ownerId);
+      return {
+        device, color: this.deviceColorOf(device.ownerId), count: rows.filter((r) => r.copies.some((c) => c.ownerId === device.ownerId)).length,
+        // An app too old for the shapes takes nothing: the head says so once,
+        // and its boxes are dashes.
+        ...(deviceSupportsShapes(owner) ? {} : { blocked: { badge: "Update app", text: updateDeviceMessage(owner) } }),
+      };
+    });
   }
 
   /** The board on every device: a section per place a shape sits. */
   private compAllSections(items: readonly CompBoardItem[], devices: readonly LinkDevice[], emptyText: string): BoardSection[] {
     const sections = COMP_WHERE_ORDER.map((where): BoardSection => {
       const mine = items.filter((it) => it.where === where).sort(compItemOrder);
-      return { key: where, title: COMP_WHERE_TITLES[where], count: mine.length, hint: COMP_WHERE_HINTS[where], rows: mine.map((it) => this.compBoardRow(it, devices)) };
+      return this.withGreyNote({ key: where, title: COMP_WHERE_TITLES[where], count: mine.length, hint: COMP_WHERE_HINTS[where], rows: mine.map((it) => this.compBoardRow(it, devices)) }, devices);
     }).filter((s) => s.rows.length > 0);
     return sections.length === 0 ? [{ key: "none", rows: [], empty: emptyText }] : sections;
   }
@@ -14697,7 +15228,6 @@ export class WristAssistantPanel extends LitElement {
       columns: this.compBoardColumns(devices),
       onFocus: (ownerId) => this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId)),
       wide: this.compRoomy.wide,
-      focusWord: "Focus",
       focusTitle: (d) => `Show ${d.name}'s ${compNoun(d.kind, 2)} first, on the Complications tab`,
       sections: this.compAllSections(this.compBoardItems(q), devices, q !== "" ? `Nothing matches "${query.trim()}".` : "No complications yet."),
     });
@@ -14706,16 +15236,12 @@ export class WristAssistantPanel extends LitElement {
   /** A focused device's head: who it is, how many it has, its own screens,
    * and the way back to every device. */
   private renderCompFocusHead(device: LinkDevice, total: number) {
-    const word = device.kind === "iphone" ? "iPhone" : "watch";
-    const own: DeviceOwnScreen[] = device.kind === "watch" ? ["settings", "rooms", "voice"] : ["settings", "rooms"];
-    const color = this.deviceColorOf(device.ownerId);
-    return html`<div class="bd-focus" style=${color === undefined ? nothing : `--dc:${color}`}>
-      <span class="bd-focus-glyph" aria-hidden="true">${uiIcon(device.kind === "iphone" ? "phone" : "watch")}</span>
-      <span class="bd-focus-t"><b>${device.name}</b> <span>${total} ${compNoun(device.kind, total)}</span></span>
-      <span class="bd-focus-own">Also on this ${word}:
-        ${own.map((screen) => html`<button type="button" class="bd-link" @click=${() => this.openOwnScreen(device.ownerId, device.kind, screen)}>${DEVICE_OWN_LABELS[screen]}</button>`)}</span>
-      <button type="button" class="bd-focus-all" @click=${() => this.goTo(COMPLICATIONS_PATH)}>${uiIcon("grid")}<span>All devices</span></button>
-    </div>`;
+    return renderFocusBanner({
+      device, color: this.deviceColorOf(device.ownerId),
+      text: `${total} ${compNoun(device.kind, total)}`,
+      onOwn: (screen: DeviceOwnScreen) => this.openOwnScreen(device.ownerId, device.kind, screen),
+      onAll: () => this.goTo(COMPLICATIONS_PATH),
+    });
   }
 
   /** One design's row: its picture, name and shape, then a box per device.
@@ -14742,7 +15268,14 @@ export class WristAssistantPanel extends LitElement {
       group: shape,
       ...(dim ? { dim: true } : {}),
       ...(it.locked !== undefined && noteOpen ? { under: html`<p class="lt-note ok">${it.locked.title}</p>` } : {}),
+      peek: () => ({ picture: this.compBoardPicture(it, open, COMP_BOARD_PEEK_W), where: this.compWhereText(row, devices) }),
     };
+  }
+
+  /** Where a design is, under a Compact row's big picture. */
+  private compWhereText(row: PickerRow, devices: readonly LinkDevice[]): string {
+    const names = devices.filter((d) => row.copies.some((c) => c.ownerId === d.ownerId)).map((d) => d.name);
+    return names.length === 0 ? "On no device yet" : `On ${joinWords(names)}`;
   }
 
   /** One box: where the design is on one device, and what a click there
@@ -14771,7 +15304,7 @@ export class WristAssistantPanel extends LitElement {
       lockShape: it.family === "rectangular" || it.family === "circular" || it.family === "inline",
       shelfName: UNASSIGNED_LABEL,
     });
-    if (cell.dash !== undefined || place === undefined) return { dashTitle: cell.dash ?? `Does not fit ${device.name}` };
+    if (cell.dash !== undefined || place === undefined) return { dashTitle: cell.dash ?? `Does not fit ${device.name}`, ...(cell.grey === true ? { grey: true } : {}) };
     const busy = this.compBoardBusy === `${row.key}|${device.ownerId}`;
     const record = place.on ? this.recordAt(device.ownerId, place.copies[0]!.id) : undefined;
     const hidden = record !== undefined && this.rowHidden(record);
@@ -14796,11 +15329,15 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** A row's small picture: the shape as the device it opens on draws it. */
-  private compBoardPicture(it: CompBoardItem, copy: PickerCopy<PickerItem>) {
+  private compBoardPicture(it: CompBoardItem, copy: PickerCopy<PickerItem>, at?: number) {
     const kind = deviceKindOf(this.ownerOf(copy.ownerId));
     const device = this.cardDevice(kind, it.family);
-    // A complication is wide already: it grows with the room, to a point.
-    const width = Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(device === "iphone" && it.family !== undefined && isHomeFamily(it.family) ? 64 : 76));
+    const well = shapeWell(it.family, device);
+    // A complication is wide already: it grows with the room, to a point. In
+    // Compact it stands as tall as a row's other pictures, as wide as its shape.
+    const width = at ?? (boardDensity() === "compact"
+      ? Math.round(COMPACT_PICTURE_PX * Math.min(well ?? 1, 2.375))
+      : Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(device === "iphone" && it.family !== undefined && isHomeFamily(it.family) ? 64 : 76)));
     let live: LiveShapes = {};
     if (copy.item.kind === "record") {
       const record = copy.item.record;
@@ -14810,16 +15347,30 @@ export class WristAssistantPanel extends LitElement {
       if (preview && !pictured) this.queueCardPreview(copy.ownerId, record, preview.config);
       live = pictured ?? (drawn ? (device === "iphone" ? drawn.phone : drawn.watch) : {});
     }
-    const well = shapeWell(it.family, device);
     return html`<span class="cb-pic" style=${`width:${width}px;${well === undefined ? "" : `aspect-ratio:${well}`}`}>${shapeOnlyArt(it.family, device, live)}</span>`;
   }
 
   /** A box clicked: put the design on that device, or take it off, then say
    * "Saved" when nothing went wrong. */
-  private async compBoardTick(it: CompBoardItem, place: DevicePlace, on: boolean) {
+  private async compBoardTick(it: CompBoardItem, place: DevicePlace, on: boolean, offer = true) {
     if (this.saving) return;
     const said = this.copyStatus;
-    this.compBoardBusy = `${it.row.key}|${place.owner.ownerId}`;
+    const ownerId = place.owner.ownerId;
+    const device = place.owner.label;
+    const shelf = this.libraryOwner();
+    // What a way back needs, read before the write. A design on the shelf
+    // leaves it when it lands on a device, so its copies there are kept too.
+    const snapshots = (owner: string, ids: readonly string[]) => ids.flatMap((id) => {
+      const record = this.recordAt(owner, id);
+      return record?.document ? [{ id, revision: record.revision, document: record.document as Record<string, unknown> }] : [];
+    });
+    const was = on
+      ? (shelf === undefined ? [] : snapshots(shelf.ownerId, it.row.copies.filter((c) => c.ownerId === shelf.ownerId).map((c) => c.id)))
+      : snapshots(ownerId, place.copies.map((c) => c.id));
+    this.compLastPlaced = undefined;
+    this.compLastShelved = undefined;
+    this.compLastLinked = undefined;
+    this.compBoardBusy = `${it.row.key}|${ownerId}`;
     this.saveError = undefined;
     try {
       if (on) await this.addRowTo(it.row, place.owner, true);
@@ -14827,7 +15378,109 @@ export class WristAssistantPanel extends LitElement {
     } finally {
       this.compBoardBusy = undefined;
     }
-    if (this.saveError === undefined && this.copyStatus === said) this.flashCompSaved();
+    if (this.saveError !== undefined || this.copyStatus !== said) return;
+    if (!offer) return;
+    const name = it.row.name;
+    if (on) {
+      const placed = this.compLastPlaced;
+      // Nothing written (a design that cannot be read, say): nothing to undo.
+      if (placed === undefined) return;
+      const linked = this.compLastLinked;
+      offerUndo({ text: tickDoneText(name, device, true), undo: () => this.undoCompPutOn(name, device, ownerId, placed, was, linked) });
+      return;
+    }
+    if (was.length === 0 || was.some((r) => this.recordAt(ownerId, r.id) !== undefined)) return;
+    const shelved = this.compLastShelved;
+    offerUndo({ text: tickDoneText(name, device, false), undo: () => this.undoCompTakeOff(name, device, ownerId, was, shelved) });
+  }
+
+  /** Save a deleted record back under its own id, at its own seat. The server
+   * revives a tombstone from the tombstone's revision: the one after the delete
+   * unless the record moved since, which its refusal then says. */
+  private async reviveRecord(ownerId: string, was: { revision: number; document: Record<string, unknown> }): Promise<SaveResult> {
+    const out = await saveRecord(this.hass, ownerId, was.document, was.revision + 1);
+    if (out.ok || out.error !== "conflict" || !out.current) return out;
+    return saveRecord(this.hass, ownerId, was.document, out.current.revision);
+  }
+
+  /** Undo a tick: the copy it wrote goes, a design that came off the shelf for
+   * it goes back there, and a link the tick made is taken off the record it
+   * was written to. */
+  private async undoCompPutOn(name: string, device: string, ownerId: string, placedId: string, shelved: readonly { id: string; revision: number; document: Record<string, unknown> }[], linked: LinkedByTick | undefined): Promise<string | undefined> {
+    if (this.saving) return `${name} is still on ${device}. Another write is running, so tick it off in a moment.`;
+    this.saving = true;
+    try {
+      await this.loadOtherLists();
+      const record = this.recordAt(ownerId, placedId);
+      if (record !== undefined) {
+        const gone = await deleteRecord(this.hass, ownerId, record.id, record.revision);
+        if (!gone.ok) return `${name} is still on ${device}: ${outText(gone, "the delete failed")}`;
+      }
+      const shelf = this.libraryOwner();
+      if (shelf !== undefined) {
+        for (const was of shelved) {
+          const out = await this.reviveRecord(shelf.ownerId, was);
+          if (!out.ok) return `${name} came off ${device}, but could not go back under ${UNASSIGNED_LABEL}: ${outText(out, "the save failed")}`;
+        }
+      }
+      if (linked !== undefined) await this.dropTickLink(linked, placedId);
+      await this.reloadAfterRowWrite(ownerId, shelf?.ownerId ?? "", linked?.ownerId ?? "");
+      return undefined;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Put a record back as it was before a tick linked it, when it is still what
+   * that tick left and nothing else shares the link. A record that moved on
+   * keeps the link, and so does one with edits open on it. Nobody can see a
+   * link of one, so one that stays, or a write that fails, is not worth words:
+   * the Undo that was asked for has happened. */
+  private async dropTickLink(linked: LinkedByTick, placedId: string) {
+    const now = this.recordAt(linked.ownerId, linked.id);
+    if (now === undefined || now.revision !== linked.revision) return;
+    if (this.linkedSiblings(linked.linkId, linked.ownerId, linked.id).some((s) => s.record.id !== placedId)) return;
+    const open = linked.ownerId === this.ownerId && linked.id === this.selectedId;
+    if (open && this.draft?.dirty) return;
+    try {
+      const out = await saveRecord(this.hass, linked.ownerId, linked.document, now.revision);
+      if (!out.ok || !out.record || !open || !this.draft || this.draft.dirty) return;
+      // The editor's clean copy follows, so its next save does not write the
+      // link back, and the list read after this finds nothing to reopen.
+      delete this.draft.config.linkId;
+      this.draft = this.draft.commit(out.record.revision);
+    } catch {
+      /* See above. */
+    }
+  }
+
+  /** Undo an untick: the deleted copies come back as they were, same id, seat
+   * and hidden flag, so a face using one finds it, and the shelf's copy the
+   * last one left goes. When that copy cannot go, the words say so: the design
+   * is on the device and also listed under the shelf. */
+  private async undoCompTakeOff(name: string, device: string, ownerId: string, copies: readonly { id: string; revision: number; document: Record<string, unknown> }[], shelvedId: string | undefined): Promise<string | undefined> {
+    if (this.saving) return `${name} is still off ${device}. Another write is running, so tick it on in a moment.`;
+    this.saving = true;
+    try {
+      await this.loadOtherLists();
+      for (const was of copies) {
+        const out = await this.reviveRecord(ownerId, was);
+        if (!out.ok) return `${name} could not go back on ${device}: ${outText(out, "the save failed")}`;
+      }
+      const shelf = this.libraryOwner();
+      let shelfCopyStays = false;
+      if (shelf !== undefined && shelvedId !== undefined) {
+        const record = this.recordAt(shelf.ownerId, shelvedId);
+        if (record !== undefined) {
+          const gone = await deleteRecord(this.hass, shelf.ownerId, record.id, record.revision).catch(() => undefined);
+          shelfCopyStays = gone?.ok !== true;
+        }
+      }
+      await this.reloadAfterRowWrite(ownerId, shelf?.ownerId ?? "");
+      return shelfCopyStays ? `${name} is back on ${device}, but the copy under ${UNASSIGNED_LABEL} stays. Delete it from its own card.` : undefined;
+    } finally {
+      this.saving = false;
+    }
   }
 
   /** Hide here, or show again, from a focused column. */
@@ -15206,6 +15859,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.newOpen) this.newOpen = false;
     if (this.dupOpen) this.dupOpen = false;
     if (this.confirmDelete) this.confirmDelete = false;
+    if (this.rawOpen) this.rawOpen = false;
     if (this.shareOpen || this.galleryOpen) {
       this.shareOpen = false;
       this.galleryOpen = false;
@@ -19254,6 +19908,8 @@ export class WristAssistantPanel extends LitElement {
         <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
         <span class="spacer"></span>
         ${this.renderLayersViewButtons()}
+        <button class="lc-help" title="Every key and mouse trick" aria-label="Every key and mouse trick" aria-haspopup="dialog"
+          @click=${() => { this.helpTab = "keys"; this.helpOpen = true; }}>?</button>
         ${edit ? html`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet ? "true" : "false"}
           title="Add a layer, a preset or a saved part (/)"
           @click=${(e: Event) => this.toggleAddSheet(e.currentTarget as HTMLElement)}>${uiIcon("plus")}<span>Add layer</span></button>` : nothing}
@@ -19280,8 +19936,9 @@ export class WristAssistantPanel extends LitElement {
             </div>`
           : nothing}
       ${this.renderNotesCard(cfg, edit)}
-      ${pickedCount < 2 && selectedCount === 0 && cfg.elements.length >= 2 && edit && !cfg.groups?.length
-          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
+      ${!this.layersTipSeen && pickedCount < 2 && selectedCount === 0 && cfg.elements.length >= 2 && edit && !cfg.groups?.length
+          ? html`<div class="one-tip" role="note">${uiIcon("info")}<span>Tip: ${MULTI_KEY}-click or Shift-click rows to pick several, then group them.</span>
+              <button type="button" class="small" @click=${() => this.putAwayLayersTip()}>Got it</button></div>`
           : nothing}
       ${family === "corner" ? nothing : shapeRows.length === 0 ? html`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>` : nothing}
       ${!all && body.length === 0 && shapeRows.length > 0 && paged
@@ -19330,6 +19987,16 @@ export class WristAssistantPanel extends LitElement {
       </div>
       </div>
     </div>`;
+  }
+
+  /** The multi-select tip, put away for good in this browser. */
+  private putAwayLayersTip() {
+    this.layersTipSeen = true;
+    try {
+      window.localStorage.setItem(LAYERS_TIP_STORE_KEY, "1");
+    } catch {
+      /* Storage off: it is back on the next visit. */
+    }
   }
 
   /**
@@ -19900,22 +20567,22 @@ export class WristAssistantPanel extends LitElement {
   // ── Home ──────────────────────────────────────────────────────────────
 
   /**
-   * Home, the panel's front page at its own address: a device browser. The
-   * tabs above already lead to the watch app's screens and to the
-   * complications, so Home does not repeat them; it answers "what is in this
-   * home, whose is it, and is each one up to date", one device at a time.
+   * The Devices tab (once Home), the panel's front page: a device browser. The
+   * tabs above already lead to the boards and to the complications, so it
+   * does not repeat them; it answers "what is in this home, whose is it, and
+   * is each one up to date", one device at a time, each at its own address
+   * (`homeAddress`).
    *
-   * The side bar has the head, Pair a device, then every device, grouped
+   * The side bar has the head with + Pair, Overview, then every device, grouped
    * in a box by the person it belongs to (`people`), the box's head saying
    * how their devices stand, each device in its own color
    * (`device-colors.ts`). A device's word is the header pill's rule for its
    * complications; a watch's is the worse of that and its watch app records
-   * (`deviceVerdict`).
+   * (`deviceVerdict`). A device away for a week with changes waiting is asleep
+   * (`sync-pill.ts`), in grey.
    *
-   * The rest of the page is the picked device (`renderHomeDetail`): drawn
-   * large on a lit stage with its own complications on its face, its sync
-   * state, and a door to each of its pages. Picking another slides it in
-   * (`animateHomePick`).
+   * The rest of the page is the picked device (`renderHomeDetail`). Picking
+   * another slides it in (`animateHomePick`).
    *
    * A home with no devices gets the welcome instead (`renderHomeWelcome`):
    * install the app, pick the device, pair it. Nothing but "Loading…" while
@@ -19939,7 +20606,7 @@ export class WristAssistantPanel extends LitElement {
     if (failed || loading || devices.length === 0) {
       return html`${error}
         <div class="home home-pad"><div class="home-wrap">
-          <div class="home-head"><div class="home-head-text"><h1>Home</h1>${lead}${scope}</div></div>
+          <div class="home-head"><div class="home-head-text"><h1>Devices</h1>${lead}${scope}</div></div>
           ${failed ? this.renderNotReady() : html`<p class="home-empty">Loading…</p>`}
         </div></div>
         ${pair}`;
@@ -19949,17 +20616,16 @@ export class WristAssistantPanel extends LitElement {
     return html`${error}
       <div class="home hb">
         <aside class="hb-side" aria-label="Devices">
-          <div class="hb-head"><h1>Home</h1>${lead}${scope}</div>
-          <button type="button" class="hb-pair" @click=${() => this.openPairDialog()}>
-            <span class="hb-pair-ic" aria-hidden="true">${uiIcon("plus")}</span>
-            <span class="hb-pair-t"><b>Pair a device</b><span>A watch with a code, an iPhone with a QR code</span></span>
-          </button>
+          <div class="hb-head">
+            <div class="hb-head-top"><h1>Devices</h1>
+              <button type="button" class="home-btn" aria-label="Pair a device" title="Pair a watch with a code, an iPhone with a QR code" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair</span></button>
+            </div>
+            ${lead}${scope}
+          </div>
           ${this.renderHomeAllRow(devices.length)}
           ${groups.map((g) => this.renderHomeGroup(g, this.homeAll ? "" : row.id, elapsed))}
-          ${this.renderHomeShared()}
-          <p class="home-small">${HOME_SYNC_NOTE}</p>
         </aside>
-        <section class="hb-main" aria-label=${this.homeAll ? "All devices" : row.name}>
+        <section class="hb-main" aria-label=${this.homeAll ? "Overview" : row.name}>
           ${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}
         </section>
       </div>
@@ -20076,16 +20742,14 @@ export class WristAssistantPanel extends LitElement {
   private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, pick: string, elapsed: number) {
     const color = "var(--wa-hue-grey)";
     const name = g.person?.label ?? "Other devices";
-    const n = g.rows.length;
-    const { synced, waiting } = homeTotals(g.rows);
-    const sum = waiting > 0 ? `${waiting} waiting` : synced === n ? "All synced" : `${synced} of ${n} synced`;
+    const sum = homeGroupSummary(syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed).map(syncStateOf));
     return html`<section class="hb-group" style=${`--c:${color}`}>
       <div class="hb-person">
         <span class="hb-avatar" aria-hidden="true">${g.person?.picture
           ? html`<img src=${g.person.picture} alt="" loading="lazy" />`
           : html`<span>${name.trim().charAt(0).toLocaleUpperCase()}</span>`}</span>
         <h2 class="hb-person-name">${name}</h2>
-        <span class="hb-person-sum">${sum}<i class="home-dot ${waiting > 0 ? "waiting" : synced === n ? "synced" : ""}" aria-hidden="true"></i></span>
+        <span class="hb-person-sum">${sum.text}<i class="home-dot ${sum.tone}" aria-hidden="true"></i></span>
       </div>
       ${g.person !== undefined && g.person.userId === undefined
         ? html`<span class="hb-person-note" title="No Home Assistant user is linked to these devices. The name is read from a device's name.">Not linked to a user</span>`
@@ -20094,37 +20758,14 @@ export class WristAssistantPanel extends LitElement {
     </section>`;
   }
 
-  /** The Library: the screens that belong to the whole home, not one
-   * device, under the people in Home's side bar (`homeLibraryScreens`: HTTP
-   * actions and Cameras). With no Watch app tab, this is their
-   * way in. Each is a real link, so a middle click opens it in a new browser
-   * tab. */
-  private renderHomeShared() {
-    const screens = homeLibraryScreens();
-    return html`<section class="hb-group hb-shared" aria-label=${HOME_LIBRARY_TITLE}>
-      <div class="hb-person"><h2 class="hb-person-name">${HOME_LIBRARY_TITLE}</h2></div>
-      <p class="hb-lead">${HOME_LIBRARY_LEAD}</p>
-      ${screens.map((screen) => {
-        const look = WATCH_SCREEN_LOOK[screen.id];
-        const path = watchScreenPath(screen);
-        return html`<a class="hb-row hb-link" href=${panelUrl(this.route, path, globalThis.location?.pathname ?? "")}
-          title=${watchScreenSentence(screen)} style=${`--h:${look.hue}`}
-          @click=${(e: MouseEvent) => { if (!isPlainClick(e)) return; e.preventDefault(); this.goTo(path); }}>
-          <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon(look.icon)}</span>
-          <span class="hb-row-t"><span class="hb-row-name">${screen.label}${screen.beta === "alpha" ? betaPill("ALPHA") : screen.beta === true ? betaPill() : nothing}</span><span class="hb-row-sub">${HOME_SHARED_SUB[screen.id] ?? ""}</span></span>
-        </a>`;
-      })}
-    </section>`;
-  }
-
-  /** "All devices", at the top of Home's side bar (plan step 6): every
-   * thing in the home and the devices it is on, as one table. */
+  /** "Overview", at the top of the side bar, at `/devices/all` (plan step 6):
+   * every thing in the home and the devices it is on, as one table. */
   private renderHomeAllRow(n: number) {
     const on = this.homeAll;
     return html`<button type="button" class="hb-row hb-all ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
       style="--h:var(--wa-hue-grey)" title="Every thing in your home, and the devices it is on" @click=${() => this.openHomeAll()}>
       <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon("grid")}</span>
-      <span class="hb-row-t"><span class="hb-row-name">All devices</span><span class="hb-row-sub">${n} ${n === 1 ? "device" : "devices"}, every thing on each</span></span>
+      <span class="hb-row-t"><span class="hb-row-name">Overview</span><span class="hb-row-sub">${n} ${n === 1 ? "device" : "devices"} at a glance</span></span>
     </button>`;
   }
 
@@ -20136,7 +20777,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Home with "All devices" picked (plan step 6): the boards as one table,
+   * The Devices tab with Overview picked (plan step 6): the boards as one table,
    * under one search. Pages, status pages and menus are their tabs' own
    * boards, drawn without their heads (`embedded`); then the
    * complications; then what is on every device, with a lock in each box;
@@ -20156,10 +20797,9 @@ export class WristAssistantPanel extends LitElement {
         ${tab === undefined ? nothing : html`<button type="button" class="hl-change" title=${`Open the ${title} tab`} @click=${() => this.goTo(tab)}>Open tab${uiIcon("right")}</button>`}</div>
       ${body}
     </section>`;
-    // The device count, for the stacked tables' least width (`boardStackStyles`).
-    return html`<div class="ha" style=${`--bd-n:${this.compBoardDevices().length}`}>
+    return html`<div class="ha">
       <div class="ha-head">
-        <div class="ha-head-t"><h2>All devices</h2><p>Every thing in your home, and the devices it is on. A tick saves at once. Click a device's name to change its order.</p></div>
+        <div class="ha-head-t"><h2>Overview</h2><p>Every thing in your home, and the devices it is on. A tick saves at once. Press Focus on a device to change its order.</p></div>
         <label class="pk-search ha-search">
           ${uiIcon("search")}
           <input type="search" class="pk-search-input" .value=${q} placeholder="Find a thing" aria-label="Find a thing"
@@ -20186,15 +20826,8 @@ export class WristAssistantPanel extends LitElement {
   private renderHomeAllTable(label: string, thing: string, rows: readonly HomeAllRow[], empty: string) {
     const devices = this.compBoardDevices();
     const span = devices.length + 1;
-    return html`<div class="bd-scroll bd-fixed"><table class="bd" aria-label=${label}>
-      <thead><tr>
-        <th scope="col" class="bd-thing">${thing}</th>
-        ${devices.map((d) => {
-          const color = this.deviceColorOf(d.ownerId);
-          return html`<th scope="col" class="bd-col" style=${color === undefined ? nothing : `--dc:${color}`}><span class="ha-col">
-            <span class="bd-col-glyph" aria-hidden="true">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}</span><span class="bd-col-name">${d.name}</span></span></th>`;
-        })}
-      </tr></thead>
+    const columns = devices.map((device) => ({ device, color: this.deviceColorOf(device.ownerId) }));
+    return html`<div class="bd-fixed">${renderPlainBoard({ label, thing, columns, body: html`
       <tbody>${rows.length === 0 ? html`<tr class="bd-none"><td colspan=${span}>${empty}</td></tr>` : rows.map((r) => html`<tr class="bd-row">
         <th scope="row" class="bd-thing"><span class="bd-thing-in">
           ${r.onOpen === undefined
@@ -20208,12 +20841,11 @@ export class WristAssistantPanel extends LitElement {
           const color = this.deviceColorOf(d.ownerId);
           return html`<td class="bd-cell" style=${color === undefined ? nothing : `--dc:${color}`}>${r.cell(d)}</td>`;
         })}
-      </tr>`)}</tbody>
-    </table></div>`;
+      </tr>`)}</tbody>` })}</div>`;
   }
 
-  /** "On every device": HTTP actions and Cameras, kept once for the whole
-   * home, with a lock in every box: nothing to pick. */
+  /** "Shared": HTTP actions, Camera framing and the Home map, kept once for
+   * the whole home, with a lock in every box: nothing to pick. */
   private renderHomeAllShared(query: string) {
     const q = query.trim().toLocaleLowerCase();
     const rows = homeLibraryScreens()
@@ -20223,10 +20855,10 @@ export class WristAssistantPanel extends LitElement {
         return {
           key: screen.id, name: screen.label, detail: HOME_SHARED_SUB[screen.id] ?? "", icon: look.icon, hue: look.hue,
           openTitle: `Open ${screen.label}`, onOpen: () => this.goTo(watchScreenPath(screen)),
-          cell: (d) => html`<span class="ha-lock" role="img" aria-label=${`On ${d.name}, as on every device`} title="On every device. Nothing to pick.">${uiIcon("lock")}</span>`,
+          cell: (d) => html`<span class="ha-lock" role="img" aria-label=${`On ${d.name}, as on every device`} title="Shared by every device. Nothing to pick.">${uiIcon("lock")}</span>`,
         };
       });
-    return this.renderHomeAllTable("On every device", "Thing", rows, `Nothing on every device matches "${query.trim()}".`);
+    return this.renderHomeAllTable("Shared", "Thing", rows, `Nothing shared matches "${query.trim()}".`);
   }
 
   /** "Each device's own": Settings, Rooms and Voice, kept by each device
@@ -20259,10 +20891,11 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** One device picked on Home (plan step 6): what is on it, in its order,
-   * a group per kind, then its own screens. Pages, status pages and menus
-   * come from the library (`wa-home-lineup`); the complications and the
-   * own screens are drawn here. Edit opens a thing in its tab's one editor;
-   * Change opens that tab's board focused on this device. */
+   * a group per kind. Its own screens are in the row under its header
+   * (`renderDeviceOwnRow`). Pages, status pages and menus come from the
+   * library (`wa-home-lineup`); the complications are drawn here. Edit opens a
+   * thing in its tab's one editor; "Open in Pages" and the like, and an empty
+   * box's button, open that tab's board focused on this device. */
   private renderHomeLineup(row: HomeDeviceRow) {
     const ownerId = row.id;
     const word = row.kind === "watch" ? "watch" : "iPhone";
@@ -20275,18 +20908,16 @@ export class WristAssistantPanel extends LitElement {
       onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),
       onLoaded: () => this.requestUpdate(),
     }) : nothing;
-    const own = this.homeOwnGroup(row);
     return html`<h3 class="home-title">On this ${word}</h3>
       <div class="hl-groups hb-lineup">
         ${library}
         ${renderLineupGroup(this.homeCompGroup(row))}
-        ${own.lines.length === 0 ? nothing : renderLineupGroup(own)}
       </div>`;
   }
 
   /** A device's complications (a watch) or widgets (an iPhone), in its own
-   * order, each with Edit; Change opens the Complications board focused on
-   * it. */
+   * order, each with Edit; "Open in Complications", and the button in an empty
+   * box, open the Complications board focused on it. */
   private homeCompGroup(row: HomeDeviceRow): LineupGroup {
     const ownerId = row.id;
     const word = row.kind === "watch" ? "watch" : "iPhone";
@@ -20324,7 +20955,8 @@ export class WristAssistantPanel extends LitElement {
       // Cards like the pages', each as wide as the widest picture: a picture
       // grows with the room, and in a row it pushed the name out.
       strip: true, numbered: false, cell: Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(76)) + 18,
-      change: { title: `Put complications on this ${word} or take them off`, onClick: () => void this.openDeviceList(ownerId, "all") },
+      change: { label: "Open in Complications", title: `Put ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} or take them off, on the Complications tab`, onClick: () => void this.openDeviceList(ownerId, "all") },
+      add: { label: row.kind === "watch" ? "Add complications" : "Add widgets", title: `Open the Complications tab, focused on this ${word}`, onClick: () => void this.openDeviceList(ownerId, "all") },
     };
   }
 
@@ -20337,7 +20969,7 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.homeCompSaid = undefined;
-    await this.compBoardTick(it, place, false);
+    await this.compBoardTick(it, place, false, false);
     this.homeCompSaid = this.saveError !== undefined
       ? { ownerId, tone: "err", text: `Not taken off ${device}. ${this.saveError}` }
       : {
@@ -20360,58 +20992,47 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.homeCompSaid = undefined;
-    await this.compBoardTick(it, place, true);
+    await this.compBoardTick(it, place, true, false);
     this.homeCompSaid = this.saveError !== undefined
       ? { ownerId, tone: "err", text: `Not put back on ${device}. ${this.saveError}` }
       : { ownerId, tone: "ok", text: `Put ${name} back on ${device}.` };
-  }
-
-  /** A device's own screens: Settings, Rooms and Voice (a watch's alone),
-   * each "Not shared", with Open. */
-  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {
-    const word = row.kind === "watch" ? "watch" : "iPhone";
-    const own = new Set<string>([WATCH_SETTINGS_SCREEN.id, "rooms", "voice"]);
-    const screens = deviceSheetTabs(row.kind, this.phonePages).flatMap((t) => (t.kind === "screen" && own.has(t.screen.id) ? [t] : []));
-    const lines = screens.map((t): LineupLine => {
-      const screen = (t as Extract<DeviceSheetTab, { kind: "screen" }>).screen;
-      const path = deviceScreenPath(row.kind, screen, row.id);
-      return {
-        key: screen.id, name: t.label, detail: homeDoorLook(t, row.kind).blurb, tag: LINEUP_OWN_TAG,
-        action: {
-          label: "Open", title: `${t.label} on ${row.name}`, href: panelUrl(this.route, path, globalThis.location?.pathname ?? ""),
-          onClick: () => { this.pickWatch(row.id); this.goTo(path); },
-        },
-      };
-    });
-    return { key: "own", title: `This ${word}'s own`, icon: "sliders", hue: "var(--wa-hue-grey)", noCount: true, lines, empty: "" };
   }
 
   /** Edit on a complication's line: open it in the editor on the
    * Complications tab. Nothing moves when the editor kept unsaved work. */
   private async openFromHome(row: PickerRow, copy: PickerCopy<PickerItem>) {
     await this.openFromPicker(row, copy);
-    if (this.ownerId === copy.ownerId && this.selectedId === copy.id) this.goTo(COMPLICATIONS_PATH);
+    if (this.ownerId === copy.ownerId && this.selectedId === copy.id) {
+      // Opened straight at its own address: its List goes to the full list, not
+      // to wherever an earlier design was opened from.
+      this.listReturn = undefined;
+      this.goTo(designPath(copy.ownerId, copy.id));
+    }
   }
 
   /** One device's row in Home's side bar, which picks it: its small drawing,
    * its name, what it holds and when it was heard from, and a dot in its
-   * sync color. A device whose user was deleted says so, and picking it
-   * opens its Remove step. */
+   * sync color; an asleep one is grey and says how long. A device whose user
+   * was deleted says so, and picking it opens its Remove step. */
   private renderHomeRow(d: HomeDeviceRow, on: boolean, elapsed: number) {
     const owner = this.ownerOf(d.id);
     const held = owner?.complication_count ?? 0;
     const gone = userGone(owner);
     const rejected = (d.rejected?.length ?? 0) > 0;
     const heard = seenWords(owner, elapsed) ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
-    const state = gone ? "" : rejected ? "rejected" : d.sync;
+    const device = syncPillDevices([d], (id) => this.ownerOf(id), elapsed)[0]!;
+    const asleep = isAsleep(device);
+    const state = gone ? "" : asleep ? "asleep" : rejected ? "rejected" : d.sync;
     // The device's own color (`device-colors.ts`), on its drawing's box, its
     // lit slot, and the picked row's outline.
     const color = this.deviceColorOf(d.id);
     return html`<button type="button" class="hb-row ${state} ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
       style=${color === undefined ? nothing : `--c:${color}`}
-      title=${`${d.name}: ${gone ? USER_GONE_TEXT : homeDeviceLabel(d)}`} @click=${() => this.openHomeDevice(d.id, gone)}>
+      title=${`${d.name}: ${gone ? USER_GONE_TEXT : syncRowWords(device)}`} @click=${() => this.openHomeDevice(d.id, gone)}>
       <span class="hb-icon ${color === undefined ? "" : "tinted"}" style=${color === undefined ? nothing : `--c:${color}`} aria-hidden="true">${homeMiniArt(d.kind, held > 0)}</span>
-      <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT : homeRowSub(d.kind, held, heard, this.homePageCount(d))}</span></span>
+      <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT
+        : asleep ? html`${homeRowSub(d.kind, held, undefined, this.homePageCount(d))} · <span class="hb-asleep">${asleepRowWords(device)}</span>`
+        : homeRowSub(d.kind, held, heard, this.homePageCount(d))}</span></span>
       <i class="hb-row-dot" aria-hidden="true"></i>
     </button>`;
   }
@@ -20483,8 +21104,9 @@ export class WristAssistantPanel extends LitElement {
     if (this.draft) {
       await this.draftSave;
       if (this.draft?.dirty && !this.confirmDiscard()) return;
-      this.selectNone();
+      this.dropDesign();
     }
+    this.listReturn = undefined;
     this.pickerFilter = filter;
     this.pickPickerTab(ownerId);
     this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId));
@@ -20496,16 +21118,44 @@ export class WristAssistantPanel extends LitElement {
     return new Map(homeDeviceRows(this.homeDevices(), this.watchAppSyncs).map((row) => [row.id, row.sync]));
   }
 
-  /** Back to Home from a device's screen, with that device picked. */
+  /** The devices that are asleep (`sync-pill.ts`), for the row over their
+   * screens, which says so in place of Waiting, as the Devices tab does. */
+  private rowAsleep(): Set<string> {
+    const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
+    const rows = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
+    return new Set(syncPillDevices(rows, (id) => this.ownerOf(id), elapsed).filter(isAsleep).map((d) => d.id));
+  }
+
+  /** Back to the Devices tab from a device's screen, with that device
+   * picked, at that device's own address. */
   private backToHome(ownerId: string | undefined) {
     this.toggleWatchRowMenu(false);
-    if (ownerId !== undefined && this.ownerOf(ownerId) !== undefined) this.openHomeDevice(ownerId);
-    this.goTo(tabPath("home"));
+    const known = ownerId !== undefined && this.ownerOf(ownerId) !== undefined;
+    if (known) this.openHomeDevice(ownerId);
+    this.goTo(known ? devicePath(ownerId) : tabPath("home"));
+  }
+
+  /** Make the Devices tab and its address agree (`homeAddress`), after any
+   * move, Back and a reload included, and once the device list is in. A pick
+   * that came from the address starts the device afresh, the way a press
+   * does; nothing moves when it is the device already picked. */
+  private settleHomeAddress() {
+    // Home Assistant may keep a hidden panel a while, still updating: it must
+    // not rewrite the address of the page now on screen.
+    if (!this.isConnected || this.route === undefined || tabOfRoute(this.route) !== "home") return;
+    const rows = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
+    const next = homeAddress(this.route, rows, { pick: this.homePick, all: this.homeAll }, (id) => this.ownerOf(id));
+    if (next.pick !== undefined && (next.pick !== this.homePick || (this.homeAll && !next.all))) this.openHomeDevice(next.pick, false, false);
+    this.homeAll = next.all;
+    if (next.rewrite !== undefined) this.goTo(next.rewrite, true);
   }
 
   /** Pick a device on Home, starting on its overview, or on its Remove step
-   * for a waiting line or row whose user was deleted. */
-  private openHomeDevice(ownerId: string, forget = false) {
+   * for a waiting line or row whose user was deleted. On the tab itself the
+   * address follows with a history step of its own (`move`), so Back returns
+   * to the device before; the address's own pick has already moved. */
+  private openHomeDevice(ownerId: string, forget = false, move = true) {
+    if (move && tabOfRoute(this.route) === "home") this.goTo(devicePath(ownerId));
     this.devicePaired = undefined;
     this.deviceForgetAsk = forget;
     this.deviceForgetError = undefined;
@@ -20521,10 +21171,11 @@ export class WristAssistantPanel extends LitElement {
     if (deviceKindOf(this.ownerOf(ownerId)) !== "library") void this.loadDeviceAddresses(ownerId);
   }
 
-  /** Show All devices on Home. On a narrow page, where it sits under the
-   * list, it is brought into view. */
+  /** Show Overview on the Devices tab, at `/devices/all`. On a narrow page,
+   * where it sits under the list, it is brought into view. */
   private openHomeAll() {
     this.homeAll = true;
+    this.goTo(devicePath(DEVICES_ALL));
     void this.updateComplete.then(() => {
       if (!window.matchMedia?.("(max-width: 720px)").matches) return;
       this.renderRoot.querySelector<HTMLElement>(".ha")?.scrollIntoView({ block: "start" });
@@ -20591,22 +21242,18 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The picked device on Home. A bar with whose it is and its name, the
-   * arrows to the device before and after it, Rename and Remove. Then the
-   * device drawn large on its stage in its person's color, wearing its own
-   * complications where they have card pictures (`homeFace`), its sync word,
-   * and two counts pointing at it. Under the stage, its name and facts, its
-   * sync state in a lit well, and a door per page (`deviceSheetTabs`), each
-   * opening that page on this device: its glyph in the page's section hue,
-   * how many it holds, and a line on what it is for. An iPhone of a home
-   * with phone pages has its Settings and Pages too, which open in the
-   * iPhone app.
+   * The picked device on the Devices tab, the same for every kind (mock-home
+   * item 3). One header line: the device small, its name, whose it is and its
+   * facts, its sync word with when it was last seen, then the arrows to the
+   * device before and after it and a ··· menu. Under that, Overview and its
+   * own screens (`renderDeviceOwnRow`), its addresses, and what is on it.
    *
    * Anyone can rename it (the name is Home Assistant's own device name, set
    * through the integration's own command since Home Assistant keeps its
    * registry update to administrators) and anyone can remove it, after a
-   * second step that says what goes with it. A device whose user was
-   * deleted says so and offers Remove alone.
+   * second step that says what goes with it. Both are in the ··· menu, with
+   * Copy device address. A device whose user was deleted says so and offers
+   * Remove alone.
    */
   private renderHomeDetail(row: HomeDeviceRow, devices: readonly HomeDeviceRow[], groups: readonly { person?: Person; index: number; rows: HomeDeviceRow[] }[], elapsed: number) {
     const ownerId = row.id;
@@ -20619,11 +21266,11 @@ export class WristAssistantPanel extends LitElement {
     const held = owner?.complication_count ?? 0;
     const rejected = (row.rejected?.length ?? 0) > 0;
     const gone = userGone(owner);
-    const state = rejected ? "rejected" : row.sync;
+    const device = syncPillDevices([row], (id) => this.ownerOf(id), elapsed)[0]!;
+    const asleep = isAsleep(device);
+    const state = asleep ? "asleep" : rejected ? "rejected" : row.sync;
     const pending = pendingWords(owner);
-    const syncSub = rejected ? attentionText(row, undefined)
-      : row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}`
-      : row.sync === "synced" ? "Has every change" : "Has never synced anything";
+    const syncSub = rejected && !asleep ? attentionText(row, undefined) : undefined;
     const facts = deviceFacts(owner, row.kind).join(" · ");
     const step = (dir: -1 | 1) => {
       const next = homeStep(devices, ownerId, dir);
@@ -20665,16 +21312,38 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
     // A watch's and an iPhone's alike: Home Assistant keeps both their records.
     const addresses = !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind) : nothing;
-    const goneNote = html`<div class="hb-ask"><p><b>${USER_GONE_TEXT}.</b> Home Assistant refuses everything ${row.name} sends. Remove it here, or pair it again for someone who has a user.</p></div>`;
-    const overview = html`<div class="hb-state ${state}">
-        <span class="hb-state-chip" aria-hidden="true">${uiIcon(rejected ? "info" : row.sync === "waiting" ? "clock" : "check")}</span>
-        <span class="hb-state-t"><b>${homeDeviceLabel(row)}</b><span>${syncSub}${pending === undefined ? "" : ` · ${pending}`}</span></span>
-        ${heard === undefined ? nothing : html`<span class="hb-seen"><span>Last seen</span><b>${heard.replace(/^Seen /, "")}</b></span>`}
+    const askRemove = () => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); };
+    const goneNote = html`<div class="hb-ask"><p><b>${USER_GONE_TEXT}.</b> Home Assistant refuses everything ${row.name} sends. Remove it here, or pair it again for someone who has a user.</p>
+      <div class="dev-acts"><button class="danger" @click=${askRemove}>${uiIcon("delete")}<span>Remove device…</span></button></div></div>`;
+    // The sync word and when it was last seen; a watch that could not use a
+    // save also says what, since only that needs reading. The rest is the
+    // chip's tooltip.
+    const chipTitle = asleep ? ASLEEP_NOTE : pending === undefined ? HOME_SYNC_NOTE : `${HOME_SYNC_NOTE} ${pending}.`;
+    const chipIcon = asleep ? undefined : rejected ? "info" : row.sync === "synced" ? "check" : undefined;
+    const overview = html`<div class="hb-state ${state} ${chipIcon === undefined ? "plain" : ""}" title=${chipTitle}>
+        ${chipIcon === undefined ? nothing : html`<span class="hb-state-chip" aria-hidden="true">${uiIcon(chipIcon)}</span>`}
+        <span class="hb-state-t"><b>${asleep ? "Asleep" : syncRowWords(device)}</b>${syncSub === undefined ? nothing : html`<span>${syncSub}</span>`}</span>
+        ${heard === undefined ? nothing : html`<span class="hb-seen">${seen?.startsWith("Seen ") ? html`<span>Last seen</span>` : nothing}<b>${heard.replace(/^Seen /, "")}</b></span>`}
       </div>`;
+    const moreRun = (fn: () => void) => () => { this.toggleSideMenu("device", false); fn(); };
+    const moreOpen = this.sideMenu === "device";
+    const more = html`<span class="side-menu hb-more" data-side-menu="device" @keydown=${(e: KeyboardEvent) => this.homeMenuKey(e)}>
+        <button type="button" class="hb-step hb-more-btn" aria-haspopup="menu" aria-expanded=${moreOpen ? "true" : "false"} aria-label=${`More for ${row.name}`} title="More"
+          @click=${(e: MouseEvent) => this.toggleHomeMenu(e.detail === 0)}>${uiIcon("more")}</button>
+        ${moreOpen ? html`<div class="pop-menu side-pop hb-menu" role="menu" aria-label=${`More for ${row.name}`}>
+          ${!this.deviceForgetAsk && !renaming && !gone
+            ? html`<button type="button" class="row" role="menuitem" title="Change the name Home Assistant shows for it" @click=${moreRun(() => this.startDeviceRename(ownerId))}>${uiIcon("note")}<span>Rename…</span></button>`
+            : nothing}
+          <button type="button" class="row" role="menuitem" title="Copy this device's page address, to open it here again or send it" @click=${moreRun(() => void this.copyDeviceAddress(ownerId, row.name))}>${uiIcon("link")}<span>Copy device address</span></button>
+          ${this.deviceForgetAsk ? nothing
+            : html`<div class="pop-sep" role="separator"></div>
+              <button type="button" class="row danger" role="menuitem" title=${`Remove ${row.name} from this Home Assistant`} @click=${moreRun(askRemove)}>${uiIcon("delete")}<span>Remove device…</span></button>`}
+        </div>` : nothing}
+      </span>`;
     return html`<div class="hb-detail" data-pick=${ownerId} style=${`--c:${color}`}>
       <div class="hb-bar">
         <div class="hb-hero">
-          <div class="hb-stage"><div class="hb-device" aria-hidden="true">${art}</div></div>
+          <div class="hb-stage"><div class="hb-device" style=${`--c:${color}`} aria-hidden="true">${art}</div></div>
           <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2>
             <span class="hb-facts"><i aria-hidden="true"></i>${whose} · ${facts}</span></div>
           ${this.deviceForgetAsk || gone ? nothing : overview}
@@ -20682,16 +21351,15 @@ export class WristAssistantPanel extends LitElement {
         <div class="hb-acts">
           ${devices.length > 1 ? html`
             <button type="button" class="hb-step" title="Previous device" aria-label="Previous device" @click=${() => step(-1)}>${uiIcon("left")}</button>
-            <button type="button" class="hb-step" title="Next device" aria-label="Next device" @click=${() => step(1)}>${uiIcon("right")}</button>
-            <span class="hb-sep" aria-hidden="true"></span>` : nothing}
-          ${!this.deviceForgetAsk && !renaming && !gone
-            ? html`<button type="button" class="home-btn" title="Change the name Home Assistant shows for it" @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
-            : nothing}
-          ${this.deviceForgetAsk ? nothing
-            : html`<button type="button" class="home-btn hb-remove" title=${`Remove ${row.name} from this Home Assistant`}
-                @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); }}>Remove</button>`}
+            <button type="button" class="hb-step" title="Next device" aria-label="Next device" @click=${() => step(1)}>${uiIcon("right")}</button>` : nothing}
+          ${more}
         </div>
       </div>
+      ${this.deviceForgetAsk || gone ? nothing : renderDeviceOwnRow({
+        route: this.route, ownerId, kind: row.kind, phones: this.phonePages,
+        titleOf: (screen) => ownScreenBlurb(screen.id, row.kind),
+        onGo: (path) => { this.pickWatch(ownerId); this.goTo(path); },
+      })}
       ${this.devicePaired === ownerId || renaming || this.deviceForgetAsk || gone ? html`<div class="hb-info">
           ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
           ${renaming ? renameForm : nothing}
@@ -20700,6 +21368,43 @@ export class WristAssistantPanel extends LitElement {
       ${addresses}
       ${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}
     </div>`;
+  }
+
+  /** The ··· on the picked device. Opened from the keyboard, its first item
+   * takes the focus. */
+  private toggleHomeMenu(fromKeys: boolean) {
+    this.toggleSideMenu("device");
+    if (!fromKeys || this.sideMenu !== "device") return;
+    void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".hb-menu [role=menuitem]")?.focus());
+  }
+
+  /** The keys of the ··· menu: Escape shuts it and hands the focus back, the
+   * arrows walk its items. */
+  private homeMenuKey(e: KeyboardEvent) {
+    if (this.sideMenu !== "device") return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleSideMenu("device", false);
+      this.renderRoot.querySelector<HTMLElement>(".hb-more-btn")?.focus();
+      return;
+    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const items = [...this.renderRoot.querySelectorAll<HTMLElement>(".hb-menu [role=menuitem]")];
+    if (items.length === 0) return;
+    const at = items.indexOf((this.renderRoot as ShadowRoot).activeElement as HTMLElement);
+    const from = at < 0 && e.key === "ArrowUp" ? 0 : at;
+    items[(from + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+  }
+
+  /** Copy a device's own address (`/devices/<id>`), which reload, Back and a
+   * shared link all land on. Says so in the toast; when no way of copying
+   * worked, the toast holds the address to copy by hand. */
+  private async copyDeviceAddress(ownerId: string, name: string) {
+    const path = panelUrl(this.route, devicePath(ownerId), globalThis.location?.pathname ?? "");
+    const url = `${globalThis.location?.origin ?? ""}${path}`;
+    sayDone(await copyPlainText(url) ? `Copied the address of ${name}.` : `Could not copy it. The address of ${name} is ${url}`);
   }
 
   /** Open the picked device's name field on the name Home Assistant shows
@@ -21147,7 +21852,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
     const cfg = this.canvasConfig();
     if (!cfg) return this.renderListPage();
-    const layouts = resolveAll(cfg, this.buildContext(), this.forced);
+    const layouts = this.frameLayouts(cfg);
     this.syncCountdownTicker(layouts);
     const deviceCase = this.currentCase();
     const family = this.activeFamily;
@@ -21157,7 +21862,6 @@ export class WristAssistantPanel extends LitElement {
     if (this.inControlView) {
       return html`
         <div class="card canvas-card">
-          ${this.renderCanvasHead(cfg, layouts)}
           ${this.renderCanvasDevices(cfg)}
           <div class="stage-area">
             <div class="stage-wrap"><div class="stage control-stage">${this.renderControlStage(cfg)}</div></div>
@@ -21178,7 +21882,6 @@ export class WristAssistantPanel extends LitElement {
     const reserve = stageReserve({ rowStrip: designing, firstRun: tiles });
     return html`
       <div class="card canvas-card">
-        ${this.renderCanvasHead(cfg, layouts)}
         ${this.renderCanvasDevices(cfg)}
         <div class="stage-area">
           <div class="stage-wrap ${tiles ? "first-run" : ""}"
@@ -21213,74 +21916,59 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The header over the canvas, one row: what this is (the name, typed over
-   * in place, then shape and page, muted) and what is done to the whole of it
-   * (Undo, Redo, Duplicate, Delete). Where it lives is the device strip right
-   * under it (`renderCanvasDevices`), the same block a page's editor has.
+   * The device strip over the stage, the page editor's: the question, then a
+   * checkbox per device of this design's kind, ticked where it is, in the
+   * device's color. Ticking writes a linked copy there (`addRowTo`); unticking
+   * takes it off (`removeRowFrom`), and the last copy goes to Not on a device
+   * rather than being deleted. Unlike the layers, that does not wait for Save,
+   * and the line beside the question says so.
    *
-   * It folds the rows that used to sit here: the name with its actions and
-   * the tool row. The tools went onto the floating toolbar. A document that
-   * still holds a shape and a Control Center control keeps its segmented
-   * switch, here, in place of the shape's name.
-   */
-  private renderCanvasHead(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const f = supportedFamilies(cfg)[0];
-    const seg = this.hasControlTab(cfg);
-    const paged = usesPages(cfg) && !this.inControlView;
-    const pagePart = paged ? `page ${this.shownPage()} of ${pagesSpecOf(cfg).count}` : "";
-    return html`<div class="cv-head">
-      ${this.renderNameField(cfg)}
-      <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
-      ${seg
-        ? html`${this.renderShapeSwitch(cfg, layouts)}${pagePart ? html`<span class="cv-shape">${pagePart}</span>` : nothing}`
-        : f === undefined
-          ? nothing
-          : html`<span class="cv-shape"><span class="fam">${this.shapeTitle(f)}${pagePart ? ` · ${pagePart}` : ""}</span>${this.shapeNotes(cfg, layouts, f)}</span>`}
-      </span>
-      ${this.canEdit ? html`<span class="cv-acts">${this.renderDocActions(cfg)}</span>` : nothing}
-    </div>`;
-  }
-
-  /**
-   * The device strip under the canvas head, the page editor's: the question,
-   * a tick per device of this design's kind (ticked where it is), then the
-   * count. Ticking writes a linked copy there (`addRowTo`); unticking takes
-   * it off in one click (`removeRowFrom`), like a page's chip. The last copy
-   * goes to Unassigned
-   * rather than being deleted. The same block, in the same place, as a
-   * page's, and drawn by the same `renderTickChips`, so when the chips do not
-   * fit the strip the unticked ones fold into "+ Add to a device" here too.
+   * A tick while the draft holds unsaved work cannot be written yet: the copy
+   * would carry the edit, or leave it behind. So it waits for Save
+   * (`queueDeviceTick`), drawn the way it will be and tagged, and Save runs it.
+   * The chips are `renderTickChips`, so when they do not fit the strip the
+   * unticked ones fold into "+ Add to a device".
    */
   private renderCanvasDevices(cfg: CustomComplicationConfig) {
     const question = "Which devices do you want this on?";
     const row = this.openRow();
     if (!row) {
-      return html`<div class="lib-on over-stage none" role="group" aria-label=${question}>
+      return html`<div class="lib-on over-stage comp-on none" role="group" aria-label=${question}>
         <span class="lib-on-l">${question}</span><span class="lib-on-n">Save it first. Then tick a device to put it there.</span>
       </div>`;
     }
     const f = supportedFamilies(cfg)[0];
     const places = this.rowPlaces(row, f).filter((p) => p.owner.kind !== "library");
     const on = places.filter((p) => p.on).length;
+    const queue = this.deviceQueue;
+    const waits = this.draft?.dirty === true || this.deviceQueueHeld;
     const chips = places.map((place): TickChip => {
       const target = place.owner;
       const label = placeLabel(target, f);
+      const queued = queue.get(target.ownerId);
+      const shown = queued ?? place.on;
       const block = place.on ? undefined : this.placeBlock(place, f, label);
-      const stuck = block?.why
+      // A queued tick can always be taken back: one that failed because the
+      // device is full is drawn stuck otherwise, with no way to let go of it.
+      const stuck = queued !== undefined ? undefined : block?.why
         ?? (place.on && place.last && this.libraryOwner() === undefined ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.` : undefined)
         ?? (!this.canEdit ? "Only an administrator can change where this is." : undefined);
-      const title = stuck ?? (place.on
-        ? place.last ? `On ${label}. Click to take it off and keep it under ${UNASSIGNED_LABEL}.` : `On ${label}. Click to take it off.`
-        : `Put it on ${label}. Saving it saves it everywhere it is.`);
+      const title = stuck ?? (queued !== undefined
+        ? queued ? `Goes on ${label} when you save. Click to leave it off.` : `Comes off ${label} when you save. Click to keep it.`
+        : waits
+          ? place.on ? `On ${label}. Untick to take it off when you save.` : `Not on ${label}. Tick to put it there when you save.`
+          : place.on
+            ? place.last ? `On ${label}. Untick to take it off and keep it under ${UNASSIGNED_LABEL}.` : `On ${label}. Untick to take it off.`
+            : `Not on ${label}. Tick to put it there.`);
       // A device that cannot take it says why in a word on the chip, the way
       // the old menu's row did, not only in a tooltip a touch screen never
-      // shows.
-      const tag = block?.tag;
+      // shows. A tick waiting for Save says that the same way.
+      const tag = queued !== undefined ? "after Save" : block?.tag;
       return {
         ownerId: target.ownerId, name: label, device: target.kind === "iphone" ? "iphone" : "watch",
-        color: this.deviceColorOf(target.ownerId), shape: "square", on: place.on, hidden: false,
+        color: this.deviceColorOf(target.ownerId), shape: "square", on: shown, hidden: false,
         busy: this.saving, add: false, label, title,
-        next: stuck !== undefined || this.saving ? undefined : !place.on,
+        next: stuck !== undefined || this.saving ? undefined : !shown,
         ...(stuck === undefined ? {} : { stuck }),
         ...(tag === undefined ? {} : { tag }),
       };
@@ -21288,38 +21976,20 @@ export class WristAssistantPanel extends LitElement {
     const onPick = (ownerId: string, putOn: boolean) => {
       const place = places.find((p) => p.owner.ownerId === ownerId);
       if (!place) return;
+      if (waits) {
+        this.deviceQueue = queueDeviceTick(this.deviceQueue, ownerId, putOn, place.on);
+        // Nothing left to wait for: the next tick writes at once again.
+        if (this.deviceQueue.size === 0) this.deviceQueueHeld = false;
+        return;
+      }
       if (putOn) { void this.addRowTo(row, place.owner, true); return; }
       void this.removeRowFrom(row, place, true, true);
     };
-    return html`<div class="lib-on over-stage ${on === 0 ? "none" : ""}" role="group" aria-label=${question}>
+    return html`<div class="lib-on over-stage comp-on ${on === 0 ? "none" : ""}" role="group" aria-label=${question}>
       <span class="lib-on-l">${question}</span>
+      <span class="lib-on-n" role="status">${deviceStripNote({ queued: queue.size, on })}</span>
       ${renderTickChips(chips, { foldLabel: "Add to a device" }, onPick)}
-      <span class="lib-on-n">${on === 0 ? "On no device yet" : `On ${on} ${on === 1 ? "device" : "devices"}`}</span>
     </div>`;
-  }
-
-  /**
-   * What is done to the whole complication, as icon buttons at the right of
-   * the canvas head: Undo and Redo, then Duplicate and Delete, parted by
-   * hairlines. Undo takes back inspector edits too, so it stands with the
-   * whole-document actions rather than the canvas's view controls. Delete arms
-   * the way it always did: one press asks in place, and a design on several
-   * devices asks which. Putting it on a device, or taking it off one, is the
-   * device strip under the head.
-   */
-  private renderDocActions(cfg: CustomComplicationConfig) {
-    if (!this.canEdit) return nothing;
-    const d = this.draft;
-    return html`<button class="cv-act icon undo" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title=${`Undo (${KEY_MOD}Z)`} aria-label="Undo">${uiIcon("undo")}</button>
-      <button class="cv-act icon undo" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title=${`Redo (${KEY_SHIFT}${KEY_MOD}Z)`} aria-label="Redo">${uiIcon("redo")}</button>
-      <span class="cv-div" aria-hidden="true"></span>
-      <button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
-        title="Duplicate: make this design again as another shape, or on another device"
-        @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>${uiIcon("duplicate")}</button>
-      <span class="cv-div" aria-hidden="true"></span>
-      <button class="cv-act danger icon" aria-haspopup="dialog" aria-expanded=${this.confirmDelete ? "true" : "false"}
-        title="Delete this complication. It asks first." aria-label="Delete this complication"
-        @click=${() => { this.confirmDelete = true; }}>${uiIcon("delete")}</button>`;
   }
 
   /**
@@ -22373,26 +23043,23 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * What this complication is, in words, for the read-only Shape row of the
-   * Complication card: "Rectangular, on Jesse's Apple Watch".
+   * Complication card: "Rectangular". Where it is, is the device strip's to say.
    *
    * One shape on one kind of device, so there is nothing to tick and nothing
-   * to choose. It used to be the "Appears on" list, a column of devices with a
-   * copy behind each tick, which is the whole of what one shape per
-   * complication did away with. A shape travels by being copied now, and a
-   * copy is its own complication from that moment, which the row's tooltip
-   * says.
+   * to choose. A shape travels by being copied, and a copy is its own
+   * complication from that moment, which the row's tooltip says.
    */
-  private whatItIs(cfg: CustomComplicationConfig): { line: string; note: string } {
+  private whatItIs(cfg: CustomComplicationConfig): { line: string; note: string; family?: FamilyKind } {
     const family = supportedFamilies(cfg)[0];
     const shelved = isLibraryOwner(this.selectedOwner) || !this.selectedOwner;
     const shape = family === undefined ? "Control Center" : familyTitle(family);
-    const where = shelved || !this.selectedOwner ? "on no device yet" : `on ${ownerLabel(this.selectedOwner)}`;
     const also = cfg.control !== undefined && family !== undefined ? ", with a Control Center control" : "";
     return {
-      line: `${shape}, ${where}${also}`,
+      line: `${shape}${also}`,
       note: shelved
         ? "No device shows it until a copy of it goes on one."
         : "A copy on another device is a complication of its own.",
+      ...(family === undefined ? {} : { family }),
     };
   }
 
@@ -22431,12 +23098,12 @@ export class WristAssistantPanel extends LitElement {
     const control = this.inControlView;
     if (ins.kind === "general" || control) {
       // Refresh, the tap action and the flash belong to the shapes, so on the
-      // control's tab the card is the name alone. What this complication is,
-      // in words, is the read-only Shape row under the name on both tabs: one
-      // shape on one kind of device is the fact everything else on the card
-      // hangs off.
+      // control's tab the card is the shape alone. What this complication is,
+      // in words, is the read-only Shape row on both tabs: one shape on one
+      // kind of device is the fact everything else on the card hangs off. The
+      // name has one home, the editor's bar.
       const complication = card(host, "complication", "Complication",
-        generalEditor(host, { nameOnly: control, shape: this.whatItIs(cfg) }),
+        generalEditor(host, { shapeOnly: control, shape: this.whatItIs(cfg) }),
         { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true });
       // A document with no layers yet gets the four steps instead of the line
       // about clicking one, since there is nothing to click.
@@ -22581,36 +23248,24 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Status and the raw document, as one thin bar across the foot of the
-   * editor, under all three columns.
-   *
-   * Neither is part of authoring, so neither earns a card. The bar says the
-   * one thing worth a glance, which is whether the work is saved. History
-   * opens the earlier saves, and Raw configuration opens the rest above it.
+   * The raw document, from the bar's ··· menu: the saved details, the
+   * templates and entities it reads, and the document itself. Nothing here is
+   * part of authoring, so it stays out of the way until asked for.
    */
-  private renderFooter() {
+  private renderRawDialog() {
     const d = this.draft;
     if (!d) return nothing;
-    const rec = this.records.find((r) => r.id === this.selectedId);
-    // Whether the work is saved is said once, beside Save in the top bar.
-    return html`<div class="foot" data-open=${this.rawOpen ? "true" : "false"}>
-      ${this.rawOpen ? this.renderRawDetails(d, rec) : nothing}
-      <div class="foot-row">
-        <span class="foot-fill"></span>
-        ${this.canEdit ? html`<button class="foot-raw" aria-haspopup="dialog" ?disabled=${d.baseRevision === null}
-          title=${d.baseRevision === null ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
-          @click=${() => void this.openHistoryDialog()}>History</button>` : nothing}
-        <button class="foot-raw" aria-expanded=${this.rawOpen ? "true" : "false"}
-          @click=${() => { this.rawOpen = !this.rawOpen; }}>Raw configuration</button>
-      </div>
-    </div>`;
+    const close = () => { this.rawOpen = false; };
+    return html`<dialog class="xf raw-dialog" @close=${close}>
+      ${this.dialogHead("Raw configuration", "", close)}
+      ${this.renderRawDetails(d, this.records.find((r) => r.id === this.selectedId))}
+    </dialog>`;
   }
 
-  /** What Raw configuration opens: the saved details, the templates and
-   * entities the document reads, and the document itself. */
+  /** What Raw configuration holds. */
   private renderRawDetails(d: Draft, rec: ComplicationRecord | undefined) {
     return html`
-      <div class="foot-body">
+      <div class="raw-body">
         <dl class="kv">
           <dt>Revision</dt><dd>${rec ? rec.revision : "unsaved"}${d.dirty ? html` <span class="warn">· unsaved changes</span>` : ""}</dd>
           ${rec ? html`<dt>Saved</dt><dd>${rec.updatedAt || "at an unknown time"} ${savedByWords(rec.updatedBy) || "by an unknown user"}</dd>` : nothing}

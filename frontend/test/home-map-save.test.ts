@@ -27,6 +27,7 @@ import {
   homeMapCapable,
   homeMapOn,
   homeMapRead,
+  homeMapReadFailed,
   keepHomeMap,
   setHomeMapCapable,
 } from "../src/home-map/store.js";
@@ -300,5 +301,27 @@ describe("the map held between screens", () => {
     homeMapRead(hass, () => undefined);
     await settle();
     expect(homeMapRead(hass, () => undefined)).toEqual({ doc: null, rev: 4 });
+  });
+
+  it("says when the first read failed, and asks to draw again so a card can say so", async () => {
+    setHomeMapCapable(true);
+    const hass = { connection: { sendMessagePromise: () => Promise.reject(new Error("no")) } } as unknown as Parameters<typeof homeMapRead>[0];
+    const drawn = vi.fn();
+    expect(homeMapRead(hass, drawn)).toBeUndefined();
+    expect(homeMapReadFailed()).toBe(false);
+    await settle();
+    expect(drawn).toHaveBeenCalledOnce();
+    expect(homeMapReadFailed()).toBe(true);
+    // Drawing again does not read again, so the two cannot loop.
+    expect(homeMapRead(hass, drawn)).toBeUndefined();
+    expect(drawn).toHaveBeenCalledOnce();
+  });
+
+  it("does not call a read that came back a failure", async () => {
+    setHomeMapCapable(true);
+    const { hass } = fakeHass({ doc: fixture(), rev: 2 });
+    homeMapRead(hass, () => undefined);
+    await settle();
+    expect(homeMapReadFailed()).toBe(false);
   });
 });

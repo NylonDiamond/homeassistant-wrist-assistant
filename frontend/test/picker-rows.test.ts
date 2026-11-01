@@ -431,7 +431,8 @@ describe("personIndex", () => {
     expect(placeColorVar(people, "p1", "iphone")).toBe("var(--wa-person-1)");
     expect(placeColorVar(people, "w1", "watch")).toBe("var(--wa-person-2)");
     expect(placeColorVar(people, "lost-phone", "iphone")).toBe("var(--wa-hue-blue)");
-    expect(placeColorVar(people, "lost-watch", "watch")).toBe("var(--wa-hue-green)");
+    // Never green, which means synced.
+    expect(placeColorVar(people, "lost-watch", "watch")).toBe("var(--wa-hue-grey)");
     expect(placeColorVar(people, LIBRARY_OWNER_ID, "library")).toBeUndefined();
   });
 

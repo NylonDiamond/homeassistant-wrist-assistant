@@ -50,9 +50,14 @@ export interface HelpScreen {
 }
 
 const HOME_TEXT = [
-  "Home lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
-  "Waiting means the device gets them the next time Wrist Assistant opens on it.",
-  "On every device holds what the whole home shares: HTTP actions and camera framing.",
+  "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
+  "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
+  "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.",
+];
+
+const SHARED_TEXT = [
+  "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions, camera framing and Home map.",
+  "Open one to change it. A save reaches every device.",
 ];
 
 const COMPLICATIONS_TEXT = [
@@ -66,7 +71,7 @@ export const PAGES_PHONE_TILES_TEXT = "A few tiles, like a map or a web card, ar
 
 const PAGES_TEXT = [
   "Pages lists every page in your home, with a column for each device. Tick a box and the page is on that device: one page, the same everywhere, so an edit shows on every device that has it.",
-  "Pick a page to edit it, or make a new one. Click a device's name to set its order and what it hides.",
+  "Pick a page to edit it, or make a new one. Press Focus on a device to set its order and what it hides.",
   PAGES_PHONE_TILES_TEXT,
 ];
 
@@ -77,7 +82,7 @@ const STATUS_PAGES_TEXT = [
 
 const MENUS_TEXT = [
   "Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu on more than one device is the same menu: an edit shows on all of them.",
-  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a dot to have that device use it. To change a menu on one device only, click the device's name, then Duplicate its menu. New menu starts on no device yet.",
+  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a dot to have that device use it. To change a menu on one device only, press Focus on the device, then Duplicate its menu from the row's ... button. New menu starts on no device yet.",
 ];
 
 /** Each screen's guide in the docs: what the ? in the screen's own bar
@@ -95,7 +100,7 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
 };
 
 /** What the sheet says of whose a whole-home screen is. */
-export const HELP_LIBRARY_TEXT = "It is on every device in this home: Home lists it under On every device.";
+export const HELP_LIBRARY_TEXT = "It is on every device in this home: find it under the Shared tab.";
 
 /** A watch screen's blurb as a sentence (its name, then the blurb, which
  * reads on from the name), then whose it is. The blurbs are
@@ -126,7 +131,8 @@ export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   if (tab === "pages") return { name: "Pages", text: PAGES_TEXT, more: WATCH_PAGES_HELP_URL };
   if (tab === "status-pages") return { name: "Status pages", text: STATUS_PAGES_TEXT, more: WATCH_STATUS_PAGES_HELP_URL };
   if (tab === "menus") return { name: "Menus", text: MENUS_TEXT, more: WATCH_MENUS_HELP_URL };
-  return { name: "Home", text: HOME_TEXT, more: DOCS_URL };
+  if (tab === "shared") return { name: "Shared", text: SHARED_TEXT, more: DOCS_URL };
+  return { name: "Devices", text: HOME_TEXT, more: DOCS_URL };
 }
 
 export interface HelpSheetInput {

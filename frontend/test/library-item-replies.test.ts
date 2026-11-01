@@ -24,7 +24,7 @@ import "../src/watch-pages/page-editor.js";
 import { forgetStatusPagesDraft, keptStatusPagesDraft } from "../src/watch-status-pages/draft.js";
 import { renameStatusPage, statusPagesOf } from "../src/watch-status-pages/model.js";
 import "../src/watch-status-pages/status-pages-editor.js";
-import { type StatusPagesViewHost, renderPagesCard } from "../src/watch-status-pages/view.js";
+import { type StatusPagesViewHost, renderStatusInspector } from "../src/watch-status-pages/view.js";
 import { connectLibrary, flat, libraryHome, settle } from "./library-editor-home.js";
 
 interface Reply {
@@ -159,7 +159,7 @@ describe("the server's library/item replies in the editors", () => {
     expect(draft.revision).toBe(reply.revision);
     expect(draft.document).toEqual(reply.document);
     expect(statusPagesOf(draft.document).map((p) => p.id)).toEqual([id]);
-    expect(flat(renderPagesCard(e.call<StatusPagesViewHost>("viewHost")))).toContain(`Delete ${page.name as string}`);
+    expect(flat(renderStatusInspector(e.call<StatusPagesViewHost>("viewHost")))).toContain("<span>Delete page</span>");
     draft.apply(renameStatusPage(draft.document, id, "Renamed"));
     await e.call<Promise<void>>("save");
     await settle();

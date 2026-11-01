@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import catalog from "../src/watch-settings-catalog.json";
-import { IPHONE_SETTINGS_BLURB, countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, homeTotalBucket, homeTotals, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { IPHONE_SETTINGS_BLURB, countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
@@ -208,34 +208,17 @@ describe("countWord", () => {
   });
 });
 
-describe("homeTotals", () => {
-  it("counts every device and each sync word", () => {
-    expect(homeTotals([{ sync: "synced" }, { sync: "waiting" }, { sync: "synced" }, { sync: "idle" }]))
-      .toEqual({ all: 4, synced: 2, waiting: 1, idle: 1 });
-    expect(homeTotals([])).toEqual({ all: 0, synced: 0, waiting: 0, idle: 0 });
-  });
-
+describe("needsAttention", () => {
   it("counts a watch that could not use the last save as waiting, never synced", () => {
-    // Its delivery numbers say synced (it fetched the save), but its card says
-    // Not synced and it is listed under Waiting to sync; the totals agree.
-    const refused = { sync: "synced" as const, rejected: ["pages"] };
-    expect(homeTotals([{ sync: "synced" }, refused]))
-      .toEqual({ all: 2, synced: 1, waiting: 1, idle: 0 });
-    expect(homeTotals([{ sync: "idle", rejected: ["settings"] }]))
-      .toEqual({ all: 1, synced: 0, waiting: 1, idle: 0 });
+    // Its delivery numbers say synced (it fetched the save), but its row says
+    // Not synced, and `syncStateOf` in the person's box agrees.
+    expect(needsAttention({ sync: "synced" })).toBe(false);
+    expect(needsAttention({ sync: "idle" })).toBe(false);
+    expect(needsAttention({ sync: "waiting" })).toBe(true);
+    expect(needsAttention({ sync: "synced", rejected: ["pages"] })).toBe(true);
+    expect(needsAttention({ sync: "idle", rejected: ["settings"] })).toBe(true);
     // An empty list of refused parts is no refusal.
-    expect(homeTotals([{ sync: "synced", rejected: [] }]))
-      .toEqual({ all: 1, synced: 1, waiting: 0, idle: 0 });
-  });
-
-  it("puts each device in the bucket Waiting to sync agrees with", () => {
-    expect(homeTotalBucket({ sync: "synced" })).toBe("synced");
-    expect(homeTotalBucket({ sync: "idle" })).toBe("idle");
-    expect(homeTotalBucket({ sync: "waiting" })).toBe("waiting");
-    expect(homeTotalBucket({ sync: "synced", rejected: ["pages"] })).toBe("waiting");
-    for (const row of [{ sync: "synced" as const }, { sync: "synced" as const, rejected: ["pages"] }, { sync: "idle" as const, rejected: ["x"] }]) {
-      expect(homeTotalBucket(row) === "waiting").toBe(needsAttention(row));
-    }
+    expect(needsAttention({ sync: "synced", rejected: [] })).toBe(false);
   });
 });
 
@@ -409,13 +392,13 @@ describe("the shell's and Home's look", () => {
     }
   });
 
-  it("outlines every tab, and marks the open one with weight and a grey fill", () => {
+  it("draws the tabs as one segmented group, and marks the open one with weight, the switch's fill and a rim", () => {
     const text = shellStyles.cssText;
-    const tab = text.slice(text.indexOf("a.wa-tab {"), text.indexOf("}", text.indexOf("a.wa-tab {")));
-    expect(tab).toContain("border: 1px solid var(--wa-line-strong)");
+    const list = text.slice(text.indexOf(".wa-tabs-list {"), text.indexOf("}", text.indexOf(".wa-tabs-list {")));
+    expect(list).toContain("box-shadow: inset 0 0 0 1px var(--wa-line-strong)");
     const on = text.slice(text.indexOf("a.wa-tab.on {"), text.indexOf("}", text.indexOf("a.wa-tab.on {")));
     expect(on).toContain("font-weight: 600");
-    expect(on).toContain("var(--wa-ink) 10%");
+    expect(on).toContain("background: var(--wa-seg-on)");
     expect(on).not.toContain("--wa-hue");
     expect(text).toContain("flex-wrap: wrap");
   });

@@ -765,9 +765,9 @@ export function watchRecordUnreadable(record: WatchConfigRecord | undefined, rea
 
 /** A first save refused as `no_record`: the integration makes a first record
  * only for a watch it has a key for. The path is the one a new user finds
- * first: the Home tab's Pair a device. Every watch editor says this same
+ * first: + Pair, on the Devices tab. Every watch editor says this same
  * line. */
-export const PAIR_FIRST_TEXT = "Pair this watch first: on the Home tab, choose Pair a device.";
+export const PAIR_FIRST_TEXT = "Pair this watch first: on the Devices tab, press Pair.";
 
 /** The same, said inside Watch settings, whose pairing card is below. */
 export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a device on this page.";

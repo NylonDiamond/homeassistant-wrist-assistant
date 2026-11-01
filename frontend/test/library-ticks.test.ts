@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { libraryOf } from "../src/library/model.js";
 import { pendingKey } from "../src/library/store.js";
 import { chipsFold } from "../src/library/chip-row.js";
-import { TICK_ADMIN_TEXT, type TickChip, renderTickChips, renderTicks, tickChips, tickSkipsText, tickSkipsTitle, type TicksInput } from "../src/library/ticks.js";
+import { type DeviceCheck, SAVES_AT_ONCE_TEXT, SHOWN_ON_TEXT, TICK_ADMIN_TEXT, type TickChip, deviceCheckChips, renderTickChips, renderTicks, tickChips, tickSkipsText, tickSkipsTitle, type TicksInput } from "../src/library/ticks.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, QUICK, summary } from "./library-fixture.js";
 
 const flat = (v: unknown): string => {
@@ -82,6 +82,50 @@ describe("tickChips", () => {
     const lonely = tickChips(input({ itemId: LONELY, admin: false }));
     expect(lonely.every((c) => c.next === undefined && c.stuck === TICK_ADMIN_TEXT)).toBe(true);
     expect(tickChips(input({ itemId: LONELY, admin: true })).every((c) => c.next === true)).toBe(true);
+  });
+});
+
+describe("a chip as a checkbox", () => {
+  const check = (name: string, over: Partial<DeviceCheck> = {}): DeviceCheck => ({ ownerId: name, name, kind: "watch", color: `var(--c-${name})`, on: false, ...over });
+
+  it("is a real button with a checkbox's role, and a tick drawn only when on", () => {
+    const text = flat(renderTicks(input({}), () => undefined));
+    expect(text.match(/role="checkbox"/g)).toHaveLength(2 * 3); // Inline, and again in the fold.
+    expect(text).toMatch(/<button type="button" role="checkbox"\s+class="lt-chip on/);
+    expect(text).toContain("aria-checked=true");
+    expect(text).toContain("aria-checked=false");
+    expect(text).not.toContain("aria-pressed");
+    const chips = flat(renderTickChips([{ ...deviceCheckChips([check("a", { on: true })])[0]! }], { foldLabel: "Add" }, () => undefined));
+    expect(chips).toContain(`<svg class="lt-tick"`);
+    expect(flat(renderTickChips(deviceCheckChips([check("a")]), { foldLabel: "Add" }, () => undefined))).not.toContain(`class="lt-tick"`);
+  });
+
+  it("keeps a menu's round box, with no tick", () => {
+    const text = flat(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), () => undefined));
+    expect(text).toContain("lt-chip on rd");
+    expect(text).not.toContain(`class="lt-tick"`);
+  });
+
+  it("says Shown on and saves at once on the chips' own line, only when asked", () => {
+    const plain = flat(renderTicks(input({}), () => undefined));
+    expect(plain).not.toContain("lt-chipline");
+    const text = flat(renderTicks(input({ lead: SHOWN_ON_TEXT, saves: SAVES_AT_ONCE_TEXT }), () => undefined));
+    expect(SHOWN_ON_TEXT).toBe("Shown on");
+    expect(SAVES_AT_ONCE_TEXT).toBe("saves at once");
+    expect(text).toContain(`<span class="lt-lead">Shown on</span>`);
+    expect(text).toContain(`<span class="lt-saves">saves at once</span>`);
+    expect(text.indexOf("lt-lead")).toBeLessThan(text.indexOf("wa-chip-row"));
+    expect(text.lastIndexOf("</wa-chip-row>")).toBeLessThan(text.indexOf("lt-saves"));
+    expect(text).toContain(`aria-label=Shown on`);
+  });
+
+  it("makes chips of a plain list of devices, one click asking the opposite", () => {
+    const chips = deviceCheckChips([check("a", { on: true }), check("b"), check("c", { busy: true }), check("d", { stuck: "Save it first." }), check("e", { title: "Mine." })]);
+    expect(chips.map((c) => [c.ownerId, c.on, c.next])).toEqual([["a", true, false], ["b", false, true], ["c", false, undefined], ["d", false, undefined], ["e", false, true]]);
+    expect(chips.map((c) => c.title)).toEqual(["On a. Untick to take it off.", "Not on b. Tick to put it there.", "Saving…", "Save it first.", "Mine."]);
+    expect(chips[3]!.stuck).toBe("Save it first.");
+    expect(chips[0]!.color).toBe("var(--c-a)");
+    expect(chips.every((c) => c.shape === "square")).toBe(true);
   });
 });
 

@@ -1,13 +1,12 @@
 // The status page editor's views, drawn from a host, in the complication
 // editor's chrome (`editor-chrome.ts`) as the page and menu editors wear it:
-// the Status pages card (the list: add, pick, move, delete, and the
-// library's rest, "Not on this watch", under it), the Rows card
-// (the picked page's rows: pick, move, hide, remove, add), the watch preview
-// the canvas draws from Home Assistant's states with the watch's own rules
-// (`rules.ts`), and the inspector: a picked row's Row card, the Add a row
-// card while a row is being added, the page's own Page card, and its Style
-// card. `<wa-status-pages-editor>` owns the draft and hands a host in on
-// every draw; nothing here keeps state of its own beyond `uiState`.
+// the watch preview the canvas draws from Home Assistant's states with the
+// watch's own rules (`rules.ts`), whose rows are picked and dragged there, the
+// stage's + Add row and the rows it cannot draw right now, and the inspector:
+// a picked row's Row card, the Add a row card while a row is being added, and
+// with neither the page's own settings and its look cards.
+// `<wa-status-pages-editor>` owns the draft and hands a host in on every draw;
+// nothing here keeps state of its own beyond `uiState`.
 //
 // Every edit is a setter of `model.ts` applied to the document as it is at
 // the moment the edit commits (`host.edit`), never to the one drawn.
@@ -28,8 +27,6 @@ import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
 import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
-import { linkBadgeStyles, renderLinkBadge } from "../library/link-badge.js";
-import type { LinkBadge } from "../watch-pages/library-editing.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import type { JsonObject } from "../watch-pages/model.js";
@@ -38,12 +35,10 @@ import {
   type StatusPagesDocument,
   type StatusStyleField,
   STATUS_PAGE_KEYS,
-  addStatusPage,
   addStatusRow,
   findStatusPage,
   findStatusRow,
   isSystemStatusPage,
-  moveStatusPage,
   moveStatusRow,
   newStatusDynamicListRow,
   newStatusEntityRow,
@@ -51,7 +46,6 @@ import {
   newStatusHeaderRow,
   removeStatusPage,
   removeStatusRow,
-  renameStatusPage,
   resetStatusPageStyle,
   sameStatusId,
   setStatusPageStyle,
@@ -105,32 +99,18 @@ export interface StatusPagesViewHost {
    * the phone draws a status page over the pages, and the page is drawn in
    * the iPhone (`phone-frame.ts`). */
   readonly phone?: PhonePagesLayout;
-  /** The badge of a status page other devices have too, "Also on Jesse's
-   * iPhone", or undefined for one on this device alone
-   * (`libraryBadgeText`). */
-  linkBadge?(page: JsonObject): string | undefined;
-  /** The same badge drawn as an icon per other device, in its color, with
-   * that sentence as its tooltip (`libraryLinkBadge`, `library/link-badge.ts`).
-   * Undefined for a page on this device alone. A host that gives it is
-   * drawn with it, and `linkBadge` goes unused. */
-  linkDevices?(page: JsonObject): LinkBadge | undefined;
-  /** The line under the page list when some pages are on other devices too
-   * (`statusSharedText`). */
-  readonly sharedLine?: string;
   /** Delete a page. One other devices have too asks first: off this device
    * only, or out of the library. Without it, Delete is an edit at once, as
    * it always was. */
   deletePage?(pageId: string): void;
-  /** Drawn under the page list: the editor's list of every status page in
-   * the library (`library/item-list.ts`). */
-  readonly elsewhere?: TemplateResult;
-  /** One status page edited in the library on its own: no Add, and its row
-   * has no drag and no Move up or down. Delete stays, through
-   * `deletePage`. */
-  readonly single?: boolean;
-  /** Library mode: the filter at the right of the Status pages card's head
-   * (every status page, or those on no device). */
-  readonly listTools?: TemplateResult;
+  /** The first of the page's own settings in the inspector, from the editor:
+   * the Name row and the On each device card. */
+  readonly pageHead?: TemplateResult;
+  /** The picture beside the edited stage (Side by side): drawn the same, with
+   * nothing to pick or drag. */
+  readonly still?: boolean;
+  /** The bar's Hints: plain hints show under the settings. */
+  readonly helpOn?: boolean;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -177,9 +157,7 @@ export function saveStatusPagesZoom(scale: number | undefined, storage: ColumnSt
 
 // ── words ────────────────────────────────────────────────────────────────
 
-export const STATUS_PAGES_CARD_LINE = "Pages the watch opens from a tile, a menu slot or Siri. A save reaches the watch the next time it checks.";
-
-export const STATUS_PAGES_STAGE_HINT = "Drawn from Home Assistant's states now, as the watch draws the page. Tap a row to edit it.";
+export const STATUS_PAGES_STAGE_HINT = "Drawn from Home Assistant's states now, as the watch draws the page. Click a row to edit it, or drag it to reorder.";
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -335,43 +313,35 @@ function addRow(host: StatusPagesViewHost, row: JsonObject, keepAdding = false):
   return id;
 }
 
-/** Add a new page at the end and pick it. */
-export function addPage(host: StatusPagesViewHost): void {
-  let id: string | undefined;
-  host.edit((d) => {
-    const out = addStatusPage(d);
-    id = out.id;
-    return out.document;
-  });
-  if (id !== undefined) selectStatusPage(host, id);
-}
-
 // ── drag to reorder ──────────────────────────────────────────────────────
 
-interface DragState {
-  list: "page" | "row";
-  id: string;
-}
-
-function dragHandlers(host: StatusPagesViewHost, list: "page" | "row", id: string, index: number, move: (from: string, to: number) => void) {
+/** A row's drag on the stage: dropped on another row, it takes that row's
+ * place in the page's order. `index` is the place in the stored rows, so a
+ * dynamic list drawn as several rows moves as the one row it is. */
+function rowDragHandlers(host: Pick<StatusPagesViewHost, "uiState">, id: string, index: number, move: (from: string, to: number) => void) {
+  const mark = (e: DragEvent, on: boolean) => {
+    if (e.currentTarget instanceof HTMLElement) e.currentTarget.classList.toggle("sp-drop", on);
+  };
   return {
     start: (e: DragEvent) => {
-      host.uiState.set(DRAG_KEY, { list, id } satisfies DragState);
+      host.uiState.set(DRAG_KEY, id);
       e.dataTransfer?.setData("text/plain", id);
       if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     },
     over: (e: DragEvent) => {
-      const drag = host.uiState.get(DRAG_KEY) as DragState | undefined;
-      if (drag?.list !== list) return;
+      if (typeof host.uiState.get(DRAG_KEY) !== "string") return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      mark(e, true);
     },
+    leave: (e: DragEvent) => mark(e, false),
     drop: (e: DragEvent) => {
-      const drag = host.uiState.get(DRAG_KEY) as DragState | undefined;
+      const drag = host.uiState.get(DRAG_KEY);
       host.uiState.delete(DRAG_KEY);
-      if (drag?.list !== list || sameStatusId(drag.id, id)) return;
+      mark(e, false);
+      if (typeof drag !== "string" || sameStatusId(drag, id)) return;
       e.preventDefault();
-      move(drag.id, index);
+      move(drag, index);
     },
     end: () => { host.uiState.delete(DRAG_KEY); },
   };
@@ -383,11 +353,7 @@ function glyph(host: Pick<StatusPagesViewHost, "icons">, icon: string, size: num
   return host.icons.render(icon, size, color) ?? html`<span class="sp-glyph-dot" style=${`background:${color};width:${Math.max(4, size * 0.6)}px;height:${Math.max(4, size * 0.6)}px`}></span>`;
 }
 
-function thumb(host: StatusPagesViewHost, icon: string, color: string): TemplateResult {
-  return html`<span class="thumb sp-thumb" style=${`--c:${color}`} aria-hidden="true"><span class="sp-thumb-glyph">${glyph(host, icon, 14, color)}</span></span>`;
-}
-
-/** A stored row's color in the lists: an entity row's by its state now, a
+/** A stored row's color for its chip: an entity row's by its state now, a
  * list's or a count's as the watch colors its rows. */
 function rowColor(host: StatusPagesViewHost, row: JsonObject): string {
   const r = readStatusRow(row);
@@ -396,140 +362,38 @@ function rowColor(host: StatusPagesViewHost, row: JsonObject): string {
   return statusColor(r.domain, "on");
 }
 
-// ── the Status pages card ────────────────────────────────────────────────
+// ── the stage's rows ─────────────────────────────────────────────────────
 
-/** A page row's badge for the other devices that have the page: the device
- * icons when the host gives them, else the sentence. Either way the tooltip
- * adds that an edit here reaches them too. */
-function linkBadge(host: StatusPagesViewHost, page: JsonObject): TemplateResult | typeof nothing {
-  const devices = host.linkDevices?.(page);
-  if (devices !== undefined) return renderLinkBadge(devices.others, `${devices.title}. An edit here shows there too.`, devices.colorOf);
-  const shared = host.linkBadge?.(page);
-  if (shared === undefined) return nothing;
-  return html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`;
-}
-
-function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, count: number, shown: JsonObject | undefined): TemplateResult {
-  const id = statusPageId(page);
-  const name = statusPageName(page);
-  const on = shown !== undefined && sameStatusId(id, statusPageId(shown));
-  const rows = statusPageRows(page).length;
-  const move = (from: string, to: number) => host.edit((d) => moveStatusPage(d, from, to));
-  const drag = dragHandlers(host, "page", id, index, move);
-  const pick = () => { if (!on) selectStatusPage(host, id); };
-  const single = host.single === true;
-  return html`<div class="layer sp-page-row ${on ? "hl" : ""}" data-page=${id} role="listitem" tabindex="0"
-    draggable=${host.busy || single ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
-    @dragstart=${drag.start} @dragover=${drag.over} @drop=${drag.drop} @dragend=${drag.end}
-    @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
-    @keydown=${(e: KeyboardEvent) => {
-      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-      e.preventDefault();
-      pick();
-    }}>
-    <span class="grip" aria-hidden="true"></span>
-    ${thumb(host, "doc.text.fill", "#5B8FD4")}
-    <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
-    <span class="right">
-      <span class="badges">${linkBadge(host, page)}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. It is edited and put on devices like any other.">starter</span>` : nothing}</span>
-      <span class="acts">
-        ${single ? nothing : html`<button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
-          @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
-        <button type="button" class="icon" ?disabled=${host.busy || index === count - 1} title="Move down" aria-label=${`Move ${name} down`}
-          @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>`}
-        <button type="button" class="icon danger" ?disabled=${host.busy} title="Delete" aria-label=${`Delete ${name}`}
-          @click=${() => deletePage(host, id)}>${uiIcon("delete")}</button>
-      </span>
-    </span>
-  </div>`;
-}
-
-/** The Status pages card: every page in the watch's order; + Add makes
- * "New Page N" as the phone names it. */
-export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
-  const pages = statusPagesOf(host.document);
-  const shown = shownStatusPage(host);
-  return html`<section class="card lc sp-pages-card" aria-label="Status pages" style="--c: var(--wa-lc-pages, #26a69a); --thumb-w: 44px; --thumb-h: 22px">
-    <div class="lc-head">
-      <span class="swatch">${uiIcon("list")}</span><span class="lc-title">Status pages</span>
-      ${host.single === true ? nothing : html`<span class="lc-sub" title=${STATUS_PAGES_CARD_LINE}>${plural(pages.length, "page", "pages")}</span>`}
-      <span class="spacer"></span>
-      ${host.listTools ?? nothing}
-      ${host.single === true ? nothing : html`<button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
-        title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>`}
-    </div>
-    ${pages.length === 0
-      ? html`<div class="lc-note">No status pages. Add one to show the live state of entities you pick.</div>`
-      : html`<div class="layers sp-page-list" role="list">${pages.map((p, i) => pageRow(host, p, i, pages.length, shown))}</div>`}
-    ${host.sharedLine === undefined || pages.length === 0 ? nothing : html`<div class="lc-note sp-shared-note" role="note">${host.sharedLine}</div>`}
-    ${host.elsewhere ?? nothing}
-  </section>`;
-}
-
-// ── the Rows card ────────────────────────────────────────────────────────
-
-function rowRow(host: StatusPagesViewHost, pageId: string, row: JsonObject, index: number, count: number, selected: JsonObject | undefined): TemplateResult {
-  const id = statusRowId(row);
-  const r = readStatusRow(row);
-  const on = selected !== undefined && sameStatusId(id, statusRowId(selected));
-  const hidden = r.isHidden === true;
-  const name = r.displayName === "" ? "Display Name" : r.displayName;
-  const move = (from: string, to: number) => host.edit((d) => moveStatusRow(d, pageId, from, to));
-  const drag = dragHandlers(host, "row", id, index, move);
-  const pick = () => selectStatusRow(host, id);
-  const icon = r.rowType === "sectionHeader" ? "line.horizontal.3" : r.iconName;
-  return html`<div class="layer sp-row-row ${on ? "hl" : ""} ${hidden ? "dim" : ""}" data-row=${id} role="listitem" tabindex="0"
-    draggable=${host.busy ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name}
-    title=${`${name} · ${statusRowSubtitle(row)}${hidden ? ", hidden" : ""}`}
-    @dragstart=${drag.start} @dragover=${drag.over} @drop=${drag.drop} @dragend=${drag.end}
-    @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
-    @keydown=${(e: KeyboardEvent) => {
-      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-      e.preventDefault();
-      pick();
-    }}>
-    <span class="grip" aria-hidden="true"></span>
-    ${thumb(host, icon, rowColor(host, row))}
-    <span class="name"><b><span class="nm-t">${name}</span></b><small>${statusRowSubtitle(row)}</small></span>
-    <span class="right">
-      <span class="badges">${hidden ? html`<span class="badge">hidden</span>` : nothing}</span>
-      <span class="acts">
-        <button type="button" class="icon" ?disabled=${host.busy} title=${hidden ? "Show" : "Hide"} aria-label=${`${hidden ? "Show" : "Hide"} ${name}`}
-          @click=${() => host.edit((d) => setStatusRowKey(d, pageId, id, "isHidden", !hidden))}>${uiIcon(hidden ? "show" : "hide")}</button>
-        <button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
-          @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
-        <button type="button" class="icon" ?disabled=${host.busy || index === count - 1} title="Move down" aria-label=${`Move ${name} down`}
-          @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>
-        <button type="button" class="icon danger" ?disabled=${host.busy} title="Remove" aria-label=${`Remove ${name}`}
-          @click=${() => host.edit((d) => removeStatusRow(d, pageId, id))}>${uiIcon("delete")}</button>
-      </span>
-    </span>
-  </div>`;
-}
-
-/** The Rows card: the shown page's rows in order; + Add opens the add card
- * in the inspector. */
-export function renderRowsCard(host: StatusPagesViewHost): TemplateResult {
+/** The stage's + Add row, its one loud button: the Add a row card opens in
+ * the inspector. */
+export function renderAddRowButton(host: StatusPagesViewHost): TemplateResult {
   const page = shownStatusPage(host);
-  const rows = page === undefined ? [] : statusPageRows(page);
+  return html`<button type="button" class="pe-stage-add sp-add-row" aria-label="Add row" ?disabled=${host.busy || page === undefined}
+    title="Add an entity, a group count, a dynamic list or a header" @click=${() => openStatusAddRow(host)}>${uiIcon("plus")}<span>Add row</span></button>`;
+}
+
+/**
+ * The rows the screen does not draw now, hidden ones and a list with nothing
+ * to show, under the stage: each still has to be reachable to change it, and
+ * nothing on the device stands for it. A press picks it.
+ */
+export function renderUndrawnRows(host: StatusPagesViewHost): TemplateResult | typeof nothing {
+  const page = shownStatusPage(host);
+  if (page === undefined) return nothing;
+  const drawn = statusPageFill(page, host.hass.states).map((r) => r.rowId.toUpperCase());
+  const left = statusPageRows(page).filter((r) => !drawn.includes(statusRowId(r).toUpperCase()));
+  if (left.length === 0) return nothing;
   const selected = selectedStatusRow(host);
-  const pageId = page === undefined ? "" : statusPageId(page);
-  let body: TemplateResult;
-  if (page === undefined) body = html`<div class="lc-note">Add a status page to give it rows.</div>`;
-  else if (rows.length === 0) body = html`<div class="lc-note">No rows yet. Add entities to show in this status page.</div>`;
-  else body = html`<div class="layers sp-row-list" role="list">${rows.map((r, i) => rowRow(host, pageId, r, i, rows.length, selected))}</div>
-    <div class="lc-note sp-drag-note">Drag a row, or use its arrows, to reorder.</div>`;
-  const adding = addState(host) !== undefined;
-  return html`<section class="card lc sp-rows-card" aria-label="Rows" style="--c: var(--wa-lc-layers, #4a7fe8); --thumb-w: 44px; --thumb-h: 22px">
-    <div class="lc-head">
-      <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Rows</span>
-      ${page === undefined ? nothing : html`<span class="lc-sub">${plural(rows.length, "row", "rows")}</span>`}
-      <span class="spacer"></span>
-      <button type="button" class="lc-btn pri sp-add-row ${adding ? "on" : ""}" aria-label="Add row" ?disabled=${host.busy || page === undefined}
-        title="Add an entity, a group count, a dynamic list or a header" @click=${() => openStatusAddRow(host)}>${uiIcon("plus")}<span>Add</span></button>
-    </div>
-    ${body}
-  </section>`;
+  return html`<div class="sp-undrawn" role="group" aria-label="Rows not on the screen now">
+    <span class="sp-undrawn-l">Not on the screen now:</span>
+    ${left.map((row) => {
+      const r = readStatusRow(row);
+      const id = statusRowId(row);
+      const on = selected !== undefined && sameStatusId(id, statusRowId(selected));
+      return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} data-row=${id}
+        title=${statusRowSubtitle(row)} @click=${() => selectStatusRow(host, id)}>${r.displayName === "" ? "Display Name" : r.displayName}${r.isHidden === true ? " (hidden)" : ""}</button>`;
+    })}
+  </div>`;
 }
 
 // ── the watch preview ────────────────────────────────────────────────────
@@ -596,7 +460,43 @@ function pill(style: PreviewStyle, color: string): string {
 
 /** What drawing the watch screen needs of the host: the Status pages tab's cards
  * hand in only this (`renderStatusPagePicture`). */
-type ScreenHost = Pick<StatusPagesViewHost, "hass" | "icons" | "scale" | "screen" | "phone" | "uiState" | "document" | "requestUpdate">;
+type ScreenHost = Pick<StatusPagesViewHost, "hass" | "icons" | "scale" | "screen" | "phone" | "uiState" | "document" | "requestUpdate">
+  & Partial<Pick<StatusPagesViewHost, "edit" | "busy" | "still">>;
+
+/** What makes a drawn row a control on the edited stage: focus, Enter or
+ * Space to pick it, and a drag to take another row's place. Nothing on a
+ * picture (`still`, or a host with no edit). */
+function stageRow(host: ScreenHost, row: StatusPreviewRow): {
+  role: "button" | typeof nothing;
+  tabindex: "0" | typeof nothing;
+  draggable: "true" | typeof nothing;
+  key: ((e: KeyboardEvent) => void) | undefined;
+  start: ((e: DragEvent) => void) | undefined;
+  over: ((e: DragEvent) => void) | undefined;
+  leave: ((e: DragEvent) => void) | undefined;
+  drop: ((e: DragEvent) => void) | undefined;
+  end: (() => void) | undefined;
+} {
+  const edit = host.edit;
+  const page = shownStatusPage(host);
+  const index = page === undefined ? -1 : statusPageRows(page).findIndex((r) => sameStatusId(statusRowId(r), row.rowId));
+  if (edit === undefined || host.still === true || page === undefined || index < 0) {
+    return { role: nothing, tabindex: nothing, draggable: nothing, key: undefined, start: undefined, over: undefined, leave: undefined, drop: undefined, end: undefined };
+  }
+  const pageId = statusPageId(page);
+  const drag = rowDragHandlers(host, row.rowId, index, (from, to) => edit((d) => moveStatusRow(d, pageId, from, to)));
+  return {
+    role: "button",
+    tabindex: "0",
+    draggable: host.busy === true ? nothing : "true",
+    key: (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      selectStatusRow(host, row.rowId);
+    },
+    ...drag,
+  };
+}
 
 function previewIcon(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, size: number, scale: number): TemplateResult {
   const color = hexColor(row.color);
@@ -609,14 +509,19 @@ function previewRow(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow
   const sizes = TEXT_SIZES[style.textSize] ?? TEXT_SIZES.medium!;
   const on = selectedId !== undefined && sameStatusId(selectedId, row.rowId);
   const pick = () => selectStatusRow(host, row.rowId);
+  const stage = stageRow(host, row);
   if (row.kind === "sectionHeader") {
     return html`<div class="sp-w-header ${on ? "on" : ""}" style=${`font-size:${9 * s}px;text-align:${row.align === "center" ? "center" : row.align === "trailing" ? "right" : "left"}`}
+      role=${stage.role} tabindex=${stage.tabindex} draggable=${stage.draggable}
+      @dragstart=${stage.start} @dragover=${stage.over} @dragleave=${stage.leave} @drop=${stage.drop} @dragend=${stage.end} @keydown=${stage.key}
       @click=${pick}>${row.label}</div>`;
   }
   const color = hexColor(row.color);
   const plain = style.rowStyle === "plain";
   return html`<div class="sp-w-row ${on ? "on" : ""}" title=${row.entityId ?? row.label}
     style=${`gap:${6 * s}px;font-size:${sizes.row * s}px;font-weight:${FONT_WEIGHTS[style.fontWeight] ?? 400};padding:${plain ? 0 : 4 * s}px ${plain ? 0 : 8 * s}px;border-radius:${6 * s}px;${pill(style, color)}`}
+    role=${stage.role} tabindex=${stage.tabindex} draggable=${stage.draggable}
+    @dragstart=${stage.start} @dragover=${stage.over} @dragleave=${stage.leave} @drop=${stage.drop} @dragend=${stage.end} @keydown=${stage.key}
     @click=${pick}>
     ${style.iconPosition === "leading" ? previewIcon(host, style, row, sizes.icon, s) : nothing}
     <span class="sp-w-label">${row.label}</span>
@@ -632,8 +537,11 @@ function previewCell(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRo
   const on = selectedId !== undefined && sameStatusId(selectedId, row.rowId);
   const color = hexColor(row.color);
   const plain = style.rowStyle === "plain";
+  const stage = stageRow(host, row);
   return html`<div class="sp-w-cell ${on ? "on" : ""}" title=${row.label}
     style=${`gap:${3 * s}px;font-size:${sizes.compact * s}px;font-weight:${FONT_WEIGHTS[style.fontWeight] ?? 400};padding:${plain ? 0 : 3 * s}px ${plain ? 0 : 6 * s}px;border-radius:${6 * s}px;${pill(style, color)}`}
+    role=${stage.role} tabindex=${stage.tabindex} draggable=${stage.draggable}
+    @dragstart=${stage.start} @dragover=${stage.over} @dragleave=${stage.leave} @drop=${stage.drop} @dragend=${stage.end} @keydown=${stage.key}
     @click=${() => selectStatusRow(host, row.rowId)}>
     ${style.iconPosition === "leading" ? previewIcon(host, style, row, sizes.icon, s) : nothing}
     <span class="sp-w-value" style=${`color:${color}`}>${row.value}</span>
@@ -714,7 +622,8 @@ function statusScreenBox(host: ScreenHost, label: string): TemplateResult {
     style=${`width:${Math.round(width * s)}px;min-height:${Math.round(height * s)}px`}>${content}</div>`;
 }
 
-/** The canvas head's facts: the page's rows and what the watch draws. */
+/** The page's facts, for the ··· menu and the bar: its rows and how many are
+ * hidden. */
 export function statusStageFacts(host: Pick<StatusPagesViewHost, "uiState" | "document" | "hass">): string[] {
   const page = shownStatusPage(host);
   if (page === undefined) return [];
@@ -763,12 +672,13 @@ function card(host: StatusPagesViewHost, badge: keyof typeof BADGES, fold: strin
   }, open ? body : html``);
 }
 
-/** The cards drawn now that fold, for the inspector's Collapse all. */
+/** The cards drawn now that fold, for the inspector's Collapse all. The
+ * page's Name is a plain row and never folds. */
 export function statusInspectorFolds(host: ViewState): FoldId[] {
   if (addState(host) !== undefined) return [{ module: FOLD_MODULE, section: "add" }];
   const look = LOOK_FOLDS.map((section) => ({ module: FOLD_MODULE, section }));
   if (selectedStatusRow(host) !== undefined) return [{ module: FOLD_MODULE, section: "row" }, ...look];
-  return [{ module: FOLD_MODULE, section: "page" }, ...look];
+  return [...look, { module: FOLD_MODULE, section: "devices" }];
 }
 
 /** The suffix of the uiState key that holds a checklist's order. */
@@ -936,8 +846,15 @@ function renderRowCard(host: StatusPagesViewHost, page: JsonObject, row: JsonObj
   }
 
   const body = html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Row">${parts}</fieldset>`;
+  const rows = statusPageRows(page);
+  const index = rows.findIndex((x) => sameStatusId(statusRowId(x), id));
+  // Moving a row is a drag on the stage; these reach it from the keyboard too.
   return html`${card(host, "row", "row", rowTypeLabel(r.rowType), body, { summary: statusRowSubtitle(row) })}
     <div class="sp-acts">
+      <button type="button" class="pe-btn sp-row-up" ?disabled=${host.busy || index <= 0} title="Move this row up the page"
+        @click=${() => host.edit((d) => moveStatusRow(d, pageId, id, index - 1))}>${uiIcon("up")}<span>Move up</span></button>
+      <button type="button" class="pe-btn sp-row-down" ?disabled=${host.busy || index < 0 || index >= rows.length - 1} title="Move this row down the page"
+        @click=${() => host.edit((d) => moveStatusRow(d, pageId, id, index + 1))}>${uiIcon("down")}<span>Move down</span></button>
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Remove this row from the page"
         @click=${() => host.edit((d) => removeStatusRow(d, pageId, id))}>${uiIcon("delete")}<span>Remove</span></button>
     </div>`;
@@ -1097,19 +1014,19 @@ function renderLookCards(host: StatusPagesViewHost, page: JsonObject): TemplateR
     </div>`;
 }
 
-/** The Page card: the name and Delete. The devices the page is on are in
- * the strip under the canvas head, as in every editor. */
-function renderPageCard(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
+/** The foot of the page's settings, as on Pages: the line on reaching a row,
+ * then Delete page. A starter page says what it is. */
+function renderPageFoot(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
   const pageId = statusPageId(page);
-  const name = statusPageName(page);
-  return card(host, "page", "page", "Page", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Page">
-    ${textField("Name", name, (v) => host.edit((d) => renameStatusPage(d, pageId, v), `page:${pageId}:name`), { placeholder: "Page Name" })}
-    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited, put on devices and deleted like any other.</div>` : nothing}
-    <div class="sp-acts">
+  return html`${isSystemStatusPage(page) ? html`<div class="hint keep sp-starter">One of the app's starter pages. It is edited, put on devices and deleted like any other.</div>` : nothing}
+    <div class="pe-no-tile">
+      <span class="pe-no-tile-ic" aria-hidden="true">${uiIcon("tap")}</span>
+      <p>${statusPageRows(page).length === 0 ? "No rows yet. Add entities to show in this status page." : "Click a row on the stage to edit it, or drag it to reorder."}</p>
+    </div>
+    <div class="pe-page-acts">
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Delete this status page"
         @click=${() => deletePage(host, pageId)}>${uiIcon("delete")}<span>Delete page</span></button>
-    </div>
-  </fieldset>`, { summary: name });
+    </div>`;
 }
 
 function presetButton(host: StatusPagesViewHost, preset: StatusPagePreset, on: boolean, pick: () => void): TemplateResult {
@@ -1202,11 +1119,12 @@ function renderAddCard(host: StatusPagesViewHost, page: JsonObject, state: AddSt
 }
 
 /**
- * The inspector: a sticky head with the breadcrumb (the page, then a picked
- * row's chip and name; the page's name is the way back) and Collapse all,
- * then the cards. A picked row has its Row card and the page's look cards
- * (Rows, Text, More); adding a row, the Add a row card; with neither, the
- * Page card and the look cards.
+ * The inspector: a sticky head with Page, or the path back to it and a picked
+ * row's chip and name, and Collapse all, then the cards. A picked row has its
+ * Row card and the page's look cards (Rows, Text, More); adding a row, the Add
+ * a row card; with neither, the page's own settings as on Pages: the editor's
+ * Name row and On each device card (`pageHead`), the look cards, the line on
+ * reaching a row, and Delete page.
  */
 export function renderStatusInspector(host: StatusPagesViewHost): TemplateResult {
   const page = shownStatusPage(host);
@@ -1214,7 +1132,6 @@ export function renderStatusInspector(host: StatusPagesViewHost): TemplateResult
     return html`<div class="insp-head"><div class="crumbs"><span class="nm">No status page</span></div></div>
       <div class="insp-body"><p class="sp-note">Add a status page to edit it.</p></div>`;
   }
-  const name = statusPageName(page) || "Untitled page";
   const row = selectedStatusRow(host);
   const adding = addState(host);
   const folds = statusInspectorFolds(host);
@@ -1222,23 +1139,22 @@ export function renderStatusInspector(host: StatusPagesViewHost): TemplateResult
   let crumbs: TemplateResult;
   let body: TemplateResult;
   if (adding !== undefined) {
-    crumbs = html`<div class="crumbs"><button class="root" title="The page's own settings" @click=${() => deselectStatusRow(host)}>${name}</button><span class="sep">›</span><span class="nm">Add a row</span></div>`;
+    crumbs = html`<div class="crumbs"><button class="root" title="The page's own settings" @click=${() => deselectStatusRow(host)}>Page</button><span class="sep">›</span><span class="nm">Add a row</span></div>`;
     body = renderAddCard(host, page, adding);
   } else if (row !== undefined) {
     const r = readStatusRow(row);
     const label = r.displayName === "" ? "Display Name" : r.displayName;
-    crumbs = html`<div class="crumbs"><button class="root" title="The page's own settings" @click=${() => selectStatusRow(host, undefined)}>${name}</button><span class="sep">›</span><span class="kchip" style=${`--k:${rowColor(host, row)}`}>${rowTypeLabel(r.rowType)}</span><span class="nm" title=${label}>${label}</span></div>`;
+    crumbs = html`<div class="crumbs"><button class="root" title="The page's own settings" @click=${() => selectStatusRow(host, undefined)}>Page</button><span class="sep">›</span><span class="kchip" style=${`--k:${rowColor(host, row)}`}>${rowTypeLabel(r.rowType)}</span><span class="nm" title=${label}>${label}</span></div>`;
     body = html`${renderRowCard(host, page, row)}${renderLookCards(host, page)}`;
   } else {
-    crumbs = html`<div class="crumbs"><span class="kchip" style="--k:#5B8FD4">Page</span><span class="nm" title=${name}>${name}</span></div>`;
-    body = html`${renderPageCard(host, page)}${renderLookCards(host, page)}
-      <p class="sp-note">Select a row to edit it, or add one.</p>`;
+    crumbs = html`<div class="crumbs"><span class="nm pe-insp-t">Page</span></div>`;
+    body = html`${host.pageHead ?? nothing}${renderLookCards(host, page)}${renderPageFoot(host, page)}`;
   }
   return html`<div class="insp-head">
       ${crumbs}
       <button class="expand" @click=${() => { setSectionsOpen(host.uiState, folds, !anyOpen); host.requestUpdate(); }}>${anyOpen ? "Collapse all" : "Expand all"}</button>
     </div>
-    <div class="insp-body">${body}</div>`;
+    <div class="insp-body pe-page-insp" data-help=${host.helpOn === true ? "on" : "off"}>${body}</div>`;
 }
 
 /** Whether `findStatusPage` finds the page picked; for the editor's keys. */
@@ -1249,29 +1165,18 @@ export function statusPageShown(host: ViewState, pageId: string): boolean {
 /** The views' rules, after the shared chrome and the editor's own in the
  * editor's sheet. */
 export const statusPagesViewStyles = css`
-  .sp-pages-card > .layers, .sp-rows-card > .layers { padding: 6px 8px 8px; overflow: visible; }
-  .sp-pages-card > .lc-note, .sp-rows-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
-  .sp-rows-card > .lc-note.sp-drag-note { margin-top: 0; font-size: 11.5px; }
-  .sp-pages-card > .lc-note.sp-shared-note { margin-top: 0; font-size: 11.5px; }
-  /* The badge of a status page other devices have too: the device icons
-     (linkBadgeStyles, here because the editors take this sheet) for a host
-     that gives \`linkDevices\`, else the sentence, cut short in a narrow
-     list, its title holding the whole name. */
-  ${linkBadgeStyles}
-  .badge.sp-linked {
-    max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px; white-space: nowrap;
-    color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
-  }
-  .lc-btn.on { box-shadow: var(--wa-ring); }
-  /* The save-first line in place of a status page's ticks, in the strip
-     under the canvas head (libraryTicksStyles has the ticks). */
-  .sp-lib-hint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
-  .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
-  .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
-  .layer .thumb.sp-thumb { display: grid; place-items: center; background: color-mix(in srgb, var(--c, #888) 22%, #000); }
-  .layer .thumb .sp-thumb-glyph { display: grid; place-items: center; width: 16px; height: 16px; }
-  .layer .thumb .sp-thumb-glyph svg { width: 14px; height: 14px; display: block; }
+  /* The save-first line in place of a status page's ticks, in the bar
+     (libraryTicksStyles has the ticks). */
+  .sp-lib-hint { margin: 0; max-width: 280px; font-size: 12px; line-height: 1.3; color: var(--wa-muted); }
   .sp-glyph-dot { display: inline-block; border-radius: 50%; }
+  /* The rows the screen does not draw now, under the stage: a press picks one. */
+  .sp-undrawn { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; max-width: 520px; align-self: center; }
+  .sp-undrawn-l { font-size: 12px; color: var(--wa-muted); }
+  .sp-starter { margin: 12px 0 0; }
+  /* A row on the edited stage: its focus, and where a drag would land. */
+  .sp-w-row[tabindex]:focus-visible, .sp-w-cell[tabindex]:focus-visible, .sp-w-header[tabindex]:focus-visible { outline: 2px solid var(--sp-mark); outline-offset: 2px; border-radius: 4px; }
+  .sp-w-row[draggable="true"], .sp-w-cell[draggable="true"], .sp-w-header[draggable="true"] { cursor: grab; }
+  .sp-w-row.sp-drop, .sp-w-cell.sp-drop, .sp-w-header.sp-drop { box-shadow: 0 -2px 0 0 var(--sp-mark); }
 
   /* The watch screen on the stage: black, as tall as the page needs. */
   .sp-screen { position: relative; flex: none; background: #000; color: #fff; overflow: hidden; }

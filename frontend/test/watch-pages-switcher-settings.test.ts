@@ -109,10 +109,10 @@ function host(extra: Record<string, unknown> = {}) {
 const page = (extra: Record<string, unknown> = {}): WatchPage => findWatchPage(doc(extra), PAGE)!;
 
 describe("the switcher rows", () => {
-  it("draw Hidden, Show as, Name, Automatic icon, Icon and Color, then the hint", () => {
+  it("draw Hidden, Show as, the switcher label, Automatic icon, Icon and Color, then the hint", () => {
     const text = flat(renderSwitcherSettings(host().h));
-    const order = [">Hidden<", ">Show as<", ">Name<", ">Automatic icon</button>", ">Icon<", ">Color<",
-      "Left empty, the watch shows the page's name and picks the icon and color itself."];
+    const order = [">Hidden<", ">Show as<", ">Switcher label (optional)<", "Defaults to the page name", ">Automatic icon</button>", ">Icon<", ">Color<",
+      "Left empty, the watch picks the icon and color itself."];
     // Each after the one before ("Icon" is also a Show as choice).
     let last = 0;
     for (const part of order) {
@@ -144,9 +144,9 @@ describe("the switcher rows", () => {
     expect(now()).toEqual(findWatchPage(setWatchPageSwitcherDisplayMode(doc(), PAGE, "icon"), PAGE));
   });
 
-  it("typing a name is one undo step", () => {
+  it("typing a switcher label is one undo step", () => {
     const { h, draft, edits, page: now } = host();
-    for (const value of ["H", "Ha", "Hall"]) handler(renderSwitcherSettings(h), ">Name<", "input")({ target: { value } });
+    for (const value of ["H", "Ha", "Hall"]) handler(renderSwitcherSettings(h), ">Switcher label (optional)<", "input")({ target: { value } });
     expect(now().switcherText).toBe("Hall");
     expect(edits).toEqual([{ typing: true }, { typing: true }, { typing: true }]);
     expect(draft.undoDepth).toBe(1);

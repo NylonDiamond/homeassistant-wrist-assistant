@@ -277,6 +277,18 @@ export function newStatusPage(name: string, id: string): JsonObject {
   return sortedObject(page);
 }
 
+/** A copy of a page under a new name, with its own id and a new id for each
+ * row, for the library's Duplicate. */
+export function statusPageCopy(page: JsonObject, name: string, make?: StatusIdMaker): JsonObject {
+  const rows = Array.isArray(page.rows) ? page.rows : [];
+  return {
+    ...structuredClone(page),
+    id: newId(make),
+    name,
+    rows: rows.map((row) => (isJsonObject(row) ? { ...structuredClone(row), id: newId(make) } : row)),
+  };
+}
+
 /** A new page at the end of the list, named as the phone names it. */
 export function addStatusPage(document: StatusPagesDocument, make?: StatusIdMaker): { document: StatusPagesDocument; id: string } {
   const id = newId(make);

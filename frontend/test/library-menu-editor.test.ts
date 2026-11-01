@@ -113,7 +113,7 @@ describe("the menu editor's library menu", () => {
     expect(inline.match(/lt-chip on +rd/g)).toHaveLength(2);
     expect(inline.match(/lt-chip off +rd/g)).toHaveLength(1);
     expect(text).toMatch(/lt-chip off +rd[^>]*title=Use this menu on Chen's Watch\.[^>]*aria-disabled=false/);
-    expect(text).toMatch(/title=Jesse's iPhone uses this menu\. To change that, pick another Anywhere menu for it\.\s+aria-pressed=true aria-disabled=true/);
+    expect(text).toMatch(/title=Jesse's iPhone uses this menu\. To change that, pick another Anywhere menu for it\.\s+aria-checked=true aria-disabled=true/);
   });
 
   it("names the page switcher's menu as the Anywhere menu's, and the Entity quick menu its own", async () => {

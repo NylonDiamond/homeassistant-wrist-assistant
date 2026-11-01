@@ -119,7 +119,8 @@ function tileHost(t: WatchPageTile): { host: TileSettingsHost; draft: WatchPages
     deviceSiblings: () => ({ selects: [], switches: [], sensors: [], all: [] }),
     smartRuleId: undefined,
     busy: false,
-    uiState: new Map<string, unknown>(),
+    // Every group open: these look at the rows inside them.
+    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -350,25 +351,25 @@ describe("the inspector's groups", () => {
     expect(of("color")).toEqual(["removed", "header", "icon", "color", "glow", "whenOff"]);
     expect(of("text")).toEqual(["text", "state"]);
     expect(of("surface")).toEqual(["visibility", "arrange", "size", "background", "border", "phoneExtras"]);
-    expect(of("does")).toEqual(["phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
+    expect(of("does")).toEqual(["entity", "phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
     expect([...TILE_KIND_PARTS]).toEqual(["phoneTile", "special", "phone", "target", "opens", "request"]);
-    expect(TILE_INSPECTOR_GROUPS).toEqual(["color", "text", "surface", "does"]);
+    expect(TILE_INSPECTOR_GROUPS).toEqual(["does", "color", "text", "surface"]);
   });
 
   it("give a light its groups in order and leave out a group with nothing in it", () => {
     const { host } = tileHost(tile("light.desk"));
     expect(tileInspectorParts(host)).toEqual([
+      { group: "does", parts: ["entity", "action", "tapAnimation"] },
       { group: "color", parts: ["icon", "color", "glow", "whenOff"] },
       { group: "text", parts: ["text", "state"] },
       { group: "surface", parts: ["visibility", "arrange", "size", "background", "border"] },
-      { group: "does", parts: ["action", "tapAnimation"] },
     ]);
     // Size is the page editor's: without its rows it is not drawn.
     const text = flat(renderTileInspector(host));
-    expect([...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Color and icon", "Text", "Surface and rules", "What it does"]);
-    expect(text).toContain(`<h3 class="ts-grp-t">Color and icon</h3><span class="ts-grp-d">Fill, icon or photo, off look</span>`);
-    expect(text).toContain(`<h3 class="ts-grp-t">Text</h3><span class="ts-grp-d">Name, state, state bar</span>`);
-    expect(text).toContain(`<h3 class="ts-grp-t">Surface and rules</h3><span class="ts-grp-d">Background, border, when it shows</span>`);
+    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["What it does", "Color and icon", "Text", "Surface and rules"]);
+    expect(text).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
+    expect(text).toMatch(/<span class="ts-grp-t">Text<\/span>\s*<span class="ts-grp-d">Name, state, state bar<\/span>/);
+    expect(text).toMatch(/<span class="ts-grp-t">Surface and rules<\/span>\s*<span class="ts-grp-d">Background, border, when it shows<\/span>/);
     expect(text).toContain(`<h3 class="ts-grp-t">What it does</h3><span class="ts-grp-d">Tap, hold, the tile's own content</span>`);
     expect(text).not.toContain("data-part=size");
     expect(text).toContain("<h4>Arrangement</h4>");

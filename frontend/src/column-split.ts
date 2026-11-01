@@ -56,6 +56,16 @@ export function fitColumnWidths(available: number, want: ColumnWidths, limits: C
   return { left, right };
 }
 
+/**
+ * The same for an editor with one side column: how wide it may be in `available`
+ * px beside a middle column of `middleMin`, never below `min`. There is no other
+ * side to share the squeeze with, so it gives up only what does not fit.
+ */
+export function fitOneColumnWidth(available: number, want: number, limits: ColumnLimits): number {
+  if (available <= 0) return want;
+  return Math.max(limits.min, Math.min(want, available - limits.middleMin));
+}
+
 /** The browser's localStorage, or undefined where there is none (storage off,
  * or a test outside a browser). */
 export function browserStorage(): ColumnStorage | undefined {

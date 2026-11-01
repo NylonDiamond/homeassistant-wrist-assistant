@@ -4,7 +4,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { DEVICE_COLORS, deviceColor, deviceColorAt, deviceColorOrder, deviceColors, deviceColorsCache } from "../src/device-colors.js";
+import { readFileSync } from "node:fs";
+
+import { DEVICE_COLORS, DEVICE_PALETTE, deviceColor, deviceColorAt, deviceColorOrder, deviceColors, deviceColorsCache } from "../src/device-colors.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { ownerShortLabel, ownersByKind } from "../src/panel.js";
 import { pickerTabs } from "../src/pickerRows.js";
@@ -102,5 +104,38 @@ describe("the same color on every tab", () => {
   it("is the one the Watch app's and the iPhone app's pickers list", () => {
     expect(watchRowChoices(OWNERS, undefined).map((c) => deviceColor(colors, c.id))).toEqual([P(1), P(2)]);
     expect(watchRowChoices(OWNERS, undefined, "iphone").map((c) => deviceColor(colors, c.id))).toEqual([P(3), P(4)]);
+  });
+});
+
+describe("the device palette", () => {
+  // The panel's sheet, read as text: the light skin's six come first, the
+  // dark skin's after them.
+  const sheet = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
+  const tokens = [...sheet.matchAll(/--wa-person-(\d): (#[0-9a-f]{6});/gi)].map((m) => [Number(m[1]), m[2]!.toLowerCase()] as const);
+
+  it("sets each skin's six tokens to the palette, in order", () => {
+    expect(tokens).toHaveLength(DEVICE_COLORS * 2);
+    expect(tokens.slice(0, 6)).toEqual(DEVICE_PALETTE.map((c, i) => [i + 1, c.light]));
+    expect(tokens.slice(6)).toEqual(DEVICE_PALETTE.map((c, i) => [i + 1, c.dark]));
+  });
+
+  it("holds no red, amber or green, which mean destructive, waiting and synced", () => {
+    // A hue angle under 160 degrees is red through yellow to green, and over
+    // 330 is red again.
+    const hue = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max === min) return undefined;
+      const d = max - min;
+      const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return (h * 60 + 360) % 360;
+    };
+    for (const c of DEVICE_PALETTE) {
+      for (const value of [c.dark, c.light]) {
+        const h = hue(value);
+        expect(h === undefined || (h > 160 && h < 330), `${c.name} ${value} hue ${h}`).toBe(true);
+      }
+    }
   });
 });

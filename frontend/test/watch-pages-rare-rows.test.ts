@@ -101,7 +101,10 @@ const STATES = {
   "lock.door": { entity_id: "lock.door", state: "locked", attributes: { friendly_name: "Door" } },
 };
 
-function tileHost(t: WatchPageTile, uiState = new Map<string, unknown>()): { host: TileSettingsHost; draft: WatchPagesDraft; updates: () => number } {
+/** Every group open: these look at the rows inside them. */
+const openGroups = () => new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true]));
+
+function tileHost(t: WatchPageTile, uiState = openGroups()): { host: TileSettingsHost; draft: WatchPagesDraft; updates: () => number } {
   const draft = new WatchPagesDraft({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Living", items: [t] }] }, 1);
   const pageNow = () => (draft.document.pages as WatchPage[])[0]!;
   let updates = 0;
@@ -169,7 +172,7 @@ describe("rare rows at their defaults", () => {
     expect(moreWords(part(text, "whenOff"))).toBe("More Animate while on: off");
     // Tap animation is a part of one rare row: the whole part folds, and its
     // More line follows it.
-    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)));
+    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=color`));
     expect(tap).toMatch(/^<div class="ts-rare" \?data-shown=false><section class="ts-sec" data-part=tapAnimation /);
     expect(moreWords(tap)).toMatch(/^More Tap animation: \S/);
   });
@@ -210,7 +213,7 @@ describe("a rare row that holds a value of its own", () => {
     expect(moreWords(part(text, "text"))).toBeUndefined();
     expect(moreWords(part(text, "whenOff"))).toBeUndefined();
     // A changed Tap animation stands as an open part with no More after it.
-    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)));
+    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=color`));
     expect(tap).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
     expect(moreWords(tap)).toBeUndefined();
   });
@@ -235,7 +238,7 @@ describe("a rare row being typed in", () => {
     });
     doc.activeElement = box;
     try {
-      return drawn(tile("light.desk", LIGHT_AS_SAVED), new Map<string, unknown>([[`tile-settings:typed:${TILE_ID.toUpperCase()}:${setting}`, text]]));
+      return drawn(tile("light.desk", LIGHT_AS_SAVED), new Map<string, unknown>([...openGroups(), [`tile-settings:typed:${TILE_ID.toUpperCase()}:${setting}`, text]]));
     } finally {
       doc.activeElement = was;
     }
@@ -257,14 +260,14 @@ describe("a rare row being typed in", () => {
   });
 
   it("folds again once its box is left", () => {
-    const name = part(drawn(tile("light.desk", LIGHT_AS_SAVED), new Map()), "text");
+    const name = part(drawn(tile("light.desk", LIGHT_AS_SAVED), openGroups()), "text");
     expect(rareAround(name, "Font size")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
   });
 });
 
 describe("the More line", () => {
   it("opens its section's rows in place, reads Fewer, and is kept per section in the fold memory", () => {
-    const uiState = new Map<string, unknown>();
+    const uiState = openGroups();
     const { host, updates } = tileHost(tile("light.desk", LIGHT_AS_SAVED), uiState);
     fire(renderTileInspector(host), `data-more=text `);
     expect(updates()).toBe(1);

@@ -81,9 +81,17 @@ function fetchInto(hass: HassLike, held: Entry): void {
     () => {
       held.loading = false;
       held.at = Date.now();
+      const waiting = [...held.waiting];
       held.waiting.clear();
+      for (const done of waiting) done();
     },
   );
+}
+
+/** Whether the first read of the home's map came back with nothing because it
+ * failed, so a host can say so rather than "Reading…" for good. */
+export function homeMapReadFailed(): boolean {
+  return capable && entry !== undefined && !entry.loading && entry.read === undefined;
 }
 
 /**

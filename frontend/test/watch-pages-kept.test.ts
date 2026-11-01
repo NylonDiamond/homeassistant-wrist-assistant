@@ -4,15 +4,18 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { dropWatchPagesDrafts, registerWatchPagesDrafts, watchPagesDirty } from "../src/watch-pages/hook.js";
+import { dropWatchPagesDrafts, registerWatchPagesDrafts, watchPagesDirty, watchPagesUnsent } from "../src/watch-pages/hook.js";
+import { saveWatchPagesDraft } from "../src/watch-pages/draft.js";
 import {
   anyWatchPagesDirty,
+  anyWatchPagesUnsent,
   dropAllWatchPages,
   forgetWatchPagesDraft,
   keepWatchPagesSelection,
   keptWatchPagesDraft,
   keptWatchPagesSelection,
   takeWatchPagesRecord,
+  watchPagesSavesDone,
 } from "../src/watch-pages/kept.js";
 import { setWatchPageName } from "../src/watch-pages/edit.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -125,7 +128,7 @@ describe("the leave guard's probe", () => {
   it("asks the editor's chunk once it has said how", () => {
     let dropped = 0;
     let dirty = true;
-    registerWatchPagesDrafts({ dirty: () => dirty, drop: () => { dropped++; } });
+    registerWatchPagesDrafts({ dirty: () => dirty, unsent: () => dirty, savesDone: () => undefined, drop: () => { dropped++; } });
     expect(watchPagesDirty()).toBe(true);
     dirty = false;
     expect(watchPagesDirty()).toBe(false);
@@ -134,13 +137,49 @@ describe("the leave guard's probe", () => {
   });
 
   it("reaches the kept drafts the way the editor registers them", () => {
-    registerWatchPagesDrafts({ dirty: anyWatchPagesDirty, drop: dropAllWatchPages });
+    registerWatchPagesDrafts({ dirty: anyWatchPagesDirty, unsent: anyWatchPagesUnsent, savesDone: watchPagesSavesDone, drop: dropAllWatchPages });
     const draft = takeWatchPagesRecord("w1", doc("Home"), 1).draft;
     draft.apply(setWatchPageName(draft.document, "P1", "Kitchen"));
     expect(watchPagesDirty()).toBe(true);
     dropWatchPagesDrafts();
     expect(watchPagesDirty()).toBe(false);
     expect(keptWatchPagesDraft("w1")).toBeUndefined();
+  });
+});
+
+describe("a move away while a save is out", () => {
+  const PAGE = "11111111-1111-4111-8111-111111111111";
+  const valid = (): WatchPagesDocument => ({ schemaVersion: 1, pages: [{ id: PAGE, name: "Home", items: [] }] });
+
+  function savingDraft(result: () => Promise<{ revision: number }>) {
+    registerWatchPagesDrafts({ dirty: anyWatchPagesDirty, unsent: anyWatchPagesUnsent, savesDone: watchPagesSavesDone, drop: dropAllWatchPages });
+    const draft = takeWatchPagesRecord("w1", valid(), 1).draft;
+    draft.apply(setWatchPageName(draft.document, PAGE, "Kitchen"));
+    const running = saveWatchPagesDraft(draft, { save: result, fetch: async () => ({ revision: 1, document: doc("Home") }) });
+    return { draft, running };
+  }
+
+  it("is not asked about edits on their way, and waits for them to land", async () => {
+    const { draft } = savingDraft(async () => ({ revision: 2 }));
+    expect(watchPagesDirty()).toBe(true);
+    expect(watchPagesUnsent()).toBe(false);
+    await watchPagesSavesDone();
+    expect(draft.dirty).toBe(false);
+    expect(watchPagesSavesDone()).toBeUndefined();
+  });
+
+  it("is asked as usual once the save has failed", async () => {
+    savingDraft(async () => { throw { code: "unknown", message: "no" }; });
+    await watchPagesSavesDone();
+    expect(watchPagesSavesDone()).toBeUndefined();
+    expect(watchPagesUnsent()).toBe(true);
+  });
+
+  it("has nothing to wait for with no save out, and asks about plain edits", () => {
+    const draft = takeWatchPagesRecord("w1", doc("Home"), 1).draft;
+    draft.apply(setWatchPageName(draft.document, "P1", "Kitchen"));
+    expect(watchPagesSavesDone()).toBeUndefined();
+    expect(anyWatchPagesUnsent()).toBe(true);
   });
 });
 

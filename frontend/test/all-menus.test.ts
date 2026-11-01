@@ -123,10 +123,10 @@ describe("the tab's words", () => {
     expect(allMenusLead(4)).toBe("4 menus in your home. Each device uses one Anywhere menu and one Entity quick menu.");
     expect(allMenusLead(1)).toBe(`1 menu in your home. ${ALL_MENUS_LEAD}`);
     expect(MENUS_FOOT).toBe("Click a menu to edit it. Tick a device on a card and that device uses this menu from now on. New menu starts on no device yet.");
-    expect(MENUS_BOARD_FOOT).toBe("Click a menu to edit it. Pick a dot and that device uses this menu from now on. Click a device's name to see its menus first.");
+    expect(MENUS_BOARD_FOOT).toBe("Click a menu to edit it. Pick a dot and that device uses this menu from now on. Press Focus on a device to see its menus first.");
     expect(MENUS_BOARD_HINT).toBe("Each device uses one of each kind. Pick a dot to switch.");
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
-    expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
+    expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Devices tab.");
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
     // A watch still waiting for its iPhone: its menus are on their way.
     expect(menusEmptyText(DEVICES, "")).toBe("None yet.");
@@ -407,10 +407,11 @@ describe("the Menus tab", () => {
     show(t, "board", CHEN);
     await t.ready();
     const text = t.whole();
-    expect(text).toContain("<b>Chen Watch</b>");
+    expect(text).toContain("<b>Showing Chen Watch first</b>");
+    expect(text).toContain(">Show every device<");
     expect(text).toContain("uses Chen's menu and Entity quick menu");
     expect(text).toContain("On Chen Watch");
-    expect(text).toContain("Not on this watch");
+    expect(text).toContain("Not on Chen Watch");
     expect(text).toContain("Pick its dot under Chen Watch to use it there.");
     expect(text).toMatch(/class=bd-row dim/);
     expect(text.indexOf(`data-row=${CHEN_MENU}`)).toBeLessThan(text.indexOf(`data-row=${HOME_MENU}`));

@@ -1,6 +1,6 @@
 // Home's lineup for one device (plan step 6): what is on it, in its order,
-// a group per kind, Edit on each line and Change on each group; and Home's
-// "All devices", the boards as one table.
+// a group per kind, Edit on each line and "Open in Pages" and the like on each
+// group; and the Devices tab's Overview, the boards as one table.
 
 import { describe, expect, it } from "vitest";
 import { html } from "lit";
@@ -39,7 +39,7 @@ describe("a device's lineup on Home", () => {
     expect(pages.map((l) => [l.name, l.hidden === true])).toEqual([["Smart", false], ["New Page 1", true]]);
   });
 
-  it("opens a line in its tab's editor and a group's Change on its board", () => {
+  it("opens a line in its tab's editor and a group's Open in on its board", () => {
     const { out, calls } = groups(CHEN);
     out[0]!.lines[0]!.action!.onClick();
     out[2]!.lines[0]!.action!.onClick();
@@ -104,6 +104,20 @@ describe("a device's lineup on Home", () => {
     expect(out[0]!.sub).toBe("in the order the iPhone swipes them");
   });
 
+  it("says where each group's button goes, and gives each empty box one button to the same board", () => {
+    const { out, calls } = groups("nobody", "iphone");
+    expect(out.map((g) => g.change!.label)).toEqual(["Open in Pages", "Open in Status pages", "Open in Menus"]);
+    expect(out.map((g) => g.add!.label)).toEqual(["Add pages", "Add status pages", "Pick a menu"]);
+    for (const g of out) g.add!.onClick();
+    expect(calls).toEqual(["change:pages", "change:status_pages", "change:menus"]);
+    const text = flat(renderLineupGroup(out[2]!));
+    expect(text).toContain("This iPhone uses no menu yet.");
+    expect(text).toContain(`class="hl-add"`);
+    expect(text).toContain("Pick a menu");
+    expect(text).toContain("Open in Menus");
+    expect(text).not.toContain(">Change");
+  });
+
   it("says a watch waits for its iPhone where Home Assistant holds none of a kind and its iPhone may still move it", () => {
     const draw = { waitsForIphone: true, onEdit: () => undefined, onChange: () => undefined };
     const waiting = lineupGroups(libraryOf(summary()), "nobody", "watch", draw);
@@ -114,8 +128,10 @@ describe("a device's lineup on Home", () => {
     ]);
     for (const g of waiting) {
       expect(g.empty).not.toMatch(/[–—]| - /);
-      // Change still opens the board.
+      // Open in still opens the board, but the box offers no button to start
+      // over while the iPhone's move may still come.
       expect(g.change).toBeDefined();
+      expect(g.add).toBeUndefined();
     }
     // A watch whose records are here keeps its own empty lines.
     const held = lineupGroups(libraryOf(summary()), CHEN, "watch", draw);
@@ -125,11 +141,11 @@ describe("a device's lineup on Home", () => {
     expect(PANEL).toContain(`waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait"`);
   });
 
-  it("draws a group with its count, its Change, and a tag on a hidden line", () => {
+  it("draws a group with its count, its Open in Pages, and a tag on a hidden line", () => {
     const text = flat(renderLineupGroup(groups(JESSE).out[0]!));
     expect(text).toContain(`<h3 class="hl-title">Pages</h3>`);
     expect(text).toContain(`<span class="hl-n">2</span>`);
-    expect(text).toContain(">Change");
+    expect(text).toContain("Open in Pages");
     expect(text).toContain(`<em class="hl-tag">${LINEUP_HIDDEN_TAG}</em>`);
     expect(text).toContain(`data-line=${SMART}`);
     expect(text).toContain(`data-line=${PAGE1}`);
@@ -158,7 +174,8 @@ describe("Home's All devices", () => {
   });
 
   it("puts a lock in every box of what is on every device, and watch only for an iPhone's Voice", () => {
-    expect(PANEL).toContain(`title="On every device. Nothing to pick.">\${uiIcon("lock")}</span>`);
+    expect(PANEL).toContain(`title="Shared by every device. Nothing to pick.">\${uiIcon("lock")}</span>`);
+    expect(PANEL).toContain(`this.renderHomeAllTable("Shared", "Thing", rows,`);
     expect(PANEL).toContain(`const why = id === "voice" ? "watch only" : "in the app";`);
   });
 });

@@ -932,10 +932,11 @@ describe("the empty shape set", () => {
 });
 
 describe("the Complication card on the control's tab", () => {
-  it("is the name alone: refresh, the tap action and the flash are the shapes'", () => {
+  it("is the shape alone: refresh, the tap action and the flash are the shapes'", () => {
     const cfg = newControlConfig("Kitchen lamp", 0);
-    const markup = flatten(generalEditor(host(cfg), { nameOnly: true }));
-    expect(markup).toContain("Name");
+    const markup = flatten(generalEditor(host(cfg), { shapeOnly: true, shape: { line: "Control Center" } }));
+    expect(markup).toContain("Shape");
+    expect(markup).not.toContain("Name");
     expect(markup).not.toContain("Refresh");
     expect(markup).not.toContain("Tap action");
     expect(markup).not.toContain("Flash");
@@ -943,10 +944,12 @@ describe("the Complication card on the control's tab", () => {
 
   it("is every row again on a shape's tab", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
-    const markup = flatten(generalEditor(host(cfg)));
-    for (const label of ["Name", "Auto refresh", "Tap action", "Flash"]) {
+    const markup = flatten(generalEditor(host(cfg), { shape: { line: "Circular", family: "circular" } }));
+    for (const label of ["Shape", "Auto refresh", "Tap action", "Flash"]) {
       expect(markup, label).toContain(label);
     }
+    // The name has one home, the editor's bar.
+    expect(markup).not.toContain("Name");
   });
 });
 

@@ -79,10 +79,11 @@ async function editor(options: { complications?: Record<string, JsonObject[]> } 
 }
 
 describe("the page editor's devices, from the library", () => {
-  it("draws a tick per device in the editor bar, after a small On, with no device locked as this one", async () => {
+  it("draws a tick per device in the editor bar, after Shown on, with no device locked as this one", async () => {
     const { ticks } = await editor();
     const hall = ticks();
-    expect(hall).toMatch(/class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>\s*<span class="pe-bar-on-l">On<\/span>/);
+    expect(hall).toMatch(/class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>/);
+    expect(hall).toContain(`<span class="lt-lead">Shown on</span>`);
     expect(hall).toContain("Jesse's Watch");
     expect(hall).toContain("Jesse's iPhone");
     expect(hall).not.toContain("On this watch. Delete takes the page off it.");

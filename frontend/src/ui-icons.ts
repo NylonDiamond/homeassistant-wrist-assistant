@@ -17,7 +17,7 @@ export type UiIconName =
   | "compact" | "expanded" | "foldAll" | "unfoldAll" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
   | "checklist" | "home" | "more" | "mic" | "sliders" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note"
-  | "alignLeft" | "alignCenterX" | "alignRight" | "alignTop" | "alignCenterY" | "alignBottom" | "alignCenter";
+  | "alignLeft" | "alignCenterX" | "alignRight" | "alignTop" | "alignCenterY" | "alignBottom" | "alignCenter" | "share";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -231,6 +231,9 @@ function shape(name: UiIconName) {
     // Settings: two sliders, each with its knob somewhere along it.
     case "sliders":
       return svg`<path d="M4 8H11M15 8H20M4 16H7M11 16H20" /><circle cx="13" cy="8" r="2" /><circle cx="9" cy="16" r="2" />`;
+    // Sending a design out: an arrow leaving its tray.
+    case "share":
+      return svg`<path d="M12 15V3M7.5 7.5L12 3L16.5 7.5" /><path d="M5 12V19.5H19V12" />`;
     // More choices behind a menu.
     case "more":
       return svg`<circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" />`;

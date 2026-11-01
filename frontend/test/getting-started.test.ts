@@ -178,10 +178,12 @@ describe("the Help sheet", () => {
     ...(editor ? { onEditorHelp: () => undefined } : {}),
   }));
 
-  it("names the screen in view: Home, Complications, and each watch screen by its own blurb", () => {
-    expect(helpScreen(at(""))).toMatchObject({ name: "Home" });
-    expect(helpScreen(at("")).text).toContain("On every device holds what the whole home shares: HTTP actions and camera framing.");
-    expect(helpScreen(undefined).name).toBe("Home");
+  it("names the screen in view: Devices, Shared, Complications, and each watch screen by its own blurb", () => {
+    expect(helpScreen(at(""))).toMatchObject({ name: "Devices" });
+    expect(helpScreen(at("/devices/w1"))).toMatchObject({ name: "Devices" });
+    expect(helpScreen(at("")).text).toContain("The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.");
+    expect(helpScreen(at("/shared")).name).toBe("Shared");
+    expect(helpScreen(undefined).name).toBe("Devices");
     expect(helpScreen(at("/complications")).name).toBe("Complications");
     for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN]) {
       const h = helpScreen(at(screen.path));
@@ -190,10 +192,10 @@ describe("the Help sheet", () => {
     }
     expect(helpScreen(at("/http-actions")).text[1]).toBe(HELP_LIBRARY_TEXT);
     expect(helpScreen(at("/cameras")).text).toEqual([
-      "Cameras sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
-      "It is on every device in this home: Home lists it under On every device.",
+      "Camera framing sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+      "It is on every device in this home: find it under the Shared tab.",
     ]);
-    expect(helpScreen(at("/photos")).name).toBe("Home");
+    expect(helpScreen(at("/photos")).name).toBe("Devices");
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
@@ -269,7 +271,7 @@ describe("the Help sheet", () => {
     expect(helpScreen(at("/iphone")).name).toBe("Pages");
     expect(sheet("/iphone/pages/p1")).toContain(`href=${WATCH_PAGES_HELP_URL}`);
     // A watch only screen behind /iphone is no iPhone screen.
-    expect(helpScreen(at("/iphone/voice/p1")).name).toBe("Home");
+    expect(helpScreen(at("/iphone/voice/p1")).name).toBe("Devices");
   });
 
   it("shows the steps with a green bar, and the open step's action only", () => {

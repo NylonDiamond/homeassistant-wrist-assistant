@@ -21,6 +21,7 @@ import { firstFreeWatchCell, giveWatchTileId } from "../src/watch-pages/edit.js"
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import type { NameFieldInput } from "../src/watch-pages/page-frame.js";
 import { pageDevicesText, stageHiddenReason, stageHiddenText, watchPageCopy } from "../src/watch-pages/page-editor.js";
 import {
   PAGE_INSPECTOR_MIN,
@@ -250,7 +251,7 @@ describe("the editor bar", () => {
     const bar = barOf(text);
     expect(bar).toContain(`class="tb-btn tb-back pe-bar-back" title="Back to the Pages board"`);
     expect(bar).toContain("<span>All pages</span>");
-    const order = [`pe-bar-back"`, `class="pe-pp"`, `class="pe-bar-on`, `class="spacer"`, `aria-label="Undo"`, `aria-label="Redo"`, `class="pe-saved"`, `class="tb-btn tb-more"`, `pe-bar-help`]
+    const order = [`pe-bar-back"`, `class="pe-pp"`, `class="pe-name"`, `class="pe-bar-meta"`, `class="pe-bar-on`, `class="spacer"`, `class="pe-bar-right"`, `aria-label="Undo"`, `aria-label="Redo"`, `class="pe-saved"`, `class="tb-btn tb-more"`, `pe-bar-help`]
       .map((p) => bar.indexOf(p));
     expect(order.every((i) => i > -1), String(order)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -266,24 +267,27 @@ describe("the editor bar", () => {
     }
   });
 
-  it("draws the page picker slim: picture, name, tile count and Shared, a chevron", () => {
+  it("draws a grid button for the switcher, then the name as a field in place, then the tile count and Shared", () => {
     const { whole } = editor();
     const text = whole();
-    const button = text.slice(text.indexOf(`<button type="button" class="pe-pp"`), text.indexOf("</button>", text.indexOf(`class="pe-pp-chev"`)));
+    const button = text.slice(text.indexOf(`<button type="button" class="pe-pp"`), text.indexOf("</button>", text.indexOf(`class="pe-pp"`)));
     expect(button).toContain(`aria-haspopup="dialog" aria-expanded=false`);
     expect(button).toContain("aria-label=Switch page. Editing Hall");
-    expect(button).toMatch(/<span class="pe-pic" style=width:28px;height:\d+px;/);
-    expect(button).toContain(`>Hall</span>`);
-    expect(button).toMatch(/<span class="pe-pp-sub">4 tiles · <span title=[^>]*>Shared<\/span><\/span>/);
+    expect(button).toContain("title=Pick a page to edit, or make one");
+    expect(text).toMatch(/<span class="pe-name" data-size=Hall>\s*<input type="text" class="pe-name-in" size="1" aria-label=Page name/);
+    expect(text).toMatch(/<span class="pe-bar-meta">4 tiles · <span title=[^>]*>Shared<\/span><\/span>/);
     expect(text).not.toContain("pe-pp-pop");
   });
 
-  it("puts the devices right after the picker, ticked ones inline and the rest always folded", () => {
+  it("puts Shown on after the name, ticked devices inline as checkboxes, the rest always folded, then saves at once", () => {
     const { whole, owners } = withLibrary();
     const bar = barOf(whole());
-    expect(bar).toMatch(/<div class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>\s*<span class="pe-bar-on-l">On<\/span>/);
+    expect(bar).toMatch(/<div class="pe-bar-on "[^>]*aria-label=Which devices do you want this on\?>/);
+    expect(bar).toContain(`<span class="lt-lead">Shown on</span>`);
+    expect(bar).toContain(`role="checkbox"`);
     expect(bar).toContain(owners[0]!.device_name);
     expect(bar).toContain("+ Add to a device");
+    expect(bar).toContain(`<span class="lt-saves">saves at once</span>`);
     const css = sheet();
     expect(rule(css, ".pe-bar-on wa-chip-row > .lt-chip.off:not(.add)")).toContain("display: none");
     expect(rule(css, ".pe-bar-on wa-chip-row > .lt-fold")).toContain("display: inline-flex");
@@ -355,7 +359,8 @@ describe("the page picker", () => {
     // Porch is on both watches.
     expect(pop).toContain(`<span class="pe-pp-card-sub">On Jesse's Watch and Chen's Watch</span>`);
     expect(pop).toMatch(/class="pe-pp-card pe-pp-new" \?disabled=false[\s\S]*New page/);
-    expect(pop).toContain(`class="pe-btn pe-pp-rename"`);
+    // Renaming is the bar's own field now, not the popover's foot.
+    expect(pop).not.toContain("Rename");
     expect(pop).toContain(`class="pe-btn pe-pp-dup"`);
     expect(pop).toContain(">Open the Pages board</button>");
     // A second press of the button shuts it, focus back on the button.
@@ -417,21 +422,49 @@ describe("the page picker", () => {
     expect(el.pickerOpen).toBe(false);
   });
 
-  it("renames the open page in its foot, Enter keeping the name and Escape dropping it", () => {
+  it("renames the page in place: Enter or a click away keeps it in one undo step, Escape drops it, empty goes back", () => {
     const { el, whole: body, call, draft } = withLibrary();
     stubBrowser(el);
-    call("togglePicker");
-    call("startRename", "P-HALL");
-    expect(body()).toMatch(/<div class="pe-pp-foot">\s*<input class="pe-rename" aria-label="Page name" \.value=Hall/);
-    (el.renaming as { value: string }).value = "Hallway";
-    call("commitRename");
-    expect(((draft().document.pages as WatchPage[])[0]!).name).toBe("Hallway");
-    expect(draft().canUndo).toBe(true);
-    call("startRename", "P-HALL");
-    (el.renaming as { value: string }).value = "Nope";
-    call("cancelRename");
-    expect(((draft().document.pages as WatchPage[])[0]!).name).toBe("Hallway");
-    expect(el.focusAfter).toBe(".pe-pp-rename");
+    const name = () => ((draft().document.pages as WatchPage[])[0]!).name;
+    const field = () => call("nameField", (el.currentPage as () => unknown).call(el)) as NameFieldInput;
+    // Both fields draw what is typed, in the bar and in the inspector.
+    field().onInput("Hallway");
+    expect(body()).toMatch(/<span class="pe-name" data-size=Hallway>/);
+    expect(name()).toBe("Hall");
+    // No save runs in this test: a save is the next one's.
+    el.save = () => Promise.resolve(undefined);
+    field().onCommit();
+    expect(name()).toBe("Hallway");
+    expect(el.renaming).toBeUndefined();
+    expect((draft() as unknown as { undoDepth: number }).undoDepth).toBe(1);
+    field().onInput("Nope");
+    field().onCancel();
+    expect(name()).toBe("Hallway");
+    field().onInput("   ");
+    field().onCommit();
+    expect(name()).toBe("Hallway");
+    expect(field().typed).toBeUndefined();
+    expect((draft() as unknown as { undoDepth: number }).undoDepth).toBe(1);
+  });
+
+  it("saves a new name at once with nothing else waiting, and leaves it with the other edits when there are some", () => {
+    const { el, call, draft } = withLibrary();
+    stubBrowser(el);
+    const saves: unknown[] = [];
+    el.save = (anyway?: unknown) => { saves.push(anyway); return Promise.resolve(undefined); };
+    const field = () => call("nameField", (el.currentPage as () => unknown).call(el)) as NameFieldInput;
+    field().onInput("Hallway");
+    field().onCommit();
+    expect(saves).toEqual([true]);
+    // The same name again writes nothing, so nothing goes out.
+    field().onInput("Hallway");
+    field().onCommit();
+    expect(saves).toEqual([true]);
+    // Now edits wait (the name above, in this stand-in, never left): a rename joins them.
+    expect((draft() as unknown as { dirty: boolean }).dirty).toBe(true);
+    field().onInput("Hall two");
+    field().onCommit();
+    expect(saves).toEqual([true]);
   });
 
   it("makes a New page and a Duplicate in the library and opens them; only for an administrator", async () => {
@@ -479,7 +512,7 @@ describe("the page picker", () => {
 
   it("reads clearly at 4K and 100%: a name a size up from the bar's words, the popover on the editor's tokens", () => {
     const css = sheet();
-    expect(rule(css, ".pe-pp-name")).toContain("font-size: 15px");
+    expect(rule(css, ".pe-name")).toContain("font-size: 15px");
     expect(rule(css, ".pe-pp-pop")).toContain("var(--wa-shadow-pop)");
     expect(rule(css, ".pe-pp-card.on")).toContain("var(--wa-sel-ring)");
   });

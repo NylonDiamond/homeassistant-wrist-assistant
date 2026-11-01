@@ -66,7 +66,18 @@ export interface TicksInput {
   /** The device the editor was opened from (`LibraryItemRef.from`): its chip
    * wears a ring and says "viewing". */
   viewing?: string;
+  /** The words in front of the chips on one line ("Shown on"). */
+  lead?: string;
+  /** The hint after the chips on that line (`SAVES_AT_ONCE_TEXT`), saying a
+   * click does not wait for Save. */
+  saves?: string;
 }
+
+/** The words a chip group wears before its chips. */
+export const SHOWN_ON_TEXT = "Shown on";
+
+/** The hint after a group of chips that write on one click. */
+export const SAVES_AT_ONCE_TEXT = "saves at once";
 
 /** How a row's note reads. */
 export type TickNoteKind = "ok" | "warn" | "err";
@@ -209,7 +220,41 @@ export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boo
     ...(input.note === undefined ? {} : { note: input.note }),
     ...(input.noteKind === undefined ? {} : { noteKind: input.noteKind }),
     ...(input.ask === undefined ? {} : { ask: input.ask }),
+    ...(input.lead === undefined ? {} : { lead: input.lead }),
+    ...(input.saves === undefined ? {} : { saves: input.saves }),
   }, onPick);
+}
+
+/** One device for `deviceCheckChips`, when the caller has no library item to
+ * read: a complication's places, a screen's own list. */
+export interface DeviceCheck {
+  ownerId: string;
+  name: string;
+  kind: LinkDevice["kind"];
+  /** Its color var (`device-colors.ts`). */
+  color: string | undefined;
+  on: boolean;
+  /** Its write is out. */
+  busy?: boolean;
+  /** Why a click does nothing, shown as the tooltip. */
+  stuck?: string;
+  /** The tooltip, when it should not be the plain one. */
+  title?: string;
+}
+
+/** A plain list of devices as chips to tick. Draw them with
+ * `renderTickChips(chips, { foldLabel, lead: SHOWN_ON_TEXT, saves:
+ * SAVES_AT_ONCE_TEXT }, onPick)`. */
+export function deviceCheckChips(devices: readonly DeviceCheck[]): TickChip[] {
+  return devices.map((d): TickChip => {
+    const busy = d.busy === true;
+    return {
+      ownerId: d.ownerId, name: d.name, device: d.kind, color: d.color, shape: "square", on: d.on, hidden: false, busy, add: false, label: d.name,
+      title: d.stuck ?? d.title ?? (busy ? "Saving…" : d.on ? `On ${d.name}. Untick to take it off.` : `Not on ${d.name}. Tick to put it there.`),
+      next: busy || d.stuck !== undefined ? undefined : !d.on,
+      ...(d.stuck === undefined ? {} : { stuck: d.stuck }),
+    };
+  });
 }
 
 /** How a row of chips is drawn (`renderTickChips`). */
@@ -218,6 +263,10 @@ export interface TickChipsOptions {
   foldLabel: string;
   /** The words over the row (a menu's "Used by"). */
   hint?: string;
+  /** The words in front of the chips on one line ("Shown on"). */
+  lead?: string;
+  /** The hint after the chips on that line ("saves at once"). */
+  saves?: string;
   /** The item's last refusal, or what its last tick did, under the row. */
   note?: string;
   /** How `note` reads; "warn" unless given. */
@@ -240,16 +289,21 @@ export interface TickChipsOptions {
  *
  * The popover is a `<details>`, so it needs no open state of its own; it
  * closes on a click outside it or Escape.
+ *
+ * Each chip is a checkbox in its device's color (2026-10-31 review): a box
+ * with a tick when on, for a screen reader too (`role="checkbox"`), so a
+ * click reads as putting it there and not as a tag. A menu's chip keeps its
+ * round box: a device uses one menu of each kind.
  */
 export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptions, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
-  const chip = (c: TickChip) => html`<button type="button"
+  const chip = (c: TickChip) => html`<button type="button" role="checkbox"
       class="lt-chip ${c.on ? "on" : "off"} ${c.shape === "round" ? "rd" : ""} ${c.add ? "add" : ""} ${c.busy ? "busy" : ""} ${c.stuck === undefined ? "" : "stuck"} ${c.hidden ? "dim" : ""} ${c.viewing === true ? "viewing" : ""}"
       style=${c.color === undefined ? nothing : `--dc:${c.color}`} title=${c.viewing === true ? `${c.title} You came here from ${c.name}.` : c.title}
-      aria-pressed=${c.on ? "true" : "false"} aria-disabled=${c.next === undefined ? "true" : "false"}
+      aria-checked=${c.on ? "true" : "false"} aria-disabled=${c.next === undefined ? "true" : "false"}
       @click=${(e: Event) => {
         e.stopPropagation();
         if (c.next !== undefined) onPick(c.ownerId, c.next);
-      }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${c.label}</span>${c.hidden
+      }}><span class="lt-box" aria-hidden="true">${c.on && c.shape !== "round" ? TICK_MARK : nothing}</span><span class="lt-name">${c.label}</span>${c.hidden
         ? html`<em>hidden</em>`
         : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}${c.skips === undefined
         ? nothing
@@ -257,22 +311,28 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
   // The dashed "Add to this watch" chip is already the way in, so it never
   // folds and never asks for a fold of its own.
   const folds = chips.some((c) => !c.on && !c.add);
-  return html`<div class="lt-ticks" @click=${(e: Event) => e.stopPropagation()}>
-    ${opts.hint === undefined ? nothing : html`<span class="lt-hint">${opts.hint}</span>`}
-    <wa-chip-row class="lt-chips" role="group" aria-label=${opts.hint ?? "Devices"}>${chips.map(chip)}${folds
+  const row = html`<wa-chip-row class="lt-chips" role="group" aria-label=${opts.lead ?? opts.hint ?? "Devices"}>${chips.map(chip)}${folds
       // Inside the chips' line, so the fold sits right after the ticked
       // chips both in the strip's row and on a library card's column.
       ? html`<details class="lt-fold" @toggle=${foldToggled}>
       <summary class="lt-chip add lt-fold-sum"><span class="lt-name">+ ${opts.foldLabel}</span><svg class="lt-chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 4l2.5 2.5L7.5 4"/></svg></summary>
       <div class="lt-fold-pop" role="group" aria-label=${opts.foldLabel}>${chips.map(chip)}</div>
     </details>`
-      : nothing}</wa-chip-row>
+      : nothing}</wa-chip-row>`;
+  return html`<div class="lt-ticks" @click=${(e: Event) => e.stopPropagation()}>
+    ${opts.hint === undefined ? nothing : html`<span class="lt-hint">${opts.hint}</span>`}
+    ${opts.lead === undefined && opts.saves === undefined ? row : html`<div class="lt-chipline">
+      ${opts.lead === undefined ? nothing : html`<span class="lt-lead">${opts.lead}</span>`}${row}${opts.saves === undefined ? nothing : html`<span class="lt-saves">${opts.saves}</span>`}
+    </div>`}
     ${opts.ask === undefined ? nothing : renderTickAsk(opts.ask)}
     ${opts.note === undefined ? nothing : opts.noteKind === "ok"
       ? html`<p class="lt-note ok" role="status">${opts.note}</p>`
       : html`<p class="lt-note" role="alert">${opts.note}</p>`}
   </div>`;
 }
+
+/** The tick in a chip's box, and in a board's. */
+export const TICK_MARK = html`<svg class="lt-tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.6 8.4l2.9 2.9 5.9-6.5"/></svg>`;
 
 /** The untick's question in the row, the way the panel asks in place
  * elsewhere: the words, then Remove in the destructive style and a plain
@@ -323,9 +383,16 @@ export const libraryTicksStyles = css`
   }
   .lt-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .lt-box {
-    flex: none; width: 11px; height: 11px; border-radius: 3px; box-sizing: border-box;
+    flex: none; display: inline-grid; place-items: center; width: 12px; height: 12px; border-radius: 3px; box-sizing: border-box;
     border: 1.5px solid var(--dc, var(--wa-muted));
   }
+  /* The tick in a ticked box, in the card's color so it reads on the
+     device's fill in either skin. */
+  .lt-tick { display: block; width: 10px; height: 10px; fill: none; stroke: var(--wa-card); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  /* "Shown on", the chips, then "saves at once", on one line. */
+  .lt-chipline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+  .lt-lead { flex: none; font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
+  .lt-saves { flex: none; font-size: 11.5px; color: var(--wa-muted); white-space: nowrap; }
   .lt-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lt-chip.on {
     border-color: color-mix(in srgb, var(--dc, var(--wa-muted)) 60%, transparent);

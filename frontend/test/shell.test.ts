@@ -3,19 +3,31 @@
 // the move between them, the first-open landing, when the complication
 // editor's keys are live, and the tab bar itself, flattened to text.
 
+import { html } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { watchComplicationsRouteOwner } from "../src/watch-complications.js";
 import {
   BAR_TABS,
+  type BarTab,
   COMPLICATIONS_PATH,
+  DEVICES_ALL,
+  DEVICES_PATH,
   HOME_PATH,
   IPHONE_PATH,
   IPHONE_SCREENS,
   PANEL_TABS,
+  SHARED_PATH,
   WATCH_SCREENS,
   WATCH_SETTINGS_SCREEN,
+  barTabOfScreen,
+  designPath,
+  designRouteOf,
+  devicePath,
+  deviceRouteOf,
   deviceScreenPath,
   editorKeysLive,
+  isSharedRoute,
+  redirectPath,
   isComplicationsRoute,
   iphoneInnerRoute,
   iphoneScreenOf,
@@ -136,7 +148,7 @@ describe("iPhone app screens", () => {
 
 describe("watch screens", () => {
   it("lists the ten screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Cameras", "Home map"]);
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Camera framing", "Home map"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -178,15 +190,16 @@ describe("watch screens", () => {
     expect(tabOfRoute(at("/parts/x"))).toBe("home");
   });
 
-  it("lists Cameras, then the Home map last, as shared screens with their own blurbs", () => {
+  it("lists Camera framing, then the Home map last, as shared screens with their own blurbs", () => {
     expect(WATCH_SCREENS.at(-2)).toEqual({
-      id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+      id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
       path: WATCH_CAMERAS_PATH, shared: true,
     });
     expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[8]);
     // The Home map needs the integration's `home_map`, which Home's Library
     // checks before listing it.
-    expect(WATCH_SCREENS.at(-1)).toMatchObject({ id: "home-map", label: "Home map", path: HOME_MAP_PATH, shared: true, capability: "home_map" });
+    // One pre-release word for it everywhere: BETA.
+    expect(WATCH_SCREENS.at(-1)).toMatchObject({ id: "home-map", label: "Home map", path: HOME_MAP_PATH, shared: true, beta: true, capability: "home_map" });
     expect(watchScreenOf(at("/home-map"))).toBe(WATCH_SCREENS[9]);
   });
 
@@ -203,7 +216,8 @@ describe("watch screens", () => {
 
 describe("addresses", () => {
   it("sends each tab to its own path", () => {
-    expect(tabPath("home")).toBe(HOME_PATH);
+    expect(tabPath("home")).toBe(DEVICES_PATH);
+    expect(tabPath("shared")).toBe(SHARED_PATH);
     expect(tabPath("complications")).toBe(COMPLICATIONS_PATH);
     expect(tabPath("watch")).toBe("/pages");
     expect(tabPath("iphone")).toBe("/iphone/pages");
@@ -268,7 +282,7 @@ describe("addresses", () => {
     expect(tabPath("watch", "w2")).toBe("/pages/w2");
     expect(tabPath("watch", "a/b")).toBe("/pages/a%2Fb");
     expect(tabPath("watch", undefined)).toBe("/pages");
-    expect(tabPath("home", "w2")).toBe(HOME_PATH);
+    expect(tabPath("home", "w2")).toBe(DEVICES_PATH);
     expect(tabPath("complications", "w2")).toBe(COMPLICATIONS_PATH);
   });
 
@@ -278,17 +292,18 @@ describe("addresses", () => {
     expect(tabPath("watch", "w2", "p1")).toBe("/pages/w2");
   });
 
-  it("offers five tabs to everybody: no Watch app or iPhone app tab", () => {
-    expect(PANEL_TABS).toEqual(["home", "pages", "status-pages", "menus", "complications"]);
+  it("offers six tabs to everybody: no Watch app or iPhone app tab", () => {
+    expect(PANEL_TABS).toEqual(["home", "pages", "status-pages", "menus", "complications", "shared"]);
   });
 
   it("keeps the tabs in one table, each with its name and address", () => {
     expect(BAR_TABS.map((t) => [t.id, t.label, t.path])).toEqual([
-      ["home", "Home", HOME_PATH],
+      ["home", "Devices", DEVICES_PATH],
       ["pages", "Pages", "/all-pages"],
       ["status-pages", "Status pages", "/all-status-pages"],
       ["menus", "Menus", "/all-menus"],
       ["complications", "Complications", COMPLICATIONS_PATH],
+      ["shared", "Shared", SHARED_PATH],
     ]);
     for (const t of BAR_TABS) {
       expect(tabPath(t.id)).toBe(t.path);
@@ -296,21 +311,62 @@ describe("addresses", () => {
     }
   });
 
-  it("marks Home in the bar on a watch's or an iPhone's screens", () => {
-    expect(barTabOf(at("/menus/w1"))).toBe("home");
-    expect(barTabOf(at("/settings/w1"))).toBe("home");
-    expect(barTabOf(at("/http-actions"))).toBe("home");
-    expect(barTabOf(at("/iphone/pages/p1"))).toBe("home");
-    expect(barTabOf(at("/all-pages"))).toBe("pages");
-    expect(barTabOf(at("/status-pages/w1"))).toBe("home");
-    expect(barTabOf(at("/status-pages"))).toBe("home");
-    expect(barTabOf(at("/iphone/status-pages/p1"))).toBe("home");
-    expect(barTabOf(at("/all-status-pages"))).toBe("status-pages");
-    expect(barTabOf(at("/menus"))).toBe("home");
-    expect(barTabOf(at("/iphone/menus/p1"))).toBe("home");
-    expect(barTabOf(at("/all-menus"))).toBe("menus");
-    expect(barTabOf(at("/complications"))).toBe("complications");
-    expect(barTabOf(at(""))).toBe("home");
+  it("lights the tab each screen belongs to, so the bar always says where you are", () => {
+    // The device's very own screens: Devices.
+    for (const path of ["/settings/w1", "/rooms/w1", "/voice/w1", "/iphone/settings/p1", "/iphone/rooms/p1", "", "/devices", "/devices/w1", "/devices/all"]) {
+      expect(barTabOf(at(path)), path).toBe("home");
+    }
+    // A kind's editors: that kind's tab.
+    for (const path of ["/pages/w1", "/iphone/pages/p1", "/all-pages", "/library/pages/x"]) expect(barTabOf(at(path)), path).toBe("pages");
+    for (const path of ["/status-pages", "/status-pages/w1", "/iphone/status-pages/p1", "/all-status-pages", "/library/status-pages/x"]) expect(barTabOf(at(path)), path).toBe("status-pages");
+    for (const path of ["/menus", "/menus/w1", "/iphone/menus/p1", "/all-menus", "/library/menus/x"]) expect(barTabOf(at(path)), path).toBe("menus");
+    // Complications, a watch's own view of them, and the retired Control Center.
+    for (const path of ["/complications", "/complications/design/w1/c1", "/watch-complications/w1", "/control-center/w1"]) expect(barTabOf(at(path)), path).toBe("complications");
+    // What the whole home keeps: Shared, never Home.
+    for (const path of ["/shared", "/http-actions", "/cameras", "/home-map"]) expect(barTabOf(at(path)), path).toBe("shared");
+  });
+
+  it("names a tab for every screen of the Watch app", () => {
+    for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN]) expect(PANEL_TABS, screen.id).toContain(barTabOfScreen(screen.id));
+  });
+
+  it("builds and reads a device's address, every device's, and a bare Devices tab", () => {
+    expect(devicePath()).toBe("/devices");
+    expect(devicePath("")).toBe("/devices");
+    expect(devicePath("A b/c")).toBe("/devices/A%20b%2Fc");
+    expect(devicePath(DEVICES_ALL)).toBe("/devices/all");
+    expect(deviceRouteOf(at(devicePath("A b/c")))).toEqual({ owner: "A b/c" });
+    expect(deviceRouteOf(at("/devices/all"))).toEqual({ all: true });
+    expect(deviceRouteOf(at("/devices"))).toBeUndefined();
+    expect(deviceRouteOf(at(""))).toBeUndefined();
+    expect(deviceRouteOf(at("/pages/w1"))).toBeUndefined();
+    expect(deviceRouteOf(at("/devices/%E0%A4%A"))).toBeUndefined();
+  });
+
+  it("builds and reads a design's address", () => {
+    expect(designPath("O/1", "c 2")).toBe("/complications/design/O%2F1/c%202");
+    expect(designRouteOf(at(designPath("O/1", "c 2")))).toEqual({ owner: "O/1", id: "c 2" });
+    expect(designRouteOf(at("/complications"))).toBeUndefined();
+    expect(designRouteOf(at("/complications/design/o"))).toBeUndefined();
+    expect(designRouteOf(at("/complications/design/o/c/extra"))).toBeUndefined();
+    expect(tabOfRoute(at(designPath("o", "c")))).toBe("complications");
+  });
+
+  it("knows the Shared tab's own page from the screens it opens", () => {
+    expect(isSharedRoute(at("/shared"))).toBe(true);
+    expect(isSharedRoute(at("/shared/"))).toBe(true);
+    expect(isSharedRoute(at("/http-actions"))).toBe(false);
+    expect(isSharedRoute(at("/sharedx"))).toBe(false);
+    expect(tabOfRoute(at("/sharedx"))).toBe("home");
+  });
+
+  it("moves an old address to where it lives now, and leaves the rest", () => {
+    expect(redirectPath(at("/library"))).toBe(SHARED_PATH);
+    expect(redirectPath(at("/library/"))).toBe(SHARED_PATH);
+    expect(redirectPath(at("/devices/"))).toBe(DEVICES_PATH);
+    for (const path of ["", "/devices", "/devices/w1", "/library/pages/x", "/complications", "/http-actions", "/control-center/w1"]) {
+      expect(redirectPath(at(path)), path).toBeUndefined();
+    }
   });
 
   it("takes the prefix from the route when there is one", () => {
@@ -330,6 +386,9 @@ describe("addresses", () => {
     expect(panelPrefix(undefined, "/wrist-assistant/pagesx")).toBe("/wrist-assistant/pagesx");
     expect(panelPrefix(undefined, "/wrist-assistant/iphone")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/iphone/pages/p1")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/devices/w1")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/shared")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/complications/design/o/c")).toBe("/wrist-assistant");
   });
 });
 
@@ -471,47 +530,63 @@ describe("reopensDesign", () => {
 });
 
 describe("renderTabBar", () => {
+  // Each tab's glyph left out, so a tab reads as its address and its name.
   const bar = (path: string, menu = false) => flat(renderTabBar({
     route: at(path), menu, onMenu: () => undefined, onTab: () => undefined,
-  }));
+  })).replace(/<svg[\s\S]*?<\/svg>/g, "");
 
-  it("draws Home, Pages, Status pages, Menus and Complications, as links to their addresses", () => {
+  it("draws Devices, Pages, Status pages, Menus, Complications and Shared, as links to their addresses", () => {
     const text = bar("");
-    expect(text).toContain(">Home</a>");
+    expect(text).toContain(">Devices</a>");
     expect(text).toContain(">Pages</a>");
     expect(text).toContain(">Status pages</a>");
     expect(text).toContain(">Menus</a>");
     expect(text).toContain(">Complications</a>");
-    expect(text.indexOf("Home</a>")).toBeLessThan(text.indexOf(">Pages</a>"));
+    expect(text).toContain(">Shared</a>");
+    expect(text).not.toContain(">Home</a>");
+    expect(text.indexOf("Devices</a>")).toBeLessThan(text.indexOf(">Pages</a>"));
     expect(text.indexOf(">Pages</a>")).toBeLessThan(text.indexOf(">Status pages</a>"));
     expect(text.indexOf(">Status pages</a>")).toBeLessThan(text.indexOf(">Menus</a>"));
     expect(text.indexOf(">Menus</a>")).toBeLessThan(text.indexOf("Complications</a>"));
+    // Shared sits apart, after a hairline.
+    expect(text.indexOf("Complications</a>")).toBeLessThan(text.indexOf("wa-tabs-sep"));
+    expect(text.indexOf("wa-tabs-sep")).toBeLessThan(text.indexOf(">Shared</a>"));
     expect(text).toMatch(/href=\/wrist-assistant\/all-status-pages [^>]*>Status pages<\/a>/);
     expect(text).toMatch(/href=\/wrist-assistant\/all-menus [^>]*>Menus<\/a>/);
+    expect(text).toMatch(/href=\/wrist-assistant\/shared [^>]*>Shared<\/a>/);
     expect(text).not.toContain("Watch app</a>");
     expect(text).not.toContain("iPhone app</a>");
-    expect(text).toMatch(/href=\/wrist-assistant [^>]*>Home<\/a>/);
+    expect(text).toMatch(/href=\/wrist-assistant\/devices [^>]*>Devices<\/a>/);
   });
 
-  it("marks the tab on screen and no other, Home on a device's screens", () => {
+  it("marks the tab on screen and no other, on every screen", () => {
     const marks = (text: string) => text.match(/wa-tab on/g)?.length ?? 0;
-    for (const [path, label] of [["", "Home"], ["/menus/w1", "Home"], ["/iphone/menus/p1", "Home"], ["/all-pages", "Pages"],
-      ["/all-status-pages", "Status pages"], ["/status-pages/w1", "Home"], ["/all-menus", "Menus"], ["/menus", "Home"],
-      ["/complications", "Complications"]] as const) {
+    for (const [path, label] of [["", "Devices"], ["/devices/w1", "Devices"], ["/settings/w1", "Devices"], ["/rooms/w1", "Devices"], ["/voice/w1", "Devices"],
+      ["/menus/w1", "Menus"], ["/iphone/menus/p1", "Menus"], ["/all-pages", "Pages"], ["/pages/w1", "Pages"],
+      ["/all-status-pages", "Status pages"], ["/status-pages/w1", "Status pages"], ["/all-menus", "Menus"], ["/menus", "Menus"],
+      ["/complications", "Complications"], ["/watch-complications/w1", "Complications"],
+      ["/shared", "Shared"], ["/http-actions", "Shared"], ["/cameras", "Shared"], ["/home-map", "Shared"]] as const) {
       const text = bar(path);
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));
     }
   });
 
-  it("puts an orange dot on the Home tab, named for a screen reader, while a device screen is unsaved", () => {
-    const text = (watchUnsaved?: boolean) => flat(renderTabBar({
-      route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, watchUnsaved,
+  it("puts an orange dot on the tab of a screen with unsaved work, named for a screen reader", () => {
+    const text = (tabs?: BarTab[]) => flat(renderTabBar({
+      route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, ...(tabs === undefined ? {} : { unsavedTabs: new Set(tabs) }),
     }));
-    expect(text(true)).toMatch(/>Home<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
-    expect(text(true).match(/wa-unsaved/g)).toHaveLength(1);
-    expect(text(false)).not.toContain("wa-unsaved");
-    expect(text(undefined)).not.toContain("wa-unsaved");
+    expect(text(["shared"])).toMatch(/>Shared<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
+    expect(text(["shared"]).match(/wa-unsaved/g)).toHaveLength(1);
+    expect(text(["home", "pages"]).match(/wa-unsaved/g)).toHaveLength(2);
+    expect(text([])).not.toContain("wa-unsaved");
+    expect(text()).not.toContain("wa-unsaved");
+  });
+
+  it("draws what it is given before Help, for the sync pill", () => {
+    const text = flat(renderTabBar({ route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, onHelp: () => undefined, sync: html`<b>PILL</b>` }));
+    expect(text.indexOf("PILL")).toBeGreaterThan(text.indexOf(">Shared</a>"));
+    expect(text.indexOf("PILL")).toBeLessThan(text.indexOf("wa-tabs-help"));
   });
 
   it("offers Home Assistant's menu only when asked", () => {

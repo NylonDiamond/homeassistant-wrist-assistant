@@ -10,7 +10,7 @@ import { type HassLike, fetchList, saveRecord } from "../ha-api.js";
 import type { LibraryListKind, LibraryPickReply } from "../library/client.js";
 import type { LibraryStore, LibraryWrite } from "../library/store.js";
 import { clearStatusPageRefCounts } from "../watch-status-pages/links-io.js";
-import { untickAskText, untickNote } from "./library-editing.js";
+import { pageRefWords, untickAskText, untickNote } from "./library-editing.js";
 import { isJsonObject } from "./model.js";
 import { clearPageRefCounts, countPageRefs } from "./page-links-io.js";
 import { clearPageFromComplication, keepSlotsOf } from "./page-refs.js";
@@ -75,6 +75,12 @@ export type TickResult = LibraryWrite<LibraryPickReply> & { note?: WatchPagesNot
  * that could not be cleared only fails on the device, so the note says so
  * and the untick stands. An untick that would clear something asks first
  * (`askUntick`).
+ *
+ * With `names`, a tick that landed offers Undo on the panel's toast
+ * ("Kitchen is on Apple Watch now"), unless `undo` says no because the caller
+ * offers its own way back. Undo restores the item and its place
+ * (`LibraryStore.offerPickUndo`); the menu slots and taps an untick cleared
+ * do not come back, as its question said, so the toast says that too.
  */
 export async function tickItem(
   hass: HassLike | undefined,
@@ -84,15 +90,26 @@ export async function tickItem(
   itemId: string,
   on: boolean,
   names?: TickNames,
+  { undo = true, onUndone }: { undo?: boolean; onUndone?: () => void } = {},
 ): Promise<TickResult> {
+  const before = store.lastRead;
   const result = await store.pick(ownerId, kind, itemId, on);
-  if (on || !result.ok || hass === undefined) return result;
+  const offer = (extra?: string) => {
+    if (names !== undefined && undo) store.offerPickUndo(before, ownerId, kind, itemId, on, names.device, extra, onUndone);
+  };
+  if (!result.ok) return result;
+  if (on || hass === undefined) {
+    offer();
+    return result;
+  }
   // The store read the library again before the pick settled: this device
   // is off the item now, and the other devices are as they are.
   const keep = keepSlotsOf(store.library, ownerId, kind);
   const cleared = kind === "pages"
     ? await clearPageRefCounts(hass, ownerId, [itemId], keep)
     : await clearStatusPageRefCounts(hass, ownerId, [itemId], keep);
+  const words = pageRefWords(cleared);
+  offer(words === "" ? undefined : `Undo does not bring back ${words}.`);
   const note = names === undefined ? undefined : untickNote(names.item, names.device, cleared, cleared.failed);
   return note === undefined ? result : { ...result, note };
 }
@@ -116,7 +133,8 @@ export interface UntickAsk {
  * unticks at once and settles undefined; with some, or when they could not
  * be read, it settles the question for the caller to show, whose Remove is
  * `tickItem` with the same names. Without Home Assistant nothing would be
- * cleared, so it unticks at once.
+ * cleared, so it unticks at once. An untick made at once offers Undo as
+ * `tickItem` does, unless `undo` says no.
  */
 export async function askUntick(
   hass: HassLike | undefined,
@@ -125,12 +143,13 @@ export async function askUntick(
   kind: LibraryListKind,
   itemId: string,
   names: TickNames,
+  { undo = true }: { undo?: boolean } = {},
 ): Promise<UntickAsk | undefined> {
   const count = hass === undefined
     ? { slots: 0, taps: 0 }
     : await countPageRefs(hass, ownerId, [itemId], keepSlotsOf(store.library, ownerId, kind), kind === "status_pages");
   if (count !== undefined && count.slots + count.taps === 0) {
-    await tickItem(hass, store, ownerId, kind, itemId, false);
+    await tickItem(hass, store, ownerId, kind, itemId, false, names, { undo });
     return undefined;
   }
   return { kind, itemId, ownerId, names, text: untickAskText(kind, names.item, names.device, count) };

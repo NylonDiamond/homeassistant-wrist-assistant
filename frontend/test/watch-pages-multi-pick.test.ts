@@ -121,7 +121,8 @@ function pickHost(items: WatchPageTile[], picked: string[]): { host: TileSetting
     deviceSiblings: () => ({ selects: [], switches: [], sensors: [], all: [] }),
     smartRuleId: undefined,
     busy: false,
-    uiState: new Map<string, unknown>(),
+    // Every group open: these look at the rows inside them.
+    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -267,7 +268,7 @@ describe("the inspector over several tiles", () => {
     expect(hidden.get("does")).toEqual(["action"]);
     expect(hidden.get("surface")).toEqual(["visibility", "arrange", "size"]);
     const text = flat(renderTileInspector(host));
-    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Action.</p>`);
+    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Tap.</p>`);
     // Size is not drawn for a page's tile even alone (the stage sizes it),
     // so the line never names it.
     expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Shows when, Arrangement.</p>`);

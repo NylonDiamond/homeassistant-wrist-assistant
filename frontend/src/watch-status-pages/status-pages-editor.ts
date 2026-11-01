@@ -2,11 +2,12 @@
 // in the library itself with no device (`library/item-mode.ts`), at
 // `/library/status-pages/<id>[/<owner>]`.
 //
-// It wears the complication editor's chrome (`editor-chrome.ts`) the way the
-// page and menu editors do: the top bar, then three columns with drag gutters
-// (the Status pages and Rows cards, the canvas with the page drawn on a watch
-// or an iPhone from Home Assistant's states, and the inspector). The views
-// are `view.ts`.
+// It wears the same frame as the page editor (`watch-pages/page-frame.ts`), one
+// editor layout to learn: the top bar (All status pages, the switcher's grid
+// button, the name in place, "Shown on" and its chips, then Undo, Redo, Saved
+// or Save, ··· and Hints), then two columns with a drag gutter (the stage with
+// the page drawn on a watch or an iPhone from Home Assistant's states, and the
+// inspector). The views are `view.ts`.
 //
 // The item is read with `library/item` and kept as raw JSON in a draft
 // (`draft.ts`) under `libraryDraftKey`, with undo and redo, and saved with
@@ -15,10 +16,10 @@
 // device that has the page.
 //
 // Every status page lives once in the library (`library/`), and a device
-// picks from it: the strip under the canvas head has a tick per device
-// (`library/pick`), On each device says where it is, the list under the
-// page opens the library's other status pages, and Delete takes it out of
-// the library. The rules are `watch-pages/library-editing.ts`.
+// picks from it: the bar has a tick per device (`library/pick`), On each
+// device says where it is, the switcher's popover opens the library's other
+// status pages, and Delete takes it out of the library. The rules are
+// `watch-pages/library-editing.ts`.
 //
 // The panel loads this module on its own, with one `import()` (`hook.ts`).
 // Nothing it imports may import `icons.ts`.
@@ -28,14 +29,14 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { live } from "lit/directives/live.js";
+import { repeat } from "lit/directives/repeat.js";
+import { type ColumnWidths, beginColumnDrag, fitOneColumnWidth, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
   columnStyles,
   inspectorStyles,
-  leftCardStyles,
-  rowListStyles,
   topBarStyles,
 } from "../editor-chrome.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
@@ -50,7 +51,7 @@ import {
 } from "../ha-api.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, sameId } from "../library/model.js";
 import { LibraryController } from "../library/store.js";
-import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
+import { SAVES_AT_ONCE_TEXT, SHOWN_ON_TEXT, libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
   fetchLibraryRecord,
@@ -63,20 +64,18 @@ import {
   type LibraryItemRef,
   libraryModeStyles,
   libraryOwners,
+  onDevicesQuestion,
   otherPreviewKind,
   type PreviewKind,
   previewLabel,
   previewOwner,
-  renderBarDevices,
-  renderLibraryTag,
-  renderPreviewPicker,
+  renderStripSaved,
   sameLibraryItem,
   startPreviewKind,
   startSideBySide,
   summaryRevision,
 } from "../library/item-mode.js";
 import { followDeliveries, onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
-import { type ItemFilter, itemListStyles, itemWhereText, listedItems, renderItemFilter, renderNoneLeft } from "../library/item-list.js";
 import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { sectionOpen, setSectionOpen } from "../watch-pages/fold-memory.js";
@@ -88,7 +87,25 @@ import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type LinkDevice, linkDevicesOf } from "../watch-pages/devices.js";
+import { randomWatchId } from "../watch-pages/edit.js";
 import type { JsonObject } from "../watch-pages/model.js";
+import {
+  type NameFieldInput,
+  type TypedName,
+  ON_NO_DEVICE_TEXT,
+  hintsOn,
+  pageDevicesText,
+  pageFrameStyles,
+  renderBarMeta,
+  renderHintsButton,
+  renderNameInPlace,
+  renderNameRow,
+  renderPreviewSeg,
+  renderSaveState,
+  renderSwitcherButton,
+  renderUndoRedo,
+  setHintsOn,
+} from "../watch-pages/page-frame.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { StageFitWatch } from "../watch-pages/stage-fit.js";
@@ -105,10 +122,12 @@ import { watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
   anyStatusPagesDirty,
+  anyStatusPagesUnsent,
   dropAllStatusPages,
   forgetStatusPagesDraft,
   keptStatusPagesDraft,
   saveStatusPagesDraft,
+  statusPagesSavesDone,
   takeStatusPagesRecord,
 } from "./draft.js";
 import { registerWatchStatusPagesDrafts } from "./hook.js";
@@ -117,8 +136,13 @@ import {
   STATUS_PAGES_UPDATE_TEXT,
   asStatusPagesDocument,
   findStatusPage,
+  newStatusPage,
+  nextStatusPageName,
+  renameStatusPage,
+  statusPageCopy,
   statusPageId,
   statusPageName,
+  statusPageRows,
   statusPageTitle,
 } from "./model.js";
 import { statusPagesKeptText, statusPagesSaveNote } from "./save-note.js";
@@ -127,17 +151,18 @@ import {
   type StatusPagesViewHost,
   deselectStatusRow,
   loadStatusPagesZoom,
-  renderPagesCard,
-  renderRowsCard,
+  renderAddRowButton,
   renderStatusInspector,
+  renderStatusPagePicture,
   renderStatusPageScreen,
+  renderUndrawnRows,
   saveStatusPagesZoom,
   shownStatusPage,
   statusPagesViewStyles,
   statusStageFacts,
 } from "./view.js";
 
-registerWatchStatusPagesDrafts({ dirty: anyStatusPagesDirty, drop: dropAllStatusPages });
+registerWatchStatusPagesDrafts({ dirty: anyStatusPagesDirty, unsent: anyStatusPagesUnsent, savesDone: statusPagesSavesDone, drop: dropAllStatusPages });
 
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", (e: BeforeUnloadEvent) => {
@@ -147,18 +172,17 @@ if (typeof window !== "undefined") {
   });
 }
 
-const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-const MOD = IS_MAC ? "⌘" : "Ctrl+";
-
-/** The lists column and the inspector, each widened by dragging the gutter
- * beside it, with the page editor's limits and defaults. */
-const SP_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const SP_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 340 };
-export const SP_COLUMNS_KEY = "wrist-assistant-panel.status-pages.columns.v1";
-/** The grid's own cost beside its three columns, CSS px. */
-const SP_GRID_CHROME = 2 * 8 + 4 * 2;
+/** The inspector, widened by dragging the gutter beside it. No left column
+ * since the list moved into the switcher's popover. */
+const SP_COLUMNS = { min: 280, max: 720, middleMin: 320 } as const;
+const SP_COLUMNS_DEFAULT: ColumnWidths = { left: 0, right: 372 };
+export const SP_COLUMNS_KEY = "wrist-assistant-panel.status-pages.columns.v2";
+/** The grid's own cost beside its two columns, CSS px. */
+const SP_GRID_CHROME = 8 + 4;
 /** At or below this content width the columns stack. */
 const SP_STACK_WIDTH = 820;
+/** Each page card's picture in the switcher's popover, CSS px wide. */
+const SP_CARD_THUMB_W = 76;
 
 type Note = WatchPagesNote;
 
@@ -238,6 +262,17 @@ export class WaStatusPagesEditor extends LitElement {
   /** A delete from the library is out. */
   @state() private deletingAll = false;
   @state() private topMenuOpen = false;
+  /** The name being typed, in the bar or the inspector's Page. */
+  @state() private renaming?: TypedName;
+  /** The switcher's popover is open, and what its find field holds. */
+  @state() private pickerOpen = false;
+  @state() private pickerFind = "";
+  /** New status page or Duplicate is out. */
+  @state() private pickerBusy = false;
+  /** The bar's Hints, one switch with the page editor's. */
+  @state() private helpOn = hintsOn();
+  /** A control to focus once drawn, by selector. */
+  private focusAfter?: string;
   @state() private zoom = loadStatusPagesZoom();
   /** Fit held to the stage's width (`stage-fit.ts`). */
   private stageFit = new StageFitWatch(this, ".sp-stage-body", () => this.stageScale);
@@ -270,8 +305,6 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private previewKind: PreviewKind = "watch";
   /** Side by side: the other kind is drawn beside the edited preview. */
   @state() private sideBySide = false;
-  /** The Status pages card: every status page, or those on no device. */
-  @state() private listFilter: ItemFilter = "all";
   /** Every device's delivery numbers, for On each device: read on open,
    * after each write and on each delivery of status pages. */
   @state() private configSummary?: WatchConfigSummary;
@@ -363,6 +396,11 @@ export class WaStatusPagesEditor extends LitElement {
     if (dialog !== this.shownDialog) {
       this.shownDialog = dialog;
       if (dialog && !dialog.open) dialog.showModal();
+    }
+    if (this.focusAfter !== undefined) {
+      const selector = this.focusAfter;
+      this.focusAfter = undefined;
+      this.renderRoot.querySelector<HTMLElement>(selector)?.focus();
     }
     this.observeTop();
   }
@@ -490,6 +528,9 @@ export class WaStatusPagesEditor extends LitElement {
       this.uiState.clear();
       this.closeDelete();
       this.followedRevision = undefined;
+      this.renaming = undefined;
+      this.pickerOpen = false;
+      this.pickerFind = "";
     }
     void this.load(key, quiet);
   }
@@ -655,24 +696,150 @@ export class WaStatusPagesEditor extends LitElement {
       ...(this.phoneLayout() === undefined ? {} : { phone: this.phoneLayout() }),
       get document() { return draft.document; },
       get busy() { return self.saving; },
-      ...this.libraryHost(),
+      helpOn: this.helpOn,
+      deletePage: (pageId) => this.askDelete(pageId),
+      pageHead: this.renderPageHead(),
       edit: (change, coalesce) => this.draft === draft && this.edit(change, coalesce),
       endCoalesce: () => draft.endCoalesce(),
       requestUpdate: () => this.requestUpdate(),
     };
   }
 
-  /** The view's library parts: the one page, Delete, which asks to delete it
-   * from the library, the list's filter and the library's other status pages
-   * under it. Nothing of a device's own. The ticks are not the view's: they
-   * stand in the strip under the canvas head (`renderStageDevices`). */
-  private libraryHost(): Pick<StatusPagesViewHost, "deletePage" | "elsewhere" | "single" | "listTools"> {
+  /** The first of the page's own settings: its real name, which the bar's
+   * title sets too, then On each device. */
+  private renderPageHead(): TemplateResult {
+    const page = this.draft === undefined ? undefined : this.shownPage();
+    return html`${page === undefined ? nothing : renderNameRow(this.nameField(page))}${this.renderDevicesCard()}`;
+  }
+
+  /** The shown page, without needing a whole view host. */
+  private shownPage(): JsonObject | undefined {
+    const draft = this.draft;
+    return draft === undefined ? undefined : shownStatusPage({ uiState: this.uiState, document: draft.document });
+  }
+
+  // ── the name ───────────────────────────────────────────────────────────
+
+  /** What a name field draws and calls, in the bar or in the inspector. */
+  private nameField(page: JsonObject): NameFieldInput {
+    const pageId = statusPageId(page);
+    const typed = this.renaming !== undefined && sameId(this.renaming.pageId, pageId) ? this.renaming.value : undefined;
     return {
-      single: true,
-      deletePage: (pageId) => this.askDelete(pageId),
-      listTools: renderItemFilter(this.listFilter, (f) => { this.listFilter = f; }, "status page"),
-      elsewhere: this.renderLibraryOthers(),
+      name: statusPageName(page),
+      typed,
+      label: "Status page name",
+      placeholder: "Page name",
+      disabled: this.saving,
+      onInput: (value) => { this.renaming = { pageId, value }; },
+      onCommit: () => this.commitRename(),
+      onCancel: () => { this.renaming = undefined; },
     };
+  }
+
+  /** All status pages. A press on it lets go of a name being typed, which
+   * starts that name's save: it goes once the save has landed, so the way out
+   * never asks about edits that are on their way. */
+  private leave(): void {
+    const running = this.saving ? this.draft?.saveDone : undefined;
+    if (running === undefined) {
+      this.onBack?.();
+      return;
+    }
+    const go = (): void => this.onBack?.();
+    void running.then(go, go);
+  }
+
+  /** The typed name into the draft, one undo step. Empty, or the name it
+   * already had, writes nothing and the field goes back. Whether it wrote. */
+  private writeTypedName(): boolean {
+    const renaming = this.renaming;
+    if (renaming === undefined) return false;
+    this.renaming = undefined;
+    const name = renaming.value.trim();
+    const page = findStatusPage(this.draft?.document, renaming.pageId);
+    if (page === undefined || name === "" || name === statusPageName(page)) return false;
+    this.draft?.endCoalesce();
+    return this.edit((d) => renameStatusPage(d, renaming.pageId, name));
+  }
+
+  /** Enter, or clicking away from a name field. Like the device chips, the
+   * name saves at once, and Undo steps it back: with no other edit waiting it
+   * goes straight out. With edits waiting it joins them, since a save sends
+   * the page whole, and the bar's Save says so. */
+  private commitRename(): void {
+    const clean = this.draft?.dirty === false;
+    if (this.writeTypedName() && clean) void this.save();
+  }
+
+  // ── the switcher ───────────────────────────────────────────────────────
+
+  private togglePicker(): void {
+    if (this.pickerOpen) {
+      this.closePicker(true);
+      return;
+    }
+    this.topMenuOpen = false;
+    this.pickerOpen = true;
+    this.pickerFind = "";
+    this.focusAfter = ".pe-pp-find";
+  }
+
+  private closePicker(refocus: boolean): void {
+    if (!this.pickerOpen) return;
+    this.pickerOpen = false;
+    if (refocus) this.focusAfter = ".pe-pp";
+  }
+
+  /** Open another status page of the library here. The open page's edits
+   * stay in its kept draft until it is opened again. */
+  private openPickedPage(id: string): void {
+    this.closePicker(false);
+    if (this.libraryItem !== undefined && sameId(id, this.libraryItem.id)) {
+      this.focusAfter = ".pe-pp";
+      return;
+    }
+    this.onOpenItem?.(id);
+  }
+
+  /** Why New status page and Duplicate cannot make one now, or undefined when
+   * they can: a page the library makes is on no device, an administrator's,
+   * as on the board. */
+  private pickerMakeRefusal(): string | undefined {
+    if (this.lib.store === undefined) return "The library is not read yet.";
+    if (this.hass?.user?.is_admin !== true) return "Only an administrator can make a status page.";
+    if (this.pickerBusy) return "Making the status page…";
+    return undefined;
+  }
+
+  /** New status page: empty, named as the app names the next one, on no device
+   * yet, then open here. */
+  private async newPickedPage(): Promise<void> {
+    const lib = this.lib.library;
+    const name = nextStatusPageName({ schemaVersion: 1, statusPages: lib === undefined ? [] : libraryItems(lib, "status_pages").map((e) => e.item) });
+    await this.makeLibraryPage(newStatusPage(name, randomWatchId().toUpperCase()), "Not made");
+  }
+
+  /** Duplicate: the open page as it stands here, unsaved edits and all, as a
+   * new page named "<name> copy", on no device yet, then open here. */
+  private async duplicatePage(): Promise<void> {
+    this.writeTypedName();
+    const page = this.shownPage();
+    if (page === undefined) return;
+    await this.makeLibraryPage(statusPageCopy(page, `${statusPageName(page)} copy`), "Not copied");
+  }
+
+  private async makeLibraryPage(page: JsonObject, failed: string): Promise<void> {
+    const store = this.lib.store;
+    if (store === undefined || this.pickerMakeRefusal() !== undefined) return;
+    this.pickerBusy = true;
+    const made = await store.createItem("status_pages", { schemaVersion: 1, statusPages: [page] });
+    this.pickerBusy = false;
+    if (!made.ok) {
+      this.note = { kind: "err", text: `${failed}. ${made.text}` };
+      return;
+    }
+    this.pickerOpen = false;
+    this.onOpenItem?.(made.reply.id);
   }
 
   // ── the library: ticks, delete ─────────────────────────────────────────
@@ -692,18 +859,22 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   /**
-   * The shown status page's devices, in the strip under the canvas head
-   * where every editor has them: a chip per device, ticked where the page
-   * is (`library/pick`). Ticking puts the page, as saved, on that device;
-   * unsaved edits here reach it with the next save, since it is one page.
-   * Nothing before the page or the library is read.
+   * The shown status page's devices in the bar, after the name and a divider,
+   * as on Pages: "Shown on", a checkbox chip per device where the page is
+   * (`library/pick`), "+ Add to a device", then "saves at once", since these
+   * skip Save. Ticking puts the page, as saved, on that device; unsaved edits
+   * here reach it with the next save, since it is one page. Nothing before
+   * the page or the library is read.
    */
-  private renderStageDevices(page: JsonObject | undefined): TemplateResult | typeof nothing {
+  private renderBarTicks(page: JsonObject | undefined): TemplateResult | typeof nothing {
     const lib = this.lib.library;
     const item = this.libraryItem;
     if (lib === undefined || page === undefined || item === undefined) return nothing;
     const count = libraryItem(lib, "status_pages", item.id)?.owners.length ?? 0;
-    return renderBarDevices("status_pages", count, this.statusTicksBody(page), this.lib.store?.savedStamp("status_pages", item.id));
+    return html`<span class="pe-bar-div" aria-hidden="true"></span>
+      <div class="pe-bar-on ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion("status_pages")}>
+        ${this.statusTicksBody(page)}${renderStripSaved(this.lib.store?.savedStamp("status_pages", item.id))}
+      </div>`;
   }
 
   /** The ticks themselves, or the save-first line while the library has no
@@ -724,6 +895,8 @@ export class WaStatusPagesEditor extends LitElement {
       kind: "status_pages",
       itemId: entry.id,
       devices: this.linkDevices,
+      lead: entry.owners.length === 0 ? ON_NO_DEVICE_TEXT : SHOWN_ON_TEXT,
+      saves: SAVES_AT_ONCE_TEXT,
       ...(this.libraryItem?.from === undefined ? {} : { viewing: this.libraryItem.from }),
       colorOf: (ownerId) => this.colorOf(ownerId),
       pending: store.pending,
@@ -743,11 +916,11 @@ export class WaStatusPagesEditor extends LitElement {
     const store = this.lib.store;
     if (store === undefined) return;
     this.untickAsk = undefined;
+    const names = { item: entry.name, device: this.deviceName(ownerId) };
     if (on) {
-      void tickItem(this.hass, store, ownerId, "status_pages", entry.id, true);
+      void tickItem(this.hass, store, ownerId, "status_pages", entry.id, true, names);
       return;
     }
-    const names = { item: entry.name, device: this.deviceName(ownerId) };
     void askUntick(this.hass, store, ownerId, "status_pages", entry.id, names).then((ask) => { this.untickAsk = ask; });
   }
 
@@ -757,8 +930,14 @@ export class WaStatusPagesEditor extends LitElement {
     const store = this.lib.store;
     this.untickAsk = undefined;
     if (store === undefined) return;
-    const result = await tickItem(this.hass, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names);
-    if (result.note !== undefined) this.note = result.note;
+    let said: Note | undefined;
+    const result = await tickItem(this.hass, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names, {
+      onUndone: () => { if (said !== undefined && this.note === said) this.note = undefined; },
+    });
+    if (result.note !== undefined) {
+      said = result.note;
+      this.note = said;
+    }
   }
 
   /** Delete the page: always out of the library, asked first, since there
@@ -847,6 +1026,8 @@ export class WaStatusPagesEditor extends LitElement {
     const key = this.recordKey;
     const item = this.libraryItem;
     this.endScrub();
+    // A name still being typed is part of what gets saved.
+    this.writeTypedName();
     const draft = this.draft;
     if (!hass || key === undefined || item === undefined || !draft || this.saving || !draft.dirty) return;
     this.note = undefined;
@@ -879,6 +1060,12 @@ export class WaStatusPagesEditor extends LitElement {
       void this.save();
       return;
     }
+    if (e.key === "Escape" && this.pickerOpen) {
+      // From its find field too.
+      e.preventDefault();
+      this.closePicker(true);
+      return;
+    }
     if (e.key === "Escape" && this.topMenuOpen) {
       e.preventDefault();
       this.topMenuOpen = false;
@@ -904,16 +1091,16 @@ export class WaStatusPagesEditor extends LitElement {
   };
 
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (!this.topMenuOpen) return;
+    if (!this.topMenuOpen && !this.pickerOpen) return;
     const path = e.composedPath();
     const within = (name: string) => path.some((n) => n instanceof HTMLElement && n.classList.contains(name));
-    if (!within("pe-top-menu")) this.topMenuOpen = false;
+    if (this.pickerOpen && !within("pe-pp-wrap")) this.closePicker(false);
+    if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
   };
 
   // ── drawing ────────────────────────────────────────────────────────────
 
   override render(): TemplateResult {
-    const watches = this.watches;
     const draft = this.draft;
     return html`
       <div class="pe-top">
@@ -921,7 +1108,7 @@ export class WaStatusPagesEditor extends LitElement {
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
-      ${this.renderBody(watches)}
+      ${this.renderBody()}
       ${this.deleteAsk ? this.renderDeleteAsk(this.deleteAsk) : nothing}
     `;
   }
@@ -930,36 +1117,132 @@ export class WaStatusPagesEditor extends LitElement {
     return this.narrow || (this.hostWidth > 0 && this.hostWidth <= SP_STACK_WIDTH);
   }
 
-  /** The bar: back to the Status pages tab, the Library tag, then the ···
-   * menu and Save. No delivery: a save reaches every device that has the
-   * page, each on its own. The devices that have it are in the strip under
-   * the canvas head, Preview on in the tool strip over the stage. */
+  /**
+   * The bar, the page editor's frame (mock-pages, item 11): All status pages,
+   * a divider, the switcher's grid button, the name in place, the rows and
+   * Shared, the devices (`renderBarTicks`), then a divider and the fixed right
+   * cluster: Undo and Redo, Saved or Save, the ··· menu and Hints. No
+   * delivery: a save reaches every device that has the page, each on its own.
+   * Drawn in every state, so a page still loading can still be left.
+   */
   private renderTopBar(draft: StatusPagesDraft | undefined): TemplateResult {
-    const editing = draft !== undefined;
-    const dirty = editing && this.dirty;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Status page in the library">
+    const page = draft === undefined || this.loading || this.loadError !== undefined || this.record === undefined ? undefined : this.shownPage();
+    return html`<div class="wa-bar pe-bar" role="group" aria-label="Status page editor">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to the Status pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Status pages</span></button>
-      ${renderLibraryTag()}
+      <button type="button" class="tb-btn tb-back pe-bar-back" title="Back to the Status pages board" @click=${() => this.leave()}>${uiIcon("left")}<span>All status pages</span></button>
+      ${page === undefined ? nothing : html`<span class="pe-bar-div" aria-hidden="true"></span>
+        ${this.renderPagePicker(page)}
+        ${this.renderBarTicks(page)}`}
       <span class="spacer"></span>
-      ${this.renderTopMenu(editing ? draft : undefined)}
-      ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches every device that has this status page.` : `Nothing to save (${MOD}S)`}
-          @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>` : nothing}
-      ${this.barActions}
+      <div class="pe-bar-right">
+        <span class="pe-bar-div" aria-hidden="true"></span>
+        ${draft === undefined ? nothing : html`${renderUndoRedo({ canUndo: draft.canUndo, canRedo: draft.canRedo, onUndo: () => this.undo(), onRedo: () => this.redo() })}
+          ${renderSaveState({ dirty: draft.dirty, saving: this.saving, reach: "A save reaches every device that has this status page.", onSave: () => void this.save() })}`}
+        ${this.renderTopMenu(draft)}
+        ${renderHintsButton(this.helpOn, () => { this.helpOn = !this.helpOn; setHintsOn(this.helpOn); })}
+        ${this.barActions}
+      </div>
     </div>`;
   }
 
-  /** The ··· menu: Discard edits. */
+  /** The page's head in the bar: the switcher's grid button with its popover,
+   * the name in place, and how many rows with Shared. */
+  private renderPagePicker(page: JsonObject): TemplateResult {
+    const name = statusPageName(page) || "Untitled page";
+    const rows = statusPageRows(page).length;
+    const open = this.pickerOpen;
+    return html`<div class="pe-pp-wrap">
+        ${renderSwitcherButton({ open, title: "Pick a status page to edit, or make one", label: `Switch status page. Editing ${name}`, onClick: () => this.togglePicker() })}
+        ${open ? this.renderPickerPopover(page) : nothing}
+      </div>
+      ${renderNameInPlace(this.nameField(page))}
+      ${renderBarMeta(`${rows} ${rows === 1 ? "row" : "rows"}`, "One status page for every device that has it. A save reaches all of them.")}`;
+  }
+
+  /**
+   * The switcher's popover, as on Pages: "Pick a status page to edit" with the
+   * count and a find field (by name), the library's status pages as cards in
+   * its order, each with its picture, its name and the devices it is on, the
+   * open one tagged Editing, then New status page; under them Duplicate and
+   * Open the Status pages board.
+   */
+  private renderPickerPopover(page: JsonObject): TemplateResult {
+    const ref = this.libraryItem;
+    const openId = ref?.id ?? statusPageId(page);
+    const lib = this.lib.library;
+    const items = lib === undefined ? [] : libraryItems(lib, "status_pages");
+    // The open page from the draft, so its card shows the edits; in its own
+    // place, or first when the library does not list it yet.
+    type Card = { id: string; page: JsonObject; name: string; sub: string };
+    const devicesOf = (owners: readonly string[]) => pageDevicesText(owners.map((o) => this.deviceName(o)));
+    const own: Card = {
+      id: openId, page, name: statusPageName(page) || "Untitled page",
+      sub: devicesOf(lib === undefined ? [] : devicesFor(lib, "status_pages", openId)),
+    };
+    const cards: Card[] = items.map((entry) => (sameId(entry.id, openId) ? own : {
+      id: entry.id, page: entry.item as JsonObject, name: entry.name, sub: devicesOf(entry.owners),
+    }));
+    if (!cards.includes(own)) cards.unshift(own);
+    const find = this.pickerFind.trim().toLowerCase();
+    const shown = find === "" ? cards : cards.filter((c) => c.name.toLowerCase().includes(find));
+    const makeRefusal = this.pickerMakeRefusal();
+    const hass = this.hass;
+    const scale = SP_CARD_THUMB_W / REFERENCE_CASE.screen.width;
+    return html`<div class="pe-pp-pop" role="dialog" aria-label="Switch status page">
+      <div class="pe-pp-top">
+        <strong>Pick a status page to edit</strong>
+        <span class="pe-pp-count">${cards.length} ${cards.length === 1 ? "status page" : "status pages"}</span>
+        <input type="search" class="pe-pp-find" placeholder="Find a status page" aria-label="Find a status page" .value=${live(this.pickerFind)}
+          @input=${(e: Event) => { this.pickerFind = (e.target as HTMLInputElement).value; }} />
+      </div>
+      <div class="pe-pp-grid" role="group" aria-label="Status pages">
+        ${repeat(shown, (c) => c.id.toUpperCase(), (c) => {
+          const current = sameId(c.id, openId);
+          return html`<button type="button" class="pe-pp-card ${current ? "on" : ""}" data-pick-page=${c.id}
+            aria-current=${current ? "true" : "false"} title=${current ? `Editing ${c.name}` : `Open ${c.name}`}
+            @click=${() => this.openPickedPage(c.id)}>
+            <span class="sp-pp-pic" aria-hidden="true">${hass === undefined ? nothing : renderStatusPagePicture({
+              page: c.page, hass, icons: this.memoIcons(), screen: REFERENCE_CASE.screen, scale,
+            })}</span>
+            <span class="pe-pp-card-name">${c.name}</span>
+            <span class="pe-pp-card-sub">${c.sub}</span>
+            ${current ? html`<span class="pe-pp-tag">Editing</span>` : nothing}
+          </button>`;
+        })}
+        <button type="button" class="pe-pp-card pe-pp-new" ?disabled=${makeRefusal !== undefined}
+          title=${makeRefusal ?? "An empty status page in the library, on no device yet"} @click=${() => void this.newPickedPage()}>
+          <span class="pe-pp-plus" aria-hidden="true">${uiIcon("plus")}</span><span class="pe-pp-card-name">New status page</span>
+        </button>
+      </div>
+      ${shown.length === 0 ? html`<p class="pe-pp-none">No status page's name has "${this.pickerFind.trim()}" in it.</p>` : nothing}
+      <div class="pe-pp-foot">
+        <button type="button" class="pe-btn pe-pp-dup" ?disabled=${makeRefusal !== undefined}
+          title=${makeRefusal ?? "A copy of this status page as it is now, in the library, on no device yet"}
+          @click=${() => void this.duplicatePage()}>${uiIcon("duplicate")}<span>Duplicate</span></button>
+        <button type="button" class="pe-link pe-pp-board" @click=${() => { this.closePicker(false); this.onBack?.(); }}>Open the Status pages board</button>
+      </div>
+    </div>`;
+  }
+
+  /** The ··· menu: what the preview is drawn on and the page's facts, as a
+   * line at its top as on Pages, then Discard edits. */
   private renderTopMenu(draft: StatusPagesDraft | undefined): TemplateResult | typeof nothing {
     if (draft === undefined) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
+    const host = open ? this.viewHost() : undefined;
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const label = host?.phone === undefined ? (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).label : host.phone.model.label;
+    const facts = host === undefined ? [] : [...statusStageFacts(host), label];
     return html`<span class="side-menu pe-top-menu">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
-      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
+      ${open ? html`<div class="pop-menu side-pop pe-menu" role="menu" aria-label="More actions">
+        ${facts.length === 0 ? nothing : html`<div class="pe-menu-facts">
+          ${owner === undefined ? nothing : html`<b class="pe-watch-crumb">${watchName(owner, this.watches)}</b>`}
+          <span>${facts.join(" · ")}</span>
+        </div>`}
         <button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>
@@ -976,25 +1259,24 @@ export class WaStatusPagesEditor extends LitElement {
 
   private fittedColumns(): ColumnWidths {
     if (this.hostWidth > 0 && this.hostWidth <= SP_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - SP_GRID_CHROME, this.columns, SP_COLUMNS);
+    return { left: 0, right: fitOneColumnWidth(this.hostWidth - SP_GRID_CHROME, this.columns.right, SP_COLUMNS) };
   }
 
-  private renderGutter(side: "left" | "right"): TemplateResult {
-    return html`<div class="gutter ${side}" role="separator" aria-orientation="vertical"
-      aria-label=${side === "left" ? "Resize the pages and rows column" : "Resize the settings column"}
+  private renderGutter(): TemplateResult {
+    return html`<div class="gutter right" role="separator" aria-orientation="vertical"
+      aria-label="Resize the settings column"
       title="Drag to resize. Double-click to reset."
       @pointerdown=${(e: PointerEvent) => {
-        const shown = this.fittedColumns();
         beginColumnDrag(e, {
-          side,
-          base: side === "left" ? shown.left : shown.right,
+          side: "right",
+          base: this.fittedColumns().right,
           limits: SP_COLUMNS,
-          onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
+          onWidth: (width) => { this.columns = { ...this.columns, right: width }; },
           onEnd: () => saveColumnWidths(SP_COLUMNS_KEY, this.columns),
         });
       }}
       @dblclick=${() => {
-        this.columns = { ...this.columns, [side]: SP_COLUMNS_DEFAULT[side] };
+        this.columns = { ...this.columns, right: SP_COLUMNS_DEFAULT.right };
         saveColumnWidths(SP_COLUMNS_KEY, this.columns);
       }}></div>`;
   }
@@ -1010,51 +1292,48 @@ export class WaStatusPagesEditor extends LitElement {
     saveStatusPagesZoom(scale);
   }
 
-  private renderStage(host: StatusPagesViewHost, watches: readonly OwnerSummary[]): TemplateResult {
-    const owner = watches.find((w) => w.owner_watch_id === this.watchId);
-    const found = caseForScreenSize(owner?.screen_size);
-    const watchCase = found ?? REFERENCE_CASE;
+  /**
+   * The stage, as on Pages: the big + Add row at its top, the hint while
+   * Hints is on, the device in the middle with its rows to pick and drag, the
+   * rows it cannot draw now under it, and at its foot the dock: the zoom, Fit,
+   * then Preview on (Watch, iPhone, Both).
+   */
+  private renderStage(host: StatusPagesViewHost): TemplateResult {
     const phone = host.phone !== undefined;
-    const caseLabel = host.phone === undefined ? watchCase.label : host.phone.model.label;
-    const facts = [...statusStageFacts(host), caseLabel];
+    const device = phone ? "iPhone" : "watch";
     // The percent is of the device's own points.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
-    const page = shownStatusPage(host);
-    const name = page === undefined ? "Status pages" : statusPageName(page) || "Untitled page";
-    const draft = this.draft;
     const scale = this.stageScale;
+    const fitting = this.zoom === undefined;
     const fit = this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
     return html`<div class="card canvas-card lit sp-canvas" aria-label="Status page">
-      <div class="cv-head">
-        <span class="cv-title" title=${name}>${name}</span>
-        ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
-          <span class="cv-watch">${watchName(owner, watches)}</span></span>` : nothing}
-        <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
-          <span class="cv-shape" title=${facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
-        <span class="cv-acts">
-          <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
-            @click=${() => this.undo()}>${uiIcon("undo")}</button>
-          <button class="cv-act icon undo" ?disabled=${!draft?.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
-            @click=${() => this.redo()}>${uiIcon("redo")}</button>
-        </span>
-      </div>
-      ${this.renderStageDevices(page)}
       <div class="stage-area sp-stage-area">
-        <div class="stage-tools" role="toolbar" aria-label="Stage tools">
-          ${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind),
-            this.phones ? { on: this.sideBySide, pick: () => { this.sideBySide = true; } } : undefined)}<span class="tb-sep" aria-hidden="true"></span>
-          <span class="tb-zoom" role="group" aria-label="Zoom">
-            <button class="tb icon" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
-              @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
-            <button class="tb pct" aria-label=${`Zoom ${shownAs(scale)}. Back to fit`}
-              title=${`The ${phone ? "iPhone" : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
-              @click=${() => this.setZoom(undefined)}>${shownAs(scale)}</button>
-            <button class="tb icon" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
-              @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
-          </span>
-        </div>
+        <div class="pe-stage-top">${renderAddRowButton(host)}</div>
+        ${this.helpOn ? html`<div class="under"><span class="tail">${STATUS_PAGES_STAGE_HINT}</span></div>` : nothing}
         <div class="sp-stage-body">${this.renderLibraryStage(host)}</div>
-        <div class="under"><span class="tail">${STATUS_PAGES_STAGE_HINT}</span></div>
+        ${renderUndrawnRows(host)}
+        <div class="pe-dock-area">
+          <div class="stage-tools pe-dock" role="toolbar" aria-label="Stage tools">
+            <span class="tb-zoom" role="group" aria-label="Zoom">
+              <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
+                @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
+              <span class="pe-zoom-pct" role="status" title=${`The ${device} at ${shownAs(scale)} of its own points`}>${shownAs(scale)}</span>
+              <button class="tb icon pe-zoom-in" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
+                @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
+              <button class="tb pe-fit ${fitting ? "lit" : ""}" aria-pressed=${fitting ? "true" : "false"}
+                title=${fitting ? `Fitting the ${device} to the stage (${shownAs(fit)})` : `Fit the ${device} to the stage again (${shownAs(fit)})`}
+                @click=${() => this.setZoom(undefined)}>Fit</button>
+            </span>
+            <span class="tb-sep" aria-hidden="true"></span>
+            ${renderPreviewSeg({
+              kind: this.previewKind,
+              duo: this.sideBySide,
+              phones: this.phones,
+              onPick: (k) => this.pickPreview(k),
+              onBoth: () => { this.sideBySide = true; },
+            })}
+          </div>
+        </div>
       </div>
     </div>`;
   }
@@ -1088,7 +1367,7 @@ export class WaStatusPagesEditor extends LitElement {
     const owner = this.watches.find((w) => w.owner_watch_id === id);
     const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size)) : undefined;
     const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
-    const shown: StatusPagesViewHost = { ...host, screen, scale: phone === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM };
+    const shown: StatusPagesViewHost = { ...host, still: true, screen, scale: phone === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM };
     const companion: StatusPagesViewHost = phone === undefined ? (({ phone: _drop, ...rest }) => rest)(shown) : { ...shown, phone };
     return html`<div class="lib-duo">
       ${side(kind, edited, "editing")}
@@ -1125,25 +1404,7 @@ export class WaStatusPagesEditor extends LitElement {
     }) : html``)}</div>`;
   }
 
-  /** The list: every other status page of the library, a row
-   * that opens it, after the open one (the view's own row). */
-  private renderLibraryOthers(): TemplateResult {
-    const ref = this.libraryItem;
-    const lib = this.lib.library;
-    if (ref === undefined || lib === undefined) return html``;
-    const shown = listedItems(libraryItems(lib, "status_pages"), ref.id, this.listFilter);
-    const others = shown.filter((entry) => !sameId(entry.id, ref.id));
-    return html`${others.length === 0 ? nothing : html`<div class="layers sp-page-list sp-lib-others" role="list">
-      ${others.map((entry) => html`<button type="button" class="layer lib-other-row ${entry.owners.length === 0 ? "nowhere" : ""}" role="listitem"
-        data-lib-status=${entry.id} title=${`Open ${entry.name}`} @click=${() => this.onOpenItem?.(entry.id)}>
-        <span class="grip" aria-hidden="true"></span>
-        <span class="thumb sp-lib-thumb" aria-hidden="true">${uiIcon("list")}</span>
-        <span class="name"><b><span class="nm-t">${entry.name}</span></b><small>${entry.detail} · ${itemWhereText(entry)}</small></span>
-      </button>`)}
-    </div>`}${renderNoneLeft(this.listFilter, others.length + 1, "status page")}`;
-  }
-
-  private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
+  private renderBody(): TemplateResult {
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
     if (this.loadError !== undefined) {
       const id = this.recordKey;
@@ -1160,24 +1421,18 @@ export class WaStatusPagesEditor extends LitElement {
     if (host === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
-      <div class="column left">
-        ${renderPagesCard(host)}
-        ${renderRowsCard(host)}
-      </div>
-      ${this.renderGutter("left")}
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "sp-wide"}" style=${`--wa-right:${fit.right}px;${view}`}>
       <div class="column canvas">
-        ${this.renderStage(host, watches)}
+        ${this.renderStage(host)}
       </div>
-      ${this.renderGutter("right")}
+      ${this.renderGutter()}
       <div class="column inspector card">
-        ${this.renderDevicesCard()}
         ${renderStatusInspector(host)}
       </div>
     </div>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, phoneFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, canvasStyles, inspectorStyles, watchFrameStyles, phoneFrameStyles, pageFrameStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -1202,15 +1457,8 @@ export class WaStatusPagesEditor extends LitElement {
       padding: 0 0 10px;
       background: var(--wa-bg);
     }
-    h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-muted); }
+    h3 { font-size: 13px; font-weight: 650; color: var(--wa-muted); }
     code { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
-    .wa-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-    .wa-bar button.tb-btn svg.ui-icon { width: 14px; height: 14px; }
-    /* Stacked, the way back stays first on the first line, not under it. */
-    .wa-bar.stacked > button.tb-btn.tb-back { order: 0; }
-    .wa-bar button.tb-btn:disabled, .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
-    .wa-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
-    .wa-bar .pop-menu .row:disabled:hover { background: transparent; }
     .pe-top > .pe-note { margin: 10px var(--cf-pad, 16px) 0; }
     .pe-note {
       display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px 12px;
@@ -1226,47 +1474,39 @@ export class WaStatusPagesEditor extends LitElement {
       display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 560px;
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
-    /* One screen tall, as the page editor: the editor never scrolls as a
-       whole, and each list, the stage and the inspector scroll in their own
-       box, so every card stays on screen. */
+    /* Two columns, the stage and the inspector, one screen tall, as the page
+       editor: the editor never scrolls as a whole, and the stage and the
+       inspector each scroll in their own box, so every card stays on screen. */
     .layout.pe-layout { padding: 0; align-items: stretch; }
-    .layout.pe-layout.cols-3 { flex: 1 1 0; min-height: 0; overflow: hidden; }
-    .pe-layout > .column.left { display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: auto; }
-    .pe-layout.cols-3 > .column.left { overflow: hidden; }
-    .pe-layout.cols-3 > .column.left > .card { display: flex; flex-direction: column; min-height: 120px; }
-    .pe-layout.cols-3 > .column.left > .card:first-child { flex: 0 1 auto; max-height: 50%; }
-    .pe-layout.cols-3 > .column.left > .card:last-child { flex: 1 1 0; }
-    .pe-layout.cols-3 > .column.left > .card > :not(.layers) { flex: none; }
-    .pe-layout.cols-3 > .column.left > .card > .layers { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-    /* The open status page's own row stays whole over the others, which
-       scroll under it: one bar in the card, not two. */
-    .pe-layout.cols-3 > .column.left > .sp-pages-card > .layers:has(+ .sp-lib-others) { flex: none; overflow: visible; }
-    .pe-layout.cols-3 > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
-    .pe-layout.cols-3 > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
-    .pe-layout.cols-3 > .column.canvas > .card { flex: none; }
+    .layout.pe-layout.sp-wide {
+      grid-template-columns: minmax(0, 1fr) 8px var(--wa-right, 372px); column-gap: 0;
+      flex: 1 1 0; min-height: 0; overflow: hidden;
+    }
+    .pe-layout.sp-wide > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
+    .pe-layout.sp-wide > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.sp-wide > .column.canvas > .card.canvas-card.sp-canvas { flex: 1 1 0; min-height: 420px; }
+    .pe-layout.sp-wide .sp-canvas > .sp-stage-area { flex: 1 1 0; min-height: 0; }
+    .pe-layout.sp-wide .sp-stage-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.sp-wide .sp-stage-area > :not(.sp-stage-body) { flex: none; }
     .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
     @container (max-width: 820px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
       .pe-layout > .gutter { display: none; }
-      /* As strong as the sticky rule, so a stacked list or inspector stops
-         sliding over the cards above it (the page editor's fix). */
-      .pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector { grid-column: auto; position: static; max-height: none; overflow: visible; }
+      /* As strong as the wide rules, so a stacked inspector stops sliding over
+         the stage above it (the page editor's fix). */
+      .pe-layout > .column.canvas, .pe-layout > .column.inspector { grid-column: auto; position: static; max-height: none; overflow: visible; }
       .pe-layout > .column.canvas { order: 1; }
       .pe-layout > .column.inspector { order: 2; }
-      .pe-layout > .column.left { order: 3; }
     }
     .column.canvas > .card.canvas-card.sp-canvas { min-height: 0; flex: none; }
     /* The lit stage's edge in Status pages' hue, Home's Status pages door. */
     .canvas-card.sp-canvas { --wa-stage-hue: var(--wa-hue-yellow); }
-    .cv-head .cv-title { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .cv-head .cv-watch { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--wa-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sp-stage-area { position: relative; padding: 64px 12px 12px; gap: 10px; }
-    @container (max-width: 460px) {
-      .sp-stage-area { padding-top: 92px; }
-    }
+    .canvas-card.lit .stage-area.sp-stage-area { position: relative; padding: 14px 12px 14px; gap: 8px; }
     /* "safe": a watch wider than the stage starts at its left edge, so all
        of it can be scrolled to, instead of hanging off both sides. */
     .sp-stage-body { display: flex; justify-content: safe center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
+    /* A status page's picture on a switcher card: its top, cut at the card. */
+    .sp-pp-pic { position: relative; display: block; flex: none; width: 76px; height: 96px; overflow: hidden; border-radius: 12px; box-shadow: 0 0 0 1px var(--wa-line-strong); pointer-events: none; }
     .sp-stage-area > .under {
       display: flex; flex-direction: column; gap: 4px; align-self: center; max-width: 460px; text-align: center;
       font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));
@@ -1294,13 +1534,10 @@ export class WaStatusPagesEditor extends LitElement {
     /* The delete question's two long answers wrap under each other. */
     .pe-ask-foot.sp-del-foot { flex-wrap: wrap; }
     :host([narrow]) { --cf-pad: 12px; }
-    /* On each device over the inspector's cards, and the other status pages
-       under the open one, each with a list glyph. */
+    /* On each device under the Name. */
     .sp-devices { margin-bottom: 10px; }
-    .sp-lib-others { margin-top: 2px; }
-    .sp-lib-thumb { display: inline-flex; align-items: center; justify-content: center; color: var(--wa-muted); }
-    .sp-lib-thumb svg.ui-icon { width: 16px; height: 16px; }
-  `, statusPagesViewStyles, libraryTicksStyles, libraryModeStyles, onEachDeviceStyles, itemListStyles];
+    .pe-chip:disabled { opacity: .55; cursor: default; }
+  `, statusPagesViewStyles, libraryTicksStyles, libraryModeStyles, onEachDeviceStyles];
 }
 
 if (!customElements.get("wa-status-pages-editor")) {

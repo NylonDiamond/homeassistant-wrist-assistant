@@ -1020,7 +1020,7 @@ export class WaRoomsEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Devices tab."}</div>`;
     }
     const home = this.kindOf(this.watchId, watches) === "rooms";
     if (home && this.unsupported) return html`<div class="pe-empty"><b>${HOME_ROOMS_UPDATE_TEXT}</b></div>`;

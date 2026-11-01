@@ -70,16 +70,20 @@ async function editor() {
 describe("the status pages editor's devices, from the library", () => {
   afterEach(resetLaterForTest);
 
-  it("draws a tick per device in the strip under the canvas head, none locked", async () => {
-    const { call, el, host, page } = await editor();
+  it("draws a tick per device in the bar, Shown on, none locked, then saves at once", async () => {
+    const { call, host, page } = await editor();
     expect(statusPagesOf(host().document).map((p) => p.id)).toEqual([HOUSE]);
-    const ticks = flat(call("renderStageDevices", page()));
-    expect(ticks).toContain("lib-on over-stage");
+    const ticks = flat(call("renderBarTicks", page()));
+    expect(ticks).toContain(`<span class="lt-lead">Shown on</span>`);
     expect(ticks).toContain("Jesse's Watch");
     expect(ticks).toContain("Jesse's iPhone");
+    expect(ticks).toContain(`role="checkbox"`);
+    expect(ticks).toContain(`<span class="lt-saves">saves at once</span>`);
     expect(ticks).not.toContain("Delete takes the status page off it.");
-    const stage = flat(call("renderStage", host(), el.owners));
-    expect(stage).toMatch(/cv-head[\s\S]*lib-on over-stage[\s\S]*lt-ticks[\s\S]*class="stage-area/);
+    // Over the stage, not in it: no strip under a canvas head any more.
+    const stage = flat(call("renderStage", host()));
+    expect(stage).not.toContain("lib-on");
+    expect(stage).not.toContain("cv-head");
   });
 
   it("clears a device's Status page slots once an untick took a status page off it", async () => {

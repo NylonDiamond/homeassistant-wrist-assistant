@@ -9,9 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { libraryOf } from "../src/library/model.js";
 import { previewLabel, previewOwner, renderPreviewPicker, renderStripSaved, startPreviewKind, startSideBySide } from "../src/library/item-mode.js";
-import { itemWhereText, listedItems } from "../src/library/item-list.js";
 import { DELIVERY_SETTLE_MS, followDeliveries, onEachDeviceLines, ordinal, placeText, syncText } from "../src/library/on-each-device.js";
-import { libraryItems } from "../src/library/model.js";
 import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
 import { renderTicks } from "../src/library/ticks.js";
@@ -241,18 +239,5 @@ describe("On each device follows the deliveries", () => {
       expect(source).toMatch(/this\.stopDeliveries\?\.\(\);\n\s*this\.stopDeliveries = undefined;/);
       expect(source).toMatch(/onReconnect = \(\): void => \{[\s\S]*?void this\.readConfigSummary\(\);[\s\S]*?\n {2}\};/);
     }
-  });
-});
-
-describe("the left list in the one editor", () => {
-  const lib = libraryOf(summary());
-
-  it("keeps every page, or with On no device only those and the open one", () => {
-    const items = libraryItems(lib, "pages");
-    expect(listedItems(items, PAGE1, "all")).toHaveLength(items.length);
-    expect(listedItems(items, PAGE1, "none").map((e) => e.id).sort()).toEqual([LONELY, PAGE1].sort());
-    expect(itemWhereText({ owners: [] })).toBe("On no device yet");
-    expect(itemWhereText({ owners: [JESSE] })).toBe("On 1 device");
-    expect(itemWhereText({ owners: [JESSE, PHONE] })).toBe("On 2 devices");
   });
 });

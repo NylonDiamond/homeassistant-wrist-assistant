@@ -102,6 +102,10 @@ export interface CompCellFacts {
 /** One box: a dash with its reason, or a tick with what a click asks for. */
 export interface CompCell {
   dash?: string;
+  /** The dash is one of a whole kind: this kind of design never goes on this
+   * kind of device. Drawn greyed, and the section says why once
+   * (`compGreyNote`). */
+  grey?: boolean;
   on: boolean;
   /** What a click asks for, or undefined when a click does nothing. */
   next?: boolean;
@@ -114,7 +118,7 @@ export function compCell(f: CompCellFacts): CompCell {
   const name = f.deviceName;
   if (!f.listed) {
     return {
-      on: false,
+      on: false, grey: true,
       dash: f.designKind === "iphone"
         ? `An iPhone widget. To have it on ${name}, open it and use Duplicate as.`
         : `A watch complication. To have it on ${name}, open it and use Duplicate as.`,
@@ -125,19 +129,30 @@ export function compCell(f: CompCellFacts): CompCell {
     return {
       on: true, next: false,
       title: f.last
-        ? `Take it off ${name}. It stays in your list, under ${f.shelfName}.`
-        : `Take it off ${name}. A face or widget already using it keeps it.`,
+        ? `Take off ${name}. It stays in your list, under ${f.shelfName}.`
+        : `Take off ${name}. A face or widget already using it keeps it.`,
     };
   }
   if (!f.draws) {
-    if (f.tooOld !== undefined) return { on: false, title: f.tooOld, note: "update app", noteWarn: true };
+    // The column's head says "Update app" (`compColumnBlock`).
+    if (f.tooOld !== undefined) return { on: false, dash: f.tooOld, title: "" };
     return { on: false, dash: `${name} does not draw this shape.`, title: "" };
   }
   if (f.full) {
     return { on: false, title: `${name} is full for this shape. Presets made in the iPhone app count too. Delete a complication on it first.`, note: "full", noteWarn: true };
   }
   const lock = f.deviceKind === "iphone" && f.designKind === "library" && f.lockShape;
-  return { on: false, next: true, title: lock ? `Put it on ${name}'s Lock Screen.` : `Put it on ${name}.` };
+  return { on: false, next: true, title: lock ? `Put on ${name}'s Lock Screen` : `Put on ${name}` };
+}
+
+/** The words under a section's heading, once, for the greyed columns of its
+ * rows: watch designs on the iPhones' columns, iPhone designs on the watches'.
+ * The panel adds "Use Duplicate as." Undefined when no column is greyed. */
+export function compGreyNote(kinds: { watchGrey: boolean; iphoneGrey: boolean }): string | undefined {
+  if (kinds.iphoneGrey && kinds.watchGrey) return "Watch designs cannot go on an iPhone, nor iPhone designs on a watch.";
+  if (kinds.iphoneGrey) return "Watch designs cannot go on an iPhone.";
+  if (kinds.watchGrey) return "iPhone designs cannot go on a watch.";
+  return undefined;
 }
 
 /** What a focused device's head calls its things. */
@@ -181,10 +196,16 @@ export function saveCompView(storage: () => Storage, view: CompListView): void {
  * `boardStyles`. A board page is as wide as the list tabs' boards. */
 export const compBoardStyles = css`
   .cl-page.cl-board .cl-wrap { width: min(2200px, 100%); gap: 14px; }
+  /* The device heads stick right under the tab bar (\`.bd-pin\`), reaching
+     back over the page's top padding as the Cards toolbar does. */
+  .cl-page { --bd-pin-top: calc(-1 * var(--cl-top, 0px)); }
   .cl-acts { align-items: center; }
   .cb-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .cb-tools .pk-search { flex: 0 1 320px; }
   .cb-pic { display: inline-flex; flex: none; align-items: center; justify-content: center; max-height: 96px; overflow: hidden; border-radius: 6px; }
   .cb-pic > * { width: 100%; height: 100%; }
+  .bd-peek .cb-pic { max-height: none; }
   .cb-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
+  /* A phone's page has less padding over it to reach back across. */
+  @media (max-width: 640px) { .cl-page { --bd-pin-top: -14px; } }
 `;

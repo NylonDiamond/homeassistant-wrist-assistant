@@ -18,9 +18,15 @@ import {
   LABEL_HIDDEN_NOTE,
   NO_ICON_GLOW_NOTE,
   NO_ICON_NOTE,
+  TILE_GROUPS_FOOT,
   type TileInspectorPart,
+  openTileGroup,
   renderTileInspector,
   renderTileSettings,
+  tileGroupOfPart,
+  tileGroupOpen,
+  tileGroupSummary,
+  tileHueWord,
   watchTileDrawsNoIcon,
   watchTileInspectorPartChanged,
   watchTileInspectorPartReset,
@@ -120,7 +126,8 @@ function tileHost(t: WatchPageTile): { host: TileSettingsHost; draft: WatchPages
     deviceSiblings: () => ({ selects: [], switches: [], sensors: [], all: [] }),
     smartRuleId: undefined,
     busy: false,
-    uiState: new Map<string, unknown>(),
+    // Every group open: these look at the rows inside them.
+    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -164,8 +171,9 @@ describe("the tile's own kind's card", () => {
     // keeps a smaller one, with its iPhone tag.
     expect(card).toMatch(/<section class="ts-sec" data-part=special aria-label=Camera>\s*<div class="sec-b ts-sec-b">/);
     expect(card).toMatch(/<section class="ts-sec" data-part=phone aria-label=[^>]+>\s*<div class="ts-sec-h ts-sec-sub"><h5>[^<]+<\/h5><span class="ts-dev-tag"/);
-    expect(does.indexOf("<h4>Action</h4>")).toBeGreaterThan(does.indexOf(`class="ts-kind"`));
-    expect(does.indexOf("<h4>Tap animation</h4>")).toBeGreaterThan(does.indexOf("<h4>Action</h4>"));
+    expect(does.indexOf("<h4>Entity</h4>")).toBeLessThan(does.indexOf(`class="ts-kind"`));
+    expect(does.indexOf("<h4>Tap</h4>")).toBeGreaterThan(does.indexOf(`class="ts-kind"`));
+    expect(does.indexOf("<h4>Tap animation</h4>")).toBeGreaterThan(does.indexOf("<h4>Tap</h4>"));
   });
 
   it("is left out where the tile's kind holds nothing of its own", () => {
@@ -343,5 +351,78 @@ describe("the pictures of a choice that is not about color", () => {
     expect(part(text, "glow")).toContain(`<div class="ts-big-pic" aria-hidden="true">`);
     expect(part(text, "whenOff")).toContain(`class="field pc-field pc-size-large"`);
     expect(part(text, "whenOff").match(/<span class="pc-tile"/g)?.length).toBe(2);
+  });
+});
+
+describe("the groups' rows (mock-pages, view 2, items 6 and 7)", () => {
+  /** A host with every group at where it starts: only What it does open. */
+  const fresh = (t: WatchPageTile) => {
+    const { host } = tileHost(t);
+    host.uiState.clear();
+    return host;
+  };
+
+  it("leads with What it does, open, then one row each for the others, with the line under them", () => {
+    const text = flat(renderTileInspector(fresh(tile("lock.front_door"))));
+    expect(text.indexOf("data-group=does")).toBeLessThan(text.indexOf("data-group=color"));
+    expect(text).toContain(`<div class="ts-grp-h"><h3 class="ts-grp-t">What it does</h3>`);
+    expect(text).toContain("<h4>Entity</h4>");
+    expect(text).toContain("<h4>Tap</h4>");
+    for (const id of ["color", "text", "surface"]) expect(text).toContain(`<section class="ts-grp ts-grp-row" data-group=${id} `);
+    expect(text).not.toContain("<h4>Icon</h4>");
+    expect(text).toContain(TILE_GROUPS_FOOT);
+    expect(text.match(/class="ts-grp-btn" aria-expanded=false/g)).toHaveLength(3);
+  });
+
+  it("opens a row on a press, and folds it again, and it stays as it was left", () => {
+    const host = fresh(tile("lock.front_door"));
+    const before = flat(renderTileInspector(host));
+    expect(before).not.toContain("<h4>Icon</h4>");
+    expect(tileGroupOpen(host.uiState, "color")).toBe(false);
+    fire(renderTileInspector(host), `Color and icon</span>`);
+    expect(tileGroupOpen(host.uiState, "color")).toBe(true);
+    const open = flat(renderTileInspector(host));
+    expect(open).toContain("<h4>Icon</h4>");
+    expect(open).toContain(`<section class="ts-grp" data-group=color `);
+    expect(open).toContain(`class="ts-grp-btn" aria-expanded=true`);
+    fire(renderTileInspector(host), `Color and icon</span>`);
+    expect(tileGroupOpen(host.uiState, "color")).toBe(false);
+  });
+
+  it("opens the group a part stands in, and says if it had to", () => {
+    const host = fresh(tile("lock.front_door"));
+    expect(tileGroupOfPart("background")).toBe("surface");
+    expect(tileGroupOfPart("action")).toBe("does");
+    expect(openTileGroup(host.uiState, "does")).toBe(false);
+    expect(openTileGroup(host.uiState, "surface")).toBe(true);
+    expect(openTileGroup(host.uiState, "surface")).toBe(false);
+  });
+
+  it("says each group's current choice at a glance", () => {
+    const host = fresh(tile("lock.front_door", { color: "#EC7212", icon: "lock.fill" }));
+    expect(tileGroupSummary(host, "color")).toBe("Orange, lock icon");
+    expect(tileGroupSummary(fresh(tile("light.desk")), "text")).toMatch(/, Name \+ State$/);
+    expect(tileGroupSummary(host, "surface")).toBe("Solid, no rules");
+    const text = flat(renderTileInspector(host));
+    expect(text).toMatch(/<span class="ts-grp-d">Orange, lock icon<\/span>/);
+  });
+
+  it("names a color in plain words", () => {
+    expect(tileHueWord("#FF3B30")).toBe("red");
+    expect(tileHueWord("#EC7212")).toBe("orange");
+    expect(tileHueWord("#FFD60A")).toBe("yellow");
+    expect(tileHueWord("#34C759")).toBe("green");
+    expect(tileHueWord("#13A79D")).toBe("teal");
+    expect(tileHueWord("#0A84FF")).toBe("blue");
+    expect(tileHueWord("#7B6CF0")).toBe("purple");
+    expect(tileHueWord("#FF3D8A")).toBe("pink");
+    expect(tileHueWord("#FFFFFF")).toBe("white");
+    expect(tileHueWord("#000000")).toBe("black");
+    expect(tileHueWord("#8E8E93")).toBe("grey");
+  });
+
+  it("marks a folded group with changes by a blue dot alone, and an open one by its count", () => {
+    const host = fresh(tile("lock.front_door", { borderStyle: "line" }));
+    expect(flat(renderTileInspector(host))).toMatch(/<span class="ts-grp-n" title=1 changed><i aria-hidden="true"><\/i><\/span>/);
   });
 });

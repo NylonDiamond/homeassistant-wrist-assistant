@@ -63,7 +63,7 @@ function hostWith(open: boolean): EditorHost {
 describe("the chrome sheets", () => {
   const sheets: [string, CSSResult, string[]][] = [
     ["chromeTokens", chromeTokens, [".wa-chrome", "--wa-float-bg", "--wa-lc-pages", ".canvas-card"]],
-    ["topBarStyles", topBarStyles, ["header, .wa-bar", "button.tb-btn.tb-new", ".tb-sync .tb-dot", "@keyframes wa-pulse", "button.help", "button.tb-btn.tb-pages"]],
+    ["topBarStyles", topBarStyles, ["header, .wa-bar", "button.tb-btn.tb-more", ".tb-sync .tb-dot", "@keyframes wa-pulse", "button.help", "button.tb-btn.tb-pages"]],
     ["columnStyles", columnStyles, [".layout {", ".gutter", ".column {", ".card {"]],
     ["leftCardStyles", leftCardStyles, [".card.lc", ".lc-head .swatch", "button.lc-btn.pri", ".pop-menu {"]],
     ["rowListStyles", rowListStyles, [".layer.hl", ".layer .thumb.clear", ".badge.need", ".tap-strip", ".values-list .datum.svr"]],
@@ -111,9 +111,9 @@ describe("the chrome sheets", () => {
     }
   });
 
-  it("gives the top bar buttons a plain outline in their own hue, and rule badges a plain fill", () => {
+  it("gives the device pickers a plain outline in their own hue, and rule badges a plain fill", () => {
     const bar = chromeRuns.topBar.cssText;
-    for (const selector of [".picker > button.tb-browse {", "button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {"]) {
+    for (const selector of [".picker > button.tb-browse {"]) {
       const rule = bar.slice(bar.indexOf(selector), bar.indexOf("}", bar.indexOf(selector)));
       expect(rule, selector).toContain("border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));");
       expect(rule, selector).not.toContain("linear-gradient");

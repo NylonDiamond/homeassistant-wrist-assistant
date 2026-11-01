@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { type ColumnStorage, clampColumnWidth, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../src/column-split.js";
+import { type ColumnStorage, clampColumnWidth, fitColumnWidths, fitOneColumnWidth, loadColumnWidths, saveColumnWidths } from "../src/column-split.js";
 
 const LIMITS = { min: 200, max: 720, middleMin: 320 };
 const DEFAULTS = { left: 250, right: 300 };
@@ -26,6 +26,21 @@ describe("clampColumnWidth", () => {
     expect(clampColumnWidth(333.6, LIMITS)).toBe(334);
     expect(clampColumnWidth(200, LIMITS)).toBe(200);
     expect(clampColumnWidth(720, LIMITS)).toBe(720);
+  });
+});
+
+describe("fitOneColumnWidth", () => {
+  const ONE = { min: 280, max: 720, middleMin: 320 };
+
+  it("gives up only what does not fit, with no other side to share with", () => {
+    expect(fitOneColumnWidth(1012, 720, ONE)).toBe(692);
+    expect(fitOneColumnWidth(1400, 720, ONE)).toBe(720);
+    expect(fitOneColumnWidth(1012, 372, ONE)).toBe(372);
+  });
+
+  it("stops at the narrowest, and stands before the first measurement", () => {
+    expect(fitOneColumnWidth(500, 720, ONE)).toBe(280);
+    expect(fitOneColumnWidth(0, 720, ONE)).toBe(720);
   });
 });
 

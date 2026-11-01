@@ -72,10 +72,11 @@ describe("the Pages tab", () => {
     expect(text).toContain(`aria-pressed=true`);
     expect(text).toMatch(/bd-col-name">Jesse Apple Watch<\/span>[\s\S]*?bd-col-n">2</);
     expect(text).toMatch(/bd-col-name">iPhone 15 Pro<\/span>[\s\S]*?bd-col-n">1</);
-    expect(text).toContain(">Order<");
+    expect(text).toContain("<span>Focus</span>");
+    expect(text).not.toContain(">Order<");
     expect(text).toContain(">Board<");
     expect(text).toContain(">Cards<");
-    expect(text).toContain("Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.");
+    expect(text).toContain("Click a page to edit it. Tick a box to show the page on that device. Press Focus on a device to order its pages.");
     for (const gone of ["pk-tab", ">Device<", "Watches (", "Link", "Not linked", "Same as"]) expect(text).not.toContain(gone);
   });
 
@@ -93,13 +94,15 @@ describe("the Pages tab", () => {
     expect(focused).toEqual([CHEN, undefined]);
   });
 
-  it("says Saved beside the head for a moment after a box's write", async () => {
+  it("says a box's write in the Undo toast, with no Saved beside the head", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
-    const entry = (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.find((e) => e.id === LIGHTS)!;
+    const entry = (t.el.lib as { library: { pages: { id: string; name: string }[] } }).library.pages.find((e) => e.id === LIGHTS)!;
     await t.call("tick", entry, JESSE, true);
-    expect(t.whole()).toContain(`<span class="bd-saved" role="status">`);
+    expect(t.whole()).not.toContain(`<span class="bd-saved" role="status">`);
+    expect(laterToast()).toMatchObject({ text: `${entry.name} is on Jesse Apple Watch now.`, undo: true, done: true });
+    resetLaterForTest();
   });
 
   it("reads the library once and draws a card per page with a tick per device, and no Devices, Link or Add to", async () => {
@@ -395,11 +398,15 @@ describe("a focused device", () => {
     showTab(t, JESSE);
     await t.ready();
     const text = t.whole();
-    expect(text).toContain("<b>Jesse Apple Watch</b>");
+    expect(text).toContain("<b>Showing Jesse Apple Watch first</b>");
     expect(text).toContain("2 pages, in the order the watch shows them");
     expect(text).toContain("On Jesse Apple Watch");
     expect(text).toContain("Drag to order. The order is this watch's own.");
     expect(text).toContain(`class="bd-col on"`);
+    // The focused pill, and its column numbering its ticks.
+    expect(text).toContain("<span>Focused</span>");
+    expect(text).toMatch(/bd-ord" title=Number 1 on Jesse Apple Watch>1</);
+    expect(text).toMatch(/bd-ord" title=Number 2 on Jesse Apple Watch>2</);
     expect(text).toContain(`title=Hide here: keep Smart on Jesse Apple Watch without showing it`);
     expect(text).toContain(`title=Show New Page 1 on Jesse Apple Watch again`);
     expect(text).toContain("bd-eye hid");
@@ -410,10 +417,10 @@ describe("a focused device", () => {
     expect(smart).toBeLessThan(text.indexOf(`data-row=${PAGE1.toUpperCase()}`));
     // The system page is the device's own, never a row.
     expect(text).not.toContain(`data-row=${SYSTEM.toUpperCase()}`);
-    expect(text).toContain("Not on this watch");
-    expect(text).toContain("Tick its box under Jesse Apple Watch to add it.");
+    expect(text).toContain("Not on Jesse Apple Watch");
+    expect(text).toContain("Tick Jesse Apple Watch to add one to the end of its order.");
     expect(text).toMatch(/class=bd-row dim/);
-    expect(text).toContain(">All devices<");
+    expect(text).toContain(">Show every device<");
     // No Multi select on a focused device.
     expect(text).not.toContain("Multi select");
   });

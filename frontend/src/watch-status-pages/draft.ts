@@ -341,6 +341,21 @@ export function anyStatusPagesDirty(): boolean {
   return false;
 }
 
+/** Whether any kept draft holds edits with no save on its way: what a leave
+ * guard that cannot wait for a save has to ask about. */
+export function anyStatusPagesUnsent(): boolean {
+  for (const draft of drafts.values()) if (draft.dirty && !draft.saving) return true;
+  return false;
+}
+
+/** The saves out now, settling when every one has ended; undefined when none
+ * is. A draft stays dirty until its save lands, so a move away waits for this
+ * rather than asking about edits that are on their way. */
+export function statusPagesSavesDone(): Promise<unknown> | undefined {
+  const running = [...drafts.values()].flatMap((draft) => draft.saveDone ?? []);
+  return running.length === 0 ? undefined : Promise.allSettled(running);
+}
+
 export function dropAllStatusPages(): void {
   drafts.clear();
 }

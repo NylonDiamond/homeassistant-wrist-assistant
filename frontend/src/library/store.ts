@@ -24,10 +24,30 @@
 // shows the state asked for meanwhile (`pending`), and a refusal is kept as
 // a note on the item (`noteFor`) until the next write on that item.
 //
-// Nothing here saves a device's record: the editors' own saves do that.
+// Nothing here saves a device's record: the editors' own saves do that. The
+// one exception is Undo of an untick, below, which puts the item back at the
+// place and with the Hide here it had.
+//
+// Every instant write can offer Undo on the panel's toast (`delete-later.ts`):
+// `offerPickUndo` for a tick, `UndoOffer` on `pickMenu` and `copyMenu`. Undo
+// restores the state from before the write, not just the opposite write:
+//
+// - a tick on: the item comes off, and so do the status pages it brought
+//   along that the device did not have;
+// - an untick: the item goes back at its old place, hidden if it was, and
+//   status pages it brings along that the device did not have come off;
+// - a menu pick: the device goes back to the menu it used;
+// - a Duplicate: the device goes back to the menu it used, and the copy made
+//   for it is deleted.
+//
+// A first menu has no way back. A device with no menus record gets one from
+// the pick, and Home Assistant has no op to take a device's menus record away
+// again (`library/pick` always names a menu; `library/delete` refuses a menu
+// in use). So that pick says what it did and offers no Undo.
+//
 // Plan: app repo docs/one_library_plan_2026-10.md.
 
-import { type HassLike, subscribeWatchConfig } from "../ha-api.js";
+import { type HassLike, fetchWatchConfig, saveWatchConfig, subscribeWatchConfig } from "../ha-api.js";
 import {
   type LibraryDeleteReply,
   type LibraryItemCreateReply,
@@ -53,9 +73,9 @@ import {
   renameLibraryMenu,
   saveLibraryItem,
 } from "./client.js";
-import { type Library, holdsRecord, libraryOf } from "./model.js";
+import { type Library, holdsRecord, isHiddenOn, itemsFor, libraryItem, libraryMenu, libraryOf, menuFor, sameId } from "./model.js";
 import { watchMenusDefaults } from "../watch-menus/model.js";
-import { deleteLater, laterHidden, laterKey, laterVersion, onLaterChange } from "../delete-later.js";
+import { deleteLater, laterHidden, laterKey, laterVersion, offerUndo, onLaterChange, sayDone } from "../delete-later.js";
 
 /** Where the read stands. `unsupported` is an integration older than the
  * library (`unknown_command`). */
@@ -67,6 +87,44 @@ export type LibraryWrite<T> = { ok: true; reply: T } | { ok: false; code?: strin
 /** A tick waiting for its write: a page or status page going on or off a
  * device, or a menu a device is moving to (`menuId`). */
 export type PendingPick = { on: boolean } | { menuId: string };
+
+/** What an instant write's Undo toast names. */
+export interface UndoOffer {
+  /** The device's name: "iPhone 17 Pro now uses Kitchen." */
+  device: string;
+  /** Runs when Undo has moved the device back, for any words that said
+   * otherwise. */
+  onUndone?: () => void;
+}
+
+/** The toast after a tick: "Kitchen is on Apple Watch now." */
+export function tickDoneText(item: string, device: string, on: boolean): string {
+  return `${item} is ${on ? "on" : "off"} ${device} now.`;
+}
+
+/** The toast after a menu pick: "iPhone 17 Pro now uses Kitchen." */
+export function menuDoneText(device: string, menu: string): string {
+  return `${device} now uses ${menu}.`;
+}
+
+/** The same for a device's first menu, which has no way back. */
+export function firstMenuDoneText(device: string, menu: string): string {
+  return `${menuDoneText(device, menu)} It had no menu before, and Home Assistant cannot take a device back to no menu.`;
+}
+
+/** Why an Undo did not finish, in the toast. */
+export function notUndoneText(why: string): string {
+  return `Not undone. ${why}`;
+}
+
+/** The place an item goes back to: in front of the first pick that followed
+ * it and is still on the device, or undefined when nothing that followed it
+ * is left, which is the end of the list, where a tick puts it. */
+export function placeBefore(order: readonly string[], itemId: string, present: readonly string[]): string | undefined {
+  const at = order.findIndex((id) => sameId(id, itemId));
+  if (at < 0) return undefined;
+  return order.slice(at + 1).find((id) => present.some((p) => sameId(p, id)));
+}
 
 /** The record kinds whose change can move the library. */
 const LIBRARY_EVENT_KINDS: ReadonlySet<string> = new Set(["pages", "status_pages", "menus"]);
@@ -246,14 +304,111 @@ export class LibraryStore {
       () => pickLibraryItem(this.hass, ownerId, kind, itemId, on));
   }
 
+  /** The library as last read, for `offerPickUndo` to compare with: take it
+   * before the write. */
+  get lastRead(): Library | undefined {
+    return this.read;
+  }
+
+  /**
+   * Show the Undo toast for a tick that has landed. `before` is the library
+   * from before the tick (`lastRead`). Undo puts back the state from before
+   * (this file's head). `extra` is said after the toast's words, for what
+   * Undo will not bring back. `onUndone` runs once the tick is taken back, for
+   * any words that said otherwise.
+   */
+  offerPickUndo(before: Library | undefined, ownerId: string, kind: LibraryListKind, itemId: string, on: boolean, device: string, extra?: string, onUndone?: () => void): void {
+    if (before === undefined) return;
+    const name = libraryItem(before, kind, itemId)?.name ?? (this.read === undefined ? undefined : libraryItem(this.read, kind, itemId)?.name) ?? "It";
+    const text = tickDoneText(name, device, on);
+    offerUndo({
+      text: extra === undefined || extra === "" ? text : `${text} ${extra}`,
+      undo: () => this.undoPick(before, ownerId, kind, itemId, on, onUndone),
+    });
+  }
+
+  /** Take a tick back. Words for what went wrong, or undefined. */
+  private async undoPick(before: Library, ownerId: string, kind: LibraryListKind, itemId: string, on: boolean, onUndone?: () => void): Promise<string | undefined> {
+    const back = await this.pick(ownerId, kind, itemId, !on);
+    if (!back.ok) return notUndoneText(back.text);
+    onUndone?.();
+    // A page brings the status pages its tiles open, going on: whichever way
+    // this went, those the device did not have before come off again.
+    if (kind === "pages" && this.read !== undefined) {
+      const had = itemsFor(before, ownerId, "status_pages").map((p) => p.id);
+      const extras = itemsFor(this.read, ownerId, "status_pages").filter((p) => !had.some((id) => sameId(id, p.id)));
+      for (const extra of extras) {
+        const off = await this.pick(ownerId, "status_pages", extra.id, false);
+        if (!off.ok) return notUndoneText(off.text);
+      }
+    }
+    return on ? undefined : this.restorePlace(before, ownerId, kind, itemId);
+  }
+
+  /** An item back on a device goes last and visible: move it to where it
+   * was, and hide it if it was hidden. Each is a save of the device's own
+   * record (`changeDevicePicks`), with the app's page code loaded only now. */
+  private async restorePlace(before: Library, ownerId: string, kind: LibraryListKind, itemId: string): Promise<string | undefined> {
+    const present = this.read === undefined ? [] : itemsFor(this.read, ownerId, kind).map((p) => p.id);
+    const next = placeBefore(itemsFor(before, ownerId, kind).map((p) => p.id), itemId, present);
+    const hidden = isHiddenOn(before, ownerId, kind, itemId);
+    if (next === undefined && !hidden) return undefined;
+    const { changeDevicePicks } = await import("../watch-pages/all-pages-picks.js");
+    const io = {
+      read: (owner: string, k: LibraryListKind) => fetchWatchConfig(this.hass, owner, k),
+      save: (owner: string, k: LibraryListKind, base: number, document: LibraryObject) => saveWatchConfig(this.hass, owner, k, base, document),
+    };
+    const words: string[] = [];
+    if (next !== undefined) {
+      const moved = await changeDevicePicks(io, ownerId, kind, { id: itemId, before: next });
+      if (!moved.ok) words.push(moved.message);
+    }
+    if (hidden) {
+      const hid = await changeDevicePicks(io, ownerId, kind, { id: itemId, hidden: true });
+      if (!hid.ok) words.push(hid.message);
+    }
+    await this.refresh();
+    return words.length === 0 ? undefined : `Put back, but not in its old place. ${words.join(" ")}`;
+  }
+
   /** Have a device use `menuId` for `unit`. A device that holds no menus
    * record yet is sent the app's defaults to start from, which Home
    * Assistant reads only when no device with menus uses the menu (a menu
-   * just made with New menu). */
-  pickMenu(ownerId: string, unit: MenuUnit, menuId: string): Promise<LibraryWrite<LibraryPickReply>> {
+   * just made with New menu). With `offer`, the toast says what it did and
+   * offers Undo, back to the menu the device used (this file's head). */
+  async pickMenu(ownerId: string, unit: MenuUnit, menuId: string, offer?: UndoOffer): Promise<LibraryWrite<LibraryPickReply>> {
+    const before = this.read;
     const start = this.library !== undefined && !holdsRecord(this.library, ownerId, "menus") ? watchMenusDefaults() : undefined;
-    return this.write(noteKey("menus", menuId), pendingKey("menus", ownerId, unit), { menuId },
+    const result = await this.write(noteKey("menus", menuId), pendingKey("menus", ownerId, unit), { menuId },
       () => pickLibraryMenu(this.hass, ownerId, unit, menuId, start));
+    if (result.ok && offer !== undefined) {
+      const name = this.read === undefined ? undefined : libraryMenu(this.read, menuId)?.name;
+      const used = before === undefined ? undefined : menuFor(before, ownerId, unit);
+      this.offerMenuUndo(ownerId, unit, used?.id, name ?? "this menu", offer.device, menuId, undefined, offer.onUndone);
+    }
+    return result;
+  }
+
+  /** The toast after a device moved to a menu: Undo moves it back to
+   * `used`. With no menu to go back to there is no way back to offer. The
+   * same menu asked again has nothing to undo, so it says nothing. */
+  private offerMenuUndo(ownerId: string, unit: MenuUnit, used: string | undefined, name: string, device: string, menuId: string, drop?: string, onUndone?: () => void): void {
+    if (used !== undefined && sameId(used, menuId)) return;
+    if (used === undefined) {
+      sayDone(firstMenuDoneText(device, name));
+      return;
+    }
+    offerUndo({
+      text: menuDoneText(device, name),
+      undo: async () => {
+        const back = await this.pickMenu(ownerId, unit, used);
+        if (!back.ok) return notUndoneText(back.text);
+        onUndone?.();
+        if (drop === undefined) return undefined;
+        const gone = await this.deleteItem("menus", drop);
+        return gone.ok ? undefined : `Moved back, but the copy stays. ${gone.text}`;
+      },
+    });
   }
 
   /** New menu: a library menu of `unit` named `name`, made of `sections`,
@@ -270,9 +425,16 @@ export class LibraryStore {
   }
 
   /** "Make a copy for this watch": a new menu from the one the device uses
-   * for `unit`, named `name`, used there from now on. */
-  copyMenu(ownerId: string, unit: MenuUnit, name: string): Promise<LibraryWrite<LibraryMenuCopyReply>> {
-    return this.write(undefined, undefined, undefined, () => copyLibraryMenu(this.hass, ownerId, unit, name));
+   * for `unit`, named `name`, used there from now on. With `offer`, Undo
+   * moves the device back to the menu it used and deletes the copy. */
+  async copyMenu(ownerId: string, unit: MenuUnit, name: string, offer?: UndoOffer): Promise<LibraryWrite<LibraryMenuCopyReply>> {
+    const before = this.read;
+    const result = await this.write(undefined, undefined, undefined, () => copyLibraryMenu(this.hass, ownerId, unit, name));
+    if (result.ok && offer !== undefined) {
+      const used = before === undefined ? undefined : menuFor(before, ownerId, unit);
+      this.offerMenuUndo(ownerId, unit, used?.id, name, offer.device, result.reply.id, result.reply.id, offer.onUndone);
+    }
+    return result;
   }
 
   /** Rename a menu. */

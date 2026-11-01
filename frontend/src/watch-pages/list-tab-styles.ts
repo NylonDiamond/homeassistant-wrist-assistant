@@ -41,7 +41,7 @@ export const listTabStyles = css`
   .pk-page > :first-child { border-top-left-radius: calc(var(--wa-r-lg) - 1px); border-top-right-radius: calc(var(--wa-r-lg) - 1px); }
   .pk-page > :last-child { border-bottom-left-radius: calc(var(--wa-r-lg) - 1px); border-bottom-right-radius: calc(var(--wa-r-lg) - 1px); }
   .pk-page > .pk-pin { position: sticky; top: calc(-1 * var(--ap-top, 0px)); z-index: 7; background: var(--wa-card); }
-  .pk-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
+  .pk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
   .pk-head > .pk-search { margin-left: auto; }
   .pk-shape { display: inline-flex; align-items: center; gap: 6px; flex: none; }
   .pk-shape-lead { font-size: 12px; color: var(--wa-muted); }

@@ -487,7 +487,7 @@ describe("a watch with nothing in Home Assistant yet", () => {
   it("says what a new watch's screen means, and names no iPhone switch", () => {
     expect(NEW_WATCH_TEXT).toBe("New watch. The watch keeps what it has until you save here. Your first Save replaces it.");
     expect(NOTHING_TO_SAVE_TEXT).toBe("Nothing to save yet. Make a change first.");
-    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first: on the Home tab, choose Pair a device.");
+    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first: on the Devices tab, press Pair.");
     expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a device on this page.");
     const all = [NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT];
     for (const text of all) {

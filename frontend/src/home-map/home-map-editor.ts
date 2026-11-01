@@ -1450,7 +1450,7 @@ export class WaHomeMapEditor extends LitElement {
       ${note === undefined ? nothing : html`<span class="hme-first-note ${note.kind}" role="status">${note.text}</span>`}
       <button type="button" class="hme-tb primary hme-start-btn" @click=${() => this.startByHand()}>${HOME_MAP_START_TEXT}</button>
       <span class="hme-first-line">${HOME_MAP_SCAN_TEXT}</span>
-      ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-link" @click=${() => this.onHome?.()}>‹ Home</button>`}
+      ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-link" @click=${() => this.onHome?.()}>‹ Shared</button>`}
     </div></div>`;
   }
 
@@ -1484,7 +1484,7 @@ export class WaHomeMapEditor extends LitElement {
     const wallsRoom = this.walls === undefined ? undefined : floor.rooms.find((r) => sameHomeMapId(r.id, this.walls));
     const look = homeStyleOf(doc).look;
     return html`<header class="hme-bar">
-      ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-back" @click=${() => this.onHome?.()}>‹ Home</button><span class="hme-vsep"></span>`}
+      ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-back" @click=${() => this.onHome?.()}>‹ Shared</button><span class="hme-vsep"></span>`}
       <strong class="hme-title">Home map</strong><span class="hme-beta">BETA</span>
       ${wallsRoom === undefined ? nothing : html`<span class="hme-crumb-sep" aria-hidden="true">›</span>
         <strong class="hme-title hme-crumb">${homeMapRoomName(wallsRoom)} walls</strong>`}

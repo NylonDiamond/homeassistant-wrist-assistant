@@ -15,7 +15,7 @@
 
 import type { LibraryListKind } from "../library/client.js";
 import { type Library, type LibraryItem, type LibraryPick, itemsFor, libraryItems, restFor, sameId } from "../library/model.js";
-import { type LinkDevice, deviceWord } from "./devices.js";
+import { type LinkDevice, deviceWord, joinWords } from "./devices.js";
 
 /** What a card is: a page, or a status page. */
 export type CardKind = LibraryListKind;
@@ -66,7 +66,7 @@ export function emptyLibraryText(kind: CardKind, admin: boolean): string {
 }
 
 /** The line in the surface's foot. On the board (`view`) a click on a
- * device's name focuses it; Cards has no column to click. */
+ * device's Focus pill focuses it; Cards has no column to click. */
 export function footText(kind: CardKind, device: LinkDevice | undefined, selecting = false, view: "board" | "cards" = "board"): string {
   const one = cardNoun(kind);
   if (selecting) return `Click ${cardNoun(kind, 2)} to pick them. Shift+click picks every ${one} between two.`;
@@ -78,8 +78,8 @@ export function footText(kind: CardKind, device: LinkDevice | undefined, selecti
   }
   if (view === "board") {
     return kind === "status_pages"
-      ? "Click a status page to edit it. Tick a box to put it on that device. Click a device's name to order its status pages."
-      : "Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.";
+      ? "Click a status page to edit it. Tick a box to put it on that device. Press Focus on a device to order its status pages."
+      : "Click a page to edit it. Tick a box to show the page on that device. Press Focus on a device to order its pages.";
   }
   return kind === "status_pages"
     ? "Click a status page to edit it. Tick a device to put it there."
@@ -191,7 +191,33 @@ export function orderHint(device: LinkDevice): string {
 
 /** The second heading: the rest of the library. */
 export function restTitle(device: LinkDevice): string {
-  return `Not on this ${deviceWord(device.kind)}`;
+  return `Not on ${device.name}`;
+}
+
+/** Its line at the right: a tick adds a row to the end of the order. */
+export function restHint(device: LinkDevice): string {
+  return `Tick ${device.name} to add one to the end of its order.`;
+}
+
+/** 1st, 2nd, 3rd, 4th... 11th, 21st. */
+export function ordinalText(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th"}`;
+}
+
+/** Where a thing is, under a Compact row's big picture: "3rd on Apple Watch,
+ * also on iPhone 15 Pro JESSE", or with no device focused "On Apple Watch and
+ * Sim". Three names at most, then how many more. */
+export function peekWhereText(entry: Pick<LibraryItem, "owners">, devices: readonly LinkDevice[], focus?: { device: LinkDevice; at: number }): string {
+  const names = (list: readonly LinkDevice[]): string => list.length <= 3 ? joinWords(list.map((d) => d.name)) : `${list.slice(0, 2).map((d) => d.name).join(", ")} and ${list.length - 2} more`;
+  const on = devices.filter((d) => entry.owners.some((o) => sameId(o, d.ownerId)));
+  if (focus !== undefined) {
+    const lead = `${ordinalText(focus.at + 1)} on ${focus.device.name}`;
+    const others = on.filter((d) => !sameId(d.ownerId, focus.device.ownerId));
+    return others.length === 0 ? lead : `${lead}, also on ${names(others)}`;
+  }
+  return on.length === 0 ? "On no device yet" : `On ${names(on)}`;
 }
 
 /** Whether a focused device shows its "Not on this watch" list. With no
@@ -217,7 +243,7 @@ export function noPicksText(device: LinkDevice, kind: CardKind, search: string, 
 
 /** What the board says with no row to show. */
 export function emptyText(devices: readonly LinkDevice[], search: string, cardKind: CardKind = "pages"): string {
-  if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
+  if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Devices tab.";
   if (search.trim() !== "") return `No ${cardNoun(cardKind)} has that name.`;
   return cardKind === "status_pages"
     ? "Your home has no status pages yet. Use New status page to make one."

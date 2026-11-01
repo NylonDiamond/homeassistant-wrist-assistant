@@ -30,7 +30,7 @@ import "../src/watch-pages/page-editor.js";
 import { forgetStatusPagesDraft, keptStatusPagesDraft } from "../src/watch-status-pages/draft.js";
 import { type StatusPagesDocument, renameStatusPage, statusPagesOf } from "../src/watch-status-pages/model.js";
 import "../src/watch-status-pages/status-pages-editor.js";
-import { type StatusPagesViewHost, renderPagesCard, renderStatusInspector } from "../src/watch-status-pages/view.js";
+import { type StatusPagesViewHost, renderStatusInspector } from "../src/watch-status-pages/view.js";
 import { connectLibrary, flat, libraryHome, settle } from "./library-editor-home.js";
 import { fakeHome } from "./library-tab-fake.js";
 import { JESSE, LONELY } from "./library-fixture.js";
@@ -146,32 +146,41 @@ describe("the status pages editor in library mode", () => {
     expect(keptStatusPagesDraft(e.watch)).toBeUndefined();
   });
 
-  it("draws Preview as, the ticks and Delete, and no Add, order, history or delivery", async () => {
+  it("draws the page editor's frame: the bar's order, the ticks, Preview on in the dock, Delete, and no history or delivery", async () => {
     const e = await statusEditor();
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
-    expect(bar).toContain("Back to the Status pages tab");
-    for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved", "Preview as"]) expect(bar).not.toContain(gone);
-    // The devices stand in the strip under the canvas head, over the stage:
-    // the question, a tick per device, then the count. Not in the bar, not
-    // in the Page card.
-    expect(bar).not.toContain("lib-on");
-    const stage = flat(e.call("renderStage", e.host(), e.owners));
-    expect(stage).toMatch(/cv-head[\s\S]*lib-on over-stage none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="stage-area/);
+    expect(bar).toContain("Back to the Status pages board");
+    expect(bar).toContain("<span>All status pages</span>");
+    for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved", "Preview as", "lib-mode-tag"]) expect(bar).not.toContain(gone);
+    // Left to right as on Pages, the Save in the right cluster.
+    const order = [`pe-bar-back"`, `class="pe-pp"`, `class="pe-name"`, `class="pe-bar-meta"`, `class="pe-bar-on`, `class="pe-bar-right"`, `aria-label="Undo"`, `aria-label="Redo"`, `class="pe-saved"`, `class="tb-btn tb-more"`, `pe-bar-help`]
+      .map((p) => bar.indexOf(p));
+    expect(order.every((i) => i > -1), String(order)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The devices are in the bar, on no device yet in plain words, never
+    // over the stage or in the Page card.
+    expect(bar).toContain(`<span class="lt-lead">On no device yet</span>`);
+    expect(bar).toMatch(/Jesse's Watch[\s\S]*Jesse's iPhone/);
+    const stage = flat(e.call("renderStage", e.host()));
+    expect(stage).not.toContain("lib-on");
     expect(stage).not.toContain("On this watch.");
     expect(flat(renderStatusInspector(e.host()))).not.toContain("lib-on");
-    // Preview on sits in the strip over the stage, beside the size and the
-    // zoom: the watch and iPhone thumbnails, no device named.
-    expect(stage).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on[\s\S]*lib-preview-thumb iphone /);
-    expect(stage.slice(stage.indexOf("Preview on"), stage.indexOf("Preview on an iPhone"))).not.toContain("Jesse");
-    const card = flat(renderPagesCard(e.host()));
-    expect(e.host().single).toBe(true);
-    for (const gone of ["sp-add-page", "Move up", "Move down"]) expect(card).not.toContain(gone);
-    // The grip stays as an empty span: it holds the row's first grid column.
-    expect(card).toContain(`<span class="grip" aria-hidden="true"></span>`);
-    expect(card).toContain("Delete Lone");
-    const body = flat(e.call("renderBody", e.owners));
+    // Preview on sits last in the dock at the stage's foot, by word, no device
+    // named.
+    expect(stage).toMatch(/class="pe-dock-area"[\s\S]*pe-zoom-pct[\s\S]*aria-label="Preview on"[\s\S]*>Watch<\/button>[\s\S]*>iPhone<\/button>/);
+    expect(stage.slice(stage.indexOf(`aria-label="Preview on"`))).not.toContain("Jesse");
+    // The list is the switcher's: the open page drawn with no Add, and Delete
+    // is the inspector's own.
+    expect(stage).toContain("sp-add-row");
+    const inspector = flat(renderStatusInspector(e.host()));
+    expect(inspector).toContain("<span>Delete page</span>");
+    expect(inspector).toContain(`<span class="nm pe-insp-t">Page</span>`);
+    expect(inspector).toContain(`<label class="field pe-page-name">`);
+    const body = flat(e.call("renderBody"));
     expect(body).not.toContain("cf-bar");
     expect(body).not.toContain("Not on this watch");
+    expect(body).not.toContain("column left");
+    expect(body.split(`class="gutter`).length - 1).toBe(1);
   });
 
   it("saves with library/item/save over the item's revision, and a conflict reads it again", async () => {

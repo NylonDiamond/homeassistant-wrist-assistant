@@ -36,7 +36,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
-import { type EntityPickSource, checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, templateBox, textField } from "../editors.js";
+import { type EntityPickSource, areaLookup, checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, templateBox, textField } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
 import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
@@ -1037,11 +1037,12 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
 // ── the tile inspector's groups ──────────────────────────────────────────
 
 /** The four groups the tile inspector stands its settings in, always in
- * this order: Color and icon, Text, Surface and rules, What it does. */
+ * this order: What it does, the first question, then the looks: Color and
+ * icon, Text, Surface and rules. */
 export type TileInspectorGroup = "color" | "text" | "surface" | "does";
 
 /** The groups in their order. */
-export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["color", "text", "surface", "does"];
+export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["does", "color", "text", "surface"];
 
 /**
  * One section of the tile inspector, under one heading. Most are a settings
@@ -1049,10 +1050,11 @@ export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["color", "t
  * each stands under its own heading and its Tap animation goes to What it
  * does: `color`, `icon` (the symbol, the state icons, the icon's size and
  * shadow), `glow`, `whenOff` (Dim when off, Animate while on) and
- * `tapAnimation`. One is no settings section: `arrange`, the tile's
- * Arrangement (`arrange-card.ts`), in Surface and rules after Shows when.
+ * `tapAnimation`. Two are no settings section: `arrange`, the tile's
+ * Arrangement (`arrange-card.ts`), in Surface and rules after Shows when, and
+ * `entity`, what the tile shows, first in What it does.
  */
-export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation" | "arrange";
+export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation" | "arrange" | "entity";
 
 /**
  * Where each part goes, as one table, in reading order. Color and icon is
@@ -1061,10 +1063,11 @@ export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "col
  * look comes first too, as the look it is. Text is the name and the state.
  * Surface and rules is when the tile shows, where its parts sit, a smart
  * rule's size, its background and border, and the iPhone extras of a
- * watch's editor last, as the aside they are. What it does starts with
- * what the tile's own kind holds (`TILE_KIND_PARTS`: an iPhone tile's task,
- * a special task, an iPhone key, a home map's or a library tile's target, a
- * link's page, the reply of a request), then the tap and its animation.
+ * watch's editor last, as the aside they are. What it does starts with the
+ * entity the tile shows, then what the tile's own kind holds
+ * (`TILE_KIND_PARTS`: an iPhone tile's task, a special task, an iPhone key, a
+ * home map's or a library tile's target, a link's page, the reply of a
+ * request), then the tap and its animation.
  */
 export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileInspectorGroup])[] = [
   ["removed", "color"],
@@ -1081,6 +1084,7 @@ export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileIn
   ["background", "surface"],
   ["border", "surface"],
   ["phoneExtras", "surface"],
+  ["entity", "does"],
   ["phoneTile", "does"],
   ["special", "does"],
   ["phone", "does"],
@@ -1114,7 +1118,110 @@ const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
   text: "Name",
   visibility: "Shows when",
   arrange: "Arrangement",
+  entity: "Entity",
+  action: "Tap",
 };
+
+/** Where each group's fold is kept (`fold-memory.ts`). What it does is always
+ * open; the others start folded to one summary row. */
+export const TILE_GROUP_FOLD_MODULE = "tile-inspector-groups";
+
+/** The folds of the groups that fold. */
+export const TILE_GROUP_FOLDS: readonly FoldId[] = (["color", "text", "surface"] as const).map((section) => ({ module: TILE_GROUP_FOLD_MODULE, section, folded: true }));
+
+/** The line under the summary rows. */
+export const TILE_GROUPS_FOOT = "Open a row to see all of its settings. A blue dot marks a group with changes.";
+
+/** The group a part stands in. */
+export function tileGroupOfPart(part: string): TileInspectorGroup | undefined {
+  return TILE_INSPECTOR_PARTS.find(([p]) => p === part)?.[1];
+}
+
+/** Whether a group's settings are drawn, not just its summary row. */
+export function tileGroupOpen(uiState: ReadonlyMap<string, unknown>, group: TileInspectorGroup): boolean {
+  return group === "does" || sectionOpen(uiState, TILE_GROUP_FOLD_MODULE, group, true);
+}
+
+/** Open a group, for a press in the head that goes to one of its parts.
+ * Whether it was folded, so the caller knows to wait for the draw. */
+export function openTileGroup(uiState: Map<string, unknown>, group: TileInspectorGroup): boolean {
+  if (tileGroupOpen(uiState, group)) return false;
+  setSectionOpen(uiState, TILE_GROUP_FOLD_MODULE, group, true, true);
+  return true;
+}
+
+/** A color's nearest plain word, from its hue: enough for a summary row,
+ * where "#EC7212" would say nothing. */
+export function tileHueWord(hex: string): string {
+  const n = Number.parseInt(hex.replace("#", "").slice(0, 6), 16);
+  if (!Number.isFinite(n)) return "custom";
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255) as [number, number, number];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const light = (max + min) / 2;
+  const delta = max - min;
+  const sat = delta === 0 ? 0 : delta / (1 - Math.abs(2 * light - 1));
+  if (light > 0.92) return "white";
+  if (light < 0.08) return "black";
+  if (sat < 0.14) return "grey";
+  const hue = max === r ? ((g - b) / delta + 6) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  const degrees = hue * 60;
+  if (degrees < 15 || degrees >= 340) return "red";
+  if (degrees < 42) return "orange";
+  if (degrees < 68) return "yellow";
+  if (degrees < 165) return "green";
+  if (degrees < 195) return "teal";
+  if (degrees < 240) return "blue";
+  if (degrees < 295) return "purple";
+  return "pink";
+}
+
+function capitalized(text: string): string {
+  return text === "" ? text : text[0]!.toUpperCase() + text.slice(1);
+}
+
+/** "lock.fill" as "lock icon": a symbol's first word. */
+function tileIconWord(icon: string | undefined): string {
+  if (icon === "") return "no icon";
+  if (icon === undefined) return "default icon";
+  const name = icon.split(":").pop()!.split(".")[0]!.replaceAll("-", " ");
+  return name === "" ? "default icon" : `${name} icon`;
+}
+
+/**
+ * A folded group's one row, its current choice at a glance: "Orange, lock
+ * icon", "Medium, Name + State", "Solid, no rules". Each word comes only from
+ * a part the tile has. Several picked tiles have no one choice, so the
+ * group's own grey line stands in.
+ */
+export function tileGroupSummary(host: TileSettingsHost, group: TileInspectorGroup): string {
+  const fallback = TILE_INSPECTOR_GROUP_WORDS[group].description;
+  if (host.picked !== undefined) return fallback;
+  const tile = host.tile;
+  const parts = tileInspectorParts(host).flatMap((g) => g.parts);
+  const words: string[] = [];
+  if (group === "color") {
+    const look = watchTileIconSettings(tile);
+    const defaults = host.domainStyle === true ? { icon: undefined, color: undefined } : kindDefaults(host);
+    if (parts.includes("color")) {
+      const color = look.color ?? defaults.color ?? "";
+      const hex = /#[0-9a-f]{6}/i.exec(color)?.[0];
+      words.push(hex !== undefined ? tileHueWord(hex) : /rainbow/i.test(color) ? "rainbow" : "theme color");
+    }
+    if (parts.includes("icon")) words.push(iconPhotoShown(host) ? "photo" : tileIconWord(look.icon ?? defaults.icon));
+  } else if (group === "text") {
+    if (parts.includes("text")) words.push(watchTileTextSettings(tile).fontWeight);
+    const shown = [...(parts.includes("text") && watchTileTextSettings(tile).showLabel ? ["Name"] : []), ...(parts.includes("state") ? ["State"] : [])];
+    if (shown.length > 0) words.push(shown.join(" + "));
+  } else if (group === "surface") {
+    if (parts.includes("background")) words.push(sectionSummary(host, "background") || "solid");
+    if (parts.includes("visibility")) {
+      const rule = showTileSummary(host);
+      words.push(rule === "" ? "no rules" : rule[0]!.toLowerCase() + rule.slice(1));
+    }
+  }
+  return words.length === 0 ? fallback : capitalized(words.join(", "));
+}
 
 /** The groups of the tile on `host`, each with its parts in reading order;
  * a group with no part is left out. Size is the page editor's, so it is in
@@ -1133,6 +1240,8 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
         return sections.includes("icon") && whenOffShown(host);
       case "arrange":
         return tileArrangeShown(host);
+      case "entity":
+        return host.domainStyle !== true && tileHeadHasEntity(host.tile);
       default:
         return sections.includes(part);
     }
@@ -1187,7 +1296,8 @@ export function pickedInspectorParts(host: TileSettingsHost): {
     const any = TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && each.some((t) => t.parts.includes(p))).map(([p]) => p);
     const parts = any.filter(shared);
     if (parts.length > 0) groups.push({ group, parts });
-    const left = any.filter((p) => !parts.includes(p) && p !== "removed");
+    // The entity is no setting, only a fact about one tile: nothing to miss.
+    const left = any.filter((p) => !parts.includes(p) && p !== "removed" && p !== "entity");
     if (left.length > 0) hidden.set(group, left);
   }
   return { groups, hidden };
@@ -1241,6 +1351,8 @@ export function watchTileInspectorPartChanged(host: TileSettingsHost, part: Tile
   switch (part) {
     case "size":
       return sizeChanged;
+    case "entity":
+      return false;
     case "arrange":
       return watchTileArrange(tile) !== undefined;
     case "color": {
@@ -1361,9 +1473,26 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
       return extras.size?.body() ?? nothing;
     case "arrange":
       return renderArrangeSection(host, extras.arrangePicture);
+    case "entity":
+      return renderEntityShown(host, tileEntityId(host.tile));
     default:
       return sectionBodyFor(host, part);
   }
+}
+
+/** What the tile shows: the kind's icon, the entity's friendly name, then in
+ * grey its area and its id. */
+function renderEntityShown(host: TileSettingsHost, entityId: string): TemplateResult {
+  const friendly = host.hass.states[entityId]?.attributes?.["friendly_name"];
+  const name = typeof friendly === "string" && friendly.trim() !== "" ? friendly.trim() : undefined;
+  const area = areaLookup(host.hass)?.(entityId);
+  const icon = watchEntityDefaults(watchEntityAddFromHass(host.hass as unknown as WatchHassView, entityId), host.page).icon;
+  const glyph = icon === undefined ? undefined : host.icons.render(icon, 16, "#a1a1aa");
+  return html`<div class="ts-head-ent"><span class="ts-head-ent-nm">${glyph === undefined
+    ? nothing
+    : html`<svg class="ts-head-ent-ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">${glyph}</svg>`}${name === undefined
+    ? nothing
+    : html`<b title=${name}>${name}</b>`}<small>${area === undefined ? nothing : html`${area} · `}<code class="ts-head-entity" title=${entityId}>${entityId}</code></small></span></div>`;
 }
 
 /** Whether a part is one only the iPhone reads, for the small iPhone tag. */
@@ -1450,15 +1579,17 @@ function renderKindCard(host: TileSettingsHost, parts: readonly TileInspectorPar
 
 /**
  * The selected tile's settings as the page editor's inspector stands them:
- * the head (`extras.head`) across the inspector's whole width, then four
- * group columns, Color and icon, Text, Surface and rules and What it does,
- * each with its own hue, its title, its grey line and how many of its parts
- * hold a value of their own, then its parts under calm headings, always
- * open. What it does leads with the tile's own kind's card
- * (`renderKindCard`). The columns are pure CSS by the inspector's own width
- * (`@container insp`): four side by side from 1580 px, each as tall as the
- * inspector and scrolling on its own, two from 680 px with the inspector
- * scrolling as one, else one.
+ * the head (`extras.head`) across the inspector's whole width, then What it
+ * does, always open, since what a tile does is the first question: the
+ * entity, then the tile's own kind's card (`renderKindCard`), then the tap.
+ * Each of the other groups (Color and icon, Text, Surface and rules) folds to
+ * one summary row with its current choice (`tileGroupSummary`) and a blue dot
+ * while it holds a value of its own; open, it shows its parts under calm
+ * headings, as What it does does. Each has its own hue. The columns are pure
+ * CSS by the inspector's own width (`@container insp`): four side by side
+ * from 1580 px, each as tall as the inspector and scrolling on its own, What
+ * it does beside the rows from 680 px with the inspector scrolling as one,
+ * else one.
  */
 export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
@@ -1483,23 +1614,42 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     const n = changed.filter(Boolean).length;
     const words = TILE_INSPECTOR_GROUP_WORDS[id];
     const left = hidden.get(id);
-    // What the tile's own kind holds leads What it does, as one card.
+    const count = n === 0 ? nothing : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`;
+    // What the tile's own kind holds leads What it does after the entity, as
+    // one card.
     const kind = id === "does" ? g.parts.flatMap((p, i) => (TILE_KIND_PARTS.has(p) ? [i] : [])) : [];
-    const rest = g.parts.flatMap((p, i) => (kind.includes(i) ? [] : [i]));
+    const first = g.parts.flatMap((p, i) => (p === "entity" ? [i] : []));
+    const rest = g.parts.flatMap((p, i) => (kind.includes(i) || first.includes(i) ? [] : [i]));
+    const open = tileGroupOpen(host.uiState, id);
+    const fold = () => { setSectionOpen(host.uiState, TILE_GROUP_FOLD_MODULE, id, !open, true); host.requestUpdate(); };
+    const toggle = html`<h3 class="ts-grp-h ts-grp-tog"><button type="button" class="ts-grp-btn" aria-expanded=${open ? "true" : "false"} @click=${fold}>
+      <span class="ts-grp-t">${words.title}</span>
+      <span class="ts-grp-d">${open ? words.description : tileGroupSummary(host, id)}</span>
+      ${open ? count : n === 0 ? nothing : html`<span class="ts-grp-n" title=${`${n} changed`}><i aria-hidden="true"></i></span>`}
+      <span class="ts-grp-chev" aria-hidden="true">${uiIcon("right")}</span>
+    </button></h3>`;
+    if (!open) return html`<section class="ts-grp ts-grp-row" data-group=${id} aria-label=${words.title}>${toggle}</section>`;
     return html`<section class="ts-grp" data-group=${id} aria-label=${words.title}>
-      <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${words.description}</span>${n === 0
-        ? nothing
-        : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`}</div>
+      ${id === "does" ? html`<div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3><span class="ts-grp-d">${words.description}</span>${count}</div>` : toggle}
+      ${first.map((i) => renderPart(host, g.parts[i]!, changed[i]!, extras))}
       ${kind.length === 0 ? nothing : renderKindCard(host, kind.map((i) => g.parts[i]!), kind.map((i) => changed[i]!), extras)}
       ${rest.map((i) => renderPart(host, g.parts[i]!, changed[i]!, extras))}
       ${left === undefined ? nothing : html`<p class="hint keep ts-picked-off">${PICKED_HIDDEN_NOTE}: ${left.map((p) => partTitle(host, p)).join(", ")}.</p>`}
     </section>`;
   };
   // The head spans the inspector over the columns; the columns are as many
-  // as there are groups to draw, at most four (`--ts-n`).
+  // as there are groups to draw, at most four (`--ts-n`). The rows stand
+  // together, under or beside What it does.
+  const looks = TILE_INSPECTOR_GROUPS.filter((id) => id !== "does" && groups.some((g) => g.group === id));
   return html`<div class="ts-root ts-insp">
     ${extras.head === undefined ? nothing : html`<div class="ts-insp-head">${extras.head}</div>`}
-    <div class="ts-groups" style=${`--ts-n:${groups.length}`}>${TILE_INSPECTOR_GROUPS.map(group)}</div>
+    <div class="ts-groups" style=${`--ts-n:${groups.length}`}>
+      ${group("does")}
+      ${looks.length === 0 ? nothing : html`<div class="ts-grp-rest">
+        ${looks.map(group)}
+        <p class="ts-grp-foot">${TILE_GROUPS_FOOT}</p>
+      </div>`}
+    </div>
   </div>`;
 }
 
@@ -3962,23 +4112,50 @@ export const tileSettingsStyles = css`
   .ts-picked-off { margin: 6px 0 2px; font-size: 12px; color: var(--wa-hint, var(--wa-muted)); }
 
   /* The tile inspector (\`renderTileInspector\`): the head across the whole
-     inspector, then the four group columns under it, by the inspector's own
-     width, pure CSS: four side by side from 1580px (each as tall as the
-     inspector and scrolling on its own, the page editor's rules), two from
-     680px with the inspector scrolling as one, else one. A pair of groups on
-     one row are as tall as each other, so no column ends ragged. */
+     inspector, then What it does and the rows of the other groups, by the
+     inspector's own width, pure CSS: four columns side by side from 1580px
+     (each as tall as the inspector and scrolling on its own, the page
+     editor's rules), What it does beside the rows from 680px with the
+     inspector scrolling as one, else all in one column. */
   .ts-insp { gap: 14px; min-width: 0; }
   .ts-insp-head { min-width: 0; }
   .ts-groups {
-    display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; min-width: 0;
     --ts-gap: 12px; --ts-lab: 104px; --ts-blue: var(--wa-hue-blue, #4c8dff);
   }
+  .ts-grp-rest { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .ts-grp-foot { margin: 2px 4px 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   @container insp (min-width: 680px) {
-    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+    .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @container insp (min-width: 1580px) {
     .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); }
+    .ts-grp-rest { display: contents; }
+    .ts-grp-foot { display: none; }
+    .ts-grp.ts-grp-row { align-self: start; }
   }
+  /* A group's head as a button: the whole band folds it. Folded, it is the
+     one row: the title in its hue, the current choice, the blue dot while it
+     holds a value of its own, and a chevron. */
+  .ts-grp-h.ts-grp-tog { display: block; padding: 0; margin: 0; font: inherit; text-transform: none; letter-spacing: normal; }
+  .ts-grp-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin: 0; padding: 0 12px 0 14px;
+    border: 0; border-radius: inherit; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  }
+  .ts-grp-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ts-grp-btn > .ts-grp-t { flex: none; font-size: 13.5px; }
+  .ts-grp-btn > .ts-grp-d { flex: 1 1 0; min-width: 0; font-size: 12.5px; color: var(--wa-label, var(--wa-muted)); }
+  .ts-grp-chev { display: inline-flex; flex: none; margin-left: auto; color: var(--wa-muted); transition: transform .15s ease-out; }
+  .ts-grp-chev svg.ui-icon { width: 13px; height: 13px; }
+  .ts-grp-btn[aria-expanded="true"] .ts-grp-chev { transform: rotate(90deg); }
+  .ts-grp-btn > .ts-grp-n + .ts-grp-chev { margin-left: 0; }
+  .ts-grp-row { border-radius: 12px; }
+  .ts-grp-row > .ts-grp-h.ts-grp-tog {
+    border-radius: 12px; border-bottom: 0; box-shadow: inset 3px 0 0 rgb(var(--ts-hue));
+    background: linear-gradient(90deg, rgba(var(--ts-hue), .10), transparent 60%), var(--wa-card);
+  }
+  .ts-grp-row > .ts-grp-h.ts-grp-tog:hover { background: linear-gradient(90deg, rgba(var(--ts-hue), .16), transparent 70%), var(--wa-hover); }
+  @media (prefers-reduced-motion: reduce) { .ts-grp-chev { transition: none; } }
   /* Each group has its own hue, kept clear of the blue that marks what
      changed: amber, violet, teal and coral. */
   .ts-grp { --ts-hue: 150, 150, 160; min-width: 0; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card); }

@@ -168,7 +168,8 @@ async function setup(items: WatchPageTile[], picked: string[]) {
     photos,
     smartRuleId: undefined,
     busy: false,
-    uiState: new Map<string, unknown>(),
+    // Every group open: these look at the rows inside them.
+    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,

@@ -181,7 +181,9 @@ function inside(...selectors: { sel: string; data?: Record<string, string> }[]):
 
 describe("the head's Shows", () => {
   it("names the entity by its friendly name, then in grey its area and its id", () => {
-    const shows = head(editor(hallPage(), DIMMER));
+    const text = flat(inspector(editor(hallPage(), DIMMER)));
+    const shows = text.slice(text.indexOf(`data-part=entity`));
+    expect(shows).toContain(`<h4>Entity</h4>`);
     expect(shows).toContain(`<b title=Smart Plug Dimmer>Smart Plug Dimmer</b><small>Office · <code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code></small>`);
     // A light's entity has no other way to say it here: no Change.
     expect(shows).not.toContain(`class="link ts-head-change"`);
@@ -199,23 +201,24 @@ describe("the head's facts", () => {
     expect(pills.find((p) => p.startsWith("Tap: "))).toMatch(/> action$/);
     expect(pills).toContain("Hold up: Toggle light > action");
     expect(pills.some((p) => p.startsWith("Hold down"))).toBe(false);
-    expect(pills).toContain("Shows: Only while on > visibility");
+    expect(pills).toContain("Shows: light.smart_plug_dimmer > entity");
+    expect(pills).toContain("Shows when: Only while on > visibility");
     expect(pills).toContain("Off look: Dim > whenOff");
   });
 
   it("are buttons in the head, each going to its section, washed amber", () => {
     const el = editor(hallPage(), DIMMER);
     const text = head(el);
-    expect(text).toContain(`<button type="button" class="ts-pill" data-goes=visibility title=Go to Shows when @click=>Shows: <b>Always</b></button>`);
+    expect(text).toMatch(/<button type="button" class="ts-pill ts-pill-link" data-goes=entity title=Go to Entity @click=>Shows: <b class="ts-pill-id">light\.smart_plug_dimmer<\/b><svg/);
     const flashed: string[] = [];
     const section = {
       scrollIntoView() {}, offsetWidth: 0, querySelector: () => null,
       classList: { add: (c: string) => flashed.push(c), remove() {} },
     };
-    const groups = { querySelector: (sel: string) => (sel === `.ts-sec[data-part="visibility"]` ? section : null) };
+    const groups = { querySelector: (sel: string) => (sel === `.ts-sec[data-part="entity"]` ? section : null) };
     el.renderRoot = { activeElement: null, querySelector: (sel: string) => (sel === ".pe-tile-insp .ts-groups" ? groups : null) };
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
-    click(inspector(el), "data-goes=visibility");
+    click(inspector(el), "data-goes=entity");
     expect(flashed).toEqual(["pe-found"]);
   });
 
@@ -236,7 +239,7 @@ describe("the head's changed line", () => {
   it("counts the parts the groups count, then Reset all, which is off at the defaults", () => {
     const plain = editor(hallPage(), DIMMER);
     expect(tileHeadChangedCount(hostOf(plain))).toBe(0);
-    expect(head(plain)).toMatch(/<div class="ts-head-changed"><span>Default look<\/span>\s*<button type="button" class="link ts-reset-btn" \?disabled=true/);
+    expect(head(plain)).toMatch(/<div class="ts-head-changed">\s*<button type="button" class="link ts-reset-btn" \?disabled=true/);
     const changed = editor(hallPage({ borderStyle: "line", iconSizeOverride: 30 } as Partial<WatchPageTile>), DIMMER);
     expect(tileHeadChangedCount(hostOf(changed))).toBe(2);
     expect(head(changed)).toMatch(/<i aria-hidden="true"><\/i><span>2 changed<\/span>\s*<button type="button" class="link ts-reset-btn" \?disabled=false[^>]*>Reset all<\/button>/);
@@ -271,12 +274,12 @@ describe("the head's tile and the settings", () => {
     expect(text).toContain(`<span class="pe-hp" data-head-part=tile aria-hidden="true" title=Go to the tile's settings`);
     for (const part of ["icon", "name", "state"]) expect(text).toContain(`data-head-part=${part} `);
     const went: string[] = [];
-    const groups = { querySelector: (sel: string) => (sel.startsWith(".ts-sec") ? { sel } : null) };
     const go = el["goToHeadPart"] as (this: unknown, part: string) => void;
-    const self = { inspectorGroupsEl: () => groups, goToSetting: (part: string, within?: unknown) => went.push(`${part}${within === undefined ? "" : " card"}`) };
-    go.call(self, "name");
-    go.call(self, "bar");
-    go.call(self, "tile");
+    // By the parts the tile has, not those drawn: a folded group draws none.
+    el["goToSetting"] = (part: string, within?: unknown) => went.push(`${part}${within === undefined ? "" : " card"}`);
+    go.call(el, "name");
+    go.call(el, "bar");
+    go.call(el, "tile");
     expect(went).toEqual(["text", "state card", "color"]);
   });
 
@@ -309,5 +312,36 @@ describe("the head's tile and the settings", () => {
     expect(pic.dataset["lit"]).toBe("icon");
     leave();
     expect(pic.dataset["lit"]).toBeUndefined();
+  });
+});
+
+describe("the head's facts as links (mock-pages, view 2, item 5)", () => {
+  const lockOn = (el: Editor) => tileHeadPills(hostOf(el)).map((p) => p.label);
+
+  it("name no Off look for anything but a light", () => {
+    const light = editor(hallPage(), DIMMER);
+    expect(lockOn(light)).toContain("Off look");
+    const lock = editor(hallPage({ entityId: "lock.front_door" } as Partial<WatchPageTile>), DIMMER);
+    expect(lockOn(lock)).not.toContain("Off look");
+    expect(lockOn(lock)).toEqual(expect.arrayContaining(["Tap", "Shows"]));
+  });
+
+  it("open a folded group first, then go to the section once it is drawn", async () => {
+    const el = editor(hallPage(), DIMMER);
+    const went: string[] = [];
+    el["goToDrawnSetting"] = (part: string) => went.push(part);
+    el["requestUpdate"] = () => undefined;
+    Object.defineProperty(el, "updateComplete", { value: Promise.resolve(true) });
+    const go = el["goToSetting"] as (this: unknown, part: string) => void;
+    // What it does is always open: straight there.
+    go.call(el, "action");
+    expect(went).toEqual(["action"]);
+    // Border stands in Surface and rules, folded: it waits for the draw.
+    expect(flat(inspector(el))).not.toContain("data-part=border");
+    go.call(el, "border");
+    expect(went).toEqual(["action"]);
+    expect(flat(inspector(el))).toContain("data-part=border");
+    await Promise.resolve();
+    expect(went).toEqual(["action", "border"]);
   });
 });

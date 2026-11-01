@@ -40,8 +40,8 @@ const OWNERS = [
 ];
 
 describe("Home's Library", () => {
-  it("is the side bar section of the whole home's screens, with its own line", () => {
-    expect(HOME_LIBRARY_TITLE).toBe("On every device");
+  it("is the Shared tab's list of the whole home's screens, with its own line", () => {
+    expect(HOME_LIBRARY_TITLE).toBe("Shared");
     expect(HOME_LIBRARY_LEAD).toBe("Kept once for the whole home. Every watch and iPhone uses them.");
     // The Home map only once the integration lists `home_map`.
     expect(homeLibraryScreens().map((s) => s.id)).toEqual(["http-actions", "cameras"]);
@@ -54,17 +54,21 @@ describe("Home's Library", () => {
     expect(Object.keys(HOME_SHARED_SUB)).toEqual(["http-actions", "cameras", "home-map"]);
   });
 
-  it("names the row over its screens On every device, with the Home button and each screen", () => {
+  it("names the row over its screens Shared, with the way back there and each screen", () => {
     expect(SHARED_ROW_LABEL).toBe(HOME_LIBRARY_TITLE);
     const input: WatchRowInput = {
       route: route("/cameras"), owners: OWNERS, watch: "w1", loaded: true, menuOpen: false,
       onMenu: () => undefined, onPick: () => undefined, onGo: () => undefined, onHome: () => undefined,
     };
     const text = flat(renderWatchRow(input));
-    expect(text).toContain(`<span class="wa-wr-shared">On every device</span>`);
+    // Named once: the way back says Shared, so the row adds no second one.
+    expect(text).not.toContain(`class="wa-wr-shared"`);
     expect(text).toContain(`class="wa-wr-home"`);
-    expect(text).toContain("Back to Home");
-    for (const label of ["HTTP actions", "Cameras"]) expect(text).toContain(`>${label}</a>`);
+    expect(text).toContain("Back to Shared");
+    expect(text).toContain("<span>Shared</span>");
+    const { onHome: _gone, ...noWayBack } = input;
+    expect(flat(renderWatchRow(noWayBack))).toContain(`<span class="wa-wr-shared">Shared</span>`);
+    for (const label of ["HTTP actions", "Camera framing"]) expect(text).toContain(`>${label}</a>`);
     for (const label of ["Photos", "Parts"]) expect(text).not.toContain(`>${label}</a>`);
     expect(text).not.toContain("wa-wr-picker");
     expect(sharedRowLinks(route("/cameras")).filter((l) => l.on).map((l) => l.screen.id)).toEqual(["cameras"]);

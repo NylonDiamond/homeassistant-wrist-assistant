@@ -43,7 +43,7 @@ import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import {
   WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen,
-  iphoneScreenOf, iphoneScreenPath, isPlainClick, panelUrl, screenTakesPhone, unsavedDot, watchScreenOf, watchScreenPath, watchScreenSentence,
+  devicePath, iphoneScreenOf, iphoneScreenPath, isPlainClick, panelUrl, screenTakesPhone, unsavedDot, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { ALL_PAGES_PATH, type ListOwnScreen, listFocusPath } from "./watch-pages/all-pages-hook.js";
@@ -65,6 +65,9 @@ export interface WatchRowChoice {
   sync: DeviceSync | undefined;
   /** The device on show. */
   on: boolean;
+  /** Away for a week with changes waiting (`sync-pill.ts`): it says Asleep,
+   * in grey, in place of Waiting. */
+  asleep?: boolean;
 }
 
 /** The home's devices as the row's menu lists them: the watches, or in the
@@ -101,8 +104,10 @@ export function deviceRowChoices(
   current: string | undefined,
   phones: boolean,
   syncs: ReadonlyMap<string, DeviceSync> = new Map(),
+  asleep: ReadonlySet<string> = new Set(),
 ): WatchRowChoice[] {
-  return [...watchRowChoices(owners, current, "watch", syncs), ...(phones ? watchRowChoices(owners, current, "iphone", syncs) : [])];
+  return [...watchRowChoices(owners, current, "watch", syncs), ...(phones ? watchRowChoices(owners, current, "iphone", syncs) : [])]
+    .map((c) => (asleep.has(c.id) ? { ...c, asleep: true } : c));
 }
 
 /** One of the row's links: one of the device's own screens. */
@@ -133,6 +138,52 @@ export function watchRowLinks(route: PanelRoute | undefined, watch: string | und
   return ROW_OWN_SCREENS.map(ownScreen).filter((screen) => rowHasScreen(screen, kind)).map((screen) => ({
     screen, path: kind === "iphone" ? iphoneScreenPath(screen, watch) : watchScreenPath(screen, watch), on: screen.id === shown,
   }));
+}
+
+/** Beside the row of a device's own screens on the Devices tab. */
+export function deviceOwnRowHint(kind: RowKind): string {
+  return kind === "iphone"
+    ? "This iPhone's own screens. No Voice: the iPhone has no voice settings."
+    : "This watch's own screens. Each one has its own address.";
+}
+
+export interface DeviceOwnRowInput {
+  route: PanelRoute | undefined;
+  ownerId: string;
+  kind: RowKind;
+  /** The home keeps phone pages. Without them an iPhone keeps none of these
+   * screens here, and there is no row. */
+  phones: boolean;
+  /** A screen's tooltip. */
+  titleOf: (screen: WatchScreen) => string | undefined;
+  /** A plain click on a screen: its path inside the panel. */
+  onGo: (path: string) => void;
+}
+
+/**
+ * Under a device's header on the Devices tab: Overview (the page on show),
+ * then the device's own screens in the row style those screens already wear
+ * (mock-home item 3). It only lists screens the device has, so an iPhone has
+ * no Voice. Nothing when the device has none of them.
+ */
+export function renderDeviceOwnRow(input: DeviceOwnRowInput): TemplateResult | typeof nothing {
+  const links = input.kind === "iphone" && !input.phones ? [] : watchRowLinks(input.route, input.ownerId, input.kind);
+  if (links.length === 0) return nothing;
+  const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
+  const word = input.kind === "iphone" ? "iPhone" : "watch";
+  return html`<div class="hb-subnav">
+    <nav class="wa-wr-links" aria-label=${`This ${word}'s own`}>
+      <a class="wa-wr-link on" href=${href(devicePath(input.ownerId))} aria-current="page" style="--h: var(--wa-label)"
+        @click=${(e: MouseEvent) => { if (isPlainClick(e)) e.preventDefault(); }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon("grid")}</span>Overview</a>
+      ${links.map((l) => html`<a class="wa-wr-link" href=${href(l.path)} title=${input.titleOf(l.screen) ?? nothing} style=${`--h: ${WATCH_SCREEN_LOOK[l.screen.id].hue}`}
+        @click=${(e: MouseEvent) => {
+          if (!isPlainClick(e)) return;
+          e.preventDefault();
+          input.onGo(l.path);
+        }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(WATCH_SCREEN_LOOK[l.screen.id].icon)}</span>${l.screen.label}</a>`)}
+    </nav>
+    <span class="hb-subnav-hint">${deviceOwnRowHint(input.kind)}</span>
+  </div>`;
 }
 
 /** The row's last link: the Pages board, focused on the device. */
@@ -245,6 +296,8 @@ export interface WatchRowInput {
    * settings together), so the chip never says Synced while the screen's
    * own bar says Waiting. */
   syncs?: ReadonlyMap<string, DeviceSync>;
+  /** The devices that are asleep, which say so in place of Waiting. */
+  asleep?: ReadonlySet<string>;
   /** Home pressed: back to Home, with this device picked. */
   onHome?: () => void;
 }
@@ -280,9 +333,10 @@ export function watchRowLinkTitle(screen: WatchScreen): string | undefined {
 }
 
 /** The line under the watch's name on its chip: whose it is, then its
- * complications' verdict, "Jesse · Synced". Either may be missing. */
-export function watchChipSub(person: string | undefined, sync: DeviceSync | undefined): string {
-  return [person, sync === undefined ? undefined : deviceSyncLabel(sync)].filter((w): w is string => w !== undefined && w !== "").join(" · ");
+ * complications' verdict, "Jesse · Synced", or "Jesse · Asleep". Either may
+ * be missing. */
+export function watchChipSub(person: string | undefined, sync: DeviceSync | undefined, asleep = false): string {
+  return [person, asleep ? "Asleep" : sync === undefined ? undefined : deviceSyncLabel(sync)].filter((w): w is string => w !== undefined && w !== "").join(" · ");
 }
 
 /**
@@ -295,7 +349,7 @@ export function watchChipSub(person: string | undefined, sync: DeviceSync | unde
  */
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const kind: RowKind = input.iphone === true ? "iphone" : "watch";
-  const choices = deviceRowChoices(input.owners, input.watch, kind === "iphone" || input.phones === true, input.syncs);
+  const choices = deviceRowChoices(input.owners, input.watch, kind === "iphone" || input.phones === true, input.syncs, input.asleep);
   // No device of the row's kind: the way to pair one, whatever else the
   // home has. Otherwise the switcher holds every device.
   const slot = watchRowSlot(input.loaded, choices.some((c) => c.kind === kind) ? choices.length : 0);
@@ -330,9 +384,12 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   };
   return html`<div class="wa-watchrow ${slot === "none" && !shared ? "no-watch" : ""}">
     ${input.onHome === undefined ? nothing : html`<button type="button" class="wa-wr-home"
-      title=${shared ? "Back to Home" : `Back to Home, with this ${word} picked`}
-      @click=${() => { closeRowTip(); input.onHome?.(); }}>${uiIcon("left")}<span>Home</span></button>`}
-    ${shared ? html`<span class="wa-wr-shared">${SHARED_ROW_LABEL}</span>` : renderWatchSlot(input, slot, choices, kind)}
+      title=${shared ? `Back to ${SHARED_ROW_LABEL}` : `Back to Devices, with this ${word} picked`}
+      @click=${() => { closeRowTip(); input.onHome?.(); }}>${uiIcon("left")}<span>${shared ? SHARED_ROW_LABEL : "Devices"}</span></button>`}
+    ${shared
+      // The way back already says Shared; only a row with no way back names it.
+      ? input.onHome === undefined ? html`<span class="wa-wr-shared">${SHARED_ROW_LABEL}</span>` : nothing
+      : renderWatchSlot(input, slot, choices, kind)}
     ${slot === "none" && !shared ? html`<span class="wa-wr-note">${kind === "iphone" ? (hasPhoneAwaitingUpdate(input.owners) ? IPHONE_ROW_UPDATE_NOTE : IPHONE_ROW_NONE_NOTE) : WATCH_ROW_NONE_NOTE}</span>` : nothing}
     ${links.length === 0 ? nothing : html`<nav class="wa-wr-links" aria-label=${shared ? SHARED_ROW_LABEL : `This ${word}'s own`} @scroll=${(e: Event) => { markRowMore(e.currentTarget as HTMLElement); closeRowTip(); }}>
       ${links.map(link)}
@@ -485,10 +542,10 @@ function chipArt(input: WatchRowInput, id: string | undefined, kind: RowKind = "
 /** The chip's name and the line under it. */
 function chipWords(input: WatchRowInput, c: WatchRowChoice) {
   const person = (input.people ?? []).find((p) => p.owners.some((o) => o.owner_watch_id === c.id))?.label;
-  const sub = watchChipSub(person, c.sync);
+  const sub = watchChipSub(person, c.sync, c.asleep === true);
   return html`<span class="wa-wr-id"><b class="wa-wr-name">${c.name}</b>${sub === ""
     ? nothing
-    : html`<span class="wa-wr-sub"><i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i>${sub}</span>`}</span>`;
+    : html`<span class="wa-wr-sub"><i class="wa-wr-dot ${c.asleep === true ? "asleep" : c.sync ?? ""}" aria-hidden="true"></i>${sub}</span>`}</span>`;
 }
 
 /** The way to pair the first device: for a watch, Settings, where a watch
@@ -522,10 +579,11 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
     return html`<button type="button" class="wa-wr-row ${c.on ? "on" : ""} ${color === undefined ? "" : "tinted"}" role="menuitemradio"
       style=${color === undefined ? nothing : `--dc:${color}`}
       aria-checked=${c.on ? "true" : "false"} data-watch=${c.id} data-kind=${c.kind}
-      title=${c.sync ? deviceSyncLabel(c.sync) : nothing}
+      title=${c.asleep === true ? "Asleep" : c.sync ? deviceSyncLabel(c.sync) : nothing}
       @click=${() => { input.onMenu(false); if (!c.on) input.onPick(c.id); }}>
-      <i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i><span class="wa-wr-row-name">${c.name}</span>
+      <i class="wa-wr-dot ${c.asleep === true ? "asleep" : c.sync ?? ""}" aria-hidden="true"></i><span class="wa-wr-row-name">${c.name}</span>
       ${c.on ? html`<span class="wa-wr-check" aria-hidden="true">${uiIcon("check")}</span>`
+        : c.asleep === true ? html`<span class="wa-wr-sync">Asleep</span>`
         : c.sync === "synced" || c.sync === "waiting" ? html`<span class="wa-wr-sync">${deviceSyncLabel(c.sync)}</span>` : nothing}
     </button>`;
   };
@@ -636,6 +694,7 @@ export const watchRowStyles = css`
   .wa-wr-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .wa-wr-dot.synced { background: var(--wa-green); }
   .wa-wr-dot.waiting { background: var(--wa-amber); }
+  .wa-wr-dot.asleep { background: var(--wa-faint); }
   .wa-wr-sync { flex: none; font-size: 12px; font-weight: 400; color: var(--wa-muted); }
   .wa-wr-check { display: inline-flex; flex: none; }
   .wa-wr-check svg.ui-icon { width: 14px; height: 14px; }

@@ -301,9 +301,10 @@ describe("the page editor", () => {
     expect(card).not.toContain(`class="sec name-sec"`);
     const side = text.slice(inspector);
     expect(side).toContain(`<div class="insp-head">`);
-    expect(side).toContain(`>Page</span><span class="nm"`);
+    expect(side).toContain(`<span class="nm pe-insp-t">Page</span>`);
     expect(side).not.toContain(`class="sec name-sec"`);
-    expect(side).not.toContain(`aria-label="Page name"`);
+    // The real name is the inspector's first row.
+    expect(side.indexOf(`<label class="field pe-page-name">`)).toBeLessThan(side.indexOf("<h4>Look"));
     // Look, then On the watch, then the line and Delete page.
     const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page"].map((p) => side.indexOf(p));
     expect(order.every((i) => i > -1)).toBe(true);
@@ -466,8 +467,8 @@ describe("the sticky top block", () => {
   it("keeps every editor one screen tall beside the lists, each part scrolling in its own box", () => {
     for (const tag of ["wa-page-editor", "wa-status-pages-editor", "wa-menu-editor"] as const) {
       const css = styles(tag);
-      // The page editor has no lists beside its stage: two columns, `pe-wide`.
-      const wide = tag === "wa-page-editor" ? "pe-wide" : "cols-3";
+      // The page and status page editors have no lists beside the stage: two columns.
+      const wide = tag === "wa-page-editor" ? "pe-wide" : tag === "wa-status-pages-editor" ? "sp-wide" : "cols-3";
       expect(rule(css, `.layout.pe-layout.${wide}`), tag).toMatch(/flex:\s*1 1 0;\s*min-height:\s*0;\s*overflow:\s*hidden/);
       expect(rule(css, `.pe-layout.${wide} > .column.inspector`), tag).toMatch(/overflow-y:\s*auto/);
       expect(rule(css, `.pe-layout.${wide} > .column.canvas`), tag).toMatch(/overflow-y:\s*auto/);

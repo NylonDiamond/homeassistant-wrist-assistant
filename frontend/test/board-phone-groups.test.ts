@@ -38,7 +38,7 @@ describe("a board section's groups", () => {
 
   it("heads each run of rows of one kind, with how many it has", () => {
     const text = flat(renderBoard({
-      label: "x", thing: "Complication", columns: [], onFocus: () => {}, focusWord: "Focus", focusTitle: () => "",
+      label: "x", thing: "Complication", columns: [], onFocus: () => {}, focusTitle: () => "",
       sections: [{ key: "face", title: "Watch face", rows: [row("a", "Rectangular"), row("b", "Rectangular"), row("c", "Circular")] }],
     }));
     expect(text.match(/class="bd-group"/g)?.length).toBe(2);
@@ -48,7 +48,7 @@ describe("a board section's groups", () => {
 
   it("draws no heading for rows with no kind", () => {
     const text = flat(renderBoard({
-      label: "x", thing: "Page", columns: [], onFocus: () => {}, focusWord: "Order", focusTitle: () => "",
+      label: "x", thing: "Page", columns: [], onFocus: () => {}, focusTitle: () => "",
       sections: [{ key: "on", rows: [row("a"), row("b")] }],
     }));
     expect(text).not.toContain(`class="bd-group"`);
@@ -67,7 +67,8 @@ describe("a complication taken off on Home", () => {
   it("says so with Undo, as a page does, and Undo puts it back on that device", () => {
     const source = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
     expect(source).toContain("undo: () => void this.compBackOnFromHome(it, ownerId, name, device),");
-    expect(source).toContain("await this.compBoardTick(it, place, true);");
+    // Home keeps its own way back, so the box's toast stays out of it.
+    expect(source).toContain("await this.compBoardTick(it, place, true, false);");
   });
 });
 

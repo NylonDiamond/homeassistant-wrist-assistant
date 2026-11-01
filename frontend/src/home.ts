@@ -8,8 +8,10 @@ import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
 import type { Person } from "./people.js";
 import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
-import { IPHONE_SCREENS, type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
+import { DEVICES_ALL, DEVICES_PATH, HOME_PATH, IPHONE_SCREENS, type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, devicePath, deviceRouteOf } from "./shell.js";
+import type { SyncPillState } from "./sync-pill.js";
 import type { UiIconName } from "./ui-icons.js";
+import type { PanelRoute } from "./watch-pages/hook.js";
 import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
@@ -245,17 +247,14 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
   return `Seen ${agoWords(seconds + Math.max(0, elapsed))}`;
 }
 
-/** Home's small print under the devices: what Synced and Waiting are about.
- * The totals already say what each word means, so this only says what it
- * covers, which on a watch is more than its complications. */
-/** The name of Home's side bar section for the whole home's screens, which
- * the row over those screens says too (`SHARED_ROW_LABEL`). */
-export const HOME_LIBRARY_TITLE = "On every device";
+/** The name of the whole home's screens: the Shared tab's title, which the
+ * row over those screens says too (`SHARED_ROW_LABEL`). */
+export const HOME_LIBRARY_TITLE = "Shared";
 
-/** The section's one line under its name. */
+/** The Shared tab's one line under its title. */
 export const HOME_LIBRARY_LEAD = "Kept once for the whole home. Every watch and iPhone uses them.";
 
-/** The screens Home's Library lists, in order: every screen of the whole
+/** The screens the Shared tab lists, in order: every screen of the whole
  * home (`shared`) that is not retired, and of those that need a capability
  * only the ones the integration advertises (the Home map, `home_map`). */
 export function homeLibraryScreens(capable: (capability: string) => boolean = homeScreenCapable): WatchScreen[] {
@@ -268,14 +267,16 @@ function homeScreenCapable(capability: string): boolean {
   return capability === HOME_MAP_CAPABILITY && homeMapCapable();
 }
 
-/** The line under each of the Library's screens in Home's side bar
- * (`renderHomeShared`): what it holds, short enough for one line. */
+/** The line under each of the Library's screens in All devices: what it
+ * holds, short enough for one line. */
 export const HOME_SHARED_SUB: Partial<Record<WatchScreen["id"], string>> = {
   "http-actions": "Web requests every device can run",
   "cameras": "How each camera is framed in alerts",
   "home-map": "Your home's plan, with a pin for each device",
 };
 
+/** What Synced and Waiting cover, on a device's sync chip as its tooltip: on a
+ * watch that is more than its complications. */
 export const HOME_SYNC_NOTE = "On a watch, Synced and Waiting cover its complications and the whole watch app: pages, menus and settings.";
 
 /** A device the server holds but that never talked to it: no app version,
@@ -305,21 +306,89 @@ export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | unde
   return `${n} ${n === 1 ? "change" : "changes"} to pick up`;
 }
 
-/** Which of Home's totals a device counts under. A device that needs
- * attention counts as waiting, so a watch that could not use the last save
- * (it fetched it, so its delivery numbers alone say synced) is never
- * counted as Synced while its card says Not synced and it is listed under
- * Waiting to sync. */
-export function homeTotalBucket(row: Pick<HomeDeviceRow, "sync" | "rejected">): DeviceSync {
-  return needsAttention(row) ? "waiting" : row.sync;
+/** What a person's box says of their devices, by each one's state
+ * (`syncStateOf`): how many wait, else that all are synced, else how the rest
+ * stand. An asleep device never counts as waiting. The tone colors the dot. */
+export function homeGroupSummary(states: readonly SyncPillState[]): { text: string; tone: "waiting" | "synced" | "" } {
+  const count = (s: SyncPillState) => states.filter((x) => x === s).length;
+  const waiting = count("waiting");
+  const synced = count("synced");
+  const asleep = count("asleep");
+  const all = states.length;
+  if (waiting > 0) return { text: `${waiting} waiting`, tone: "waiting" };
+  if (synced === all) return { text: "All synced", tone: "synced" };
+  if (asleep === all) return { text: `${asleep} asleep`, tone: "" };
+  if (asleep > 0 && synced > 0) return { text: `${synced} synced, ${asleep} asleep`, tone: "" };
+  if (asleep > 0) return { text: `${asleep} asleep`, tone: "" };
+  return { text: `${synced} of ${all} synced`, tone: "" };
 }
 
-/** Home's totals: how many devices, and how many are synced, waiting (or
- * could not use the last save), or have nothing waiting and never synced.
- * The thin bar and a person's summary dot read these too. */
-export function homeTotals(rows: readonly Pick<HomeDeviceRow, "sync" | "rejected">[]): { all: number; synced: number; waiting: number; idle: number } {
-  const count = (s: DeviceSync) => rows.filter((r) => homeTotalBucket(r) === s).length;
-  return { all: rows.length, synced: count("synced"), waiting: count("waiting"), idle: count("idle") };
+/** Where the Devices tab stands for an address: the device picked, or every
+ * device, and the address to rewrite in place when this one should name
+ * something else. */
+export interface HomeAddress {
+  pick: string | undefined;
+  all: boolean;
+  rewrite?: string;
+}
+
+/**
+ * The Devices tab's address and its pick, made to agree (mock-home item 7), so
+ * reload, Back and a shared link all land on the same device. `/devices/all`
+ * is every device. `/devices/<id>` picks that device while it is in the list;
+ * a device that has left falls to the next choice (`homePickOf`) and the
+ * address follows. The bare tab (`""`, `/devices`) takes what was picked
+ * before, or the device heard from last, and the address then names it, so
+ * Back never lands on an address that picks something different. An address
+ * the tab does not know stands as it is, and so does any address while there
+ * are no devices to pick from: a list that has not loaded must not lose it.
+ */
+export function homeAddress(
+  route: PanelRoute | undefined,
+  rows: readonly Pick<HomeDeviceRow, "id">[],
+  was: { pick: string | undefined; all: boolean },
+  ownerOf: (id: string) => Pick<OwnerSummary, "polling" | "last_seen_seconds"> | undefined,
+): HomeAddress {
+  const at = deviceRouteOf(route);
+  if (at !== undefined && "all" in at) return { pick: was.pick, all: true };
+  const path = route?.path ?? "";
+  const bare = path === HOME_PATH || path === "/" || path === DEVICES_PATH;
+  if (at === undefined && !bare) return { pick: was.pick, all: was.all };
+  if (at === undefined && was.all) return { pick: was.pick, all: true, rewrite: devicePath(DEVICES_ALL) };
+  const named = at?.owner;
+  if (rows.length === 0) return { pick: named ?? was.pick, all: false };
+  const pick = homePickOf(rows, named ?? was.pick, ownerOf);
+  return pick === undefined || pick === named ? { pick, all: false } : { pick, all: false, rewrite: devicePath(pick) };
+}
+
+/**
+ * Copy text, for "Copy device address". Home Assistant reached over plain http
+ * has no `navigator.clipboard` at all and a browser can refuse the write, so
+ * the old `execCommand("copy")` on a hidden box goes second. False when neither
+ * worked.
+ */
+export async function copyPlainText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText !== undefined) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Refused: the selection below may still work.
+  }
+  const box = document.createElement("textarea");
+  box.value = text;
+  box.setAttribute("readonly", "");
+  box.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;";
+  document.body.append(box);
+  box.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    box.remove();
+  }
 }
 
 /** Home's devices by person, in the people's own order: each person with
@@ -431,6 +500,13 @@ export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): Hom
   return kind === "iphone" && tab.screen.id === "settings" ? { ...look, blurb: IPHONE_SETTINGS_BLURB } : look;
 }
 
+/** The one line a device's own screen wears as its tooltip in the row under
+ * the device's header (`renderDeviceOwnRow`): Settings, Rooms and Voice. */
+export function ownScreenBlurb(id: WatchScreen["id"], kind: "watch" | "iphone"): string | undefined {
+  if (kind === "iphone" && id === "settings") return IPHONE_SETTINGS_BLURB;
+  return SCREEN_DOORS[id]?.blurb;
+}
+
 /** How many of a watch's pages its Pages door draws, and how wide each
  * screen is drawn, in CSS pixels. A door too narrow for all of them drops
  * the last whole rather than cutting it; the door's count says how many
@@ -532,9 +608,9 @@ export const homeStyles = css`
     /* A fixed height must not squeeze its parts: it scrolls instead. */
     .hb-side > * { flex-shrink: 0; }
   }
-  /* All devices, picked, is lit like a picked device, in the accent. */
+  /* Overview, picked, is lit like a picked device, in the accent. */
   button.hb-row.hb-all { --c: var(--wa-accent); }
-  /* The side bar: the head, Pair a device, then every device by person. */
+  /* The side bar: the head with + Pair, Overview, then every device by person. */
   .hb-side {
     flex: 1 1 280px; max-width: 340px; min-width: 0; box-sizing: border-box;
     display: flex; flex-direction: column; gap: 16px; padding: 20px 12px 18px;
@@ -544,28 +620,10 @@ export const homeStyles = css`
   .hb-head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
   .hb-head .home-lead { font-size: 12px; line-height: 1.45; }
   .hb-head .home-scope { font-size: 11.5px; }
-  /* Pair a device, the side bar's one call to action: a card lit green from
-     its top left, a green plus in a round chip, its name and how each kind
-     pairs. */
-  button.hb-pair {
-    --c: var(--wa-green); --lo-fill: color-mix(in srgb, var(--wa-green) 7%, var(--wa-card)); --lo-mid: var(--wa-card-mid);
-    ${litOutline}
-    border-width: 1px;
-    display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 12px 14px;
-    border-radius: 13px; font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink);
-    box-shadow: var(--home-lift); transition: filter .15s ease;
-  }
-  button.hb-pair:hover { filter: brightness(1.12); }
-  button.hb-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hb-pair-ic {
-    width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center;
-    color: var(--wa-green); background: color-mix(in srgb, var(--wa-green) 16%, transparent);
-    border: 1px solid color-mix(in srgb, var(--wa-green) 45%, transparent);
-  }
-  .hb-pair-ic svg.ui-icon { width: 18px; height: 18px; }
-  .hb-pair-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .hb-pair-t b { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-  .hb-pair-t span { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+  /* The title with + Pair beside it, where a new device will appear. */
+  .hb-head-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .hb-head-top .home-btn { height: 28px; padding: 0 11px; font-weight: 600; }
+  .hb-head-top .home-btn svg.ui-icon { width: 13px; height: 13px; }
   /* One person: their picture (or initial) ringed in grey (the colors are
      the devices'), their
      name in small capitals, how their devices stand, then a row each, all
@@ -601,6 +659,10 @@ export const homeStyles = css`
   button.hb-row.synced { --s: var(--wa-green); }
   button.hb-row.waiting { --s: var(--wa-amber); }
   button.hb-row.rejected { --s: var(--error-color); }
+  /* Asleep: unseen for a week with changes waiting. Grey, never amber, since
+     there is nothing to do about it (\`sync-pill.ts\`). */
+  button.hb-row.asleep { --s: var(--wa-faint); }
+  .hb-asleep { color: var(--wa-faint); }
   button.hb-row:hover { background-color: var(--wa-hover); }
   button.hb-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.hb-row.on {
@@ -661,10 +723,17 @@ export const homeStyles = css`
   button.hb-step:hover { background: var(--wa-hover); }
   button.hb-step:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.hb-step svg.ui-icon { width: 14px; height: 14px; }
-  .hb-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--wa-line-strong); }
-  .hb-acts .home-btn { height: 32px; border-radius: 9px; }
-  button.home-btn.hb-remove { color: var(--error-color); background: transparent; border-color: color-mix(in srgb, var(--error-color) 50%, var(--wa-line)); }
-  button.home-btn.hb-remove:hover { background: color-mix(in srgb, var(--error-color) 10%, transparent); }
+  /* The ··· menu: Rename, Copy device address and, last and in red, Remove. */
+  .hb-more { display: inline-flex; }
+  .pop-menu.side-pop.hb-menu { min-width: 200px; }
+  .pop-menu.side-pop.hb-menu .row { flex-direction: row; align-items: center; gap: 9px; font-weight: 500; font-size: 13px; }
+  .hb-menu .row svg.ui-icon { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
+  .hb-menu .row.danger svg.ui-icon { color: inherit; }
+  /* A device's own screens, under its bar: the Settings screen's own row
+     style, as wide as its tabs, then a quiet line on what they are. */
+  .hb-subnav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+  .hb-subnav nav.wa-wr-links { flex: 0 1 auto; order: 0; }
+  .hb-subnav-hint { min-width: 0; font-size: 12px; line-height: 1.35; color: var(--wa-faint); }
   /* The device at the top of its page, small, so its pages and the rest it
      holds below are the page: a stage a hand wide beside its name, its sync
      state and its two counts. The stage is the device standing in a soft
@@ -675,7 +744,7 @@ export const homeStyles = css`
      pages; this row only says which device it is (Jesse, 2026-10-23). */
   .hb-hero { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .hb-stage {
-    position: relative; flex: none; width: 44px; height: 44px; border-radius: 11px; overflow: hidden; box-sizing: border-box;
+    position: relative; flex: none; width: 46px; height: 46px; border-radius: 11px; overflow: hidden; box-sizing: border-box;
     border: 1px solid transparent;
     background:
       radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) padding-box,
@@ -684,6 +753,9 @@ export const homeStyles = css`
         var(--wa-card-mid) 64%, color-mix(in srgb, var(--c) 15%, transparent) 100%) border-box;
     box-shadow: var(--home-lift);
   }
+  /* In the bar its edge is plain grey: the device's color is the dot in its
+     facts line and the slots lit on the drawing, which keep their own --c. */
+  .hb-bar .hb-stage { --c: var(--wa-line-strong); }
   .hb-floor {
     display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 42px;
     background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 3%, transparent), transparent);
@@ -822,6 +894,10 @@ export const homeStyles = css`
   .hb-state.synced { --c: var(--wa-green); }
   .hb-state.waiting { --c: var(--wa-amber); }
   .hb-state.rejected { --c: var(--error-color); }
+  .hb-state.asleep { --c: var(--wa-faint); }
+  /* Only Synced and Not synced wear a glyph; the rest start on their words. */
+  .hb-state.plain { padding-left: 12px; }
+  .hb-state.asleep .hb-state-t b { color: var(--wa-label); }
   .hb-state-chip {
     width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
     border: 1px solid var(--c); color: var(--c);

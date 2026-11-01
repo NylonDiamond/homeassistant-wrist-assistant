@@ -13,12 +13,31 @@
 //
 // Per device rather than per person: one person's watch and iPhone are the
 // two devices most often told apart.
+//
+// The six are purple, mint, teal blue, slate, sky and pink violet (the
+// 2026-10-31 review's palette, set in the panel's sheet for each skin): no
+// red, amber or green, which mean destructive, waiting and synced. The color
+// is the panel's own drawing: it is worked out here from the owners list
+// and never stored, and the watch and iPhone apps do not read it.
 
 import type { OwnerSummary } from "./ha-api.js";
 import { deviceKindOf } from "./version.js";
 
 /** How many device colors there are. */
 export const DEVICE_COLORS = 6;
+
+/** The six device colors, in order, as `--wa-person-1` to `-6` hold them:
+ * each one's name, its dark skin value and its light skin value (dark
+ * enough for 4.5:1 on a white card). The panel's sheet sets the tokens to
+ * exactly these (a test holds them to it). */
+export const DEVICE_PALETTE: readonly { name: string; dark: string; light: string }[] = [
+  { name: "Purple", dark: "#a78bfa", light: "#6d28d9" },
+  { name: "Mint", dark: "#5eead4", light: "#0f766e" },
+  { name: "Teal blue", dark: "#22b8cf", light: "#0e7490" },
+  { name: "Slate", dark: "#94a3b8", light: "#475569" },
+  { name: "Sky", dark: "#38bdf8", light: "#0369a1" },
+  { name: "Pink violet", dark: "#e879f9", light: "#a21caf" },
+];
 
 /** The color at one place in the order. */
 export function deviceColorAt(index: number): string {

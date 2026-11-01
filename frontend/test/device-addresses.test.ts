@@ -373,7 +373,7 @@ describe("the panel's wiring", () => {
   });
 
   it("reads a watch's or an iPhone's addresses again each time it is picked on Home", () => {
-    expect(method("  private openHomeDevice(ownerId: string, forget = false) {"))
+    expect(method("  private openHomeDevice(ownerId: string, forget = false, move = true) {"))
       .toContain(`if (deviceKindOf(this.ownerOf(ownerId)) !== "library") void this.loadDeviceAddresses(ownerId);`);
   });
 
@@ -386,7 +386,7 @@ describe("the panel's wiring", () => {
     const start = method("  private async startAddressEdit(ownerId: string) {");
     expect(start).toContain("this.deviceRename = undefined;");
     expect(start).toContain("this.addressEdit = { owner: ownerId, draft: addressDraft(record) };");
-    expect(method("  private openHomeDevice(ownerId: string, forget = false) {")).toContain("this.stopAddressEdit();");
+    expect(method("  private openHomeDevice(ownerId: string, forget = false, move = true) {")).toContain("this.stopAddressEdit();");
     expect(method("  private resetHomeDetail() {")).toContain("this.stopAddressEdit();");
     expect(method("  private stopAddressEdit() {")).toContain("if (this.addressBusy) return;");
   });

@@ -4,12 +4,64 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles,
+  type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles,
   listsReady, pickTab, pickerSurfaceClass, restoreTab,
 } from "../src/list-page.js";
 import { ALL_DEVICES } from "../src/pickerRows.js";
+import { designPath } from "../src/shell.js";
 
 const route = (path: string) => ({ prefix: "/wrist-assistant", path });
+
+describe("one open design, one address", () => {
+  const a = { owner: "w1", id: "a" };
+  const b = { owner: "w1", id: "b" };
+  const atA = route(designPath("w1", "a"));
+  const atB = route(designPath("w1", "b"));
+  const list = route("/complications");
+  const step = (input: Partial<Parameters<typeof designAddressStep>[0]>) => designAddressStep({
+    route: list, previous: undefined, open: undefined, unsaved: false, opened: false, ...input,
+  });
+
+  it("writes the address when a design opens, a new step from the list", () => {
+    expect(step({ route: list, open: a, opened: true })).toEqual({ kind: "write", path: designPath("w1", "a"), replace: false });
+    expect(step({ route: route("/complications/w1"), open: a, opened: true })).toEqual({ kind: "write", path: designPath("w1", "a"), replace: false });
+  });
+
+  it("replaces it when the editor moves on to another copy", () => {
+    expect(step({ route: atA, open: b, opened: true })).toEqual({ kind: "write", path: designPath("w1", "b"), replace: true });
+  });
+
+  it("stays when a reload opened what the address already named", () => {
+    expect(step({ route: atA, open: a, opened: true })).toEqual({ kind: "stay" });
+  });
+
+  it("opens what Back or a link names", () => {
+    expect(step({ route: atB, previous: atA, open: a })).toEqual({ kind: "open", owner: "w1", id: "b" });
+    expect(step({ route: atB, previous: list })).toEqual({ kind: "open", owner: "w1", id: "b" });
+    expect(step({ route: atA, previous: list, open: a })).toEqual({ kind: "stay" });
+  });
+
+  it("closes the design when Back reaches the list from its address", () => {
+    expect(step({ route: list, previous: atA, open: a })).toEqual({ kind: "close" });
+    expect(step({ route: route("/complications/w1"), previous: atA, open: a })).toEqual({ kind: "close" });
+  });
+
+  it("writes its own address over the list's when it was kept open from another tab", () => {
+    expect(step({ route: list, previous: route("/devices"), open: a })).toEqual({ kind: "write", path: designPath("w1", "a"), replace: true });
+  });
+
+  it("gives a design nobody has saved no address of its own", () => {
+    expect(step({ route: list, unsaved: true, opened: true })).toEqual({ kind: "stay" });
+    expect(step({ route: atA, unsaved: true, opened: true })).toEqual({ kind: "write", path: "/complications", replace: false });
+    expect(step({ route: list, previous: route("/devices"), unsaved: true })).toEqual({ kind: "stay" });
+  });
+
+  it("leaves a first draw and every other tab alone", () => {
+    expect(step({ route: atA })).toEqual({ kind: "stay" });
+    expect(step({ route: route("/devices"), open: a, opened: true })).toEqual({ kind: "stay" });
+    expect(step({ route: route("/devices"), previous: atA, open: a })).toEqual({ kind: "stay" });
+  });
+});
 
 describe("pickerSurfaceClass", () => {
   it("keeps the dialog's own class, which showModal finds it by", () => {

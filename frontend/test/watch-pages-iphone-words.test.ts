@@ -278,7 +278,7 @@ describe("the page switcher rows on an iPhone", () => {
     const drawn = text(renderSwitcherSettings(h));
     expect(drawn).toContain("The page stays on the iPhone. Only the switcher leaves it out.");
     expect(drawn).toContain("Picked by the iPhone");
-    expect(drawn).toContain("Left empty, the iPhone shows the page's name and picks the icon and color itself.");
+    expect(drawn).toContain("Left empty, the iPhone picks the icon and color itself.");
     expect(drawn).not.toMatch(/the watch\b/i);
   });
 });

@@ -10,7 +10,7 @@
 
 import { css } from "lit";
 import { ALL_DEVICES } from "./pickerRows.js";
-import { tabOfRoute } from "./shell.js";
+import { COMPLICATIONS_PATH, designPath, designRouteOf, tabOfRoute } from "./shell.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 
 /** Where the surface is drawn: the modal dialog over the editor, or the page. */
@@ -108,6 +108,66 @@ export function listPageEscape(state: { dupOpen: boolean; selecting: boolean }):
   return undefined;
 }
 
+/** A saved design, by the two ids its address names. */
+export interface DesignAt {
+  owner: string;
+  id: string;
+}
+
+/** What keeping the address and the open design in step asks for. */
+export type DesignAddressStep =
+  | { kind: "stay" }
+  /** The design changed: the address follows it. */
+  | { kind: "write"; path: string; replace: boolean }
+  /** The address changed (Back, a link): open the design it names. */
+  | { kind: "open"; owner: string; id: string }
+  /** Back from a design to its list: close the design. */
+  | { kind: "close" };
+
+function sameDesign(a: DesignAt | undefined, b: DesignAt | undefined): boolean {
+  return a !== undefined && b !== undefined && a.owner === b.owner && a.id === b.id;
+}
+
+/**
+ * One open design has one address, `/complications/design/<owner>/<id>`, and
+ * either can move first.
+ *
+ * Opening one writes the address: a new step for Back from the list, or the
+ * same step when the editor moved from one design to another copy of it. A
+ * design with no record yet has no address, so the list's address stands for
+ * it until its first Save. Pressing Back moves the address first: a design's
+ * address opens that design, and the list's closes the one Back came from.
+ * Arriving at the list's address from another tab with a design still open
+ * (it kept unsaved work) is that design's own address written over it.
+ *
+ * Closing a design is not here: whoever closes it knows whether the address
+ * should move (`leaveDesignAddress` in the panel), and a device switch empties
+ * the editor for a moment on its way to the next design.
+ */
+export function designAddressStep(input: {
+  route: PanelRoute | undefined;
+  /** The address before this draw, only when this draw moved it. */
+  previous: PanelRoute | undefined;
+  open: DesignAt | undefined;
+  /** A design nobody has saved yet is open. */
+  unsaved: boolean;
+  /** A design opened, or got its first record, since the last draw. */
+  opened: boolean;
+}): DesignAddressStep {
+  if (tabOfRoute(input.route) !== "complications") return { kind: "stay" };
+  const named = designRouteOf(input.route);
+  if (input.opened) {
+    if (input.unsaved) return named === undefined ? { kind: "stay" } : { kind: "write", path: COMPLICATIONS_PATH, replace: false };
+    if (input.open === undefined || sameDesign(named, input.open)) return { kind: "stay" };
+    return { kind: "write", path: designPath(input.open.owner, input.open.id), replace: named !== undefined };
+  }
+  if (input.previous === undefined) return { kind: "stay" };
+  if (named !== undefined) return sameDesign(named, input.open) ? { kind: "stay" } : { kind: "open", ...named };
+  if (input.open === undefined) return { kind: "stay" };
+  if (designRouteOf(input.previous) !== undefined) return { kind: "close" };
+  return { kind: "write", path: designPath(input.open.owner, input.open.id), replace: true };
+}
+
 /** The line under the page's title: how many there are, and the one fact
  * about them a newcomer gets wrong. The title says Complications, as the tab
  * does, so this line is where an iPhone's widgets are counted in. */
@@ -146,6 +206,9 @@ export const listPageStyles = css`
   a.cl-btn:focus-visible, button.cl-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.cl-btn:disabled { opacity: .5; cursor: default; }
   .cl-btn svg.ui-icon { width: 14px; height: 14px; }
+  /* The main job gets the one filled button on the page. */
+  button.cl-btn.cl-new { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
+  button.cl-btn.cl-new:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-primary-bg) 85%, var(--wa-muted)); }
   .cl-loading { margin: 0; padding: 24px 2px; font-size: 13px; color: var(--wa-muted); }
   .pk-surface.pk-page {
     display: flex; flex-direction: column; min-width: 0;
@@ -168,7 +231,8 @@ export const listPageStyles = css`
   @media (max-width: 640px) {
     .cl-page { padding: 14px 12px 32px; }
     .cl-head h1 { font-size: 22px; }
-    .pk-page .pk-head > .pk-search { margin-left: 0; }
+    .pk-page .pk-head > .pk-search { margin-left: 0; flex: 1 1 100%; }
+    .pk-page .pk-vsep { display: none; }
     .pk-page > .pk-pin { position: static; }
     /* The dialog's device tabs scroll sideways on a phone, to keep its fixed
        height for the cards. The page scrolls down instead, so here they wrap

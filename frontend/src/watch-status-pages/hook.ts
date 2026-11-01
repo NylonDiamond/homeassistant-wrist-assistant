@@ -47,6 +47,10 @@ export const WATCH_STATUS_PAGES_HELP_URL = "https://docs.wrist-assistant.com/fea
 /** What the editor's chunk tells the entry about the drafts it keeps. */
 export interface WatchStatusPagesDraftProbe {
   dirty(): boolean;
+  /** Whether any kept draft holds edits with no save on its way. */
+  unsent(): boolean;
+  /** The saves out now, settled when all have ended; undefined when none is. */
+  savesDone(): Promise<unknown> | undefined;
   drop(): void;
 }
 
@@ -60,6 +64,17 @@ export function registerWatchStatusPagesDrafts(probe: WatchStatusPagesDraftProbe
 /** Whether a status pages draft holds edits, for the panel's leave guards. */
 export function watchStatusPagesDirty(): boolean {
   return draftProbe?.dirty() ?? false;
+}
+
+/** The same, leaving out edits whose save is on its way, for a leave guard
+ * that cannot wait for that save. */
+export function watchStatusPagesUnsent(): boolean {
+  return draftProbe?.unsent() ?? false;
+}
+
+/** The status page saves out now, for a move away to wait for. */
+export function watchStatusPagesSavesDone(): Promise<unknown> | undefined {
+  return draftProbe?.savesDone();
 }
 
 /** The person agreed to leave with status page edits unsaved: drop them. */

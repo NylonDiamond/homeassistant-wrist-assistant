@@ -109,7 +109,7 @@ function card(text: string, title: string): string {
 const titles = (part: string) => [...part.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
 
 /** The tile inspector's group panels' titles, in order. */
-const groupTitles = (text: string) => [...text.matchAll(/<h3 class="ts-grp-t">([^<]+)/g)].map((m) => m[1]);
+const groupTitles = (text: string) => [...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1]);
 
 /** One group panel of the tile inspector, to the next group. */
 function group(text: string, id: string): string {
@@ -194,6 +194,8 @@ function editor(page: WatchPage, selectedTile?: string): Editor {
   el.selectedTileId = selectedTile;
   // Not connected: the selection's blur reads the render root.
   el.renderRoot = { activeElement: null, querySelector: () => null };
+  // Every group open: most of these look at the rows inside them.
+  for (const g of ["color", "text", "surface"]) (el.uiState as Map<string, unknown>).set(`tile-inspector-groups:open:${g}`, true);
   return el;
 }
 
@@ -260,7 +262,8 @@ describe("the breadcrumb", () => {
     click(inspector(el), `class="pe-path-back"`);
     expect(el.selectedTileId).toBeUndefined();
     const text = flat(inspector(el));
-    expect(text).toContain(`<span class="kchip" style=--k:${WATCH_PAGE_CHIP_COLOR}>Page</span><span class="nm" title=Hall>Hall</span>`);
+    expect(text).toContain(`<span class="nm pe-insp-t">Page</span>`);
+    expect(text).toMatch(/<label class="field pe-page-name"><span>Name<\/span>\s*<input type="text" aria-label=Page name/);
     expect(text).not.toContain("pe-back");
     expect(text).toContain("<h4>Look");
   });
@@ -332,19 +335,23 @@ describe("the tile's cards", () => {
     expect(text.indexOf(`<div class="ts-groups"`)).toBeLessThan(text.indexOf(`data-group=color`));
     const head = text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<section class="ts-grp"`));
     expect(head).not.toContain("<h4>");
+    // The path, then the tile with the Name beside it.
+    expect(head.indexOf(`<div class="ts-head-path">`)).toBeLessThan(head.indexOf(`<div class="ts-head-lead">`));
+    expect(head.slice(head.indexOf(`<div class="ts-head-path">`), head.indexOf(`<div class="ts-head-row">`))).toContain("pe-path");
     const lead = head.slice(head.indexOf(`<div class="ts-head-lead">`), head.indexOf(`<div class="ts-head-mid">`));
-    expect(lead.indexOf("pe-path")).toBeLessThan(lead.indexOf("pe-head-pic"));
     expect(lead).toContain(`<div class="pe-head-pic"><span class="pe-head-tile" `);
     const mid = head.slice(head.indexOf(`<div class="ts-head-mid">`), head.indexOf(`<div class="ts-head-side">`));
     expect(mid).toContain(`<span class="ts-head-lab">Name</span>`);
     expect(mid).toContain(`aria-label="Name"`);
-    // Shows names the entity by its friendly name, then in grey its id.
-    expect(mid).toMatch(/<span class="ts-head-lab">Shows<\/span><div class="ts-head-ent"><span class="ts-head-ent-nm">.*<b title=Smart Plug Dimmer>Smart Plug Dimmer<\/b><small><code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer<\/code><\/small><\/span>/s);
-    // The facts under Name and Shows, each a button to its section.
-    const pills = [...mid.matchAll(/<button type="button" class="ts-pill" data-goes=(\w+)[^>]*>([^<]+)<b>([^<]+)<\/b><\/button>/g)].map((m) => `${m[1]} ${m[2]}${m[3]}`);
-    expect(pills).toContain("visibility Shows: Always");
+    // What the tile shows moved to What it does: the head only links to it.
+    expect(mid).not.toContain(`<span class="ts-head-lab">Shows</span>`);
+    expect(text.slice(text.indexOf(`data-part=entity`))).toMatch(/<div class="ts-head-ent"><span class="ts-head-ent-nm">.*<b title=Smart Plug Dimmer>Smart Plug Dimmer<\/b><small><code class="ts-head-entity" title/s);
+    // The facts under the Name, each a link to its section with an arrow.
+    const pills = [...mid.matchAll(/<button type="button" class="ts-pill ts-pill-link" data-goes=(\w+)[^>]*>([^<]+)<b[^>]*>([^<]+)<\/b><svg/g)].map((m) => `${m[1]} ${m[2]}${m[3]}`);
+    expect(pills).toContain("entity Shows: light.smart_plug_dimmer");
     expect(pills.some((p) => p.startsWith("action Tap: "))).toBe(true);
-    // A light says what it shows by its entity: no Change, which is a library tile's.
+    // Always is no fact worth a link: only a rule says when it shows.
+    expect(pills.some((p) => p.startsWith("visibility "))).toBe(false);
     expect(mid).not.toContain("ts-head-change");
     const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
     const acts = [...side.matchAll(/<span>(Duplicate|Hide|Reset|Delete)<\/span>/g)].map((m) => m[1]);
@@ -363,15 +370,15 @@ describe("the tile's cards", () => {
     expect(card(body, "Name")).not.toContain(`aria-label="Label"`);
     // The groups, in their order, each with its title, its line and its
     // sections.
-    expect(groupTitles(body)).toEqual(["Color and icon", "Text", "Surface and rules", "What it does"]);
-    expect(group(body, "color")).toContain(`<h3 class="ts-grp-t">Color and icon</h3><span class="ts-grp-d">Fill, icon or photo, off look</span>`);
+    expect(groupTitles(body)).toEqual(["What it does", "Color and icon", "Text", "Surface and rules"]);
+    expect(group(body, "color")).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
     expect(titles(group(body, "color"))).toEqual(["Icon", "Color", "Glow", "When it is off"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
     // No Size: dragging the tile or its corner on the stage moves and sizes it.
     expect(titles(group(body, "surface"))).toEqual(["Shows when", "Arrangement", "Background", "Border"]);
     expect(group(body, "surface")).toContain(`<span class="ts-grp-d">Background, border, when it shows</span>`);
-    // A light has nothing of its own kind, so What it does is the tap alone.
-    expect(titles(group(body, "does"))).toEqual(["Action", "Tap animation"]);
+    // A light has nothing of its own kind, so What it does is its entity and the tap.
+    expect(titles(group(body, "does"))).toEqual(["Entity", "Tap", "Tap animation"]);
     expect(body).not.toContain(`class="ts-kind"`);
     // The Arrangement: Default or Free, with no large tile until Free.
     const arrangement = card(body, "Arrangement");
@@ -388,19 +395,19 @@ describe("the tile's cards", () => {
     // columns as there are groups to draw.
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const groups = text.slice(text.indexOf(`<div class="ts-groups" style=--ts-n:4>`));
-    const at = ["color", "text", "surface", "does"].map((g) => groups.indexOf(`<section class="ts-grp" data-group=${g} `));
+    const at = ["does", "color", "text", "surface"].map((g) => groups.indexOf(`<section class="ts-grp" data-group=${g} `));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(text).not.toContain("ts-g1");
     expect(text).not.toContain("pe-insp-col");
     expect(text).not.toContain("data-col=");
-    expect(css).toContain("@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }");
-    expect(css).toContain("@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); } }");
+    expect(css).toContain("@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }");
+    expect(css).toContain("@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); } .ts-grp-rest { display: contents; }");
     expect(css).not.toContain(".ts-g3");
     // Four across: each column fills the inspector's height and scrolls on
     // its own under a title that stays put.
     const wide = css.slice(css.indexOf("@container insp (min-width: 1580px) { .pe-layout.pe-wide"));
-    expect(wide).toContain(".pe-layout.pe-wide .pe-tile-body .ts-groups > .ts-grp { min-height: 0; overflow-y: auto;");
+    expect(wide).toContain(".pe-layout.pe-wide .pe-tile-body .ts-groups .ts-grp:not(.ts-grp-row) { min-height: 0; overflow-y: auto;");
     expect(wide).toContain(".pe-layout.pe-wide .pe-tile-body .ts-grp > .ts-grp-h { position: sticky; top: 0;");
     expect(wide).toContain("grid-template-rows: minmax(0, 1fr);");
     expect(css).not.toContain("pe-tile-on");
@@ -486,7 +493,7 @@ describe("the tile's cards", () => {
   it("head every section the same calm way: its title in sentence case, no badge, no fold", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const body = text.slice(text.indexOf(`<div class="ts-groups"`));
-    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Action", "Tap animation", "Shows when", "Arrangement"]) {
+    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Tap", "Tap animation", "Shows when", "Arrangement"]) {
       const c = card(body, title);
       expect(c, title).toMatch(new RegExp(`^<section class="ts-sec" data-part=\\w+ aria-label=${title}>\\s*<div class="ts-sec-h"><h4>${title}</h4>`));
       expect(c, title).not.toContain(`class="swatch"`);
@@ -577,7 +584,7 @@ describe("the inspector with no tile", () => {
 
   it("on a smart page holds the Rules cards in the Rules color, and the rule's own, then the page's own with the smart rows", () => {
     const text = flat(inspector(editor(smartHall())));
-    expect(text).toContain(`>Smart page</span><span class="nm" title=Hall>Hall</span>`);
+    expect(text).toContain(`<span class="nm pe-insp-t">Smart page</span>`);
     const titles = [...text.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
     expect(titles).toEqual(["On each device", "Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background", "Look", "On the watch", "In the page switcher"]);
     for (const title of ["Rules", "Header"]) {

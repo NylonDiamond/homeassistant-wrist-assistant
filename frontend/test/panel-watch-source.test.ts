@@ -183,7 +183,7 @@ describe("the watch screens under the row", () => {
 
   it("asks before a move inside the panel leaves a screen with unsaved work, and drops only that screen's edits on a yes", () => {
     const go = method("  private goTo(path: string");
-    expect(go.indexOf("if (!replace && !this.leaveScreenFor(")).toBeGreaterThan(0);
+    expect(go.indexOf("if (!this.leaveScreenFor(to)) return;")).toBeGreaterThan(0);
     expect(go.indexOf("leaveScreenFor(")).toBeLessThan(go.indexOf("navigatePanel("));
     const leave = method("  private leaveScreenFor(");
     expect(leave).toContain("if (screenIdOf(from) === screenIdOf(to)) return true;");
@@ -192,20 +192,41 @@ describe("the watch screens under the row", () => {
     expect(leave.indexOf("confirmDiscard")).toBeLessThan(leave.indexOf("kept.drop();"));
     const kept = method("  private screenDraft(");
     for (const line of [
-      `case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts };`,
+      `case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts, saves: watchPagesSavesDone() };`,
       `case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };`,
-      `case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts };`,
+      `case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts, saves: watchStatusPagesSavesDone() };`,
       `case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };`,
       `case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };`,
       `case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };`,
       `case "cameras": return { dirty: watchCamerasDirty(), drop: dropWatchCamerasDrafts };`,
       `case "settings": return { dirty: anyWatchSettingsDirty(), drop: () => this.watchSettings.dropKept() };`,
-      `case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.selectNone() };`,
+      `case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.dropDesign() };`,
     ]) expect(kept).toContain(line);
     // The browser's Back and a link from inside an editor do not go through
     // goTo: the route change asks, and a no puts the address back.
     const will = method("  protected override willUpdate(");
-    expect(will).toContain("if (!this.leaveScreenFor(this.route, from)) this.route = navigatePanel(this.route, from.path, true) ?? from;");
+    expect(will).toContain("} else if (!this.leaveScreenFor(this.route, from)) {");
+    expect(will).toContain("this.route = navigatePanel(this.route, from.path, true) ?? from;");
+  });
+
+  it("waits for a save on its way before leaving a screen, and asks only if it fails", () => {
+    // A press blurs the name field, which starts the save, and then lands while
+    // the draft is still dirty. Every way off the screen waits the same way.
+    const wait = method("  private saveToWaitFor(");
+    expect(wait).toContain("if (screenIdOf(from) === screenIdOf(to)) return undefined;");
+    expect(wait).toContain("return kept?.dirty === true ? kept.saves : undefined;");
+    const go = method("  private goTo(path: string");
+    expect(go.indexOf("this.saveToWaitFor(to)")).toBeLessThan(go.indexOf("this.leaveScreenFor(to)"));
+    expect(go).toContain("this.goToAfterSave(path, running);");
+    const will = method("  protected override willUpdate(");
+    expect(will).toContain("this.saveToWaitFor(this.route, from)");
+    expect(will).toContain("this.goToAfterSave(to, running);");
+    // The move comes back through goTo, which asks if the draft is still dirty.
+    expect(method("  private goToAfterSave(")).toContain("this.goTo(to);");
+    // A link out of the panel cannot wait, so it does not ask about those saves.
+    const guard = method("  private leaveGuard = ");
+    expect(guard).toContain("!watchPagesUnsent()");
+    expect(guard).toContain("!watchStatusPagesUnsent()");
   });
 
   it("leaves Settings to the row as a link like the six, on the shared watch", () => {
@@ -241,26 +262,26 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab));");
   });
 
-  it("Home's side bar links the whole home's screens under Library, now that no tab does", () => {
-    expect(method("  private renderHome() {")).toContain("${this.renderHomeShared()}");
-    const shared = method("  private renderHomeShared() {");
-    expect(shared).toContain("const screens = homeLibraryScreens();");
-    expect(shared).toContain(`<h2 class="hb-person-name">\${HOME_LIBRARY_TITLE}</h2>`);
-    expect(shared).toContain(`<p class="hb-lead">\${HOME_LIBRARY_LEAD}</p>`);
-    expect(shared).toContain("this.goTo(path);");
+  it("the Shared tab opens the whole home's screens, and Home's side bar no longer lists them", () => {
+    expect(method("  private renderHome() {")).not.toContain("renderHomeShared");
+    expect(SOURCE).not.toContain("private renderHomeShared");
+    const tab = method("  private renderTab() {");
+    expect(tab).toContain(`if (tab === "shared") {`);
+    expect(tab).toContain("renderSharedTabView({");
+    expect(tab).toContain("onOpen: (path) => this.goTo(path),");
     // The Library is HTTP actions and Cameras only: no Photos or Parts screen.
-    // The panel takes only three sheets from `./library/`: the complication
+    // The panel takes only four sheets from `./library/`: the complication
     // editor's device strip over the preview, which draws the same tick
-    // chips a page's editor does, and the board the Complications tab draws
-    // (plan step 5).
-    expect(SOURCE.match(/from "\.\/library\/[^"]+"/g) ?? []).toEqual(['from "./library/item-mode.js"', 'from "./library/ticks.js"', 'from "./library/board.js"']);
+    // chips a page's editor does, the board the Complications tab draws
+    // (plan step 5), and the words a tick's Undo toast says.
+    expect(SOURCE.match(/from "\.\/library\/[^"]+"/g) ?? []).toEqual(['from "./library/item-mode.js"', 'from "./library/ticks.js"', 'from "./library/board.js"', 'from "./library/store.js"']);
     expect(SOURCE).not.toContain(`case "photos":`);
     expect(SOURCE).not.toContain(`case "parts":`);
   });
 
   it("on Home's picked device, whose own screens open on that device's own watch or iPhone", () => {
-    const own = method("  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {");
-    expect(own).toContain(`href: panelUrl(this.route, path, globalThis.location?.pathname ?? ""),`);
+    const detail = method("  private renderHomeDetail(");
+    expect(detail).toContain("route: this.route, ownerId, kind: row.kind, phones: this.phonePages,");
     expect(method("  private renderHome() {")).not.toContain("watchSettings.");
   });
 });

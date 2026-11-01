@@ -1501,7 +1501,7 @@ export class WaVoiceEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Devices tab."}</div>`;
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${WATCH_VOICE_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;

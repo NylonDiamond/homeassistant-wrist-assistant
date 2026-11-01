@@ -56,6 +56,10 @@ export const WATCH_PAGES_HELP_URL = "https://docs.wrist-assistant.com/watch-app/
 export interface WatchPagesDraftProbe {
   /** Whether any kept draft holds edits. */
   dirty(): boolean;
+  /** Whether any kept draft holds edits with no save on its way. */
+  unsent(): boolean;
+  /** The saves out now, settled when all have ended; undefined when none is. */
+  savesDone(): Promise<unknown> | undefined;
   /** Drop every kept draft. */
   drop(): void;
 }
@@ -71,6 +75,17 @@ export function registerWatchPagesDrafts(probe: WatchPagesDraftProbe): void {
 /** Whether a page draft holds edits, for the panel's leave guards. */
 export function watchPagesDirty(): boolean {
   return draftProbe?.dirty() ?? false;
+}
+
+/** The same, leaving out edits whose save is on its way, for a leave guard
+ * that cannot wait for that save. */
+export function watchPagesUnsent(): boolean {
+  return draftProbe?.unsent() ?? false;
+}
+
+/** The page saves out now, for a move away to wait for. */
+export function watchPagesSavesDone(): Promise<unknown> | undefined {
+  return draftProbe?.savesDone();
 }
 
 /** The person agreed to leave with page edits unsaved: drop them, as the

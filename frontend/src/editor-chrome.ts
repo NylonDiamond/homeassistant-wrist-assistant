@@ -85,8 +85,8 @@ const topBarRun = css`
     }
     header .spacer, .wa-bar .spacer { flex: 1; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    /* Top bar: Browse, a divider, New, Import and Share at the left, then
-       sync, ···, Save and its caption, the editor switches and the help. */
+    /* Top bar: the way back and what is open at the left, then the save
+       status, Save, Share, ··· and the editor switches. */
     header, .wa-bar { gap: 6px; min-height: 46px; border-bottom: 1px solid var(--wa-line); margin-bottom: 6px; }
     .picker > button.tb-browse {
       --c: var(--wa-hue-blue); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
@@ -145,21 +145,6 @@ const topBarRun = css`
     button.tb-btn:hover:not(:disabled) { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     button.tb-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
-    /* New, Import and Share wear the lit outline, each in its own hue, with
-       no fill of color: green to make one, purple to bring one in, yellow to
-       send one out. Browse, before them, is blue. */
-    button.tb-btn.tb-new { --c: var(--wa-hue-green); display: inline-flex; align-items: center; gap: 5px; padding: 0 11px 0 9px; }
-    button.tb-btn.tb-new svg { width: 13px; height: 13px; }
-    button.tb-btn.tb-import { --c: var(--wa-hue-purple); }
-    button.tb-btn.tb-share { --c: var(--wa-hue-yellow); }
-    button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {
-      --lo-fill: var(--wa-card);
-      background: var(--lo-fill); border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));
-    }
-    button.tb-btn.tb-new:hover:not(:disabled), button.tb-btn.tb-import:hover:not(:disabled), button.tb-btn.tb-share:hover:not(:disabled) {
-      --lo-fill: var(--wa-hover);
-      background: var(--lo-fill);
-    }
     /* Whether the work is saved, the one place it is said: muted once saved,
        amber with a dot while there are changes (or Save refuses them), red
        with a dot for an error. */
@@ -192,7 +177,8 @@ const topBarRun = css`
        width item of no height, so the rows carry their own margins instead
        of a row gap that would count it twice. */
     header.stacked, .wa-bar.stacked { row-gap: 0; padding-block: 4px; }
-    header.stacked > *, .wa-bar.stacked > * { margin-block: 4px; }
+    /* A dialog drawn in the bar keeps the margin that centres it. */
+    header.stacked > :not(dialog), .wa-bar.stacked > :not(dialog) { margin-block: 4px; }
     header.stacked::after, .wa-bar.stacked::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
     header.stacked > .tb-sync, header.stacked > button.tb-btn:not(.tb-more), header.stacked > .side-menu,
     .wa-bar.stacked > .tb-sync, .wa-bar.stacked > button.tb-btn:not(.tb-more) { order: 2; }
@@ -208,12 +194,6 @@ const topBarRun = css`
     header.stacked > .tb-sync, .wa-bar.stacked > .tb-sync { flex: 1 0 auto; max-width: 100%; }
     header.stacked .tb-sync-l, .wa-bar.stacked .tb-sync-l { flex: none; }
     header.stacked .tb-sync-n, .wa-bar.stacked .tb-sync-n { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    /* A bar with no design open holds only the pill, ··· and the help: one
-       row, the pill first, its note cut before anything wraps. Two rows left
-       the help alone on the first. */
-    header.stacked.bar-list::after { content: none; }
-    header.stacked.bar-list > .tb-sync { order: 0; flex: 0 1 auto; min-width: 0; }
-    header.stacked.bar-list > .side-menu { order: 0; }
     /* Home Assistant's own menu, which a phone hides behind this button. */
     header button.icon.tb-menu, .wa-bar button.icon.tb-menu { margin-left: -6px; }
     /* The buttons that move between the editors (Pages, Menus, Watch, and

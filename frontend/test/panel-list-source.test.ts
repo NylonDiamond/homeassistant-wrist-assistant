@@ -73,12 +73,13 @@ describe("one picker surface, two forms", () => {
 });
 
 describe("the dialog and the page are never on screen together", () => {
-  it("draws Browse, and the dialog inside it, only while a design is open", () => {
+  it("draws the editor's bar, and the Browse dialog in it, only while a design is open", () => {
     const bar = method("  private renderTopBar(");
     expect(bar).toContain("const open = this.designOpen;");
-    expect(bar).toContain("${open ? this.renderPicker() : nothing}");
-    expect(SOURCE.match(/this\.renderPicker\(\)/g)).toHaveLength(1);
-    expect(method("  private renderPicker() {")).toContain("${this.pickerOpen ? this.renderPickerDialog() : nothing}");
+    expect(bar).toContain("if (!open) return nothing;");
+    expect(bar).toContain("${this.pickerOpen ? this.renderPickerDialog() : nothing}");
+    expect(SOURCE.match(/this\.renderPickerDialog\(\)/g)).toHaveLength(1);
+    expect(method("  private renderTopMenu() {")).toContain('"Browse complications"');
   });
 
   it("draws the list page only where the stage has nothing open", () => {
@@ -160,8 +161,71 @@ describe("the way back from the editor", () => {
 
   it("leads the editor's bar", () => {
     const bar = method("  private renderTopBar(");
-    expect(bar.indexOf("this.renderBackToList()")).toBeLessThan(bar.indexOf("this.renderPicker()"));
+    expect(bar.indexOf("this.renderBackToList()")).toBeLessThan(bar.indexOf("this.renderCrumb("));
     expect(method("  private renderBackToList() {")).toContain("this.closeToList()");
+  });
+
+  it("gives an open design its own address, and takes the address back with it", () => {
+    const will = method("  protected override willUpdate(changed");
+    expect(will).toContain("this.syncDesignAddress(changed);");
+    expect(will.indexOf("this.syncDesignAddress(changed);")).toBeLessThan(will.indexOf("listPageShown(this.route, this.designOpen)"));
+    // A design's address at first draw opens that design.
+    expect(will).toContain("if (named !== undefined) this.restoreOpen = named;");
+    expect(method("  private selectNone() {")).toContain("this.leaveDesignAddress();");
+    // A screen being left, or a device list being opened, is its own next step.
+    expect(SOURCE).toContain('case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.dropDesign() };');
+    // Delete closes through the same door, with its way back to the list.
+    expect(method("  private deleteRecordsLater(")).toContain("this.selectNone()");
+  });
+
+  it("puts the list back where it was left: tab, filter and scroll", () => {
+    expect(method("  private async openFromPicker(")).toContain("this.listScroll = page.scrollTop;");
+    expect(method("  private enterListPage() {")).toContain("this.listScrollDue = this.listScroll > 0;");
+    expect(method("  protected override updated(changed")).toContain("page.scrollTop = this.listScroll;");
+  });
+
+  it("holds a device tick until Save while the draft has unsaved work", () => {
+    const strip = method("  private renderCanvasDevices(");
+    expect(strip).toContain("this.deviceQueue = queueDeviceTick(this.deviceQueue, ownerId, putOn, place.on);");
+    expect(strip).toContain('"after Save"');
+    expect(strip).toContain("deviceStripNote({ queued: queue.size, on })");
+    // No toast: a device change in the editor stays quiet (mock view 2, item 12 skipped).
+    expect(strip).toContain("this.addRowTo(row, place.owner, true)");
+    expect(method("  private async save(asNew = false) {")).toContain("this.flushDeviceQueue();");
+    expect(method("  private clearDraft() {")).toContain("this.deviceQueue = new Map()");
+  });
+
+  it("keeps the editor's bar to one filled button, the rest in ···", () => {
+    const bar = method("  private renderTopBar(");
+    expect(bar.indexOf("this.renderBarUndo(d)")).toBeLessThan(bar.indexOf("tb-saved"));
+    expect(bar.indexOf("tb-saved")).toBeLessThan(bar.indexOf("primary save"));
+    expect(bar.indexOf("primary save")).toBeLessThan(bar.indexOf("this.renderShareButton()"));
+    expect(bar.indexOf("this.renderShareButton()")).toBeLessThan(bar.indexOf("this.renderTopMenu()"));
+    const menu = method("  private renderTopMenu() {");
+    const items = ["Browse complications", "New complication", "Import", "History", "View raw configuration", "Duplicate", "Delete design…"];
+    for (const [i, item] of items.entries()) {
+      expect(menu, item).toContain(`"${item}"`);
+      if (i > 0) expect(menu.indexOf(`"${items[i - 1]}"`), item).toBeLessThan(menu.indexOf(`"${item}"`));
+    }
+    // The stage title card and the foot's links are gone.
+    expect(SOURCE).not.toContain("renderCanvasHead");
+    expect(SOURCE).not.toContain("renderDocActions");
+    expect(SOURCE).not.toContain("renderFooter");
+  });
+
+  it("draws the stage toolbar in words", () => {
+    const tools = method("  private renderStageTools(");
+    expect(tools).toContain('class="stage-tools words"');
+    expect(tools).toContain('<span class="word">Demo</span>');
+    expect(tools).toContain('<span class="word">Layers 3D</span>');
+    expect(method("  private renderSnapMenu() {")).toContain('<span class="word">Snap</span>');
+  });
+
+  it("shows the multi-select tip once, with a ? in the Layers head", () => {
+    const layers = method("  private renderLayers() {");
+    expect(layers).toContain("!this.layersTipSeen");
+    expect(layers).toContain("Got it");
+    expect(layers).toContain('this.helpTab = "keys"; this.helpOpen = true;');
   });
 
   it("counts a record that could not be opened as open, so its bar still has the way back", () => {
@@ -180,7 +244,7 @@ describe("the list page", () => {
     expect(start).not.toContain("startRecent");
   });
 
-  it("puts Gallery, Import and New at the head, for everyone", () => {
+  it("puts New, Gallery and Import at the head, for everyone", () => {
     const page = method("  private renderListPage() {");
     expect(page).toContain("href=${GALLERY_PAGE}");
     expect(page).toContain('<button class="cl-btn cl-import"');
@@ -188,6 +252,62 @@ describe("the list page", () => {
     expect(page).not.toContain("admin");
     expect(page).toContain("this.openNewDialog()");
     expect(page).toContain("this.openImportDialog()");
+    expect(page.indexOf("cl-new")).toBeLessThan(page.indexOf("cl-gallery"));
+    expect(page.indexOf("cl-gallery")).toBeLessThan(page.indexOf("cl-import"));
+  });
+
+  it("moves Board and Cards into the card toolbar, for both views", () => {
+    expect(method("  private renderListPage() {")).not.toContain("renderViewSwitch");
+    expect(method("  private renderPickerSurface(")).toContain('renderViewSwitch(phoneView("complications", this.compView)');
+    expect(method("  private renderCompBoard(")).toContain('renderViewSwitch(phoneView("complications", this.compView)');
+  });
+
+  it("says Preview, In a face and Close up", () => {
+    const look = method("  private renderPickerLook() {");
+    for (const word of ["Preview", "In a face", "Close up"]) expect(look, word).toContain(word);
+    expect(look).not.toContain("On device");
+    expect(look).not.toContain("Shape only");
+  });
+
+  it("searches by entity on both views, with the field saying so", () => {
+    expect(method("  private renderPickerSurface(")).toContain("COMP_SEARCH_PLACEHOLDER");
+    expect(method("  private renderCompBoard(")).toContain("placeholder=${COMP_SEARCH_PLACEHOLDER}");
+    expect(method("  private pickerMatches(")).toContain("designTextMatches(this.searchTextOf(copy.item.record), query");
+  });
+
+  it("folds what is on no device, and never hides a search's hits", () => {
+    const all = method("  private renderPickerAll(");
+    expect(all).toContain("foldShelf(");
+    expect(all).toContain("this.renderShelfRow(");
+    expect(method("  private shelfShownOpen(")).toContain('query !== ""');
+    const shelf = method("  private renderShelfRow(");
+    expect(shelf).toContain("Select all empty");
+    expect(shelf).toContain("Delete empty…");
+    // Through the one delete with Undo.
+    expect(method("  private deleteEmpty(")).toContain("this.deleteRecordsLater(deleteEmptyDone(rows.length), records);");
+    // "All shown" picks only what a closed row leaves on screen.
+    expect(method("  private renderPickerSurface(")).toContain("rows.filter((row) => !isShelvedRow(row))");
+  });
+
+  it("draws an empty design as a dashed slot, with no picture work", () => {
+    const card = method("  private renderPickerCard(");
+    expect(card).toContain("const blank = !open && this.recordIsEmpty(drawn);");
+    expect(card).toContain("EMPTY_DESIGN_TEXT");
+    // A document this panel cannot read is never offered for clearing away.
+    expect(method("  private recordIsEmpty(")).toContain("empty = false;");
+  });
+
+  it("sets the hover tools in the picture's corner, off the name", () => {
+    const card = method("  private renderPickerCard(");
+    expect(card.indexOf('class="pk-card-pic"')).toBeLessThan(card.indexOf('class="pk-card-acts'));
+    expect(SOURCE).toContain('title="Devices" aria-label=${`Devices for ${row.name}`}');
+  });
+
+  it("folds devices with nothing into +N more, Not on a device set apart", () => {
+    const tabs = method("  private renderPickerTabs(");
+    expect(tabs).toContain("splitPickerTabs(tabs, current)");
+    expect(tabs).toContain("+${row.more.length} more");
+    expect(tabs).toContain('tabButton(row.shelf, "chip")');
   });
 
   it("leaves New and Import out of the page's foot, which the head has", () => {

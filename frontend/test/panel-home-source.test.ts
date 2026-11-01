@@ -30,7 +30,7 @@ const home = method("  private renderHome() {");
 const group = method("  private renderHomeGroup(");
 const row = method("  private renderHomeRow(");
 const detail = method("  private renderHomeDetail(");
-const open = method("  private openHomeDevice(ownerId: string, forget = false) {");
+const open = method("  private openHomeDevice(ownerId: string, forget = false, move = true) {");
 
 describe("Home's page", () => {
   it("is the devices alone: no Watch app card, no complications card, no recent designs", () => {
@@ -45,10 +45,10 @@ describe("Home's page", () => {
     expect(home).toContain(`<aside class="hb-side" aria-label="Devices">`);
     expect(home).toContain("const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));");
     expect(home).toContain("${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}");
-    // "All devices" leads the side bar (plan step 6).
+    // Overview leads the side bar, under the title and + Pair (plan step 6).
     expect(home.indexOf("${this.renderHomeAllRow(devices.length)}")).toBeLessThan(home.indexOf("${groups.map("));
-    expect(home.indexOf("hb-pair")).toBeLessThan(home.indexOf("${this.renderHomeAllRow(devices.length)}"));
-    expect(home.indexOf("hb-pair")).toBeLessThan(home.indexOf("groups.map((g) => this.renderHomeGroup("));
+    expect(home.indexOf("<span>Pair</span>")).toBeLessThan(home.indexOf("${this.renderHomeAllRow(devices.length)}"));
+    expect(home.indexOf("<span>Pair</span>")).toBeLessThan(home.indexOf("groups.map((g) => this.renderHomeGroup("));
   });
 
   it("tells a person who is not an administrator that the list shows only their devices", () => {
@@ -62,15 +62,19 @@ describe("Home's page", () => {
     expect(home).toContain("${failed ? this.renderNotReady() : html`<p class=\"home-empty\">Loading…</p>`}");
   });
 
-  it("has no New complication button, only Pair a device", () => {
+  it("has no New complication button, only a small + Pair by the title", () => {
     expect(home).not.toContain("openNewDialog");
     expect(home).not.toContain("New complication");
-    expect(home).toContain(`<button type="button" class="hb-pair" @click=\${() => this.openPairDialog()}>`);
-    expect(home).toContain("<b>Pair a device</b>");
+    expect(home).toContain("<h1>Devices</h1>");
+    expect(home).not.toContain("<h1>Home</h1>");
+    expect(home).toContain(`aria-label="Pair a device"`);
+    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair</span></button>");
+    expect(home).not.toContain("hb-pair");
   });
 
-  it("says in small print what the states cover: the watch app too", () => {
-    expect(home).toContain(`<p class="home-small">\${HOME_SYNC_NOTE}</p>`);
+  it("says on the sync chip's tooltip what the states cover: the watch app too", () => {
+    expect(home).not.toContain("HOME_SYNC_NOTE");
+    expect(detail).toContain("pending === undefined ? HOME_SYNC_NOTE");
   });
 
   it("judges each watch on its watch app records too, for everyone", () => {
@@ -85,7 +89,7 @@ describe("Home's household state", () => {
   it("is no card of its own: each person's box says how their devices stand", () => {
     expect(SOURCE).not.toContain("renderHomeStatus");
     expect(SOURCE).not.toContain("hb-sum");
-    expect(group).toContain(`const sum = waiting > 0 ? \`\${waiting} waiting\``);
+    expect(group).toContain("const sum = homeGroupSummary(syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed).map(syncStateOf));");
   });
 });
 
@@ -115,9 +119,10 @@ describe("Home's device rows", () => {
     expect(row).toContain("homeMiniArt(d.kind, held > 0)");
   });
 
-  it("marks a watch that could not use the last save in red", () => {
-    expect(row).toContain(`const state = gone ? "" : rejected ? "rejected" : d.sync;`);
-    expect(row).toContain("homeDeviceLabel(d)");
+  it("marks a watch that could not use the last save in red, and an asleep one in grey with how long", () => {
+    expect(row).toContain(`const state = gone ? "" : asleep ? "asleep" : rejected ? "rejected" : d.sync;`);
+    expect(row).toContain("syncRowWords(device)");
+    expect(row).toContain(`<span class="hb-asleep">\${asleepRowWords(device)}</span>`);
   });
 });
 
@@ -139,7 +144,7 @@ describe("Home's picked device", () => {
   });
 
   it("names the device, its owner and its sync state in its bar, with no count buttons: its lineup below lists them", () => {
-    expect(detail).toContain(`<div class="hb-stage"><div class="hb-device" aria-hidden="true">\${art}</div></div>`);
+    expect(detail).toContain(`<div class="hb-stage"><div class="hb-device" style=\${\`--c:\${color}\`} aria-hidden="true">\${art}</div></div>`);
     expect(detail).toContain("${this.deviceForgetAsk || gone ? nothing : overview}");
     expect(detail).not.toContain("hb-call");
   });
@@ -163,14 +168,28 @@ describe("Home's picked device", () => {
     expect(detail).toContain(`aria-label="Next device"`);
   });
 
-  it("says Not synced, in red, for a watch that could not use the last save", () => {
-    expect(detail).toContain(`const state = rejected ? "rejected" : row.sync;`);
-    expect(detail).toContain(`<div class="hb-state \${state}">`);
-    expect(detail).toContain("<b>${homeDeviceLabel(row)}</b>");
-    expect(detail).toContain("const syncSub = rejected ? attentionText(row, undefined)");
+  it("says Not synced, in red, for a watch that could not use the last save, and Asleep in grey", () => {
+    expect(detail).toContain(`const state = asleep ? "asleep" : rejected ? "rejected" : row.sync;`);
+    expect(detail).toContain("<div class=\"hb-state ${state} ${chipIcon === undefined ? \"plain\" : \"\"}\" title=${chipTitle}>");
+    expect(detail).toContain(`<b>\${asleep ? "Asleep" : syncRowWords(device)}</b>`);
+    expect(detail).toContain("const syncSub = rejected && !asleep ? attentionText(row, undefined) : undefined;");
   });
 
-  it("lists what is on the device in its order, each line with Edit and each group with Change (plan step 6)", () => {
+  it("puts the device's own screens in a row under its header, gone with its Remove step", () => {
+    expect(detail).toContain("${this.deviceForgetAsk || gone ? nothing : renderDeviceOwnRow({");
+    expect(detail).toContain("onGo: (path) => { this.pickWatch(ownerId); this.goTo(path); },");
+    expect(detail.indexOf("renderDeviceOwnRow({")).toBeLessThan(detail.indexOf("${addresses}"));
+    expect(SOURCE).not.toContain("private homeOwnGroup(");
+  });
+
+  it("copies the device's own address, saying so in the toast", () => {
+    expect(detail).toContain("void this.copyDeviceAddress(ownerId, row.name)");
+    const copy = method("  private async copyDeviceAddress(");
+    expect(copy).toContain("panelUrl(this.route, devicePath(ownerId),");
+    expect(copy).toContain("await copyPlainText(url)");
+  });
+
+  it("lists what is on the device in its order, each line with Edit and each group with Open in (plan step 6)", () => {
     expect(detail).toContain("${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}");
     expect(detail).not.toContain("hb-doors");
     const lineup = method("  private renderHomeLineup(row: HomeDeviceRow) {");
@@ -179,11 +198,8 @@ describe("Home's picked device", () => {
     expect(lineup).toContain("${renderLineupGroup(this.homeCompGroup(row))}");
     const comps = method("  private homeCompGroup(row: HomeDeviceRow): LineupGroup {");
     expect(comps).toContain(`onClick: () => void this.openDeviceList(ownerId, "all")`);
-    // A device's own screens open on that device, in the iPhone app for an
-    // iPhone.
-    const own = method("  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {");
-    expect(own).toContain("const path = deviceScreenPath(row.kind, screen, row.id);");
-    expect(own).toContain("onClick: () => { this.pickWatch(row.id); this.goTo(path); },");
+    expect(comps).toContain(`label: "Open in Complications"`);
+    expect(comps).toContain(`label: row.kind === "watch" ? "Add complications" : "Add widgets"`);
     // The board focused on the device (plan step 5), after closing a design
     // open in the editor; Cards, if picked, opens on that device's tab.
     const list = method("  private async openDeviceList(");
@@ -213,17 +229,19 @@ describe("Home's picked device", () => {
     expect(detail).not.toContain("confirm(");
   });
 
-  it("offers Remove to everyone, behind a second step", () => {
+  it("offers Remove to everyone, last in the ··· menu, behind a second step", () => {
     expect(detail).not.toContain("is_admin");
-    expect(detail).toContain("@click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); }}>Remove</button>");
+    expect(detail).toContain("const askRemove = () => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); };");
+    expect(detail).toContain("@click=${moreRun(askRemove)}>${uiIcon(\"delete\")}<span>Remove device…</span></button>");
+    expect(detail.indexOf("Copy device address")).toBeLessThan(detail.indexOf("Remove device…</span></button>`}"));
     expect(detail).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
     expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : nothing}");
   });
 
-  it("renames the device through the integration, from a button on its bar, for everyone", () => {
+  it("renames the device through the integration, from its ··· menu, for everyone", () => {
     expect(detail).not.toContain("mayRename");
     expect(detail).toContain("${!this.deviceForgetAsk && !renaming && !gone");
-    expect(detail).toContain("@click=${() => this.startDeviceRename(ownerId)}>Rename</button>");
+    expect(detail).toContain("@click=${moreRun(() => this.startDeviceRename(ownerId))}>${uiIcon(\"note\")}<span>Rename…</span></button>");
     expect(detail).toContain("void this.renameDeviceNow(ownerId);");
     expect(method("  private startDeviceRename(ownerId: string) {")).toContain(`".hb-detail input.dev-rename-in"`);
     const save = method("  private async renameDeviceNow(ownerId: string) {");
@@ -250,7 +268,28 @@ describe("Home's picked device", () => {
     expect(detail).toContain("const gone = userGone(owner);");
     const note = between(detail, "const goneNote = html`", "</div>`;");
     expect(note).toContain("${USER_GONE_TEXT}.");
+    expect(note).toContain("@click=${askRemove}");
     expect(detail).toContain("${!this.deviceForgetAsk && !renaming && !gone");
+  });
+});
+
+describe("each device's own address", () => {
+  const settle = method("  private settleHomeAddress() {");
+
+  it("reads the address on every move and once the device list is in", () => {
+    const will = method("  protected override willUpdate(changed");
+    expect(will).toContain(`if ((changed.has("route") || changed.has("owners")) && listed) this.settleHomeAddress();`);
+    // After the leave question, which may put the address back.
+    expect(will.indexOf("this.settleHomeAddress()")).toBeGreaterThan(will.indexOf("this.leaveScreenFor(this.route, from)"));
+    // Never from a hidden panel, whose address is another page's now.
+    expect(settle).toContain(`if (!this.isConnected || this.route === undefined || tabOfRoute(this.route) !== "home") return;`);
+    expect(settle).toContain("if (next.rewrite !== undefined) this.goTo(next.rewrite, true);");
+  });
+
+  it("pushes the address on a press on the tab, and never when it came from the address", () => {
+    expect(open).toContain(`if (move && tabOfRoute(this.route) === "home") this.goTo(devicePath(ownerId));`);
+    expect(settle).toContain("this.openHomeDevice(next.pick, false, false);");
+    expect(method("  private openHomeAll() {")).toContain("this.goTo(devicePath(DEVICES_ALL));");
   });
 });
 
@@ -266,7 +305,8 @@ describe("coming back to Home", () => {
     const will = method("  protected override willUpdate(changed");
     const back = between(will, `if (changed.has("route") && tabOfRoute(this.route) === "home"`, "}");
     expect(back).toContain("void this.loadWatchAppSync(true);");
-    expect(will).toContain(`if (changed.has("owners") && barTabOf(this.route) === "home") void this.loadWatchAppSync(false);`);
+    // On every tab: the top bar's sync pill gives the verdict everywhere.
+    expect(will).toContain(`if (changed.has("owners")) void this.loadWatchAppSync(false);`);
     const load = method("  private async loadWatchAppSync(again: boolean) {");
     expect(load).not.toContain("is_admin");
     expect(load).toContain("const summary = await fetchWatchConfigSummary(hass);");
@@ -283,8 +323,7 @@ describe("coming back to Home", () => {
 describe("Home's Pair a device dialog", () => {
   it("opens from the side bar's button for everyone; a home with no devices pairs in its welcome", () => {
     expect(home).not.toContain("home-device-add");
-    expect(home).toContain(`<button type="button" class="hb-pair" @click=\${() => this.openPairDialog()}>`);
-    expect(home).toContain("<b>Pair a device</b>");
+    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair</span></button>");
     expect(home).toContain("const pair = this.pairOpen ? this.renderPairDialog() : nothing;");
   });
 
