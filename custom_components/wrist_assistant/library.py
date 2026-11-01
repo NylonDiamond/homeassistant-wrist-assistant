@@ -177,6 +177,9 @@ _GRID_FIELDS: tuple[tuple[str, str], ...] = (
 # What the app reads for a tile field that is missing (page-keys.json).
 _GRID_DEFAULTS: dict[str, int] = {"col": 0, "row": 0, "colSpan": 6, "rowSpan": 4}
 _GRID_COLUMNS = 12
+# A tile is at most the grid's width across. Down it has no limit: the tile
+# fields have none and the panel's resize grows a tile past 12 rows, so a
+# screen holds any rowSpan from 1.
 _MAX_SPAN = 12
 
 # The tile kinds the watch does not draw, off on its screen when a page has
@@ -410,14 +413,14 @@ def _tile_geometry(tile: Mapping[str, Any]) -> dict[str, int]:
     out["col"] = min(max(out["col"], 0), _GRID_COLUMNS - 1)
     out["row"] = max(out["row"], 0)
     out["colSpan"] = min(max(out["colSpan"], 1), _MAX_SPAN)
-    out["rowSpan"] = min(max(out["rowSpan"], 1), _MAX_SPAN)
+    out["rowSpan"] = max(out["rowSpan"], 1)
     return out
 
 
 def _valid_geometry(raw: Any) -> dict[str, int] | None:
     """A screen entry as stored, or None when it is not one: four whole
-    numbers, the column 0 to 11, the row from 0 and both spans 1 to 12.
-    Any other key is dropped."""
+    numbers, the column 0 to 11, the row from 0, colSpan 1 to 12 and
+    rowSpan from 1. Any other key is dropped."""
     if not isinstance(raw, Mapping):
         return None
     out: dict[str, int] = {}
@@ -428,7 +431,7 @@ def _valid_geometry(raw: Any) -> dict[str, int] | None:
         out[name] = value
     if not 0 <= out["col"] < _GRID_COLUMNS or out["row"] < 0:
         return None
-    if not (1 <= out["colSpan"] <= _MAX_SPAN and 1 <= out["rowSpan"] <= _MAX_SPAN):
+    if not (1 <= out["colSpan"] <= _MAX_SPAN and out["rowSpan"] >= 1):
         return None
     return out
 
@@ -501,7 +504,7 @@ def _with_checked_screens(page: Mapping[str, Any], *, strict: bool) -> dict[str,
                     raise LibraryError(
                         "invalid",
                         f"screens.{screen}.{tile_id} must hold whole numbers col 0 to 11, "
-                        "row from 0, colSpan and rowSpan 1 to 12",
+                        "row from 0, colSpan 1 to 12 and rowSpan from 1",
                     )
                 continue
             entries[spelled] = checked

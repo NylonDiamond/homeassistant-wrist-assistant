@@ -346,6 +346,20 @@ def test_a_panel_save_of_the_wrong_shape_is_refused() -> None:
         assert err.value.code == "invalid", screens
 
 
+def test_a_tile_taller_than_twelve_rows_keeps_its_height() -> None:
+    page = _lights_page()
+    page["items"][2] = _tile("M1", "map.home", 0, 4, 12, 16)
+    raw = _library(page)
+    raw["version"] = 1
+    filled = lib.fill_screens(lib.validate_library(raw))
+    assert filled["pages"][PAGE]["screens"]["iphone"]["M1"] == _at(0, 4, 12, 16), "the fill keeps 16 rows"
+    assert _grid(_built(filled, PHONE))[2] == ("M1", 0, 4, 12, 16)
+    content = _split_page()
+    content["screens"]["iphone"]["M1"] = _at(0, 3, 12, 20)
+    change = lib.replace_item(_library(_split_page()), "pages", PAGE, content)
+    assert change.library["pages"][PAGE]["screens"]["iphone"]["M1"] == _at(0, 3, 12, 20)
+
+
 def test_a_panel_save_drops_a_tile_on_no_screen() -> None:
     library = _library(_split_page())
     content = _split_page()
