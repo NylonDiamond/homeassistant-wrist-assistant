@@ -558,15 +558,16 @@ def _merge_saved_page(
 
     A copy that carries ``screens`` is the panel's and is taken whole. Any
     other is a device's stamped copy: its page keys and its tiles' content
-    are the item's, and its tiles' places go into its own screen only. A
-    tile the item has that the save lacks stays when it was off this screen
-    already (the watch never had it); one that was on it leaves this screen,
-    and the page when no screen has it any more. A tile new to the item goes
-    on this screen where the save put it and at the bottom of the other
-    one, unless that is the watch and it does not draw the kind. Each
-    tile's own fields are then the watch screen's (the iPhone's for one off
-    the watch). An item that had no ``screens`` gets none while the result
-    still reads the same without them."""
+    are the item's, and its tiles' places go into its own screen only (on
+    the watch's, never a kind the watch skips: an old record still holds
+    them). A tile the item has that the save lacks stays when it was off
+    this screen already (the watch never had it); one that was on it leaves
+    this screen, and the page when no screen has it any more. A tile new to
+    the item goes on this screen where the save put it and at the bottom of
+    the other one, unless that is the watch and it does not draw the kind.
+    Each tile's own fields are then the watch screen's (the iPhone's for one
+    off the watch). An item that had no ``screens`` gets none while the
+    result still reads the same without them."""
     if SCREENS_KEY in saved:
         return _with_checked_screens(saved, strict=True)
     other = IPHONE_SCREEN if screen == WATCH_SCREEN else WATCH_SCREEN
@@ -575,7 +576,11 @@ def _merge_saved_page(
     sent = _page_tiles(saved)
     by_key = {_key(t["id"]): t for t in sent}
     screens = {
-        screen: {t["id"]: _tile_geometry(t) for t in sent},
+        screen: {
+            t["id"]: _tile_geometry(t)
+            for t in sent
+            if not (screen == WATCH_SCREEN and _tile_kind(t) in WATCH_SKIPPED_TILE_KINDS)
+        },
         other: {
             tile_id: geometry
             for tile_id, geometry in before[other].items()
@@ -606,6 +611,8 @@ def _merge_saved_page(
         for tile_id, geometry in screens[other].items()
         if _key(tile_id) in spelled
     }
+    on = {_key(t) for entries in screens.values() for t in entries}
+    tiles = [t for t in tiles if _key(t["id"]) in on]
     out = {k: copy.deepcopy(v) for k, v in saved.items() if k != "items"}
     if "items" in saved or "items" in item:
         out = _with_key(out, "items", tiles)
