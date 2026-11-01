@@ -51,12 +51,12 @@ describe("a board's density", () => {
     return { getItem: () => now ?? null, setItem: (_k: string, v: string) => { now = v; } };
   };
 
-  it("is Compact unless Large was picked in this browser", () => {
-    expect(boardDensity(() => store())).toBe("compact");
+  it("is Large unless Compact was picked in this browser", () => {
+    expect(boardDensity(() => store())).toBe("large");
     resetBoardDensity();
-    expect(boardDensity(() => store("large"))).toBe("large");
+    expect(boardDensity(() => store("compact"))).toBe("compact");
     resetBoardDensity();
-    expect(boardDensity(() => store("nonsense"))).toBe("compact");
+    expect(boardDensity(() => store("nonsense"))).toBe("large");
   });
 
   it("is remembered when picked, and holds with storage off", () => {

@@ -148,6 +148,30 @@ def _delete_all_records(base_url: str, token: str, owner: str) -> None:
         _ws_admin_commands(base_url, token, commands)
 
 
+def _delete_forgotten_copies(base_url: str, token: str, watch_id: str) -> int:
+    """Delete what forgetting ``watch_id`` moved to the Library, by the stamp
+    the move leaves, so a run leaves nothing under Not on a device in the panel.
+    Returns how many went."""
+    listed = _ws_admin_commands(
+        base_url,
+        token,
+        [{"type": "wrist_assistant/complications/list", "owner_watch_id": "library"}],
+    )[0]
+    commands = [
+        {
+            "type": "wrist_assistant/complications/delete",
+            "owner_watch_id": "library",
+            "complication_id": r["id"],
+            "base_revision": r["revision"],
+        }
+        for r in (listed.get("result") or {}).get("records") or []
+        if r.get("updatedBy") == f"forget:{watch_id}" and not r.get("deleted")
+    ]
+    if commands:
+        _ws_admin_commands(base_url, token, commands)
+    return len(commands)
+
+
 @pytest.fixture
 def owner(
     base_url: str,
@@ -668,6 +692,9 @@ def test_forgetting_a_watch_leaves_only_tombstones(
             }
         ],
     )[0]
+    # Before any other check, so a failure below still leaves the box clean:
+    # the forget keeps a design no other device has, under Not on a device.
+    assert _delete_forgotten_copies(base_url, token, watch_id) == 1
     assert reply["success"], reply
     assert reply["result"]["complications_removed"] is True
 

@@ -43,13 +43,13 @@ export const BOARD_DENSITY_STORE_KEY = "wrist-assistant-panel.board-density.v1";
 
 let keptDensity: BoardDensity | undefined;
 
-/** Compact unless Large was picked in this browser. */
+/** Large unless Compact was picked in this browser. */
 export function boardDensity(storage: () => Pick<Storage, "getItem"> = () => window.localStorage): BoardDensity {
   if (keptDensity !== undefined) return keptDensity;
   try {
-    keptDensity = storage().getItem(BOARD_DENSITY_STORE_KEY) === "large" ? "large" : "compact";
+    keptDensity = storage().getItem(BOARD_DENSITY_STORE_KEY) === "compact" ? "compact" : "large";
   } catch {
-    keptDensity = "compact";
+    keptDensity = "large";
   }
   return keptDensity;
 }
