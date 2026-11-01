@@ -76,6 +76,26 @@ materialised menus document drops any ``linkIds`` its template carries. Only
 the one-time :func:`migrate` reads them, as the old link tokens that join
 copies of one page or menu.
 
+A page has two screens, the watch's and the iPhone's (app repo
+``docs/pages_two_screens_plan_2026-11.md``). Its tiles are one list, the
+same on every device, and each screen places them its own way, in the
+page's optional ``screens`` key::
+
+    "screens": {"watch":  {"<tile id>": {"col": 0, "row": 0, "colSpan": 6, "rowSpan": 4}},
+                "iphone": {"<tile id>": {...}}}
+
+A tile absent from a screen's map is off there; one in neither map is not
+kept (:func:`validate_library` drops it). A page without the key reads as
+both screens equal to the tiles' own ``gridCol``, ``gridRow``, ``colSpan``
+and ``rowSpan``, with the kinds the watch skips off on the watch
+(:func:`page_screens`). Only the panel writes the key. A record never
+carries it: :func:`materialise` stamps the owner's screen into each tile's
+fields and leaves its off tiles out (:func:`stamp_page`), and a device's
+save of a page writes its tiles' places into its own screen only, keeping
+the other one (:func:`map_back`). The tile's own fields stay in the item as
+the watch screen's copy, so a reader that ignores ``screens`` still sees a
+sane page.
+
 Pure, with no Home Assistant import, so it is tested on its own. Every
 function returns new objects and never changes what it is given. Ids are
 compared ignoring case (the app reads them as UUIDs) and new ones are
@@ -85,11 +105,18 @@ upper-case UUIDs, as the app makes them.
 from __future__ import annotations
 
 import copy
+import logging
 import uuid
-from collections.abc import Container, Iterable, Mapping, Sequence
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence
 from typing import Any, NamedTuple
 
 from .page_links import link_reach
+
+_LOGGER = logging.getLogger(__name__)
+
+# The library's own version, in its ``version`` key. 2 is the first with
+# page screens: a library read at 1 gets them once (:func:`fill_screens`).
+LIBRARY_VERSION = 2
 
 # The kinds the library holds, in the order they are built: status pages
 # before pages (a page's tiles open status pages) and pages before menus.
@@ -132,6 +159,30 @@ _STATUS_TILE_KIND = "status_page"
 # `statusPage`). Both name it in `pageId`.
 _MENU_ACTIONS: dict[str, str] = {"pages": "navigateToPage", "status_pages": "showStatusPage"}
 _MENU_PAGE_KEY = "pageId"
+
+# A page's screens: the key, the two screens (each named as the secret
+# store names the device kind, ``DEVICE_KIND_WATCH`` and
+# ``DEVICE_KIND_IPHONE``), and each screen entry's keys by the tile field it
+# is stamped into.
+SCREENS_KEY = "screens"
+WATCH_SCREEN = "watch"
+IPHONE_SCREEN = "iphone"
+SCREENS: tuple[str, ...] = (WATCH_SCREEN, IPHONE_SCREEN)
+_GRID_FIELDS: tuple[tuple[str, str], ...] = (
+    ("col", "gridCol"),
+    ("row", "gridRow"),
+    ("colSpan", "colSpan"),
+    ("rowSpan", "rowSpan"),
+)
+# What the app reads for a tile field that is missing (page-keys.json).
+_GRID_DEFAULTS: dict[str, int] = {"col": 0, "row": 0, "colSpan": 6, "rowSpan": 4}
+_GRID_COLUMNS = 12
+_MAX_SPAN = 12
+
+# The tile kinds the watch does not draw, off on its screen when a page has
+# no ``screens``: ``const.PHONE_ONLY_TILE_KINDS``, repeated so this module
+# keeps importing nothing (tests/test_library.py keeps the two equal).
+WATCH_SKIPPED_TILE_KINDS = frozenset({"map", "chart", "text_field", "web"})
 
 
 class LibraryError(Exception):
@@ -301,12 +352,316 @@ def _check_name(name: Any) -> str:
     return name.strip()
 
 
+# ── screens ──────────────────────────────────────────────────────────────
+
+
+def _whole(value: Any) -> int | None:
+    """A whole number as JSON gives one (``3`` or ``3.0``), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _tile_kind(tile: Mapping[str, Any]) -> str:
+    """The kind of a tile: its entity id up to the first dot."""
+    entity_id = tile.get("entityId")
+    return entity_id.split(".", 1)[0] if isinstance(entity_id, str) else ""
+
+
+def _page_tiles(page: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """A page's tiles that have an id, in order, the first of each id."""
+    raw = page.get("items")
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for tile in raw if isinstance(raw, list) else []:
+        if isinstance(tile, dict) and (key := _key(tile.get("id"))) is not None and key not in seen:
+            seen.add(key)
+            out.append(tile)
+    return out
+
+
+def _tile_geometry(tile: Mapping[str, Any]) -> dict[str, int]:
+    """A tile's place and size from its own fields, read as the app reads
+    them: a missing or unusable field is the app's default, and each one is
+    brought inside the grid."""
+    out: dict[str, int] = {}
+    for name, field in _GRID_FIELDS:
+        value = _whole(tile.get(field))
+        out[name] = _GRID_DEFAULTS[name] if value is None else value
+    out["col"] = min(max(out["col"], 0), _GRID_COLUMNS - 1)
+    out["row"] = max(out["row"], 0)
+    out["colSpan"] = min(max(out["colSpan"], 1), _MAX_SPAN)
+    out["rowSpan"] = min(max(out["rowSpan"], 1), _MAX_SPAN)
+    return out
+
+
+def _valid_geometry(raw: Any) -> dict[str, int] | None:
+    """A screen entry as stored, or None when it is not one: four whole
+    numbers, the column 0 to 11, the row from 0 and both spans 1 to 12.
+    Any other key is dropped."""
+    if not isinstance(raw, Mapping):
+        return None
+    out: dict[str, int] = {}
+    for name, _field in _GRID_FIELDS:
+        value = _whole(raw.get(name))
+        if value is None:
+            return None
+        out[name] = value
+    if not 0 <= out["col"] < _GRID_COLUMNS or out["row"] < 0:
+        return None
+    if not (1 <= out["colSpan"] <= _MAX_SPAN and 1 <= out["rowSpan"] <= _MAX_SPAN):
+        return None
+    return out
+
+
+def _fallback_screens(page: Mapping[str, Any]) -> dict[str, dict[str, dict[str, int]]]:
+    """The screens of a page with no ``screens``: both the tiles' own
+    fields, every tile on the iPhone and every one but the kinds the watch
+    skips on the watch."""
+    tiles = _page_tiles(page)
+    return {
+        WATCH_SCREEN: {
+            t["id"]: _tile_geometry(t) for t in tiles if _tile_kind(t) not in WATCH_SKIPPED_TILE_KINDS
+        },
+        IPHONE_SCREEN: {t["id"]: _tile_geometry(t) for t in tiles},
+    }
+
+
+def page_screens(page: Mapping[str, Any]) -> dict[str, dict[str, dict[str, int]]]:
+    """A page's two screens, ``{"watch": {tile id: geometry}, "iphone":
+    {...}}``: its ``screens`` as stored, or what a page without it reads as.
+    A copy."""
+    held = page.get(SCREENS_KEY)
+    if isinstance(held, Mapping):
+        return {
+            screen: copy.deepcopy(dict(held[screen])) if isinstance(held.get(screen), Mapping) else {}
+            for screen in SCREENS
+        }
+    return _fallback_screens(page)
+
+
+def _check_screen(screen: str) -> None:
+    if screen not in SCREENS:
+        raise LibraryError("invalid", f"{screen!r} is not a screen")
+
+
+def _with_checked_screens(page: Mapping[str, Any], *, strict: bool) -> dict[str, Any]:
+    """``page`` with its ``screens`` checked: two maps of tile id to a place
+    and size (:func:`_valid_geometry`), each id one of the page's tiles and
+    spelled as the tile spells it. A tile in neither map is taken off the
+    page (logged). Without ``strict`` what does not fit is dropped: an entry
+    that is not one, or for no tile on the page, and the whole key when it
+    holds no map at all (the page then reads as one without it). With
+    ``strict`` (a save) a key or entry of the wrong shape is ``invalid``;
+    an entry for no tile on the page is still only dropped. A page without
+    the key comes back as it is."""
+    if SCREENS_KEY not in page:
+        return dict(page)
+    raw = page[SCREENS_KEY]
+    rest = {k: v for k, v in page.items() if k != SCREENS_KEY}
+    if not isinstance(raw, Mapping) or not any(isinstance(raw.get(s), Mapping) for s in SCREENS):
+        if strict:
+            raise LibraryError("invalid", "screens must hold a watch and an iphone map")
+        return rest
+    ids = {_key(t["id"]): t["id"] for t in _page_tiles(page)}
+    screens: dict[str, dict[str, dict[str, int]]] = {}
+    for screen in SCREENS:
+        held = raw.get(screen, {})
+        if not isinstance(held, Mapping):
+            if strict:
+                raise LibraryError("invalid", f"screens.{screen} must be an object")
+            held = {}
+        entries: dict[str, dict[str, int]] = {}
+        for tile_id, geometry in held.items():
+            spelled = ids.get(_key(tile_id))
+            if spelled is None:
+                continue
+            checked = _valid_geometry(geometry)
+            if checked is None:
+                if strict:
+                    raise LibraryError(
+                        "invalid",
+                        f"screens.{screen}.{tile_id} must hold whole numbers col 0 to 11, "
+                        "row from 0, colSpan and rowSpan 1 to 12",
+                    )
+                continue
+            entries[spelled] = checked
+        screens[screen] = entries
+    on = {_key(tile_id) for entries in screens.values() for tile_id in entries}
+    tiles = page.get("items")
+    if isinstance(tiles, list):
+        kept = [t for t in tiles if isinstance(t, dict) and _key(t.get("id")) in on]
+        if len(kept) != len(tiles):
+            _LOGGER.info(
+                "Took %d tile(s) on no screen off page %s",
+                len(tiles) - len(kept),
+                page.get("id"),
+            )
+            rest["items"] = kept
+    return {k: (screens if k == SCREENS_KEY else rest[k]) for k in page}
+
+
+def _set_geometry(tile: Mapping[str, Any], geometry: Mapping[str, int]) -> dict[str, Any]:
+    """``tile`` with its four fields set to ``geometry``, each in its place
+    or at its sorted place among the keys. A field the tile does not have
+    stays out when the value is what the app reads for a missing one."""
+    out = dict(tile)
+    for name, field in _GRID_FIELDS:
+        if field not in out and geometry[name] == _GRID_DEFAULTS[name]:
+            continue
+        out = _with_key(out, field, geometry[name])
+    return out
+
+
+def stamp_page(page: Mapping[str, Any], screen: str) -> dict[str, Any]:
+    """The page as a device of ``screen`` reads it, with no ``screens``.
+
+    With ``screens``, each tile on that screen takes the screen's place and
+    size into ``gridCol``, ``gridRow``, ``colSpan`` and ``rowSpan``, the
+    tiles off it are left out, and the list is in the screen's order, row
+    then column (the watch packs in that order). Without it, the tiles stay
+    as they are, less the kinds the watch skips on the watch. A copy."""
+    _check_screen(screen)
+    out = {k: copy.deepcopy(v) for k, v in page.items() if k != SCREENS_KEY}
+    tiles = out.get("items")
+    if not isinstance(tiles, list):
+        return out
+    held = page.get(SCREENS_KEY)
+    if not isinstance(held, Mapping):
+        if screen == WATCH_SCREEN:
+            out["items"] = [
+                t
+                for t in tiles
+                if not (isinstance(t, dict) and _tile_kind(t) in WATCH_SKIPPED_TILE_KINDS)
+            ]
+        return out
+    entries = held.get(screen) if isinstance(held.get(screen), Mapping) else {}
+    places = {_key(tile_id): geometry for tile_id, geometry in entries.items()}
+    placed: list[tuple[dict[str, int], dict[str, Any]]] = []
+    for tile in tiles:
+        geometry = places.get(_key(tile.get("id"))) if isinstance(tile, dict) else None
+        if geometry is not None:
+            placed.append((geometry, _set_geometry(tile, geometry)))
+    placed.sort(key=lambda pair: (pair[0]["row"], pair[0]["col"]))
+    out["items"] = [tile for _geometry, tile in placed]
+    return out
+
+
+def _merge_saved_page(
+    item: Mapping[str, Any], saved: Mapping[str, Any], screen: str
+) -> dict[str, Any]:
+    """The library item after a device of ``screen`` saved its copy of it.
+
+    A copy that carries ``screens`` is the panel's and is taken whole. Any
+    other is a device's stamped copy: its page keys and its tiles' content
+    are the item's, and its tiles' places go into its own screen only. A
+    tile the item has that the save lacks stays when it was off this screen
+    already (the watch never had it); one that was on it leaves this screen,
+    and the page when no screen has it any more. A tile new to the item goes
+    on this screen where the save put it and at the bottom of the other
+    one, unless that is the watch and it does not draw the kind. Each
+    tile's own fields are then the watch screen's (the iPhone's for one off
+    the watch). An item that had no ``screens`` gets none while the result
+    still reads the same without them."""
+    if SCREENS_KEY in saved:
+        return _with_checked_screens(saved, strict=True)
+    other = IPHONE_SCREEN if screen == WATCH_SCREEN else WATCH_SCREEN
+    before = page_screens(item)
+    old = {_key(t["id"]): t for t in _page_tiles(item)}
+    sent = _page_tiles(saved)
+    by_key = {_key(t["id"]): t for t in sent}
+    screens = {
+        screen: {t["id"]: _tile_geometry(t) for t in sent},
+        other: {
+            tile_id: geometry
+            for tile_id, geometry in before[other].items()
+            if _key(tile_id) in old
+        },
+    }
+    elsewhere = {_key(tile_id) for tile_id in screens[other]}
+    tiles: list[dict[str, Any]] = []
+    for key, tile in old.items():
+        if key in by_key:
+            tiles.append(copy.deepcopy(by_key[key]))
+        elif key in elsewhere:
+            tiles.append(copy.deepcopy(tile))
+    bottom = max((g["row"] + g["rowSpan"] for g in screens[other].values()), default=0)
+    for tile in sent:
+        if _key(tile["id"]) in old:
+            continue
+        tiles.append(copy.deepcopy(tile))
+        if other == WATCH_SCREEN and _tile_kind(tile) in WATCH_SKIPPED_TILE_KINDS:
+            continue
+        geometry = {**_tile_geometry(tile), "col": 0, "row": bottom}
+        bottom += geometry["rowSpan"]
+        screens[other][tile["id"]] = geometry
+    # The other screen keyed by the spelling of the tile that stays.
+    spelled = {_key(t["id"]): t["id"] for t in tiles}
+    screens[other] = {
+        spelled[_key(tile_id)]: geometry
+        for tile_id, geometry in screens[other].items()
+        if _key(tile_id) in spelled
+    }
+    out = {k: copy.deepcopy(v) for k, v in saved.items() if k != "items"}
+    if "items" in saved or "items" in item:
+        out = _with_key(out, "items", tiles)
+    if SCREENS_KEY not in item and _fallback_screens(out) == screens:
+        return out
+    watch = {_key(t): g for t, g in screens[WATCH_SCREEN].items()}
+    iphone = {_key(t): g for t, g in screens[IPHONE_SCREEN].items()}
+    out["items"] = [
+        _set_geometry(t, watch.get(_key(t["id"])) or iphone[_key(t["id"])]) for t in tiles
+    ]
+    return _with_key(out, SCREENS_KEY, screens)
+
+
+def _drop_from_screens(page: dict[str, Any]) -> None:
+    """Take out of a page's ``screens``, in place, every entry for a tile
+    the page no longer has."""
+    held = page.get(SCREENS_KEY)
+    if not isinstance(held, dict):
+        return
+    ids = {_key(t["id"]) for t in _page_tiles(page)}
+    for screen, entries in held.items():
+        if isinstance(entries, dict):
+            held[screen] = {k: v for k, v in entries.items() if _key(k) in ids}
+
+
+def fill_screens(library: Mapping[str, Any]) -> dict[str, Any]:
+    """The library with ``screens`` written into every page that has none
+    (what it reads as without them, :func:`page_screens`), at
+    :data:`LIBRARY_VERSION`. Once per library: the store runs it on a
+    library read at an older version. A page that already has screens stays
+    as it is, and so does one with a tile that has no id (a screen could not
+    name it, so it keeps reading from its tiles), so running it twice
+    changes nothing more. Nothing a device reads changes."""
+    lib = copy.deepcopy(dict(library))
+    filled = 0
+    for item_id, page in lib["pages"].items():
+        if isinstance(page.get(SCREENS_KEY), dict):
+            continue
+        tiles = page.get("items")
+        if isinstance(tiles, list) and len(_page_tiles(page)) != len(tiles):
+            continue
+        lib["pages"][item_id] = _with_key(page, SCREENS_KEY, _fallback_screens(page))
+        filled += 1
+    lib["version"] = LIBRARY_VERSION
+    if filled:
+        _LOGGER.info("Gave %d page(s) a watch and an iPhone screen", filled)
+    return stamp_item_revisions(library, lib)
+
+
 # ── the shape ────────────────────────────────────────────────────────────
 
 
 def empty_library() -> dict[str, Any]:
     """A library holding nothing and picked by no one."""
     return {
+        "version": LIBRARY_VERSION,
         "pages": {},
         "status_pages": {},
         "menus": {},
@@ -325,13 +680,17 @@ def validate_library(raw: Any) -> dict[str, Any]:
     still loads what it can: an item with no id or one already held
     (ignoring case), a system page, a menu with an unknown kind, a section
     that is not the kind's or not an object, a pick of an item the library
-    does not hold or one picked twice, a menu pick of the wrong kind. Items
-    lose ``isHidden`` and ``linkId``; picks use the library's spelling of
-    each id.
+    does not hold or one picked twice, a menu pick of the wrong kind, and
+    of a page's ``screens`` what :func:`_with_checked_screens` drops (a
+    tile on neither screen with it). Items lose ``isHidden`` and
+    ``linkId``; picks use the library's spelling of each id. ``version`` is
+    1 for a library written before it had one.
     """
     lib = empty_library()
     if not isinstance(raw, dict):
         return lib
+    version = _whole(raw.get("version"))
+    lib["version"] = version if version is not None and version >= 1 else 1
     for kind in LIST_KEYS:
         held = raw.get(kind)
         seen: set[str] = set()
@@ -341,7 +700,10 @@ def validate_library(raw: Any) -> dict[str, Any]:
             if kind == "pages" and _is_system_page(page):
                 continue
             seen.add(key)
-            lib[kind][page["id"]] = _content(page)
+            content = _content(page)
+            if kind == "pages":
+                content = _with_checked_screens(content, strict=False)
+            lib[kind][page["id"]] = content
     menus = raw.get("menus")
     for menu_id, menu in menus.items() if isinstance(menus, dict) else []:
         if not isinstance(menu_id, str) or not menu_id or not isinstance(menu, dict):
@@ -591,11 +953,13 @@ def materialise(
     owner_id: str,
     kind: str,
     template: Mapping[str, Any] | None = None,
+    screen: str = WATCH_SCREEN,
 ) -> dict[str, Any] | None:
     """The ``kind`` document the apps read for one owner, built from its
     picks. None when the owner has no picks of that kind (it never had a
     record, or the library has not met it): the caller leaves its record as
-    it is, or writes none.
+    it is, or writes none. ``screen`` is the owner's kind of device, whose
+    screen each page is stamped with (:func:`stamp_page`).
 
     ``template`` is the owner's own document (its stored record, or the one
     it just saved). Every key of it the library does not own is kept as it
@@ -603,9 +967,10 @@ def materialise(
     template the document is ``{"schemaVersion": 1, ...}``.
 
     * Pages and status pages: the list is the picks in order, each the
-      library item with the pick's ``isHidden`` when it has one. A system
-      page is the pick's own object. The list is built from the items, so a
-      ``linkId`` in the template's list never survives.
+      library item (a page stamped with the owner's screen) with the pick's
+      ``isHidden`` when it has one. A system page is the pick's own object.
+      The list is built from the items, so a ``linkId`` in the template's
+      list never survives.
     * Menus: ``quickAction`` and ``pageSwitcher`` from the picked Anywhere
       menu, ``entityRadial`` from the picked Entity quick menu, each placed
       where the template has it or at its sorted place. A unit with no pick
@@ -613,6 +978,7 @@ def materialise(
       old record, or an old panel save) is dropped.
     """
     _check_kind(kind)
+    _check_screen(screen)
     held = library["picks"].get(owner_id)
     if not isinstance(held, dict) or kind not in held:
         return None
@@ -629,7 +995,7 @@ def materialise(
         item = library[kind].get(pick["id"])
         if item is None:
             continue
-        page = copy.deepcopy(item)
+        page = stamp_page(item, screen) if kind == "pages" else copy.deepcopy(item)
         if HIDDEN_KEY in pick:
             page[HIDDEN_KEY] = copy.deepcopy(pick[HIDDEN_KEY])
         out.append(page)
@@ -658,23 +1024,30 @@ def changed_owners(
     before: Mapping[str, Any],
     after: Mapping[str, Any],
     saved: tuple[str, str, Mapping[str, Any]] | None = None,
+    screen_of: Callable[[str], str | None] | None = None,
 ) -> dict[str, list[str]]:
     """For each owner, the kinds whose materialised record differs between
     two libraries. ``saved`` (owner, kind, document) is a document that owner
     just saved: that kind is compared against it instead, with it as the
-    template."""
+    template. ``screen_of`` names each owner's screen; an owner it gives
+    None for (or every owner, without it) is compared on both screens, so
+    a change that reaches either is never missed."""
     out: dict[str, list[str]] = {}
     owners = sorted(set(before["picks"]) | set(after["picks"]))
     for owner in owners:
+        known = screen_of(owner) if screen_of is not None else None
+        screens = (known,) if known in SCREENS else SCREENS
         for kind in LIBRARY_KINDS:
-            if saved is not None and saved[0] == owner and saved[1] == kind:
-                was: Any = saved[2]
-                now: Any = materialise(after, owner, kind, saved[2])
-            else:
-                was = materialise(before, owner, kind)
-                now = materialise(after, owner, kind)
-            if was != now:
-                out.setdefault(owner, []).append(kind)
+            for screen in screens if kind == "pages" else SCREENS[:1]:
+                if saved is not None and saved[0] == owner and saved[1] == kind:
+                    was: Any = saved[2]
+                    now: Any = materialise(after, owner, kind, saved[2], screen)
+                else:
+                    was = materialise(before, owner, kind, None, screen)
+                    now = materialise(after, owner, kind, None, screen)
+                if was != now:
+                    out.setdefault(owner, []).append(kind)
+                    break
     return out
 
 
@@ -850,6 +1223,7 @@ def _merge_owner(
     *,
     links: _Links | None = None,
     owner_name: str | None = None,
+    screen: str = WATCH_SCREEN,
 ) -> _Merged:
     """Fold one owner's documents into ``lib`` (a private copy, changed in
     place) and make them that owner's picks, for the kinds ``docs`` holds.
@@ -885,10 +1259,10 @@ def _merge_owner(
                     continue
                 key = _key(page["id"])
                 held = index.get(key)
-                if held is None or _joins(lib, kind, page, held, links) or key in own.get(kind, ()):
+                if held is None or _joins(lib, kind, page, held, links, screen) or key in own.get(kind, ()):
                     continue
                 first = origin.get((kind, key), key)
-                fork = None if (kind, key) in moved else _fork_for(lib, kind, page, first, links)
+                fork = None if (kind, key) in moved else _fork_for(lib, kind, page, first, links, screen)
                 fresh[kind][page["id"]] = fork or new_item_id()
         if not any(fresh.values()):
             break
@@ -905,7 +1279,9 @@ def _merge_owner(
     picks = lib["picks"].setdefault(owner, {})
     for kind in ("status_pages", "pages"):
         if kind in docs:
-            picks[kind] = _commit_pages(lib, kind, docs[kind], own.get(kind, ()), links, origin)
+            picks[kind] = _commit_pages(
+                lib, kind, docs[kind], own.get(kind, ()), links, origin, screen
+            )
     new_menus: list[str] = []
     if "menus" in docs:
         # A unit whose slots the renames rewrote is no longer the menu its
@@ -929,12 +1305,25 @@ def _merge_owner(
 
 
 def _joins(
-    lib: Mapping[str, Any], kind: str, page: Mapping[str, Any], held: str, links: _Links | None
+    lib: Mapping[str, Any],
+    kind: str,
+    page: Mapping[str, Any],
+    held: str,
+    links: _Links | None,
+    screen: str = WATCH_SCREEN,
 ) -> bool:
     """Whether ``page`` is the library item ``held``: an equal copy, or one
-    that carried a link token the item was met under."""
-    if _same_content(page, lib[kind][held]):
+    that carried a link token the item was met under. A device's copy of a
+    page is equal when it is the item as that device's screen reads it
+    (:func:`stamp_page`), or the item whole with no ``screens`` (a record
+    written before the screens, which held every tile as stored)."""
+    item = lib[kind][held]
+    if _same_content(page, item):
         return True
+    if kind == "pages" and SCREENS_KEY not in page:
+        whole = {k: v for k, v in item.items() if k != SCREENS_KEY}
+        if _same_content(page, stamp_page(item, screen)) or _same_content(page, whole):
+            return True
     token = page.get(LINK_KEY)
     return (
         links is not None
@@ -944,7 +1333,12 @@ def _joins(
 
 
 def _fork_for(
-    lib: Mapping[str, Any], kind: str, page: Mapping[str, Any], first: str, links: _Links | None
+    lib: Mapping[str, Any],
+    kind: str,
+    page: Mapping[str, Any],
+    first: str,
+    links: _Links | None,
+    screen: str = WATCH_SCREEN,
 ) -> str | None:
     """A new id a migration already gave another copy of the page first met
     as ``first`` that this copy joins, so equal or linked copies on later
@@ -952,7 +1346,7 @@ def _fork_for(
     if links is None:
         return None
     for fork in links.forks.get((kind, first), []):
-        if fork in lib[kind] and _joins(lib, kind, page, fork, links):
+        if fork in lib[kind] and _joins(lib, kind, page, fork, links, screen):
             return fork
     return None
 
@@ -964,9 +1358,12 @@ def _commit_pages(
     own: Container[str],
     links: _Links | None,
     origin: Mapping[tuple[str, str], str],
+    screen: str = WATCH_SCREEN,
 ) -> list[dict[str, Any]]:
     """The owner's picks of a list kind from its document, adding or
-    updating the items they name."""
+    updating the items they name. A page updates its item through
+    :func:`_merge_saved_page`, so a device's save keeps the other screen; a
+    new page carrying ``screens`` (the panel's) has them checked."""
     held = lib[kind]
     index = _index(held)
     out: list[dict[str, Any]] = []
@@ -983,14 +1380,17 @@ def _commit_pages(
         if stored is None:
             stored = page["id"]
             held[stored] = _content(page)
+            if kind == "pages":
+                held[stored] = _with_checked_screens(held[stored], strict=True)
             index[key] = stored
             first = origin.get((kind, key))
             if links is not None and first is not None and first != key:
                 links.forks.setdefault((kind, first), []).append(stored)
         elif key in own:
-            held[stored] = {
-                k: (stored if k == "id" else v) for k, v in _content(page).items()
-            }
+            content = {k: (stored if k == "id" else v) for k, v in _content(page).items()}
+            if kind == "pages":
+                content = _merge_saved_page(held[stored], content, screen)
+            held[stored] = content
         token = page.get(LINK_KEY)
         if links is not None and isinstance(token, str) and token:
             links.tokens.setdefault((kind, key), set()).add(token)
@@ -1088,10 +1488,17 @@ def new_menu_name(lib: Mapping[str, Any], unit: str, owner_name: str | None) -> 
 # ── migration ────────────────────────────────────────────────────────────
 
 
+def _screen_in(screens: Mapping[str, str] | None, owner: str) -> str:
+    """An owner's screen as ``screens`` names it, the watch's by default."""
+    found = (screens or {}).get(owner)
+    return found if found in SCREENS else WATCH_SCREEN
+
+
 def migrate(
     records: Mapping[str, Mapping[str, Any]],
     owner_order: Sequence[str],
     names: Mapping[str, str],
+    screens: Mapping[str, str] | None = None,
 ) -> MigrationResult:
     """Build the library from every owner's ``pages``, ``status_pages`` and
     ``menus`` documents (``records``: owner id to kind to document; ``rooms``
@@ -1112,6 +1519,10 @@ def migrate(
       the first owner that uses it ("Jesse's Apple Watch's menu").
     * Picks come from each record's order and ``isHidden``; a system page
       stays the owner's own.
+
+    ``screens`` names each owner's screen (the watch's when it names none).
+    The pages it builds have no ``screens`` yet: they read as the tiles'
+    own fields on both screens, which is what every record held.
     """
     lib = empty_library()
     links = _Links()
@@ -1129,7 +1540,9 @@ def migrate(
         }
         if not any(kind in docs for kind in LIBRARY_KINDS):
             continue
-        merged = _merge_owner(lib, owner, docs, {}, links=links)
+        merged = _merge_owner(
+            lib, owner, docs, {}, links=links, screen=_screen_in(screens, owner)
+        )
         for menu_id in merged.new_menus:
             first_owner[menu_id] = owner
         if merged.renamed:
@@ -1158,7 +1571,8 @@ def migrate(
             if not isinstance(record, dict):
                 continue
             if kind in LIBRARY_KINDS:
-                differs = materialise(lib, owner, kind, record) != record
+                built = materialise(lib, owner, kind, record, _screen_in(screens, owner))
+                differs = built != record
             else:
                 differs = kind in rewritten.get(owner, {})
             if differs:
@@ -1178,6 +1592,7 @@ def map_back(
     *,
     fork_conflicts: bool = False,
     owner_name: str | None = None,
+    screen: str = WATCH_SCREEN,
 ) -> MapBack:
     """Turn one owner's saved ``kind`` document into library and picks
     writes.
@@ -1202,34 +1617,57 @@ def map_back(
     owner's other records are folded back in with that id rewritten
     (``renamed``); any of its items that the rewrite changes and that
     another owner also picks become the owner's own copies.
+
+    ``screen`` is the owner's kind of device. A page saved without
+    ``screens`` (every device's) writes its tiles' places into that screen
+    only and keeps the other (:func:`_merge_saved_page`); one saved with
+    them (the panel's) is taken whole.
     """
     _check_kind(kind)
+    _check_screen(screen)
     if not isinstance(document, Mapping):
         raise LibraryError("invalid", "document must be an object")
     lib = copy.deepcopy(dict(library))
     if not fork_conflicts:
-        merged = _merge_owner(lib, owner_id, {kind: document}, {kind: _ALL}, owner_name=owner_name)
+        merged = _merge_owner(
+            lib,
+            owner_id,
+            {kind: document},
+            {kind: _ALL},
+            owner_name=owner_name,
+            screen=screen,
+        )
     else:
         merged = _merge_owner(
             lib,
             owner_id,
-            _owner_docs(library, owner_id, kind, document),
+            _owner_docs(library, owner_id, kind, document, screen),
             _own_items(library, owner_id, kind),
             owner_name=owner_name,
+            screen=screen,
         )
     lib = stamp_item_revisions(library, lib)
-    touched = changed_owners(library, lib, (owner_id, kind, document))
+    touched = changed_owners(
+        library,
+        lib,
+        (owner_id, kind, document),
+        lambda owner: screen if owner == owner_id else None,
+    )
     return MapBack(lib, touched, merged.renamed)
 
 
 def _owner_docs(
-    library: Mapping[str, Any], owner: str, kind: str, document: Mapping[str, Any]
+    library: Mapping[str, Any],
+    owner: str,
+    kind: str,
+    document: Mapping[str, Any],
+    screen: str = WATCH_SCREEN,
 ) -> dict[str, Any]:
     """The owner's documents of every library kind it has picks of, with the
     saved one in place of its own kind."""
     docs: dict[str, Any] = {}
     for other in LIBRARY_KINDS:
-        held = document if other == kind else materialise(library, owner, other)
+        held = document if other == kind else materialise(library, owner, other, None, screen)
         if held is not None:
             docs[other] = held
     return docs
@@ -1382,7 +1820,7 @@ def create_item(library: Mapping[str, Any], kind: str, content: Mapping[str, Any
     Pages and Status pages tabs' New page; a tick then puts it on a
     device), so no record changes. ``content`` is the page object the panel
     made, with its id; it is kept as :func:`replace_item` keeps one
-    (``isHidden`` and ``linkId`` dropped). ``invalid`` for a menu, a page
+    (``isHidden`` and ``linkId`` dropped, ``screens`` checked). ``invalid`` for a menu, a page
     with no id, an id the library already holds or a system page."""
     _check_kind(kind, ("pages", "status_pages"))
     if not isinstance(content, Mapping) or _key(content.get("id")) is None:
@@ -1394,6 +1832,8 @@ def create_item(library: Mapping[str, Any], kind: str, content: Mapping[str, Any
         raise LibraryError("invalid", f"the library already holds {kind} item {new_id}")
     lib = copy.deepcopy(dict(library))
     lib[kind][new_id] = _content(content)
+    if kind == "pages":
+        lib[kind][new_id] = _with_checked_screens(lib[kind][new_id], strict=True)
     change = _change(library, lib)
     return Copied(change.library, change.touched, new_id)
 
@@ -1420,7 +1860,10 @@ def replace_item(
     * Pages and status pages: ``content`` is the page object. Its id must be
       the item's (ignoring case); the item keeps the library's spelling of
       it, and ``isHidden`` and ``linkId`` are dropped, as a record save
-      drops them. A system page is never an item.
+      drops them. A system page is never an item. The page is taken whole,
+      ``screens`` too: the panel sends both screens, and a page without the
+      key reads as one (:func:`page_screens`). A ``screens`` of the wrong
+      shape is ``invalid``; a tile on neither screen is dropped.
     * Menus: ``content`` is the menu's sections, exactly the keys of its
       unit (:data:`MENU_UNITS`), each an object. The name stays.
 
@@ -1449,6 +1892,8 @@ def replace_item(
     if kind == "pages" and _is_system_page(content):
         raise LibraryError("invalid", "a system page is never a library item")
     lib[kind][stored] = {k: (stored if k == "id" else v) for k, v in _content(content).items()}
+    if kind == "pages":
+        lib[kind][stored] = _with_checked_screens(lib[kind][stored], strict=True)
     return _change(library, lib)
 
 
@@ -1530,6 +1975,7 @@ def _drop_tiles(page: dict[str, Any], prefixes: Iterable[str], key: str) -> None
         return prefix in prefixes and _key(target) == key
 
     page["items"] = [t for t in tiles if not opens(t)]
+    _drop_from_screens(page)
 
 
 def copy_picks(

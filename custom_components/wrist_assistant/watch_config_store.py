@@ -200,8 +200,11 @@ from .const import (
     WATCH_LIBRARY_STORAGE_VERSION,
 )
 from .library import (
+    IPHONE_SCREEN,
     LIBRARY_KINDS,
+    LIBRARY_VERSION,
     MENU_UNITS,
+    WATCH_SCREEN,
     LibraryError,
     changed_owners,
     copy_menu,
@@ -210,6 +213,7 @@ from .library import (
     create_menu,
     delete_item,
     empty_library,
+    fill_screens,
     held_renames,
     hold_renames,
     item_revision,
@@ -1756,6 +1760,12 @@ class WatchConfigStore:
             self._migrate_library()
         else:
             self._library = validate_library(raw)
+            if self._library["version"] < LIBRARY_VERSION:
+                # Once: every page gets its watch and iPhone screen, read
+                # from its tiles as it was drawn until now. What each device
+                # reads changes only where the watch skipped a tile kind it
+                # never drew, which its record now leaves out.
+                self._library = fill_screens(self._library)
             self._reconcile_library()
         # A home with nothing to put in a library writes no file yet.
         changed = raw != self._library if raw is not None else self._library != empty_library()
@@ -1830,7 +1840,8 @@ class WatchConfigStore:
             if owner not in self._failed_owners
         }
         names = {owner: self._owner_name(owner) for owner in records}
-        result = migrate(records, self._index_order, names)
+        screens = {owner: self._screen_of(owner) for owner in records}
+        result = migrate(records, self._index_order, names, screens)
         self._library = result.library
         for owner, renamed in sorted(result.renamed.items()):
             self._library = hold_renames(self._library, owner, renamed)
@@ -1902,6 +1913,7 @@ class WatchConfigStore:
                         document,
                         fork_conflicts=first,
                         owner_name=self._owner_name(owner),
+                        screen=self._screen_of(owner),
                     )
                 except LibraryError as err:
                     _LOGGER.warning("Could not fold %s of %s into the library: %s", kind, owner, err)
@@ -1924,7 +1936,9 @@ class WatchConfigStore:
                 record = self._records[owner].get(kind)
                 if record is None:
                     continue
-                document = materialise(self._library, owner, kind, record.document)
+                document = materialise(
+                    self._library, owner, kind, record.document, self._screen_of(owner)
+                )
                 if document is not None and document != record.document:
                     self._write_quietly(owner, kind, document, updated_by)
                 self._note_hash(owner, kind, save=False)
@@ -2055,7 +2069,9 @@ class WatchConfigStore:
         from, when the store's already holds it (a move). Returns ``(records
         written, failed owners)``.
         """
-        touched = changed_owners(self._library if base is None else base, library)
+        touched = changed_owners(
+            self._library if base is None else base, library, screen_of=self._screen_of
+        )
         order = ([first] if first in touched else []) + sorted(o for o in touched if o != first)
         writes: list[tuple[str, str, dict[str, Any]]] = []
         for owner in order:
@@ -2066,7 +2082,7 @@ class WatchConfigStore:
                     continue
                 record = self._records.get(owner, {}).get(kind)
                 template = record.document if record is not None else (seeds or {}).get((owner, kind))
-                document = materialise(library, owner, kind, template)
+                document = materialise(library, owner, kind, template, self._screen_of(owner))
                 if document is None or (record is not None and record.document == document):
                     continue
                 if record is None and self._awaits_move(owner, kind):
@@ -2656,6 +2672,7 @@ class WatchConfigStore:
         half made."""
         self._check_library()
         before_doc = existing.document if existing is not None else None
+        screen = self._screen_of(owner_watch_id)
         sent: dict[str, Any] = document
         if existing is None or restored:
             renames = held_renames(self._library, owner_watch_id)
@@ -2675,6 +2692,7 @@ class WatchConfigStore:
                 sent,
                 fork_conflicts=existing is None,
                 owner_name=self._owner_name(owner_watch_id),
+                screen=screen,
             )
             lib = result.library
             if result.renamed:
@@ -2683,7 +2701,7 @@ class WatchConfigStore:
                 lib = self._with_slot_pages(lib, owner_watch_id, before_doc, sent)
         except LibraryError as err:
             raise WatchConfigValidationError(err.message) from err
-        stored = materialise(lib, owner_watch_id, kind, sent)
+        stored = materialise(lib, owner_watch_id, kind, sent, screen)
         if stored is None:  # map_back always leaves picks of the kind
             stored = sent
         kept = stored == document
@@ -2692,11 +2710,14 @@ class WatchConfigStore:
         # what the library changes is ids, and stale link keys dropped,
         # never tiles.
         size = validate_document(kind, final, check_items=panel)
-        for other in changed_owners(self._library, lib).get(owner_watch_id, []):
+        touched = changed_owners(self._library, lib, screen_of=self._screen_of)
+        for other in touched.get(owner_watch_id, []):
             if other == kind:
                 continue
             record = self._records.get(owner_watch_id, {}).get(other)
-            built = materialise(lib, owner_watch_id, other, record.document if record else None)
+            built = materialise(
+                lib, owner_watch_id, other, record.document if record else None, screen
+            )
             if built is not None:
                 validate_document(other, built)
         # Ids the device cannot know were rewritten (a fork of this save, or
@@ -2887,6 +2908,12 @@ class WatchConfigStore:
         """Whether the secret store knows the owner as an iPhone. False when
         no check was handed in (see ``__init__``)."""
         return self._is_iphone is not None and bool(self._is_iphone(owner_watch_id))
+
+    def _screen_of(self, owner_watch_id: str) -> str:
+        """The screen of a page the owner's records carry
+        (``library.SCREENS``): the iPhone's for an owner the secret store
+        knows as an iPhone, the watch's for any other, an unknown one too."""
+        return IPHONE_SCREEN if self._owner_is_iphone(owner_watch_id) else WATCH_SCREEN
 
     def _check_owner_kind(self, owner_watch_id: str, kind: str) -> None:
         """Refuse a kind an iPhone may not own, for an iPhone owner."""
