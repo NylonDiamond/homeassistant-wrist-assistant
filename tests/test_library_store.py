@@ -1473,3 +1473,87 @@ def test_a_library_file_from_before_item_revisions_loads_with_ones(env) -> None:
     for kind in ("pages", "status_pages", "menus"):
         assert {entry["revision"] for entry in summary[kind].values()} == {1}, kind
     assert "item_revisions" in _FakeStore.files[LIBRARY_KEY], "written back once"
+
+
+# ── Make a copy of a page ────────────────────────────────────────────────
+
+
+def test_fork_page_gives_the_iphone_its_own_copy_and_follows_its_rooms_and_complications(env) -> None:
+    """The watch and the iPhone share Home, Lights and one menu. A copy of
+    Lights for the iPhone: the iPhone's record lists the copy where Lights
+    was, its menu is its own now with the slot on the copy, its rooms and
+    complications open the copy, Home's tile stays on Lights (Home is
+    shared), and the watch's records are not written."""
+    rooms = {"schemaVersion": 1, "roomQuickJumpFallbackPageId": LIGHTS,
+             "roomQuickJumpMappings": {"kitchen": LIGHTS, "hall": HOME}}
+    _seed(
+        env.mod,
+        {
+            WATCH: {"pages": _pages(), "menus": _menus()},
+            PHONE: {"pages": _pages(), "menus": _menus(), "rooms": rooms},
+        },
+    )
+    told: list[tuple[str, dict]] = []
+
+    def rename_pages(owner: str, pages: dict) -> list[str]:
+        told.append((owner, pages))
+        return ["Lights tap"]
+
+    store = env.mod.WatchConfigStore(
+        _Hass(),
+        is_paired=lambda owner: owner == WATCH,
+        is_iphone=lambda owner: owner == PHONE,
+        device_name=NAMES.get,
+        rename_pages=rename_pages,
+    )
+    asyncio.run(store.async_load())
+    env.store = store
+    assert store.library_summary()["pages"][LIGHTS]["owners"] == [PHONE, WATCH]
+    watch_pages = store.get(WATCH, "pages").revision
+    watch_menus = store.get(WATCH, "menus").revision
+
+    result = store.library_fork_page(LIGHTS, [PHONE], "Lights (iPhone)")
+
+    new = result["item_id"]
+    phone = store.get(PHONE, "pages").document
+    assert _ids(phone) == [SYSTEM, HOME, new]
+    assert _page(phone, new)["name"] == "Lights (iPhone)"
+    assert _page(phone, HOME)["items"][0]["entityId"] == f"page.{LIGHTS}"
+    menus = store.get(PHONE, "menus").document
+    assert menus["quickAction"]["slots"][0]["action"]["pageId"] == new
+    assert store.get(PHONE, "rooms").document["roomQuickJumpMappings"] == {"kitchen": new, "hall": HOME}
+    assert told == [(PHONE, {LIGHTS: new})]
+    assert result["rewritten"] == [
+        {"owner_id": PHONE, "what": "menu slot Top left in Jesse's iPhone's menu, a copy of Anywhere menu"},
+        {"owner_id": PHONE, "what": "room fallback page"},
+        {"owner_id": PHONE, "what": "room kitchen"},
+        {"owner_id": PHONE, "what": "complication Lights tap"},
+    ]
+    assert result["kept"] == [
+        {"owner_id": PHONE, "what": "Go to page tile on Home still opens the original: that page is shared"}
+    ]
+    assert set(result["revisions"]) == {PHONE}
+    assert result["link_failures"] == []
+    # The watch keeps Lights and its menu, and none of its records moved.
+    assert store.get(WATCH, "pages").revision == watch_pages
+    assert store.get(WATCH, "menus").revision == watch_menus
+    summary = store.library_summary()
+    assert summary["pages"][LIGHTS]["owners"] == [WATCH]
+    assert summary["pages"][new]["owners"] == [PHONE]
+
+
+def test_fork_page_refusals(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    for args, code in (
+        ((LIGHTS, ["ghost"]), "unknown_device"),
+        (("nope", [WATCH]), "not_found"),
+        ((LIGHTS, [PHONE]), "invalid"),
+        ((LIGHTS, [WATCH], " "), "invalid"),
+    ):
+        with pytest.raises(env.mod.WatchConfigStoreError) as err:
+            store.library_fork_page(*args)
+        assert err.value.code == code, args
+    with pytest.raises(env.mod.WatchConfigValidationError):
+        store.library_fork_page(LIGHTS, [])
+    assert store.library_summary()["pages"][LIGHTS]["owners"] == [WATCH]

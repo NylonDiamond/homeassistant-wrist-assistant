@@ -119,6 +119,7 @@ _OWNER = {
         "ws_library_pick": "require_owner",
         "ws_library_menus_clear": "require_owner",
         "ws_library_menus_copy": "require_owner",
+        "ws_library_fork_page": "require_owner",
         "ws_library_menus_rename": "_may_change_item",
         "ws_library_menus_delete": "_may_change_item",
         "ws_library_delete": "_may_change_item",

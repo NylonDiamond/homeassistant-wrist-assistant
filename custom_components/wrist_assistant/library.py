@@ -213,6 +213,21 @@ class Copied(NamedTuple):
     id: str
 
 
+class Forked(NamedTuple):
+    """:func:`fork_page`'s result: a :class:`Copied` (``id`` is the copy's)
+    plus, in plain words, what it pointed at the copy and what it could not.
+    Each is a list of ``{"owner_id": ..., "what": ...}``, in the order the
+    owners were named: ``rewritten`` the menu slots and page links that open
+    the copy now, ``kept`` the page links left on the original because the
+    page holding them is shared with a device that keeps the original."""
+
+    library: dict[str, Any]
+    touched: dict[str, list[str]]
+    id: str
+    rewritten: list[dict[str, str]]
+    kept: list[dict[str, str]]
+
+
 class MapBack(NamedTuple):
     """:func:`map_back`'s result.
 
@@ -1153,6 +1168,20 @@ def rename_refs(
     return doc
 
 
+def room_words(before: Any, after: Any) -> list[str]:
+    """What :func:`rename_refs` changed in a ``rooms`` or ``behavior``
+    document, in plain words: "room fallback page", then "room <room>" for
+    each room mapping that opens another page now."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return []
+    words = ["room fallback page"] if before.get(_ROOM_PAGE_KEY) != after.get(_ROOM_PAGE_KEY) else []
+    was = before.get(_ROOM_MAPPINGS_KEY)
+    now = after.get(_ROOM_MAPPINGS_KEY)
+    if isinstance(was, dict) and isinstance(now, dict):
+        words += [f"room {room}" for room in now if was.get(room) != now[room]]
+    return words
+
+
 def _rename_tile(tile: dict[str, Any], page_map: Mapping[str, str], status_map: Mapping[str, str]) -> None:
     entity_id = tile.get("entityId")
     if not isinstance(entity_id, str) or "." not in entity_id:
@@ -1843,6 +1872,173 @@ def create_item(library: Mapping[str, Any], kind: str, content: Mapping[str, Any
         lib[kind][new_id] = _with_checked_screens(lib[kind][new_id], strict=True)
     change = _change(library, lib)
     return Copied(change.library, change.touched, new_id)
+
+
+# What a person calls a tile that opens a page, by its kind.
+_PAGE_TILE_NAMES: dict[str, str] = {"page": "Go to page tile", "show_page": "Peek page tile"}
+
+
+def _tile_words(page: Mapping[str, Any], key: str) -> list[str]:
+    """Each tile of ``page`` that opens the page ``key``, in plain words,
+    once each: "Go to page tile on Home"."""
+    name = page.get("name") if isinstance(page.get("name"), str) and page["name"] else "a page"
+    words: dict[str, None] = {}
+    tiles = page.get("items")
+    for tile in tiles if isinstance(tiles, list) else []:
+        entity_id = tile.get("entityId") if isinstance(tile, dict) else None
+        if not isinstance(entity_id, str) or "." not in entity_id:
+            continue
+        prefix, target = entity_id.split(".", 1)
+        if prefix in _PAGE_TILE_NAMES and _key(target) == key:
+            words[f"{_PAGE_TILE_NAMES[prefix]} on {name}"] = None
+    return list(words)
+
+
+def _spot(position: Any) -> str:
+    """A slot's position as a person reads it: ``topLeft`` is "Top left"."""
+    if not isinstance(position, str) or not position:
+        return "slot"
+    spaced = "".join(f" {c.lower()}" if c.isupper() else c for c in position).strip()
+    return spaced[:1].upper() + spaced[1:]
+
+
+def _slot_words(sections: Mapping[str, Any], key: str) -> list[str]:
+    """The position of each Go to page slot of a menu's sections that opens
+    the page ``key``, as :func:`_spot` names it, once each."""
+    words: dict[str, None] = {}
+    for section in sections.values():
+        for slots in _slot_lists(section):
+            for slot in slots:
+                action = slot.get("action") if isinstance(slot, dict) else None
+                if (
+                    isinstance(action, dict)
+                    and action.get("type") == _MENU_ACTIONS["pages"]
+                    and _key(action.get(_MENU_PAGE_KEY)) == key
+                ):
+                    words[_spot(slot.get("position"))] = None
+    return list(words)
+
+
+def fork_page(
+    library: Mapping[str, Any],
+    item_id: str,
+    owner_ids: Sequence[str],
+    *,
+    name: str | None = None,
+    names: Mapping[str, str] | None = None,
+) -> Forked:
+    """Make a copy of a page for some of the devices that use it (the page
+    menu's Make a copy): from then on the copy and the original are two
+    pages, and a change to one never reaches the other. The original keeps
+    its id and stays on every other device.
+
+    * The copy is a new page with the original's content, ``screens`` too,
+      under a new id, named ``name`` when one is given.
+    * Each of ``owner_ids`` uses the copy in the original's place, at the
+      same spot in its order, hidden or not as it was.
+    * On those devices, what opened the original opens the copy. A Go to
+      page or Peek page tile on a page only they use is pointed at the copy
+      in place, the copy's own tiles included; one on a page another device
+      uses too stays on the original (``kept``), since changing it would
+      change that device's page. A menu slot is pointed at the copy in the
+      menu itself when only they use the menu; a menu another device uses
+      too is copied for them, with the slots pointed at the copy, under a
+      new name (:func:`new_menu_name`, after the one device when only one
+      of them uses it, from ``names``). A system page is the device's own,
+      so its tiles are pointed at the copy too.
+    * The library remembers the new id for each of them (:func:`hold_renames`),
+      so a first record or a restore that still names the original lands on
+      the copy. Their complications and rooms live elsewhere: the caller
+      points them at the copy (:func:`rename_complication`,
+      :func:`rename_refs`).
+
+    ``not_found`` for a page the library does not hold. ``invalid`` for no
+    devices, or a device that does not use the page, or an empty name."""
+    stored = _stored_id(library, "pages", item_id)
+    if (
+        isinstance(owner_ids, (str, bytes))
+        or not isinstance(owner_ids, Sequence)
+        or not owner_ids
+        or not all(isinstance(owner, str) and owner for owner in owner_ids)
+    ):
+        raise LibraryError("invalid", "name at least one device for the copy")
+    owners = list(dict.fromkeys(owner_ids))
+    key = _key(stored)
+    for owner in owners:
+        held = library["picks"].get(owner, {})
+        if not any("page" not in p and _key(p["id"]) == key for p in held.get("pages", [])):
+            raise LibraryError("invalid", f"{owner} does not use page {stored}")
+    lib = copy.deepcopy(dict(library))
+    new_id = new_item_id()
+    content = copy.deepcopy(lib["pages"][stored])
+    content["id"] = new_id
+    if name is not None:
+        content["name"] = _check_name(name)
+    lib["pages"][new_id] = content
+    for owner in owners:
+        for pick in lib["picks"][owner]["pages"]:
+            if "page" not in pick and _key(pick["id"]) == key:
+                pick["id"] = new_id
+    moving = set(owners)
+    page_map = {stored: new_id}
+    rewritten: dict[str, list[str]] = {owner: [] for owner in owners}
+    kept: dict[str, list[str]] = {owner: [] for owner in owners}
+
+    for unit in MENU_UNITS:
+        users = pickers(lib, "menus")
+        groups: dict[str, list[str]] = {}
+        for owner in owners:
+            menu_id = lib["picks"][owner].get("menus", {}).get(unit)
+            if menu_id in lib["menus"]:
+                groups.setdefault(menu_id, []).append(owner)
+        for menu_id, mine in groups.items():
+            menu = lib["menus"][menu_id]
+            spots = _slot_words(menu["sections"], key)
+            if not spots:
+                continue
+            sections = rename_refs("menus", menu["sections"], page_map)
+            if set(users[menu_id]) <= moving:
+                menu["sections"] = sections
+                label = menu["name"]
+            else:
+                fork_id = new_item_id()
+                owner_name = names.get(mine[0]) if names and len(mine) == 1 else None
+                fork_name = new_menu_name(lib, unit, owner_name)
+                lib["menus"][fork_id] = {"name": fork_name, "kind": unit, "sections": sections}
+                for owner in mine:
+                    lib["picks"][owner]["menus"][unit] = fork_id
+                label = f"{fork_name}, a copy of {menu['name']}"
+            for owner in mine:
+                rewritten[owner] += [f"menu slot {spot} in {label}" for spot in spots]
+
+    users = pickers(lib, "pages")
+    for page_id, page in lib["pages"].items():
+        mine = [owner for owner in owners if owner in users[page_id]]
+        words = _tile_words(page, key) if mine else []
+        if not words:
+            continue
+        if set(users[page_id]) <= moving:
+            lib["pages"][page_id] = rename_refs("pages", {"pages": [page]}, page_map)["pages"][0]
+            for owner in mine:
+                rewritten[owner] += words
+        else:
+            for owner in mine:
+                kept[owner] += [f"{w} still opens the original: that page is shared" for w in words]
+    for owner in owners:
+        for pick in lib["picks"][owner]["pages"]:
+            if "page" in pick and (words := _tile_words(pick["page"], key)):
+                pick["page"] = rename_refs("pages", {"pages": [pick["page"]]}, page_map)["pages"][0]
+                rewritten[owner] += words
+        lib = hold_renames(lib, owner, {"pages": dict(page_map)})
+
+    change = _change(library, lib)
+    return Forked(
+        change.library,
+        change.touched,
+        new_id,
+        [{"owner_id": o, "what": w} for o in owners for w in rewritten[o]],
+        [{"owner_id": o, "what": w} for o in owners for w in kept[o]],
+    )
 
 
 def rename_menu(library: Mapping[str, Any], menu_id: str, name: str) -> dict[str, Any]:
