@@ -378,10 +378,10 @@ describe("the tile's cards", () => {
     expect(body).not.toContain(`class="ts-kind"`);
     // No Size: dragging the tile or its corner on the stage moves and sizes it.
     expect(titles(group(body, "where"))).toEqual(["Visible when"]);
-    // Inside the tile, in the top card: the looks, with no large tile until Custom.
+    // Inside the tile, in the top card: the looks beside the live tile.
     const layout = text.slice(text.indexOf("data-part=arrange"), text.indexOf(`<div class="ts-groups"`));
     expect(layout).toContain("aria-label=Look");
-    expect(layout).not.toContain("ts-arr-pic");
+    expect(layout).toContain("ts-arr-pic");
     expect(text).not.toContain("pe-presets");
     expect(text).not.toContain("pe-size-more");
   });

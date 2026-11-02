@@ -220,7 +220,6 @@ export function arrangeOffered(tile: WatchPageTile): boolean {
 /** Every `uiState` key the Arrange rows keep starts with this. */
 export const ARRANGE_UI_KEY = "tile-settings:arrange";
 
-const freeKey = (tileId: string) => `${ARRANGE_UI_KEY}:free:${tileId.toUpperCase()}`;
 const partKey = (tileId: string) => `${ARRANGE_UI_KEY}:part:${tileId.toUpperCase()}`;
 
 /** What the part key holds once the part was let go (Escape on the stage):
@@ -240,21 +239,12 @@ export function setArrangePickedPart(uiState: Map<string, unknown>, tileId: stri
   uiState.set(partKey(tileId), part ?? NO_PART);
 }
 
-/** Free picked on a tile with nothing moved yet (which stores nothing). */
-export function setArrangeFreePicked(uiState: Map<string, unknown>, tileId: string, on: boolean): void {
-  if (on) uiState.set(freeKey(tileId), true);
-  else uiState.delete(freeKey(tileId));
-}
-
-/** Whether the card shows Custom for a tile: a stored arrangement that is
- * none of the looks (`arrangeLookOfKey`), or Custom picked. Whether the tile
- * can use it is `arrangeFreeBlock`'s answer. */
-export function arrangeFreeOn(uiState: ReadonlyMap<string, unknown>, tile: WatchPageTile): boolean {
-  return arrangeLookOfKey(normalizeTileArrange(tile.arrange)) === "custom" || uiState.get(freeKey(tileIdOf(tile))) === true;
-}
-
-function tileIdOf(tile: WatchPageTile): string {
-  return typeof tile.id === "string" ? tile.id : "";
+/** Whether a tile has a layout of its own: a stored arrangement that is none
+ * of the looks (`arrangeLookOfKey`). Only then the stage's tile moves its parts;
+ * on any other a drag there moves the tile. Whether the tile can use it is
+ * `arrangeFreeBlock`'s answer. */
+export function arrangeFreeOn(tile: WatchPageTile): boolean {
+  return arrangeLookOfKey(normalizeTileArrange(tile.arrange)) === "custom";
 }
 
 // ── the parts on the stage ───────────────────────────────────────────────

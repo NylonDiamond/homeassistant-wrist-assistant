@@ -16,7 +16,7 @@ import { libraryDraftKey } from "../src/library/item-mode.js";
 import { libraryOf } from "../src/library/model.js";
 import type { TickChip } from "../src/library/ticks.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
-import { arrangePickedPart, setArrangeFreePicked, setArrangePickedPart } from "../src/watch-pages/arrange-model.js";
+import { arrangePickedPart, setArrangePickedPart } from "../src/watch-pages/arrange-model.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { firstFreeWatchCell, giveWatchTileId, lastFreeWatchCell } from "../src/watch-pages/edit.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
@@ -1525,15 +1525,22 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
   type Arr = { v: 1; parts: Record<string, Record<string, unknown>> } | undefined;
   type PartMove = { kind: string; part?: string; started: boolean; width?: number; height?: number; arrange?: Arr };
 
-  /** The editor on Room with `selected` picked, Free picked on it when
+  /** A layout of its own, which none of the looks is: what lets the stage's
+   * tile move its parts. */
+  const OWN = { name: { spot: "bl" } };
+  const room = (selected: string) => ({
+    ...ROOM,
+    pages: [{ ...(ROOM.pages as WatchPage[])[0]!, items: (ROOM.pages as { items: WatchPageTile[] }[])[0]!.items.map((t) => t.id === selected ? { ...t, arrange: { v: 1, parts: OWN } } : t) }],
+  } as unknown as WatchPagesDocument);
+
+  /** The editor on Room with `selected` picked, with a layout of its own when
    * `free`, drawn once, with no pointer to capture. */
   function stage(selected: string, free = true) {
-    const made = editor(selected, ROOM, STATES);
+    const made = editor(selected, free ? room(selected) : ROOM, STATES);
     const { el } = made;
     const { Element } = stubBrowser(el);
     el.capture = () => undefined;
     const ui = el.uiState as Map<string, unknown>;
-    if (free) setArrangeFreePicked(ui, selected, true);
     made.body();
     const screen = nodeOf(Element, "pe-screen");
     const tileOf = (id: string) => ((made.draft().document.pages as { items: (WatchPageTile & { id: string })[] }[])[0]!.items.find((t) => t.id === id))!;
@@ -1604,7 +1611,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     // The tile did not move.
     expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
     draft().undo();
-    expect(Object.hasOwn(tileOf("T-BIG"), "arrange")).toBe(false);
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: OWN });
     expect(draft().canUndo).toBe(false);
   });
 
@@ -1651,6 +1658,23 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect((tileOf("T-BIG").arrange as Arr)!.parts.icon!.spot).toMatch(/^[tmb][lcr]$/);
   });
 
+  it("draws the parts on that tile with no layout stored, while a drag on the stage's tile still moves the tile", () => {
+    const { el, body, move, up, tileOf, pressTile, gesture, call } = stage("T-BIG", false);
+    expect(stageTile(body(), "T-BIG")).not.toContain("pe-part");
+    pressTile();
+    expect(gesture()!.kind).toBe("move");
+    call("endGesture");
+    const page = (el.currentPage as () => WatchPage).call(el);
+    expect(flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")))).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
+    (el.onPartPointerDown as (...a: unknown[]) => void).call(el, {
+      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
+      currentTarget: null, stopPropagation: () => undefined,
+    }, "T-BIG", "icon", el.layoutArrange);
+    move(20, 0);
+    up();
+    expect((tileOf("T-BIG").arrange as Arr)!.parts.icon).toBeDefined();
+  });
+
   it("keeps a part's spot when it is dragged on its own side, and a press with no travel writes nothing", () => {
     const made = editor("T-BIG", {
       ...ROOM,
@@ -1689,12 +1713,12 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
   it("nudges the picked part 1% a key, 5% with Shift, one undo step each, and Escape lets it go so the arrows move the tile", () => {
     const { el, ui, key, tileOf, draft, body } = stage("T-BIG");
     expect(key("ArrowRight")).toBe(true);
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01 } } });
     expect(key("ArrowDown", { shiftKey: true })).toBe(true);
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01, dy: 0.05 } } });
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01, dy: 0.05 } } });
     expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
     draft().undo();
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01 } } });
     // Escape lets the part go, and the tile stays selected.
     expect(key("Escape")).toBe(true);
     expect(arrangePickedPart(ui, "T-BIG")).toBeUndefined();
@@ -1702,7 +1726,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     body();
     expect(stageTile(body(), "T-BIG")).not.toContain("pe-part on");
     key("ArrowRight");
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01 } } });
     expect(tileOf("T-BIG").gridCol).toBe(1);
     // A second Escape lets the tile go.
     key("Escape");
@@ -1731,7 +1755,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(strip.press("icon")).toBe(false);
     expect(strip.gesture()).toBeUndefined();
     strip.key("ArrowRight");
-    expect(Object.hasOwn(strip.tileOf("T-STRIP"), "arrange")).toBe(false);
+    expect(strip.tileOf("T-STRIP").arrange).toEqual({ v: 1, parts: OWN });
     expect(strip.tileOf("T-STRIP").gridCol).toBe(1);
   });
 });

@@ -165,7 +165,8 @@ describe("the rows that used to fold", () => {
     const cards = text.slice(text.indexOf(`<div class="ts-groups">`));
     expect(cards).not.toContain("ts-rare");
     expect(cards).not.toContain("ts-more");
-    expect(moreWords(text)).toBeUndefined();
+    // The one fold left is in the top card.
+    expect(moreWords(text)).toBe("More Exact place");
     for (const row of ["State icons and colors", "Icon size", "Icon shadow"]) expect(part(text, "iconLook"), row).toContain(row);
     for (const row of ["Font size", "Name shadow"]) expect(part(text, "text"), row).toContain(row);
     for (const row of ["Text shadow", "State text", "Bar border", "Bar shadow"]) expect(part(text, "state"), row).toContain(row);

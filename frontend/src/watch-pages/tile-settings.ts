@@ -277,7 +277,7 @@ import {
 } from "./picture-choice.js";
 import { arrangeResetEdit, renderArrangeSection } from "./arrange-card.js";
 import { iconPhotoShown, renderIconPhoto, renderIconSource } from "./icon-photo-card.js";
-import { arrangeFreeOn, arrangeOffered } from "./arrange-model.js";
+import { arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
   type WatchHoldSlideRow,
@@ -3941,15 +3941,10 @@ export const tileSettingsStyles = css`
   /* The looks: as wide as the section, each card a real tile, three in a row
      where they fit. The section's heading names them, so no title of their own. */
   .ts-arr-looks .field.pc-field > span:first-child { display: none; }
-  .ts-arr-looks .pc-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
-  .ts-arr-looks .pc-opt { min-width: 0; padding: 6px 6px 7px; }
-  .ts-arr-looks .pc-size-large .pc-pic { width: 100%; height: 80px; overflow: hidden; }
-  .ts-arr-looks .pc-label { font-size: 12px; }
-  .ts-arr-custom { position: relative; display: block; width: 84px; height: 54px; border: 1px dashed var(--wa-faint, var(--wa-muted)); border-radius: 10px; }
-  .ts-arr-custom > i { position: absolute; display: block; border-radius: 2px; background: var(--wa-muted); }
-  .ts-arr-custom > i:nth-child(1) { left: 9px; top: 9px; width: 18px; height: 7px; }
-  .ts-arr-custom > i:nth-child(2) { right: 9px; top: 20px; width: 24px; height: 14px; }
-  .ts-arr-custom > i:nth-child(3) { left: 9px; bottom: 8px; width: 38px; height: 6px; }
+  .ts-arr-looks .pc-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 5px; }
+  .ts-arr-looks .pc-opt { min-width: 0; padding: 4px 4px 5px; }
+  .ts-arr-looks .pc-size-large .pc-pic { width: 100%; height: 52px; overflow: hidden; }
+  .ts-arr-looks .pc-label { font-size: 11.5px; }
   .ts-arr-ask { display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border: 1px solid var(--wa-pick-line, var(--wa-line-strong)); border-radius: 9px; background: var(--wa-sel-bg); color: var(--wa-ink); font-size: 12.5px; line-height: 1.4; }
   .ts-arr-ask > p { margin: 0; }
   .ts-arr-ask > p.sub { font-size: 12px; color: var(--wa-pick-ink, var(--wa-label)); }
@@ -3957,21 +3952,28 @@ export const tileSettingsStyles = css`
   .ts-arr-done { display: flex; align-items: center; gap: 10px; padding: 6px 7px 6px 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: var(--wa-panel); font-size: 12.5px; }
   .ts-arr-done > span { flex: 1 1 auto; min-width: 0; }
   .ts-arr-pic {
-    display: grid; place-items: center; width: 100%; min-height: 150px; margin: 0; padding: 34px;
+    display: grid; place-items: center; width: 100%; min-height: 190px; margin: 0; padding: 20px;
     border-radius: 10px; background: #000; overflow: hidden;
   }
   .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
   .ts-arr-now { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--wa-label); }
-  .ts-arr-how { margin: 6px 0 2px; text-align: center; }
+  .ts-arr-how { margin: 2px 0 0; text-align: center; }
   .ts-arr-work { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px 14px; align-items: start; }
-  @container insp (min-width: 900px) { .ts-arr-work { grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); } }
-  .ts-arr-stage, .ts-arr-tools { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .ts-arr-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
+  @container insp (min-width: 620px) {
+    .ts-arr-work { grid-template-columns: minmax(0, 1.25fr) minmax(250px, 1fr); }
+    .ts-arr-side { grid-column: 1 / -1; }
+  }
+  @container insp (min-width: 980px) {
+    .ts-arr-work { grid-template-columns: minmax(270px, 300px) minmax(0, 520px) minmax(270px, 340px); justify-content: start; }
+    .ts-arr-side { grid-column: auto; }
+  }
+  .ts-arr-side, .ts-arr-stage, .ts-arr-tools { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .ts-arr-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 5px; }
   .ts-arr-part { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-panel); overflow: hidden; }
   .ts-arr-part.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
   .ts-arr-part.off .ts-arr-part-name { color: var(--wa-muted); }
   .ts-arr-part button { border: 0; background: transparent; color: var(--wa-ink); cursor: pointer; font: inherit; }
-  .ts-arr-part-name { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 32px; padding: 0 2px 0 8px; font-size: 12.5px !important; }
+  .ts-arr-part-name { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 28px; padding: 0 2px 0 8px; font-size: 12.5px !important; }
   .ts-arr-eye { display: grid; place-items: center; flex: 0 0 28px; color: var(--wa-muted) !important; }
   .ts-arr-eye:hover { color: var(--wa-ink) !important; }
   .ts-arr-part.off .ts-arr-eye { color: var(--wa-label) !important; }
@@ -4069,7 +4071,9 @@ export const tileSettingsStyles = css`
   .ts-top .sym-field .sym-now-name { display: none; }
   .ts-top .sym-field > .sym-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; width: min(400px, 80vw); margin: 0; }
   .ts-top .sym-field > .sym-menu .ts-after { padding: 0 0 8px; }
-  /* Inside the tile: the looks on one row, Use on whole page after them. */
+  /* Inside the tile: a short tile's looks on one row, Use on whole page after
+     them; on a wide inspector the looks of the others in two rows, beside the
+     tile and its tools. */
   .ts-top .ts-arr { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
   .ts-top .ts-arr > * { flex: 1 1 100%; min-width: 0; }
   .ts-top .ts-arr > .ts-arr-looks { flex: 0 1 auto; }
@@ -4078,7 +4082,11 @@ export const tileSettingsStyles = css`
   .ts-top .ts-arr-looks .field.pc-field > span:first-child { display: none; }
   .ts-top .ts-arr-looks .pc-group { display: flex; flex-wrap: wrap; gap: 6px; }
   .ts-top .ts-arr-looks .pc-opt { padding: 4px; }
-  .ts-top .ts-arr-looks .pc-size-large .pc-pic { width: 96px; height: 64px; }
+  .ts-top .ts-arr-looks .pc-size-large .pc-pic { width: 76px; height: 50px; }
+  @container insp (min-width: 980px) {
+    .ts-top .ts-arr-side .ts-arr-looks .pc-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ts-top .ts-arr-side .ts-arr-looks .pc-size-large .pc-pic { width: 100%; }
+  }
   .ts-top .ts-rare:not([data-shown]) { display: none; }
   .ts-top button.ts-more {
     display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 4px 0 0; padding: 4px 2px;

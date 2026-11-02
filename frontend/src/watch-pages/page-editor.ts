@@ -366,6 +366,7 @@ import {
   arrangePickedPart,
   arrangeResizeNote,
   arrangeStageParts,
+  arrangeStartFor,
   movedArrangePart,
   nudgedArrangePart,
   setArrangePickedPart,
@@ -451,8 +452,8 @@ const PAGE_THUMB_MAX_RATIO = 1.4;
 const HEAD_TILE_MAX_SCALE = 3;
 /** The Arrangement section's live tile, which the parts are dragged on, is
  * larger: as large as fits this box. */
-const ARRANGE_TILE_W = 440;
-const ARRANGE_TILE_H = 240;
+const ARRANGE_TILE_W = 300;
+const ARRANGE_TILE_H = 150;
 /** A small tile is drawn this large at most there, so its parts can be grabbed. */
 const ARRANGE_TILE_MAX_SCALE = 6;
 /** How near a line, in pixels on screen, a dragged part jumps to it. */
@@ -460,8 +461,8 @@ const ARRANGE_SNAP_PIXELS = 7;
 /** The shortest a part's box is drawn on screen, so a thin bar can be pressed. */
 const ARRANGE_PART_MIN_PIXELS = 12;
 /** A look's card in that section. */
-const ARRANGE_LOOK_W = 92;
-const ARRANGE_LOOK_H = 60;
+const ARRANGE_LOOK_W = 72;
+const ARRANGE_LOOK_H = 44;
 /** The watch's band stubs on the stage, each as a share of its screen's width. */
 const WATCH_BAND_RATIO = 0.1;
 /** The room the Screen 1 mark takes beside a device, px. */
@@ -1020,7 +1021,7 @@ export class WaPageEditor extends LitElement {
   private stageArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
   /** The same for the Arrangement section's live tile, while it draws its
    * parts. */
-  private layoutArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
+  private layoutArrange?: { tileId: string; stage: ArrangeStageParts; scale: number; base?: TileArrange };
   /** The look cards the Layout section drew last, kept for a running drag. */
   private readonly arrangeLookPictures = new Map<string, TemplateResult>();
   /** A press landed on a part of the selected Free tile: the click it ends
@@ -2852,7 +2853,7 @@ export class WaPageEditor extends LitElement {
 
   /** A press on a part of the selected Free tile: it picks the part and
    * starts its drag, so one press does both. */
-  private onPartPointerDown(e: PointerEvent, tileId: string, part: ArrangePart, at: { stage: ArrangeStageParts; scale: number } | undefined): void {
+  private onPartPointerDown(e: PointerEvent, tileId: string, part: ArrangePart, at: { stage: ArrangeStageParts; scale: number; base?: TileArrange } | undefined): void {
     if (e.button !== 0 || !e.isPrimary || e.metaKey || e.ctrlKey || e.shiftKey) return;
     this.pressedPart = { tileId, part };
     // With no part picked (Escape let it go), a drag moves the tile, and the
@@ -2866,7 +2867,7 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     const tile = page === undefined ? undefined : this.tileOn(page, tileId);
     if (draft === undefined || page === undefined || tile === undefined) return;
-    const from = watchTileArrange(tile);
+    const from = watchTileArrange(tile) ?? at.base;
     this.gesture = {
       kind: "part",
       pointerId: e.pointerId,
@@ -4949,7 +4950,7 @@ export class WaPageEditor extends LitElement {
     const g = this.gesture;
     if (g?.started === true && g.kind !== "part") return nothing;
     const pageId = this.selectedPageId;
-    if (pageId === undefined || !this.oneLookOn(pageId) || !arrangeFreeOn(this.uiState, tile)) return nothing;
+    if (pageId === undefined || !this.oneLookOn(pageId) || !arrangeFreeOn(tile)) return nothing;
     const stage = arrangeStageParts(tile, cell, input, unit);
     if (stage === undefined) return nothing;
     this.stageArrange = { tileId: id, stage, scale: s };
@@ -4972,7 +4973,7 @@ export class WaPageEditor extends LitElement {
   /** A box over each part `stage` holds, drawn at scale `s`: a press picks the
    * part and drags it. The stage's tile and the Arrangement section's live
    * tile both draw them. */
-  private renderPartBoxes(id: string, stage: ArrangeStageParts, s: number): TemplateResult {
+  private renderPartBoxes(id: string, stage: ArrangeStageParts, s: number, base?: TileArrange): TemplateResult {
     const g = this.gesture;
     const picked = arrangePickedPart(this.uiState, id);
     const px = (v: number) => Math.round(v * s * 100) / 100;
@@ -4987,7 +4988,7 @@ export class WaPageEditor extends LitElement {
       return html`<span class="pe-part ${on ? "on" : ""} ${on && g?.kind === "part" && g.started ? "dragging" : ""}" data-part=${part} aria-hidden="true"
         title=${`Drag to move the ${word}. Arrow keys nudge it, Escape lets it go.`}
         style=${`left:${px(stage.inset + r.x)}px;top:${top}px;width:${px(r.width)}px;height:${height}px`}
-        @pointerdown=${(e: PointerEvent) => this.onPartPointerDown(e, id, part, { stage, scale: s })}
+        @pointerdown=${(e: PointerEvent) => this.onPartPointerDown(e, id, part, { stage, scale: s, ...(base === undefined ? {} : { base }) })}
         @click=${(e: MouseEvent) => {
           // The picked part's own click; another part's click is the tile's
           // (its press captured the pointer on the tile).
@@ -5733,38 +5734,42 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The Arrangement section's live tile, while its Arrangement is Free: the
-   * selected tile as large as fits `ARRANGE_TILE_W` by `ARRANGE_TILE_H`,
-   * drawn as the stage draws it (Live preview, a state tried), with its
-   * parts as boxes to pick and drag, as on the stage, only larger. Nothing
-   * in Default, while another drag runs, or for a tile with no place.
+   * The Arrangement section's live tile: the selected tile as large as fits
+   * `ARRANGE_TILE_W` by `ARRANGE_TILE_H`, drawn as the stage draws it (Live
+   * preview, a state tried), with its parts as boxes to pick and drag, as on
+   * the stage, only larger. An iPhone tile whose size gives it a layout of few
+   * parts is drawn from what it draws now (`arrangeStartFor`), so it has parts
+   * to grab; nothing is written until one moves. Nothing while another drag
+   * runs, or for a tile with no place.
    */
   private renderArrangePicture(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
     this.layoutArrange = undefined;
     const g = this.gesture;
-    const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page) && arrangeFreeOn(this.uiState, tile)
+    const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page)
       && !(g?.started === true && g.kind !== "part");
     if (!free) return nothing;
     // The picture being edited, or the other where only that one can place
     // the parts: a short watch tile keeps its row, and its iPhone tile moves.
     const id = tileIdOf(tile);
-    let shown: { picture: SelectedTilePicture; input: WatchPagePreviewInput; s: number; stage: ArrangeStageParts | undefined } | undefined;
+    let shown: { picture: SelectedTilePicture; input: WatchPagePreviewInput; s: number; stage: ArrangeStageParts | undefined; start: TileArrange | undefined } | undefined;
     for (const kind of [this.clickedScreen, otherWatchScreen(this.clickedScreen)]) {
       const picture = this.selectedTilePicture(page, tile, kind);
       if (picture === undefined) continue;
       const { placed, layout, drawn } = picture;
       const s = Math.min(ARRANGE_TILE_W / placed.width, ARRANGE_TILE_H / placed.height, ARRANGE_TILE_MAX_SCALE);
       const input = this.selectedTileInput(page, picture, s);
-      const stage = arrangeStageParts(drawn, { width: placed.width, height: placed.height }, input, layout.unit);
-      if (shown === undefined || (shown.stage === undefined && stage !== undefined)) shown = { picture, input, s, stage };
+      const cell = { width: placed.width, height: placed.height };
+      const start = kind === "iphone" && watchTileArrange(drawn) === undefined ? arrangeStartFor(watchTileOneLookModel(drawn, cell, input, layout.unit)) : undefined;
+      const stage = arrangeStageParts(start === undefined ? drawn : withArrange(drawn, start), cell, input, layout.unit);
+      if (shown === undefined || (shown.stage === undefined && stage !== undefined)) shown = { picture, input, s, stage, start };
       if (stage !== undefined) break;
     }
     if (shown === undefined) return nothing;
-    const { picture, input, s, stage } = shown;
+    const { picture, input, s, stage, start } = shown;
     const { layout, placed, drawn } = picture;
-    this.layoutArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s };
+    this.layoutArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s, ...(start === undefined ? {} : { base: start }) };
     return html`<span class="pe-head-tile ${stage === undefined ? "" : "arr"}" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
-      renderWatchTileFace(drawn, { width: placed.width, height: placed.height }, input, layout.unit)}${stage === undefined ? nothing : html`${this.renderArrangeGrid(stage, s)}${this.renderPartBoxes(id, stage, s)}`}</span>`;
+      renderWatchTileFace(start === undefined ? drawn : withArrange(drawn, start), { width: placed.width, height: placed.height }, input, layout.unit)}${stage === undefined ? nothing : html`${this.renderArrangeGrid(stage, s)}${this.renderPartBoxes(id, stage, s, start)}`}</span>`;
   }
 
   /** The tile as the iPhone's picture draws it, with no layout of its own, for
