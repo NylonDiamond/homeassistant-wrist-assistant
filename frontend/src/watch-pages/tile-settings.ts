@@ -80,6 +80,7 @@ import {
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
+import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type ColorPickerView, type ColorTrial, colorFormField, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
@@ -767,6 +768,9 @@ export interface TileSettingsExtras {
   /** The tile drawn small as `make` changes it, for a look's card in the
    * Layout section; `key` names the look. Only the page editor draws it. */
   arrangeLookPicture?: (key: string, make: (tile: WatchPageTile) => WatchPageTile) => TemplateResult | typeof nothing;
+  /** The tile as the page editor draws it on the iPhone, which Custom starts
+   * from. */
+  arrangePhoneModel?: () => OneLookPreviewModel | undefined;
   /** The tile's head (`renderTileHead`): the first row of the top card. */
   head?: TemplateResult;
   /** The page editor's Watch and iPhone chips, the first row of Where it
@@ -1377,7 +1381,7 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
     case "size":
       return extras.size?.body() ?? nothing;
     case "arrange":
-      return renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture);
+      return renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture, extras.arrangePhoneModel);
     case "entity":
       return renderEntityShown(host, tileEntityId(host.tile));
     default:
@@ -3973,12 +3977,15 @@ export const tileSettingsStyles = css`
   .ts-arr-done { display: flex; align-items: center; gap: 10px; padding: 6px 7px 6px 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: var(--wa-panel); font-size: 12.5px; }
   .ts-arr-done > span { flex: 1 1 auto; min-width: 0; }
   .ts-arr-pic {
-    display: grid; place-items: center; width: 100%; min-height: 150px; margin: 6px 0; padding: 14px;
+    display: grid; place-items: center; width: 100%; min-height: 150px; margin: 0; padding: 14px;
     border-radius: 10px; background: #000; overflow: hidden;
   }
   .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
   .ts-arr-now { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--wa-label); }
-  .ts-arr-how { margin: -2px 0 2px; text-align: center; }
+  .ts-arr-how { margin: 6px 0 2px; text-align: center; }
+  .ts-arr-work { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px 14px; align-items: start; }
+  @container insp (min-width: 900px) { .ts-arr-work { grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); } }
+  .ts-arr-stage, .ts-arr-tools { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .ts-arr-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .ts-arr-part { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-panel); overflow: hidden; }
   .ts-arr-part.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }

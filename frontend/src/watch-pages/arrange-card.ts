@@ -4,14 +4,16 @@
 // writes it (`arrange-looks.ts`), and Use on whole page offers it for every
 // tile that can use it, one undo step.
 //
-// Custom folds the looks to one line and opens the tools: a large live tile the
-// parts are dragged on, a row of the parts, each picked by its name and shown or
-// hidden by its eye, the picked part's Spot on a 3 by 3 grid of the tile's
-// content box beside its Size, and under More a small move across and down. Every edit is
-// one commit of the tile key `arrange` (`setWatchTileArrange`), so it goes
-// through the draft and undo like every other tile setting. The part picked
-// is shared with the stage (`arrangePickedPart`): there the picked part of
-// the selected tile is outlined and dragged, or nudged with the arrow keys.
+// The looks always stay in view. Custom opens the tools under them: a large live
+// tile with a grid, whose parts are pressed and dragged straight away and snap
+// as they move (`arrange-snap.ts`), a row of the parts, each picked by its name
+// and shown or hidden by its eye, the picked part's Spot on a 3 by 3 grid of the
+// tile's content box beside its Size, and under More a small move across and
+// down. Every edit is one commit of the tile key `arrange`
+// (`setWatchTileArrange`), so it goes through the draft and undo like every
+// other tile setting. The part picked is shared with the stage
+// (`arrangePickedPart`): there the selected tile's parts are dragged too, or
+// nudged with the arrow keys.
 //
 // A tile whose picture fills it and a chart get no looks, only the reason. A
 // stacked or strip watch tile gets Standard and Icon only, and the renderer
@@ -40,6 +42,7 @@ import {
   arrangeFreeOn,
   arrangeFrame,
   arrangePickedPart,
+  arrangeStartFor,
   setArrangeFreePicked,
   setArrangePickedPart,
 } from "./arrange-model.js";
@@ -81,8 +84,6 @@ export function arrangeFreeShown(host: TileSettingsHost): boolean {
 const askKey = (tileId: string) => `${ARRANGE_UI_KEY}:ask:${tileId.toUpperCase()}`;
 /** The line after a whole page edit, while that edit is the document. */
 const doneKey = (tileId: string) => `${ARRANGE_UI_KEY}:done:${tileId.toUpperCase()}`;
-/** Custom's looks are unfolded, by Change look. */
-const looksKey = (tileId: string) => `${ARRANGE_UI_KEY}:looks:${tileId.toUpperCase()}`;
 
 interface ArrangeAsk { plan: ArrangePagePlan; document: WatchPagesDocument }
 interface ArrangeDone { look: ArrangeLook; count: number; document: WatchPagesDocument }
@@ -107,7 +108,6 @@ function forgetWholePage(host: TileSettingsHost): void {
 /** A look: it is written at once, one undo step, and Custom's tools close. */
 export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook): void {
   setArrangeFreePicked(host.uiState, host.tileId, false);
-  host.uiState.delete(looksKey(host.tileId));
   forgetWholePage(host);
   host.endCoalesce();
   const { pageId, tileId } = host;
@@ -115,21 +115,25 @@ export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook): void
   host.requestUpdate();
 }
 
-/** Custom: the tools open at once, starting from what the tile has; nothing
- * is written until a part moves. A part let go before is picked again (Icon),
- * so the stage tile can be grabbed at once. An iPhone tile too small for the
- * centred layout has no parts to grab until it holds a layout, so it starts
- * from its icon in the middle (its name, for a tile with no icon). */
-export function pickArrangeCustom(host: TileSettingsHost): void {
+/**
+ * Custom: the tools open at once, starting from what the tile has; nothing is
+ * written until a part changes. A part let go before is picked again (Icon), so
+ * the tile can be grabbed at once. An iPhone tile whose size gives it a layout
+ * of few parts has nothing to grab until it holds a layout of its own, so it
+ * starts from what it draws now (`arrangeStartFor`). `phoneModel` is that tile
+ * as the page editor draws it on the iPhone.
+ */
+export function pickArrangeCustom(host: TileSettingsHost, phoneModel?: () => OneLookPreviewModel | undefined): void {
   setArrangeFreePicked(host.uiState, host.tileId, true);
-  host.uiState.delete(looksKey(host.tileId));
   forgetWholePage(host);
   if (arrangeSelectedPart(host) === undefined) setArrangePickedPart(host.uiState, host.tileId, "icon");
-  const model = arrangeFrame(sourceOf(host), host.tile)?.model;
-  if (hostDevice(host) === "iphone" && watchTileArrange(host.tile) === undefined && arrangeFaceBlock(model) === undefined && model?.layout.mode !== "centred") {
-    const parts = model?.icon === "" && model.photo === undefined ? { name: { spot: "bc" as const } } : { icon: { spot: "mc" as const } };
-    host.endCoalesce();
-    writeArrange(host, "start", () => ({ v: 1, parts }));
+  if (watchTileArrange(host.tile) === undefined) {
+    const model = phoneModel?.() ?? (hostDevice(host) === "iphone" ? arrangeFrame(sourceOf(host), host.tile)?.model : undefined);
+    const start = arrangeStartFor(model);
+    if (start !== undefined) {
+      host.endCoalesce();
+      writeArrange(host, "start", () => start);
+    }
   }
   host.requestUpdate();
 }
@@ -247,6 +251,7 @@ export function renderArrangeSection(
   host: TileSettingsHost,
   picture?: () => TemplateResult | typeof nothing,
   lookPicture?: (key: string, make: (tile: WatchPageTile) => WatchPageTile) => TemplateResult | typeof nothing,
+  phoneModel?: () => OneLookPreviewModel | undefined,
 ): TemplateResult {
   const tile = host.tile;
   const stored = watchTileArrange(tile);
@@ -277,7 +282,7 @@ export function renderArrangeSection(
   ];
   const offNotes = read.looks.filter((l) => l.off !== undefined);
   const looks = html`<div class="ts-arr-looks">${pictureChoice<ArrangeLook | "custom">("Look", value, options,
-    (v) => (v === "custom" ? pickArrangeCustom(host) : pickArrangeLook(host, v)), { size: "large" })}</div>`;
+    (v) => (v === "custom" ? pickArrangeCustom(host, phoneModel) : pickArrangeLook(host, v)), { size: "large" })}</div>`;
   const notes = html`${read.short && read.block !== undefined ? html`<div class="hint keep">${read.block}${stored !== undefined && read.current !== "icon" ? " The layout stored on it is kept but not drawn." : ""}</div>` : nothing}
     ${offNotes.length === 0 ? nothing : html`<div class="hint keep">${offNotes.map((l) => `${l.label} is off because ${l.off}.`).join(" ")}</div>`}
     ${watchNote}
@@ -285,22 +290,25 @@ export function renderArrangeSection(
   if (!custom) {
     return html`<div class="ts-arr">${looks}${notes}${value === "custom" ? nothing : renderWholePage(host, value)}</div>`;
   }
-  const looksOpen = host.uiState.get(looksKey(host.tileId)) === true;
-  const toggleLooks = () => {
-    if (looksOpen) host.uiState.delete(looksKey(host.tileId));
-    else host.uiState.set(looksKey(host.tileId), true);
-    host.requestUpdate();
-  };
   const drawn = picture?.() ?? nothing;
   const well = drawn === nothing ? nothing : html`<div class="ts-arr-pic">${drawn}</div>`;
+  const picked = arrangeSelectedPart(host);
+  const pickedHidden = picked !== undefined && stored?.parts[picked]?.hidden === true;
   return html`<div class="ts-arr">
-    <div class="ts-arr-now"><span>Custom layout</span>
-      <button type="button" class="ghost ts-reset-btn" aria-expanded=${looksOpen ? "true" : "false"} @click=${toggleLooks}>${looksOpen ? "Hide looks" : "Change look"}</button></div>
-    ${looksOpen ? looks : nothing}
-    ${notes}${well}
-    <div class="hint keep ts-arr-how">Drag a part on the tile to move it. Arrow keys nudge it.</div>
-    ${renderPartRow(host, stored)}
-    ${renderCustomRows(host, stored, arrangeFrame(source, tile)?.model)}</div>`;
+    ${looks}
+    ${notes}
+    <div class="ts-arr-work">
+      <div class="ts-arr-stage">
+        ${well}
+        <div class="hint keep ts-arr-how">${pickedHidden
+          ? `The ${PART_WORDS[picked]} is hidden. Press its eye to show it.`
+          : "Drag a part to move it. It snaps to the grid and to the other parts. Hold Option or Alt to place it freely."}</div>
+      </div>
+      <div class="ts-arr-tools">
+        ${renderPartRow(host, stored)}
+        ${renderCustomRows(host, stored, arrangeFrame(source, tile)?.model)}
+      </div>
+    </div></div>`;
 }
 
 const EYE = html`<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>`;
