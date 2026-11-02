@@ -48,15 +48,31 @@ const input = (items: WatchPageTile[], states: Record<string, HassEntityState> |
   ({ page: page(items), pages: [page(items)], screen: { width: 208, height: 248 }, states, scale: 1, stateMode });
 
 describe("the all-on picture's states", () => {
-  it("turns a light on, keeping its brightness only while it is really on", () => {
-    const off = tile("light.desk");
-    expect(watchAllOnStates(off, statesOf(entity("light.desk", "off", { brightness: 200, friendly_name: "Desk" })))!["light.desk"]).toMatchObject({
-      state: "on", attributes: { friendly_name: "Desk" },
+  it("turns a light that can dim on at full brightness, however the real light is", () => {
+    const desk = tile("light.desk");
+    const dims = { supported_color_modes: ["color_temp", "xy"], friendly_name: "Desk" };
+    expect(watchAllOnStates(desk, statesOf(entity("light.desk", "off", dims)))!["light.desk"]).toMatchObject({
+      state: "on", attributes: { friendly_name: "Desk", brightness: 255 },
     });
-    expect(watchAllOnStates(off, statesOf(entity("light.desk", "off", { brightness: 200 })))!["light.desk"]!.attributes).not.toHaveProperty("brightness");
-    // An off light has no brightness to show: no badge, not OFF.
-    expect(badgeOn(off, statesOf(entity("light.desk", "off")))).toBeUndefined();
-    expect(badgeOn(off, statesOf(entity("light.desk", "on", { brightness: 128 })))).toBe("50%");
+    expect(badgeOn(desk, statesOf(entity("light.desk", "off", dims)))).toBe("100%");
+    expect(badgeOn(desk, statesOf(entity("light.desk", "on", { ...dims, brightness: 128 })))).toBe("100%");
+  });
+
+  it("gives a light with no dimming no brightness: no badge, not OFF", () => {
+    const desk = tile("light.desk");
+    const plain = watchAllOnStates(desk, statesOf(entity("light.desk", "off", { supported_color_modes: ["onoff"] })))!["light.desk"]!;
+    expect(plain.state).toBe("on");
+    expect(plain.attributes).not.toHaveProperty("brightness");
+    expect(badgeOn(desk, statesOf(entity("light.desk", "off")))).toBeUndefined();
+  });
+
+  it("leaves out a light's real color", () => {
+    const desk = tile("light.desk");
+    const { attributes } = watchAllOnStates(desk, statesOf(entity("light.desk", "on", {
+      brightness: 128, color_mode: "rgb", rgb_color: [255, 0, 0], hs_color: [0, 100], xy_color: [0.7, 0.3], color_temp_kelvin: 2700, color_temp: 370,
+      supported_color_modes: ["rgb"],
+    })))!["light.desk"]!;
+    expect(Object.keys(attributes).sort()).toEqual(["brightness", "supported_color_modes"]);
   });
 
   it("opens a cover, at its full position when it has one", () => {

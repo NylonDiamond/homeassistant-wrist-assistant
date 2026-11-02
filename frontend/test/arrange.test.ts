@@ -29,6 +29,7 @@ import {
   arrangeFreeOn,
   arrangeOffered,
   arrangeOffset,
+  arrangePartDrawn,
   arrangePickedPart,
   arrangeResizeNote,
   arrangeStageParts,
@@ -826,6 +827,20 @@ describe("a look on the whole page", () => {
 // ── the stage's part drag ────────────────────────────────────────────────
 
 describe("the parts on the stage", () => {
+  it("draws the bar of a light that can dim while it is really off, with Live preview off", () => {
+    const t = light();
+    const onPage: WatchPage = { id: "P", name: "P", items: [t] };
+    const entity = (attributes: Record<string, unknown>): Record<string, HassEntityState> => ({
+      "light.kitchen": { entity_id: "light.kitchen", state: "off", attributes, last_changed: "", last_updated: "" },
+    });
+    const barOf = (attributes: Record<string, unknown>, stateMode: "live" | "all-on") =>
+      arrangePartDrawn(arrangeFrame({ page: onPage, pages: [onPage], device: "watch", states: entity(attributes), stateMode }, t)!.model!, "bar");
+    expect(barOf({ supported_color_modes: ["color_temp", "xy"] }, "all-on")).toBe(true);
+    expect(barOf({ supported_color_modes: ["onoff"] }, "all-on")).toBe(false);
+    // Live preview on: an off light draws no bar.
+    expect(barOf({ supported_color_modes: ["color_temp", "xy"] }, "live")).toBe(false);
+  });
+
   it("finds the parts a Free tile draws, leaving out hidden parts, and none on a tile Free cannot place", () => {
     const input = watchInput(lit("light.kitchen"));
     const stage = arrangeStageParts(light(), cellOf(6, 4), input, UNIT)!;

@@ -3208,6 +3208,19 @@ const ALL_ON_WORDS: Readonly<Record<string, string>> = {
   person: "home", timer: "active", climate: "heat", alarm_control_panel: "armed_home",
 };
 
+/** The attributes that hold a light's real level and color. */
+const LIGHT_LEVEL_AND_COLOR_ATTRIBUTES = [
+  "brightness", "color_mode", "rgb_color", "rgbw_color", "rgbww_color", "hs_color", "xy_color", "color_temp", "color_temp_kelvin",
+] as const;
+
+/** Whether a light can dim: it reports a brightness, or a color mode other
+ * than plain on and off. Home Assistant reports the modes on an off light too. */
+function lightCanDim(attributes: Readonly<Record<string, unknown>>): boolean {
+  if (storedNumber(attributes.brightness) !== undefined) return true;
+  const modes = attributes.supported_color_modes;
+  return Array.isArray(modes) && modes.some((mode) => mode !== "onoff");
+}
+
 /**
  * `real` (or nothing, for an entity Home Assistant has not reported) as a
  * typical on state of its kind, which is what the watch draws lit: a light,
@@ -3216,11 +3229,12 @@ const ALL_ON_WORDS: Readonly<Record<string, string>> = {
  * player playing; a vacuum cleaning; a mower mowing; a person home; a timer
  * running with no time to count; a climate in its own mode when it is on,
  * else its first mode that is not off, else heat; an alarm panel armed as it
- * is, else armed home. A light keeps its brightness and a fan its speed only
- * while they are really on (an off light has none to show), and every other
- * attribute (a player's volume, a climate's temperatures) is kept as it is.
- * Undefined for a kind with no on state: a sensor, number, select, scene,
- * button, script and the app's own tiles keep their real state.
+ * is, else armed home. A light that can dim is at full brightness and a light
+ * has no color of its own, whether or not it is really on, so the picture does
+ * not follow the real lights. A fan keeps its speed only while it is really on,
+ * and every other attribute (a player's volume, a climate's temperatures) is
+ * kept as it is. Undefined for a kind with no on state: a sensor, number,
+ * select, scene, button, script and the app's own tiles keep their real state.
  */
 function allOnEntity(entityId: string, real: HassEntityState | undefined): HassEntityState | undefined {
   const kind = tileKind(entityId);
@@ -3229,9 +3243,14 @@ function allOnEntity(entityId: string, real: HassEntityState | undefined): HassE
   const attributes: Record<string, unknown> = { ...(real?.attributes ?? {}) };
   let state = ALL_ON_WORDS[kind]!;
   switch (kind) {
-    case "light":
+    case "light": {
+      const dims = lightCanDim(attributes);
+      for (const key of LIGHT_LEVEL_AND_COLOR_ATTRIBUTES) delete attributes[key];
+      if (dims) attributes.brightness = 255;
+      break;
+    }
     case "fan":
-      if (was !== "on") delete attributes[kind === "light" ? "brightness" : "percentage"];
+      if (was !== "on") delete attributes.percentage;
       break;
     case "cover":
     case "valve":
