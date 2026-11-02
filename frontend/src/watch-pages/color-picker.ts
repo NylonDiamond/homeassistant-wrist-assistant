@@ -76,6 +76,9 @@ export interface ColorPickerView {
     forms: readonly ("solid" | "gradient")[];
     pick(form: "solid" | "gradient"): void;
     title?: string;
+    /** Draw the switch at the start of the swatch row, a hairline after it,
+     * and not on a row of its own (the tile's top card). */
+    inRow?: boolean;
   };
   /** The Rainbow swatch, where the device draws `#RAINBOW` for the key: last
    * in the row, with the gradients where there is a Gradient form. Picking
@@ -220,6 +223,16 @@ function tileChip(t: NonNullable<ColorPickerView["tile"]>, trial: ColorTrial | u
     title=${t.title} @click=${() => { t.pick(); trial?.end(); }}>${COLOR_TILE_LABEL}</button>`;
 }
 
+/** The Form switch as one row, for a card that stands it apart from the
+ * swatches. With `mixed`, no form is lit. */
+export function colorFormField(form: NonNullable<ColorPickerView["form"]>, mixed = false): TemplateResult | typeof nothing {
+  if (form.forms.length < 2) return nothing;
+  const shown: WatchColorModeChoice = mixed ? "none" : form.shown === "rainbow" ? "gradient" : form.shown;
+  return segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
+    if (f === "solid" || f === "gradient") form.pick(f);
+  });
+}
+
 /** The picker: heading, Form, Default with the swatches, Rainbow and the
  * Custom swatch, then the Custom row while it is in use. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
@@ -242,15 +255,12 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
   const customOn = !mixed && v.custom.shown !== undefined && v.custom.shown !== "" && !named;
   const tail = html`${rainbow}${customSwatch(customOn, v.custom.shown, v.trial)}`;
   const word = html`<em class="pc-mixed">${MIXED_WORD}</em>`;
-  const chips = html`${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? form?.title, v.trial)}${
+  const inRow = form?.inRow === true ? html`<div class="ts-color-form">${colorFormField(form, mixed)}</div><i class="ts-color-rule" aria-hidden="true"></i>` : nothing;
+  const chips = html`${inRow}${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? (form?.inRow === true ? undefined : form?.title), v.trial)}${
     v.tile === undefined ? nothing : tileChip(mixed ? { ...v.tile, on: false } : v.tile, v.trial)}`;
   return html`
     ${v.label === undefined ? nothing : html`<div class="ts-sub-h"><span>${v.label}</span>${mixed ? word : nothing}</div>`}
-    ${form === undefined
-      ? nothing
-      : segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
-          if (f === "solid" || f === "gradient") form.pick(f);
-        })}
+    ${form === undefined || form.inRow === true ? nothing : colorFormField(form, mixed)}
     <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, color, v.pickSwatch, chips, tail, v.trial)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
     ${v.wrap(html`<div class="ts-no-alpha ts-custom" ?hidden=${!customOn} @input=${QUIET_WHILE_HIDDEN} @change=${QUIET_WHILE_HIDDEN}>${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;

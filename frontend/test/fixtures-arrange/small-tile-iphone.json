@@ -54,6 +54,12 @@
       "y": 17,
       "width": 30.723,
       "height": 23.1
+    },
+    "bar": {
+      "x": 12,
+      "y": 8,
+      "width": 27.6667,
+      "height": 4
     }
   },
   "arrange": {
@@ -96,6 +102,16 @@
         "y": 17,
         "width": 30.723,
         "height": 23.1
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "bar": {
+      "rect": {
+        "x": 12,
+        "y": 8,
+        "width": 27.6667,
+        "height": 4
       },
       "scale": 1,
       "hidden": false

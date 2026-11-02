@@ -262,6 +262,7 @@ import {
   renderWatchTileFace,
   type WatchTilePreviewAs,
   watchTileStatesAs,
+  watchTileOneLookModel,
   watchPagePreviewScrolls,
   watchPagePreviewStyles,
   watchPreviewTileLabel,
@@ -296,9 +297,7 @@ import {
   forgetTileSettingsNotes,
   renderHomeMapLooks,
   renderHomeMapPlace,
-  openTileGroup,
   renderTileInspector,
-  tileGroupOfPart,
   tileHeadHasEntity,
   tileInspectorParts,
   tileSettingsStyles,
@@ -344,6 +343,8 @@ import {
 } from "./page-frame.js";
 import { type SwitcherSettingsHost, SWITCHER_SECTION_TITLE, renderSwitcherSettings, switcherSettingsSummary, watchPageSwitcherChanged } from "./switcher-settings.js";
 import { watchTileKindColor } from "./tile-settings-options.js";
+import { ARRANGE_GRID, snappedArrangePart } from "./arrange-snap.js";
+import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "./fold-memory.js";
 import { specialSettingsStyles } from "./special-settings.js";
 import { watchCameraRefreshDefaults, watchDeviceSiblings, watchObjectName } from "./special-model.js";
@@ -369,7 +370,7 @@ import {
   nudgedArrangePart,
   setArrangePickedPart,
 } from "./arrange-model.js";
-import { ARRANGE_PARTS, type ArrangePart, type TileArrange, encodeTileArrange, normalizeTileArrange } from "./one-look/arrange.js";
+import { ARRANGE_PARTS, type ArrangePart, type TileArrange, encodeTileArrange, normalizeTileArrange, withArrangePart } from "./one-look/arrange.js";
 import type { OneLookPhotoLight } from "./one-look/glow.js";
 import {
   type StageGrid,
@@ -445,23 +446,22 @@ const CARD_THUMB_W = 76;
 /** A page's picture is at most this many times as tall as it is wide: an
  * iPhone's tall pages area shows its top. */
 const PAGE_THUMB_MAX_RATIO = 1.4;
-/** The inspector head's live tile is drawn as large as fits this box, CSS
- * px, and never past this scale, so a small tile does not read as a big
- * one. A wide tile (12 by 4) comes out about 210 by 72. On a narrow
- * inspector the head draws it smaller (`HEAD_TILE_ZOOM`). */
-const HEAD_TILE_W = 210;
-const HEAD_TILE_H = 140;
+/** A tile drawn large in the settings is never past this scale, so a small
+ * tile does not read as a big one. */
 const HEAD_TILE_MAX_SCALE = 3;
-/** The head's live tile at 150 px wide under a 680 px inspector and 120 px
- * under 520 px, as shares of `HEAD_TILE_W`. */
-const HEAD_TILE_ZOOM = { narrow: 150 / HEAD_TILE_W, small: 120 / HEAD_TILE_W } as const;
 /** The Arrangement section's live tile, which the parts are dragged on, is
  * larger: as large as fits this box. */
-const ARRANGE_TILE_W = 300;
-const ARRANGE_TILE_H = 190;
+const ARRANGE_TILE_W = 440;
+const ARRANGE_TILE_H = 240;
+/** A small tile is drawn this large at most there, so its parts can be grabbed. */
+const ARRANGE_TILE_MAX_SCALE = 6;
+/** How near a line, in pixels on screen, a dragged part jumps to it. */
+const ARRANGE_SNAP_PIXELS = 7;
+/** The shortest a part's box is drawn on screen, so a thin bar can be pressed. */
+const ARRANGE_PART_MIN_PIXELS = 12;
 /** A look's card in that section. */
-const ARRANGE_LOOK_W = 112;
-const ARRANGE_LOOK_H = 72;
+const ARRANGE_LOOK_W = 92;
+const ARRANGE_LOOK_H = 60;
 /** The watch's band stubs on the stage, each as a share of its screen's width. */
 const WATCH_BAND_RATIO = 0.1;
 /** The room the Screen 1 mark takes beside a device, px. */
@@ -592,32 +592,16 @@ interface PartGesture extends GestureBase {
   from: TileArrange | undefined;
   /** The arrangement the pointer asks for now. */
   arrange: TileArrange | undefined;
-  /** The tile's face as drawn, in pixels: what an offset is a share of. */
-  width: number;
-  height: number;
-  /** How far a text part can go before the tile's edge stops it, as shares
-   * of the tile (`arrangePartRect` holds it there), so a drag past the edge
-   * leaves no offset to drag back through. Undefined for the icon. */
-  room: { left: number; right: number; up: number; down: number } | undefined;
+  /** The tile's parts when the press began, and the scale they were drawn at. */
+  stage: ArrangeStageParts;
+  scale: number;
+  /** Option or Alt is down: the part goes where the pointer puts it. */
+  free: boolean;
+  /** The lines it has landed on now, to draw, from the face's top left. */
+  guides: { x?: number; y?: number };
 }
 
 type Gesture = MoveGesture | ResizeGesture | PartGesture;
-
-/** A part's room to each edge of the tile, as shares of the tile, from where
- * the stage draws it. */
-function partRoom(stage: ArrangeStageParts, part: ArrangePart): PartGesture["room"] {
-  const r = stage.parts[part];
-  const { width, height } = stage.size;
-  if (r === undefined || !(width > 0 && height > 0)) return undefined;
-  // The name is free across (`arrangePartRect`).
-  const across = part !== "name";
-  return {
-    left: across ? Math.max(0, r.x / width) : Infinity,
-    right: across ? Math.max(0, (width - r.x - r.width) / width) : Infinity,
-    up: Math.max(0, r.y / height),
-    down: Math.max(0, (height - r.y - r.height) / height),
-  };
-}
 
 /** The page as one picture of the stage draws it: that screen's places in
  * the tile fields (`watchScreenPage`), and only the tiles on that screen, so
@@ -655,7 +639,7 @@ function withArrange(tile: WatchPageTile, arrange: TileArrange | undefined): Wat
   return out;
 }
 
-const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state" };
+const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state", bar: "bar", button: "button" };
 
 /** The part of `home-assistant-js-websocket`'s connection that tells of a
  * reconnect. Both optional: a test double or another frontend may lack them. */
@@ -948,6 +932,10 @@ export class WaPageEditor extends LitElement {
    * pointer, set straight on the tile's box (`onInspectorHover`), so a
    * hover never redraws the editor. */
   private headLit?: TileHeadPart;
+  /** The pointer is on When it is off, so `hoverState` is that row's. */
+  private offWhileHovered = false;
+  /** The press now under way began on the tile already selected. */
+  private pressedSelected = false;
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
@@ -2779,6 +2767,7 @@ export class WaPageEditor extends LitElement {
     const group = this.multiPicked && this.isPicked(tileId);
     const selected = group || (sameWatchId(tileId, this.selectedTileId) && !this.multiPicked);
     if (e.pointerType === "touch" && !selected) return;
+    this.pressedSelected = selected && !group;
     const page = this.currentPage();
     const tile = page === undefined ? undefined : this.tileOn(page, tileId);
     const button = e.currentTarget as HTMLElement;
@@ -2861,16 +2850,18 @@ export class WaPageEditor extends LitElement {
     return true;
   }
 
-  /** A press on a part of the selected Free tile. On the picked part it
-   * starts a drag of that part; on another part it is the tile's press (a
-   * drag moves the tile), and the click it ends with picks the part. */
+  /** A press on a part of the selected Free tile: it picks the part and
+   * starts its drag, so one press does both. */
   private onPartPointerDown(e: PointerEvent, tileId: string, part: ArrangePart, at: { stage: ArrangeStageParts; scale: number } | undefined): void {
     if (e.button !== 0 || !e.isPrimary || e.metaKey || e.ctrlKey || e.shiftKey) return;
     this.pressedPart = { tileId, part };
-    if (at === undefined || this.multiPicked || !sameWatchId(this.selectedTileId, tileId) || part !== arrangePickedPart(this.uiState, tileId)) return;
+    // With no part picked (Escape let it go), a drag moves the tile, and the
+    // click a press ends with picks the part again.
+    if (at === undefined || this.multiPicked || !sameWatchId(this.selectedTileId, tileId) || arrangePickedPart(this.uiState, tileId) === undefined) return;
     // The tile's own press must not start a move as well.
     e.stopPropagation();
     if (this.gesture || this.saving || this.editingOff()) return;
+    if (part !== arrangePickedPart(this.uiState, tileId)) this.pickStagePart(tileId, part);
     const draft = this.draft;
     const page = this.currentPage();
     const tile = page === undefined ? undefined : this.tileOn(page, tileId);
@@ -2890,9 +2881,10 @@ export class WaPageEditor extends LitElement {
       part,
       from,
       arrange: from,
-      width: at.stage.size.width * at.scale,
-      height: at.stage.size.height * at.scale,
-      room: part === "icon" ? undefined : partRoom(at.stage, part),
+      stage: at.stage,
+      scale: at.scale,
+      free: e.altKey,
+      guides: {},
       captured: this.capture(e.currentTarget, e.pointerId),
       baseVersion: draft.baseVersion,
     };
@@ -2974,6 +2966,7 @@ export class WaPageEditor extends LitElement {
       if (this.baseMoved(g.baseVersion)) return;
       g.clientX = e.clientX;
       g.clientY = e.clientY;
+      if (g.kind === "part") g.free = e.altKey;
       if (!g.started) {
         if (!pastDragThreshold(e.clientX - g.startX, e.clientY - g.startY)) return;
         g.started = true;
@@ -2999,7 +2992,10 @@ export class WaPageEditor extends LitElement {
         this.swallowTileClick = true;
         setTimeout(() => { this.swallowTileClick = false; }, 0);
       }
-      if (g.started) this.finishGesture(g);
+      if (g.started) {
+        this.pressedSelected = false;
+        this.finishGesture(g);
+      }
       this.flushPending();
     }
   };
@@ -3015,14 +3011,24 @@ export class WaPageEditor extends LitElement {
   private trackGesture(): void {
     const g = this.gesture;
     if (g?.kind === "part") {
-      // The part from where it was by the pointer's travel, as shares of
-      // the tile, clamped and rounded as the drop writes them.
-      const across = g.width > 0 ? (g.clientX - g.startX) / g.width : 0;
-      const down = g.height > 0 ? (g.clientY - g.startY) / g.height : 0;
-      const room = g.room;
-      g.arrange = room === undefined
-        ? movedArrangePart(g.from, g.part, across, down)
-        : movedArrangePart(g.from, g.part, Math.max(-room.left, Math.min(across, room.right)), Math.max(-room.up, Math.min(down, room.down)));
+      // The part from where it was by the pointer's travel, snapped, as the
+      // drop writes it (`arrange-snap.ts`).
+      const drawn = g.stage.parts[g.part];
+      const native = g.stage.native[g.part];
+      if (drawn === undefined || native === undefined) return;
+      const landed = snappedArrangePart({
+        tile: g.stage.size,
+        content: g.stage.content,
+        native,
+        part: g.part,
+        entry: g.from?.parts[g.part],
+        drawn,
+        others: ARRANGE_PARTS.flatMap((p) => { const r = g.stage.parts[p]; return p === g.part || r === undefined ? [] : [r]; }),
+        threshold: ARRANGE_SNAP_PIXELS / g.scale,
+        free: g.free,
+      }, (g.clientX - g.startX) / g.scale, (g.clientY - g.startY) / g.scale);
+      g.arrange = withArrangePart(g.from, g.part, () => landed.entry);
+      g.guides = landed.guides;
       this.requestUpdate();
       return;
     }
@@ -4866,6 +4872,7 @@ export class WaPageEditor extends LitElement {
     const cell = { width: width / s, height: height / s };
     const face = renderWatchTileFace(drawnTile, cell, input, unit);
     const parts = selected && handles && !inMulti && id !== "" ? this.renderStageParts(drawnTile, id, cell, input, unit, s) : nothing;
+    const headParts = selected && handles && !inMulti && id !== "" ? this.renderStageHeadParts(drawnTile, cell, input, unit, s) : nothing;
     // The ring of a selected tile follows the tile's own corners, which are
     // the watch's, or 22 points in an iPhone's iPhone look
     // (`previewTileCornerRadius`).
@@ -4910,8 +4917,17 @@ export class WaPageEditor extends LitElement {
           return;
         }
         if (this.takePressedPart(id, e)) return;
+        // A plain click on the tile already selected goes to the settings of
+        // the part under it. A drag's click is no such click.
+        const already = this.pressedSelected;
+        this.pressedSelected = false;
+        const part = already && selected && !this.multiPicked && !e.shiftKey && !e.metaKey && !e.ctrlKey ? this.headPartAtClick(e.currentTarget as HTMLElement, e) : undefined;
+        if (part !== undefined) {
+          this.goToHeadPart(part);
+          return;
+        }
         this.clickTile(id, e);
-      }}>${face}${parts}${word}${tag}${badge}</button>`;
+      }}>${face}${parts}${headParts}${word}${tag}${badge}</button>`;
   }
 
   /**
@@ -4937,12 +4953,25 @@ export class WaPageEditor extends LitElement {
     const stage = arrangeStageParts(tile, cell, input, unit);
     if (stage === undefined) return nothing;
     this.stageArrange = { tileId: id, stage, scale: s };
-    return this.renderPartBoxes(id, stage, s);
+    return html`${g?.kind === "part" && g.started ? this.renderArrangeGrid(stage, s) : nothing}${this.renderPartBoxes(id, stage, s)}`;
   }
 
-  /** A box over each part `stage` holds, drawn at scale `s`: the picked one
-   * outlined and dragged, a click on another picks it. The stage's tile and
-   * the Arrangement section's live tile both draw them. */
+  /** The grid a part snaps to over a tile's face, and the lines the part being
+   * dragged has landed on. */
+  private renderArrangeGrid(stage: ArrangeStageParts, s: number): TemplateResult {
+    const g = this.gesture;
+    const guides = g?.kind === "part" && g.started ? g.guides : {};
+    const px = (v: number) => Math.round(v * s * 100) / 100;
+    return html`<span class="pe-arr-grid" aria-hidden="true"
+      style=${`left:${px(stage.inset)}px;top:${px(stage.inset)}px;width:${px(stage.size.width)}px;height:${px(stage.size.height)}px;border-radius:${px(stage.radius)}px;background-size:calc(100% / ${ARRANGE_GRID.across}) calc(100% / ${ARRANGE_GRID.down})`}>
+      ${guides.x === undefined ? nothing : html`<i class="pe-arr-guide x" style=${`left:${px(guides.x)}px`}></i>`}
+      ${guides.y === undefined ? nothing : html`<i class="pe-arr-guide y" style=${`top:${px(guides.y)}px`}></i>`}
+    </span>`;
+  }
+
+  /** A box over each part `stage` holds, drawn at scale `s`: a press picks the
+   * part and drags it. The stage's tile and the Arrangement section's live
+   * tile both draw them. */
   private renderPartBoxes(id: string, stage: ArrangeStageParts, s: number): TemplateResult {
     const g = this.gesture;
     const picked = arrangePickedPart(this.uiState, id);
@@ -4952,9 +4981,12 @@ export class WaPageEditor extends LitElement {
       if (r === undefined) return nothing;
       const on = part === picked;
       const word = PART_WORDS[part];
+      // A thin part, the bar above all, still gets a box a pointer can press.
+      const height = Math.max(px(r.height), ARRANGE_PART_MIN_PIXELS);
+      const top = px(stage.inset + r.y + r.height / 2) - height / 2;
       return html`<span class="pe-part ${on ? "on" : ""} ${on && g?.kind === "part" && g.started ? "dragging" : ""}" data-part=${part} aria-hidden="true"
-        title=${on ? `Drag to move the ${word}. Arrow keys nudge it, Escape lets it go.` : `Click to pick the ${word}`}
-        style=${`left:${px(stage.inset + r.x)}px;top:${px(stage.inset + r.y)}px;width:${px(r.width)}px;height:${px(r.height)}px`}
+        title=${`Drag to move the ${word}. Arrow keys nudge it, Escape lets it go.`}
+        style=${`left:${px(stage.inset + r.x)}px;top:${top}px;width:${px(r.width)}px;height:${height}px`}
         @pointerdown=${(e: PointerEvent) => this.onPartPointerDown(e, id, part, { stage, scale: s })}
         @click=${(e: MouseEvent) => {
           // The picked part's own click; another part's click is the tile's
@@ -5441,49 +5473,70 @@ export class WaPageEditor extends LitElement {
    */
   private renderTileCard(page: WatchPage, tile: WatchPageTile, head: TemplateResult): TemplateResult {
     const host = this.tileSettingsHost(page, tile);
-    // The four groups (Color and icon, Text, Surface and rules, What it
-    // does) lay themselves out by the inspector's width, the head across
-    // the top over all of them. A settings row under the pointer lights its
-    // part of the head's tile.
+    // The top card, then the cards of every other setting, which lay
+    // themselves out by the inspector's width. A settings row under the
+    // pointer lights its part of the selected tile on the stage.
     return html`<div class="pe-tile-insp" @pointerover=${this.onInspectorHover} @pointerleave=${this.onInspectorLeave}>
       ${host === undefined ? head : renderTileInspector(host, {
         arrangePicture: () => this.renderArrangePicture(page, tile),
         arrangeLookPicture: (key, make) => this.renderArrangeLookPicture(page, tile, key, make),
+        arrangePhoneModel: () => this.arrangePhoneModel(page, tile),
         head,
       })}
-      ${host === undefined ? nothing : this.renderTileFoot(page, tile)}
       ${this.renderResizeLoss(tile)}
     </div>`;
   }
 
-  /** The head's tile box, where its lit part is marked (`data-lit`). */
-  private headPicEl(): HTMLElement | null {
-    return this.renderRoot?.querySelector<HTMLElement>(".pe-tile-insp .pe-head-pic") ?? null;
+  /** The selected tile on each picture, where its lit part is marked
+   * (`data-lit`). */
+  private selectedTileEls(): HTMLElement[] {
+    return [...(this.renderRoot?.querySelectorAll<HTMLElement>(".pe-tile.sel") ?? [])];
   }
 
-  /** Light `part` of the head's tile, or none: an attribute on its box the
+  /** Light `part` of the selected tile, or none: an attribute on its box the
    * template never binds, so the next draw keeps it and nothing redraws. */
   private lightHeadPart(part: TileHeadPart | undefined): void {
-    if (part === this.headLit && (part === undefined || this.headPicEl()?.dataset["lit"] === part)) return;
+    const els = this.selectedTileEls();
+    if (part === this.headLit && els.every((el) => (part === undefined ? el.dataset["lit"] === undefined : el.dataset["lit"] === part))) return;
     this.headLit = part;
-    const pic = this.headPicEl();
-    if (pic === null) return;
-    if (part === undefined) delete pic.dataset["lit"];
-    else pic.dataset["lit"] = part;
+    for (const el of els) {
+      if (part === undefined) delete el.dataset["lit"];
+      else el.dataset["lit"] = part;
+    }
   }
 
   /** The pointer moved onto something in the tile inspector: the part of the
-   * head's tile its settings row stands for lights (`tileHeadPartAt`), none
-   * outside the groups. */
+   * selected tile its settings row stands for lights (`tileHeadPartAt`), none
+   * outside the settings. On a row about the off look, the stage shows the
+   * tile off (`showOffWhileHovered`). */
   private onInspectorHover = (e: PointerEvent): void => {
-    this.lightHeadPart(tileHeadPartAt(e.target instanceof Element ? e.target : null));
+    const target = e.target instanceof Element ? e.target : null;
+    this.lightHeadPart(tileHeadPartAt(target));
+    this.showOffWhileHovered(target?.closest(".ts-sec[data-part=\"whenOff\"]") !== null && target !== null);
   };
 
   private onInspectorLeave = (): void => {
     this.lightHeadPart(undefined);
+    this.showOffWhileHovered(false);
   };
 
-  /** A press on a part of the head's tile: its section, gone to and washed
+  /** While the pointer is on When it is off, the selected tile's entity is
+   * tried as off on the stage, as the Live strip's states are while they are
+   * pointed at. */
+  private showOffWhileHovered(on: boolean): void {
+    const page = this.currentPage();
+    const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
+    const id = tile === undefined || !tileHeadHasEntity(tile) ? undefined : tileEntityId(tile);
+    if (on && id !== undefined) {
+      if (this.hoverState?.entityId !== id || this.hoverState.state !== "off") this.hoverState = { entityId: id, state: "off" };
+      this.offWhileHovered = true;
+    } else if (this.offWhileHovered) {
+      this.offWhileHovered = false;
+      this.hoverState = undefined;
+    }
+  }
+
+  /** A press on a part of the selected tile: its section, gone to and washed
    * (`TILE_HEAD_GOES_TO`), the first one of them the tile has. */
   private goToHeadPart(part: TileHeadPart): void {
     const to = TILE_HEAD_GOES_TO[part];
@@ -5491,10 +5544,21 @@ export class WaPageEditor extends LitElement {
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
     const host = page === undefined || tile === undefined ? undefined : this.tileSettingsHost(page, tile);
     if (host === undefined) return;
-    // Which parts the tile has, not which are drawn: a folded group draws none.
     const parts = tileInspectorParts(host).flatMap((g) => g.parts);
     const section = to.sections.find((s) => parts.includes(s));
     if (section !== undefined) this.goToSetting(section, to.within);
+  }
+
+  /** The part of the selected tile under a click, from the boxes drawn over
+   * it (`renderStageHeadParts`), the last drawn on top; none on the tile's bare
+   * ground. */
+  private headPartAtClick(button: HTMLElement, e: MouseEvent): TileHeadPart | undefined {
+    const boxes = [...button.querySelectorAll<HTMLElement>(".pe-hp[data-head-part]")].reverse();
+    const hit = boxes.find((b) => {
+      const r = b.getBoundingClientRect();
+      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    });
+    return hit?.dataset["headPart"] as TileHeadPart | undefined;
   }
 
   /**
@@ -5573,73 +5637,30 @@ export class WaPageEditor extends LitElement {
     this.edit(setTileOnScreen(document, watchPageId(page), tileId, screen, on));
   }
 
-  /** The inspector's foot: "Delete tile", from every device. Taking it off
-   * one screen is the chips under its Name (`renderTileScreens`). */
-  private renderTileFoot(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
-    const id = typeof tile.id === "string" ? tile.id : "";
-    if (id === "") return nothing;
-    const acts = this.tileActs(page, tile);
-    return html`<div class="pe-tile-foot">
-      <button type="button" class="pe-btn pe-danger pe-del-tile" ?disabled=${acts.delRefusal !== undefined}
-        title=${acts.delRefusal ?? "Delete the tile (Delete or Backspace)"} @click=${() => this.deleteTile(id)}>${uiIcon("delete")}<span class="pe-del-words"><span>Delete tile</span><small>from every device</small></span></button>
-    </div>`;
-  }
-
   /**
-   * The selected tile's head: the path, Page (back to the page's own
-   * settings) then the tile's name, and under it the tile, large
-   * (`renderHeadTile`), with its Name beside it and the Tile on Watch and
-   * iPhone chips under the Name (`renderTileScreens`); the facts, each a
-   * link to its section, and the group line while the tile is in a group;
-   * Duplicate, with how many parts are changed and Reset all at
-   * their end (`tile-head.ts`). It spans the
-   * inspector over the groups (`renderTileCard`), which all start at the
-   * same top under it. With no host (no draft yet), the path and the tile
-   * alone.
+   * The first row of the top card (`tile-head.ts`): the way back to the page's
+   * settings, the tile's Name, its Tile on chips, how many parts are changed and Reset all,
+   * Duplicate, Copy look, Paste look and Delete, and the group line while the
+   * tile is in a group. With no host (no draft yet), the way back alone.
    */
-  private renderTileStrip(page: WatchPage, tile: WatchPageTile, pages: readonly WatchPage[]): TemplateResult {
-    const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
-    const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.pickerCatalog }) || kindLabel;
-    const path = html`<nav class="pe-path" aria-label="Where you are">
-        <button type="button" class="pe-path-back" title="Back to the page's settings" @click=${() => this.selectTile(undefined)}>Page</button>
-        <span class="pe-path-sep" aria-hidden="true">${uiIcon("right")}</span>
-        <span class="pe-path-nm" title=${label === kindLabel ? label : `${label} (${kindLabel})`}>${label}</span>
-      </nav>`;
-    const lead = this.renderHeadTile(page, tile);
+  private renderTileStrip(page: WatchPage, tile: WatchPageTile, _pages: readonly WatchPage[]): TemplateResult {
+    const path = html`<button type="button" class="pe-path-back" title="Back to the page's settings" @click=${() => this.selectTile(undefined)}><span class="pe-path-sep" aria-hidden="true">${uiIcon("left")}</span>Page</button>`;
     const host = this.tileSettingsHost(page, tile);
-    if (host === undefined) return html`<div class="pe-strip"><section class="ts-head ts-root" aria-label="Tile"><div class="ts-head-path">${path}</div><div class="ts-head-lead">${lead}</div></section></div>`;
+    if (host === undefined) return html`<div class="pe-strip"><div class="ts-head ts-root" role="group" aria-label="Tile"><div class="ts-head-path">${path}</div></div></div>`;
     const acts = this.tileActs(page, tile);
-    // No Hide here: whether the tile shows on each screen is the Tile on
-    // chips under the Name and the chips under each picture, and when it
-    // shows is Show tile's. Delete is the inspector's foot (`renderTileFoot`).
+    const id = typeof tile.id === "string" ? tile.id : "";
     const actions = html`
       <button type="button" class="ghost pe-strip-dup" ?disabled=${acts.dupRefusal !== undefined} title=${acts.dupRefusal ?? "Duplicate the tile"}
-        @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}<span>Duplicate</span></button>`;
-    const off = this.editingOff(page);
+        @click=${() => this.duplicateTile()}>Duplicate</button>`;
+    const remove = id === "" ? nothing : html`<button type="button" class="ghost pe-strip-del pe-del-tile" ?disabled=${acts.delRefusal !== undefined}
+        title=${acts.delRefusal ?? "Delete the tile from every device (Delete or Backspace)"} @click=${() => this.deleteTile(id)}>Delete</button>`;
     return html`<div class="pe-strip">${renderTileHead(host, {
       path,
-      lead,
       actions,
-      remove: nothing,
-      screens: off ? nothing : this.renderTileScreens(page, tile),
-      below: off ? nothing : renderTileGroupLine(host, this.groupActions),
-      go: (part) => this.goToSetting(part),
+      remove,
+      below: this.editingOff(page) ? nothing : renderTileGroupLine(host, this.groupActions),
+      screens: this.editingOff(page) ? nothing : this.renderTileScreens(page, tile),
     })}</div>`;
-  }
-
-  /**
-   * The head's live tile: the selected tile drawn large by the stage's
-   * renderer (`renderTileHeadPicture`), on where its entity has an on state
-   * (a light, a switch), else as Home Assistant has it now. Jesse cut the
-   * Off and Unavailable tiles beside it on 2026-10-26: three small tiles
-   * read oddly, and one large one shows the look; the Live strip over the
-   * stage's dock still pins any state on the stage.
-   */
-  private renderHeadTile(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
-    const real = this.hass?.states;
-    const hasOn = tileHeadHasEntity(tile) && watchTileStatesAs(tile, real, "on") !== real;
-    const one = this.renderTileHeadPicture(page, tile, hasOn ? "on" : undefined);
-    return one === nothing ? nothing : html`<div class="pe-head-pic">${one}</div>`;
   }
 
   /**
@@ -5649,14 +5670,14 @@ export class WaPageEditor extends LitElement {
    * own places (`screenDrawnPage`). While a resize runs, the shape the handle
    * asks for. The tile comes back with those places in its fields, the
    * arrangement a part drag asks for and any choice being tried. Undefined
-   * for a tile with no place on either.
+   * for a tile with no place on either. With `only`, that picture alone.
    */
-  private selectedTilePicture(page: WatchPage, tile: WatchPageTile): SelectedTilePicture | undefined {
+  private selectedTilePicture(page: WatchPage, tile: WatchPageTile, only?: WatchScreen): SelectedTilePicture | undefined {
     const g = this.gesture;
     const raw = g?.kind === "resize" && g.started && g.preview !== undefined ? g.preview.page : page;
     const id = tileIdOf(tile);
     const clicked = this.clickedScreen;
-    for (const kind of [clicked, otherWatchScreen(clicked)]) {
+    for (const kind of only === undefined ? [clicked, otherWatchScreen(clicked)] : [only]) {
       const owner = this.pictureOwnerOf(kind);
       const phone = kind === this.previewKind ? this.phoneLayoutOf(undefined)
         : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) })
@@ -5693,46 +5714,21 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The head's live tile: the selected tile at its own shape as the picture
-   * being edited lays it out (`selectedTilePicture`), at the largest scale that fits
-   * `HEAD_TILE_W` by `HEAD_TILE_H`, its entity drawn in the state `as`
-   * says (on, off or unavailable, as `watchTileStatesAs` makes it; its real
-   * state with none), whatever the Live switch or a state tried does to the
-   * stage, and the choice being pointed at in an Effect or Animation menu
-   * drawn in place of the stored one (`watchTriedTile`). Nothing for a tile
-   * with no place on the page.
+   * The selected tile's parts on the stage as boxes over it, to light from a
+   * settings row under the pointer (`onInspectorHover`) and to find a press on
+   * (`headPartAtClick`), where One Look lays them out (`tileHeadPartRects`).
+   * They take no pointer: the press is the tile's, which also drags it.
    */
-  private renderTileHeadPicture(page: WatchPage, tile: WatchPageTile, as: WatchTilePreviewAs | undefined): TemplateResult | typeof nothing {
-    const picture = this.selectedTilePicture(page, tile);
-    if (picture === undefined) return nothing;
-    const { layout, placed, drawn } = picture;
-    const s = Math.min(HEAD_TILE_W / placed.width, HEAD_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
-    const { testedIds: _tested, ...base } = this.selectedTileInput(page, picture, s);
-    const states = as === undefined ? this.hass?.states : watchTileStatesAs(drawn, this.hass?.states, as);
-    const input: WatchPagePreviewInput = { ...base, stateMode: "live", ...(states === undefined ? {} : { states }) };
-    const cell = { width: placed.width, height: placed.height };
-    return html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
-      renderWatchTileFace(drawn, cell, input, layout.unit)}${this.renderHeadParts(drawn, cell, input, layout.unit, s)}</span>`;
-  }
-
-  /**
-   * The head's tile's parts as boxes over it, to light and to press: the
-   * whole tile first, then its bar, icon, name and state where One Look
-   * lays them out (`tileHeadPartRects`). A tile it does not lay out that way
-   * gets the whole tile's box alone. A press goes to the part's section
-   * (`goToHeadPart`); a settings row under the pointer lights its box
-   * (`onInspectorHover`).
-   */
-  private renderHeadParts(tile: WatchPageTile, cell: { width: number; height: number }, input: WatchPagePreviewInput, unit: number, s: number): TemplateResult {
+  private renderStageHeadParts(tile: WatchPageTile, cell: { width: number; height: number }, input: WatchPagePreviewInput, unit: number, s: number): TemplateResult | typeof nothing {
+    if (this.gesture?.started === true) return nothing;
     const rects = tileHeadPartRects(tile, cell, input, unit);
+    if (rects === undefined) return nothing;
     const px = (v: number) => Math.round(v * s * 100) / 100;
-    const box = (part: TileHeadPart, style: string, words: string) => html`<span class="pe-hp" data-head-part=${part} aria-hidden="true" title=${`Go to the ${words}'s settings`}
-      style=${style} @click=${(e: MouseEvent) => { e.stopPropagation(); this.goToHeadPart(part); }}></span>`;
-    const words: Record<TileHeadPart, string> = { tile: "tile", icon: "icon", name: "name", state: "state", bar: "state bar" };
-    return html`${box("tile", "inset:0", words.tile)}${rects === undefined ? nothing : TILE_HEAD_BOX_PARTS.map((part) => {
+    return html`${TILE_HEAD_BOX_PARTS.map((part) => {
       const r = rects.parts[part];
       return r === undefined ? nothing
-        : box(part, `left:${px(rects.inset + r.x)}px;top:${px(rects.inset + r.y)}px;width:${px(r.width)}px;height:${px(r.height)}px`, words[part]);
+        : html`<span class="pe-hp" data-head-part=${part} aria-hidden="true"
+            style=${`left:${px(rects.inset + r.x)}px;top:${px(rects.inset + r.y)}px;width:${px(r.width)}px;height:${px(r.height)}px`}></span>`;
     })}`;
   }
 
@@ -5749,17 +5745,35 @@ export class WaPageEditor extends LitElement {
     const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page) && arrangeFreeOn(this.uiState, tile)
       && !(g?.started === true && g.kind !== "part");
     if (!free) return nothing;
-    const picture = this.selectedTilePicture(page, tile);
-    if (picture === undefined) return nothing;
-    const { layout, placed, drawn } = picture;
+    // The picture being edited, or the other where only that one can place
+    // the parts: a short watch tile keeps its row, and its iPhone tile moves.
     const id = tileIdOf(tile);
-    const s = Math.min(ARRANGE_TILE_W / placed.width, ARRANGE_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
-    const input = this.selectedTileInput(page, picture, s);
-    const cell = { width: placed.width, height: placed.height };
-    const stage = arrangeStageParts(drawn, cell, input, layout.unit);
+    let shown: { picture: SelectedTilePicture; input: WatchPagePreviewInput; s: number; stage: ArrangeStageParts | undefined } | undefined;
+    for (const kind of [this.clickedScreen, otherWatchScreen(this.clickedScreen)]) {
+      const picture = this.selectedTilePicture(page, tile, kind);
+      if (picture === undefined) continue;
+      const { placed, layout, drawn } = picture;
+      const s = Math.min(ARRANGE_TILE_W / placed.width, ARRANGE_TILE_H / placed.height, ARRANGE_TILE_MAX_SCALE);
+      const input = this.selectedTileInput(page, picture, s);
+      const stage = arrangeStageParts(drawn, { width: placed.width, height: placed.height }, input, layout.unit);
+      if (shown === undefined || (shown.stage === undefined && stage !== undefined)) shown = { picture, input, s, stage };
+      if (stage !== undefined) break;
+    }
+    if (shown === undefined) return nothing;
+    const { picture, input, s, stage } = shown;
+    const { layout, placed, drawn } = picture;
     this.layoutArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s };
     return html`<span class="pe-head-tile ${stage === undefined ? "" : "arr"}" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
-      renderWatchTileFace(drawn, cell, input, layout.unit)}${stage === undefined ? nothing : this.renderPartBoxes(id, stage, s)}</span>`;
+      renderWatchTileFace(drawn, { width: placed.width, height: placed.height }, input, layout.unit)}${stage === undefined ? nothing : html`${this.renderArrangeGrid(stage, s)}${this.renderPartBoxes(id, stage, s)}`}</span>`;
+  }
+
+  /** The tile as the iPhone's picture draws it, with no layout of its own, for
+   * Custom to start from (`arrangeStartFor`). */
+  private arrangePhoneModel(page: WatchPage, tile: WatchPageTile): OneLookPreviewModel | undefined {
+    const picture = this.selectedTilePicture(page, tile, "iphone");
+    if (picture === undefined) return undefined;
+    const { layout, placed, drawn } = picture;
+    return watchTileOneLookModel(drawn, { width: placed.width, height: placed.height }, this.selectedTileInput(page, picture, 1), layout.unit);
   }
 
   /**
@@ -5787,30 +5801,19 @@ export class WaPageEditor extends LitElement {
 
   // ── going to a section ─────────────────────────────────────────────────
 
-  /** The tile inspector's groups as drawn now, or null. */
+  /** The tile inspector's settings as drawn now, or null. */
   private inspectorGroupsEl(): HTMLElement | null {
-    return this.renderRoot?.querySelector<HTMLElement>(".pe-tile-insp .ts-groups") ?? null;
+    return this.renderRoot?.querySelector<HTMLElement>(".pe-tile-insp .ts-insp") ?? null;
   }
 
   /**
-   * Go to the section the head names (a fact, a part of its tile, Hide):
-   * its group opened first if it was folded to its row, then the section
+   * Go to the section of a part of the selected tile: the section
    * scrolled into view inside the inspector's own scroll, washed amber for a
    * moment (not with reduced motion), and the section's first control
    * focused. With `within`, the element of the section it picks (the State
    * section's bar card) is the one gone to.
    */
   private goToSetting(part: string, within?: (section: HTMLElement) => HTMLElement | null): void {
-    const group = tileGroupOfPart(part);
-    if (group !== undefined && openTileGroup(this.uiState, group)) {
-      this.requestUpdate();
-      void this.updateComplete.then(() => this.goToDrawnSetting(part, within));
-      return;
-    }
-    this.goToDrawnSetting(part, within);
-  }
-
-  private goToDrawnSetting(part: string, within?: (section: HTMLElement) => HTMLElement | null): void {
     const groups = this.inspectorGroupsEl();
     const found = groups?.querySelector<HTMLElement>(`.ts-sec[data-part="${part}"]`) ?? null;
     if (groups === null || found === null) return;
@@ -6233,13 +6236,6 @@ export class WaPageEditor extends LitElement {
     }
     .pe-only svg.ui-icon { width: 11px; height: 11px; stroke-width: 2.2; }
     /* The inspector's foot: Delete tile from every device. */
-    .pe-tile-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 4px; }
-    .pe-tile-foot > .pe-btn { flex: 1 1 0; min-width: 0; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 12.5px; }
-    .pe-tile-foot > .pe-btn svg.ui-icon { flex: none; width: 14px; height: 14px; }
-    .pe-tile-foot > .pe-btn.pe-danger { border-color: color-mix(in srgb, var(--wa-need) 55%, var(--wa-line-strong)); background: transparent; }
-    .pe-tile-foot > .pe-btn.pe-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-need) 10%, transparent); }
-    .pe-del-words { display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
-    .pe-del-words > small { font-size: 10.5px; color: var(--wa-muted); }
     /* The picture keeps its size and the stage scrolls under it when it is
        bigger than the stage (a step past Fit, or a long page). "safe": a
        watch wider or taller than the stage starts at its top left edge, so
@@ -6369,7 +6365,15 @@ export class WaPageEditor extends LitElement {
     /* The parts of the selected tile while its Arrangement is Free: a box
        over each, the picked one outlined thinly and dragged, the others
        picked with a click. */
-    .pe-part { position: absolute; z-index: 1; box-sizing: border-box; border-radius: 3px; cursor: pointer; }
+    .pe-part { position: absolute; z-index: 1; box-sizing: border-box; border-radius: 3px; cursor: move; touch-action: none; }
+    /* The grid a part snaps to, and in amber the lines it has landed on. */
+    .pe-arr-grid {
+      position: absolute; display: block; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
+      background-image: linear-gradient(to right, rgba(255, 255, 255, .24) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, .24) 1px, transparent 1px);
+    }
+    .pe-arr-guide { position: absolute; display: block; background: rgb(255, 179, 64); }
+    .pe-arr-guide.x { top: 0; bottom: 0; width: 1px; }
+    .pe-arr-guide.y { left: 0; right: 0; height: 1px; }
     .pe-part:hover { outline: 1px dashed var(--pe-mark); outline-offset: 1px; }
     .pe-part.on { outline: 1px solid var(--pe-mark); outline-offset: 1px; cursor: move; touch-action: none; }
     .pe-part.on.dragging { cursor: grabbing; }
@@ -6484,70 +6488,38 @@ export class WaPageEditor extends LitElement {
     /* The strip spans the inspector over the group columns
        (\`renderTileCard\`). */
     .pe-strip { position: relative; min-width: 0; }
-    /* Duplicate, Hide and Delete as small outlined buttons, Delete in red. */
-    .pe-strip .ts-head-acts > button { border: 1px solid var(--wa-line-strong); border-radius: 7px; }
+    /* Delete in red. */
     .pe-strip .ts-head-acts > button.pe-strip-del:not(:disabled) { color: var(--wa-need); }
-    /* Four columns side by side (the inspector 1580px and wider, in the wide
-       layout, which is one screen tall): the tile's body fills the
-       inspector, the head keeps its height, and each group column fills the
-       rest, all starting at the same top, each scrolling on its own under
-       its title, which stays put. Narrower, or with several tiles picked
-       (their list and Group card come under the groups), the inspector
-       scrolls as one. On a screen too short for the columns to be any use
-       (under 360px for them) the inspector scrolls as one too. */
-    @container insp (min-width: 1580px) {
-      .pe-layout.pe-wide > .column.inspector > .insp-body.pe-tile-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding-bottom: 0; }
-      .pe-layout.pe-wide .pe-tile-body > .pe-tile-insp { flex: 1 1 0; min-height: 0; }
-      .pe-layout.pe-wide .pe-tile-body > .pe-tile-insp > .ts-insp { flex: 1 1 0; min-height: 0; }
-      .pe-layout.pe-wide .pe-tile-body .ts-insp > .ts-insp-head { flex: none; }
-      .pe-layout.pe-wide .pe-tile-body .ts-insp > .ts-groups { flex: 1 1 0; min-height: 360px; grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
-      .pe-layout.pe-wide .pe-tile-body .ts-groups .ts-grp:not(.ts-grp-row) { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-      .pe-layout.pe-wide .pe-tile-body .ts-grp > .ts-grp-h { position: sticky; top: 0; z-index: 2; }
-    }
-    .ts-groups .ts-sec { scroll-margin-top: 12px; }
-    /* The path over the live tiles: Page, back to the page's settings, then
-       the tile's name. */
-    .pe-path { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12.5px; color: var(--wa-muted); }
+    .ts-insp .ts-sec { scroll-margin-top: 12px; }
+    /* The way back to the page's settings, over the top card's rows. */
     .pe-path-back {
-      flex: none; padding: 4px 6px; border: 0; border-radius: 6px; background: none;
-      font: inherit; color: var(--wa-muted); cursor: pointer;
+      display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 2px 6px 2px 2px; border: 0; border-radius: 6px; background: none;
+      font: inherit; font-size: 12px; color: var(--wa-muted); cursor: pointer;
     }
     .pe-path-back:hover { color: var(--wa-ink); background: var(--wa-hover); }
     .pe-path-back:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pe-path-sep { display: inline-flex; flex: none; opacity: .7; }
     .pe-path-sep svg.ui-icon { width: 12px; height: 12px; }
-    .pe-path-nm { min-width: 0; font-weight: 500; color: var(--wa-ink); overflow-wrap: anywhere; }
-    /* The live tile, large, under the path; smaller on a narrow inspector,
-       its part boxes with it. */
-    .pe-head-pic { --pe-amber: 255, 179, 64; display: grid; place-items: center start; min-height: ${HEAD_TILE_H}px; }
-    @container insp (max-width: 680px) { .pe-head-pic { zoom: ${Math.round(HEAD_TILE_ZOOM.narrow * 1000) / 1000}; } }
-    @container insp (max-width: 520px) { .pe-head-pic { zoom: ${Math.round(HEAD_TILE_ZOOM.small * 1000) / 1000}; } }
-    /* The tile's parts (\`renderHeadParts\`): a press goes to the part's
-       section; the part a settings row under the pointer stands for wears
-       an amber ring (\`data-lit\`, set by \`lightHeadPart\`). */
-    .pe-head-tile > .pe-hp {
-      position: absolute; border-radius: 6px; pointer-events: auto; cursor: pointer;
-      transition: box-shadow .15s ease-out, background-color .15s ease-out;
+    /* The selected tile's parts on the stage (\`renderStageHeadParts\`): the
+       part a settings row under the pointer stands for wears an amber ring
+       (\`data-lit\`, set by \`lightHeadPart\`), the whole tile an amber edge. */
+    .pe-tile > .pe-hp { position: absolute; border-radius: 4px; pointer-events: none; transition: box-shadow .15s ease-out, background-color .15s ease-out; }
+    .pe-tile[data-lit="icon"] > .pe-hp[data-head-part="icon"],
+    .pe-tile[data-lit="name"] > .pe-hp[data-head-part="name"],
+    .pe-tile[data-lit="state"] > .pe-hp[data-head-part="state"],
+    .pe-tile[data-lit="bar"] > .pe-hp[data-head-part="bar"] {
+      box-shadow: 0 0 0 2px rgb(255, 179, 64); background-color: rgba(255, 179, 64, .18);
     }
-    .pe-head-tile > .pe-hp[data-head-part="tile"] { border-radius: 12px; }
-    .pe-head-tile > .pe-hp:hover { box-shadow: 0 0 0 1px rgba(var(--pe-amber), .55); }
-    .pe-head-pic[data-lit="tile"] .pe-hp[data-head-part="tile"],
-    .pe-head-pic[data-lit="icon"] .pe-hp[data-head-part="icon"],
-    .pe-head-pic[data-lit="name"] .pe-hp[data-head-part="name"],
-    .pe-head-pic[data-lit="state"] .pe-hp[data-head-part="state"],
-    .pe-head-pic[data-lit="bar"] .pe-hp[data-head-part="bar"] {
-      box-shadow: 0 0 0 2px rgb(var(--pe-amber)); background-color: rgba(var(--pe-amber), .18);
-    }
-    .pe-head-pic[data-lit="tile"] .pe-hp[data-head-part="tile"] { background-color: rgba(var(--pe-amber), .08); }
-    @media (prefers-reduced-motion: reduce) { .pe-head-tile > .pe-hp { transition: none; } }
+    .pe-tile[data-lit="tile"] { outline: 2px solid rgb(255, 179, 64); outline-offset: 1px; }
+    @media (prefers-reduced-motion: reduce) { .pe-tile > .pe-hp { transition: none; } }
     /* The section the head went to: an amber wash that fades. None with
        reduced motion (the script does not add it then either). */
-    .ts-groups .pe-found { animation: pe-found ${FIND_FLASH_MS}ms ease-out; }
+    .ts-insp .pe-found { animation: pe-found ${FIND_FLASH_MS}ms ease-out; }
     @keyframes pe-found {
       0%, 55% { background-color: rgba(255, 179, 64, .22); }
       100% { background-color: transparent; }
     }
-    @media (prefers-reduced-motion: reduce) { .ts-groups .pe-found { animation: none; } }
+    @media (prefers-reduced-motion: reduce) { .ts-insp .pe-found { animation: none; } }
     /* The page's own cards in one to three columns by the inspector's own
        width, pure CSS: a column balances by height and keeps the cards in
        reading order, top to bottom then across, and never splits a card. */

@@ -1,9 +1,9 @@
-// The tile inspector's head (`tile-head.ts`): Shows names the entity by its
-// friendly name, area and id; the facts under Name and Shows each go to
-// their section; which pages a change reaches; how many parts are changed
-// with Reset all; and the head's large tile and the settings talking to
-// each other, a row under the pointer lighting its part of the tile and a
-// press on a part of the tile going to its section.
+// The tile inspector's head (`tile-head.ts`): Controls names the entity by its
+// friendly name, area and id; the row holds the Name, how many parts are
+// changed with Reset all, then the tile's actions; Copy look and Paste look;
+// and the selected tile on the stage and the settings talking to each other,
+// a row under the pointer lighting its part of the tile and a press on a part
+// of the tile going to its section.
 //
 // No DOM: the page editor's `renderInspector` is drawn to its Lit template
 // and read as text; the few DOM reads are answered by small stand-ins.
@@ -22,8 +22,11 @@ import {
   TILE_HEAD_PART_OF,
   tileHeadChangedCount,
   tileHeadPartAt,
-  tileHeadPills,
+  watchTileLookKeys,
+  watchTileLookOf,
+  watchTileWithLook,
 } from "../src/watch-pages/tile-head.js";
+import { requiredTileKeyDefault } from "../src/watch-pages/merge.js";
 import { watchTileStateCards } from "../src/watch-pages/styling-model.js";
 import "../src/watch-pages/page-editor.js";
 
@@ -143,10 +146,13 @@ function inspector(el: Editor): unknown {
   return el.renderInspector(page, tile, [page]);
 }
 
-/** The head's markup, from its section to the first group. */
+/** The head's markup, from its row to the top card's first part, or to the
+ * cards on a tile with no part up there. */
 function head(el: Editor): string {
   const text = flat(inspector(el));
-  return text.slice(text.indexOf(`<section class="ts-head ts-root"`), text.indexOf(`<section class="ts-grp"`));
+  const from = text.indexOf(`<div class="ts-head ts-root"`);
+  const part = text.indexOf(`<section class="ts-sec ts-top-part"`, from);
+  return text.slice(from, part >= 0 ? part : text.indexOf(`<div class="ts-groups">`, from));
 }
 
 function hostOf(el: Editor): TileSettingsHost {
@@ -180,11 +186,11 @@ function inside(...selectors: { sel: string; data?: Record<string, string> }[]):
   } as unknown as Element;
 }
 
-describe("the head's Shows", () => {
+describe("what the tile controls", () => {
   it("names the entity by its friendly name, its area and its id, on a row that a click changes", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const shows = text.slice(text.indexOf(`data-part=entity`));
-    expect(shows).toContain(`<h4>Entity</h4>`);
+    expect(shows).toContain(`<div class="ts-top-lab"><span>Controls</span></div>`);
     expect(shows).toContain(`<div class="ts-entity-pick">`);
     expect(shows).toMatch(/<button type="button" class="ent-pick"[^>]*>.*<span class="ent-name">Smart Plug Dimmer<\/span>\s*<span class="ent-area">Office<\/span>\s*<span class="ent-id mono">light\.smart_plug_dimmer<\/span>/s);
     // A tile always shows an entity, so its row has no x.
@@ -196,45 +202,64 @@ describe("the head's Shows", () => {
   });
 });
 
-describe("the head's facts", () => {
-  it("say what a tap does, each hold and slide direction of its own, when the tile shows and its off look", () => {
-    const el = editor(hallPage({ holdSlideActions: ["up", "toggle"], hideWhenInactive: true } as Partial<WatchPageTile>), DIMMER);
-    const pills = tileHeadPills(hostOf(el)).map((p) => `${p.label}: ${p.value} > ${p.part}`);
-    expect(pills.find((p) => p.startsWith("Tap: "))).toMatch(/> action$/);
-    expect(pills).toContain("Hold up: Toggle light > action");
-    expect(pills.some((p) => p.startsWith("Hold down"))).toBe(false);
-    expect(pills).toContain("Shows: light.smart_plug_dimmer > entity");
-    expect(pills).toContain("Shows when: Only while on > visibility");
-    expect(pills).toContain("Off look: Dim > whenOff");
+describe("the head's row", () => {
+  it("draws the way back, the Name, the Tile on chips, the changed line, then Duplicate, Copy look, Paste look and Delete, and no facts", () => {
+    const text = head(editor(hallPage(), DIMMER));
+    const order = [`class="pe-path-back"`, `aria-label="Name"`, "pe-tile-screens", `class="ts-head-changed"`, "pe-strip-dup", "pe-strip-copy", "pe-strip-paste", "pe-strip-del pe-del-tile"].map((m) => text.indexOf(m));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    for (const gone of ["ts-pill", "ts-head-pills", "pe-head-pic"]) expect(text, gone).not.toContain(gone);
   });
 
-  it("are buttons in the head, each going to its section, washed amber", () => {
+  it("stands above the top card's parts", () => {
+    const text = flat(inspector(editor(hallPage(), DIMMER)));
+    const top = text.slice(text.indexOf(`<section class="ts-top" `));
+    expect(top.indexOf(`class="ts-head ts-root"`)).toBeGreaterThan(-1);
+    expect(top.indexOf(`class="ts-head ts-root"`)).toBeLessThan(top.indexOf("data-part=entity"));
+  });
+
+  it("presses Delete through the page editor, for the tile it is on", () => {
     const el = editor(hallPage(), DIMMER);
-    const text = head(el);
-    expect(text).toMatch(/<button type="button" class="ts-pill ts-pill-link" data-goes=entity title=Go to Entity @click=>Shows: <b class="ts-pill-id">light\.smart_plug_dimmer<\/b><svg/);
+    const deleted: unknown[] = [];
+    el["deleteTile"] = (id: unknown) => deleted.push(id);
+    click(inspector(el), "pe-strip-del pe-del-tile");
+    expect(deleted).toEqual([DIMMER]);
+  });
+});
+
+describe("going to a setting", () => {
+  it("finds its section in the settings, scrolls to it and washes it, whatever card it stands in", () => {
+    const el = editor(hallPage(), DIMMER);
     const flashed: string[] = [];
-    const section = {
-      scrollIntoView() {}, offsetWidth: 0, querySelector: () => null,
+    const scrolled: string[] = [];
+    const section = (part: string) => ({
+      scrollIntoView() { scrolled.push(part); }, offsetWidth: 0, querySelector: () => null,
       classList: { add: (c: string) => flashed.push(c), remove() {} },
-    };
-    const groups = { querySelector: (sel: string) => (sel === `.ts-sec[data-part="entity"]` ? section : null) };
-    el.renderRoot = { activeElement: null, querySelector: (sel: string) => (sel === ".pe-tile-insp .ts-groups" ? groups : null) };
+    });
+    const insp = { querySelector: (sel: string) => /data-part="(\w+)"/.exec(sel)?.[1] === "border" || sel.includes(`"entity"`) ? section(sel.includes("border") ? "border" : "entity") : null };
+    el.renderRoot = { activeElement: null, querySelector: (sel: string) => (sel === ".pe-tile-insp .ts-insp" ? insp : null) };
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
-    click(inspector(el), "data-goes=entity");
-    expect(flashed).toEqual(["pe-found"]);
+    const go = el["goToSetting"] as (this: unknown, part: string) => void;
+    go.call(el, "entity");
+    go.call(el, "border");
+    expect(scrolled).toEqual(["entity", "border"]);
+    expect(flashed).toEqual(["pe-found", "pe-found"]);
+    // A part the tile does not have goes nowhere.
+    go.call(el, "state");
+    expect(scrolled).toEqual(["entity", "border"]);
   });
+});
 
-  it("come after the Tile on chips, which sit right under the Name, with no line saying a tile is the same on every device", () => {
+describe("the Watch and iPhone chips", () => {
+  it("stand in the head, right after the Name, with no line saying a tile is the same on every device", () => {
     const el = editor(hallPage(), DIMMER);
-    const text = head(el);
-    const name = text.indexOf(`aria-label="Name"`);
+    const text = flat(inspector(el));
     const on = text.indexOf(`<div class="pe-tile-screens" role="group" aria-label=Tile on>`);
-    expect(name).toBeGreaterThan(-1);
-    expect(on).toBeGreaterThan(name);
-    // In the Name's column, over the facts.
-    expect(on).toBeGreaterThan(text.indexOf(`<div class="ts-head-mid">`));
-    expect(on).toBeLessThan(text.indexOf(`<div class="ts-head-pills">`));
-    const line = text.slice(on, text.indexOf(`<div class="ts-head-pills">`));
+    expect(on).toBeGreaterThan(-1);
+    expect(on).toBeGreaterThan(text.indexOf(`aria-label="Name"`));
+    expect(on).toBeLessThan(text.indexOf(`class="ts-head-side"`));
+    expect(text.slice(text.indexOf(`<section class="ts-grp" data-group=where `))).not.toContain("pe-tile-screens");
+    const line = text.slice(on);
     expect(line).toContain(`<span class="lt-lead">Tile on</span>`);
     expect([...line.matchAll(/<span class="lt-name">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Watch", "iPhone"]);
     expect(text).not.toContain("Same on every device");
@@ -261,15 +286,19 @@ describe("the head's tile and the settings", () => {
   it("stand every section for a part of the tile", () => {
     for (const [part] of TILE_INSPECTOR_PARTS) expect(TILE_HEAD_PART_OF[part], part).toBeDefined();
     expect(TILE_HEAD_PART_OF.icon).toBe("icon");
+    expect(TILE_HEAD_PART_OF.iconLook).toBe("icon");
+    expect(TILE_HEAD_PART_OF.tap).toBe("tile");
+    expect(TILE_HEAD_PART_OF.color).toBe("tile");
     expect(TILE_HEAD_PART_OF.text).toBe("name");
     expect(TILE_HEAD_PART_OF.state).toBe("state");
     expect(TILE_HEAD_PART_OF.background).toBe("tile");
     expect(TILE_HEAD_PART_OF.visibility).toBe("tile");
   });
 
-  it("light the part a row under the pointer stands for: its own mark first, then its section's, nothing outside the groups", () => {
-    const groups = { sel: ".ts-groups" };
+  it("light the part a row under the pointer stands for: its own mark first, then its section's, nothing outside the settings", () => {
+    const groups = { sel: ".ts-insp" };
     expect(tileHeadPartAt(inside(groups, { sel: ".ts-sec[data-part]", data: { part: "icon" } }))).toBe("icon");
+    expect(tileHeadPartAt(inside(groups, { sel: ".ts-sec[data-part]", data: { part: "tap" } }))).toBe("tile");
     expect(tileHeadPartAt(inside(groups, { sel: ".ts-sec[data-part]", data: { part: "text" } }))).toBe("name");
     expect(tileHeadPartAt(inside(groups, { sel: "[data-tile-part]", data: { tilePart: "bar" } }, { sel: ".ts-sec[data-part]", data: { part: "state" } }))).toBe("bar");
     expect(tileHeadPartAt(inside(groups, { sel: ".ts-sec[data-part]", data: { part: "border" } }))).toBe("tile");
@@ -279,19 +308,37 @@ describe("the head's tile and the settings", () => {
     expect(tileHeadPartAt(null)).toBeUndefined();
   });
 
-  it("draw a box over the whole tile and each part One Look lays out, each going to its section", () => {
+  it("draw a box on the stage over each part One Look lays out, each going to its section", () => {
     const el = editor(hallPage(), DIMMER);
-    const text = head(el);
-    expect(text).toContain(`<span class="pe-hp" data-head-part=tile aria-hidden="true" title=Go to the tile's settings`);
-    for (const part of ["icon", "name", "state"]) expect(text).toContain(`data-head-part=${part} `);
+    const page = el.currentPage()!;
+    const input = { page, pages: [page], screen: { width: 200, height: 240 }, states: HASS.states };
+    const draw = el["renderStageHeadParts"] as (this: unknown, tile: WatchPageTile, cell: { width: number; height: number }, input: unknown, unit: number, s: number) => unknown;
+    const text = flat(draw.call(el, (page.items as WatchPageTile[])[0]!, { width: 90, height: 60 }, input, 1, 2));
+    for (const part of ["icon", "name", "state"]) expect(text).toMatch(new RegExp(`<span class="pe-hp" data-head-part=${part} aria-hidden="true"`));
+    // While a tile is dragged, no boxes.
+    el["gesture"] = { started: true, kind: "move" };
+    expect(draw.call(el, (page.items as WatchPageTile[])[0]!, { width: 90, height: 60 }, input, 1, 2)).toBe(nothing);
+    el["gesture"] = undefined;
     const went: string[] = [];
     const go = el["goToHeadPart"] as (this: unknown, part: string) => void;
-    // By the parts the tile has, not those drawn: a folded group draws none.
     el["goToSetting"] = (part: string, within?: unknown) => went.push(`${part}${within === undefined ? "" : " card"}`);
     go.call(el, "name");
     go.call(el, "bar");
     go.call(el, "tile");
     expect(went).toEqual(["text", "state card", "color"]);
+  });
+
+  it("find the part under a click on the selected tile, the last drawn on top, none on its bare ground", () => {
+    const el = editor(hallPage(), DIMMER);
+    const box = (part: string, left: number, right: number) => ({
+      dataset: { headPart: part },
+      getBoundingClientRect: () => ({ left, right, top: 0, bottom: 100 }),
+    });
+    const button = { querySelectorAll: () => [box("bar", 0, 50), box("state", 20, 50)] } as unknown as HTMLElement;
+    const at = el["headPartAtClick"] as (this: unknown, button: HTMLElement, e: unknown) => string | undefined;
+    expect(at.call(el, button, { clientX: 30, clientY: 10 })).toBe("state");
+    expect(at.call(el, button, { clientX: 10, clientY: 10 })).toBe("bar");
+    expect(at.call(el, button, { clientX: 90, clientY: 10 })).toBeUndefined();
   });
 
   it("light the bar for a row of the State section's State bar card, the state for its other cards", () => {
@@ -300,7 +347,7 @@ describe("the head's tile and the settings", () => {
     expect(watchTileStateCards(light).find((c) => c.id === "bar")?.title).toBe(STATE_BAR_CARD_TITLE);
     const card = (title: string) => ({ querySelector: (sel: string) => (sel === ".ts-sub-h" ? { textContent: ` ${title} ` } : null) });
     const row = (title: string) => ({
-      closest: (sel: string) => (sel === ".ts-groups" ? {} : sel === ".ts-sec[data-part]" ? { dataset: { part: "state" } } : sel === ".ts-group" ? card(title) : null),
+      closest: (sel: string) => (sel === ".ts-insp" ? {} : sel === ".ts-sec[data-part]" ? { dataset: { part: "state" } } : sel === ".ts-group" ? card(title) : null),
     }) as unknown as Element;
     expect(tileHeadPartAt(row(STATE_BAR_CARD_TITLE))).toBe("bar");
     expect(tileHeadPartAt(row("State text"))).toBe("state");
@@ -310,49 +357,160 @@ describe("the head's tile and the settings", () => {
     expect(TILE_HEAD_GOES_TO.bar.within!(section)).toBe(bar);
   });
 
-  it("mark the lit part on the tile's box, without a redraw", () => {
-    const el = editor(hallPage(), DIMMER);
-    const pic = { dataset: {} as Record<string, string> };
-    el.renderRoot = { activeElement: null, querySelector: (sel: string) => (sel === ".pe-tile-insp .pe-head-pic" ? pic : null) };
-    const hover = el["onInspectorHover"] as (e: unknown) => void;
-    const leave = el["onInspectorLeave"] as () => void;
+  /** A row of the settings under the pointer, in the part named. */
+  const rowIn = (part: string): Element => {
     (globalThis as { Element?: unknown }).Element ??= class {};
     const El = (globalThis as unknown as { Element: new () => Element }).Element;
-    const row = Object.assign(new El(), { closest: (sel: string) => (sel === ".ts-groups" ? {} : sel === ".ts-sec[data-part]" ? { dataset: { part: "icon" } } : null) });
-    hover({ target: row });
-    expect(pic.dataset["lit"]).toBe("icon");
+    return Object.assign(new El(), {
+      closest: (sel: string) => (sel === ".ts-insp" ? {} : sel === ".ts-sec[data-part]" ? { dataset: { part } } : sel === `.ts-sec[data-part="${part}"]` ? {} : null),
+    });
+  };
+
+  it("mark the lit part on the selected tile's box on each picture, without a redraw", () => {
+    const el = editor(hallPage(), DIMMER);
+    const boxes = [{ dataset: {} as Record<string, string> }, { dataset: {} as Record<string, string> }];
+    el.renderRoot = { activeElement: null, querySelector: () => null, querySelectorAll: (sel: string) => (sel === ".pe-tile.sel" ? boxes : []) };
+    const hover = el["onInspectorHover"] as (e: unknown) => void;
+    const leave = el["onInspectorLeave"] as () => void;
+    hover({ target: rowIn("icon") });
+    expect(boxes.map((b) => b.dataset["lit"])).toEqual(["icon", "icon"]);
     leave();
-    expect(pic.dataset["lit"]).toBeUndefined();
+    expect(boxes.map((b) => b.dataset["lit"])).toEqual([undefined, undefined]);
+  });
+
+  it("try the tile off on the stage while the pointer is on When it is off, and only then", () => {
+    const el = editor(hallPage(), DIMMER);
+    el.renderRoot = { activeElement: null, querySelector: () => null, querySelectorAll: () => [] };
+    const hover = el["onInspectorHover"] as (e: unknown) => void;
+    const leave = el["onInspectorLeave"] as () => void;
+    hover({ target: rowIn("whenOff") });
+    expect(el["hoverState"]).toEqual({ entityId: "light.smart_plug_dimmer", state: "off" });
+    hover({ target: rowIn("glow") });
+    expect(el["hoverState"]).toBeUndefined();
+    hover({ target: rowIn("whenOff") });
+    leave();
+    expect(el["hoverState"]).toBeUndefined();
+    // A state the Live strip is trying stays through a hover over another row.
+    el["hoverState"] = { entityId: "light.smart_plug_dimmer", state: "on" };
+    hover({ target: rowIn("glow") });
+    expect(el["hoverState"]).toEqual({ entityId: "light.smart_plug_dimmer", state: "on" });
   });
 });
 
-describe("the head's facts as links (mock-pages, view 2, item 5)", () => {
-  const lockOn = (el: Editor) => tileHeadPills(hostOf(el)).map((p) => p.label);
+describe("a tile's look", () => {
+  const FULL: WatchPageTile = {
+    ...DIMMER_TILE,
+    color: "#FF0000", iconSizeOverride: 30, iconShadow: true, iconGlow: { mode: "off" }, dimWhenOff: false, iconTapAnimation: "bounce",
+    labelFontSizeOverride: 14, labelFontWeight: "bold", labelFontDesign: "serif", labelShadow: false, labelColorHex: "#00FF00",
+    stateValueLabelStyle: "Pill", borderStyle: "line", backgroundPattern: "dots", arrange: { v: 1, parts: { icon: { dx: 0.1 } } },
+    icon: "star.circle", iconPhotoId: "photo-1", iconPhotoLook: "clear", stateIcons: { on: "bolt" }, stateColors: { on: "#0000FF" },
+    singleTapAction: "openControl", requiresConfirmation: true, hideWhenInactive: true,
+  };
+  const NEVER = ["id", "entityId", "gridCol", "gridRow", "colSpan", "rowSpan", "icon", "iconPhotoId", "iconPhotoLook", "customLabel", "stateIcons", "stateColors", "singleTapAction", "requiresConfirmation", "hideWhenInactive", "showLabel"];
 
-  it("name no Off look for anything but a light", () => {
-    const light = editor(hallPage(), DIMMER);
-    expect(lockOn(light)).toContain("Off look");
-    const lock = editor(hallPage({ entityId: "lock.front_door" } as Partial<WatchPageTile>), DIMMER);
-    expect(lockOn(lock)).not.toContain("Off look");
-    expect(lockOn(lock)).toEqual(expect.arrayContaining(["Tap", "Shows"]));
+  it("carries color, glow, text look, state, border, background and arrange", () => {
+    const look = watchTileLookOf(FULL);
+    expect(look).toMatchObject({
+      color: "#FF0000", iconSizeOverride: 30, iconShadow: true, iconGlow: { mode: "off" }, dimWhenOff: false, iconTapAnimation: "bounce",
+      labelFontSizeOverride: 14, labelFontWeight: "bold", labelFontDesign: "serif", labelShadow: false, labelColorHex: "#00FF00",
+      stateValueLabelStyle: "Pill", borderStyle: "line", backgroundPattern: "dots", arrange: { v: 1, parts: { icon: { dx: 0.1 } } },
+    });
   });
 
-  it("open a folded group first, then go to the section once it is drawn", async () => {
-    const el = editor(hallPage(), DIMMER);
-    const went: string[] = [];
-    el["goToDrawnSetting"] = (part: string) => went.push(part);
-    el["requestUpdate"] = () => undefined;
-    Object.defineProperty(el, "updateComplete", { value: Promise.resolve(true) });
-    const go = el["goToSetting"] as (this: unknown, part: string) => void;
-    // What it does is always open: straight there.
-    go.call(el, "action");
-    expect(went).toEqual(["action"]);
-    // Border stands in Surface and rules, folded: it waits for the draw.
-    expect(flat(inspector(el))).not.toContain("data-part=border");
-    go.call(el, "border");
-    expect(went).toEqual(["action"]);
-    expect(flat(inspector(el))).toContain("data-part=border");
-    await Promise.resolve();
-    expect(went).toEqual(["action", "border"]);
+  it("never carries the tile's icon, photo, name, state icons and colors, what it does, its entity or its place", () => {
+    const look = watchTileLookOf(FULL);
+    for (const key of NEVER) {
+      expect(Object.keys(look), key).not.toContain(key);
+      expect(watchTileLookKeys(), key).not.toContain(key);
+    }
+    // Nor any other key of the tile's entity.
+    expect(watchTileLookKeys().filter((k) => /entity/i.test(k))).toEqual([]);
+  });
+
+  it("holds only what the tile holds, as a copy of its own", () => {
+    expect(watchTileLookOf({ id: DIMMER, entityId: "light.a" } as WatchPageTile)).toEqual({});
+    const look = watchTileLookOf(FULL);
+    (look["iconGlow"] as { mode: string }).mode = "on";
+    expect(FULL.iconGlow).toEqual({ mode: "off" });
+  });
+
+  it("goes on another tile with that tile's own icon, name, tap and place kept", () => {
+    const other: WatchPageTile = { id: SPACER, entityId: "light.b", gridCol: 6, gridRow: 2, colSpan: 3, rowSpan: 2, icon: "bolt", customLabel: "B", singleTapAction: "toggle", stateIcons: { off: "moon" } };
+    const next = watchTileWithLook(other, watchTileLookOf(FULL));
+    expect(next).toMatchObject({ id: SPACER, entityId: "light.b", gridCol: 6, gridRow: 2, colSpan: 3, rowSpan: 2, icon: "bolt", customLabel: "B", singleTapAction: "toggle", stateIcons: { off: "moon" } });
+    expect(next).toMatchObject({ color: "#FF0000", borderStyle: "line", arrange: { v: 1, parts: { icon: { dx: 0.1 } } } });
+    expect(next.iconPhotoId).toBeUndefined();
+  });
+
+  it("takes a key off that the look does not hold, but puts a required one back at its default", () => {
+    const next = watchTileWithLook(FULL, {});
+    // Required: the phone and the watch refuse a whole page without them.
+    for (const key of ["iconShadow", "labelShadow", "iconTapAnimation", "stateValueLabelStyle"]) {
+      expect(requiredTileKeyDefault(key), key).toBeDefined();
+      expect(next[key], key).toEqual(requiredTileKeyDefault(key));
+    }
+    expect(next.labelFontWeight).toBe(requiredTileKeyDefault("labelFontWeight"));
+    // Not required: gone.
+    for (const key of ["color", "iconSizeOverride", "iconGlow", "dimWhenOff", "labelColorHex", "arrange"]) {
+      expect(requiredTileKeyDefault(key), key).toBeUndefined();
+      expect(Object.keys(next), key).not.toContain(key);
+    }
+    // And what is the tile's own stays.
+    expect(next.icon).toBe("star.circle");
+    expect(next.singleTapAction).toBe("openControl");
+  });
+});
+
+describe("Copy look and Paste look", () => {
+  /** Press the `@click` bound right after `marker` in any template. */
+  const press = (root: unknown, marker: string): void => {
+    for (const t of templates(root)) {
+      let text = "";
+      for (let i = 0; i < t.values.length; i++) {
+        text += t.strings[i]!;
+        const v = t.values[i];
+        if (text.includes(marker) && typeof v === "function" && t.strings[i]!.trimEnd().endsWith("@click=")) {
+          (v as () => void)();
+          return;
+        }
+        text += flat(v);
+      }
+    }
+    throw new Error(`no @click after ${marker}`);
+  };
+  const OTHER = "C3A0E000-0000-4000-8000-0000000000C3";
+  const twoLights = () => ({
+    ...hallPage({ color: "#FF0000", borderStyle: "line" } as Partial<WatchPageTile>),
+    items: [
+      { ...DIMMER_TILE, color: "#FF0000", borderStyle: "line" },
+      { ...DIMMER_TILE, id: OTHER, entityId: "light.other", gridRow: 4, icon: "bolt", customLabel: "Other" },
+    ],
+  }) as WatchPage;
+  const pasteOf = (text: string): string => text.slice(text.indexOf("pe-strip-paste"), text.indexOf(">Paste look<"));
+
+  it("has Paste look off until a look is copied, then on, on any tile of the page", () => {
+    const el = editor(twoLights(), DIMMER);
+    expect(pasteOf(head(el))).toContain("?disabled=true");
+    expect(pasteOf(head(el))).toContain("title=Copy a tile's look first");
+    press(inspector(el), "pe-strip-copy");
+    expect(pasteOf(head(el))).toContain("?disabled=false");
+    el.selectedTileId = OTHER;
+    expect(pasteOf(head(el))).toContain("?disabled=false");
+  });
+
+  it("gives the tile the copied look as one edit, keeping its own icon, name and entity", () => {
+    const el = editor(twoLights(), DIMMER);
+    press(inspector(el), "pe-strip-copy");
+    el.selectedTileId = OTHER;
+    press(inspector(el), "pe-strip-paste");
+    const other = (el.currentPage()!.items as WatchPageTile[]).find((t) => t.id === OTHER)!;
+    expect(other).toMatchObject({ color: "#FF0000", borderStyle: "line", icon: "bolt", customLabel: "Other", entityId: "light.other", gridRow: 4 });
+  });
+
+  it("presses to nothing while nothing is copied", () => {
+    const el = editor(twoLights(), DIMMER);
+    const before = el.currentPage();
+    press(inspector(el), "pe-strip-paste");
+    expect(el.currentPage()).toBe(before);
   });
 });

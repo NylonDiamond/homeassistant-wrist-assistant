@@ -142,7 +142,7 @@ describe("Icon and color in One Look", () => {
     const { host, draft } = tileHost(tile("switch.fan", { dimWhenOff: false }), true);
     const before = draft.document;
     const sw = text(renderTileSettings(host));
-    expect(greyedBefore(sw, ONE_LOOK_DIM_OFF_REASON)).toContain("When it is off");
+    expect(greyedBefore(sw, ONE_LOOK_DIM_OFF_REASON)).toContain("When off");
     expect(sw).not.toContain("The tile dims while it is off, or keeps its color.");
     // Drawing greys; it never writes.
     expect(draft.document).toBe(before);

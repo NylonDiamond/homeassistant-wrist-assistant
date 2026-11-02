@@ -1,9 +1,8 @@
-// The tile inspector's picture choices (`picture-choice.ts`) and its four
-// groups: each setting shown as pictures writes what its old control wrote,
-// a choice of a menu that moves plays on the head's preview tile without
-// touching the draft, the arrow keys move between pictures, Preview as draws
-// a tile's entity on, off or unavailable, and every section lands in one of
-// the four groups.
+// The tile inspector's picture choices (`picture-choice.ts`) and its groups:
+// each setting shown as pictures writes what its old control wrote, a choice
+// of a menu that moves plays on the selected tile without touching the draft,
+// the arrow keys move between pictures, Preview as draws a tile's entity on,
+// off or unavailable, and every section lands in one of the groups.
 //
 // No DOM: the settings are drawn to their Lit templates and read as text, and
 // a button is pressed by calling the handler its template holds.
@@ -120,7 +119,7 @@ function tileHost(t: WatchPageTile): { host: TileSettingsHost; draft: WatchPages
     smartRuleId: undefined,
     busy: false,
     // Every group open: these look at the rows inside them.
-    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
+    uiState: new Map<string, unknown>(),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -140,9 +139,9 @@ describe("picture choices", () => {
   // Weight and Design are one segmented row each (`segChoice`): each
   // button names its choice in full as its accessible name.
   const cases: { name: string; tile: WatchPageTile; value: string; seg?: string; expect: (d: WatchPagesDocument, t: WatchPageTile) => WatchPagesDocument }[] = [
-    { name: "When it is off: Keep color", tile: tile("light.desk"), value: "keep",
+    { name: "When it is off: Keep color", tile: tile("light.desk"), value: "keep", seg: "Keep color",
       expect: (d) => setWatchTileDimWhenOff(d, PAGE_ID, TILE_ID, false) },
-    { name: "When it is off: Dim", tile: tile("light.desk", { dimWhenOff: false }), value: "dim",
+    { name: "When it is off: Dim", tile: tile("light.desk", { dimWhenOff: false }), value: "dim", seg: "Dim",
       expect: (d) => setWatchTileDimWhenOff(d, PAGE_ID, TILE_ID, true) },
     { name: "State value Pill", tile: tile("light.desk", { stateValueLabelStyle: "Plain" }), value: "Pill",
       expect: (d) => (WATCH_STATE_ROW_SETTERS.stateValueLabelStyle as Setter)(d, PAGE_ID, TILE_ID, "Pill" as never) },
@@ -178,14 +177,14 @@ describe("picture choices", () => {
     });
   }
 
-  it("draws Glow as one large tile on over its switch, and When it is off as the tile off, large", () => {
+  it("draws Glow as its switch and When off as one grey row of two words, with no picture of the tile", () => {
     const text = flat(renderTileSettings(tileHost(tile("light.desk")).host));
-    const glow = text.slice(text.indexOf(`<div class="ts-big-pic"`), text.indexOf("Glow icon when on"));
-    expect(glow.match(/<span class="pc-tile"/g)?.length).toBe(1);
+    expect(text).not.toContain("ts-big-pic");
+    expect(text).toContain("Glow icon when on");
     expect(text).not.toMatch(/role="radiogroup" aria-label=Glow\s/);
-    expect(text).toContain(`class="field pc-field pc-size-large"`);
-    const off = text.slice(text.indexOf(`aria-label=When it is off`));
-    expect(off.slice(0, off.indexOf("</div>\n  </div>")).match(/<span class="pc-tile"/g)?.length).toBe(2);
+    const off = text.slice(text.indexOf(`<div class="pc-seg" role="radiogroup" aria-label=When off`));
+    expect(off.slice(0, off.indexOf("</div>"))).not.toContain("pc-tile");
+    expect([...off.slice(0, off.indexOf("</div>")).matchAll(/<span class="pc-seg-w"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Dim", "Keep color"]);
     expect(text).not.toContain(">Dim when off<");
   });
 
@@ -341,39 +340,41 @@ describe("the inspector's groups", () => {
     const parts = TILE_INSPECTOR_PARTS.map(([p]) => p);
     expect(new Set(parts).size).toBe(parts.length);
     for (const s of all.filter((x) => x !== "icon")) expect(parts, s).toContain(s);
-    for (const p of ["color", "icon", "glow", "whenOff", "tapAnimation"] as const) expect(parts).toContain(p);
+    for (const p of ["color", "icon", "iconLook", "glow", "whenOff", "tapAnimation", "tap"] as const) expect(parts).toContain(p);
     const of = (g: string) => TILE_INSPECTOR_PARTS.filter(([, x]) => x === g).map(([p]) => p);
-    // Color and icon is the fill, the icon or photo and the off look, a
-    // removed kind's line and a header's look leading it; Surface and rules
-    // is when it shows, where its parts sit, a rule's size, the background
-    // and border, the iPhone extras last; What it does leads with what the
-    // tile's own kind holds, then the tap.
-    expect(of("color")).toEqual(["removed", "header", "icon", "color", "glow", "whenOff"]);
-    expect(of("text")).toEqual(["arrange", "text", "state"]);
-    expect(of("surface")).toEqual(["visibility", "size", "background", "border", "phoneExtras"]);
-    expect(of("does")).toEqual(["entity", "phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
+    // The top card is what the tile controls, the tap, the icon, its color and
+    // its layout; Look is the rest of how it is drawn, a removed kind's line
+    // and a header's look leading it; What it does leads with what the tile's
+    // own kind holds, then the rest of the tap; Where it shows is when it
+    // shows, a rule's size and the iPhone extras last.
+    expect(of("top")).toEqual(["entity", "tap", "icon", "color", "arrange"]);
+    expect(of("color")).toEqual(["removed", "header", "iconLook", "whenOff", "glow"]);
+    expect(of("surface")).toEqual(["background", "border"]);
+    expect(of("text")).toEqual(["text", "state"]);
+    expect(of("does")).toEqual(["phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
+    expect(of("where")).toEqual(["visibility", "size", "phoneExtras"]);
     expect([...TILE_KIND_PARTS]).toEqual(["phoneTile", "special", "phone", "target", "opens", "request"]);
-    expect(TILE_INSPECTOR_GROUPS).toEqual(["color", "does", "text", "surface"]);
+    expect(TILE_INSPECTOR_GROUPS).toEqual(["top", "color", "surface", "text", "does", "where"]);
   });
 
   it("give a light its groups in order and leave out a group with nothing in it", () => {
     const { host } = tileHost(tile("light.desk"));
     expect(tileInspectorParts(host)).toEqual([
-      { group: "color", parts: ["icon", "color", "glow", "whenOff"] },
-      { group: "does", parts: ["entity", "action", "tapAnimation"] },
-      { group: "text", parts: ["arrange", "text", "state"] },
-      { group: "surface", parts: ["visibility", "size", "background", "border"] },
+      { group: "top", parts: ["entity", "tap", "icon", "color", "arrange"] },
+      { group: "color", parts: ["iconLook", "whenOff", "glow"] },
+      { group: "surface", parts: ["background", "border"] },
+      { group: "text", parts: ["text", "state"] },
+      { group: "does", parts: ["action", "tapAnimation"] },
+      { group: "where", parts: ["visibility", "size"] },
     ]);
     // Size is the page editor's: without its rows it is not drawn.
     const text = flat(renderTileInspector(host));
-    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Color and icon", "What it does", "Text and layout", "Surface and rules"]);
-    expect(text).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
-    expect(text).toMatch(/<span class="ts-grp-t">Text and layout<\/span>\s*<span class="ts-grp-d">Layout, name, state<\/span>/);
-    expect(text).toMatch(/<span class="ts-grp-t">Surface and rules<\/span>\s*<span class="ts-grp-d">Background, border, when it shows<\/span>/);
-    expect(text).toContain(`<h3 class="ts-grp-t">What it does</h3><span class="ts-grp-d">Tap, hold, the tile's own content</span>`);
+    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "Background and border", "Text", "What it does", "Where it shows"]);
+    expect(text).not.toContain("ts-grp-d");
+    expect(text).toContain(`<h3 class="ts-grp-t">What it does</h3>`);
     expect(text).not.toContain("data-part=size");
-    expect(text).toContain("<h4>Layout</h4>");
-    expect(text).toContain("<h4>Shows when</h4>");
+    expect(text).toContain(`data-part=arrange aria-label=Inside the tile`);
+    expect(text).toContain("<h4>Visible when</h4>");
     // A light has nothing of its own kind: no kind card.
     expect(text).not.toContain(`class="ts-kind"`);
   });

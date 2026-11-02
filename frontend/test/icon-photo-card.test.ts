@@ -169,7 +169,7 @@ async function setup(items: WatchPageTile[], picked: string[]) {
     smartRuleId: undefined,
     busy: false,
     // Every group open: these look at the rows inside them.
-    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
+    uiState: new Map<string, unknown>(),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -424,28 +424,35 @@ describe("Look, Colour or Clear", () => {
 // ── the Clear look's glow color ──────────────────────────────────────────
 
 describe("the Clear look's Color", () => {
-  /** The Color part's text: from its heading to the next part's. */
-  const colorPart = (text: string) => {
-    const start = Math.max(text.indexOf(`>${CLEAR_GLOW_COLOR_TITLE}<`), text.indexOf(">Color<"));
-    const end = text.indexOf("When it is off", start);
-    return text.slice(start, end > start ? end : undefined);
+  /** A part's text: from its section's tag to the next section's. */
+  const partOf = (text: string, id: string) => {
+    const start = text.search(new RegExp(`<section class="ts-sec( ts-top-part)?" data-part=${id} `));
+    if (start < 0) throw new Error(`no ${id} part`);
+    const end = text.slice(start + 1).search(/<section class="ts-(sec|grp)/);
+    return text.slice(start, end < 0 ? undefined : start + 1 + end);
   };
+  const colorPart = (text: string) => partOf(text, "color");
 
   it("reads as Glow color with one glow color, and says when a light's own color wins", async () => {
     const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear" })], [A]);
     expect(clearPhotoTile(host)).toBe(true);
     expect(partTitle(host, "color")).toBe(CLEAR_GLOW_COLOR_TITLE);
-    const text = colorPart(flat(renderTileInspector(host)));
+    const all = flat(renderTileInspector(host));
+    const text = colorPart(all);
+    expect(text).toContain(`<span>${CLEAR_GLOW_COLOR_TITLE}</span>`);
     expect(text).toContain(CLEAR_GLOW_LIGHT_NOTE);
-    expect(text).not.toContain(">Gradient<");
     expect(text).not.toContain(CLEAR_GLOW_GRADIENT_NOTE);
+    // One glow color: no Fill row at all.
+    expect(all).not.toContain("data-part=fill");
+    expect(text).not.toContain(">Gradient<");
   });
 
   it("keeps the Solid and Gradient switch while the tile holds a gradient, and says what it glows in", async () => {
     const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear", color: "GRADIENT|#FF0000|#0000FF" })], [A]);
-    const text = colorPart(flat(renderTileInspector(host)));
-    expect(text).toContain(">Gradient<");
-    expect(text).toContain(CLEAR_GLOW_GRADIENT_NOTE);
+    const all = flat(renderTileInspector(host));
+    // The switch leads the swatches, in the top card.
+    expect(colorPart(all)).toContain(">Gradient<");
+    expect(colorPart(all)).toContain(CLEAR_GLOW_GRADIENT_NOTE);
   });
 
   it("says the plain glow line on a tile that is not a light", async () => {

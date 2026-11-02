@@ -1,11 +1,14 @@
 // A tile's Arrangement (the tile key `arrange`), the one setting that moves
 // a tile's own parts: the icon (its glow and a person's photo go with it),
-// the name and the state. Absent is Default, every part in its native place.
+// the name, the state, the bar across the top and the round button (play or
+// pause, the fan). Absent is Default, every part in its native place.
 //
 //   "arrange": {"v": 1, "parts": {
-//     "icon":  {"spot": "tr", "dx": 0, "dy": 0, "scale": 1.2, "hidden": false},
-//     "name":  {"spot": "bl"},
-//     "state": {"hidden": true}}}
+//     "icon":   {"spot": "tr", "dx": 0, "dy": 0, "scale": 1.2, "hidden": false},
+//     "name":   {"spot": "bl"},
+//     "state":  {"hidden": true},
+//     "bar":    {"spot": "bc"},
+//     "button": {"spot": "bl"}}}
 //
 // Everything here is pure: reading and writing the key, and where a part
 // lands given its native rect. The iPhone and watch apps place the parts
@@ -13,11 +16,16 @@
 // `frontend/test/fixtures-arrange/` (their README states the math in words).
 // Plan: app repo docs/page_editor_calm_plan_2026-10.md, "The Arrangement key".
 
-import type { OneLookLayout, OneLookRect, OneLookSize } from "./layout.js";
+import { type OneLookLayout, type OneLookRect, type OneLookSize, oneLookAccessoryHasOwnAction } from "./layout.js";
 
 /** The parts a tile can arrange, in the order the card lists them. */
-export const ARRANGE_PARTS = ["icon", "name", "state"] as const;
+export const ARRANGE_PARTS = ["icon", "name", "state", "bar", "button"] as const;
 export type ArrangePart = (typeof ARRANGE_PARTS)[number];
+
+/** The grid a part snaps to: the whole tile cut in this many columns and rows.
+ * An even number of each, so its middle lines are grid lines. One cell is also
+ * how far past the tile's edge text may go. */
+export const ARRANGE_GRID = { across: 12, down: 8 } as const;
 
 /** The nine spots: row (top, middle, bottom) then column (left, centre,
  * right) of the tile's content box. */
@@ -158,6 +166,13 @@ export interface ArrangedName extends ArrangedPart {
   align: ArrangeAlign;
 }
 
+/** How far a part of `size` may go past the tile's edge, on an axis of `tile`
+ * points cut in `cells`: one grid cell, and never more than half of itself, so
+ * it never leaves the tile. */
+export function arrangeOverhang(tile: number, cells: number, size: number): number {
+  return Math.min(tile / cells, size / 2);
+}
+
 /**
  * Where a part lands (the plan's math, which the apps share):
  *
@@ -170,12 +185,11 @@ export interface ArrangedName extends ArrangedPart {
  *    bottom at the box's bottom. Without a spot it stays centred on the
  *    native rect's centre.
  * 3. Then it moves by (dx times the tile's width, dy times its height).
- * 4. The state's box then stays inside the tile, and the name's box inside
- *    its top and bottom, moved back in at any edge it crossed: fonts differ
- *    by a point between the panel, the watch and the iPhone, so text near an
- *    edge would be cut on one and not another. The name is free across, as
- *    its box is nearly the tile's width whatever the name's length, and the
- *    icon may hang over: its box is larger than its ink.
+ * 4. The state's box then goes past the tile's edge at most by
+ *    `arrangeOverhang`, and the name's box past its top and bottom, so text is
+ *    cut but some of it shows. The name is free across, as its box is nearly
+ *    the tile's width whatever the name's length. The icon, the bar and the
+ *    button are not held: the tile's shape cuts what hangs over.
  * 5. Hidden parts are not drawn; nothing else moves.
  */
 export function arrangePartRect(
@@ -202,8 +216,10 @@ export function arrangePartRect(
   }
   x += (entry?.dx ?? 0) * tile.width;
   y += (entry?.dy ?? 0) * tile.height;
-  if (part === "state") x = Math.max(0, Math.min(x, tile.width - width));
-  if (part !== "icon") y = Math.max(0, Math.min(y, tile.height - height));
+  const overX = arrangeOverhang(tile.width, ARRANGE_GRID.across, width);
+  const overY = arrangeOverhang(tile.height, ARRANGE_GRID.down, height);
+  if (part === "state") x = Math.max(-overX, Math.min(x, tile.width - width + overX));
+  if (part === "state" || part === "name") y = Math.max(-overY, Math.min(y, tile.height - height + overY));
   return { rect: { x, y, width, height }, scale, hidden: entry?.hidden === true };
 }
 
@@ -230,12 +246,14 @@ export function oneLookArrangeContent(layout: Pick<OneLookLayout, "size" | "inse
 
 /** Each part's native rect in the centred layout, for the parts it draws:
  * the glyph's box (the photo's too), the name's text block, the state's
- * box. */
+ * box, the bar's track, the round button's circle. */
 export function oneLookArrangeNative(layout: OneLookLayout): Partial<Record<ArrangePart, OneLookRect>> {
   const out: Partial<Record<ArrangePart, OneLookRect>> = {};
   if (layout.discRect.width > 0) out.icon = layout.discRect;
   if (layout.name.lines.length > 0) out.name = { x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: layout.textHeight };
   if (layout.stateRect !== undefined) out.state = layout.stateRect;
+  if (layout.barRect !== undefined) out.bar = layout.barRect;
+  if (layout.accessoryRect !== undefined && oneLookAccessoryHasOwnAction(layout.accessory)) out.button = layout.accessoryRect;
   return out;
 }
 
@@ -244,6 +262,8 @@ export interface OneLookArranged {
   icon?: ArrangedPart;
   name?: ArrangedName;
   state?: ArrangedPart;
+  bar?: ArrangedPart;
+  button?: ArrangedPart;
 }
 
 /**

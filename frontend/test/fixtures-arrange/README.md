@@ -13,12 +13,16 @@ A tile key, absent means Default (every part in its native place):
 "arrange": {"v": 1, "parts": {
   "icon":  {"spot": "tr", "dx": 0, "dy": 0, "scale": 1.2, "hidden": false},
   "name":  {"spot": "bl"},
-  "state": {"hidden": true}}}
+  "state": {"hidden": true},
+  "bar":   {"spot": "bc"},
+  "button": {"spot": "bl"}}}
 ```
 
 - Parts: `icon` (the glyph; the icon glow and a person's photo travel with
-  it), `name` and `state`. Each is optional; a part that is not listed sits
-  in its native place.
+  it), `name`, `state`, `bar` (the brightness or level bar across the top) and
+  `button` (the round play or pause, or fan, button; its touch area goes with
+  it). Each is optional; a part that is not listed sits in its native place.
+  A build that does not know `bar` or `button` ignores them.
 - `spot`: one of `tl tc tr ml mc mr bl bc br` (row top, middle, bottom, then
   column left, centre, right), or absent for the native place.
 - `dx`, `dy`: a move as a share of the tile's width and height, -0.5 to 0.5.
@@ -36,7 +40,7 @@ Inputs: the drawn tile T (its width and height), the content box C (the tile
 less the native inset the centred layout already uses: `insetH` at the left
 and right, `insetV` at the top and bottom), a part's native rect R (where
 the centred layout put it: the glyph's box, the name's text block, the
-state's box), and the part's entry.
+state's box, the bar's track, the button's circle), and the part's entry.
 
 1. Scaled size: S = (R.width * scale, R.height * scale). The name is the one
    exception: its box keeps its native width, only its height (its font)
@@ -47,21 +51,23 @@ state's box), and the part's entry.
    puts its bottom at C's bottom. Without a spot, keep the scaled rect
    centred on R's centre.
 3. Then move it by (dx * T.width, dy * T.height).
-4. Keep text in T. For the name and the state, y = max(0, min(y, T.height -
-   S.height)). For the state also x = max(0, min(x, T.width - S.width)).
-   Fonts differ by a point between the panel and the apps, so text near an
-   edge would be cut on one and not another. The name is free across, as its
-   box is nearly T's width whatever the name's length. The icon is not held
-   in: its box is larger than its ink, so it may hang over. See
-   `text-stays-inside.json`.
+4. Hold text a little past T's edge: at most one grid cell, where the grid is
+   T cut in 12 columns and 8 rows, and at most half of itself, so it never
+   leaves the tile. over X = min(T.width / 12, S.width / 2), over Y =
+   min(T.height / 8, S.height / 2). For the name and the state, y = max(-over Y, min(y, T.height - S.height + over Y)).
+   For the state also x = max(-over X, min(x, T.width - S.width + over X)). The
+   name is free across, as its box is nearly T's width whatever the name's
+   length. The icon, the bar and the button are not held: they may hang over,
+   and the tile's shape cuts what does. See `text-stays-inside.json` and
+   `bar-moved.json`.
 5. Hidden: the part is not drawn. Nothing else moves.
 6. The name's text alignment: with a spot, its column sets it (l leading,
    c centre, r trailing); without one it keeps its native alignment, which
    in the centred layout is centre.
 
 The icon's glow is centred on the icon's rect and scales with it; a
-person's photo fills the icon's rect. The accessory button (play or pause,
-the fan) is not a part and never moves.
+person's photo fills the icon's rect. A LIVE chip is not a part and never
+moves.
 
 Free is offered only for tiles drawn in the centred layout. A tile whose
 picture fills it (a camera showing its picture, album art), a chart, and a
@@ -102,7 +108,8 @@ rounded to 4 decimals; compare within 0.001.
 | `spots-bottom-row-iphone.json` | The bottom row (icon `bc`, name `br` trailing, state `bl`) on a sensor, iPhone. |
 | `drag-offset.json` | A drag: the icon moved from its native place, the name moved from a spot; the state not listed. |
 | `short-icon-only.json` | A short light whose key hides its name and state: laid out as only an icon, centred. |
-| `text-stays-inside.json` | Moved past the edges: the name is held in at the bottom, the state at the top and left, the icon hangs over. |
+| `text-stays-inside.json` | Moved past the edges: the name is held a little past the bottom, the state a little past the top and left, the icon hangs over. |
+| `bar-moved.json` | A lit light's bar at the bottom at 80%, hanging over the edge. |
 | `scale-up-down-iphone.json` | Sizes: icon 150% about its centre, name 120% (native width kept), state 80% in a spot, iPhone. |
 | `hidden-parts.json` | Name and state hidden, icon 120% in the middle; hidden parts keep their rects. |
 | `person-photo.json` | A person's photo as the icon part, in a spot at 80% with a nudge. |

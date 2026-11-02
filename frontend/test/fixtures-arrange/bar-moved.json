@@ -1,0 +1,118 @@
+{
+  "name": "bar-moved",
+  "about": "A lit light's brightness bar moved to the bottom of the tile at 80%, and hanging a little over its edge: the bar is not held in, as the tile's shape cuts it.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-00000000000D",
+    "entityId": "light.desk",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "customLabel": "Desk",
+    "color": "#8F7BEA"
+  },
+  "states": {
+    "light.desk": {
+      "state": "on",
+      "attributes": {
+        "brightness": 200
+      }
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 67
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 66
+  },
+  "applies": true,
+  "content": {
+    "x": 5.94,
+    "y": 5.94,
+    "width": 88.62,
+    "height": 54.12
+  },
+  "native": {
+    "icon": {
+      "x": 26.3574,
+      "y": 6.1074,
+      "width": 47.7852,
+      "height": 47.7852
+    },
+    "name": {
+      "x": 3,
+      "y": 48.26,
+      "width": 94.5,
+      "height": 11.8
+    },
+    "state": {
+      "x": 5.94,
+      "y": 9.5,
+      "width": 20.9,
+      "height": 14
+    },
+    "bar": {
+      "x": 6,
+      "y": 4,
+      "width": 88.5,
+      "height": 3
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "bar": {
+        "spot": "bc",
+        "dy": 0.1,
+        "scale": 0.8
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 26.3574,
+        "y": 6.1074,
+        "width": 47.7852,
+        "height": 47.7852
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 3,
+        "y": 48.26,
+        "width": 94.5,
+        "height": 11.8
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "center"
+    },
+    "state": {
+      "rect": {
+        "x": 5.94,
+        "y": 9.5,
+        "width": 20.9,
+        "height": 14
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "bar": {
+      "rect": {
+        "x": 14.85,
+        "y": 64.26,
+        "width": 70.8,
+        "height": 2.4
+      },
+      "scale": 0.8,
+      "hidden": false
+    }
+  }
+}

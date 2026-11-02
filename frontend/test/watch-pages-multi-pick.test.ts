@@ -122,7 +122,7 @@ function pickHost(items: WatchPageTile[], picked: string[]): { host: TileSetting
     smartRuleId: undefined,
     busy: false,
     // Every group open: these look at the rows inside them.
-    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
+    uiState: new Map<string, unknown>(),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -228,7 +228,7 @@ describe("the inspector over several tiles", () => {
     expect(style).toContain(`class="pc-opt on" aria-checked=true\n          data-value=line`);
     expect(style).not.toContain("Mixed");
     // The tile color differs: no swatch is on, and the row says Mixed.
-    expect(text).toMatch(/<div class="ts-swatches" role="group" aria-label=[^>]*>\s*<em class="pc-mixed">Mixed<\/em>/);
+    expect(text).toMatch(/<div class="ts-swatches" role="group" aria-label=[^>]*>\s*<div class="ts-color-form">.*?<i class="ts-color-rule" aria-hidden="true"><\/i><em class="pc-mixed">Mixed<\/em>/s);
   });
 
   it("writes a pick to every picked tile in one undo step, each keeping the rest of its own", () => {
@@ -251,10 +251,10 @@ describe("the inspector over several tiles", () => {
     ], [A, C]);
     const one = (id: string, entityId: string) => {
       const single = pickHost([tile(id, entityId, 0, { color: "#FF453A" })], [id]);
-      fire(renderTileInspector(single.host), `aria-label=Default color\n`);
+      fire(renderTileInspector(single.host), `aria-label=Default\n`);
       return watchTileIconSettings(tileIn(single.draft.document, id)).color;
     };
-    fire(renderTileInspector(host), `aria-label=Default color\n`);
+    fire(renderTileInspector(host), `aria-label=Default\n`);
     expect(watchTileIconSettings(tileIn(draft.document, A)).color).toBe(one(A, "light.desk"));
     expect(watchTileIconSettings(tileIn(draft.document, C)).color).toBe(one(C, "switch.fan"));
   });
@@ -263,17 +263,19 @@ describe("the inspector over several tiles", () => {
     const { host } = pickHost(items(), [A, B]);
     const { groups, hidden } = pickedInspectorParts(host);
     const parts = groups.flatMap((g) => g.parts);
-    for (const p of ["color", "icon", "glow", "background", "border", "text", "state", "tapAnimation"] as const) expect(parts).toContain(p);
-    for (const p of ["action", "visibility", "size"] as const) expect(parts).not.toContain(p);
+    for (const p of ["color", "icon", "iconLook", "glow", "background", "border", "text", "state", "tapAnimation"] as const) expect(parts).toContain(p);
+    for (const p of ["tap", "action", "visibility", "size", "arrange", "entity"] as const) expect(parts).not.toContain(p);
+    // The entity is one tile's alone: nothing to miss, so no line names it.
+    expect(hidden.get("top")).toEqual(["tap", "arrange"]);
     expect(hidden.get("does")).toEqual(["action"]);
-    expect(hidden.get("text")).toEqual(["arrange"]);
-    expect(hidden.get("surface")).toEqual(["visibility", "size"]);
+    expect(hidden.get("where")).toEqual(["visibility", "size"]);
+    expect(hidden.get("text")).toBeUndefined();
     const text = flat(renderTileInspector(host));
-    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Tap.</p>`);
+    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Tap, Inside the tile.</p>`);
+    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Hold and slide.</p>`);
     // Size is not drawn for a page's tile even alone (the stage sizes it),
     // so the line never names it.
-    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Shows when.</p>`);
-    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Layout.</p>`);
+    expect(text).toContain(`<p class="hint keep ts-picked-off">Shown when one tile is picked: Visible when.</p>`);
     // State icons and colors are per state of one entity.
     expect(text).toContain("State icons and colors: shown when one tile is picked.");
     expect(text).not.toContain(`class="ts-state-row`);
@@ -297,12 +299,12 @@ describe("pointing at a choice", () => {
     fire(drawn, `data-value=keep `, "@pointerenter=");
     expect(watchTileIconSettings(watchTriedTile(host.uiState, A)!).dimWhenOff.value).toBe(false);
     expect(watchTileIconSettings(watchTriedTile(host.uiState, B)!).dimWhenOff.value).toBe(false);
-    expect(watchTryLabel(host.uiState)).toBe("When it is off: Keep color");
+    expect(watchTryLabel(host.uiState)).toBe("When off: Keep color");
     expect(draft.document).toBe(before);
     expect(draft.canUndo).toBe(false);
     expect(updates()).toBeGreaterThan(0);
     // Leaving the row draws what is stored.
-    fire(drawn, `role="radiogroup" aria-label=When it is off`, "@pointerleave=");
+    fire(drawn, `role="radiogroup" aria-label=When off`, "@pointerleave=");
     expect(watchTriedTile(host.uiState, A)).toBeUndefined();
     expect(watchTryLabel(host.uiState)).toBeUndefined();
   });
@@ -316,10 +318,10 @@ describe("pointing at a choice", () => {
     const tried = watchTriedTile(host.uiState, A)!;
     expect(watchTileIconSettings(tried).color).toBe(label.slice("Color: ".length));
     expect(draft.canUndo).toBe(false);
-    fire(drawn, `aria-label=Default color\n`, "@pointerenter=");
+    fire(drawn, `aria-label=Default\n`, "@pointerenter=");
     expect(watchTryLabel(host.uiState)).toBe("Color: Default");
     // A press stores it and ends the try.
-    fire(drawn, `aria-label=Default color\n`);
+    fire(drawn, `aria-label=Default\n`);
     expect(draft.canUndo).toBe(true);
     expect(watchTriedTile(host.uiState, A)).toBeUndefined();
   });

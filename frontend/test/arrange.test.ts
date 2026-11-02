@@ -327,6 +327,16 @@ function templates(node: unknown, out: Tpl[] = []): Tpl[] {
   }
   return out;
 }
+/** Move the range slider labelled `label` to `value`. */
+function slide(root: unknown, label: string, value: number): void {
+  for (const t of templates(root)) {
+    t.strings.forEach((s, i) => {
+      if (!s.trimEnd().endsWith("@input=") || !t.strings.some((part) => part.includes("type=\"range\""))) return;
+      if (t.values.every((v) => v !== label)) return;
+      (t.values[i] as (e: unknown) => void)({ target: { value: String(value) } });
+    });
+  }
+}
 /** Press the smallest @click button whose markup holds `marker`. */
 function click(root: unknown, marker: string): void {
   const found = templates(root)
@@ -399,13 +409,14 @@ const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel
 const stored = (host: TileSettingsHost) => host.tile.arrange;
 
 describe("the Arrangement card", () => {
-  it("comes first in Text and layout under One Look, for tiles with their own parts", () => {
-    // No settings section of its own: an inspector part of Text and layout.
+  it("comes last in the top card under One Look, for tiles with their own parts", () => {
+    // No settings section of its own: an inspector part of the top card.
     expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 2)).toEqual(["size", "icon"]);
     expect(tileArrangeShown(tileHost(KITCHEN).host)).toBe(true);
-    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "text")?.parts).toEqual(["arrange", "text", "state"]);
+    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "top")?.parts).toEqual(["entity", "tap", "icon", "color", "arrange"]);
+    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "text")?.parts).toEqual(["text", "state"]);
     expect(tileArrangeShown(tileHost(KITCHEN, { oneLook: false }).host)).toBe(false);
-    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "text")?.parts).toEqual(["text", "state"]);
+    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "top")?.parts).toEqual(["entity", "tap", "icon", "color"]);
     for (const entityId of ["spacer.x", "divider.line.light", "template.x", "map.x", "macro.x"]) {
       expect(arrangeOffered({ id: "x", entityId }), entityId).toBe(false);
     }
@@ -421,16 +432,13 @@ describe("the Arrangement card", () => {
     const doc = draft.document;
     click(head(host), "data-value=custom");
     expect(draft.document).toBe(doc);
-    // The looks fold to one line, and Change look opens them again.
+    // The looks stay in view over the tools.
     const free = text(card(host));
-    expect(free).toContain("Custom layout");
-    expect(free).not.toContain("aria-label=Look");
+    expect(free).toContain("aria-label=Look");
+    expect(free).toMatch(/class="pc-opt on"[^>]*data-value=custom/);
     expect(free).toContain("aria-label=Part");
     expect(free).not.toContain("Use on whole page");
-    click(card(host), ">Change look<");
-    const open = text(card(host));
-    expect(open).toMatch(/class="pc-opt on"[^>]*data-value=custom/);
-    expect(open).toContain("Hide looks");
+    expect(free).not.toContain("Change look");
   });
 
   it("draws the editor's large live tile in Custom only, above Part", () => {
@@ -467,7 +475,7 @@ describe("the Arrangement card", () => {
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tl", scale: 0.8 }, name: { spot: "bl" } } });
     // Custom stays with no pick behind it: this is no look any more.
     host.uiState.clear();
-    expect(text(card(host))).toContain("Custom layout");
+    expect(text(card(host))).toContain("aria-label=Part");
     expect(arrangeFreeOn(host.uiState, host.tile)).toBe(true);
     // A stored look alone opens no tools, so the stage shows no parts.
     expect(arrangeFreeOn(host.uiState, { ...host.tile, arrange: { v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } } })).toBe(false);
@@ -505,13 +513,31 @@ describe("the Arrangement card", () => {
     click(head(host), "data-value=custom");
     click(card(host), "aria-label=Top right");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
-    click(card(host), ">150%</button>");
-    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
+    slide(card(host), "Size", 137);
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.37 } } });
     click(card(host), "aria-label=Hide the state");
-    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 }, state: { hidden: true } } });
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.37 }, state: { hidden: true } } });
     expect(text(head(host))).toContain("ts-arr-moved");
     draft.undo();
-    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.37 } } });
+  });
+
+  it("takes a slide of Size as one undo step", () => {
+    const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { spot: "tr" } } } });
+    slide(card(host), "Size", 110);
+    slide(card(host), "Size", 120);
+    slide(card(host), "Size", 133);
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.33 } } });
+    draft.undo();
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
+  });
+
+  it("lists the bar for a kind that has one, and the button only for a kind that draws one", () => {
+    const light = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { spot: "tr" } } } });
+    expect(text(card(light.host))).toContain("Hide the bar");
+    expect(text(card(light.host))).not.toContain("Hide the button");
+    const plug = tileHost({ ...KITCHEN, entityId: "switch.plug", arrange: { v: 1, parts: { icon: { spot: "tr" } } } });
+    expect(text(card(plug.host))).not.toContain("Hide the bar");
   });
 
   it("puts a dragged part exactly at a spot, keeping its size and eye, and Reset puts it back", () => {
@@ -525,13 +551,13 @@ describe("the Arrangement card", () => {
     expect(text(card(host))).toMatch(/\?disabled=true[^<]*>Reset icon</);
   });
 
-  it("keeps the exact place under More until a part has one", () => {
+  it("keeps the exact place under More, also after a drag leaves an offset, so the rows never jump", () => {
     const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
     expect(text(card(host))).toContain("Exact place");
     const nudged = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { dx: 0.1 } } } });
     const markup = text(card(nudged.host));
-    expect(markup).not.toContain("Exact place");
-    expect(markup).toContain("?data-shown=true");
+    expect(markup).toContain("Exact place");
+    expect(markup).toContain("?data-shown=false");
   });
 
   it("drops a moved spot's offset when the same spot is clicked again", () => {
@@ -542,18 +568,16 @@ describe("the Arrangement card", () => {
 
   it("goes back to Standard by removing the key, which undo brings back", () => {
     const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
-    expect(text(card(host))).toContain("Custom layout");
-    click(card(host), ">Change look<");
+    expect(text(card(host))).toContain("aria-label=Part");
     click(head(host), "data-value=standard");
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
-    expect(text(card(host))).not.toContain("Custom layout");
+    expect(text(card(host))).not.toContain("aria-label=Part");
     draft.undo();
     expect(stored(host)).toEqual({ v: 1, parts: { name: { spot: "bl" } } });
   });
 
   it("Standard takes the layout off and closes the tools", () => {
     const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { spot: "tl" }, state: { hidden: true } } } });
-    click(card(host), ">Change look<");
     click(head(host), "data-value=standard");
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
     expect(text(card(host))).toMatch(/class="pc-opt on"[^>]*data-value=standard/);
@@ -646,13 +670,12 @@ describe("the Arrangement card", () => {
     setArrangePickedPart(host.uiState, TILE_ID, undefined);
     const none = text(card(host));
     expect(none).not.toContain("ts-arr-part on");
-    expect(none).toContain("Drag a part on the tile");
+    expect(none).toContain("Drag a part to move it");
     expect(none).not.toContain("Reset ");
     click(head(host), ">Icon<");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
     // Custom picked again after a look brings a let go pick back as Icon.
     setArrangePickedPart(host.uiState, TILE_ID, undefined);
-    click(card(host), ">Change look<");
     click(head(host), "data-value=standard");
     click(head(host), "data-value=custom");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
@@ -674,7 +697,8 @@ describe("a layout on a small iPhone tile", () => {
   it("starts Custom from a layout that draws its parts, so they can be grabbed", () => {
     const { host, draft } = tileHost(TINY, { device: "iphone" });
     click(head(host), "data-value=custom");
-    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "mc" } } });
+    // What it draws now, and what it does not draw stays hidden.
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "mc" }, name: { hidden: true }, state: { hidden: true }, bar: { hidden: true } } });
     draft.undo();
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
     // A tile that already draws its parts writes nothing.
@@ -805,15 +829,21 @@ describe("the parts on the stage", () => {
   it("finds the parts a Free tile draws, leaving out hidden parts, and none on a tile Free cannot place", () => {
     const input = watchInput(lit("light.kitchen"));
     const stage = arrangeStageParts(light(), cellOf(6, 4), input, UNIT)!;
-    expect(Object.keys(stage.parts).sort()).toEqual(["icon", "name", "state"]);
+    expect(Object.keys(stage.parts).sort()).toEqual(["bar", "icon", "name", "state"]);
     expect(stage.size.width).toBeGreaterThan(0);
+    expect(stage.radius).toBeGreaterThan(0);
+    // The bar moves as the others do, and its eye hides it.
+    const barMoved = arrangeStageParts(light({ arrange: { v: 1, parts: { bar: { spot: "bc" } } } }), cellOf(6, 4), input, UNIT)!;
+    expect(barMoved.parts.bar!.y).toBeGreaterThan(stage.parts.bar!.y + 10);
+    const barHidden = arrangeStageParts(light({ arrange: { v: 1, parts: { bar: { hidden: true } } } }), cellOf(6, 4), input, UNIT)!;
+    expect(barHidden.parts.bar).toBeUndefined();
     const icon = stage.parts.icon!;
     expect(stage.inset).toBeGreaterThanOrEqual(0);
     // Where the arrangement puts it.
     const moved = arrangeStageParts(light({ arrange: { v: 1, parts: { icon: { dx: 0.1 } } } }), cellOf(6, 4), input, UNIT)!;
     expect(moved.parts.icon!.x).toBeCloseTo(icon.x + 0.1 * stage.size.width, 5);
     const hidden = arrangeStageParts(light({ arrange: { v: 1, parts: { state: { hidden: true } } } }), cellOf(6, 4), input, UNIT)!;
-    expect(Object.keys(hidden.parts).sort()).toEqual(["icon", "name"]);
+    expect(Object.keys(hidden.parts).sort()).toEqual(["bar", "icon", "name"]);
     // A strip, and a kind with no parts of its own.
     expect(arrangeStageParts(light({ rowSpan: 3 }), cellOf(6, 3), input, UNIT)).toBeUndefined();
     expect(arrangeStageParts({ id: "S", entityId: "spacer.x", colSpan: 6, rowSpan: 4 }, cellOf(6, 4), input, UNIT)).toBeUndefined();

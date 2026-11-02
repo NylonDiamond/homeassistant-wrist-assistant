@@ -255,6 +255,24 @@ describe("a light in One Look", () => {
 });
 
 describe("the other parts", () => {
+  it("draws a moved button where its layout puts it, and none while it is hidden", () => {
+    const moved = tile("media_player.music", { customLabel: "Music", arrange: { v: 1, parts: { button: { spot: "bl", scale: 1.2 } } } });
+    const at = place(styleOf(onPhone(moved, entity("media_player.music", "playing")), "ol-acc"));
+    expect(at.w).toBeCloseTo(36, 0);
+    expect(at.x).toBeLessThan(40);
+    expect(at.y).toBeGreaterThan(40);
+    const gone = tile("media_player.music", { customLabel: "Music", arrange: { v: 1, parts: { button: { hidden: true } } } });
+    expect(onPhone(gone, entity("media_player.music", "playing"))).not.toContain("data-accessory=playPause");
+  });
+
+  it("draws a moved bar where its layout puts it, and none while it is hidden", () => {
+    const lit = entity("light.a", "on", { brightness: 128 });
+    const plain = place(styleOf(onPhone(tile("light.a", { customLabel: "A" }), lit), "ol-bar"));
+    const moved = place(styleOf(onPhone(tile("light.a", { customLabel: "A", arrange: { v: 1, parts: { bar: { spot: "bc" } } } }), lit), "ol-bar"));
+    expect(moved.y).toBeGreaterThan(plain.y + 20);
+    expect(onPhone(tile("light.a", { customLabel: "A", arrange: { v: 1, parts: { bar: { hidden: true } } } }), lit)).not.toContain("ol-bar");
+  });
+
   it("draws a player's play or pause top right, its glyph half the disc (D18)", () => {
     const music = tile("media_player.music", { customLabel: "Music" });
     const html = onPhone(music, entity("media_player.music", "playing"));

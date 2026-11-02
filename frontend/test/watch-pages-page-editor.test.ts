@@ -1580,7 +1580,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(several.body()).not.toContain("pe-part");
   });
 
-  it("drags the picked part by shares of the tile, live, and writes dx and dy once, clamped, as one undo step", () => {
+  it("drags the picked part, snapped, live, and writes it once, as one undo step", () => {
     const { el, body, press, move, up, gesture, tileOf, draft } = stage("T-BIG");
     // A press on the picked part is the part's, not the tile's.
     expect(press("icon")).toBe(true);
@@ -1589,19 +1589,18 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(g.part).toBe("icon");
     const before = draft().document;
     move(13, -7);
-    const across = Math.round((13 / g.width!) * 1000) / 1000;
-    const down = Math.round((-7 / g.height!) * 1000) / 1000;
-    expect(gesture()!.arrange).toEqual({ v: 1, parts: { icon: { dx: across, dy: down } } });
+    const first = gesture()!.arrange as Arr;
+    expect(first!.parts.icon!.spot).toMatch(/^[tmb][lcr]$/);
     // Drawn where the pointer puts it, nothing written yet.
     expect(draft().document).toBe(before);
     expect(body()).toMatch(/class="pe-part on dragging" data-part=icon /);
-    // Far past the tile: half the tile at most.
+    // Far past the tile: held inside the content box, on that side.
     move(5000, -5000);
-    expect(gesture()!.arrange).toEqual({ v: 1, parts: { icon: { dx: 0.5, dy: -0.5 } } });
+    expect((gesture()!.arrange as Arr)!.parts.icon!.spot).toMatch(/r$/);
     move(13, -7);
     up();
     expect(el.gesture).toBeUndefined();
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: across, dy: down } } });
+    expect(tileOf("T-BIG").arrange).toEqual(first);
     // The tile did not move.
     expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
     draft().undo();
@@ -1629,7 +1628,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     el.gesture = undefined;
   });
 
-  it("draws the parts on the Arrangement section's larger tile too, and drags them by shares of that tile", () => {
+  it("draws the parts on the Arrangement section's larger tile too, with its grid, and drags them at that tile's scale", () => {
     const { el, body, move, up, tileOf } = stage("T-BIG");
     body();
     // The inspector is stubbed here: the Arrangement's live tile is drawn on its own.
@@ -1637,10 +1636,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     const bigTile = flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")));
     expect(bigTile).toContain(`class="pe-head-tile arr"`);
     expect(bigTile).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
-    // The head's live tiles are pictures only: no parts to drag there.
-    const headTile = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile, as: string) => unknown).call(el, page, tileOf("T-BIG"), "on"));
-    expect(headTile).toContain(`class="pe-head-tile"`);
-    expect(headTile).not.toContain("pe-part");
+    expect(bigTile).toContain(`class="pe-arr-grid"`);
     const head = el.layoutArrange as { scale: number; stage: { size: { width: number; height: number } } };
     const onStage = el.stageArrange as { scale: number };
     expect(head.scale).toBeGreaterThan(onStage.scale);
@@ -1648,14 +1644,14 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
       button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
       currentTarget: null, stopPropagation: () => undefined,
     }, "T-BIG", "icon", head);
-    const g = el.gesture as PartMove;
-    expect(g.width).toBeCloseTo(head.stage.size.width * head.scale, 5);
+    const g = el.gesture as { scale: number };
+    expect(g.scale).toBeCloseTo(head.scale, 5);
     move(20, 0);
     up();
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: Math.round((20 / g.width!) * 1000) / 1000 } } });
+    expect((tileOf("T-BIG").arrange as Arr)!.parts.icon!.spot).toMatch(/^[tmb][lcr]$/);
   });
 
-  it("keeps a part's spot when it is dragged, and a press with no travel writes nothing", () => {
+  it("keeps a part's spot when it is dragged on its own side, and a press with no travel writes nothing", () => {
     const made = editor("T-BIG", {
       ...ROOM,
       pages: [{ ...(ROOM.pages as WatchPage[])[0]!, items: (ROOM.pages as { items: WatchPageTile[] }[])[0]!.items.map((t) => t.id === "T-BIG" ? { ...t, arrange: { v: 1, parts: { name: { spot: "bl" } } } } : t) }],
@@ -1670,27 +1666,24 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     made.call("onPointerUp", { pointerId: 7 });
     expect(made.draft().document).toBe(before);
     made.call("onPartPointerDown", ev, "T-BIG", "name", made.el.stageArrange);
-    made.call("onPointerMove", { pointerId: 7, clientX: 50, clientY: 90, preventDefault: () => undefined });
+    made.call("onPointerMove", { pointerId: 7, clientX: 50, clientY: 38, preventDefault: () => undefined });
     made.call("onPointerUp", { pointerId: 7 });
     const arrange = ((made.draft().document.pages as { items: WatchPageTile[] }[])[0]!.items.find((t) => t.id === "T-BIG")!.arrange as Arr)!;
     expect(arrange.parts.name!.spot).toBe("bl");
-    expect(arrange.parts.name!.dy).toBeGreaterThan(0);
+    expect(arrange.parts.name!.dy).toBeLessThan(0);
   });
 
-  it("picks a part with a click on it, in the card's view state too", () => {
-    const { ui, press, click, gesture, body } = stage("T-BIG");
-    // Another part's press is the tile's: no part drag, and its click picks it.
-    expect(press("state")).toBe(false);
-    expect(gesture()).toBeUndefined();
+  it("picks a part with one press, which drags it too, in the card's view state as well", () => {
+    const { ui, press, up, click, gesture, body } = stage("T-BIG");
+    expect(press("state")).toBe(true);
+    expect((gesture() as { part?: string }).part).toBe("state");
+    expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
+    up();
     expect(click()).toBe(true);
     expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
     expect(stageTile(body(), "T-BIG")).toMatch(/<span class="pe-part on [^"]*" data-part=state /);
-    // A click with no press on a part picks nothing, and a press that became
-    // a drag of the tile picks nothing either.
+    // A click with no press on a part picks nothing.
     expect(click()).toBe(false);
-    press("name");
-    expect(click("T-STRIP")).toBe(false);
-    expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
   });
 
   it("nudges the picked part 1% a key, 5% with Shift, one undo step each, and Escape lets it go so the arrows move the tile", () => {
@@ -1847,7 +1840,7 @@ describe("the two pictures", () => {
     expect([moved2.gridCol, moved2.gridRow]).toEqual([2, 6]);
   });
 
-  it("draws the inspector's large tile from the picture being edited, and with the shape a resize asks for", () => {
+  it("takes the selected tile's picture from the picture being edited, with the shape a resize asks for", () => {
     const { el, page } = both("T-BOTTOM");
     const tile = (page().items as WatchPageTile[]).find((t) => t.id === "T-BOTTOM")!;
     const withScreens = (iphone: Record<string, Rect>) => ({
@@ -1857,9 +1850,8 @@ describe("the two pictures", () => {
     const wide = withScreens({ "T-BOTTOM": { col: 0, row: 0, colSpan: 12, rowSpan: 2 } });
     /** The drawn tile's width over its height. */
     const shape = (on: WatchPage): number => {
-      const drawn = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile, as: undefined) => unknown).call(el, on, tile, undefined));
-      const m = /pe-head-tile" style=width:(\d+)px;height:(\d+)px/.exec(drawn.replaceAll('"width', "width").replaceAll('style="', "style="))!;
-      return Number(m[1]) / Number(m[2]);
+      const { placed } = (el.selectedTilePicture as (p: WatchPage, t: WatchPageTile) => { placed: { width: number; height: number } }).call(el, on, tile);
+      return placed.width / placed.height;
     };
     el.editScreen = "watch";
     const onWatch = shape(wide);
