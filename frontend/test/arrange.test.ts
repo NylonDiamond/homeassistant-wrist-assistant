@@ -444,6 +444,13 @@ describe("the Arrangement card", () => {
     }
   });
 
+  it("draws the words to try under the live tile, before the words on how to drag", () => {
+    const { host } = tileHost(KITCHEN);
+    const markup = text(renderArrangeSection(host, () => svg`<rect class="big-tile"></rect>`, undefined, undefined, () => svg`<rect class="words"></rect>`));
+    expect(markup.indexOf("big-tile")).toBeLessThan(markup.indexOf("words"));
+    expect(markup.indexOf("words")).toBeLessThan(markup.indexOf("Drag a part to move it"));
+  });
+
   it("keeps the tile's place while a drag on the stage takes the tile away", () => {
     const { host } = tileHost(KITCHEN);
     expect(text(renderArrangeSection(host, () => nothing))).toContain(`class="ts-arr-pic"`);

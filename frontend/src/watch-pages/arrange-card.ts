@@ -9,7 +9,8 @@
 // they move (`arrange-snap.ts`), a row of the parts, each picked by its name and
 // shown or hidden by its eye, the picked part's Spot on a 3 by 3 grid of the
 // tile's content box beside its Size, and under More a small move across and
-// down. A change leaves the look, and then no look is lit: the tile has a layout
+// down. Under the tile, the words its entity can say, to see how each fits. A
+// change leaves the look, and then no look is lit: the tile has a layout
 // of its own. Every edit is one commit of the tile key `arrange`
 // (`setWatchTileArrange`), so it goes through the draft and undo like every
 // other tile setting. The parts move only here: on the stage a drag moves the
@@ -230,6 +231,7 @@ export function renderArrangeSection(
   picture?: () => TemplateResult | typeof nothing,
   lookPicture?: (key: string, make: (tile: WatchPageTile) => WatchPageTile) => TemplateResult | typeof nothing,
   phoneModel?: () => OneLookPreviewModel | undefined,
+  states?: () => TemplateResult | typeof nothing,
 ): TemplateResult {
   const tile = host.tile;
   const stored = watchTileArrange(tile);
@@ -274,6 +276,7 @@ export function renderArrangeSection(
       <div class="ts-arr-side">${looks}${notes}${whole}</div>
       <div class="ts-arr-stage">
         ${well}
+        ${states?.() ?? nothing}
         <div class="hint keep ts-arr-how">${pickedHidden
           ? `The ${PART_WORDS[picked]} is hidden. Press its eye to show it.`
           : "Drag a part to move it. Hold Option or Alt to place it freely."}</div>

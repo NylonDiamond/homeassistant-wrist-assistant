@@ -771,6 +771,8 @@ export interface TileSettingsExtras {
   /** The tile as the page editor draws it on the iPhone, which Custom starts
    * from. */
   arrangePhoneModel?: () => OneLookPreviewModel | undefined;
+  /** The words the tile's entity can say, to try under the section's live tile. */
+  arrangeStates?: () => TemplateResult | typeof nothing;
   /** The tile's head (`renderTileHead`): the first row of the top card. */
   head?: TemplateResult;
 }
@@ -1371,7 +1373,7 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
     case "size":
       return extras.size?.body() ?? nothing;
     case "arrange":
-      return renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture, extras.arrangePhoneModel);
+      return renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture, extras.arrangePhoneModel, extras.arrangeStates);
     case "entity":
       return renderEntityShown(host, tileEntityId(host.tile));
     default:

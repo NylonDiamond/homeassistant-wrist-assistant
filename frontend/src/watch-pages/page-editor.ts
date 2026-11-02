@@ -5382,6 +5382,7 @@ export class WaPageEditor extends LitElement {
         arrangePicture: () => this.renderArrangePicture(page, tile),
         arrangeLookPicture: (key, make) => this.renderArrangeLookPicture(page, tile, key, make),
         arrangePhoneModel: () => this.arrangePhoneModel(page, tile),
+        arrangeStates: () => this.renderArrangeStates(tile),
         head,
       })}
       ${this.renderResizeLoss(tile)}
@@ -5670,6 +5671,21 @@ export class WaPageEditor extends LitElement {
     this.layoutArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s, ...(start === undefined ? {} : { base: start }) };
     return html`<span class="pe-head-tile ${stage === undefined ? "" : "arr"}" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
       renderWatchTileFace(start === undefined ? drawn : withArrange(drawn, start), { width: placed.width, height: placed.height }, input, layout.unit)}${stage === undefined ? nothing : html`${this.renderArrangeGrid(stage, s)}${this.renderPartBoxes(id, stage, s, start)}`}</span>`;
+  }
+
+  /** Under the section's live tile: the words its entity can say, to see how
+   * each fits, as the states to try under the stage do and shared with them.
+   * Nothing for an entity with no known set of words. */
+  private renderArrangeStates(tile: WatchPageTile): TemplateResult | typeof nothing {
+    const entityId = tileEntityId(tile);
+    if (entityId === "" || this.multiPicked || isVirtualTileKind(tileKind(entityId))) return nothing;
+    const real = this.hass?.states?.[entityId];
+    const override = this.testStates.get(entityId);
+    const control = testControlFor(entityId, real, override);
+    if (control.kind !== "choice") return nothing;
+    const name = watchPreviewTileLabel(tile, { states: this.previewStates(), pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.pickerCatalog })
+      || tileKindLabel(tileKind(entityId));
+    return this.renderStateChips(entityId, name, control.options, real?.state, override);
   }
 
   /** The tile as the iPhone's picture draws it, with no layout of its own, for

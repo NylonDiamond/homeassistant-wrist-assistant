@@ -1692,6 +1692,27 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(el.selectedTileId).toBeUndefined();
   });
 
+  it("offers the words a light can say under the live tile, a click keeping one on every picture", () => {
+    const { el, well, tileOf } = stage("T-BIG");
+    const row = () => flat((el.renderArrangeStates as (t: WatchPageTile) => unknown).call(el, tileOf("T-BIG")));
+    expect(row()).toContain(`class="pe-state-chips"`);
+    for (const word of ["on", "off", "unavailable", "unknown"]) expect(row()).toContain(`>${word}`);
+    expect(el.testStates).toEqual(new Map());
+    (el.setTestValue as (id: string, v: string) => void).call(el, "light.big", "unavailable");
+    expect(row()).toMatch(/class="pe-state-chip on"[^>]*>unavailable/);
+    const before = well();
+    (el.setTestValue as (id: string, v: string | undefined) => void).call(el, "light.big", undefined);
+    expect(well()).not.toBe(before);
+  });
+
+  it("offers no words for a tile with no entity or for several tiles picked", () => {
+    const { el, tileOf } = stage("T-BIG");
+    const row = (t: WatchPageTile) => (el.renderArrangeStates as (t: WatchPageTile) => unknown).call(el, t);
+    expect(flat(row({ id: "S", entityId: "spacer.x", colSpan: 2, rowSpan: 2 } as WatchPageTile))).not.toContain("pe-state-chips");
+    (el.clickTile as (i: string, e: object) => void).call(el, "T-STRIP", { shiftKey: false, metaKey: true, ctrlKey: false });
+    expect(flat(row(tileOf("T-BIG")))).not.toContain("pe-state-chips");
+  });
+
   it("presses on a part of another tile than the selected one do nothing", () => {
     const { press, gesture } = stage("T-BIG");
     expect(press("icon", "T-STRIP")).toBe(false);
