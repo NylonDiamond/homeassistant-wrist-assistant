@@ -1055,6 +1055,10 @@ export class WaPageEditor extends LitElement {
   /** The one toast of a first drag or resize (`takeScreenMoveToast`). */
   @state() private screenToast?: string;
   private screenToastTimer?: ReturnType<typeof setTimeout>;
+  /** What a resize took from its tile, floating over the settings so nothing
+   * moves. It holds for that tile and that document: any edit or undo ends it. */
+  @state() private resizeLoss?: { tileId: string; text: string; document: WatchPagesDocument };
+  private resizeLossTimer?: ReturnType<typeof setTimeout>;
   /** A tile taken off its last screen: the inspector asks "Delete this
    * tile?" in place of the Tile on chips. */
   @state() private screenOffAsk?: { tileId: string; screen: WatchScreen };
@@ -3099,8 +3103,7 @@ export class WaPageEditor extends LitElement {
     }
   }
 
-  /** Say what a resize took from its tile, in the line under the bar, which
-   * the next edit clears. */
+  /** Say what a resize took from its tile, over the tile's settings. */
   private noteResizeLoss(g: ResizeGesture, after: WatchPage): void {
     const model = (page: WatchPage) => {
       const tile = watchPageTiles(watchScreenPage(page, g.screen)).find((t) => sameWatchId(tileIdOf(t), g.tileId));
@@ -3114,7 +3117,22 @@ export class WaPageEditor extends LitElement {
     };
     const tile = watchPageTiles(after).find((t) => sameWatchId(tileIdOf(t), g.tileId));
     const said = arrangeResizeNote(model(g.basePage), model(after), normalizeTileArrange(tile?.arrange));
-    if (said !== undefined) this.refuseGesture(said);
+    const document = this.draft?.document;
+    if (said === undefined || document === undefined) return;
+    this.resizeLoss = { tileId: g.tileId, text: said, document };
+    if (this.resizeLossTimer !== undefined) clearTimeout(this.resizeLossTimer);
+    this.resizeLossTimer = setTimeout(() => { this.resizeLoss = undefined; }, 8000);
+  }
+
+  /** The resize's line over the settings of the tile it is about: no height
+   * of its own, so it covers what is under it and moves nothing. */
+  private renderResizeLoss(tile: WatchPageTile): TemplateResult | typeof nothing {
+    const loss = this.resizeLoss;
+    if (loss === undefined || loss.document !== this.draft?.document || !sameWatchId(loss.tileId, tileIdOf(tile))) return nothing;
+    return html`<div class="pe-insp-toast"><div class="pe-screen-toast" role="status">
+      <span>${loss.text}</span>
+      <button type="button" class="pe-screen-toast-x" aria-label="Close" title="Close" @click=${() => { this.resizeLoss = undefined; }}>${uiIcon("close")}</button>
+    </div></div>`;
   }
 
   /** What dropping a pick of several would do: `same` with no delta, `move`
@@ -5434,6 +5452,7 @@ export class WaPageEditor extends LitElement {
         head,
       })}
       ${host === undefined ? nothing : this.renderTileFoot(page, tile)}
+      ${this.renderResizeLoss(tile)}
     </div>`;
   }
 
@@ -6192,6 +6211,10 @@ export class WaPageEditor extends LitElement {
     }
     .pe-screen-toast-x { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
     .pe-screen-toast-x svg.ui-icon { width: 13px; height: 13px; }
+    /* A resize's line, at the foot of the settings in view. No height of its
+       own: its card hangs upward over the settings, so nothing moves. */
+    .pe-insp-toast { position: sticky; bottom: 12px; z-index: 12; flex: none; display: flex; justify-content: flex-end; height: 0; padding-right: 12px; }
+    .pe-insp-toast > .pe-screen-toast { position: static; transform: none; align-self: flex-end; max-width: min(380px, 100%); }
     /* The inspector's "Tile on" line under the Name: the words, then the
        Watch and iPhone chips, drawn by the device strip's own chip
        (renderTickChip, libraryTicksStyles), and the question that stands in
