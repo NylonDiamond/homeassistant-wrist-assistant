@@ -392,25 +392,26 @@ describe("every tile", () => {
 
   it("keeps the disc rule only where a disc is drawn; the centred layout uses the glyph's ink square", () => {
     const disc = { x: 10, y: 20, width: 40, height: 40 };
-    const withDisc = oneLookCutoutPlace({ drawsDisc: true, discRect: disc, glyphSize: 30 }, 384 / 322);
+    const withDisc = oneLookCutoutPlace({ drawsDisc: true, discRect: disc }, 384 / 322);
     expect(withDisc).toEqual(oneLookCutoutRect(disc, 384 / 322));
-    // No disc: 0.86 of the glyph box, on its centre, whatever the aspect.
+    // No disc: 0.86 of the glyph box (the apps' `boxSide(disc:...)` with
+    // `onDisc` false), on its centre, whatever the aspect.
     for (const a of [384 / 322, 2, 1, 0.5, undefined, 0, Number.NaN]) {
-      const r = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, a);
-      expect(r.box.width, String(a)).toBeCloseTo(43, 6);
-      expect(r.box.height, String(a)).toBeCloseTo(43, 6);
+      const r = oneLookCutoutPlace({ drawsDisc: false, discRect: disc }, a);
+      expect(r.box.width, String(a)).toBeCloseTo(34.4, 6);
+      expect(r.box.height, String(a)).toBeCloseTo(34.4, 6);
       expect(r.box.x + r.box.width / 2, String(a)).toBeCloseTo(30, 6);
       expect(r.box.y + r.box.height / 2, String(a)).toBeCloseTo(40, 6);
-      expect(r.radius, String(a)).toBeCloseTo(43 * 0.22, 6);
+      expect(r.radius, String(a)).toBeCloseTo(34.4 * 0.22, 6);
     }
     // Fitted with its aspect kept, as the layout's ink rect: side x min(1, a)
     // across, side / max(1, a) high.
-    const wide = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, 2).photo;
-    expect(wide.width).toBeCloseTo(43, 6);
-    expect(wide.height).toBeCloseTo(21.5, 6);
-    const tall = oneLookCutoutPlace({ drawsDisc: false, discRect: disc, glyphSize: 50 }, 0.5).photo;
-    expect(tall.width).toBeCloseTo(21.5, 6);
-    expect(tall.height).toBeCloseTo(43, 6);
+    const wide = oneLookCutoutPlace({ drawsDisc: false, discRect: disc }, 2).photo;
+    expect(wide.width).toBeCloseTo(34.4, 6);
+    expect(wide.height).toBeCloseTo(17.2, 6);
+    const tall = oneLookCutoutPlace({ drawsDisc: false, discRect: disc }, 0.5).photo;
+    expect(tall.width).toBeCloseTo(17.2, 6);
+    expect(tall.height).toBeCloseTo(34.4, 6);
     expect(oneLookCutoutAspect(undefined)).toBe(1);
     expect(oneLookCutoutAspect(0)).toBe(1);
     expect(oneLookCutoutAspect(Number.NaN)).toBe(1);

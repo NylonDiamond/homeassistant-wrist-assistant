@@ -21,7 +21,9 @@ import {
   ONE_LOOK_CUTOUT_OFF_FILTER,
   oneLookCutoutDimmed,
   oneLookCutoutOf,
+  oneLookCutoutPlace,
   oneLookCutoutRect,
+  oneLookCutoutSide,
   oneLookPreviewModel,
   renderOneLookTile,
 } from "../src/watch-pages/one-look/render.js";
@@ -140,6 +142,40 @@ describe("an icon photo on a One Look tile", () => {
     expect(oneLookPreviewModel(sized)!.cutout).toEqual({ url: "blob:lamp", aspect: 2 });
     const at = place(styleOf(text(renderOneLookTile(sized)), "ol-cutout"));
     expect(at.w / at.h).toBeCloseTo(2, 1);
+  });
+
+  it("sizes the box by the apps' rule, from the glyph box or disc, never the bare glyph inside it", () => {
+    // `OneLookCutout.boxSide(disc:aspect:onDisc:)` and the app's own cases:
+    // on a disc 40 across, the lamp photo (384 by 322) takes 40 x 1.19, a
+    // tall or unknown one 40, a very wide one 40 x 1.35; off a disc, the
+    // glyph box's ink square, 40 x 0.86, whatever the photo's shape.
+    expect(oneLookCutoutSide(40, 384 / 322, true)).toBeCloseTo(40 * 384 / 322, 10);
+    expect(oneLookCutoutSide(40, 353 / 384, true)).toBe(40);
+    expect(oneLookCutoutSide(40, undefined, true)).toBe(40);
+    expect(oneLookCutoutSide(40, 3, true)).toBeCloseTo(54, 10);
+    for (const aspect of [undefined, 0.5, 1, 384 / 322, 3]) expect(oneLookCutoutSide(40, aspect, false)).toBeCloseTo(34.4, 10);
+
+    // A watch strip (6 by 3) draws no disc and its bare glyph at 85% of the
+    // 20 point box; the photo takes the box's ink square, 20 x 0.86 = 17.2,
+    // on the box's centre, as on the watch.
+    const cell = { width: 6 * UNIT + 10, height: 3 * UNIT + 4 };
+    const strip: OneLookTileFaceInput = {
+      ...face(lamp({ colSpan: 6, rowSpan: 3 }), "on", { ...have, photoSize: () => ({ width: 384, height: 322 }) }),
+      width: cell.width - 1, height: cell.height - 1, cell,
+    };
+    const model = oneLookPreviewModel(strip)!;
+    expect(model.layout.mode).toBe("strip");
+    expect(model.layout.drawsDisc).toBe(false);
+    expect(model.layout.discRect.width).toBeCloseTo(20, 5);
+    expect(model.layout.glyphSize).toBeCloseTo(17, 5);
+    const { box } = oneLookCutoutPlace(model.layout, 384 / 322);
+    expect(box.width).toBeCloseTo(17.2, 5);
+    const at = place(styleOf(text(renderOneLookTile(strip)), "ol-cutout"));
+    expect(at.w).toBeCloseTo(17.2, 1);
+    expect(at.h).toBeCloseTo(17.2 * 322 / 384, 1);
+    const disc = model.layout.discRect;
+    expect(at.x + at.w / 2).toBeCloseTo(disc.x + disc.width / 2, 1);
+    expect(at.y + at.h / 2).toBeCloseTo(disc.y + disc.height / 2, 1);
   });
 
   it("moves with the tile's Arrangement, as the icon does", () => {

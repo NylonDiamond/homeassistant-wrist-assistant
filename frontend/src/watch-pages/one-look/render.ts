@@ -256,17 +256,30 @@ export function oneLookCutoutAspect(aspect: number | undefined): number {
 }
 
 /**
- * Where an icon photo is drawn in a tile's layout (the apps'
- * `OneLookCutout`): with a disc drawn, `oneLookCutoutRect` on the disc;
- * with none (the centred layout), the glyph's ink square, its side the
- * glyph box times the glyph ink share (0.86) on the glyph box's centre,
- * which is the ink the layout already keeps clear of the state, the bar and
- * the name. The photo is fitted in it, aspect kept, corners 22% of the box.
+ * The icon photo's box side in a layout whose glyph box or disc (`discRect`,
+ * or where the tile's Arrangement put it) is `disc` across: the apps'
+ * `OneLookCutout.boxSide(disc:aspect:onDisc:)`. Off a disc, the glyph's ink
+ * square, `disc` times the glyph ink share (0.86), whatever the photo's
+ * shape (the centred layout sized `disc` for that shape); on a disc, `disc`
+ * times the aspect held to 1 to 1.35 (`oneLookCutoutBoxSide`). Always the
+ * glyph box itself, never the bare glyph's size inside it, which a strip,
+ * stacked or compact tile without a disc draws at 85% of the box.
  */
-export function oneLookCutoutPlace(layout: Pick<OneLookLayout, "drawsDisc" | "discRect" | "glyphSize">, aspect: number | undefined): { box: OneLookRect; photo: OneLookRect; radius: number } {
-  if (layout.drawsDisc) return oneLookCutoutRect(layout.discRect, aspect);
+export function oneLookCutoutSide(disc: number, aspect: number | undefined, onDisc: boolean): number {
+  return onDisc ? oneLookCutoutBoxSide(disc, aspect) : disc * ONE_LOOK_GLYPH_INK_SHARE;
+}
+
+/**
+ * Where an icon photo is drawn in a tile's layout (the apps'
+ * `OneLookCutout.box(around:aspect:onDisc:)`): a square box of
+ * `oneLookCutoutSide` on the centre of the glyph box or disc, the photo
+ * fitted in it with its aspect kept, corners 22% of the box. Centred, that
+ * is the ink the layout already keeps clear of the state, the bar and the
+ * name.
+ */
+export function oneLookCutoutPlace(layout: Pick<OneLookLayout, "drawsDisc" | "discRect">, aspect: number | undefined): { box: OneLookRect; photo: OneLookRect; radius: number } {
   const rect = layout.discRect;
-  const side = layout.glyphSize * ONE_LOOK_GLYPH_INK_SHARE;
+  const side = oneLookCutoutSide(rect.width, aspect, layout.drawsDisc);
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
   const box = { x: cx - side / 2, y: cy - side / 2, width: side, height: side };
@@ -999,8 +1012,8 @@ export function oneLookTintedOn(cutout: Pick<OneLookCutout, "url" | "on" | "onMa
 /**
  * A tile's icon photo in the glyph's place (photo tiles plan, "Drawing"):
  * no disc fill, the photo fitted in a square box on the glyph's centre
- * (`oneLookCutoutPlace`: the glyph's ink square in the centred layout, the
- * disc times the aspect held to 1 to 1.35 where a disc is drawn), its
+ * (`oneLookCutoutPlace`: the glyph box's ink square where no disc is drawn,
+ * the disc times the aspect held to 1 to 1.35 where one is), its
  * corners rounded by 22% of the box. Lit (and not wrist down): the pearl
  * halo behind it as a glyph has it, the pearl disc's white glow in the disc
  * layouts. Not lit, and wrist down: no halo. Grayscale 85% and brightness
