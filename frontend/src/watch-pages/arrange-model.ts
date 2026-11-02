@@ -29,6 +29,7 @@ import {
   ARRANGE_PARTS,
   type ArrangePart,
   type TileArrange,
+  encodeTileArrange,
   normalizeTileArrange,
   oneLookArrangeNative,
   withArrangePart,
@@ -97,9 +98,26 @@ export function arrangeFreeBlock(model: OneLookPreviewModel | undefined): string
   return undefined;
 }
 
-/** The arrangement the Free picture shows on a tile with none of its own:
- * the icon top right, a little smaller, and the name bottom left. */
-export const ARRANGE_SAMPLE: TileArrange = { v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } };
+/** A ready made layout: nothing but a stored `arrange` key, so the apps draw
+ * it as they draw any arrangement. Standard is no key. */
+export type ArrangeLook = "standard" | "icon" | "big" | "corners" | "text";
+
+/** The looks in the order the card shows them. */
+export const ARRANGE_LOOKS: readonly { id: ArrangeLook; label: string; arrange: TileArrange | undefined }[] = [
+  { id: "standard", label: "Standard", arrange: undefined },
+  // 125%, not the 150% limit: on a 6 by 4 watch tile the icon's box at 150%
+  // is taller than the tile.
+  { id: "icon", label: "Icon only", arrange: { v: 1, parts: { icon: { spot: "mc", scale: 1.25 }, name: { hidden: true }, state: { hidden: true } } } },
+  { id: "big", label: "Big value", arrange: { v: 1, parts: { icon: { hidden: true }, state: { spot: "mc", scale: 1.5 } } } },
+  { id: "corners", label: "Corners", arrange: { v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } } },
+  { id: "text", label: "Text only", arrange: { v: 1, parts: { icon: { hidden: true }, name: { spot: "mc" } } } },
+];
+
+/** Which look a stored arrangement is, or "custom" when it is none of them. */
+export function arrangeLookOfKey(arrange: TileArrange | undefined): ArrangeLook | "custom" {
+  const key = JSON.stringify(encodeTileArrange(arrange));
+  return ARRANGE_LOOKS.find((l) => JSON.stringify(encodeTileArrange(l.arrange)) === key)?.id ?? "custom";
+}
 
 /** The kinds the card is offered for: every kind One Look draws with an
  * icon, a name and a state of its own (not a header, a spacer, a template,
@@ -145,11 +163,11 @@ export function setArrangeFreePicked(uiState: Map<string, unknown>, tileId: stri
   else uiState.delete(freeKey(tileId));
 }
 
-/** Whether the card shows Free for a tile: a stored arrangement, or Free
- * picked and nothing moved yet. Whether the tile can use Free is
- * `arrangeFreeBlock`'s answer. */
+/** Whether the card shows Custom for a tile: a stored arrangement that is
+ * none of the looks (`arrangeLookOfKey`), or Custom picked. Whether the tile
+ * can use it is `arrangeFreeBlock`'s answer. */
 export function arrangeFreeOn(uiState: ReadonlyMap<string, unknown>, tile: WatchPageTile): boolean {
-  return normalizeTileArrange(tile.arrange) !== undefined || uiState.get(freeKey(tileIdOf(tile))) === true;
+  return arrangeLookOfKey(normalizeTileArrange(tile.arrange)) === "custom" || uiState.get(freeKey(tileIdOf(tile))) === true;
 }
 
 function tileIdOf(tile: WatchPageTile): string {
@@ -168,6 +186,17 @@ export interface ArrangeStageParts {
   /** Each part drawn now (not hidden, and one the tile has), where it is
    * drawn, from the face's top left. */
   parts: Partial<Record<ArrangePart, OneLookRect>>;
+}
+
+/** `rect`, the icon's box wherever it is placed, shrunk to where the glyph's
+ * ink lands in that box. */
+function inkBox(rect: OneLookRect, layout: OneLookPreviewModel["layout"]): OneLookRect {
+  const box = layout.discRect;
+  const ink = layout.glyphInk;
+  if (ink === undefined || !(box.width > 0 && box.height > 0)) return rect;
+  const across = rect.width / box.width;
+  const down = rect.height / box.height;
+  return { x: rect.x + (ink.x - box.x) * across, y: rect.y + (ink.y - box.y) * down, width: ink.width * across, height: ink.height * down };
 }
 
 /**
@@ -189,7 +218,10 @@ export function arrangeStageParts(tile: WatchPageTile, cell: { width: number; he
     if (part === "icon" && model.icon === "" && model.photo === undefined) continue;
     if (part === "state" && (layout.state === undefined || model.kind.stateHidden)) continue;
     const rect = placed?.rect ?? native[part];
-    if (rect !== undefined && rect.width > 0 && rect.height > 0) parts[part] = rect;
+    if (rect === undefined || !(rect.width > 0 && rect.height > 0)) continue;
+    // The icon's box is the glyph's ink, not the larger box it is fitted in,
+    // whose lower edge runs through the name on a watch tile.
+    parts[part] = part === "icon" && model.photo === undefined ? inkBox(rect, layout) : rect;
   }
   return { size: layout.size, inset: previewTileCellInset(input, tile, cell.width, cell.height), parts };
 }

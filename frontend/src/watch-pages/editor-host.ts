@@ -65,6 +65,9 @@ export interface WatchPagesEditorHost {
    * an older app ignores (the head's Arrange rows). A getter. Absent: none
    * known, so no note. */
   readonly pickers?: readonly { name: string; version?: string | null }[];
+  /** Take the last edit back, as the editor's Undo button does. Absent where
+   * the host keeps no steps. */
+  readonly undoEdit?: () => void;
   /** The selected page: its id as the document has it, and the page. */
   readonly pageId: string;
   readonly page: WatchPage;

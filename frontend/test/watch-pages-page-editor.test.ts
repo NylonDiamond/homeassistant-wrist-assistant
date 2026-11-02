@@ -1609,6 +1609,26 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(draft().canUndo).toBe(false);
   });
 
+  it("draws a look's card as the tile the look makes, small, with no parts to drag", () => {
+    const { el, body, tileOf } = stage("T-BIG");
+    body();
+    const page = (el.currentPage as () => WatchPage).call(el);
+    const draw = el.renderArrangeLookPicture as (p: WatchPage, t: WatchPageTile, key: string, make: (t: WatchPageTile) => WatchPageTile) => unknown;
+    const seen: unknown[] = [];
+    const card = flat(draw.call(el, page, tileOf("T-BIG"), "icon", (t) => {
+      seen.push(t.id);
+      return { ...t, arrange: { v: 1, parts: { name: { hidden: true } } } };
+    }));
+    expect(seen).toEqual(["T-BIG"]);
+    expect(card).toContain(`class="pe-head-tile"`);
+    expect(card).not.toContain("pe-part");
+    // While a drag runs the card it drew stands.
+    el.gesture = { started: true, kind: "part" };
+    const again = draw.call(el, page, tileOf("T-BIG"), "icon", () => { throw new Error("drawn again"); });
+    expect(flat(again)).toBe(card);
+    el.gesture = undefined;
+  });
+
   it("draws the parts on the Arrangement section's larger tile too, and drags them by shares of that tile", () => {
     const { el, body, move, up, tileOf } = stage("T-BIG");
     body();

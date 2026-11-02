@@ -4,7 +4,7 @@
 // (`arrange-fixtures.test.ts`). Plan: app repo
 // docs/page_editor_calm_plan_2026-10.md, "The Arrangement key", steps 5 and 6.
 
-import { svg } from "lit";
+import { nothing, svg } from "lit";
 import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
@@ -14,7 +14,7 @@ import { SymbolBrowser } from "../src/symbols.js";
 import { MIN_VERSION_FOR_ARRANGEMENT, arrangementFor, arrangementUpdateNote } from "../src/version.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
-import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, watchPageTiles } from "../src/watch-pages/model.js";
 import { type WatchPagePreviewInput, renderWatchTileFace, watchTileOneLookModel } from "../src/watch-pages/preview.js";
 import {
   arrangeNameAlign,
@@ -25,6 +25,7 @@ import {
 } from "../src/watch-pages/one-look/arrange.js";
 import {
   arrangeFreeBlock,
+  arrangeFreeOn,
   arrangeOffered,
   arrangeOffset,
   arrangePickedPart,
@@ -267,8 +268,8 @@ describe("the version note", () => {
 
   it("names the devices that draw Default", () => {
     expect(arrangementUpdateNote([], "3.2.0")).toBeUndefined();
-    expect(arrangementUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Default arrangement.");
-    expect(arrangementUpdateNote(["A", "B", "C"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on A, B and C. Until then they draw the Default arrangement.");
+    expect(arrangementUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Standard layout.");
+    expect(arrangementUpdateNote(["A", "B", "C"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on A, B and C. Until then they draw the Standard layout.");
   });
 });
 
@@ -308,11 +309,19 @@ function click(root: unknown, marker: string): void {
 const PAGE_ID = "C3A0E000-0000-4000-8000-0000000000AA";
 const TILE_ID = "C3A0E000-0000-4000-8000-000000000001";
 
+/** The states the card's tiles read: a lit light, a camera with a picture,
+ * and a script, which has no state line. */
+const CARD_STATES = {
+  ...lit("light.kitchen"),
+  "camera.porch": { entity_id: "camera.porch", state: "idle", attributes: { entity_picture: "/api/camera_proxy/camera.porch" } },
+  "script.movie": { entity_id: "script.movie", state: "off", attributes: {} },
+};
+
 function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers?: { name: string; version: string | null }[] } = {}) {
   const draft = new WatchPagesDraft({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Living", items: [{ id: TILE_ID, gridCol: 0, gridRow: 0, ...t }] }] }, 1);
   const pageNow = () => (draft.document.pages as WatchPage[])[0]!;
   const host = {
-    hass: { states: lit("light.kitchen") },
+    hass: { states: CARD_STATES },
     icons: NO_ICONS,
     symbols: new SymbolBrowser(() => undefined),
     get document() { return draft.document; },
@@ -347,44 +356,92 @@ const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel
 const stored = (host: TileSettingsHost) => host.tile.arrange;
 
 describe("the Arrangement card", () => {
-  it("comes right after Shows when in Surface and rules under One Look, for tiles with their own parts", () => {
-    // No settings section of its own: an inspector part of Surface and rules.
+  it("comes first in Text and layout under One Look, for tiles with their own parts", () => {
+    // No settings section of its own: an inspector part of Text and layout.
     expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 2)).toEqual(["size", "icon"]);
     expect(tileArrangeShown(tileHost(KITCHEN).host)).toBe(true);
-    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "surface")?.parts).toEqual(["visibility", "arrange", "size", "background", "border"]);
+    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "text")?.parts).toEqual(["arrange", "text", "state"]);
     expect(tileArrangeShown(tileHost(KITCHEN, { oneLook: false }).host)).toBe(false);
-    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "surface")?.parts).toEqual(["visibility", "size", "background", "border"]);
+    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "text")?.parts).toEqual(["text", "state"]);
     for (const entityId of ["spacer.x", "divider.line.light", "template.x", "map.x", "macro.x"]) {
       expect(arrangeOffered({ id: "x", entityId }), entityId).toBe(false);
     }
     expect(arrangeOffered({ id: "x", entityId: "camera.porch" })).toBe(true);
   });
 
-  it("starts on Default, and Free picked over the tile shows the rows without writing", () => {
+  it("starts on Standard, and Custom picked over the tile shows the rows without writing", () => {
     const { host, draft } = tileHost(KITCHEN);
     const before = text(card(host));
-    expect(before).not.toContain("Native place");
-    expect(before).not.toContain("Put every part back");
-    expect(text(head(host))).toMatch(/aria-label=Arrange>/);
-    expect(text(head(host))).not.toContain("aria-label=Part");
+    expect(before).toMatch(/class="pc-opt on"[^>]*data-value=standard/);
+    expect(before).not.toContain("Back to Standard");
+    expect(before).not.toContain("aria-label=Part");
     const doc = draft.document;
-    click(head(host), ">Free</button>");
+    click(head(host), "data-value=custom");
     expect(draft.document).toBe(doc);
     const free = text(card(host));
-    expect(free).toContain("Native place");
-    expect(free).toContain("Put every part back");
-    expect(text(head(host))).toContain("aria-label=Part");
+    expect(free).toMatch(/class="pc-opt on"[^>]*data-value=custom/);
+    expect(free).toContain("Back to Standard");
+    expect(free).toContain("aria-label=Part");
+    expect(free).not.toContain("Use on whole page");
   });
 
-  it("draws the editor's large live tile in Free only, between Arrange and Part", () => {
+  it("draws the editor's large live tile in Custom only, between the looks and Part", () => {
     const { host } = tileHost(KITCHEN);
     const picture = () => svg`<rect class="big-tile"></rect>`;
     expect(text(renderArrangeSection(host, picture))).not.toContain("big-tile");
-    click(head(host), ">Free</button>");
+    click(head(host), "data-value=custom");
     const free = text(renderArrangeSection(host, picture));
     expect(free).toContain(`<div class="ts-arr-pic"><rect class="big-tile"></rect></div>`);
-    expect(free.indexOf("aria-label=Arrange>")).toBeLessThan(free.indexOf("ts-arr-pic"));
+    expect(free.indexOf("aria-label=Look")).toBeLessThan(free.indexOf("ts-arr-pic"));
     expect(free.indexOf("ts-arr-pic")).toBeLessThan(free.indexOf("aria-label=Part"));
+  });
+
+  it("writes a look at once as one undo step, and reads it back as that look, not Custom", () => {
+    const { host, draft } = tileHost(KITCHEN);
+    click(head(host), "data-value=corners");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } });
+    expect(text(card(host))).toMatch(/class="pc-opt on"[^>]*data-value=corners/);
+    expect(text(card(host))).not.toContain("aria-label=Part");
+    click(head(host), "data-value=icon");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "mc", scale: 1.25 }, name: { hidden: true }, state: { hidden: true } } });
+    draft.undo();
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } });
+    click(head(host), "data-value=standard");
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
+  });
+
+  it("opens Custom from a look keeping it, and a move there makes it the tile's own", () => {
+    const { host } = tileHost(KITCHEN);
+    click(head(host), "data-value=corners");
+    click(head(host), "data-value=custom");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } });
+    click(card(host), "aria-label=Top left");
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tl", scale: 0.8 }, name: { spot: "bl" } } });
+    // Custom stays with no pick behind it: this is no look any more.
+    host.uiState.clear();
+    expect(text(card(host))).toMatch(/class="pc-opt on"[^>]*data-value=custom/);
+    expect(arrangeFreeOn(host.uiState, host.tile)).toBe(true);
+    // A stored look alone opens no tools, so the stage shows no parts.
+    expect(arrangeFreeOn(host.uiState, { ...host.tile, arrange: { v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } } })).toBe(false);
+  });
+
+  it("draws each look's card with the tile the look writes", () => {
+    const { host } = tileHost(KITCHEN);
+    const seen: Record<string, unknown> = {};
+    text(renderArrangeSection(host, undefined, (key, make) => {
+      seen[key] = make(host.tile).arrange;
+      return nothing;
+    }));
+    expect(Object.keys(seen)).toEqual(["standard", "icon", "big", "corners", "text"]);
+    expect(seen.standard).toBeUndefined();
+    expect(seen.big).toEqual({ v: 1, parts: { icon: { hidden: true }, state: { spot: "mc", scale: 1.5 } } });
+  });
+
+  it("turns a look off with the reason on a tile without the part it shows", () => {
+    const { host } = tileHost({ entityId: "script.movie", colSpan: 6, rowSpan: 4, customLabel: "Movie" });
+    const markup = text(card(host));
+    expect(markup).toMatch(/data-value=big title=Off because it has no value \?disabled=true/);
+    expect(markup).toContain("Big value is off because it has no value.");
   });
 
   it("marks the section changed while an arrangement is stored, and its Reset goes back to Default", () => {
@@ -397,7 +454,7 @@ describe("the Arrangement card", () => {
 
   it("writes a spot, a size and hidden for the part picked, each one undo step", () => {
     const { host, draft } = tileHost(KITCHEN);
-    click(head(host), ">Free</button>");
+    click(head(host), "data-value=custom");
     click(card(host), "aria-label=Top right");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
     click(card(host), ">150%</button>");
@@ -410,16 +467,24 @@ describe("the Arrangement card", () => {
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.5 } } });
   });
 
-  it("puts a dragged part exactly at a spot or its native place, keeping its size and Show", () => {
-    const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { dx: 0.038, dy: 0.29, scale: 1.2 } } } });
-    // Moved by a drag: Native place is not lit, though no spot is stored.
-    expect(text(card(host))).toMatch(/class="pe-chip " aria-pressed=false/);
-    click(card(host), ">Native place<");
-    expect(stored(host)).toEqual({ v: 1, parts: { icon: { scale: 1.2 } } });
-    expect(text(card(host))).toMatch(/class="pe-chip on" aria-pressed=true/);
-    host.endCoalesce();
+  it("puts a dragged part exactly at a spot, keeping its size and Show, and Reset this part puts it back", () => {
+    const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { dx: 0.038, dy: 0.29, scale: 1.2 }, name: { spot: "bl" } } } });
     click(card(host), "aria-label=Top right");
-    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.2 } } });
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 1.2 }, name: { spot: "bl" } } });
+    host.endCoalesce();
+    click(card(host), ">Reset this part<");
+    expect(stored(host)).toEqual({ v: 1, parts: { name: { spot: "bl" } } });
+    // Nothing left to reset on this part.
+    expect(text(card(host))).toMatch(/\?disabled=true[^<]*>Reset this part</);
+  });
+
+  it("keeps the exact place under More until a part has one", () => {
+    const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
+    expect(text(card(host))).toContain("Exact place");
+    const nudged = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { dx: 0.1 } } } });
+    const markup = text(card(nudged.host));
+    expect(markup).not.toContain("Exact place");
+    expect(markup).toContain("?data-shown=true");
   });
 
   it("drops a moved spot's offset when the same spot is clicked again", () => {
@@ -428,33 +493,63 @@ describe("the Arrangement card", () => {
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr" } } });
   });
 
-  it("goes back to Default by removing the key, which undo brings back", () => {
+  it("goes back to Standard by removing the key, which undo brings back", () => {
     const { host, draft } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { name: { spot: "bl" } } } });
-    expect(text(card(host))).toContain("Native place");
-    click(head(host), ">Default</button>");
+    expect(text(card(host))).toContain("Back to Standard");
+    click(head(host), "data-value=standard");
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
-    expect(text(card(host))).not.toContain("Native place");
+    expect(text(card(host))).not.toContain("Back to Standard");
     draft.undo();
     expect(stored(host)).toEqual({ v: 1, parts: { name: { spot: "bl" } } });
   });
 
-  it("puts every part back and stays on Free", () => {
+  it("Back to Standard takes the layout off and closes the tools", () => {
     const { host } = tileHost({ ...KITCHEN, arrange: { v: 1, parts: { icon: { spot: "tl" }, state: { hidden: true } } } });
-    click(card(host), ">Put every part back<");
+    click(card(host), ">Back to Standard<");
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
-    expect(text(card(host))).toContain("Native place");
+    expect(text(card(host))).toMatch(/class="pc-opt on"[^>]*data-value=standard/);
+    expect(text(card(host))).not.toContain("aria-label=Part");
   });
 
-  it("greys Free with the reason on a tile that cannot use it", () => {
-    const { host } = tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3, arrange: { v: 1, parts: { icon: { spot: "tl" } } } });
-    const markup = text(card(host));
-    const rows = text(head(host));
-    expect(rows).toMatch(/aria-checked=true\s+class=on title=Every part where the tile's layout puts it \?disabled=false/);
-    expect(rows).toMatch(/title=A tile under 4 rows[^?]*\?disabled=true/);
+  it("gives a short light only the reason: it always draws a state word, so it cannot be only an icon", () => {
+    const markup = text(card(tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3 }).host));
     expect(markup).toContain("A tile under 4 rows lays its parts out in a row.");
-    expect(markup).toContain("The arrangement stored on it is kept but not drawn.");
-    expect(markup).not.toContain("Native place");
-    click(card(host), ">Put every part back<");
+    expect(markup).not.toContain("data-value=");
+  });
+
+  it("gives a short tile with no state Standard and Icon only, by turning its name off", () => {
+    const { host, draft } = tileHost({ entityId: "script.movie", colSpan: 12, rowSpan: 3, customLabel: "Movie" });
+    const markup = text(card(host));
+    expect(markup).toContain("data-value=standard");
+    expect(markup).toContain("data-value=icon");
+    expect(markup).not.toContain("data-value=big");
+    expect(markup).not.toContain("data-value=custom");
+    expect(markup).toContain("A tile under 4 rows lays its parts out in a row.");
+    const before = draft.document;
+    click(head(host), "data-value=icon");
+    expect(draft.document).not.toBe(before);
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
+    expect(host.tile.showLabel).toBe(false);
+    // Short by size still: Icon only reads as on, and no more looks open up.
+    const after = text(card(host));
+    expect(after).toMatch(/class="pc-opt on"[^>]*data-value=icon/);
+    expect(after).not.toContain("data-value=custom");
+    click(head(host), "data-value=standard");
+    expect(host.tile.showLabel).not.toBe(false);
+    expect(text(card(host))).toMatch(/class="pc-opt on"[^>]*data-value=standard/);
+    draft.undo();
+    expect(host.tile.showLabel).toBe(false);
+  });
+
+  it("gives a tile whose picture fills it only the reason, and a way to clear a stored layout", () => {
+    const camera = { entityId: "camera.porch", colSpan: 6, rowSpan: 4, customLabel: "Porch", cameraDisplayMode: "preview" };
+    const plain = text(card(tileHost(camera).host));
+    expect(plain).toContain("The camera's picture fills this tile");
+    expect(plain).not.toContain("data-value=");
+    expect(plain).not.toContain("Clear the stored layout");
+    const { host } = tileHost({ ...camera, arrange: { v: 1, parts: { icon: { spot: "tl" } } } });
+    expect(text(card(host))).toContain("The layout stored on it is kept but not drawn.");
+    click(card(host), ">Clear the stored layout<");
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
   });
 
@@ -466,7 +561,7 @@ describe("the Arrangement card", () => {
 
   it("shares the part picked with the stage through the editor's view state", () => {
     const { host } = tileHost(KITCHEN);
-    click(head(host), ">Free</button>");
+    click(head(host), "data-value=custom");
     // Icon until another is picked.
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
     click(head(host), ">Name</button>");
@@ -479,15 +574,107 @@ describe("the Arrangement card", () => {
     const none = text(card(host));
     expect(text(head(host))).not.toMatch(/aria-checked=true\s+class=on title=The (icon|tile's name|state line)/);
     expect(none).toContain("Pick a part, or click it on the tile");
-    expect(none).not.toContain("Native place");
-    expect(none).toContain("Put every part back");
+    expect(none).not.toContain("Reset this part");
+    expect(none).toContain("Back to Standard");
     click(head(host), ">Icon</button>");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
-    // Free picked again after Default brings a let go pick back as Icon.
+    // Custom picked again after a look brings a let go pick back as Icon.
     setArrangePickedPart(host.uiState, TILE_ID, undefined);
-    click(head(host), ">Default</button>");
-    click(head(host), ">Free</button>");
+    click(card(host), ">Back to Standard<");
+    click(head(host), "data-value=custom");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
+  });
+});
+
+describe("a look on the whole page", () => {
+  const OTHER = "C3A0E000-0000-4000-8000-000000000002";
+  const CAMERA = "C3A0E000-0000-4000-8000-000000000003";
+  const SCENE = "C3A0E000-0000-4000-8000-000000000004";
+  const OWN = "C3A0E000-0000-4000-8000-000000000005";
+  const SHORT = "C3A0E000-0000-4000-8000-000000000006";
+  const SPACER = "C3A0E000-0000-4000-8000-000000000007";
+  const SHORT_LIGHT = "C3A0E000-0000-4000-8000-000000000008";
+  const others = [
+    { id: OTHER, entityId: "light.kitchen", colSpan: 6, rowSpan: 4, gridCol: 6, gridRow: 0, customLabel: "Hall" },
+    { id: CAMERA, entityId: "camera.porch", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 4, customLabel: "Porch", cameraDisplayMode: "preview" },
+    { id: SCENE, entityId: "script.movie", colSpan: 6, rowSpan: 4, gridCol: 6, gridRow: 4, customLabel: "Movie" },
+    { id: OWN, entityId: "light.kitchen", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 8, customLabel: "Own", arrange: { v: 1, parts: { icon: { spot: "tl" } } } },
+    { id: SHORT, entityId: "script.movie", colSpan: 12, rowSpan: 3, gridCol: 0, gridRow: 12, customLabel: "Short" },
+    { id: SPACER, entityId: "spacer.x", colSpan: 12, rowSpan: 2, gridCol: 0, gridRow: 15 },
+    { id: SHORT_LIGHT, entityId: "light.kitchen", colSpan: 12, rowSpan: 3, gridCol: 0, gridRow: 17, customLabel: "Strip" },
+  ];
+  function pageHost() {
+    const { host, draft } = tileHost(KITCHEN);
+    const start = draft.document;
+    const page = (start.pages as WatchPage[])[0]!;
+    draft.apply({ ...start, pages: [{ ...page, items: [...(page.items as WatchPageTile[]), ...others] }] });
+    return { host, draft };
+  }
+  const tileAt = (host: TileSettingsHost, id: string) => watchPageTiles(host.page).find((t) => t.id === id)!;
+
+  it("asks first, naming what changes, what stays and why, and writes nothing until asked", () => {
+    const { host, draft } = pageHost();
+    click(head(host), "data-value=big");
+    const doc = draft.document;
+    click(card(host), ">Use on whole page<");
+    expect(draft.document).toBe(doc);
+    const ask = text(card(host)).replace(/\s+/g, " ");
+    // Hall and Own: the camera, the scene and both short tiles stay; the spacer has no parts.
+    expect(ask).toContain("Use Big value on 2 tiles?");
+    expect(ask).toContain("1 tile has a layout of its own, and this replaces it.");
+    expect(ask).toContain("4 tiles stay as they are");
+    expect(ask).toContain("Porch (the camera fills the tile)");
+    expect(ask).toContain("Movie (it has no value)");
+    expect(ask).toContain("Short (it is too short)");
+    expect(ask).toContain("and 1 more");
+    expect(ask).not.toContain("spacer");
+    click(card(host), ">Cancel<");
+    expect(draft.document).toBe(doc);
+    expect(text(card(host))).toContain("Use on whole page");
+  });
+
+  it("changes every tile in one undo step, and says so with an Undo", () => {
+    const { host, draft } = pageHost();
+    const undone: string[] = [];
+    Object.defineProperty(host, "undoEdit", { value: () => { undone.push("undo"); draft.undo(); }, configurable: true });
+    click(head(host), "data-value=corners");
+    const before = draft.document;
+    click(card(host), ">Use on whole page<");
+    click(card(host), ">Use on ");
+    const corners = { v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } };
+    for (const id of [OTHER, SCENE, OWN]) expect(tileAt(host, id).arrange, id).toEqual(corners);
+    expect(Object.hasOwn(tileAt(host, CAMERA), "arrange")).toBe(false);
+    expect(Object.hasOwn(tileAt(host, SHORT), "arrange")).toBe(false);
+    expect(Object.hasOwn(tileAt(host, SHORT_LIGHT), "arrange")).toBe(false);
+    expect(text(card(host))).toContain("Corners is on 3 tiles.");
+    click(card(host), ">Undo<");
+    expect(undone).toEqual(["undo"]);
+    expect(draft.document).toEqual(before);
+    expect(text(card(host))).not.toContain("is on 3 tiles");
+  });
+
+  it("uses a short tile's own way for Icon only, and Standard takes every layout off", () => {
+    const { host } = pageHost();
+    click(head(host), "data-value=icon");
+    click(card(host), ">Use on whole page<");
+    expect(text(card(host))).toContain("Use Icon only on 4 tiles?");
+    click(card(host), ">Use on ");
+    expect(tileAt(host, SHORT).showLabel).toBe(false);
+    expect(Object.hasOwn(tileAt(host, SHORT), "arrange")).toBe(false);
+    click(head(host), "data-value=standard");
+    click(card(host), ">Use on whole page<");
+    click(card(host), ">Use on ");
+    for (const id of [OTHER, SCENE, OWN, SHORT]) expect(Object.hasOwn(tileAt(host, id), "arrange"), id).toBe(false);
+    expect(tileAt(host, SHORT).showLabel).not.toBe(false);
+  });
+
+  it("closes the question when another edit changes the page", () => {
+    const { host, draft } = pageHost();
+    click(head(host), "data-value=corners");
+    click(card(host), ">Use on whole page<");
+    expect(text(card(host))).toContain("Use Corners on");
+    draft.apply(setWatchTileArrange(draft.document, PAGE_ID, OTHER, { v: 1, parts: { icon: { spot: "tl" } } }));
+    expect(text(card(host))).not.toContain("Use Corners on");
   });
 });
 

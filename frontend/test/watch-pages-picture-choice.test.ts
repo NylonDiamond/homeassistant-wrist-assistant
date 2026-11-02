@@ -349,8 +349,8 @@ describe("the inspector's groups", () => {
     // and border, the iPhone extras last; What it does leads with what the
     // tile's own kind holds, then the tap.
     expect(of("color")).toEqual(["removed", "header", "icon", "color", "glow", "whenOff"]);
-    expect(of("text")).toEqual(["text", "state"]);
-    expect(of("surface")).toEqual(["visibility", "arrange", "size", "background", "border", "phoneExtras"]);
+    expect(of("text")).toEqual(["arrange", "text", "state"]);
+    expect(of("surface")).toEqual(["visibility", "size", "background", "border", "phoneExtras"]);
     expect(of("does")).toEqual(["entity", "phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
     expect([...TILE_KIND_PARTS]).toEqual(["phoneTile", "special", "phone", "target", "opens", "request"]);
     expect(TILE_INSPECTOR_GROUPS).toEqual(["color", "does", "text", "surface"]);
@@ -361,18 +361,18 @@ describe("the inspector's groups", () => {
     expect(tileInspectorParts(host)).toEqual([
       { group: "color", parts: ["icon", "color", "glow", "whenOff"] },
       { group: "does", parts: ["entity", "action", "tapAnimation"] },
-      { group: "text", parts: ["text", "state"] },
-      { group: "surface", parts: ["visibility", "arrange", "size", "background", "border"] },
+      { group: "text", parts: ["arrange", "text", "state"] },
+      { group: "surface", parts: ["visibility", "size", "background", "border"] },
     ]);
     // Size is the page editor's: without its rows it is not drawn.
     const text = flat(renderTileInspector(host));
-    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Color and icon", "What it does", "Text", "Surface and rules"]);
+    expect([...text.matchAll(/class="ts-grp-t">([^<]+)/g)].map((m) => m[1])).toEqual(["Color and icon", "What it does", "Text and layout", "Surface and rules"]);
     expect(text).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
-    expect(text).toMatch(/<span class="ts-grp-t">Text<\/span>\s*<span class="ts-grp-d">Name, state, state bar<\/span>/);
+    expect(text).toMatch(/<span class="ts-grp-t">Text and layout<\/span>\s*<span class="ts-grp-d">Layout, name, state<\/span>/);
     expect(text).toMatch(/<span class="ts-grp-t">Surface and rules<\/span>\s*<span class="ts-grp-d">Background, border, when it shows<\/span>/);
     expect(text).toContain(`<h3 class="ts-grp-t">What it does</h3><span class="ts-grp-d">Tap, hold, the tile's own content</span>`);
     expect(text).not.toContain("data-part=size");
-    expect(text).toContain("<h4>Arrangement</h4>");
+    expect(text).toContain("<h4>Layout</h4>");
     expect(text).toContain("<h4>Shows when</h4>");
     // A light has nothing of its own kind: no kind card.
     expect(text).not.toContain(`class="ts-kind"`);

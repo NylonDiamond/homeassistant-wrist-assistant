@@ -383,20 +383,20 @@ describe("the tile's cards", () => {
     expect(card(body, "Name")).not.toContain(`aria-label="Label"`);
     // The groups, in their order, each with its title, its line and its
     // sections.
-    expect(groupTitles(body)).toEqual(["Color and icon", "What it does", "Text", "Surface and rules"]);
+    expect(groupTitles(body)).toEqual(["Color and icon", "What it does", "Text and layout", "Surface and rules"]);
     expect(group(body, "color")).toMatch(/<span class="ts-grp-t">Color and icon<\/span>\s*<span class="ts-grp-d">Fill, icon or photo, off look<\/span>/);
     expect(titles(group(body, "color"))).toEqual(["Icon", "Color", "Glow", "When it is off"]);
-    expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
+    expect(titles(group(body, "text"))).toEqual(["Layout", "Name", "State"]);
     // No Size: dragging the tile or its corner on the stage moves and sizes it.
-    expect(titles(group(body, "surface"))).toEqual(["Shows when", "Arrangement", "Background", "Border"]);
+    expect(titles(group(body, "surface"))).toEqual(["Shows when", "Background", "Border"]);
     expect(group(body, "surface")).toContain(`<span class="ts-grp-d">Background, border, when it shows</span>`);
     // A light has nothing of its own kind, so What it does is its entity and the tap.
     expect(titles(group(body, "does"))).toEqual(["Entity", "Tap", "Tap animation"]);
     expect(body).not.toContain(`class="ts-kind"`);
-    // The Arrangement: Default or Free, with no large tile until Free.
-    const arrangement = card(body, "Arrangement");
-    expect(arrangement).toMatch(/aria-label=Arrange>/);
-    expect(arrangement).not.toContain("ts-arr-pic");
+    // The Layout: the looks, with no large tile until Custom.
+    const layout = card(body, "Layout");
+    expect(layout).toContain("aria-label=Look");
+    expect(layout).not.toContain("ts-arr-pic");
     expect(text).not.toContain("pe-presets");
     expect(text).not.toContain("pe-size-more");
   });
@@ -508,7 +508,7 @@ describe("the tile's cards", () => {
   it("head every section the same calm way: its title in sentence case, no badge, no fold", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const body = text.slice(text.indexOf(`<div class="ts-groups"`));
-    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Tap", "Tap animation", "Shows when", "Arrangement"]) {
+    for (const title of ["Color", "Icon", "When it is off", "Background", "Border", "Name", "State", "Tap", "Tap animation", "Shows when", "Layout"]) {
       const c = card(body, title);
       expect(c, title).toMatch(new RegExp(`^<section class="ts-sec" data-part=\\w+ aria-label=${title}>\\s*<div class="ts-sec-h"><h4>${title}</h4>`));
       expect(c, title).not.toContain(`class="swatch"`);

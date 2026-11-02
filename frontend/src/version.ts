@@ -95,7 +95,7 @@ export function arrangementFor(
 
 /** The note the head's Arrange rows show when devices on the page are too
  * old to draw it, naming them: "Needs Wrist Assistant 3.2 on Chen Watch.
- * Until then it draws the Default arrangement." (two: "on A and B ... they
+ * Until then it draws the Standard layout." (two: "on A and B ... they
  * draw"; more: "on A, B and C"). Undefined for an empty list. */
 export function arrangementUpdateNote(
   deviceNames: readonly string[],
@@ -105,7 +105,7 @@ export function arrangementUpdateNote(
   if (names.length === 0 || minimum === null) return undefined;
   const version = versionForCopy(minimum);
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the Default arrangement.`;
+  return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the Standard layout.`;
 }
 
 /** First app version, on either device, that draws a tile's icon photo

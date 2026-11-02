@@ -459,6 +459,9 @@ const HEAD_TILE_ZOOM = { narrow: 150 / HEAD_TILE_W, small: 120 / HEAD_TILE_W } a
  * larger: as large as fits this box. */
 const ARRANGE_TILE_W = 300;
 const ARRANGE_TILE_H = 190;
+/** A look's card in that section. */
+const ARRANGE_LOOK_W = 112;
+const ARRANGE_LOOK_H = 72;
 /** How long a section gone to from the head (a fact, a part of its tile,
  * Hide, Change) keeps its amber wash, ms. */
 const FIND_FLASH_MS = 1100;
@@ -1004,6 +1007,8 @@ export class WaPageEditor extends LitElement {
   /** The same for the Arrangement section's live tile, while it draws its
    * parts. */
   private layoutArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
+  /** The look cards the Layout section drew last, kept for a running drag. */
+  private readonly arrangeLookPictures = new Map<string, TemplateResult>();
   /** A press landed on a part of the selected Free tile: the click it ends
    * with picks that part in the Arrangement section's Part row, unless it
    * became a drag. */
@@ -5348,7 +5353,11 @@ export class WaPageEditor extends LitElement {
     // the top over all of them. A settings row under the pointer lights its
     // part of the head's tile.
     return html`<div class="pe-tile-insp" @pointerover=${this.onInspectorHover} @pointerleave=${this.onInspectorLeave}>
-      ${host === undefined ? head : renderTileInspector(host, { arrangePicture: () => this.renderArrangePicture(page, tile), head })}
+      ${host === undefined ? head : renderTileInspector(host, {
+        arrangePicture: () => this.renderArrangePicture(page, tile),
+        arrangeLookPicture: (key, make) => this.renderArrangeLookPicture(page, tile, key, make),
+        head,
+      })}
       ${host === undefined ? nothing : this.renderTileFoot(page, tile)}
     </div>`;
   }
@@ -5659,6 +5668,29 @@ export class WaPageEditor extends LitElement {
       renderWatchTileFace(drawn, cell, input, layout.unit)}${stage === undefined ? nothing : this.renderPartBoxes(id, stage, s)}</span>`;
   }
 
+  /**
+   * A look's card in the Layout section: the selected tile drawn small with
+   * `make` over it. While a drag runs the card it drew before stands, so a
+   * drag does not draw five more tiles on every move.
+   */
+  private renderArrangeLookPicture(page: WatchPage, tile: WatchPageTile, key: string, make: (tile: WatchPageTile) => WatchPageTile): TemplateResult | typeof nothing {
+    const cacheKey = `${tileIdOf(tile)}:${key}`;
+    if (this.gesture?.started === true) {
+      const kept = this.arrangeLookPictures.get(cacheKey);
+      if (kept !== undefined) return kept;
+    }
+    const picture = this.selectedTilePicture(page, tile);
+    if (picture === undefined) return nothing;
+    const { layout, placed, drawn } = picture;
+    const s = Math.min(ARRANGE_LOOK_W / placed.width, ARRANGE_LOOK_H / placed.height, HEAD_TILE_MAX_SCALE);
+    const input = this.selectedTileInput(page, picture, s);
+    const cell = { width: placed.width, height: placed.height };
+    const out = html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
+      renderWatchTileFace(make(drawn), cell, input, layout.unit)}</span>`;
+    this.arrangeLookPictures.set(cacheKey, out);
+    return out;
+  }
+
   // ── going to a section ─────────────────────────────────────────────────
 
   /** The tile inspector's groups as drawn now, or null. */
@@ -5718,6 +5750,7 @@ export class WaPageEditor extends LitElement {
     // page moved.
     let seen: { page: WatchPage; tile: WatchPageTile } | undefined;
     return extendHost(host, {
+      undoEdit: () => () => this.undo(),
       tileId: () => tileId,
       tile: () => {
         const now = host.page;

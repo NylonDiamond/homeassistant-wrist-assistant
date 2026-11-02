@@ -638,7 +638,7 @@ function moreOpen(host: TileSettingsHost, section: string): boolean {
  * and a row whose box is typed in counts as changed until the box is left
  * (`rareTyped`), so one cleared back to its default keeps its field too.
  */
-function rareRow(host: TileSettingsHost, section: string, changed: boolean, body: TemplateResult | typeof nothing): TemplateResult {
+export function rareRow(host: TileSettingsHost, section: string, changed: boolean, body: TemplateResult | typeof nothing): TemplateResult {
   return html`<div class="ts-rare" ?data-shown=${changed || moreOpen(host, section)}>${body}</div>`;
 }
 
@@ -649,7 +649,7 @@ function rareRow(host: TileSettingsHost, section: string, changed: boolean, body
  * the inspector stands fewer than four columns (CSS); its open state is kept
  * per section across tiles and reloads (`fold-memory.ts`).
  */
-function moreLine(host: TileSettingsHost, section: string, folded: readonly RareRowWords[]): TemplateResult | typeof nothing {
+export function moreLine(host: TileSettingsHost, section: string, folded: readonly RareRowWords[]): TemplateResult | typeof nothing {
   if (folded.length === 0) return nothing;
   const open = moreOpen(host, section);
   const words = folded.map((r) => (r.value === undefined ? r.name : `${r.name}: ${r.value}`)).join(", ");
@@ -795,6 +795,9 @@ export interface TileSettingsExtras {
   sections?: readonly WatchTileSettingsSection[];
   size?: { summary: () => string; body: () => TemplateResult; changed?: () => boolean };
   arrangePicture?: () => TemplateResult | typeof nothing;
+  /** The tile drawn small as `make` changes it, for a look's card in the
+   * Layout section; `key` names the look. Only the page editor draws it. */
+  arrangeLookPicture?: (key: string, make: (tile: WatchPageTile) => WatchPageTile) => TemplateResult | typeof nothing;
   /** The tile's head (`renderTileHead`), across the inspector's whole width
    * over the group columns, which all start at the same top under it. */
   head?: TemplateResult;
@@ -1053,7 +1056,7 @@ export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["color", "d
  * does: `color`, `icon` (the symbol, the state icons, the icon's size and
  * shadow), `glow`, `whenOff` (Dim when off, Animate while on) and
  * `tapAnimation`. Two are no settings section: `arrange`, the tile's
- * Arrangement (`arrange-card.ts`), in Surface and rules after Shows when, and
+ * Layout (`arrange-card.ts`), first in Text and layout, and
  * `entity`, what the tile shows, first in What it does.
  */
 export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "glow" | "whenOff" | "tapAnimation" | "arrange" | "entity";
@@ -1066,8 +1069,8 @@ export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "col
  * entity the tile shows, then what the tile's own kind holds
  * (`TILE_KIND_PARTS`: an iPhone tile's task, a special task, an iPhone key, a
  * home map's or a library tile's target, a link's page, the reply of a
- * request), then the tap and its animation. Text is the name and the state.
- * Surface and rules is when the tile shows, where its parts sit, a smart
+ * request), then the tap and its animation. Text and layout is where the
+ * tile's parts sit, the name and the state. Surface and rules is when the tile shows, a smart
  * rule's size, its background and border, and the iPhone extras of a
  * watch's editor last, as the aside they are.
  */
@@ -1087,10 +1090,10 @@ export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileIn
   ["request", "does"],
   ["action", "does"],
   ["tapAnimation", "does"],
+  ["arrange", "text"],
   ["text", "text"],
   ["state", "text"],
   ["visibility", "surface"],
-  ["arrange", "surface"],
   ["size", "surface"],
   ["background", "surface"],
   ["border", "surface"],
@@ -1105,7 +1108,7 @@ export const TILE_KIND_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspe
 /** Each group's title and its one grey line. */
 export const TILE_INSPECTOR_GROUP_WORDS: Readonly<Record<TileInspectorGroup, { title: string; description: string }>> = {
   color: { title: "Color and icon", description: "Fill, icon or photo, off look" },
-  text: { title: "Text", description: "Name, state, state bar" },
+  text: { title: "Text and layout", description: "Layout, name, state" },
   surface: { title: "Surface and rules", description: "Background, border, when it shows" },
   does: { title: "What it does", description: "Tap, hold, the tile's own content" },
 };
@@ -1119,7 +1122,7 @@ const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
   tapAnimation: "Tap animation",
   text: "Name",
   visibility: "Shows when",
-  arrange: "Arrangement",
+  arrange: "Layout",
   entity: "Entity",
   action: "Tap",
 };
@@ -1475,7 +1478,7 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
     case "size":
       return extras.size?.body() ?? nothing;
     case "arrange":
-      return renderArrangeSection(host, extras.arrangePicture);
+      return renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture);
     case "entity":
       return renderEntityShown(host, tileEntityId(host.tile));
     default:
@@ -4095,9 +4098,28 @@ export const tileSettingsStyles = css`
   .ts-ph-add > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .ts-ph-add:focus-within { box-shadow: var(--wa-ring); }
 
-  /* The Arrangement section (\`arrange-card.ts\`): in Free, the large live
-     tile on a black well as wide as the section, then the rows. */
-  .ts-arr { display: flex; flex-direction: column; gap: 4px; }
+  /* The Layout section (\`arrange-card.ts\`): the looks and, in Custom, the
+     large live tile on a black well as wide as the section, then the rows. */
+  .ts-arr { display: flex; flex-direction: column; gap: 6px; }
+  /* The looks: as wide as the section, each card a real tile, three in a row
+     where they fit. The section's heading names them, so no title of their own. */
+  .ts-groups .ts-arr-looks .field.pc-field { display: block; padding: 0; }
+  .ts-arr-looks .field.pc-field > span:first-child { display: none; }
+  .ts-arr-looks .pc-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
+  .ts-arr-looks .pc-opt { min-width: 0; padding: 6px 6px 7px; }
+  .ts-arr-looks .pc-size-large .pc-pic { width: 100%; height: 80px; overflow: hidden; }
+  .ts-arr-looks .pc-label { font-size: 12px; }
+  .ts-arr-custom { position: relative; display: block; width: 84px; height: 54px; border: 1px dashed var(--wa-faint, var(--wa-muted)); border-radius: 10px; }
+  .ts-arr-custom > i { position: absolute; display: block; border-radius: 2px; background: var(--wa-muted); }
+  .ts-arr-custom > i:nth-child(1) { left: 9px; top: 9px; width: 18px; height: 7px; }
+  .ts-arr-custom > i:nth-child(2) { right: 9px; top: 20px; width: 24px; height: 14px; }
+  .ts-arr-custom > i:nth-child(3) { left: 9px; bottom: 8px; width: 38px; height: 6px; }
+  .ts-arr-ask { display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border: 1px solid var(--wa-pick-line, var(--wa-line-strong)); border-radius: 9px; background: var(--wa-sel-bg); color: var(--wa-ink); font-size: 12.5px; line-height: 1.4; }
+  .ts-arr-ask > p { margin: 0; }
+  .ts-arr-ask > p.sub { font-size: 12px; color: var(--wa-pick-ink, var(--wa-label)); }
+  .ts-arr-ask-row { display: flex; gap: 8px; margin-top: 6px; }
+  .ts-arr-done { display: flex; align-items: center; gap: 10px; padding: 6px 7px 6px 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: var(--wa-panel); font-size: 12.5px; }
+  .ts-arr-done > span { flex: 1 1 auto; min-width: 0; }
   .ts-arr-pic {
     display: grid; place-items: center; width: 100%; min-height: 150px; margin: 6px 0; padding: 14px;
     border-radius: 10px; background: #000; overflow: hidden;
@@ -4114,7 +4136,9 @@ export const tileSettingsStyles = css`
   .ts-arr-spot.on { background: var(--wa-sel-bg); }
   .ts-arr-spot.on > span { background: var(--wa-accent); }
   .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
+  .ts-arr-foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+  .ts-arr-foot.start { justify-content: flex-start; }
+  .ts-arr-foot.between { justify-content: space-between; }
 
   /* The inspector's head has its own rules, \`tileHeadStyles\` in
      tile-head.ts. */

@@ -1,20 +1,21 @@
-// Where a tile's own parts sit: the Arrangement section of the tile
-// inspector's Surface and rules group, after Shows when
-// (`renderArrangeSection`). Arrange
-// (Default or Free) and, in Free, a large live tile the parts are dragged
-// on, the Part being placed, its Spot on a 3 by 3 grid of the tile's content
-// box (or its native place), its Size, Shown or Hidden, a small move across
-// and down, and "Put every part back". Every edit is one commit of the tile key
-// `arrange` (`setWatchTileArrange`), so it goes through the draft and undo
-// like every other tile setting; Default removes the key. The part picked
+// Where a tile's own parts sit: the Layout section of the tile inspector's
+// Text and layout group (`renderArrangeSection`). First a row of ready made
+// looks, each drawn with the tile itself, and Custom. One click on a look
+// writes it (`arrange-looks.ts`), and Use on whole page offers it for every
+// tile that can use it, one undo step.
+//
+// Custom opens the tools: a large live tile the parts are dragged on, the Part
+// being placed, its Spot on a 3 by 3 grid of the tile's content box, its Size,
+// Shown or Hidden, and under More a small move across and down. Every edit is
+// one commit of the tile key `arrange` (`setWatchTileArrange`), so it goes
+// through the draft and undo like every other tile setting. The part picked
 // is shared with the stage (`arrangePickedPart`): there the picked part of
 // the selected tile is outlined and dragged, or nudged with the arrow keys.
 //
-// Free is offered only where One Look lays the tile out centred: a tile
-// whose picture fills it, a chart, and a stacked or strip tile show Free
-// greyed with the reason, and the renderer ignores a key stored on one.
-// The placement math is `one-look/arrange.ts`, what the rows know about
-// the tile `arrange-model.ts`.
+// A tile whose picture fills it and a chart get no looks, only the reason. A
+// stacked or strip tile gets Standard and Icon only. The renderer ignores an
+// `arrange` key stored on any of them. The placement math is
+// `one-look/arrange.ts`, what the rows know about the tile `arrange-model.ts`.
 // Plan: app repo docs/page_editor_calm_plan_2026-10.md, step 6.
 //
 // The rows' rules are in `tileSettingsStyles` (tile-settings.ts), under
@@ -26,17 +27,19 @@ import { numberField, segField } from "../editors.js";
 import type { HassEntityState } from "../ha-api.js";
 import { arrangementFor, arrangementUpdateNote } from "../version.js";
 import { type TileSettingsHost, hostDevice } from "./editor-host.js";
-import type { WatchPagesDocument } from "./model.js";
-import type { OneLookPreviewModel } from "./one-look/render.js";
+import type { WatchPagesDocument, WatchPageTile } from "./model.js";
 import {
+  ARRANGE_UI_KEY,
   type ArrangeFrameSource,
-  arrangeFrame,
-  arrangeFreeBlock,
+  type ArrangeLook,
+  ARRANGE_LOOKS,
   arrangeFreeOn,
+  arrangeFrame,
   arrangePickedPart,
   setArrangeFreePicked,
   setArrangePickedPart,
 } from "./arrange-model.js";
+import { type ArrangePagePlan, arrangePagePlan, tileLooks, tileWithLook } from "./arrange-looks.js";
 import {
   ARRANGE_OFFSET_RANGE,
   ARRANGE_SPOTS,
@@ -46,12 +49,14 @@ import {
   type TileArrange,
   withArrangePart,
 } from "./one-look/arrange.js";
-import { setWatchTileArrange, watchTileArrange } from "./tile-settings-model.js";
-import { commit, resetButton, typed, typedNumber, typingField } from "./tile-settings.js";
+import type { OneLookPreviewModel } from "./one-look/render.js";
+import { pictureChoice } from "./picture-choice.js";
+import { editTile, setWatchTileArrange, watchTileArrange } from "./tile-settings-model.js";
+import { commit, moreLine, rareRow, resetButton, typed, typedNumber, typingField } from "./tile-settings.js";
 
 // ── state kept between draws ─────────────────────────────────────────────
 //
-// Free and the part picked live in `uiState` by tile (`arrange-model.ts`),
+// Custom and the part picked live in `uiState` by tile (`arrange-model.ts`),
 // where the stage reads them too: a part clicked on the stage tile is the
 // one this card shows, and Escape on the stage lets the pick go.
 
@@ -61,11 +66,20 @@ export function arrangeSelectedPart(host: TileSettingsHost): ArrangePart | undef
   return arrangePickedPart(host.uiState, host.tileId);
 }
 
-/** Whether the card shows Free: a stored arrangement, or Free picked and
- * nothing moved yet (which stores nothing: no move is Default). */
+/** Whether the card shows Custom: an arrangement of its own, or Custom picked
+ * with nothing moved yet. */
 export function arrangeFreeShown(host: TileSettingsHost): boolean {
   return arrangeFreeOn(host.uiState, host.tile);
 }
+
+/** The question open under the looks, with the document it was asked about:
+ * any other edit closes it, as its numbers no longer hold. */
+const askKey = (tileId: string) => `${ARRANGE_UI_KEY}:ask:${tileId.toUpperCase()}`;
+/** The line after a whole page edit, while that edit is the document. */
+const doneKey = (tileId: string) => `${ARRANGE_UI_KEY}:done:${tileId.toUpperCase()}`;
+
+interface ArrangeAsk { plan: ArrangePagePlan; document: WatchPagesDocument }
+interface ArrangeDone { look: ArrangeLook; count: number; document: WatchPagesDocument }
 
 // ── edits ────────────────────────────────────────────────────────────────
 
@@ -79,41 +93,68 @@ function writePart(host: TileSettingsHost, setting: string, change: (entry: Arra
   writeArrange(host, setting, (now) => withArrangePart(now, part, change), typing);
 }
 
-/** Default: the key goes (one undo step brings it back), and Free is
- * forgotten. */
-export function pickArrangeDefault(host: TileSettingsHost): void {
+function forgetWholePage(host: TileSettingsHost): void {
+  host.uiState.delete(askKey(host.tileId));
+  host.uiState.delete(doneKey(host.tileId));
+}
+
+/** A look: it is written at once, one undo step, and Custom's tools close. */
+export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook, short: boolean): void {
   setArrangeFreePicked(host.uiState, host.tileId, false);
+  forgetWholePage(host);
   host.endCoalesce();
-  writeArrange(host, "default", () => undefined);
+  const { pageId, tileId } = host;
+  commit(host, "arrange:look", (d) => editTile(d, pageId, tileId, (tile) => tileWithLook(tile, look, short)));
   host.requestUpdate();
 }
 
-/** Free: shown at once; nothing is written until a part moves. A part let
- * go before is picked again (Icon), so the stage tile can be grabbed at once. */
-export function pickArrangeFree(host: TileSettingsHost): void {
+/** Custom: the tools open at once, starting from what the tile has; nothing
+ * is written until a part moves. A part let go before is picked again (Icon),
+ * so the stage tile can be grabbed at once. */
+export function pickArrangeCustom(host: TileSettingsHost): void {
   setArrangeFreePicked(host.uiState, host.tileId, true);
+  forgetWholePage(host);
   if (arrangeSelectedPart(host) === undefined) setArrangePickedPart(host.uiState, host.tileId, "icon");
   host.requestUpdate();
 }
 
-/** The Arrangement section's Reset: the key goes, as Default writes it,
- * and Free, if picked, stays picked with nothing moved. */
+/** The Layout section's Reset: the key goes, as Standard writes it, and
+ * Custom, if picked, stays picked with nothing moved. */
 export function arrangeResetEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
   const { pageId, tileId } = host;
   return (d) => setWatchTileArrange(d, pageId, tileId, undefined);
 }
 
-/** Put every part back: the key goes, Free stays picked. */
-export function putEveryPartBack(host: TileSettingsHost): void {
-  setArrangeFreePicked(host.uiState, host.tileId, true);
+/** Take a look or an arrangement off a tile that no longer draws it. */
+function clearStored(host: TileSettingsHost): void {
   host.endCoalesce();
   writeArrange(host, "reset", () => undefined);
+}
+
+/** Open the question for the whole page, its numbers read now. */
+function askWholePage(host: TileSettingsHost, look: ArrangeLook): void {
+  const ask: ArrangeAsk = { plan: arrangePagePlan(sourceOf(host), host.page, look), document: host.document };
+  host.uiState.delete(doneKey(host.tileId));
+  host.uiState.set(askKey(host.tileId), ask);
+  host.requestUpdate();
+}
+
+/** Use the look on every tile the question named: one edit, so one undo step
+ * brings them all back. */
+function useOnWholePage(host: TileSettingsHost, plan: ArrangePagePlan): void {
+  const { pageId } = host;
+  host.endCoalesce();
+  host.uiState.delete(askKey(host.tileId));
+  commit(host, "arrange:page", (d) => plan.changes.reduce((next, c) => editTile(next, pageId, c.tileId, (tile) => tileWithLook(tile, plan.look, c.short)), d));
+  const done: ArrangeDone = { look: plan.look, count: plan.changes.length, document: host.document };
+  host.uiState.set(doneKey(host.tileId), done);
+  host.requestUpdate();
 }
 
 // ── the rows ─────────────────────────────────────────────────────────────
 
 const PART_LABELS: [ArrangePart, string][] = [["icon", "Icon"], ["name", "Name"], ["state", "State"]];
-const SCALES: [string, string][] = [["0.8", "80%"], ["1", "Normal"], ["1.2", "120%"], ["1.5", "150%"]];
+const SCALES: [string, string][] = [["0.8", "80%"], ["1", "100%"], ["1.2", "120%"], ["1.5", "150%"]];
 const SPOT_WORDS: Readonly<Record<ArrangeSpot, string>> = {
   tl: "Top left", tc: "Top centre", tr: "Top right",
   ml: "Middle left", mc: "Middle", mr: "Middle right",
@@ -121,48 +162,108 @@ const SPOT_WORDS: Readonly<Record<ArrangeSpot, string>> = {
 };
 const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state" };
 
-/** The names of the devices on the page whose app draws Default whatever is
+/** The names of the devices on the page whose app draws Standard whatever is
  * stored. */
 function tooOld(host: TileSettingsHost): string[] {
   return (host.pickers ?? []).filter((p) => !arrangementFor(p.version ?? null)).map((p) => p.name);
 }
 
-/** What the section's rows read: the stored arrangement, the tile's One
- * Look model, why Free cannot place it (undefined when it can), and whether
- * Free shows. */
-function arrangeNow(host: TileSettingsHost): { stored: TileArrange | undefined; model: OneLookPreviewModel | undefined; block: string | undefined; free: boolean } {
-  const tile = host.tile;
-  const source: ArrangeFrameSource = {
+function sourceOf(host: TileSettingsHost): ArrangeFrameSource {
+  return {
     page: host.page, pages: [host.page, ...host.otherPages], device: hostDevice(host),
     states: host.hass.states as Record<string, HassEntityState>, icons: host.icons, behavior: host.behavior,
     ...(host.catalog === undefined ? {} : { catalog: host.catalog }),
   };
-  const model = arrangeFrame(source, tile)?.model;
-  const block = arrangeFreeBlock(model);
-  return { stored: watchTileArrange(tile), model, block, free: block === undefined && arrangeFreeShown(host) };
 }
 
+const lookLabel = (look: ArrangeLook) => ARRANGE_LOOKS.find((l) => l.id === look)?.label ?? look;
+
+/** "A, B and C", at most three names and then how many more. */
+function namesLine(items: readonly { name: string; why: string }[]): string {
+  const named = items.slice(0, 3).map((s) => `${s.name} (${s.why})`);
+  const more = items.length - named.length;
+  if (more > 0) return `${named.join(", ")} and ${more} more`;
+  return named.length < 2 ? named.join("") : `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+}
+
+/** Under the looks: Use on whole page, its question, or the line after it. */
+function renderWholePage(host: TileSettingsHost, look: ArrangeLook): TemplateResult {
+  const ask = host.uiState.get(askKey(host.tileId)) as ArrangeAsk | undefined;
+  if (ask !== undefined && ask.document === host.document && ask.plan.look === look) {
+    const { plan } = ask;
+    const close = () => { host.uiState.delete(askKey(host.tileId)); host.requestUpdate(); };
+    const n = plan.changes.length;
+    const tiles = (count: number) => (count === 1 ? "1 tile" : `${count} tiles`);
+    if (n === 0) {
+      return html`<div class="ts-arr-ask" role="status"><p>No other tile can change.</p>
+        ${plan.skipped.length === 0 ? nothing : html`<p class="sub">${namesLine(plan.skipped)}.</p>`}
+        <div class="ts-arr-ask-row"><button type="button" class="ghost ts-reset-btn" @click=${close}>Close</button></div></div>`;
+    }
+    return html`<div class="ts-arr-ask" role="group" aria-label="Use on whole page">
+      <p><b>Use ${lookLabel(look)} on ${tiles(n)}?</b></p>
+      ${plan.replaces === 0 ? nothing : html`<p class="sub">${plan.replaces === 1 ? "1 tile has a layout of its own, and this replaces it." : `${plan.replaces} tiles have a layout of their own, and this replaces them.`}</p>`}
+      ${plan.skipped.length === 0 ? nothing : html`<p class="sub">${plan.skipped.length === 1 ? "1 tile stays as it is" : `${plan.skipped.length} tiles stay as they are`}: ${namesLine(plan.skipped)}.</p>`}
+      <div class="ts-arr-ask-row">
+        <button type="button" class="primary" @click=${() => useOnWholePage(host, plan)}>Use on ${tiles(n)}</button>
+        ${html`<button type="button" class="ghost ts-reset-btn" @click=${close}>Cancel</button>`}
+      </div>
+    </div>`;
+  }
+  const done = host.uiState.get(doneKey(host.tileId)) as ArrangeDone | undefined;
+  if (done !== undefined && done.document === host.document) {
+    return html`<div class="ts-arr-done" role="status"><span>${lookLabel(done.look)} is on ${done.count === 1 ? "1 tile" : `${done.count} tiles`}.</span>
+      ${host.undoEdit === undefined ? nothing : html`<button type="button" class="ghost ts-reset-btn" @click=${() => { host.uiState.delete(doneKey(host.tileId)); host.undoEdit?.(); host.requestUpdate(); }}>Undo</button>`}</div>`;
+  }
+  return html`<div class="ts-arr-foot start"><button type="button" class="ghost ts-reset-btn" title="Use this look on every tile of this page that can use it"
+    @click=${() => askWholePage(host, look)}>Use on whole page</button></div>`;
+}
+
+/** Custom's picture: a tile with its parts as plain marks. */
+const CUSTOM_PICTURE = html`<span class="ts-arr-custom"><i></i><i></i><i></i></span>`;
+
 /**
- * The Arrangement section's rows: Arrange (Default or Free, Free greyed
- * with the reason on a tile that cannot use it), and with Free the live
- * tile the page editor draws for the parts to be dragged on (`picture`, on
- * a black well), the Part being placed and that part's rows.
+ * The Layout section's rows: a tile's reason when it can use no look, else
+ * the looks, each drawn by `lookPicture`, then under Custom the live tile the
+ * page editor draws for the parts to be dragged on (`picture`, on a black
+ * well) and the part's rows, and under a look Use on whole page.
  */
-export function renderArrangeSection(host: TileSettingsHost, picture?: () => TemplateResult | typeof nothing): TemplateResult {
-  const { stored, model, block, free } = arrangeNow(host);
-  const pick = (v: "default" | "free") => (v === "free" ? pickArrangeFree(host) : pickArrangeDefault(host));
-  const arrange = segField<"default" | "free">("Arrange", free ? "free" : "default", [["default", "Default"], ["free", "Free"]], pick, {
-    titles: { default: "Every part where the tile's layout puts it", free: block ?? "Move, size or hide the icon, the name and the state" },
-    disabled: { free: block !== undefined },
-  });
+export function renderArrangeSection(
+  host: TileSettingsHost,
+  picture?: () => TemplateResult | typeof nothing,
+  lookPicture?: (key: string, make: (tile: WatchPageTile) => WatchPageTile) => TemplateResult | typeof nothing,
+): TemplateResult {
+  const tile = host.tile;
+  const stored = watchTileArrange(tile);
+  const source = sourceOf(host);
+  const read = tileLooks(source, tile);
   const old = arrangementUpdateNote(tooOld(host));
-  const notes = html`${block === undefined || stored === undefined ? nothing
-      : html`<div class="hint keep ts-under">${block} The arrangement stored on it is kept but not drawn.</div>`}
-    ${old === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${old}</div>`}`;
-  if (!free) {
-    return html`<div class="ts-arr">${arrange}${notes}${block !== undefined && stored !== undefined
-      ? html`<div class="ts-arr-foot">${resetButton("Put every part back", "Clear the stored arrangement", () => putEveryPartBack(host))}</div>`
-      : nothing}</div>`;
+  const oldNote = old === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${old}</div>`;
+  if (read.looks.length === 0) {
+    return html`<div class="ts-arr">
+      ${read.block === undefined ? nothing : html`<div class="hint keep">${read.block}${stored === undefined ? "" : " The layout stored on it is kept but not drawn."}</div>`}
+      ${oldNote}
+      ${read.block !== undefined && stored !== undefined ? html`<div class="ts-arr-foot">${resetButton("Clear the stored layout", "Clear the stored layout", () => clearStored(host))}</div>` : nothing}
+    </div>`;
+  }
+  const custom = !read.short && arrangeFreeShown(host);
+  const value = custom ? "custom" : read.current;
+  const options = [
+    ...read.looks.map((l) => ({
+      value: l.id as ArrangeLook | "custom",
+      label: l.label,
+      ...(l.off === undefined ? {} : { disabled: true, title: `Off because ${l.off}` }),
+      picture: () => lookPicture?.(l.id, (t) => tileWithLook(t, l.id, read.short)) ?? nothing,
+    })),
+    ...(read.short ? [] : [{ value: "custom" as ArrangeLook | "custom", label: "Custom", picture: () => CUSTOM_PICTURE }]),
+  ];
+  const offNotes = read.looks.filter((l) => l.off !== undefined);
+  const looks = html`<div class="ts-arr-looks">${pictureChoice<ArrangeLook | "custom">("Look", value, options,
+    (v) => (v === "custom" ? pickArrangeCustom(host) : pickArrangeLook(host, v, read.short)), { size: "large" })}</div>`;
+  const notes = html`${read.short && read.block !== undefined ? html`<div class="hint keep">${read.block}</div>` : nothing}
+    ${offNotes.length === 0 ? nothing : html`<div class="hint keep">${offNotes.map((l) => `${l.label} is off because ${l.off}.`).join(" ")}</div>`}
+    ${oldNote}`;
+  if (!custom) {
+    return html`<div class="ts-arr">${looks}${notes}${value === "custom" ? nothing : renderWholePage(host, value)}</div>`;
   }
   const picked = arrangeSelectedPart(host);
   const moved = (p: ArrangePart) => stored?.parts[p] !== undefined;
@@ -173,18 +274,24 @@ export function renderArrangeSection(host: TileSettingsHost, picture?: () => Tem
   };
   const drawn = picture?.() ?? nothing;
   const well = drawn === nothing ? nothing : html`<div class="ts-arr-pic">${drawn}</div>`;
-  return html`<div class="ts-arr">${arrange}${notes}${well}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
+  return html`<div class="ts-arr">${looks}${notes}${well}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
     titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
-  })}${renderFreeRows(host, stored, model)}</div>`;
+  })}${renderCustomRows(host, stored, arrangeFrame(source, tile)?.model)}</div>`;
 }
 
-/** The rows under Free, for the part picked. */
-function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
+/** Back to Standard: every part where the tile's layout puts it, and Custom's
+ * tools close. */
+function backToStandard(host: TileSettingsHost): TemplateResult {
+  return resetButton("Back to Standard", "Every part back where the tile's layout puts it", () => pickArrangeLook(host, "standard", false));
+}
+
+/** The rows under Custom, for the part picked. */
+function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
   const picked = arrangeSelectedPart(host);
   if (picked === undefined) {
     return html`<div class="ts-arr-free">
-      <div class="hint keep ts-under">Pick a part, or click it on the tile, then drag it there or use the arrow keys.</div>
-      <div class="ts-arr-foot">${resetButton("Put every part back", "Every part back where the tile's layout puts it", () => putEveryPartBack(host))}</div>
+      <div class="hint keep">Pick a part, or click it on the tile, then drag it there or use the arrow keys.</div>
+      <div class="ts-arr-foot">${backToStandard(host)}</div>
     </div>`;
   }
   const part = picked;
@@ -193,25 +300,25 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
     : part === "icon" ? model.layout.discRect.width > 0
     : part === "name" ? model.layout.name.lines.length > 0
     : model.layout.stateRect !== undefined;
-  // A spot or Native place puts the part exactly there: the move across and
-  // down (what a drag on the stage writes) goes with it. Size and Show stay.
-  const placeAt = (spot: ArrangeSpot | undefined) => writePart(host, "spot", (e) => {
+  // A spot puts the part exactly there: the move across and down (what a drag
+  // on the stage writes) goes with it. Size and Show stay.
+  const placeAt = (spot: ArrangeSpot) => writePart(host, "spot", (e) => {
     const { spot: _s, dx: _x, dy: _y, ...rest } = e;
-    return spot === undefined ? rest : { ...rest, spot };
+    return { ...rest, spot };
   });
   const nudged = (entry.dx ?? 0) !== 0 || (entry.dy ?? 0) !== 0;
-  const native = entry.spot === undefined && !nudged;
   const scale = String(entry.scale ?? 1);
+  const percent = (axis: "dx" | "dy") => Math.round((entry[axis] ?? 0) * 1000) / 10;
   const offset = (axis: "dx" | "dy") => {
     const label = axis === "dx" ? "Across" : "Down";
-    const shown = typedNumber(typed(host, `arrange:${axis}`), Math.round((entry[axis] ?? 0) * 1000) / 10);
+    const shown = typedNumber(typed(host, `arrange:${axis}`), percent(axis));
     const set = (v: number | undefined) => writePart(host, axis, (e) => ({ ...e, [axis]: v === undefined ? 0 : v / 100 }), true);
     return typingField(host, `arrange:${axis}`, numberField(label, shown, set, {
       step: 1, min: ARRANGE_OFFSET_RANGE[0] * 100, max: ARRANGE_OFFSET_RANGE[1] * 100, unit: "%", def: 0,
-    }), Math.round((entry[axis] ?? 0) * 1000) / 10);
+    }), percent(axis));
   };
   return html`<div class="ts-arr-free">
-    ${drawn ? nothing : html`<div class="hint keep ts-under">This tile draws no ${PART_WORDS[part]} now; its arrangement is kept for when it does.</div>`}
+    ${drawn ? nothing : html`<div class="hint keep">This tile draws no ${PART_WORDS[part]} now; its layout is kept for when it does.</div>`}
     <div class="field ts-arr-spot-row"><span>Spot</span>
       <div class="ts-arr-spot-ctl">
         <div class="ts-arr-spots" role="radiogroup" aria-label=${`Spot of the ${PART_WORDS[part]}`}>
@@ -223,16 +330,18 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
               @click=${() => { if (!exact) placeAt(spot); }}><span></span></button>`;
           })}
         </div>
-        <button type="button" class="pe-chip ${native ? "on" : ""}" aria-pressed=${native ? "true" : "false"}
-          title=${`Back where the tile's layout puts the ${PART_WORDS[part]}`}
-          @click=${() => { if (!native) placeAt(undefined); }}>Native place</button>
       </div>
     </div>
     ${segField("Size", scale, SCALES, (v) => writePart(host, "scale", (e) => ({ ...e, scale: Number(v) })), { def: "1" })}
     ${segField<"shown" | "hidden">("Show", entry.hidden === true ? "hidden" : "shown", [["shown", "Shown"], ["hidden", "Hidden"]],
       (v) => writePart(host, "hidden", (e) => ({ ...e, hidden: v === "hidden" })), { def: "shown" })}
-    ${offset("dx")}${offset("dy")}
-    <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the iPhone.</div>
-    <div class="ts-arr-foot">${resetButton("Put every part back", "Every part back where the tile's layout puts it", () => putEveryPartBack(host))}</div>
+    ${rareRow(host, "arrange", nudged, html`${offset("dx")}${offset("dy")}
+      <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the iPhone.</div>`)}
+    ${moreLine(host, "arrange", nudged ? [] : [{ name: "Exact place" }])}
+    <div class="ts-arr-foot between">
+      <button type="button" class="ghost ts-reset-btn" title=${`Put the ${PART_WORDS[part]} back: its place, size and Show`} ?disabled=${stored?.parts[part] === undefined}
+        @click=${() => writePart(host, "part-reset", () => ({}))}>Reset this part</button>
+      ${backToStandard(host)}
+    </div>
   </div>`;
 }

@@ -22,7 +22,6 @@
 
 import "../src/watch-pages/page-editor.js";
 import "../src/watch-menus/menu-editor.js";
-import "../src/watch-control-center/control-center-editor.js";
 import "../src/watch-rooms/rooms-editor.js";
 import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
 // The phone's menus as the app's tests write them, for `?menus`.
