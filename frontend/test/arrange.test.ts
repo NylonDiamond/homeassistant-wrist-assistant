@@ -27,7 +27,6 @@ import {
   arrangeFrame,
   arrangeFreeBlock,
   arrangeOffered,
-  arrangeOffset,
   arrangePartDrawn,
   arrangePickedPart,
   arrangeResizeNote,
@@ -853,10 +852,4 @@ describe("the parts on the stage", () => {
     expect(arrangeStageParts({ id: "S", entityId: "spacer.x", colSpan: 6, rowSpan: 4 }, cellOf(6, 4), input, UNIT)).toBeUndefined();
   });
 
-  it("clamps an offset to half the tile and rounds it to a thousandth", () => {
-    expect(arrangeOffset(0.12345)).toBe(0.123);
-    expect(arrangeOffset(0.9)).toBe(0.5);
-    expect(arrangeOffset(-0.9)).toBe(-0.5);
-    expect(Object.is(arrangeOffset(-0.0001), 0)).toBe(true);
-  });
 });

@@ -306,10 +306,3 @@ export function arrangeStageParts(tile: WatchPageTile, cell: { width: number; he
   };
 }
 
-/** An offset as a drag writes it: clamped to its range and
- * rounded to a thousandth of the tile. */
-export function arrangeOffset(v: number): number {
-  const clamped = Math.min(ARRANGE_OFFSET_RANGE[1], Math.max(ARRANGE_OFFSET_RANGE[0], v));
-  return Math.round(clamped * 1000) / 1000 + 0;
-}
-
