@@ -589,9 +589,29 @@ interface PartGesture extends GestureBase {
   /** The tile's face as drawn, in pixels: what an offset is a share of. */
   width: number;
   height: number;
+  /** How far a text part can go before the tile's edge stops it, as shares
+   * of the tile (`arrangePartRect` holds it there), so a drag past the edge
+   * leaves no offset to drag back through. Undefined for the icon. */
+  room: { left: number; right: number; up: number; down: number } | undefined;
 }
 
 type Gesture = MoveGesture | ResizeGesture | PartGesture;
+
+/** A part's room to each edge of the tile, as shares of the tile, from where
+ * the stage draws it. */
+function partRoom(stage: ArrangeStageParts, part: ArrangePart): PartGesture["room"] {
+  const r = stage.parts[part];
+  const { width, height } = stage.size;
+  if (r === undefined || !(width > 0 && height > 0)) return undefined;
+  // The name is free across (`arrangePartRect`).
+  const across = part !== "name";
+  return {
+    left: across ? Math.max(0, r.x / width) : Infinity,
+    right: across ? Math.max(0, (width - r.x - r.width) / width) : Infinity,
+    up: Math.max(0, r.y / height),
+    down: Math.max(0, (height - r.y - r.height) / height),
+  };
+}
 
 /** The page as one picture of the stage draws it: that screen's places in
  * the tile fields (`watchScreenPage`), and only the tiles on that screen, so
@@ -2861,6 +2881,7 @@ export class WaPageEditor extends LitElement {
       arrange: from,
       width: at.stage.size.width * at.scale,
       height: at.stage.size.height * at.scale,
+      room: part === "icon" ? undefined : partRoom(at.stage, part),
       captured: this.capture(e.currentTarget, e.pointerId),
       baseVersion: draft.baseVersion,
     };
@@ -2987,7 +3008,10 @@ export class WaPageEditor extends LitElement {
       // the tile, clamped and rounded as the drop writes them.
       const across = g.width > 0 ? (g.clientX - g.startX) / g.width : 0;
       const down = g.height > 0 ? (g.clientY - g.startY) / g.height : 0;
-      g.arrange = movedArrangePart(g.from, g.part, across, down);
+      const room = g.room;
+      g.arrange = room === undefined
+        ? movedArrangePart(g.from, g.part, across, down)
+        : movedArrangePart(g.from, g.part, Math.max(-room.left, Math.min(across, room.right)), Math.max(-room.up, Math.min(down, room.down)));
       this.requestUpdate();
       return;
     }

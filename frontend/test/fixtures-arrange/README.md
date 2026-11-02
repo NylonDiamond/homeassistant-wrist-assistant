@@ -47,8 +47,15 @@ state's box), and the part's entry.
    puts its bottom at C's bottom. Without a spot, keep the scaled rect
    centred on R's centre.
 3. Then move it by (dx * T.width, dy * T.height).
-4. Hidden: the part is not drawn. Nothing else moves.
-5. The name's text alignment: with a spot, its column sets it (l leading,
+4. Keep text in T. For the name and the state, y = max(0, min(y, T.height -
+   S.height)). For the state also x = max(0, min(x, T.width - S.width)).
+   Fonts differ by a point between the panel and the apps, so text near an
+   edge would be cut on one and not another. The name is free across, as its
+   box is nearly T's width whatever the name's length. The icon is not held
+   in: its box is larger than its ink, so it may hang over. See
+   `text-stays-inside.json`.
+5. Hidden: the part is not drawn. Nothing else moves.
+6. The name's text alignment: with a spot, its column sets it (l leading,
    c centre, r trailing); without one it keeps its native alignment, which
    in the centred layout is centre.
 
@@ -89,6 +96,7 @@ rounded to 4 decimals; compare within 0.001.
 | `spots-middle-row.json` | The middle row (icon `mr`, name `ml` leading, state `mc`) on a switch, watch. |
 | `spots-bottom-row-iphone.json` | The bottom row (icon `bc`, name `br` trailing, state `bl`) on a sensor, iPhone. |
 | `drag-offset.json` | A drag: the icon moved from its native place, the name moved from a spot; the state not listed. |
+| `text-stays-inside.json` | Moved past the edges: the name is held in at the bottom, the state at the top and left, the icon hangs over. |
 | `scale-up-down-iphone.json` | Sizes: icon 150% about its centre, name 120% (native width kept), state 80% in a spot, iPhone. |
 | `hidden-parts.json` | Name and state hidden, icon 120% in the middle; hidden parts keep their rects. |
 | `person-photo.json` | A person's photo as the icon part, in a spot at 80% with a nudge. |

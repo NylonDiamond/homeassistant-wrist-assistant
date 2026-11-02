@@ -163,7 +163,13 @@ export interface ArrangedName extends ArrangedPart {
  *    bottom at the box's bottom. Without a spot it stays centred on the
  *    native rect's centre.
  * 3. Then it moves by (dx times the tile's width, dy times its height).
- * 4. Hidden parts are not drawn; nothing else moves.
+ * 4. The state's box then stays inside the tile, and the name's box inside
+ *    its top and bottom, moved back in at any edge it crossed: fonts differ
+ *    by a point between the panel, the watch and the iPhone, so text near an
+ *    edge would be cut on one and not another. The name is free across, as
+ *    its box is nearly the tile's width whatever the name's length, and the
+ *    icon may hang over: its box is larger than its ink.
+ * 5. Hidden parts are not drawn; nothing else moves.
  */
 export function arrangePartRect(
   tile: OneLookSize,
@@ -189,6 +195,8 @@ export function arrangePartRect(
   }
   x += (entry?.dx ?? 0) * tile.width;
   y += (entry?.dy ?? 0) * tile.height;
+  if (part === "state") x = Math.max(0, Math.min(x, tile.width - width));
+  if (part !== "icon") y = Math.max(0, Math.min(y, tile.height - height));
   return { rect: { x, y, width, height }, scale, hidden: entry?.hidden === true };
 }
 
