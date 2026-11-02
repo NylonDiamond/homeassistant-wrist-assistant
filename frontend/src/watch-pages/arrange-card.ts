@@ -12,9 +12,8 @@
 // down. A change leaves the look, and then no look is lit: the tile has a layout
 // of its own. Every edit is one commit of the tile key `arrange`
 // (`setWatchTileArrange`), so it goes through the draft and undo like every
-// other tile setting. The part picked is shared with the stage
-// (`arrangePickedPart`): there the selected tile's parts are dragged too, or
-// nudged with the arrow keys.
+// other tile setting. The parts move only here: on the stage a drag moves the
+// tile. The part picked is kept by tile (`arrangePickedPart`).
 //
 // A tile whose picture fills it and a chart get no looks, only the reason. A
 // stacked or strip watch tile gets Standard and Icon only, with no tile and no
@@ -67,13 +66,11 @@ import { commit, moreLine, rareRow, resetButton, typed, typedNumber, typingField
 
 // ── state kept between draws ─────────────────────────────────────────────
 //
-// The part picked lives in `uiState` by tile (`arrange-model.ts`), where the
-// stage reads it too: a part clicked on the stage tile is the
-// one this card shows, and Escape on the stage lets the pick go.
+// The part picked lives in `uiState` by tile (`arrange-model.ts`): a part
+// pressed on the live tile is the one the rows show.
 
-/** The part the card is placing: Icon until another is picked, undefined
- * once the pick was let go on the stage. */
-export function arrangeSelectedPart(host: TileSettingsHost): ArrangePart | undefined {
+/** The part the card is placing: Icon until another is picked. */
+export function arrangeSelectedPart(host: TileSettingsHost): ArrangePart {
   return arrangePickedPart(host.uiState, host.tileId);
 }
 
@@ -94,7 +91,6 @@ function writeArrange(host: TileSettingsHost, setting: string, next: (now: TileA
 
 function writePart(host: TileSettingsHost, setting: string, base: TileArrange | undefined, change: (entry: ArrangePartEntry) => ArrangePartEntry, typing = false): void {
   const part = arrangeSelectedPart(host);
-  if (part === undefined) return;
   writeArrange(host, setting, (now) => withArrangePart(now ?? base, part, change), typing);
 }
 
@@ -103,11 +99,9 @@ function forgetWholePage(host: TileSettingsHost): void {
   host.uiState.delete(doneKey(host.tileId));
 }
 
-/** A look: it is written at once, one undo step. A part let go before is
- * picked again (Icon), so the tile can be grabbed at once. */
+/** A look: it is written at once, one undo step. */
 export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook): void {
   forgetWholePage(host);
-  if (arrangeSelectedPart(host) === undefined) setArrangePickedPart(host.uiState, host.tileId, "icon");
   host.endCoalesce();
   const { pageId, tileId } = host;
   commit(host, "arrange:look", (d) => editTile(d, pageId, tileId, (tile) => tileWithLook(tile, look)));
@@ -271,10 +265,10 @@ export function renderArrangeSection(
   if (read.short) return html`<div class="ts-arr">${looks}${notes}${whole}</div>`;
   const base = arrangeBase(host, phoneModel);
   const model = arrangeFrame(source, base === stored ? tile : { ...tile, arrange: encodeTileArrange(base) })?.model;
-  // Its place stays while a drag on the stage takes the tile away for a moment.
+  // Its place stays while a drag on the stage takes the live tile away for a moment.
   const well = picture === undefined ? nothing : html`<div class="ts-arr-pic">${picture()}</div>`;
   const picked = arrangeSelectedPart(host);
-  const pickedHidden = picked !== undefined && base?.parts[picked]?.hidden === true;
+  const pickedHidden = base?.parts[picked]?.hidden === true;
   return html`<div class="ts-arr">
     <div class="ts-arr-work">
       <div class="ts-arr-side">${looks}${notes}${whole}</div>
@@ -319,10 +313,8 @@ function renderPartRow(host: TileSettingsHost, base: TileArrange | undefined, mo
 }
 
 /** The rows for the part picked. */
-function renderCustomRows(host: TileSettingsHost, base: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult | typeof nothing {
-  const picked = arrangeSelectedPart(host);
-  if (picked === undefined) return nothing;
-  const part = picked;
+function renderCustomRows(host: TileSettingsHost, base: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
+  const part = arrangeSelectedPart(host);
   const entry = base?.parts[part] ?? {};
   const drawn = model === undefined ? true
     : part === "bar" ? model.layout.barRect !== undefined
@@ -331,7 +323,7 @@ function renderCustomRows(host: TileSettingsHost, base: TileArrange | undefined,
     : part === "name" ? model.layout.name.lines.length > 0
     : model.layout.stateRect !== undefined;
   // A spot puts the part exactly there: the move across and down (what a drag
-  // on the stage writes) goes with it. Size and Show stay.
+  // writes) goes with it. Size and Show stay.
   const placeAt = (spot: ArrangeSpot) => writePart(host, "spot", base, (e) => {
     const { spot: _s, dx: _x, dy: _y, ...rest } = e;
     return { ...rest, spot };

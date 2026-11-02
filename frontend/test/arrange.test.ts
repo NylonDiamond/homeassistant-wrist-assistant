@@ -26,15 +26,12 @@ import {
 import {
   arrangeFrame,
   arrangeFreeBlock,
-  arrangeFreeOn,
   arrangeOffered,
   arrangeOffset,
   arrangePartDrawn,
   arrangePickedPart,
   arrangeResizeNote,
   arrangeStageParts,
-  movedArrangePart,
-  nudgedArrangePart,
   setArrangePickedPart,
 } from "../src/watch-pages/arrange-model.js";
 import { setWatchTileArrange, setWatchTileIconSize } from "../src/watch-pages/tile-settings-model.js";
@@ -467,18 +464,15 @@ describe("the Arrangement card", () => {
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
   });
 
-  it("leaves a look when a part moves, with no look lit, and the stage's tile then moves its parts", () => {
+  it("leaves a look when a part moves, with no look lit", () => {
     const { host } = tileHost(KITCHEN);
     click(head(host), "data-value=corners");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tr", scale: 0.8 }, name: { spot: "bl" } } });
-    // A look alone: a drag on the stage still moves the tile.
-    expect(arrangeFreeOn(host.tile)).toBe(false);
     click(card(host), "aria-label=Top left");
     expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "tl", scale: 0.8 }, name: { spot: "bl" } } });
     const markup = text(card(host));
     expect(markup).not.toMatch(/class="pc-opt on"/);
     expect(markup).not.toContain("Use on whole page");
-    expect(arrangeFreeOn(host.tile)).toBe(true);
   });
 
   it("draws each look's card with the tile the look writes", () => {
@@ -657,27 +651,17 @@ describe("the Arrangement card", () => {
     expect(old).not.toContain("Jesse iPhone");
   });
 
-  it("shares the part picked with the stage through the editor's view state", () => {
+  it("shares the part picked with the live tile through the editor's view state", () => {
     const { host } = tileHost(KITCHEN);
     // Icon until another is picked.
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
     const partOn = (word: string) => new RegExp(`ts-arr-part on [^"]*">\\s*<button[\\s\\S]{0,200}?>${word}<`);
     click(head(host), ">Name<");
     expect(arrangePickedPart(host.uiState, TILE_ID.toLowerCase())).toBe("name");
-    // A part picked on the stage is the card's.
+    // A part pressed on the live tile is the rows'.
     setArrangePickedPart(host.uiState, TILE_ID, "state");
     expect(text(head(host))).toMatch(partOn("State"));
-    // Let go on the stage (Escape): no part on, and no rows to set one.
-    setArrangePickedPart(host.uiState, TILE_ID, undefined);
-    const none = text(card(host));
-    expect(none).not.toContain("ts-arr-part on");
-    expect(none).toContain("Drag a part to move it");
-    expect(none).not.toContain("Reset ");
     click(head(host), ">Icon<");
-    expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
-    // A look picked brings a let go pick back as Icon.
-    setArrangePickedPart(host.uiState, TILE_ID, undefined);
-    click(head(host), "data-value=corners");
     expect(arrangePickedPart(host.uiState, TILE_ID)).toBe("icon");
   });
 });
@@ -869,23 +853,10 @@ describe("the parts on the stage", () => {
     expect(arrangeStageParts({ id: "S", entityId: "spacer.x", colSpan: 6, rowSpan: 4 }, cellOf(6, 4), input, UNIT)).toBeUndefined();
   });
 
-  it("moves a part by shares of the tile, keeping its spot, clamped to half the tile and rounded to a thousandth", () => {
+  it("clamps an offset to half the tile and rounds it to a thousandth", () => {
     expect(arrangeOffset(0.12345)).toBe(0.123);
     expect(arrangeOffset(0.9)).toBe(0.5);
     expect(arrangeOffset(-0.9)).toBe(-0.5);
     expect(Object.is(arrangeOffset(-0.0001), 0)).toBe(true);
-    const from = normalizeTileArrange({ v: 1, parts: { icon: { spot: "tr", dx: 0.1 } } });
-    expect(movedArrangePart(from, "icon", 0.0504, -0.2)).toEqual({ v: 1, parts: { icon: { spot: "tr", dx: 0.15, dy: -0.2 } } });
-    expect(movedArrangePart(from, "icon", 2, 2)).toEqual({ v: 1, parts: { icon: { spot: "tr", dx: 0.5, dy: 0.5 } } });
-    expect(movedArrangePart(undefined, "name", 0.0004, 0)).toBeUndefined();
-    expect(movedArrangePart(undefined, "name", -0.25, 0)).toEqual({ v: 1, parts: { name: { dx: -0.25 } } });
-  });
-
-  it("nudges a part 1% a key, 5% with Shift", () => {
-    expect(nudgedArrangePart(undefined, "icon", "right", false)).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
-    expect(nudgedArrangePart(undefined, "state", "up", true)).toEqual({ v: 1, parts: { state: { dy: -0.05 } } });
-    const at = normalizeTileArrange({ v: 1, parts: { name: { dx: 0.49 } } });
-    expect(nudgedArrangePart(at, "name", "right", true)).toEqual({ v: 1, parts: { name: { dx: 0.5 } } });
-    expect(nudgedArrangePart(normalizeTileArrange({ v: 1, parts: { name: { dx: 0.01 } } }), "name", "left", false)).toBeUndefined();
   });
 });

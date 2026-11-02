@@ -1525,8 +1525,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
   type Arr = { v: 1; parts: Record<string, Record<string, unknown>> } | undefined;
   type PartMove = { kind: string; part?: string; started: boolean; width?: number; height?: number; arrange?: Arr };
 
-  /** A layout of its own, which none of the looks is: what lets the stage's
-   * tile move its parts. */
+  /** A layout of its own, which none of the looks is. */
   const OWN = { name: { spot: "bl" } };
   const room = (selected: string) => ({
     ...ROOM,
@@ -1534,9 +1533,9 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
   } as unknown as WatchPagesDocument);
 
   /** The editor on Room with `selected` picked, with a layout of its own when
-   * `free`, drawn once, with no pointer to capture. */
-  function stage(selected: string, free = true) {
-    const made = editor(selected, free ? room(selected) : ROOM, STATES);
+   * `own`, drawn once, with no pointer to capture. */
+  function stage(selected: string, own = false) {
+    const made = editor(selected, own ? room(selected) : ROOM, STATES);
     const { el } = made;
     const { Element } = stubBrowser(el);
     el.capture = () => undefined;
@@ -1544,12 +1543,16 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     made.body();
     const screen = nodeOf(Element, "pe-screen");
     const tileOf = (id: string) => ((made.draft().document.pages as { items: (WatchPageTile & { id: string })[] }[])[0]!.items.find((t) => t.id === id))!;
-    const press = (part: string, tileId = selected, mods: Record<string, boolean> = {}) => {
+    /** The Inside the tile section's live tile: the inspector is stubbed here,
+     * so it is drawn on its own. */
+    const well = (id = selected) => flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, (el.currentPage as () => WatchPage).call(el), tileOf(id)));
+    const press = (part: string, tileId = selected) => {
+      well(tileId);
       let stopped = false;
       made.call("onPartPointerDown", {
-        button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, ...mods, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
+        button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
         currentTarget: null, stopPropagation: () => { stopped = true; },
-      }, tileId, part, el.stageArrange);
+      }, tileId, part, el.layoutArrange);
       return stopped;
     };
     const pressTile = (tileId = selected) => made.call("onTilePointerDown", {
@@ -1563,33 +1566,37 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
       made.call("onKeyDown", k.event);
       return k.prevented();
     };
-    const click = (tileId = selected) => made.call("takePressedPart", tileId, { shiftKey: false, metaKey: false, ctrlKey: false });
-    return { ...made, ui, tileOf, press, pressTile, move, up, key, click, gesture: () => el.gesture as PartMove | undefined };
+    return { ...made, ui, tileOf, well, press, pressTile, move, up, key, gesture: () => el.gesture as PartMove | undefined };
   }
 
-  it("outlines the picked part of the selected Free tile, and boxes its other parts to pick", () => {
-    const { body } = stage("T-BIG");
-    const big = stageTile(body(), "T-BIG");
-    expect(big).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
-    expect(big).toMatch(/<span class="pe-part  [^"]*" data-part=name /);
-    expect(big).toMatch(/<span class="pe-part  [^"]*" data-part=state /);
-    expect(big).toContain("Drag to move the icon. Arrow keys nudge it, Escape lets it go.");
+  it("draws the parts and their grid on the section's live tile, the picked one outlined, whatever the tile's layout", () => {
+    for (const own of [false, true]) {
+      const { well } = stage("T-BIG", own);
+      const big = well();
+      expect(big).toContain(`class="pe-head-tile arr"`);
+      expect(big).toContain(`class="pe-arr-grid"`);
+      expect(big).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
+      expect(big).toMatch(/<span class="pe-part  [^"]*" data-part=name /);
+      expect(big).toMatch(/<span class="pe-part  [^"]*" data-part=state /);
+      expect(big).toContain("Drag to move the icon.");
+    }
     expect(sheet()).toMatch(/\.pe-part\.on\s*\{[^}]*outline: 1px solid var\(--pe-mark\)/);
   });
 
-  it("draws no parts with Free off, on a tile Free cannot place, or with several tiles picked", () => {
-    expect(stageTile(stage("T-BIG", false).body(), "T-BIG")).not.toContain("pe-part");
-    const strip = stage("T-STRIP");
-    expect(stageTile(strip.body(), "T-STRIP")).not.toContain("pe-part");
-    expect(strip.el.stageArrange).toBeUndefined();
-    const several = stage("T-BIG");
-    (several.el.clickTile as (i: string, e: object) => void).call(several.el, "T-STRIP", { shiftKey: false, metaKey: true, ctrlKey: false });
-    expect(several.body()).not.toContain("pe-part");
+  it("never draws parts on the stage's tile, with a layout of its own or not", () => {
+    expect(stageTile(stage("T-BIG").body(), "T-BIG")).not.toContain("pe-part");
+    expect(stageTile(stage("T-BIG", true).body(), "T-BIG")).not.toContain("pe-part");
   });
 
-  it("drags the picked part, snapped, live, and writes it once, as one undo step", () => {
-    const { el, body, press, move, up, gesture, tileOf, draft } = stage("T-BIG");
-    // A press on the picked part is the part's, not the tile's.
+  it("draws no parts on the live tile with several tiles picked", () => {
+    const several = stage("T-BIG", true);
+    (several.el.clickTile as (i: string, e: object) => void).call(several.el, "T-STRIP", { shiftKey: false, metaKey: true, ctrlKey: false });
+    several.body();
+    expect(several.well()).not.toContain("pe-part");
+  });
+
+  it("drags the picked part, snapped, live on both tiles, and writes it once, as one undo step", () => {
+    const { el, body, well, press, move, up, gesture, tileOf, draft } = stage("T-BIG");
     expect(press("icon")).toBe(true);
     const g = gesture()!;
     expect(g.kind).toBe("part");
@@ -1600,7 +1607,8 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     expect(first!.parts.icon!.spot).toMatch(/^[tmb][lcr]$/);
     // Drawn where the pointer puts it, nothing written yet.
     expect(draft().document).toBe(before);
-    expect(body()).toMatch(/class="pe-part on dragging" data-part=icon /);
+    expect(well()).toMatch(/class="pe-part on dragging" data-part=icon /);
+    expect(stageTile(body(), "T-BIG")).not.toContain("pe-part");
     // Far past the tile: held inside the content box, on that side.
     move(5000, -5000);
     expect((gesture()!.arrange as Arr)!.parts.icon!.spot).toMatch(/r$/);
@@ -1611,7 +1619,7 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     // The tile did not move.
     expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
     draft().undo();
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: OWN });
+    expect(Object.hasOwn(tileOf("T-BIG"), "arrange")).toBe(false);
     expect(draft().canUndo).toBe(false);
   });
 
@@ -1635,128 +1643,59 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     el.gesture = undefined;
   });
 
-  it("draws the parts on the Arrangement section's larger tile too, with its grid, and drags them at that tile's scale", () => {
-    const { el, body, move, up, tileOf } = stage("T-BIG");
-    body();
-    // The inspector is stubbed here: the Arrangement's live tile is drawn on its own.
-    const page = (el.currentPage as () => WatchPage).call(el);
-    const bigTile = flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")));
-    expect(bigTile).toContain(`class="pe-head-tile arr"`);
-    expect(bigTile).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
-    expect(bigTile).toContain(`class="pe-arr-grid"`);
-    const head = el.layoutArrange as { scale: number; stage: { size: { width: number; height: number } } };
-    const onStage = el.stageArrange as { scale: number };
-    expect(head.scale).toBeGreaterThan(onStage.scale);
-    (el.onPartPointerDown as (...a: unknown[]) => void).call(el, {
-      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
-      currentTarget: null, stopPropagation: () => undefined,
-    }, "T-BIG", "icon", head);
-    const g = el.gesture as { scale: number };
-    expect(g.scale).toBeCloseTo(head.scale, 5);
+  it("drags at the live tile's scale", () => {
+    const { el, press, move, up, tileOf } = stage("T-BIG");
+    press("icon");
+    const head = el.layoutArrange as { scale: number };
+    expect(head.scale).toBeGreaterThan(1);
+    expect((el.gesture as { scale: number }).scale).toBeCloseTo(head.scale, 5);
     move(20, 0);
     up();
     expect((tileOf("T-BIG").arrange as Arr)!.parts.icon!.spot).toMatch(/^[tmb][lcr]$/);
   });
 
-  it("draws the parts on that tile with no layout stored, while a drag on the stage's tile still moves the tile", () => {
-    const { el, body, move, up, tileOf, pressTile, gesture, call } = stage("T-BIG", false);
-    expect(stageTile(body(), "T-BIG")).not.toContain("pe-part");
-    pressTile();
-    expect(gesture()!.kind).toBe("move");
-    call("endGesture");
-    const page = (el.currentPage as () => WatchPage).call(el);
-    expect(flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")))).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
-    (el.onPartPointerDown as (...a: unknown[]) => void).call(el, {
-      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
-      currentTarget: null, stopPropagation: () => undefined,
-    }, "T-BIG", "icon", el.layoutArrange);
-    move(20, 0);
-    up();
-    expect((tileOf("T-BIG").arrange as Arr)!.parts.icon).toBeDefined();
-  });
-
   it("keeps a part's spot when it is dragged on its own side, and a press with no travel writes nothing", () => {
-    const made = editor("T-BIG", {
-      ...ROOM,
-      pages: [{ ...(ROOM.pages as WatchPage[])[0]!, items: (ROOM.pages as { items: WatchPageTile[] }[])[0]!.items.map((t) => t.id === "T-BIG" ? { ...t, arrange: { v: 1, parts: { name: { spot: "bl" } } } } : t) }],
-    } as unknown as WatchPagesDocument, STATES);
-    stubBrowser(made.el);
-    made.el.capture = () => undefined;
-    setArrangePickedPart(made.el.uiState as Map<string, unknown>, "T-BIG", "name");
-    made.body();
-    const ev = { button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerId: 7, clientX: 50, clientY: 50, currentTarget: null, stopPropagation: () => undefined };
-    made.call("onPartPointerDown", ev, "T-BIG", "name", made.el.stageArrange);
-    const before = made.draft().document;
-    made.call("onPointerUp", { pointerId: 7 });
-    expect(made.draft().document).toBe(before);
-    made.call("onPartPointerDown", ev, "T-BIG", "name", made.el.stageArrange);
-    made.call("onPointerMove", { pointerId: 7, clientX: 50, clientY: 38, preventDefault: () => undefined });
-    made.call("onPointerUp", { pointerId: 7 });
-    const arrange = ((made.draft().document.pages as { items: WatchPageTile[] }[])[0]!.items.find((t) => t.id === "T-BIG")!.arrange as Arr)!;
-    expect(arrange.parts.name!.spot).toBe("bl");
-    expect(arrange.parts.name!.dy).toBeLessThan(0);
+    const { ui, press, move, up, tileOf, draft } = stage("T-BIG", true);
+    setArrangePickedPart(ui, "T-BIG", "name");
+    press("name");
+    const before = draft().document;
+    up();
+    expect(draft().document).toBe(before);
+    press("name");
+    move(0, -12);
+    up();
+    const arrange = tileOf("T-BIG").arrange as Arr;
+    expect(arrange!.parts.name!.spot).toBe("bl");
+    expect(arrange!.parts.name!.dy).toBeLessThan(0);
   });
 
   it("picks a part with one press, which drags it too, in the card's view state as well", () => {
-    const { ui, press, up, click, gesture, body } = stage("T-BIG");
+    const { ui, press, up, gesture, well } = stage("T-BIG");
     expect(press("state")).toBe(true);
     expect((gesture() as { part?: string }).part).toBe("state");
     expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
     up();
-    expect(click()).toBe(true);
     expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
-    expect(stageTile(body(), "T-BIG")).toMatch(/<span class="pe-part on [^"]*" data-part=state /);
-    // A click with no press on a part picks nothing.
-    expect(click()).toBe(false);
+    expect(well()).toMatch(/<span class="pe-part on [^"]*" data-part=state /);
   });
 
-  it("nudges the picked part 1% a key, 5% with Shift, one undo step each, and Escape lets it go so the arrows move the tile", () => {
-    const { el, ui, key, tileOf, draft, body } = stage("T-BIG");
+  it("leaves the stage's tile to the tile: a drag and the arrows move it, and Escape lets it go", () => {
+    const { el, ui, key, tileOf, pressTile, gesture, call } = stage("T-BIG", true);
+    expect(arrangePickedPart(ui, "T-BIG")).toBe("icon");
+    pressTile();
+    expect(gesture()!.kind).toBe("move");
+    call("endGesture");
     expect(key("ArrowRight")).toBe(true);
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01 } } });
-    expect(key("ArrowDown", { shiftKey: true })).toBe(true);
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01, dy: 0.05 } } });
-    expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
-    draft().undo();
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01 } } });
-    // Escape lets the part go, and the tile stays selected.
-    expect(key("Escape")).toBe(true);
-    expect(arrangePickedPart(ui, "T-BIG")).toBeUndefined();
-    expect(el.selectedTileId).toBe("T-BIG");
-    body();
-    expect(stageTile(body(), "T-BIG")).not.toContain("pe-part on");
-    key("ArrowRight");
-    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { ...OWN, icon: { dx: 0.01 } } });
     expect(tileOf("T-BIG").gridCol).toBe(1);
-    // A second Escape lets the tile go.
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: OWN });
     key("Escape");
     expect(el.selectedTileId).toBeUndefined();
   });
 
-  it("moves the tile as before with no part picked, with Free off, and on a tile Free cannot place", () => {
-    const loose = stage("T-BIG");
-    setArrangePickedPart(loose.ui, "T-BIG", undefined);
-    loose.body();
-    expect(loose.press("icon")).toBe(false);
-    expect(loose.gesture()).toBeUndefined();
-    loose.pressTile();
-    expect(loose.gesture()!.kind).toBe("move");
-    loose.call("endGesture");
-
-    const off = stage("T-BIG", false);
-    off.pressTile();
-    expect(off.gesture()!.kind).toBe("move");
-    off.call("endGesture");
-    off.key("ArrowRight");
-    expect(off.tileOf("T-BIG").gridCol).toBe(1);
-    expect(Object.hasOwn(off.tileOf("T-BIG"), "arrange")).toBe(false);
-
-    const strip = stage("T-STRIP");
-    expect(strip.press("icon")).toBe(false);
-    expect(strip.gesture()).toBeUndefined();
-    strip.key("ArrowRight");
-    expect(strip.tileOf("T-STRIP").arrange).toEqual({ v: 1, parts: OWN });
-    expect(strip.tileOf("T-STRIP").gridCol).toBe(1);
+  it("presses on a part of another tile than the selected one do nothing", () => {
+    const { press, gesture } = stage("T-BIG");
+    expect(press("icon", "T-STRIP")).toBe(false);
+    expect(gesture()).toBeUndefined();
   });
 });
 

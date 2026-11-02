@@ -210,41 +210,26 @@ export function arrangeOffered(tile: WatchPageTile): boolean {
   return kind !== "divider" && kind !== "spacer" && kind !== "template" && !isWatchRemovedTileKind(kind) && !isWatchPhoneTileKind(kind);
 }
 
-// ── the part being placed, shared by the card and the stage ──────────────
+// ── the part being placed ───────────────────────────────────────────────
 //
-// Free and the part picked are view state, kept in the page editor's
-// `uiState` (it outlives a draw, not a watch switch), by tile: the card's
-// Part row and the stage's selected tile read and write the same keys, so a
-// part picked on either is the one the other shows.
+// The part picked is view state, kept in the page editor's `uiState` (it
+// outlives a draw, not a watch switch), by tile: the card's Part row and its
+// live tile read and write the same key.
 
 /** Every `uiState` key the Arrange rows keep starts with this. */
 export const ARRANGE_UI_KEY = "tile-settings:arrange";
 
 const partKey = (tileId: string) => `${ARRANGE_UI_KEY}:part:${tileId.toUpperCase()}`;
 
-/** What the part key holds once the part was let go (Escape on the stage):
- * no part picked, so a drag on the tile moves the tile. */
-const NO_PART = "none";
-
-/** The part being placed on a tile: Icon until another is picked, or
- * undefined once the pick was let go. */
-export function arrangePickedPart(uiState: ReadonlyMap<string, unknown>, tileId: string): ArrangePart | undefined {
+/** The part being placed on a tile: Icon until another is picked. */
+export function arrangePickedPart(uiState: ReadonlyMap<string, unknown>, tileId: string): ArrangePart {
   const v = uiState.get(partKey(tileId));
-  if (v === NO_PART) return undefined;
   return typeof v === "string" && (ARRANGE_PARTS as readonly string[]).includes(v) ? (v as ArrangePart) : "icon";
 }
 
-/** Pick the part to place on a tile, or let the pick go (undefined). */
-export function setArrangePickedPart(uiState: Map<string, unknown>, tileId: string, part: ArrangePart | undefined): void {
-  uiState.set(partKey(tileId), part ?? NO_PART);
-}
-
-/** Whether a tile has a layout of its own: a stored arrangement that is none
- * of the looks (`arrangeLookOfKey`). Only then the stage's tile moves its parts;
- * on any other a drag there moves the tile. Whether the tile can use it is
- * `arrangeFreeBlock`'s answer. */
-export function arrangeFreeOn(tile: WatchPageTile): boolean {
-  return arrangeLookOfKey(normalizeTileArrange(tile.arrange)) === "custom";
+/** Pick the part to place on a tile. */
+export function setArrangePickedPart(uiState: Map<string, unknown>, tileId: string, part: ArrangePart): void {
+  uiState.set(partKey(tileId), part);
 }
 
 // ── the parts on the stage ───────────────────────────────────────────────
@@ -321,35 +306,10 @@ export function arrangeStageParts(tile: WatchPageTile, cell: { width: number; he
   };
 }
 
-/** An offset as a drag or a nudge writes it: clamped to its range and
+/** An offset as a drag writes it: clamped to its range and
  * rounded to a thousandth of the tile. */
 export function arrangeOffset(v: number): number {
   const clamped = Math.min(ARRANGE_OFFSET_RANGE[1], Math.max(ARRANGE_OFFSET_RANGE[0], v));
   return Math.round(clamped * 1000) / 1000 + 0;
 }
 
-/**
- * `arrange` with `part` moved by (`across`, `down`), shares of the tile's
- * width and height, from where it is: its spot kept, its offsets clamped and
- * rounded (`arrangeOffset`). Undefined once nothing is left moved (Default).
- */
-export function movedArrangePart(arrange: TileArrange | undefined, part: ArrangePart, across: number, down: number): TileArrange | undefined {
-  return withArrangePart(arrange, part, (e) => ({ ...e, dx: arrangeOffset((e.dx ?? 0) + across), dy: arrangeOffset((e.dy ?? 0) + down) }));
-}
-
-/** How far one arrow key moves a part: 1% of the tile, 5% with Shift. */
-export const ARRANGE_NUDGE_STEP = 0.01;
-export const ARRANGE_NUDGE_BIG_STEP = 0.05;
-
-/** `arrange` with `part` moved one arrow key's step. */
-export function nudgedArrangePart(
-  arrange: TileArrange | undefined,
-  part: ArrangePart,
-  direction: "up" | "down" | "left" | "right",
-  big: boolean,
-): TileArrange | undefined {
-  const step = big ? ARRANGE_NUDGE_BIG_STEP : ARRANGE_NUDGE_STEP;
-  const across = direction === "left" ? -step : direction === "right" ? step : 0;
-  const down = direction === "up" ? -step : direction === "down" ? step : 0;
-  return movedArrangePart(arrange, part, across, down);
-}
