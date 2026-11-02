@@ -76,6 +76,9 @@ export interface ColorPickerView {
     forms: readonly ("solid" | "gradient")[];
     pick(form: "solid" | "gradient"): void;
     title?: string;
+    /** Draw the switch at the start of the swatch row, a hairline after it,
+     * and not on a row of its own (the tile's top card). */
+    inRow?: boolean;
   };
   /** The Rainbow swatch, where the device draws `#RAINBOW` for the key: last
    * in the row, with the gradients where there is a Gradient form. Picking
@@ -252,11 +255,12 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
   const customOn = !mixed && v.custom.shown !== undefined && v.custom.shown !== "" && !named;
   const tail = html`${rainbow}${customSwatch(customOn, v.custom.shown, v.trial)}`;
   const word = html`<em class="pc-mixed">${MIXED_WORD}</em>`;
-  const chips = html`${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? form?.title, v.trial)}${
+  const inRow = form?.inRow === true ? html`<div class="ts-color-form">${colorFormField(form, mixed)}</div><i class="ts-color-rule" aria-hidden="true"></i>` : nothing;
+  const chips = html`${inRow}${mixed && v.label === undefined ? word : nothing}${v.default === undefined ? nothing : defaultChip(mixed ? { ...v.default, on: false } : v.default, v.label ?? (form?.inRow === true ? undefined : form?.title), v.trial)}${
     v.tile === undefined ? nothing : tileChip(mixed ? { ...v.tile, on: false } : v.tile, v.trial)}`;
   return html`
     ${v.label === undefined ? nothing : html`<div class="ts-sub-h"><span>${v.label}</span>${mixed ? word : nothing}</div>`}
-    ${form === undefined ? nothing : colorFormField(form, mixed)}
+    ${form === undefined || form.inRow === true ? nothing : colorFormField(form, mixed)}
     <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, color, v.pickSwatch, chips, tail, v.trial)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
     ${v.wrap(html`<div class="ts-no-alpha ts-custom" ?hidden=${!customOn} @input=${QUIET_WHILE_HIDDEN} @change=${QUIET_WHILE_HIDDEN}>${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;

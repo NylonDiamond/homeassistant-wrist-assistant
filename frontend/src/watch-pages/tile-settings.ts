@@ -81,7 +81,7 @@ import {
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
-import { type ColorPickerView, type ColorTrial, colorFormField, colorPickerView } from "./color-picker.js";
+import { type ColorPickerView, type ColorTrial, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
@@ -773,9 +773,6 @@ export interface TileSettingsExtras {
   arrangePhoneModel?: () => OneLookPreviewModel | undefined;
   /** The tile's head (`renderTileHead`): the first row of the top card. */
   head?: TemplateResult;
-  /** The page editor's Watch and iPhone chips, the first row of Where it
-   * shows, with the words of their title. */
-  screens?: TemplateResult | typeof nothing;
 }
 
 /** The sections a page's selected tile gets in the inspector: its place and
@@ -1025,15 +1022,15 @@ export const TILE_INSPECTOR_GROUPS: readonly TileInspectorGroup[] = ["top", "col
 
 /**
  * One section of the tile inspector. Most are a settings section as it is;
- * the Icon and color section is split into `color`, `fill` (Solid or
- * Gradient), `icon` (Icon or Photo, and the symbol or the photo), `iconLook`
+ * the Icon and color section is split into `color` (with its Solid or
+ * Gradient switch), `icon` (Icon or Photo, and the symbol or the photo), `iconLook`
  * (the state icons, the icon's size and shadow), `glow`, `whenOff` (Dim when
  * off, Animate while on) and `tapAnimation`, and the Tap section into `tap`
  * (the single tap) and `action` (the rest). Two are no settings section:
  * `arrange`, the tile's layout (`arrange-card.ts`), and `entity`, what the
  * tile controls.
  */
-export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "fill" | "icon" | "iconLook" | "glow" | "whenOff" | "tapAnimation" | "tap" | "arrange" | "entity";
+export type TileInspectorPart = Exclude<WatchTileSettingsSection, "icon"> | "color" | "icon" | "iconLook" | "glow" | "whenOff" | "tapAnimation" | "tap" | "arrange" | "entity";
 
 /**
  * Where each part goes, as one table, in reading order. The top card is what
@@ -1055,7 +1052,6 @@ export const TILE_INSPECTOR_PARTS: readonly (readonly [TileInspectorPart, TileIn
   ["arrange", "top"],
   ["removed", "color"],
   ["header", "color"],
-  ["fill", "color"],
   ["iconLook", "color"],
   ["whenOff", "color"],
   ["glow", "color"],
@@ -1093,7 +1089,6 @@ export const TILE_INSPECTOR_GROUP_WORDS: Readonly<Record<Exclude<TileInspectorGr
 /** The heading of each part that is not titled by its kind. */
 const PART_TITLES: Readonly<Partial<Record<TileInspectorPart, string>>> = {
   color: "Color",
-  fill: "Fill",
   icon: "Icon",
   iconLook: "Icon",
   glow: "Glow",
@@ -1119,8 +1114,6 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
       case "iconLook":
       case "tapAnimation":
         return sections.includes("icon");
-      case "fill":
-        return sections.includes("icon") && tileColorForm(host, kindDefaults(host).color) !== undefined;
       case "tap":
         return sections.includes("action") && host.domainStyle !== true && watchSingleTapMenu(host.tile) !== undefined;
       case "glow":
@@ -1145,11 +1138,11 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
  * rest (what a kind's own task shows, the entity, the tap's action, Show
  * tile, the size and the arrangement) are one tile's. */
 const PICKED_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>([
-  "color", "fill", "icon", "iconLook", "glow", "whenOff", "background", "border", "text", "state", "tapAnimation",
+  "color", "icon", "iconLook", "glow", "whenOff", "background", "border", "text", "state", "tapAnimation",
 ]);
 
 /** The parts the Icon and color section is split into. */
-const ICON_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>(["color", "fill", "icon", "iconLook", "glow", "whenOff", "tapAnimation"]);
+const ICON_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>(["color", "icon", "iconLook", "glow", "whenOff", "tapAnimation"]);
 
 /** The grey line a group carries for its parts left out while several tiles
  * are picked. */
@@ -1252,7 +1245,6 @@ export function watchTileInspectorPartChanged(host: TileSettingsHost, part: Tile
     case "size":
       return sizeChanged;
     case "entity":
-    case "fill":
       return false;
     case "arrange":
       return watchTileArrange(tile) !== undefined;
@@ -1354,8 +1346,6 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
   switch (part) {
     case "color":
       return renderTileColor(host, kindDefaults(host).color, true);
-    case "fill":
-      return renderTileFill(host);
     case "icon":
       // The icon or the photo, never both, and the switch between them right
       // beside it (a rule's style holds no photo).
@@ -1472,7 +1462,7 @@ function renderPart(host: TileSettingsHost, part: TileInspectorPart, changed: bo
 }
 
 /** The parts whose one row names them already, so they need no heading. */
-const HEADLESS_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>(["fill", "tapAnimation"]);
+const HEADLESS_PARTS: ReadonlySet<TileInspectorPart> = new Set<TileInspectorPart>(["tapAnimation"]);
 
 /** The kind card's title: the tile's kind by name ("Home map", "Camera",
  * "HTTP action"), or the first part's own title on a tile with no entity. */
@@ -1541,9 +1531,8 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
   };
   const card = (id: Exclude<TileInspectorGroup, "top">): TemplateResult | typeof nothing => {
     const g = groups.find((x) => x.group === id);
-    const screens = id === "where" ? extras.screens : undefined;
-    if (g === undefined && (screens === undefined || screens === nothing)) return nothing;
-    const parts = g?.parts ?? [];
+    if (g === undefined) return nothing;
+    const parts = g.parts;
     const changed = parts.map(changedOf);
     const n = changed.filter(Boolean).length;
     const words = TILE_INSPECTOR_GROUP_WORDS[id];
@@ -1552,7 +1541,6 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
     const rest = parts.flatMap((_p, i) => (kind.includes(i) ? [] : [i]));
     return html`<section class="ts-grp" data-group=${id} aria-label=${words.title}>
       <div class="ts-grp-h"><h3 class="ts-grp-t">${words.title}</h3>${n === 0 ? nothing : html`<span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`}</div>
-      ${screens === undefined || screens === nothing ? nothing : html`<div class="ts-where-screens" data-tile-part="tile">${screens}</div>`}
       ${kind.length === 0 ? nothing : renderKindCard(host, kind.map((i) => parts[i]!), kind.map((i) => changed[i]!), extras)}
       ${rest.map((i) => renderPart(host, parts[i]!, changed[i]!, extras, HEADLESS_PARTS.has(parts[i]!) ? "none" : "main"))}
       ${leftNote(id)}
@@ -2508,16 +2496,8 @@ function tileColorForm(host: TileSettingsHost, defaultColor: string | undefined)
   return { title: "Fill", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick };
 }
 
-/** Fill: the tile's color as Solid or Gradient, apart from the swatches, which
- * stand in the top card. */
-function renderTileFill(host: TileSettingsHost): TemplateResult | typeof nothing {
-  const form = tileColorForm(host, kindDefaults(host).color);
-  return form === undefined ? nothing : colorFormField(form, pickedMixed(host, (t) => watchTileIconSettings(t).color));
-}
-
-/** The tile's color. In the top card (`top`) the Fill switch stands apart
- * (`renderTileFill`), and the Rainbow swatch shows with the gradients only, as
- * it does beside the switch. */
+/** The tile's color. In the top card (`top`) the Solid or Gradient switch leads
+ * the swatch row, and the Rainbow swatch shows with the gradients only. */
 function renderTileColor(host: TileSettingsHost, defaultColor: string | undefined, top = false): TemplateResult {
   const color = watchTileIconSettings(host.tile).color;
   const mode = watchColorModeChoice(color);
@@ -2574,7 +2554,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
       on: atDefault,
       pick: resetColor,
     },
-    ...(top ? {} : { form: clear && !held ? undefined : { ...tileColorForm(host, defaultColor)!, title: "Color" } }),
+    form: clear && !held ? undefined : { ...tileColorForm(host, defaultColor)!, title: top ? "Fill" : "Color", inRow: top },
     rainbow: (clear && !held) || (top && !held) ? undefined : { note: rainbowNote },
     custom: { shown: typed(host, "color") ?? (differ ? undefined : watchCustomBoxColor(color)), pick: custom },
     wrap: (body) => typingField(host, "color", body),
@@ -4066,6 +4046,13 @@ export const tileSettingsStyles = css`
   .ts-top .ts-swatch-row { padding: 6px 0; }
   .ts-top .ts-swatches { gap: 7px; }
   .ts-top .ts-swatch { width: 24px; height: 24px; }
+  /* The Solid or Gradient switch leads the swatch row, a hairline after it. */
+  .ts-color-form { flex: none; }
+  .ts-color-form .field { display: block; min-height: 0; padding: 0; }
+  .ts-color-form .field > span:first-child { display: none; }
+  .ts-color-form .seg.wide { width: auto; flex-wrap: nowrap; }
+  .ts-color-form .seg.wide button { flex: none; padding: 0 10px; }
+  .ts-color-rule { flex: none; width: 1px; height: 20px; margin: 0 3px; background: var(--wa-line-strong); }
   .ts-top .ts-custom { max-width: 260px; }
   .ts-top .ts-custom .field { --wa-lab: 64px; }
   /* Icon: the Icon or Photo switch, then one small box whose list drops open
@@ -4125,8 +4112,7 @@ export const tileSettingsStyles = css`
   .ts-grp-n { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 11.5px; color: var(--ts-blue); white-space: nowrap; }
   .ts-grp-n > i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--ts-blue); }
   /* A removed kind's or an inbox's one line, where a group's sections would be. */
-  .ts-grp > :not(.ts-grp-h):not(.ts-sec):not(.ts-kind):not(.ts-where-screens) { margin: 10px 12px; }
-  .ts-where-screens { padding: 8px 12px; border-bottom: 1px solid var(--wa-line); }
+  .ts-grp > :not(.ts-grp-h):not(.ts-sec):not(.ts-kind) { margin: 10px 12px; }
 
   /* One quiet heading for every section: the blue dot and Reset while it
      holds a value of its own. */

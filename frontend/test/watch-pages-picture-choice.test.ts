@@ -340,7 +340,7 @@ describe("the inspector's groups", () => {
     const parts = TILE_INSPECTOR_PARTS.map(([p]) => p);
     expect(new Set(parts).size).toBe(parts.length);
     for (const s of all.filter((x) => x !== "icon")) expect(parts, s).toContain(s);
-    for (const p of ["color", "fill", "icon", "iconLook", "glow", "whenOff", "tapAnimation", "tap"] as const) expect(parts).toContain(p);
+    for (const p of ["color", "icon", "iconLook", "glow", "whenOff", "tapAnimation", "tap"] as const) expect(parts).toContain(p);
     const of = (g: string) => TILE_INSPECTOR_PARTS.filter(([, x]) => x === g).map(([p]) => p);
     // The top card is what the tile controls, the tap, the icon, its color and
     // its layout; Look is the rest of how it is drawn, a removed kind's line
@@ -348,7 +348,7 @@ describe("the inspector's groups", () => {
     // own kind holds, then the rest of the tap; Where it shows is when it
     // shows, a rule's size and the iPhone extras last.
     expect(of("top")).toEqual(["entity", "tap", "icon", "color", "arrange"]);
-    expect(of("color")).toEqual(["removed", "header", "fill", "iconLook", "whenOff", "glow"]);
+    expect(of("color")).toEqual(["removed", "header", "iconLook", "whenOff", "glow"]);
     expect(of("surface")).toEqual(["background", "border"]);
     expect(of("text")).toEqual(["text", "state"]);
     expect(of("does")).toEqual(["phoneTile", "special", "phone", "target", "opens", "request", "action", "tapAnimation"]);
@@ -361,7 +361,7 @@ describe("the inspector's groups", () => {
     const { host } = tileHost(tile("light.desk"));
     expect(tileInspectorParts(host)).toEqual([
       { group: "top", parts: ["entity", "tap", "icon", "color", "arrange"] },
-      { group: "color", parts: ["fill", "iconLook", "whenOff", "glow"] },
+      { group: "color", parts: ["iconLook", "whenOff", "glow"] },
       { group: "surface", parts: ["background", "border"] },
       { group: "text", parts: ["text", "state"] },
       { group: "does", parts: ["action", "tapAnimation"] },

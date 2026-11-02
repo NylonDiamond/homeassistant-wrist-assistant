@@ -432,12 +432,17 @@ describe("the top card", () => {
     expect(open.slice(0, at)).not.toContain(">No icon</button>");
   });
 
-  it("offers the Rainbow swatch only while the tile holds a gradient or the rainbow, and no Form switch", () => {
+  it("offers the Rainbow swatch only while the tile holds a gradient or the rainbow", () => {
     const color = (extra: Record<string, unknown>) => part(flat(renderTileInspector(tileHost(tile("light.desk", extra)).host)), "color");
     expect(color({ color: "#FF0000" })).not.toContain("aria-label=Rainbow");
     expect(color({ color: "GRADIENT|#FF0000|#0000FF" })).toContain("aria-label=Rainbow");
-    expect(color({ color: "#FF0000" })).not.toContain(">Gradient<");
-    expect(color({ color: "GRADIENT|#FF0000|#0000FF" })).not.toContain(">Gradient<");
+  });
+
+  it("leads the swatch row with Solid and Gradient, a hairline, then Default", () => {
+    const color = part(flat(renderTileInspector(tileHost(tile("light.desk", { color: "#FF0000" })).host)), "color");
+    const order = [`class="ts-swatches"`, ">Solid<", ">Gradient<", `class="ts-color-rule"`, ">Default</button>", "title=#"].map((m) => color.indexOf(m));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it("names the single tap Tap, the menu's own label kept but hidden by the card", () => {
@@ -452,7 +457,7 @@ describe("the top card", () => {
 describe("the cards under the top card", () => {
   const GROUP_OF: Readonly<Record<string, TileInspectorGroup>> = {
     entity: "top", tap: "top", icon: "top", color: "top", arrange: "top",
-    removed: "color", header: "color", fill: "color", iconLook: "color", whenOff: "color", glow: "color",
+    removed: "color", header: "color", iconLook: "color", whenOff: "color", glow: "color",
     background: "surface", border: "surface",
     text: "text", state: "text",
     phoneTile: "does", special: "does", phone: "does", target: "does", opens: "does", request: "does", action: "does", tapAnimation: "does",
@@ -480,15 +485,7 @@ describe("the cards under the top card", () => {
     expect(partIds(cards(text))).toEqual(
       tileInspectorParts(host).filter((g) => g.group !== "top").flatMap((g) => g.parts).filter((p) => p !== "size"),
     );
-    expect(partIds(cards(text))).toEqual(["fill", "iconLook", "whenOff", "glow", "background", "border", "text", "state", "action", "tapAnimation", "visibility"]);
-  });
-
-  it("carry the Watch and iPhone chips in Where it shows, ahead of its parts", () => {
-    const text = flat(renderTileInspector(tileHost(tile("light.desk")).host, { screens: { strings: [`<div class="the-chips"></div>`], values: [] } as never }));
-    const where = text.slice(text.indexOf("data-group=where "));
-    expect(where).toContain(`<div class="ts-where-screens" data-tile-part="tile"><div class="the-chips"></div></div>`);
-    expect(where.indexOf("the-chips")).toBeLessThan(where.indexOf("data-part=visibility"));
-    expect(text.slice(0, text.indexOf("data-group=where "))).not.toContain("the-chips");
+    expect(partIds(cards(text))).toEqual(["iconLook", "whenOff", "glow", "background", "border", "text", "state", "action", "tapAnimation", "visibility"]);
   });
 
   it("count a changed part on the card, the top card's parts on none", () => {
@@ -499,12 +496,12 @@ describe("the cards under the top card", () => {
   });
 });
 
-// ── the Fill row ─────────────────────────────────────────────────────────
+// ── the Solid and Gradient switch ────────────────────────────────────────
 
-describe("the Fill row", () => {
+describe("the Solid and Gradient switch", () => {
   it("writes a gradient on Solid to Gradient, and a solid color on the way back", () => {
     const { host } = tileHost(tile("light.desk", { color: "#FF0000" }));
-    const row = () => part(flat(renderTileInspector(host)), "fill");
+    const row = () => part(flat(renderTileInspector(host)), "color");
     expect(row()).toContain("Solid");
     expect(row()).toContain("Gradient");
     fire(renderTileInspector(host), ">Gradient</button>");
@@ -514,14 +511,14 @@ describe("the Fill row", () => {
     expect(host.tile.color).toBe("#FF0000");
   });
 
-  it("is no part of a Clear photo tile, unless it holds a gradient so it can be put back", () => {
+  it("is not on a Clear photo tile, unless it holds a gradient so it can be put back", () => {
     const clear = { iconPhotoId: "photo-1", iconPhotoLook: "clear" };
-    const partsOf = (extra: Record<string, unknown>) => tileInspectorParts(tileHost(tile("light.desk", { ...clear, ...extra })).host).flatMap((g) => g.parts);
-    expect(partsOf({ color: "#FF0000" })).not.toContain("fill");
-    expect(partsOf({ color: "GRADIENT|#FF0000|#0000FF" })).toContain("fill");
+    const color = (extra: Record<string, unknown>) => part(flat(renderTileInspector(tileHost(tile("light.desk", extra)).host)), "color");
+    expect(color({ ...clear, color: "#FF0000" })).not.toContain("ts-color-form");
+    expect(color({ ...clear, color: "GRADIENT|#FF0000|#0000FF" })).toContain("ts-color-form");
     // Any other photo look, and a tile with no photo, keep it.
-    expect(tileInspectorParts(tileHost(tile("light.desk", { iconPhotoId: "photo-1", color: "#FF0000" })).host).flatMap((g) => g.parts)).toContain("fill");
-    expect(tileInspectorParts(tileHost(tile("light.desk", { color: "#FF0000" })).host).flatMap((g) => g.parts)).toContain("fill");
+    expect(color({ iconPhotoId: "photo-1", color: "#FF0000" })).toContain("ts-color-form");
+    expect(color({ color: "#FF0000" })).toContain("ts-color-form");
   });
 });
 

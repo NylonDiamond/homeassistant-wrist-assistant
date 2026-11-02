@@ -56,7 +56,6 @@ export const TILE_HEAD_PART_OF: Readonly<Record<TileInspectorPart, TileHeadPart>
   removed: "tile",
   header: "tile",
   color: "tile",
-  fill: "tile",
   icon: "icon",
   iconLook: "icon",
   glow: "icon",
@@ -222,12 +221,15 @@ export interface TileHeadParts {
   remove: TemplateResult | typeof nothing;
   /** Under the row: the group line, while the tile is in a group. */
   below?: TemplateResult | typeof nothing;
+  /** The Tile on chips, Watch and iPhone, right after the Name. */
+  screens?: TemplateResult | typeof nothing;
 }
 
 /**
  * The first row of the top card: the tile's Name (for a tile with a Text
  * section; empty shows the name the watch falls back to and stores no label),
- * how many parts are changed with Reset all, then the actions. A tile with no
+ * which devices it is on, how many parts are changed with Reset all, then the
+ * actions. A tile with no
  * entity says what it is where a Name would not be. Inside a `.ts-root`, so
  * the editor lets the name's box go when the selection moves.
  */
@@ -254,6 +256,7 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
     <div class="ts-head-row">
       ${parts.path === undefined ? nothing : html`<div class="ts-head-path">${parts.path}</div>`}
       ${name}${name === nothing ? what : nothing}
+      ${parts.screens === undefined || parts.screens === nothing ? nothing : html`<div class="ts-head-on" data-tile-part="tile">${parts.screens}</div>`}
       <div class="ts-head-side">
         <div class="ts-head-changed">${n === 0 ? nothing : html`<i aria-hidden="true"></i><span>${n} changed</span>`}
           <button type="button" class="link ts-reset-btn" ?disabled=${!resettable || host.busy}
@@ -283,6 +286,7 @@ export const tileHeadStyles = css`
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
   .ts-head-none { font-size: 13px; color: var(--wa-muted); }
+  .ts-head-on { flex: none; max-width: 100%; min-width: 0; }
   .ts-head-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; margin-left: auto; }
   .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 28px; padding: 0 10px; font-size: 12.5px; border: 1px solid var(--wa-line-strong); border-radius: 7px; }

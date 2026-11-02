@@ -203,12 +203,12 @@ describe("what the tile controls", () => {
 });
 
 describe("the head's row", () => {
-  it("draws the way back, the Name, the changed line, then Duplicate, Copy look, Paste look and Delete, and no facts", () => {
+  it("draws the way back, the Name, the Tile on chips, the changed line, then Duplicate, Copy look, Paste look and Delete, and no facts", () => {
     const text = head(editor(hallPage(), DIMMER));
-    const order = [`class="pe-path-back"`, `aria-label="Name"`, `class="ts-head-changed"`, "pe-strip-dup", "pe-strip-copy", "pe-strip-paste", "pe-strip-del pe-del-tile"].map((m) => text.indexOf(m));
+    const order = [`class="pe-path-back"`, `aria-label="Name"`, "pe-tile-screens", `class="ts-head-changed"`, "pe-strip-dup", "pe-strip-copy", "pe-strip-paste", "pe-strip-del pe-del-tile"].map((m) => text.indexOf(m));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    for (const gone of ["ts-pill", "ts-head-pills", "pe-head-pic", "pe-tile-screens"]) expect(text, gone).not.toContain(gone);
+    for (const gone of ["ts-pill", "ts-head-pills", "pe-head-pic"]) expect(text, gone).not.toContain(gone);
   });
 
   it("stands above the top card's parts", () => {
@@ -251,14 +251,15 @@ describe("going to a setting", () => {
 });
 
 describe("the Watch and iPhone chips", () => {
-  it("stand in the Where it shows card, not in the head, with no line saying a tile is the same on every device", () => {
+  it("stand in the head, right after the Name, with no line saying a tile is the same on every device", () => {
     const el = editor(hallPage(), DIMMER);
     const text = flat(inspector(el));
-    const where = text.slice(text.indexOf(`<section class="ts-grp" data-group=where `));
-    const on = where.indexOf(`<div class="pe-tile-screens" role="group" aria-label=Tile on>`);
+    const on = text.indexOf(`<div class="pe-tile-screens" role="group" aria-label=Tile on>`);
     expect(on).toBeGreaterThan(-1);
-    expect(text.slice(0, text.indexOf(`<section class="ts-grp" data-group=where `))).not.toContain("pe-tile-screens");
-    const line = where.slice(on);
+    expect(on).toBeGreaterThan(text.indexOf(`aria-label="Name"`));
+    expect(on).toBeLessThan(text.indexOf(`class="ts-head-side"`));
+    expect(text.slice(text.indexOf(`<section class="ts-grp" data-group=where `))).not.toContain("pe-tile-screens");
+    const line = text.slice(on);
     expect(line).toContain(`<span class="lt-lead">Tile on</span>`);
     expect([...line.matchAll(/<span class="lt-name">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Watch", "iPhone"]);
     expect(text).not.toContain("Same on every device");
@@ -287,7 +288,7 @@ describe("the head's tile and the settings", () => {
     expect(TILE_HEAD_PART_OF.icon).toBe("icon");
     expect(TILE_HEAD_PART_OF.iconLook).toBe("icon");
     expect(TILE_HEAD_PART_OF.tap).toBe("tile");
-    expect(TILE_HEAD_PART_OF.fill).toBe("tile");
+    expect(TILE_HEAD_PART_OF.color).toBe("tile");
     expect(TILE_HEAD_PART_OF.text).toBe("name");
     expect(TILE_HEAD_PART_OF.state).toBe("state");
     expect(TILE_HEAD_PART_OF.background).toBe("tile");

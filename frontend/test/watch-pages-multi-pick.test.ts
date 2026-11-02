@@ -228,7 +228,7 @@ describe("the inspector over several tiles", () => {
     expect(style).toContain(`class="pc-opt on" aria-checked=true\n          data-value=line`);
     expect(style).not.toContain("Mixed");
     // The tile color differs: no swatch is on, and the row says Mixed.
-    expect(text).toMatch(/<div class="ts-swatches" role="group" aria-label=[^>]*>\s*<em class="pc-mixed">Mixed<\/em>/);
+    expect(text).toMatch(/<div class="ts-swatches" role="group" aria-label=[^>]*>\s*<div class="ts-color-form">.*?<i class="ts-color-rule" aria-hidden="true"><\/i><em class="pc-mixed">Mixed<\/em>/s);
   });
 
   it("writes a pick to every picked tile in one undo step, each keeping the rest of its own", () => {
@@ -263,7 +263,7 @@ describe("the inspector over several tiles", () => {
     const { host } = pickHost(items(), [A, B]);
     const { groups, hidden } = pickedInspectorParts(host);
     const parts = groups.flatMap((g) => g.parts);
-    for (const p of ["color", "fill", "icon", "iconLook", "glow", "background", "border", "text", "state", "tapAnimation"] as const) expect(parts).toContain(p);
+    for (const p of ["color", "icon", "iconLook", "glow", "background", "border", "text", "state", "tapAnimation"] as const) expect(parts).toContain(p);
     for (const p of ["tap", "action", "visibility", "size", "arrange", "entity"] as const) expect(parts).not.toContain(p);
     // The entity is one tile's alone: nothing to miss, so no line names it.
     expect(hidden.get("top")).toEqual(["tap", "arrange"]);

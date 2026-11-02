@@ -5482,7 +5482,6 @@ export class WaPageEditor extends LitElement {
         arrangeLookPicture: (key, make) => this.renderArrangeLookPicture(page, tile, key, make),
         arrangePhoneModel: () => this.arrangePhoneModel(page, tile),
         head,
-        screens: this.editingOff(page) ? nothing : this.renderTileScreens(page, tile),
       })}
       ${this.renderResizeLoss(tile)}
     </div>`;
@@ -5640,7 +5639,7 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The first row of the top card (`tile-head.ts`): the way back to the page's
-   * settings, the tile's Name, how many parts are changed and Reset all,
+   * settings, the tile's Name, its Tile on chips, how many parts are changed and Reset all,
    * Duplicate, Copy look, Paste look and Delete, and the group line while the
    * tile is in a group. With no host (no draft yet), the way back alone.
    */
@@ -5660,6 +5659,7 @@ export class WaPageEditor extends LitElement {
       actions,
       remove,
       below: this.editingOff(page) ? nothing : renderTileGroupLine(host, this.groupActions),
+      screens: this.editingOff(page) ? nothing : this.renderTileScreens(page, tile),
     })}</div>`;
   }
 

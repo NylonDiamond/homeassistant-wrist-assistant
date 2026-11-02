@@ -340,12 +340,11 @@ describe("the tile's cards", () => {
     expect(text.slice(text.indexOf(`data-part=entity`))).toMatch(/<div class="ts-entity-pick">.*<span class="ent-name">Smart Plug Dimmer<\/span>/s);
     const side = head.slice(head.indexOf(`<div class="ts-head-side">`));
     const acts = [...side.matchAll(/<button type="button" class="ghost[^>]*>\s*([A-Z][a-z]+(?: look)?)<\/button>/gs)].map((m) => m[1]);
-    // No Hide: the chips in Where it shows and under each picture say where it shows.
+    // No Hide: the chips here and under each picture say where it shows.
     expect(acts).toEqual(["Duplicate", "Copy look", "Paste look", "Delete"]);
     expect(head).not.toContain("Same on every device");
     expect(head).not.toContain("pe-screen-sw");
-    const where = text.slice(text.indexOf(`<section class="ts-grp" data-group=where `));
-    const tileOn = where.slice(where.indexOf(`<div class="pe-tile-screens"`), where.indexOf(`<section class="ts-sec"`));
+    const tileOn = head.slice(head.indexOf(`<div class="pe-tile-screens"`), head.indexOf(`<div class="ts-head-side">`));
     expect(tileOn).toContain(`<span class="lt-lead">Tile on</span>`);
     expect([...tileOn.matchAll(/<span class="lt-name">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Watch", "iPhone"]);
     // Both ticked: a light shows on the watch and on the iPhone.
@@ -366,11 +365,11 @@ describe("the tile's cards", () => {
     expect(text.match(/aria-label="Name"/g)?.length).toBe(1);
     expect(card(body, "Name")).not.toContain(`aria-label="Label"`);
     // The cards, in their order, each with its title and its sections, and no
-    // line under the title. The Fill and the Tap animation need no heading.
+    // line under the title. The Tap animation needs no heading.
     expect(groupTitles(body)).toEqual(["Look", "Background and border", "Text", "What it does", "Where it shows"]);
     expect(body).not.toContain("ts-grp-d");
     expect(titles(group(body, "color"))).toEqual(["Icon", "When it is off", "Glow"]);
-    expect(group(body, "color")).toContain("data-part=fill ");
+    expect(group(body, "color")).not.toContain("data-part=fill ");
     expect(titles(group(body, "surface"))).toEqual(["Background", "Border"]);
     expect(titles(group(body, "text"))).toEqual(["Name", "State"]);
     // A light has nothing of its own kind, so What it does is the rest of the tap.
@@ -516,13 +515,12 @@ describe("the tile's cards", () => {
     expect(text).not.toContain(`aria-label="Name"`);
     expect(text).not.toContain(`class="pe-st `);
     expect(text).toContain(`<span class="ts-head-none">No entity</span>`);
-    // Background and border, and the chips of Where it shows: a group with
+    // Background and border, with the chips in the head: a group with
     // nothing in it is not drawn, and a spacer has no Arrangement (it has no
     // parts) and no Size (the stage sizes it).
-    expect(groupTitles(text)).toEqual(["Background and border", "Where it shows"]);
+    expect(groupTitles(text)).toEqual(["Background and border"]);
     expect(titles(group(text, "surface"))).toEqual(["Background", "Border"]);
-    expect(titles(group(text, "where"))).toEqual([]);
-    expect(group(text, "where")).toContain(`class="pe-tile-screens"`);
+    expect(text).toContain(`class="pe-tile-screens"`);
     expect(text).toContain(`<div class="ts-groups">`);
   });
 });

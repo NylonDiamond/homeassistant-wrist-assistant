@@ -450,9 +450,8 @@ describe("the Clear look's Color", () => {
   it("keeps the Solid and Gradient switch while the tile holds a gradient, and says what it glows in", async () => {
     const { host } = await setup([tile(A, "light.desk", { iconPhotoId: LAMP, iconPhotoLook: "clear", color: "GRADIENT|#FF0000|#0000FF" })], [A]);
     const all = flat(renderTileInspector(host));
-    // The switch is the Look card's Fill row, apart from the swatches.
-    expect(partOf(all, "fill")).toContain(">Gradient<");
-    expect(colorPart(all)).not.toContain(">Gradient<");
+    // The switch leads the swatches, in the top card.
+    expect(colorPart(all)).toContain(">Gradient<");
     expect(colorPart(all)).toContain(CLEAR_GLOW_GRADIENT_NOTE);
   });
 
