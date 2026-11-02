@@ -1822,6 +1822,35 @@ describe("the two pictures", () => {
     expect([moved2.gridCol, moved2.gridRow]).toEqual([2, 6]);
   });
 
+  it("draws the inspector's large tile from the picture being edited, and with the shape a resize asks for", () => {
+    const { el, page } = both("T-BOTTOM");
+    const tile = (page().items as WatchPageTile[]).find((t) => t.id === "T-BOTTOM")!;
+    const withScreens = (iphone: Record<string, Rect>) => ({
+      ...page(),
+      screens: { watch: { "T-BOTTOM": { col: 0, row: 0, colSpan: 6, rowSpan: 4 } }, iphone },
+    }) as unknown as WatchPage;
+    const wide = withScreens({ "T-BOTTOM": { col: 0, row: 0, colSpan: 12, rowSpan: 2 } });
+    /** The drawn tile's width over its height. */
+    const shape = (on: WatchPage): number => {
+      const drawn = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile, as: undefined) => unknown).call(el, on, tile, undefined));
+      const m = /pe-head-tile" style=width:(\d+)px;height:(\d+)px/.exec(drawn.replaceAll('"width', "width").replaceAll('style="', "style="))!;
+      return Number(m[1]) / Number(m[2]);
+    };
+    el.editScreen = "watch";
+    const onWatch = shape(wide);
+    el.editScreen = "iphone";
+    expect(shape(wide)).toBeGreaterThan(onWatch * 2);
+    // A resize on the iPhone's picture shows while the handle moves.
+    const tall = withScreens({ "T-BOTTOM": { col: 0, row: 0, colSpan: 6, rowSpan: 6 } });
+    el.gesture = { kind: "resize", started: true, screen: "iphone", tileId: "T-BOTTOM", preview: { page: wide } };
+    expect(shape(tall)).toBeCloseTo(shape(wide));
+    el.gesture = undefined;
+    expect(shape(tall)).toBeLessThan(shape(wide));
+    // A tile off on the edited picture still draws, from the other one.
+    el.editScreen = "iphone";
+    expect(shape(withScreens({}))).toBeCloseTo(onWatch, 0);
+  });
+
   it("lists a tile switched off on the watch as a chip there, which puts it back on", () => {
     const { body, screens, call, clickOn } = both("T-RIGHT");
     call("setTileScreen", "T-RIGHT", "watch", false);

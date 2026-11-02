@@ -231,9 +231,11 @@ import {
   isSmartWatchPage,
   isSystemWatchPage,
   isVirtualTileKind,
+  type WatchPageLayout,
   type WatchScreen,
   WATCH_SCREENS,
   otherWatchScreen,
+  tileGeometry,
   tileDrawsOn,
   tileEntityId,
   tileKind,
@@ -598,6 +600,21 @@ function screenDrawnPage(page: WatchPage, screen: WatchScreen): WatchPage {
   if (!Array.isArray(drawn.items)) return drawn;
   const items = drawn.items.filter((raw) => !isJsonObject(raw) || tileDrawsOn(raw, screen));
   return items.length === drawn.items.length ? drawn : { ...drawn, items };
+}
+
+/** The selected tile in one picture of the stage, for the inspector's large
+ * tiles (`selectedTilePicture`). */
+interface SelectedTilePicture {
+  readonly kind: WatchScreen;
+  /** The page with that screen's places in its tile fields. */
+  readonly shown: WatchPage;
+  readonly screen: { width: number; height: number };
+  readonly phone: PhonePagesLayout | undefined;
+  readonly appVersion: string | null | undefined;
+  readonly layout: WatchPageLayout;
+  readonly placed: WatchPageLayout["tiles"][number];
+  /** The tile to draw: that screen's places, and any choice being tried. */
+  readonly drawn: WatchPageTile;
 }
 
 /** `tile` drawn with `arrange` in place of its own (Default removes it). */
@@ -5523,8 +5540,58 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The head's live tile: the selected tile at its own shape as the stage
-   * lays it out on the preview device, at the largest scale that fits
+   * The selected tile as the picture being edited draws it: the picture the
+   * handles are on (`clickedScreen`), or the other when the tile is not on
+   * that one, on the device that picture's title names, with that screen's
+   * own places (`screenDrawnPage`). While a resize runs, the shape the handle
+   * asks for. The tile comes back with those places in its fields, the
+   * arrangement a part drag asks for and any choice being tried. Undefined
+   * for a tile with no place on either.
+   */
+  private selectedTilePicture(page: WatchPage, tile: WatchPageTile): SelectedTilePicture | undefined {
+    const g = this.gesture;
+    const raw = g?.kind === "resize" && g.started && g.preview !== undefined ? g.preview.page : page;
+    const id = tileIdOf(tile);
+    const clicked = this.clickedScreen;
+    for (const kind of [clicked, otherWatchScreen(clicked)]) {
+      const owner = this.pictureOwnerOf(kind);
+      const phone = kind === this.previewKind ? this.phoneLayoutOf(undefined)
+        : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) })
+        : undefined;
+      const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+      const appVersion = this.screenLookVersion(kind);
+      const sideInset = watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), appVersion });
+      const shown = screenDrawnPage(raw, kind);
+      const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset });
+      const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
+      if (placed === undefined || !(placed.width > 0 && placed.height > 0)) continue;
+      const tried = watchTriedTile(this.uiState, id);
+      const here = tileGeometry(placed.tile);
+      const drawn = tried !== undefined
+        ? { ...tried, gridCol: here.col, gridRow: here.row, colSpan: here.colSpan, rowSpan: here.rowSpan }
+        : g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(placed.tile, g.arrange) : placed.tile;
+      return { kind, shown, screen, phone, appVersion, layout, placed, drawn };
+    }
+    return undefined;
+  }
+
+  /** What `selectedTilePicture`'s tile is drawn with at `scale`: the stage's
+   * states, symbols and renders, with that picture's page, device and look.
+   * The other kind's picture reads no device settings (`companionInput`). */
+  private selectedTileInput(page: WatchPage, picture: SelectedTilePicture, scale: number): WatchPagePreviewInput {
+    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
+    const { phone: _phone, ...rest } = this.previewInput(picture.shown, pages, picture.screen, scale);
+    return {
+      ...rest,
+      appVersion: picture.appVersion,
+      ...(picture.phone === undefined ? {} : { phone: picture.phone }),
+      ...(picture.kind === this.previewKind ? {} : { behavior: undefined }),
+    };
+  }
+
+  /**
+   * The head's live tile: the selected tile at its own shape as the picture
+   * being edited lays it out (`selectedTilePicture`), at the largest scale that fits
    * `HEAD_TILE_W` by `HEAD_TILE_H`, its entity drawn in the state `as`
    * says (on, off or unavailable, as `watchTileStatesAs` makes it; its real
    * state with none), whatever the Live switch or a state tried does to the
@@ -5533,19 +5600,11 @@ export class WaPageEditor extends LitElement {
    * with no place on the page.
    */
   private renderTileHeadPicture(page: WatchPage, tile: WatchPageTile, as: WatchTilePreviewAs | undefined): TemplateResult | typeof nothing {
-    const screen = this.screenOf(this.pictureOwnerOf(this.previewKind));
-    const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
-    const id = tileIdOf(tile);
-    const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
-    if (placed === undefined || !(placed.width > 0 && placed.height > 0)) return nothing;
-    // A part drag draws the tile with the arrangement the pointer asks for,
-    // here as on the stage.
-    const g = this.gesture;
-    const dragged = g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(tile, g.arrange) : tile;
-    const drawn = watchTriedTile(this.uiState, id) ?? dragged;
+    const picture = this.selectedTilePicture(page, tile);
+    if (picture === undefined) return nothing;
+    const { layout, placed, drawn } = picture;
     const s = Math.min(HEAD_TILE_W / placed.width, HEAD_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
-    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
-    const { testedIds: _tested, ...base } = this.previewInput(page, pages, screen, s);
+    const { testedIds: _tested, ...base } = this.selectedTileInput(page, picture, s);
     const states = as === undefined ? this.hass?.states : watchTileStatesAs(drawn, this.hass?.states, as);
     const input: WatchPagePreviewInput = { ...base, stateMode: "live", ...(states === undefined ? {} : { states }) };
     const cell = { width: placed.width, height: placed.height };
@@ -5587,16 +5646,12 @@ export class WaPageEditor extends LitElement {
     const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page) && arrangeFreeOn(this.uiState, tile)
       && !(g?.started === true && g.kind !== "part");
     if (!free) return nothing;
-    const screen = this.screenOf(this.pictureOwnerOf(this.previewKind));
-    const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
+    const picture = this.selectedTilePicture(page, tile);
+    if (picture === undefined) return nothing;
+    const { layout, placed, drawn } = picture;
     const id = tileIdOf(tile);
-    const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
-    if (placed === undefined || !(placed.width > 0 && placed.height > 0)) return nothing;
-    const dragged = g?.kind === "part" && sameWatchId(g.tileId, id) ? withArrange(tile, g.arrange) : tile;
-    const drawn = watchTriedTile(this.uiState, id) ?? dragged;
     const s = Math.min(ARRANGE_TILE_W / placed.width, ARRANGE_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
-    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
-    const input = this.previewInput(page, pages, screen, s);
+    const input = this.selectedTileInput(page, picture, s);
     const cell = { width: placed.width, height: placed.height };
     const stage = arrangeStageParts(drawn, cell, input, layout.unit);
     this.layoutArrange = stage === undefined ? undefined : { tileId: id, stage, scale: s };
