@@ -189,7 +189,7 @@ export function saveStageLive(on: boolean, storage: ColumnStorage | undefined = 
 
 /** Where the page editor's settings column width is remembered, CSS px,
  * as last dragged; empty for the default width. */
-export const PAGE_INSPECTOR_WIDTH_KEY = "wrist-assistant-panel.pages.inspector-width.v1";
+export const PAGE_INSPECTOR_WIDTH_KEY = "wrist-assistant-panel.pages.inspector-width.v2";
 
 /** The narrowest the settings column is dragged to, and the least the
  * stage keeps beside it, CSS px. */

@@ -4063,7 +4063,7 @@ export const tileSettingsStyles = css`
   .ts-top .ts-custom .field { --wa-lab: 64px; }
   /* Icon: the Icon or Photo switch, then one small box whose list drops open
      over the cards; the photos on a row of their own. */
-  .ts-top .ts-top-part[data-part="icon"] fieldset.ts-top-b { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .ts-top .ts-top-part[data-part="icon"] fieldset.ts-top-b { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ts-top-src .field { display: block; min-height: 0; padding: 0; }
   .ts-top-src .seg.wide { width: auto; height: 36px; flex-wrap: nowrap; }
   .ts-top-src .seg.wide button { flex: none; padding: 0 11px; }
@@ -4164,8 +4164,13 @@ export const tileSettingsStyles = css`
   .ts-groups .field.pc-field > span:first-child { padding-top: 4px; }
   .ts-groups .ts-stack .field { grid-template-columns: var(--wa-lab) minmax(0, 1fr); column-gap: var(--ts-gap); }
   .ts-groups .ts-stack .field.entity-field > :not(:first-child) { grid-column: 2; }
+  /* Every small choice in the cards is one kind of segmented row, in grey. */
   .ts-groups .seg.wide { height: auto; min-height: 25px; flex-wrap: wrap; }
-  .ts-groups .seg.wide > button { min-height: 21px; padding: 1px 6px; font-size: 12px; }
+  .ts-groups .seg.wide > button { height: 21px; min-height: 21px; padding: 0 6px; font-size: 12px; font-weight: 400; }
+  .ts-groups .seg.wide > button.on { font-weight: 500; }
+  .ts-groups .pc-seg { min-height: 25px; }
+  .ts-groups .pc-opt.pc-seg-opt { min-height: 21px; padding: 0 6px; font-size: 12px; }
+  .ts-groups .pc-opt.pc-seg-opt.on { background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); }
   .ts-groups .ts-swatch { width: 15px; height: 15px; }
   .ts-groups .ts-swatches { gap: 5px; }
   /* A choice of pictures reads as a segmented row of its words in the cards:
@@ -4176,9 +4181,9 @@ export const tileSettingsStyles = css`
     flex-wrap: nowrap; gap: 1px; padding: 1px; border: 1px solid var(--wa-line); border-radius: 7px;
   }
   .ts-groups .pc-field:not(.pc-size-swatch):not(.pc-size-map) .pc-opt {
-    flex: 1 1 auto; min-width: 0; min-height: 21px; padding: 1px 6px; border: 0; border-radius: 5px; background: none;
+    flex: 1 1 auto; justify-content: center; min-width: 0; min-height: 21px; padding: 0 6px; border: 0; border-radius: 5px; background: none;
   }
-  .ts-groups .pc-field:not(.pc-size-swatch):not(.pc-size-map) .pc-opt.on { background: var(--wa-sel-bg, var(--wa-panel)); box-shadow: inset 0 0 0 1px var(--wa-sel-ring, var(--wa-accent)); }
+  .ts-groups .pc-field:not(.pc-size-swatch):not(.pc-size-map) .pc-opt.on { background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); }
   .ts-groups .pc-field:not(.pc-size-swatch):not(.pc-size-map) .pc-label { font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ts-groups .pc-size-swatch .pc-group { gap: 3px; }
   .ts-groups .pc-size-swatch .pc-opt { padding: 1px; }
