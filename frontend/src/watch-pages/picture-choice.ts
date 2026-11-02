@@ -134,7 +134,7 @@ export function pictureChoice<T extends string>(
         const on = o.value === shown;
         const tryIt = trial === undefined || o.disabled === true ? nothing : () => trial.try(o.value, o.label);
         return html`<button type="button" role="radio" class="pc-opt ${on ? "on" : ""}" aria-checked=${on ? "true" : "false"}
-          data-value=${o.value} title=${o.title ?? nothing} ?disabled=${o.disabled === true}
+          data-value=${o.value} title=${o.title ?? (size === "swatch" ? o.label : nothing)} ?disabled=${o.disabled === true}
           @pointerenter=${tryIt} @focus=${tryIt}
           @click=${() => { if (!on) pick(o.value); trial?.end(); }}>
           <span class="pc-pic" aria-hidden="true">${o.picture()}</span>

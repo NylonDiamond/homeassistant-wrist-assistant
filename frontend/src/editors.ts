@@ -2011,6 +2011,9 @@ export interface SymbolFieldOptions {
   /** False drops the x, for a host with its own way back to no icon (the
    * tile's No icon and Default chips) or with no such thing as none. */
   clearable?: boolean;
+  /** The first row of the list when it drops open: a host's own ways back to
+   * no icon or a default, where the box has no room for them. */
+  menuLead?: TemplateResult;
   /** What the box says, and the glyph it shows, while the name is empty: a
    * default the watch draws in its place, say. */
   emptyText?: string;
@@ -2184,6 +2187,7 @@ export function symbolField(
         // their own focus.
         if (!(e.target instanceof Element) || e.target.closest("input, select") === null) e.preventDefault();
       }}>
+      ${opts.menuLead ?? nothing}
       ${offersMdi ? packToggle(browser, key, showing) : nothing}
       <div class="sym-bar">
         ${symbolSearch(browser, key, query, showing === "mdi" ? "Search Material Design icons, or type a name" : "Search icons, or type a name", enter)}

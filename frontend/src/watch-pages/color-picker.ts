@@ -220,6 +220,16 @@ function tileChip(t: NonNullable<ColorPickerView["tile"]>, trial: ColorTrial | u
     title=${t.title} @click=${() => { t.pick(); trial?.end(); }}>${COLOR_TILE_LABEL}</button>`;
 }
 
+/** The Form switch as one row, for a card that stands it apart from the
+ * swatches. With `mixed`, no form is lit. */
+export function colorFormField(form: NonNullable<ColorPickerView["form"]>, mixed = false): TemplateResult | typeof nothing {
+  if (form.forms.length < 2) return nothing;
+  const shown: WatchColorModeChoice = mixed ? "none" : form.shown === "rainbow" ? "gradient" : form.shown;
+  return segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
+    if (f === "solid" || f === "gradient") form.pick(f);
+  });
+}
+
 /** The picker: heading, Form, Default with the swatches, Rainbow and the
  * Custom swatch, then the Custom row while it is in use. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
@@ -246,11 +256,7 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
     v.tile === undefined ? nothing : tileChip(mixed ? { ...v.tile, on: false } : v.tile, v.trial)}`;
   return html`
     ${v.label === undefined ? nothing : html`<div class="ts-sub-h"><span>${v.label}</span>${mixed ? word : nothing}</div>`}
-    ${form === undefined
-      ? nothing
-      : segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
-          if (f === "solid" || f === "gradient") form.pick(f);
-        })}
+    ${form === undefined ? nothing : colorFormField(form, mixed)}
     <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, color, v.pickSwatch, chips, tail, v.trial)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
     ${v.wrap(html`<div class="ts-no-alpha ts-custom" ?hidden=${!customOn} @input=${QUIET_WHILE_HIDDEN} @change=${QUIET_WHILE_HIDDEN}>${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
