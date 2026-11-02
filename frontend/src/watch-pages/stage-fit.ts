@@ -27,6 +27,14 @@
 // scrollbar coming or going does not change; no more than `CHAIN_MAX` draws
 // in a row are asked for by measuring alone; and while `held` says so (a
 // tile being dragged) the fit holds where it was.
+//
+// What is measured is each device alone, the tallest of `deviceSelector`,
+// never the row or the lines under them. Measuring the row made the height
+// follow the layout: two devices wrapped one over the other read as one very
+// tall device, the zoom fell until they fit in a row, the row read short, the
+// zoom rose, and they wrapped again, for as long as the page stayed open
+// (Jesse, 2026-11-01). A device's height follows the page and the zoom only,
+// so the fit no longer depends on how the devices are laid out.
 
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 
@@ -86,9 +94,9 @@ export class StageFitWatch implements ReactiveController {
   private width = 0;
   /** The box's room inside its padding, for `fill`: zero until measured. */
   private room = { width: 0, height: 0 };
-  /** For `fill`: how tall the drawing stood per unit of zoom when last
-   * drawn, past its fixed room; a page longer than the screen makes it more
-   * than the device alone. Zero until measured. */
+  /** For `fill`: how tall the tallest device stood per unit of zoom when
+   * last drawn; a page longer than the screen makes it more than the empty
+   * device. Zero until measured. */
   private drawn = 0;
   /** The last fit given, which a held fit keeps. */
   private last?: number;
@@ -100,13 +108,15 @@ export class StageFitWatch implements ReactiveController {
    * `scaleNow` is the scale the host drew at. `fill`, when given, sizes the
    * drawing to the box's height too while it returns one (undefined falls
    * back to the width alone, as on a stacked editor whose stage grows with
-   * what it holds, where filling the height would never settle). */
+   * what it holds, where filling the height would never settle).
+   * `deviceSelector` finds each device of a filling stage inside the box. */
   constructor(
     private readonly host: ReactiveControllerHost & HTMLElement & { renderRoot: ParentNode },
     private readonly selector: string,
     private readonly scaleNow: () => number,
     private readonly fill?: () => StageFillDrawing | undefined,
     private readonly held: () => boolean = () => false,
+    private readonly deviceSelector?: string,
   ) {
     host.addController(this);
   }
@@ -153,15 +163,15 @@ export class StageFitWatch implements ReactiveController {
     return stageFillZoom(this.room, { ...drawing, height: Math.max(drawing.height, this.drawn) }, STAGE_FILL_FLOOR);
   }
 
-  /** How tall the drawing (the box's first child) stood per unit of zoom,
-   * kept when it moved by more than a pixel, which draws again. Its layout
-   * height, so a scroll or a transform never counts. */
+  /** How tall the tallest device stood per unit of zoom, kept when it moved
+   * by more than a pixel, which draws again. Its layout height, so a scroll
+   * or a transform never counts. */
   private measureDrawn(): boolean {
-    const drawing = this.fill?.();
-    const child = this.box?.firstElementChild as HTMLElement | null | undefined;
     const scale = this.scaleNow();
-    if (drawing === undefined || typeof child?.offsetHeight !== "number" || scale <= 0) return false;
-    const unit = Math.max(0, (child.offsetHeight - drawing.fixedHeight) / scale);
+    if (this.fill?.() === undefined || this.box === undefined || this.deviceSelector === undefined || scale <= 0) return false;
+    const devices = [...this.box.querySelectorAll<HTMLElement>(this.deviceSelector)];
+    if (devices.length === 0) return false;
+    const unit = Math.max(...devices.map((device) => device.offsetHeight)) / scale;
     if (Math.abs(unit - this.drawn) <= Math.max(1 / scale, this.drawn * DRAWN_SLACK)) return false;
     this.drawn = unit;
     return true;

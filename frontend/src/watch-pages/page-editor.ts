@@ -910,7 +910,7 @@ export class WaPageEditor extends LitElement {
   @state() private zoom: number | undefined = undefined;
   /** Fit, filling the stage's width and height both (`stage-fit.ts`, the
    * device's size from `stageDrawing`), held while a tile is dragged. */
-  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale, () => this.stageDrawing(), () => this.gesture !== undefined);
+  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale, () => this.stageDrawing(), () => this.gesture !== undefined, ".lib-duo-side > :first-child");
   /** The scale the stage was last drawn at, so a draw at a new one (a Fit
    * after a resize, a zoom step) turns the tile faces' fades off for that
    * draw: a glow growing with the zoom should not trail the window's edge. */
@@ -5887,6 +5887,13 @@ export class WaPageEditor extends LitElement {
     .pe-layout.pe-wide .pe-stage-area { flex: 1 1 0; min-height: 0; }
     .pe-layout.pe-wide .pe-stage-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
     .pe-layout.pe-wide .pe-stage-area > :not(.pe-stage-body) { flex: none; }
+    /* Beside the settings the two pictures stay in one row: Fit shrinks them
+       to the stage's width, and only the words under them could have pushed
+       one below the other. So a side narrows to its device at the least, and
+       its words wrap. */
+    .pe-layout.pe-wide .lib-duo { flex-wrap: nowrap; justify-content: safe center; }
+    .pe-layout.pe-wide .lib-duo-side { min-width: min-content; }
+    .pe-layout.pe-wide .pe-screen-title { white-space: normal; }
     /* One column under 1100px (PE_STACK_WIDTH): the stage, then the
        settings, and the editor scrolls as one page. Beside each other there
        the stage and four groups of settings were both too narrow. Nothing

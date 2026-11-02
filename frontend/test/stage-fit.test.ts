@@ -110,11 +110,11 @@ describe("the page editor's Fit, filling the stage", () => {
   });
 
   it("fits all of a page longer than the device's screen, by the drawing's height per unit of zoom", () => {
-    // Drawn at 1.5: 600 per unit of zoom past the label, more than the watch alone.
-    const box = { clientWidth: 1000, clientHeight: 800, scrollWidth: 1000, firstElementChild: { offsetHeight: 30 + 600 * 1.5 } };
+    // Drawn at 1.5: 600 per unit of zoom, more than the watch alone.
+    const box = { clientWidth: 1000, clientHeight: 800, scrollWidth: 1000, querySelectorAll: () => [{ offsetHeight: 600 * 1.5 }] };
     let asked = 0;
     const host = { renderRoot: { querySelector: () => box }, addController: () => {}, requestUpdate: () => { asked += 1; } };
-    const fit = new StageFitWatch(host as never, ".stage", () => 1.5, () => WATCH);
+    const fit = new StageFitWatch(host as never, ".stage", () => 1.5, () => WATCH, undefined, ".device");
     fit.hostUpdated();
     fit.hostUpdated();
     expect(asked).toBe(2);
@@ -126,17 +126,17 @@ describe("the page editor's Fit, filling the stage", () => {
   });
 
   it("never asks to draw again and again when each draw measures a little differently, and holds while held", () => {
-    // A drawing with a part that does not grow with the zoom (120 px more than
-    // the label it counts out) and that wobbles by a pixel per draw, as
-    // rounding did when the browser froze.
+    // A drawing with a part that does not grow with the zoom (120 px) and
+    // that wobbles by a pixel per draw, as rounding did when the browser
+    // froze.
     let scale = 1.5;
     let wobble = 0;
-    const child = { get offsetHeight() { wobble ^= 1; return 30 + 120 + 600 * scale + wobble; } };
-    const box = { clientWidth: 420, clientHeight: 800, offsetWidth: 420, offsetHeight: 800, scrollWidth: 420, firstElementChild: child };
+    const child = { get offsetHeight() { wobble ^= 1; return 120 + 600 * scale + wobble; } };
+    const box = { clientWidth: 420, clientHeight: 800, offsetWidth: 420, offsetHeight: 800, scrollWidth: 420, querySelectorAll: () => [child] };
     let asked = 0;
     let held = false;
     const host = { renderRoot: { querySelector: () => box }, addController: () => {}, requestUpdate: () => { asked += 1; } };
-    const fit = new StageFitWatch(host as never, ".stage", () => scale, () => WATCH, () => held);
+    const fit = new StageFitWatch(host as never, ".stage", () => scale, () => WATCH, () => held, ".device");
     // Draw as Lit would: each ask is one more draw at the fit it gives.
     for (let i = 0; i < 50; i++) {
       const before = asked;
@@ -153,6 +153,30 @@ describe("the page editor's Fit, filling the stage", () => {
     fit.hostUpdated();
     expect(asked).toBe(before);
     expect(fit.fit(1.5)).toBe(kept);
+  });
+
+  it("holds one zoom when two devices would wrap one over the other, however many draws come", () => {
+    // Two devices that wrap past a zoom of 0.7. Measuring the row read the
+    // wrapped pair as one tall device, the zoom fell, they unwrapped, and it
+    // rose again for as long as the page stayed open.
+    const TWO: StageFillDrawing = { width: 380, height: 300, fixedWidth: 44, fixedHeight: 52, max: STAGE_FILL_MAX };
+    let scale = 1;
+    const wrapped = () => scale > 0.7;
+    const row = { get offsetHeight() { return 52 + 300 * scale * (wrapped() ? 2 : 1) + (wrapped() ? 52 : 0); } };
+    const devices = [{ get offsetHeight() { return 300 * scale; } }, { get offsetHeight() { return 200 * scale; } }];
+    const box = { clientWidth: 410, clientHeight: 500, offsetWidth: 410, offsetHeight: 500, scrollWidth: 410, firstElementChild: row, querySelectorAll: () => devices };
+    const host = { renderRoot: { querySelector: () => box }, addController: () => {}, requestUpdate: () => {} };
+    const fit = new StageFitWatch(host as never, ".stage", () => scale, () => TWO, undefined, ".device");
+    // Every draw, whether asked for by the fit or by a state changing.
+    const zooms: number[] = [];
+    for (let i = 0; i < 40; i++) {
+      scale = fit.fit(1);
+      zooms.push(scale);
+      fit.hostUpdated();
+    }
+    expect(new Set(zooms.slice(5)).size).toBe(1);
+    // The tallest device, not the two added up.
+    expect(zooms.at(-1)).toBe(stageFillZoom({ width: 410, height: 500 }, TWO, STAGE_FILL_FLOOR));
   });
 
   it("gives the zoom that fills the box's height alone, which the page editor sizes its stage's width by", () => {
