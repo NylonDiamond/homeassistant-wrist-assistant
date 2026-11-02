@@ -966,6 +966,33 @@ describe("One Look's bridge look, as the Swift lays it out (derived)", () => {
       expect(cover.state).toBeDefined();
     });
 
+    // Discord, 2026-11-02: a closed cover drew no word and an open one, under
+    // its bar, no icon.
+    it("keeps a narrow cover's word and icon at a big State Size", () => {
+      const big = { ...own, stateSize: 16 };
+      for (const [state, topBar] of [[word("Closed"), false], [word("Open"), true], [percent("52"), true]] as const) {
+        const l = layout("ultra211", 3, 4, { centred: true, topBar, name: "Mid", state, style: big });
+        expect(l.mode).toBe("centred");
+        expect(l.state).toBeDefined();
+        expect(l.state!.size).toBeLessThanOrEqual(16);
+        expect(l.state!.size).toBeGreaterThanOrEqual(ONE_LOOK_WATCH.textMin);
+        expect(l.name.lines).toEqual(["Mid"]);
+        expect(l.glyphInk).toBeDefined();
+        expect(l.glyphInk!.width).toBeGreaterThan(0);
+        expect(l.glyphInk!.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height);
+        expect(l.glyphInk!.y + l.glyphInk!.height).toBeLessThanOrEqual(oneLookTextRect(l).y);
+      }
+    });
+
+    it("lets a word at its own State Size shrink to the smallest text", () => {
+      const fitter = new OneLookTextFitter("watch", fake, oneLookScaledText(ONE_LOOK_WATCH, 1, 1, 1, 16));
+      near(fitter.fitState(word("Closed"), 38, 3)!.size, 11.15);
+      expect(fitter.fitState(word("Closed"), 34.1, 3)?.size).toBe(10);
+      expect(fitter.fitState(word("Closed"), 34, 3)).toBeUndefined();
+      // Beside a glyph it stops at 85%, and the glyph gives way.
+      expect(fitter.fitState(word("Closed"), 38, 3, 0.7)).toBeUndefined();
+    });
+
     it("lets the centred icon go before the value", () => {
       const l = layout("ultra211", 3, 3, { centred: true, topBar: true, name: "Mid", state: word("Open"), style: own });
       expect(l.mode).toBe("centred");

@@ -48,6 +48,10 @@ export interface OneLookMetrics {
   /** A word state's size, and the smallest a fitted state may shrink to. */
   readonly wordSize: number;
   readonly textMin: number;
+  /** How small a word at a tile's own State Size may shrink before it is
+   * dropped: the device's smallest text, past the usual 85%. Absent without
+   * a set size. */
+  readonly ownWordFloor?: number;
   /** The icon disc: its share of the tile's height, its floor (and the floor
    * on a narrow tile), its cap, and the glyph's share of it. */
   readonly discK: number;
@@ -173,8 +177,12 @@ export function oneLookScaledText(m: OneLookMetrics, scale: number, name = 1, fa
     : Math.min(Math.max(stateSize, m.textMin), m.figureSize * ONE_LOOK_STATE_SCALE_RANGE[1]);
   const state = ownState === undefined ? factor : ownState / m.figureSize;
   const stateScale = scale * state;
+  const ownWordFloor = ownState === undefined
+    ? (m.ownWordFloor === undefined ? undefined : m.ownWordFloor * scale)
+    : m.textMin * scale;
   return Object.freeze({
     ...m,
+    ...(ownWordFloor === undefined ? {} : { ownWordFloor }),
     nameSize: m.nameSize * scale * name,
     nameMin: m.nameMin * scale * Math.min(1, name),
     figureSize: m.figureSize * stateScale,

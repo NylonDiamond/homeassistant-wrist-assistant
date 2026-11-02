@@ -432,7 +432,10 @@ export class OneLookTextFitter {
         const amber = state.amber === true;
         const w = (s: string, size: number) => this.width(s, size, "regular") + (amber ? size * ONE_LOOK_AMBER_DOT_EM : 0);
         const fullSize = m.wordSize;
-        const low = Math.max(fullSize * ONE_LOOK_STATE_SHARE, m.textMin);
+        const shareLow = Math.max(fullSize * ONE_LOOK_STATE_SHARE, m.textMin);
+        // At a tile's own State Size a word may shrink as far as the device's
+        // smallest text; one giving way beside a glyph still stops at 85%.
+        const low = numberFloor === undefined ? Math.min(shareLow, m.ownWordFloor ?? shareLow) : shareLow;
         let word = state.word;
         let size = fullSize;
         if (w(word, fullSize) > room) {

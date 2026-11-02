@@ -842,7 +842,18 @@ function centred(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
       }
     }
     const stateBox: OneLookRect | undefined = state === undefined ? undefined : { x: inset, y: top, width: clearW, height: stateLH };
-    const placed = stateBox === undefined ? full : place([bar, stateBox, accRect, nameBox]);
+    let placed = stateBox === undefined ? full : place([bar, stateBox, accRect, nameBox]);
+    // On a small tile the state's line can reach past the middle, so the
+    // glyph at its floor still runs into it (a cover's bar pushes the state
+    // down too). It moves to the middle of the room between the state and the
+    // name, rather than leave the tile.
+    if (stateBox !== undefined && textH > 0 && oneLookRectsIntersect(placed.ink, stateBox)) {
+      placed = oneLookOldPlaceGlyph({
+        size: input.size, points, offset: (top + topBand + textTop) / 2 - h / 2,
+        extent: input.glyphExtent, aspect: input.glyphAspect, photo: input.glyphIsPhoto,
+        floor, obstacles: [bar, stateBox, accRect, nameBox].filter((o): o is OneLookRect => o !== undefined),
+      });
+    }
     // The photo gave way for a wider word, so this one may take back its
     // whole size in the room left of it.
     if (photoWord && clearW > stateW && wholeState !== undefined) {
