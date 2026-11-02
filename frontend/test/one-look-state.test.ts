@@ -143,6 +143,14 @@ describe("climate", () => {
     expect(oneLookTileState(tile("climate.den"), states(ent("climate.den", "off")), NOW)!.state).toEqual(word("Off"));
   });
 
+  it("keeps the target while off when the tile shows only its target", () => {
+    const base = { isOff: true, current: 20, target: 21, isDualSetpoint: false, supportsFanMode: false, format: climateFormat() };
+    expect(oneLookClimate({ ...base, showCurrent: false }).state).toEqual(num("21°", { tail: "Off" }));
+    expect(oneLookClimate({ ...base, showCurrent: false, showTarget: false }).state).toEqual(word("Off"));
+    expect(oneLookClimate({ ...base, showCurrent: false, target: undefined }).state).toEqual(word("Off"));
+    expect(oneLookClimate(base).state).toEqual(num("20°", { tail: "Off" }));
+  });
+
   it("lets the tile's settings choose the number", () => {
     const base = { isOff: false, current: 23.2, target: 21.5, isDualSetpoint: false, supportsFanMode: false, format: climateFormat(0.5) };
     expect(oneLookClimate({ ...base, showTarget: false }).state).toEqual(num("23.2°"));

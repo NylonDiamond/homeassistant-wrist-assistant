@@ -392,7 +392,7 @@ export function oneLookClimate(c: OneLookClimateInput): OneLookTileState {
   const accessory: OneLookAccessory = c.supportsFanMode ? "fan" : "none";
   let targetText: string | undefined;
   let targetTail: string | undefined;
-  if (c.showTarget !== false && !c.isOff) {
+  if (c.showTarget !== false) {
     if (c.isDualSetpoint && c.low !== undefined && c.high !== undefined) {
       const low = c.format(c.low);
       targetText = `${low.endsWith("°") ? low.slice(0, -1) : low}\u2013${c.format(c.high)}`;
@@ -404,7 +404,8 @@ export function oneLookClimate(c: OneLookClimateInput): OneLookTileState {
   }
   let state: OneLookStateLine;
   if (c.showCurrent !== false && c.current !== undefined) state = oneLookNumber(c.format(c.current), { tail: c.isOff ? ONE_LOOK_OFF_WORD : targetTail });
-  else if (targetText !== undefined) state = oneLookNumber(targetText);
+  // A tile set to show only its target keeps it while off, as the old look did.
+  else if (targetText !== undefined) state = c.isOff ? oneLookNumber(targetText, { tail: ONE_LOOK_OFF_WORD }) : oneLookNumber(targetText);
   else if (c.isOff) state = oneLookWordLine(ONE_LOOK_OFF_WORD);
   else state = NONE;
   return tileState({ state, accessory, isCalm: c.isOff });

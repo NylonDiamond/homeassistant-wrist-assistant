@@ -190,7 +190,7 @@ export function oneLookStateRowNote(kind: string, key: string, value: unknown): 
     case "statusTextShadow":
       return "A soft shadow under the state on a colored tile, on the iPhone. The watch draws none.";
     case "badgeFontSizeOverride":
-      return "Grows or shrinks the state from 75% to 150% of the tile's own size. It still shrinks to fit.";
+      return "The state's size in points, as the old look drew it. It still shrinks to fit.";
     case "stateBarStyle":
       return value === "Fill"
         ? "The tile fills with its color from the left to the level; the rest is a dark shade of it."

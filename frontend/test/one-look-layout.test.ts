@@ -938,10 +938,56 @@ describe("One Look's bridge look, as the Swift lays it out (derived)", () => {
     near(strip.nameLineHeight, 13.34, 0.001);
     near(strip.stateLineHeight, 13.44, 0.001);
     const tiny = layout("ultra211", 2, 2, { name: "", state: NO_STATE, centred: true });
-    expect(tiny.mode).toBe("strip");
-    nearRect(tiny.discRect, 4, 6, 20, 20);
+    expect(tiny.mode).toBe("centred");
+    near(midX(tiny.discRect), tiny.size.width / 2);
+    near(midY(tiny.discRect), tiny.size.height / 2);
     expect(tiny.drawsDisc).toBe(false);
-    near(tiny.glyphSize, 17, 0.0001);
+    expect(tiny.glyphSize).toBeGreaterThan(0);
+  });
+
+  describe("a tile's own sizes (Discord, 2026-11-01)", () => {
+    const own = { nameSize: 16, iconSize: 36, stateSize: 13, ownSizes: true };
+
+    it("draws a set State Size in points", () => {
+      const m = oneLookScaledText(ONE_LOOK_WATCH, 1, 1, 1, 13);
+      near(m.figureSize, 13);
+      near(m.wordSize, 13);
+      near(oneLookScaledText(ONE_LOOK_WATCH, 1, 1, 1, 4).wordSize, ONE_LOOK_WATCH.textMin);
+      near(oneLookScaledText(ONE_LOOK_WATCH, 1, 1, 1, 40).figureSize, ONE_LOOK_WATCH.figureSize * 1.5);
+      near(oneLookScaledText(ONE_LOOK_WATCH, 1.2, 1, 1, 13).figureSize, 15.6);
+    });
+
+    it("keeps the value on a tile with its own sizes", () => {
+      const sensor = layout("ultra211", 6, 4, { centred: true, name: "kantoor", state: percent("22"), style: own });
+      expect(sensor.mode).toBe("centred");
+      expect(sensor.state).toBeDefined();
+      const cover = layout("ultra211", 3, 4, { centred: true, topBar: true, name: "Mid", state: word("Open"), style: own });
+      expect(cover.mode).toBe("centred");
+      expect(cover.state).toBeDefined();
+    });
+
+    it("lets the centred icon go before the value", () => {
+      const l = layout("ultra211", 3, 3, { centred: true, topBar: true, name: "Mid", state: word("Open"), style: own });
+      expect(l.mode).toBe("centred");
+      expect(l.state).toBeDefined();
+      expect(l.discRect.width).toBe(0);
+      expect(l.name.lines).toEqual(["Mid"]);
+      // A photo stays: the state goes first.
+      const photo = resolveOneLookLayout({ ...input("ultra211", 3, 3, { centred: true, topBar: true, name: "Mid", state: word("Open"), style: own }), keepsGlyph: true }, fake);
+      expect(photo.discRect.width).toBeGreaterThan(0);
+      expect(photo.state).toBeUndefined();
+    });
+
+    it("centres a short tile's only icon, and draws it over a name if the tile has its own sizes", () => {
+      const arrow = layout("ultra211", 4, 3, { centred: true, name: "", state: NO_STATE, style: { iconSize: 26 } });
+      expect(arrow.mode).toBe("centred");
+      near(midX(arrow.discRect), arrow.size.width / 2);
+      const named = layout("ultra211", 6, 3, { centred: true, name: "Gaatjes", state: NO_STATE, style: own });
+      expect(named.mode).toBe("centred");
+      expect(named.glyphInk!.y + named.glyphInk!.height).toBeLessThanOrEqual(oneLookTextRect(named).y);
+      // A short tile with no sizes of its own stays a strip.
+      expect(layout("ultra211", 6, 3, { centred: true, name: "Gaatjes", state: NO_STATE }).mode).toBe("strip");
+    });
   });
 
   it("D12: the old place's glyph at 30 pt, 3 up", () => {

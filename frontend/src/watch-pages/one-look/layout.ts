@@ -23,6 +23,7 @@ import {
   ONE_LOOK_CHOICES,
   oneLookDiscMin,
   oneLookMetrics,
+  ONE_LOOK_STATE_SCALE_RANGE,
   oneLookScaledText,
   type OneLookDevice,
   type OneLookMetrics,
@@ -86,8 +87,15 @@ export interface OneLookTileStyle {
   readonly iconSize?: number;
   /** Points, negative is up. */
   readonly iconOffset: number;
-  /** State Size over the look's own, held to 0.75 to 1.5. */
+  /** State Size over the look's own, held to 0.75 to 1.5. A drawn tile goes
+   * by `stateSize` instead. */
   readonly stateScale: number;
+  /** State Size in points, as the old look drew it, for a number and a word
+   * alike; undefined when the tile sets no size. */
+  readonly stateSize?: number;
+  /** The tile sets its own Icon Size or Name Size, so it keeps the old look's
+   * shape on a tile under 4 rows too, when that fits. */
+  readonly ownSizes: boolean;
   /** Status Icon Size over the round button's own, held to 0.75 to 1.4. */
   readonly accessoryScale: number;
   /** Font Weight; undefined (unset, or Light) keeps the look's. */
@@ -108,6 +116,7 @@ export interface OneLookTileStyle {
 export const ONE_LOOK_DEFAULT_STYLE: OneLookTileStyle = Object.freeze({
   iconOffset: 0,
   stateScale: 1,
+  ownSizes: false,
   accessoryScale: 1,
   nameDesign: "standard",
   nameShadow: true,
@@ -117,7 +126,7 @@ export const ONE_LOOK_DEFAULT_STYLE: OneLookTileStyle = Object.freeze({
   glow: ONE_LOOK_NATIVE_GLOW,
 });
 
-export const ONE_LOOK_STATE_SCALE_RANGE: readonly [number, number] = [0.75, 1.5];
+export { ONE_LOOK_STATE_SCALE_RANGE };
 export const ONE_LOOK_ACCESSORY_SCALE_RANGE: readonly [number, number] = [0.75, 1.4];
 
 /** A set size over the old look's own for the tile, held in `range` and
@@ -161,6 +170,9 @@ export interface OneLookLayoutInput {
   readonly glyphExtent: number;
   /** The glyph is a person's round photo, filling its whole box. */
   readonly glyphIsPhoto: boolean;
+  /** The glyph is a photo, a person's or the tile's cut-out: it says who or
+   * what the tile is, so it stays when the state has to go. */
+  readonly keepsGlyph: boolean;
   readonly style: OneLookTileStyle;
 }
 
@@ -182,6 +194,7 @@ export function oneLookLayoutInput(init: OneLookLayoutInputInit): OneLookLayoutI
     glyphAspect: ONE_LOOK_DEFAULT_GLYPH_ASPECT,
     glyphExtent: ONE_LOOK_DEFAULT_GLYPH_EXTENT,
     glyphIsPhoto: false,
+    keepsGlyph: false,
     style: ONE_LOOK_DEFAULT_STYLE,
     ...init,
   };
@@ -235,6 +248,7 @@ export interface OneLookLayout {
   readonly textScale: number;
   readonly nameScale: number;
   readonly stateScale: number;
+  readonly stateSize?: number;
   /** The centred layout's state box, top left, as wide as the fitted state
    * (and its pill padding). */
   readonly stateRect?: OneLookRect;
@@ -264,7 +278,7 @@ export function oneLookRowNameSize(layout: OneLookLayout): number | undefined {
 /** The device's metrics at the layout's text sizes, for drawing the state
  * and the big value at the sizes the layout made room for. */
 export function oneLookLayoutMetrics(layout: OneLookLayout, device: OneLookDevice): OneLookMetrics {
-  return oneLookScaledText(oneLookMetrics(device), layout.textScale, layout.nameScale, layout.stateScale);
+  return oneLookScaledText(oneLookMetrics(device), layout.textScale, layout.nameScale, layout.stateScale, layout.stateSize);
 }
 
 // Constants (the mock's, unless marked)
@@ -430,7 +444,7 @@ function step(mode: OneLookMode, rest: Partial<Omit<Step, "mode">> = {}): Step {
  */
 export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutInputInit, measurer: TextMeasurer): OneLookLayout {
   const input = oneLookLayoutInput(given);
-  const metrics = oneLookScaledText(oneLookMetrics(input.device), input.textScale, oneLookNameScale(input), input.style.stateScale);
+  const metrics = oneLookScaledText(oneLookMetrics(input.device), input.textScale, oneLookNameScale(input), input.style.stateScale, input.style.stateSize);
   const fitter = new OneLookTextFitter(input.device, measurer, metrics).styled(input.style);
   for (const s of ladder(input)) {
     if (s.mode === "compact") return keepScales(compact(input, fitter), input);
@@ -442,7 +456,7 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
   return keepScales(compact(input, fitter), input);
 }
 
-type Unscaled = Omit<OneLookLayout, "textScale" | "nameScale" | "stateScale" | "glyphExtent">;
+type Unscaled = Omit<OneLookLayout, "textScale" | "nameScale" | "stateScale" | "stateSize" | "glyphExtent">;
 
 function keepScales(layout: Unscaled, input: OneLookLayoutInput): OneLookLayout {
   return {
@@ -450,8 +464,14 @@ function keepScales(layout: Unscaled, input: OneLookLayoutInput): OneLookLayout 
     textScale: input.textScale,
     nameScale: oneLookNameScale(input),
     stateScale: input.style.stateScale,
+    ...(input.style.stateSize === undefined ? {} : { stateSize: input.style.stateSize }),
     glyphExtent: layout.mode === "centred" ? input.glyphExtent : ONE_LOOK_DEFAULT_GLYPH_EXTENT,
   };
+}
+
+/** The mock's layout for a tile: a strip under `stripRows`, else stacked. */
+function naturalMode(input: OneLookLayoutInput): OneLookMode {
+  return input.rowSpan < input.stripRows ? "strip" : "stacked";
 }
 
 /**
@@ -459,13 +479,17 @@ function keepScales(layout: Unscaled, input: OneLookLayoutInput): OneLookLayout 
  * first, then again with its glyph at the tiny floor; then the mock's
  * layout (with the bridge look, a bare glyph); a strip that does not fit is
  * stacked if that fits; then the state is dropped; then the disc may go
- * under its floor; then compact.
+ * under its floor; then compact. A short tile takes the centred layout too
+ * when it shows only an icon or sets its own sizes (`ownSizes`), and before
+ * the state is dropped the centred layout's icon goes.
  */
 function ladder(input: OneLookLayoutInput): Step[] {
-  const natural: OneLookMode = input.rowSpan < input.stripRows ? "strip" : "stacked";
+  const natural = naturalMode(input);
   const hasState = input.state.kind !== "none";
   const steps: Step[] = [];
-  if (input.centred && natural === "stacked") {
+  const iconOnly = input.hasIcon && input.name === "" && !hasState;
+  const centredFirst = input.centred && (natural === "stacked" || iconOnly || input.style.ownSizes);
+  if (centredFirst) {
     steps.push(step("centred", { hasIcon: input.hasIcon }));
     if (input.hasIcon) steps.push(step("centred", { discFloor: oneLookCentredGlyphTinyFloor(input.device) }));
   }
@@ -478,6 +502,9 @@ function ladder(input: OneLookLayoutInput): Step[] {
     if (input.hasIcon) steps.push(step("stacked", { discFloor: oneLookTinyDiscFloor(input.device) }));
     steps.push(step("strip", { hasIcon: input.hasIcon }));
   }
+  // The value says more than an icon: when both do not fit, the bridge
+  // look's icon goes first, but never a photo.
+  if (hasState && centredFirst && input.hasIcon && !input.keepsGlyph) steps.push(step("centred", { hasIcon: false }));
   if (hasState) {
     steps.push(step(natural, { withState: false, hasIcon: input.hasIcon }));
     if (natural === "strip") steps.push(step("stacked", { withState: false, hasIcon: input.hasIcon }));
@@ -757,8 +784,13 @@ function centred(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
     // bar, the accessory and the name do. The state's line height stays the
     // full size's.
     const nameBox: OneLookRect | undefined = textH > 0 ? { x: 0, y: textTop, width: w, height: textH } : undefined;
+    // A tile under 4 rows has no room in its middle once it has a name: the
+    // glyph centres in the room above the name.
+    const offset = naturalMode(input) === "strip" && textH > 0
+      ? (top + topBand + textTop) / 2 - h / 2
+      : input.style.iconOffset;
     const place = (obstacles: readonly (OneLookRect | undefined)[]) => oneLookOldPlaceGlyph({
-      size: input.size, points, offset: input.style.iconOffset,
+      size: input.size, points, offset,
       extent: input.glyphExtent, aspect: input.glyphAspect, photo: input.glyphIsPhoto,
       floor, obstacles: obstacles.filter((o): o is OneLookRect => o !== undefined),
     });

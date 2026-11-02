@@ -168,6 +168,12 @@ describe("the old look's sizes (takeOldSizes)", () => {
   it("gives the Ultra's 6 x 4 bulb 36 points, its name 10, lifted 3", () => {
     expect(oneLookOldSizes(tile("light.a"), WATCH_CELL, 6, WATCH_UNIT, "watch")).toEqual({ nameSize: 10, iconSize: 36, iconOffset: -3 });
   });
+
+  it("reads a set State Size in points, scaled like the name", () => {
+    expect(oneLookOldSizes(tile("light.a", { badgeFontSizeOverride: 13 }), WATCH_CELL, 6, WATCH_UNIT, "watch").stateSize).toBe(13);
+    const phone = oneLookOldSizes(tile("light.a", { badgeFontSizeOverride: 13, labelFontSizeOverride: 13 }), PHONE_CELL, 6, PHONE_UNIT, "iphone");
+    expect(phone.stateSize).toBe(phone.nameSize);
+  });
 });
 
 describe("a light in One Look", () => {

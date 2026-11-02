@@ -152,6 +152,8 @@ export function oneLookCornerRadius(m: OneLookMetrics, size: { width: number; he
   return Math.min(m.cornerRadiusMax, Math.min(size.width, size.height) * m.cornerRadiusK);
 }
 
+export const ONE_LOOK_STATE_SCALE_RANGE: readonly [number, number] = [0.75, 1.5];
+
 /**
  * These metrics with their text at Dynamic Type's `scale` and the tile's own
  * Name Size and State Size factors (`scaledText`): the name, number, word
@@ -159,9 +161,17 @@ export function oneLookCornerRadius(m: OneLookMetrics, size: { width: number; he
  * shrinks to fit. Discs, insets, gaps, the accessory and the LIVE chip keep
  * their size. All three at 1 give the metrics back unchanged. The panel has
  * no Dynamic Type, so `scale` is always 1 here.
+ *
+ * `stateSize` is the tile's State Size in points
+ * (`OneLookTileStyle.stateSize`), in place of `factor`: a number and a word
+ * both draw at it, held between the device's smallest text and half again
+ * its number.
  */
-export function oneLookScaledText(m: OneLookMetrics, scale: number, name = 1, state = 1): OneLookMetrics {
-  if (scale === 1 && name === 1 && state === 1) return m;
+export function oneLookScaledText(m: OneLookMetrics, scale: number, name = 1, factor = 1, stateSize?: number): OneLookMetrics {
+  if (scale === 1 && name === 1 && factor === 1 && stateSize === undefined) return m;
+  const ownState = stateSize === undefined ? undefined
+    : Math.min(Math.max(stateSize, m.textMin), m.figureSize * ONE_LOOK_STATE_SCALE_RANGE[1]);
+  const state = ownState === undefined ? factor : ownState / m.figureSize;
   const stateScale = scale * state;
   return Object.freeze({
     ...m,
@@ -169,7 +179,7 @@ export function oneLookScaledText(m: OneLookMetrics, scale: number, name = 1, st
     nameMin: m.nameMin * scale * Math.min(1, name),
     figureSize: m.figureSize * stateScale,
     unitMin: m.unitMin * scale * Math.min(1, state),
-    wordSize: m.wordSize * stateScale,
+    wordSize: (ownState ?? m.wordSize * state) * scale,
     textMin: m.textMin * scale * Math.min(1, state),
     bigSize: m.bigSize * stateScale,
     bigSubSize: m.bigSubSize * stateScale,

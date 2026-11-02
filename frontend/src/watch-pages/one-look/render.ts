@@ -440,12 +440,21 @@ function storedNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** What `oneLookOldSizes` reads. `stateSize` only when the tile sets one. */
+export interface OneLookOldSizes {
+  readonly nameSize: number;
+  readonly iconSize: number;
+  readonly iconOffset: number;
+  readonly stateSize?: number;
+}
+
 /**
  * The old look's name size, icon size and icon offset for a tile in its
  * cell on a grid of `unit` (`effectiveLabelFontSize`, `baseIconSize` and
  * `dynamicIconVerticalOffset`, each with the page's look): what One Look
  * draws a tile's name at before it shrinks to fit, and where and how big
- * it puts the glyph.
+ * it puts the glyph. A State Size the tile sets is in points too
+ * (`effectiveBadgeFontSize`).
  */
 export function oneLookOldSizes(
   tile: WatchPageTile,
@@ -453,7 +462,7 @@ export function oneLookOldSizes(
   colSpan: number,
   unit: number,
   look: PageLook,
-): { nameSize: number; iconSize: number; iconOffset: number } {
+): OneLookOldSizes {
   const scale = oneLookTileTextScale(unit, look);
   const nameOverride = storedNumber(tile.labelFontSizeOverride);
   let nameSize: number;
@@ -469,7 +478,13 @@ export function oneLookOldSizes(
   const iconSize = iconOverride !== undefined
     ? Math.max(8, Math.min(look === "iphone" ? iconOverride * scale : iconOverride, fit))
     : Math.max(10, Math.min(fit, (room ? 36 : 40) * (look === "iphone" ? scale : 1)));
-  return { nameSize, iconSize, iconOffset: watchIconVerticalOffset(tile, cell.height) };
+  const stateOverride = storedNumber(tile.badgeFontSizeOverride);
+  return {
+    nameSize,
+    iconSize,
+    iconOffset: watchIconVerticalOffset(tile, cell.height),
+    ...(stateOverride === undefined ? {} : { stateSize: stateOverride * scale }),
+  };
 }
 
 /** `GridItemConfig.dynamicBadgeFontSize`, the property: the old look's own
@@ -491,7 +506,7 @@ export function oneLookTileStyle(
   tile: WatchPageTile,
   colSpan: number,
   rowSpan: number,
-  old: { nameSize: number; iconSize: number; iconOffset: number },
+  old: OneLookOldSizes,
 ): OneLookTileStyle {
   const weight = typeof tile.labelFontWeight === "string" && NAME_WEIGHTS.has(tile.labelFontWeight)
     ? tile.labelFontWeight as OneLookTextWeight : undefined;
@@ -503,6 +518,8 @@ export function oneLookTileStyle(
     iconSize: old.iconSize,
     iconOffset: old.iconOffset,
     stateScale: oneLookStyleFactor(storedNumber(tile.badgeFontSizeOverride), staticBadgeSize(colSpan, rowSpan), ONE_LOOK_STATE_SCALE_RANGE),
+    ...(old.stateSize === undefined ? {} : { stateSize: old.stateSize }),
+    ownSizes: storedNumber(tile.iconSizeOverride) !== undefined || storedNumber(tile.labelFontSizeOverride) !== undefined,
     accessoryScale: oneLookStyleFactor(storedNumber(tile.statusIconSizeOverride), DEFAULT_STATUS_ICON_SIZE, ONE_LOOK_ACCESSORY_SCALE_RANGE),
     ...(weight === undefined ? {} : { nameWeight: weight }),
     nameDesign: design,
@@ -732,6 +749,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     glyphAspect: !centred ? 1 : cutout !== undefined ? oneLookCutoutAspect(cutout.aspect) : glyphAspectOf(measurer, base),
     glyphExtent: centred ? glyphExtentOf(measurer, base) : 1.25,
     glyphIsPhoto: centred && photo !== undefined,
+    keepsGlyph: photo !== undefined || cutout !== undefined,
     style,
   };
   let layout = resolveOneLookLayout(init, measurer);
