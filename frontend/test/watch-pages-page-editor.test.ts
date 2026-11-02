@@ -1793,9 +1793,14 @@ describe("the two pictures", () => {
     expect(text.indexOf(`data-screen=watch`)).toBeLessThan(text.indexOf(`data-screen=iphone`));
     expect(text).not.toContain("lib-duo-other");
     expect(text).not.toContain("lib-duo-tag");
-    expect(text).toMatch(/<span class="lib-duo-l pe-screen-title"[^>]*>Watch<\/span>/);
+    expect(text).toMatch(/<span class="lib-duo-l pe-screen-title"[^>]*><svg[\s\S]*?<\/svg>Watch<\/span>/);
     expect(text).toContain(`<span class="pe-screen-status">Same order as the iPhone`);
     expect(text).toContain(`<span class="pe-screen-status">Same order as the watch`);
+    // Each device stands in its own box, with one Screen 1 mark.
+    expect(text).toContain(`class="pe-device watch"`);
+    expect(text).toContain(`class="pe-device iphone"`);
+    expect(text.match(/<b>Screen 1<\/b>/g)?.length).toBe(2);
+    expect(text).not.toContain("Screen 2");
   });
 
   it("moves a tile on the iPhone picture only, with the toast the first time ever, and takes the watch's order back in one undo step", () => {

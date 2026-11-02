@@ -255,8 +255,6 @@ import { setWatchPageFitToScreen } from "./page-settings-model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
-  PHONE_SCREEN_FOLD_TEXT,
-  WATCH_SCREEN_FOLD_TEXT,
   renderMapPageArt,
   renderPreviewFrame,
   renderWatchPagePreview,
@@ -462,6 +460,12 @@ const ARRANGE_TILE_H = 190;
 /** A look's card in that section. */
 const ARRANGE_LOOK_W = 112;
 const ARRANGE_LOOK_H = 72;
+/** The watch's band stubs on the stage, each as a share of its screen's width. */
+const WATCH_BAND_RATIO = 0.1;
+/** The room the Screen 1 mark takes beside a device, px. */
+const SCREEN_END_ROOM = 56;
+const STAGE_WATCH_END_TEXT = "The mark beside the watch shows where its screen ends. The page scrolls on below it.";
+const STAGE_PHONE_END_TEXT = "The mark beside the iPhone shows where its screen ends. The page scrolls on below it.";
 /** How long a section gone to from the head (a fact, a part of its tile,
  * Hide, Change) keeps its amber wash, ms. */
 const FIND_FLASH_MS = 1100;
@@ -1248,6 +1252,7 @@ export class WaPageEditor extends LitElement {
   }
 
   protected override updated(): void {
+    this.placeScreenEnds();
     this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft));
     // The dragged number's field was drawn away (an undo, a merge, a folded
     // section): its drag can send no end any more.
@@ -4084,8 +4089,10 @@ export class WaPageEditor extends LitElement {
       } else {
         const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
         width += screen.width * (1 + 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO) + WATCH_CROWN_RATIO);
-        height = Math.max(height, screen.height + screen.width * 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO));
+        height = Math.max(height, screen.height + screen.width * 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO + WATCH_BAND_RATIO));
       }
+      // The Screen 1 mark on the device's outer side.
+      fixedWidth += SCREEN_END_ROOM;
       if (screenOffChips(page, kind).length > 0) chips = true;
     }
     // Under each device: the title and the status line (a line and a gap
@@ -4093,6 +4100,22 @@ export class WaPageEditor extends LitElement {
     const fixedHeight = 52 + (chips ? 30 : 0);
     const max = kinds.includes("watch") ? STAGE_FILL_MAX : STAGE_FILL_MAX / PHONE_STAGE_ZOOM;
     return { width, height, fixedWidth, fixedHeight, max };
+  }
+
+  /**
+   * Each device's Screen 1 mark, level with where its screen ends, read off
+   * the picture's fold (`renderWatchScreenFold`), which the stage keeps but
+   * does not show. The mark stands outside the frame, past what the screen
+   * clips. Hidden on a page that fits one screen, which has no fold.
+   */
+  private placeScreenEnds(): void {
+    for (const device of this.renderRoot?.querySelectorAll?.<HTMLElement>(".pe-device") ?? []) {
+      const mark = device.querySelector<HTMLElement>(":scope > .pe-screen-end");
+      if (mark === null) continue;
+      const fold = device.querySelector<HTMLElement>(".wp-fold");
+      mark.hidden = fold === null;
+      if (fold !== null) mark.style.top = `${Math.round(fold.getBoundingClientRect().top - device.getBoundingClientRect().top)}px`;
+    }
   }
 
   /** The Live preview switch: Home Assistant's real states, or every tile
@@ -4245,7 +4268,7 @@ export class WaPageEditor extends LitElement {
         ${status !== undefined || help !== undefined || fold ? html`<div class="under pe-under">
           ${status !== undefined ? html`<span class="tail">${status}</span>` : nothing}
           ${help !== undefined ? html`<span class="tail pe-hint">${help}</span>` : nothing}
-          ${fold ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
+          ${fold ? html`<span class="tail pe-fold-text">${phone ? STAGE_PHONE_END_TEXT : STAGE_WATCH_END_TEXT}</span>` : nothing}
         </div>` : nothing}
         <div class="pe-stage-body">
           ${this.renderLibraryStage(page, pages, input, kind, (at, on) => smart || map || asOnWatch ? renderWatchPagePreview(at) : this.renderEditScreen(page, at, on))}
@@ -4317,8 +4340,13 @@ export class WaPageEditor extends LitElement {
       // A picture that is no edit screen (Watch view, a smart or a map page)
       // draws the tile being tried in the inspector too.
       const at = k === edited ? input : this.companionInput(this.withTriedTiles(page), pages, input, k);
+      const w = at.screen.width * (at.scale ?? 1);
+      const parts = k === "watch" ? `--pe-band:${Math.round(w * WATCH_BAND_RATIO)}px;--pe-crown:${Math.round(w * WATCH_CROWN_RATIO)}px` : nothing;
       return html`<div class="lib-duo-side ${k}" data-screen-side=${k}>
-        ${draw(at, k)}
+        <div class="pe-device ${k}" style=${parts}>
+          ${draw(at, k)}
+          <span class="pe-screen-end" hidden title=${k === "watch" ? STAGE_WATCH_END_TEXT : STAGE_PHONE_END_TEXT}><i></i><b>Screen 1</b></span>
+        </div>
         ${this.renderScreenLines(page, at, k, shown.length > 1)}
         ${last ? missing.map((m) => this.renderAddKindLink(m)) : nothing}
       </div>`;
@@ -4362,7 +4390,7 @@ export class WaPageEditor extends LitElement {
       if (document !== undefined && !off) this.edit(useOtherScreensOrder(document, pageId, screen));
     };
     return html`<div class="pe-screen-lines">
-      <span class="lib-duo-l pe-screen-title" title=${title}>${title}</span>
+      <span class="lib-duo-l pe-screen-title" title=${title}>${uiIcon(screen === "watch" ? "watch" : "phone")}${title}</span>
       ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${useWords === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
         title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${useWords}</button>`}</span>`}
       ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen)}>
@@ -6006,6 +6034,31 @@ export class WaPageEditor extends LitElement {
     .pe-layout.pe-wide .lib-duo { flex-wrap: nowrap; justify-content: safe center; }
     .pe-layout.pe-wide .lib-duo-side { min-width: min-content; }
     .pe-layout.pe-wide .pe-screen-title { white-space: normal; }
+    /* A device on the stage. The watch has band stubs that fade out, and each
+       device a quiet mark on its outer side where its first screen ends, in
+       place of the dashed line across the tiles. */
+    .pe-device { position: relative; display: flex; flex: none; isolation: isolate; }
+    .pe-device.watch { padding-block: var(--pe-band, 0px); }
+    .pe-device > .wa-watch, .pe-device > .wa-phone { z-index: 1; }
+    .pe-device.watch::before, .pe-device.watch::after {
+      content: ""; position: absolute; z-index: 0; left: 20%; right: calc(20% + var(--pe-crown, 0px));
+      height: calc(var(--pe-band, 0px) + 14px); pointer-events: none;
+    }
+    .pe-device.watch::before { top: 0; border-radius: 6px 6px 0 0; background: linear-gradient(to top, var(--wa-art-case, #2b2f3d) 45%, transparent); }
+    .pe-device.watch::after { bottom: 0; border-radius: 0 0 6px 6px; background: linear-gradient(to bottom, var(--wa-art-case, #2b2f3d) 45%, transparent); }
+    .pe-device .wp-fold { visibility: hidden; }
+    .pe-screen-end {
+      position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; transform: translateY(-50%);
+      font-size: 10.5px; line-height: 1; white-space: nowrap; color: var(--wa-muted);
+    }
+    .pe-screen-end[hidden] { display: none; }
+    .pe-screen-end > b { font-weight: 500; }
+    .pe-screen-end > i { display: block; width: 10px; height: 1px; background: currentColor; }
+    .pe-device.watch > .pe-screen-end { right: calc(100% - 7px); flex-direction: row-reverse; }
+    .pe-device.iphone > .pe-screen-end { left: calc(100% - 7px); }
+    .pe-screen-title > svg.ui-icon { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+    .lib-duo-side.watch .pe-screen-title > svg.ui-icon { color: var(--wa-hue-purple); }
+    .lib-duo-side.iphone .pe-screen-title > svg.ui-icon { color: var(--wa-hue-pink); }
     /* One column under 1100px (PE_STACK_WIDTH): the stage, then the
        settings, and the editor scrolls as one page. Beside each other there
        the stage and four groups of settings were both too narrow. Nothing
