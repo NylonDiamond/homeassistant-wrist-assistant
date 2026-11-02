@@ -7,6 +7,7 @@ import { svg } from "lit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type HassEntityState, type HassLike, type RenderResult, fetchCloudStatus, fetchConfigEntries } from "../src/ha-api.js";
+import { DEFAULT_PHONE, phonePagesLayout } from "../src/phone-frame.js";
 import type { IconProvider } from "../src/renderer.js";
 import {
   MUSIC_ASSISTANT_DOMAIN,
@@ -23,6 +24,7 @@ import {
 import { type WatchPage, type WatchPageTile, tileSymbol } from "../src/watch-pages/model.js";
 import {
   WATCH_TEMPLATE_PLACEHOLDER_SYMBOL,
+  phoneLitTileInk,
   renderWatchTileFace,
   watchSpecialTileLook,
   watchTemplateFontSize,
@@ -281,6 +283,44 @@ describe("a template tile in the preview", () => {
     expect(drawn).not.toContain("[icon:");
     // An eight digit color's opacity.
     expect(face(tile(), { ok: true, value: "[icon:power color:#FF880080]" }, icons("power"))).toContain("opacity:0.502");
+  });
+
+  describe("with the iPhone look", () => {
+    const phone = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
+    const iphoneFace = (t: WatchPageTile, value: string, provider?: IconProvider) =>
+      text(renderWatchTileFace(t, { width: 90, height: 60 }, { page, pages: [], screen: { width: 198, height: 242 }, scale: 1, phone, icons: provider, templates: renders({ ok: true, value }) }, 21));
+
+    it("fills the tile with its own color exactly, not the watch's glass", () => {
+      const drawn = iphoneFace(tile({ color: "#FFFFFF" }), "21");
+      expect(drawn).toContain("linear-gradient(rgba(255, 255, 255, 1), rgba(255, 255, 255, 1))");
+      expect(drawn).not.toContain("rgba(255, 255, 255, 0.52)");
+    });
+
+    it("draws the text in the tile's ink, with no glow, and keeps an icon's own color", () => {
+      const white = iphoneFace(tile({ color: "#FFFFFF" }), "[icon:pc color:#A9C7DF] [icon:power] 21", icons("pc", "power"));
+      expect(white).toContain("color:#14161A");
+      expect(white).toContain("pc #A9C7DF");
+      expect(white).toContain("power #14161A");
+      expect(white).not.toContain("text-shadow");
+      const navy = iphoneFace(tile({ color: "#102040" }), "21");
+      expect(navy).toContain("color:rgba(242, 244, 247, 0.95)");
+    });
+
+    it("picks its ink as the app does, from the colour, its opacity and the ground", () => {
+      expect(phoneLitTileInk({ kind: "solid", hex: "#FFFFFF", opacity: 1 }, "#FFFFFF", 1, false)).toBe("#14161A");
+      expect(phoneLitTileInk({ kind: "solid", hex: "#000000", opacity: 1 }, "#FFFFFF", 1, false)).toBe("rgba(242, 244, 247, 0.95)");
+      // White at a low opacity over a page's own colour or photo reads dark.
+      expect(phoneLitTileInk({ kind: "solid", hex: "#FFFFFF", opacity: 1 }, "#FFFFFF", 0.2, true)).toBe("rgba(242, 244, 247, 0.95)");
+      // A gradient averages its two ends.
+      expect(phoneLitTileInk({ kind: "gradient", from: "#FFFFFF", to: "#000000" }, "#FFFFFF", 1, false)).toBe("#14161A");
+    });
+
+    it("keeps the watch's glass on the watch", () => {
+      const drawn = face(tile({ color: "#FFFFFF" }), { ok: true, value: "21" });
+      expect(drawn).toContain("rgba(255, 255, 255, 0.52)");
+      expect(drawn).toContain("color:#FFFFFF");
+      expect(drawn).toContain("text-shadow");
+    });
   });
 
   it("shrinks its text to fit five lines, down to 40% of the body size", () => {

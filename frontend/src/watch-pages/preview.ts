@@ -120,6 +120,7 @@ import {
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
 import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
+import { oneLookLuminance, oneLookParseHex } from "./one-look/colour.js";
 import type { OneLookPhotoLight } from "./one-look/glow.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
@@ -634,6 +635,71 @@ export function watchTileFill(color: WatchTileColor | undefined, ink: string, ac
  * (fitted: a lit tile's material at 0.62 left about half of the navy
  * page behind it). */
 const WATCH_MATERIAL_DARKEN = 0.8;
+
+/** `PhoneVault.Lit`, the iPhone look's lit tile, for the kind One Look leaves
+ * out (a template). `RAINBOW_LEAD` is `RainbowHelper.colors[0]`. */
+const PHONE_LIT = {
+  lamplight: 0.55,
+  lamplightMid: 0.25,
+  lamplightMidLocation: 45,
+  lamplightReach: 0.62,
+  rimTop: 0.7,
+  rim: 0.25,
+  darkInkLuminance: 0.45,
+  lamplightLift: 0.08,
+  ink: "#14161A",
+  warmWhite: "rgba(242, 244, 247, 0.95)",
+  rainbowLead: "#FF453A",
+  /** `PhoneVault` `.tileTop`: light, as the panel's iPhone page is, and dark,
+   * as a tile over a page's own color or photo takes it. */
+  groundLight: "#FFFFFF",
+  groundGlass: "#1C1D20",
+} as const;
+
+/**
+ * A lit iPhone look tile as CSS background layers, top first
+ * (`vaultLitSurface`): the lamplight from the top left corner, the user's own
+ * color exactly (solid, their gradient or the rainbow) at their opacity, over
+ * the tile's ground, or a dark wash for the app's material on a page with its
+ * own color or photo.
+ */
+export function phoneLitTileFill(color: WatchTileColor | undefined, ink: string, alpha: number, size: { width: number; height: number }, s: number, onGlass: boolean): string {
+  const flat = (c: string) => `linear-gradient(${c}, ${c})`;
+  const reach = Math.round(Math.max(size.width, size.height) * PHONE_LIT.lamplightReach * s * 100) / 100;
+  const lamp = `radial-gradient(circle ${reach}px at 0 0, rgba(255, 255, 255, ${PHONE_LIT.lamplight}), rgba(255, 255, 255, ${PHONE_LIT.lamplightMid}) ${PHONE_LIT.lamplightMidLocation}%, rgba(255, 255, 255, 0))`;
+  const tint = color?.kind === "rainbow"
+    ? `linear-gradient(${watchDiagonal(size.width, size.height)}, ${RAINBOW_STOPS.map((c) => `rgba(${c}, ${alpha})`).join(", ")})`
+    : color?.kind === "gradient"
+      ? watchMeshGradient(color.from, color.to, alpha)
+      : flat(rgba(color?.kind === "solid" ? color.hex : ink, (color?.kind === "solid" ? color.opacity : 1) * alpha));
+  const base = onGlass ? `rgba(0, 0, 0, ${0.62 * WATCH_MATERIAL_DARKEN})` : PHONE_LIT.groundLight;
+  return [lamp, tint, flat(base)].join(", ");
+}
+
+/** A lit iPhone look tile's text: ink or warm white by how light the surface
+ * reads, averaged over both ends of a gradient and lifted a little by the
+ * lamplight (`PhoneTileLight.usesDarkInk`). */
+export function phoneLitTileInk(color: WatchTileColor | undefined, ink: string, alpha: number, onGlass: boolean): string {
+  const fills: { hex: string; opacity: number }[] = color?.kind === "rainbow"
+    ? [{ hex: PHONE_LIT.rainbowLead, opacity: 1 }]
+    : color?.kind === "gradient"
+      ? [{ hex: color.from, opacity: 1 }, { hex: color.to, opacity: 1 }]
+      : [{ hex: color?.kind === "solid" ? color.hex : ink, opacity: color?.kind === "solid" ? color.opacity : 1 }];
+  const luminance = (hex: string) => oneLookLuminance(oneLookParseHex(hex) ?? [0, 0, 0]);
+  const ground = luminance(onGlass ? PHONE_LIT.groundGlass : PHONE_LIT.groundLight);
+  const total = fills.reduce((sum, fill) => {
+    const a = Math.max(0, Math.min(1, alpha * fill.opacity));
+    const mixed = luminance(fill.hex) * a + ground * (1 - a);
+    return sum + mixed + (1 - mixed) * PHONE_LIT.lamplightLift;
+  }, 0);
+  return total / fills.length > PHONE_LIT.darkInkLuminance ? PHONE_LIT.ink : PHONE_LIT.warmWhite;
+}
+
+/** A lit iPhone look tile's rim: a half point all round and a bright inner
+ * line along the top (`vaultRim`). */
+function phoneLitTileRim(s: number): string {
+  return `inset 0 ${s}px 0 rgba(255, 255, 255, ${PHONE_LIT.rimTop}), inset 0 0 0 ${0.5 * s}px rgba(255, 255, 255, ${PHONE_LIT.rim})`;
+}
 
 /** A color with SwiftUI's `.saturation(amount)` applied (the luminance
  * preserving matrix CSS's `saturate()` uses too), as hex. */
@@ -2093,8 +2159,16 @@ export function watchTemplateRichText(text: string, ink: string, px: number, ico
 function templateFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
   const radiusPt = previewTileCornerRadius(input, cell.width, cell.height);
   const radius = radiusPt * s;
-  // Always lit, as `SimpleTemplateTile` passes `isActive: true`.
-  const ground = watchTileFill(parseTileColor(tile.color), flatInk(tile.color, themeInk(input.page, "entitySensor").hex), true, watchTileColorOpacity(tile), { width, height });
+  // Always lit, as `SimpleTemplateTile` passes `isActive: true`. With the
+  // iPhone look it keeps the app's lit surface: One Look leaves a template out.
+  const iphone = phoneDrawsIphoneLook(input.phone);
+  const tileColor = parseTileColor(tile.color);
+  const fillInk = flatInk(tile.color, themeInk(input.page, "entitySensor").hex);
+  const alpha = watchTileColorOpacity(tile);
+  const onGlass = !watchPageHasDefaultBlackBackground(input.page);
+  const ground = iphone
+    ? phoneLitTileFill(tileColor, fillInk, alpha, { width, height }, s, onGlass)
+    : watchTileFill(tileColor, fillInk, true, alpha, { width, height });
   const border = watchTileBorder(tile, true, watchTileFallbackInk(tile, input.page, input.states));
   const look = watchTemplateTileLook(tile, input);
   const padX = 4 + Math.min(2, width / 8);
@@ -2107,14 +2181,18 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * s, "#FFCC00")}</span>`;
   } else {
     const size = watchTemplateFontSize(look.text, width - padX * 2, height - padY * 2) * s;
+    // The iPhone look: the text in the tile's ink, with no glow
+    // (`SimpleTemplateTile.followsTileInk`). An icon's own color stays.
+    const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : look.ink;
     const style = [
-      `font-size:${size}px`, `color:${look.ink}`, `text-align:${look.multiLine ? "left" : "center"}`,
-      `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`,
+      `font-size:${size}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`,
+      ...(iphone ? [] : [`text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`]),
     ].join(";");
-    content = html`<span class="wp-tpl-text" style=${style}>${watchTemplateRichText(look.text, look.ink, size, input.icons)}</span>`;
+    content = html`<span class="wp-tpl-text" style=${style}>${watchTemplateRichText(look.text, textInk, size, input.icons)}</span>`;
   }
+  const rim = iphone ? `box-shadow:${phoneLitTileRim(s)};` : "";
   return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
-    style=${`${box}border-radius:${radius}px;background:${ground};padding:${padY * s}px ${padX * s}px`}>
+    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:${padY * s}px ${padX * s}px`}>
     ${tileUnderlay(tile, input, true, { width, height }, s)}
     ${content}
     ${renderTileRim(border, width, height, s, radiusPt)}
