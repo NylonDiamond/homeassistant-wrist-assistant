@@ -1,0 +1,74 @@
+{
+  "name": "short-icon-only",
+  "about": "A short light whose key hides its name and state, on a watch: a tile under 4 rows ignores the key in every other case, but this one is laid out as only an icon, centred, and the key places the icon.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-00000000000C",
+    "entityId": "light.desk",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 3,
+    "customLabel": "Desk",
+    "color": "#8F7BEA"
+  },
+  "states": {
+    "light.desk": {
+      "state": "on",
+      "attributes": {
+        "brightness": 200
+      }
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 49.75
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 48.75
+  },
+  "applies": true,
+  "content": {
+    "x": 4.5,
+    "y": 4.5,
+    "width": 91.5,
+    "height": 39.75
+  },
+  "native": {
+    "icon": {
+      "x": 30.726,
+      "y": 2.851,
+      "width": 39.048,
+      "height": 39.048
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "mc",
+        "scale": 1.25
+      },
+      "name": {
+        "hidden": true
+      },
+      "state": {
+        "hidden": true
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 25.845,
+        "y": -0.03,
+        "width": 48.81,
+        "height": 48.81
+      },
+      "scale": 1.25,
+      "hidden": false
+    }
+  }
+}

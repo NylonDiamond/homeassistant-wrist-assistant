@@ -99,12 +99,12 @@ function forgetWholePage(host: TileSettingsHost): void {
 }
 
 /** A look: it is written at once, one undo step, and Custom's tools close. */
-export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook, short: boolean): void {
+export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook): void {
   setArrangeFreePicked(host.uiState, host.tileId, false);
   forgetWholePage(host);
   host.endCoalesce();
   const { pageId, tileId } = host;
-  commit(host, "arrange:look", (d) => editTile(d, pageId, tileId, (tile) => tileWithLook(tile, look, short)));
+  commit(host, "arrange:look", (d) => editTile(d, pageId, tileId, (tile) => tileWithLook(tile, look)));
   host.requestUpdate();
 }
 
@@ -145,7 +145,7 @@ function useOnWholePage(host: TileSettingsHost, plan: ArrangePagePlan): void {
   const { pageId } = host;
   host.endCoalesce();
   host.uiState.delete(askKey(host.tileId));
-  commit(host, "arrange:page", (d) => plan.changes.reduce((next, c) => editTile(next, pageId, c.tileId, (tile) => tileWithLook(tile, plan.look, c.short)), d));
+  commit(host, "arrange:page", (d) => plan.changes.reduce((next, id) => editTile(next, pageId, id, (tile) => tileWithLook(tile, plan.look)), d));
   const done: ArrangeDone = { look: plan.look, count: plan.changes.length, document: host.document };
   host.uiState.set(doneKey(host.tileId), done);
   host.requestUpdate();
@@ -252,14 +252,14 @@ export function renderArrangeSection(
       value: l.id as ArrangeLook | "custom",
       label: l.label,
       ...(l.off === undefined ? {} : { disabled: true, title: `Off because ${l.off}` }),
-      picture: () => lookPicture?.(l.id, (t) => tileWithLook(t, l.id, read.short)) ?? nothing,
+      picture: () => lookPicture?.(l.id, (t) => tileWithLook(t, l.id)) ?? nothing,
     })),
     ...(read.short ? [] : [{ value: "custom" as ArrangeLook | "custom", label: "Custom", picture: () => CUSTOM_PICTURE }]),
   ];
   const offNotes = read.looks.filter((l) => l.off !== undefined);
   const looks = html`<div class="ts-arr-looks">${pictureChoice<ArrangeLook | "custom">("Look", value, options,
-    (v) => (v === "custom" ? pickArrangeCustom(host) : pickArrangeLook(host, v, read.short)), { size: "large" })}</div>`;
-  const notes = html`${read.short && read.block !== undefined ? html`<div class="hint keep">${read.block}</div>` : nothing}
+    (v) => (v === "custom" ? pickArrangeCustom(host) : pickArrangeLook(host, v)), { size: "large" })}</div>`;
+  const notes = html`${read.short && read.block !== undefined ? html`<div class="hint keep">${read.block}${stored !== undefined && read.current !== "icon" ? " The layout stored on it is kept but not drawn." : ""}</div>` : nothing}
     ${offNotes.length === 0 ? nothing : html`<div class="hint keep">${offNotes.map((l) => `${l.label} is off because ${l.off}.`).join(" ")}</div>`}
     ${oldNote}`;
   if (!custom) {
@@ -282,7 +282,7 @@ export function renderArrangeSection(
 /** Back to Standard: every part where the tile's layout puts it, and Custom's
  * tools close. */
 function backToStandard(host: TileSettingsHost): TemplateResult {
-  return resetButton("Back to Standard", "Every part back where the tile's layout puts it", () => pickArrangeLook(host, "standard", false));
+  return resetButton("Back to Standard", "Every part back where the tile's layout puts it", () => pickArrangeLook(host, "standard"));
 }
 
 /** The rows under Custom, for the part picked. */

@@ -551,14 +551,30 @@ describe("the Arrangement card", () => {
     expect(text(card(host))).not.toContain("aria-label=Part");
   });
 
-  it("gives a short light only the reason: it always draws a state word, so it cannot be only an icon", () => {
-    const markup = text(card(tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3 }).host));
-    expect(markup).toContain("A tile under 4 rows lays its parts out in a row.");
-    expect(markup).not.toContain("data-value=");
+  it("draws a short tile as only a centred icon when its layout hides its text, and ignores any other layout", () => {
+    const short = { ...KITCHEN, id: TILE_ID, colSpan: 6, rowSpan: 3 };
+    const input = watchInput(lit("light.kitchen"));
+    const layoutOf = (t: WatchPageTile) => watchTileOneLookModel(t, cellOf(6, 3), input, UNIT)!;
+    expect(layoutOf(short).layout.mode).toBe("strip");
+    const icon = { v: 1, parts: { icon: { spot: "mc", scale: 1.25 }, name: { hidden: true }, state: { hidden: true } } };
+    const only = layoutOf({ ...short, arrange: icon });
+    expect(only.layout.mode).toBe("centred");
+    expect(only.layout.name.lines).toEqual([]);
+    expect(only.layout.state).toBeUndefined();
+    const placed = only.arrange!.icon!;
+    expect(placed.rect.x + placed.rect.width / 2).toBeCloseTo(only.layout.size.width / 2, 3);
+    expect(placed.rect.y + placed.rect.height / 2).toBeCloseTo(only.layout.size.height / 2, 3);
+    // Hiding only one, or the icon too, stays a strip that ignores the key.
+    expect(layoutOf({ ...short, arrange: { v: 1, parts: { name: { hidden: true } } } }).layout.mode).toBe("strip");
+    expect(layoutOf({ ...short, arrange: { v: 1, parts: { icon: { hidden: true }, name: { hidden: true }, state: { hidden: true } } } }).layout.mode).toBe("strip");
+    // A tall tile keeps its layout's rects: the key only hides the parts.
+    const tall = watchTileOneLookModel(light({ arrange: icon }), cellOf(6, 4), input, UNIT)!;
+    expect(tall.layout.name.lines.length).toBeGreaterThan(0);
+    expect(tall.arrange!.name!.hidden).toBe(true);
   });
 
-  it("gives a short tile with no state Standard and Icon only, by turning its name off", () => {
-    const { host, draft } = tileHost({ entityId: "script.movie", colSpan: 12, rowSpan: 3, customLabel: "Movie" });
+  it("gives a short light Standard and Icon only through its layout, with no other key touched", () => {
+    const { host, draft } = tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3 });
     const markup = text(card(host));
     expect(markup).toContain("data-value=standard");
     expect(markup).toContain("data-value=icon");
@@ -568,17 +584,24 @@ describe("the Arrangement card", () => {
     const before = draft.document;
     click(head(host), "data-value=icon");
     expect(draft.document).not.toBe(before);
-    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
-    expect(host.tile.showLabel).toBe(false);
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "mc", scale: 1.25 }, name: { hidden: true }, state: { hidden: true } } });
+    expect(Object.hasOwn(host.tile, "showLabel")).toBe(false);
     // Short by size still: Icon only reads as on, and no more looks open up.
     const after = text(card(host));
     expect(after).toMatch(/class="pc-opt on"[^>]*data-value=icon/);
     expect(after).not.toContain("data-value=custom");
     click(head(host), "data-value=standard");
-    expect(host.tile.showLabel).not.toBe(false);
+    expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
     expect(text(card(host))).toMatch(/class="pc-opt on"[^>]*data-value=standard/);
     draft.undo();
-    expect(host.tile.showLabel).toBe(false);
+    expect(stored(host)).toEqual({ v: 1, parts: { icon: { spot: "mc", scale: 1.25 }, name: { hidden: true }, state: { hidden: true } } });
+  });
+
+  it("says a short tile keeps a layout it does not draw, and Standard clears it", () => {
+    const { host } = tileHost({ ...KITCHEN, colSpan: 12, rowSpan: 3, arrange: { v: 1, parts: { icon: { spot: "tl" } } } });
+    const markup = text(card(host));
+    expect(markup).toMatch(/class="pc-opt on"[^>]*data-value=standard/);
+    expect(markup).toContain("The layout stored on it is kept but not drawn.");
   });
 
   it("gives a tile whose picture fills it only the reason, and a way to clear a stored layout", () => {
@@ -693,19 +716,19 @@ describe("a look on the whole page", () => {
     expect(text(card(host))).not.toContain("is on 3 tiles");
   });
 
-  it("uses a short tile's own way for Icon only, and Standard takes every layout off", () => {
+  it("puts Icon only on short tiles too, a short light with them, and Standard takes every layout off", () => {
     const { host } = pageHost();
     click(head(host), "data-value=icon");
     click(card(host), ">Use on whole page<");
-    expect(text(card(host))).toContain("Use Icon only on 4 tiles?");
+    expect(text(card(host))).toContain("Use Icon only on 5 tiles?");
     click(card(host), ">Use on ");
-    expect(tileAt(host, SHORT).showLabel).toBe(false);
-    expect(Object.hasOwn(tileAt(host, SHORT), "arrange")).toBe(false);
+    const iconOnly = { v: 1, parts: { icon: { spot: "mc", scale: 1.25 }, name: { hidden: true }, state: { hidden: true } } };
+    expect(tileAt(host, SHORT).arrange).toEqual(iconOnly);
+    expect(tileAt(host, SHORT_LIGHT).arrange).toEqual(iconOnly);
     click(head(host), "data-value=standard");
     click(card(host), ">Use on whole page<");
     click(card(host), ">Use on ");
-    for (const id of [OTHER, SCENE, OWN, SHORT]) expect(Object.hasOwn(tileAt(host, id), "arrange"), id).toBe(false);
-    expect(tileAt(host, SHORT).showLabel).not.toBe(false);
+    for (const id of [OTHER, SCENE, OWN, SHORT, SHORT_LIGHT]) expect(Object.hasOwn(tileAt(host, id), "arrange"), id).toBe(false);
   });
 
   it("closes the question when another edit changes the page", () => {

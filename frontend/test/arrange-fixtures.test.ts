@@ -76,7 +76,9 @@ function frameOf(f: Fixture, withArrange: boolean) {
 
 /** What the file's computed fields are now. */
 function computed(f: Fixture): Required<Pick<Fixture, "cell" | "unit" | "size" | "applies" | "content" | "native" | "expected">> {
-  const { cell, unit, model } = frameOf(f, false);
+  // With the key: it leaves the layout alone, but on a short tile that hides
+  // its text the layout is what the key changes.
+  const { cell, unit, model } = frameOf(f, true);
   if (model === undefined) throw new Error(`${f.name}: not drawn in One Look`);
   const layout = model.layout;
   const applies = layout.mode === "centred";

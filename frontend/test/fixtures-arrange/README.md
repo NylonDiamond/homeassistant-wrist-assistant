@@ -67,6 +67,11 @@ Free is offered only for tiles drawn in the centred layout. A tile whose
 picture fills it (a camera showing its picture, album art), a chart, and a
 stacked or strip tile ignore the key and draw every part as Default.
 
+One case changes the layout itself. A tile under 4 rows whose key hides the
+name and the state, and not the icon, is laid out with no name and no state.
+That draws only an icon, in the centred layout, and the key then places the
+icon. See `short-icon-only.json`.
+
 ## A file
 
 | Key | What it is |
@@ -96,6 +101,7 @@ rounded to 4 decimals; compare within 0.001.
 | `spots-middle-row.json` | The middle row (icon `mr`, name `ml` leading, state `mc`) on a switch, watch. |
 | `spots-bottom-row-iphone.json` | The bottom row (icon `bc`, name `br` trailing, state `bl`) on a sensor, iPhone. |
 | `drag-offset.json` | A drag: the icon moved from its native place, the name moved from a spot; the state not listed. |
+| `short-icon-only.json` | A short light whose key hides its name and state: laid out as only an icon, centred. |
 | `text-stays-inside.json` | Moved past the edges: the name is held in at the bottom, the state at the top and left, the icon hangs over. |
 | `scale-up-down-iphone.json` | Sizes: icon 150% about its centre, name 120% (native width kept), state 80% in a spot, iPhone. |
 | `hidden-parts.json` | Name and state hidden, icon 120% in the middle; hidden parts keep their rects. |

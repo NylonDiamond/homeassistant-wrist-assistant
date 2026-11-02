@@ -134,6 +134,13 @@ export function withArrangePart(
   return normalizeTileArrange({ v: 1, parts });
 }
 
+/** Whether the key hides the name and the state and keeps the icon. A tile
+ * under 4 rows, which ignores the key in every other case, is then laid out as
+ * only an icon, centred, and the key places the icon there. */
+export function arrangeHidesText(arrange: TileArrange | undefined): boolean {
+  return arrange?.parts.name?.hidden === true && arrange.parts.state?.hidden === true && arrange.parts.icon?.hidden !== true;
+}
+
 // ── placement ────────────────────────────────────────────────────────────
 
 /** A name's text alignment in its box. */

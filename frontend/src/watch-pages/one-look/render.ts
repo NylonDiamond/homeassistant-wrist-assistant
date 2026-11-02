@@ -88,16 +88,17 @@ import {
   ONE_LOOK_ACCESSORY_SCALE_RANGE,
   ONE_LOOK_GLYPH_INK_SHARE,
   ONE_LOOK_STATE_SCALE_RANGE,
+  ONE_LOOK_STRIP_ROWS,
   oneLookAccessoryGlyphShare,
   oneLookLayoutMetrics,
   oneLookStyleFactor,
   resolveOneLookLayout,
 } from "./layout.js";
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
-import { type OneLookArranged, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
+import { type OneLookArranged, arrangeHidesText, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
 import { type OneLookPhotoLight, oneLookGlowColour, oneLookLightPlacement } from "./glow.js";
 import { type OneLookTint, oneLookTintIsWhite, oneLookTintOf, oneLookTintRGB8 } from "./tint.js";
-import { type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
+import { NO_STATE, type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
 
 /** Which of a tile's own parts are left undrawn: the glyph (its icon or a
  * person's photo, and the glow with it), the name, and the state line. */
@@ -740,17 +741,20 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   const centred = oneLookCentredGlyph(device) && picture === "none" && !isChart;
   const reservesBar = ONE_LOOK_CHOICES.brightnessBar && !bar.fill
     && (ks.role.kind === "light" || ks.keepsBarRoom || ks.barLevel !== undefined);
+  // A short tile whose layout hides its text is only an icon: the layout gets
+  // no text, and draws it centred.
+  const onlyIcon = rowSpan < ONE_LOOK_STRIP_ROWS && arrangeHidesText(normalizeTileArrange(tile.arrange));
   const init: OneLookLayoutInputInit = {
     device,
     size: { width: f.width, height: f.height },
     colSpan,
     rowSpan,
-    name,
-    state: ks.state,
+    name: onlyIcon ? "" : name,
+    state: onlyIcon ? NO_STATE : ks.state,
     hasIcon: base !== "" || photo !== undefined || cutout !== undefined,
     accessory: ks.accessory,
     isChart,
-    ...(ks.bigValue === undefined ? {} : { bigValue: ks.bigValue }),
+    ...(ks.bigValue === undefined || onlyIcon ? {} : { bigValue: ks.bigValue }),
     centred,
     topBar: centred && reservesBar,
     // A cut-out photo is laid out by its own aspect, not the icon's (a wide
@@ -764,7 +768,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   let layout = resolveOneLookLayout(init, measurer);
   // A wide weather tile's big value that found no room: laid out again with
   // the state that stands in for it.
-  if (ks.bigValue !== undefined && layout.bigValue === undefined && ks.stateWithoutBig !== undefined && !sameLine(ks.stateWithoutBig, ks.state)) {
+  if (!onlyIcon && ks.bigValue !== undefined && layout.bigValue === undefined && ks.stateWithoutBig !== undefined && !sameLine(ks.stateWithoutBig, ks.state)) {
     const again: OneLookLayoutInputInit = { ...init, state: ks.stateWithoutBig };
     delete (again as { bigValue?: unknown }).bigValue;
     layout = resolveOneLookLayout(again, measurer);
