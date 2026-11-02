@@ -27,8 +27,16 @@ import { LibraryStore, menuDoneText, menusMadeSince, placeBefore, tickDoneText }
 import { tickItem } from "../src/watch-pages/library-editing-io.js";
 import { CAMERA, CHEN, CHEN_MENU, DOORS, HOME_MENU, JESSE, LIGHTS, PAGE1, PHONE, QUICK, SMART, STARTER, summary } from "./library-fixture.js";
 
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** Until an Undo has run all the way: it says "Undoing…" until then, and it
+ * can load a module on the way (`restorePlace`), which takes as long as it
+ * takes on a busy machine, so no fixed count of ticks is enough. Then a few
+ * ticks more for what follows it. */
 const flush = async () => {
-  for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await tick();
+  while (laterToast()?.busy === true) await tick();
+  for (let i = 0; i < 5; i++) await tick();
 };
 
 describe("the toast of a write that saved at once", () => {
