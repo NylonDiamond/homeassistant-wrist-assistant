@@ -9,6 +9,8 @@ Nothing here talks to a live Home Assistant.
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -74,6 +76,21 @@ def test_a_minimal_arrangement_saves(mod) -> None:  # noqa: F811
         _ok(mod, arrange)
 
 
+def test_every_part_the_panel_can_move_saves(mod) -> None:  # noqa: F811
+    for name in ("icon", "name", "state", "bar", "button"):
+        _ok(mod, {"v": 1, "parts": {name: {"spot": "bc", "dx": -0.142, "dy": 0.1, "scale": 1.37}}})
+
+
+def test_every_key_in_the_shared_fixtures_saves(mod) -> None:  # noqa: F811
+    # The panel and the apps read these keys, so a part they know and this
+    # guard does not would draw in the panel and then refuse to save.
+    folder = Path(__file__).parent.parent / "frontend" / "test" / "fixtures-arrange"
+    files = sorted(folder.glob("*.json"))
+    assert files
+    for file in files:
+        _ok(mod, json.loads(file.read_text(encoding="utf-8"))["arrange"])
+
+
 def test_absent_or_null_is_default(mod) -> None:  # noqa: F811
     mod.validate_document("pages", _pages(_tile()), check_items=True)
     _ok(mod, None)
@@ -118,7 +135,7 @@ def test_parts_that_are_not_an_object_are_refused(mod) -> None:  # noqa: F811
 def test_an_unknown_part_is_refused(mod) -> None:  # noqa: F811
     for name in ("glow", "photo", "Icon", ""):
         assert _refusal(mod, {"v": 1, "parts": {"icon": {}, name: {}}}) == (
-            f'{AT}.parts has the unknown part "{name}"; the parts are icon, name and state'
+            f'{AT}.parts has the unknown part "{name}"; the parts are icon, name, state, bar and button'
         )
 
 

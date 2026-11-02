@@ -989,7 +989,7 @@ def _check_icon_glow(glow: Any, at: str) -> None:
 _ARRANGE_KEY = "arrange"
 _ARRANGE_VERSION = 1
 _ARRANGE_KEYS = ("v", "parts")
-_ARRANGE_PARTS = ("icon", "name", "state")
+_ARRANGE_PARTS = ("icon", "name", "state", "bar", "button")
 _ARRANGE_PART_KEYS = ("spot", "dx", "dy", "scale", "hidden")
 _ARRANGE_SPOTS = ("tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br")
 # Inclusive ranges: a move as a share of the tile's width or height, and a
@@ -1015,8 +1015,8 @@ def _check_arrange(arrange: Any, at: str) -> None:
     ``at`` names the tile by page and index.
 
     The setting is an object with ``v`` 1 and, when present, ``parts``: an
-    object keyed by ``icon``, ``name`` and ``state``, so at most three. Each
-    part is an object with, when present, ``spot`` one of the nine spots
+    object keyed by ``icon``, ``name``, ``state``, ``bar`` and ``button``, so at
+    most five. Each part is an object with, when present, ``spot`` one of the nine spots
     (``tl`` to ``br``), ``dx`` and ``dy`` finite numbers from -0.5 to 0.5,
     ``scale`` a finite number from 0.8 to 1.5 and ``hidden`` a bool. Any
     other key, at any level, is refused: unlike the rest of a tile, this is
@@ -1041,7 +1041,7 @@ def _check_arrange(arrange: Any, at: str) -> None:
     for name, part in parts.items():
         if name not in _ARRANGE_PARTS:
             raise WatchConfigValidationError(
-                f'{where}.parts has the unknown part "{name}"; the parts are icon, name and state'
+                f'{where}.parts has the unknown part "{name}"; the parts are icon, name, state, bar and button'
             )
         at_part = f"{where}.parts.{name}"
         if not isinstance(part, dict):
