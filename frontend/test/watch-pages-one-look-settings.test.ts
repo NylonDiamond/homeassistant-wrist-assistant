@@ -158,7 +158,7 @@ describe("Icon and color in One Look", () => {
 
   it("words the icon size and the state icons for One Look", () => {
     const light = drawn(tile("light.desk"), true);
-    expect(light).toMatch(/Leave empty for Auto, or pick 8 to \d+ pt\. The icon sits where it always did and shrinks if the state or name needs the room\./);
+    expect(light).toContain("Leave empty for Auto, or pick 8 to 400 pt. A size that fits gives way to the state and name. A larger one draws over them, and the tile cuts it off at its edges.");
     expect(light).toContain(ONE_LOOK_STATE_ICONS_NOTE);
   });
 });

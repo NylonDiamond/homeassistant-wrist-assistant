@@ -444,6 +444,8 @@ function storedNumber(value: unknown): number | undefined {
 export interface OneLookOldSizes {
   readonly nameSize: number;
   readonly iconSize: number;
+  /** How far a set Icon Size goes past `iconSize`. */
+  readonly iconGrow?: number;
   readonly iconOffset: number;
   readonly stateSize?: number;
 }
@@ -475,13 +477,16 @@ export function oneLookOldSizes(
   const heightShare = look === "iphone" ? (room ? 0.42 : 0.6) : (room ? 0.54 : 0.68);
   const fit = Math.min(room ? cell.width * 0.64 : cell.width * 0.7, cell.height * heightShare);
   const iconOverride = storedNumber(tile.iconSizeOverride);
-  const iconSize = iconOverride !== undefined
-    ? Math.max(8, Math.min(look === "iphone" ? iconOverride * scale : iconOverride, fit))
+  const iconAsked = iconOverride === undefined ? undefined : look === "iphone" ? iconOverride * scale : iconOverride;
+  const iconSize = iconAsked !== undefined
+    ? Math.max(8, Math.min(iconAsked, fit))
     : Math.max(10, Math.min(fit, (room ? 36 : 40) * (look === "iphone" ? scale : 1)));
+  const iconGrow = iconAsked === undefined ? 0 : Math.max(0, iconAsked - iconSize);
   const stateOverride = storedNumber(tile.badgeFontSizeOverride);
   return {
     nameSize,
     iconSize,
+    ...(iconGrow > 0 ? { iconGrow } : {}),
     iconOffset: watchIconVerticalOffset(tile, cell.height),
     ...(stateOverride === undefined ? {} : { stateSize: stateOverride * scale }),
   };
@@ -516,6 +521,7 @@ export function oneLookTileStyle(
   return {
     nameSize: old.nameSize,
     iconSize: old.iconSize,
+    ...(old.iconGrow === undefined ? {} : { iconGrow: old.iconGrow }),
     iconOffset: old.iconOffset,
     stateScale: oneLookStyleFactor(storedNumber(tile.badgeFontSizeOverride), staticBadgeSize(colSpan, rowSpan), ONE_LOOK_STATE_SCALE_RANGE),
     ...(old.stateSize === undefined ? {} : { stateSize: old.stateSize }),

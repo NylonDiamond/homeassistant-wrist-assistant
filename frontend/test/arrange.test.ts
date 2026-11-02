@@ -34,7 +34,7 @@ import {
   nudgedArrangePart,
   setArrangePickedPart,
 } from "../src/watch-pages/arrange-model.js";
-import { setWatchTileArrange } from "../src/watch-pages/tile-settings-model.js";
+import { setWatchTileArrange, setWatchTileIconSize } from "../src/watch-pages/tile-settings-model.js";
 import { renderArrangeSection } from "../src/watch-pages/arrange-card.js";
 import {
   tileArrangeShown,
@@ -167,6 +167,44 @@ function watchInput(states: Record<string, HassEntityState>): WatchPagePreviewIn
 }
 const onWatch = (t: WatchPageTile, cols = 6, rows = 4, states = lit("light.kitchen")) =>
   text(renderWatchTileFace(t, cellOf(cols, rows), watchInput(states), UNIT));
+
+describe("an Icon Size past what fits", () => {
+  const model = (size: number | undefined) => watchTileOneLookModel(light(size === undefined ? {} : { iconSizeOverride: size }), cellOf(6, 4), watchInput(lit("light.kitchen")), UNIT)!;
+
+  it("grows the icon about its centre, over the text, which stays where it was", () => {
+    const fits = model(50).layout;
+    const grown = model(150).layout;
+    expect(grown.mode).toBe("centred");
+    expect(grown.stateRect).toEqual(fits.stateRect);
+    expect(grown.textOrigin).toEqual(fits.textOrigin);
+    expect(grown.name).toEqual(fits.name);
+    expect(grown.discRect.x + grown.discRect.width / 2).toBeCloseTo(fits.discRect.x + fits.discRect.width / 2, 5);
+    expect(grown.discRect.y + grown.discRect.height / 2).toBeCloseTo(fits.discRect.y + fits.discRect.height / 2, 5);
+    expect(grown.discRect.height).toBeGreaterThan(grown.size.height);
+    expect(grown.glyphSize / fits.glyphSize).toBeCloseTo(grown.discRect.width / fits.discRect.width, 5);
+  });
+
+  it("grows a little for a little: no jump just past the size that fits", () => {
+    const edge = model(38).layout.discRect.width;
+    const past = model(39).layout.discRect.width;
+    expect(past).toBeGreaterThan(edge);
+    expect(past - edge).toBeLessThan(3);
+  });
+
+  it("changes nothing for a size that fits, or for Auto", () => {
+    expect(model(undefined).style.iconGrow).toBeUndefined();
+    expect(model(20).style.iconGrow).toBeUndefined();
+    expect(model(150).style.iconGrow).toBeGreaterThan(0);
+  });
+
+  it("stores up to 400 under One Look, and the tile's own largest under the old look", () => {
+    const start = { schemaVersion: 1, pages: [{ id: PAGE_ID, name: "P", items: [{ id: TILE_ID, gridCol: 0, gridRow: 0, ...KITCHEN }] }] } as WatchPagesDocument;
+    const stored = (d: WatchPagesDocument) => watchPageTiles((d.pages as WatchPage[])[0])[0]!.iconSizeOverride;
+    expect(stored(setWatchTileIconSize(start, PAGE_ID, TILE_ID, 400, { oneLook: true }))).toBe(400);
+    expect(setWatchTileIconSize(start, PAGE_ID, TILE_ID, 401, { oneLook: true })).toBe(start);
+    expect(setWatchTileIconSize(start, PAGE_ID, TILE_ID, 400)).toBe(start);
+  });
+});
 
 describe("One Look draws the arrangement", () => {
   it("moves the glyph and its glow together to a spot, at its size", () => {

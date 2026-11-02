@@ -87,6 +87,10 @@ export interface OneLookTileStyle {
   readonly iconSize?: number;
   /** Points, negative is up. */
   readonly iconOffset: number;
+  /** How far a set Icon Size goes past `iconSize`, the largest that leaves
+   * room for the text, in points. The layout is made at `iconSize`, then the
+   * icon grows by this about its centre: over the text, cut off by the tile. */
+  readonly iconGrow?: number;
   /** State Size over the look's own, held to 0.75 to 1.5. A drawn tile goes
    * by `stateSize` instead. */
   readonly stateScale: number;
@@ -458,7 +462,27 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
 
 type Unscaled = Omit<OneLookLayout, "textScale" | "nameScale" | "stateScale" | "stateSize" | "glyphExtent">;
 
-function keepScales(layout: Unscaled, input: OneLookLayoutInput): OneLookLayout {
+/** The layout with its icon grown by the tile's `iconGrow` about its centre,
+ * after the layout that fits is chosen, so the text stays where it was. */
+function grownGlyph(layout: Unscaled, input: OneLookLayoutInput): Unscaled {
+  const grow = input.style.iconGrow ?? 0;
+  const box = layout.discRect;
+  if (!(grow > 0) || layout.mode !== "centred" || !layout.glyphAtOldPlace || !(box.width > 0)) return layout;
+  const more = input.glyphIsPhoto ? grow * ONE_LOOK_OLD_PLACE_PHOTO_SHARE : grow * input.glyphExtent / ONE_LOOK_GLYPH_INK_SHARE;
+  const factor = (box.width + more) / box.width;
+  const about = (r: OneLookRect): OneLookRect => ({
+    x: midX(r) - r.width * factor / 2, y: midY(r) - r.height * factor / 2, width: r.width * factor, height: r.height * factor,
+  });
+  return {
+    ...layout,
+    discRect: about(box),
+    glyphSize: layout.glyphSize * factor,
+    ...(layout.glyphInk === undefined ? {} : { glyphInk: about(layout.glyphInk) }),
+  };
+}
+
+function keepScales(unscaled: Unscaled, input: OneLookLayoutInput): OneLookLayout {
+  const layout = grownGlyph(unscaled, input);
   return {
     ...layout,
     textScale: input.textScale,

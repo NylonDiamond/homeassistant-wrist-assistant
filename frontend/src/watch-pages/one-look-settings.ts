@@ -88,7 +88,7 @@ export const ONE_LOOK_STATE_ICONS_NOTE = "An icon or color per state. A state's 
 
 /** The line under Icon size. */
 export function oneLookIconSizeHint(top: number): string {
-  return `Leave empty for Auto, or pick 8 to ${top} pt. The icon sits where it always did and shrinks if the state or name needs the room.`;
+  return `Leave empty for Auto, or pick 8 to ${top} pt. A size that fits gives way to the state and name. A larger one draws over them, and the tile cuts it off at its edges.`;
 }
 
 /** Dim when off on a light, the one kind One Look dims. */

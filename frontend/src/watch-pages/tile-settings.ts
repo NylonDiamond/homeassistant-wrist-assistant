@@ -188,6 +188,7 @@ import {
   type WatchSlideDirection,
   WATCH_FONT_SIZE_RANGE,
   WATCH_HEADER_TEXT_SIZE_RANGE,
+  ONE_LOOK_ICON_SIZE_MAX,
   WATCH_ICON_SIZE_RANGE,
   WATCH_ICON_TAP_ANIMATIONS,
   WATCH_TRIGGER_TARGET_DOMAINS,
@@ -2681,14 +2682,16 @@ function renderIconSize(host: TileSettingsHost): TemplateResult {
   const s = watchTileIconSettings(host.tile);
   // The next whole number above a largest size with a fraction stands for
   // that size (`watchTileIconSizeValue`), so the box and a drag reach it.
-  const top = watchTileIconSizeTop(s.iconSizeMax);
+  const looksOne = oneLook(host);
+  const top = looksOne ? ONE_LOOK_ICON_SIZE_MAX : watchTileIconSizeTop(s.iconSizeMax);
   const mixed = pickedMixed(host, (t) => watchTileIconSettings(t).iconSize);
   const shown = typedNumber(typed(host, "iconSize"), mixed ? undefined : s.iconSize);
   const set = (v: number | undefined) => {
     if (v === undefined) return commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null), { typing: true });
     // Each picked tile has its own largest size: the first that refuses says why.
-    const reason = firstPicked(host, () => watchIconSizeRefusal(v, watchTileIconSettings(host.tile).iconSizeMax));
-    commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, v), { typing: true, ...reasonOf(reason) });
+    const reason = looksOne ? watchWholeRefusal(v, WATCH_ICON_SIZE_RANGE.min, ONE_LOOK_ICON_SIZE_MAX)
+      : firstPicked(host, () => watchIconSizeRefusal(v, watchTileIconSettings(host.tile).iconSizeMax));
+    commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, v, { oneLook: looksOne }), { typing: true, ...reasonOf(reason) });
   };
   return html`${typingField(host, "iconSize", html`<div class="ts-with-link">
       ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: mixed ? MIXED_WORD : "Auto", unit: "pt", rawTyping: true })}

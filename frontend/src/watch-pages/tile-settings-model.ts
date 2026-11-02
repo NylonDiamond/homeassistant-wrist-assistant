@@ -534,18 +534,24 @@ export function watchTileIconSizeValue(size: number, max: number): number | unde
   return n <= watchTileIconSizeTop(max) ? Math.max(WATCH_ICON_SIZE_RANGE.min, max) : undefined;
 }
 
-/** Icon Size: `watchTileIconSizeValue` for the tile's
- * `watchTileMaxIconSize`, or `null` for Auto, which removes the key. The
- * stored value is not clamped later when the tile is resized; the watch
- * clamps it. */
+/** The largest Icon Size One Look takes on any tile. Past what fits the icon
+ * grows over the text and the tile cuts it off; the old look still holds it
+ * to `watchTileMaxIconSize`. */
+export const ONE_LOOK_ICON_SIZE_MAX = 400;
+
+/** Icon Size: `watchTileIconSizeValue` for the tile's largest (under One
+ * Look `ONE_LOOK_ICON_SIZE_MAX`, else `watchTileMaxIconSize`), or `null` for
+ * Auto, which removes the key. The stored value is not clamped later when the
+ * tile is resized; the watch clamps it. */
 export function setWatchTileIconSize(
   document: WatchPagesDocument,
   pageId: string,
   tileId: string,
   size: number | null,
+  options: { oneLook?: boolean } = {},
 ): WatchPagesDocument {
   return setKey(document, pageId, tileId, "iconSizeOverride", (tile) =>
-    size === null ? REMOVE : watchTileIconSizeValue(size, watchTileMaxIconSize(tile)),
+    size === null ? REMOVE : watchTileIconSizeValue(size, options.oneLook === true ? ONE_LOOK_ICON_SIZE_MAX : watchTileMaxIconSize(tile)),
   );
 }
 
