@@ -1637,10 +1637,6 @@ describe("dragging a tile's own parts (Arrangement, Free)", () => {
     const bigTile = flat((el.renderArrangePicture as (p: WatchPage, t: WatchPageTile) => unknown).call(el, page, tileOf("T-BIG")));
     expect(bigTile).toContain(`class="pe-head-tile arr"`);
     expect(bigTile).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
-    // The head's live tiles are pictures only: no parts to drag there.
-    const headTile = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile, as: string) => unknown).call(el, page, tileOf("T-BIG"), "on"));
-    expect(headTile).toContain(`class="pe-head-tile"`);
-    expect(headTile).not.toContain("pe-part");
     const head = el.layoutArrange as { scale: number; stage: { size: { width: number; height: number } } };
     const onStage = el.stageArrange as { scale: number };
     expect(head.scale).toBeGreaterThan(onStage.scale);
@@ -1847,7 +1843,7 @@ describe("the two pictures", () => {
     expect([moved2.gridCol, moved2.gridRow]).toEqual([2, 6]);
   });
 
-  it("draws the inspector's large tile from the picture being edited, and with the shape a resize asks for", () => {
+  it("takes the selected tile's picture from the picture being edited, with the shape a resize asks for", () => {
     const { el, page } = both("T-BOTTOM");
     const tile = (page().items as WatchPageTile[]).find((t) => t.id === "T-BOTTOM")!;
     const withScreens = (iphone: Record<string, Rect>) => ({
@@ -1857,9 +1853,8 @@ describe("the two pictures", () => {
     const wide = withScreens({ "T-BOTTOM": { col: 0, row: 0, colSpan: 12, rowSpan: 2 } });
     /** The drawn tile's width over its height. */
     const shape = (on: WatchPage): number => {
-      const drawn = flat((el.renderTileHeadPicture as (p: WatchPage, t: WatchPageTile, as: undefined) => unknown).call(el, on, tile, undefined));
-      const m = /pe-head-tile" style=width:(\d+)px;height:(\d+)px/.exec(drawn.replaceAll('"width', "width").replaceAll('style="', "style="))!;
-      return Number(m[1]) / Number(m[2]);
+      const { placed } = (el.selectedTilePicture as (p: WatchPage, t: WatchPageTile) => { placed: { width: number; height: number } }).call(el, on, tile);
+      return placed.width / placed.height;
     };
     el.editScreen = "watch";
     const onWatch = shape(wide);

@@ -1,12 +1,11 @@
 // The tile inspector's rare rows and its Hold and slide pad (tile-settings.ts).
 //
-// Rare rows (the state icons, the icon's size and shadow, Animate while on,
+// The rare rows (the state icons, the icon's size and shadow, Animate while on,
 // the label's font size and shadow, the state's text size and shadow, the
-// bar's border and shadow, the tap's animation) fold behind one More line at
-// the foot of their section while the inspector stands fewer than four
-// columns. That width test is pure CSS; here the markup is read: which rows
-// carry the fold, which never fold because they hold a value of their own,
-// what the More line names, and how its open state is kept.
+// bar's border and shadow, the tap's animation) are always drawn now. The one
+// fold left is a Custom layout's Exact place in the top card: which row carries
+// it, when it stands open because the part holds a value of its own, what its
+// More line names, and how its open state is kept.
 //
 // Hold and slide is one arrow pad: four direction buttons around a small
 // tile, and the picked direction's rows in one box under it.
@@ -101,10 +100,7 @@ const STATES = {
   "lock.door": { entity_id: "lock.door", state: "locked", attributes: { friendly_name: "Door" } },
 };
 
-/** Every group open: these look at the rows inside them. */
-const openGroups = () => new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true]));
-
-function tileHost(t: WatchPageTile, uiState = openGroups()): { host: TileSettingsHost; draft: WatchPagesDraft; updates: () => number } {
+function tileHost(t: WatchPageTile, uiState = new Map<string, unknown>()): { host: TileSettingsHost; draft: WatchPagesDraft; updates: () => number } {
   const draft = new WatchPagesDraft({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Living", items: [t] }] }, 1);
   const pageNow = () => (draft.document.pages as WatchPage[])[0]!;
   let updates = 0;
@@ -137,11 +133,12 @@ function tileHost(t: WatchPageTile, uiState = openGroups()): { host: TileSetting
   return { host, draft, updates: () => updates };
 }
 
-/** One section of the groups, from its heading to the next section. */
+/** One section of the settings, in the top card or a card, from its heading
+ * to the next section. */
 function part(text: string, id: string): string {
-  const at = text.indexOf(`<section class="ts-sec" data-part=${id} `);
+  const at = text.search(new RegExp(`<section class="ts-sec( ts-top-part)?" data-part=${id} `));
   if (at < 0) throw new Error(`no ${id} section`);
-  const next = text.slice(at + 1).search(/<section class="ts-(sec|grp)"/);
+  const next = text.slice(at + 1).search(/<section class="ts-(sec|grp)/);
   return text.slice(at, next < 0 ? undefined : at + 1 + next);
 }
 
@@ -162,71 +159,47 @@ const drawn = (t: WatchPageTile, uiState?: Map<string, unknown>) => flat(renderT
 
 // ── rare rows ────────────────────────────────────────────────────────────
 
-describe("rare rows at their defaults", () => {
-  it("fold behind one More line per section that names each with its value", () => {
+describe("the rows that used to fold", () => {
+  it("are all drawn at their defaults, with no More line in any card", () => {
     const text = drawn(tile("light.desk", LIGHT_AS_SAVED));
-    expect(moreWords(part(text, "icon"))).toBe("More State icons and colors, Icon size: Auto, Icon shadow: off");
-    expect(moreWords(part(text, "text"))).toBe("More Font size: Auto, Text shadow: on");
-    // In the State cards' order: the value's shadow, the text's size, the bar's.
-    expect(moreWords(part(text, "state"))).toBe("More Text shadow: on, Text size: Auto, Bar border: off, Bar shadow: off");
-    expect(moreWords(part(text, "whenOff"))).toBe("More Animate while on: off");
-    // Tap animation is a part of one rare row: the whole part folds, and its
-    // More line follows it.
-    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=text`));
-    expect(tap).toMatch(/^<div class="ts-rare" \?data-shown=false><section class="ts-sec" data-part=tapAnimation /);
-    expect(moreWords(tap)).toMatch(/^More Tap animation: \S/);
+    const cards = text.slice(text.indexOf(`<div class="ts-groups">`));
+    expect(cards).not.toContain("ts-rare");
+    expect(cards).not.toContain("ts-more");
+    expect(moreWords(text)).toBeUndefined();
+    for (const row of ["State icons and colors", "Icon size", "Icon shadow"]) expect(part(text, "iconLook"), row).toContain(row);
+    for (const row of ["Font size", "Name shadow"]) expect(part(text, "text"), row).toContain(row);
+    for (const row of ["Text shadow", "State text", "Bar border", "Bar shadow"]) expect(part(text, "state"), row).toContain(row);
+    expect(part(text, "whenOff")).toContain("Animate while on");
+    expect(part(text, "tapAnimation")).toContain("Tap animation");
   });
 
-  it("put Font size and Text shadow last in the Name section, after Label color, each in a fold", () => {
+  it("put Font size and Name shadow last in the Name section, after Name color", () => {
     const name = part(drawn(tile("light.desk", LIGHT_AS_SAVED)), "text");
-    const order = ["Weight", "Design", "Label color", "Font size", "Text shadow"].map((w) => name.indexOf(w));
+    const order = ["Weight", "Design", "Name color", "Font size", "Name shadow"].map((w) => name.indexOf(w));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    expect(rareAround(name, "Font size")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
-    expect(rareAround(name, ">Text shadow</span>")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
-    // The common rows carry no fold.
-    expect(name.slice(0, name.indexOf("Label color"))).not.toContain("ts-rare");
   });
 
-  it("fold a State card of nothing else whole, and only the rare rows of the others", () => {
+  it("keep each State card whole, a card of one row with its heading", () => {
     const state = part(drawn(tile("light.desk", LIGHT_AS_SAVED)), "state");
-    // State text holds only its size: the card, heading and all, folds.
-    expect(rareAround(state, "<span>State text</span>")).toMatch(/^<div class="ts-rare" \?data-shown=false><div class="ts-group">\s*<div class="ts-sub-h">$/);
-    // The bar's style and color stay; its border and shadow fold.
+    expect(state.slice(state.indexOf("<span>State text</span>"))).toContain(">Size</span>");
     const bar = state.slice(state.indexOf("<span>State bar</span>"));
-    expect(bar.slice(0, bar.indexOf("Bar color"))).not.toContain("ts-rare");
-    expect(rareAround(bar, "Bar border")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
+    const order = ["Bar color", "Bar border", "Bar shadow"].map((w) => bar.indexOf(w));
+    expect(order.every((at) => at >= 0)).toBe(true);
+  });
+
+  it("stand the same way with a value of their own, which the part counts as changed", () => {
+    const { host } = tileHost(tile("light.desk", { ...LIGHT_AS_SAVED, labelFontSizeOverride: 14, stateBarBorder: true, badgeFontSizeOverride: 9 }));
+    const text = flat(renderTileInspector(host));
+    expect(part(text, "text")).toContain("Font size");
+    expect(part(text, "text")).toContain(`<h4>Name</h4><span class="ts-dot"`);
+    expect(part(text, "state")).toContain("Bar border");
+    expect(part(text, "state")).toContain(`<h4>State</h4><span class="ts-dot"`);
+    expect(text.slice(text.indexOf(`<div class="ts-groups">`))).not.toContain("ts-rare");
   });
 });
 
-describe("a rare row that holds a value of its own", () => {
-  it("never folds, and its More line names only the rows still folded", () => {
-    const text = drawn(tile("light.desk", { ...LIGHT_AS_SAVED, labelFontSizeOverride: 14, iconShadow: true }));
-    const name = part(text, "text");
-    expect(rareAround(name, "Font size")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    expect(moreWords(name)).toBe("More Text shadow: on");
-    expect(moreWords(part(text, "icon"))).toBe("More State icons and colors, Icon size: Auto");
-  });
-
-  it("leaves no More line where every rare row of the section is changed", () => {
-    const text = drawn(tile("light.desk", { ...LIGHT_AS_SAVED, labelFontSizeOverride: 14, labelShadow: false, activeIconAnimationEnabled: true, iconTapAnimation: "bounce" }));
-    expect(moreWords(part(text, "text"))).toBeUndefined();
-    expect(moreWords(part(text, "whenOff"))).toBeUndefined();
-    // A changed Tap animation stands as an open part with no More after it.
-    const tap = text.slice(text.lastIndexOf(`<div class="ts-rare"`, text.indexOf(`data-part=tapAnimation `)), text.indexOf(`data-group=text`));
-    expect(tap).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    expect(moreWords(tap)).toBeUndefined();
-  });
-
-  it("counts a State row against what the State Reset would leave", () => {
-    const state = part(drawn(tile("light.desk", { ...LIGHT_AS_SAVED, stateBarBorder: true, badgeFontSizeOverride: 9 })), "state");
-    expect(moreWords(state)).toBe("More Text shadow: on, Bar shadow: off");
-    expect(rareAround(state, "<span>State text</span>")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    expect(rareAround(state, "Bar border")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-  });
-});
-
-describe("a rare row being typed in", () => {
+describe("a row being typed in", () => {
   /** The settings drawn while the box of `setting` has focus and holds
    * `text` (`typingField` keeps it; a draw drops typing of a box that has
    * no focus, `dropStaleTyping`). */
@@ -238,58 +211,64 @@ describe("a rare row being typed in", () => {
     });
     doc.activeElement = box;
     try {
-      return drawn(tile("light.desk", LIGHT_AS_SAVED), new Map<string, unknown>([...openGroups(), [`tile-settings:typed:${TILE_ID.toUpperCase()}:${setting}`, text]]));
+      return drawn(tile("light.desk", LIGHT_AS_SAVED), new Map<string, unknown>([[`tile-settings:typed:${TILE_ID.toUpperCase()}:${setting}`, text]]));
     } finally {
       doc.activeElement = was;
     }
   };
 
-  it("stays shown while its box is cleared back to the default, so the caret never folds away", () => {
+  it("keeps its box while it is cleared back to the default, so the caret stays", () => {
     // Font size backspaced empty: the override is gone, the box still has focus.
-    const name = part(typedDraw("fontSize", ""), "text");
-    expect(rareAround(name, "Font size")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    expect(moreWords(name)).toBe("More Text shadow: on");
-    // Icon size the same.
-    const icon = part(typedDraw("iconSize", ""), "icon");
-    expect(rareAround(icon, "Icon size")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    expect(moreWords(icon)).toBe("More State icons and colors, Icon shadow: off");
+    expect(part(typedDraw("fontSize", ""), "text")).toContain("Font size");
+    expect(part(typedDraw("iconSize", ""), "iconLook")).toContain("Icon size");
     // State's Text size, whose card holds nothing else.
     const state = part(typedDraw("badgeFontSizeOverride", ""), "state");
-    expect(rareAround(state, "<span>State text</span>")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    expect(moreWords(state)).toBe("More Text shadow: on, Bar border: off, Bar shadow: off");
-  });
-
-  it("folds again once its box is left", () => {
-    const name = part(drawn(tile("light.desk", LIGHT_AS_SAVED), openGroups()), "text");
-    expect(rareAround(name, "Font size")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
+    expect(state.slice(state.indexOf("<span>State text</span>"))).toContain(">Size</span>");
   });
 });
 
-describe("the More line", () => {
-  it("opens its section's rows in place, reads Fewer, and is kept per section in the fold memory", () => {
-    const uiState = openGroups();
-    const { host, updates } = tileHost(tile("light.desk", LIGHT_AS_SAVED), uiState);
-    fire(renderTileInspector(host), `data-more=text `);
-    expect(updates()).toBe(1);
-    expect(sectionOpen(uiState, MORE_FOLD_MODULE, "text", true)).toBe(true);
-    const text = flat(renderTileInspector(host));
-    const name = part(text, "text");
-    expect(moreWords(name)).toBe("Fewer");
-    expect(name).toContain(`aria-expanded=true`);
-    expect(rareAround(name, "Font size")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
-    // The other sections stay folded.
-    expect(moreWords(part(text, "icon"))).toMatch(/^More /);
-    // The open state follows the person from tile to tile.
-    expect(moreWords(part(drawn(tile("light.desk", LIGHT_AS_SAVED), uiState), "text"))).toBe("Fewer");
-    fire(renderTileInspector(host), `data-more=text `);
-    expect(sectionOpen(uiState, MORE_FOLD_MODULE, "text", true)).toBe(false);
+describe("the More line of a Custom layout", () => {
+  /** A tile in the Custom layout, its icon picked and at a spot of its own. */
+  const custom = (entry: Record<string, unknown> = { spot: "tr" }) => tile("light.desk", { ...LIGHT_AS_SAVED, arrange: { v: 1, parts: { icon: entry } } });
+
+  it("is the one fold left: Exact place, in the top card", () => {
+    const text = drawn(custom());
+    const arrange = part(text, "arrange");
+    expect(moreWords(arrange)).toBe("More Exact place");
+    expect(rareAround(arrange, "Across")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
+    expect(text.slice(text.indexOf(`<div class="ts-groups">`))).not.toContain("ts-more");
   });
 
-  it("shows only under four columns, by the inspector's own width, and never outside the groups", () => {
+  it("is gone, its rows shown, while the part holds a place of its own", () => {
+    const arrange = part(drawn(custom({ spot: "tr", dx: 0.1 })), "arrange");
+    expect(moreWords(arrange)).toBeUndefined();
+    expect(rareAround(arrange, "Across")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
+  });
+
+  it("opens its rows in place, reads Fewer, and is kept in the fold memory", () => {
+    const uiState = new Map<string, unknown>();
+    const { host, updates } = tileHost(custom(), uiState);
+    fire(renderTileInspector(host), `data-more=arrange `);
+    expect(updates()).toBe(1);
+    expect(sectionOpen(uiState, MORE_FOLD_MODULE, "arrange", true)).toBe(true);
+    const arrange = part(flat(renderTileInspector(host)), "arrange");
+    expect(moreWords(arrange)).toBe("Fewer");
+    expect(arrange).toContain(`aria-expanded=true`);
+    expect(rareAround(arrange, "Across")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
+    // The open state follows the person from tile to tile.
+    expect(moreWords(part(drawn(custom(), uiState), "arrange"))).toBe("Fewer");
+    fire(renderTileInspector(host), `data-more=arrange `);
+    expect(sectionOpen(uiState, MORE_FOLD_MODULE, "arrange", true)).toBe(false);
+  });
+
+  it("folds only in the top card, by CSS, and shows nowhere else", () => {
     const sheet = tileSettingsStyles.cssText;
-    expect(sheet).toMatch(/@container insp \(width < 1580px\) \{\s*\.ts-groups \.ts-rare:not\(\[data-shown\]\) \{ display: none; \}\s*\.ts-groups button\.ts-more \{/);
+    expect(sheet).toContain(".ts-top .ts-rare:not([data-shown]) { display: none; }");
+    expect(sheet).toMatch(/\.ts-top button\.ts-more \{/);
     expect(sheet).toContain(".ts-rare { display: contents; }");
     expect(sheet).toContain("button.ts-more { display: none; }");
+    expect(sheet).not.toContain("ts-groups .ts-rare");
+    expect(sheet).not.toContain("ts-groups button.ts-more");
   });
 });
 

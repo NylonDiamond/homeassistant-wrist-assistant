@@ -641,7 +641,7 @@ describe("a rule's style through the stand-in tile", () => {
     for (const section of ["icon", "state", "text", "action"]) style.uiState.set(`tile-settings:open:${section}`, true);
     const text = flatten(renderTileSettings(style, { sections: ["icon", "state", "text", "action"] }));
     expect(text).toContain("Ask before running");
-    expect(text).toContain("Show label");
+    expect(text).toContain("Show name");
     for (const gone of ["Single tap", "Hold and slide", "Hide when off", "State icons and colors", "Target temperature", "Current temperature", "Dim when off", ">Label<"]) {
       expect(text, gone).not.toContain(gone);
     }
@@ -651,7 +651,7 @@ describe("a rule's style through the stand-in tile", () => {
     const s = setup(smartPage([LIGHTS]));
     const style = smartStyleHost(s.host, R1);
     style.uiState.set("tile-settings:open:text", true);
-    check(renderTileSettings(style, { sections: ["text"] }), "Text shadow", false);
+    check(renderTileSettings(style, { sections: ["text"] }), "Name shadow", false);
     expect((s.rule(R1).tileStyle as JsonObject).labelShadow).toBe(false);
     s.draft.undo();
     expect(Object.hasOwn(s.rule(R1).tileStyle as JsonObject, "labelShadow")).toBe(false);

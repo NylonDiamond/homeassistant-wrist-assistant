@@ -18,15 +18,14 @@ import {
   LABEL_HIDDEN_NOTE,
   NO_ICON_GLOW_NOTE,
   NO_ICON_NOTE,
-  TILE_GROUPS_FOOT,
+  TILE_INSPECTOR_GROUP_WORDS,
+  TILE_INSPECTOR_GROUPS,
+  TILE_INSPECTOR_PARTS,
+  type TileInspectorGroup,
   type TileInspectorPart,
-  openTileGroup,
   renderTileInspector,
   renderTileSettings,
-  tileGroupOfPart,
-  tileGroupOpen,
-  tileGroupSummary,
-  tileHueWord,
+  tileInspectorParts,
   watchTileDrawsNoIcon,
   watchTileInspectorPartChanged,
   watchTileInspectorPartReset,
@@ -126,8 +125,7 @@ function tileHost(t: WatchPageTile): { host: TileSettingsHost; draft: WatchPages
     deviceSiblings: () => ({ selects: [], switches: [], sensors: [], all: [] }),
     smartRuleId: undefined,
     busy: false,
-    // Every group open: these look at the rows inside them.
-    uiState: new Map<string, unknown>(["color", "text", "surface"].map((g) => [`tile-inspector-groups:open:${g}`, true])),
+    uiState: new Map<string, unknown>(),
     apply: (next: WatchPagesDocument) => draft.apply(next),
     endCoalesce: () => draft.endCoalesce(),
     selectTile: () => undefined,
@@ -139,13 +137,23 @@ function tileHost(t: WatchPageTile): { host: TileSettingsHost; draft: WatchPages
   return { host, draft, updates: () => updates };
 }
 
-/** One section of the groups, from its heading to the next section. */
+/** One section of the settings, in the top card or in a card, from its heading
+ * to the next section. */
 function part(text: string, id: string): string {
-  const at = text.indexOf(`<section class="ts-sec" data-part=${id} `);
+  const at = text.search(new RegExp(`<section class="ts-sec( ts-top-part)?" data-part=${id} `));
   if (at < 0) throw new Error(`no ${id} section`);
-  const next = text.slice(at + 1).search(/<section class="ts-(sec|grp)"/);
+  const next = text.slice(at + 1).search(/<section class="ts-(sec|grp)/);
   return text.slice(at, next < 0 ? undefined : at + 1 + next);
 }
+
+/** The top card of a markup, to the first card under it. */
+const topCard = (text: string): string => text.slice(text.indexOf(`<section class="ts-top" `), text.indexOf(`<div class="ts-groups">`));
+
+/** The cards under the top card. */
+const cards = (text: string): string => text.slice(text.indexOf(`<div class="ts-groups">`));
+
+/** The part ids of a markup, in the order they stand. */
+const partIds = (text: string): string[] => [...text.matchAll(/<section class="ts-sec[^"]*" data-part=(\w+) /g)].map((m) => m[1]!);
 
 const changed = (t: WatchPageTile, p: TileInspectorPart) => watchTileInspectorPartChanged(tileHost(t).host, p);
 
@@ -171,9 +179,12 @@ describe("the tile's own kind's card", () => {
     // keeps a smaller one, with its iPhone tag.
     expect(card).toMatch(/<section class="ts-sec" data-part=special aria-label=Camera>\s*<div class="sec-b ts-sec-b">/);
     expect(card).toMatch(/<section class="ts-sec" data-part=phone aria-label=[^>]+>\s*<div class="ts-sec-h ts-sec-sub"><h5>[^<]+<\/h5><span class="ts-dev-tag"/);
-    expect(does.indexOf("<h4>Entity</h4>")).toBeLessThan(does.indexOf(`class="ts-kind"`));
-    expect(does.indexOf("<h4>Tap</h4>")).toBeGreaterThan(does.indexOf(`class="ts-kind"`));
-    expect(does.indexOf("<h4>Tap animation</h4>")).toBeGreaterThan(does.indexOf("<h4>Tap</h4>"));
+    // What it controls and the tap stand in the top card; the rest of What it
+    // does comes after the kind's card.
+    expect(does).not.toContain("data-part=entity");
+    expect(does).not.toContain("data-part=tap ");
+    expect(does.indexOf("data-part=action ")).toBeGreaterThan(does.indexOf(`class="ts-kind"`));
+    expect(does.indexOf("data-part=tapAnimation ")).toBeGreaterThan(does.indexOf("data-part=action "));
   });
 
   it("is left out where the tile's kind holds nothing of its own", () => {
@@ -191,18 +202,30 @@ describe("a section that differs from its defaults", () => {
     }
   });
 
-  it("splits Icon and color: Color, Icon, Glow, When it is off and Tap animation each count only their own keys", () => {
+  it("splits Icon and color: Color, Icon, Icon look, Glow, When it is off and Tap animation each count only their own keys", () => {
     expect(changed(tile("light.desk", { color: "#FF0000" }), "color")).toBe(true);
     expect(changed(tile("light.desk", { color: "#FF0000" }), "icon")).toBe(false);
     expect(changed(tile("light.desk", { icon: "star.circle" }), "icon")).toBe(true);
     expect(changed(tile("light.desk", { icon: "star.circle" }), "color")).toBe(false);
-    expect(changed(tile("light.desk", { iconSizeOverride: 24 }), "icon")).toBe(true);
-    expect(changed(tile("light.desk", { stateColors: { on: "#FF0000" } }), "icon")).toBe(true);
+    expect(changed(tile("light.desk", { icon: "star.circle" }), "iconLook")).toBe(false);
+    expect(changed(tile("light.desk", { iconPhotoId: "photo-1" }), "icon")).toBe(true);
+    expect(changed(tile("light.desk", { iconPhotoId: "photo-1" }), "iconLook")).toBe(false);
+    expect(changed(tile("light.desk", { iconSizeOverride: 24 }), "iconLook")).toBe(true);
+    expect(changed(tile("light.desk", { iconSizeOverride: 24 }), "icon")).toBe(false);
+    expect(changed(tile("light.desk", { stateColors: { on: "#FF0000" } }), "iconLook")).toBe(true);
+    expect(changed(tile("light.desk", { stateColors: { on: "#FF0000" } }), "icon")).toBe(false);
     expect(changed(tile("light.desk", { iconGlow: { mode: "off" } }), "glow")).toBe(true);
     expect(changed(tile("light.desk", { dimWhenOff: false }), "whenOff")).toBe(true);
     expect(changed(tile("light.desk", { dimWhenOff: true }), "whenOff")).toBe(false);
     expect(changed(tile("light.desk", { iconTapAnimation: "bounce" }), "tapAnimation")).toBe(true);
     expect(changed(tile("light.desk", { iconTapAnimation: "bounce" }), "glow")).toBe(false);
+  });
+
+  it("splits the tap: the single tap counts for Tap, the rest for Hold and slide", () => {
+    expect(changed(tile("light.desk", { singleTapAction: "openControl" }), "tap")).toBe(true);
+    expect(changed(tile("light.desk", { singleTapAction: "openControl" }), "action")).toBe(false);
+    expect(changed(tile("light.desk", { requiresConfirmation: true }), "action")).toBe(true);
+    expect(changed(tile("light.desk", { requiresConfirmation: true }), "tap")).toBe(false);
   });
 
   it("counts a State, Border or Background key only when the rows read other than they would after Reset", () => {
@@ -213,39 +236,51 @@ describe("a section that differs from its defaults", () => {
     expect(changed(tile("light.desk", { backgroundPattern: "dots" }), "background")).toBe(true);
   });
 
-  it("marks the section with the dot and Reset, and its group with the count", () => {
-    const { host } = tileHost(tile("light.desk", { color: "#FF0000", borderStyle: "line", iconTapAnimation: "bounce" }));
+  it("marks the section with the dot and Reset, and its card with the count", () => {
+    const { host } = tileHost(tile("light.desk", { iconSizeOverride: 30, borderStyle: "line", iconTapAnimation: "bounce" }));
     const text = flat(renderTileInspector(host));
-    expect(part(text, "color")).toContain(`<h4>Color</h4><span class="ts-dot"`);
+    expect(part(text, "iconLook")).toContain(`<h4>Icon</h4><span class="ts-dot"`);
     expect(part(text, "border")).toContain(`>Reset</button>`);
-    expect(part(text, "icon")).not.toContain("ts-dot");
-    expect(text).toMatch(/data-group=color [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
-    expect(text).toMatch(/data-group=surface [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
-    expect(text).toMatch(/data-group=does [^]*?<span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
-    expect(text).not.toMatch(/data-group=text [^]*?<span class="ts-grp-n">[^]*?data-group=surface/);
+    expect(part(text, "glow")).not.toContain("ts-dot");
+    const count = (id: string, n: number) => new RegExp(`data-group=${id} [^]*?<div class="ts-grp-h"><h3 class="ts-grp-t">[^<]+</h3><span class="ts-grp-n"><i aria-hidden="true"></i>${n} changed</span>`);
+    expect(text).toMatch(count("color", 1));
+    expect(text).toMatch(count("surface", 1));
+    expect(text).toMatch(count("does", 1));
+    expect(text).toMatch(/data-group=text [^]*?<div class="ts-grp-h"><h3 class="ts-grp-t">Text<\/h3><\/div>/);
     // The border's own Reset at the foot of its rows is the heading's now.
     expect(part(text, "border")).toContain(`class="ts-after ts-reset"`);
+  });
+
+  it("marks a part of the top card with a dot that puts it back, and only a changed one", () => {
+    const { host } = tileHost(tile("light.desk", { color: "#FF0000" }));
+    const text = flat(renderTileInspector(host));
+    expect(part(text, "color")).toContain(`class="ts-dot ts-dot-btn" title=Put color back to its default`);
+    expect(part(text, "icon")).not.toContain("ts-dot");
+    fire(renderTileInspector(host), "title=Put color back to its default");
+    expect(host.tile.color).not.toBe("#FF0000");
   });
 });
 
 // ── Reset puts back that section only ────────────────────────────────────
 
 describe("a section's Reset", () => {
-  const busy = { color: "#FF0000", iconSizeOverride: 30, iconShadow: true, iconGlow: { mode: "off" }, dimWhenOff: false,
+  const busy = { color: "#FF0000", icon: "star.circle", iconPhotoId: "photo-1", iconSizeOverride: 30, iconShadow: true, iconGlow: { mode: "off" }, dimWhenOff: false,
     iconTapAnimation: "bounce", labelFontWeight: "bold", labelShadow: false, borderStyle: "line", backgroundPattern: "dots",
-    singleTapAction: "openControl", hideWhenInactive: true };
+    singleTapAction: "openControl", requiresConfirmation: true, hideWhenInactive: true, stateIcons: { on: "bolt" }, stateColors: { on: "#00FF00" } };
 
   it("puts each section back and leaves the others as they are, required keys at their defaults", () => {
     const cases: [TileInspectorPart, (t: WatchPageTile) => void][] = [
       ["color", (t) => { expect(t.color).not.toBe("#FF0000"); expect(t.iconSizeOverride).toBe(30); }],
-      ["icon", (t) => { expect(t.iconSizeOverride).toBeUndefined(); expect(t.iconShadow).toBe(false); expect(t.color).toBe("#FF0000"); }],
-      ["glow", (t) => { expect(t.iconGlow).toBeUndefined(); expect(t.dimWhenOff).toBe(false); }],
+      ["icon", (t) => { expect(t.icon).not.toBe("star.circle"); expect(t.iconPhotoId).toBeUndefined(); expect(t.iconSizeOverride).toBe(30); expect(t.iconShadow).toBe(true); expect(t.color).toBe("#FF0000"); }],
+      ["iconLook", (t) => { expect(t.iconSizeOverride).toBeUndefined(); expect(t.iconShadow).toBe(false); expect(t.stateIcons).toBeUndefined(); expect(t.stateColors).toBeUndefined(); expect(t.icon).toBe("star.circle"); expect(t.iconPhotoId).toBe("photo-1"); expect(t.color).toBe("#FF0000"); }],
+      ["glow",(t) => { expect(t.iconGlow).toBeUndefined(); expect(t.dimWhenOff).toBe(false); }],
       ["whenOff", (t) => { expect(t.dimWhenOff).toBeUndefined(); expect(t.iconGlow).toEqual({ mode: "off" }); }],
       ["tapAnimation", (t) => { expect(t.iconTapAnimation).toBe("replace"); expect(t.iconShadow).toBe(true); }],
       ["text", (t) => { expect(t.labelFontWeight).toBeUndefined(); expect(t.labelShadow).toBe(true); expect(t.borderStyle).toBe("line"); }],
       ["border", (t) => { expect(t.borderStyle ?? "none").toBe("none"); expect(t.backgroundPattern).toBe("dots"); }],
       ["background", (t) => { expect(t.backgroundPattern ?? "none").toBe("none"); expect(t.borderStyle).toBe("line"); }],
-      ["action", (t) => { expect(t.singleTapAction).toBeUndefined(); expect(t.hideWhenInactive).toBe(true); }],
+      ["tap", (t) => { expect(t.singleTapAction).toBeUndefined(); expect(t.requiresConfirmation).toBe(true); expect(t.hideWhenInactive).toBe(true); }],
+      ["action", (t) => { expect(t.requiresConfirmation).toBeUndefined(); expect(t.singleTapAction).toBe("openControl"); expect(t.hideWhenInactive).toBe(true); }],
       ["visibility", (t) => { expect(t.hideWhenInactive ?? false).toBe(false); expect(t.singleTapAction).toBe("openControl"); }],
     ];
     for (const [p, check] of cases) {
@@ -281,12 +316,12 @@ describe("rows that cannot do anything", () => {
     const none = tile("light.desk", { icon: "" });
     expect(watchTileDrawsNoIcon(none)).toBe(true);
     const text = flat(renderTileInspector(tileHost(none).host));
-    const icon = part(text, "icon");
-    expect(icon).toContain(NO_ICON_NOTE);
-    expect(icon).not.toContain("Icon size");
-    expect(icon).not.toContain("Icon shadow");
+    const look = part(text, "iconLook");
+    expect(look).toContain(NO_ICON_NOTE);
+    expect(look).not.toContain("Icon size");
+    expect(look).not.toContain("Icon shadow");
     // The state icons stay: a state's own icon still draws on a No icon tile.
-    expect(icon).toContain("State icons and colors");
+    expect(look).toContain("State icons and colors");
     const glow = part(text, "glow");
     expect(glow).toContain(NO_ICON_GLOW_NOTE);
     expect(glow).not.toContain(`role="radiogroup" aria-label=Glow`);
@@ -297,17 +332,17 @@ describe("rows that cannot do anything", () => {
     const stateIcon = tile("light.desk", { icon: "", stateIcons: { on: "lightbulb.fill" } });
     expect(watchTileDrawsNoIcon(stateIcon)).toBe(false);
     const text = flat(renderTileInspector(tileHost(stateIcon).host));
-    expect(part(text, "icon")).toContain("Icon size");
+    expect(part(text, "iconLook")).toContain("Icon size");
     expect(part(text, "glow")).toContain("Glow icon when on");
   });
 
-  it("Show label off hides the label's size, weight, design, shadow and color, with one line", () => {
+  it("Show name off hides the label's size, weight, design, shadow and color, with one line", () => {
     const hidden = tile("light.desk", { showLabel: false });
     expect(watchTileLabelDrawn(hidden)).toBe(false);
     const text = part(flat(renderTileInspector(tileHost(hidden).host)), "text");
-    expect(text).toContain("Show label");
+    expect(text).toContain("Show name");
     expect(text).toContain(LABEL_HIDDEN_NOTE);
-    for (const row of ["Font size", "aria-label=Weight", "aria-label=Design", "Text shadow", "Label color"]) expect(text, row).not.toContain(row);
+    for (const row of ["Font size", "aria-label=Weight", "aria-label=Design", "Name shadow", "Name color"]) expect(text, row).not.toContain(row);
     // The same in a card.
     expect(flat(renderTileSettings(tileHost(hidden).host, { sections: ["text"] }))).toContain(LABEL_HIDDEN_NOTE);
   });
@@ -345,87 +380,148 @@ describe("the pictures of a choice that is not about color", () => {
     expect(text).not.toContain("#FF0000");
   });
 
-  it("keep the real tile, large, for Glow (one, on) and When it is off (two, off)", () => {
+  it("leave Glow and When it is off no picture of the tile: the selected tile on the stage is the preview", () => {
     const text = flat(renderTileInspector(tileHost(tile("light.desk")).host));
-    expect(part(text, "glow").match(/<span class="pc-tile"/g)?.length).toBe(1);
-    expect(part(text, "glow")).toContain(`<div class="ts-big-pic" aria-hidden="true">`);
-    expect(part(text, "whenOff")).toContain(`class="field pc-field pc-size-large"`);
-    expect(part(text, "whenOff").match(/<span class="pc-tile"/g)?.length).toBe(2);
+    expect(part(text, "glow")).not.toContain(`class="pc-tile"`);
+    expect(part(text, "glow")).not.toContain("ts-big-pic");
+    expect(part(text, "whenOff")).not.toContain(`class="pc-tile"`);
+    expect(part(text, "whenOff")).toContain(`class="field pc-seg-field"`);
+    expect(part(text, "whenOff")).toContain("<h4>When it is off</h4>");
+    expect(part(text, "whenOff")).toContain("aria-label=When off");
   });
 });
 
-describe("the groups' rows (mock-pages, view 2, items 6 and 7)", () => {
-  /** A host with every group at where it starts: only What it does open. */
-  const fresh = (t: WatchPageTile) => {
-    const { host } = tileHost(t);
-    host.uiState.clear();
-    return host;
+// ── the top card ─────────────────────────────────────────────────────────
+
+describe("the top card", () => {
+  it("draws its parts in order, Controls, Tap, Icon, Color and Inside the tile, and none of them in the cards", () => {
+    const text = flat(renderTileInspector(tileHost(tile("light.desk")).host));
+    const top = partIds(topCard(text));
+    expect(top).toEqual(["entity", "tap", "icon", "color", "arrange"]);
+    const rest = partIds(cards(text));
+    for (const id of top) expect(rest, id).not.toContain(id);
+    for (const [id, title] of [["entity", "Controls"], ["tap", "Tap"], ["icon", "Icon"], ["color", "Color"], ["arrange", "Inside the tile"]] as const) {
+      expect(part(text, id)).toMatch(new RegExp(`<section class="ts-sec ts-top-part" data-part=${id} aria-label=${title}>\\s*<div class="ts-top-lab">`));
+    }
+  });
+
+  it("stands Controls beside Tap and Icon beside Color, and Inside the tile on its own", () => {
+    const text = topCard(flat(renderTileInspector(tileHost(tile("light.desk")).host)));
+    const rows = text.split(`<div class="ts-top-row `).slice(1).map((r) => partIds(r.slice(0, r.indexOf(`<section class="ts-sec ts-top-part" data-part=arrange `) >= 0 ? r.indexOf(`<section class="ts-sec ts-top-part" data-part=arrange `) : undefined)));
+    expect(rows).toEqual([["entity", "tap"], ["icon", "color"]]);
+  });
+
+  it("puts the head first, as the page editor hands it in", () => {
+    const text = flat(renderTileInspector(tileHost(tile("light.desk")).host, { head: { strings: [`<div class="the-head"></div>`], values: [] } as never }));
+    expect(topCard(text).indexOf(`class="the-head"`)).toBeLessThan(topCard(text).indexOf("data-part=entity"));
+  });
+
+  it("holds No icon and Default inside the icon's dropdown, its switch to a photo beside it", () => {
+    const { host } = tileHost(tile("light.desk"));
+    const closed = part(flat(renderTileInspector(host)), "icon");
+    expect(closed).toContain(`<div class="ts-top-src">`);
+    expect(closed).not.toContain(">No icon</button>");
+    expect(closed).not.toContain(">Default</button>");
+    host.symbols.toggle("pe:ts:symbol");
+    const open = part(flat(renderTileInspector(host)), "icon");
+    const at = open.indexOf(`class="sym-browse sym-menu"`);
+    expect(at).toBeGreaterThan(-1);
+    const menu = open.slice(at);
+    expect(menu.indexOf(">No icon</button>")).toBeGreaterThan(-1);
+    expect(menu.indexOf(">Default</button>")).toBeGreaterThan(menu.indexOf(">No icon</button>"));
+    expect(open.slice(0, at)).not.toContain(">No icon</button>");
+  });
+
+  it("offers the Rainbow swatch only while the tile holds a gradient or the rainbow, and no Form switch", () => {
+    const color = (extra: Record<string, unknown>) => part(flat(renderTileInspector(tileHost(tile("light.desk", extra)).host)), "color");
+    expect(color({ color: "#FF0000" })).not.toContain("aria-label=Rainbow");
+    expect(color({ color: "GRADIENT|#FF0000|#0000FF" })).toContain("aria-label=Rainbow");
+    expect(color({ color: "#FF0000" })).not.toContain(">Gradient<");
+    expect(color({ color: "GRADIENT|#FF0000|#0000FF" })).not.toContain(">Gradient<");
+  });
+
+  it("names the single tap Tap, the menu's own label kept but hidden by the card", () => {
+    const tap = part(flat(renderTileInspector(tileHost(tile("light.desk")).host)), "tap");
+    expect(tap).toContain(`<div class="ts-top-lab"><span>Tap</span></div>`);
+    expect(tap).toContain("<span>Single tap</span>");
+  });
+});
+
+// ── the cards under it ───────────────────────────────────────────────────
+
+describe("the cards under the top card", () => {
+  const GROUP_OF: Readonly<Record<string, TileInspectorGroup>> = {
+    entity: "top", tap: "top", icon: "top", color: "top", arrange: "top",
+    removed: "color", header: "color", fill: "color", iconLook: "color", whenOff: "color", glow: "color",
+    background: "surface", border: "surface",
+    text: "text", state: "text",
+    phoneTile: "does", special: "does", phone: "does", target: "does", opens: "does", request: "does", action: "does", tapAnimation: "does",
+    visibility: "where", size: "where", phoneExtras: "where",
   };
 
-  it("leads with the Color and icon row, then What it does, open, then one row each for the others, with the line under them", () => {
-    const text = flat(renderTileInspector(fresh(tile("lock.front_door"))));
-    expect(text.indexOf("data-group=color")).toBeLessThan(text.indexOf("data-group=does"));
-    expect(text.indexOf("data-group=does")).toBeLessThan(text.indexOf("data-group=text"));
-    expect(text.indexOf("data-group=text")).toBeLessThan(text.indexOf("data-group=surface"));
-    expect(text.indexOf("data-group=surface")).toBeLessThan(text.indexOf(TILE_GROUPS_FOOT));
-    expect(text).toContain(`<div class="ts-grp-h"><h3 class="ts-grp-t">What it does</h3>`);
-    expect(text).toContain("<h4>Entity</h4>");
-    expect(text).toContain("<h4>Tap</h4>");
-    for (const id of ["color", "text", "surface"]) expect(text).toContain(`<section class="ts-grp ts-grp-row" data-group=${id} `);
-    expect(text).not.toContain("<h4>Icon</h4>");
-    expect(text).toContain(TILE_GROUPS_FOOT);
-    expect(text.match(/class="ts-grp-btn" aria-expanded=false/g)).toHaveLength(3);
+  it("hold each part in one group, by the table", () => {
+    expect(Object.fromEntries(TILE_INSPECTOR_PARTS)).toEqual(GROUP_OF);
+    expect(TILE_INSPECTOR_PARTS).toHaveLength(Object.keys(GROUP_OF).length);
+    expect(TILE_INSPECTOR_GROUPS).toEqual(["top", "color", "surface", "text", "does", "where"]);
   });
 
-  it("opens a row on a press, and folds it again, and it stays as it was left", () => {
-    const host = fresh(tile("lock.front_door"));
-    const before = flat(renderTileInspector(host));
-    expect(before).not.toContain("<h4>Icon</h4>");
-    expect(tileGroupOpen(host.uiState, "color")).toBe(false);
-    fire(renderTileInspector(host), `Color and icon</span>`);
-    expect(tileGroupOpen(host.uiState, "color")).toBe(true);
-    const open = flat(renderTileInspector(host));
-    expect(open).toContain("<h4>Icon</h4>");
-    expect(open).toContain(`<section class="ts-grp" data-group=color `);
-    expect(open).toContain(`class="ts-grp-btn" aria-expanded=true`);
-    fire(renderTileInspector(host), `Color and icon</span>`);
-    expect(tileGroupOpen(host.uiState, "color")).toBe(false);
+  it("are titled Look, Background and border, Text, What it does and Where it shows, in that order and always open", () => {
+    const text = cards(flat(renderTileInspector(tileHost(tile("lock.front_door")).host)));
+    const drawn = [...text.matchAll(/<section class="ts-grp" data-group=(\w+) aria-label=([^>]+)>\s*<div class="ts-grp-h"><h3 class="ts-grp-t">([^<]+)<\/h3>/g)];
+    expect(drawn.map((m) => m[3])).toEqual(["Look", "Background and border", "Text", "What it does", "Where it shows"]);
+    for (const m of drawn) expect(TILE_INSPECTOR_GROUP_WORDS[m[1] as Exclude<TileInspectorGroup, "top">].title).toBe(m[3]);
+    // Nothing folds, nothing is summed up.
+    for (const gone of ["ts-grp-tog", "ts-grp-row", "ts-grp-rest", "ts-grp-btn", "ts-grp-d"]) expect(flat(renderTileInspector(tileHost(tile("light.desk")).host)), gone).not.toContain(gone);
   });
 
-  it("opens the group a part stands in, and says if it had to", () => {
-    const host = fresh(tile("lock.front_door"));
-    expect(tileGroupOfPart("background")).toBe("surface");
-    expect(tileGroupOfPart("action")).toBe("does");
-    expect(openTileGroup(host.uiState, "does")).toBe(false);
-    expect(openTileGroup(host.uiState, "surface")).toBe(true);
-    expect(openTileGroup(host.uiState, "surface")).toBe(false);
-  });
-
-  it("says each group's current choice at a glance", () => {
-    const host = fresh(tile("lock.front_door", { color: "#EC7212", icon: "lock.fill" }));
-    expect(tileGroupSummary(host, "color")).toBe("Orange, lock icon");
-    expect(tileGroupSummary(fresh(tile("light.desk")), "text")).toMatch(/, Name \+ State$/);
-    expect(tileGroupSummary(host, "surface")).toBe("Solid, no rules");
+  it("draw every part of the groups for a light, in the table's order", () => {
+    const { host } = tileHost(tile("light.desk"));
     const text = flat(renderTileInspector(host));
-    expect(text).toMatch(/<span class="ts-grp-d">Orange, lock icon<\/span>/);
+    expect(partIds(cards(text))).toEqual(
+      tileInspectorParts(host).filter((g) => g.group !== "top").flatMap((g) => g.parts).filter((p) => p !== "size"),
+    );
+    expect(partIds(cards(text))).toEqual(["fill", "iconLook", "whenOff", "glow", "background", "border", "text", "state", "action", "tapAnimation", "visibility"]);
   });
 
-  it("names a color in plain words", () => {
-    expect(tileHueWord("#FF3B30")).toBe("red");
-    expect(tileHueWord("#EC7212")).toBe("orange");
-    expect(tileHueWord("#FFD60A")).toBe("yellow");
-    expect(tileHueWord("#34C759")).toBe("green");
-    expect(tileHueWord("#13A79D")).toBe("teal");
-    expect(tileHueWord("#0A84FF")).toBe("blue");
-    expect(tileHueWord("#7B6CF0")).toBe("purple");
-    expect(tileHueWord("#FF3D8A")).toBe("pink");
-    expect(tileHueWord("#FFFFFF")).toBe("white");
-    expect(tileHueWord("#000000")).toBe("black");
-    expect(tileHueWord("#8E8E93")).toBe("grey");
+  it("carry the Watch and iPhone chips in Where it shows, ahead of its parts", () => {
+    const text = flat(renderTileInspector(tileHost(tile("light.desk")).host, { screens: { strings: [`<div class="the-chips"></div>`], values: [] } as never }));
+    const where = text.slice(text.indexOf("data-group=where "));
+    expect(where).toContain(`<div class="ts-where-screens" data-tile-part="tile"><div class="the-chips"></div></div>`);
+    expect(where.indexOf("the-chips")).toBeLessThan(where.indexOf("data-part=visibility"));
+    expect(text.slice(0, text.indexOf("data-group=where "))).not.toContain("the-chips");
   });
 
-  it("marks a folded group with changes by a blue dot alone, and an open one by its count", () => {
-    const host = fresh(tile("lock.front_door", { borderStyle: "line" }));
-    expect(flat(renderTileInspector(host))).toMatch(/<span class="ts-grp-n" title=1 changed><i aria-hidden="true"><\/i><\/span>/);
+  it("count a changed part on the card, the top card's parts on none", () => {
+    const text = flat(renderTileInspector(tileHost(tile("lock.front_door", { borderStyle: "line", color: "#FF0000" })).host));
+    expect(topCard(text)).not.toContain("ts-grp-n");
+    expect(text).toMatch(/<h3 class="ts-grp-t">Background and border<\/h3><span class="ts-grp-n"><i aria-hidden="true"><\/i>1 changed<\/span>/);
+    expect(text).toMatch(/<h3 class="ts-grp-t">Look<\/h3><\/div>/);
   });
 });
+
+// ── the Fill row ─────────────────────────────────────────────────────────
+
+describe("the Fill row", () => {
+  it("writes a gradient on Solid to Gradient, and a solid color on the way back", () => {
+    const { host } = tileHost(tile("light.desk", { color: "#FF0000" }));
+    const row = () => part(flat(renderTileInspector(host)), "fill");
+    expect(row()).toContain("Solid");
+    expect(row()).toContain("Gradient");
+    fire(renderTileInspector(host), ">Gradient</button>");
+    const color = host.tile.color as string;
+    expect(color).toMatch(/^GRADIENT\|#FF0000\|/);
+    fire(renderTileInspector(host), ">Solid</button>");
+    expect(host.tile.color).toBe("#FF0000");
+  });
+
+  it("is no part of a Clear photo tile, unless it holds a gradient so it can be put back", () => {
+    const clear = { iconPhotoId: "photo-1", iconPhotoLook: "clear" };
+    const partsOf = (extra: Record<string, unknown>) => tileInspectorParts(tileHost(tile("light.desk", { ...clear, ...extra })).host).flatMap((g) => g.parts);
+    expect(partsOf({ color: "#FF0000" })).not.toContain("fill");
+    expect(partsOf({ color: "GRADIENT|#FF0000|#0000FF" })).toContain("fill");
+    // Any other photo look, and a tile with no photo, keep it.
+    expect(tileInspectorParts(tileHost(tile("light.desk", { iconPhotoId: "photo-1", color: "#FF0000" })).host).flatMap((g) => g.parts)).toContain("fill");
+    expect(tileInspectorParts(tileHost(tile("light.desk", { color: "#FF0000" })).host).flatMap((g) => g.parts)).toContain("fill");
+  });
+});
+

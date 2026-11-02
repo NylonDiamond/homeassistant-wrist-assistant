@@ -307,7 +307,7 @@ describe("the Home map tile's settings", () => {
     expect(card).not.toContain("<h5>");
     for (const row of ["<span>Floor</span>", "<span>Room</span>", "Devices", "Room names"]) expect(card, row).toContain(row);
     // The tap's own sections come after it.
-    expect(does.indexOf("<h4>Tap animation</h4>")).toBeGreaterThan(does.indexOf("<span>Floor</span>"));
+    expect(does.indexOf("data-part=tapAnimation ")).toBeGreaterThan(does.indexOf("<span>Floor</span>"));
     // Nowhere else.
     expect(text.slice(0, text.indexOf(`data-group=does `))).not.toContain("<span>Floor</span>");
   });

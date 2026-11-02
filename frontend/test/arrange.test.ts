@@ -399,13 +399,14 @@ const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel
 const stored = (host: TileSettingsHost) => host.tile.arrange;
 
 describe("the Arrangement card", () => {
-  it("comes first in Text and layout under One Look, for tiles with their own parts", () => {
-    // No settings section of its own: an inspector part of Text and layout.
+  it("comes last in the top card under One Look, for tiles with their own parts", () => {
+    // No settings section of its own: an inspector part of the top card.
     expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 2)).toEqual(["size", "icon"]);
     expect(tileArrangeShown(tileHost(KITCHEN).host)).toBe(true);
-    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "text")?.parts).toEqual(["arrange", "text", "state"]);
+    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "top")?.parts).toEqual(["entity", "tap", "icon", "color", "arrange"]);
+    expect(tileInspectorParts(tileHost(KITCHEN).host).find((g) => g.group === "text")?.parts).toEqual(["text", "state"]);
     expect(tileArrangeShown(tileHost(KITCHEN, { oneLook: false }).host)).toBe(false);
-    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "text")?.parts).toEqual(["text", "state"]);
+    expect(tileInspectorParts(tileHost(KITCHEN, { oneLook: false }).host).find((g) => g.group === "top")?.parts).toEqual(["entity", "tap", "icon", "color"]);
     for (const entityId of ["spacer.x", "divider.line.light", "template.x", "map.x", "macro.x"]) {
       expect(arrangeOffered({ id: "x", entityId }), entityId).toBe(false);
     }

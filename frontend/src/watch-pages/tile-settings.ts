@@ -3956,7 +3956,6 @@ export const tileSettingsStyles = css`
   .ts-arr { display: flex; flex-direction: column; gap: 6px; }
   /* The looks: as wide as the section, each card a real tile, three in a row
      where they fit. The section's heading names them, so no title of their own. */
-  .ts-groups .ts-arr-looks .field.pc-field { display: block; padding: 0; }
   .ts-arr-looks .field.pc-field > span:first-child { display: none; }
   .ts-arr-looks .pc-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
   .ts-arr-looks .pc-opt { min-width: 0; padding: 6px 6px 7px; }
@@ -3992,7 +3991,8 @@ export const tileSettingsStyles = css`
   .ts-arr-part button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
   .ts-arr-moved { width: 5px; height: 5px; border-radius: 50%; background: var(--wa-accent); }
   .ts-arr-place { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding-top: 8px; }
-  .ts-groups .ts-arr-place .field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 0; min-width: 0; }
+  .ts-arr-place .field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 0; min-width: 0; }
+  .ts-top .ts-arr-place .seg.wide button { flex: 1 1 auto; padding: 0 8px; white-space: nowrap; }
   .ts-arr-spots {
     display: grid; grid-template-columns: repeat(3, 26px); gap: 3px; padding: 3px;
     border: 1px solid var(--wa-line-strong); border-radius: 9px;

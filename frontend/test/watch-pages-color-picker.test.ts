@@ -350,7 +350,7 @@ describe("every card draws the same picker", () => {
     const text = flat(renderTileSettings(host, { sections: ["icon", "text", "border", "background"] }));
     const list = pickers(text);
     expectSameShape(list);
-    expect(list.map((p) => p.heading)).toEqual(expect.arrayContaining(["Label color", "Border color", "Pattern color", "Effect color"]));
+    expect(list.map((p) => p.heading)).toEqual(expect.arrayContaining(["Name color", "Border color", "Pattern color", "Effect color"]));
     // Border, pattern and effect take Solid and Gradient; the tile's own
     // color too, its switch titled Color as the card's heading. No card has
     // a Rainbow form: it is a swatch.
