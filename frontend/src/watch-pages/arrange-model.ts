@@ -134,8 +134,8 @@ export function arrangeResizeNote(before: OneLookPreviewModel | undefined, after
 
 /**
  * The layout Custom starts from on a tile whose size gives it a layout of few
- * parts: it keeps what the tile draws now, in the middle (the name at the
- * bottom, the state at the top left), and hides what the tile does not draw, so
+ * parts: it keeps what the tile draws now (the icon in the middle, the name at
+ * the bottom, the state at the top left), and hides what the tile does not draw, so
  * nothing appears on a small tile that it has no room for. The eyes bring a
  * part back. Undefined for a tile that has its parts in the centred layout
  * already, or that keeps its own face.
@@ -144,12 +144,14 @@ export function arrangeStartFor(model: OneLookPreviewModel | undefined): TileArr
   if (model === undefined || arrangeFaceBlock(model) !== undefined || model.layout.mode === "centred") return undefined;
   const drawn = drawnParts(model);
   if (drawn.length === 0) return undefined;
+  // A tile with its parts in a row is thin: they start apart, as it drew them.
+  const row = model.layout.mode === "strip";
   return normalizeTileArrange({
     v: 1,
     parts: {
-      icon: drawn.includes("icon") ? { spot: "mc" } : { hidden: true },
-      name: drawn.includes("name") ? { spot: "bc" } : { hidden: true },
-      state: drawn.includes("state") ? { spot: "tl" } : { hidden: true },
+      icon: drawn.includes("icon") ? { spot: row ? "ml" : "mc" } : { hidden: true },
+      name: drawn.includes("name") ? (row ? { spot: "mr", scale: 0.8 } : { spot: "bc" }) : { hidden: true },
+      state: drawn.includes("state") ? { spot: row ? "tr" : "tl" } : { hidden: true },
     },
   });
 }

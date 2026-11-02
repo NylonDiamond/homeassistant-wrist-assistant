@@ -239,10 +239,10 @@ describe("the More line of a Custom layout", () => {
     expect(text.slice(text.indexOf(`<div class="ts-groups">`))).not.toContain("ts-more");
   });
 
-  it("is gone, its rows shown, while the part holds a place of its own", () => {
+  it("stays folded while the part holds a place of its own, so a drag never makes the rows jump", () => {
     const arrange = part(drawn(custom({ spot: "tr", dx: 0.1 })), "arrange");
-    expect(moreWords(arrange)).toBeUndefined();
-    expect(rareAround(arrange, "Across")).toMatch(/^<div class="ts-rare" \?data-shown=true>/);
+    expect(moreWords(arrange)).toBe("More Exact place");
+    expect(rareAround(arrange, "Across")).toMatch(/^<div class="ts-rare" \?data-shown=false>/);
   });
 
   it("opens its rows in place, reads Fewer, and is kept in the fold memory", () => {

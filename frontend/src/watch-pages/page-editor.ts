@@ -6364,7 +6364,7 @@ export class WaPageEditor extends LitElement {
     /* The grid a part snaps to, and in amber the lines it has landed on. */
     .pe-arr-grid {
       position: absolute; display: block; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
-      background-image: linear-gradient(to right, rgba(255, 255, 255, .13) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, .13) 1px, transparent 1px);
+      background-image: linear-gradient(to right, rgba(255, 255, 255, .24) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, .24) 1px, transparent 1px);
     }
     .pe-arr-guide { position: absolute; display: block; background: rgb(255, 179, 64); }
     .pe-arr-guide.x { top: 0; bottom: 0; width: 1px; }
