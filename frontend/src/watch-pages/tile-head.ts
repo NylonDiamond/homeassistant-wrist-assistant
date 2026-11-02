@@ -318,18 +318,6 @@ export const tileHeadStyles = css`
     width: 100%; min-width: 0; height: 34px; min-height: 34px; padding: 0 10px; font-size: 14px; font-weight: 500; border-radius: 8px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
-  .ts-head-ent {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; height: 34px; padding: 0 10px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field);
-  }
-  .ts-head-ent-nm { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .ts-head-ent-ic { flex: none; }
-  .ts-head-ent-nm > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: 13px; color: var(--wa-ink); }
-  .ts-head-ent-nm > small {
-    flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 11.5px; color: var(--wa-hint, var(--wa-muted));
-  }
-  .ts-head-entity { font-size: 11.5px; color: inherit; }
   .ts-head-none { font-size: 12.5px; color: var(--wa-muted); }
   /* The facts: one link each, in the panel's link blue with its value
      underlined and an arrow, since a press jumps to its setting. */

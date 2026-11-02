@@ -345,7 +345,7 @@ describe("the tile's cards", () => {
     expect(mid).toContain(`aria-label="Name"`);
     // What the tile shows moved to What it does: the head only links to it.
     expect(mid).not.toContain(`<span class="ts-head-lab">Shows</span>`);
-    expect(text.slice(text.indexOf(`data-part=entity`))).toMatch(/<div class="ts-head-ent"><span class="ts-head-ent-nm">.*<b title=Smart Plug Dimmer>Smart Plug Dimmer<\/b><small><code class="ts-head-entity" title/s);
+    expect(text.slice(text.indexOf(`data-part=entity`))).toMatch(/<div class="ts-entity-pick">.*<span class="ent-name">Smart Plug Dimmer<\/span>/s);
     // The facts under the Name, each a link to its section with an arrow.
     const pills = [...mid.matchAll(/<button type="button" class="ts-pill ts-pill-link" data-goes=(\w+)[^>]*>([^<]+)<b[^>]*>([^<]+)<\/b><svg/g)].map((m) => `${m[1]} ${m[2]}${m[3]}`);
     expect(pills).toContain("entity Shows: light.smart_plug_dimmer");

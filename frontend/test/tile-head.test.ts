@@ -181,13 +181,14 @@ function inside(...selectors: { sel: string; data?: Record<string, string> }[]):
 }
 
 describe("the head's Shows", () => {
-  it("names the entity by its friendly name, then in grey its area and its id", () => {
+  it("names the entity by its friendly name, its area and its id, on a row that a click changes", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const shows = text.slice(text.indexOf(`data-part=entity`));
     expect(shows).toContain(`<h4>Entity</h4>`);
-    expect(shows).toContain(`<b title=Smart Plug Dimmer>Smart Plug Dimmer</b><small>Office · <code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code></small>`);
-    // A light's entity has no other way to say it here: no Change.
-    expect(shows).not.toContain(`class="link ts-head-change"`);
+    expect(shows).toContain(`<div class="ts-entity-pick">`);
+    expect(shows).toMatch(/<button type="button" class="ent-pick"[^>]*>.*<span class="ent-name">Smart Plug Dimmer<\/span>\s*<span class="ent-area">Office<\/span>\s*<span class="ent-id mono">light\.smart_plug_dimmer<\/span>/s);
+    // A tile always shows an entity, so its row has no x.
+    expect(shows.slice(0, shows.indexOf(`</section>`))).not.toContain(`class="ent-clear"`);
   });
 
   it("keeps the words of a tile with no entity", () => {

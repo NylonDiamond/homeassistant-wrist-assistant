@@ -37,6 +37,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
 import { type EntityPickSource, areaLookup, checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, templateBox, textField } from "../editors.js";
+import { WATCH_TILE_ENTITY_DOMAINS, isWatchTileEntityChoice, setWatchTileEntity } from "./tile-entity.js";
 import { sectionCard } from "../editor-chrome.js";
 import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
@@ -1297,7 +1298,8 @@ export function pickedInspectorParts(host: TileSettingsHost): {
     const any = TILE_INSPECTOR_PARTS.filter(([p, g]) => g === group && each.some((t) => t.parts.includes(p))).map(([p]) => p);
     const parts = any.filter(shared);
     if (parts.length > 0) groups.push({ group, parts });
-    // The entity is no setting, only a fact about one tile: nothing to miss.
+    // The entity belongs to one tile, and is changed with one tile picked:
+    // several tiles never share it, so it is nothing to miss.
     const left = any.filter((p) => !parts.includes(p) && p !== "removed" && p !== "entity");
     if (left.length > 0) hidden.set(group, left);
   }
@@ -1481,19 +1483,32 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
   }
 }
 
-/** What the tile shows: the kind's icon, the entity's friendly name, then in
- * grey its area and its id. */
+/** What the tile shows: the entity's name, area and id on one row, which a
+ * click turns into a search for another entity. The row has no label and no
+ * x: the part's heading names it, and a tile always shows an entity. */
 function renderEntityShown(host: TileSettingsHost, entityId: string): TemplateResult {
   const friendly = host.hass.states[entityId]?.attributes?.["friendly_name"];
-  const name = typeof friendly === "string" && friendly.trim() !== "" ? friendly.trim() : undefined;
+  const ref: EntityRef = {
+    entityId,
+    displayName: typeof friendly === "string" && friendly.trim() !== "" ? friendly.trim() : entityId,
+    domain: tileKind(entityId),
+  };
+  const view = host.hass as unknown as WatchHassView;
+  const pick = (next: EntityRef) => {
+    const nextId = next.entityId.trim();
+    if (nextId === "" || nextId === entityId) return;
+    // The Name box shows the label again, which may have moved with the entity.
+    host.uiState.delete(typedKey(host, "label"));
+    commit(host, "entity", (d) => setWatchTileEntity(d, host.pageId, host.tileId, watchEntityAddFromHass(view, nextId), watchEntityAddFromHass(view, entityId)), {
+      reason: isWatchTileEntityChoice(nextId) ? undefined : "Pick an entity from the list, or type a full entity id such as light.kitchen.",
+    });
+  };
   const area = areaLookup(host.hass)?.(entityId);
-  const icon = watchEntityDefaults(watchEntityAddFromHass(host.hass as unknown as WatchHassView, entityId), host.page).icon;
-  const glyph = icon === undefined ? undefined : host.icons.render(icon, 16, "#a1a1aa");
-  return html`<div class="ts-head-ent"><span class="ts-head-ent-nm">${glyph === undefined
-    ? nothing
-    : html`<svg class="ts-head-ent-ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">${glyph}</svg>`}${name === undefined
-    ? nothing
-    : html`<b title=${name}>${name}</b>`}<small>${area === undefined ? nothing : html`${area} · `}<code class="ts-head-entity" title=${entityId}>${entityId}</code></small></span></div>`;
+  return html`<div class="ts-entity-pick">${entityField({ hass: host.hass }, "", ref, pick, `pe:ts:entity:${host.tileId}`, {
+    domain: WATCH_TILE_ENTITY_DOMAINS,
+    clearable: false,
+    ...(area === undefined ? {} : { area }),
+  })}</div>${fieldNote(host, "entity")}`;
 }
 
 /** Whether a part is one only the iPhone reads, for the small iPhone tag. */
@@ -3991,6 +4006,8 @@ export const tileSettingsStyles = css`
   .ts-no-alpha .color-box { padding-right: 6px; }
 
   /* A row whose control needs the card's whole width: title above. */
+  .ts-entity-pick .field.entity-field { display: block; padding: 0; }
+  .ts-entity-pick .field.entity-field > span:first-child { display: none; }
   .ts-stack .field { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 2px 0; }
   .ts-stack .field.entity-field > :not(:first-child) { grid-column: 1; }
   .ts-with-link { display: flex; align-items: center; gap: 8px; min-width: 0; }

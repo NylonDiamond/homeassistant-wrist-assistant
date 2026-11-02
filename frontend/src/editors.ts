@@ -1611,6 +1611,8 @@ export interface EntityFieldOptions {
   /** Offer an x that removes the chosen entity. Off where the row beside the
    * field already has its own remove button, so two x's never sit together. */
   clearable?: boolean;
+  /** The chosen entity's area, drawn before its id on the chosen row. */
+  area?: string;
 }
 
 /** Whether a field's result list is open right now. The preset dialog asks so
@@ -1738,6 +1740,7 @@ export function entityField(host: Pick<EditorHost, "hass"> & Partial<Pick<Editor
       <button type="button" class="ent-pick" title=${`${name}\n${ref.entityId}\nClick to change`} @click=${edit}>
         <span class="ent-ico ${live && isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
         <span class="ent-name">${name}</span>
+        ${opts.area ? html`<span class="ent-area">${opts.area}</span>` : nothing}
         ${name === ref.entityId ? nothing : html`<span class="ent-id mono">${ref.entityId}</span>`}
         ${live ? html`<span class="ent-state">${live.state}</span>` : nothing}
       </button>
