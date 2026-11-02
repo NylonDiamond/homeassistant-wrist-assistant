@@ -11,14 +11,20 @@
 // exactly repeats the viewBox, none of which draw anything.
 //
 // Usage:
-//   node build-icons.mjs --src <dir of *.svg> [--only <file, one name per line>]
+//   node build-icons.mjs --src <dir of *.svg> [--only <file, one name per line>] [--merge]
 //
 // Source file names use the icon pack spelling (`lightbulb-fill.svg`); the
 // output is keyed by Apple's own (`lightbulb.fill`), because that is what the
 // saved documents and the watch both use.
+//
+// `--merge` starts from the bundle already shipped and adds or replaces only
+// the symbols in `--src`, for a symbol the original set lacks or draws in an
+// older shape than the devices do. Its SVG must be in the set's own units:
+// the outline's tight box at 22 points, as `WATCH_SYMBOL_EXPORT_SIZE` reads
+// it (the light bulb is 13.65 by 23.68).
 
 import { createHash } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { optimize } from "svgo";
@@ -71,8 +77,11 @@ const NUMBER = String.raw`-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?`;
 const LEADING_MOVE_RE = new RegExp(String.raw`^m\s*(${NUMBER})[\s,]*(${NUMBER})\s*(?=([-.\d])?)`);
 const absoluteMove = (_all, x, y, more) => `M${x}${y.startsWith("-") ? "" : " "}${y}${more === undefined ? "" : "l"}`;
 
-const icons = {};
+const merge = process.argv.includes("--merge");
+const icons = merge ? JSON.parse(gunzipSync(readFileSync(OUT)).toString("utf8")) : {};
+const shipped = Object.keys(icons).length;
 const skipped = [];
+const merged = [];
 
 for (const file of readdirSync(src).sort()) {
   if (!file.endsWith(".svg")) continue;
@@ -92,8 +101,10 @@ for (const file of readdirSync(src).sort()) {
   }
   // Several subpaths concatenate into one `d` without changing the drawing,
   // which saves repeating the element for every piece of a layered symbol.
+  if (merge) merged.push(`${name}${name in icons ? " (replaced)" : " (added)"}`);
   icons[name] = [paths.join(" "), viewBox];
 }
+if (merge) console.log(`build-icons: merged into the ${shipped} shipped: ${merged.join(", ") || "nothing"}`);
 
 if (only) {
   const missing = [...only].filter((n) => !(n in icons));
