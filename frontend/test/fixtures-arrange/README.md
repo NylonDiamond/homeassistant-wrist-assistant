@@ -112,3 +112,12 @@ rounded to 4 decimals; compare within 0.001.
 To rewrite the computed fields after changing a file's inputs or the
 panel's layout: `WA_WRITE_ARRANGE_FIXTURES=1 npx vitest run
 test/arrange-fixtures.test.ts` in the panel's `frontend`, then read the diff.
+
+## Which tiles draw the key
+
+The centred layout places the parts. On the watch a tile only has that layout
+when it fits, so a smaller tile ignores the key (`ignored-strip.json`), unless
+the key hides its name and state (`short-icon-only.json`). On the iPhone a tile
+with the key always takes the centred layout, whatever its size, and keeps it
+when its parts do not fit: the person placed them and sees them. Its glyph then
+stands at the centred layout's tiny floor (`small-tile-iphone.json`).

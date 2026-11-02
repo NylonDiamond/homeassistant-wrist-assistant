@@ -757,6 +757,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     ...(ks.bigValue === undefined || onlyIcon ? {} : { bigValue: ks.bigValue }),
     centred,
     topBar: centred && reservesBar,
+    ownLayout: device === "phone" && centred && normalizeTileArrange(tile.arrange) !== undefined,
     // A cut-out photo is laid out by its own aspect, not the icon's (a wide
     // photo must not rise beside the state as a narrow bulb may).
     glyphAspect: !centred ? 1 : cutout !== undefined ? oneLookCutoutAspect(cutout.aspect) : glyphAspectOf(measurer, base),

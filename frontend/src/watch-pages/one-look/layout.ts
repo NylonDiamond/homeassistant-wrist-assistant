@@ -168,6 +168,9 @@ export interface OneLookLayoutInput {
   readonly centred: boolean;
   /** The centred layout keeps a brightness bar's room across the top. */
   readonly topBar: boolean;
+  /** An iPhone tile with a layout of its own: the centred layout, whatever
+   * the tile's size, as the key places its parts and the person sees them. */
+  readonly ownLayout: boolean;
   /** The glyph's image's width over its height, and its longer side over
    * its font size (the measurer's `glyphAspect` and `glyphExtent`). */
   readonly glyphAspect: number;
@@ -195,6 +198,7 @@ export function oneLookLayoutInput(init: OneLookLayoutInputInit): OneLookLayoutI
     stripRows: ONE_LOOK_STRIP_ROWS,
     centred: false,
     topBar: false,
+    ownLayout: false,
     glyphAspect: ONE_LOOK_DEFAULT_GLYPH_ASPECT,
     glyphExtent: ONE_LOOK_DEFAULT_GLYPH_EXTENT,
     glyphIsPhoto: false,
@@ -450,6 +454,11 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
   const input = oneLookLayoutInput(given);
   const metrics = oneLookScaledText(oneLookMetrics(input.device), input.textScale, oneLookNameScale(input), input.style.stateScale, input.style.stateSize);
   const fitter = new OneLookTextFitter(input.device, measurer, metrics).styled(input.style);
+  if (input.ownLayout && input.centred) {
+    const roomy = centred(input, fitter, step("centred", { hasIcon: input.hasIcon }));
+    if (fits(roomy, fitter)) return keepScales(roomy, input);
+    return keepScales(centred(input, fitter, step("centred", { hasIcon: input.hasIcon, discFloor: oneLookCentredGlyphTinyFloor(input.device) })), input);
+  }
   for (const s of ladder(input)) {
     if (s.mode === "compact") return keepScales(compact(input, fitter), input);
     const layout = s.mode === "stacked" ? stacked(input, fitter, s)
@@ -518,7 +527,16 @@ function ladder(input: OneLookLayoutInput): Step[] {
     if (input.hasIcon) steps.push(step("centred", { discFloor: oneLookCentredGlyphTinyFloor(input.device) }));
   }
   steps.push(step(natural, { hasIcon: input.hasIcon }));
+  // An iPhone tile too narrow for a row has room for the centred layout long
+  // before it runs out of room for its text.
+  if (natural === "strip" && input.device === "phone" && input.centred && !centredFirst) {
+    steps.push(step("centred", { hasIcon: input.hasIcon }));
+    if (input.hasIcon) steps.push(step("centred", { discFloor: oneLookCentredGlyphTinyFloor(input.device) }));
+  }
   if (natural === "strip") steps.push(step("stacked", { hasIcon: input.hasIcon }));
+  if (natural === "strip" && input.device === "phone" && input.centred && !centredFirst && hasState && input.hasIcon) {
+    steps.push(step("centred", { withState: false, discFloor: oneLookCentredGlyphTinyFloor(input.device) }));
+  }
   // With Dynamic Type's larger text (never in the panel), a stacked tile
   // keeps its state by letting the disc go under its floor, then by turning
   // into a strip, before the state goes.

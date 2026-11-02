@@ -89,13 +89,45 @@ export function arrangeFrame(source: ArrangeFrameSource, tile: WatchPageTile): A
  * the centred layout places them. The words name what the tile is drawn as.
  */
 export function arrangeFreeBlock(model: OneLookPreviewModel | undefined): string | undefined {
+  const face = arrangeFaceBlock(model);
+  if (face !== undefined || model === undefined) return face;
+  if (model.layout.mode === "strip") return "On the watch, a tile under 4 rows keeps its parts in a row. Make it taller for more layouts.";
+  if (model.layout.mode !== "centred") return "On the watch, a tile this small has few layouts. Make it bigger for more.";
+  return undefined;
+}
+
+/** Why a tile's parts cannot move at any size: it has a face of its own. */
+export function arrangeFaceBlock(model: OneLookPreviewModel | undefined): string | undefined {
   if (model === undefined) return "This tile keeps its own face, so its parts cannot move.";
   if (model.picture === "camera") return "The camera's picture fills this tile, so its parts cannot move.";
   if (model.picture === "artwork") return "The album art fills this tile, so its parts cannot move.";
   if (model.chart !== undefined) return "A chart tile keeps its own layout, so its parts cannot move.";
-  if (model.layout.mode === "strip") return "A tile under 4 rows lays its parts out in a row. Make it taller to move them.";
-  if (model.layout.mode !== "centred") return "This tile is too small for its parts to move. Make it bigger to move them.";
   return undefined;
+}
+
+/** Which parts a model draws, whatever its layout's key then hides. */
+function drawnParts(model: OneLookPreviewModel): readonly ArrangePart[] {
+  const layout = model.layout;
+  return ARRANGE_PARTS.filter((part) => (part === "icon" ? layout.discRect.width > 0
+    : part === "name" ? layout.name.lines.length > 0
+    : layout.state !== undefined && !model.kind.stateHidden));
+}
+
+/**
+ * What a resize took from a tile, in the words of the line under the bar, or
+ * undefined when it took nothing. The tile is drawn from its size, so making
+ * it bigger brings back all of it.
+ */
+export function arrangeResizeNote(before: OneLookPreviewModel | undefined, after: OneLookPreviewModel | undefined, arrange: TileArrange | undefined): string | undefined {
+  if (before === undefined || after === undefined) return undefined;
+  if (arrange !== undefined && before.layout.mode === "centred" && after.layout.mode !== "centred") {
+    return "This tile is now too small for its layout on the watch, so it uses Standard. Make it bigger to bring the layout back.";
+  }
+  const left = drawnParts(after);
+  const lost = drawnParts(before).filter((part) => !left.includes(part));
+  if (lost.length === 0) return undefined;
+  const words = lost.length === 1 ? lost[0]! : `${lost.slice(0, -1).join(", ")} and ${lost[lost.length - 1]!}`;
+  return `This tile is now too small to show its ${words}. Make it bigger to bring ${lost.length === 1 ? "it" : "them"} back.`;
 }
 
 /** A ready made layout: nothing but a stored `arrange` key, so the apps draw

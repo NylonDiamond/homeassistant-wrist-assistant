@@ -3,12 +3,14 @@
 // on the whole page would change. Nothing here draws. The section is
 // `arrange-card.ts`.
 //
-// A look is a stored `arrange` key. A short tile lays its parts out in a row
-// and ignores that key, unless the key hides its name and its state
-// (`arrangeHidesText`): then it is drawn as only a centred icon. So a short
-// tile has two looks, Standard and Icon only.
+// A look is a stored `arrange` key. On the watch a short tile lays its parts
+// out in a row and ignores that key, unless the key hides its name and its
+// state (`arrangeHidesText`): then it is drawn as only a centred icon. So a
+// short watch tile has two looks, Standard and Icon only. On the iPhone a
+// layout is drawn at any size (`ownLayout` in the layout), so every tile with
+// parts has every look.
 
-import { arrangeFrame, arrangeFreeBlock, arrangeLookOfKey, arrangeOffered, ARRANGE_LOOKS, type ArrangeFrameSource, type ArrangeLook } from "./arrange-model.js";
+import { arrangeFaceBlock, arrangeFrame, arrangeFreeBlock, arrangeLookOfKey, arrangeOffered, ARRANGE_LOOKS, type ArrangeFrameSource, type ArrangeLook } from "./arrange-model.js";
 import { type WatchPage, type WatchPageTile, watchPageTiles } from "./model.js";
 import { arrangeHidesText, encodeTileArrange, normalizeTileArrange } from "./one-look/arrange.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
@@ -73,6 +75,15 @@ export function tileLooks(source: ArrangeFrameSource, tile: WatchPageTile): Tile
   const model = frameOf(source, baseTile)?.model;
   const name = model?.name || (typeof tile.customLabel === "string" ? tile.customLabel : "") || "A tile";
   const block = arrangeFreeBlock(model);
+  if (source.device === "iphone" && arrangeFaceBlock(model) === undefined && arrangeFrame(source, baseTile) !== undefined) {
+    // Read with every part on: a tile too small for Standard's parts still
+    // holds them, and a layout draws them.
+    const whole = arrangeFrame(source, tileWithLook(baseTile, "corners"))?.model ?? model;
+    return {
+      current: arrangeLookOfKey(stored), short: false, block: undefined, skip: undefined, name,
+      looks: ARRANGE_LOOKS.map((l) => ({ id: l.id, label: l.label, off: lookOff(whole)[l.id] })),
+    };
+  }
   if (isShortModel(model) && iconOnlyDraws(frameOf(source, tileWithLook(baseTile, "icon"))?.model)) {
     return {
       // Any other layout stored on it is not drawn, so it reads as Standard.
@@ -83,17 +94,23 @@ export function tileLooks(source: ArrangeFrameSource, tile: WatchPageTile): Tile
   if (block !== undefined || model === undefined) {
     return { current: arrangeLookOfKey(stored), short: false, looks: [], block, skip: skipWords(model), name };
   }
-  const noIcon = model.icon === "" && model.photo === undefined;
-  const noName = model.layout.name.lines.length === 0;
-  const noState = model.layout.stateRect === undefined || model.kind.stateHidden;
-  const off: Partial<Record<ArrangeLook, string>> = {
-    ...(noIcon ? { icon: "it has no icon", corners: "it has no icon" } : {}),
-    ...(noState ? { big: "it has no value" } : {}),
-    ...(noName ? { text: "it has no name" } : {}),
-  };
+  const off = lookOff(model);
   return {
     current: arrangeLookOfKey(stored), short: false, block: undefined, skip: undefined, name,
     looks: ARRANGE_LOOKS.map((l) => ({ id: l.id, label: l.label, off: off[l.id] })),
+  };
+}
+
+/** The looks a tile cannot use for lack of a part, and why. */
+function lookOff(model: OneLookPreviewModel | undefined): Partial<Record<ArrangeLook, string>> {
+  if (model === undefined) return {};
+  const noIcon = model.icon === "" && model.photo === undefined;
+  const noName = model.layout.name.lines.length === 0;
+  const noState = model.layout.stateRect === undefined || model.kind.stateHidden;
+  return {
+    ...(noIcon ? { icon: "it has no icon", corners: "it has no icon" } : {}),
+    ...(noState ? { big: "it has no value" } : {}),
+    ...(noName ? { text: "it has no name" } : {}),
   };
 }
 

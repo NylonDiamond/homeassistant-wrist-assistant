@@ -1,0 +1,104 @@
+{
+  "name": "small-tile-iphone",
+  "about": "A layout of its own on a light too small for the centred layout's parts, 2 by 2 on the iPhone: the tile takes that layout anyway, with its glyph at the tiny floor, and the key places the parts. The same tile on the watch ignores the key.",
+  "device": "iphone",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-0000000000E0",
+    "entityId": "light.desk",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 2,
+    "rowSpan": 2,
+    "customLabel": "Desk",
+    "color": "#8F7BEA"
+  },
+  "states": {
+    "light.desk": {
+      "state": "on",
+      "attributes": {
+        "brightness": 200
+      }
+    }
+  },
+  "cell": {
+    "width": 61.6667,
+    "height": 61.6667
+  },
+  "unit": 29.8333,
+  "size": {
+    "width": 51.6667,
+    "height": 51.6667
+  },
+  "applies": true,
+  "content": {
+    "x": 10,
+    "y": 10,
+    "width": 31.6667,
+    "height": 31.6667
+  },
+  "native": {
+    "icon": {
+      "x": 16.8333,
+      "y": 23.0805,
+      "width": 18,
+      "height": 18
+    },
+    "name": {
+      "x": 8,
+      "y": 24.0611,
+      "width": 35.6667,
+      "height": 17.6056
+    },
+    "state": {
+      "x": 10,
+      "y": 17,
+      "width": 30.723,
+      "height": 23.1
+    }
+  },
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "tr",
+        "scale": 0.8
+      },
+      "name": {
+        "spot": "bl"
+      }
+    }
+  },
+  "expected": {
+    "icon": {
+      "rect": {
+        "x": 27.2667,
+        "y": 10,
+        "width": 14.4,
+        "height": 14.4
+      },
+      "scale": 0.8,
+      "hidden": false
+    },
+    "name": {
+      "rect": {
+        "x": 10,
+        "y": 24.0611,
+        "width": 35.6667,
+        "height": 17.6056
+      },
+      "scale": 1,
+      "hidden": false,
+      "align": "leading"
+    },
+    "state": {
+      "rect": {
+        "x": 10,
+        "y": 17,
+        "width": 30.723,
+        "height": 23.1
+      },
+      "scale": 1,
+      "hidden": false
+    }
+  }
+}

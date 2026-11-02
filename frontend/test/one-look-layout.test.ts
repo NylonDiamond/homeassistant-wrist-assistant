@@ -1283,3 +1283,36 @@ describe("the layout's glyph extent", () => {
     expect(stacked.glyphExtent).toBe(1.25);
   });
 });
+
+describe("an iPhone tile too narrow for a row", () => {
+  const LIGHT = { name: "All Kitchen", state: word("On"), centred: true, topBar: true } as const;
+  const lay = (screen: Screen, colSpan: number, rowSpan: number, extra: Partial<OneLookLayoutInput> = {}) =>
+    resolveOneLookLayout({ device: deviceOf(screen), size: drawn(screen, colSpan, rowSpan), colSpan, rowSpan, ...LIGHT, ...extra }, fake);
+
+  it("keeps its text in the centred layout where a watch tile of its size would", () => {
+    const square = lay("phone402", 3, 3);
+    expect(square.mode).toBe("centred");
+    expect(square.name.lines.length).toBe(1);
+    expect(square.state).toBeDefined();
+    const thin = lay("phone402", 2, 3);
+    expect(thin.mode).toBe("centred");
+    expect(thin.name.lines.length).toBe(1);
+    expect(thin.state).toBeUndefined();
+  });
+
+  it("keeps a row wherever a row fits, and leaves the watch as it was", () => {
+    expect(lay("phone402", 4, 3).mode).toBe("strip");
+    expect(lay("phone402", 12, 3).mode).toBe("strip");
+    expect(lay("watch45mm198", 4, 3).mode).toBe("stacked");
+    expect(lay("watch45mm198", 2, 3).mode).toBe("compact");
+  });
+
+  it("draws a layout of its own at any size, parts and all", () => {
+    expect(lay("phone402", 2, 2).mode).toBe("compact");
+    const own = lay("phone402", 2, 2, { ownLayout: true });
+    expect(own.mode).toBe("centred");
+    expect(own.name.lines.length).toBe(1);
+    expect(own.state).toBeDefined();
+    expect(lay("phone402", 12, 3, { ownLayout: true }).mode).toBe("centred");
+  });
+});

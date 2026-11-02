@@ -4128,7 +4128,21 @@ export const tileSettingsStyles = css`
     border-radius: 10px; background: #000; overflow: hidden;
   }
   .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
-  .ts-arr-spot-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ts-arr-now { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--wa-label); }
+  .ts-arr-how { margin: -2px 0 2px; text-align: center; }
+  .ts-arr-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .ts-arr-part { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-panel); overflow: hidden; }
+  .ts-arr-part.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
+  .ts-arr-part.off .ts-arr-part-name { color: var(--wa-muted); }
+  .ts-arr-part button { border: 0; background: transparent; color: var(--wa-ink); cursor: pointer; font: inherit; }
+  .ts-arr-part-name { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 32px; padding: 0 2px 0 8px; font-size: 12.5px !important; }
+  .ts-arr-eye { display: grid; place-items: center; flex: 0 0 28px; color: var(--wa-muted) !important; }
+  .ts-arr-eye:hover { color: var(--wa-ink) !important; }
+  .ts-arr-part.off .ts-arr-eye { color: var(--wa-label) !important; }
+  .ts-arr-part button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
+  .ts-arr-moved { width: 5px; height: 5px; border-radius: 50%; background: var(--wa-accent); }
+  .ts-arr-place { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding-top: 8px; }
+  .ts-groups .ts-arr-place .field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 0; min-width: 0; }
   .ts-arr-spots {
     display: grid; grid-template-columns: repeat(3, 26px); gap: 3px; padding: 3px;
     border: 1px solid var(--wa-line-strong); border-radius: 9px;

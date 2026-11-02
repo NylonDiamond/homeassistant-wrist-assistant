@@ -360,14 +360,16 @@ import {
 import { scrubWatchOrphanTriggers, setWatchTileArrange, watchTileArrange } from "./tile-settings-model.js";
 import {
   type ArrangeStageParts,
+  arrangeFrame,
   arrangeFreeOn,
   arrangePickedPart,
+  arrangeResizeNote,
   arrangeStageParts,
   movedArrangePart,
   nudgedArrangePart,
   setArrangePickedPart,
 } from "./arrange-model.js";
-import { ARRANGE_PARTS, type ArrangePart, type TileArrange, encodeTileArrange } from "./one-look/arrange.js";
+import { ARRANGE_PARTS, type ArrangePart, type TileArrange, encodeTileArrange, normalizeTileArrange } from "./one-look/arrange.js";
 import type { OneLookPhotoLight } from "./one-look/glow.js";
 import {
   type StageGrid,
@@ -3091,7 +3093,28 @@ export class WaPageEditor extends LitElement {
       this.refuseGesture("That size would cover a tile above or beside it, so the tile kept its size.");
       return;
     }
-    if (this.edit(resizeWatchTile(document, g.pageId, g.tileId, g.rect, { baseline: g.basePage, screen: g.screen }))) this.toastScreenMove(g.screen);
+    if (this.edit(resizeWatchTile(document, g.pageId, g.tileId, g.rect, { baseline: g.basePage, screen: g.screen }))) {
+      this.toastScreenMove(g.screen);
+      this.noteResizeLoss(g, preview.page);
+    }
+  }
+
+  /** Say what a resize took from its tile, in the line under the bar, which
+   * the next edit clears. */
+  private noteResizeLoss(g: ResizeGesture, after: WatchPage): void {
+    const model = (page: WatchPage) => {
+      const tile = watchPageTiles(watchScreenPage(page, g.screen)).find((t) => sameWatchId(tileIdOf(t), g.tileId));
+      if (tile === undefined) return undefined;
+      const states = this.previewStates();
+      return arrangeFrame({
+        page, pages: [page], device: g.screen,
+        ...(states === undefined ? {} : { states }),
+        ...(this.icons === undefined ? {} : { icons: this.icons }),
+      }, tile)?.model;
+    };
+    const tile = watchPageTiles(after).find((t) => sameWatchId(tileIdOf(t), g.tileId));
+    const said = arrangeResizeNote(model(g.basePage), model(after), normalizeTileArrange(tile?.arrange));
+    if (said !== undefined) this.refuseGesture(said);
   }
 
   /** What dropping a pick of several would do: `same` with no delta, `move`

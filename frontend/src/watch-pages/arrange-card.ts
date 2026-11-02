@@ -4,17 +4,19 @@
 // writes it (`arrange-looks.ts`), and Use on whole page offers it for every
 // tile that can use it, one undo step.
 //
-// Custom opens the tools: a large live tile the parts are dragged on, the Part
-// being placed, its Spot on a 3 by 3 grid of the tile's content box, its Size,
-// Shown or Hidden, and under More a small move across and down. Every edit is
+// Custom folds the looks to one line and opens the tools: a large live tile the
+// parts are dragged on, a row of the parts, each picked by its name and shown or
+// hidden by its eye, the picked part's Spot on a 3 by 3 grid of the tile's
+// content box beside its Size, and under More a small move across and down. Every edit is
 // one commit of the tile key `arrange` (`setWatchTileArrange`), so it goes
 // through the draft and undo like every other tile setting. The part picked
 // is shared with the stage (`arrangePickedPart`): there the picked part of
 // the selected tile is outlined and dragged, or nudged with the arrow keys.
 //
 // A tile whose picture fills it and a chart get no looks, only the reason. A
-// stacked or strip tile gets Standard and Icon only. The renderer ignores an
-// `arrange` key stored on any of them. The placement math is
+// stacked or strip watch tile gets Standard and Icon only, and the renderer
+// ignores an `arrange` key stored on any of them. An iPhone tile draws its
+// layout at any size, so it gets them all. The placement math is
 // `one-look/arrange.ts`, what the rows know about the tile `arrange-model.ts`.
 // Plan: app repo docs/page_editor_calm_plan_2026-10.md, step 6.
 //
@@ -33,6 +35,8 @@ import {
   type ArrangeFrameSource,
   type ArrangeLook,
   ARRANGE_LOOKS,
+  arrangeFaceBlock,
+  arrangeFreeBlock,
   arrangeFreeOn,
   arrangeFrame,
   arrangePickedPart,
@@ -77,6 +81,8 @@ export function arrangeFreeShown(host: TileSettingsHost): boolean {
 const askKey = (tileId: string) => `${ARRANGE_UI_KEY}:ask:${tileId.toUpperCase()}`;
 /** The line after a whole page edit, while that edit is the document. */
 const doneKey = (tileId: string) => `${ARRANGE_UI_KEY}:done:${tileId.toUpperCase()}`;
+/** Custom's looks are unfolded, by Change look. */
+const looksKey = (tileId: string) => `${ARRANGE_UI_KEY}:looks:${tileId.toUpperCase()}`;
 
 interface ArrangeAsk { plan: ArrangePagePlan; document: WatchPagesDocument }
 interface ArrangeDone { look: ArrangeLook; count: number; document: WatchPagesDocument }
@@ -101,6 +107,7 @@ function forgetWholePage(host: TileSettingsHost): void {
 /** A look: it is written at once, one undo step, and Custom's tools close. */
 export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook): void {
   setArrangeFreePicked(host.uiState, host.tileId, false);
+  host.uiState.delete(looksKey(host.tileId));
   forgetWholePage(host);
   host.endCoalesce();
   const { pageId, tileId } = host;
@@ -110,11 +117,20 @@ export function pickArrangeLook(host: TileSettingsHost, look: ArrangeLook): void
 
 /** Custom: the tools open at once, starting from what the tile has; nothing
  * is written until a part moves. A part let go before is picked again (Icon),
- * so the stage tile can be grabbed at once. */
+ * so the stage tile can be grabbed at once. An iPhone tile too small for the
+ * centred layout has no parts to grab until it holds a layout, so it starts
+ * from its icon in the middle (its name, for a tile with no icon). */
 export function pickArrangeCustom(host: TileSettingsHost): void {
   setArrangeFreePicked(host.uiState, host.tileId, true);
+  host.uiState.delete(looksKey(host.tileId));
   forgetWholePage(host);
   if (arrangeSelectedPart(host) === undefined) setArrangePickedPart(host.uiState, host.tileId, "icon");
+  const model = arrangeFrame(sourceOf(host), host.tile)?.model;
+  if (hostDevice(host) === "iphone" && watchTileArrange(host.tile) === undefined && arrangeFaceBlock(model) === undefined && model?.layout.mode !== "centred") {
+    const parts = model?.icon === "" && model.photo === undefined ? { name: { spot: "bc" as const } } : { icon: { spot: "mc" as const } };
+    host.endCoalesce();
+    writeArrange(host, "start", () => ({ v: 1, parts }));
+  }
   host.requestUpdate();
 }
 
@@ -238,6 +254,9 @@ export function renderArrangeSection(
   const read = tileLooks(source, tile);
   const old = arrangementUpdateNote(tooOld(host));
   const oldNote = old === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${old}</div>`;
+  const onWatch = stored !== undefined && source.device === "iphone" ? arrangeFrame({ ...source, device: "watch" }, tile)?.model : undefined;
+  const watchNote = onWatch !== undefined && arrangeFreeBlock(onWatch) !== undefined
+    ? html`<div class="hint keep">On the watch, this tile uses Standard, because it is too small there for this layout.</div>` : nothing;
   if (read.looks.length === 0) {
     return html`<div class="ts-arr">
       ${read.block === undefined ? nothing : html`<div class="hint keep">${read.block}${stored === undefined ? "" : " The layout stored on it is kept but not drawn."}</div>`}
@@ -261,39 +280,57 @@ export function renderArrangeSection(
     (v) => (v === "custom" ? pickArrangeCustom(host) : pickArrangeLook(host, v)), { size: "large" })}</div>`;
   const notes = html`${read.short && read.block !== undefined ? html`<div class="hint keep">${read.block}${stored !== undefined && read.current !== "icon" ? " The layout stored on it is kept but not drawn." : ""}</div>` : nothing}
     ${offNotes.length === 0 ? nothing : html`<div class="hint keep">${offNotes.map((l) => `${l.label} is off because ${l.off}.`).join(" ")}</div>`}
+    ${watchNote}
     ${oldNote}`;
   if (!custom) {
     return html`<div class="ts-arr">${looks}${notes}${value === "custom" ? nothing : renderWholePage(host, value)}</div>`;
   }
-  const picked = arrangeSelectedPart(host);
-  const moved = (p: ArrangePart) => stored?.parts[p] !== undefined;
-  const pickPart = (p: ArrangePart | "none") => {
-    setArrangePickedPart(host.uiState, host.tileId, p === "none" ? undefined : p);
-    host.endCoalesce();
+  const looksOpen = host.uiState.get(looksKey(host.tileId)) === true;
+  const toggleLooks = () => {
+    if (looksOpen) host.uiState.delete(looksKey(host.tileId));
+    else host.uiState.set(looksKey(host.tileId), true);
     host.requestUpdate();
   };
   const drawn = picture?.() ?? nothing;
   const well = drawn === nothing ? nothing : html`<div class="ts-arr-pic">${drawn}</div>`;
-  return html`<div class="ts-arr">${looks}${notes}${well}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
-    titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
-  })}${renderCustomRows(host, stored, arrangeFrame(source, tile)?.model)}</div>`;
+  return html`<div class="ts-arr">
+    <div class="ts-arr-now"><span>Custom layout</span>
+      <button type="button" class="ghost ts-reset-btn" aria-expanded=${looksOpen ? "true" : "false"} @click=${toggleLooks}>${looksOpen ? "Hide looks" : "Change look"}</button></div>
+    ${looksOpen ? looks : nothing}
+    ${notes}${well}
+    <div class="hint keep ts-arr-how">Drag a part on the tile to move it. Arrow keys nudge it.</div>
+    ${renderPartRow(host, stored)}
+    ${renderCustomRows(host, stored, arrangeFrame(source, tile)?.model)}</div>`;
 }
 
-/** Back to Standard: every part where the tile's layout puts it, and Custom's
- * tools close. */
-function backToStandard(host: TileSettingsHost): TemplateResult {
-  return resetButton("Back to Standard", "Every part back where the tile's layout puts it", () => pickArrangeLook(host, "standard"));
+const EYE = html`<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>`;
+const EYE_OFF = html`<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M3 13 13 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+
+/** The parts, one button each: its name picks it, its eye shows or hides it.
+ * A hidden part has nothing to click on the tile, so it is picked here. */
+function renderPartRow(host: TileSettingsHost, stored: TileArrange | undefined): TemplateResult {
+  const picked = arrangeSelectedPart(host);
+  const pick = (part: ArrangePart) => {
+    setArrangePickedPart(host.uiState, host.tileId, part);
+    host.endCoalesce();
+    host.requestUpdate();
+  };
+  return html`<div class="ts-arr-parts" role="group" aria-label=Part>${PART_LABELS.map(([part, label]) => {
+    const entry = stored?.parts[part];
+    const hidden = entry?.hidden === true;
+    const eye = html`<button type="button" class="ts-arr-eye" aria-pressed=${hidden ? "false" : "true"} aria-label=${`${hidden ? "Show" : "Hide"} the ${PART_WORDS[part]}`} title=${`${hidden ? "Show" : "Hide"} the ${PART_WORDS[part]}`}
+      @click=${() => { host.endCoalesce(); writeArrange(host, `hidden:${part}`, (now) => withArrangePart(now, part, (e) => ({ ...e, hidden: !hidden }))); }}>${hidden ? EYE_OFF : EYE}</button>`;
+    return html`<div class="ts-arr-part ${part === picked ? "on" : ""} ${hidden ? "off" : ""}">
+      <button type="button" class="ts-arr-part-name" aria-pressed=${part === picked ? "true" : "false"} @click=${() => pick(part)}>${label}${entry === undefined ? nothing : html`<i class="ts-arr-moved" title="Changed"></i>`}</button>
+      ${eye}
+    </div>`;
+  })}</div>`;
 }
 
 /** The rows under Custom, for the part picked. */
-function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
+function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult | typeof nothing {
   const picked = arrangeSelectedPart(host);
-  if (picked === undefined) {
-    return html`<div class="ts-arr-free">
-      <div class="hint keep">Pick a part, or click it on the tile, then drag it there or use the arrow keys.</div>
-      <div class="ts-arr-foot">${backToStandard(host)}</div>
-    </div>`;
-  }
+  if (picked === undefined) return nothing;
   const part = picked;
   const entry = stored?.parts[part] ?? {};
   const drawn = model === undefined ? true
@@ -319,8 +356,8 @@ function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefine
   };
   return html`<div class="ts-arr-free">
     ${drawn ? nothing : html`<div class="hint keep">This tile draws no ${PART_WORDS[part]} now; its layout is kept for when it does.</div>`}
-    <div class="field ts-arr-spot-row"><span>Spot</span>
-      <div class="ts-arr-spot-ctl">
+    <div class="ts-arr-place">
+      <div class="field ts-arr-spot-row"><span>Spot</span>
         <div class="ts-arr-spots" role="radiogroup" aria-label=${`Spot of the ${PART_WORDS[part]}`}>
           ${ARRANGE_SPOTS.map((spot) => {
             const on = entry.spot === spot;
@@ -331,17 +368,14 @@ function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefine
           })}
         </div>
       </div>
+      ${segField("Size", scale, SCALES, (v) => writePart(host, "scale", (e) => ({ ...e, scale: Number(v) })), { def: "1" })}
     </div>
-    ${segField("Size", scale, SCALES, (v) => writePart(host, "scale", (e) => ({ ...e, scale: Number(v) })), { def: "1" })}
-    ${segField<"shown" | "hidden">("Show", entry.hidden === true ? "hidden" : "shown", [["shown", "Shown"], ["hidden", "Hidden"]],
-      (v) => writePart(host, "hidden", (e) => ({ ...e, hidden: v === "hidden" })), { def: "shown" })}
     ${rareRow(host, "arrange", nudged, html`${offset("dx")}${offset("dy")}
       <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the iPhone.</div>`)}
-    ${moreLine(host, "arrange", nudged ? [] : [{ name: "Exact place" }])}
     <div class="ts-arr-foot between">
-      <button type="button" class="ghost ts-reset-btn" title=${`Put the ${PART_WORDS[part]} back: its place, size and Show`} ?disabled=${stored?.parts[part] === undefined}
-        @click=${() => writePart(host, "part-reset", () => ({}))}>Reset this part</button>
-      ${backToStandard(host)}
+      ${moreLine(host, "arrange", nudged ? [] : [{ name: "Exact place" }])}
+      <button type="button" class="ghost ts-reset-btn" title=${`Put the ${PART_WORDS[part]} back: its place, size and eye`} ?disabled=${stored?.parts[part] === undefined}
+        @click=${() => writePart(host, "part-reset", () => ({}))}>Reset ${PART_WORDS[part]}</button>
     </div>
   </div>`;
 }
