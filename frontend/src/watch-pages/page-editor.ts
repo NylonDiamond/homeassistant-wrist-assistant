@@ -4961,9 +4961,9 @@ export class WaPageEditor extends LitElement {
     const guides = g?.kind === "part" && g.started ? g.guides : {};
     const px = (v: number) => Math.round(v * s * 100) / 100;
     return html`<span class="pe-arr-grid" aria-hidden="true"
-      style=${`left:${px(stage.inset)}px;top:${px(stage.inset)}px;width:${px(stage.size.width)}px;height:${px(stage.size.height)}px;background-size:calc(100% / ${ARRANGE_GRID.across}) calc(100% / ${ARRANGE_GRID.down})`}>
-      ${guides.x === undefined ? nothing : html`<i class="pe-arr-guide x" style=${`left:${px(guides.x)}px`}></i>`}
-      ${guides.y === undefined ? nothing : html`<i class="pe-arr-guide y" style=${`top:${px(guides.y)}px`}></i>`}
+      style=${`left:${px(stage.inset + stage.content.x)}px;top:${px(stage.inset + stage.content.y)}px;width:${px(stage.content.width)}px;height:${px(stage.content.height)}px;background-size:calc(100% / ${ARRANGE_GRID.across}) calc(100% / ${ARRANGE_GRID.down})`}>
+      ${guides.x === undefined ? nothing : html`<i class="pe-arr-guide x" style=${`left:${px(guides.x - stage.content.x)}px`}></i>`}
+      ${guides.y === undefined ? nothing : html`<i class="pe-arr-guide y" style=${`top:${px(guides.y - stage.content.y)}px`}></i>`}
     </span>`;
   }
 

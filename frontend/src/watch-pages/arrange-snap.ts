@@ -12,8 +12,8 @@
 import { type ArrangePart, type ArrangePartEntry, type ArrangeSpot, arrangePartRect } from "./one-look/arrange.js";
 import type { OneLookRect, OneLookSize } from "./one-look/layout.js";
 
-/** The grid a part snaps to: the tile cut in this many columns and rows. An
- * even number of each, so the tile's middle lines are grid lines. */
+/** The grid a part snaps to: the tile's content box cut in this many columns
+ * and rows. An even number of each, so its middle lines are grid lines. */
 export const ARRANGE_GRID = { across: 12, down: 8 } as const;
 
 /** What a drag knows about the part it moves. */
@@ -43,8 +43,10 @@ export interface ArrangeSnapped {
   guides: { x?: number; y?: number };
 }
 
-function clampSpan(start: number, size: number, length: number): number {
-  return size >= length ? (length - size) / 2 : Math.max(0, Math.min(start, length - size));
+/** A span held inside a box of `length` from `from`, or centred on it when it
+ * is the larger. */
+function clampSpan(start: number, size: number, from: number, length: number): number {
+  return size >= length ? from + (length - size) / 2 : Math.max(from, Math.min(start, from + length - size));
 }
 
 /** The lines of a box on one axis: its start, its middle and its end. */
@@ -53,10 +55,12 @@ function spanLines(start: number, size: number): number[] {
 }
 
 /** One axis of a drag: the span's new start, and the line it landed on when
- * that line was a box's and not just the grid's. */
-function snapAxis(start: number, size: number, length: number, cells: number, lines: readonly number[], threshold: number, free: boolean): { start: number; guide?: number } {
-  const at = clampSpan(start, size, length);
-  if (free) return { start: at };
+ * that line was a box's and not just the grid's. Snapping holds the part inside
+ * the content box, where a spot would put it, and cuts that box in `cells`;
+ * placed freely it may go to the tile's edge. */
+function snapAxis(start: number, size: number, tile: number, boxStart: number, box: number, cells: number, lines: readonly number[], threshold: number, free: boolean): { start: number; guide?: number } {
+  if (free) return { start: clampSpan(start, size, 0, tile) };
+  const at = clampSpan(start, size, boxStart, box);
   let best: { move: number; line: number } | undefined;
   for (const own of spanLines(at, size)) {
     for (const line of lines) {
@@ -64,11 +68,11 @@ function snapAxis(start: number, size: number, length: number, cells: number, li
       if (Math.abs(move) <= threshold && (best === undefined || Math.abs(move) < Math.abs(best.move))) best = { move, line };
     }
   }
-  if (best !== undefined) return { start: clampSpan(at + best.move, size, length), guide: best.line };
-  const step = length / cells;
-  const moves = spanLines(at, size).map((own) => Math.round(own / step) * step - own);
+  if (best !== undefined) return { start: clampSpan(at + best.move, size, boxStart, box), guide: best.line };
+  const step = box / cells;
+  const moves = spanLines(at, size).map((own) => boxStart + Math.round((own - boxStart) / step) * step - own);
   const move = moves.reduce((a, b) => (Math.abs(b) < Math.abs(a) ? b : a));
-  return { start: clampSpan(at + move, size, length) };
+  return { start: clampSpan(at + move, size, boxStart, box) };
 }
 
 /** Which third of a length a span's middle is in. */
@@ -85,8 +89,7 @@ function storedOffset(points: number, length: number): number {
 }
 
 /**
- * Where a part dragged by (`moveX`, `moveY`) points lands. It stays inside the
- * tile. The spot written is the one nearest where it lands, with what is left
+ * Where a part dragged by (`moveX`, `moveY`) points lands. The spot written is the one nearest where it lands, with what is left
  * as an offset, so on a tile of another width it stays near that side. The
  * name's text aligns to that side too: its box is nearly the tile's width, so
  * what moves is the text, from the box's start, middle or end.
@@ -97,8 +100,8 @@ export function snappedArrangePart(input: ArrangeSnapInput, moveX: number, moveY
     x: [...spanLines(content.x, content.width), ...others.flatMap((o) => spanLines(o.x, o.width))],
     y: [...spanLines(content.y, content.height), ...others.flatMap((o) => spanLines(o.y, o.height))],
   };
-  const x = snapAxis(drawn.x + moveX, drawn.width, tile.width, ARRANGE_GRID.across, lines.x, threshold, free);
-  const y = snapAxis(drawn.y + moveY, drawn.height, tile.height, ARRANGE_GRID.down, lines.y, threshold, free);
+  const x = snapAxis(drawn.x + moveX, drawn.width, tile.width, content.x, content.width, ARRANGE_GRID.across, lines.x, threshold, free);
+  const y = snapAxis(drawn.y + moveY, drawn.height, tile.height, content.y, content.height, ARRANGE_GRID.down, lines.y, threshold, free);
 
   const placed = arrangePartRect(tile, content, native, part, entry).rect;
   const col = thirdOf(x.start, drawn.width, tile.width);

@@ -378,10 +378,10 @@ function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefine
       </div>
       ${segField("Size", scale, SCALES, (v) => writePart(host, "scale", (e) => ({ ...e, scale: Number(v) })), { def: "1" })}
     </div>
-    ${rareRow(host, "arrange", nudged, html`${offset("dx")}${offset("dy")}
+    ${rareRow(host, "arrange", false, html`${offset("dx")}${offset("dy")}
       <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the iPhone.</div>`)}
     <div class="ts-arr-foot between">
-      ${moreLine(host, "arrange", nudged ? [] : [{ name: "Exact place" }])}
+      ${moreLine(host, "arrange", [{ name: "Exact place" }])}
       <button type="button" class="ghost ts-reset-btn" title=${`Put the ${PART_WORDS[part]} back: its place, size and eye`} ?disabled=${stored?.parts[part] === undefined}
         @click=${() => writePart(host, "part-reset", () => ({}))}>Reset ${PART_WORDS[part]}</button>
     </div>
