@@ -1607,8 +1607,8 @@ function renderKindCard(host: TileSettingsHost, parts: readonly TileInspectorPar
  * does does. Each has its own hue. The columns are pure CSS by the
  * inspector's own width (`@container insp`): four side by side from 1580 px,
  * each as tall as the inspector and scrolling on its own; from 680 px Color
- * and icon in the first cell with the other rows under it and What it does
- * beside them, the inspector scrolling as one; else one.
+ * and icon over What it does on the left, Text and layout over Surface and
+ * rules on the right, the inspector scrolling as one; else one.
  */
 export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
@@ -1659,7 +1659,7 @@ export function renderTileInspector(watchHost: TileSettingsHost, extras: TileSet
   // The head spans the inspector over the columns; the columns are as many
   // as there are groups to draw, at most four (`--ts-n`). Color and icon
   // comes first, then What it does, then the other rows, which stand
-  // together under Color and icon, the line under them.
+  // together as the right stack in two columns, the line under them.
   const looks = groups.some((g) => g.group !== "does");
   const rows = TILE_INSPECTOR_GROUPS.filter((id) => id !== "color" && id !== "does" && groups.some((g) => g.group === id));
   return html`<div class="ts-root ts-insp">
@@ -4160,11 +4160,10 @@ export const tileSettingsStyles = css`
      inspector, then Color and icon, What it does and the rows of the other
      groups, by the inspector's own width, pure CSS: four columns side by
      side from 1580px (each as tall as the inspector and scrolling on its
-     own, the page editor's rules), from 680px Color and icon in the first
-     cell with the other rows under it and What it does beside them all,
-     the inspector scrolling as one, else all in one column. The second row
-     takes what What it does needs past the first, so the rows stay close
-     under Color and icon. */
+     own, the page editor's rules), from 680px two stacks, Color and icon over
+     What it does on the left, Text and layout over Surface and rules on the
+     right, the inspector scrolling as one, else all in one column. The right
+     stack spans both rows, so neither stack waits for the other's height. */
   .ts-insp { gap: 14px; min-width: 0; }
   .ts-insp-head { min-width: 0; }
   .ts-groups {
@@ -4175,13 +4174,13 @@ export const tileSettingsStyles = css`
   .ts-grp-foot { margin: 2px 4px 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   @container insp (min-width: 680px) {
     .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; row-gap: 6px; }
-    .ts-groups > :not([data-group="does"]) { grid-column: 1; }
-    .ts-groups > .ts-grp[data-group="does"] { grid-column: 2; grid-row: 1 / span 2; }
+    .ts-groups > .ts-grp[data-group="color"] { grid-column: 1; grid-row: 1; }
+    .ts-groups > .ts-grp[data-group="does"] { grid-column: 1; grid-row: 2; }
+    .ts-groups > .ts-grp-rest { grid-column: 2; grid-row: 1 / span 2; }
   }
   @container insp (min-width: 1580px) {
     .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); grid-template-rows: none; row-gap: 10px; }
-    .ts-groups > :not([data-group="does"]) { grid-column: auto; }
-    .ts-groups > .ts-grp[data-group="does"] { grid-column: auto; grid-row: auto; }
+    .ts-groups > .ts-grp[data-group] { grid-column: auto; grid-row: auto; }
     .ts-grp-rest { display: contents; }
     .ts-grp-foot { display: none; }
     .ts-grp.ts-grp-row { align-self: start; }

@@ -414,10 +414,10 @@ describe("the tile's cards", () => {
     expect(text).not.toContain("ts-g1");
     expect(text).not.toContain("pe-insp-col");
     expect(text).not.toContain("data-col=");
-    // Two across: Color and icon in the first cell with the other rows under
-    // it, What it does in the second beside them all.
-    expect(css).toContain(`@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; row-gap: 6px; } .ts-groups > :not([data-group="does"]) { grid-column: 1; } .ts-groups > .ts-grp[data-group="does"] { grid-column: 2; grid-row: 1 / span 2; } }`);
-    expect(css).toContain(`@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); grid-template-rows: none; row-gap: 10px; } .ts-groups > :not([data-group="does"]) { grid-column: auto; } .ts-groups > .ts-grp[data-group="does"] { grid-column: auto; grid-row: auto; } .ts-grp-rest { display: contents; }`);
+    // Two across: Color and icon over What it does on the left, Text and
+    // layout over Surface and rules on the right.
+    expect(css).toContain(`@container insp (min-width: 680px) { .ts-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; row-gap: 6px; } .ts-groups > .ts-grp[data-group="color"] { grid-column: 1; grid-row: 1; } .ts-groups > .ts-grp[data-group="does"] { grid-column: 1; grid-row: 2; } .ts-groups > .ts-grp-rest { grid-column: 2; grid-row: 1 / span 2; } }`);
+    expect(css).toContain(`@container insp (min-width: 1580px) { .ts-groups { grid-template-columns: repeat(var(--ts-n, 4), minmax(0, 1fr)); grid-template-rows: none; row-gap: 10px; } .ts-groups > .ts-grp[data-group] { grid-column: auto; grid-row: auto; } .ts-grp-rest { display: contents; }`);
     expect(css).not.toContain(".ts-g3");
     // Four across: each column fills the inspector's height and scrolls on
     // its own under a title that stays put.
