@@ -37,6 +37,23 @@ export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean):
   }));
 }
 
+/**
+ * The device a picture of `kind` is drawn for, by owner id, so the picture
+ * is the size of the device its title names: the first device of that kind
+ * that shows the page (`showing`, the page's owners, read in `devices`'
+ * order, so the first name under the picture), else the home's first device
+ * of that kind. Undefined with no device of the kind, or before the library
+ * says who shows the page (`showing` undefined): the caller then draws on
+ * the Preview on device.
+ */
+export function pictureOwnerId(devices: readonly LinkDevice[], kind: LinkDevice["kind"], showing: readonly string[] | undefined): string | undefined {
+  if (showing === undefined) return undefined;
+  const ofKind = devices.filter((d) => d.kind === kind);
+  const up = (id: string) => id.toUpperCase();
+  const shows = ofKind.find((d) => showing.some((o) => up(o) === up(d.ownerId)));
+  return (shows ?? ofKind[0])?.ownerId;
+}
+
 /** "iPhone" or "watch", as the lines name the device on screen. */
 export function deviceWord(kind: LinkDevice["kind"]): string {
   return kind === "iphone" ? "iPhone" : "watch";

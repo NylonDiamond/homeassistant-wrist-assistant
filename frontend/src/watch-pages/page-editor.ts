@@ -153,7 +153,7 @@ import {
   watchName,
   watchRecordUnreadable,
 } from "../watch-settings.js";
-import { type LinkDevice, deviceWord, linkDevicesOf } from "./devices.js";
+import { type LinkDevice, deviceWord, linkDevicesOf, pictureOwnerId } from "./devices.js";
 import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newCopyForm, openCopyDialog, renderCopyDialog, runCopy, tickCopyForm } from "./make-copy.js";
 import { newItemDialogStyles } from "../library/new-dialog.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
@@ -3411,7 +3411,8 @@ export class WaPageEditor extends LitElement {
     const page = this.headDrawn ? this.currentPage() : undefined;
     const document = draft?.document;
     const pages = document === undefined ? [] : watchPagesOf(this.contextPages(document));
-    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    // The picker's thumbnails are drawn at the edited picture's size.
+    const owner = this.pictureOwnerOf(this.previewKind);
     return html`<div class="wa-bar pe-bar" role="group" aria-label="Page editor">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
@@ -3446,7 +3447,7 @@ export class WaPageEditor extends LitElement {
     const page = open ? this.currentPage() : undefined;
     const selectable = page === undefined || isSmartWatchPage(page) || isMapWatchPage(page) || this.editingOff(page) ? 0 : this.readingIds(page).length;
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
-    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const owner = this.pictureOwnerOf(this.previewKind);
     const facts = page === undefined ? undefined : this.pageFacts(page, owner);
     const acts = page === undefined ? undefined : this.tileActs(page, tile);
     return html`<span class="side-menu pe-top-menu">
@@ -3479,7 +3480,8 @@ export class WaPageEditor extends LitElement {
 
   /**
    * What the preview is drawn on and the page's facts, for the ··· menu's
-   * top line: the preview device's name, then "6 tiles · 16 rows · 46 mm"
+   * top line: the name of the device the picture is drawn for
+   * (`pictureOwnerOf`), then "6 tiles · 16 rows · 46 mm"
    * (a smart page names itself as the watch does, from its fill), and the
    * longer words for its tooltip where the size needs saying.
    */
@@ -3586,7 +3588,8 @@ export class WaPageEditor extends LitElement {
     // page tile reads as it would there.
     const pages = watchPagesOf(this.contextPages(document));
     const page = this.currentPage();
-    const owner = watches.find((w) => w.owner_watch_id === this.watchId);
+    // The device the edited picture is drawn for, the one its title names.
+    const owner = this.pictureOwnerOf(this.previewKind) ?? watches.find((w) => w.owner_watch_id === this.watchId);
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
     // Two columns under the editor bar (the way back, the page picker, the
     // devices): the canvas card and the inspector. The editor is one screen
@@ -3784,14 +3787,14 @@ export class WaPageEditor extends LitElement {
    * over a 3.2 watch that shows the page too. With none of that kind
    * showing it, the home's first device of the kind; with none of the kind
    * at all, the Preview on device. Until the library is read, the device the
-   * picture is drawn on (`stageOwnerOf`). Only the look follows this: the
-   * catalog, the behaviour, the cameras and the screen size stay the Preview
-   * on device's.
+   * picture is drawn on (`pictureOwnerOf`). The screen size follows the
+   * device the title names (`pictureOwnerOf`); the catalog, the behaviour
+   * and the cameras stay the Preview on device's.
    */
   private screenLookVersion(screen: WatchScreen): string | null | undefined {
     const ref = this.libraryItem;
     const owners = ref === undefined ? undefined : libraryOwners(this.lib.library, ref);
-    if (owners === undefined) return this.previewAppVersion(this.stageOwnerOf(screen));
+    if (owners === undefined) return this.previewAppVersion(this.pictureOwnerOf(screen));
     const versionOf = (ownerId: string) => this.ownerList.find((o) => sameId(o.owner_watch_id, ownerId))?.app_version;
     const ofKind = this.linkDevices.filter((d) => d.kind === screen);
     const showing = ofKind.filter((d) => owners.some((o) => sameId(o, d.ownerId)));
@@ -3803,10 +3806,12 @@ export class WaPageEditor extends LitElement {
   /** On an iPhone, where its pages screen lays itself out (`phone-frame.ts`),
    * in the Page look its own settings ask for (the iPhone look until they
    * are read, as the phone draws with none), its pages ending at the bar
-   * its dots settings and its shown pages size; undefined on a watch. */
+   * its dots settings and its shown pages size; undefined on a watch. The
+   * model is `owner`'s, else the one the iPhone picture is drawn for
+   * (`pictureOwnerOf`). */
   private phoneLayoutOf(owner: OwnerSummary | undefined): PhonePagesLayout | undefined {
     if (!this.onPhone) return undefined;
-    const shown = owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId);
+    const shown = owner ?? this.pictureOwnerOf("iphone") ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId);
     const document = this.draft?.document;
     const visible = document === undefined ? 0
       : watchPagesOf(this.contextPages(document)).filter((p) => p.isHidden !== true && p.isSystemPage !== true).length;
@@ -3968,9 +3973,31 @@ export class WaPageEditor extends LitElement {
     this.cancelGestures();
   }
 
-  /** The device of `kind` drawn on the stage: the preview device for the
-   * edited kind, else (Side by side's other preview) the first device of
-   * that kind that has the page, else the home's first of the kind. */
+  /**
+   * The device a picture of `kind` is drawn for, the one its title names
+   * (`pictureOwnerId`): the first device of that kind that shows the page,
+   * else the home's first of the kind, else, as before the library is read,
+   * `stageOwnerOf`. Its screen size sizes every picture of the page, the
+   * stage's both, the page picker's thumbnails and the inspector's tile
+   * pictures, so a page Chen's 42 mm watch is picked to preview but only
+   * Jesse's Ultra shows is drawn at the Ultra's size. The things that are
+   * not a picture (the catalog, the behaviour, the live states, the smart
+   * rule pick, the picks) stay the Preview on device's.
+   */
+  private pictureOwnerOf(kind: PreviewKind): OwnerSummary | undefined {
+    const ref = this.libraryItem;
+    const showing = ref === undefined ? undefined : libraryOwners(this.lib.library, ref);
+    const id = pictureOwnerId(this.linkDevices, kind, showing);
+    const found = id === undefined ? undefined
+      : this.watches.find((w) => sameId(w.owner_watch_id, id)) ?? this.ownerList.find((o) => sameId(o.owner_watch_id, id));
+    return found ?? this.stageOwnerOf(kind);
+  }
+
+  /** The device of `kind` the stage worked from before the pictures took
+   * their own (`pictureOwnerOf`), and still does until the library is read:
+   * the preview device for the edited kind, else (Side by side's other
+   * preview) the first device of that kind that has the page, else the
+   * home's first of the kind. */
   private stageOwnerOf(kind: PreviewKind): OwnerSummary | undefined {
     if (kind === this.previewKind) return this.watches.find((w) => w.owner_watch_id === this.watchId);
     const ref = this.libraryItem;
@@ -4001,7 +4028,7 @@ export class WaPageEditor extends LitElement {
     let fixedWidth = 16 + (kinds.length - 1) * 28;
     let chips = false;
     for (const kind of kinds) {
-      const owner = this.stageOwnerOf(kind);
+      const owner = this.pictureOwnerOf(kind);
       if (kind === "iphone") {
         const model = phoneModelForScreenSize(owner?.screen_size);
         const grow = 1 + 2 * (PHONE_BEZEL_RATIO + PHONE_RIM_RATIO);
@@ -4347,13 +4374,14 @@ export class WaPageEditor extends LitElement {
   /**
    * What the other kind's preview of Side by side is drawn with: the
    * edited preview's states, symbols and renders, on the screen of the
-   * first device of that kind that has the page (else the home's first of
-   * the kind, else the reference one), at the zoom that kind is drawn at.
+   * device its title names (`pictureOwnerOf`: the first device of that kind
+   * that has the page, else the home's first of the kind, else the
+   * reference one), at the zoom that kind is drawn at.
    * That device's own settings are not read: an iPhone takes its look's
    * defaults, as the phone does before its settings load.
    */
   private companionInput(page: WatchPage, pages: readonly WatchPage[], input: WatchPagePreviewInput, kind: PreviewKind): WatchPagePreviewInput {
-    const owner = this.stageOwnerOf(kind);
+    const owner = this.pictureOwnerOf(kind);
     // The edited stage's own: its phone frame, its live cameras and its
     // smart rule pick.
     const rest: WatchPagePreviewInput = { ...input };
@@ -5177,8 +5205,7 @@ export class WaPageEditor extends LitElement {
     const n = ids.length;
     const off = this.busy || this.editingOff(page);
     const copyable = this.copyableCount(page, ids);
-    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    const screen = this.screenOf(owner);
+    const screen = this.screenOf(this.pictureOwnerOf(this.previewKind));
     const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
     const states = this.previewStates();
     const labels: string[] = [];
@@ -5506,8 +5533,7 @@ export class WaPageEditor extends LitElement {
    * with no place on the page.
    */
   private renderTileHeadPicture(page: WatchPage, tile: WatchPageTile, as: WatchTilePreviewAs | undefined): TemplateResult | typeof nothing {
-    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    const screen = this.screenOf(owner);
+    const screen = this.screenOf(this.pictureOwnerOf(this.previewKind));
     const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
     const id = tileIdOf(tile);
     const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
@@ -5561,8 +5587,7 @@ export class WaPageEditor extends LitElement {
     const free = this.oneLookOn(watchPageId(page)) && !this.multiPicked && !this.editingOff(page) && arrangeFreeOn(this.uiState, tile)
       && !(g?.started === true && g.kind !== "part");
     if (!free) return nothing;
-    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    const screen = this.screenOf(owner);
+    const screen = this.screenOf(this.pictureOwnerOf(this.previewKind));
     const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
     const id = tileIdOf(tile);
     const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
