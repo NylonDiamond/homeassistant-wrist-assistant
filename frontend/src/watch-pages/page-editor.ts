@@ -457,6 +457,8 @@ const ARRANGE_TILE_H = 240;
 const ARRANGE_TILE_MAX_SCALE = 6;
 /** How near a line, in pixels on screen, a dragged part jumps to it. */
 const ARRANGE_SNAP_PIXELS = 7;
+/** The shortest a part's box is drawn on screen, so a thin bar can be pressed. */
+const ARRANGE_PART_MIN_PIXELS = 12;
 /** A look's card in that section. */
 const ARRANGE_LOOK_W = 92;
 const ARRANGE_LOOK_H = 60;
@@ -637,7 +639,7 @@ function withArrange(tile: WatchPageTile, arrange: TileArrange | undefined): Wat
   return out;
 }
 
-const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state" };
+const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state", bar: "bar", button: "button" };
 
 /** The part of `home-assistant-js-websocket`'s connection that tells of a
  * reconnect. Both optional: a test double or another frontend may lack them. */
@@ -4961,9 +4963,9 @@ export class WaPageEditor extends LitElement {
     const guides = g?.kind === "part" && g.started ? g.guides : {};
     const px = (v: number) => Math.round(v * s * 100) / 100;
     return html`<span class="pe-arr-grid" aria-hidden="true"
-      style=${`left:${px(stage.inset + stage.content.x)}px;top:${px(stage.inset + stage.content.y)}px;width:${px(stage.content.width)}px;height:${px(stage.content.height)}px;background-size:calc(100% / ${ARRANGE_GRID.across}) calc(100% / ${ARRANGE_GRID.down})`}>
-      ${guides.x === undefined ? nothing : html`<i class="pe-arr-guide x" style=${`left:${px(guides.x - stage.content.x)}px`}></i>`}
-      ${guides.y === undefined ? nothing : html`<i class="pe-arr-guide y" style=${`top:${px(guides.y - stage.content.y)}px`}></i>`}
+      style=${`left:${px(stage.inset)}px;top:${px(stage.inset)}px;width:${px(stage.size.width)}px;height:${px(stage.size.height)}px;border-radius:${px(stage.radius)}px;background-size:calc(100% / ${ARRANGE_GRID.across}) calc(100% / ${ARRANGE_GRID.down})`}>
+      ${guides.x === undefined ? nothing : html`<i class="pe-arr-guide x" style=${`left:${px(guides.x)}px`}></i>`}
+      ${guides.y === undefined ? nothing : html`<i class="pe-arr-guide y" style=${`top:${px(guides.y)}px`}></i>`}
     </span>`;
   }
 
@@ -4979,9 +4981,12 @@ export class WaPageEditor extends LitElement {
       if (r === undefined) return nothing;
       const on = part === picked;
       const word = PART_WORDS[part];
+      // A thin part, the bar above all, still gets a box a pointer can press.
+      const height = Math.max(px(r.height), ARRANGE_PART_MIN_PIXELS);
+      const top = px(stage.inset + r.y + r.height / 2) - height / 2;
       return html`<span class="pe-part ${on ? "on" : ""} ${on && g?.kind === "part" && g.started ? "dragging" : ""}" data-part=${part} aria-hidden="true"
         title=${`Drag to move the ${word}. Arrow keys nudge it, Escape lets it go.`}
-        style=${`left:${px(stage.inset + r.x)}px;top:${px(stage.inset + r.y)}px;width:${px(r.width)}px;height:${px(r.height)}px`}
+        style=${`left:${px(stage.inset + r.x)}px;top:${top}px;width:${px(r.width)}px;height:${height}px`}
         @pointerdown=${(e: PointerEvent) => this.onPartPointerDown(e, id, part, { stage, scale: s })}
         @click=${(e: MouseEvent) => {
           // The picked part's own click; another part's click is the tile's

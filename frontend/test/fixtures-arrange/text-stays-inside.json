@@ -1,6 +1,6 @@
 {
   "name": "text-stays-inside",
-  "about": "Moved past the tile's edges on a watch: the name past the bottom and the state past the left are held inside the tile, and the icon may hang over.",
+  "about": "Moved past the tile's edges on a watch: the name past the bottom and the state past the left are held a little past the tile's edge, and the icon may hang over.",
   "device": "watch",
   "tile": {
     "id": "A11A0000-0000-4000-8000-00000000000B",
@@ -54,6 +54,12 @@
       "y": 9.5,
       "width": 20.9,
       "height": 14
+    },
+    "bar": {
+      "x": 6,
+      "y": 4,
+      "width": 88.5,
+      "height": 3
     }
   },
   "arrange": {
@@ -87,7 +93,7 @@
     "name": {
       "rect": {
         "x": 4.407,
-        "y": 54.2,
+        "y": 55.85,
         "width": 94.5,
         "height": 11.8
       },
@@ -97,10 +103,20 @@
     },
     "state": {
       "rect": {
-        "x": 0,
-        "y": 0,
+        "x": -8.375,
+        "y": -7,
         "width": 20.9,
         "height": 14
+      },
+      "scale": 1,
+      "hidden": false
+    },
+    "bar": {
+      "rect": {
+        "x": 6,
+        "y": 4,
+        "width": 88.5,
+        "height": 3
       },
       "scale": 1,
       "hidden": false

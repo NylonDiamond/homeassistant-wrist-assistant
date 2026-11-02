@@ -1,20 +1,20 @@
 // Where a dragged part of a tile lands (the Custom layout, `arrange-card.ts`).
 // As in the complication editor's canvas, a drag snaps: on each axis the part's
-// start, middle or end lands on the nearest line of the tile's content box or
-// of another part while one is near, else on the grid. Option or Alt places it
-// freely. Nothing here draws.
+// start, middle or end lands on the nearest line of the tile, its content box
+// or another part while one is near, else on the grid, which runs from edge to
+// edge of the tile. A part may go a little past the tile's edge, where the
+// tile's shape cuts it (`arrangeOverhang`). Option or Alt places it freely up to
+// that limit. Nothing here draws.
 //
 // What is stored is the tile key `arrange` as the apps already read it
 // (`one-look/arrange.ts`): the spot nearest the part, and a small offset from
 // that spot. So a part keeps its side of the tile on every device, whatever
 // its width: a name dropped on the left stays on the left, aligned left.
 
-import { type ArrangePart, type ArrangePartEntry, type ArrangeSpot, arrangePartRect } from "./one-look/arrange.js";
+import { ARRANGE_GRID, type ArrangePart, type ArrangePartEntry, type ArrangeSpot, arrangeOverhang, arrangePartRect } from "./one-look/arrange.js";
 import type { OneLookRect, OneLookSize } from "./one-look/layout.js";
 
-/** The grid a part snaps to: the tile's content box cut in this many columns
- * and rows. An even number of each, so its middle lines are grid lines. */
-export const ARRANGE_GRID = { across: 12, down: 8 } as const;
+export { ARRANGE_GRID };
 
 /** What a drag knows about the part it moves. */
 export interface ArrangeSnapInput {
@@ -55,12 +55,15 @@ function spanLines(start: number, size: number): number[] {
 }
 
 /** One axis of a drag: the span's new start, and the line it landed on when
- * that line was a box's and not just the grid's. Snapping holds the part inside
- * the content box, where a spot would put it, and cuts that box in `cells`;
- * placed freely it may go to the tile's edge. */
-function snapAxis(start: number, size: number, tile: number, boxStart: number, box: number, cells: number, lines: readonly number[], threshold: number, free: boolean): { start: number; guide?: number } {
-  if (free) return { start: clampSpan(start, size, 0, tile) };
-  const at = clampSpan(start, size, boxStart, box);
+ * that line was a box's and not just the grid's. The tile of `tile` points is
+ * cut in `cells`, and the part may go a little past either edge
+ * (`arrangeOverhang`). */
+function snapAxis(start: number, size: number, tile: number, cells: number, lines: readonly number[], threshold: number, free: boolean): { start: number; guide?: number } {
+  const step = tile / cells;
+  const over = arrangeOverhang(tile, cells, size);
+  const held = (v: number) => clampSpan(v, size, -over, tile + 2 * over);
+  const at = held(start);
+  if (free) return { start: at };
   let best: { move: number; line: number } | undefined;
   for (const own of spanLines(at, size)) {
     for (const line of lines) {
@@ -68,11 +71,10 @@ function snapAxis(start: number, size: number, tile: number, boxStart: number, b
       if (Math.abs(move) <= threshold && (best === undefined || Math.abs(move) < Math.abs(best.move))) best = { move, line };
     }
   }
-  if (best !== undefined) return { start: clampSpan(at + best.move, size, boxStart, box), guide: best.line };
-  const step = box / cells;
-  const moves = spanLines(at, size).map((own) => boxStart + Math.round((own - boxStart) / step) * step - own);
+  if (best !== undefined) return { start: held(at + best.move), guide: best.line };
+  const moves = spanLines(at, size).map((own) => Math.round(own / step) * step - own);
   const move = moves.reduce((a, b) => (Math.abs(b) < Math.abs(a) ? b : a));
-  return { start: clampSpan(at + move, size, boxStart, box) };
+  return { start: held(at + move) };
 }
 
 /** Which third of a length a span's middle is in. */
@@ -97,11 +99,11 @@ function storedOffset(points: number, length: number): number {
 export function snappedArrangePart(input: ArrangeSnapInput, moveX: number, moveY: number): ArrangeSnapped {
   const { tile, content, native, part, entry, drawn, others, threshold, free } = input;
   const lines = {
-    x: [...spanLines(content.x, content.width), ...others.flatMap((o) => spanLines(o.x, o.width))],
-    y: [...spanLines(content.y, content.height), ...others.flatMap((o) => spanLines(o.y, o.height))],
+    x: [...spanLines(0, tile.width), content.x, content.x + content.width, ...others.flatMap((o) => spanLines(o.x, o.width))],
+    y: [...spanLines(0, tile.height), content.y, content.y + content.height, ...others.flatMap((o) => spanLines(o.y, o.height))],
   };
-  const x = snapAxis(drawn.x + moveX, drawn.width, tile.width, content.x, content.width, ARRANGE_GRID.across, lines.x, threshold, free);
-  const y = snapAxis(drawn.y + moveY, drawn.height, tile.height, content.y, content.height, ARRANGE_GRID.down, lines.y, threshold, free);
+  const x = snapAxis(drawn.x + moveX, drawn.width, tile.width, ARRANGE_GRID.across, lines.x, threshold, free);
+  const y = snapAxis(drawn.y + moveY, drawn.height, tile.height, ARRANGE_GRID.down, lines.y, threshold, free);
 
   const placed = arrangePartRect(tile, content, native, part, entry).rect;
   const col = thirdOf(x.start, drawn.width, tile.width);

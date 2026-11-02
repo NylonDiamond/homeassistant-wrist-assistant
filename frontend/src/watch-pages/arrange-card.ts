@@ -27,7 +27,7 @@
 // that are read while the two load.
 
 import { html, nothing, type TemplateResult } from "lit";
-import { numberField, segField } from "../editors.js";
+import { numberField, sliderField } from "../editors.js";
 import type { HassEntityState } from "../ha-api.js";
 import { arrangementFor, arrangementUpdateNote } from "../version.js";
 import { type TileSettingsHost, hostDevice } from "./editor-host.js";
@@ -41,6 +41,8 @@ import {
   arrangeFreeBlock,
   arrangeFreeOn,
   arrangeFrame,
+  arrangePartDrawn,
+  arrangePartOffered,
   arrangePickedPart,
   arrangeStartFor,
   setArrangeFreePicked,
@@ -49,6 +51,7 @@ import {
 import { type ArrangePagePlan, arrangePagePlan, tileLooks, tileWithLook } from "./arrange-looks.js";
 import {
   ARRANGE_OFFSET_RANGE,
+  ARRANGE_SCALE_RANGE,
   ARRANGE_SPOTS,
   type ArrangePart,
   type ArrangePartEntry,
@@ -173,14 +176,13 @@ function useOnWholePage(host: TileSettingsHost, plan: ArrangePagePlan): void {
 
 // ── the rows ─────────────────────────────────────────────────────────────
 
-const PART_LABELS: [ArrangePart, string][] = [["icon", "Icon"], ["name", "Name"], ["state", "State"]];
-const SCALES: [string, string][] = [["0.8", "80%"], ["1", "100%"], ["1.2", "120%"], ["1.5", "150%"]];
+const PART_LABELS: [ArrangePart, string][] = [["icon", "Icon"], ["name", "Name"], ["state", "State"], ["bar", "Bar"], ["button", "Button"]];
 const SPOT_WORDS: Readonly<Record<ArrangeSpot, string>> = {
   tl: "Top left", tc: "Top centre", tr: "Top right",
   ml: "Middle left", mc: "Middle", mr: "Middle right",
   bl: "Bottom left", bc: "Bottom centre", br: "Bottom right",
 };
-const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state" };
+const PART_WORDS: Readonly<Record<ArrangePart, string>> = { icon: "icon", name: "name", state: "state", bar: "bar", button: "button" };
 
 /** The names of the devices on the page whose app draws Standard whatever is
  * stored. */
@@ -302,10 +304,10 @@ export function renderArrangeSection(
         ${well}
         <div class="hint keep ts-arr-how">${pickedHidden
           ? `The ${PART_WORDS[picked]} is hidden. Press its eye to show it.`
-          : "Drag a part to move it. It snaps to the grid and to the other parts. Hold Option or Alt to place it freely."}</div>
+          : "Drag a part to move it. It snaps to the grid and to the other parts, and can go a little past the edge. Hold Option or Alt to place it freely."}</div>
       </div>
       <div class="ts-arr-tools">
-        ${renderPartRow(host, stored)}
+        ${renderPartRow(host, stored, arrangeFrame(source, tile)?.model)}
         ${renderCustomRows(host, stored, arrangeFrame(source, tile)?.model)}
       </div>
     </div></div>`;
@@ -316,14 +318,17 @@ const EYE_OFF = html`<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden
 
 /** The parts, one button each: its name picks it, its eye shows or hides it.
  * A hidden part has nothing to click on the tile, so it is picked here. */
-function renderPartRow(host: TileSettingsHost, stored: TileArrange | undefined): TemplateResult {
+function renderPartRow(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
   const picked = arrangeSelectedPart(host);
   const pick = (part: ArrangePart) => {
     setArrangePickedPart(host.uiState, host.tileId, part);
     host.endCoalesce();
     host.requestUpdate();
   };
-  return html`<div class="ts-arr-parts" role="group" aria-label=Part>${PART_LABELS.map(([part, label]) => {
+  // Only the parts this tile can have. A part kept for a tile that has it no
+  // more, so its Changed mark and Reset are still in reach, stays too.
+  const parts = PART_LABELS.filter(([part]) => arrangePartOffered(model, part) || stored?.parts[part] !== undefined);
+  return html`<div class="ts-arr-parts" role="group" aria-label=Part>${parts.map(([part, label]) => {
     const entry = stored?.parts[part];
     const hidden = entry?.hidden === true;
     const eye = html`<button type="button" class="ts-arr-eye" aria-pressed=${hidden ? "false" : "true"} aria-label=${`${hidden ? "Show" : "Hide"} the ${PART_WORDS[part]}`} title=${`${hidden ? "Show" : "Hide"} the ${PART_WORDS[part]}`}
@@ -342,6 +347,8 @@ function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefine
   const part = picked;
   const entry = stored?.parts[part] ?? {};
   const drawn = model === undefined ? true
+    : part === "bar" ? model.layout.barRect !== undefined
+    : part === "button" ? arrangePartDrawn(model, "button")
     : part === "icon" ? model.layout.discRect.width > 0
     : part === "name" ? model.layout.name.lines.length > 0
     : model.layout.stateRect !== undefined;
@@ -352,7 +359,6 @@ function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefine
     return { ...rest, spot };
   });
   const nudged = (entry.dx ?? 0) !== 0 || (entry.dy ?? 0) !== 0;
-  const scale = String(entry.scale ?? 1);
   const percent = (axis: "dx" | "dy") => Math.round((entry[axis] ?? 0) * 1000) / 10;
   const offset = (axis: "dx" | "dy") => {
     const label = axis === "dx" ? "Across" : "Down";
@@ -376,7 +382,9 @@ function renderCustomRows(host: TileSettingsHost, stored: TileArrange | undefine
           })}
         </div>
       </div>
-      ${segField("Size", scale, SCALES, (v) => writePart(host, "scale", (e) => ({ ...e, scale: Number(v) })), { def: "1" })}
+      ${sliderField("Size", Math.round((entry.scale ?? 1) * 100), (p) => writePart(host, "scale", (e) => ({ ...e, scale: p / 100 }), true), {
+        min: ARRANGE_SCALE_RANGE[0] * 100, max: ARRANGE_SCALE_RANGE[1] * 100, step: 1, def: 100, unit: "%", format: (p) => `${Math.round(p)}%`,
+      })}
     </div>
     ${rareRow(host, "arrange", false, html`${offset("dx")}${offset("dy")}
       <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the iPhone.</div>`)}

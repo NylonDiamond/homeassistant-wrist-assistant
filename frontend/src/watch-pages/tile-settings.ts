@@ -3977,7 +3977,7 @@ export const tileSettingsStyles = css`
   .ts-arr-done { display: flex; align-items: center; gap: 10px; padding: 6px 7px 6px 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: var(--wa-panel); font-size: 12.5px; }
   .ts-arr-done > span { flex: 1 1 auto; min-width: 0; }
   .ts-arr-pic {
-    display: grid; place-items: center; width: 100%; min-height: 150px; margin: 0; padding: 14px;
+    display: grid; place-items: center; width: 100%; min-height: 150px; margin: 0; padding: 34px;
     border-radius: 10px; background: #000; overflow: hidden;
   }
   .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
@@ -3986,7 +3986,7 @@ export const tileSettingsStyles = css`
   .ts-arr-work { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px 14px; align-items: start; }
   @container insp (min-width: 900px) { .ts-arr-work { grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); } }
   .ts-arr-stage, .ts-arr-tools { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .ts-arr-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .ts-arr-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
   .ts-arr-part { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-panel); overflow: hidden; }
   .ts-arr-part.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
   .ts-arr-part.off .ts-arr-part-name { color: var(--wa-muted); }

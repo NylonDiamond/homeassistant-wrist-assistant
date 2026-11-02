@@ -23,7 +23,8 @@ import {
   watchTileOneLookModel,
 } from "./preview.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
-import type { OneLookRect, OneLookSize } from "./one-look/layout.js";
+import { type OneLookRect, type OneLookSize, oneLookAccessoryHasOwnAction } from "./one-look/layout.js";
+import { oneLookCornerRadius, oneLookMetrics } from "./one-look/metrics.js";
 import {
   ARRANGE_OFFSET_RANGE,
   ARRANGE_PARTS,
@@ -107,12 +108,32 @@ export function arrangeFaceBlock(model: OneLookPreviewModel | undefined): string
   return undefined;
 }
 
-/** Which parts a model draws, whatever its layout's key then hides. */
+/** Which of the icon, the name and the state a model draws, whatever its
+ * layout's key then hides. */
 function drawnParts(model: OneLookPreviewModel): readonly ArrangePart[] {
+  return (["icon", "name", "state"] as const).filter((part) => arrangePartDrawn(model, part));
+}
+
+/** Whether a model draws a part now, wherever its layout's key puts it or
+ * whether the key hides it. A bar needs a level to show: an off light has none. */
+export function arrangePartDrawn(model: OneLookPreviewModel, part: ArrangePart): boolean {
   const layout = model.layout;
-  return ARRANGE_PARTS.filter((part) => (part === "icon" ? layout.discRect.width > 0
-    : part === "name" ? layout.name.lines.length > 0
-    : layout.state !== undefined && !model.kind.stateHidden));
+  switch (part) {
+    case "icon": return layout.discRect.width > 0;
+    case "name": return layout.name.lines.length > 0;
+    case "state": return layout.state !== undefined && !model.kind.stateHidden;
+    case "bar": return layout.barRect !== undefined && model.barValue !== undefined;
+    case "button": return layout.accessoryRect !== undefined && oneLookAccessoryHasOwnAction(layout.accessory);
+  }
+}
+
+/** Whether a tile can have a part at all, so its row is worth showing: a bar
+ * on a kind that keeps its room (an off light too), a button on a kind that
+ * draws one. The other three are on every tile. */
+export function arrangePartOffered(model: OneLookPreviewModel | undefined, part: ArrangePart): boolean {
+  if (part === "bar") return model?.layout.barRect !== undefined;
+  if (part === "button") return model !== undefined && arrangePartDrawn(model, "button");
+  return true;
 }
 
 /**
@@ -146,12 +167,16 @@ export function arrangeStartFor(model: OneLookPreviewModel | undefined): TileArr
   if (drawn.length === 0) return undefined;
   // A tile with its parts in a row is thin: they start apart, as it drew them.
   const row = model.layout.mode === "strip";
+  // A kind with a bar gets one in the centred layout, which this tile did not
+  // draw: it stays hidden until its eye brings it back.
+  const hasBar = !model.bar.fill && (model.kind.role.kind === "light" || model.kind.keepsBarRoom === true || model.kind.barLevel !== undefined);
   return normalizeTileArrange({
     v: 1,
     parts: {
       icon: drawn.includes("icon") ? { spot: row ? "ml" : "mc" } : { hidden: true },
       name: drawn.includes("name") ? (row ? { spot: "mr", scale: 0.8 } : { spot: "bc" }) : { hidden: true },
       state: drawn.includes("state") ? { spot: row ? "tr" : "tl" } : { hidden: true },
+      ...(hasBar ? { bar: { hidden: true } } : {}),
     },
   });
 }
@@ -239,6 +264,8 @@ function tileIdOf(tile: WatchPageTile): string {
 export interface ArrangeStageParts {
   /** The face's size inside the cell: what `dx` and `dy` are shares of. */
   size: OneLookSize;
+  /** The face's corner radius, which the grid over it follows. */
+  radius: number;
   /** How far the face sits in from the cell's edge on every side. */
   inset: number;
   /** Each part drawn now (not hidden, and one the tile has), where it is
@@ -289,7 +316,7 @@ export function arrangeStageParts(tile: WatchPageTile, cell: { width: number; he
     const placed = model.arrange?.[part];
     if (placed?.hidden === true) continue;
     if (part === "icon" && model.icon === "" && model.photo === undefined) continue;
-    if (part === "state" && (layout.state === undefined || model.kind.stateHidden)) continue;
+    if (part !== "icon" && !arrangePartDrawn(model, part)) continue;
     const rect = placed?.rect ?? native[part];
     if (rect === undefined || !(rect.width > 0 && rect.height > 0)) continue;
     // The icon's box is the glyph's ink, not the larger box it is fitted in,
@@ -298,7 +325,10 @@ export function arrangeStageParts(tile: WatchPageTile, cell: { width: number; he
       : part === "name" ? nameTextBox(rect, model, input.phone === undefined ? "watch" : "phone")
       : rect;
   }
-  return { size: layout.size, inset: previewTileCellInset(input, tile, cell.width, cell.height), parts, content: oneLookArrangeContent(layout), native };
+  return {
+    size: layout.size, radius: oneLookCornerRadius(oneLookMetrics(model.device), layout.size),
+    inset: previewTileCellInset(input, tile, cell.width, cell.height), parts, content: oneLookArrangeContent(layout), native,
+  };
 }
 
 /** An offset as a drag or a nudge writes it: clamped to its range and

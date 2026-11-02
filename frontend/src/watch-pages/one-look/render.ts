@@ -945,9 +945,10 @@ function bigValueLayer(model: OneLookPreviewModel, s: number): TemplateResult | 
 /** The thin bar across the top, filled to a lit light's brightness or
  * another kind's level, over a faint track. */
 function barLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeof nothing {
-  const rect = model.layout.barRect;
+  const placed = model.arrange?.bar;
+  const rect = placed?.rect ?? model.layout.barRect;
   const level = model.barValue;
-  if (rect === undefined || level === undefined) return nothing;
+  if (rect === undefined || level === undefined || placed?.hidden === true) return nothing;
   const fill = Math.max(rect.height, rect.width * Math.min(1, Math.max(0, level)));
   const colour = oneLookInkCss(oneLookBarColour(model.palette, model.bar.white), ONE_LOOK_BAR_FILL_OPACITY);
   const border = model.bar.border ? `;box-shadow:inset 0 0 0 ${r2(s)}px rgba(255, 255, 255, ${ONE_LOOK_BAR_BORDER_OPACITY})` : "";
@@ -1161,8 +1162,9 @@ const ACCESSORY_SYMBOLS: Readonly<Record<string, string>> = { fan: "fan.fill" };
  * has, so it draws nothing. */
 function accessoryLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: number): TemplateResult | typeof nothing {
   const { layout, palette } = model;
-  const rect = layout.accessoryRect;
-  if (rect === undefined || layout.accessory === "none" || layout.accessory === "live") return nothing;
+  const placed = model.arrange?.button;
+  const rect = placed?.rect ?? layout.accessoryRect;
+  if (rect === undefined || layout.accessory === "none" || layout.accessory === "live" || placed?.hidden === true) return nothing;
   const playing = model.kind.role.kind === "media" && model.kind.role.playing;
   const symbol = layout.accessory === "playPause" ? (playing ? "pause.fill" : "play.fill") : ACCESSORY_SYMBOLS[layout.accessory] ?? "";
   const box = rect.width * oneLookAccessoryGlyphShare(layout.accessory);
