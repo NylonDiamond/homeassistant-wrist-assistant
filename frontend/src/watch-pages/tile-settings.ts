@@ -2941,7 +2941,7 @@ function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<
   };
   return html`<div class="ts-sub ts-slide">
     <div class="ts-sub-h">
-      <span>Hold and slide</span>
+      <span></span>
       ${slides.anyStored && slides.readable
         ? linkButton("Reset all", "Every direction back to its default", () => commit(host, "slide", (d) => clearWatchTileHoldSlide(d, host.pageId, host.tileId)))
         : nothing}
@@ -4042,6 +4042,8 @@ export const tileSettingsStyles = css`
     min-width: 0; padding: 0; border: 0; scroll-margin-top: 12px;
   }
   .ts-top .ts-top-part[data-part="color"] { grid-template-columns: auto minmax(0, 1fr); }
+  .ts-top .ts-top-part[data-part="icon"] { grid-template-columns: var(--ts-top-lab) auto; }
+  .ts-top-look.has-photo .ts-top-part[data-part="icon"] { grid-template-columns: var(--ts-top-lab) minmax(0, 1fr); }
   @container insp (min-width: 760px) { .ts-top .ts-top-part[data-part="tap"] { grid-template-columns: auto minmax(0, 1fr); } }
   .ts-top-lab { display: flex; align-items: center; gap: 6px; min-height: 36px; font-size: 14px; font-weight: 500; color: var(--wa-ink); white-space: nowrap; }
   button.ts-dot-btn { padding: 0; border: 0; cursor: pointer; }
@@ -4063,7 +4065,8 @@ export const tileSettingsStyles = css`
      over the cards; the photos on a row of their own. */
   .ts-top .ts-top-part[data-part="icon"] fieldset.ts-top-b { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ts-top-src .field { display: block; min-height: 0; padding: 0; }
-  .ts-top-src .seg.wide { min-height: 36px; flex-wrap: nowrap; }
+  .ts-top-src .seg.wide { width: auto; height: 36px; flex-wrap: nowrap; }
+  .ts-top-src .seg.wide button { flex: none; padding: 0 11px; }
   .ts-top-photo { flex: 1 1 100%; min-width: 0; }
   .ts-top .ts-top-b .sym-field { position: relative; display: block; flex: none; padding: 0; }
   .ts-top .sym-field .sym-box { min-height: 36px; }
@@ -4079,9 +4082,9 @@ export const tileSettingsStyles = css`
   .ts-top .ts-arr > .ts-arr-foot.start { flex: none; }
   .ts-top .ts-arr-looks .field.pc-field { display: block; padding: 0; }
   .ts-top .ts-arr-looks .field.pc-field > span:first-child { display: none; }
-  .ts-top .pc-size-large .pc-opt { padding: 4px; }
-  .ts-top .pc-size-large .pc-pic { width: 96px; height: 64px; }
-  .ts-top .pc-size-large .pc-label { font-size: 12px; }
+  .ts-top .ts-arr-looks .pc-group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ts-top .ts-arr-looks .pc-opt { padding: 4px; }
+  .ts-top .ts-arr-looks .pc-size-large .pc-pic { width: 96px; height: 64px; }
   .ts-top .ts-rare:not([data-shown]) { display: none; }
   .ts-top button.ts-more {
     display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 4px 0 0; padding: 4px 2px;
