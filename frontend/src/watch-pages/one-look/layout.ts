@@ -87,9 +87,9 @@ export interface OneLookTileStyle {
   readonly iconSize?: number;
   /** Points, negative is up. */
   readonly iconOffset: number;
-  /** How far a set Icon Size goes past `iconSize`, the largest that leaves
-   * room for the text, in points. The layout is made at `iconSize`, then the
-   * icon grows by this about its centre: over the text, cut off by the tile. */
+  /** How far a set Icon Size goes past the old editor's largest for the tile,
+   * in points. The layout is made at `iconSize`, then the icon grows by this
+   * about its centre: over the text, cut off by the tile. */
   readonly iconGrow?: number;
   /** State Size over the look's own, held to 0.75 to 1.5. A drawn tile goes
    * by `stateSize` instead. */

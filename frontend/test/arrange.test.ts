@@ -172,7 +172,7 @@ describe("an Icon Size past what fits", () => {
   const model = (size: number | undefined) => watchTileOneLookModel(light(size === undefined ? {} : { iconSizeOverride: size }), cellOf(6, 4), watchInput(lit("light.kitchen")), UNIT)!;
 
   it("grows the icon about its centre, over the text, which stays where it was", () => {
-    const fits = model(50).layout;
+    const fits = model(48).layout;
     const grown = model(150).layout;
     expect(grown.mode).toBe("centred");
     expect(grown.stateRect).toEqual(fits.stateRect);
@@ -184,17 +184,19 @@ describe("an Icon Size past what fits", () => {
     expect(grown.glyphSize / fits.glyphSize).toBeCloseTo(grown.discRect.width / fits.discRect.width, 5);
   });
 
-  it("grows a little for a little: no jump just past the size that fits", () => {
-    const edge = model(38).layout.discRect.width;
-    const past = model(39).layout.discRect.width;
+  it("grows a little for a little: no jump just past the old largest", () => {
+    const edge = model(48).layout.discRect.width;
+    const past = model(50).layout.discRect.width;
     expect(past).toBeGreaterThan(edge);
-    expect(past - edge).toBeLessThan(3);
+    expect(past - edge).toBeLessThan(5);
   });
 
-  it("changes nothing for a size that fits, or for Auto", () => {
+  it("changes nothing for a size the old editor could store, or for Auto", () => {
     expect(model(undefined).style.iconGrow).toBeUndefined();
     expect(model(20).style.iconGrow).toBeUndefined();
-    expect(model(150).style.iconGrow).toBeGreaterThan(0);
+    // More than room for the text here, but a size stored before: it gives way.
+    expect(model(48).style.iconGrow).toBeUndefined();
+    expect(model(150).style.iconGrow).toBeCloseTo(150 - 48.6, 5);
   });
 
   it("stores up to 400 under One Look, and the tile's own largest under the old look", () => {

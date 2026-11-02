@@ -21,6 +21,7 @@ import { html, nothing, svg, type TemplateResult } from "lit";
 import type { HassEntityState } from "../../ha-api.js";
 import type { IconProvider } from "../../renderer.js";
 import { type WatchPageTile, tileEntityId, tileKind, tileShowsLabel, tileTarget } from "../model.js";
+import { watchTileMaxIconSize } from "../tile-settings-model.js";
 import { findWatchCatalogEntry, watchLibraryTarget, type WatchCatalog } from "../catalog.js";
 import { isWatchTvRemote } from "../special-model.js";
 import { watchMediaArtwork, watchSensorChart } from "../phone-keys-model.js";
@@ -444,7 +445,7 @@ function storedNumber(value: unknown): number | undefined {
 export interface OneLookOldSizes {
   readonly nameSize: number;
   readonly iconSize: number;
-  /** How far a set Icon Size goes past `iconSize`. */
+  /** How far a set Icon Size goes past the tile's old largest. */
   readonly iconGrow?: number;
   readonly iconOffset: number;
   readonly stateSize?: number;
@@ -477,11 +478,13 @@ export function oneLookOldSizes(
   const heightShare = look === "iphone" ? (room ? 0.42 : 0.6) : (room ? 0.54 : 0.68);
   const fit = Math.min(room ? cell.width * 0.64 : cell.width * 0.7, cell.height * heightShare);
   const iconOverride = storedNumber(tile.iconSizeOverride);
-  const iconAsked = iconOverride === undefined ? undefined : look === "iphone" ? iconOverride * scale : iconOverride;
-  const iconSize = iconAsked !== undefined
-    ? Math.max(8, Math.min(iconAsked, fit))
+  const iconSize = iconOverride !== undefined
+    ? Math.max(8, Math.min(look === "iphone" ? iconOverride * scale : iconOverride, fit))
     : Math.max(10, Math.min(fit, (room ? 36 : 40) * (look === "iphone" ? scale : 1)));
-  const iconGrow = iconAsked === undefined ? 0 : Math.max(0, iconAsked - iconSize);
+  // A size up to the old editor's largest for the tile (every size stored
+  // before this could grow) gives way to the text as it always did; only what
+  // goes past that grows.
+  const iconGrow = iconOverride === undefined ? 0 : Math.max(0, iconOverride - watchTileMaxIconSize(tile)) * (look === "iphone" ? scale : 1);
   const stateOverride = storedNumber(tile.badgeFontSizeOverride);
   return {
     nameSize,
