@@ -9,6 +9,7 @@
 // does. With no symbol provider, an icon draws as a dot that names its
 // symbol.
 
+import { svg } from "lit";
 import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
@@ -176,6 +177,39 @@ describe("an icon photo on a One Look tile", () => {
     const disc = model.layout.discRect;
     expect(at.x + at.w / 2).toBeCloseTo(disc.x + disc.width / 2, 1);
     expect(at.y + at.h / 2).toBeCloseTo(disc.y + disc.height / 2, 1);
+  });
+
+  it("draws a 2-across light tile's lamp as the watch does, from under the bar down to the name", () => {
+    // Jesse's "Jesse Office Lights": a watch 6x4 light tile, on, with a
+    // 384 by 310 lamp. The app (`takeOldSizes`, `oldPlaceGlyph`,
+    // `OneLookCutout.boxSide` with no disc): icon size min(36, 68 x 0.54)
+    // = 36, the bulb's extent 1.316 (its image over its point size), so the
+    // glyph box is 36 x 1.316 / 0.86 = 55.1, clear of the bar, the state
+    // and the name; the photo box its ink square, 55.1 x 0.86 = 47.4, and
+    // the lamp fitted in it, 47.4 by 38.3: 57% of the tile's 67 points,
+    // beside "100%", between the bar (to 7) and the name (from 50.4).
+    const bulb = { lightbulb: [13.65, 23.68], "lightbulb.fill": [13.65, 23.68] } as Record<string, [number, number]>;
+    const icons = {
+      render: (name: string, size: number) => bulb[name] === undefined ? undefined
+        : svg`<svg width=${size} height=${size} viewBox=${`0 0 ${bulb[name]![0]} ${bulb[name]![1]}`}><rect /></svg>`,
+      available: () => true,
+      names: () => Object.keys(bulb),
+    } as unknown as WatchPagePreviewInput["icons"];
+    const base = face(lamp({ customLabel: "Jesse Office Lights" }), "on", { ...have, photoSize: () => ({ width: 384, height: 310 }) });
+    const f: OneLookTileFaceInput = { ...base, input: { ...base.input, icons } };
+    const model = oneLookPreviewModel(f)!;
+    const l = model.layout;
+    expect(l.mode).toBe("centred");
+    expect(l.glyphAtOldPlace).toBe(true);
+    expect(model.style.iconSize).toBe(36);
+    expect(l.discRect.width).toBeCloseTo(36 * (23.68 / 22 + 0.24) / 0.86, 3);
+    const at = place(styleOf(text(renderOneLookTile(f)), "ol-cutout"));
+    expect(at.w).toBeCloseTo(47.4, 1);
+    expect(at.h).toBeCloseTo(47.4 * 310 / 384, 1);
+    expect(at.h / l.size.height).toBeGreaterThan(0.55);
+    expect(at.y).toBeGreaterThanOrEqual(l.barRect!.y + l.barRect!.height);
+    expect(at.y + at.h).toBeLessThanOrEqual(l.textOrigin.y);
+    expect(at.x).toBeGreaterThan(l.stateRect!.x + l.stateRect!.width - 2);
   });
 
   it("moves with the tile's Arrangement, as the icon does", () => {
