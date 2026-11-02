@@ -66,6 +66,24 @@ describe("the all-on picture's states", () => {
     expect(badgeOn(desk, statesOf(entity("light.desk", "off")))).toBeUndefined();
   });
 
+  it("turns a fan with speeds on at full speed, however the real fan is", () => {
+    const fan = tile("fan.bedroom");
+    const percent = (attributes: Record<string, unknown>, state = "off") =>
+      watchAllOnStates(fan, statesOf(entity("fan.bedroom", state, attributes)))!["fan.bedroom"]!.attributes.percentage;
+    expect(percent({ percentage: 0, percentage_step: 25 })).toBe(100);
+    expect(percent({ percentage: 25 }, "on")).toBe(100);
+    // Really on with no speed to read, as a fan in a preset mode is.
+    expect(percent({ percentage: null, percentage_step: 25, supported_features: 57 }, "on")).toBe(100);
+    expect(percent({ percentage: null, supported_features: 1 })).toBe(100);
+  });
+
+  it("gives a fan with no speeds no speed", () => {
+    const fan = tile("fan.bedroom");
+    const lit = watchAllOnStates(fan, statesOf(entity("fan.bedroom", "off", { supported_features: 48 })))!["fan.bedroom"]!;
+    expect(lit.state).toBe("on");
+    expect(lit.attributes).not.toHaveProperty("percentage");
+  });
+
   it("leaves out a light's real color", () => {
     const desk = tile("light.desk");
     const { attributes } = watchAllOnStates(desk, statesOf(entity("light.desk", "on", {

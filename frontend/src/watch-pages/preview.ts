@@ -3221,6 +3221,13 @@ function lightCanDim(attributes: Readonly<Record<string, unknown>>): boolean {
   return Array.isArray(modes) && modes.some((mode) => mode !== "onoff");
 }
 
+/** Whether a fan has speeds: it reports a speed or a speed step, or the set
+ * speed feature (bit 1). Home Assistant reports the last two on an off fan too. */
+function fanHasSpeeds(attributes: Readonly<Record<string, unknown>>): boolean {
+  if (storedNumber(attributes.percentage) !== undefined || storedNumber(attributes.percentage_step) !== undefined) return true;
+  return ((storedNumber(attributes.supported_features) ?? 0) & 1) !== 0;
+}
+
 /**
  * `real` (or nothing, for an entity Home Assistant has not reported) as a
  * typical on state of its kind, which is what the watch draws lit: a light,
@@ -3229,12 +3236,12 @@ function lightCanDim(attributes: Readonly<Record<string, unknown>>): boolean {
  * player playing; a vacuum cleaning; a mower mowing; a person home; a timer
  * running with no time to count; a climate in its own mode when it is on,
  * else its first mode that is not off, else heat; an alarm panel armed as it
- * is, else armed home. A light that can dim is at full brightness and a light
- * has no color of its own, whether or not it is really on, so the picture does
- * not follow the real lights. A fan keeps its speed only while it is really on,
- * and every other attribute (a player's volume, a climate's temperatures) is
- * kept as it is. Undefined for a kind with no on state: a sensor, number,
- * select, scene, button, script and the app's own tiles keep their real state.
+ * is, else armed home. A light that can dim is at full brightness, a light has
+ * no color of its own and a fan with speeds is at full speed, whether or not
+ * they are really on, so the picture does not follow the real devices. Every
+ * other attribute (a player's volume, a climate's temperatures) is kept as it
+ * is. Undefined for a kind with no on state: a sensor, number, select, scene,
+ * button, script and the app's own tiles keep their real state.
  */
 function allOnEntity(entityId: string, real: HassEntityState | undefined): HassEntityState | undefined {
   const kind = tileKind(entityId);
@@ -3250,7 +3257,8 @@ function allOnEntity(entityId: string, real: HassEntityState | undefined): HassE
       break;
     }
     case "fan":
-      if (was !== "on") delete attributes.percentage;
+      if (fanHasSpeeds(attributes)) attributes.percentage = 100;
+      else delete attributes.percentage;
       break;
     case "cover":
     case "valve":
