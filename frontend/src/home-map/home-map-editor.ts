@@ -100,6 +100,16 @@ import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { type HomeMapOp, addFloor, deleteFloor, homeMapFirstFloor, homeMapThingOfPin, homeStyleOf, renameFloor, startHomeMap } from "./edit-ops.js";
 import { HomeMapEditPage, homeMapKeyGroups } from "./edit-page.js";
+import {
+  HOME_MAP_SPLIT_MAX,
+  HOME_MAP_SPLIT_MIN,
+  homeMapClampSplit,
+  homeMapSplitPercent,
+  homeMapStoreSplit,
+  homeMapStoreTips,
+  homeMapStoredSplit,
+  homeMapStoredTips,
+} from "./editor-view.js";
 import { type HomeMapAddTab, HomeMapAddDialog, homeMapAddDialogStyles } from "./add-dialog.js";
 import {
   type HomeMapApplyOptions,
@@ -249,6 +259,10 @@ export class WaHomeMapEditor extends LitElement {
   @state() private styleOpen = false;
   /** Opens on Both, the plan to edit beside the model in 3D. */
   @state() private viewKind: "flat" | "model" | "both" = "both";
+  /** How much of Both the plan takes, in percent (`homeMapSplitPercent`). */
+  @state() private split = homeMapStoredSplit();
+  /** The how-to lines under the side panel's options show. */
+  @state() private tipsShown = homeMapStoredTips();
   @state() private view?: HomeMapView;
   @state() private artScale = 0;
   @state() private stageSize = { width: 0, height: 0 };
@@ -1327,7 +1341,8 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     const ctx = this.context();
-    if (ctx !== undefined && this.viewKind !== "model" && this.page.keyDown?.(ctx, e) === true) {
+    const clipKey = shortcut === "copy" || shortcut === "paste" || shortcut === "duplicate";
+    if (ctx !== undefined && (this.viewKind !== "model" || clipKey) && this.page.keyDown?.(ctx, e) === true) {
       e.preventDefault?.();
       return;
     }
@@ -1425,9 +1440,12 @@ export class WaHomeMapEditor extends LitElement {
       ${this.renderBar(doc, ctx)}
       ${note === undefined ? nothing : html`<div class="hme-note ${note.kind}" role="status"><span>${note.text}</span>
         <button class="hme-link" @click=${() => this.session?.dismissNote()}>Dismiss</button></div>`}
-      <div class="hme-body">
-        <aside class="hme-insp" aria-label=${this.walls === undefined ? "Side panel" : "Walls"}>${this.page.inspector(ctx)}</aside>
-        <section class="hme-stage-wrap">${this.renderStage(ctx)}</section>
+      <div class=${this.tipsShown ? "hme-body tips" : "hme-body"}>
+        <aside class="hme-insp" aria-label=${this.walls === undefined ? "Side panel" : "Walls"}>
+          ${this.page.inspector(ctx)}
+          <button type="button" class="hme-link hme-tips-link" aria-pressed=${this.tipsShown ? "true" : "false"} @click=${() => this.toggleTips()}>${this.tipsShown ? "Hide tips" : "Show tips"}</button>
+        </aside>
+        <section class="hme-stage-wrap" style=${`--hme-split:${this.split}%`}>${this.renderStage(ctx)}</section>
       </div>
       ${this.page.sheet?.(ctx) ?? nothing}
       ${this.renderDialog()}
@@ -1618,24 +1636,54 @@ export class WaHomeMapEditor extends LitElement {
         @drop=${(e: DragEvent) => this.onStageDrop(e)}>
         ${model ? this.renderModel(ctx, width, height) : this.renderPlan(ctx, width, height)}
       </svg>
-      ${banner === nothing ? nothing : html`<div class="hme-banner">${banner}</div>`}
-      ${pill === nothing ? nothing : html`<div class="hme-pill ${banner === nothing ? "" : "under"}">${pill}</div>`}
+      ${banner === nothing ? nothing : html`<div class="hme-banner ${walls ? "" : "beside"}">${banner}</div>`}
+      ${pill === nothing ? nothing : html`<div class="hme-pill ${banner !== nothing ? "under" : walls ? "" : "beside"}">${pill}</div>`}
       ${model ? nothing : page.stageExtra?.(ctx) ?? nothing}
       ${empty && !model && !page.arrange.draw.active ? html`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
         <span>Draw one by hand, or scan this floor with the iPhone.</span>
         <button type="button" class="hme-tb" @click=${() => { const c = this.context(); if (c) page.startDrawing(c); }}>＋ Draw a room by hand</button></div>` : nothing}
-      ${walls ? nothing : this.renderAddButton()}
+      ${walls ? nothing : this.renderAddButton(pill !== nothing || banner !== nothing)}
       ${this.renderDock(ctx)}
-    </div>${side}`;
+    </div>${both ? this.renderSplitHandle() : nothing}${side}`;
   }
 
   /** The Add button, floating in the plan's top left corner (the 3D view's
    * in Model): the one way in for devices and furniture, where the eye
    * already is rather than in the bar, where it was easy to miss. */
-  private renderAddButton(): TemplateResult {
-    return html`<button type="button" class="hme-add-btn" aria-haspopup="dialog" aria-expanded=${this.addOpen === undefined ? "false" : "true"}
-      title="Add a device or a piece of furniture (A)" @click=${() => this.openAdd()}>
-      <span aria-hidden="true">＋</span>Add device or furniture</button>`;
+  private renderAddButton(compact = false): TemplateResult {
+    return html`<button type="button" class="hme-add-btn ${compact ? "compact" : ""}" aria-haspopup="dialog" aria-expanded=${this.addOpen === undefined ? "false" : "true"}
+      aria-label="Add device or furniture" title="Add a device or a piece of furniture (A)" @click=${() => this.openAdd()}>
+      <span aria-hidden="true">＋</span>${compact ? "Add" : "Add device or furniture"}</button>`;
+  }
+
+  /** The bar between the plan and the model: drag it to give one more room,
+   * arrow keys step it, a double-click evens them. Kept in this browser. */
+  private renderSplitHandle(): TemplateResult {
+    const follow = (e: PointerEvent) => {
+      const handle = e.currentTarget as HTMLElement;
+      const wrap = handle.parentElement?.getBoundingClientRect();
+      if (wrap !== undefined) this.split = homeMapSplitPercent(e.clientX, wrap.left, wrap.width);
+    };
+    const save = () => homeMapStoreSplit(this.split);
+    return html`<div class="hme-split-handle" role="separator" tabindex="0" aria-orientation="vertical"
+      aria-label="Size of the plan and the model" aria-valuemin=${HOME_MAP_SPLIT_MIN} aria-valuemax=${HOME_MAP_SPLIT_MAX} aria-valuenow=${Math.round(this.split)}
+      title="Drag to give the plan or the model more room. Double-click to even them."
+      @pointerdown=${(e: PointerEvent) => { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); }}
+      @pointermove=${(e: PointerEvent) => { if (e.buttons !== 0) follow(e); }}
+      @pointerup=${save}
+      @dblclick=${() => { this.split = 50; save(); }}
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.split = homeMapClampSplit(this.split + (e.key === "ArrowLeft" ? -5 : 5));
+        save();
+      }}><span aria-hidden="true"></span></div>`;
+  }
+
+  private toggleTips(): void {
+    this.tipsShown = !this.tipsShown;
+    homeMapStoreTips(this.tipsShown);
   }
 
   /** A press on the model beside the plan turns it, as in Model. */

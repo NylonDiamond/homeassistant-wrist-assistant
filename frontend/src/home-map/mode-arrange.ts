@@ -63,8 +63,12 @@ import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from 
 import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
 import {
+  type HomeMapClip,
   type HomeMapObjectResize,
   type HomeMapPart,
+  type HomeMapPasted,
+  homeMapClipOf,
+  pasteThings,
   type HomeMapResize,
   type HomeMapResizeSides,
   type HomeMapRoomPart,
@@ -146,6 +150,7 @@ import {
 import {
   homeMapCount,
   homeMapObjectName,
+  homeMapOnMac,
   homeMapOpeningName,
   homeMapRoomBox,
   homeMapRoomSize,
@@ -279,7 +284,7 @@ function colourChoice(o: {
       <label class="hme-chip sel hme-pick ${custom ? "on" : ""}" title=${o.customTitle}>${custom ? html`<span class="hme-swatch" style=${`background:${now}`}></span>` : nothing}Custom
         ${hmeColourInput({ value: now ?? o.presets[0]!.hex, label: o.customLabel, preview: o.preview, set: o.set })}</label>
     </div></div>
-    ${mixed ? hmeHint(`Mixed: their ${o.word.toLowerCase()} colours differ. Pick one to set them all.`) : nothing}`;
+    ${mixed ? hmeHint(`Mixed: their ${o.word.toLowerCase()} colours differ. Pick one to set them all.`, true) : nothing}`;
 }
 
 /** A turn handle snaps to this many degrees unless Alt is held. */
@@ -1074,6 +1079,72 @@ export class ArrangeMode {
     this.draw.hover(ctx, at);
   }
 
+  // ── copy and paste ─────────────────────────────────────────────────────
+
+  /** What Copy last took, kept while the editor is open, on any floor. */
+  private clip: HomeMapClip | undefined;
+  /** Where the pointer is on the plan; undefined when it is off the plan. */
+  pointer: HomePoint | undefined;
+
+  /** The furniture picked, as places on the map. */
+  private pickedRefs(ctx: HomeMapEditorContext): HomeMapThingRef[] {
+    const selection = ctx.selection;
+    if (selection?.kind === "object") return [{ roomId: selection.roomId, object: selection.object }];
+    if (selection?.kind === "objects") return selection.items;
+    return [];
+  }
+
+  private copyPicked(ctx: HomeMapEditorContext): boolean {
+    const clip = homeMapClipOf(ctx.doc, this.pickedRefs(ctx));
+    if (clip === undefined) return false;
+    this.clip = clip;
+    return true;
+  }
+
+  /** `clip` on the floor showing, what landed picked; one edit to undo. */
+  private paste(ctx: HomeMapEditorContext, clip: HomeMapClip, at: HomePoint | undefined): HomeMapPasted | undefined {
+    const floorId = ctx.floor.id;
+    const roomId = homeMapSelectionRoom(ctx.selection);
+    const pasted = pasteThings(ctx.doc, floorId, clip, at, roomId);
+    if (pasted === undefined) return undefined;
+    const first = pasted.items[0]!;
+    const select: HomeMapSelection = pasted.items.length === 1
+      ? { kind: "object", roomId: first.roomId, object: first.object }
+      : { kind: "objects", items: pasted.items };
+    return ctx.apply((d) => pasteThings(d, floorId, clip, at, roomId)?.doc, { select }) ? pasted : undefined;
+  }
+
+  private pasteClip(ctx: HomeMapEditorContext): boolean {
+    if (this.clip === undefined) return false;
+    const pasted = this.paste(ctx, this.clip, this.pointer);
+    if (pasted !== undefined) this.clip = pasted.clip;
+    return true;
+  }
+
+  private duplicatePicked(ctx: HomeMapEditorContext): boolean {
+    const clip = homeMapClipOf(ctx.doc, this.pickedRefs(ctx));
+    if (clip === undefined) return false;
+    this.paste(ctx, clip, undefined);
+    return true;
+  }
+
+  /** Copy, Paste or Duplicate from the keys. False with nothing to act on,
+   * so the browser's own copy still works on text. */
+  clipKey(ctx: HomeMapEditorContext, key: "copy" | "paste" | "duplicate"): boolean {
+    if (key === "copy") return this.copyPicked(ctx);
+    if (key === "paste") return this.pasteClip(ctx);
+    return this.duplicatePicked(ctx);
+  }
+
+  private copyButtons(ctx: HomeMapEditorContext): TemplateResult {
+    return html`<button type="button" class="hme-tb" title="Copy it, to paste on any floor (${homeMapOnMac() ? "⌘C" : "Ctrl+C"})" @click=${() => this.copyPicked(ctx)}>Copy</button>
+      <button type="button" class="hme-tb" title="Make a copy beside it (${homeMapOnMac() ? "⌘D" : "Ctrl+D"})" @click=${() => this.duplicatePicked(ctx)}>Duplicate</button>`;
+  }
+
+  private pasteButton(ctx: HomeMapEditorContext): TemplateResult {
+    return html`<button type="button" class="hme-tb" title="Paste the furniture you copied (${homeMapOnMac() ? "⌘V" : "Ctrl+V"})" @click=${() => this.pasteClip(ctx)}>Paste</button>`;
+  }
+
   keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
     if (this.draw.active) return this.draw.keyDown(ctx, e);
     const many = this.pickedMany(ctx);
@@ -1182,24 +1253,27 @@ export class ArrangeMode {
       const refs = thingRefs(many);
       const shown = many.some((t) => t.object.hidden !== true);
       return html`<span class="hme-pill-name">${homeMapCount(many.length, "thing")}</span>
+        ${this.copyButtons(ctx)}
         <button type="button" class="hme-tb" title=${shown ? "Hide every picked thing" : "Show every picked thing"}
           @click=${() => ctx.apply((d) => setObjectsHidden(d, refs, shown))}>${shown ? "Hide" : "Show"}</button>
         <button type="button" class="hme-tb danger" @click=${() => void this.askDeleteThings(ctx, many)}>Delete</button>`;
     }
     const room = this.focus(ctx);
-    if (room === undefined || this.dragging) return nothing;
+    if (this.dragging) return nothing;
+    if (room === undefined) return this.clip === undefined ? nothing : this.pasteButton(ctx);
     const id = room.id;
     const thing = this.picked(ctx);
     if (thing !== undefined) {
       const { index, object } = thing;
       return html`<span class="hme-pill-name">${homeMapThingName(object)}</span>
         <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnObject(d, id, index, 90))}>⟲ Turn 90°</button>
-        <button type="button" class="hme-tb" title="Turn it square with the room's walls" @click=${() => ctx.apply((d) => levelObject(d, id, index))}>Line up</button>
+        ${this.copyButtons(ctx)}
         <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => setObjectHidden(d, id, index, object.hidden !== true))}>${object.hidden === true ? "Show" : "Hide"}</button>
         <button type="button" class="hme-tb" @click=${() => ctx.select({ kind: "room", roomId: id })}>${homeMapRoomName(room)} ›</button>
         <button type="button" class="hme-tb danger" @click=${() => ctx.apply((d) => removeObject(d, id, index), { select: { kind: "room", roomId: id } })}>Remove</button>`;
     }
     return html`<span class="hme-pill-name">${homeMapRoomName(room)}</span>
+      ${this.clip === undefined ? nothing : this.pasteButton(ctx)}
       <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>⟲ Turn 90°</button>
       <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, id))}>Square the corners</button>
       <button type="button" class="hme-tb" title="Turn it to the floor's walls and slide it onto the nearest wall line, as the iPhone does"

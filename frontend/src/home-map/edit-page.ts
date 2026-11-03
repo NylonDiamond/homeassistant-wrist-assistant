@@ -203,6 +203,7 @@ export class HomeMapEditPage implements HomeMapPart {
   }
 
   hover(ctx: HomeMapEditorContext, at: HomePoint | undefined): void {
+    this.arrange.pointer = at;
     if (ctx.walls === undefined) this.arrange.hover(ctx, at);
     this.shape.hover(ctx, at);
   }
@@ -227,6 +228,7 @@ export class HomeMapEditPage implements HomeMapPart {
       return false;
     }
     if (this.arrange.draw.active && this.arrange.draw.keyDown(ctx, e)) return true;
+    if (shortcut === "copy" || shortcut === "paste" || shortcut === "duplicate") return this.arrange.clipKey(ctx, shortcut);
     if (letter === "f") {
       ctx.openAdd("furniture");
       return true;
@@ -416,6 +418,9 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
       title: "Edit",
       keys: [
         ["Delete", "Remove what is picked"],
+        [`${cmd}${mac ? "" : "+"}C`, "Copy the picked furniture"],
+        [`${cmd}${mac ? "" : "+"}V`, "Paste it under the pointer, on any floor"],
+        [`${cmd}${mac ? "" : "+"}D`, "Duplicate the picked furniture"],
         ["Arrows", "Nudge it 1 cm, with Shift 10 cm"],
         ["Enter", "Close the room being drawn"],
         ["Backspace", "Take back the last corner drawn"],
@@ -441,6 +446,7 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
         [`${cmd} click`, "Pick several things"],
         ["Shift drag", "Pick every device in a box"],
         ["Drag in 3D", "Turn the model; scroll to zoom"],
+        ["Drag a number", "Change it, with Shift in big steps, with Alt in fine ones; click it to type"],
       ],
     },
   ];

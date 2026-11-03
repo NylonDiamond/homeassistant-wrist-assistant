@@ -117,6 +117,9 @@ export type HomeMapShortcut =
   | "zoomOut"
   | "fit"
   | "help"
+  | "copy"
+  | "paste"
+  | "duplicate"
   | { letter: string }
   | { nudge: HomePoint };
 
@@ -144,6 +147,9 @@ export function homeMapShortcut(e: HomeMapKey, typing: boolean): HomeMapShortcut
   if (command) {
     if (key === "z") return e.shiftKey === true ? "redo" : "undo";
     if (key === "y") return "redo";
+    if (e.shiftKey !== true && key === "c") return "copy";
+    if (e.shiftKey !== true && key === "v") return "paste";
+    if (e.shiftKey !== true && key === "d") return "duplicate";
     return undefined;
   }
   if (e.altKey === true) return undefined;
@@ -315,4 +321,67 @@ export function homeMapObjectName(kind: string): string {
 /** "1 room", "3 rooms". */
 export function homeMapCount(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+// ── how the editor is laid out, kept in this browser ─────────────────────
+
+/** The least and most of Both the plan takes, in percent. */
+export const HOME_MAP_SPLIT_MIN = 25;
+export const HOME_MAP_SPLIT_MAX = 80;
+
+const SPLIT_KEY = "wa.homeMap.split";
+const TIPS_KEY = "wa.homeMap.tips";
+
+function homeMapStorage(): Storage | undefined {
+  try {
+    return (globalThis as { localStorage?: Storage }).localStorage ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `percent` kept in range; even for anything that is no number. */
+export function homeMapClampSplit(percent: number): number {
+  if (!Number.isFinite(percent)) return 50;
+  return Math.min(Math.max(percent, HOME_MAP_SPLIT_MIN), HOME_MAP_SPLIT_MAX);
+}
+
+/** The plan's share with the bar at `x`, in a space from `left`, `width` wide. */
+export function homeMapSplitPercent(x: number, left: number, width: number): number {
+  if (width <= 0) return 50;
+  return homeMapClampSplit(((x - left) / width) * 100);
+}
+
+export function homeMapStoredSplit(): number {
+  try {
+    const stored = homeMapStorage()?.getItem(SPLIT_KEY);
+    return stored === null || stored === undefined ? 50 : homeMapClampSplit(Number(stored));
+  } catch {
+    return 50;
+  }
+}
+
+export function homeMapStoreSplit(percent: number): void {
+  try {
+    homeMapStorage()?.setItem(SPLIT_KEY, String(Math.round(percent * 10) / 10));
+  } catch {
+    // Private browsing: it lasts until the page closes.
+  }
+}
+
+/** Tips start off: the options read without them. */
+export function homeMapStoredTips(): boolean {
+  try {
+    return homeMapStorage()?.getItem(TIPS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function homeMapStoreTips(shown: boolean): void {
+  try {
+    homeMapStorage()?.setItem(TIPS_KEY, shown ? "1" : "0");
+  } catch {
+    // Private browsing: it lasts until the page closes.
+  }
 }

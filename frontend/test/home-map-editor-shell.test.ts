@@ -75,7 +75,7 @@ describe("the editor's keys", () => {
     expect(homeMapShortcut({ key: "y", ctrlKey: true }, false)).toBe("redo");
     expect(homeMapShortcut({ key: "z", metaKey: true }, true)).toBeUndefined();
     expect(homeMapShortcut({ key: "d" }, true)).toBeUndefined();
-    expect(homeMapShortcut({ key: "c", metaKey: true }, false)).toBeUndefined();
+    expect(homeMapShortcut({ key: "k", metaKey: true }, false)).toBeUndefined();
   });
 
   it("hands a lone letter to the mode, and reads Escape, Delete, Enter, zoom and the arrows", () => {
@@ -144,7 +144,7 @@ describe("the editor's keys", () => {
     // Every tool key is a plain letter, never undo, redo, zoom or fit.
     for (const key of [...HOME_MAP_EDIT_TOOLS, ...HOME_MAP_SHAPE_TOOLS].map((t) => t.key)) {
       expect(homeMapShortcut({ key }, false)).toEqual({ letter: key });
-      expect(homeMapShortcut({ key, metaKey: true }, false)).toBeUndefined();
+      expect(["undo", "redo", "zoomIn", "zoomOut", "fit"]).not.toContain(homeMapShortcut({ key, metaKey: true }, false));
     }
     expect(homeMapShortcut({ key: "z", metaKey: true }, false)).toBe("undo");
   });

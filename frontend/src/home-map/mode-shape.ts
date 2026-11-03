@@ -856,7 +856,7 @@ export class ShapeMode {
         ${hmeRow("Walls", html`<span class="hme-val">${homeMapRoomWalls(room).length}</span>`)}
         ${hmeRow("Wall height", hmeNumber({ label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, set: (v) => ctx.apply((d) => setWallHeight(d, roomId, v)) }))}
         ${hmeHint("Click a wall to change it or put a door or window in it. Drag a corner to move it, or the dot in a wall's middle to add a corner.")}
-        ${back === undefined ? nothing : hmeHint("Its shape has changed since the iPhone scanned it.")}
+        ${back === undefined ? nothing : hmeHint("Its shape has changed since the iPhone scanned it.", true)}
         <div class="hme-row-end">
           ${back === undefined ? nothing : html`<button type="button" class="hme-tb" title=${BACK_TO_SCAN_TITLE} @click=${() => ctx.apply((d) => backToScan(d, roomId, back))}>Back to the scan</button>`}
           <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, roomId))}>Square the corners</button>

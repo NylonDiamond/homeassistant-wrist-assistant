@@ -1298,7 +1298,7 @@ export class DevicesMode {
           ${hmePic({ label: "Pill", picture: readingPicture("pill", tile), on: !reading.mixed && reading.value === undefined, title: "Each one's reading, as 21.5°, 52% or 627 W, when it has one", click: () => setAll({ reading: null }) })}
           ${hmePic({ label: "Name", picture: readingPicture("name", tile), on: !reading.mixed && reading.value === "name", click: () => setAll({ reading: "name" }) })}
         </div></div>
-        ${reading.mixed ? hmeHint("Mixed: they show different things. Pick one to set them all.") : nothing}`)}
+        ${reading.mixed ? hmeHint("Mixed: they show different things. Pick one to set them all.", true) : nothing}`)}
 
       ${hmeCard("Height", html`
         <div class="hme-r">
@@ -1350,7 +1350,7 @@ export class DevicesMode {
             set: (v) => setAll({ glowColor: v }),
           })}</label>
       </div></div>
-      ${colour.mixed ? hmeHint("Mixed: their colors differ. Pick one to set them all.") : nothing}
+      ${colour.mixed ? hmeHint("Mixed: their colors differ. Pick one to set them all.", true) : nothing}
       ${stayRow(spill.mixed ? "mixed" : spill.value ? "off" : "on", (stay) => setAll({ glowSpill: stay ? null : true }))}`);
   }
 

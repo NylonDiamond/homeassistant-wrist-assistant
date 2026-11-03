@@ -101,6 +101,9 @@ export const editorStyles = css`
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   }
   .hme-add-btn span { font-size: 18px; font-weight: 500; }
+  /* With something picked its bar takes the top of the plan: Add draws small
+   * and the bar starts after it, so neither covers the other. */
+  .hme-add-btn.compact { padding: 0 12px 0 9px; gap: 5px; }
   .hme-add-btn:hover { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); }
   .hme-add-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .hme-tb.hme-icon { width: 30px; padding: 0; font-size: 15px; }
@@ -236,6 +239,9 @@ export const editorStyles = css`
   .hme-turn .hme-num { flex: 1; }
   .hme-turn .hme-tb.hme-icon { width: 32px; padding: 0; justify-content: center; }
   .hme-foot-hint { color: var(--wa-faint); font-size: 11.5px; line-height: 1.4; margin: 2px 0 0; }
+  /* How-to lines wait for Show tips, so the options read at a glance. */
+  .hme-body:not(.tips) .hme-insp .hme-foot-hint, .hme-body:not(.tips) .hme-insp .hme-hint:not(.keep) { display: none; }
+  .hme-tips-link { align-self: flex-start; margin: 2px 4px 6px; font-size: 12px; color: var(--wa-faint); }
   .hme-in.hme-ro { color: var(--wa-soft); }
   .hme-pics { display: flex; gap: 10px; flex-wrap: wrap; }
   .hme-pic { display: flex; flex-direction: column; align-items: center; gap: 5px; font: inherit; font-size: 11px; color: var(--wa-muted); border: 0; background: none; padding: 0; cursor: pointer; max-width: 72px; text-align: center; }
@@ -373,8 +379,15 @@ export const editorStyles = css`
 
   /* ── the stage ────────────────────────────────────────────────────── */
   .hme-stage { position: absolute; inset: 0; border-radius: 16px; border: 1px solid var(--wa-line); background: #11100f; overflow: hidden; }
-  .hme-stage.hme-split-l { right: calc(50% + 6px); }
-  .hme-stage.hme-split-r { left: calc(50% + 6px); }
+  .hme-stage.hme-split-l { right: calc(100% - var(--hme-split, 50%) + 6px); }
+  .hme-stage.hme-split-r { left: calc(var(--hme-split, 50%) + 6px); }
+  .hme-split-handle {
+    position: absolute; top: 0; bottom: 0; left: calc(var(--hme-split, 50%) - 6px); width: 12px; z-index: 5;
+    display: flex; align-items: center; justify-content: center; cursor: col-resize; touch-action: none; border-radius: 6px;
+  }
+  .hme-split-handle span { width: 4px; height: 44px; border-radius: 2px; background: #48484a; }
+  .hme-split-handle:hover span, .hme-split-handle:active span { background: var(--hme-sel); }
+  .hme-split-handle:focus-visible { outline: 2px solid var(--hme-sel); outline-offset: -2px; }
   svg.hme-svg { display: block; position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
   svg.hme-svg text { font-family: var(--wa-font, inherit); }
   .hme-tag text { font-size: 11px; font-weight: 600; }
@@ -386,6 +399,7 @@ export const editorStyles = css`
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
   .hme-pill { top: 14px; }
+  .hme-pill.beside, .hme-banner.beside { left: 100px; transform: none; max-width: calc(100% - 114px); }
   .hme-pill.under { top: 62px; }
   .hme-dock { bottom: 14px; gap: 6px; padding: 6px; }
   /* Wall editing: the stage ringed in blue, and its Done bar. */

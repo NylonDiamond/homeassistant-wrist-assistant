@@ -128,6 +128,7 @@ import {
   orderedPin,
   orderedRoom,
   sameHomeMapId,
+  homeMapRoomAt,
 } from "./model.js";
 
 /** An edit that can be made again on a newer document. */
@@ -1419,6 +1420,65 @@ export function moveObjects(doc: HomeMapDocument, things: readonly HomeMapThingR
     const object = roomAt(d, t.roomId)?.room.objects[t.object];
     return object === undefined ? undefined : moveObject(d, t.roomId, t.object, [object.c[0] + dx, object.c[1] + dy]);
   });
+}
+
+/** Things copied, ready to paste. A copy holds no device: a device is one
+ * thing on the map, so the original keeps it. */
+export interface HomeMapClip {
+  objects: readonly HomeMapObject[];
+}
+
+/** How far a paste with no pointer to go by lands from what it copies, in
+ * meters along each of x and y. */
+export const HOME_MAP_PASTE_STEP = 0.3;
+
+/** `things` as a clip, undefined when none of them is there. */
+export function homeMapClipOf(doc: HomeMapDocument, things: readonly HomeMapThingRef[]): HomeMapClip | undefined {
+  const objects = things.flatMap((t) => {
+    const object = roomAt(doc, t.roomId)?.room.objects[t.object];
+    return object === undefined ? [] : [withoutLink(object)];
+  });
+  return objects.length === 0 ? undefined : { objects };
+}
+
+/** A paste: the map, the new things to pick, and the clip again with its
+ * things where they landed, so the next paste steps on from them. */
+export interface HomeMapPasted {
+  doc: HomeMapDocument;
+  items: HomeMapThingRef[];
+  clip: HomeMapClip;
+}
+
+/** The map with `clip` pasted on the floor, kept in the shape it was copied
+ * in: its middle at `at`, else `HOME_MAP_PASTE_STEP` on from where it was.
+ * Each thing joins the room under it, else the room under the middle, else
+ * `roomId`, else the floor's first room. Undefined with no room to take it,
+ * or a room that is full. */
+export function pasteThings(doc: HomeMapDocument, floorId: string, clip: HomeMapClip, at?: HomePoint, roomId?: string): HomeMapPasted | undefined {
+  const floor = doc.floors.find((f) => sameHomeMapId(f.id, floorId));
+  if (floor === undefined || clip.objects.length === 0) return undefined;
+  const middle = [0, 1].map((axis) => clip.objects.reduce((sum, o) => sum + o.c[axis]!, 0) / clip.objects.length) as [number, number];
+  const target: HomePoint = at ?? [middle[0] + HOME_MAP_PASTE_STEP, middle[1] + HOME_MAP_PASTE_STEP];
+  if (!finite(...target)) return undefined;
+  const fallback = homeMapRoomAt(floor, target)
+    ?? floor.rooms.find((room) => roomId !== undefined && sameHomeMapId(room.id, roomId))
+    ?? floor.rooms[0];
+  if (fallback === undefined) return undefined;
+  let next = doc;
+  const items: HomeMapThingRef[] = [];
+  const pasted: HomeMapObject[] = [];
+  for (const object of clip.objects) {
+    const c = roundPoint([object.c[0] + target[0] - middle[0], object.c[1] + target[1] - middle[1]]);
+    const room = homeMapRoomAt(floor, c) ?? fallback;
+    const copy = orderedObject({ ...object, c });
+    const index = roomAt(next, room.id)?.room.objects.length ?? 0;
+    const edited = editRoom(next, room.id, (r) => (r.objects.length >= 256 ? undefined : { ...r, objects: [...r.objects, copy] }));
+    if (edited === undefined) return undefined;
+    next = edited;
+    items.push({ roomId: room.id, object: index });
+    pasted.push(copy);
+  }
+  return { doc: next, items, clip: { objects: pasted } };
 }
 
 /** The map without several things, taken out of each room from the end of

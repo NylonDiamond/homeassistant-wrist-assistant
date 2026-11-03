@@ -24,9 +24,11 @@ export function hmeRow(label: string, ...controls: unknown[]): TemplateResult {
   return html`<div class="hme-r"><span class="hme-l">${label}</span>${controls}</div>`;
 }
 
-/** A hint under a row, lined up with the controls. */
-export function hmeHint(text: unknown): TemplateResult {
-  return html`<p class="hme-hint">${text}</p>`;
+/** A hint under a row, lined up with the controls. Hints show only with Show
+ * Tips on; `keep` is for one that says what is true now, not how to do things,
+ * and shows always. */
+export function hmeHint(text: unknown, keep = false): TemplateResult {
+  return html`<p class="hme-hint ${keep ? "keep" : ""}">${text}</p>`;
 }
 
 /** How far a dragged number field moves before it scrubs, in pixels. */
