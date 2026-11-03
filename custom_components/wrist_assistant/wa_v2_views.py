@@ -183,6 +183,7 @@ from .notifications import (
     is_iphone_entry,
     phone_watch_ids,
     resolve_push_routes,
+    watch_phone_ids,
 )
 from .page_images import content_type as page_image_content_type
 from .page_images_store import (
@@ -2292,6 +2293,64 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
             image_source=image_source,
             enriched_actions=enriched_actions,
             target_watch_ids=targets,
+        )
+    except HomeAssistantError as err:
+        return ctx.signed_json({"ok": False, "reason": str(err)})
+
+    sent = result.get("sent", 0)
+    return ctx.signed_json({"ok": sent > 0, "sent": sent})
+
+
+# The key the iPhone app routes on (`RemotePushRouter.openProKey`): a tap on an
+# alert that holds it opens the app's Pro screen.
+_OPEN_PRO_PUSH_KEY = "wa_open_pro"
+
+
+async def _op_pro_open_on_phone(ctx: _OpContext) -> Response:
+    """Ask the watch's iPhone to show Pro, from the watch's Pro screen.
+
+    The phone and the watch never talk to each other, and no watch app can
+    bring an iPhone app to the front. So this sends the iPhones of the watch's
+    Home Assistant user an alert, and a tap on it opens the app's Pro screen.
+    With the app open, the app shows Pro at once and no banner.
+
+    Returns {"ok": bool, ...}; ``ok:false`` with ``reason:"no_phone"`` when the
+    user has no iPhone here with a push token, and ``reason:"not_a_watch"`` for
+    an iPhone caller. The watch says what to do by hand in those cases.
+    """
+    store = ctx.domain_data.notification_store
+    if store is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "notifications unavailable"}, status=503
+        )
+    if _caller_is_iphone(ctx):
+        return ctx.signed_json({"ok": False, "reason": "not_a_watch"})
+
+    # The watch's own id is in this list when an old app left an iOS token under
+    # it. As a target it could route back to the watch, so it is left out.
+    phones = [
+        phone_id
+        for phone_id in watch_phone_ids(
+            ctx.domain_data.widget_secret_store.all_entries,
+            store.all_entries,
+            ctx.watch_id,
+        )
+        if phone_id != ctx.watch_id
+    ]
+    if not phones:
+        return ctx.signed_json({"ok": False, "reason": "no_phone"})
+
+    # Lazy import: see `_op_send_test_notification`.
+    from . import _deliver_push
+
+    try:
+        result = await _deliver_push(
+            ctx.hass,
+            ctx.domain_data,
+            title="Get Pro",
+            message="Tap to open Wrist Assistant Pro.",
+            extra_data={_OPEN_PRO_PUSH_KEY: True},
+            target_watch_ids=phones,
         )
     except HomeAssistantError as err:
         return ctx.signed_json({"ok": False, "reason": str(err)})
@@ -5821,6 +5880,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "notifications_register": _op_notifications_register,
     "notifications_status": _op_notifications_status,
     "send_test_notification": _op_send_test_notification,
+    "pro_open_on_phone": _op_pro_open_on_phone,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
     "snapshots_open": _op_snapshots_open,

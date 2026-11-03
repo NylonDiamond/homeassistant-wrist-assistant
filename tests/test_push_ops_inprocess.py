@@ -44,6 +44,7 @@ _NAMES = (
     "_op_notifications_register",
     "_op_notifications_status",
     "_op_send_test_notification",
+    "_op_pro_open_on_phone",
     "_op_watch_secret_status",
 )
 
@@ -145,6 +146,8 @@ class _Env:
             "DELIVERY_MODE_MIRROR": self.notif.DELIVERY_MODE_MIRROR,
             "is_iphone_entry": self.notif.is_iphone_entry,
             "phone_watch_ids": self.notif.phone_watch_ids,
+            "watch_phone_ids": self.notif.watch_phone_ids,
+            "_OPEN_PRO_PUSH_KEY": "wa_open_pro",
             "resolve_push_routes": self.notif.resolve_push_routes,
             "log_push_token_registered": lambda *a, **k: None,
             "_prebind_relay_token": lambda hass, data, wid, platform: env.prebound.append(
@@ -332,6 +335,30 @@ def test_a_watch_s_test_push_targets_itself(env) -> None:
     reply = env.call("send_test_notification", "w1", {})
     assert reply.body == {"ok": True, "sent": 1}
     assert env.delivered == [["w1"]]
+
+
+# ── pro_open_on_phone ────────────────────────────────────────────────────
+
+
+def test_a_watch_asks_its_user_s_phone_to_show_pro(env) -> None:
+    _register(env, "p1", "P1")
+    _register(env, "p2", "P2")
+    reply = env.call("pro_open_on_phone", "w1", {})
+    assert reply.body == {"ok": True, "sent": 1}
+    assert env.delivered == [["p1"]]
+
+
+def test_a_watch_whose_user_has_no_phone_token_is_told_so(env) -> None:
+    reply = env.call("pro_open_on_phone", "w1", {})
+    assert reply.body == {"ok": False, "reason": "no_phone"}
+    assert env.delivered == []
+
+
+def test_a_phone_cannot_ask_for_pro_on_a_phone(env) -> None:
+    _register(env, "p1", "P1")
+    reply = env.call("pro_open_on_phone", "p1", {})
+    assert reply.body == {"ok": False, "reason": "not_a_watch"}
+    assert env.delivered == []
 
 
 # ── the companion check: same user or nothing ────────────────────────────
