@@ -251,12 +251,14 @@ import {
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
 import { setWatchPageFitToScreen } from "./page-settings-model.js";
+import { fitStateWords } from "./fit-rows.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
   renderMapPageArt,
   renderPreviewFrame,
   renderWatchPagePreview,
+  watchFitState,
   renderWatchScreenFold,
   renderWatchTileFace,
   type WatchTilePreviewAs,
@@ -1075,9 +1077,16 @@ export class WaPageEditor extends LitElement {
     return this.libraryItem === undefined ? undefined : libraryDraftKey(this.libraryItem);
   }
 
-  /** Editing is off while a page with headers is shown as on the watch. */
+  /** Editing is off while a page with headers, or one fitted to the iPhone's
+   * screen, is shown as on its device. */
   private editingOff(page = this.currentPage()): boolean {
-    return this.asOnWatch && page !== undefined && watchPageHasHeader(page);
+    return this.asOnWatch && page !== undefined && (watchPageHasHeader(page) || this.fitsOnPhone(page));
+  }
+
+  /** A page Fit to screen changes: only in iPhone view, as the watch never
+   * reads the key. */
+  private fitsOnPhone(page: WatchPage): boolean {
+    return this.onPhone && !isSmartWatchPage(page) && !isMapWatchPage(page) && page.fitToScreen === true;
   }
 
   /** Whether the page is being saved. The save belongs to the kept draft,
@@ -4202,7 +4211,8 @@ export class WaPageEditor extends LitElement {
     const tiles = watchPageTiles(page).length;
     const config = readSmartConfig(page);
     const states = this.previewStates();
-    const headers = !smart && !map && watchPageHasHeader(page);
+    const fits = this.fitsOnPhone(page);
+    const headers = !smart && !map && (watchPageHasHeader(page) || fits);
     const asOnWatch = headers && this.asOnWatch;
     const scale = phone ? this.stageScale * PHONE_STAGE_ZOOM : this.stageScale;
     const input: WatchPagePreviewInput = {
@@ -4254,6 +4264,7 @@ export class WaPageEditor extends LitElement {
     // while Help is on (the inspector's switch, `helpOn`).
     const status = smart ? undefined
       : map ? WATCH_MAP_PAGE_WORDS.stage
+      : asOnWatch && fits ? `Shown as the iPhone draws it, fitted to its screen. Turn off ${this.viewName} to edit.`
       : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
       : undefined;
@@ -4499,7 +4510,7 @@ export class WaPageEditor extends LitElement {
           @click=${() => this.setZoom(undefined)}>Fit</button>
       </span>
       ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
-          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
+          title=${`See the page as the ${deviceWord(this.linkKind)} draws it. Editing is off while this is on.`}
           @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word keep">${this.viewName}</span></button>` : nothing}
       ${smart ? nothing : html`${sep}<label class="pe-switch pe-live pe-tip"
           data-tip=${this.liveStates
@@ -5083,20 +5094,30 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The Fit to screen switch, a row of the On the iPhone card: on, the
-   * iPhone shrinks the page's tiles, kept square and centred, until every
-   * row shows without scrolling (`fitToScreen`). Only in iPhone view, and
-   * never on a map page, which is one map and no grid.
+   * iPhone keeps the page's width and makes its rows shorter until every row
+   * shows without scrolling (`fitToScreen`), and the row says what that does
+   * to this page. Only in iPhone view, and never on a map page, which is one
+   * map and no grid.
    */
   private renderFitToScreenSwitch(page: WatchPage): TemplateResult | typeof nothing {
     if (!this.onPhone || isMapWatchPage(page)) return nothing;
     return html`<label class="pe-switch pe-ow-row">
-      <span class="pe-ow-t"><span class="pe-ow-l">Fit to screen</span><span class="pe-ow-d">Shrinks the tiles so every row shows without scrolling. A page that needs them smaller than 60% scrolls as normal.</span></span>
+      <span class="pe-ow-t"><span class="pe-ow-l">Fit to screen</span><span class="pe-ow-d">Keeps the page's width and makes its rows shorter, so every row shows without scrolling.${page.fitToScreen === true ? ` ${this.fitWords(page)}` : ""}</span></span>
       <input type="checkbox" role="switch" .checked=${live(page.fitToScreen === true)} ?disabled=${this.busy}
         @change=${(e: Event) => this.applyFitToScreen(watchPageId(page), (e.target as HTMLInputElement).checked)} />
     </label>`;
   }
 
-  /** Turn Fit to screen on or off, as one undo step. */
+  /** What Fit to screen does to `page` on the iPhone shown. */
+  private fitWords(page: WatchPage): string {
+    const phone = this.phoneLayoutOf(undefined);
+    if (phone === undefined) return "";
+    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
+    return fitStateWords(watchFitState(this.previewInput(screenDrawnPage(page, "iphone"), pages, phonePagesScreen(phone), 1)));
+  }
+
+  /** Turn Fit to screen on or off, as one undo step. On shows the page as the
+   * iPhone draws it, so the fit is seen at once. */
   private applyFitToScreen(pageId: string, on: boolean): void {
     const document = this.draft?.document;
     if (document === undefined || this.busy) {
@@ -5109,6 +5130,8 @@ export class WaPageEditor extends LitElement {
       return;
     }
     this.edit(next);
+    this.asOnWatch = on;
+    this.cancelGestures();
   }
 
   /**

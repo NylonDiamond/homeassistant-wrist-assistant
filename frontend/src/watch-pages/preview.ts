@@ -91,6 +91,7 @@ import {
 } from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
+import { fittedLayout, fitState, PHONE_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
 import {
   PHONE_GRID_TOP_INSET,
   PHONE_GROUPED_BACKGROUND,
@@ -3900,7 +3901,10 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   // in the all-on picture every tile is on, so none is hidden. A tile the
   // device does not draw is gone in both.
   const phone = input.phone !== undefined;
-  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, phone ? "iphone" : "watch"), screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+  const packed = watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, phone ? "iphone" : "watch");
+  const unfitted = watchPreviewLayout(packed, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+  // A Fit to screen page draws as the iPhone draws it: its rows shorter.
+  const layout = phone && page.fitToScreen === true ? fittedLayout(unfitted, packed, watchFitHeight(input, packed)) : unfitted;
   // The tiles a watch skips, as dashed outlines where the page stores them
   // and under the tiles that move up into their place.
   const skipped = phone ? [] : watchSkippedTilesLayout(page, screen, input);
@@ -3918,6 +3922,23 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
     ${phone ? nothing : renderWatchPageIndicator(input, s)}
     ${scrolls ? renderWatchScreenFold(screen.height * s, phone) : nothing}
   </div>`);
+}
+
+/** The height a Fit to screen page's rows must fit in, on an iPhone: its pages
+ * area under the grid's top inset and over the room One Look leaves for the
+ * dock (`InteractiveGrid.fitHeight`). */
+export function watchFitHeight(input: WatchPagePreviewInput, page: WatchPage): number {
+  const top = page.fullScreen === true ? 0 : watchPreviewTopInset(input);
+  const dock = previewOneLook(input) === "phone" && input.phone !== undefined && phoneDrawsIphoneLook(input.phone)
+    && input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true).length >= 2;
+  return input.screen.height - top - (dock ? PHONE_FIT_BOTTOM_ROOM : 0);
+}
+
+/** How Fit to screen treats a page on an iPhone, for the panel to say. */
+export function watchFitState(input: WatchPagePreviewInput): FitState {
+  const packed = watchReflowPage(input.page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, "iphone");
+  const layout = watchPreviewLayout(packed, input.screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+  return fitState(packed, layout.unit, watchFitHeight(input, packed));
 }
 
 /** The look a map page's picture is drawn in: the iPhone draws the page as a
@@ -4142,7 +4163,9 @@ export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number
   if (isSmartWatchPage(page) || (phone && isMapWatchPage(page))) return false;
   const shown = watchScreenPage(page, phone ? "iphone" : "watch");
   if (!phone) return watchPreviewLayout(shown, screen).height > screen.height + 0.5;
-  return watchPreviewHeight(watchPreviewLayout(shown, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET }), true) > screen.height + 0.5;
+  const layout = watchPreviewLayout(shown, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET });
+  const drawn = page.fitToScreen === true ? fittedLayout(layout, shown, screen.height - PHONE_GRID_TOP_INSET) : layout;
+  return watchPreviewHeight(drawn, true) > screen.height + 0.5;
 }
 
 /** The picture's own rules. The screen is dark in both of the panel's skins,
