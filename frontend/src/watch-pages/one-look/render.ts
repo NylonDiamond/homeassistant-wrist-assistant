@@ -509,6 +509,10 @@ const NAME_WEIGHTS: ReadonlySet<string> = new Set(["regular", "medium", "semibol
  * (`defaultStatusIconSize`), which Status Icon Size is a factor on. */
 const DEFAULT_STATUS_ICON_SIZE = 15;
 
+/** The largest a squashed tile's state draws, so a big number leaves its name
+ * room (`OneLookTileStyle.squashedStateScale`). */
+export const ONE_LOOK_SQUASHED_STATE_SCALE = 0.7;
+
 /** A tile's text and icon settings as One Look reads them
  * (`OneLookTileStyle(item)`), with the old look's sizes in. */
 export function oneLookTileStyle(
@@ -522,15 +526,18 @@ export function oneLookTileStyle(
   const design = tile.labelFontDesign === "rounded" || tile.labelFontDesign === "monospaced" || tile.labelFontDesign === "serif"
     ? tile.labelFontDesign : "standard";
   const colour = watchTileLabelColor(tile);
+  // Squashed to a strip on a Fit to screen page (`fitDrawnTile`).
+  const squashed = storedNumber(tile.fittedCellHeight) !== undefined && rowSpan < ONE_LOOK_STRIP_ROWS;
   return {
     nameSize: old.nameSize,
     iconSize: old.iconSize,
     ...(old.iconGrow === undefined ? {} : { iconGrow: old.iconGrow }),
     iconOffset: old.iconOffset,
-    stateScale: oneLookStyleFactor(storedNumber(tile.badgeFontSizeOverride), staticBadgeSize(colSpan, rowSpan), ONE_LOOK_STATE_SCALE_RANGE),
+    stateScale: squashed ? Math.min(ONE_LOOK_SQUASHED_STATE_SCALE, oneLookStyleFactor(storedNumber(tile.badgeFontSizeOverride), staticBadgeSize(colSpan, rowSpan), ONE_LOOK_STATE_SCALE_RANGE))
+      : oneLookStyleFactor(storedNumber(tile.badgeFontSizeOverride), staticBadgeSize(colSpan, rowSpan), ONE_LOOK_STATE_SCALE_RANGE),
     ...(old.stateSize === undefined ? {} : { stateSize: old.stateSize }),
     ownSizes: storedNumber(tile.iconSizeOverride) !== undefined || storedNumber(tile.labelFontSizeOverride) !== undefined,
-    ...(storedNumber(tile.fittedCellHeight) === undefined ? {} : { keepsStateLine: true }),
+    ...(squashed ? { keepsStateLine: true } : {}),
     accessoryScale: oneLookStyleFactor(storedNumber(tile.statusIconSizeOverride), DEFAULT_STATUS_ICON_SIZE, ONE_LOOK_ACCESSORY_SCALE_RANGE),
     ...(weight === undefined ? {} : { nameWeight: weight }),
     nameDesign: design,

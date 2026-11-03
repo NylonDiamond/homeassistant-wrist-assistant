@@ -20,6 +20,7 @@ import {
   type FitRowKind,
 } from "../src/watch-pages/fit-rows.js";
 import { watchPageLayout, type WatchPageTile } from "../src/watch-pages/model.js";
+import { ONE_LOOK_SQUASHED_STATE_SCALE, oneLookTileStyle } from "../src/watch-pages/one-look/render.js";
 import { cellAtPx, cellDelta, cellRectPx, cellsPath, nearestCell, rowsOnScreen, rowTopPx, stageGrid, withFitRows } from "../src/watch-pages/stage.js";
 import { setWatchPageFitToScreen } from "../src/watch-pages/page-settings-model.js";
 
@@ -193,6 +194,23 @@ describe("what the panel says of a fit", () => {
   it("has words for each", () => {
     expect(fitStateWords({ kind: "squashed", share: 0.48 })).toContain("48%");
     expect(fitStateWords({ kind: "scrolls" })).toContain("scrolls as normal");
+  });
+});
+
+describe("a squashed tile's text", () => {
+  const old = { nameSize: 15, iconSize: 20, iconOffset: 0 };
+  const tile = { entityId: "light.a", gridRow: 0, gridCol: 0, colSpan: 6, rowSpan: 4 } as unknown as WatchPageTile;
+
+  it("keeps its state, smaller, once it draws as a strip", () => {
+    const style = oneLookTileStyle(fitDrawnTile(tile, 42, 29), 6, 1, old);
+    expect(style.keepsStateLine).toBe(true);
+    expect(style.stateScale).toBe(ONE_LOOK_SQUASHED_STATE_SCALE);
+  });
+
+  it("is as it was on a tile that stays tall or has no fit", () => {
+    expect(oneLookTileStyle(tile, 6, 4, old).keepsStateLine).toBeUndefined();
+    const stillTall = { ...tile, rowSpan: 6, fittedCellHeight: 130 } as unknown as WatchPageTile;
+    expect(oneLookTileStyle(stillTall, 6, 6, old).keepsStateLine).toBeUndefined();
   });
 });
 

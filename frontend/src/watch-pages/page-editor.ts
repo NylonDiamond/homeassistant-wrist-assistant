@@ -4346,7 +4346,7 @@ export class WaPageEditor extends LitElement {
       const w = at.screen.width * (at.scale ?? 1);
       const parts = k === "watch" ? `--pe-band:${Math.round(w * WATCH_BAND_RATIO)}px;--pe-crown:${Math.round(w * WATCH_CROWN_RATIO)}px` : nothing;
       return html`<div class="lib-duo-side ${k}" data-screen-side=${k}>
-        <div class="pe-device ${k}" style=${parts}>
+        <div class="pe-device ${k}" style=${parts} @click=${(e: MouseEvent) => this.onDeviceClick(e, k)}>
           ${draw(at, k)}
           <span class="pe-screen-end" hidden title=${k === "watch" ? STAGE_WATCH_END_TEXT : STAGE_PHONE_END_TEXT}><i></i><b>Screen 1</b></span>
         </div>
@@ -4355,6 +4355,20 @@ export class WaPageEditor extends LitElement {
       </div>`;
     };
     return html`<div class="lib-duo">${shown.map((k, i) => side(k, i === shown.length - 1))}</div>`;
+  }
+
+  /**
+   * A click on a device that no tile took: it picks that picture and shows the
+   * page's settings. The iPhone's top row and dock sit outside its screen,
+   * which is only its pages area, so the click is taken here and the screen
+   * gets the focus, as a click on it would.
+   */
+  private onDeviceClick(e: MouseEvent, on: WatchScreen): void {
+    this.editScreen = on;
+    const inScreen = (e.target as Element | null)?.closest?.(".pe-screen") ?? null;
+    if (inScreen !== null) return;
+    this.selectTile(undefined);
+    this.renderRoot.querySelector<HTMLElement>(`.pe-screen[data-screen="${on}"]`)?.focus({ preventScroll: true });
   }
 
   /**
