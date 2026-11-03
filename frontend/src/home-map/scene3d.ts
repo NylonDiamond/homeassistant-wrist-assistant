@@ -25,7 +25,7 @@
 // The plan's x stays x, the plan's y becomes z, and up is y; a thing's turn
 // is a turn about up by the same angle, a model's front its +z. Shown at
 // night only the lights and a faint sky light it, by day a sun comes in
-// too; a soft environment stands in for the light a room's walls bounce
+// too, where the real sun is (`sun.ts`); a soft environment stands in for the light a room's walls bounce
 // about, so a shadow is never pure black. A ceiling light shines down in a
 // soft cone, any other light every way. A light a lamp holds has no bulb of
 // its own drawn: it shines from inside the lamp, which casts no shadow so
@@ -65,6 +65,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { CopyShader } from "three/addons/shaders/CopyShader.js";
 import { homeMapHeldPins } from "./edit-ops.js";
+import { type HomeMapSky } from "./sun.js";
 import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeWallsOf } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
@@ -78,8 +79,9 @@ export interface HomeMap3DInput {
   /** The picked room, or the picked things (one or several, in any rooms),
    * each by its room and its place in that room's list. */
   mark: { roomId: string } | { things: readonly { roomId: string; object: number }[] } | undefined;
-  /** Daylight: a sun comes in. Off, only the lights light the rooms. */
-  daylight: boolean;
+  /** The sun and the sky (`sun.ts`). At night only the lights light the
+   * rooms. */
+  sky: HomeMapSky;
 }
 
 // ── models ───────────────────────────────────────────────────────────────
@@ -144,7 +146,10 @@ const WALL = 0xdcd5c8;
 const BOX = 0x8a7f72;
 const FINISH: Readonly<Record<string, number>> = { carpet: 0x6f665c, wood: 0x8a6a4a, tile: 0xb9b4aa, stone: 0x8f8a82, plain: 0x8a847c };
 const NIGHT_SKY = 0x0f0e0d;
-const DAY_SKY = 0x1a1916;
+const DAY_SKY = new THREE.Color(0x1a1916);
+/** The sun's colour high in the sky and at the horizon. */
+const SUN_HIGH = new THREE.Color(0xfff1dc);
+const SUN_LOW = new THREE.Color(0xffa768);
 
 /** A light's brightest, in candela, as tuned on a real lamp. */
 const LAMP_CANDELA = 9;
@@ -701,6 +706,8 @@ export class HomeMapScene3D {
   private readonly environment: THREE.Texture;
   private readonly sky = new THREE.HemisphereLight(0x8a9ab8, 0x2a2018, 0.18);
   private readonly sun = new THREE.DirectionalLight(0xfff1dc, 0);
+  /** The sky last set, with the floor's bounds. */
+  private skyKey = "";
   private readonly rooms = new Map<string, { key: string; group: THREE.Group; walls: WallPiece[] }>();
   private readonly things = new Map<string, Thing>();
   private readonly lamps = new Map<string, Lamp>();
@@ -1037,10 +1044,7 @@ export class HomeMapScene3D {
       this.lightScreens(input.states);
       changed = true;
     }
-    if (seen === undefined || seen.daylight !== input.daylight) {
-      this.setDaylight(input.daylight, input.floor);
-      changed = true;
-    }
+    if (this.setSky(input.sky, input.floor)) changed = true;
     if (this.setMark(input.floor, input.mark)) changed = true;
     if (!sameHomeMapId(this.floorId, input.floor.id)) {
       this.floorId = input.floor.id;
@@ -1381,19 +1385,28 @@ export class HomeMapScene3D {
     disposeTree(lamp.bulb);
   }
 
-  private setDaylight(day: boolean, floor: HomeMapFloor): void {
+  /** The sun and the sky as `sky` says, the sun's shadow round `floor`.
+   * True when anything changed: the sun's shadow is drawn again only then. */
+  private setSky(sky: HomeMapSky, floor: HomeMapFloor): boolean {
     const b = floorBounds(floor);
+    const key = JSON.stringify([sky, b]);
+    if (key === this.skyKey) return false;
+    this.skyKey = key;
     const mid = new THREE.Vector3((b.minX + b.maxX) / 2, 0.8, (b.minY + b.maxY) / 2);
     const half = Math.max(b.maxX - b.minX, b.maxY - b.minY) / 2 + 1.5;
-    this.sun.intensity = day ? 2 : 0;
-    this.sun.position.set(mid.x - half * 0.4, 4.5 + half * 0.4, mid.z + half * 1.6);
+    const reach = half * 3 + 10;
+    this.sun.intensity = 2 * sky.sun;
+    this.sun.color.set(SUN_HIGH).lerp(SUN_LOW, sky.warm);
+    this.sun.position.set(mid.x + sky.dir[0] * reach, mid.y + sky.dir[1] * reach, mid.z + sky.dir[2] * reach);
     this.sun.target.position.copy(mid);
-    Object.assign(this.sun.shadow.camera, { left: -half * 1.4, right: half * 1.4, top: half * 1.4, bottom: -half * 1.4, near: 0.5, far: half * 6 + 20 });
+    this.sun.target.updateMatrixWorld();
+    Object.assign(this.sun.shadow.camera, { left: -half * 1.4, right: half * 1.4, top: half * 1.4, bottom: -half * 1.4, near: 0.5, far: reach * 2 });
     this.sun.shadow.camera.updateProjectionMatrix();
-    this.sky.intensity = day ? 0.55 : 0.18;
-    this.scene.environmentIntensity = day ? 0.35 : 0.22;
-    (this.scene.background as THREE.Color).set(day ? DAY_SKY : NIGHT_SKY);
+    this.sky.intensity = 0.18 + (0.55 - 0.18) * sky.sky;
+    this.scene.environmentIntensity = 0.22 + (0.35 - 0.22) * sky.sky;
+    (this.scene.background as THREE.Color).set(NIGHT_SKY).lerp(DAY_SKY, sky.sky);
     this.renderer.shadowMap.needsUpdate = true;
+    return true;
   }
 
   /** The picked room's floor, or each picked thing's box, outlined in

@@ -439,6 +439,12 @@ export const editorStyles = css`
     background: rgba(28, 28, 30, 0.96); border: 1px solid #3a3a3c; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
+  .hme-north { flex-direction: row; align-items: center; gap: 10px; padding: 8px 12px; white-space: nowrap; }
+  .hme-north-dial { width: 40px; height: 40px; flex: none; }
+  .hme-north-dial circle { fill: none; stroke: #48484a; stroke-width: 1.5; }
+  .hme-north-dial path { fill: #8e8e93; }
+  .hme-north-dial path.n { fill: #ff453a; }
+  .hme-north-row { display: flex; flex-direction: column; gap: 4px; color: #d1d1d6; font-size: 12px; min-width: 170px; }
   .hme-dock-item {
     display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; background: none;
     color: #d1d1d6; font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap;

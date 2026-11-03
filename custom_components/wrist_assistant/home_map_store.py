@@ -32,6 +32,7 @@ so a writer that drifts from it hears so at once::
     {"v": 1,
      "style"?: {"look"?, "turn"?, "names"?, "devices"?, "furniture"?,
                 "glow"?},
+     "north"?: <whole degrees, 1 to 359>,
      "floors": [{"id", "name", "story": <int>,
                  "place"?: {"x", "y", "turn"},
                  "rooms":[{"id", "name"?, "areaId"?, "pageId"?,
@@ -67,7 +68,10 @@ tile has no key of its own: ``look`` (plan, night, warm, lines, clay,
 blueprint or dots; plan when absent), ``turn`` (whole degrees, -180 to 180;
 -28), ``names``, ``furniture`` and ``glow`` (true or false; true) and
 ``devices`` (lights, all or none; lights). A default sent in ``style`` is
-dropped, and so is a ``style`` left empty. A floor's ``place`` says how it
+dropped, and so is a ``style`` left empty. ``north`` says where north is on
+the base floor's plan, in whole degrees clockwise from the top of the plan,
+0 to 359; 0, the top of the plan, is dropped. The 3D views' sun reads it. A
+floor's ``place`` says how it
 sits over the base floor (the floor with the lowest ``story``, the first
 of them on a tie), whose plan is the whole house's frame: a point of the
 floor's plan is turned round the plan's 0, 0 by ``turn`` degrees, the same
@@ -394,6 +398,16 @@ def _style(raw: Any) -> dict[str, Any]:
     return {key: value for key, value in checked.items() if value != STYLE_DEFAULTS[key]}
 
 
+def _north(raw: Any) -> int:
+    """Where north is on the plan, as whole degrees from 0 to 359."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+        _fail("doc.north", "must be a whole number between 0 and 359")
+    north = round(raw)
+    if not 0 <= north <= 359:
+        _fail("doc.north", "must be a whole number between 0 and 359")
+    return north
+
+
 class _Ids:
     """The floor, room and pin ids seen so far: unique across the whole
     document, whatever their case."""
@@ -609,11 +623,12 @@ def check_document(raw: Any) -> dict[str, Any]:
     contract's order. A new object; ``raw`` is not changed. ``invalid`` for
     anything off the contract (the message says where), ``too_large`` for a
     map over 256 KiB as stored."""
-    doc = _object(raw, "doc", ("v", "floors"), ("style",))
+    doc = _object(raw, "doc", ("v", "floors"), ("style", "north"))
     version = doc["v"]
     if isinstance(version, bool) or version != DOCUMENT_VERSION:
         _fail("doc.v", f"must be {DOCUMENT_VERSION}")
     style = _style(doc["style"]) if "style" in doc else {}
+    north = _north(doc["north"]) if "north" in doc else 0
     ids = _Ids()
     rooms_in_all = 0
     pins_in_all = 0
@@ -651,6 +666,8 @@ def check_document(raw: Any) -> dict[str, Any]:
     checked: dict[str, Any] = {"v": DOCUMENT_VERSION}
     if style:
         checked["style"] = style
+    if north != 0:
+        checked["north"] = north
     checked["floors"] = floors
     size = document_bytes(checked)
     if size > MAX_DOCUMENT_BYTES:

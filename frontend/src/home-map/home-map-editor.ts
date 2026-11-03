@@ -90,15 +90,16 @@
 
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing, svg } from "lit";
 import { property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { chromeTokens } from "../editor-chrome.js";
-import { formStyles } from "../form-styles.js";
+import { formStyles, rangeFill } from "../form-styles.js";
 import { type HassLike, fetchHomeMap, fetchHomeMapIfChanged, subscribeHomeMap } from "../ha-api.js";
 import { fetchLibrarySummary } from "../library/client.js";
 import { libraryItems, libraryOf } from "../library/model.js";
 import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { type HomeMapOp, addFloor, deleteFloor, homeMapFirstFloor, homeMapThingOfPin, homeStyleOf, renameFloor, startHomeMap } from "./edit-ops.js";
+import { type HomeMapOp, addFloor, deleteFloor, homeMapFirstFloor, homeMapThingOfPin, homeStyleOf, renameFloor, setHomeNorth, startHomeMap } from "./edit-ops.js";
 import { HomeMapEditPage, homeMapKeyGroups } from "./edit-page.js";
 import {
   HOME_MAP_SPLIT_MAX,
@@ -175,6 +176,7 @@ import {
   homeMapWriteQualityChoice,
 } from "./quality.js";
 import { homeMapPlanLook } from "./furniture.js";
+import { type HomeMapSkyChoice, type HomeMapSunPlace, homeMapFloorNorth, homeMapSkyFor, homeMapSunPlace } from "./sun.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
@@ -274,13 +276,16 @@ export class WaHomeMapEditor extends LitElement {
   @state() private measure: { a?: HomePoint; b?: HomePoint; hover?: HomePoint } = {};
   @state() private floorMenu = false;
   /** The dock's View menu (the plan's) or Look menu (the model's) is open. */
-  @state() private dockMenu?: "view" | "look";
+  @state() private dockMenu?: "view" | "look" | "north";
   @state() private dialog?: Dialog;
   @state() private modelLook?: HomeMapLook;
   /** The model is drawn in real 3D rather than as one of the looks. */
   @state() private model3d = true;
   /** The 3D look by day, a sun coming in; else at night, lights only. */
-  @state() private daylight = false;
+  /** What the 3D view's sky shows. */
+  @state() private skyChoice: HomeMapSkyChoice = "now";
+  /** North while its slider is dragged, before it is saved. */
+  @state() private northLive: number | undefined;
   @state() private modelTurn?: number;
   @state() private pages?: HomeMapPageChoice[];
   @state() private spaceHeld = false;
@@ -425,7 +430,9 @@ export class WaHomeMapEditor extends LitElement {
     const things = homeMapPickedThings(sel);
     const roomId = homeMapSelectionRoom(sel);
     const mark = things.length > 0 ? { things } : roomId === undefined ? undefined : { roomId };
-    return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, daylight: this.daylight };
+    const place = homeMapSunPlace(this.hass?.states);
+    const north = homeMapFloorNorth(this.doc === null ? null : { ...this.doc, north: this.northLive ?? this.doc.north }, floor);
+    return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, sky: homeMapSkyFor(this.skyChoiceNow(place), place, north) };
   }
 
   /** After each draw: the 3D look in its place on the page and drawing what
@@ -1866,6 +1873,9 @@ export class WaHomeMapEditor extends LitElement {
     const real = this.model3d && this.bundleUrl !== undefined;
     const look = real ? undefined : this.modelLookNow();
     const pressed = (on: boolean) => (on ? "true" : "false");
+    const place = homeMapSunPlace(this.hass?.states);
+    const sky = this.skyChoiceNow(place);
+    const north = this.northLive ?? this.doc?.north ?? 0;
     const looks: HomeMapDockItem[] = HOME_TILE_MODEL_LOOKS.map((l) => ({
       label: MODEL_LOOK_NAMES[l] ?? l,
       on: l === look,
@@ -1876,15 +1886,45 @@ export class WaHomeMapEditor extends LitElement {
     }
     if (real) looks.push(...this.qualityItems());
     return html`<div class="hme-dock">
-      ${real ? html`<button type="button" class="hme-tb ${this.daylight ? "" : "on"}" aria-pressed=${pressed(!this.daylight)} title="Night: only the lights that are on light the rooms"
-          @click=${() => { this.daylight = false; }}>Lights</button>
-        <button type="button" class="hme-tb ${this.daylight ? "on" : ""}" aria-pressed=${pressed(this.daylight)} title="Day: the sun comes in through the windows"
-          @click=${() => { this.daylight = true; }}>Daylight</button>
+      ${real ? html`${place === undefined ? nothing : html`<button type="button" class="hme-tb ${sky === "now" ? "on" : ""}" aria-pressed=${pressed(sky === "now")} title="The sun where it is now: it moves through the day, and the house goes dark at night"
+          @click=${() => { this.skyChoice = "now"; }}>Now</button>`}
+        <button type="button" class="hme-tb ${sky === "night" ? "on" : ""}" aria-pressed=${pressed(sky === "night")} title="Night: only the lights that are on light the rooms"
+          @click=${() => { this.skyChoice = "night"; }}>Lights</button>
+        <button type="button" class="hme-tb ${sky === "day" ? "on" : ""}" aria-pressed=${pressed(sky === "day")} title="Day: the sun comes in through the windows"
+          @click=${() => { this.skyChoice = "day"; }}>Daylight</button>
+        ${place === undefined || sky !== "now" ? nothing : this.dockMenuButton("north", `North ${north}°`, "Where north is on the plan, so the sun comes in on the right side")}
         <span class="hme-vsep"></span>` : nothing}
       ${this.dockMenuButton("look", `Look: ${real ? "3D" : MODEL_LOOK_NAMES[look ?? "night"] ?? look}`, "How the model is drawn: the tiles' looks, or real 3D")}
       <button type="button" class="hme-tb" title=${real ? "Show the whole floor from the home style's turn" : "Back to the home style's turn"} @click=${() => this.turnBack()}>⟲ Turn back</button>
       ${withLive && live !== undefined ? html`<span class="hme-vsep"></span>${live}` : nothing}
-    </div>${this.dockMenuList("look", "Look", looks, "menuitemradio")}`;
+    </div>${this.dockMenuList("look", "Look", looks, "menuitemradio")}${this.renderNorthMenu(north)}`;
+  }
+
+  /** What the sky shows now: Now with no sun to go by is the night. */
+  private skyChoiceNow(place: HomeMapSunPlace | undefined): HomeMapSkyChoice {
+    return this.skyChoice === "now" && place === undefined ? "night" : this.skyChoice;
+  }
+
+  /** The North menu while it is open: a compass that turns with its slider.
+   * The top of the compass is the top of the plan. */
+  private renderNorthMenu(north: number): TemplateResult | typeof nothing {
+    if (this.dockMenu !== "north") return nothing;
+    return html`<div class="hme-dock-pop hme-north" role="group" aria-label="North">
+      <svg class="hme-north-dial" viewBox="-20 -20 40 40" aria-hidden="true">
+        <circle r="18" />
+        <g transform=${`rotate(${north})`}><path class="n" d="M0 -15 L4 0 L-4 0 Z" /><path d="M0 15 L4 0 L-4 0 Z" /></g>
+      </svg>
+      <label class="hme-north-row">Where north is on the plan
+        <input type="range" class="hme-range" min="0" max="359" step="1" .value=${live(String(north))} style=${rangeFill(north, 0, 359)}
+          @input=${(e: Event) => { this.northLive = Number((e.target as HTMLInputElement).value); }}
+          @change=${(e: Event) => {
+            const degrees = Number((e.target as HTMLInputElement).value);
+            this.northLive = undefined;
+            this.context()?.apply((d) => setHomeNorth(d, degrees));
+          }} />
+      </label>
+      <span class="hme-val mono">${north}°</span>
+    </div>`;
   }
 
   /** The plan's dock: the zoom, Fit, the page's Snap and the View menu (the
@@ -1919,7 +1959,7 @@ export class WaHomeMapEditor extends LitElement {
   }
 
   /** A dock's menu button, View or Look, opening or closing its list. */
-  private dockMenuButton(which: "view" | "look", label: string, title: string): TemplateResult {
+  private dockMenuButton(which: "view" | "look" | "north", label: string, title: string): TemplateResult {
     const open = this.dockMenu === which;
     return html`<button type="button" class="hme-tb ${open ? "on" : ""}" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} title=${title}
       @click=${() => { this.dockMenu = open ? undefined : which; }}>${label} <span class="hme-caret" aria-hidden="true">▾</span></button>`;

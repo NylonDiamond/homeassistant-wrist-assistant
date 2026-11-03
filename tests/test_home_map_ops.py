@@ -812,6 +812,32 @@ def test_the_delta_reply_names_the_map_rev_only_once_a_map_is_stored(coordinator
         assert coord.home_map_revision() == 2
 
 
+def test_the_delta_reply_says_where_the_sun_is_once_a_map_is_stored(coordinator) -> None:  # noqa: F811
+    _module, hass, coord = coordinator
+    hass.states.set("light.x", "off")
+    with loaded_package() as loaded:
+        store = loaded.store_mod.HomeMapStore(object())
+        asyncio.run(store.async_load())
+
+        async def run() -> None:
+            coord.attach_home_map_store(store)
+            hass.states.set("sun.sun", "above_horizon").attributes = {"azimuth": 182.46, "elevation": 31.04}
+            _status, body = await _poll(coord, entities=["light.x"], timeout=0)
+            # No map: no sun.
+            assert "home_sun" not in body
+            store.save(basic(), 0)
+            _status, body = await _poll(coord, entities=["light.x"], timeout=0)
+            assert body["home_sun"] == {"azimuth": 182.5, "elevation": 31.0}
+            _status, body = await _poll(coord, entities=["light.x"], timeout=0, lean=True)
+            assert body["home_sun"] == {"azimuth": 182.5, "elevation": 31.0}
+            # A sun entity with no numbers says nothing.
+            hass.states.set("sun.sun", "above_horizon").attributes = {"azimuth": "south"}
+            _status, body = await _poll(coord, entities=["light.x"], timeout=0)
+            assert "home_sun" not in body
+
+        asyncio.run(run())
+
+
 def test_a_save_releases_every_parked_poll_once_with_the_new_rev(coordinator) -> None:  # noqa: F811
     """Any save, the home's first map included, wakes every parked poll,
     which answers at once naming the new rev; told once, the next poll

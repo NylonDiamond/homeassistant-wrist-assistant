@@ -509,6 +509,24 @@ def _keys(value: dict[str, Any]) -> list[str]:
     return list(value.keys())
 
 
+def test_north_is_kept_after_the_style_and_before_the_floors(env) -> None:
+    doc = basic()
+    doc["north"] = 90
+    doc["style"] = {"look": "clay"}
+    checked = env.mod.check_document(doc)
+    assert _keys(checked) == ["v", "style", "north", "floors"]
+    assert checked["north"] == 90
+    # The top of the plan is the default, so it is dropped.
+    doc["north"] = 0
+    assert "north" not in env.mod.check_document(doc)
+    # A map from before the key reads the same.
+    assert "north" not in env.mod.check_document(basic())
+    for bad in (360, -1, "90", True, float("nan")):
+        doc["north"] = bad
+        with pytest.raises(env.mod.HomeMapInvalidError):
+            env.mod.check_document(doc)
+
+
 def test_the_home_style_is_kept_without_its_defaults_and_before_the_floors(env) -> None:
     doc = basic()
     # Sent in another order, and after the floors.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import math
 import secrets
 from collections import deque
 from collections.abc import Callable, Iterable
@@ -866,6 +867,23 @@ class DeltaCoordinator:
             return None
         return int(store.rev)
 
+    def home_sun(self) -> dict[str, float] | None:
+        """Where the sun is, from ``sun.sun``, for the map's 3D views: its
+        ``azimuth`` (degrees clockwise from north) and ``elevation`` (degrees
+        over the horizon), at 1 decimal. None when Home Assistant has no sun
+        entity or it holds no such numbers: the reply then leaves ``home_sun``
+        out and the views draw their own fixed sun."""
+        state = self.hass.states.get("sun.sun")
+        if state is None:
+            return None
+        sun: dict[str, float] = {}
+        for key in ("azimuth", "elevation"):
+            value = state.attributes.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                return None
+            sun[key] = round(float(value), 1)
+        return sun
+
     def _home_map_baseline(self) -> int | None:
         """What to note for a watch before it parks: the rev, or 0 while no
         map is stored, so that the home's first map counts as news. None
@@ -1319,7 +1337,8 @@ class DeltaCoordinator:
         could not be read. Any save wakes every parked poll, which answers at
         once with the new number, once per save. A lean reply carries it
         whole, since the poll does not report it. Older watches ignore the
-        key.
+        key. Beside it, ``home_sun``: where the sun is (``home_sun``), left
+        out with no map or no sun entity.
 
         An entity removed from Home Assistant (deleted, or renamed to another
         id) is an event like any other change: ``state`` ``unavailable``, the
@@ -1452,6 +1471,12 @@ class DeltaCoordinator:
         if map_revision is not None:
             body["home_map_rev"] = map_revision
             self._home_map_sent[watch_id] = map_revision
+            # Beside the rev, whole on a lean reply too. It rides the replies
+            # that go out anyway and wakes no poll of its own: the sun moves
+            # slowly.
+            sun = self.home_sun()
+            if sun is not None:
+                body["home_sun"] = sun
         library_revision = self.http_actions_revision()
         if library_revision is not None:
             body["http_actions"] = library_revision

@@ -236,6 +236,9 @@ export interface HomeMapDocument {
   v: 1;
   /** Left out when empty. */
   style?: HomeMapStyle;
+  /** Where north is on the base floor's plan, in whole degrees clockwise from
+   * the top of the plan, 1 to 359. Left out for the top of the plan. */
+  north?: number;
   floors: HomeMapFloor[];
 }
 
@@ -598,9 +601,16 @@ export function homeMapBytes(doc: unknown): number {
  */
 export function checkHomeMap(raw: unknown): HomeMapCheck {
   try {
-    const doc = object(raw, "doc", ["v", "floors"], ["style"]);
+    const doc = object(raw, "doc", ["v", "floors"], ["style", "north"]);
     if (doc.v !== HOME_MAP_VERSION) fail("doc.v", `must be ${HOME_MAP_VERSION}`);
     const style = Object.hasOwn(doc, "style") ? checkStyle(doc.style) : {};
+    let north = 0;
+    if (Object.hasOwn(doc, "north")) {
+      const raw = doc.north;
+      const whole = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : Number.NaN;
+      if (!(whole >= 0 && whole <= 359)) fail("doc.north", "must be a whole number between 0 and 359");
+      north = whole;
+    }
     const ids = new Ids();
     let rooms = 0;
     let pins = 0;
@@ -625,7 +635,7 @@ export function checkHomeMap(raw: unknown): HomeMapCheck {
       const checkedPins = rawPins.map((p, j) => checkPin(p, `${path}.pins[${j}]`, ids, roomIds));
       return { id, name, story, ...(place === undefined ? {} : { place }), rooms: checkedRooms, pins: checkedPins };
     });
-    const checked: HomeMapDocument = Object.keys(style).length > 0 ? { v: HOME_MAP_VERSION, style, floors } : { v: HOME_MAP_VERSION, floors };
+    const checked = orderedDocument({ v: HOME_MAP_VERSION, style, ...(north === 0 ? {} : { north }), floors });
     const size = homeMapBytes(checked);
     if (size > HOME_MAP_MAX_BYTES) {
       throw new CheckError(
@@ -1081,7 +1091,12 @@ export function orderedPin(pin: HomeMapPin): HomeMapPin {
 /** A map with its keys in the contract's order, the style only when it
  * holds a key. */
 export function orderedDocument(doc: HomeMapDocument): HomeMapDocument {
-  return doc.style !== undefined && Object.keys(doc.style).length > 0 ? { v: doc.v, style: doc.style, floors: doc.floors } : { v: doc.v, floors: doc.floors };
+  return {
+    v: doc.v,
+    ...(doc.style !== undefined && Object.keys(doc.style).length > 0 ? { style: doc.style } : {}),
+    ...(doc.north === undefined || doc.north === 0 ? {} : { north: doc.north }),
+    floors: doc.floors,
+  };
 }
 
 /** The pin with its room set to the one it now stands in, or none. */

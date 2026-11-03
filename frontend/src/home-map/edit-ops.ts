@@ -3294,6 +3294,15 @@ export function setHomeStyle(doc: HomeMapDocument, change: HomeMapStyleChange): 
   return orderedDocument(Object.keys(style).length > 0 ? { ...rest, style } : rest);
 }
 
+/** Where north is on the plan, as whole degrees from 0 to 359; undefined for
+ * a value that is not a finite number. */
+export function setHomeNorth(doc: HomeMapDocument, degrees: number): HomeMapDocument | undefined {
+  if (!Number.isFinite(degrees)) return undefined;
+  const north = ((Math.round(degrees) % 360) + 360) % 360;
+  const { north: _old, ...rest } = doc;
+  return orderedDocument(north === 0 ? rest : { ...rest, north });
+}
+
 /** The home style with every key filled in from its default. */
 export function homeStyleOf(doc: HomeMapDocument | null | undefined): Required<HomeMapStyle> {
   return { ...HOME_MAP_STYLE_DEFAULTS, ...(doc?.style ?? {}) };
