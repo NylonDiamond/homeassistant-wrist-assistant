@@ -84,7 +84,7 @@ import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type ColorPickerView, type ColorTrial, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
-import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, watchLinkDocument } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import {
   type OneLookGlowMode,
@@ -1627,7 +1627,7 @@ export function sectionSummary(host: TileSettingsHost, section: WatchTileSetting
   switch (section) {
     case "opens": {
       const link = watchPageLinkTarget(tile);
-      const page = link === undefined ? undefined : findWatchPage(host.document, link.targetId);
+      const page = link === undefined ? undefined : findWatchPage(watchLinkDocument(host), link.targetId) ?? host.pageInHome?.(link.targetId);
       return page === undefined ? "" : watchPageName(page);
     }
     case "target": {
@@ -1654,7 +1654,7 @@ export function sectionSummary(host: TileSettingsHost, section: WatchTileSetting
       const text = watchTileTextSettings(tile);
       // A rule's tiles carry each entity's own name.
       if (host.domainStyle === true) return text.showLabel ? "Label shown" : "Label hidden";
-      const name = text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+      const name = text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(watchLinkDocument(host)), host.catalog);
       return text.showLabel ? name : `${name} (hidden)`;
     }
     case "action": {
@@ -1850,17 +1850,19 @@ function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateRes
 function renderOpens(host: TileSettingsHost): TemplateResult {
   const link = watchPageLinkTarget(host.tile);
   if (link === undefined) return html``;
-  const targets = watchLinkTargetPages(host.document, host.pageId, link.kind === "page" ? "pageLink" : "peekLink");
-  const menu = watchLinkTargetMenu(host.document, host.tile, targets);
+  const pool = watchLinkDocument(host);
+  const targets = watchLinkTargetPages(pool, host.pageId, link.kind === "page" ? "pageLink" : "peekLink");
+  const menu = watchLinkTargetMenu(pool, host.tile, targets, host.pageInHome);
   if (menu === undefined) return html``;
   const pick = (id: string) => {
     commit(host, "target", (d) => {
       // The pages and the old target's name as they are now: an edit just
       // before this one may have renamed either.
-      const now = watchLinkTargetPages(d, host.pageId, link.kind === "page" ? "pageLink" : "peekLink");
+      const poolNow = watchLinkDocument(host, d);
+      const now = watchLinkTargetPages(poolNow, host.pageId, link.kind === "page" ? "pageLink" : "peekLink");
       const page = now.find((p) => watchPageId(p) === id);
       if (page === undefined) return d;
-      const old = watchLinkTargetMenu(d, host.tile, now)?.oldTargetName;
+      const old = watchLinkTargetMenu(poolNow, host.tile, now, host.pageInHome)?.oldTargetName;
       return setWatchPageLinkTarget(d, host.pageId, host.tileId, { id: watchPageId(page), name: watchStoredPageName(page) }, old);
     });
   };
@@ -2999,7 +3001,7 @@ function slidePadTile(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const n = host.picked?.ids.length ?? 1;
   const text = watchTileTextSettings(tile);
-  const name = n > 1 ? `${n} tiles` : text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+  const name = n > 1 ? `${n} tiles` : text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(watchLinkDocument(host)), host.catalog);
   const ends = watchColorEnds(watchTileIconSettings(tile).color ?? kindDefaults(host).color);
   const ground = ends === undefined ? "var(--wa-card-2, #2a2c31)" : `linear-gradient(160deg, ${ends.from}, ${ends.to})`;
   return html`<div class="ts-pad-tile" aria-hidden="true" style=${`--pad-ground:${ground}`}><span>${name}</span></div>`;

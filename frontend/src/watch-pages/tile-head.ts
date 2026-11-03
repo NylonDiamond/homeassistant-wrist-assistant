@@ -12,7 +12,7 @@
 // `tileSettingsStyles`.
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { type TileSettingsHost, hostDevice } from "./editor-host.js";
+import { type TileSettingsHost, hostDevice, watchLinkDocument } from "./editor-host.js";
 import { requiredTileKeyDefault } from "./merge.js";
 import { tileEntityId, tileKind, tileKindLabel, watchPagesOf } from "./model.js";
 import { watchStylingReset } from "./tile-styling.js";
@@ -241,7 +241,7 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
   const named = host.domainStyle !== true && watchTileSettingsSections(tile, host.hass.states).includes("text");
   let name: TemplateResult | typeof nothing = nothing;
   if (named) {
-    const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+    const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(watchLinkDocument(host)), host.catalog);
     const label = typed(host, "label") ?? watchTileTextSettings(tile).label ?? "";
     const set = (v: string) =>
       commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });

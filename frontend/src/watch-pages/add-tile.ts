@@ -87,7 +87,7 @@ import {
   watchLibraryLister,
   watchNoPhoneLibraryText,
 } from "./catalog.js";
-import { type AddTileHost, type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { type AddTileHost, type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, watchLinkDocument } from "./editor-host.js";
 import { type HomeMapFloor, homeMapFloorName } from "../home-map/model.js";
 import { WATCH_HOME_MAP_ADD_WORDS, watchHomeMapAddFloors, watchHomeMapAddedText } from "./home-map-tile.js";
 import { WATCH_MAP_PAGE_WORDS, makeWatchMapPage, watchMapPageAddRemovedCount } from "./map-page.js";
@@ -495,11 +495,12 @@ function tileChip(host: AddTileHost, c: WatchAddCandidate): TemplateResult {
 }
 
 function renderLinks(host: AddTileHost, view: AddTileView, kind: LinkKind): TemplateResult {
-  const pages = watchLinkTargetPages(host.document, host.pageId, kind);
+  const pool = watchLinkDocument(host);
+  const pages = watchLinkTargetPages(pool, host.pageId, kind);
   const question = kind === "pageLink" ? "Which page should the tile open?" : "Which page should the tile peek at?";
   let empty = "";
   if (pages.length === 0) {
-    const hiddenOnly = kind === "pageLink" && watchLinkTargetPages(host.document, host.pageId, "peekLink").length > 0;
+    const hiddenOnly = kind === "pageLink" && watchLinkTargetPages(pool, host.pageId, "peekLink").length > 0;
     empty = hiddenOnly
       ? "Every other page is hidden, and Go to page cannot open a hidden page. Peek page can show one."
       : "There is no other page yet. Add a page first, then link to it here.";

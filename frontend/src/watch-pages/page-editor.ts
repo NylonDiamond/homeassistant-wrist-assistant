@@ -1621,6 +1621,17 @@ export class WaPageEditor extends LitElement {
     return { ...document, pages: [...editing, ...theirs] };
   }
 
+  /** The pages a Go to page or Peek page tile can pick: `contextPages`, or
+   * with no device of the kind shown (an iPhone preview in a home with no
+   * iPhone), every page of the home, since none of them is any less there. */
+  private linkPages(document: WatchPagesDocument): WatchPagesDocument {
+    const lib = this.lib.library;
+    if (lib === undefined || this.watchId !== undefined) return this.contextPages(document);
+    const editing = watchPagesOf(document);
+    const rest = (libraryItems(lib, "pages").map((e) => e.item) as WatchPage[]).filter((p) => !editing.some((e) => sameWatchId(watchPageId(e), watchPageId(p))));
+    return { ...document, pages: [...editing, ...rest] };
+  }
+
   // ── loading ────────────────────────────────────────────────────────────
 
   /** What the pickers and the preview read beside the page: the home's
@@ -2027,11 +2038,15 @@ export class WaPageEditor extends LitElement {
       deviceSiblings: (entityId: string) => watchDeviceSiblings(this.hass?.entities, entityId),
       loadImageSize: (url: string) => this.loadImageSize(url),
       photos: this.photos,
+      pageInHome: (id: string) => {
+        const lib = this.lib.library;
+        return lib === undefined ? undefined : libraryItem(lib, "pages", id)?.item as WatchPage | undefined;
+      },
     };
     return extendHost(base, {
       document: () => draft.document,
       page: pageNow,
-      otherPages: () => listedWatchPages(this.contextPages(draft.document)).filter((p) => !sameWatchId(p.id, pageId)),
+      otherPages: () => listedWatchPages(this.linkPages(draft.document)).filter((p) => !sameWatchId(p.id, pageId)),
       // The element's, read live: a catalog that arrives while a picker is
       // open is the one its next pick reads.
       catalog: () => this.pickerCatalog,

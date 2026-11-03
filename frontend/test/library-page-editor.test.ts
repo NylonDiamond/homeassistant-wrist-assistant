@@ -4,14 +4,19 @@
 // `library/pick`, an untick clearing that device's menu slots and taps, and
 // the lock on a device whose page draft holds unsaved edits.
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
 import { libraryDraftKey } from "../src/library/item-mode.js";
 import { libraryItem } from "../src/library/model.js";
 import { forgetWatchPagesDraft, keptWatchPagesDraft } from "../src/watch-pages/kept.js";
 import { tickItem } from "../src/watch-pages/library-editing-io.js";
+import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, extendHost, watchLinkDocument } from "../src/watch-pages/editor-host.js";
+import { renderAddTile } from "../src/watch-pages/add-tile.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { watchLinkTargetPages } from "../src/watch-pages/tile-new.js";
+import { renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { setWatchPageLinkTarget } from "../src/watch-pages/tile-settings-model.js";
 import "../src/watch-pages/page-editor.js";
 import { connectLibrary, flat, libraryHome, settle } from "./library-editor-home.js";
 
@@ -208,5 +213,71 @@ describe("unticking a device under the library", () => {
     expect(el.untickAsk).toBeUndefined();
     expect(ha.of("library/pick").map((m) => [m.item_id, m.on])).toEqual([[DEN, false]]);
     expect(el.note).toBeUndefined();
+  });
+});
+
+describe("a link tile's pages, from the library", () => {
+  beforeAll(() => { vi.stubGlobal("document", { activeElement: null }); vi.stubGlobal("HTMLElement", class {}); });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  /** The Opens card of Hall's first tile, pointed at `target`. */
+  async function opens(target: string, leave: (el: Record<string, unknown>) => void = () => undefined) {
+    const made = await editor();
+    leave(made.el);
+    const doc = structuredClone(made.draft().document);
+    ((doc.pages as JsonObject[])[0]!.items as JsonObject[])[0]!.entityId = target;
+    made.draft().apply(doc);
+    const hall = made.page();
+    const host = made.call<TileSettingsHost>("tileSettingsHost", hall, (hall.items as JsonObject[])[0]);
+    return { ...made, host, card: flat(renderTileSettings(host, { sections: ["opens"] })) };
+  }
+
+  /** The names offered by the Add tile dialog's Peek page list. */
+  function addList(host: TileSettingsHost, kind: "pageLink" | "peekLink"): string {
+    const add = extendHost<WatchPagesEditorHost, Pick<AddTileHost, "tileId" | "tile">>(host, { tileId: () => undefined, tile: () => undefined }) as AddTileHost;
+    renderAddTile(add);
+    const view = [...add.uiState.values()].find((v) => typeof v === "object" && v !== null && "links" in v) as { links?: string };
+    view.links = kind;
+    return flat(renderAddTile(add));
+  }
+
+  it("keeps a link to a page the device shown has, and offers that device's other pages", async () => {
+    const { card, host } = await opens(`show_page.${MINE}`);
+    expect(card).not.toContain("A page that is gone");
+    expect(card).toMatch(/>Mine</);
+    expect(card).toMatch(/>Yard</);
+    expect(card).not.toMatch(/>Den</);
+    const list = addList(host, "peekLink");
+    expect(list).toContain(">Yard<");
+    expect(list).toContain(">Mine<");
+    expect(list).not.toContain("There is no other page yet");
+  });
+
+  it("moves a link to another page through the draft alone", async () => {
+    const { host, page, draft } = await opens(`show_page.${MINE}`);
+    const pool = watchLinkDocument(host);
+    const now = watchLinkTargetPages(pool, host.pageId, "peekLink");
+    const yard = now.find((p) => p.id === YARD)!;
+    draft().apply(setWatchPageLinkTarget(draft().document, host.pageId, host.tileId, { id: YARD, name: yard.name }));
+    expect(((page().items as JsonObject[])[0]!).entityId).toBe(`show_page.${YARD}`);
+    expect(draft().document.pages).toHaveLength(1);
+  });
+
+  it("names a page only another device has, and says so, rather than calling it gone", async () => {
+    const { card } = await opens(`show_page.${DEN}`);
+    expect(card).not.toContain("A page that is gone");
+    expect(card).toMatch(/>Den</);
+    expect(card).toContain("This page is not on the device shown.");
+  });
+
+  it("calls a page gone only when the home does not have it", async () => {
+    const { card } = await opens(`show_page.${U(999)}`);
+    expect(card).toContain("A page that is gone");
+  });
+
+  it("offers every page of the home when no device of the kind shown exists", async () => {
+    const { card } = await opens(`show_page.${SHED}`, (el) => { el.watchId = undefined; });
+    expect(card).not.toContain("A page that is gone");
+    for (const name of ["Yard", "Mine", "Den", "Shed"]) expect(card).toMatch(new RegExp(`>${name}<`));
   });
 });

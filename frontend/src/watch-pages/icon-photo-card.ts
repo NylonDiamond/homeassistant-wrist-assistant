@@ -25,7 +25,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { segField } from "../editors.js";
 import type { PageImageEntry } from "../ha-api.js";
 import { photoTilesFor, photoTilesUpdateNote } from "../version.js";
-import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
+import { type TileSettingsHost, hostDeviceNoun, watchLinkDocument } from "./editor-host.js";
 import { isVirtualTileKind, tileEntityId, tileKind, watchPagesOf } from "./model.js";
 import { infoTip, mixedWord } from "./picture-choice.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
@@ -86,7 +86,7 @@ function photoEntityOf(host: TileSettingsHost): string | undefined {
 /** The tile's name as it shows: its own label, else its fallback. */
 function tileName(host: TileSettingsHost): string {
   const own = typeof host.tile.customLabel === "string" ? host.tile.customLabel.trim() : "";
-  return own !== "" ? own : watchTileFallbackName(host.tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+  return own !== "" ? own : watchTileFallbackName(host.tile, host.hass.states, watchPagesOf(watchLinkDocument(host)), host.catalog);
 }
 
 /**

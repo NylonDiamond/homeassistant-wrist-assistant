@@ -719,17 +719,20 @@ export interface WatchLinkTargetMenu extends WatchMenu {
 /**
  * The Opens menu for a go to page or peek tile, or undefined for any other
  * tile. `targets` is `watchLinkTargetPages` for the tile's kind. A target
- * that is not among them (a page since deleted, or hidden while the link
- * goes to it) is shown first, disabled, with a line that says why.
+ * that is not among them (a page since deleted, hidden while the link goes
+ * to it, or `pageInHome`'s, a page only another device has) is shown first,
+ * disabled, with a line that says why.
  */
 export function watchLinkTargetMenu(
   document: WatchPagesDocument,
   tile: WatchPageTile,
   targets: readonly WatchPage[],
+  pageInHome?: (id: string) => WatchPage | undefined,
 ): WatchLinkTargetMenu | undefined {
   const link = watchPageLinkTarget(tile);
   if (link === undefined) return undefined;
-  const current = findWatchPage(document, link.targetId);
+  const here = findWatchPage(document, link.targetId);
+  const current = here ?? pageInHome?.(link.targetId);
   const options: WatchMenuOption[] = targets.map((p) => ({ value: watchPageId(p), label: watchPageName(p) }));
   const offered = targets.find((p) => sameWatchId(p.id, link.targetId));
   const base = {
@@ -748,6 +751,8 @@ export function watchLinkTargetMenu(
     selected,
     note: missing
       ? "The page this tile opened is no longer there. Pick another."
+      : here === undefined
+        ? "This page is not on the device shown. Pick another, or add the page to that device."
       : link.kind === "page" && current.isHidden === true
         ? "A go to page tile cannot open a hidden page. Pick another, or show the page again."
         : "This tile cannot open that page. Pick another.",

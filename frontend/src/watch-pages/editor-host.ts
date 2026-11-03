@@ -21,7 +21,8 @@ import type { WatchPhoneTilesGroup } from "./add-tile-list.js";
 import type { WatchTemplateRender } from "./app-model.js";
 import type { WatchCatalog, WatchCatalogVoice } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
-import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
+import { sameWatchId } from "./edit.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, watchPagesOf } from "./model.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
 import type { WatchDeviceSiblings } from "./special-model.js";
 
@@ -72,8 +73,14 @@ export interface WatchPagesEditorHost {
   readonly pageId: string;
   readonly page: WatchPage;
   /** Every other page a person can pick, in watch order: the targets of a
-   * Go to page or Peek page tile. System pages are left out. */
+   * Go to page or Peek page tile. System pages are left out. The editor's
+   * document holds only the page being edited, so read targets through
+   * `watchLinkDocument`, never from `document`. */
   readonly otherPages: readonly WatchPage[];
+  /** The home's page of this id when it is not among `otherPages`: a link
+   * to it is not broken, the device shown just lacks the page. Absent: no
+   * such pages are known. */
+  readonly pageInHome?: (id: string) => WatchPage | undefined;
   /** The iPhone's HTTP actions and status pages (`catalog.ts`), as
    * the element read them last, with the watch's own status pages and the
    * home's HTTP actions joined in; undefined while there is none of them. Held by the element, never in the document: nothing here saves,
@@ -216,6 +223,19 @@ export function hostDevice(host: Pick<WatchPagesEditorHost, "device">): SettingD
  * page: `The ${hostDeviceNoun(host)} picks the icon`. */
 export function hostDeviceNoun(host: Pick<WatchPagesEditorHost, "device">): string {
   return deviceNoun(hostDevice(host));
+}
+
+/** `document` (the one being edited, by default) with the host's other pages
+ * after its own: what a Go to page or Peek page tile can open and be named
+ * after. The draft holds only the page being edited, so a link read from it
+ * alone finds no target at all. Never saved: edits go to `document`. */
+export function watchLinkDocument(
+  host: Pick<WatchPagesEditorHost, "document" | "otherPages">,
+  document: WatchPagesDocument = host.document,
+): WatchPagesDocument {
+  const own = watchPagesOf(document);
+  const more = host.otherPages.filter((p) => !own.some((o) => sameWatchId(o.id, p.id)));
+  return more.length === 0 ? document : { ...document, pages: [...own, ...more] };
 }
 
 /** A provider that draws nothing, for an element the panel gave no icons. */
