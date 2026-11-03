@@ -104,6 +104,7 @@ const theme = EditorView.theme({
   "&": { background: "var(--wa-field, var(--wa-input))", color: "var(--wa-soft, var(--wa-ink))", borderRadius: "9px", border: "1px solid var(--wa-line-strong)", fontSize: "12.5px" },
   "&.cm-focused": { outline: "none", borderColor: "var(--wa-pick-line, var(--wa-line-strong))" },
   ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: "1.65", padding: "2px 0 8px", overflow: "auto", minHeight: "120px", maxHeight: "620px" },
+  ".cm-scroller:has(.cm-lineWrapping)": { overflowX: "hidden" },
   ".cm-content": { caretColor: "var(--wa-ink)", padding: "0 10px" },
   ".cm-line": { padding: "0" },
   ".cm-cursor": { borderLeftColor: "var(--wa-ink)", borderLeftWidth: "1.5px" },
@@ -150,7 +151,7 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
     const scan = scanTemplateSource(state.doc.toString());
     const focused = state.field(focusField);
     const sel = state.selection.main;
-    const issues = context.issues(scan, sel.head);
+    const issues = context.issues(scan, sel.empty ? sel.head : -1);
     const sections = options.view === "sections";
     const stacked = sections || options.format;
     const openRow = state.field(openField);

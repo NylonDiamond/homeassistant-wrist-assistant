@@ -15,7 +15,7 @@ import { WATCH_APP } from "./app-model.js";
 import type { RenderResult } from "../ha-api.js";
 import type { TemplateCode, TemplateCodeOptions, TemplateCodeView } from "./template-code.js";
 import { type TemplateCell, templateRows } from "./template-rows.js";
-import { type AlignedRow, type SourceIssue, type SourceScan, alignTemplate, scanTemplateSource, templateNameIssues, templateTokenValues } from "./template-source.js";
+import { type AlignedRow, type SourceIssue, type SourceScan, alignTemplate, findTemplatePart, scanTemplateSource, templateNameIssues, templateTokenValues } from "./template-source.js";
 import { templateIconColor } from "./rich-text.js";
 import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
@@ -94,6 +94,8 @@ export class WaTemplateEditor extends LitElement {
   private cached: { text: string; scan: SourceScan } | undefined;
   private flipFrom: Map<string, DOMRect> | undefined;
   private flipGuides = false;
+  /** The last press on the tile found no one place in the code. */
+  private notFound = false;
   private lastFace: { tileId: string; device: string; face: TemplateResult } | undefined;
 
   /** Draws into the parent's root: see the top of this file. */
@@ -171,6 +173,10 @@ export class WaTemplateEditor extends LitElement {
       changed: (text) => this.data.write(text, true),
       selected: (from, to, head, focused) => {
         this.selection = { from, to, head, focused };
+        if (focused && this.notFound) {
+          this.notFound = false;
+          this.requestUpdate();
+        }
         this.data.remember(head, this.getRootNode());
         this.lightTile();
       },
@@ -245,7 +251,7 @@ export class WaTemplateEditor extends LitElement {
     if (tile === null) return;
     const { from, to, focused } = this.selection;
     const aligned = this.aligned(this.scan());
-    tile.classList.toggle("found", aligned !== undefined);
+    tile.classList.toggle("found", this.renderedRows() !== undefined);
     const at = (range: { from: number; to: number } | undefined): boolean => {
       if (range === undefined || !focused) return false;
       return from === to ? from >= range.from && from <= range.to : from < range.to && to > range.from;
@@ -259,8 +265,15 @@ export class WaTemplateEditor extends LitElement {
   private pressTile(event: Event): void {
     const part = (event.target as Element).closest?.<HTMLElement>("[data-tp]");
     if (!part || this.code === undefined) return;
-    const cell = this.aligned(this.scan())?.[Number(part.dataset["tr"])]?.cells[Number(part.dataset["tc"])];
-    const range = part.dataset["tp"] === "icon" ? cell?.icon : cell?.text;
+    const row = Number(part.dataset["tr"]);
+    const column = Number(part.dataset["tc"]);
+    const kind = part.dataset["tp"] === "icon" ? "icon" : "text";
+    const scan = this.scan();
+    const aligned = this.aligned(scan)?.[row]?.cells[column];
+    const range = (kind === "icon" ? aligned?.icon : aligned?.text)
+      ?? findTemplatePart(scan, this.renderedRows()?.[row]?.[column], kind);
+    this.notFound = range === undefined;
+    this.requestUpdate();
     if (range !== undefined) this.code.select(range.from, range.to);
   }
 
@@ -329,7 +342,7 @@ export class WaTemplateEditor extends LitElement {
     const watch = d.picture("watch", TILE_W, TILE_H) !== undefined;
     const iphone = d.picture("iphone", TILE_W, TILE_H) !== undefined;
     const scan = this.scan();
-    const issues = [...(scan.open === undefined ? [] : [scan.open]), ...this.nameIssues(scan, this.selection.focused ? this.selection.head : -1)];
+    const issues = [...(scan.open === undefined ? [] : [scan.open]), ...this.nameIssues(scan, this.selection.focused && this.selection.from === this.selection.to ? this.selection.head : -1)];
     const refused = d.render?.ok === false && scan.open === undefined ? d.render.error : undefined;
     const small = picture !== undefined && !picture.stale && picture.textScale < SMALL_TEXT;
     let face = picture?.face;
@@ -370,10 +383,10 @@ export class WaTemplateEditor extends LitElement {
               ${this.code === undefined ? html`<textarea class="te-plain" rows="6" spellcheck="false" aria-label="Template" .value=${d.text}
                 @input=${(e: Event) => d.write((e.target as HTMLTextAreaElement).value, true)} @blur=${() => d.ended()}></textarea>` : nothing}
             </div>
-            ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><span>${issue.text}</span>${issue.fix === undefined ? nothing
+            ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><button type="button" class="te-issue-go" title="Show it in the code" @click=${() => this.code?.select(issue.from, issue.to)}>${issue.text}</button>${issue.fix === undefined ? nothing
               : html`<button type="button" class="te-chip" @click=${() => this.code?.change(issue.fix!.from, issue.fix!.to, issue.fix!.insert)}>${issue.fix.words}</button>`}</div>`)}</div>`}
             ${refused === undefined ? nothing : html`<div class="te-issue" role="status"><span>${refused}</span></div>`}
-            <div class="te-hint">${d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon: or {{ for suggestions."}</div>
+            <div class="te-hint">${this.notFound ? "That part comes out of logic, so no one place in the code writes it." : d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon: or {{ for suggestions."}</div>
             ${d.helpers}
           </div>
         </div>
@@ -413,7 +426,7 @@ export const templateEditorStyles = css`
   .te-root { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .te-large-h { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
   .te-grid { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  @container (min-width: 720px) {
+  @container (min-width: 620px) {
     .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
   }
   dialog.te-d:modal .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
@@ -448,6 +461,8 @@ export const templateEditorStyles = css`
   .te-issues { display: flex; flex-direction: column; gap: 5px; }
   .te-issue { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--wa-need) 45%, transparent); border-radius: 8px; font-size: 12px; color: var(--wa-need); }
   .te-issue > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .te-issue-go { flex: 1; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+  .te-issue-go:hover { text-decoration: underline; }
   .te-issue .te-chip { flex: none; color: var(--wa-ink); }
   .te-hint { font-size: 11.5px; color: var(--wa-muted); }
   /* Inside the code. */

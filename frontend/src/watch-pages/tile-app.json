@@ -78,7 +78,7 @@
     "columns": {
       "key": "templateColumns",
       "kinds": ["template"],
-      "write": "true while Line up columns is on; off removes the key. Both devices read it. An older app ignores it and draws the text as it always did.",
+      "write": "Absent is on. false while Line up columns is off; turning it on removes the key. Both devices read it. An older app ignores it and draws the text as it always did.",
       "rule": "Each row's cells stand in columns. An icon starts a cell, and words before a row's first icon are a cell. The number of columns is the row with the most cells, a column is as wide as its widest cell, and each cell's icon sits in a slot of one width. A line of white space is no row. With one row or one column the tile draws its text as it always did."
     },
     "richText": {

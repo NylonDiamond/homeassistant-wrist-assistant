@@ -1710,7 +1710,7 @@
         "templateColumns": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": true
         },
         "mapEntityIds": {
           "type": "array",

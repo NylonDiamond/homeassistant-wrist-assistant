@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { setWatchTemplateColumns, watchTemplateColumns } from "../src/watch-pages/app-model.js";
 import { templateColumnRows, templateColumnsFontSize, templateRows } from "../src/watch-pages/template-rows.js";
-import { alignTemplate, nearestName, namedEntityIds, scanTemplateSource, sourceRowAt, templateNameIssues, templateTokenValues } from "../src/watch-pages/template-source.js";
+import { alignTemplate, findTemplatePart, nearestName, namedEntityIds, scanTemplateSource, sourceRowAt, templateNameIssues, templateTokenValues } from "../src/watch-pages/template-source.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 
 const TILE = "11111111-1111-4111-8111-111111111111";
@@ -55,14 +55,15 @@ describe("template rows", () => {
 });
 
 describe("the columns key", () => {
-  it("is there only while on, and only on a template tile", () => {
+  it("is on when absent, false only while off, and only on a template tile", () => {
     const template = documentWith(`template.${TILE}`);
-    const on = setWatchTemplateColumns(template, PAGE, TILE, true);
-    expect(tileOf(on)["templateColumns"]).toBe(true);
-    expect(watchTemplateColumns(tileOf(on) as never)).toBe(true);
-    const off = setWatchTemplateColumns(on, PAGE, TILE, false);
-    expect(Object.hasOwn(tileOf(off), "templateColumns")).toBe(false);
-    expect(Object.hasOwn(tileOf(setWatchTemplateColumns(documentWith("light.a"), PAGE, TILE, true)), "templateColumns")).toBe(false);
+    expect(watchTemplateColumns(tileOf(template) as never)).toBe(true);
+    const off = setWatchTemplateColumns(template, PAGE, TILE, false);
+    expect(tileOf(off)["templateColumns"]).toBe(false);
+    expect(watchTemplateColumns(tileOf(off) as never)).toBe(false);
+    const on = setWatchTemplateColumns(off, PAGE, TILE, true);
+    expect(Object.hasOwn(tileOf(on), "templateColumns")).toBe(false);
+    expect(Object.hasOwn(tileOf(setWatchTemplateColumns(documentWith("light.a"), PAGE, TILE, false)), "templateColumns")).toBe(false);
   });
 });
 
@@ -118,6 +119,29 @@ describe("the source of a template", () => {
     expect(source.slice(cell.icon!.from, cell.icon!.to).startsWith("[icon:thermometer")).toBe(true);
     expect(source.slice(cell.text!.from, cell.text!.to)).toBe("{{ states('sensor.woon') }}°");
     expect(templateTokenValues(aligned).get(cell.tokens[1]!.from)).toBe("22,3");
+  });
+
+  it("lines up a template whose set lines draw nothing, with icons from expressions", () => {
+    const text = "{% set t = states('sensor.a') %}{% set ti = 'x' %}[icon:books.fill] Aanb [icon:{{ ti }} color:{{ tc }}] {{ t }}\\n{# note #}[icon:power] Kant [icon:{{ ti }}] {{ t }}".replace("\\n", "\n");
+    const scan = scanTemplateSource(text);
+    const aligned = alignTemplate(scan, templateRows("[icon:books.fill] Aanb [icon:thermometer.low color:#123] 1\n[icon:power] Kant [icon:thermometer.low] 2"));
+    expect(aligned).toHaveLength(2);
+    const cell = aligned![0]!.cells[1]!;
+    expect(text.slice(cell.icon!.from, cell.icon!.to)).toBe("[icon:{{ ti }} color:{{ tc }}]");
+    expect(text.slice(cell.text!.from, cell.text!.to)).toBe("{{ t }}");
+  });
+
+  it("finds the end of a marker past a ] inside an expression", () => {
+    const scan = scanTemplateSource("[icon:a color:{{ x['b'] }}] c");
+    expect(scan.rows[0]!.tokens.map((t) => t.src)).toEqual(["[icon:a color:{{ x['b'] }}]", "c"]);
+    expect(scanTemplateSource("[icon:a\nb]").open).toBeDefined();
+  });
+
+  it("guesses at a part when logic stops the two lining up, and says nothing when no one place wrote it", () => {
+    const scan = scanTemplateSource("{% if a %}[icon:power] On{% endif %}");
+    expect(findTemplatePart(scan, { icon: { symbol: "power", color: undefined }, text: "On" }, "icon")).toEqual({ from: 10, to: 22 });
+    expect(findTemplatePart(scan, { text: "On" }, "text")).toEqual({ from: 23, to: 25 });
+    expect(findTemplatePart(scan, { text: "Sam" }, "text")).toBeUndefined();
   });
 
   it("says nothing when the two cannot be lined up with certainty", () => {

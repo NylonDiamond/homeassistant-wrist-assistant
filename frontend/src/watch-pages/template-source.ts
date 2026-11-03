@@ -19,6 +19,9 @@ export interface SourceToken {
   /** A text run with nothing between it and the part before it, like the
    * degree sign after a value. */
   glued?: boolean;
+  /** A `{% set %}` or `{# note #}`, which draws nothing: it does not move a
+   * row or a cell, so the tile can still be lined up with the source. */
+  silent?: boolean;
 }
 
 export interface SourceRow {
@@ -66,7 +69,7 @@ export function scanTemplateSource(doc: string): SourceScan {
   while (i < doc.length) {
     if (doc.startsWith("[icon:", i)) {
       endText(i);
-      const close = doc.indexOf("]", i);
+      const close = markerEnd(doc, i);
       if (close < 0) {
         open = { kind: "open", from: i, to: doc.length, text: "This [icon: has no closing ].", fix: { from: doc.length, to: doc.length, insert: "]", words: "Add ]" } };
         i = doc.length;
@@ -78,17 +81,18 @@ export function scanTemplateSource(doc: string): SourceScan {
       i = close + 1;
       continue;
     }
-    if (doc.startsWith("{{", i) || doc.startsWith("{%", i)) {
-      const logic = doc[i + 1] === "%";
-      const closer = logic ? "%}" : "}}";
+    if (doc.startsWith("{{", i) || doc.startsWith("{%", i) || doc.startsWith("{#", i)) {
+      const logic = doc[i + 1] !== "{";
+      const closer = doc[i + 1] === "#" ? "#}" : logic ? "%}" : "}}";
       endText(i);
       const close = doc.indexOf(closer, i + 2);
       if (close < 0) {
-        open = { kind: "open", from: i, to: doc.length, text: `This ${logic ? "{%" : "{{"} has no closing ${closer}.`, fix: { from: doc.length, to: doc.length, insert: ` ${closer}`, words: `Add ${closer}` } };
+        open = { kind: "open", from: i, to: doc.length, text: `This ${doc.slice(i, i + 2)} has no closing ${closer}.`, fix: { from: doc.length, to: doc.length, insert: ` ${closer}`, words: `Add ${closer}` } };
         i = doc.length;
         break;
       }
-      row().tokens.push({ kind: logic ? "logic" : "expr", from: i, to: close + 2, src: doc.slice(i, close + 2) });
+      const src = doc.slice(i, close + 2);
+      row().tokens.push({ kind: logic ? "logic" : "expr", from: i, to: close + 2, src, ...(logic && /^\{(?:#|%-?\s*(?:set|endset)\b)/.test(src) ? { silent: true } : {}) });
       i = close + 2;
       continue;
     }
@@ -104,6 +108,24 @@ export function scanTemplateSource(doc: string): SourceScan {
   }
   endText(i);
   return open === undefined ? { rows } : { rows, open };
+}
+
+/** Where a marker's `]` is, past any `{{ }}` in it, which may hold a `]` of
+ * its own. -1 when it never closes. */
+function markerEnd(doc: string, from: number): number {
+  let i = from;
+  while (i < doc.length) {
+    if (doc.startsWith("{{", i)) {
+      const close = doc.indexOf("}}", i + 2);
+      if (close < 0) return -1;
+      i = close + 2;
+      continue;
+    }
+    if (doc[i] === "]") return i;
+    if (doc[i] === "\n") return -1;
+    i++;
+  }
+  return -1;
 }
 
 /** The first row a position is in, or -1. */
@@ -217,6 +239,7 @@ const sourceCells = (row: SourceRow): SourceToken[][] => {
   const out: SourceToken[][] = [];
   let current: SourceToken[] = [];
   for (const token of row.tokens) {
+    if (token.silent === true) continue;
     if (token.kind === "icon" && current.length > 0) {
       out.push(current);
       current = [];
@@ -229,13 +252,14 @@ const sourceCells = (row: SourceRow): SourceToken[][] => {
 
 /**
  * Which source part drew each rendered part. Undefined when they cannot be
- * lined up with certainty: the template has logic (`{% %}`), or the rendered
- * rows or icons are not the ones the source writes.
+ * lined up with certainty: the template has logic that decides what draws
+ * (`{% if %}`, `{% for %}`; a `{% set %}` draws nothing and is fine), or the
+ * rendered rows or icons are not the ones the source writes.
  */
 export function alignTemplate(scan: SourceScan, rendered: readonly (readonly TemplateCell[])[]): AlignedRow[] | undefined {
   if (scan.open !== undefined) return undefined;
-  const filled = scan.rows.map((row, index) => ({ row, index })).filter(({ row }) => row.tokens.length > 0);
-  if (filled.some(({ row }) => row.tokens.some((t) => t.kind === "logic"))) return undefined;
+  const filled = scan.rows.map((row, index) => ({ row, index })).filter(({ row }) => row.tokens.some((t) => t.silent !== true));
+  if (scan.rows.some((row) => row.tokens.some((t) => t.kind === "logic" && t.silent !== true))) return undefined;
   if (filled.length !== rendered.length) return undefined;
   const out: AlignedRow[] = [];
   for (let r = 0; r < filled.length; r++) {
@@ -283,4 +307,20 @@ export function templateTokenValues(aligned: readonly AlignedRow[] | undefined):
     }
   }
   return values;
+}
+
+/**
+ * The best guess at where a rendered part came from when the template cannot
+ * be lined up: an icon of that name, or written words that hold it. Undefined
+ * when the part comes out of logic and no one place wrote it.
+ */
+export function findTemplatePart(scan: SourceScan, cell: TemplateCell | undefined, part: "icon" | "text"): { from: number; to: number } | undefined {
+  if (cell === undefined) return undefined;
+  const tokens = scan.rows.flatMap((row) => row.tokens);
+  if (part === "icon") {
+    const found = tokens.find((t) => t.kind === "icon" && t.symbol === cell.icon?.symbol);
+    return found === undefined ? undefined : { from: found.from, to: found.to };
+  }
+  const found = tokens.find((t) => t.kind === "text" && (cell.text.includes(t.src) || t.src.includes(cell.text)));
+  return found === undefined ? undefined : { from: found.from, to: found.to };
 }

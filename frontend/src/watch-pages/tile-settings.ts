@@ -4107,6 +4107,16 @@ export const tileSettingsStyles = css`
     columns: 4 320px; column-gap: 12px; min-width: 0;
     --ts-gap: 10px; --ts-lab: 104px; --ts-blue: var(--wa-hue-blue, #4c8dff);
   }
+  /* A template tile: the code needs the room. The other cards stand in one
+     column and What it does takes the rest, down the whole height. */
+  @container insp (min-width: 900px) {
+    .ts-groups:has(wa-template-editor) {
+      columns: auto; display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); column-gap: 12px;
+      grid-template-rows: repeat(5, auto) 1fr; align-items: start;
+    }
+    .ts-groups:has(wa-template-editor) > .ts-grp { grid-column: 1; }
+    .ts-groups:has(wa-template-editor) > .ts-grp[data-group="does"] { grid-column: 2; grid-row: 1 / -1; }
+  }
   /* Each group has a mark of its own hue, kept clear of the blue that marks
      what changed: amber, green, violet, coral and teal. */
   .ts-grp { --ts-hue: 150, 150, 160; display: block; min-width: 0; margin: 0 0 12px; break-inside: avoid; border: 1px solid var(--wa-line); border-radius: 11px; background: var(--wa-card); }

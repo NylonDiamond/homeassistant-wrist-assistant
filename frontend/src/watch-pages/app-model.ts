@@ -459,13 +459,13 @@ export function setWatchTemplateText(document: WatchPagesDocument, pageId: strin
 }
 
 /** Line up columns: whether the tile stands its rows in columns, each icon
- * starting one (`template-rows.ts`). The key is only there while it is on. */
+ * starting one (`template-rows.ts`). On unless the key says false. */
 export function watchTemplateColumns(tile: WatchPageTile): boolean {
-  return tile.templateColumns === true;
+  return tile.templateColumns !== false;
 }
 
 export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
-  return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? true : REMOVE) : undefined));
+  return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? REMOVE : false) : undefined));
 }
 
 /** A preset chip: writes the preset's text over the tile's. */
