@@ -196,6 +196,56 @@ describe("snapping a dragged room", () => {
     expect(snap.guides.every((g) => g.roomId === id(1))).toBe(true);
   });
 
+  describe("door to door", () => {
+    /** Two rooms side by side and apart, each with a door on the wall that
+     * faces the other: the left one's at y 1 to 2, the right one's 40 cm lower
+     * on the plan. */
+    const doors = (kinds: readonly ["door" | "opening" | "window", "door" | "opening" | "window"] = ["door", "door"], width = 1): HomeMapDocument => {
+      const left = box(id(1), 0, 0, 4, 3);
+      const right = box(id(2), 5, 0, 4, 3);
+      left.openings = [{ kind: kinds[0], a: [4, 1], b: [4, 2], z0: 0, z1: 2 }];
+      right.openings = [{ kind: kinds[1], a: [5, 1.4], b: [5, 1.4 + width], z0: 0, z1: 2 }];
+      return home([left, right]);
+    };
+
+    it("locks a door to the door of the next room, both ways", () => {
+      const snap = snapRoom(doors(), id(2), -0.9, -0.2)!;
+      // Its door lands on the other's exactly: the right room's middle door at
+      // 5, 1.9 moves to 4, 1.5.
+      expect(snap.dx).toBeCloseTo(-1, 5);
+      expect(snap.dy).toBeCloseTo(-0.4, 5);
+      expect(snap.guides).toEqual([{ a: [4, 1], b: [4, 2], roomId: id(1), door: true }]);
+    });
+
+    it("beats a wall's line, and takes a wide opening too", () => {
+      const snap = snapRoom(doors(["opening", "door"]), id(2), -1, -0.2)!;
+      expect(snap.dy).toBeCloseTo(-0.4, 5);
+      expect(snap.guides[0]?.door).toBe(true);
+    });
+
+    it("leaves a door too far off to the walls", () => {
+      for (const [dx, dy] of [[-0.5, -0.4], [-1, 0.2]] as const) {
+        expect(snapRoom(doors(), id(2), dx, dy)?.guides.some((g) => g.door === true)).toBe(false);
+      }
+    });
+
+    it("never locks a window, or doors of different widths", () => {
+      expect(snapRoom(doors(["window", "door"]), id(2), -0.9, -0.2)?.guides.some((g) => g.door === true)).toBe(false);
+      expect(snapRoom(doors(["door", "door"], 1.8), id(2), -0.9, -0.6)?.guides.some((g) => g.door === true)).toBe(false);
+    });
+
+    it("needs the rooms on either side of the door", () => {
+      // The right room dragged over the left, past the door: both on one side.
+      expect(snapRoom(doors(), id(2), -5, -0.4)?.guides.some((g) => g.door === true)).toBe(false);
+    });
+
+    it("needs the two doors along one line", () => {
+      const doc = doors();
+      room(doc, id(2)).openings = [{ kind: "door", a: [6, 0], b: [7, 0], z0: 0, z1: 2 }];
+      expect(snapRoom(doc, id(2), -2.5, 1.5)?.guides.some((g) => g.door === true)).toBe(false);
+    });
+  });
+
   it("leaves a move alone when no wall is near", () => {
     const snap = snapRoom(two(), id(2), 3, 3)!;
     expect(snap).toEqual({ dx: 3, dy: 3, guides: [] });

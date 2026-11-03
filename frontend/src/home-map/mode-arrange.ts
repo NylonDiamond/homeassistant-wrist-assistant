@@ -737,6 +737,18 @@ export class ArrangeMode {
   private guide(ctx: HomeMapEditorContext, g: HomeMapSnapGuide): SVGTemplateResult {
     const a = ctx.toScreen(g.a);
     const b = ctx.toScreen(g.b);
+    if (g.door === true) {
+      const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, g.roomId));
+      const label = `Door to ${room === undefined ? "the next room" : homeMapRoomName(room)}`;
+      const width = label.length * 6.2 + 20;
+      const x = (a[0] + b[0]) / 2 - width / 2;
+      const y = (a[1] + b[1]) / 2 - 34;
+      return svg`<g class="hme-guide" pointer-events="none">
+        <line x1=${fmt(a[0])} y1=${fmt(a[1])} x2=${fmt(b[0])} y2=${fmt(b[1])} stroke="#30d158" stroke-width="5" stroke-linecap="round" />
+        <g class="hme-tag"><rect x=${fmt(x)} y=${fmt(y)} width=${fmt(width)} height="20" rx="10" fill="#30d158" />
+        <text x=${fmt(x + width / 2)} y=${fmt(y + 14)} fill="#000" text-anchor="middle">${label}</text></g>
+      </g>`;
+    }
     const d = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 1e-6);
     const u: HomePoint = [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
     const a2: HomePoint = [a[0] - u[0] * 40, a[1] - u[1] * 40];
@@ -1308,7 +1320,7 @@ export class ArrangeMode {
 
   dock(ctx: HomeMapEditorContext): TemplateResult {
     return html`<button type="button" class="hme-tb ${ctx.toggles.snap ? "on" : ""}" aria-pressed=${ctx.toggles.snap ? "true" : "false"}
-        title="Snap to walls: a dragged room lines up with the walls round it. Hold Alt to move it freely." @click=${() => ctx.setToggle("snap", !ctx.toggles.snap)}>Snap</button>`;
+        title="Snap: a dragged room locks to the door of the next room, or lines up with the walls round it. Hold Alt to move it freely." @click=${() => ctx.setToggle("snap", !ctx.toggles.snap)}>Snap</button>`;
   }
 
   /** The dock's View menu: the 10 cm grid. */

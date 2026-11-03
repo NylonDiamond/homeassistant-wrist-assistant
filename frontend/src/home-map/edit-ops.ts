@@ -459,6 +459,8 @@ export interface HomeMapSnapGuide {
   b: HomePoint;
   /** The neighbour. */
   roomId: string;
+  /** Not a wall's line: the door the two rooms now share. */
+  door?: true;
 }
 
 /** A dragged room's move once snapped, and the lines to draw. */
@@ -468,8 +470,63 @@ export interface HomeMapSnap {
   guides: HomeMapSnapGuide[];
 }
 
+/** How near a dragged room's door must come to a neighbour's door to lock to
+ * it, in meters: square to the door's wall, and along it. */
+const DOOR_ACROSS = 0.25;
+const DOOR_ALONG = 0.35;
+/** Two doors further apart in width than this are not one door, in meters. */
+const DOOR_WIDTH_GAP = 0.5;
+/** Two doors further from parallel than this are not one door, in degrees. */
+const DOOR_PARALLEL = 5;
+
+/** A room's doors and wide openings, moved by `offset`. */
+function doorsOf(room: HomeMapRoom, offset: HomePoint = [0, 0]): { a: HomePoint; b: HomePoint; mid: HomePoint; width: number; ux: number; uy: number }[] {
+  return room.openings.flatMap((o) => {
+    if (o.kind === "window") return [];
+    const width = Math.hypot(o.b[0] - o.a[0], o.b[1] - o.a[1]);
+    if (width < 0.05) return [];
+    const a: HomePoint = [o.a[0] + offset[0], o.a[1] + offset[1]];
+    const b: HomePoint = [o.b[0] + offset[0], o.b[1] + offset[1]];
+    return [{ a, b, mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as HomePoint, width, ux: (b[0] - a[0]) / width, uy: (b[1] - a[1]) / width }];
+  });
+}
+
 /**
- * Where a room dragged by `dx`, `dy` snaps: along each of the floor's two
+ * The move that puts a door of a room dragged by `dx`, `dy` on a neighbour's
+ * door, the nearest two, or undefined with none near. The two must lie along
+ * one line (a room is not turned to fit), be about one width, and their rooms
+ * must stand on either side of the door. A door between two rooms is scanned
+ * once from each, so this locks a room to the room it opens into.
+ */
+function snapRoomToDoor(room: HomeMapRoom, others: readonly HomeMapRoom[], dx: number, dy: number): HomeMapSnap | undefined {
+  const middle = homeMapRoomCenter(room);
+  const centre: HomePoint = [middle[0] + dx, middle[1] + dy];
+  let best: { pull: HomePoint; size: number; guide: HomeMapSnapGuide } | undefined;
+  for (const mine of doorsOf(room, [dx, dy])) {
+    for (const other of others) {
+      const theirCentre = homeMapRoomCenter(other);
+      for (const theirs of doorsOf(other)) {
+        if (Math.abs(mine.ux * theirs.uy - mine.uy * theirs.ux) > Math.sin((DOOR_PARALLEL * Math.PI) / 180)) continue;
+        if (Math.abs(mine.width - theirs.width) > DOOR_WIDTH_GAP) continue;
+        const pull: HomePoint = [theirs.mid[0] - mine.mid[0], theirs.mid[1] - mine.mid[1]];
+        const along = Math.abs(pull[0] * theirs.ux + pull[1] * theirs.uy);
+        const across = Math.abs(pull[0] * -theirs.uy + pull[1] * theirs.ux);
+        if (along > DOOR_ALONG || across > DOOR_ACROSS) continue;
+        const side = (p: HomePoint) => (p[0] - theirs.mid[0]) * -theirs.uy + (p[1] - theirs.mid[1]) * theirs.ux;
+        const mineSide = side([centre[0] + pull[0], centre[1] + pull[1]]);
+        if (mineSide * side(theirCentre) >= 0) continue;
+        const size = Math.hypot(pull[0], pull[1]);
+        if (best === undefined || size < best.size) best = { pull, size, guide: { a: theirs.a, b: theirs.b, roomId: other.id, door: true } };
+      }
+    }
+  }
+  return best === undefined ? undefined : { dx: dx + best.pull[0], dy: dy + best.pull[1], guides: [best.guide] };
+}
+
+/**
+ * Where a room dragged by `dx`, `dy` snaps. A door of it near a neighbour's
+ * door locks to that door (`snapRoomToDoor`), which sets the room both ways.
+ * Else, along each of the floor's two
  * wall directions, the nearest of its walls that lies within `tolerance` of
  * a neighbour's wall line, so two walls that face each other read as one,
  * within a meter of that wall along
@@ -482,6 +539,8 @@ export function snapRoom(doc: HomeMapDocument, roomId: string, dx: number, dy: n
   if (at === undefined || !finite(dx, dy)) return undefined;
   const others = at.floor.rooms.filter((x) => x !== at.room);
   if (others.length === 0) return { dx, dy, guides: [] };
+  const door = snapRoomToDoor(at.room, others, dx, dy);
+  if (door !== undefined) return door;
   const axes = floorAxes(others);
   let offset: HomePoint = [dx, dy];
   const guides: HomeMapSnapGuide[] = [];
