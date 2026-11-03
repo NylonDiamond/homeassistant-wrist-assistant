@@ -435,7 +435,7 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
     },
     {
       title: "View",
-      keys: [["Space", "Hold and drag to pan"], ["+ −", "Zoom in and out"], ["0", "Fit the floor"], ["?", "Show or hide these keys"]],
+      keys: [["Space", "Hold and drag to pan"], ["+ −", "Zoom in and out"], ["0", "Fit the floor"], ["Z", "Fit the picked room"], ["?", "Show or hide these keys"]],
     },
     {
       title: "Mouse",
@@ -446,6 +446,7 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
         [`${cmd} click`, "Pick several things"],
         ["Shift drag", "Pick every device in a box"],
         ["Drag in 3D", "Turn the model; scroll to zoom"],
+        ["Alt drag", "Drag a copy of the furniture picked"],
         ["Drag a number", "Change it, with Shift in big steps, with Alt in fine ones; click it to type"],
       ],
     },

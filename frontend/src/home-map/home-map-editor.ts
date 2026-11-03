@@ -121,6 +121,7 @@ import {
   type HomeMapToggles,
   homeMapLampPick,
   homeMapPickedThings,
+  homeMapRoomsPicked,
   homeMapSelectionRoom,
   homeMapSelectionThere,
   homeMapToggleThing,
@@ -921,6 +922,20 @@ export class WaHomeMapEditor extends LitElement {
     this.userMoved = false;
   }
 
+  /** Show the rooms of what is picked; nothing with none. Kept through a
+   * resize of the stage, as a pan or a zoom is. */
+  fitPicked(): void {
+    const { width, height } = this.stageSize;
+    const floor = this.baseFloor();
+    if (width <= 0 || floor === undefined) return;
+    const rooms = homeMapRoomsPicked(floor, this.selection);
+    if (rooms.length === 0) return;
+    this.view = homeMapFitView({ ...floor, rooms, pins: [] }, width, height);
+    this.artScale = this.view.scale;
+    this.needFit = false;
+    this.userMoved = true;
+  }
+
   zoomBy(factor: number, at?: HomePoint): void {
     if (this.view === undefined) return;
     this.view = homeMapZoomAt(this.view, factor, at ?? [this.stageSize.width / 2, this.stageSize.height / 2]);
@@ -1338,6 +1353,11 @@ export class WaHomeMapEditor extends LitElement {
     if (typeof shortcut === "object" && "letter" in shortcut && shortcut.letter === "a" && !this.page.devices.choosing) {
       e.preventDefault?.();
       this.openAdd();
+      return;
+    }
+    if (typeof shortcut === "object" && "letter" in shortcut && shortcut.letter === "z" && this.viewKind !== "model") {
+      e.preventDefault?.();
+      this.fitPicked();
       return;
     }
     const ctx = this.context();
@@ -1891,6 +1911,7 @@ export class WaHomeMapEditor extends LitElement {
       <span class="hme-zoom mono">${percent}%</span>
       <button type="button" class="hme-tb hme-icon" aria-label="Zoom in" title="Zoom in (+)" @click=${() => this.zoomBy(HOME_MAP_ZOOM_STEP)}>＋</button>
       <button type="button" class="hme-tb" title="Fit the floor (0)" @click=${() => this.fit()}>Fit</button>
+      ${homeMapRoomsPicked(ctx.floor, ctx.selection).length === 0 ? nothing : html`<button type="button" class="hme-tb" title="Fit the picked room (Z)" @click=${() => this.fitPicked()}>Fit room</button>`}
       <span class="hme-vsep"></span>
       ${this.page.dock?.(ctx) ?? nothing}
       ${this.dockMenuButton("view", "View", "What the plan shows: the grid, names, live states and more")}

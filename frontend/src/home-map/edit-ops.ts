@@ -1441,6 +1441,15 @@ export function homeMapClipOf(doc: HomeMapDocument, things: readonly HomeMapThin
   return objects.length === 0 ? undefined : { objects };
 }
 
+/** The middle of a clip's things. */
+export function homeMapClipMiddle(clip: HomeMapClip): HomePoint {
+  const count = Math.max(clip.objects.length, 1);
+  return [
+    clip.objects.reduce((sum, o) => sum + o.c[0]!, 0) / count,
+    clip.objects.reduce((sum, o) => sum + o.c[1]!, 0) / count,
+  ];
+}
+
 /** A paste: the map, the new things to pick, and the clip again with its
  * things where they landed, so the next paste steps on from them. */
 export interface HomeMapPasted {
@@ -1457,7 +1466,7 @@ export interface HomeMapPasted {
 export function pasteThings(doc: HomeMapDocument, floorId: string, clip: HomeMapClip, at?: HomePoint, roomId?: string): HomeMapPasted | undefined {
   const floor = doc.floors.find((f) => sameHomeMapId(f.id, floorId));
   if (floor === undefined || clip.objects.length === 0) return undefined;
-  const middle = [0, 1].map((axis) => clip.objects.reduce((sum, o) => sum + o.c[axis]!, 0) / clip.objects.length) as [number, number];
+  const middle = homeMapClipMiddle(clip);
   const target: HomePoint = at ?? [middle[0] + HOME_MAP_PASTE_STEP, middle[1] + HOME_MAP_PASTE_STEP];
   if (!finite(...target)) return undefined;
   const fallback = homeMapRoomAt(floor, target)

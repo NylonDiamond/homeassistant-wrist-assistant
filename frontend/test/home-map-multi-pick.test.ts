@@ -552,9 +552,66 @@ describe("the things part with several picked", () => {
     expect(mode.pointerDown(s.ctx, s.press({ metaKey: true }), [4, 3.4])).toBe(true);
     expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_B, TABLE] });
     expect(s.handlers()).toBeUndefined();
+    // A plain press on one of them waits: a drag moves them all, a click picks it.
     expect(mode.pointerDown(s.ctx, s.press(), [5, 1])).toBe(true);
-    expect(s.ctx.selection).toEqual({ kind: "object", ...LAMP_B });
     expect(s.handlers()).toBeDefined();
+    expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_B, TABLE] });
+    s.handlers()!.end([5, 1], s.press(), false);
+    expect(s.ctx.selection).toEqual({ kind: "object", ...LAMP_B });
+    expect(s.log.applied).toBe(0);
+  });
+
+  it("moves every picked thing by dragging one, previewed live and saved once", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B] }, undefined, lamps());
+    const mode = new ArrangeMode();
+    const a = thingOf(s.doc, LAMP_A).c;
+    const b = thingOf(s.doc, LAMP_B).c;
+    expect(mode.pointerDown(s.ctx, s.press(), [5, 1])).toBe(true);
+    s.handlers()!.move([5.5, 1.25], s.press());
+    expect(s.log.previews).toBe(1);
+    expect(mode.pill(s.ctx)).toBe(nothing);
+    s.handlers()!.end([5.5, 1.25], s.press(), true);
+    expect(s.log.applied).toBe(1);
+    expect(thingOf(s.doc, LAMP_A).c).toEqual([a[0] + 0.5, a[1] + 0.25]);
+    expect(thingOf(s.doc, LAMP_B).c).toEqual([b[0] + 0.5, b[1] + 0.25]);
+    expect(s.ctx.selection).toEqual({ kind: "objects", items: [LAMP_A, LAMP_B] });
+  });
+
+  it("drags a copy of one thing with Alt, leaving the original and picking the copy", () => {
+    const s = shell(undefined, undefined, lamps());
+    const mode = new ArrangeMode();
+    const before = thingOf(s.doc, LAMP_B);
+    const count = s.doc.floors[0]!.rooms.find((r) => r.id === LIVING)!.objects.length;
+    expect(mode.pointerDown(s.ctx, s.press({ altKey: true }), [5, 1])).toBe(true);
+    s.handlers()!.move([5.5, 1.5], s.press({ altKey: true }));
+    // Only a preview until the drop.
+    expect(s.log.applied).toBe(0);
+    s.handlers()!.end([5.5, 1.5], s.press({ altKey: true }), true);
+    expect(s.log.applied).toBe(1);
+    const objects = s.doc.floors[0]!.rooms.find((r) => r.id === LIVING)!.objects;
+    expect(objects).toHaveLength(count + 1);
+    expect(thingOf(s.doc, LAMP_B)).toEqual(before);
+    expect(objects[count]!.c).toEqual([before.c[0] + 0.5, before.c[1] + 0.5]);
+    expect(objects[count]).not.toHaveProperty("device");
+    expect(s.ctx.selection).toEqual({ kind: "object", roomId: LIVING, object: count });
+  });
+
+  it("drags copies of every picked thing with Alt, keeping their shape, and makes none on a click", () => {
+    const s = shell({ kind: "objects", items: [LAMP_A, LAMP_B] }, undefined, lamps());
+    const mode = new ArrangeMode();
+    const a = thingOf(s.doc, LAMP_A).c;
+    const b = thingOf(s.doc, LAMP_B).c;
+    mode.pointerDown(s.ctx, s.press({ altKey: true }), [5, 1]);
+    s.handlers()!.end([5, 1], s.press({ altKey: true }), false);
+    expect(s.log.applied).toBe(0);
+    mode.pointerDown(s.ctx, s.press({ altKey: true }), [5, 1]);
+    s.handlers()!.move([5, 2], s.press({ altKey: true }));
+    s.handlers()!.end([5, 2], s.press({ altKey: true }), true);
+    expect(s.log.applied).toBe(1);
+    const picked = homeMapPickedThings(s.ctx.selection);
+    expect(picked).toHaveLength(2);
+    expect(thingOf(s.doc, picked[0]!).c).toEqual([a[0], a[1] + 1]);
+    expect(thingOf(s.doc, picked[1]!).c).toEqual([b[0], b[1] + 1]);
   });
 
   it("outlines every picked thing, with no handles", () => {

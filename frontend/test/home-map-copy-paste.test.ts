@@ -3,7 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 
+import { HOME_MAP_EDIT_TOOLS } from "../src/home-map/edit-page.js";
 import { HOME_MAP_PASTE_STEP, homeMapClipOf, pasteThings } from "../src/home-map/edit-ops.js";
+import { homeMapRoomsPicked } from "../src/home-map/editor-mode.js";
+import { HOME_MAP_SHAPE_TOOLS } from "../src/home-map/mode-shape.js";
 import { HOME_MAP_SPLIT_MAX, HOME_MAP_SPLIT_MIN, homeMapClampSplit, homeMapShortcut, homeMapSplitPercent } from "../src/home-map/editor-view.js";
 import { type HomeMapDocument, type HomeMapObject, type HomeMapRoom, checkHomeMap } from "../src/home-map/model.js";
 
@@ -110,6 +113,37 @@ describe("the keys", () => {
 
   it("stay out of a text field", () => {
     expect(homeMapShortcut({ key: "v", metaKey: true }, true)).toBeUndefined();
+  });
+});
+
+describe("Fit room", () => {
+  const floor = () => doc().floors[0]!;
+  const ids = (sel: Parameters<typeof homeMapRoomsPicked>[1]) => homeMapRoomsPicked(floor(), sel).map((r) => r.id);
+
+  it("goes by the room of what is picked", () => {
+    expect(ids(undefined)).toEqual([]);
+    expect(ids({ kind: "room", roomId: RIGHT })).toEqual([RIGHT]);
+    expect(ids({ kind: "object", roomId: LEFT, object: 0 })).toEqual([LEFT]);
+    expect(ids({ kind: "wall", roomId: LEFT, wall: 1 })).toEqual([LEFT]);
+    expect(ids({ kind: "objects", items: [{ roomId: LEFT, object: 0 }, { roomId: RIGHT, object: 0 }, { roomId: LEFT, object: 1 }] })).toEqual([LEFT, RIGHT]);
+  });
+
+  it("finds a pin's room by its own key, else by where it stands", () => {
+    const pins = [
+      { id: "kept", entityId: "light.a", roomId: LEFT, at: [6, 1, 1] },
+      { id: "loose", entityId: "light.b", at: [6, 1, 1] },
+      { id: "outside", entityId: "light.c", at: [50, 50, 1] },
+    ];
+    const withPins = { ...floor(), pins } as unknown as ReturnType<typeof floor>;
+    const of = (pinId: string) => homeMapRoomsPicked(withPins, { kind: "pin", pinId }).map((r) => r.id);
+    expect(of("kept")).toEqual([LEFT]);
+    expect(of("loose")).toEqual([RIGHT]);
+    expect(of("outside")).toEqual([]);
+  });
+
+  it("is on a free letter and takes no tool's key", () => {
+    expect(homeMapShortcut({ key: "z" }, false)).toEqual({ letter: "z" });
+    expect([...HOME_MAP_EDIT_TOOLS, ...HOME_MAP_SHAPE_TOOLS].map((t) => t.key)).not.toContain("z");
   });
 });
 

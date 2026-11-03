@@ -67,6 +67,7 @@ import {
   type HomeMapObjectResize,
   type HomeMapPart,
   type HomeMapPasted,
+  homeMapClipMiddle,
   homeMapClipOf,
   pasteThings,
   type HomeMapResize,
@@ -655,7 +656,7 @@ export class ArrangeMode {
     const parts: SVGTemplateResult[] = [];
     for (const guide of this.guides) parts.push(this.guide(ctx, guide));
     if (many !== undefined) {
-      // Each picked thing outlined, no handles: several move by the arrows.
+      // Each picked thing outlined, no handles: a drag on one moves them all.
       for (const t of many) {
         const box = homeBoxCorners(homeBoxOf(t.object)).map((p) => pt(ctx.toScreen(p))).join(" ");
         parts.push(svg`<polygon class="hme-box" points=${box} fill="rgba(91,141,239,0.1)" stroke="#5b8def" stroke-width="2"
@@ -791,15 +792,91 @@ export class ArrangeMode {
       ctx.select(homeMapToggleThing(ctx.selection, { roomId: room.id, object: ref.object }));
       return true;
     }
-    this.pickThing(ctx, room, ref.object);
-    this.thingMoveDrag(ctx, e, { room, index: ref.object, object }, at);
+    this.dragThing(ctx, e, { room, index: ref.object, object }, at);
     return true;
   }
 
+  /** A press on a thing with no Cmd or Ctrl. One of several picked: a drag
+   * moves them all, and a click with no drag picks it alone. Any other: it is
+   * picked alone and drags at once. With Alt the drag leaves the originals
+   * where they are and moves copies of them. */
+  private dragThing(ctx: HomeMapEditorContext, e: PointerEvent, thing: ThingAt, at: HomePoint): void {
+    const many = this.pickedMany(ctx);
+    const inMany = many !== undefined && many.some((t) => sameHomeMapId(t.room.id, thing.room.id) && t.index === thing.index);
+    if (!inMany) this.pickThing(ctx, thing.room, thing.index);
+    if (e.altKey) this.copyDrag(ctx, e, inMany ? many : [thing], at);
+    else if (inMany) this.manyMoveDrag(ctx, e, many, thing, at);
+    else this.thingMoveDrag(ctx, e, thing, at);
+  }
+
+  /** Drag several picked things as one, in grid steps from the first while
+   * the grid is on. They keep their places against each other, so no one of
+   * them snaps to a wall. Saved on the drop as one move. */
+  private manyMoveDrag(ctx: HomeMapEditorContext, e: PointerEvent, many: readonly ThingAt[], pressed: ThingAt, start: HomePoint): void {
+    const refs = thingRefs(many);
+    const first = many[0]!.object.c;
+    let delta: HomePoint = [0, 0];
+    ctx.drag(e, {
+      move: (p) => {
+        let dx = p[0] - start[0];
+        let dy = p[1] - start[1];
+        if (ctx.toggles.grid) {
+          const g = HOME_MAP_ARRANGE_GRID;
+          dx = Math.round((first[0] + dx) / g) * g - first[0];
+          dy = Math.round((first[1] + dy) / g) * g - first[1];
+        }
+        this.guides = [];
+        this.dragging = true;
+        delta = [dx, dy];
+        ctx.preview((d) => moveObjects(d, refs, dx, dy));
+      },
+      end: (_p, _ev, moved) => {
+        this.stopDrag(ctx);
+        if (!moved) {
+          this.pickThing(ctx, pressed.room, pressed.index);
+          return;
+        }
+        const [dx, dy] = delta;
+        if (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005) ctx.apply((d) => moveObjects(d, refs, dx, dy));
+      },
+      cancel: () => this.stopDrag(ctx),
+    });
+  }
+
+  /** Alt and a drag: copies of `things` follow the pointer, in the shape they
+   * stand in, in grid steps while the grid is on. Nothing is made until the
+   * drop, one edit to undo, and the copies land picked. */
+  private copyDrag(ctx: HomeMapEditorContext, e: PointerEvent, things: readonly ThingAt[], start: HomePoint): void {
+    const clip = homeMapClipOf(ctx.doc, thingRefs(things));
+    if (clip === undefined) return;
+    const floorId = ctx.floor.id;
+    const middle = homeMapClipMiddle(clip);
+    let target: HomePoint | undefined;
+    ctx.drag(e, {
+      move: (p) => {
+        let next: HomePoint = [middle[0] + p[0] - start[0], middle[1] + p[1] - start[1]];
+        if (ctx.toggles.grid) {
+          const g = HOME_MAP_ARRANGE_GRID;
+          next = [Math.round(next[0] / g) * g, Math.round(next[1] / g) * g];
+        }
+        this.guides = [];
+        this.dragging = true;
+        target = next;
+        const made = next;
+        ctx.preview((d) => pasteThings(d, floorId, clip, made)?.doc);
+      },
+      end: (_p, _ev, moved) => {
+        this.stopDrag(ctx);
+        if (moved && target !== undefined) this.paste(ctx, clip, target);
+      },
+      cancel: () => this.stopDrag(ctx),
+    });
+  }
+
   /** A press on a thing (in any room; the smallest where several overlap)
-   * picks it alone and drags it at once; on a room's open floor, picks the
-   * room and drags it. With Cmd or Ctrl a thing is added to the pick or
-   * taken out, and a room's open floor leaves the pick as it is. */
+   * is `dragThing`'s; on a room's open floor, picks the room and drags it.
+   * With Cmd or Ctrl a thing is added to the pick or taken out, and a room's
+   * open floor leaves the pick as it is. */
   pressBody(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     const thing = this.thingUnder(ctx, at, undefined);
     if (e.metaKey || e.ctrlKey) {
@@ -807,8 +884,7 @@ export class ArrangeMode {
       return thing !== undefined || homeRoomUnder(ctx.floor, at) !== undefined;
     }
     if (thing !== undefined) {
-      this.pickThing(ctx, thing.room, thing.index);
-      this.thingMoveDrag(ctx, e, thing, at);
+      this.dragThing(ctx, e, thing, at);
       return true;
     }
     const room = homeRoomUnder(ctx.floor, at);
@@ -1248,6 +1324,7 @@ export class ArrangeMode {
         ${this.draw.points.length >= 3 ? html`<button type="button" class="hme-tb" @click=${() => void this.draw.finish(ctx)}>Close the room</button>` : nothing}
         <button type="button" class="hme-tb" @click=${() => this.draw.stop(ctx)}>Cancel</button>`;
     }
+    if (this.dragging) return nothing;
     const many = this.pickedMany(ctx);
     if (many !== undefined) {
       const refs = thingRefs(many);

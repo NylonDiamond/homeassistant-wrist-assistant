@@ -44,7 +44,7 @@ import type { IconProvider } from "../renderer.js";
 import type { HomeMapOp, HomeMapThingRef } from "./edit-ops.js";
 import type { HomeMapView } from "./editor-view.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapScans, HomePoint } from "./model.js";
-import { sameHomeMapId } from "./model.js";
+import { homeMapRoomAt, sameHomeMapId } from "./model.js";
 import { homeMapRoomWalls, homeMapThingOfPin } from "./edit-ops.js";
 
 /** What is picked. Indexes are a room's walls as `homeMapRoomWalls` numbers
@@ -62,6 +62,21 @@ export type HomeMapSelection =
   | { kind: "objects"; items: HomeMapThingRef[] }
   | { kind: "pin"; pinId: string }
   | { kind: "pins"; pinIds: string[] };
+
+/** The rooms what is picked stands in, each once, for Fit Room. A pin goes by
+ * its room, else the room under it. */
+export function homeMapRoomsPicked(floor: HomeMapFloor, sel: HomeMapSelection | undefined): HomeMapFloor["rooms"] {
+  if (sel === undefined) return [];
+  const pins = sel.kind === "pin" ? [sel.pinId] : sel.kind === "pins" ? sel.pinIds : [];
+  const pinRooms = pins.flatMap((id) => {
+    const pin = floor.pins.find((p) => sameHomeMapId(p.id, id));
+    if (pin === undefined) return [];
+    const room = floor.rooms.find((r) => pin.roomId !== undefined && sameHomeMapId(r.id, pin.roomId)) ?? homeMapRoomAt(floor, pin.at);
+    return room === undefined ? [] : [room.id];
+  });
+  const ids = sel.kind === "objects" ? sel.items.map((t) => t.roomId) : sel.kind === "pin" || sel.kind === "pins" ? pinRooms : [sel.roomId];
+  return floor.rooms.filter((room) => ids.some((id) => sameHomeMapId(id, room.id)));
+}
 
 /** The room a selection is in, if any; none for several things, which may
  * lie in several rooms. */
