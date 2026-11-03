@@ -181,12 +181,16 @@ describe("moving and turning a room", () => {
 describe("snapping a dragged room", () => {
   const two = () => home([box(id(1), 0, 0, 4, 3, "Living"), box(id(2), 4.18, 0.06, 2, 3, "Hall")]);
 
-  it("pulls a near wall onto a neighbour's, or a wall's thickness from it, with a guide", () => {
+  it("pulls a near wall onto a neighbour's, so the two read as one wall, with a guide", () => {
     const doc = two();
-    const snap = snapRoom(doc, id(2), 0, 0)!;
-    // Its left wall is 18 cm from the living room's right wall: within
-    // 15 cm of the wall's thickness, so it lands 10 cm off; its top lines up.
-    expect(snap.dx).toBeCloseTo(-0.08, 5);
+    // Its left wall is 18 cm from the living room's right wall: just out of
+    // reach, while its top lines up.
+    const apart = snapRoom(doc, id(2), 0, 0)!;
+    expect(apart.dx).toBeCloseTo(0, 5);
+    expect(apart.dy).toBeCloseTo(-0.06, 5);
+    // Dragged 10 cm nearer it lands on that wall, with no gap.
+    const snap = snapRoom(doc, id(2), -0.1, 0)!;
+    expect(snap.dx).toBeCloseTo(-0.18, 5);
     expect(snap.dy).toBeCloseTo(-0.06, 5);
     expect(snap.guides.length).toBeGreaterThan(0);
     expect(snap.guides.every((g) => g.roomId === id(1))).toBe(true);
@@ -286,18 +290,18 @@ describe("resizing a room", () => {
 
   it("snaps a dragged side to a neighbour's wall, with a guide", () => {
     const doc = home([box(id(1), 0, 0, 4, 3, "Living"), box(id(2), 4.1, 0, 2, 2.5, "Hall")]);
-    // The right side dragged to 3.95: a wall's thickness off the hall's left
-    // wall is 4.0, 5 cm away.
+    // The right side dragged to 3.95: the hall's left wall is at 4.1, 15 cm
+    // away, so the two walls land on one line.
     const snap = snapRoomResize(doc, id(1), { width: 3.95, anchor: [0, 0.5] }, { a: 1 })!;
-    expect(snap.resize.width).toBeCloseTo(4, 5);
+    expect(snap.resize.width).toBeCloseTo(4.1, 5);
     expect(snap.guides.length).toBeGreaterThan(0);
     expect(snap.guides.every((g) => g.roomId === id(2))).toBe(true);
     // A corner: each dragged side snaps; kept in proportion, only the
     // nearest does (the bottom, onto the hall's bottom at 2.5) and the
     // width follows it.
-    const corner = { width: 3.9, depth: 2.55, anchor: [0, 0] as const };
+    const corner = { width: 3.95, depth: 2.55, anchor: [0, 0] as const };
     const free = snapRoomResize(doc, id(1), corner, { a: 1, c: 1 })!;
-    expect(free.resize.width).toBeCloseTo(4, 5);
+    expect(free.resize.width).toBeCloseTo(4.1, 5);
     expect(free.resize.depth).toBeCloseTo(2.5, 5);
     const kept = snapRoomResize(doc, id(1), corner, { a: 1, c: 1 }, { proportional: true })!;
     expect(kept.resize.depth).toBeCloseTo(2.5, 5);

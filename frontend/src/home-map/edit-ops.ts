@@ -287,17 +287,78 @@ function placedPin(pin: HomeMapPin, placement: HomeMapPlacement): HomeMapPin {
   return orderedPin({ ...pin, at: [x, y, pin.at[2]] });
 }
 
-/** The room turned and moved by `placement`, with everything in it (walls,
- * doors, windows, furniture, each piece's turn too) and, unless `pins` is
- * false, the pins that belong to it (`homeMapPinsOfRoom`). */
+/** How far past a room's walls a thing with no room round it still counts as
+ * that room's, in meters. */
+const THING_REACH = 1;
+
+function outlineDistance(outline: readonly (readonly number[])[], p: readonly number[]): number {
+  let best = Infinity;
+  outline.forEach((a, i) => {
+    const b = outline[(i + 1) % outline.length]!;
+    const dx = b[0]! - a[0]!;
+    const dy = b[1]! - a[1]!;
+    const length = dx * dx + dy * dy;
+    const t = length > 0 ? clamp(((p[0]! - a[0]!) * dx + (p[1]! - a[1]!) * dy) / length, 0, 1) : 0;
+    best = Math.min(best, Math.hypot(p[0]! - (a[0]! + t * dx), p[1]! - (a[1]! + t * dy)));
+  });
+  return best;
+}
+
+/** The floor with each thing listed under the room it stands in. A scan
+ * through an open door lists a neighbour's furniture under the room being
+ * scanned, and a thing dragged over a wall stays on its old room's list; either
+ * way it would then move with the wrong room. A thing whose middle is inside its
+ * own room stays, even where rooms overlap. Any other goes to the room round it,
+ * else the nearest room within `THING_REACH` nearer than its own, else stays. A
+ * pin the thing holds names its new room. The same floor back when none moves. */
+export function homeMapRehomeThings(floor: HomeMapFloor): HomeMapFloor {
+  const arriving: HomeMapObject[][] = floor.rooms.map(() => []);
+  const moved = new Map<string, string>();
+  const kept = floor.rooms.map((room, from) => (
+    room.objects.filter((object) => {
+      if (homePolygonHolds(room.outline, object.c)) return true;
+      let to = floor.rooms.findIndex((other, i) => i !== from && homePolygonHolds(other.outline, object.c));
+      if (to < 0) {
+        let best = outlineDistance(room.outline, object.c);
+        floor.rooms.forEach((other, i) => {
+          if (i === from) return;
+          const away = outlineDistance(other.outline, object.c);
+          if (away <= THING_REACH && away < best) {
+            best = away;
+            to = i;
+          }
+        });
+      }
+      if (to < 0) return true;
+      arriving[to]!.push(object);
+      const held = object.device ?? object.light;
+      if (held !== undefined) moved.set(held, floor.rooms[to]!.id);
+      return false;
+    })
+  ));
+  if (arriving.every((list) => list.length === 0)) return floor;
+  return {
+    ...floor,
+    rooms: floor.rooms.map((room, i) => ({ ...room, objects: [...kept[i]!, ...arriving[i]!] })),
+    pins: floor.pins.map((pin) => {
+      const roomId = moved.get(pin.id);
+      return roomId === undefined ? pin : orderedPin({ ...pin, roomId });
+    }),
+  };
+}
+
+/** The room turned and moved by `placement`, with everything standing in it
+ * (walls, doors, windows, furniture, each piece's turn too) and, unless `pins`
+ * is false, the pins that belong to it (`homeMapPinsOfRoom`). */
 export function placeRoom(doc: HomeMapDocument, roomId: string, placement: HomeMapPlacement, pins = true): HomeMapDocument | undefined {
   if (!finite(placement.angle, ...placement.pivot, ...placement.offset)) return undefined;
   const at = roomAt(doc, roomId);
   if (at === undefined) return undefined;
-  const moving = new Set(pins ? homeMapPinsOfRoom(at.floor, at.room.id).map((p) => p.id) : []);
-  const rooms = at.floor.rooms.slice();
-  rooms[at.ri] = placedRoom(at.room, placement);
-  return withFloor(doc, at.fi, { ...at.floor, rooms, pins: at.floor.pins.map((p) => (moving.has(p.id) ? placedPin(p, placement) : p)) });
+  const floor = homeMapRehomeThings(at.floor);
+  const moving = new Set(pins ? homeMapPinsOfRoom(floor, at.room.id).map((p) => p.id) : []);
+  const rooms = floor.rooms.slice();
+  rooms[at.ri] = placedRoom(rooms[at.ri]!, placement);
+  return withFloor(doc, at.fi, { ...floor, rooms, pins: floor.pins.map((p) => (moving.has(p.id) ? placedPin(p, placement) : p)) });
 }
 
 /** The room and its pins moved by `dx`, `dy`. */
@@ -332,9 +393,6 @@ export function levelRoom(doc: HomeMapDocument, roomId: string): HomeMapDocument
 
 // ── snapping a room to its neighbours ────────────────────────────────────
 
-/** The gap a snapped room leaves to a neighbour's wall: one wall's
- * thickness, as RoomPlan measures rooms to their walls' inner faces. */
-export const HOME_MAP_SNAP_GAP = HOME_WALL_THICKNESS;
 /** How far a dragged room jumps to line up with a wall, in meters. */
 export const HOME_MAP_SNAP_TOLERANCE = 0.15;
 /** How far along its line a neighbour's wall may end and still count. */
@@ -377,12 +435,11 @@ function linesAcross(room: HomeMapRoom, axis: HomePoint, offset: HomePoint = [0,
   return out;
 }
 
-/** Where a wall of one room may sit against a wall of another: in line with
- * it when both rooms lie on the same side (two tops), on it or one wall's
- * thickness past it when they face each other. */
-function snapGaps(own: WallLine, theirs: WallLine): number[] {
-  if (own.side === theirs.side) return [0];
-  return own.side > 0 ? [0, HOME_MAP_SNAP_GAP] : [0, -HOME_MAP_SNAP_GAP];
+/** Where a wall of one room may sit against a wall of another: on its line,
+ * whether they face each other, so the two read as one wall, or both rooms lie
+ * on the same side (two tops). */
+function snapGaps(_own: WallLine, _theirs: WallLine): number[] {
+  return [0];
 }
 
 /** The floor's two wall directions: the way most of `rooms`' walls run, and
@@ -414,8 +471,8 @@ export interface HomeMapSnap {
 /**
  * Where a room dragged by `dx`, `dy` snaps: along each of the floor's two
  * wall directions, the nearest of its walls that lies within `tolerance` of
- * a neighbour's wall line (in line with it, on it, or one wall's thickness
- * past it when the two face each other), within a meter of that wall along
+ * a neighbour's wall line, so two walls that face each other read as one,
+ * within a meter of that wall along
  * its line. The move comes back with that pull added (unchanged when
  * nothing is near), and a guide along each neighbour wall it lined up with.
  * Undefined when the floor has no such room.

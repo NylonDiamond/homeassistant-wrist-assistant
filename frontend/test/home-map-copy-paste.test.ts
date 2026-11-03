@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { HOME_MAP_EDIT_TOOLS } from "../src/home-map/edit-page.js";
-import { HOME_MAP_PASTE_STEP, homeMapClipOf, pasteThings } from "../src/home-map/edit-ops.js";
+import { HOME_MAP_PASTE_STEP, homeMapClipOf, homeMapRehomeThings, moveRoom, pasteThings } from "../src/home-map/edit-ops.js";
 import { homeMapRoomsPicked } from "../src/home-map/editor-mode.js";
 import { HOME_MAP_SHAPE_TOOLS } from "../src/home-map/mode-shape.js";
 import { HOME_MAP_SPLIT_MAX, HOME_MAP_SPLIT_MIN, homeMapClampSplit, homeMapShortcut, homeMapSplitPercent } from "../src/home-map/editor-view.js";
@@ -158,5 +158,42 @@ describe("the bar between the plan and the model", () => {
     expect(homeMapSplitPercent(5000, 100, 1000)).toBe(HOME_MAP_SPLIT_MAX);
     expect(homeMapClampSplit(Number.NaN)).toBe(50);
     expect(homeMapSplitPercent(10, 0, 0)).toBe(50);
+  });
+});
+
+describe("furniture and the room it stands in", () => {
+  const chairAt = (x: number, y: number, extra = {}): HomeMapObject => ({ ...chair, c: [x, y], ...extra });
+  const twoRooms = (left: HomeMapObject[], right: HomeMapObject[] = [], pins: unknown[] = []) => (
+    { v: 1, floors: [{ id: FLOOR, rooms: [room(LEFT, 0, left), room(RIGHT, 4, right)], pins }] } as unknown as HomeMapDocument
+  );
+
+  it("moves the furniture standing in a room, whichever room lists it", () => {
+    const moved = moveRoom(twoRooms([chairAt(1, 1), chairAt(5, 1)]), RIGHT, 0, 10)!;
+    expect(objects(moved, 0).map((o) => o.c)).toEqual([[1, 1]]);
+    expect(objects(moved, 1).map((o) => o.c)).toEqual([[5, 11]]);
+  });
+
+  it("leaves a neighbour's furniture behind when the listing room moves", () => {
+    const moved = moveRoom(twoRooms([chairAt(1, 1), chairAt(5, 1)]), LEFT, 0, 10)!;
+    expect(objects(moved, 0).map((o) => o.c)).toEqual([[1, 11]]);
+    expect(objects(moved, 1).map((o) => o.c)).toEqual([[5, 1]]);
+  });
+
+  it("keeps a thing inside its own room there, and returns the same floor with nothing to do", () => {
+    const floor = twoRooms([chairAt(1, 1)], [chairAt(5, 1)]).floors[0]!;
+    expect(homeMapRehomeThings(floor)).toBe(floor);
+  });
+
+  it("gives a thing outside every room to the nearer room within a meter, else leaves it", () => {
+    const near = homeMapRehomeThings({ ...twoRooms([chairAt(4.5, 3.4)]).floors[0]! });
+    expect(near.rooms[1]!.objects).toHaveLength(1);
+    const far = homeMapRehomeThings({ ...twoRooms([chairAt(1, 9)]).floors[0]! });
+    expect(far.rooms[0]!.objects).toHaveLength(1);
+  });
+
+  it("takes along a pin the thing holds", () => {
+    const pin = { id: "PIN-1", entityId: "light.a", roomId: LEFT, at: [5, 1, 1] };
+    const floor = homeMapRehomeThings(twoRooms([chairAt(5, 1, { device: "PIN-1" })], [], [pin]).floors[0]!);
+    expect(floor.pins[0]?.roomId).toBe(RIGHT);
   });
 });
