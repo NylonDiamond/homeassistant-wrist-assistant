@@ -1,49 +1,41 @@
-// The map editor's one edit page (mock boards A and B, and G for the side
-// panel): no modes, one place to arrange the rooms, their things and the
-// devices, and a room's walls edited in place.
+// The map editor's one edit page: no modes, one place to arrange the rooms,
+// their things, their walls, doors and windows, and the devices.
 //
-// Editing the floor (board A). A click picks what is on top: a device pin
-// first, then a thing (a sofa, a TV, a desk), then the room under them, and
-// a drag moves what it picked (`mode-devices.ts` for pins, `mode-arrange.ts`
-// for things and rooms, each keeping all its own gestures: the room's and
-// thing's handles, snapping, Shift, Cmd or Ctrl and a click picking several
-// pins, Cmd or Ctrl and a click picking several things in any rooms, Shift
-// and a drag picking every pin in a box, the light's glow ring, the side
-// view, the keys). The handles of what is picked lie over everything.
+// A click picks what is on top: a device pin first, then a door or window, a
+// wall, a thing (a sofa, a TV, a desk), then the room under them, and a drag
+// moves what it picked (`plan-pick.ts` finds it, `mode-devices.ts` for pins,
+// `mode-shape.ts` for walls and openings, `mode-arrange.ts` for things and
+// rooms, each keeping all its own gestures: the room's and thing's handles,
+// snapping, Shift, Cmd or Ctrl and a click picking several pins, Cmd or Ctrl and
+// a click picking several things in any rooms, Shift and a drag picking every
+// pin in a box, the light's glow ring, the side view, the keys). The handles of
+// what is picked lie over everything. A picked wall, corner or opening shows its
+// room's corners, wall middles and openings as handles; Escape goes back to the
+// room.
 //
 // The side panel, on the left of the stage, and the pill follow what is
-// picked. Nothing picked: Start here, three steps each done, the one to do
-// now, or next (Rooms, Furniture, and Lights in lamps, whose button picks
-// the lights no lamp holds), then the floor's card and one folded line of
-// keys and tips. A room: its head, In this room (its lamps and lights, its
-// furniture, its devices, each row picking its thing, tinting it on the
-// plan and in 3D while the pointer is over it, a thing's eye hiding or
-// showing it) with Add to the room, then the room's own cards
-// (`mode-arrange.ts`). A thing, a lamp, a pin or several: their cards as
-// before. Devices and furniture come onto the map through the page's Add
-// dialog, which the shell opens (`ctx.openAdd`).
+// picked. Fit rooms (`mode-doors.ts`) stands on top of the side panel whatever
+// is picked. Nothing picked: Start here, three steps each done, the one to do
+// now, or next (Rooms, Furniture, and Lights in lamps, whose button picks the
+// lights no lamp holds), then the floor's card and one folded line of keys and
+// tips. A room: its head, its doors, In this room (its lamps and lights, its
+// furniture, its devices, each row picking its thing, tinting it on the plan and
+// in 3D while the pointer is over it, a thing's eye hiding or showing it) with
+// Add to the room, then the room's own cards (`mode-arrange.ts`) and its walls.
+// A wall, corner or opening: its cards (`mode-shape.ts`). A thing, a lamp, a pin
+// or several: their cards. Devices and furniture come onto the map through the
+// page's Add dialog, which the shell opens (`ctx.openAdd`).
 //
-// A tool rail floats on the left of the plan, each tool's name under its
-// picture and its key in its title: Pick V, Room R, Wall W, Door D, Window N
-// and Measure M; F opens Add on its furniture. Wall, Door and Window work on
-// any room's walls, and once placed go into that room's wall editing with
-// the new wall or opening picked. A light a lamp holds is one thing with its
-// lamp: a press on its pin picks the lamp and drags it, and the lamp's
-// cards start with the light's (`mode-devices.ts`). Adding a light opens the
-// lamp chooser over the page, by the spot.
+// The tools stand in a column of their own on the left of the plan, each tool's
+// name under its picture and its key in its title: Pick V, Room R, Split S, Wall
+// W, Door D, Window N, Way through O, Stairs T and Measure M; F opens Add on its
+// furniture. A light a lamp holds is one thing with its lamp: a press on its pin
+// picks the lamp and drags it, and the lamp's cards start with the light's
+// (`mode-devices.ts`). Adding a light opens the lamp chooser over the page, by
+// the spot.
 //
-// The dock under the plan holds Snap and the View menu's switches (the
-// grid, the side view, every pin's name; the shell adds Live states).
-//
-// Editing a room's walls (board B), entered by a double-click on a room on
-// the plan: the other rooms dim and its corners, walls and openings take the
-// presses (`mode-shape.ts`, its whole stage, side panel and dock, held to
-// that room). A blue bar across the top of the stage says so, with Done;
-// Escape, Done or a click outside the room go back with the room picked. The
-// tool rail then holds the wall tools (Corners V, Split S, Wall W, Door D,
-// Window N, Opening O, Stairs T, and Measure M), and the side panel the
-// picked wall's or opening's cards, the room's walls with what is on each,
-// the scan check and the scan as it was.
+// The dock under the plan holds Snap and the View menu's switches (the grid, the
+// side view, every pin's name, the scan as it was; the shell adds Live states).
 //
 // Every edit is an `edit-ops.ts` function by ids, saved through the shell
 // (`editor-mode.ts` has the rules).
@@ -51,18 +43,18 @@
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { homeMapPickOf, homeMapPickedPins } from "./devices-model.js";
 import { homeMapHeldPins } from "./edit-ops.js";
-import type { HomeMapEditorContext, HomeMapPart, HomeMapViewItem } from "./editor-mode.js";
+import { type HomeMapEditorContext, type HomeMapPart, type HomeMapViewItem, homeMapPiecePicked } from "./editor-mode.js";
 import { hmeCard } from "./editor-parts.js";
 import { homeMapCount, homeMapOnMac, homeMapShortcut } from "./editor-view.js";
 import { homeMapPiece } from "./furniture.js";
-import { homeRoomUnder } from "./geometry.js";
 import { ArrangeMode } from "./mode-arrange.js";
 import { DevicesMode } from "./mode-devices.js";
-import { HOME_MAP_SHAPE_TOOLS, type HomeMapShapeTool, ShapeMode, homeMapShapeToolIcon } from "./mode-shape.js";
-import { type HomeMapFloor, type HomeMapRoom, type HomePoint, homeMapFloorName, homeMapRoomName, sameHomeMapId } from "./model.js";
+import { DoorMode } from "./mode-doors.js";
+import { type HomeMapShapeTool, ShapeMode, homeMapShapeToolIcon } from "./mode-shape.js";
+import { type HomeMapFloor, type HomeMapRoom, type HomePoint, homeMapFloorName, sameHomeMapId } from "./model.js";
 
 /** The edit page's tools, on its tool rail. */
-export type HomeMapEditTool = "pick" | "draw" | "inner" | "door" | "window" | "measure";
+export type HomeMapEditTool = "pick" | "draw" | "split" | "inner" | "door" | "window" | "opening" | "stairs" | "measure";
 
 /** The edit page's tools in the tool rail's order: the name under each
  * picture, the longer words of its title and the key that picks it. Undo
@@ -70,22 +62,14 @@ export type HomeMapEditTool = "pick" | "draw" | "inner" | "door" | "window" | "m
 export const HOME_MAP_EDIT_TOOLS: readonly { id: HomeMapEditTool; name: string; label: string; key: string }[] = [
   { id: "pick", name: "Pick", label: "Pick and move", key: "v" },
   { id: "draw", name: "Room", label: "Draw a room", key: "r" },
+  { id: "split", name: "Split", label: "Split the room", key: "s" },
   { id: "inner", name: "Wall", label: "Inner wall", key: "w" },
   { id: "door", name: "Door", label: "Door", key: "d" },
   { id: "window", name: "Window", label: "Window", key: "n" },
+  { id: "opening", name: "Opening", label: "Way through (no door)", key: "o" },
+  { id: "stairs", name: "Stairs", label: "Stairs", key: "t" },
   { id: "measure", name: "Measure", label: "Measure", key: "m" },
 ];
-
-/** The name under each wall tool's picture. */
-const SHAPE_TOOL_NAMES: Readonly<Record<HomeMapShapeTool, string>> = {
-  select: "Corners",
-  split: "Split",
-  inner: "Wall",
-  door: "Door",
-  window: "Window",
-  opening: "Opening",
-  stairs: "Stairs",
-};
 
 /** The edit page's tool a key picks, if any. */
 export function homeMapEditToolFor(letter: string): HomeMapEditTool | undefined {
@@ -125,19 +109,26 @@ export class HomeMapEditPage implements HomeMapPart {
    * pictures. */
   readonly devices = new DevicesMode((ctx, pieceId, cls) => this.arrange.piecePic(ctx, homeMapPiece(pieceId), cls));
   readonly shape = new ShapeMode();
+  readonly doors = new DoorMode();
+
+  constructor() {
+    this.arrange.roomDoors = (ctx, room) => this.doors.doorsCard(ctx, room);
+    this.arrange.roomWalls = (ctx, room) => this.shape.roomCards(ctx, room);
+    this.shape.onOpeningClick = (ctx, roomId, index) => this.doors.clicked(ctx, roomId, index);
+  }
 
   /** The tool the rail shows as on. */
-  tool(ctx: HomeMapEditorContext): HomeMapEditTool | HomeMapShapeTool {
+  tool(ctx: HomeMapEditorContext): HomeMapEditTool {
     if (ctx.toggles.measure) return "measure";
-    if (ctx.walls !== undefined) return this.shape.tool;
     if (this.arrange.draw.active) return "draw";
     const t = this.shape.tool;
-    return t === "inner" || t === "door" || t === "window" ? t : "pick";
+    return t === "select" ? "pick" : t;
   }
 
   /** Pick a tool from the tool rail, or by its key. Measure goes on or
    * off; any other tool puts the last one down. */
-  setTool(ctx: HomeMapEditorContext, tool: HomeMapEditTool | HomeMapShapeTool): void {
+  setTool(ctx: HomeMapEditorContext, tool: HomeMapEditTool): void {
+    this.doors.stop(ctx);
     if (tool === "measure") {
       this.arrange.draw.stop();
       this.shape.setTool(ctx, "select");
@@ -162,55 +153,47 @@ export class HomeMapEditPage implements HomeMapPart {
   // ── the stage ──────────────────────────────────────────────────────────
 
   overlay(ctx: HomeMapEditorContext): SVGTemplateResult | typeof nothing {
-    if (ctx.walls !== undefined) return this.shape.overlay(ctx);
-    return svg`${this.arrange.overlay(ctx)}${this.shape.armed ? this.shape.ghost(ctx) : nothing}${this.devices.overlay(ctx)}`;
+    return svg`${this.arrange.overlay(ctx)}${this.shape.overlay(ctx)}${this.doors.overlay(ctx)}${this.devices.overlay(ctx)}`;
   }
 
-  drawsPins(ctx: HomeMapEditorContext): boolean {
-    return ctx.walls === undefined;
+  drawsPins(_ctx: HomeMapEditorContext): boolean {
+    return true;
   }
 
   /** A press: with the lamp chooser open, it closes it and nothing more; a
-   * tool's while one is out; else what is on top, the picked room's or
-   * thing's handles first, then the picked light's glow handle, a pin (a
-   * pin a thing holds being its thing), with Shift off a pin the box that
-   * picks pins, a thing, a room. */
+   * door Connect offers connects; a tool's while one is out; else what is on
+   * top, the handles of what is picked first, then the picked light's glow
+   * handle, a pin (a pin a thing holds being its thing), with Shift off a pin
+   * the box that picks pins, a door, window or wall, a thing, a room. */
   pointerDown(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean {
     if (this.devices.choosing) {
       this.devices.cancelChooser(ctx);
       return true;
     }
-    if (ctx.walls !== undefined) return this.shape.pointerDown(ctx, e, at);
+    this.doors.endShow(ctx);
+    if (this.doors.active && e.button === 0 && this.doors.pointerDown(ctx, at)) return true;
     if (this.arrange.draw.active) return this.arrange.draw.pointerDown(ctx, e, at);
     if (this.shape.armed) return this.shape.pointerDown(ctx, e, at);
     if (e.button !== 0) return false;
+    if (this.shape.pressHandle(ctx, e)) return true;
     if (this.arrange.pressHandle(ctx, e, at) || this.devices.pressHandle(ctx, e, at)) return true;
     const lamp = this.devices.heldThingAt(ctx, at);
     if (lamp !== undefined && this.arrange.pressThing(ctx, e, lamp, at)) return true;
     return this.devices.pressPin(ctx, e, at)
       || this.devices.pressBox(ctx, e, at)
+      || this.shape.pressPiece(ctx, e, at)
       || this.arrange.pressBody(ctx, e, at);
-  }
-
-  /** A double-click on a room edits its walls; on a pin, or while a tool
-   * is out, it does nothing more than its two clicks. */
-  doubleClick(ctx: HomeMapEditorContext, _e: MouseEvent, at: HomePoint): void {
-    if (this.arrange.draw.active || this.shape.armed) return;
-    if (ctx.walls === undefined && this.devices.onPin(ctx, at)) return;
-    const room = homeRoomUnder(ctx.floor, at);
-    if (room === undefined || sameHomeMapId(room.id, ctx.walls)) return;
-    ctx.editWalls(room.id);
   }
 
   hover(ctx: HomeMapEditorContext, at: HomePoint | undefined): void {
     this.arrange.pointer = at;
-    if (ctx.walls === undefined) this.arrange.hover(ctx, at);
+    this.arrange.hover(ctx, at);
     this.shape.hover(ctx, at);
   }
 
-  /** A tool's letter picks it; F opens Add on its furniture; Escape puts a
-   * tool down, leaves a room's walls, or goes from a thing back to its
-   * room; the rest is the picked thing's (Delete, the arrows). */
+  /** A tool's letter picks it; F opens Add on its furniture; Escape stops
+   * Connect, puts a tool down, or goes from a wall, door or thing back to its
+   * room; the rest is what is picked's (Delete, the arrows). */
   keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
     if (this.devices.chooserKey(ctx, e)) return true;
     const shortcut = homeMapShortcut(e, false);
@@ -219,14 +202,7 @@ export class HomeMapEditPage implements HomeMapPart {
       this.setTool(ctx, "measure");
       return true;
     }
-    if (ctx.walls !== undefined) {
-      if (this.shape.keyDown(ctx, e)) return true;
-      if (shortcut === "cancel") {
-        ctx.editWalls(undefined);
-        return true;
-      }
-      return false;
-    }
+    if (this.doors.keyDown(ctx, e)) return true;
     if (this.arrange.draw.active && this.arrange.draw.keyDown(ctx, e)) return true;
     if (shortcut === "copy" || shortcut === "paste" || shortcut === "duplicate") return this.arrange.clipKey(ctx, shortcut);
     if (letter === "f") {
@@ -242,11 +218,11 @@ export class HomeMapEditPage implements HomeMapPart {
       this.setTool(ctx, "pick");
       return true;
     }
+    if (homeMapPiecePicked(ctx.selection) || this.shape.armed) return this.shape.keyDown(ctx, e);
     return this.picksPins(ctx) ? this.devices.keyDown(ctx, e) : this.arrange.keyDown(ctx, e);
   }
 
   cursor(ctx: HomeMapEditorContext): string | undefined {
-    if (ctx.walls !== undefined) return this.shape.cursor();
     return this.arrange.draw.active || this.shape.armed ? "crosshair" : undefined;
   }
 
@@ -254,60 +230,45 @@ export class HomeMapEditPage implements HomeMapPart {
     this.arrange.leave(ctx);
     this.devices.leave();
     this.shape.leave(ctx);
+    this.doors.stop(ctx);
   }
 
-  /** Snap: rooms to the walls round them, or a room's corners to 90°. */
+  /** Snap: rooms to the doors and walls round them, corners to each other. */
   dock(ctx: HomeMapEditorContext): TemplateResult {
-    return ctx.walls !== undefined ? this.shape.dock(ctx) : this.arrange.dock(ctx);
+    return this.arrange.dock(ctx);
   }
 
-  /** The View menu: the grid and, while a room's walls are edited, the
-   * scan as it was; else also the side view and every pin's name. */
+  /** The View menu: the grid, the side view, every pin's name and the scan as
+   * it was. */
   viewItems(ctx: HomeMapEditorContext): HomeMapViewItem[] {
-    return ctx.walls !== undefined ? this.shape.viewItems(ctx) : [...this.arrange.viewItems(ctx), ...this.devices.viewItems(ctx)];
+    return [...this.arrange.viewItems(ctx), ...this.devices.viewItems(ctx), ...this.shape.viewItems(ctx)];
   }
 
   pill(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    if (ctx.walls !== undefined || this.shape.armed) return this.shape.pill(ctx);
+    if (this.doors.active) return this.doors.pill(ctx);
+    if (this.shape.armed || homeMapPiecePicked(ctx.selection)) return this.shape.pill(ctx);
     if (this.arrange.draw.active) return this.arrange.pill(ctx);
     return this.picksPins(ctx) ? this.devices.pill(ctx) : this.arrange.pill(ctx);
-  }
-
-  /** While a room's walls are edited: which room, and Done. */
-  banner(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    const room = this.wallsRoom(ctx);
-    if (room === undefined) return nothing;
-    return html`<span class="hme-banner-t">Editing the walls of <b>${homeMapRoomName(room)}</b></span>
-      <button type="button" class="hme-tb hme-blue" title="Back to moving things (Esc)" @click=${() => ctx.editWalls(undefined)}>Done <kbd>Esc</kbd></button>`;
-  }
-
-  private wallsRoom(ctx: HomeMapEditorContext): HomeMapRoom | undefined {
-    return ctx.walls === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, ctx.walls));
   }
 
   /** The tool rail, the side view of the picked device, and a line on how
    * the stage works. */
   stageExtra(ctx: HomeMapEditorContext): TemplateResult {
-    const side = ctx.walls === undefined ? this.devices.stageExtra(ctx) : nothing;
-    const hint = ctx.walls !== undefined ? "Drag a corner · drag a wall's middle to add a corner · Esc when done"
-      : "Click picks what is on top · Double-click a room to edit its walls";
+    const side = this.devices.stageExtra(ctx);
+    const hint = homeMapPiecePicked(ctx.selection) ? "Drag a corner · drag a wall's middle to add a corner · Esc for the room"
+      : "Click picks what is on top: a door, a wall, a thing or a room";
     return html`${this.toolRail(ctx)}${side}
-      ${side === nothing && ctx.stage.width >= 900 ? html`<div class="hme-stage-hint">${hint}</div>` : nothing}`;
+      ${side === nothing && ctx.stage.width >= 1200 ? html`<div class="hme-stage-hint">${hint}</div>` : nothing}`;
   }
 
-  /** The tools, floating on the left of the plan, each with its name under
-   * its picture and its key in its title. */
+  /** The tools, in their own column on the left of the plan, each with its
+   * name under its picture and its key in its title. */
   private toolRail(ctx: HomeMapEditorContext): TemplateResult {
     const on = this.tool(ctx);
-    const walls = ctx.walls !== undefined;
-    const tools: { id: HomeMapEditTool | HomeMapShapeTool; name: string; label: string; key: string }[] = walls
-      ? [...HOME_MAP_SHAPE_TOOLS.map((t) => ({ ...t, name: SHAPE_TOOL_NAMES[t.id] })), { id: "measure", name: "Measure", label: "Measure", key: "m" }]
-      : [...HOME_MAP_EDIT_TOOLS];
-    // A line after the first tool, and before Measure (Way through, Stairs
-    // and Measure keep with the rest).
-    const lineAfter = new Set(walls ? [0] : [0, 4]);
-    return html`<div class="hme-toolrail" role="toolbar" aria-label=${walls ? "Wall tools" : "Tools"} aria-orientation="vertical">
-      ${tools.map((t, i) => html`<button type="button" class="hme-rtool ${on === t.id ? "on" : ""}" aria-pressed=${on === t.id ? "true" : "false"}
+    // A line after Pick, and before Measure.
+    const lineAfter = new Set([0, HOME_MAP_EDIT_TOOLS.length - 2]);
+    return html`<div class="hme-toolrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">
+      ${HOME_MAP_EDIT_TOOLS.map((t, i) => html`<button type="button" class="hme-rtool ${on === t.id ? "on" : ""}" aria-pressed=${on === t.id ? "true" : "false"}
           aria-label=${t.label} title=${`${t.label} (${t.key.toUpperCase()})`} @click=${() => this.setTool(ctx, t.id)}>
           ${toolIcon(t.id)}<span class="hme-rtool-name">${t.name}</span></button>
         ${lineAfter.has(i) ? html`<span class="hme-rtool-sep" aria-hidden="true"></span>` : nothing}`)}
@@ -317,14 +278,21 @@ export class HomeMapEditPage implements HomeMapPart {
   // ── the side panel ─────────────────────────────────────────────────────
 
   inspector(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    if (ctx.walls !== undefined) {
-      return html`${this.shape.inspector(ctx)}
-        ${this.shape.rail(ctx)}
-        ${hmeCard("Leave this", html`<p class="hme-text dim">Press Esc, click Done, or click outside the room to go back to moving things. Double-click any room to edit its walls.</p>`)}`;
-    }
+    return html`${this.doors.fitCard(ctx)}${this.pickedCards(ctx)}`;
+  }
+
+  /** The cards of what is picked. */
+  private pickedCards(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
     if (this.picksPins(ctx)) return this.devices.inspector(ctx);
     const sel = ctx.selection;
     if (sel === undefined) return this.startPanel(ctx);
+    if (homeMapPiecePicked(sel)) {
+      const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, sel.roomId));
+      return html`${this.shape.openingCardOf(ctx)}
+        ${room !== undefined && sel.kind === "opening" ? this.doors.opensToCard(ctx, room, sel.opening) : nothing}
+        ${this.shape.inspector(ctx)}
+        ${room === undefined ? nothing : this.shape.roomCards(ctx, room)}`;
+    }
     // A thing's device first (a lamp's light), then the thing's own cards.
     const lamp = sel.kind === "object" ? this.devices.thingCards(ctx, sel.roomId, sel.object) : nothing;
     return lamp === nothing ? this.arrange.inspector(ctx) : html`${lamp}${this.arrange.inspector(ctx)}`;
@@ -362,11 +330,11 @@ export class HomeMapEditPage implements HomeMapPart {
         <details class="hme-tips">
           <summary>Keys and tips <span aria-hidden="true">›</span></summary>
           <p class="hme-text">Click picks what is on top: a device, then a thing (a sofa, a TV, a desk), then the room under them. Drag it to move it.</p>
-          <p class="hme-text dim">A dragged room lines up with the walls of the rooms round it. Drag the round handle above it to turn it, or a square handle on its box to resize it. Double-click a room to edit its walls, doors and windows.</p>
+          <p class="hme-text dim">A dragged room locks to the doors of the rooms round it. Click an amber door, then the door it should meet. Drag the round handle above a room to turn it, or a square handle on its box to resize it. Click a wall, door or window to change it.</p>
           <p class="hme-text dim">Shift, Cmd or Ctrl and a click picks several devices; Cmd or Ctrl and a click picks several things, to colour or hide them together. Drag a device from Add onto the plan to place it.</p>
           <p class="hme-text dim">Press <kbd>?</kbd> or the ? button in the bar for every key.</p>
           <dl class="hme-keys">
-            ${homeMapKeyGroups(homeMapOnMac()).filter((g) => g.title !== "Mouse" && g.title !== "A room's walls")
+            ${homeMapKeyGroups(homeMapOnMac()).filter((g) => g.title !== "Mouse")
               .flatMap((g) => g.keys).map(([k, what]) => html`<dt><kbd>${k}</kbd></dt><dd>${what}</dd>`)}
           </dl>
         </details>
@@ -382,11 +350,11 @@ export class HomeMapEditPage implements HomeMapPart {
   }
 
   dragOver(ctx: HomeMapEditorContext, at: HomePoint | undefined, e: DragEvent): boolean {
-    return ctx.walls === undefined && this.devices.dragOver(ctx, at, e);
+    return this.devices.dragOver(ctx, at, e);
   }
 
   drop(ctx: HomeMapEditorContext, at: HomePoint, e: DragEvent): void {
-    if (ctx.walls === undefined) this.devices.drop(ctx, at, e);
+    this.devices.drop(ctx, at, e);
   }
 
   /** Draw a room by hand, as R does (the empty floor's button). */
@@ -424,14 +392,10 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
         ["Arrows", "Nudge it 1 cm, with Shift 10 cm"],
         ["Enter", "Close the room being drawn"],
         ["Backspace", "Take back the last corner drawn"],
-        ["Esc", "Back out: a tool, a thing to its room, a room's walls"],
+        ["Esc", "Back out: Connect, a tool, a wall, door or thing to its room"],
         [mac ? "⌘Z" : "Ctrl+Z", "Undo"],
         [mac ? "⇧⌘Z" : "Ctrl+Shift+Z or Ctrl+Y", "Redo"],
       ],
-    },
-    {
-      title: "A room's walls",
-      keys: [...HOME_MAP_SHAPE_TOOLS.map((t) => [t.key.toUpperCase(), t.label] as const), ["M", "Measure"], ["Esc", "Done with the walls"]],
     },
     {
       title: "View",
@@ -440,8 +404,8 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
     {
       title: "Mouse",
       keys: [
-        ["Click", "Pick what is on top: a device, a thing, then the room"],
-        ["Double-click", "Edit a room's walls, doors and windows"],
+        ["Click", "Pick what is on top: a device, a door or window, a wall, a thing, then the room"],
+        ["Click an amber door", "Connect it: then click the door it should meet"],
         [`Shift or ${cmd} click`, "Pick several devices"],
         [`${cmd} click`, "Pick several things"],
         ["Shift drag", "Pick every device in a box"],
@@ -454,7 +418,7 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
 }
 
 /** A tool's small picture on the tool rail. */
-function toolIcon(tool: HomeMapEditTool | HomeMapShapeTool): TemplateResult {
+function toolIcon(tool: HomeMapEditTool): TemplateResult {
   switch (tool) {
     case "pick":
       return html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M4 2.5v11.5l3.1-3 2.3 5 2-.9-2.3-4.9h4.4z" fill="currentColor"></path></svg>`;
@@ -463,6 +427,6 @@ function toolIcon(tool: HomeMapEditTool | HomeMapShapeTool): TemplateResult {
     case "measure":
       return html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 9h14M2 6v6M16 6v6M6 9v-2M9 9V6M12 9v-2" fill="none" stroke="currentColor" stroke-width="1.4"></path></svg>`;
     default:
-      return homeMapShapeToolIcon(tool);
+      return homeMapShapeToolIcon(tool as HomeMapShapeTool);
   }
 }

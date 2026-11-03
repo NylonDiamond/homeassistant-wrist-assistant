@@ -210,10 +210,6 @@ describe("the plan's hover", () => {
 
     rest([2.7, 4.15]);
     expect(hover()).toEqual({ kind: "object", roomId: LIVING, object: 0 });
-    // A room's walls edited: the shape tools have the plan.
-    el.editWalls(LIVING);
-    rest([2.7, 4.15]);
-    expect(hover()).toBeUndefined();
   });
 
   it("is dropped when what it names leaves the map", async () => {
@@ -290,9 +286,10 @@ describe("the 3D view's hover", () => {
     expect(el.context()!.selection).toBeUndefined();
     el.hover3d(undefined);
     expect(hover()).toBeUndefined();
-    // While a room's walls are edited, none.
-    el.editWalls(LIVING);
-    el.hover3d({ kind: "room", roomId: KITCHEN });
-    expect(hover()).toBeUndefined();
+    // A wall and a window, as a click there would pick them.
+    el.hover3d({ kind: "wall", roomId: KITCHEN, wall: 1 });
+    expect(hover()).toEqual({ kind: "wall", roomId: KITCHEN, wall: 1 });
+    el.hover3d({ kind: "opening", roomId: LIVING, opening: 0 });
+    expect(hover()).toEqual({ kind: "opening", roomId: LIVING, opening: 0 });
   });
 });

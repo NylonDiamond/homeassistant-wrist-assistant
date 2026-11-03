@@ -272,7 +272,7 @@ function shell(options: { doc?: HomeMapDocument; scans?: HomeMapScans; scan?: bo
   return { ctx: ctx as unknown as HomeMapEditorContext, log };
 }
 
-describe("wall editing's scan as it was", () => {
+describe("the scan as it was", () => {
   it("offers Show scan as it was in the dock's View menu only when Home Assistant keeps scans", () => {
     const mode = new ShapeMode();
     const item = (o: { scans?: HomeMapScans; scan?: boolean }) => mode.viewItems(shell(o).ctx).find((i) => i.label === "Show scan as it was");
@@ -280,13 +280,11 @@ describe("wall editing's scan as it was", () => {
     expect(item({ scans: {} })?.on).toBe(false);
     expect(item({})).toBeUndefined();
     expect(item({ scans: {}, scan: true })?.on).toBe(true);
-    // The menu flips the switch; the dock keeps Snap to 90° alone.
+    // The menu flips the switch.
     const s = shell({ scans: {} });
     mode.viewItems(s.ctx).find((i) => i.label === "Show scan as it was")!.flip();
     expect(s.log.toggles).toEqual([["scan", true]]);
-    expect(mode.viewItems(s.ctx).map((i) => i.label)).toEqual(["Grid 5 cm", "Show scan as it was"]);
-    expect(flatten(mode.dock(s.ctx))).toContain(">Snap to 90°</button>");
-    expect(flatten(mode.dock(s.ctx))).not.toContain("Show scan as it was");
+    expect(mode.viewItems(s.ctx).map((i) => i.label)).toEqual(["Show scan as it was"]);
   });
 
   it("draws the scans over the plan only while the switch is on", () => {
@@ -305,35 +303,24 @@ describe("wall editing's scan as it was", () => {
     expect(flatten(mode.overlay(shell({ scans, scan: false }).ctx))).not.toContain("hme-scan");
   });
 
-  it("shows Back to the scan for a picked room only when it differs from its scan", () => {
-    const mode = new ShapeMode();
-    const scans = { [LIVING]: scanOf(living(fixture())) };
-    const select: HomeMapSelection = { kind: "room", roomId: LIVING };
-    expect(flatten(mode.inspector(shell({ scans, selection: select }).ctx))).not.toContain("Back to the scan");
-    const changed = moveCorner(fixture(), LIVING, 2, [6.4, 5.4])!;
-    const card = flatten(mode.inspector(shell({ doc: changed, scans, selection: select }).ctx));
-    expect(card).toContain(">Back to the scan</button>");
-    expect(card).toContain("Its shape has changed since the iPhone scanned it.");
-    // A room drawn by hand has no scan, and no button.
-    expect(flatten(mode.inspector(shell({ doc: changed, scans: {}, selection: select }).ctx))).not.toContain("Back to the scan");
-    expect(flatten(mode.inspector(shell({ doc: changed, scans: undefined, selection: select }).ctx))).not.toContain("Back to the scan");
-  });
-
-  it("lists the room's walls with what is on each in the rail, with the scan as it was and Back to the scan", () => {
+  it("lists a room's walls with what is on each, with the scan as it was and Back to the scan", () => {
     const mode = new ShapeMode();
     const scans = { [LIVING]: scanOf(living(fixture())) };
     const select: HomeMapSelection = { kind: "wall", roomId: LIVING, wall: 0 };
-    const rail = flatten(mode.rail(shell({ scans, selection: select, walls: LIVING }).ctx));
+    const cards = (o: { doc?: HomeMapDocument; scans?: HomeMapScans }) => {
+      const { ctx } = shell({ ...o, selection: select });
+      return flatten(mode.roomCards(ctx, ctx.floor.rooms.find((r) => r.id === LIVING)!));
+    };
+    const rail = cards({ scans });
     expect(rail).toContain("4 walls");
     expect(rail).toMatch(/hme-lay on" aria-pressed=true[^>]*>Top wall<span class="n">6\.00 m/);
     expect(rail).toContain("Window<span class=\"n\">2.00 m");
-    expect(rail).toContain("Scan check");
     expect(rail).toContain("Show scan as it was");
     // As scanned: Back to the scan is off until the room differs.
     expect(rail).toMatch(/\?disabled=true[^>]*>Back to the scan/);
     const changed = moveCorner(fixture(), LIVING, 2, [6.4, 5.4])!;
-    expect(flatten(mode.rail(shell({ doc: changed, scans, selection: select, walls: LIVING }).ctx))).toMatch(/\?disabled=false[^>]*>Back to the scan/);
+    expect(cards({ doc: changed, scans })).toMatch(/\?disabled=false[^>]*>Back to the scan/);
     // None from an integration that keeps no scans.
-    expect(flatten(mode.rail(shell({ selection: select, walls: LIVING }).ctx))).not.toContain("Show scan as it was");
+    expect(cards({})).not.toContain("Show scan as it was");
   });
 });

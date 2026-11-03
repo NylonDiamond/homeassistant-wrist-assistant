@@ -108,9 +108,9 @@ export function homeMapAddKindOf(entityId: string): HomeMapAddKind {
 /** The room the dialog adds into: the picked room, the room of the picked
  * thing or wall, the room whose walls are edited, or the picked device's
  * room; none while nothing or several things are picked. */
-export function homeMapAddRoom(ctx: Pick<HomeMapEditorContext, "floor" | "selection" | "walls">): HomeMapRoom | undefined {
+export function homeMapAddRoom(ctx: Pick<HomeMapEditorContext, "floor" | "selection">): HomeMapRoom | undefined {
   const sel = ctx.selection;
-  const id = homeMapSelectionRoom(sel) ?? ctx.walls;
+  const id = homeMapSelectionRoom(sel);
   if (id !== undefined) return ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
   if (sel?.kind !== "pin") return undefined;
   const pin = ctx.floor.pins.find((p) => sameHomeMapId(p.id, sel.pinId));
@@ -124,7 +124,7 @@ function viewMiddle(ctx: Pick<HomeMapEditorContext, "view" | "stage">): HomePoin
 
 /** The room furniture goes into without asking: the dialog's room, else
  * the room under the middle of the plan's view. */
-export function homeMapAddFurnitureRoom(ctx: Pick<HomeMapEditorContext, "floor" | "selection" | "walls" | "view" | "stage">): HomeMapRoom | undefined {
+export function homeMapAddFurnitureRoom(ctx: Pick<HomeMapEditorContext, "floor" | "selection" | "view" | "stage">): HomeMapRoom | undefined {
   return homeMapAddRoom(ctx) ?? homeRoomUnder(ctx.floor, viewMiddle(ctx));
 }
 

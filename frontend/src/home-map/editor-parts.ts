@@ -122,9 +122,10 @@ export function hmeNumber(o: {
     box.addEventListener("pointerup", done);
     box.addEventListener("pointercancel", done);
   };
-  return html`<span class="hme-in hme-num ${o.disabled === true ? "off" : ""}" style=${o.width === undefined ? nothing : `flex:0 0 ${o.width}`}
+  const named = o.tag !== undefined && o.tag.length > 1;
+  const box = html`<span class="hme-in hme-num ${o.disabled === true ? "off" : ""}" style=${o.width === undefined ? nothing : `flex:0 0 ${o.width}`}
     title=${o.disabled === true ? nothing : "Drag sideways to change it, click to type"} @pointerdown=${scrub}>
-    ${o.tag === undefined ? nothing : html`<span class="hme-ntag" aria-hidden="true">${o.tag}</span>`}
+    ${o.tag === undefined || named ? nothing : html`<span class="hme-ntag" aria-hidden="true">${o.tag}</span>`}
     <input type="text" inputmode="decimal" aria-label=${o.label} .value=${live(text)} ?disabled=${o.disabled === true}
       placeholder=${o.value === undefined ? "Mixed" : ""}
       @change=${(e: Event) => commit(e.target as HTMLInputElement)}
@@ -143,6 +144,8 @@ export function hmeNumber(o: {
           if (!same(v)) o.set(v);
         }
       }} />${o.unit === undefined ? nothing : html`<span class="hme-unit">${o.unit}</span>`}</span>`;
+  // A word for a tag goes over the field.
+  return named ? html`<div class="hme-lab"><span class="hme-lab-t">${o.tag}</span>${box}</div>` : box;
 }
 
 /** The colour inputs whose colour shows on the plan without being saved,

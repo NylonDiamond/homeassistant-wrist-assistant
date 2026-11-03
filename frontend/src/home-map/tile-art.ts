@@ -90,6 +90,8 @@ import {
   homeRoomUnder,
   homeSlidingOpenings,
   homeSlidingPanes,
+  homeOneWallPieces,
+  homeOneWallsOf,
   homeWallSegments,
   homeWallsOf,
   homeWindowSegments,
@@ -168,6 +170,9 @@ export interface HomeTileArtOptions {
    * `furniture.ts`, which the tiles never load). Absent: a thing's own
    * `model`, `fabric` and `wood`. The plan look only. */
   furnitureLook?: (object: HomeMapObject) => HomeFurnitureLook;
+  /** The map editor's plan: walls of two rooms a few centimeters apart drawn
+   * as one wall (`homeOneWallPlaces`). The plan look only. */
+  oneWall?: boolean;
 }
 
 // ── colours ─────────────────────────────────────────────────────────────
@@ -625,7 +630,7 @@ export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
   // Only the glass pins draw icons, so only they depend on the provider;
   // those drawings are not kept.
   const icons = o.devices === "all" ? o.icons : undefined;
-  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark, o.furnitureLook !== undefined]);
+  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark, o.furnitureLook !== undefined, o.oneWall === true]);
   let byStates = memo.get(o.floor);
   if (byStates === undefined) memo.set(o.floor, (byStates = new WeakMap()));
   const statesKey = (o.states ?? NO_STATES) as object;
@@ -811,7 +816,12 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
   // Walls with their doors, openings and windows cut out: a dark line round
   // them all first, casting a soft shadow on the floor, then their pale
   // faces, so they read crisp and join cleanly at the corners.
-  const walls = homeWallSegments(floor);
+  const openings = floor.rooms.flatMap((room) => room.openings);
+  // A room's walls with every opening on the floor cut out, as drawn.
+  const drawnWalls = (room: HomeMapRoom): HomeSegment[] => ctx.o.oneWall === true
+    ? homeOneWallsOf(floor, room).flatMap((w) => homeOneWallPieces(w, openings))
+    : homeWallsOf(room).flatMap((w) => cutWall(w, openings));
+  const walls = ctx.o.oneWall === true ? floor.rooms.flatMap(drawnWalls) : homeWallSegments(floor);
   const wallLine = (s: HomeSegment, stroke: string, width: number, cap: string) => {
     const [a, b] = [project(P, s.a), project(P, s.b)];
     return svg`<line x1=${r2(a[0])} y1=${r2(a[1])} x2=${r2(b[0])} y2=${r2(b[1])} stroke=${stroke} stroke-width=${r2(width)} stroke-linecap=${cap} />`;
@@ -823,11 +833,10 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
   })}</g>`);
   // Each room's walls' faces in its own `wallColor` when it has one; a wall
   // two rooms share is drawn for each, the later room's on top.
-  const openings = floor.rooms.flatMap((room) => room.openings);
   const faces = floor.rooms.flatMap((room) => {
     const own = roomTone(room.wallColor);
     const face = own !== undefined ? toneColor(own) : PLAN.wallFace;
-    return homeWallsOf(room).flatMap((w) => cutWall(w, openings)).map((s) => wallLine(s, face, Math.max(len(s.t), 1.5), "square"));
+    return drawnWalls(room).map((s) => wallLine(s, face, Math.max(len(s.t), 1.5), "square"));
   });
   out.push(svg`<g>${faces}</g>`);
   // Windows: a pane of glass across the wall with its line of light; a
