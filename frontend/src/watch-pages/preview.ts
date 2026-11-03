@@ -91,7 +91,7 @@ import {
 } from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
-import { fittedLayout, fitState, PHONE_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
+import { FIT_STRIP_ROWS, fitDrawnTile, fitPageRows, fitRowTop, fitSmallestTile, fitsOnScreen, fittedLayout, fitState, PHONE_FIT_BOTTOM_ROOM, WATCH_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
 import {
   PHONE_GRID_TOP_INSET,
   PHONE_GROUPED_BACKGROUND,
@@ -3903,11 +3903,13 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   const phone = input.phone !== undefined;
   const packed = watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, phone ? "iphone" : "watch");
   const unfitted = watchPreviewLayout(packed, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
-  // A Fit to screen page draws as the iPhone draws it: its rows shorter.
-  const layout = phone && page.fitToScreen === true ? fittedLayout(unfitted, packed, watchFitHeight(input, packed)) : unfitted;
+  // A Fit to screen page draws as its device draws it: its rows shorter.
+  const kind = phone ? "iphone" : "watch";
+  const fitting = fitsOnScreen(page, kind);
+  const layout = fitting ? fittedLayout(unfitted, packed, watchFitHeight(input, packed), fitSmallestTile(kind)) : unfitted;
   // The tiles a watch skips, as dashed outlines where the page stores them
   // and under the tiles that move up into their place.
-  const skipped = phone ? [] : watchSkippedTilesLayout(page, screen, input);
+  const skipped = phone || (fitting && layout !== unfitted) ? [] : watchSkippedTilesLayout(page, screen, input);
   const height = watchPreviewHeight(layout, phone);
   const scrolls = height > screen.height + 0.5;
   const back = previewFramedScreenLayers(input, page, s, screen, input.photo);
@@ -3924,21 +3926,39 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   </div>`);
 }
 
-/** The height a Fit to screen page's rows must fit in, on an iPhone: its pages
+/** The height a Fit to screen page's rows must fit in: on an iPhone its pages
  * area under the grid's top inset and over the room One Look leaves for the
- * dock (`InteractiveGrid.fitHeight`). */
+ * dock, on a watch its screen under the clock and over its rounded corners
+ * (`InteractiveGrid.fitHeight`). */
 export function watchFitHeight(input: WatchPagePreviewInput, page: WatchPage): number {
   const top = page.fullScreen === true ? 0 : watchPreviewTopInset(input);
+  if (input.phone === undefined) return input.screen.height - top - WATCH_FIT_BOTTOM_ROOM;
   const dock = previewOneLook(input) === "phone" && input.phone !== undefined && phoneDrawsIphoneLook(input.phone)
     && input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true).length >= 2;
   return input.screen.height - top - (dock ? PHONE_FIT_BOTTOM_ROOM : 0);
 }
 
-/** How Fit to screen treats a page on an iPhone, for the panel to say. */
+/** How Fit to screen treats a page on the device `input` draws, for the panel
+ * to say. */
 export function watchFitState(input: WatchPagePreviewInput): FitState {
-  const packed = watchReflowPage(input.page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, "iphone");
+  const kind = input.phone === undefined ? "watch" : "iphone";
+  const packed = watchReflowPage(input.page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, kind);
   const layout = watchPreviewLayout(packed, input.screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
-  return fitState(packed, layout.unit, watchFitHeight(input, packed));
+  return fitState(packed, layout.unit, watchFitHeight(input, packed), fitSmallestTile(kind));
+}
+
+/** Whether the device `input` draws shows `tile` of `input.page` squashed to a
+ * strip by Fit to screen, so that a Custom layout does not show there. */
+export function watchTileSquashed(input: WatchPagePreviewInput, tile: WatchPageTile): boolean {
+  const kind = input.phone === undefined ? "watch" : "iphone";
+  if (!fitsOnScreen(input.page, kind)) return false;
+  const { unit, spacing } = watchPreviewLayout(input.page, input.screen, { flat: true, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+  const rows = fitPageRows(input.page, unit, watchFitHeight(input, input.page), fitSmallestTile(kind));
+  if (rows === undefined) return false;
+  const g = tileGeometry(tile);
+  const tall = fitRowTop(rows, g.row + g.rowSpan, spacing) - fitRowTop(rows, g.row, spacing) - spacing;
+  const drawn = fitDrawnTile(tile, tall, unit, spacing);
+  return drawn !== tile && tileGeometry(drawn).rowSpan < FIT_STRIP_ROWS;
 }
 
 /** The look a map page's picture is drawn in: the iPhone draws the page as a
@@ -4162,9 +4182,13 @@ export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPho
 export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number; height: number }, phone = false): boolean {
   if (isSmartWatchPage(page) || (phone && isMapWatchPage(page))) return false;
   const shown = watchScreenPage(page, phone ? "iphone" : "watch");
-  if (!phone) return watchPreviewLayout(shown, screen).height > screen.height + 0.5;
+  if (!phone) {
+    const layout = watchPreviewLayout(shown, screen);
+    const fitted = fitsOnScreen(page, "watch") ? fittedLayout(layout, shown, screen.height - layout.topInset - WATCH_FIT_BOTTOM_ROOM, fitSmallestTile("watch")) : layout;
+    return fitted.height > screen.height + 0.5;
+  }
   const layout = watchPreviewLayout(shown, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET });
-  const drawn = page.fitToScreen === true ? fittedLayout(layout, shown, screen.height - PHONE_GRID_TOP_INSET) : layout;
+  const drawn = fitsOnScreen(page, "iphone") ? fittedLayout(layout, shown, screen.height - PHONE_GRID_TOP_INSET) : layout;
   return watchPreviewHeight(drawn, true) > screen.height + 0.5;
 }
 

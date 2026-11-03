@@ -251,7 +251,7 @@ import {
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
 import { setWatchPageFitToScreen } from "./page-settings-model.js";
-import { fitDrawnTile, fitPageRows, fitStateWords, layoutOnFitRows, type FitRows } from "./fit-rows.js";
+import { fitDrawnTile, fitPageRows, fitSmallestTile, fitsOnScreen, fitStateWords, fitTileNote, layoutOnFitRows, type FitRows } from "./fit-rows.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
@@ -260,6 +260,7 @@ import {
   renderWatchPagePreview,
   watchFitHeight,
   watchFitState,
+  watchTileSquashed,
   renderWatchScreenFold,
   renderWatchTileFace,
   type WatchTilePreviewAs,
@@ -4410,6 +4411,7 @@ export class WaPageEditor extends LitElement {
       <span class="lib-duo-l pe-screen-title" title=${title}>${uiIcon(screen === "watch" ? "watch" : "phone")}${title}</span>
       ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${useWords === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
         title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${useWords}</button>`}</span>`}
+      ${this.renderFitSwitch(page, input, screen)}
       ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen)}>
         <span class="pe-screen-off-l">${screenOffLead(screen)}:</span>
         ${chips.map((c) => {
@@ -4667,10 +4669,10 @@ export class WaPageEditor extends LitElement {
     const shown = screenDrawnPage(raw, on);
     const topInset = page.fullScreen === true ? 0 : watchPreviewTopInset(input);
     const square = stageGrid(screen.width, topInset, s, watchPreviewSideInset(input));
-    // A Fit to screen page is edited as the iPhone draws it. Its rows are the
+    // A Fit to screen page is edited as its device draws it. Its rows are the
     // stored page's, so they hold still under a drag and move at the drop.
-    const fit = on === "iphone" && input.phone !== undefined && page.fitToScreen === true
-      ? fitPageRows(screenDrawnPage(page, on), square.unit / s, watchFitHeight(input, page))
+    const fit = fitsOnScreen(page, on)
+      ? fitPageRows(screenDrawnPage(page, on), square.unit / s, watchFitHeight(input, page), fitSmallestTile(on))
       : undefined;
     const grid = withFitRows(square, fit);
     // A pick of several reaches as deep as its lowest tile moved.
@@ -5090,8 +5092,7 @@ export class WaPageEditor extends LitElement {
     const hidden = isHiddenWatchPage(page);
     const smart = isSmartWatchPage(page);
     const map = isMapWatchPage(page);
-    const fits = this.onPhone && !map && page.fitToScreen === true;
-    const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : []), ...(map ? ["map page"] : []), ...(fits ? ["fit to screen"] : [])].join(", ");
+    const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : []), ...(map ? ["map page"] : [])].join(", ");
     return sectionCard({
       color: SECTION_COLOR.place,
       icon: uiIcon(this.onPhone ? "phone" : "watch"),
@@ -5105,43 +5106,46 @@ export class WaPageEditor extends LitElement {
       ${host === undefined ? nothing : html`
         ${map ? nothing : renderSmartPageSwitch(host, { detail: "Fills itself from its rules with what is on right now." })}
         ${renderSmartPageBody(host)}
-        ${this.renderMapPageSwitch(page)}
-        ${this.renderFitToScreenSwitch(page)}`}
+        ${this.renderMapPageSwitch(page)}`}
     </div>` : html``);
   }
 
   /**
-   * The Fit to screen switch, a row of the On the iPhone card: on, the
-   * iPhone keeps the page's width and makes its rows shorter until every row
-   * shows without scrolling (`fitToScreen`), and the row says what that does
-   * to this page. Only in iPhone view, and never on a map page, which is one
-   * map and no grid.
+   * The Fit to screen switch under a device's picture, which it changes, with
+   * what it does to this page while on. Each device has its own: the page
+   * keeps its width and its rows get shorter until they all show without
+   * scrolling. Never on a smart page or a map page, which have no rows to fit.
    */
-  private renderFitToScreenSwitch(page: WatchPage): TemplateResult | typeof nothing {
-    if (!this.onPhone || isMapWatchPage(page)) return nothing;
-    return html`<label class="pe-switch pe-ow-row">
-      <span class="pe-ow-t"><span class="pe-ow-l">Fit to screen</span><span class="pe-ow-d">Keeps the page's width and makes its rows shorter, so every row shows without scrolling.${page.fitToScreen === true ? ` ${this.fitWords(page)}` : ""}</span></span>
-      <input type="checkbox" role="switch" .checked=${live(page.fitToScreen === true)} ?disabled=${this.busy}
-        @change=${(e: Event) => this.applyFitToScreen(watchPageId(page), (e.target as HTMLInputElement).checked)} />
-    </label>`;
+  private renderFitSwitch(page: WatchPage, input: WatchPagePreviewInput, screen: WatchScreen): TemplateResult | typeof nothing {
+    if (isSmartWatchPage(page) || isMapWatchPage(page)) return nothing;
+    const on = fitsOnScreen(page, screen);
+    const device = screen === "iphone" ? "iPhone" : "watch";
+    return html`<label class="pe-switch pe-screen-fit" title="Keeps the page's width and makes its rows shorter, so every row shows without scrolling.">
+      <span>Fit to screen</span>
+      <input type="checkbox" role="switch" .checked=${live(on)} ?disabled=${this.busy}
+        @change=${(e: Event) => this.applyFitToScreen(watchPageId(page), (e.target as HTMLInputElement).checked, screen)} />
+    </label>
+    ${on ? html`<span class="pe-screen-status pe-screen-fit-state">${fitStateWords(watchFitState({ ...input, page: screenDrawnPage(page, screen) }), device)}</span>` : nothing}`;
   }
 
-  /** What Fit to screen does to `page` on the iPhone shown. */
-  private fitWords(page: WatchPage): string {
-    const phone = this.phoneLayoutOf(undefined);
-    if (phone === undefined) return "";
-    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
-    return fitStateWords(watchFitState(this.previewInput(screenDrawnPage(page, "iphone"), pages, phonePagesScreen(phone), 1)));
+  /** The line above Inside the tile while Fit to screen squashes the selected
+   * tile on the picture it was last pressed on: the tile's settings stay
+   * editable, as they also apply on the other device. */
+  private renderFitTileNote(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    const picture = this.selectedTilePicture(page, tile);
+    if (picture === undefined) return nothing;
+    if (!watchTileSquashed(this.selectedTileInput(page, picture, 1), picture.placed.tile)) return nothing;
+    return html`<p class="pe-fit-note" role="note">${fitTileNote(picture.kind)}</p>`;
   }
 
   /** Turn Fit to screen on or off, as one undo step. */
-  private applyFitToScreen(pageId: string, on: boolean): void {
+  private applyFitToScreen(pageId: string, on: boolean, screen: WatchScreen): void {
     const document = this.draft?.document;
     if (document === undefined || this.busy) {
       this.requestUpdate();
       return;
     }
-    const next = setWatchPageFitToScreen(document, pageId, on);
+    const next = setWatchPageFitToScreen(document, pageId, on, screen);
     if (next === document) {
       this.requestUpdate();
       return;
@@ -5433,6 +5437,7 @@ export class WaPageEditor extends LitElement {
     return html`<div class="pe-tile-insp" @pointerover=${this.onInspectorHover} @pointerleave=${this.onInspectorLeave}>
       ${host === undefined ? head : renderTileInspector(host, {
         arrangePicture: () => this.renderArrangePicture(page, tile),
+        arrangeNote: () => this.renderFitTileNote(page, tile),
         arrangeLookPicture: (key, make) => this.renderArrangeLookPicture(page, tile, key, make),
         arrangePhoneModel: () => this.arrangePhoneModel(page, tile),
         arrangeStates: () => this.renderArrangeStates(tile),
@@ -6166,6 +6171,8 @@ export class WaPageEditor extends LitElement {
        the last picture, the link that adds a kind no device shows. */
     .pe-screen-lines { display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 360px; text-align: center; }
     .pe-screen-status { font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
+    .pe-screen-fit { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1.4; cursor: pointer; }
+    .pe-fit-note { margin: 0 0 10px; padding: 7px 10px; border-radius: 8px; font-size: 12px; line-height: 1.4; color: var(--wa-muted); background: color-mix(in srgb, var(--wa-accent) 12%, transparent); }
     .pe-screen-status button.link.pe-screen-use { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--wa-accent); cursor: pointer; }
     .pe-screen-status button.link.pe-screen-use:disabled { opacity: .5; cursor: default; }
     .pe-screen-off { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 5px; margin-top: 2px; font-size: 12px; }

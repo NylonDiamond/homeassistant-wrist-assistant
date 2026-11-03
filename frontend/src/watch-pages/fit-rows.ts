@@ -5,7 +5,7 @@
 // their height. Under the floor the page scrolls at its normal size. Change
 // the two together; each has a test of the same remote page.
 
-import { tileEntityId, tileGeometry, tileKind, watchPageTiles, WATCH_GRID_SPACING, type WatchPage, type WatchPageLayout, type WatchPageTile } from "./model.js";
+import { tileEntityId, tileGeometry, tileKind, watchPageTiles, WATCH_GRID_SPACING, type WatchPage, type WatchPageLayout, type WatchPageTile, type WatchScreen } from "./model.js";
 
 /** An empty row never goes under this share of a normal row. */
 export const FIT_EMPTY_ROW_FLOOR = 0.25;
@@ -13,6 +13,23 @@ export const FIT_EMPTY_ROW_FLOOR = 0.25;
  * rows, as a tall tile's rows can get far shorter than a short tile's and
  * leave as good a button. */
 export const FIT_SMALLEST_TILE_HEIGHT = 30;
+/** The same on the watch, whose tiles are drawn in far less. */
+export const FIT_SMALLEST_WATCH_TILE_HEIGHT = 22;
+/** The room a fitted page leaves under its last row on the watch, for the
+ * screen's rounded corners (`PageFitRows.watchBottomRoom`). */
+export const WATCH_FIT_BOTTOM_ROOM = 6;
+
+/** Whether a page is set to fit `screen`: each has its own key, as a page can
+ * fit one and not the other. */
+export function fitsOnScreen(page: WatchPage, screen: WatchScreen): boolean {
+  return (screen === "iphone" ? page.fitToScreen : page.watchFitToScreen) === true;
+}
+
+/** The smallest cell a tile may have on `screen`. */
+export function fitSmallestTile(screen: WatchScreen): number {
+  return screen === "iphone" ? FIT_SMALLEST_TILE_HEIGHT : FIT_SMALLEST_WATCH_TILE_HEIGHT;
+}
+
 /** One Look's room under a page's last row, with the dock under it
  * (`OneLookGrid.phoneBottomPadding`). */
 export const PHONE_FIT_BOTTOM_ROOM = 7;
@@ -21,7 +38,7 @@ export const PHONE_FIT_BOTTOM_ROOM = 7;
 const FIRST_HEADER_SHIFT = 0.6;
 const LATER_HEADER_SHIFT = 0.4;
 /** A tile under this many rows draws as a strip (`OneLookLayout.stripRows`). */
-const FIT_STRIP_ROWS = 4;
+export const FIT_STRIP_ROWS = 4;
 /** Row heights step by this, so tiles land on whole pixels. */
 const STEP = 0.5;
 
@@ -66,6 +83,7 @@ export function fitRowsOf(
   natural: number,
   height: number,
   spacing = WATCH_GRID_SPACING,
+  smallestTile = FIT_SMALLEST_TILE_HEIGHT,
 ): FitRows | undefined {
   if (kinds.length === 0 || natural <= 0 || height <= 0) return undefined;
   const count = (kind: FitRowKind): number => kinds.filter((k) => k === kind).length;
@@ -83,7 +101,7 @@ export function fitRowsOf(
     if (tileRows === 0) return undefined;
     tileRow = Math.floor((room - emptyFloor * emptyRows) / tileRows / STEP) * STEP;
     if (tileRow <= 0) return undefined;
-    if (shortestTileRows !== undefined && tileRow * shortestTileRows + spacing * (shortestTileRows - 1) < FIT_SMALLEST_TILE_HEIGHT) return undefined;
+    if (shortestTileRows !== undefined && tileRow * shortestTileRows + spacing * (shortestTileRows - 1) < smallestTile) return undefined;
   }
   return {
     heights: kinds.map((kind) => (kind === "empty" ? emptyRow : kind === "tile" ? tileRow : natural)),
@@ -92,11 +110,11 @@ export function fitRowsOf(
 }
 
 /** A page's rows fitted in `height`, at a normal row of `natural`. */
-export function fitPageRows(page: WatchPage, natural: number, height: number): FitRows | undefined {
+export function fitPageRows(page: WatchPage, natural: number, height: number, smallestTile = FIT_SMALLEST_TILE_HEIGHT): FitRows | undefined {
   const tiles = watchPageTiles(page).map((tile) => ({ g: tileGeometry(tile), kind: tileKind(tileEntityId(tile)) }));
   const spans = tiles.filter((t) => t.kind !== "spacer" && t.kind !== "divider").map((t) => t.g.rowSpan);
   const headerCount = new Set(tiles.filter((t) => t.kind === "divider").map((t) => t.g.row)).size;
-  return fitRowsOf(fitRowKinds(page), spans.length === 0 ? undefined : Math.min(...spans), headerCount, natural, height);
+  return fitRowsOf(fitRowKinds(page), spans.length === 0 ? undefined : Math.min(...spans), headerCount, natural, height, WATCH_GRID_SPACING, smallestTile);
 }
 
 /** Where `row` starts. A row past the last counts as a tile's row. */
@@ -150,8 +168,8 @@ export function layoutOnFitRows(layout: WatchPageLayout, rows: FitRows, keepTile
 
 /** `layout` with its rows fitted in `height`, or as it is when no fit
  * applies. */
-export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: number): WatchPageLayout {
-  const rows = fitPageRows(page, layout.unit, height);
+export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: number, smallestTile = FIT_SMALLEST_TILE_HEIGHT): WatchPageLayout {
+  const rows = fitPageRows(page, layout.unit, height, smallestTile);
   if (rows === undefined) return layout;
   return { ...layoutOnFitRows(layout, rows), contentHeight: height, height: layout.screen.height };
 }
@@ -164,8 +182,8 @@ export type FitState =
   | { kind: "squashed"; share: number }
   | { kind: "scrolls" };
 
-export function fitState(page: WatchPage, natural: number, height: number): FitState {
-  const rows = fitPageRows(page, natural, height);
+export function fitState(page: WatchPage, natural: number, height: number, smallestTile = FIT_SMALLEST_TILE_HEIGHT): FitState {
+  const rows = fitPageRows(page, natural, height, smallestTile);
   if (rows !== undefined) {
     return rows.tileRow >= natural ? { kind: "empty-rows" } : { kind: "squashed", share: rows.tileRow / natural };
   }
@@ -177,12 +195,18 @@ export function fitState(page: WatchPage, natural: number, height: number): FitS
   return whole <= height ? { kind: "fits" } : { kind: "scrolls" };
 }
 
-/** A fit's state in words. */
-export function fitStateWords(state: FitState): string {
+/** A fit's state in words, on `device`. */
+export function fitStateWords(state: FitState, device = "iPhone"): string {
   switch (state.kind) {
-    case "fits": return "This page already fits this iPhone's screen.";
+    case "fits": return `This page already fits this ${device}'s screen.`;
     case "empty-rows": return "Fits: only its empty rows get shorter.";
     case "squashed": return `Fits: its rows are ${Math.round(state.share * 100)}% of their normal height.`;
-    case "scrolls": return "Too tall for this iPhone's screen, so this page scrolls as normal. Remove some rows to fit it.";
+    case "scrolls": return `Too tall for this ${device}'s screen, so this page scrolls as normal. Remove some rows to fit it.`;
   }
+}
+
+/** The line a tile's settings show when `screen` draws it squashed. */
+export function fitTileNote(screen: WatchScreen): string {
+  const [here, there] = screen === "iphone" ? ["iPhone", "watch"] : ["watch", "iPhone"];
+  return `This page fits the ${here}'s screen, so this tile draws short there. Custom layouts show on the ${there} and on taller tiles.`;
 }

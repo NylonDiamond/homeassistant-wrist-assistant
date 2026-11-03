@@ -765,6 +765,8 @@ export interface TileSettingsExtras {
   sections?: readonly WatchTileSettingsSection[];
   size?: { summary: () => string; body: () => TemplateResult; changed?: () => boolean };
   arrangePicture?: () => TemplateResult | typeof nothing;
+  /** The line above Inside the tile when Fit to screen squashes this tile. */
+  arrangeNote?: () => TemplateResult | typeof nothing;
   /** The tile drawn small as `make` changes it, for a look's card in the
    * Layout section; `key` names the look. Only the page editor draws it. */
   arrangeLookPicture?: (key: string, make: (tile: WatchPageTile) => WatchPageTile) => TemplateResult | typeof nothing;
@@ -1373,7 +1375,7 @@ function partBody(host: TileSettingsHost, part: TileInspectorPart, extras: TileS
     case "size":
       return extras.size?.body() ?? nothing;
     case "arrange":
-      return renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture, extras.arrangePhoneModel, extras.arrangeStates);
+      return html`${extras.arrangeNote?.() ?? nothing}${renderArrangeSection(host, extras.arrangePicture, extras.arrangeLookPicture, extras.arrangePhoneModel, extras.arrangeStates)}`;
     case "entity":
       return renderEntityShown(host, tileEntityId(host.tile));
     default:

@@ -21,7 +21,7 @@
 import pageKeys from "./page-keys.json";
 import { findWatchPage } from "./edit.js";
 import { sameWatchPagesJson } from "./merge.js";
-import { type JsonObject, type WatchPage, type WatchPagesDocument, isJsonObject, isSystemWatchPage } from "./model.js";
+import { type JsonObject, type WatchPage, type WatchPagesDocument, type WatchScreen, isJsonObject, isSystemWatchPage } from "./model.js";
 import { normalizeWatchColor, sameValue, withField } from "./tile-settings-model.js";
 import { WATCH_TILE_DEFAULTS, normalizedHex, watchGradientOf } from "./tile-new.js";
 import { watchSliderValue } from "./styling-model.js";
@@ -434,9 +434,9 @@ export function setWatchPageFullScreen(document: WatchPagesDocument, pageId: str
 /** Fit to screen, read only by the iPhone: the page's tiles shrink, kept
  * square and centred, until every row shows without scrolling. Off removes
  * the key, which the iPhone reads as off. */
-export function setWatchPageFitToScreen(document: WatchPagesDocument, pageId: string, on: boolean): WatchPagesDocument {
+export function setWatchPageFitToScreen(document: WatchPagesDocument, pageId: string, on: boolean, screen: WatchScreen = "iphone"): WatchPagesDocument {
   if (typeof on !== "boolean") return document;
-  return setPageKey(document, pageId, "fitToScreen", () => (on ? true : null));
+  return setPageKey(document, pageId, screen === "iphone" ? "fitToScreen" : "watchFitToScreen", () => (on ? true : null));
 }
 
 /** The setter of each Page row, by the key it writes. */

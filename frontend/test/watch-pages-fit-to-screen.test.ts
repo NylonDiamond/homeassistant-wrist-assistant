@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { findWatchPage } from "../src/watch-pages/edit.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
+  FIT_SMALLEST_TILE_HEIGHT,
+  FIT_SMALLEST_WATCH_TILE_HEIGHT,
   fitDrawnRowSpan,
   fitDrawnTile,
   fitDropsArrange,
@@ -15,7 +17,10 @@ import {
   fitRowsOf,
   fitRowTop,
   fitState,
+  fitsOnScreen,
+  fitSmallestTile,
   fitStateWords,
+  fitTileNote,
   fittedLayout,
   type FitRowKind,
 } from "../src/watch-pages/fit-rows.js";
@@ -194,6 +199,35 @@ describe("what the panel says of a fit", () => {
   it("has words for each", () => {
     expect(fitStateWords({ kind: "squashed", share: 0.48 })).toContain("48%");
     expect(fitStateWords({ kind: "scrolls" })).toContain("scrolls as normal");
+  });
+});
+
+describe("each device's own switch", () => {
+  it("writes the watch's own key and leaves the iPhone's", () => {
+    const on = setWatchPageFitToScreen(doc(), PAGE, true, "watch");
+    expect(pageOf(on).watchFitToScreen).toBe(true);
+    expect(Object.hasOwn(pageOf(on), "fitToScreen")).toBe(false);
+    expect(fitsOnScreen(pageOf(on), "watch")).toBe(true);
+    expect(fitsOnScreen(pageOf(on), "iphone")).toBe(false);
+    const off = setWatchPageFitToScreen(on, PAGE, false, "watch");
+    expect(Object.hasOwn(pageOf(off), "watchFitToScreen")).toBe(false);
+  });
+
+  it("lets a watch's tile go shorter than an iPhone's", () => {
+    expect(fitSmallestTile("watch")).toBe(FIT_SMALLEST_WATCH_TILE_HEIGHT);
+    expect(fitSmallestTile("iphone")).toBe(FIT_SMALLEST_TILE_HEIGHT);
+    const k = kinds(20);
+    const height = 20 * 10 + 19 * 2;
+    expect(fitRowsOf(k, 2, 0, 15, height, 2, fitSmallestTile("watch"))).toBeDefined();
+    expect(fitRowsOf(k, 2, 0, 15, height, 2, fitSmallestTile("iphone"))).toBeUndefined();
+  });
+
+  it("names the device in its words", () => {
+    expect(fitStateWords({ kind: "scrolls" }, "watch")).toContain("this watch's screen");
+    expect(fitTileNote("iphone")).toContain("the iPhone's screen");
+    expect(fitTileNote("iphone")).toContain("on the watch");
+    expect(fitTileNote("watch")).toContain("the watch's screen");
+    expect(fitTileNote("watch")).toContain("on the iPhone");
   });
 });
 
