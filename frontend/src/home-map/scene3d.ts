@@ -602,6 +602,34 @@ export type HomeMap3DPick =
   | { kind: "opening"; roomId: string; opening: number }
   | { kind: "pin"; pinId: string };
 
+/** A drag on a handle of the picked door, window or wall (`onFaceDrag`): which
+ * sides follow (`part`: x -1 its `a` end, 1 its `b` end, z -1 its bottom, 1 its
+ * top; both 0 the whole of it), how far along it from `a` to `b` and how far up,
+ * in meters from where the drag began, and whether it was let go. */
+export interface HomeMapFaceDrag {
+  pick: Extract<HomeMap3DPick, { kind: "wall" | "opening" }>;
+  part: { x: number; z: number };
+  ds: number;
+  dz: number;
+  done: boolean;
+}
+
+/** The handles of a picked piece: a wall's height, a window's four sides, a
+ * door's two sides and top, as it stands on the floor. */
+export function homeMapFaceHandles(pick: Extract<HomeMap3DPick, { kind: "wall" | "opening" }>, floor: HomeMapFloor): { x: number; z: number }[] {
+  if (pick.kind === "wall") return [{ x: 0, z: 1 }];
+  const room = floor.rooms.find((r) => sameHomeMapId(r.id, pick.roomId));
+  const onFloor = room?.openings[pick.opening]?.kind !== "window";
+  return [{ x: -1, z: 0 }, { x: 1, z: 0 }, { x: 0, z: 1 }, ...(onFloor ? [] : [{ x: 0, z: -1 }])];
+}
+
+/** A handle's cursor. */
+function handleCursor(part: { x: number; z: number }): string {
+  if (part.x === 0 && part.z === 0) return "move";
+  if (part.z === 0) return "ew-resize";
+  return "ns-resize";
+}
+
 /** A wall's or a door's or window's upright face: its two ends along the plan
  * and how far up it runs. */
 function homeMapPieceFace(floor: HomeMapFloor, pick: HomeMap3DPick | undefined): { a: readonly number[]; b: readonly number[]; z0: number; z1: number } | undefined {
@@ -635,6 +663,8 @@ function pieceFacePane(face: NonNullable<ReturnType<typeof homeMapPieceFace>>, m
 /** How far a press may move, in CSS pixels, and still be a click rather
  * than a turn of the view. */
 const CLICK_SLOP = 5;
+/** A press this near a handle takes it, in CSS pixels. */
+const HANDLE_REACH = 13;
 /** A light's bulb is small; a click this near its middle still finds it. */
 const BULB_REACH = 0.15;
 
@@ -783,6 +813,12 @@ export class HomeMapScene3D {
   /** What is drawn over the finished scene, after the occlusion and before
    * the glow: the picked outline, which neither shades nor glows. */
   private readonly overlay = new THREE.Scene();
+  /** The handles of the picked door, window or wall, and what they hold. */
+  private handles: { part: { x: number; z: number }; at: THREE.Vector3; sprite: THREE.Sprite }[] = [];
+  private markPiece?: Extract<HomeMap3DPick, { kind: "wall" | "opening" }>;
+  private handleTexture?: THREE.Texture;
+  /** A handle being dragged. */
+  private faceDrag?: { id: number; pick: Extract<HomeMap3DPick, { kind: "wall" | "opening" }>; part: { x: number; z: number }; plane: THREE.Plane; ax: number; ay: number; ux: number; uy: number; s0: number; z0: number };
   /** The scene drawn, then shaded in its corners (`ao`), the outline laid
    * over it, its bulbs glowing (`bloom`), and last tone mapped into the
    * page's colours (`OutputPass`), which the renderer did itself before. */
@@ -847,6 +883,8 @@ export class HomeMapScene3D {
    * or while a press orbits the view. Found at most once a frame, and told
    * only when it changes. */
   onHover?: (pick: HomeMap3DPick | undefined) => void;
+  /** A handle of the picked door, window or wall dragged. */
+  onFaceDrag?: (drag: HomeMapFaceDrag) => void;
   /** The browser took the drawing context away: the view stands still,
    * and the page says so. */
   onContextLost?: () => void;
@@ -955,6 +993,11 @@ export class HomeMapScene3D {
       this.hoverAt = undefined;
       this.sendHover(undefined);
     });
+    // Before the orbit's own press, which a handle's drag keeps out.
+    this.canvas.addEventListener("pointerdown", (e) => this.handleDown(e), { capture: true });
+    this.canvas.addEventListener("pointermove", (e) => this.handleMove(e));
+    this.canvas.addEventListener("pointerup", (e) => this.handleUp(e, true), { capture: true });
+    this.canvas.addEventListener("pointercancel", (e) => this.handleUp(e, false), { capture: true });
     this.canvas.addEventListener("pointermove", (e) => this.hoverMove(e));
     this.canvas.addEventListener("pointerleave", () => this.hoverMove(undefined));
     this.canvas.addEventListener("pointerup", (e) => {
@@ -967,6 +1010,75 @@ export class HomeMapScene3D {
     // On a Mac a Ctrl click adds to the pick; it must not also open the
     // browser's menu.
     this.canvas.addEventListener("contextmenu", (e) => { if (e.ctrlKey) e.preventDefault(); });
+  }
+
+  /** The handle of the picked piece under a point of the page, or the piece's
+   * own face for a door or window, which drags it along its wall. */
+  private handleAt(clientX: number, clientY: number): { x: number; z: number } | undefined {
+    if (this.markPiece === undefined) return undefined;
+    const box = this.canvas.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return undefined;
+    let best: { part: { x: number; z: number }; d: number } | undefined;
+    for (const handle of this.handles) {
+      const p = handle.at.clone().project(this.camera);
+      const d = Math.hypot(box.left + ((p.x + 1) / 2) * box.width - clientX, box.top + ((1 - p.y) / 2) * box.height - clientY);
+      if (d <= HANDLE_REACH && (best === undefined || d < best.d)) best = { part: handle.part, d };
+    }
+    if (best !== undefined) return best.part;
+    if (this.markPiece.kind !== "opening") return undefined;
+    const under = this.pickAt(clientX, clientY);
+    return JSON.stringify(under) === JSON.stringify(this.markPiece) ? { x: 0, z: 0 } : undefined;
+  }
+
+  /** Where the pointer's ray meets a plane, along the piece and up. */
+  private facePoint(clientX: number, clientY: number, plane: THREE.Plane): THREE.Vector3 | undefined {
+    const box = this.canvas.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return undefined;
+    this.raycaster.setFromCamera(new THREE.Vector2(((clientX - box.left) / box.width) * 2 - 1, -((clientY - box.top) / box.height) * 2 + 1), this.camera);
+    return this.raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? undefined;
+  }
+
+  private handleDown(e: PointerEvent): void {
+    const pick = this.markPiece;
+    const floor = this.input?.floor;
+    if (pick === undefined || floor === undefined || !e.isPrimary || e.button !== 0 || e.pointerType === "touch") return;
+    const part = this.handleAt(e.clientX, e.clientY);
+    const face = homeMapPieceFace(floor, pick);
+    if (part === undefined || face === undefined) return;
+    const length = Math.max(Math.hypot(face.b[0]! - face.a[0]!, face.b[1]! - face.a[1]!), 1e-6);
+    const ux = (face.b[0]! - face.a[0]!) / length;
+    const uy = (face.b[1]! - face.a[1]!) / length;
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(-uy, 0, ux), new THREE.Vector3(face.a[0]!, 0, face.a[1]!));
+    const hit = this.facePoint(e.clientX, e.clientY, plane);
+    if (hit === undefined) return;
+    this.controls.enabled = false;
+    try { this.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic press */ }
+    this.faceDrag = { id: e.pointerId, pick, part, plane, ax: face.a[0]!, ay: face.a[1]!, ux, uy, s0: (hit.x - face.a[0]!) * ux + (hit.z - face.a[1]!) * uy, z0: hit.y };
+  }
+
+  private faceDragNow(e: PointerEvent, done: boolean): void {
+    const drag = this.faceDrag;
+    if (drag === undefined) return;
+    const hit = this.facePoint(e.clientX, e.clientY, drag.plane);
+    if (hit === undefined) return;
+    const s = (hit.x - drag.ax) * drag.ux + (hit.z - drag.ay) * drag.uy;
+    this.onFaceDrag?.({ pick: drag.pick, part: drag.part, ds: s - drag.s0, dz: hit.y - drag.z0, done });
+    this.wake(200);
+  }
+
+  private handleMove(e: PointerEvent): void {
+    if (this.faceDrag !== undefined && e.pointerId === this.faceDrag.id) this.faceDragNow(e, false);
+  }
+
+  private handleUp(e: PointerEvent, drop: boolean): void {
+    const drag = this.faceDrag;
+    if (drag === undefined || e.pointerId !== drag.id) return;
+    if (drop) this.faceDragNow(e, true);
+    else this.onFaceDrag?.({ pick: drag.pick, part: drag.part, ds: 0, dz: 0, done: true });
+    this.faceDrag = undefined;
+    this.controls.enabled = true;
+    // The drag is no click.
+    this.press = undefined;
   }
 
   /** What is under a point of the page: the nearest thing, light or room
@@ -1007,6 +1119,8 @@ export class HomeMapScene3D {
     this.hoverFrame = 0;
     if (this.disposed) return;
     const at = this.hoverAt;
+    const part = at === undefined || this.press !== undefined ? undefined : this.handleAt(at.x, at.y);
+    this.canvas.style.cursor = part === undefined ? "" : handleCursor(part);
     this.sendHover(at === undefined || this.press !== undefined ? undefined : this.pickAt(at.x, at.y));
   };
 
@@ -1529,6 +1643,7 @@ export class HomeMapScene3D {
     const key = objects.length > 0 ? JSON.stringify(["things", objects.map((o) => [o.c, o.size, o.turn, o.lift ?? 0])])
       : face !== undefined ? JSON.stringify(["face", face])
       : room !== undefined ? JSON.stringify(["room", room.outline]) : "";
+    this.markPiece = face === undefined || mark === undefined || !("piece" in mark) ? undefined : mark.piece;
     if (key === this.markKey) return false;
     this.markKey = key;
     if (this.mark !== undefined) {
@@ -1537,6 +1652,11 @@ export class HomeMapScene3D {
       this.lines.length = 0;
       this.mark = undefined;
     }
+    for (const handle of this.handles) {
+      this.overlay.remove(handle.sprite);
+      handle.sprite.material.dispose();
+    }
+    this.handles = [];
     const material = () => {
       const m = new LineMaterial({ color: BLUE, linewidth: 2.5, depthTest: false, transparent: true, opacity: 0.95 });
       m.resolution.set(Math.max(this.host?.clientWidth ?? 1, 1), Math.max(this.host?.clientHeight ?? 1, 1));
@@ -1580,13 +1700,85 @@ export class HomeMapScene3D {
       geometry.setPositions(pieceFaceLines(face));
       const line = new Line2(geometry, material());
       line.computeLineDistances();
-      const pane = pieceFacePane(face, new THREE.MeshBasicMaterial({ color: BLUE, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+      const pane = pieceFacePane(face, new THREE.MeshBasicMaterial({ color: BLUE, transparent: true, opacity: 0.2, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
       group.add(pane, line);
       group.traverse((o) => { o.renderOrder = 10; });
       this.mark = group;
+      if (this.markPiece !== undefined) this.addHandles(this.markPiece, floor, face);
     }
     if (this.mark !== undefined) this.overlay.add(this.mark);
     return true;
+  }
+
+  /** The camera in front of the picked wall, door or window, on its room's
+   * side and a little above, near enough to see it well. Turn back goes back. */
+  lookAtPiece(): void {
+    const pick = this.markPiece;
+    const floor = this.input?.floor;
+    const face = floor === undefined || pick === undefined ? undefined : homeMapPieceFace(floor, pick);
+    const room = floor?.rooms.find((r) => pick !== undefined && sameHomeMapId(r.id, pick.roomId));
+    if (face === undefined || room === undefined) return;
+    const length = Math.max(Math.hypot(face.b[0]! - face.a[0]!, face.b[1]! - face.a[1]!), 0.01);
+    const ux = (face.b[0]! - face.a[0]!) / length;
+    const uy = (face.b[1]! - face.a[1]!) / length;
+    const mid = [(face.a[0]! + face.b[0]!) / 2, (face.a[1]! + face.b[1]!) / 2] as const;
+    const n = Math.max(room.outline.length, 1);
+    const cx = room.outline.reduce((s, p) => s + p[0], 0) / n;
+    const cy = room.outline.reduce((s, p) => s + p[1], 0) / n;
+    let nx = -uy;
+    let ny = ux;
+    if ((cx - mid[0]) * nx + (cy - mid[1]) * ny < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const tall = face.z1 - face.z0;
+    // The whole height of the room, so it reads against its wall.
+    const wide = Math.max(length * 3, 3);
+    const high = Math.max(tall * 1.5, (room.height > 0 ? room.height : 2.4) * 1.25);
+    const half = Math.tan((this.camera.fov * Math.PI) / 360);
+    const distance = Math.max(high / (2 * half), wide / (2 * half * this.camera.aspect));
+    const target = new THREE.Vector3(mid[0], (room.height > 0 ? room.height : 2.4) / 2, mid[1]);
+    this.controls.target.copy(target);
+    this.camera.position.set(mid[0] + nx * distance, target.y + distance * 0.12, mid[1] + ny * distance);
+    this.controls.update();
+    this.wake();
+  }
+
+  /** A round white handle at each place a picked piece drags from, the same
+   * size on screen however near the camera is. */
+  private addHandles(pick: Extract<HomeMap3DPick, { kind: "wall" | "opening" }>, floor: HomeMapFloor, face: NonNullable<ReturnType<typeof homeMapPieceFace>>): void {
+    if (this.handleTexture === undefined && typeof document !== "undefined") {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const g = c.getContext("2d");
+      if (g !== null) {
+        g.beginPath();
+        g.arc(32, 32, 26, 0, Math.PI * 2);
+        g.fillStyle = "#fff";
+        g.fill();
+        g.lineWidth = 9;
+        g.strokeStyle = "#5b8def";
+        g.stroke();
+      }
+      this.handleTexture = new THREE.CanvasTexture(c);
+    }
+    const tall = Math.max(this.host?.clientHeight ?? 600, 1);
+    const size = (20 / tall) * 2 * Math.tan((this.camera.fov * Math.PI) / 360);
+    for (const part of homeMapFaceHandles(pick, floor)) {
+      const k = (part.x + 1) / 2;
+      const at = new THREE.Vector3(
+        face.a[0]! + (face.b[0]! - face.a[0]!) * k,
+        part.z < 0 ? face.z0 : part.z > 0 ? face.z1 : (face.z0 + face.z1) / 2,
+        face.a[1]! + (face.b[1]! - face.a[1]!) * k,
+      );
+      const material = new THREE.SpriteMaterial({ map: this.handleTexture ?? null, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false, toneMapped: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.position.copy(at);
+      sprite.scale.set(size, size, 1);
+      sprite.renderOrder = 11;
+      this.overlay.add(sprite);
+      this.handles.push({ part, at, sprite });
+    }
   }
 
   /** Keep drawing for a moment: the camera easing to rest, a light easing

@@ -258,7 +258,7 @@ export class HomeMapEditPage implements HomeMapPart {
     const hint = homeMapPiecePicked(ctx.selection) ? "Drag a corner · drag a wall's middle to add a corner · Esc for the room"
       : "Click picks what is on top: a door, a wall, a thing or a room";
     return html`${this.toolRail(ctx)}${side}
-      ${side === nothing && ctx.stage.width >= 900 ? html`<div class="hme-stage-hint">${hint}</div>` : nothing}`;
+      ${side === nothing && ctx.stage.width >= 1200 ? html`<div class="hme-stage-hint">${hint}</div>` : nothing}`;
   }
 
   /** The tools, in their own column on the left of the plan, each with its

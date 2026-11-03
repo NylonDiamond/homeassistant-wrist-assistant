@@ -231,6 +231,25 @@ export const editorStyles = css`
   .hme-num.off { cursor: default; opacity: 0.5; }
   .hme-ntag { color: var(--wa-faint); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; min-width: 12px; user-select: none; }
   .hme-num.scrubbing .hme-ntag, .hme-num:hover .hme-ntag { color: var(--hme-sel); }
+  /* A field with its name over it, and the sign it drags. */
+  .hme-lab { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .hme-lab-t { font-size: 12px; color: var(--wa-muted); padding-left: 2px; white-space: nowrap; }
+  .hme-lab .hme-num { height: 36px; }
+  .hme-lab .hme-num input { font-size: 14px; }
+  .hme-num:not(.off):not(:focus-within):hover .hme-unit::after { content: " ↔"; color: var(--hme-sel); }
+  /* A wall seen square on, with its doors and windows to scale. */
+  .hme-wp { display: block; width: 100%; height: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .hme-wp-wall { fill: var(--wa-input); stroke: var(--wa-line-strong); stroke-width: 1; }
+  .hme-wp-floor { stroke: var(--wa-faint); stroke-width: 2; }
+  .hme-wp-o:hover { stroke: var(--hme-sel); }
+  .hme-wp-t { font-size: 11px; fill: var(--wa-muted); font-family: var(--hme-mono); pointer-events: none; }
+  .hme-wp-t.strong { fill: var(--wa-ink); font-weight: 600; }
+  .hme-wp-dim { fill: none; stroke: var(--wa-faint); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+  .hme-add3 { display: grid; grid-template-columns: repeat(3, minmax(0, auto)); gap: 6px; justify-content: start; }
+  .hme-kinds { gap: 8px; }
+  .hme-kinds .hme-pic { width: 56px; text-align: center; line-height: 1.15; }
+  .hme-kinds .hme-pic > svg { width: 52px; height: 35px; }
+  .hme-3d-size { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; padding: 5px 12px; border-radius: 10px; background: var(--hme-sel); color: #fff; font: 600 13px var(--hme-mono); pointer-events: none; white-space: nowrap; }
   .hme-fields { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 8px; }
   .hme-group { display: flex; flex-direction: column; gap: 6px; }
   .hme-group + .hme-group { padding-top: 4px; }

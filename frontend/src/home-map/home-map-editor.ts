@@ -493,6 +493,11 @@ export class WaHomeMapEditor extends LitElement {
             const scene = new m.HomeMapScene3D(base, quality, this.quality3d === "auto" && quality === "high");
             scene.onPick = (pick, keys) => this.pick3d(pick, keys);
             scene.onHover = (pick) => this.hover3d(pick);
+            scene.onFaceDrag = (drag) => {
+              const ctx = this.context();
+              if (ctx !== undefined) this.page.shape.faceDrag(ctx, drag);
+              this.tick++;
+            };
             scene.onContextLost = () => { this.lost3d = true; };
             scene.onContextRestored = () => this.restart3d();
             scene.onSlow = () => {
@@ -616,7 +621,7 @@ export class WaHomeMapEditor extends LitElement {
     if (e.pointerType === "touch" || this.spaceHeld || this.dialog !== undefined) return undefined;
     if (this.page.tool(ctx) !== "pick" || this.page.devices.choosing) return undefined;
     const target = e.target as Element | null;
-    if (typeof target?.closest === "function" && target.closest("[data-hme=turn], [data-hme=resize], [data-hme^=corner], [data-hme^=mid]") !== null) return undefined;
+    if (typeof target?.closest === "function" && target.closest("[data-hme=turn], [data-hme=resize], [data-hme^=corner], [data-hme^=mid], [data-hme^=end]") !== null) return undefined;
     return homeMapClickPick(ctx.floor, ctx.toScreen, at, homeMapSelectionRoom(ctx.selection));
   }
 
@@ -1838,6 +1843,7 @@ export class WaHomeMapEditor extends LitElement {
       : this.scene3d === undefined ? "Loading the 3D view…" : undefined;
     return html`<div class="hme-3d-host" role="img" aria-label=${`3D model of ${homeMapFloorName(ctx.floor)}. Drag to turn it, scroll to zoom, click a thing to pick it.`}></div>
       ${words === undefined ? nothing : html`<div class="hme-3d-note">${words}</div>`}
+      ${this.page.shape.sizeTag === undefined ? nothing : html`<div class="hme-3d-size" role="status">${this.page.shape.sizeTag}</div>`}
       ${!this.lost3d ? nothing : html`<div class="hme-3d-note hme-3d-paused" role="status"><span>3D paused</span>
         <button type="button" class="hme-link" title="Make the 3D view again now" @click=${() => this.restart3d()}>Start again</button></div>`}`;
   }
@@ -1886,6 +1892,7 @@ export class WaHomeMapEditor extends LitElement {
     ];
     return html`<div class="hme-dock">
       ${real ? this.dockMenuButton("sky", `Sky: ${SKY_NAMES[sky]}`, "The sun and the sky in 3D, and where north is") : nothing}
+      ${real && (this.selection?.kind === "wall" || this.selection?.kind === "opening") ? html`<button type="button" class="hme-tb hme-blue" title="Move the camera in front of it, to resize it. Turn back goes back." @click=${() => this.scene3d?.lookAtPiece()}>Look at it</button>` : nothing}
       ${this.dockMenuButton("look", `Look: ${real ? "3D" : MODEL_LOOK_NAMES[look ?? "night"] ?? look}`, "How the model is drawn: the tiles' looks, or real 3D")}
       <button type="button" class="hme-tb" title=${real ? "Show the whole floor from the home style's turn" : "Back to the home style's turn"} @click=${() => this.turnBack()}>⟲ Turn back</button>
       ${withLive && live !== undefined ? html`<span class="hme-vsep"></span>${live}` : nothing}

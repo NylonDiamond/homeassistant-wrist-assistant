@@ -1487,12 +1487,12 @@ export class ArrangeMode {
 
       ${hmeCard("Size and place", html`
         ${hmeFields(
-          hmeNumber({ tag: "W", label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { width: v })) }),
-          hmeNumber({ tag: "D", label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { depth: v })) }),
-          hmeNumber({ tag: "H", label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, ...edit((d, v) => setWallHeight(d, id, v)) }))}
+          hmeNumber({ tag: "Width", label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { width: v })) }),
+          hmeNumber({ tag: "Depth", label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { depth: v })) }),
+          hmeNumber({ tag: "Height", label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, ...edit((d, v) => setWallHeight(d, id, v)) }))}
         ${hmeFields(
-          hmeNumber({ tag: "X", label: "Left", value: bounds.minX, unit: "m", ...edit((d, v) => moveRoom(d, id, v - bounds.minX, 0)) }),
-          hmeNumber({ tag: "Y", label: "Top", value: bounds.minY, unit: "m", ...edit((d, v) => moveRoom(d, id, 0, v - bounds.minY)) }))}
+          hmeNumber({ tag: "From left", label: "Left", value: bounds.minX, unit: "m", ...edit((d, v) => moveRoom(d, id, v - bounds.minX, 0)) }),
+          hmeNumber({ tag: "From top", label: "Top", value: bounds.minY, unit: "m", ...edit((d, v) => moveRoom(d, id, 0, v - bounds.minY)) }))}
         <div class="hme-turn">
           ${hmeNumber({ label: "Turn", value: tilt, unit: "°", digits: 1, min: -180, max: 180, ...edit((d, v) => turnRoom(d, id, v - tilt)) })}
           <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, -90))}>−90°</button>
@@ -1634,15 +1634,15 @@ export class ArrangeMode {
 
       ${hmeCard("Size", html`
         ${hmeFields(
-          hmeNumber({ tag: "W", label: "Width", value: width, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { width: v })) }),
-          hmeNumber({ tag: "D", label: "Depth", value: depth, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { depth: v })) }),
-          hmeNumber({ tag: "H", label: "Height", value: height, ...sizes, min: 0.01, ...edit((d, v) => setObject(d, id, index, { size: [width, depth, v] })) }))}`)}
+          hmeNumber({ tag: "Width", label: "Width", value: width, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { width: v })) }),
+          hmeNumber({ tag: "Depth", label: "Depth", value: depth, ...sizes, ...edit((d, v) => resizeObject(d, id, index, { depth: v })) }),
+          hmeNumber({ tag: "Height", label: "Height", value: height, ...sizes, min: 0.01, ...edit((d, v) => setObject(d, id, index, { size: [width, depth, v] })) }))}`)}
 
       ${hmeCard("Place", html`
         ${hmeGroup("Middle, and up off the floor", hmeFields(
-          hmeNumber({ tag: "X", label: "Middle across", value: object.c[0], unit: "m", ...edit((d, v) => moveObject(d, id, index, [v, object.c[1]])) }),
-          hmeNumber({ tag: "Y", label: "Middle down", value: object.c[1], unit: "m", ...edit((d, v) => moveObject(d, id, index, [object.c[0], v])) }),
-          hmeNumber({ tag: "Z", label: "Up off the floor", value: object.lift ?? 0, unit: "m", min: 0, max: 100, ...edit((d, v) => setObject(d, id, index, { lift: v })) })))}
+          hmeNumber({ tag: "Across", label: "Middle across", value: object.c[0], unit: "m", ...edit((d, v) => moveObject(d, id, index, [v, object.c[1]])) }),
+          hmeNumber({ tag: "Down", label: "Middle down", value: object.c[1], unit: "m", ...edit((d, v) => moveObject(d, id, index, [object.c[0], v])) }),
+          hmeNumber({ tag: "Up", label: "Up off the floor", value: object.lift ?? 0, unit: "m", min: 0, max: 100, ...edit((d, v) => setObject(d, id, index, { lift: v })) })))}
         ${hmeGroup("Turn", html`<div class="hme-turn">
           ${hmeNumber({ label: "Turn", value: turn, unit: "°", digits: 1, min: -180, max: 180, ...edit((d, v) => turnObject(d, id, index, v - turn)) })}
           <button type="button" class="hme-tb" title="Turn it a quarter one way" @click=${() => ctx.apply((d) => turnObject(d, id, index, -90))}>−90°</button>

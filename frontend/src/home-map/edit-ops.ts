@@ -3827,3 +3827,96 @@ export function fitAllIssues(doc: HomeMapDocument, floorId: string): HomeMapDocu
   }
   return next === doc ? undefined : next;
 }
+
+// ── a door's or window's size and place on its wall ─────────────────────
+
+/** An opening seen square on: from `from` to `to` meters along its wall from
+ * the wall's first end, from `z0` to `z1` up from the floor, on a wall `length`
+ * long in a room `height` tall. `forward` when its `a` to `b` runs the way the
+ * wall does. */
+export interface HomeMapOpeningBox {
+  from: number;
+  to: number;
+  z0: number;
+  z1: number;
+  length: number;
+  height: number;
+  forward: boolean;
+  wall: number;
+}
+
+/** A door or window is at least this wide and this tall, in meters. */
+export const HOME_MAP_OPENING_LEAST_WIDTH = 0.2;
+export const HOME_MAP_OPENING_LEAST_TALL = 0.1;
+
+/** A room's opening as a box on its wall; undefined when it is gone or in no
+ * wall. */
+export function homeMapOpeningBox(room: HomeMapRoom, index: number): HomeMapOpeningBox | undefined {
+  const o = room.openings[index];
+  if (o === undefined) return undefined;
+  const wall = homeMapOpeningWall(room, o);
+  const line = homeWallsOf(room)[wall];
+  if (line === undefined) return undefined;
+  const sa = homeProject(o.a, line.a, line.b).along;
+  const sb = homeProject(o.b, line.a, line.b).along;
+  return { from: Math.min(sa, sb), to: Math.max(sa, sb), z0: o.z0, z1: o.z1, length: segmentLength(line), height: room.height > 0 ? room.height : 2.4, forward: sb >= sa, wall };
+}
+
+/**
+ * The box a drag or a field makes of `start`. `part` says which sides follow:
+ * x -1 its first end, 1 its last, z -1 its bottom, 1 its top, and 0 and 0 the
+ * whole of it. It stays on its wall and under the ceiling, and at least
+ * `HOME_MAP_OPENING_LEAST_WIDTH` by `HOME_MAP_OPENING_LEAST_TALL`. A door stands on the floor, so its bottom never moves.
+ */
+export function homeMapBoxDragged(start: HomeMapOpeningBox, part: { x: number; z: number }, ds: number, dz: number, onFloor: boolean): Pick<HomeMapOpeningBox, "from" | "to" | "z0" | "z1"> {
+  let { from, to, z0, z1 } = start;
+  const { length, height } = start;
+  if (part.x === 0 && part.z === 0) {
+    const s = clamp(ds, -from, length - to);
+    from += s;
+    to += s;
+    if (!onFloor) {
+      const z = clamp(dz, -z0, height - z1);
+      z0 += z;
+      z1 += z;
+    }
+    return { from, to, z0, z1 };
+  }
+  if (part.x < 0) from = clamp(from + ds, 0, to - HOME_MAP_OPENING_LEAST_WIDTH);
+  if (part.x > 0) to = clamp(to + ds, from + HOME_MAP_OPENING_LEAST_WIDTH, length);
+  if (part.z < 0 && !onFloor) z0 = clamp(z0 + dz, 0, z1 - HOME_MAP_OPENING_LEAST_TALL);
+  if (part.z > 0) z1 = clamp(z1 + dz, z0 + HOME_MAP_OPENING_LEAST_TALL, height);
+  return { from, to, z0, z1 };
+}
+
+/**
+ * An opening set to a box on its wall (`homeMapOpeningBox`). A door that meets
+ * another changes that one with it, as the two are one door. Undefined when it
+ * is gone, in no wall, or the box does not fit.
+ */
+export function setOpeningBox(doc: HomeMapDocument, roomId: string, index: number, box: Pick<HomeMapOpeningBox, "from" | "to" | "z0" | "z1">): HomeMapDocument | undefined {
+  const at = roomAt(doc, roomId);
+  const o = at?.room.openings[index];
+  if (at === undefined || o === undefined || !finite(box.from, box.to, box.z0, box.z1)) return undefined;
+  const line = homeWallsOf(at.room)[homeMapOpeningWall(at.room, o)];
+  if (line === undefined || box.to <= box.from || box.z1 <= box.z0) return undefined;
+  const pairs = homeMapDoorPairs({ rooms: at.floor.rooms });
+  const partner = homeMapDoorPartner(pairs, roomId, index);
+  const forward = homeProject(o.b, line.a, line.b).along >= homeProject(o.a, line.a, line.b).along;
+  const lo = roundPoint(alongWall(line, box.from));
+  const hi = roundPoint(alongWall(line, box.to));
+  const [a, b] = forward ? [lo, hi] : [hi, lo];
+  const rooms = at.floor.rooms.map((room, ri) => {
+    if (ri === at.ri) return orderedRoom({ ...room, openings: room.openings.map((x, i) => (i === index ? orderedOpening({ ...x, a, b, z0: r(box.z0), z1: r(box.z1) }) : x)) });
+    if (partner === undefined || !sameHomeMapId(room.id, partner.roomId)) return room;
+    const onItsLine = (p: HomePoint): HomePoint => {
+      const k = (p[0] - partner.mid[0]) * partner.ux + (p[1] - partner.mid[1]) * partner.uy;
+      return roundPoint([partner.mid[0] + partner.ux * k, partner.mid[1] + partner.uy * k]);
+    };
+    const pa = onItsLine(a);
+    const pb = onItsLine(b);
+    const keeps = (pb[0] - pa[0]) * partner.ux + (pb[1] - pa[1]) * partner.uy >= 0;
+    return orderedRoom({ ...room, openings: room.openings.map((x, i) => (i === partner.index ? orderedOpening({ ...x, a: keeps ? pa : pb, b: keeps ? pb : pa, z0: r(box.z0), z1: r(box.z1) }) : x)) });
+  });
+  return withFloor(doc, at.fi, { ...at.floor, rooms });
+}

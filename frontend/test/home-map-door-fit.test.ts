@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { homeMapDoorChoices, homeMapDoorPairs, homeMapDoorPartner, homeMapOpenDoors } from "../src/home-map/door-pairs.js";
-import { connectDoors, fitRooms, homeMapDoorLineUps, homeMapFitIssues, homeMapFitOf, meetDoors, moveRoom, placeDoors, scanIssues, snapRoom, turnRoom } from "../src/home-map/edit-ops.js";
+import { connectDoors, fitRooms, homeMapBoxDragged, homeMapDoorLineUps, homeMapOpeningBox, setOpeningBox, homeMapFitIssues, homeMapFitOf, meetDoors, moveRoom, placeDoors, scanIssues, snapRoom, turnRoom } from "../src/home-map/edit-ops.js";
 import { homeOneWallPieces, homeOneWallPlaces, homeOneWallsOf } from "../src/home-map/geometry.js";
 import { homeMapSplitStacked } from "../src/home-map/editor-view.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapRoom } from "../src/home-map/model.js";
@@ -369,5 +369,53 @@ describe("which way Both splits", () => {
     expect(homeMapSplitStacked(1300, 1700, 11, 6.6)).toBe(true);
     expect(homeMapSplitStacked(2000, 800, 11, 6.6)).toBe(false);
     expect(homeMapSplitStacked(0, 800, 11, 6.6)).toBe(false);
+  });
+});
+
+describe("a door or window as a box on its wall", () => {
+  it("reads as how far along its wall and how far up", () => {
+    const f = floor();
+    const box = homeMapOpeningBox(f.rooms[OFFICE_A]!, 1)!;
+    expect(box.from).toBeCloseTo(1.43, 2);
+    expect(box.to).toBeCloseTo(2.58, 2);
+    expect(box.length).toBeCloseTo(3.23, 2);
+    expect(box.height).toBeCloseTo(2.44, 2);
+  });
+
+  it("drags each side, on the wall and under the ceiling", () => {
+    const start = { from: 1, to: 2, z0: 1, z1: 2, length: 3, height: 2.4, forward: true, wall: 0 };
+    expect(homeMapBoxDragged(start, { x: 1, z: 0 }, 0.5, 0, false).to).toBe(2.5);
+    expect(homeMapBoxDragged(start, { x: 1, z: 0 }, 9, 0, false).to).toBe(3);
+    expect(homeMapBoxDragged(start, { x: -1, z: 0 }, 9, 0, false).from).toBeCloseTo(1.8, 5);
+    expect(homeMapBoxDragged(start, { x: 0, z: 1 }, 0, 9, false).z1).toBe(2.4);
+    expect(homeMapBoxDragged(start, { x: 0, z: -1 }, 0, -9, false).z0).toBe(0);
+    // The whole of it keeps its size at the wall's end.
+    const moved = homeMapBoxDragged(start, { x: 0, z: 0 }, 9, 9, false);
+    expect([moved.from, moved.to, moved.z0, moved.z1]).toEqual([2, 3, 1.4, 2.4]);
+  });
+
+  it("keeps a door on the floor", () => {
+    const start = { from: 1, to: 2, z0: 0, z1: 2, length: 3, height: 2.4, forward: true, wall: 0 };
+    expect(homeMapBoxDragged(start, { x: 0, z: -1 }, 0, 1, true).z0).toBe(0);
+    expect(homeMapBoxDragged(start, { x: 0, z: 0 }, 0, 1, true).z0).toBe(0);
+  });
+
+  it("saves the box, and a door that meets another takes that one with it", () => {
+    const f = floor();
+    const doc = home(f);
+    const win = setOpeningBox(doc, id(1), 1, { from: 1, to: 2, z0: 1, z1: 1.5 })!.floors[0]!.rooms[OFFICE_A]!.openings[1]!;
+    expect(win).toMatchObject({ z0: 1, z1: 1.5 });
+    expect(win.a[0]).toBeCloseTo(8.67, 2);
+    const next = setOpeningBox(doc, id(3), 0, { from: 1.5, to: 2.4, z0: 0, z1: 2.1 })!.floors[0]!;
+    const bath = next.rooms[2]!.openings[0]!;
+    const bed = next.rooms[3]!.openings[0]!;
+    expect(bed.z1).toBe(2.1);
+    expect(Math.min(bed.a[1], bed.b[1])).toBeCloseTo(Math.min(bath.a[1], bath.b[1]), 2);
+    expect(Math.max(bed.a[1], bed.b[1])).toBeCloseTo(Math.max(bath.a[1], bath.b[1]), 2);
+  });
+
+  it("refuses a box inside out", () => {
+    expect(setOpeningBox(home(), id(1), 1, { from: 2, to: 1, z0: 1, z1: 2 })).toBeUndefined();
+    expect(setOpeningBox(home(), id(1), 9, { from: 1, to: 2, z0: 1, z1: 2 })).toBeUndefined();
   });
 });

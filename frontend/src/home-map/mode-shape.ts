@@ -35,7 +35,9 @@ import {
   addOpening,
   addStairs,
   backToScan,
+  homeMapBoxDragged,
   homeMapFitIssues,
+  homeMapOpeningBox,
   homeMapOpeningWall,
   homeMapRoomWalls,
   homeMapScanDiffers,
@@ -46,6 +48,7 @@ import {
   removeOpening,
   removeWall,
   setOpening,
+  setOpeningBox,
   setWallHeight,
   setWallLength,
   setWallThickness,
@@ -55,7 +58,7 @@ import {
 } from "./edit-ops.js";
 import { HOME_MAP_SHAPE_GRID, homeMapSnapPoint } from "./draw-tool.js";
 import { type HomeMapEditorContext, type HomeMapSelection, type HomeMapViewItem, homeMapPiecePicked, homeMapSelectionRoom } from "./editor-mode.js";
-import { hmeCard, hmeHint, hmeNumber, hmePic, hmeRow } from "./editor-parts.js";
+import { hmeCard, hmeFields, hmeHint, hmeNumber, hmePic, hmeRow } from "./editor-parts.js";
 import { homeMapCount, homeMapMeters, homeMapOpeningName, homeMapShortcut, homeMapWallName, homeMapWallNames } from "./editor-view.js";
 import { homeMapPieceAt } from "./plan-pick.js";
 import { type HomeSegment, homeDistanceToSegment, homeLabelPoint, homeMainDirection, homeProject, homeRoomUnder, homeWallsOf, segmentLength } from "./geometry.js";
@@ -344,8 +347,14 @@ export class ShapeMode {
       parts.push(svg`<g data-hme=${`opening:${i}`} style="cursor:ew-resize">
         <line x1=${fmt(a[0])} y1=${fmt(a[1])} x2=${fmt(b[0])} y2=${fmt(b[1])} stroke=${on ? "#5b8def" : "rgba(14,14,16,0.9)"} stroke-width="12" stroke-linecap="round" />
         <line x1=${fmt(a[0])} y1=${fmt(a[1])} x2=${fmt(b[0])} y2=${fmt(b[1])} stroke=${color} stroke-width="3" />
-        ${on ? svg`<circle cx=${fmt(a[0])} cy=${fmt(a[1])} r="5" fill="#fff" stroke="#5b8def" stroke-width="2" /><circle cx=${fmt(b[0])} cy=${fmt(b[1])} r="5" fill="#fff" stroke="#5b8def" stroke-width="2" />` : nothing}
       </g>`);
+      if (on) {
+        // Its two ends drag to make it wider or narrower.
+        const cursor = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? "ew-resize" : "ns-resize";
+        for (const [end, p] of [[0, a], [1, b]] as const) {
+          parts.push(svg`<circle data-hme=${`end:${i}:${end}`} cx=${fmt(p[0])} cy=${fmt(p[1])} r="8" fill="#fff" stroke="#5b8def" stroke-width="2.5" style=${`cursor:${cursor}`}><title>Drag to make it wider or narrower</title></circle>`);
+        }
+      }
     }
     const shown = this.sliding !== undefined && sameHomeMapId(this.sliding.roomId, room.id) ? this.sliding.index : sel?.kind === "opening" ? sel.opening : undefined;
     if (shown !== undefined && room.openings[shown] !== undefined) parts.push(this.distances(ctx, room, room.openings[shown]!));
@@ -526,6 +535,11 @@ export class ShapeMode {
       if (issue !== undefined) ctx.apply((d) => issue.fix(d));
       return true;
     }
+    if (what === "end" && room !== undefined && arg !== undefined) {
+      const [i, end] = arg.split(":").map(Number);
+      if (Number.isInteger(i) && (end === 0 || end === 1)) this.endDrag(ctx, e, room, i!, end);
+      return true;
+    }
     const index = Number(arg);
     if (room === undefined || !Number.isInteger(index)) return false;
     if (what === "corner") this.cornerDrag(ctx, e, room, index);
@@ -631,6 +645,71 @@ export class ShapeMode {
       },
       cancel: () => this.stopDrag(ctx),
     });
+  }
+
+  /** Drag an end of a door or window along its wall: it grows or shrinks, its
+   * other end staying put. */
+  private endDrag(ctx: HomeMapEditorContext, e: PointerEvent, room: HomeMapRoom, index: number, end: 0 | 1): void {
+    const roomId = room.id;
+    const start = homeMapOpeningBox(room, index);
+    const line = start === undefined ? undefined : homeMapRoomWalls(room)[start.wall];
+    if (start === undefined || line === undefined) return;
+    // Which end of the box this end of the opening is.
+    const x = (end === 0) === start.forward ? -1 : 1;
+    const box = (p: HomePoint) => homeMapBoxDragged(start, { x, z: 0 }, homeProject(p, line.a, line.b).along - (x < 0 ? start.from : start.to), 0, false);
+    let to: ReturnType<typeof box> | undefined;
+    const select: HomeMapSelection = { kind: "opening", roomId, opening: index };
+    ctx.drag(e, {
+      move: (p) => {
+        this.dragging = true;
+        this.sliding = { roomId, index };
+        const next = box(p);
+        to = next;
+        ctx.preview((d) => setOpeningBox(d, roomId, index, next));
+      },
+      end: () => {
+        this.dragging = false;
+        this.sliding = undefined;
+        ctx.preview(undefined);
+        const next = to;
+        if (next !== undefined) ctx.apply((d) => setOpeningBox(d, roomId, index, next), { select });
+      },
+      cancel: () => this.stopDrag(ctx),
+    });
+  }
+
+  /** The size a drag in 3D shows, in words. */
+  sizeTag: string | undefined;
+
+  /** A drag on a handle of the picked door, window or wall in 3D: `ds` meters
+   * along it from `a` to `b`, `dz` up. It shows live, and saves on the drop. */
+  faceDrag(ctx: HomeMapEditorContext, drag: { pick: { kind: "wall"; roomId: string; wall: number } | { kind: "opening"; roomId: string; opening: number }; part: { x: number; z: number }; ds: number; dz: number; done: boolean }): void {
+    const { pick, part, ds, dz, done } = drag;
+    const roomId = pick.roomId;
+    const room = ctx.doc.floors.flatMap((f) => f.rooms).find((r) => sameHomeMapId(r.id, roomId));
+    if (room === undefined) return;
+    let op: ((d: HomeMapDocument) => HomeMapDocument | undefined) | undefined;
+    if (pick.kind === "wall") {
+      const height = Math.round(Math.min(Math.max(room.height + dz, 0.5), 20) * 100) / 100;
+      this.sizeTag = `Height ${height.toFixed(2)} m`;
+      op = (d) => setWallHeight(d, roomId, height);
+    } else {
+      const index = pick.opening;
+      const start = homeMapOpeningBox(room, index);
+      const o = room.openings[index];
+      if (start === undefined || o === undefined) return;
+      const sign = start.forward ? 1 : -1;
+      const next = homeMapBoxDragged(start, { x: part.x * sign, z: part.z }, ds * sign, dz, o.kind !== "window");
+      this.sizeTag = `${(next.to - next.from).toFixed(2)} × ${(next.z1 - next.z0).toFixed(2)} m`;
+      op = (d) => setOpeningBox(d, roomId, index, next);
+    }
+    if (!done) {
+      ctx.preview(op);
+      return;
+    }
+    this.sizeTag = undefined;
+    ctx.preview(undefined);
+    ctx.apply(op);
   }
 
   /** A click on a door with no drag (`mode-doors.ts` starts Connect). */
@@ -798,40 +877,146 @@ export class ShapeMode {
       return html``;
     }
     const seg = homeMapRoomWalls(room)[wi]!;
-    const onWall = room.openings.map((o, i) => ({ o, i })).filter(({ o }) => homeMapOpeningWall(room, o) === wi);
     const length = segmentLength(seg);
     const add = (kind: HomeMapOpeningKind) => {
       const index = room.openings.length;
       ctx.apply((d) => addOpening(d, roomId, wi, { kind }), { select: { kind: "opening", roomId, opening: index } });
     };
+    const wallName = homeMapWallName(room, wi, homeMapRoomName(room));
     return html`
-      ${hmeCard("Wall", html`
-        ${hmeRow("Room", html`<span class="hme-val strong">${homeMapWallName(room, wi, homeMapRoomName(room))}</span>`)}
-        ${hmeRow("Length", hmeNumber({ label: "Length", value: length, unit: "m", min: 0.1, max: 200, set: (v) => ctx.apply((d) => setWallLength(d, roomId, wi, v)) }))}
-        ${hmeRow("Thickness", hmeNumber({ label: "Thickness", value: seg.t, unit: "m", min: 0.01, max: 1, set: (v) => ctx.apply((d) => setWallThickness(d, roomId, wi, v)) }))}
-        ${hmeRow("Height", hmeNumber({ label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, set: (v) => ctx.apply((d) => setWallHeight(d, roomId, v)) }))}
+      ${sel.kind === "wall" ? html`<section class="hme-card hme-head"><div class="hme-head-t"><strong>Wall</strong><span>${wallName}</span></div></section>` : nothing}
+      <section class="hme-card">
+        <div class="hme-h">${sel.kind === "wall" ? "This wall" : `The wall: ${wallName}`}</div>
+        ${sel.kind === "wall" ? this.wallPicture(ctx, room, wi, undefined) : nothing}
+        ${hmeFields(
+          hmeNumber({ tag: "Length", label: "Length", value: length, unit: "m", min: 0.1, max: 200, set: (v) => ctx.apply((d) => setWallLength(d, roomId, wi, v)) }),
+          hmeNumber({ tag: "Height", label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, set: (v) => ctx.apply((d) => setWallHeight(d, roomId, v)) }),
+          hmeNumber({ tag: "Thick", label: "Thickness", value: seg.t, unit: "m", min: 0.01, max: 1, set: (v) => ctx.apply((d) => setWallThickness(d, roomId, wi, v)) }))}
         ${hmeHint("Type a length to move the far corner. Rooms that share the corner move with it.")}
-        <div class="hme-row-end indent">
+        <div class="hme-add3">
+          <button type="button" class="hme-tb" @click=${() => add("door")}>＋ Door</button>
+          <button type="button" class="hme-tb" @click=${() => add("window")}>＋ Window</button>
+          <button type="button" class="hme-tb" @click=${() => add("opening")}>＋ Way through</button>
+        </div>
+        <div class="hme-row-end">
           <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => straightenWall(d, roomId, wi))}>Straighten</button>
           <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, roomId))}>Square the corners</button>
           <button type="button" class="hme-tb" @click=${() => this.cornerHere(ctx, room, wi, undefined)}>Split wall</button>
           <button type="button" class="hme-tb danger" title="Take this wall away" @click=${() => ctx.apply((d) => removeWall(d, roomId, wi), { select: { kind: "room", roomId } })}>Remove</button>
-        </div>`)}
-      ${hmeCard("On this wall", html`
-        ${onWall.map(({ o, i }) => {
-          const sa = homeProject(o.a, seg.a, seg.b).along;
-          const sb = homeProject(o.b, seg.a, seg.b).along;
-          const on = sel.kind === "opening" && sel.opening === i;
-          return html`<button type="button" class="hme-list-row ${on ? "on" : ""}" @click=${() => ctx.select({ kind: "opening", roomId, opening: i })}>
-            <span class="hme-grow">${homeMapOpeningName(o)}</span><span class="mono dim">${homeMapMeters(Math.abs(sb - sa))} · ${homeMapMeters(Math.max(0, Math.min(sa, sb)))} in</span></button>`;
-        })}
-        ${onWall.length === 0 ? html`<p class="hme-empty-line">Nothing on this wall.</p>` : nothing}
-        <div class="hme-row-end">
-          <button type="button" class="hme-tb" @click=${() => add("door")}>＋ Door</button>
-          <button type="button" class="hme-tb" @click=${() => add("window")}>＋ Window</button>
-          <button type="button" class="hme-tb" @click=${() => add("opening")}>＋ Way through</button>
-        </div>`)}
-`;
+        </div>
+      </section>`;
+  }
+
+  /**
+   * A wall seen square on, drawn to scale from the side a person reads the plan
+   * (left to right, or top to bottom as left to right), with every door and
+   * window on it. A click picks one. The picked one has handles that drag it
+   * wider, taller, or along the wall, and its sizes written beside it. The
+   * picture and the fields under it always agree: both come from the map, and
+   * a drag shows live as one does on the plan.
+   */
+  private wallPicture(ctx: HomeMapEditorContext, room: HomeMapRoom, wi: number, picked: number | undefined): TemplateResult {
+    const seg = homeMapRoomWalls(room)[wi]!;
+    const length = Math.max(segmentLength(seg), 0.01);
+    const height = room.height > 0 ? room.height : 2.4;
+    const flip = Math.abs(seg.b[0] - seg.a[0]) >= Math.abs(seg.b[1] - seg.a[1]) ? seg.a[0] > seg.b[0] : seg.a[1] > seg.b[1];
+    const W = 320;
+    const pad = 14;
+    const top = 24;
+    const k = Math.min((W - pad * 2) / length, 120 / height);
+    const wallW = length * k;
+    const wallH = height * k;
+    const x0 = (W - wallW) / 2;
+    const H = top + wallH + 26;
+    const floorY = top + wallH;
+    const sx = (s: number) => x0 + (flip ? length - s : s) * k;
+    const zy = (z: number) => floorY - z * k;
+    const roomId = room.id;
+    const startDrag = (e: PointerEvent, index: number, part: { x: number; z: number }) => {
+      const start = homeMapOpeningBox(room, index);
+      const o = room.openings[index];
+      const svgEl = (e.currentTarget as Element).closest("svg");
+      if (start === undefined || o === undefined || svgEl === null || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const scale = svgEl.getBoundingClientRect().width / W || 1;
+      const from = { x: e.clientX, y: e.clientY };
+      const partS = { x: flip ? -part.x : part.x, z: part.z };
+      let next: ReturnType<typeof homeMapBoxDragged> | undefined;
+      const move = (ev: PointerEvent) => {
+        const dx = (ev.clientX - from.x) / scale / k;
+        const dz = -(ev.clientY - from.y) / scale / k;
+        if (next === undefined && Math.hypot(dx, dz) * scale * k < 3) return;
+        const made = homeMapBoxDragged(start, partS, flip ? -dx : dx, dz, o.kind !== "window");
+        next = made;
+        ctx.preview((d) => setOpeningBox(d, roomId, index, made));
+      };
+      const done = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", done);
+        window.removeEventListener("pointercancel", done);
+        ctx.preview(undefined);
+        const made = next;
+        if (made !== undefined) ctx.apply((d) => setOpeningBox(d, roomId, index, made));
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", done);
+      window.addEventListener("pointercancel", done);
+    };
+    const shapes = room.openings.flatMap((o, i) => {
+      if (homeMapOpeningWall(room, o) !== wi) return [];
+      const box = homeMapOpeningBox(room, i);
+      if (box === undefined) return [];
+      const left = Math.min(sx(box.from), sx(box.to));
+      const right = Math.max(sx(box.from), sx(box.to));
+      const y0 = zy(box.z1);
+      const y1 = zy(box.z0);
+      const on = picked === i;
+      const fill = o.kind === "window" ? "rgba(139,184,240,0.55)" : "#121214";
+      return [svg`<rect class="hme-wp-o ${on ? "on" : ""}" x=${fmt(left)} y=${fmt(y0)} width=${fmt(right - left)} height=${fmt(y1 - y0)} rx="1.5" fill=${fill} stroke=${on ? "#5b8def" : "#6e6e73"} stroke-width=${on ? 2 : 1}
+        style=${on ? "cursor:move" : "cursor:pointer"}
+        @pointerdown=${(e: PointerEvent) => { if (on) startDrag(e, i, { x: 0, z: 0 }); }}
+        @click=${() => { if (!on) ctx.select({ kind: "opening", roomId, opening: i }); }}><title>${homeMapOpeningName(o)}</title></rect>`];
+    });
+    const box = picked === undefined ? undefined : homeMapOpeningBox(room, picked);
+    const marks: SVGTemplateResult[] = [];
+    if (box !== undefined && picked !== undefined) {
+      const o = room.openings[picked]!;
+      const left = Math.min(sx(box.from), sx(box.to));
+      const right = Math.max(sx(box.from), sx(box.to));
+      const y0 = zy(box.z1);
+      const y1 = zy(box.z0);
+      const midX = (left + right) / 2;
+      const midY = (y0 + y1) / 2;
+      const onFloor = o.kind !== "window";
+      const handle = (x: number, y: number, part: { x: number; z: number }, cursor: string) => svg`<circle class="hme-wp-h" cx=${fmt(x)} cy=${fmt(y)} r="5.5" fill="#fff" stroke="#5b8def" stroke-width="2" style=${`cursor:${cursor}`}
+        @pointerdown=${(e: PointerEvent) => startDrag(e, picked, part)}></circle>`;
+      const handles = [
+        handle(left, midY, { x: -1, z: 0 }, "ew-resize"),
+        handle(right, midY, { x: 1, z: 0 }, "ew-resize"),
+        handle(midX, y0, { x: 0, z: 1 }, "ns-resize"),
+        ...(onFloor ? [] : [handle(midX, y1, { x: 0, z: -1 }, "ns-resize")]),
+      ];
+      const text = (x: number, y: number, words: string, anchor: string, strong = false) => svg`<text x=${fmt(x)} y=${fmt(y)} text-anchor=${anchor} class=${strong ? "hme-wp-t strong" : "hme-wp-t"}>${words}</text>`;
+      marks.push(text(midX, Math.max(y0 - 8, 12), `${homeMapMeters(box.to - box.from)}`, "middle", true));
+      // How far from each end of the wall, under it.
+      const gapL = (left - x0) / k;
+      const gapR = (x0 + wallW - right) / k;
+      if (gapL > 0.03) {
+        marks.push(svg`<path d=${`M${fmt(x0)} ${fmt(floorY + 8)}H${fmt(left)}`} class="hme-wp-dim" />`, text((x0 + left) / 2, floorY + 20, homeMapMeters(gapL), "middle"));
+      }
+      if (gapR > 0.03) {
+        marks.push(svg`<path d=${`M${fmt(right)} ${fmt(floorY + 8)}H${fmt(x0 + wallW)}`} class="hme-wp-dim" />`, text((right + x0 + wallW) / 2, floorY + 20, homeMapMeters(gapR), "middle"));
+      }
+      marks.push(text(right + 8, midY + 4, homeMapMeters(box.z1 - box.z0), "start", true));
+      if (box.z0 > 0.03) marks.push(svg`<path d=${`M${fmt(midX)} ${fmt(y1)}V${fmt(floorY)}`} class="hme-wp-dim" />`, text(midX + 5, (y1 + floorY) / 2 + 4, homeMapMeters(box.z0), "start"));
+      marks.push(...handles);
+    }
+    return html`<svg class="hme-wp" viewBox=${`0 0 ${W} ${H.toFixed(0)}`} role="img" aria-label=${`${homeMapWallName(room, wi, homeMapRoomName(room))}, seen square on`}>
+      ${svg`<rect x=${fmt(x0)} y=${fmt(top)} width=${fmt(wallW)} height=${fmt(wallH)} rx="2" class="hme-wp-wall" />
+        <line x1=${fmt(x0 - 8)} x2=${fmt(x0 + wallW + 8)} y1=${fmt(floorY)} y2=${fmt(floorY)} class="hme-wp-floor" />`}
+      ${shapes}${marks}
+    </svg>`;
   }
 
   /** The picked door's or window's own card. */
@@ -844,22 +1029,52 @@ export class ShapeMode {
 
   private openingCard(ctx: HomeMapEditorContext, room: HomeMapRoom, index: number, o: HomeMapOpening): TemplateResult {
     const roomId = room.id;
-    const width = Math.hypot(o.b[0] - o.a[0], o.b[1] - o.a[1]);
-    const tall = o.z1 - o.z0;
-    return hmeCard(homeMapOpeningName(o), html`
-      <div class="hme-pics">${HOME_MAP_OPENING_CHOICES.map((c) => hmePic({
-        label: c.label,
-        picture: OPENING_PICTURES[c.label]!,
-        on: o.kind === c.kind && o.style === c.style,
-        click: () => ctx.apply((d) => setOpening(d, roomId, index, { kind: c.kind, style: c.style ?? null })),
-      }))}</div>
-      ${hmeRow("Width", hmeNumber({ label: "Width", value: width, unit: "m", min: 0.1, max: 20, set: (v) => ctx.apply((d) => setOpening(d, roomId, index, { width: v })) }))}
-      ${hmeRow("From floor",
-        hmeNumber({ label: "From floor", value: o.z0, unit: "m", min: 0, max: 20, set: (v) => ctx.apply((d) => setOpening(d, roomId, index, { z0: v, z1: v + tall })) }),
-        html`<span class="hme-l short">Tall</span>`,
-        hmeNumber({ label: "Tall", value: tall, unit: "m", min: 0.05, max: 20, set: (v) => ctx.apply((d) => setOpening(d, roomId, index, { z1: o.z0 + v })) }))}
-      ${hmeHint("Drag it along the wall. The plan shows the space to each corner.")}
-      <div class="hme-row-end indent"><button type="button" class="hme-tb danger" @click=${() => ctx.apply((d) => removeOpening(d, roomId, index), { select: { kind: "room", roomId } })}>Remove ${homeMapOpeningName(o).toLowerCase()}</button></div>`);
+    const name = homeMapOpeningName(o);
+    const box = homeMapOpeningBox(room, index);
+    const wi = box?.wall ?? -1;
+    const seg = homeMapRoomWalls(room)[wi];
+    const onFloor = o.kind !== "window";
+    const flip = seg === undefined ? false : Math.abs(seg.b[0] - seg.a[0]) >= Math.abs(seg.b[1] - seg.a[1]) ? seg.a[0] > seg.b[0] : seg.a[1] > seg.b[1];
+    const across = seg === undefined || Math.abs(seg.b[0] - seg.a[0]) >= Math.abs(seg.b[1] - seg.a[1]);
+    /** A field's edit of the box: live while dragged, saved when let go. */
+    const edit = (made: (v: number) => Parameters<typeof setOpeningBox>[3]) => ({
+      set: (v: number) => { ctx.apply((d) => setOpeningBox(d, roomId, index, made(v))); },
+      preview: (v: number | undefined) => ctx.preview(v === undefined ? undefined : (d) => setOpeningBox(d, roomId, index, made(v))),
+    });
+    const kinds = html`<div class="hme-pics hme-kinds">${HOME_MAP_OPENING_CHOICES.map((c) => hmePic({
+      label: c.label,
+      picture: OPENING_PICTURES[c.label]!,
+      on: o.kind === c.kind && o.style === c.style,
+      click: () => ctx.apply((d) => setOpening(d, roomId, index, { kind: c.kind, style: c.style ?? null })),
+    }))}</div>`;
+    const remove = html`<button type="button" class="hme-tb danger" @click=${() => ctx.apply((d) => removeOpening(d, roomId, index), { select: { kind: "room", roomId } })}>Remove ${name.toLowerCase()}</button>`;
+    const head = html`<section class="hme-card hme-head"><div class="hme-head-t"><strong>${name}</strong>
+      <span>${wi >= 0 ? homeMapWallName(room, wi, homeMapRoomName(room)) : homeMapRoomName(room)}</span></div></section>`;
+    if (box === undefined || seg === undefined) {
+      // In no wall: it can only change kind, or go.
+      return html`${head}${hmeCard("Kind", kinds)}<section class="hme-card"><div class="hme-row-end">${remove}</div></section>`;
+    }
+    const width = box.to - box.from;
+    const tall = box.z1 - box.z0;
+    const fromStart = flip ? box.length - box.to : box.from;
+    const centred = (box.length - width) / 2;
+    return html`${head}
+      <section class="hme-card">
+        <div class="hme-h">Size and place</div>
+        ${this.wallPicture(ctx, room, wi, index)}
+        ${hmeFields(
+          hmeNumber({ tag: "Width", label: "Width", value: width, unit: "m", min: 0.2, max: box.length, ...edit((v) => ({ ...box, from: box.from, to: Math.min(box.from + v, box.length) })) }),
+          hmeNumber({ tag: "Height", label: "Tall", value: tall, unit: "m", min: 0.1, max: box.height, ...edit((v) => ({ ...box, z1: Math.min(box.z0 + v, box.height) })) }))}
+        ${hmeFields(
+          hmeNumber({ tag: across ? "From left" : "From top", label: across ? "From the left" : "From the top", value: fromStart, unit: "m", min: 0, max: box.length - width, ...edit((v) => (flip ? { ...box, from: box.length - v - width, to: box.length - v } : { ...box, from: v, to: v + width })) }),
+          hmeNumber({ tag: "From floor", label: "From floor", value: box.z0, unit: "m", min: 0, max: box.height - tall, disabled: onFloor, ...edit((v) => ({ ...box, z0: v, z1: v + tall })) }))}
+        <div class="hme-row-end">
+          <button type="button" class="hme-tb" title="Put it in the middle of its wall" @click=${() => ctx.apply((d) => setOpeningBox(d, roomId, index, { ...box, from: centred, to: centred + width }))}>Center on wall</button>
+          ${remove}
+        </div>
+        ${hmeHint("Drag a white dot on the picture to resize it, or the shape to move it. It works on the plan and in 3D too.", true)}
+      </section>
+      ${hmeCard("Kind", kinds)}`;
   }
 
   private cornerCard(ctx: HomeMapEditorContext, room: HomeMapRoom, index: number): TemplateResult {
