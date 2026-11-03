@@ -14,7 +14,8 @@
 // with no piece as the plain box it always was, a hidden thing nowhere; the
 // picked room's floor or each picked thing's box outlined in the editor's
 // blue; and each light on the floor as a real light at its pin, lit as Home
-// Assistant says it is. Drag to orbit, scroll or pinch to zoom; a click
+// Assistant says it is. Drag to orbit, middle or right drag to move over the
+// floor, scroll or pinch to zoom; a click
 // hands the page what it met (`onPick`), a thing, a light or a room, and
 // whether Cmd or Ctrl was held. The pointer resting on the view hands the
 // page what a click there would meet (`onHover`), and the page has the
@@ -661,6 +662,14 @@ class RoomAO extends GTAOPass {
   }
 }
 
+/** The 3D view's mouse, as on the plan: the middle button moves the view
+ * rather than zooms, and any move stays over the floor, so the view still
+ * turns round a point on the floor afterwards. */
+export function homeMapSetMouse(controls: Pick<OrbitControls, "mouseButtons" | "screenSpacePanning">): void {
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+  controls.screenSpacePanning = false;
+}
+
 export class HomeMapScene3D {
   readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
@@ -826,6 +835,9 @@ export class HomeMapScene3D {
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.minDistance = 1.5;
     this.controls.maxDistance = 60;
+    homeMapSetMouse(this.controls);
+    // The browser's own autoscroll must not take a middle press.
+    this.canvas.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
     this.controls.addEventListener("change", () => this.wake());
     this.canvas.addEventListener("pointerdown", (e) => {
       this.wake(1500);

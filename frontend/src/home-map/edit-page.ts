@@ -435,7 +435,7 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
     },
     {
       title: "View",
-      keys: [["Space", "Hold and drag to pan"], ["+ −", "Zoom in and out"], ["0", "Fit the floor"], ["Z", "Fit the picked room"], ["?", "Show or hide these keys"]],
+      keys: [["Space", "Hold and drag to pan"], ["Middle button", "Drag to move the plan or the 3D view"], ["+ −", "Zoom in and out"], ["0", "Fit the floor"], ["Z", "Fit the picked room"], ["?", "Show or hide these keys"]],
     },
     {
       title: "Mouse",
