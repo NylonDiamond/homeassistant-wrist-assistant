@@ -2,16 +2,16 @@
 // (`TileFaces.swift`, in the app repo): a page keeps its full width and its
 // rows get shorter until they all fit the height. Empty rows give up room
 // first, so a page just over the height squashes no tile. Header rows keep
-// their height. Under the floors the page scrolls at its normal size. Change
+// their height. Under the floor the page scrolls at its normal size. Change
 // the two together; each has a test of the same remote page.
 
-import { tileEntityId, tileGeometry, tileKind, watchPageTiles, WATCH_GRID_SPACING, type WatchPage, type WatchPageLayout } from "./model.js";
+import { tileEntityId, tileGeometry, tileKind, watchPageTiles, WATCH_GRID_SPACING, type WatchPage, type WatchPageLayout, type WatchPageTile } from "./model.js";
 
 /** An empty row never goes under this share of a normal row. */
 export const FIT_EMPTY_ROW_FLOOR = 0.25;
-/** A tile's row never goes under this share of a normal row. */
-export const FIT_TILE_ROW_FLOOR = 0.45;
-/** No tile's cell goes under this height in points. */
+/** No tile's cell goes under this height in points. The only floor on tile
+ * rows, as a tall tile's rows can get far shorter than a short tile's and
+ * leave as good a button. */
 export const FIT_SMALLEST_TILE_HEIGHT = 30;
 /** One Look's room under a page's last row, with the dock under it
  * (`OneLookGrid.phoneBottomPadding`). */
@@ -20,6 +20,8 @@ export const PHONE_FIT_BOTTOM_ROOM = 7;
  * as on any page (`PageGridLayout`). */
 const FIRST_HEADER_SHIFT = 0.6;
 const LATER_HEADER_SHIFT = 0.4;
+/** A tile under this many rows draws as a strip (`OneLookLayout.stripRows`). */
+const FIT_STRIP_ROWS = 4;
 /** Row heights step by this, so tiles land on whole pixels. */
 const STEP = 0.5;
 
@@ -80,7 +82,7 @@ export function fitRowsOf(
   } else {
     if (tileRows === 0) return undefined;
     tileRow = Math.floor((room - emptyFloor * emptyRows) / tileRows / STEP) * STEP;
-    if (tileRow < natural * FIT_TILE_ROW_FLOOR) return undefined;
+    if (tileRow <= 0) return undefined;
     if (shortestTileRows !== undefined && tileRow * shortestTileRows + spacing * (shortestTileRows - 1) < FIT_SMALLEST_TILE_HEIGHT) return undefined;
   }
   return {
@@ -111,6 +113,13 @@ export function fitDrawnRowSpan(height: number, natural: number, spacing = WATCH
   return Math.max(1, Math.round((height + spacing) / (natural + spacing)));
 }
 
+/** Whether a tile of `rowSpan` rows, drawn as `drawn` rows, gives up its Custom
+ * arrangement: squashed to a strip, there is no room for the parts where they
+ * were put (`PageFitRows.dropsArrange`). */
+export function fitDropsArrange(rowSpan: number, drawn: number): boolean {
+  return drawn < rowSpan && drawn < FIT_STRIP_ROWS;
+}
+
 /** `layout` with its rows fitted in `height`, or as it is when no fit
  * applies. Each tile looks like the rows it now draws. */
 export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: number): WatchPageLayout {
@@ -123,12 +132,10 @@ export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: n
     const pull = g.row * step - placed.y;
     const top = fitRowTop(rows, g.row, layout.spacing);
     const tall = fitRowTop(rows, g.row + g.rowSpan, layout.spacing) - top - layout.spacing;
-    return {
-      ...placed,
-      y: top - pull,
-      height: tall,
-      tile: { ...placed.tile, rowSpan: fitDrawnRowSpan(tall, layout.unit, layout.spacing) },
-    };
+    const drawn = fitDrawnRowSpan(tall, layout.unit, layout.spacing);
+    const tile: WatchPageTile = { ...placed.tile, rowSpan: drawn };
+    if (fitDropsArrange(g.rowSpan, drawn)) delete tile.arrange;
+    return { ...placed, y: top - pull, height: tall, tile };
   });
   return { ...layout, tiles, contentHeight: height, height: layout.screen.height };
 }

@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 import { findWatchPage } from "../src/watch-pages/edit.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
-  FIT_TILE_ROW_FLOOR,
   fitDrawnRowSpan,
+  fitDropsArrange,
   fitPageRows,
   fitRowKinds,
   fitRowsOf,
@@ -93,9 +93,10 @@ describe("Fit to screen's rows", () => {
     expect(total(rows) - 18).toBeLessThanOrEqual(700);
   });
 
-  it("gives up under the row floor", () => {
-    expect(fitRowsOf(kinds(40), 4, 0, 30, 500)).toBeUndefined();
-    expect(FIT_TILE_ROW_FLOOR).toBe(0.45);
+  it("lets tall tiles take far shorter rows", () => {
+    const rows = fitRowsOf(kinds(58), 4, 0, 29, 640)!;
+    expect(rows.tileRow).toBe(9);
+    expect(fitRowTop(rows, 4) - 2).toBe(42);
   });
 
   it("gives up when a tile would go too short", () => {
@@ -138,6 +139,19 @@ describe("a fitted layout", () => {
     const page = remote(10);
     const fitted = fittedLayout(watchPageLayout(page, screen), page, 500);
     expect((fitted.tiles[0]!.tile as { rowSpan: number }).rowSpan).toBeLessThan(3);
+  });
+
+  it("takes the Custom layout off a tile squashed to a strip", () => {
+    expect(fitDropsArrange(4, 1)).toBe(true);
+    expect(fitDropsArrange(4, 3)).toBe(true);
+    expect(fitDropsArrange(6, 4)).toBe(false);
+    expect(fitDropsArrange(3, 3)).toBe(false);
+    const page = remote(10);
+    const first = (page as unknown as { items: Record<string, unknown>[] }).items[0]!;
+    first.arrange = { v: 1, parts: { icon: { scale: 1.5 } } };
+    const fitted = fittedLayout(watchPageLayout(page, screen), page, 500);
+    expect(Object.hasOwn(fitted.tiles[0]!.tile, "arrange")).toBe(false);
+    expect(Object.hasOwn(first, "arrange")).toBe(true);
   });
 
   it("leaves a page it cannot fit alone", () => {
