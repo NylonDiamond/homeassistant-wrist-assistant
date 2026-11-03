@@ -100,6 +100,9 @@ export interface OneLookTileStyle {
   /** The tile sets its own Icon Size or Name Size, so it keeps the old look's
    * shape on a tile under 4 rows too, when that fits. */
   readonly ownSizes: boolean;
+  /** A tile squashed on a Fit to screen page: its name gets smaller before its
+   * state line goes. */
+  readonly keepsStateLine?: boolean;
   /** Status Icon Size over the round button's own, held to 0.75 to 1.4. */
   readonly accessoryScale: number;
   /** Font Weight; undefined (unset, or Light) keeps the look's. */
@@ -439,6 +442,8 @@ interface Step {
   readonly hasIcon: boolean;
   /** The disc's (or centred glyph's) floor when it may go under its own. */
   readonly discFloor?: number;
+  /** A strip's name gets smaller until its state line fits under it. */
+  readonly shrinksNameForState?: boolean;
 }
 
 function step(mode: OneLookMode, rest: Partial<Omit<Step, "mode">> = {}): Step {
@@ -527,6 +532,11 @@ function ladder(input: OneLookLayoutInput): Step[] {
     if (input.hasIcon) steps.push(step("centred", { discFloor: oneLookCentredGlyphTinyFloor(input.device) }));
   }
   steps.push(step(natural, { hasIcon: input.hasIcon }));
+  // A squashed tile keeps its state: without it a sensor says nothing, and
+  // only the long names, which already shrink, would have one.
+  if (natural === "strip" && hasState && input.style.keepsStateLine === true) {
+    steps.push(step("strip", { hasIcon: input.hasIcon, shrinksNameForState: true }));
+  }
   // An iPhone tile too narrow for a row has room for the centred layout long
   // before it runs out of room for its text.
   if (natural === "strip" && input.device === "phone" && input.centred && !centredFirst) {
@@ -982,7 +992,7 @@ export function oneLookOldPlaceGlyph(given: {
 function strip(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step): Unscaled {
   const m = fitter.metrics;
   const w = input.size.width, h = input.size.height;
-  const base = rowBase(input, m);
+  let base = rowBase(input, m);
   const hasIcon = s.hasIcon;
   const sInset = input.device === "phone" ? Math.max(8, h * 0.16) : Math.max(4, h * 0.12);
 
@@ -1013,6 +1023,7 @@ function strip(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step): U
 
   const state = s.withState ? fitter.fitState(input.state, avail, input.colSpan) : undefined;
   const stateLH = (state?.lineHeight ?? 0) * ONE_LOOK_STRIP_STATE_SHARE;
+  if (s.shrinksNameForState === true) base = Math.max(m.nameMin, Math.min(base, (h - stateLH) / ONE_LOOK_STRIP_ONE_LINE_HEIGHT));
   let two: number | undefined;
   for (const size of twoSizes(base, m)) {
     if (h - sInset >= 2 * size * ONE_LOOK_TWO_LINE_HEIGHT + stateLH) { two = size; break; }

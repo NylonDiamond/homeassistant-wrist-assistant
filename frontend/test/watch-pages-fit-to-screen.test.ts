@@ -8,6 +8,7 @@ import { findWatchPage } from "../src/watch-pages/edit.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
   fitDrawnRowSpan,
+  fitDrawnTile,
   fitDropsArrange,
   fitPageRows,
   fitRowKinds,
@@ -18,7 +19,8 @@ import {
   fittedLayout,
   type FitRowKind,
 } from "../src/watch-pages/fit-rows.js";
-import { watchPageLayout } from "../src/watch-pages/model.js";
+import { watchPageLayout, type WatchPageTile } from "../src/watch-pages/model.js";
+import { cellAtPx, cellDelta, cellRectPx, cellsPath, nearestCell, rowsOnScreen, rowTopPx, stageGrid, withFitRows } from "../src/watch-pages/stage.js";
 import { setWatchPageFitToScreen } from "../src/watch-pages/page-settings-model.js";
 
 const PAGE = "C3A0E000-0000-4000-8000-0000000000AC";
@@ -154,6 +156,15 @@ describe("a fitted layout", () => {
     expect(Object.hasOwn(first, "arrange")).toBe(true);
   });
 
+  it("draws a squashed tile from a copy that knows its height", () => {
+    const tile = { entityId: "home_map.a", gridRow: 0, gridCol: 0, colSpan: 12, rowSpan: 6 } as unknown as WatchPageTile;
+    const drawn = fitDrawnTile(tile, 64, 29);
+    expect(drawn).toMatchObject({ rowSpan: 2, fittedCellHeight: 64 });
+    expect(tile).not.toHaveProperty("fittedCellHeight");
+    // Its rows did not get shorter: the tile itself.
+    expect(fitDrawnTile(tile, 6 * 29 + 5 * 2, 29)).toBe(tile);
+  });
+
   it("leaves a page it cannot fit alone", () => {
     const page = remote(40);
     const layout = watchPageLayout(page, screen);
@@ -182,5 +193,50 @@ describe("what the panel says of a fit", () => {
   it("has words for each", () => {
     expect(fitStateWords({ kind: "squashed", share: 0.48 })).toContain("48%");
     expect(fitStateWords({ kind: "scrolls" })).toContain("scrolls as normal");
+  });
+});
+
+describe("the edit stage on fitted rows", () => {
+  const rows = { heights: [10, 10, 5, 10], tileRow: 10 };
+  const grid = withFitRows(stageGrid(370, 3, 2, 0), rows);
+
+  it("places a tile on its row's height", () => {
+    expect(rowTopPx(grid, 3)).toBe((10 + 2 + 10 + 2 + 5 + 2) * 2);
+    const box = cellRectPx(grid, { col: 0, row: 1, colSpan: 4, rowSpan: 2 });
+    expect(box.top).toBe(6 + 12 * 2);
+    expect(box.height).toBe((10 + 2 + 5) * 2);
+  });
+
+  it("finds the cell under a point, gap and all", () => {
+    expect(cellAtPx(grid, 1, 6 + 0).row).toBe(0);
+    expect(cellAtPx(grid, 1, 6 + 23).row).toBe(0);
+    expect(cellAtPx(grid, 1, 6 + 24).row).toBe(1);
+    expect(cellAtPx(grid, 1, 6 + 50).row).toBe(2);
+    // Past the known rows, at the tile row's height.
+    expect(cellAtPx(grid, 1, 6 + rowTopPx(grid, 5) + 1).row).toBe(5);
+    expect(cellAtPx(grid, 1, 0).row).toBe(-1);
+  });
+
+  it("takes the nearest row for a dragged corner", () => {
+    expect(nearestCell(grid, 0, 6 + 11, 4).row).toBe(0);
+    expect(nearestCell(grid, 0, 6 + 13, 4).row).toBe(1);
+    expect(nearestCell(grid, 0, 0, 4).row).toBe(0);
+  });
+
+  it("reads a resize in tile rows, and the screen in fitted rows", () => {
+    expect(cellDelta(grid, 0, 24).rows).toBe(1);
+    expect(rowsOnScreen(grid, 6 + rowTopPx(grid, 4) - 4)).toBe(4);
+  });
+
+  it("draws each empty cell at its row's height", () => {
+    const path = cellsPath(withFitRows(stageGrid(370, 0, 1, 0), rows), 3, 0);
+    expect(path).toContain("v10h");
+    expect(path).toContain("v5h");
+  });
+
+  it("is the old grid without fitted rows", () => {
+    const plain = stageGrid(370, 3, 2, 0);
+    expect(withFitRows(plain, undefined)).toBe(plain);
+    expect(rowTopPx(plain, 3)).toBe(3 * plain.step);
   });
 });

@@ -14,6 +14,7 @@
 
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 import type { WatchCell, WatchRect } from "./edit.js";
+import { fitRowTop, type FitRows } from "./fit-rows.js";
 import { WATCH_GRID_COLUMNS, WATCH_GRID_SIDE_INSET, WATCH_GRID_SPACING } from "./model.js";
 
 const COLUMNS = WATCH_GRID_COLUMNS;
@@ -40,6 +41,40 @@ export interface StageGrid {
   top: number;
   /** From the left of the screen to column 0: the side safe area. */
   left: number;
+  /** A Fit to screen page's rows, in points, whose heights replace `unit` down
+   * the grid (`fit-rows.ts`). */
+  fit?: FitRows;
+}
+
+/** `grid` with a Fit to screen page's rows, or as it is without any. */
+export function withFitRows(grid: StageGrid, fit: FitRows | undefined): StageGrid {
+  return fit === undefined ? grid : { ...grid, fit };
+}
+
+/** Where `row` starts, in pixels down from row 0. */
+export function rowTopPx(grid: StageGrid, row: number): number {
+  return grid.fit === undefined ? row * grid.step : fitRowTop(grid.fit, row) * grid.scale;
+}
+
+/** How far one more row goes at the foot of the grid. */
+function rowStep(grid: StageGrid): number {
+  return grid.fit === undefined ? grid.step : grid.fit.tileRow * grid.scale + grid.spacing;
+}
+
+/** The row `y` pixels down from row 0 is in (`floor`), or whose top is nearest. */
+function rowAtPx(grid: StageGrid, y: number, floor: boolean): number {
+  if (grid.fit === undefined || y < 0) {
+    const rows = y / rowStep(grid);
+    return floor ? Math.floor(rows) : Math.round(rows);
+  }
+  let row = 0;
+  let top = 0;
+  for (;;) {
+    const next = top + (grid.fit.heights[row] ?? grid.fit.tileRow) * grid.scale + grid.spacing;
+    if (y < next) return floor || y - top < next - y ? row : row + 1;
+    row += 1;
+    top = next;
+  }
 }
 
 /** The grid of a screen `screenWidth` points wide whose rows start `topInset`
@@ -57,9 +92,9 @@ export function stageGrid(screenWidth: number, topInset: number, scale: number, 
 export function cellRectPx(grid: StageGrid, rect: WatchRect): { left: number; top: number; width: number; height: number } {
   return {
     left: grid.left + rect.col * grid.step,
-    top: grid.top + rect.row * grid.step,
+    top: grid.top + rowTopPx(grid, rect.row),
     width: rect.colSpan * grid.unit + (rect.colSpan - 1) * grid.spacing,
-    height: rect.rowSpan * grid.unit + (rect.rowSpan - 1) * grid.spacing,
+    height: rowTopPx(grid, rect.row + rect.rowSpan) - rowTopPx(grid, rect.row) - grid.spacing,
   };
 }
 
@@ -67,7 +102,7 @@ export function cellRectPx(grid: StageGrid, rect: WatchRect): { left: number; to
  * cell. Nothing is clamped: a point above row 0 or beside the grid gives a
  * cell no tile covers. */
 export function cellAtPx(grid: StageGrid, x: number, y: number): WatchCell {
-  return { col: Math.floor((x - grid.left) / grid.step), row: Math.floor((y - grid.top) / grid.step) };
+  return { col: Math.floor((x - grid.left) / grid.step), row: rowAtPx(grid, y - grid.top, true) };
 }
 
 /** The cell nearest a dragged tile's top left corner, kept inside the grid
@@ -76,7 +111,7 @@ export function cellAtPx(grid: StageGrid, x: number, y: number): WatchCell {
 export function nearestCell(grid: StageGrid, left: number, top: number, colSpan: number): WatchCell {
   const span = Math.max(1, Math.min(COLUMNS, Math.trunc(colSpan)));
   const col = Math.round((left - grid.left) / grid.step);
-  const row = Math.round((top - grid.top) / grid.step);
+  const row = rowAtPx(grid, top - grid.top, false);
   return { col: Math.max(0, Math.min(COLUMNS - span, col)), row: Math.max(0, row) };
 }
 
@@ -92,7 +127,7 @@ export function draggedCorner(
 
 /** A drag in pixels as cells, not rounded: `watchResizeHandleRect` rounds. */
 export function cellDelta(grid: StageGrid, dx: number, dy: number): { cols: number; rows: number } {
-  return { cols: dx / grid.step, rows: dy / grid.step };
+  return { cols: dx / grid.step, rows: dy / rowStep(grid) };
 }
 
 /** Whether a press has travelled far enough to be a drag. */
@@ -117,6 +152,11 @@ export function autoScrollStep(y: number, top: number, bottom: number, edge = 48
 /** The whole rows that fit in `height` pixels of screen below the grid's
  * top, at least 1. */
 export function rowsOnScreen(grid: StageGrid, height: number): number {
+  if (grid.fit !== undefined) {
+    let rows = 0;
+    while (rowTopPx(grid, rows + 1) - grid.spacing <= height - grid.top) rows += 1;
+    return Math.max(1, rows);
+  }
   return Math.max(1, Math.floor((height - grid.top + grid.spacing) / grid.step));
 }
 
@@ -134,20 +174,24 @@ export function stageRows(extent: number, onScreen: number, reach = 0): number {
  * a shadow root. */
 export function cellsPath(grid: StageGrid, rows: number, radius: number): string {
   const u = grid.unit;
-  const r = Math.max(0, Math.min(radius, u / 2));
-  const side = u - 2 * r;
   const n = (v: number) => Math.round(v * 100) / 100;
   const parts: string[] = [];
+  let y = 0;
   for (let row = 0; row < rows; row++) {
+    const next = rowTopPx(grid, row + 1);
+    const tall = next - y - grid.spacing;
+    const r = Math.max(0, Math.min(radius, u / 2, tall / 2));
+    const wide = u - 2 * r;
+    const down = tall - 2 * r;
     for (let col = 0; col < COLUMNS; col++) {
       const x = grid.left + col * grid.step;
-      const y = row * grid.step;
       parts.push(
         r === 0
-          ? `M${n(x)} ${n(y)}h${n(u)}v${n(u)}h${n(-u)}z`
-          : `M${n(x + r)} ${n(y)}h${n(side)}a${n(r)} ${n(r)} 0 0 1 ${n(r)} ${n(r)}v${n(side)}a${n(r)} ${n(r)} 0 0 1 ${n(-r)} ${n(r)}h${n(-side)}a${n(r)} ${n(r)} 0 0 1 ${n(-r)} ${n(-r)}v${n(-side)}a${n(r)} ${n(r)} 0 0 1 ${n(r)} ${n(-r)}z`,
+          ? `M${n(x)} ${n(y)}h${n(u)}v${n(tall)}h${n(-u)}z`
+          : `M${n(x + r)} ${n(y)}h${n(wide)}a${n(r)} ${n(r)} 0 0 1 ${n(r)} ${n(r)}v${n(down)}a${n(r)} ${n(r)} 0 0 1 ${n(-r)} ${n(r)}h${n(-wide)}a${n(r)} ${n(r)} 0 0 1 ${n(-r)} ${n(-r)}v${n(-down)}a${n(r)} ${n(r)} 0 0 1 ${n(r)} ${n(-r)}z`,
       );
     }
+    y = next;
   }
   return parts.join("");
 }

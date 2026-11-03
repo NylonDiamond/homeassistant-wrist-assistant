@@ -530,6 +530,7 @@ export function oneLookTileStyle(
     stateScale: oneLookStyleFactor(storedNumber(tile.badgeFontSizeOverride), staticBadgeSize(colSpan, rowSpan), ONE_LOOK_STATE_SCALE_RANGE),
     ...(old.stateSize === undefined ? {} : { stateSize: old.stateSize }),
     ownSizes: storedNumber(tile.iconSizeOverride) !== undefined || storedNumber(tile.labelFontSizeOverride) !== undefined,
+    ...(storedNumber(tile.fittedCellHeight) === undefined ? {} : { keepsStateLine: true }),
     accessoryScale: oneLookStyleFactor(storedNumber(tile.statusIconSizeOverride), DEFAULT_STATUS_ICON_SIZE, ONE_LOOK_ACCESSORY_SCALE_RANGE),
     ...(weight === undefined ? {} : { nameWeight: weight }),
     nameDesign: design,

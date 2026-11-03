@@ -120,11 +120,22 @@ export function fitDropsArrange(rowSpan: number, drawn: number): boolean {
   return drawn < rowSpan && drawn < FIT_STRIP_ROWS;
 }
 
-/** `layout` with its rows fitted in `height`, or as it is when no fit
- * applies. Each tile looks like the rows it now draws. */
-export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: number): WatchPageLayout {
-  const rows = fitPageRows(page, layout.unit, height);
-  if (rows === undefined) return layout;
+/** The copy of a tile to draw at `height`: it takes the rows it looks like,
+ * and the height (`PageFitRows.drawnItem`). The tile itself when its rows did
+ * not get shorter. The copy is for drawing only and is never saved. */
+export function fitDrawnTile(tile: WatchPageTile, height: number, natural: number, spacing = WATCH_GRID_SPACING): WatchPageTile {
+  const g = tileGeometry(tile);
+  const kind = tileKind(tileEntityId(tile));
+  if (kind === "spacer" || kind === "divider" || height >= natural * g.rowSpan + spacing * (g.rowSpan - 1) - 0.01) return tile;
+  const drawn = fitDrawnRowSpan(height, natural, spacing);
+  const copy: WatchPageTile = { ...tile, rowSpan: drawn, fittedCellHeight: height };
+  if (fitDropsArrange(g.rowSpan, drawn)) delete copy.arrange;
+  return copy;
+}
+
+/** `layout` placed on fitted `rows`. Each tile keeps its stored fields where
+ * the editor reads them to move it (`keepTiles`), else it is the drawn copy. */
+export function layoutOnFitRows(layout: WatchPageLayout, rows: FitRows, keepTiles = false): WatchPageLayout {
   const step = layout.unit + layout.spacing;
   const tiles = layout.tiles.map((placed) => {
     const g = tileGeometry(placed.tile);
@@ -132,12 +143,17 @@ export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: n
     const pull = g.row * step - placed.y;
     const top = fitRowTop(rows, g.row, layout.spacing);
     const tall = fitRowTop(rows, g.row + g.rowSpan, layout.spacing) - top - layout.spacing;
-    const drawn = fitDrawnRowSpan(tall, layout.unit, layout.spacing);
-    const tile: WatchPageTile = { ...placed.tile, rowSpan: drawn };
-    if (fitDropsArrange(g.rowSpan, drawn)) delete tile.arrange;
-    return { ...placed, y: top - pull, height: tall, tile };
+    return { ...placed, y: top - pull, height: tall, tile: keepTiles ? placed.tile : fitDrawnTile(placed.tile, tall, layout.unit, layout.spacing) };
   });
-  return { ...layout, tiles, contentHeight: height, height: layout.screen.height };
+  return { ...layout, tiles };
+}
+
+/** `layout` with its rows fitted in `height`, or as it is when no fit
+ * applies. */
+export function fittedLayout(layout: WatchPageLayout, page: WatchPage, height: number): WatchPageLayout {
+  const rows = fitPageRows(page, layout.unit, height);
+  if (rows === undefined) return layout;
+  return { ...layoutOnFitRows(layout, rows), contentHeight: height, height: layout.screen.height };
 }
 
 /** How Fit to screen treats a page: it already fits, only its empty rows get

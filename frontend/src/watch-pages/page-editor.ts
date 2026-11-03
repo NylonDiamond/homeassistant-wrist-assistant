@@ -251,13 +251,14 @@ import {
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
 import { setWatchPageFitToScreen } from "./page-settings-model.js";
-import { fitStateWords } from "./fit-rows.js";
+import { fitDrawnTile, fitPageRows, fitStateWords, layoutOnFitRows, type FitRows } from "./fit-rows.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
   renderMapPageArt,
   renderPreviewFrame,
   renderWatchPagePreview,
+  watchFitHeight,
   watchFitState,
   renderWatchScreenFold,
   renderWatchTileFace,
@@ -375,6 +376,8 @@ import {
   type StageGrid,
   autoScrollStep,
   cellAtPx,
+  rowTopPx,
+  withFitRows,
   cellsPath,
   cellDelta,
   cellRectPx,
@@ -1028,7 +1031,7 @@ export class WaPageEditor extends LitElement {
    * screen in points, its side room (the watch's side safe area, none on an
    * iPhone) and its room above on a page that is not full screen (the
    * watch's 34 for its clock, the iPhone's 4). */
-  private stageGeom: Partial<Record<WatchScreen, { screen: { width: number; height: number }; sideInset: number; topInset: number }>> = {};
+  private stageGeom: Partial<Record<WatchScreen, { screen: { width: number; height: number }; sideInset: number; topInset: number; fit: FitRows | undefined }>> = {};
   /** The scale each picture was drawn at last, so a scale change draws once
    * without the fade. */
   private drawnScales: Partial<Record<WatchScreen, number>> = {};
@@ -1077,16 +1080,9 @@ export class WaPageEditor extends LitElement {
     return this.libraryItem === undefined ? undefined : libraryDraftKey(this.libraryItem);
   }
 
-  /** Editing is off while a page with headers, or one fitted to the iPhone's
-   * screen, is shown as on its device. */
+  /** Editing is off while a page with headers is shown as on the watch. */
   private editingOff(page = this.currentPage()): boolean {
-    return this.asOnWatch && page !== undefined && (watchPageHasHeader(page) || this.fitsOnPhone(page));
-  }
-
-  /** A page Fit to screen changes: only in iPhone view, as the watch never
-   * reads the key. */
-  private fitsOnPhone(page: WatchPage): boolean {
-    return this.onPhone && !isSmartWatchPage(page) && !isMapWatchPage(page) && page.fitToScreen === true;
+    return this.asOnWatch && page !== undefined && watchPageHasHeader(page);
   }
 
   /** Whether the page is being saved. The save belongs to the kept draft,
@@ -2685,7 +2681,7 @@ export class WaPageEditor extends LitElement {
     if (rect.width <= 0 || page === undefined || geom === undefined) return undefined;
     const scale = rect.width / geom.screen.width;
     const topInset = page.fullScreen === true ? 0 : geom.topInset;
-    return { grid: stageGrid(geom.screen.width, topInset, scale, geom.sideInset), rect };
+    return { grid: withFitRows(stageGrid(geom.screen.width, topInset, scale, geom.sideInset), geom.fit), rect };
   }
 
   /** The picture the handles and the arrow keys are on: the one a tile was
@@ -4211,8 +4207,7 @@ export class WaPageEditor extends LitElement {
     const tiles = watchPageTiles(page).length;
     const config = readSmartConfig(page);
     const states = this.previewStates();
-    const fits = this.fitsOnPhone(page);
-    const headers = !smart && !map && (watchPageHasHeader(page) || fits);
+    const headers = !smart && !map && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
     const scale = phone ? this.stageScale * PHONE_STAGE_ZOOM : this.stageScale;
     const input: WatchPagePreviewInput = {
@@ -4264,7 +4259,6 @@ export class WaPageEditor extends LitElement {
     // while Help is on (the inspector's switch, `helpOn`).
     const status = smart ? undefined
       : map ? WATCH_MAP_PAGE_WORDS.stage
-      : asOnWatch && fits ? `Shown as the iPhone draws it, fitted to its screen. Turn off ${this.viewName} to edit.`
       : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
       : undefined;
@@ -4510,7 +4504,7 @@ export class WaPageEditor extends LitElement {
           @click=${() => this.setZoom(undefined)}>Fit</button>
       </span>
       ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
-          title=${`See the page as the ${deviceWord(this.linkKind)} draws it. Editing is off while this is on.`}
+          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
           @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word keep">${this.viewName}</span></button>` : nothing}
       ${smart ? nothing : html`${sep}<label class="pe-switch pe-live pe-tip"
           data-tip=${this.liveStates
@@ -4658,7 +4652,13 @@ export class WaPageEditor extends LitElement {
     const raw = resize?.preview?.page ?? page;
     const shown = screenDrawnPage(raw, on);
     const topInset = page.fullScreen === true ? 0 : watchPreviewTopInset(input);
-    const grid = stageGrid(screen.width, topInset, s, watchPreviewSideInset(input));
+    const square = stageGrid(screen.width, topInset, s, watchPreviewSideInset(input));
+    // A Fit to screen page is edited as the iPhone draws it. Its rows are the
+    // stored page's, so they hold still under a drag and move at the drop.
+    const fit = on === "iphone" && input.phone !== undefined && page.fitToScreen === true
+      ? fitPageRows(screenDrawnPage(page, on), square.unit / s, watchFitHeight(input, page))
+      : undefined;
+    const grid = withFitRows(square, fit);
     // A pick of several reaches as deep as its lowest tile moved.
     const reach = move?.cell && move.group !== undefined
       ? Math.max(...move.group.map((m) => m.rect.row + moveDelta(move, move.cell!).drows + m.rect.rowSpan))
@@ -4671,7 +4671,7 @@ export class WaPageEditor extends LitElement {
     // Never more rows than an edit may reach: a tile stored past the last
     // row would otherwise draw a million of them.
     const rows = Math.min(WATCH_EDITOR_MAX_ROWS, stageRows(watchPageExtent(raw, on), rowsOnScreen(grid, screen.height * s), Math.max(reach, slot === undefined ? 0 : slot.row + slot.rowSpan)));
-    const gridHeight = rows * grid.step - grid.spacing;
+    const gridHeight = rowTopPx(grid, rows) - grid.spacing;
     const height = Math.max(screen.height * s, grid.top + gridHeight);
     return { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot, scrolls: height > screen.height * s + 0.5 };
   }
@@ -4727,10 +4727,11 @@ export class WaPageEditor extends LitElement {
   ): TemplateResult {
     const { s, screen, move, resize, shown, grid, rows, gridHeight, height, slot } = this.editStage(page, input, on);
     // The pointer arithmetic reads the grid as this picture drew it.
-    this.stageGeom[on] = { screen, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) };
+    this.stageGeom[on] = { screen, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input), fit: grid.fit };
     // The preview's own layout on the flat grid: the same side safe area and
     // unit as the watch, so each tile sits where `cellRectPx` puts its cells.
-    const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+    const flat = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+    const layout = grid.fit === undefined ? flat : layoutOnFitRows(flat, grid.fit, true);
     const phone = input.phone !== undefined;
     const width = screen.width * s;
     const handles = on === this.clickedScreen;
@@ -4832,8 +4833,11 @@ export class WaPageEditor extends LitElement {
     // (`tryTileEdit`), on every picked tile, and fades in as any edit does.
     const drawnTile = partDrag === undefined ? (watchTriedTile(this.uiState, id, this.draft?.document) ?? tile) : withArrange(tile, partDrag.arrange);
     const cell = { width: width / s, height: height / s };
-    const face = renderWatchTileFace(drawnTile, cell, input, unit);
-    const headParts = selected && handles && !inMulti && id !== "" ? this.renderStageHeadParts(drawnTile, cell, input, unit, s) : nothing;
+    // On a Fit to screen page the face is the short tile the iPhone draws;
+    // `tile` keeps the rows a move and a resize read.
+    const faceTile = grid.fit === undefined ? drawnTile : fitDrawnTile(drawnTile, cell.height, unit);
+    const face = renderWatchTileFace(faceTile, cell, input, unit);
+    const headParts = selected && handles && !inMulti && id !== "" ? this.renderStageHeadParts(faceTile, cell, input, unit, s) : nothing;
     // The ring of a selected tile follows the tile's own corners, which are
     // the watch's, or 22 points in an iPhone's iPhone look
     // (`previewTileCornerRadius`).
@@ -5116,8 +5120,7 @@ export class WaPageEditor extends LitElement {
     return fitStateWords(watchFitState(this.previewInput(screenDrawnPage(page, "iphone"), pages, phonePagesScreen(phone), 1)));
   }
 
-  /** Turn Fit to screen on or off, as one undo step. On shows the page as the
-   * iPhone draws it, so the fit is seen at once. */
+  /** Turn Fit to screen on or off, as one undo step. */
   private applyFitToScreen(pageId: string, on: boolean): void {
     const document = this.draft?.document;
     if (document === undefined || this.busy) {
@@ -5130,8 +5133,6 @@ export class WaPageEditor extends LitElement {
       return;
     }
     this.edit(next);
-    this.asOnWatch = on;
-    this.cancelGestures();
   }
 
   /**
