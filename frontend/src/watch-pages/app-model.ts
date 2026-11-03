@@ -458,6 +458,16 @@ export function setWatchTemplateText(document: WatchPagesDocument, pageId: strin
   return setKey(document, pageId, tileId, "templateString", (tile) => (isTemplate(tile) ? text : undefined));
 }
 
+/** Line up columns: whether the tile stands its rows in columns, each icon
+ * starting one (`template-rows.ts`). The key is only there while it is on. */
+export function watchTemplateColumns(tile: WatchPageTile): boolean {
+  return tile.templateColumns === true;
+}
+
+export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
+  return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? true : REMOVE) : undefined));
+}
+
 /** A preset chip: writes the preset's text over the tile's. */
 export function setWatchTemplatePreset(document: WatchPagesDocument, pageId: string, tileId: string, presetId: string): WatchPagesDocument {
   const preset = A.template.presets.find((p) => p.id === presetId);

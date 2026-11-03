@@ -12,6 +12,10 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
     "@fontsource-variable/geist": "5.3.0",
     "@mdi/svg": "7.4.47",
     "@types/node": "^26.4.0",

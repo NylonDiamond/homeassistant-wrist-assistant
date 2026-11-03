@@ -126,6 +126,7 @@ import {
   watchTemplateSignature,
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
+import { type TemplateTilePicture, templateEditorStyles } from "./template-editor.js";
 import { SCRUB_END, SCRUB_START, betaPill } from "../editors.js";
 import { watchHomeMapFloorSummary } from "./home-map-tile.js";
 import {
@@ -263,6 +264,8 @@ import {
   watchTileSquashed,
   renderWatchScreenFold,
   renderWatchTileFace,
+  watchTemplateTextScale,
+  watchTemplateTileLook,
   type WatchTilePreviewAs,
   watchTileStatesAs,
   watchTileOneLookModel,
@@ -5827,6 +5830,7 @@ export class WaPageEditor extends LitElement {
     let seen: { page: WatchPage; tile: WatchPageTile } | undefined;
     return extendHost(host, {
       undoEdit: () => () => this.undo(),
+      templatePicture: () => (device: "watch" | "iphone" | undefined, maxWidth: number, maxHeight: number) => this.templatePicture(host.page, tileId, device, maxWidth, maxHeight),
       tileId: () => tileId,
       tile: () => {
         const now = host.page;
@@ -5834,6 +5838,26 @@ export class WaPageEditor extends LitElement {
         return seen.tile;
       },
     });
+  }
+
+  /** The selected template tile as a device draws it, for the template editor. */
+  private templatePicture(page: WatchPage, tileId: string, device: "watch" | "iphone" | undefined, maxWidth: number, maxHeight: number): TemplateTilePicture | undefined {
+    const tile = this.tileOn(page, tileId);
+    const picture = tile === undefined ? undefined : this.selectedTilePicture(page, tile, device);
+    if (picture === undefined) return undefined;
+    const { layout, placed, drawn } = picture;
+    const s = Math.min(maxWidth / placed.width, maxHeight / placed.height, HEAD_TILE_MAX_SCALE);
+    const input = this.selectedTileInput(page, picture, s);
+    const cell = { width: placed.width, height: placed.height };
+    const lines = drawn.templateLines;
+    const look = watchTemplateTileLook(drawn, input);
+    return {
+      device: picture.kind === "iphone" ? "iphone" : "watch",
+      face: html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${renderWatchTileFace(drawn, cell, input, layout.unit)}</span>`,
+      textScale: watchTemplateTextScale(drawn, cell.width, cell.height, input),
+      rowLimit: picture.kind === "iphone" && typeof lines === "number" ? lines : 5,
+      stale: look.kind === "error" || (look.kind === "text" && look.pending),
+    };
   }
 
   /** The Add tile dialog, the delete question's pattern: a native modal
@@ -6605,7 +6629,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, tileHeadStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, headBarStyles];
+  `, tileSettingsStyles, tileHeadStyles, specialSettingsStyles, appSettingsStyles, templateEditorStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

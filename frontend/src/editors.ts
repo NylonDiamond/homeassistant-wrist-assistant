@@ -3076,6 +3076,14 @@ export function starterTemplate(current: ValueKind, prefer?: EntityRef): string 
   return id === undefined ? STARTER_TEMPLATE : `{{ states('${id}') }}`;
 }
 
+/** The parts `templateHelpers` draws. */
+export interface TemplateHelp {
+  recipes: TemplateResult;
+  entitySearch: TemplateResult;
+  asks: TemplateResult | typeof nothing;
+  hints: TemplateResult;
+}
+
 export interface TemplateBoxOptions {
   label: string;
   rows: number;
@@ -3100,19 +3108,30 @@ function focusTemplateSoon(key: string, cursor: number): void {
   const root = templateRoots.get(key);
   if (!root) return;
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    const box = root.querySelector<HTMLTextAreaElement>(`[data-tpl="${CSS.escape(key)}"] textarea`);
+    const box = root.querySelector<HTMLElement>(`[data-tpl="${CSS.escape(key)}"] textarea, [data-tpl="${CSS.escape(key)}"] .cm-content`);
     if (!box) return;
     box.focus();
-    box.setSelectionRange(cursor, cursor);
+    if (box instanceof HTMLTextAreaElement) box.setSelectionRange(cursor, cursor);
   }));
 }
 
+/** Where a code editor's caret is, for a recipe or an entity to land at. */
+export function rememberTemplateCaret(key: string, position: number, root: Node): void {
+  templateCursors.set(key, position);
+  if (root instanceof ShadowRoot || root instanceof Document) templateRoots.set(key, root);
+}
+
+/** Where the last recipe or entity left the caret. */
+export function templateCaretOf(key: string): number | undefined {
+  return templateCursors.get(key);
+}
+
 /**
- * A template's box with its help: recipes above it, a search that puts an
- * entity in at the caret below it, and the words on what the result can be.
- * A complication's Template source and a page's Template tile both use it.
+ * What goes around a template's text: the recipes, the search that puts an
+ * entity in at the caret, and the words on what the result can be. Inside a
+ * `.tpl-box` with `data-tpl` set to the key.
  */
-export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: TemplateBoxOptions): TemplateResult {
+export function templateHelpers(host: Pick<EditorHost, "hass">, text: string, opts: Pick<TemplateBoxOptions, "key" | "use" | "bare" | "write">): TemplateHelp {
   const states = host.hass.states;
   const entity = namedEntity(text, states);
   const pendingId = pendingRecipes.get(opts.key);
@@ -3121,12 +3140,6 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
     opts.write(next.text, false);
     templateCursors.set(opts.key, next.cursor);
     focusTemplateSoon(opts.key, next.cursor);
-  };
-  const remember = (e: Event) => {
-    const box = e.target as HTMLTextAreaElement;
-    templateCursors.set(opts.key, box.selectionStart);
-    const root = box.getRootNode();
-    if (root instanceof ShadowRoot || root instanceof Document) templateRoots.set(opts.key, root);
   };
   const choose = (r: TemplateRecipe, node: EventTarget | null) => {
     if (!recipeNeedsEntity(r, entity)) {
@@ -3150,8 +3163,7 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
     pendingRecipes.delete(opts.key);
     land(pending ? applyRecipe(text, cursor, pending, ref.entityId, STARTER_TEMPLATE, states) : insertEntity(text, cursor, ref.entityId));
   };
-  return html`<div class="tpl-box" data-tpl=${opts.key}>
-    <div class="field tpl-recipes-row"><span>Recipes</span><div class="tpl-recipes" role="group" aria-label="Recipes">
+  const recipes = html`<div class="field tpl-recipes-row"><span>Recipes</span><div class="tpl-recipes" role="group" aria-label="Recipes">
       ${recipesFor(opts.use).map((r) => {
         const asks = recipeNeedsEntity(r, entity);
         const on = recipeChosen(r, text, entity) || pending === r;
@@ -3159,18 +3171,38 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
           title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
           @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
       })}
-    </div></div>
+    </div></div>`;
+  const entitySearch = entityField(host, pending ? "For entity" : "Insert entity", EMPTY_REF, picked, `${opts.key}-insert`,
+      pending && pending.domains && pending.domains.length > 0 ? { domain: pending.domains } : {});
+  const asks = pending ? html`<div class="hint tpl-asks">Pick ${recipeEntityWords(pending)} for “${pending.label}”.
+      <button type="button" class="link" @click=${(e: Event) => { pendingRecipes.delete(opts.key); requestRerender(e.currentTarget); }}>Cancel</button></div>` : nothing;
+  const hints = html`${templateHint(opts.use, opts.bare).map((line) => html`<div class="hint">${line}</div>`)}`;
+  return { recipes, entitySearch, asks, hints };
+}
+
+/**
+ * A template's box with its help: recipes above it, a search that puts an
+ * entity in at the caret below it, and the words on what the result can be.
+ * A complication's Template source uses it; a page's Template tile has its own
+ * code editor (`watch-pages/template-editor.ts`) with the same help.
+ */
+export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: TemplateBoxOptions): TemplateResult {
+  const help = templateHelpers(host, text, opts);
+  const remember = (e: Event) => {
+    const box = e.target as HTMLTextAreaElement;
+    rememberTemplateCaret(opts.key, box.selectionStart, box.getRootNode());
+  };
+  return html`<div class="tpl-box" data-tpl=${opts.key}>
+    ${help.recipes}
     <label class="field"><span>${opts.label}</span>
       <textarea rows=${opts.rows} class="mono ${opts.error ? "tpl-err" : ""}" spellcheck="false" .value=${live(text)} placeholder=${opts.placeholder ?? ""}
         aria-invalid=${opts.error ? "true" : "false"} title=${opts.error ?? ""}
         @input=${(e: Event) => { remember(e); opts.write((e.target as HTMLTextAreaElement).value, true); }}
         @keyup=${remember} @click=${remember}
         @blur=${(e: Event) => { remember(e); opts.onBlur?.(); }}></textarea></label>
-    ${entityField(host, pending ? "For entity" : "Insert entity", EMPTY_REF, picked, `${opts.key}-insert`,
-      pending && pending.domains && pending.domains.length > 0 ? { domain: pending.domains } : {})}
-    ${pending ? html`<div class="hint tpl-asks">Pick ${recipeEntityWords(pending)} for “${pending.label}”.
-      <button type="button" class="link" @click=${(e: Event) => { pendingRecipes.delete(opts.key); requestRerender(e.currentTarget); }}>Cancel</button></div>` : nothing}
-    ${templateHint(opts.use, opts.bare).map((line) => html`<div class="hint">${line}</div>`)}
+    ${help.entitySearch}
+    ${help.asks}
+    ${help.hints}
   </div>`;
 }
 

@@ -87,8 +87,10 @@ import {
   watchMusicHubActiveSpeaker,
   watchShowWhenTemplateAllows,
   watchTemplateRender,
+  watchTemplateColumns,
   watchTemplateText,
 } from "./app-model.js";
+import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_ICON_SLOT, templateColumnRows, templateColumnsFontSize } from "./template-rows.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { FIT_STRIP_ROWS, fitDrawnTile, fitPageRows, fitRowTop, fitSmallestTile, fitsOnScreen, fittedLayout, fitState, PHONE_FIT_BOTTOM_ROOM, WATCH_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
@@ -2154,6 +2156,73 @@ export function watchTemplateRichText(text: string, ink: string, px: number, ico
   });
 }
 
+/** A symbol of a template's text, as `watchTemplateRichText` draws one. */
+function templateGlyph(symbol: string, spec: string | undefined, ink: string, px: number, icons: IconProvider | undefined): TemplateResult | typeof nothing {
+  const own = spec === undefined ? undefined : templateIconColor(spec);
+  const glyph = icons?.render(symbol, px, own?.hex ?? ink);
+  if (glyph === undefined) return nothing;
+  const fade = own !== undefined && own.alpha < 1 ? `opacity:${own.alpha}` : "";
+  return html`<svg class="wp-tpl-icon" width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} style=${fade} aria-hidden="true">${glyph}</svg>`;
+}
+
+/** The rendered text as `watchTemplateRichText` draws it, with each run marked
+ * with its row, cell and part, so the template editor can find its code. */
+function watchTemplateTextParts(text: string, ink: string, px: number, icons: IconProvider | undefined): (TemplateResult | string)[] {
+  const out: (TemplateResult | string)[] = [];
+  let row = 0;
+  text.split("\n").forEach((line, i) => {
+    if (i > 0) out.push("\n");
+    if (line.trim() === "") {
+      out.push(line);
+      return;
+    }
+    let cell = -1;
+    for (const segment of templateRichTextSegments(line)) {
+      if (segment.kind === "icon") {
+        cell = cell < 0 && out.length === 0 ? 0 : cell + 1;
+        out.push(html`<span data-tr=${row} data-tc=${cell} data-tp="icon">${templateGlyph(segment.symbol, segment.color, ink, px, icons)}</span>`);
+      } else if (segment.text.trim() === "") {
+        out.push(segment.text);
+      } else {
+        if (cell < 0) cell = 0;
+        out.push(html`<span data-tr=${row} data-tc=${cell} data-tp="text">${segment.text}</span>`);
+      }
+    }
+    row++;
+  });
+  return out;
+}
+
+/** The rows of a template's rendered text, standing in columns. */
+function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], ink: string, size: number, shadow: string, icons: IconProvider | undefined): TemplateResult {
+  const columns = Math.max(...rows.map((row) => row.length));
+  const style = [`font-size:${size}px`, `color:${ink}`, `grid-template-columns:repeat(${columns},auto)`, `column-gap:${TEMPLATE_COLUMN_GAP}em`, shadow].filter((part) => part !== "").join(";");
+  return html`<span class="wp-tpl-grid" style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
+    cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, size, icons)}</span>`}${
+    cell.text === "" ? nothing : html`<span data-tr=${r} data-tc=${c} data-tp="text">${cell.text}</span>`}</span>`))}</span>`;
+}
+
+/** The most rows a template tile draws on the iPhone and on a watch. */
+function templateRowLimit(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "phone">): number {
+  if (input.phone === undefined) return 5;
+  const lines = tile.templateLines;
+  return typeof lines === "number" ? Math.min(8, Math.max(1, Math.round(lines))) : 5;
+}
+
+/** A template's rendered text as a share of the device's full size, 0.4 to 1,
+ * for the template editor's "Text is small". */
+export function watchTemplateTextScale(tile: WatchPageTile, width: number, height: number, input: Pick<WatchPagePreviewInput, "templates" | "page" | "phone">): number {
+  const look = watchTemplateTileLook(tile, input);
+  if (look.kind !== "text" || look.pending) return 1;
+  const padX = 4 + Math.min(2, width / 8);
+  const padY = Math.min(6, height / 4);
+  const rows = templateColumnRows(look.text, watchTemplateColumns(tile));
+  const box = { width: width - padX * 2, height: height - padY * 2 };
+  const size = rows === undefined ? watchTemplateFontSize(look.text, box.width, box.height)
+    : templateColumnsFontSize(rows.slice(0, templateRowLimit(tile, input)), box.width, box.height, TEMPLATE_FONT_PT);
+  return size / TEMPLATE_FONT_PT;
+}
+
 /** A template tile as the watch draws it: its ground, border, pattern and
  * effect, and only the template's text (or the placeholder or the warning)
  * inside. */
@@ -2181,7 +2250,10 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
   } else if (look.kind === "error") {
     content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * s, "#FFCC00")}</span>`;
   } else {
-    const size = watchTemplateFontSize(look.text, width - padX * 2, height - padY * 2) * s;
+    const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, templateRowLimit(tile, input));
+    const size = (columnRows === undefined
+      ? watchTemplateFontSize(look.text, width - padX * 2, height - padY * 2)
+      : templateColumnsFontSize(columnRows, width - padX * 2, height - padY * 2, TEMPLATE_FONT_PT)) * s;
     // The iPhone look: the text in the tile's ink, with no glow
     // (`SimpleTemplateTile.followsTileInk`). An icon's own color stays.
     const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : look.ink;
@@ -2189,7 +2261,9 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
       `font-size:${size}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`,
       ...(iphone ? [] : [`text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`]),
     ].join(";");
-    content = html`<span class="wp-tpl-text" style=${style}>${watchTemplateRichText(look.text, textInk, size, input.icons)}</span>`;
+    content = columnRows !== undefined
+      ? templateColumnsFace(columnRows, textInk, size, iphone ? "" : `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`, input.icons)
+      : html`<span class="wp-tpl-text" style=${style}>${watchTemplateTextParts(look.text, textInk, size, input.icons)}</span>`;
   }
   const rim = iphone ? `box-shadow:${phoneLitTileRim(s)};` : "";
   return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
@@ -4275,6 +4349,12 @@ export const watchPagePreviewStyles = css`
     font-family: ${unsafeCSS(WATCH_ROUNDED_FAMILY)}; font-weight: 600;
   }
   .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
+  .wp-tpl-grid {
+    position: relative; display: grid; width: 100%; justify-content: space-between; align-items: center; line-height: 1.2;
+    font-family: ${unsafeCSS(WATCH_ROUNDED_FAMILY)}; font-weight: 600; overflow: hidden;
+  }
+  .wp-tpl-cell { display: inline-flex; align-items: center; min-width: 0; white-space: pre; }
+  .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }
   /* A tile only the iPhone draws, on a watch: a dashed outline at its place
      with the phone glyph and "Not on a watch". */

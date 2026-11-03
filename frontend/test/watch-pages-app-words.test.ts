@@ -87,11 +87,10 @@ const OLD_WORDS = [
 ];
 
 describe("the app cards' words", () => {
-  it("the Template card: one label, a real template for a placeholder, one hint", () => {
+  it("the Template card: one label and its code editor", () => {
     const t = drawn("template.outside", { templateString: "" });
     expect(t).toContain("Template");
-    expect(t).toContain("{{ states('sensor.outside_temperature') }}°");
-    expect(t).toContain("Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue].");
+    expect(t).toContain("wa-template-editor");
     for (const old of OLD_WORDS) expect(t, old).not.toContain(old);
   });
 

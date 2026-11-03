@@ -75,6 +75,12 @@
       "absent": 5,
       "write": "A whole number from min to max; picking absent removes the key. Only the iPhone reads it (tile-devices.json keys): the most lines it shows of the result. The watch keeps its own 5."
     },
+    "columns": {
+      "key": "templateColumns",
+      "kinds": ["template"],
+      "write": "true while Line up columns is on; off removes the key. Both devices read it. An older app ignores it and draws the text as it always did.",
+      "rule": "Each row's cells stand in columns. An icon starts a cell, and words before a row's first icon are a cell. The number of columns is the row with the most cells, a column is as wide as its widest cell, and each cell's icon sits in a slot of one width. A line of white space is no row. With one row or one column the tile draws its text as it always did."
+    },
     "richText": {
       "marker": "\\[icon:([^\\]]+)\\]",
       "rule": "Every marker becomes an icon; the text between markers stays text. Inside a marker the words split on whitespace: the first word is the symbol, the first later word starting color: (any case) gives the color, an empty color is none. A marker with no word stays as literal text.",

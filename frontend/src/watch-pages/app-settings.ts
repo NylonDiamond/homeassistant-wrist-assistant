@@ -15,7 +15,7 @@
 // contract".
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { checkField, entityField, segField, sliderField, templateBox, textField } from "../editors.js";
+import { checkField, entityField, rememberTemplateCaret, segField, sliderField, templateCaretOf, templateHelpers, textField } from "../editors.js";
 import type { EntityRef } from "../model.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
@@ -64,7 +64,8 @@ import {
   watchWebURL,
   watchWebURLNote,
 } from "./phone-tiles-model.js";
-import { watchTemplateRichText, watchTemplateTileLook } from "./preview.js";
+import type { TemplateEditorData } from "./template-editor.js";
+import "./template-editor.js";
 import { commit, fieldNote, linkButton, menuField, typed, typingField } from "./tile-settings.js";
 import { watchChoiceMenu, watchTileFallbackName } from "./tile-settings-options.js";
 import { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT } from "../watch-voice/defaults.js";
@@ -89,6 +90,7 @@ import {
   setWatchSpeakOutput,
   setWatchSpeakVolumeMode,
   setWatchTemplatePreset,
+  setWatchTemplateColumns,
   setWatchTemplateText,
   setWatchVoiceId,
   setWatchVoiceSpeakers,
@@ -110,7 +112,9 @@ import {
   watchSpeakerCountSummary,
   watchSpeakerListSummary,
   watchTTSEngines,
+  watchTemplateColumns,
   watchTemplatePresetSelected,
+  watchTemplateRender,
   watchTemplateText,
   watchVoiceMenu,
 } from "./app-model.js";
@@ -221,38 +225,39 @@ export function renderInboxLine(host: TileSettingsHost): TemplateResult {
 function renderTemplate(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const text = watchTemplateText(tile);
-  const look = watchTemplateTileLook(tile, { page: host.page, templates: host.templateRenders });
+  const key = `tile-${host.tileId}-tpl`;
   // Each keystroke writes at once, as typed; one visit to the field is one
   // undo step, as one opening of the phone's editor sheet is. A recipe or an
   // entity put in is a step of its own.
   const write = (value: string, typing: boolean) =>
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
-  let result: TemplateResult;
-  // The rich text as the tile draws it (symbols, their colors, the tile's
-  // color, centered for one line), never the markup.
-  if (text.trim() === "") result = html`<div class="hint keep">Empty: the tile shows its symbol.</div>`;
-  else if (look.kind === "error") result = html`<div class="hint warn" role="status">${look.error}</div>`;
-  else if (look.kind !== "text" || look.pending) result = html`<div class="hint keep">Rendering in Home Assistant…</div>`;
-  else {
-    result = html`<div class="ap-render" role="img" aria-label=${`Rendered: ${look.text}`}
-      style=${`color:${look.ink};text-align:${look.multiLine ? "left" : "center"}`}>${watchTemplateRichText(look.text, look.ink, 14, host.icons)}</div>`;
-  }
-  return html`
-    <div class="ts-sub-h"><span>Examples</span></div>
+  const help = templateHelpers(host, text, { key, use: "text", bare: false, write });
+  const examples = html`<div class="ts-sub-h"><span>Examples</span></div>
     <div class="ts-chips">${A.template.presets.map((p) => {
       const on = watchTemplatePresetSelected(tile, p);
       return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
-    })}</div>
-    <div class="ap-text">${templateBox(host, text, {
-      label: "Template", rows: 6, key: `tile-${host.tileId}-tpl`, use: "text", bare: false,
-      placeholder: "{{ states('sensor.outside_temperature') }}°", error: look.kind === "error" ? look.error : undefined,
-      write,
-      onBlur: () => host.endCoalesce(),
-    })}</div>
-    <div class="ts-sub-h"><span>Preview</span></div>
-    ${result}
-    <div class="hint">Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue].</div>`;
+    })}</div>`;
+  const data: TemplateEditorData = {
+    tileId: host.tileId,
+    text,
+    render: watchTemplateRender(host.templateRenders, tile),
+    columns: watchTemplateColumns(tile),
+    busy: host.busy,
+    hass: host.hass,
+    icons: host.icons,
+    caret: () => templateCaretOf(key),
+    write,
+    remember: (position, root) => rememberTemplateCaret(key, position, root),
+    ended: () => host.endCoalesce(),
+    setColumns: (on) => commit(host, "templateColumns", (d) => setWatchTemplateColumns(d, ...at(host), on)),
+    picture: (device, maxWidth, maxHeight) => host.templatePicture?.(device, maxWidth, maxHeight),
+    examples,
+    helpers: html`<div class="tpl-box">${help.recipes}${help.entitySearch}${help.asks}
+      <div class="hint">Home Assistant renders this. Write {{ … }} around each part that reads something, like {{ states('sensor.power') }}.</div>
+      <div class="hint">Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue].</div></div>`,
+  };
+  return html`<div class="tpl-box" data-tpl=${key}><wa-template-editor .data=${data}></wa-template-editor></div>`;
 }
 
 // ── Music ────────────────────────────────────────────────────────────────
@@ -639,10 +644,6 @@ export const appSettingsStyles = css`
   .ap-text { align-items: flex-start; }
   .ap-text textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line); border-radius: 6px; padding: 6px 8px; box-sizing: border-box; }
-  .ap-render { margin: 2px 0 4px; padding: 8px 10px; border-radius: 10px; background: #000;
-    font: 600 14px/1.25 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere;
-    max-height: 140px; overflow: auto; }
-  .ap-render .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .ap-row > span { min-width: 0; }
   .ap-list { display: flex; flex-direction: column; max-height: 220px; overflow: auto; padding: 2px 0; }
   /* A row keeps its own height in the scrolling list, and a speaker's name

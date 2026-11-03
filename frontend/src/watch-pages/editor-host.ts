@@ -25,6 +25,7 @@ import { sameWatchId } from "./edit.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, watchPagesOf } from "./model.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
 import type { WatchDeviceSiblings } from "./special-model.js";
+import type { TemplateTilePicture } from "./template-editor.js";
 
 /** What both modules get. Built afresh for every draw; keep none of it across
  * draws except through `uiState`.
@@ -176,6 +177,10 @@ export interface WatchPagesEditorHost {
 export interface TileSettingsHost extends WatchPagesEditorHost {
   readonly tileId: string;
   readonly tile: WatchPageTile;
+  /** The selected template tile drawn for the template editor, for a device
+   * or the one last pressed; undefined when it has no place there. Absent
+   * where no device is drawn. */
+  readonly templatePicture?: (device: "watch" | "iphone" | undefined, maxWidth: number, maxHeight: number) => TemplateTilePicture | undefined;
   /** Set when the tile stands in for a smart page rule's style (part 3f
    * batch 3, `smart-settings.ts`): the sections leave out every row whose
    * key a rule's `tileStyle` cannot hold (the name, the per state icons and

@@ -1707,6 +1707,11 @@
           "required": false,
           "default": 5
         },
+        "templateColumns": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
         "mapEntityIds": {
           "type": "array",
           "of": "entity",
