@@ -120,11 +120,10 @@ describe("the keys overlay's keys", () => {
     expect(homeMapShortcut({ key: "?", metaKey: true }, false)).toBeUndefined();
   });
 
-  it("lists every tool's key, the walls' tools too, and Cmd as this computer writes it", () => {
+  it("lists every tool's key, and Cmd as this computer writes it", () => {
     const mac = homeMapKeyGroups(true);
     const listed = (title: string) => mac.find((g) => g.title === title)!.keys.map(([k]) => k);
     expect(listed("Tools")).toEqual(HOME_MAP_EDIT_TOOLS.map((t) => t.key.toUpperCase()));
-    for (const t of HOME_MAP_SHAPE_TOOLS) expect(listed("A room's walls")).toContain(t.key.toUpperCase());
     expect(listed("Add")).toEqual(["A", "F"]);
     expect(listed("View")).toContain("?");
     expect(listed("Edit")).toContain("⌘Z");

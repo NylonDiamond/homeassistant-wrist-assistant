@@ -26,9 +26,8 @@
 //   light, pins), each room's name and size, and over it the page's overlay
 //   and its tool rail. Drag empty space, hold Space and drag, or scroll to
 //   pan; Ctrl or Cmd and scroll, a pinch, or the dock's buttons to zoom; Fit
-//   shows the floor; a double-click goes to the page. The floating pill at
-//   the top is the page's (under the blue Done bar while a room's walls are
-//   edited, the stage ringed in blue); the dock at the bottom has the zoom,
+//   shows the floor. The floating pill at the top is the page's; the dock at
+//   the bottom has the zoom,
 //   Fit, the page's Snap and the View menu (the page's switches and Live
 //   states), closed by Escape or a press on the stage. Measure (the tool
 //   rail's M) clicks
@@ -106,6 +105,7 @@ import {
   HOME_MAP_SPLIT_MIN,
   homeMapClampSplit,
   homeMapSplitPercent,
+  homeMapSplitStacked,
   homeMapStoreSplit,
   homeMapStoreTips,
   homeMapStoredSplit,
@@ -122,6 +122,7 @@ import {
   type HomeMapToggles,
   homeMapLampPick,
   homeMapPickedThings,
+  homeMapPiecePicked,
   homeMapRoomsPicked,
   homeMapSelectionRoom,
   homeMapSelectionThere,
@@ -237,6 +238,9 @@ type Dialog =
  * pointer capture. A stand-in in tests. */
 type StageEl = Pick<Element, "getBoundingClientRect" | "addEventListener" | "removeEventListener"> & Partial<Pick<Element, "setPointerCapture" | "releasePointerCapture">>;
 
+/** The Sky menu's words. */
+const SKY_NAMES: Readonly<Record<HomeMapSkyChoice, string>> = { now: "Now", night: "Lights", day: "Daylight" };
+
 export class WaHomeMapEditor extends LitElement {
   @property({ attribute: false }) hass?: HassLike;
   @property({ type: Boolean, reflect: true }) narrow = false;
@@ -262,6 +266,8 @@ export class WaHomeMapEditor extends LitElement {
   @state() private styleOpen = false;
   /** Opens on Both, the plan to edit beside the model in 3D. */
   @state() private viewKind: "flat" | "model" | "both" = "both";
+  /** Both shows the plan over the model, as that draws the plan bigger. */
+  @state() private splitStack = false;
   /** How much of Both the plan takes, in percent (`homeMapSplitPercent`). */
   @state() private split = homeMapStoredSplit();
   /** The how-to lines under the side panel's options show. */
@@ -269,14 +275,14 @@ export class WaHomeMapEditor extends LitElement {
   @state() private view?: HomeMapView;
   @state() private artScale = 0;
   @state() private stageSize = { width: 0, height: 0 };
-  @state() private toggles: HomeMapToggles = { snap: true, square: true, grid: false, measure: false, live: true, scan: false };
+  @state() private toggles: HomeMapToggles = { snap: true, grid: false, measure: false, live: true, scan: false };
   /** Each room as the iPhone scanned it; undefined from an integration
    * that keeps none. */
   @state() private scans?: HomeMapScans;
   @state() private measure: { a?: HomePoint; b?: HomePoint; hover?: HomePoint } = {};
   @state() private floorMenu = false;
   /** The dock's View menu (the plan's) or Look menu (the model's) is open. */
-  @state() private dockMenu?: "view" | "look" | "north";
+  @state() private dockMenu?: "view" | "look" | "sky" | "north";
   @state() private dialog?: Dialog;
   @state() private modelLook?: HomeMapLook;
   /** The model is drawn in real 3D rather than as one of the looks. */
@@ -409,6 +415,7 @@ export class WaHomeMapEditor extends LitElement {
       this.observer.observe(stage);
       this.observed = stage;
     }
+    this.syncSplit();
     // Draw the plan again at its new scale once the zoom rests.
     if (this.view !== undefined && this.view.scale !== this.artScale && this.zoomTimer === undefined) {
       this.zoomTimer = setTimeout(() => {
@@ -429,10 +436,24 @@ export class WaHomeMapEditor extends LitElement {
     const sel = this.selection;
     const things = homeMapPickedThings(sel);
     const roomId = homeMapSelectionRoom(sel);
-    const mark = things.length > 0 ? { things } : roomId === undefined ? undefined : { roomId };
+    const mark = things.length > 0 ? { things }
+      : sel?.kind === "wall" || sel?.kind === "opening" ? { piece: sel }
+      : roomId === undefined ? undefined : { roomId };
     const place = homeMapSunPlace(this.hass?.states);
     const north = homeMapFloorNorth(this.doc === null ? null : { ...this.doc, north: this.northLive ?? this.doc.north }, floor);
     return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, sky: homeMapSkyFor(this.skyChoiceNow(place), place, north) };
+  }
+
+  /** Which way Both splits, for the stage's size and the floor's shape. */
+  private syncSplit(): void {
+    if (this.viewKind !== "both") return;
+    const wrap = this.renderRoot.querySelector?.(".hme-stage-wrap");
+    const floor = this.baseFloor();
+    const bounds = floor === undefined ? undefined : homePointBounds(floor.rooms.flatMap((r) => r.outline));
+    if (!(wrap instanceof Element) || bounds === undefined) return;
+    const box = wrap.getBoundingClientRect();
+    const stack = homeMapSplitStacked(box.width, box.height, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+    if (stack !== this.splitStack) this.splitStack = stack;
   }
 
   /** After each draw: the 3D look in its place on the page and drawing what
@@ -522,31 +543,30 @@ export class WaHomeMapEditor extends LitElement {
   }
 
   /** A click on the 3D look picks what it found, as a click on the plan
-   * does: a thing, a light's pin or a room, empty space picking nothing.
-   * With Cmd or Ctrl (`keys.add`) a thing or a light is added to the pick or
-   * taken out, as on the plan, and a room or empty space leaves the pick as
-   * it is. A pin a thing holds is its thing, picked or added as the thing.
-   * While a room's walls are edited, a click anywhere but that room goes
-   * back to the floor, the room picked. */
+   * does: a thing, a light's pin, a wall, a door or window, or a room, empty
+   * space picking nothing. A click on a door with no partner starts Connect,
+   * and a click on a door Connect offers connects it. With Cmd or Ctrl
+   * (`keys.add`) a thing or a light is added to the pick or taken out, as on
+   * the plan, and anything else leaves the pick as it is. A pin a thing holds
+   * is its thing, picked or added as the thing. */
   pick3d(found: HomeMap3DPick | undefined, keys: { add: boolean } = { add: false }): void {
     if (this.dialog !== undefined) return;
     this.floorMenu = false;
     const floor = this.baseFloor();
     const lamp = found?.kind === "pin" && floor !== undefined ? homeMapThingOfPin(floor, found.pinId) : undefined;
     const pick: HomeMap3DPick | undefined = lamp === undefined ? found : { kind: "object", roomId: lamp.roomId, object: lamp.object };
-    if (this.walls !== undefined) {
-      if (pick === undefined || pick.kind === "pin" || !sameHomeMapId(pick.roomId, this.walls)) this.editWalls(undefined);
-      return;
-    }
     if (keys.add) {
       if (pick?.kind === "object") this.select(homeMapToggleThing(this.selection, { roomId: pick.roomId, object: pick.object }));
       else if (pick?.kind === "pin") this.select(homeMapTogglePick(this.selection, pick.pinId));
       return;
     }
-    this.select(pick === undefined ? undefined
-      : pick.kind === "pin" ? { kind: "pin", pinId: pick.pinId }
-      : pick.kind === "object" ? { kind: "object", roomId: pick.roomId, object: pick.object }
-      : { kind: "room", roomId: pick.roomId });
+    const ctx = this.context();
+    if (ctx !== undefined) {
+      if (pick?.kind === "opening" && this.page.doors.pickDoor(ctx, pick.roomId, pick.opening)) return;
+      this.page.doors.stop(ctx);
+    }
+    this.select(pick);
+    if (pick?.kind === "opening" && ctx !== undefined) this.page.doors.clicked(this.context() ?? ctx, pick.roomId, pick.opening);
   }
 
   private drop3d(): void {
@@ -565,39 +585,39 @@ export class WaHomeMapEditor extends LitElement {
 
   /** The pointer resting on the 3D look over what a click there would
    * pick, as `pick3d` reads a click: a light a lamp holds is its lamp.
-   * Nothing while a room's walls are edited or a dialog is open. */
+   * Nothing while a dialog is open. */
   hover3d(found: HomeMap3DPick | undefined): void {
-    if (this.dialog !== undefined || this.walls !== undefined) {
+    if (this.dialog !== undefined) {
       this.setHover(undefined);
       return;
     }
-    this.setHover(found === undefined ? undefined
-      : found.kind === "pin" ? homeMapLampPick(this.baseFloor(), { kind: "pin", pinId: found.pinId })
-      : found.kind === "object" ? { kind: "object", roomId: found.roomId, object: found.object }
-      : { kind: "room", roomId: found.roomId });
+    this.setHover(found?.kind === "pin" ? homeMapLampPick(this.baseFloor(), { kind: "pin", pinId: found.pinId }) : found);
   }
 
-  /** The hover as the 3D look marks it: a room, a thing or a light's pin,
-   * unless it is picked already (the pick's own outline shows it). */
+  /** The hover as the 3D look marks it: a room, a thing, a wall, a door or
+   * window, or a light's pin, unless it is picked already (the pick's own
+   * outline shows it). */
   private hoverFor3d(): HomeMap3DPick | undefined {
     const h = homeMapLiveHover(this.hover, this.selection);
     if (h === undefined) return undefined;
     if (h.kind === "pin") return { kind: "pin", pinId: h.pinId };
     if (h.kind === "object") return { kind: "object", roomId: h.roomId, object: h.object };
+    if (h.kind === "wall") return { kind: "wall", roomId: h.roomId, wall: h.wall };
+    if (h.kind === "opening") return { kind: "opening", roomId: h.roomId, opening: h.opening };
     return h.kind === "room" ? { kind: "room", roomId: h.roomId } : undefined;
   }
 
   /** What a click at plan point `at` would pick, for the plan's hover:
    * nothing for a finger, while Space pans, while a tool other than Pick is
-   * out (Measure, drawing, a door or window to place, a room's walls), while
-   * the lamp chooser or a dialog is open, or over a picked thing's handles,
-   * which take the press. */
+   * out (Measure, drawing, a door or window to place), while the lamp chooser
+   * or a dialog is open, or over the handles of what is picked, which take the
+   * press. */
   private planHoverAt(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): HomeMapSelection | undefined {
-    if (e.pointerType === "touch" || this.spaceHeld || this.dialog !== undefined || this.walls !== undefined) return undefined;
+    if (e.pointerType === "touch" || this.spaceHeld || this.dialog !== undefined) return undefined;
     if (this.page.tool(ctx) !== "pick" || this.page.devices.choosing) return undefined;
     const target = e.target as Element | null;
-    if (typeof target?.closest === "function" && target.closest("[data-hme=turn], [data-hme=resize]") !== null) return undefined;
-    return homeMapClickPick(ctx.floor, ctx.toScreen, at);
+    if (typeof target?.closest === "function" && target.closest("[data-hme=turn], [data-hme=resize], [data-hme^=corner], [data-hme^=mid]") !== null) return undefined;
+    return homeMapClickPick(ctx.floor, ctx.toScreen, at, homeMapSelectionRoom(ctx.selection));
   }
 
   /** Back to the home style's turn: the model looks' turn, and the 3D
@@ -799,8 +819,6 @@ export class WaHomeMapEditor extends LitElement {
       this.floorId = floors[0]?.id;
       this.needFit = true;
     }
-    const walls = this.walls;
-    if (walls !== undefined && !(this.baseFloor()?.rooms ?? []).some((r) => sameHomeMapId(r.id, walls))) this.walls = undefined;
     if (!homeMapSelectionThere(this.baseFloor(), this.selection)) this.selection = undefined;
     if (!homeMapSelectionThere(this.baseFloor(), this.hover)) this.hover = undefined;
     this.tick++;
@@ -863,26 +881,10 @@ export class WaHomeMapEditor extends LitElement {
     this.selection = homeMapLampPick(this.baseFloor(), selection);
   }
 
-  /** Edit a room's walls (`ctx.editWalls`), or with undefined go back to
-   * editing the floor; any tool is put down on the way in or out. Flat,
-   * Model or Both stays as picked. */
-  editWalls(roomId: string | undefined, selection?: HomeMapSelection): void {
-    const from = this.walls;
-    const room = roomId === undefined ? undefined : this.baseFloor()?.rooms.find((r) => sameHomeMapId(r.id, roomId));
-    if (roomId !== undefined && room === undefined) return;
-    const ctx = this.context();
-    if (ctx !== undefined && !(roomId === undefined ? from === undefined : sameHomeMapId(roomId, from))) this.page.leave?.(ctx);
-    this.walls = room?.id;
-    this.styleOpen = false;
-    const back = room?.id ?? from;
-    this.selection = selection ?? (back === undefined ? this.selection : { kind: "room", roomId: back });
-  }
-
   setFloor(floorId: string): void {
     const ctx = this.context();
     if (ctx !== undefined) this.page.leave?.(ctx);
     this.floorId = floorId;
-    this.walls = undefined;
     this.selection = undefined;
     this.floorMenu = false;
     this.measure = {};
@@ -965,7 +967,6 @@ export class WaHomeMapEditor extends LitElement {
       doc,
       floor,
       selection: this.selection,
-      walls: this.walls,
       view,
       stage: this.stageSize,
       toggles: this.toggles,
@@ -981,7 +982,6 @@ export class WaHomeMapEditor extends LitElement {
       apply: (op, options) => this.apply(op, options),
       preview: (op) => this.preview(op),
       select: (sel) => this.select(sel),
-      editWalls: (roomId, sel) => this.editWalls(roomId, sel),
       setFloor: (id) => this.setFloor(id),
       setToggle: (key, on) => this.setToggle(key, on),
       drag: (e, handlers) => this.drag(e, handlers),
@@ -1149,14 +1149,6 @@ export class WaHomeMapEditor extends LitElement {
       return;
     }
     this.pan(e, true);
-  }
-
-  /** A double-click on the plan: the page's (a room's walls). */
-  onStageDblClick(e: MouseEvent): void {
-    this.stageEl = e.currentTarget as unknown as StageEl;
-    if (this.dialog !== undefined || this.viewKind === "model" || this.toggles.measure || this.spaceHeld || e.button !== 0) return;
-    const ctx = this.context();
-    if (ctx !== undefined) this.page.doubleClick?.(ctx, e, this.toPlan(e.clientX, e.clientY));
   }
 
   /** The pointer over the plan: the measure's loose end, the page's hover,
@@ -1377,7 +1369,6 @@ export class WaHomeMapEditor extends LitElement {
       case "cancel":
         if (this.floorMenu) this.floorMenu = false;
         else if (this.toggles.measure) this.setToggle("measure", false);
-        else if (this.walls !== undefined) this.editWalls(undefined);
         else this.selection = undefined;
         return;
       case "zoomIn":
@@ -1468,11 +1459,11 @@ export class WaHomeMapEditor extends LitElement {
       ${note === undefined ? nothing : html`<div class="hme-note ${note.kind}" role="status"><span>${note.text}</span>
         <button class="hme-link" @click=${() => this.session?.dismissNote()}>Dismiss</button></div>`}
       <div class=${this.tipsShown ? "hme-body tips" : "hme-body"}>
-        <aside class="hme-insp" aria-label=${this.walls === undefined ? "Side panel" : "Walls"}>
+        <aside class="hme-insp" aria-label="Side panel">
           ${this.page.inspector(ctx)}
           <button type="button" class="hme-link hme-tips-link" aria-pressed=${this.tipsShown ? "true" : "false"} @click=${() => this.toggleTips()}>${this.tipsShown ? "Hide tips" : "Show tips"}</button>
         </aside>
-        <section class="hme-stage-wrap" style=${`--hme-split:${this.split}%`}>${this.renderStage(ctx)}</section>
+        <section class="hme-stage-wrap ${this.viewKind === "both" && this.splitStack ? "stack" : ""}" style=${`--hme-split:${this.split}%`}>${this.renderStage(ctx)}</section>
       </div>
       ${this.page.sheet?.(ctx) ?? nothing}
       ${this.renderDialog()}
@@ -1513,7 +1504,6 @@ export class WaHomeMapEditor extends LitElement {
     if (!session.begin((d) => startHomeMap(d, { id, name: first.name, story: first.story }))) return;
     session.note = undefined;
     this.floorId = id;
-    this.walls = undefined;
     this.selection = undefined;
     this.needFit = true;
     this.userMoved = false;
@@ -1526,13 +1516,10 @@ export class WaHomeMapEditor extends LitElement {
     const floor = this.baseFloor()!;
     const state = this.session?.state ?? { kind: "saved" };
     const mac = homeMapOnMac();
-    const wallsRoom = this.walls === undefined ? undefined : floor.rooms.find((r) => sameHomeMapId(r.id, this.walls));
     const look = homeStyleOf(doc).look;
     return html`<header class="hme-bar">
       ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-back" @click=${() => this.onHome?.()}>‹ Shared</button><span class="hme-vsep"></span>`}
       <strong class="hme-title">Home map</strong><span class="hme-beta">BETA</span>
-      ${wallsRoom === undefined ? nothing : html`<span class="hme-crumb-sep" aria-hidden="true">›</span>
-        <strong class="hme-title hme-crumb">${homeMapRoomName(wallsRoom)} walls</strong>`}
       <div class="hme-floor-wrap">
         <button type="button" class="hme-tb hme-floor-btn" aria-label="Switch floor" aria-haspopup="menu" aria-expanded=${this.floorMenu ? "true" : "false"}
           @click=${() => { this.floorMenu = !this.floorMenu; }}>
@@ -1547,7 +1534,7 @@ export class WaHomeMapEditor extends LitElement {
         <button type="button" class=${this.viewKind === "flat" ? "on" : ""} aria-pressed=${this.viewKind === "flat" ? "true" : "false"} @click=${() => { this.viewKind = "flat"; }}>Flat</button>
         <button type="button" class=${this.viewKind === "model" ? "on" : ""} aria-pressed=${this.viewKind === "model" ? "true" : "false"} @click=${() => { this.viewKind = "model"; }}>Model</button>
         <button type="button" class=${this.viewKind === "both" ? "on" : ""} aria-pressed=${this.viewKind === "both" ? "true" : "false"}
-          title="The plan to edit on the left, the model following it on the right" @click=${() => { this.viewKind = "both"; }}>Both</button>
+          title="The plan to edit and the model following it, split the way that draws the plan biggest" @click=${() => { this.viewKind = "both"; }}>Both</button>
       </div>
       <div class="hme-style-wrap">
         ${this.renderStyleButton(look)}
@@ -1622,7 +1609,6 @@ export class WaHomeMapEditor extends LitElement {
     const model = this.viewKind === "model";
     const both = this.viewKind === "both";
     const pill = model ? nothing : page.pill?.(ctx) ?? nothing;
-    const banner = model ? nothing : page.banner?.(ctx) ?? nothing;
     const cursor = this.spaceHeld ? "grab" : model ? "ew-resize" : this.toggles.measure ? "crosshair" : page.cursor?.(ctx) ?? "default";
     const empty = ctx.floor.rooms.length === 0;
     const real = this.model3d && this.bundleUrl !== undefined;
@@ -1646,13 +1632,11 @@ export class WaHomeMapEditor extends LitElement {
         ${this.renderDock(ctx)}
       </div>`;
     }
-    const walls = this.walls !== undefined && !model;
-    return html`<div class="hme-stage ${model ? "model" : ""} ${both ? "hme-split-l" : ""} ${walls ? "walls" : ""}" style=${model ? `background:${homeTileGround(this.modelLookNow())}` : ""}>
+    return html`<div class="hme-stage ${model ? "model" : "rail"} ${both ? "hme-split-l" : ""}" style=${model ? `background:${homeTileGround(this.modelLookNow())}` : ""}>
       <svg class="hme-svg" width="100%" height="100%" viewBox=${`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`} style=${`cursor:${cursor}`}
         role="img" aria-label=${`Plan of ${homeMapFloorName(ctx.floor)}`}
         @pointerdown=${(e: PointerEvent) => this.onStageDown(e)}
         @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}
-        @dblclick=${(e: MouseEvent) => this.onStageDblClick(e)}
         @pointermove=${(e: PointerEvent) => this.onStageMove(e)}
         @pointerup=${(e: PointerEvent) => this.onStageUp(e)}
         @pointercancel=${(e: PointerEvent) => this.onStageUp(e)}
@@ -1663,13 +1647,12 @@ export class WaHomeMapEditor extends LitElement {
         @drop=${(e: DragEvent) => this.onStageDrop(e)}>
         ${model ? this.renderModel(ctx, width, height) : this.renderPlan(ctx, width, height)}
       </svg>
-      ${banner === nothing ? nothing : html`<div class="hme-banner ${walls ? "" : "beside"}">${banner}</div>`}
-      ${pill === nothing ? nothing : html`<div class="hme-pill ${banner !== nothing ? "under" : walls ? "" : "beside"}">${pill}</div>`}
+      ${pill === nothing ? nothing : html`<div class="hme-pill beside">${pill}</div>`}
       ${model ? nothing : page.stageExtra?.(ctx) ?? nothing}
       ${empty && !model && !page.arrange.draw.active ? html`<div class="hme-stage-empty"><b>No rooms on this floor yet.</b>
         <span>Draw one by hand, or scan this floor with the iPhone.</span>
         <button type="button" class="hme-tb" @click=${() => { const c = this.context(); if (c) page.startDrawing(c); }}>＋ Draw a room by hand</button></div>` : nothing}
-      ${walls ? nothing : this.renderAddButton(pill !== nothing || banner !== nothing)}
+      ${this.renderAddButton(pill !== nothing)}
       ${this.renderDock(ctx)}
     </div>${both ? this.renderSplitHandle() : nothing}${side}`;
   }
@@ -1689,10 +1672,11 @@ export class WaHomeMapEditor extends LitElement {
     const follow = (e: PointerEvent) => {
       const handle = e.currentTarget as HTMLElement;
       const wrap = handle.parentElement?.getBoundingClientRect();
-      if (wrap !== undefined) this.split = homeMapSplitPercent(e.clientX, wrap.left, wrap.width);
+      if (wrap === undefined) return;
+      this.split = this.splitStack ? homeMapSplitPercent(e.clientY, wrap.top, wrap.height) : homeMapSplitPercent(e.clientX, wrap.left, wrap.width);
     };
     const save = () => homeMapStoreSplit(this.split);
-    return html`<div class="hme-split-handle" role="separator" tabindex="0" aria-orientation="vertical"
+    return html`<div class="hme-split-handle" role="separator" tabindex="0" aria-orientation=${this.splitStack ? "horizontal" : "vertical"}
       aria-label="Size of the plan and the model" aria-valuemin=${HOME_MAP_SPLIT_MIN} aria-valuemax=${HOME_MAP_SPLIT_MAX} aria-valuenow=${Math.round(this.split)}
       title="Drag to give the plan or the model more room. Double-click to even them."
       @pointerdown=${(e: PointerEvent) => { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); }}
@@ -1700,10 +1684,12 @@ export class WaHomeMapEditor extends LitElement {
       @pointerup=${save}
       @dblclick=${() => { this.split = 50; save(); }}
       @keydown=${(e: KeyboardEvent) => {
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        const less = this.splitStack ? "ArrowUp" : "ArrowLeft";
+        const more = this.splitStack ? "ArrowDown" : "ArrowRight";
+        if (e.key !== less && e.key !== more) return;
         e.preventDefault();
         e.stopPropagation();
-        this.split = homeMapClampSplit(this.split + (e.key === "ArrowLeft" ? -5 : 5));
+        this.split = homeMapClampSplit(this.split + (e.key === less ? -5 : 5));
         save();
       }}><span aria-hidden="true"></span></div>`;
   }
@@ -1730,7 +1716,7 @@ export class WaHomeMapEditor extends LitElement {
     const k = view.scale / (this.artScale || view.scale);
     return svg`${this.background(view, width, height)}
       <g class="hme-art" transform=${`translate(${view.ox.toFixed(2)} ${view.oy.toFixed(2)}) scale(${k.toFixed(5)})`} pointer-events="none">${art}</g>
-      ${ctx.walls === undefined ? homeMapHoverMark(ctx.floor, this.hover, this.selection, ctx.toScreen) : nothing}
+      ${homeMapHoverMark(ctx.floor, this.hover, this.selection, ctx.toScreen)}
       <g class="hme-labels" pointer-events="none">${this.labels(ctx)}</g>
       <g class="hme-overlay">${this.page.overlay(ctx)}</g>
       ${this.toggles.measure ? this.measureMarks(ctx) : nothing}`;
@@ -1754,6 +1740,8 @@ export class WaHomeMapEditor extends LitElement {
         furniture: true,
         // Each thing as the piece the 3D view draws, in its own colours.
         furnitureLook: homeMapPlanLook,
+        // The wall between two rooms, which each scan measures on its own.
+        oneWall: true,
         glow: true,
         width,
         height,
@@ -1766,7 +1754,7 @@ export class WaHomeMapEditor extends LitElement {
 
   /** Dots that move with the plan, or the grid while it is on. */
   private background(view: HomeMapView, width: number, height: number) {
-    const step = this.walls !== undefined ? HOME_MAP_SHAPE_GRID : HOME_MAP_ARRANGE_GRID;
+    const step = homeMapPiecePicked(this.selection) ? HOME_MAP_SHAPE_GRID : HOME_MAP_ARRANGE_GRID;
     let size = 20;
     if (this.toggles.grid) {
       size = step * view.scale;
@@ -1866,13 +1854,12 @@ export class WaHomeMapEditor extends LitElement {
     ];
   }
 
-  /** The model's dock: Lights or Daylight in 3D, the Look menu (the tiles'
-   * looks and 3D) and Turn back, with Live states when no plan's dock is
-   * beside it. */
+  /** The model's dock: the Sky menu in 3D (Now, Lights, Daylight and where
+   * north is), the Look menu (the tiles' looks and 3D) and Turn back, with Live
+   * states when no plan's dock is beside it. */
   private renderModelDock(withLive: boolean, live?: TemplateResult): TemplateResult {
     const real = this.model3d && this.bundleUrl !== undefined;
     const look = real ? undefined : this.modelLookNow();
-    const pressed = (on: boolean) => (on ? "true" : "false");
     const place = homeMapSunPlace(this.hass?.states);
     const sky = this.skyChoiceNow(place);
     const north = this.northLive ?? this.doc?.north ?? 0;
@@ -1885,19 +1872,24 @@ export class WaHomeMapEditor extends LitElement {
       looks.push({ label: "3D", on: real, title: "The floor in real 3D, with its furniture and each light lit as it is now", pick: () => { this.model3d = true; this.dockMenu = undefined; } });
     }
     if (real) looks.push(...this.qualityItems());
+    const skyItem = (choice: HomeMapSkyChoice, title: string): HomeMapDockItem => ({
+      label: SKY_NAMES[choice],
+      on: sky === choice,
+      title,
+      pick: () => { this.skyChoice = choice; this.dockMenu = undefined; },
+    });
+    const skies: HomeMapDockItem[] = [
+      ...(place === undefined ? [] : [skyItem("now", "The sun where it is now: it moves through the day, and at night only the lights that are on light the rooms")]),
+      skyItem("night", "Night: only the lights that are on light the rooms"),
+      skyItem("day", "Day: the sun comes in through the windows"),
+      ...(place === undefined ? [] : [{ label: `North ${north}°…`, on: false, title: "Where north is on the plan, so the sun comes in on the right side", pick: () => { this.dockMenu = "north"; } } satisfies HomeMapDockItem]),
+    ];
     return html`<div class="hme-dock">
-      ${real ? html`${place === undefined ? nothing : html`<button type="button" class="hme-tb ${sky === "now" ? "on" : ""}" aria-pressed=${pressed(sky === "now")} title="The sun where it is now: it moves through the day, and the house goes dark at night"
-          @click=${() => { this.skyChoice = "now"; }}>Now</button>`}
-        <button type="button" class="hme-tb ${sky === "night" ? "on" : ""}" aria-pressed=${pressed(sky === "night")} title="Night: only the lights that are on light the rooms"
-          @click=${() => { this.skyChoice = "night"; }}>Lights</button>
-        <button type="button" class="hme-tb ${sky === "day" ? "on" : ""}" aria-pressed=${pressed(sky === "day")} title="Day: the sun comes in through the windows"
-          @click=${() => { this.skyChoice = "day"; }}>Daylight</button>
-        ${place === undefined || sky !== "now" ? nothing : this.dockMenuButton("north", `North ${north}°`, "Where north is on the plan, so the sun comes in on the right side")}
-        <span class="hme-vsep"></span>` : nothing}
+      ${real ? this.dockMenuButton("sky", `Sky: ${SKY_NAMES[sky]}`, "The sun and the sky in 3D, and where north is") : nothing}
       ${this.dockMenuButton("look", `Look: ${real ? "3D" : MODEL_LOOK_NAMES[look ?? "night"] ?? look}`, "How the model is drawn: the tiles' looks, or real 3D")}
       <button type="button" class="hme-tb" title=${real ? "Show the whole floor from the home style's turn" : "Back to the home style's turn"} @click=${() => this.turnBack()}>⟲ Turn back</button>
       ${withLive && live !== undefined ? html`<span class="hme-vsep"></span>${live}` : nothing}
-    </div>${this.dockMenuList("look", "Look", looks, "menuitemradio")}${this.renderNorthMenu(north)}`;
+    </div>${this.dockMenuList("look", "Look", looks, "menuitemradio")}${this.dockMenuList("sky", "Sky", skies, "menuitemradio")}${this.renderNorthMenu(north)}`;
   }
 
   /** What the sky shows now: Now with no sun to go by is the night. */
@@ -1959,7 +1951,7 @@ export class WaHomeMapEditor extends LitElement {
   }
 
   /** A dock's menu button, View or Look, opening or closing its list. */
-  private dockMenuButton(which: "view" | "look" | "north", label: string, title: string): TemplateResult {
+  private dockMenuButton(which: "view" | "look" | "sky", label: string, title: string): TemplateResult {
     const open = this.dockMenu === which;
     return html`<button type="button" class="hme-tb ${open ? "on" : ""}" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} title=${title}
       @click=${() => { this.dockMenu = open ? undefined : which; }}>${label} <span class="hme-caret" aria-hidden="true">▾</span></button>`;
@@ -1968,7 +1960,7 @@ export class WaHomeMapEditor extends LitElement {
   /** A dock's menu while it is open, over the dock rather than in it (the
    * dock scrolls sideways, which would cut it off): each switch ticked
    * when on. A View switch keeps the menu open; a look closes it. */
-  private dockMenuList(which: "view" | "look", label: string, items: readonly HomeMapDockItem[], role: "menuitemcheckbox" | "menuitemradio"): TemplateResult | typeof nothing {
+  private dockMenuList(which: "view" | "look" | "sky", label: string, items: readonly HomeMapDockItem[], role: "menuitemcheckbox" | "menuitemradio"): TemplateResult | typeof nothing {
     if (this.dockMenu !== which) return nothing;
     return html`<div class="hme-dock-pop" role="menu" aria-label=${label}>
       ${items.map((it, i) => html`${it.group !== undefined && it.group !== items[i - 1]?.group

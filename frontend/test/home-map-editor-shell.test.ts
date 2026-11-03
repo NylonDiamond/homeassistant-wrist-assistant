@@ -42,7 +42,7 @@ import {
 import { homeSlidingPanes } from "../src/home-map/geometry.js";
 import { homeMapSaveWords } from "../src/home-map/home-map-editor.js";
 import { homeMapDeleteRoomText } from "../src/home-map/mode-arrange.js";
-import { HOME_MAP_SHAPE_TOOLS, homeMapFixAllLabel, homeMapShapeToolFor } from "../src/home-map/mode-shape.js";
+import { HOME_MAP_SHAPE_TOOLS, homeMapShapeToolFor } from "../src/home-map/mode-shape.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapRead } from "../src/home-map/model.js";
 import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT, HOME_MAP_RETRY_TEXT, type HomeMapApi } from "../src/home-map/save.js";
 import { HOME_TILE_MODEL_LOOKS, type HomeTileLook, homeTileArt } from "../src/home-map/tile-art.js";
@@ -125,15 +125,15 @@ describe("the editor's keys", () => {
     expect(homeMapIsFormControl("INPUT")).toBe(false);
   });
 
-  it("picks the edit page's tools and the wall tools by their letters, none of them a key the editor already has", () => {
-    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.key).join("")).toBe("vrwdnm");
+  it("picks the edit page's tools by their letters, none of them a key the editor already has", () => {
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.key).join("")).toBe("vrswdnotm");
     // Each named under its picture; the longer words and the key in its title.
-    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.name)).toEqual(["Pick", "Room", "Wall", "Door", "Window", "Measure"]);
-    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.label)).toEqual(["Pick and move", "Draw a room", "Inner wall", "Door", "Window", "Measure"]);
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.name)).toEqual(["Pick", "Room", "Split", "Wall", "Door", "Window", "Opening", "Stairs", "Measure"]);
+    expect(HOME_MAP_EDIT_TOOLS.map((t) => t.label)).toEqual(["Pick and move", "Draw a room", "Split the room", "Inner wall", "Door", "Window", "Way through (no door)", "Stairs", "Measure"]);
     // F opens Add on its furniture, no tool of its own.
     expect(homeMapEditToolFor("F")).toBeUndefined();
     expect(homeMapEditToolFor("m")).toBe("measure");
-    expect(homeMapEditToolFor("s")).toBeUndefined();
+    expect(homeMapEditToolFor("s")).toBe("split");
     expect(homeMapEditToolFor("a")).toBeUndefined();
     expect(HOME_MAP_SHAPE_TOOLS.map((t) => t.key).join("")).toBe("vswdnot");
     expect(homeMapShapeToolFor("D")).toBe("door");
@@ -226,9 +226,6 @@ describe("the editor's words", () => {
     expect(homeMapObjectName("washerDryer")).toBe("Washer dryer");
     expect(homeMapObjectName("television")).toBe("TV");
     expect(homeMapObjectName("coffeeMachine")).toBe("Coffee machine");
-    expect(homeMapFixAllLabel(3)).toBe("Fix all three");
-    expect(homeMapFixAllLabel(2)).toBe("Fix both");
-    expect(homeMapFixAllLabel(14)).toBe("Fix all 14");
     expect(homeMapSaveWords({ kind: "saving" })).toBe("Saving…");
     expect(homeMapSaveWords({ kind: "error", text: "x" })).toBe("Not saved");
     expect(homeMapDeleteRoomText(living, 3)).toBe("Living room comes off the map. Its 3 devices come off the map too. A scanned room comes back only by scanning it again on the iPhone. Undo brings it back while this page is open.");

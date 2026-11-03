@@ -8,15 +8,14 @@
 // menu items from the `HomeMapEditorContext` the shell hands it on every
 // draw, and answers the presses and keys the shell passes it.
 //
-// The page is in one of two states. Editing (no `ctx.walls`): a click picks
-// what is on top, a device pin, else a thing, else a room, and moves it.
-// Wall editing (`ctx.walls`, a room's id), entered by a double-click on a
-// room: that room's corners, walls, doors and windows, the rest dimmed. The
-// edit page does its work through three files that each keep one kind of
-// edit, as parts of it: `mode-arrange.ts` (rooms and things, the furniture
-// picker), `mode-devices.ts` (pins and the devices not on the map) and
-// `mode-shape.ts` (walls, corners and openings, and the placing tools).
-// `mode-style.ts` is the Home style panel the bar opens.
+// A click picks what is on top, a device pin, else a door or window, else a
+// wall, a thing or a room, and a drag moves it. There are no modes. The edit
+// page does its work through files that each keep one kind of edit, as parts
+// of it: `mode-arrange.ts` (rooms and things, the furniture picker),
+// `mode-devices.ts` (pins and the devices not on the map), `mode-shape.ts`
+// (walls, corners and openings, and the placing tools) and `mode-doors.ts`
+// (doors that meet, Connect and Fit rooms). `mode-style.ts` is the Home style
+// panel the bar opens.
 //
 // Rules every part keeps:
 //
@@ -48,8 +47,7 @@ import { homeMapRoomAt, sameHomeMapId } from "./model.js";
 import { homeMapRoomWalls, homeMapThingOfPin } from "./edit-ops.js";
 
 /** What is picked. Indexes are a room's walls as `homeMapRoomWalls` numbers
- * them, its outline corners, openings and objects (walls, corners and
- * openings only while that room's walls are edited). `pins` is two or more
+ * them, its outline corners, openings and objects. `pins` is two or more
  * pins picked at once, in the order picked (one is `pin`); `objects` two or
  * more things, in any rooms of the floor, in the order picked (one is
  * `object`). */
@@ -62,6 +60,12 @@ export type HomeMapSelection =
   | { kind: "objects"; items: HomeMapThingRef[] }
   | { kind: "pin"; pinId: string }
   | { kind: "pins"; pinIds: string[] };
+
+/** Whether a selection names a piece of a room: a wall, a corner or an opening,
+ * whose card and handles are `mode-shape.ts`'s. */
+export function homeMapPiecePicked(sel: HomeMapSelection | undefined): sel is Extract<HomeMapSelection, { kind: "wall" | "corner" | "opening" }> {
+  return sel?.kind === "wall" || sel?.kind === "corner" || sel?.kind === "opening";
+}
 
 /** The rooms what is picked stands in, each once, for Fit Room. A pin goes by
  * its room, else the room under it. */
@@ -155,14 +159,13 @@ export function sameHomeMapSelection(a: HomeMapSelection | undefined, b: HomeMap
 }
 
 /** The stage's switches. `snap`: a dragged room snaps to its neighbours'
- * walls; `square`: a dragged corner keeps its walls square; `grid`: points
- * land on the grid (10 cm, 5 cm while editing walls); `measure`: clicks
- * measure (the tool rail's Measure); `live`: the plan shows Home Assistant's
- * states; `scan`: wall editing draws each room's scan as it was over the
- * plan. */
+ * doors and walls, and a dragged corner lines up with the corners beside it;
+ * `grid`: points land on the grid (10 cm, 5 cm for a room's corners);
+ * `measure`: clicks measure (the tool rail's Measure); `live`: the plan shows
+ * Home Assistant's states; `scan`: each room's scan as it was is drawn over
+ * the plan. */
 export interface HomeMapToggles {
   snap: boolean;
-  square: boolean;
   grid: boolean;
   measure: boolean;
   live: boolean;
@@ -216,9 +219,6 @@ export interface HomeMapEditorContext {
   /** The floor on the stage, with the preview made on it. */
   readonly floor: HomeMapFloor;
   readonly selection: HomeMapSelection | undefined;
-  /** The room whose walls are being edited; undefined while editing the
-   * floor as a whole. */
-  readonly walls: string | undefined;
   readonly view: HomeMapView;
   /** The stage's size in pixels. */
   readonly stage: { width: number; height: number };
@@ -248,10 +248,6 @@ export interface HomeMapEditorContext {
   /** Show a change live without saving it; undefined ends it. */
   preview(op: HomeMapOp | undefined): void;
   select(selection: HomeMapSelection | undefined): void;
-  /** Edit a room's walls, `selection` picked in it (else the room); with
-   * undefined, back to editing the floor, `selection` picked (else the room
-   * whose walls were edited). */
-  editWalls(roomId: string | undefined, selection?: HomeMapSelection): void;
   setFloor(floorId: string): void;
   setToggle(key: keyof HomeMapToggles, on: boolean): void;
   /** Follow a press as a drag, the pointer captured. */
@@ -297,9 +293,6 @@ export interface HomeMapPart {
   /** The floating pill at the top of the stage: what is picked and what can
    * be done to it. */
   pill?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
-  /** A bar across the top of the stage, the pill under it (wall editing's
-   * Done). */
-  banner?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
   /** Switches in the dock, after the zoom and Fit (Snap). */
   dock?(ctx: HomeMapEditorContext): TemplateResult | typeof nothing;
   /** The switches of the dock's View menu, before the shell's Live
@@ -308,15 +301,13 @@ export interface HomeMapPart {
   /** A press on the stage at plan point `at`. True when the part took it;
    * false lets the shell pan (and clear the selection on a click). */
   pointerDown?(ctx: HomeMapEditorContext, e: PointerEvent, at: HomePoint): boolean;
-  /** A double-click on the stage at plan point `at`. */
-  doubleClick?(ctx: HomeMapEditorContext, e: MouseEvent, at: HomePoint): void;
   /** The pointer moving over the stage with no button down. */
   hover?(ctx: HomeMapEditorContext, at: HomePoint | undefined): void;
   /** A key, when no control of a form has focus. True when used. */
   keyDown?(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean;
   /** The stage's cursor. */
   cursor?(ctx: HomeMapEditorContext): string | undefined;
-  /** Another floor, or into or out of a room's walls: drop any tool. */
+  /** Another floor: drop any tool. */
   leave?(ctx: HomeMapEditorContext): void;
   /** Whether the part draws the floor's pins in its overlay, so the plan
    * under it leaves them out (its pools of light stay). */

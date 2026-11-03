@@ -381,6 +381,11 @@ export const editorStyles = css`
   .hme-stage { position: absolute; inset: 0; border-radius: 16px; border: 1px solid var(--wa-line); background: #11100f; overflow: hidden; }
   .hme-stage.hme-split-l { right: calc(100% - var(--hme-split, 50%) + 6px); }
   .hme-stage.hme-split-r { left: calc(var(--hme-split, 50%) + 6px); }
+  /* Both with the plan over the model, when that draws the plan bigger. */
+  .hme-stage-wrap.stack .hme-stage.hme-split-l { right: 0; bottom: calc(100% - var(--hme-split, 50%) + 6px); }
+  .hme-stage-wrap.stack .hme-stage.hme-split-r { left: 0; top: calc(var(--hme-split, 50%) + 6px); }
+  .hme-stage-wrap.stack .hme-split-handle { left: 0; right: 0; bottom: auto; width: auto; height: 12px; top: calc(var(--hme-split, 50%) - 6px); cursor: row-resize; }
+  .hme-stage-wrap.stack .hme-split-handle span { width: 44px; height: 4px; }
   .hme-split-handle {
     position: absolute; top: 0; bottom: 0; left: calc(var(--hme-split, 50%) - 6px); width: 12px; z-index: 5;
     display: flex; align-items: center; justify-content: center; cursor: col-resize; touch-action: none; border-radius: 6px;
@@ -399,29 +404,24 @@ export const editorStyles = css`
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
   .hme-pill { top: 14px; }
-  .hme-pill.beside, .hme-banner.beside { left: 100px; transform: none; max-width: calc(100% - 114px); }
-  .hme-pill.under { top: 62px; }
+  .hme-pill.beside { left: 100px; transform: none; max-width: calc(100% - 114px); }
   .hme-dock { bottom: 14px; gap: 6px; padding: 6px; }
-  /* Wall editing: the stage ringed in blue, and its Done bar. */
-  .hme-stage.walls { border: 2px solid var(--hme-sel); }
-  .hme-banner {
-    position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3;
-    display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 14px; border-radius: 12px;
-    background: rgba(28, 28, 30, 0.94); border: 1px solid var(--hme-sel); white-space: nowrap; color: #d1d1d6;
-    max-width: calc(100% - 28px); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  }
-  .hme-banner-t { overflow: hidden; text-overflow: ellipsis; }
-  .hme-banner b { color: #fff; }
   .hme-tb.hme-blue { background: var(--hme-sel); border-color: var(--hme-sel); color: #fff; }
   .hme-tb.hme-blue:hover:not(:disabled) { background: #6f9cf2; color: #fff; }
   .hme-tb.hme-blue kbd { font: 500 11px var(--hme-mono); opacity: 0.75; }
-  /* The tool rail, floating on the left of the plan. */
+  /* The tools, in a column of their own on the left of the plan, so they never
+   * cover the map. The plan and what floats over it start after the column. */
   .hme-toolrail {
-    position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 3;
-    display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 12px;
-    background: rgba(28, 28, 30, 0.94); border: 1px solid #3a3a3c; max-height: calc(100% - 28px); overflow-y: auto; scrollbar-width: none;
-    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 3; width: 66px;
+    display: flex; flex-direction: column; gap: 2px; padding: 6px 4px;
+    background: #161617; border-right: 1px solid #2c2c2e; overflow-y: auto; scrollbar-width: none;
   }
+  .hme-stage.rail { padding-left: 66px; }
+  .hme-stage.rail svg.hme-svg { left: 66px; width: calc(100% - 66px); }
+  .hme-stage.rail .hme-add-btn { left: 80px; }
+  .hme-stage.rail .hme-pill.beside { left: 164px; max-width: calc(100% - 178px); }
+  .hme-stage.rail .hme-dock, .hme-stage.rail .hme-pill:not(.beside) { left: calc(50% + 33px); max-width: calc(100% - 94px); }
+  .hme-stage.rail .hme-stage-hint { left: 80px; }
   .hme-rtool {
     width: 56px; min-height: 46px; flex: none; border-radius: 10px; border: 0; background: transparent; color: #c7c7cc; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 0 5px;
@@ -472,6 +472,23 @@ export const editorStyles = css`
   .hme-stage-empty b { color: #fff; font-size: 14px; }
   /* The real 3D look: the canvas fills the stage, dragged to orbit. */
   .hme-stage.hme-3d { background: #0f0e0d; }
+
+  /* Fit rooms: how many doors meet and the next thing to do. */
+  .hme-fit.hot { border-color: color-mix(in srgb, var(--hme-amber) 55%, var(--wa-line)); }
+  .hme-fit.good { border-color: color-mix(in srgb, #30d158 45%, var(--wa-line)); }
+  .hme-fit-bar { height: 5px; border-radius: 3px; background: var(--wa-input); overflow: hidden; margin: 2px 0 8px; }
+  .hme-fit-bar i { display: block; height: 100%; border-radius: 3px; background: var(--hme-amber); }
+  .hme-fit-bar i.full { background: #30d158; }
+  .hme-fit-acts { display: flex; gap: 6px; margin-top: 8px; }
+  .hme-fit-acts .hme-tb { flex: 1; }
+  .hme-door-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  .hme-door-name { flex: 1; min-width: 0; border: 0; background: none; padding: 0; color: var(--wa-soft); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hme-door-name:hover { color: var(--wa-ink); }
+  .hme-door-row .hme-tb { height: 24px; padding: 0 8px; font-size: 12px; }
+  .hme-fix-dot.green { background: #30d158; }
+  @keyframes hme-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .hme-door-open, .hme-door-choice > circle { animation: hme-pulse 1.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .hme-door-open, .hme-door-choice > circle { animation: none; } }
   .hme-3d-host { position: absolute; inset: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
   .hme-3d-host:active { cursor: grabbing; }
   .hme-3d-note {

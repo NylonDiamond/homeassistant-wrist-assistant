@@ -42,6 +42,17 @@
 // degrees is clockwise on screen, as the iPhone's "Move room" turns.
 
 import {
+  HOME_MAP_DOOR_ACROSS,
+  HOME_MAP_DOOR_ALONG,
+  type HomeMapDoor,
+  homeMapDoorPairs,
+  homeMapDoorPartner,
+  homeMapDoorsCouldMeet,
+  homeMapDoorsMeet,
+  homeMapDoorsOf,
+  homeMapOpenDoors,
+} from "./door-pairs.js";
+import {
   type HomeSegment,
   HOME_TOLERANCE,
   HOME_WALL_THICKNESS,
@@ -64,6 +75,7 @@ import {
   homeSide,
   homeTurnPoint,
   homeWallsOf,
+  HOME_ONE_WALL_GAP,
   isGap,
   onWallLine,
   segmentLength,
@@ -470,57 +482,35 @@ export interface HomeMapSnap {
   guides: HomeMapSnapGuide[];
 }
 
-/** How near a dragged room's door must come to a neighbour's door to lock to
- * it, in meters: square to the door's wall, and along it. */
-const DOOR_ACROSS = 0.25;
-const DOOR_ALONG = 0.35;
-/** Two doors further apart in width than this are not one door, in meters. */
-const DOOR_WIDTH_GAP = 0.5;
-/** Two doors further from parallel than this are not one door, in degrees. */
-const DOOR_PARALLEL = 5;
-
-/** A room's doors and wide openings, moved by `offset`. */
-function doorsOf(room: HomeMapRoom, offset: HomePoint = [0, 0]): { a: HomePoint; b: HomePoint; mid: HomePoint; width: number; ux: number; uy: number }[] {
-  return room.openings.flatMap((o) => {
-    if (o.kind === "window") return [];
-    const width = Math.hypot(o.b[0] - o.a[0], o.b[1] - o.a[1]);
-    if (width < 0.05) return [];
-    const a: HomePoint = [o.a[0] + offset[0], o.a[1] + offset[1]];
-    const b: HomePoint = [o.b[0] + offset[0], o.b[1] + offset[1]];
-    return [{ a, b, mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as HomePoint, width, ux: (b[0] - a[0]) / width, uy: (b[1] - a[1]) / width }];
-  });
-}
-
 /**
  * The move that puts a door of a room dragged by `dx`, `dy` on a neighbour's
- * door, the nearest two, or undefined with none near. The two must lie along
- * one line (a room is not turned to fit), be about one width, and their rooms
- * must stand on either side of the door. A door between two rooms is scanned
- * once from each, so this locks a room to the room it opens into.
+ * door where the most of its doors then meet, the nearest of those, or
+ * undefined with none near. The two must lie along one line (a room is not
+ * turned to fit), be about one width, and their rooms must stand on either
+ * side of the door. A door between two rooms is scanned once from each, so
+ * this locks a room to the rooms it opens into.
  */
 function snapRoomToDoor(room: HomeMapRoom, others: readonly HomeMapRoom[], dx: number, dy: number): HomeMapSnap | undefined {
-  const middle = homeMapRoomCenter(room);
-  const centre: HomePoint = [middle[0] + dx, middle[1] + dy];
-  let best: { pull: HomePoint; size: number; guide: HomeMapSnapGuide } | undefined;
-  for (const mine of doorsOf(room, [dx, dy])) {
-    for (const other of others) {
-      const theirCentre = homeMapRoomCenter(other);
-      for (const theirs of doorsOf(other)) {
-        if (Math.abs(mine.ux * theirs.uy - mine.uy * theirs.ux) > Math.sin((DOOR_PARALLEL * Math.PI) / 180)) continue;
-        if (Math.abs(mine.width - theirs.width) > DOOR_WIDTH_GAP) continue;
-        const pull: HomePoint = [theirs.mid[0] - mine.mid[0], theirs.mid[1] - mine.mid[1]];
-        const along = Math.abs(pull[0] * theirs.ux + pull[1] * theirs.uy);
-        const across = Math.abs(pull[0] * -theirs.uy + pull[1] * theirs.ux);
-        if (along > DOOR_ALONG || across > DOOR_ACROSS) continue;
-        const side = (p: HomePoint) => (p[0] - theirs.mid[0]) * -theirs.uy + (p[1] - theirs.mid[1]) * theirs.ux;
-        const mineSide = side([centre[0] + pull[0], centre[1] + pull[1]]);
-        if (mineSide * side(theirCentre) >= 0) continue;
-        const size = Math.hypot(pull[0], pull[1]);
-        if (best === undefined || size < best.size) best = { pull, size, guide: { a: theirs.a, b: theirs.b, roomId: other.id, door: true } };
-      }
+  const theirs = others.flatMap((other) => homeMapDoorsOf(other));
+  let best: { pull: HomePoint; size: number; meets: HomeMapDoor[] } | undefined;
+  for (const mine of homeMapDoorsOf(room, [dx, dy])) {
+    for (const their of theirs) {
+      if (!homeMapDoorsCouldMeet(mine, their)) continue;
+      const pull: HomePoint = [their.mid[0] - mine.mid[0], their.mid[1] - mine.mid[1]];
+      if (Math.abs(pull[0] * their.ux + pull[1] * their.uy) > HOME_MAP_DOOR_ALONG) continue;
+      if (Math.abs(pull[0] * -their.uy + pull[1] * their.ux) > HOME_MAP_DOOR_ACROSS) continue;
+      const placed = homeMapDoorsOf(room, [dx + pull[0], dy + pull[1]]);
+      if (!placed.some((d) => d.index === mine.index && homeMapDoorsMeet(d, their))) continue;
+      const meets = placed.flatMap((d) => theirs.find((t) => homeMapDoorsMeet(d, t)) ?? []);
+      const size = Math.hypot(pull[0], pull[1]);
+      if (best === undefined || meets.length > best.meets.length || (meets.length === best.meets.length && size < best.size)) best = { pull, size, meets };
     }
   }
-  return best === undefined ? undefined : { dx: dx + best.pull[0], dy: dy + best.pull[1], guides: [best.guide] };
+  return best === undefined ? undefined : {
+    dx: dx + best.pull[0],
+    dy: dy + best.pull[1],
+    guides: best.meets.map((d) => ({ a: d.a, b: d.b, roomId: d.roomId, door: true as const })),
+  };
 }
 
 /**
@@ -3484,4 +3474,198 @@ export class HomeMapHistory {
     this.past = [];
     this.future = [];
   }
+}
+
+// ── fitting rooms by their doors ─────────────────────────────────────────
+
+/** Fit rooms looks this far for a better place, in meters. */
+const FIT_REACH = 3;
+/** Moved rooms push aside what they would cover deeper than this, in meters. */
+const FIT_OVERLAP = 0.2;
+/** A door this near square to its partner's line keeps its room's turn, in
+ * degrees: a scan is never exact, and a room should not tilt for it. */
+const CONNECT_KEEP_TURN = 5;
+
+/** What Fit rooms offers: these rooms moved, and how many of the floor's
+ * doors meet before and after. */
+export interface HomeMapFit {
+  moves: { roomId: string; dx: number; dy: number }[];
+  doors: number;
+  before: number;
+  after: number;
+}
+
+function roomShifted(room: HomeMapRoom, dx: number, dy: number): HomeMapRoom {
+  const at = (p: readonly number[]): HomePoint => [p[0]! + dx, p[1]! + dy];
+  return {
+    ...room,
+    outline: room.outline.map(at),
+    walls: room.walls.map((w) => ({ ...w, a: at(w.a), b: at(w.b) })),
+    openings: room.openings.map((o) => ({ ...o, a: at(o.a), b: at(o.b) })),
+  };
+}
+
+const fitMemo = new WeakMap<object, { fit: HomeMapFit | undefined }>();
+
+/**
+ * The best move of rooms a floor's doors point to, or undefined when no move
+ * makes more doors meet. Each door with no partner is tried on each door of
+ * another room it could be, up to `FIT_REACH` away, with no turning. A room
+ * that a moved room would land on moves with it, so two rooms side by side go
+ * together. A move must make at least one more pair meet; the one with the
+ * most doors wins, then the fewest rooms, then the shortest. Kept for the
+ * floor object.
+ */
+export function homeMapFitOf(floor: Pick<HomeMapFloor, "rooms">): HomeMapFit | undefined {
+  const held = fitMemo.get(floor);
+  if (held !== undefined) return held.fit;
+  const rooms = floor.rooms;
+  const pairs = homeMapDoorPairs(floor);
+  const axes = rooms.length > 0 ? floorAxes(rooms) : undefined;
+  let best: { moved: Set<string>; dx: number; dy: number; after: number; size: number } | undefined;
+  if (axes !== undefined) {
+    for (const door of homeMapOpenDoors(pairs)) {
+      for (const their of pairs.doors) {
+        if (!homeMapDoorsCouldMeet(door, their)) continue;
+        const dx = their.mid[0] - door.mid[0];
+        const dy = their.mid[1] - door.mid[1];
+        const size = Math.hypot(dx, dy);
+        if (size > FIT_REACH || size < 0.01) continue;
+        const moved = new Set([door.roomId]);
+        for (let grew = true; grew;) {
+          grew = false;
+          for (const room of rooms) {
+            if (moved.has(room.id)) continue;
+            const hit = rooms.some((m) => moved.has(m.id) && (overlapOf(roomShifted(m, dx, dy), room, axes)?.depth ?? 0) > FIT_OVERLAP);
+            if (hit) {
+              moved.add(room.id);
+              grew = true;
+            }
+          }
+        }
+        if (moved.size === rooms.length) continue;
+        const after = homeMapDoorPairs({ rooms: rooms.map((room) => (moved.has(room.id) ? roomShifted(room, dx, dy) : room)) }).met;
+        if (after < pairs.met + 2) continue;
+        if (best === undefined || after > best.after || (after === best.after && (moved.size < best.moved.size || (moved.size === best.moved.size && size < best.size)))) {
+          best = { moved, dx, dy, after, size };
+        }
+      }
+    }
+  }
+  const fit = best === undefined ? undefined : {
+    moves: [...best.moved].map((roomId) => ({ roomId, dx: r(best!.dx), dy: r(best!.dy) })),
+    doors: pairs.doors.length,
+    before: pairs.met,
+    after: best.after,
+  };
+  fitMemo.set(floor, { fit });
+  return fit;
+}
+
+/**
+ * Doors that meet made one door: the narrower takes the wider's ends, on its
+ * own wall's line, as a scan often sees only part of a door from one side; of
+ * two as wide, the one in `roomIds` moves to the other. Only pairs with a room
+ * in `roomIds`, on the floor of the first of them.
+ */
+export function meetDoors(doc: HomeMapDocument, roomIds: readonly string[]): HomeMapDocument | undefined {
+  const first = roomIds[0] === undefined ? undefined : roomAt(doc, roomIds[0]);
+  if (first === undefined) return undefined;
+  const named = (id: string) => roomIds.some((x) => sameHomeMapId(x, id));
+  const pairs = homeMapDoorPairs({ rooms: first.floor.rooms });
+  const changed = new Map<string, HomeMapOpening>();
+  const key = (d: HomeMapDoor) => `${d.roomId.toUpperCase()}:${d.index}`;
+  for (const door of pairs.doors) {
+    const their = homeMapDoorPartner(pairs, door.roomId, door.index);
+    if (their === undefined || !named(door.roomId) && !named(their.roomId)) continue;
+    if (key(homeMapDoorPartner(pairs, their.roomId, their.index) ?? door) !== key(door)) continue;
+    const narrower = door.width < their.width - 0.01;
+    const asWide = Math.abs(door.width - their.width) <= 0.01;
+    if (!narrower && !(asWide && named(door.roomId) && (!named(their.roomId) || key(door) > key(their)))) continue;
+    const along = (p: HomePoint) => (p[0] - door.mid[0]) * door.ux + (p[1] - door.mid[1]) * door.uy;
+    const s0 = along(their.a);
+    const s1 = along(their.b);
+    const lo = Math.min(s0, s1);
+    const hi = Math.max(s0, s1);
+    const point = (s: number): HomePoint => roundPoint([door.mid[0] + door.ux * s, door.mid[1] + door.uy * s]);
+    const room = first.floor.rooms.find((x) => sameHomeMapId(x.id, door.roomId))!;
+    changed.set(key(door), orderedOpening({ ...room.openings[door.index]!, a: point(lo), b: point(hi) }));
+  }
+  if (changed.size === 0) return doc;
+  const rooms = first.floor.rooms.map((room) => {
+    const openings = room.openings.map((o, i) => changed.get(`${room.id.toUpperCase()}:${i}`) ?? o);
+    return openings.some((o, i) => o !== room.openings[i]) ? orderedRoom({ ...room, openings }) : room;
+  });
+  return withFloor(doc, first.fi, { ...first.floor, rooms });
+}
+
+/** Fit rooms' move made, with the doors that now meet made one door. */
+export function fitRooms(doc: HomeMapDocument, moves: HomeMapFit["moves"]): HomeMapDocument | undefined {
+  let next: HomeMapDocument | undefined = doc;
+  for (const m of moves) {
+    next = next === undefined ? undefined : moveRoom(next, m.roomId, m.dx, m.dy);
+  }
+  return next === undefined ? undefined : meetDoors(next, moves.map((m) => m.roomId));
+}
+
+/**
+ * A door connected to another room's door: its room moved, and turned if it
+ * must be, so its door lands on the other with the rooms on either side, and
+ * the two made one door. Undefined when either is gone, is no door, or the
+ * rooms are on two floors.
+ */
+export function connectDoors(doc: HomeMapDocument, roomId: string, opening: number, otherRoomId: string, otherOpening: number): HomeMapDocument | undefined {
+  const at = roomAt(doc, roomId);
+  const them = roomAt(doc, otherRoomId);
+  if (at === undefined || them === undefined || at.fi !== them.fi || sameHomeMapId(roomId, otherRoomId)) return undefined;
+  const door = homeMapDoorsOf(at.room).find((d) => d.index === opening);
+  const their = homeMapDoorsOf(them.room).find((d) => d.index === otherOpening);
+  if (door === undefined || their === undefined) return undefined;
+  const out = (d: HomeMapDoor): HomePoint => {
+    const n: HomePoint = [-d.uy, d.ux];
+    return (d.centre[0] - d.mid[0]) * n[0] + (d.centre[1] - d.mid[1]) * n[1] > 0 ? [-n[0], -n[1]] : n;
+  };
+  const from = out(door);
+  const towards = out(their);
+  const to: HomePoint = [-towards[0], -towards[1]];
+  const degrees = (Math.atan2(from[0] * to[1] - from[1] * to[0], from[0] * to[0] + from[1] * to[1]) * 180) / Math.PI;
+  let next: HomeMapDocument | undefined = Math.abs(degrees) < CONNECT_KEEP_TURN ? doc : turnRoom(doc, roomId, degrees, door.mid);
+  const turned = next === undefined ? undefined : roomAt(next, roomId);
+  const placed = turned === undefined ? undefined : homeMapDoorsOf(turned.room).find((d) => d.index === opening);
+  if (next === undefined || placed === undefined) return undefined;
+  next = moveRoom(next, roomId, their.mid[0] - placed.mid[0], their.mid[1] - placed.mid[1]);
+  return next === undefined ? undefined : meetDoors(next, [roomId]);
+}
+
+/**
+ * What Fit rooms still lists from the scan check. The walls of two rooms less
+ * than `HOME_ONE_WALL_GAP` apart draw as one wall, so a small gap or overlap
+ * says nothing any more; and a room with a door of its own does not need
+ * another to a neighbour.
+ */
+export function homeMapFitIssues(floor: HomeMapFloor): HomeMapIssue[] {
+  return scanIssues(floor).filter((issue) => {
+    if (issue.kind === "gap") return false;
+    if (issue.kind === "overlap") return issue.amount >= HOME_ONE_WALL_GAP;
+    if (issue.kind === "missingDoor") {
+      const room = floor.rooms.find((x) => sameHomeMapId(x.id, issue.roomIds[0]!));
+      return room !== undefined && !room.openings.some(isGap);
+    }
+    return true;
+  });
+}
+
+/** Every issue Fit rooms lists fixed, as `fixAllIssues` fixes the scan check's. */
+export function fitAllIssues(doc: HomeMapDocument, floorId: string): HomeMapDocument | undefined {
+  let next = doc;
+  const tried = new Set<string>();
+  for (let i = 0; i < 64; i += 1) {
+    const floor = next.floors.find((x) => sameHomeMapId(x.id, floorId));
+    if (floor === undefined) return undefined;
+    const issue = homeMapFitIssues(floor).filter((x) => !tried.has(x.id)).sort((a, b) => FIX_ORDER.indexOf(a.kind) - FIX_ORDER.indexOf(b.kind))[0];
+    if (issue === undefined) break;
+    tried.add(issue.id);
+    next = issue.fix(next) ?? next;
+  }
+  return next === doc ? undefined : next;
 }

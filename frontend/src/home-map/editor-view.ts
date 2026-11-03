@@ -37,7 +37,7 @@ export function homeMapToPlan(view: HomeMapView, s: readonly number[]): HomePoin
  * pixels, `pad` pixels clear of the sides (room for the tool rail) and
  * `padY` of the top and bottom (room for the pill and the dock), centred. A
  * floor with no rooms shows 10 meters across round 0, 0. */
-export function homeMapFitView(floor: HomeMapFloor | undefined, width: number, height: number, pad = 72, padY = 96): HomeMapView {
+export function homeMapFitView(floor: HomeMapFloor | undefined, width: number, height: number, pad = 44, padY = 72): HomeMapView {
   const empty = floor === undefined || (floor.rooms.length === 0 && floor.pins.length === 0);
   const b = empty ? { minX: -5, minY: -5, maxX: 5, maxY: 5 } : homeMapBounds(floor);
   const w = Math.max(b.maxX - b.minX, 1);
@@ -384,4 +384,16 @@ export function homeMapStoreTips(shown: boolean): void {
   } catch {
     // Private browsing: it lasts until the page closes.
   }
+}
+
+/** How wide the plan's tool column is, in pixels. */
+export const HOME_MAP_RAIL_WIDTH = 66;
+
+/** Whether Both shows the plan over the model and not beside it, for a stage
+ * this size and a floor this size: whichever split draws the plan bigger, with
+ * a margin so a window near the line does not flip back and forth. */
+export function homeMapSplitStacked(width: number, height: number, floorWidth: number, floorDepth: number): boolean {
+  if (width <= 0 || height <= 0 || floorWidth <= 0 || floorDepth <= 0) return false;
+  const room = (w: number, h: number) => Math.min(Math.max(w - HOME_MAP_RAIL_WIDTH - 24, 1) / floorWidth, Math.max(h - 96, 1) / floorDepth);
+  return room(width, height / 2) > room(width / 2, height) * 1.1;
 }

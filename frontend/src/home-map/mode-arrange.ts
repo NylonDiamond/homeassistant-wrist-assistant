@@ -91,6 +91,7 @@ import {
   homeMapThingOfPin,
   levelObject,
   levelRoom,
+  meetDoors,
   moveObject,
   moveObjects,
   moveRoom,
@@ -131,6 +132,7 @@ import {
   homeMapThingPicked,
   homeMapToggleThing,
   sameHomeMapSelection,
+  homeMapPiecePicked,
 } from "./editor-mode.js";
 import {
   hmeCard,
@@ -452,6 +454,11 @@ const fmt = (v: number) => v.toFixed(1);
 const pt = (p: readonly number[]) => `${p[0]!.toFixed(1)},${p[1]!.toFixed(1)}`;
 
 export class ArrangeMode {
+  /** A room's doors card, under its head (`mode-doors.ts`). */
+  roomDoors: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
+  /** A room's walls and scan cards, near the foot (`mode-shape.ts`). */
+  roomWalls: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
+
   readonly draw = new HomeMapDrawTool(HOME_MAP_ARRANGE_GRID);
   /** The snap lines while a room is dragged, whether a drag is on, and
    * whether that drag resizes it (its sizes then stay on show). */
@@ -612,6 +619,7 @@ export class ArrangeMode {
   }
 
   private focus(ctx: HomeMapEditorContext): HomeMapRoom | undefined {
+    if (homeMapPiecePicked(ctx.selection)) return undefined;
     const id = homeMapSelectionRoom(ctx.selection);
     return id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
   }
@@ -937,9 +945,16 @@ export class ArrangeMode {
         ctx.preview((d) => moveRoom(d, id, dx, dy));
       },
       end: (_p, _ev, moved) => {
+        // Doors it locked to become one door with theirs.
+        const locked = this.guides.some((g) => g.door === true);
         this.stopDrag(ctx);
         const [dx, dy] = delta;
-        if (moved && (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005)) ctx.apply((d) => moveRoom(d, id, dx, dy), { select: { kind: "room", roomId: id } });
+        if (moved && (Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005)) {
+          ctx.apply((d) => {
+            const next = moveRoom(d, id, dx, dy);
+            return next !== undefined && locked ? meetDoors(next, [id]) : next;
+          }, { select: { kind: "room", roomId: id } });
+        }
       },
       cancel: () => this.stopDrag(ctx),
     });
@@ -1364,11 +1379,21 @@ export class ArrangeMode {
     return html`<span class="hme-pill-name">${homeMapRoomName(room)}</span>
       ${this.clip === undefined ? nothing : this.pasteButton(ctx)}
       <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>⟲ Turn 90°</button>
-      <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => squareCorners(d, id))}>Square the corners</button>
-      <button type="button" class="hme-tb" title="Turn it to the floor's walls and slide it onto the nearest wall line, as the iPhone does"
-        @click=${() => ctx.apply((d) => snapRoomToWalls(d, id))}>Snap to walls</button>
-      ${this.floorMenu(ctx, room, "Move to floor", "hme-tb")}
-      <button type="button" class="hme-tb danger" @click=${() => void this.askDelete(ctx, room)}>Delete</button>`;
+      <button type="button" class="hme-tb" title="Make its corners square" @click=${() => ctx.apply((d) => squareCorners(d, id))}>Square</button>
+      ${hmeMenuButton({
+        label: "More",
+        cls: "hme-tb",
+        options: [
+          { value: "snap", label: "Snap to walls" },
+          { value: "level", label: "Level" },
+          { value: "delete", label: "Delete room" },
+        ],
+        pick: (what) => {
+          if (what === "snap") ctx.apply((d) => snapRoomToWalls(d, id));
+          else if (what === "level") ctx.apply((d) => levelRoom(d, id));
+          else void this.askDelete(ctx, room);
+        },
+      })}`;
   }
 
   /** Move to floor: the other floors, and a new one. */
@@ -1427,9 +1452,11 @@ export class ArrangeMode {
         <div class="hme-head-t">
           <strong>${homeMapRoomName(room)}</strong>
           <span>${homeMapRoomSizeText(room)} · ${size.area.toFixed(1)} m²${areaName === undefined ? "" : ` · ${areaName} area`}</span>
-          <span>${homeMapFloorName(ctx.floor)} · double-click to edit its walls</span>
+          <span>${homeMapFloorName(ctx.floor)}</span>
         </div>
       </section>
+
+      ${this.roomDoors?.(ctx, room) ?? nothing}
 
       ${this.inRoomCard(ctx, room)}
 
@@ -1458,24 +1485,21 @@ export class ArrangeMode {
         }))}
         ${hmeHint("What a tap on this room does on the map tiles and the watch.")}`)}
 
-      ${hmeCard("Size", html`
+      ${hmeCard("Size and place", html`
         ${hmeFields(
           hmeNumber({ tag: "W", label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { width: v })) }),
           hmeNumber({ tag: "D", label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { depth: v })) }),
           hmeNumber({ tag: "H", label: "Wall height", value: room.height, unit: "m", min: 0.5, max: 20, ...edit((d, v) => setWallHeight(d, id, v)) }))}
-        <p class="hme-foot-hint">Along its own walls, about its middle; its doors, things and devices move with it.</p>`)}
-
-      ${hmeCard("Place", html`
-        ${hmeGroup("Corner", hmeFields(
+        ${hmeFields(
           hmeNumber({ tag: "X", label: "Left", value: bounds.minX, unit: "m", ...edit((d, v) => moveRoom(d, id, v - bounds.minX, 0)) }),
-          hmeNumber({ tag: "Y", label: "Top", value: bounds.minY, unit: "m", ...edit((d, v) => moveRoom(d, id, 0, v - bounds.minY)) })))}
-        ${hmeGroup("Turn", html`<div class="hme-turn">
+          hmeNumber({ tag: "Y", label: "Top", value: bounds.minY, unit: "m", ...edit((d, v) => moveRoom(d, id, 0, v - bounds.minY)) }))}
+        <div class="hme-turn">
           ${hmeNumber({ label: "Turn", value: tilt, unit: "°", digits: 1, min: -180, max: 180, ...edit((d, v) => turnRoom(d, id, v - tilt)) })}
           <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, -90))}>−90°</button>
           <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnRoom(d, id, 90))}>+90°</button>
           <button type="button" class="hme-tb" title="Turn it so its longest wall runs straight across or down" @click=${() => ctx.apply((d) => levelRoom(d, id))}>Level</button>
-        </div>`)}
-        <p class="hme-foot-hint">Drag a number sideways to change it (Shift for big steps, Alt for fine ones), or click it to type. On the plan, drag the room to move it, a square handle to resize it, the round one to turn it.</p>
+        </div>
+        <p class="hme-foot-hint">Along its own walls, about its middle; its doors, things and devices move with it. Drag a number sideways to change it (Shift for big steps, Alt for fine ones), or click it to type. On the plan, drag the room to move it, a square handle to resize it, the round one to turn it.</p>
         ${hmeRow("Floor", hmeSelect({
           label: "Floor",
           value: ctx.floor.id,
@@ -1491,10 +1515,9 @@ export class ArrangeMode {
         ${this.roomColourRow(ctx, room, "wallColor")}
         <p class="hme-foot-hint">On the plan, the night, warm and clay looks and in 3D, here, on the iPhone and on the watch. The line looks keep their own colour.</p>`)}
 
-      ${hmeCard("Walls and more", html`
-        <div class="hme-r tight"><span class="hme-grow">${room.openings.length === 0 ? "No doors or windows" : [...new Set(room.openings.map(homeMapOpeningName))].join(", ")}</span>
-          <button type="button" class="hme-link" title="Edit this room's corners, walls, doors and windows (or double-click the room)"
-            @click=${() => ctx.editWalls(id)}>Edit walls ›</button></div>
+      ${this.roomWalls?.(ctx, room) ?? nothing}
+
+      ${hmeCard("More", html`
         <div class="hme-row-end">
           ${hmeMenuButton({
             label: "＋ Add a plain box",

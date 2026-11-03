@@ -631,3 +631,107 @@ export function homeClipSegment(p: HomePoint, q: HomePoint, a: HomePoint, b: Hom
   const cut: HomePoint = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
   return sp >= 0 ? [p, cut] : [cut, q];
 }
+
+// ── one wall ─────────────────────────────────────────────────────────────
+
+/** Two rooms' walls this near each other, in meters, are one wall to look at:
+ * the scan measures each room apart, so the wall between two rooms comes out
+ * twice, a few centimeters apart. The map keeps both. */
+export const HOME_ONE_WALL_GAP = 0.15;
+
+/** Where a room's wall is drawn as one wall with its neighbours': the line it
+ * shares, as thick as the thickest of them. `joined` when it shares one;
+ * else it is the wall as it stands. */
+export interface HomeOneWallPlace extends HomeSegment {
+  joined: boolean;
+}
+
+const oneWallMemo = new WeakMap<object, Map<string, HomeOneWallPlace[]>>();
+
+/**
+ * Each room's walls, by room id in upper case and in `homeWallsOf`'s order, as
+ * drawn with the walls of two rooms read as one. Walls of different rooms
+ * that run within 5 degrees of parallel, less than `HOME_ONE_WALL_GAP` apart
+ * and beside each other for more than 5 cm come together on one line, and so
+ * do walls that reach them through another. The line runs the way the longest
+ * of them runs, at their middle by length. Kept for the floor object.
+ */
+export function homeOneWallPlaces(floor: Pick<HomeMapFloor, "rooms">): Map<string, HomeOneWallPlace[]> {
+  const held = oneWallMemo.get(floor);
+  if (held !== undefined) return held;
+  type Wall = { room: string; seg: HomeSegment; length: number; ux: number; uy: number };
+  const walls: Wall[] = [];
+  for (const room of floor.rooms) {
+    for (const seg of homeWallsOf(room)) {
+      const length = segmentLength(seg);
+      walls.push({ room: room.id.toUpperCase(), seg, length, ux: length > 0 ? (seg.b[0] - seg.a[0]) / length : 1, uy: length > 0 ? (seg.b[1] - seg.a[1]) / length : 0 });
+    }
+  }
+  const parent = walls.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]!]!;
+      i = parent[i]!;
+    }
+    return i;
+  };
+  const parallel = Math.sin((5 * Math.PI) / 180);
+  for (let i = 0; i < walls.length; i += 1) {
+    for (let j = i + 1; j < walls.length; j += 1) {
+      const p = walls[i]!;
+      const q = walls[j]!;
+      if (p.room === q.room || p.length <= 0.05 || q.length <= 0.05) continue;
+      if (Math.abs(p.ux * q.uy - p.uy * q.ux) > parallel) continue;
+      const [long, short] = p.length >= q.length ? [p, q] : [q, p];
+      const along = (s: HomePoint) => (s[0] - long.seg.a[0]) * long.ux + (s[1] - long.seg.a[1]) * long.uy;
+      const s0 = along(short.seg.a);
+      const s1 = along(short.seg.b);
+      const lo = Math.max(Math.min(s0, s1), 0);
+      const hi = Math.min(Math.max(s0, s1), long.length);
+      if (hi - lo <= 0.05) continue;
+      // How far apart they are in the middle of where they run side by side.
+      const m = (lo + hi) / 2;
+      const k = (m - s0) / (s1 - s0);
+      const x = short.seg.a[0] + (short.seg.b[0] - short.seg.a[0]) * k;
+      const y = short.seg.a[1] + (short.seg.b[1] - short.seg.a[1]) * k;
+      const apart = Math.abs((x - long.seg.a[0]) * -long.uy + (y - long.seg.a[1]) * long.ux);
+      if (apart < HOME_ONE_WALL_GAP) parent[find(i)] = find(j);
+    }
+  }
+  const groups = new Map<number, number[]>();
+  walls.forEach((_, i) => {
+    const root = find(i);
+    groups.set(root, [...(groups.get(root) ?? []), i]);
+  });
+  const places: HomeOneWallPlace[] = walls.map((w) => ({ ...w.seg, joined: false }));
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const list = members.map((i) => walls[i]!);
+    const long = list.reduce((m, w) => (w.length > m.length ? w : m));
+    const across = (p: HomePoint) => (p[0] - long.seg.a[0]) * -long.uy + (p[1] - long.seg.a[1]) * long.ux;
+    const total = list.reduce((s, w) => s + w.length, 0);
+    const line = list.reduce((s, w) => s + ((across(w.seg.a) + across(w.seg.b)) / 2) * w.length, 0) / Math.max(total, 1e-9);
+    const t = Math.max(...list.map((w) => w.seg.t));
+    const onto = (p: HomePoint): HomePoint => {
+      const off = line - across(p);
+      return [p[0] - long.uy * off, p[1] + long.ux * off];
+    };
+    for (const i of members) places[i] = { a: onto(walls[i]!.seg.a), b: onto(walls[i]!.seg.b), t, joined: true };
+  }
+  const out = new Map<string, HomeOneWallPlace[]>();
+  walls.forEach((w, i) => out.set(w.room, [...(out.get(w.room) ?? []), places[i]!]));
+  oneWallMemo.set(floor, out);
+  return out;
+}
+
+/** A room's walls as one wall with its neighbours (`homeOneWallPlaces`). */
+export function homeOneWallsOf(floor: Pick<HomeMapFloor, "rooms">, room: HomeMapRoom): HomeOneWallPlace[] {
+  return homeOneWallPlaces(floor).get(room.id.toUpperCase()) ?? homeWallsOf(room).map((w) => ({ ...w, joined: false }));
+}
+
+/** A drawn wall less every opening on its line, whichever room recorded it.
+ * A wall on a shared line may stand up to half `HOME_ONE_WALL_GAP` from the
+ * wall the door was scanned in, so the reach is that wide at least. */
+export function homeOneWallPieces(place: HomeSegment, openings: readonly HomeMapOpening[]): HomeSegment[] {
+  return cutWall({ ...place, t: Math.max(place.t, 0.2) }, openings).map((s) => ({ ...s, t: place.t }));
+}

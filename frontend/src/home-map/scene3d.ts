@@ -67,7 +67,7 @@ import { CopyShader } from "three/addons/shaders/CopyShader.js";
 import { homeMapHeldPins } from "./edit-ops.js";
 import { type HomeMapSky } from "./sun.js";
 import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
-import { type HomeSegment, homeFloorKind, homeWallsOf } from "./geometry.js";
+import { type HomeSegment, homeFloorKind, homeOneWallsOf } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
 import { type HomeMapQuality, type HomeMapQualitySettings, HOME_MAP_SLOW_FRAME_MS, homeMapMedianFrame, homeMapQualitySettings } from "./quality.js";
 
@@ -76,9 +76,10 @@ export interface HomeMap3DInput {
   floor: HomeMapFloor;
   /** Home Assistant's states, or undefined to draw every light off. */
   states: HomeMapStates | undefined;
-  /** The picked room, or the picked things (one or several, in any rooms),
-   * each by its room and its place in that room's list. */
-  mark: { roomId: string } | { things: readonly { roomId: string; object: number }[] } | undefined;
+  /** The picked room, the picked things (one or several, in any rooms), each
+   * by its room and its place in that room's list, or the picked wall, door or
+   * window. */
+  mark: { roomId: string } | { things: readonly { roomId: string; object: number }[] } | { piece: Extract<HomeMap3DPick, { kind: "wall" | "opening" }> } | undefined;
   /** The sun and the sky (`sun.ts`). At night only the lights light the
    * rooms. */
   sky: HomeMapSky;
@@ -282,55 +283,108 @@ export function homeMapRoomColors(room: HomeMapRoom): { floor: string | number; 
   };
 }
 
-/** One room's floor, walls and window glass, and its wall pieces. */
-function buildRoom(room: HomeMapRoom): { group: THREE.Group; walls: WallPiece[] } {
+/** One wall of a room as the 3D look stands it: its line, which side the room
+ * lies, how thick, and the doors and windows cut out of it, whichever room
+ * recorded them, along its line and up from the floor. `wall` is its place in
+ * the room's walls; a cut's `opening` is its place in this room's openings, for
+ * one the room recorded itself. */
+export interface HomeMap3DWall {
+  wall: number;
+  ax: number;
+  ay: number;
+  len: number;
+  ux: number;
+  uy: number;
+  nx: number;
+  nz: number;
+  thick: number;
+  cuts: { s0: number; s1: number; z0: number; z1: number; window: boolean; opening?: number }[];
+}
+
+/**
+ * A room's walls as the 3D look stands them. Walls of two rooms a few
+ * centimeters apart share one line (`homeOneWallPlaces`), each taking its side
+ * of it, so each room shows its own wall's colour. Every door and window on the
+ * floor cuts every wall on its line, as the plan does, so a door one room
+ * recorded opens the wall its neighbour holds too. Doors that overlap make one
+ * opening.
+ */
+export function homeMapRoomWalls3D(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms">): HomeMap3DWall[] {
+  const n = Math.max(room.outline.length, 1);
+  const cx = room.outline.reduce((s, p) => s + p[0], 0) / n;
+  const cy = room.outline.reduce((s, p) => s + p[1], 0) / n;
+  const height = room.height > 0 ? room.height : 2.4;
+  const all = homeOneWallsOf(floor, room);
+  const out: HomeMap3DWall[] = [];
+  all.forEach((w, wall) => {
+    if (all.some((o, j) => j !== wall && covers(o, w))) return;
+    const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
+    if (len < 0.01) return;
+    const ux = (w.b[0] - w.a[0]) / len;
+    const uy = (w.b[1] - w.a[1]) / len;
+    // The room's side of this wall, so a wall between the camera and the
+    // room can fade.
+    let nx = -uy;
+    let nz = ux;
+    if ((cx - w.a[0]) * nx + (cy - w.a[1]) * nz < 0) {
+      nx = -nx;
+      nz = -nz;
+    }
+    const thick = w.t > 0 ? w.t : 0.1;
+    const cuts: HomeMap3DWall["cuts"] = [];
+    for (const other of floor.rooms) {
+      other.openings.forEach((o, index) => {
+        const off = (p: readonly number[]) => Math.abs((p[0]! - w.a[0]) * uy - (p[1]! - w.a[1]) * ux);
+        if (off(o.a) > 0.2 || off(o.b) > 0.2) return;
+        const sa = (o.a[0] - w.a[0]) * ux + (o.a[1] - w.a[1]) * uy;
+        const sb = (o.b[0] - w.a[0]) * ux + (o.b[1] - w.a[1]) * uy;
+        const s0 = Math.max(0, Math.min(sa, sb));
+        const s1 = Math.min(len, Math.max(sa, sb));
+        const z0 = Math.max(0, Math.min(o.z0, height));
+        const z1 = Math.max(z0, Math.min(o.z1, height));
+        if (s1 - s0 <= 0.05) return;
+        cuts.push({ s0, s1, z0, z1, window: o.kind === "window", ...(other === room ? { opening: index } : {}) });
+      });
+    }
+    cuts.sort((p, q) => p.s0 - q.s0);
+    // Doors that overlap, as two rooms record one door, make one opening.
+    const merged: HomeMap3DWall["cuts"] = [];
+    for (const cut of cuts) {
+      const last = merged[merged.length - 1];
+      if (last !== undefined && !last.window && !cut.window && cut.s0 < last.s1) {
+        last.s1 = Math.max(last.s1, cut.s1);
+        last.z0 = Math.min(last.z0, cut.z0);
+        last.z1 = Math.max(last.z1, cut.z1);
+        if (cut.opening !== undefined) last.opening = cut.opening;
+      } else merged.push({ ...cut });
+    }
+    // On a shared line each room's wall stands on its own side of it.
+    const own = w.joined ? thick / 2 : thick;
+    const shift = w.joined ? thick / 4 : 0;
+    out.push({ wall, ax: w.a[0] + nx * shift, ay: w.a[1] + nz * shift, len, ux, uy, nx, nz, thick: own, cuts: merged });
+  });
+  return out;
+}
+
+/** One room's floor, walls and window glass, and its wall pieces. A wall piece
+ * picks its wall, and each door and window this room recorded has an unseen box
+ * in its hole that picks it. */
+function buildRoom(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms">): { group: THREE.Group; walls: WallPiece[] } {
   const group = new THREE.Group();
   const walls: WallPiece[] = [];
   const colors = homeMapRoomColors(room);
   if (room.outline.length >= 3) {
     const shape = new THREE.Shape(room.outline.map(([x, y]) => new THREE.Vector2(x, -y)));
-    const floor = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.95 }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    group.add(floor);
+    const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.95 }));
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.receiveShadow = true;
+    group.add(floorMesh);
   }
-  const n = Math.max(room.outline.length, 1);
-  const cx = room.outline.reduce((s, p) => s + p[0], 0) / n;
-  const cy = room.outline.reduce((s, p) => s + p[1], 0) / n;
   const height = room.height > 0 ? room.height : 2.4;
-  const all = homeWallsOf(room);
-  const kept = all.filter((w, i) => !all.some((o, j) => j !== i && covers(o, w)));
-  for (const w of kept) {
-    const [ax, ay] = w.a;
-    const [bx, by] = w.b;
-    const len = Math.hypot(bx - ax, by - ay);
-    if (len < 0.01) continue;
-    const ux = (bx - ax) / len;
-    const uy = (by - ay) / len;
-    // The room's side of this wall, so a wall between the camera and the
-    // room can fade.
-    let nx = -uy;
-    let nz = ux;
-    if ((cx - ax) * nx + (cy - ay) * nz < 0) {
-      nx = -nx;
-      nz = -nz;
-    }
-    const cuts: { s0: number; s1: number; z0: number; z1: number; window: boolean }[] = [];
-    for (const o of room.openings) {
-      const off = (p: readonly number[]) => Math.abs((p[0]! - ax) * uy - (p[1]! - ay) * ux);
-      if (off(o.a) > 0.2 || off(o.b) > 0.2) continue;
-      let s0 = (o.a[0] - ax) * ux + (o.a[1] - ay) * uy;
-      let s1 = (o.b[0] - ax) * ux + (o.b[1] - ay) * uy;
-      if (s0 > s1) [s0, s1] = [s1, s0];
-      s0 = Math.max(0, s0);
-      s1 = Math.min(len, s1);
-      const z0 = Math.max(0, Math.min(o.z0, height));
-      const z1 = Math.max(z0, Math.min(o.z1, height));
-      if (s1 - s0 > 0.05) cuts.push({ s0, s1, z0, z1, window: o.kind === "window" });
-    }
-    cuts.sort((p, q) => p.s0 - q.s0);
+  for (const w of homeMapRoomWalls3D(room, floor)) {
+    const { ax, ay, ux, uy, nx, nz, len, thick, cuts } = w;
     const angle = -Math.atan2(uy, ux);
-    const thick = w.t > 0 ? w.t : 0.1;
+    let first: THREE.Mesh | undefined;
     const piece = (s0: number, s1: number, z0: number, z1: number) => {
       if (s1 - s0 < 0.005 || z1 - z0 < 0.005) return;
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(s1 - s0, z1 - z0, thick), new THREE.MeshStandardMaterial({ color: colors.wall, roughness: 0.92, transparent: true }));
@@ -339,37 +393,51 @@ function buildRoom(room: HomeMapRoom): { group: THREE.Group; walls: WallPiece[] 
       mesh.rotation.y = angle;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      mesh.userData.pick = { kind: "wall", roomId: room.id, wall: w.wall } satisfies HomeMap3DPick;
       group.add(mesh);
       walls.push({ mesh, nx, nz });
+      first ??= mesh;
     };
+    const holes: THREE.Mesh[] = [];
     let s = 0;
     for (const c of cuts) {
       piece(s, c.s0, 0, height);
       piece(c.s0, c.s1, 0, c.z0);
       piece(c.s0, c.s1, c.z1, height);
-      if (c.window && c.z1 - c.z0 > 0.01) {
+      const m = (c.s0 + c.s1) / 2;
+      if (c.window && c.opening !== undefined && c.z1 - c.z0 > 0.01) {
         const glass = new THREE.Mesh(
           new THREE.BoxGeometry(c.s1 - c.s0, c.z1 - c.z0, 0.01),
           new THREE.MeshStandardMaterial({ color: 0x9fb8d0, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.3, depthWrite: false }),
         );
-        const m = (c.s0 + c.s1) / 2;
         glass.position.set(ax + ux * m, (c.z0 + c.z1) / 2, ay + uy * m);
         glass.rotation.y = angle;
         group.add(glass);
       }
+      if (c.opening !== undefined && c.z1 - c.z0 > 0.01) {
+        const hole = new THREE.Mesh(new THREE.BoxGeometry(c.s1 - c.s0, c.z1 - c.z0, Math.max(thick * 2, 0.12)), new THREE.MeshBasicMaterial());
+        hole.position.set(ax + ux * m, (c.z0 + c.z1) / 2, ay + uy * m);
+        hole.rotation.y = angle;
+        hole.visible = false;
+        hole.userData.pick = { kind: "opening", roomId: room.id, opening: c.opening } satisfies HomeMap3DPick;
+        group.add(hole);
+        holes.push(hole);
+      }
       s = Math.max(s, c.s1);
     }
     piece(s, len, 0, height);
+    // A faded wall lets a click through, its doors and windows too.
+    for (const hole of holes) hole.userData.fadesWith = first;
   }
   return { group, walls };
 }
 
 /** What a room's structure is built from, as text, its colours too: built
  * again only when it changes, so a colour picked for one room builds that
- * room alone. */
-export function homeMapRoomKey(room: HomeMapRoom): string {
+ * room alone, and a room moving rebuilds only the walls it reaches. */
+export function homeMapRoomKey(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms"> = { rooms: [room] }): string {
   const colors = homeMapRoomColors(room);
-  return JSON.stringify([room.outline, room.height, room.walls, room.openings, homeFloorKind(room), colors.floor, colors.wall]);
+  return JSON.stringify([room.outline, room.height, homeMapRoomWalls3D(room, floor), room.openings, homeFloorKind(room), colors.floor, colors.wall]);
 }
 
 /** Free a group's geometry and materials. */
@@ -525,11 +593,44 @@ function tintKey(object: Pick<HomeMapObject, "fabric" | "wood">): string {
 }
 
 /** What a click on the 3D look found: a thing by its place in its room's
- * list, a room (its floor or a wall that is not faded), or a light's pin. */
+ * list, a room (its floor), a wall that is not faded, a door or window, or a
+ * light's pin. */
 export type HomeMap3DPick =
   | { kind: "object"; roomId: string; object: number }
   | { kind: "room"; roomId: string }
+  | { kind: "wall"; roomId: string; wall: number }
+  | { kind: "opening"; roomId: string; opening: number }
   | { kind: "pin"; pinId: string };
+
+/** A wall's or a door's or window's upright face: its two ends along the plan
+ * and how far up it runs. */
+function homeMapPieceFace(floor: HomeMapFloor, pick: HomeMap3DPick | undefined): { a: readonly number[]; b: readonly number[]; z0: number; z1: number } | undefined {
+  if (pick?.kind !== "wall" && pick?.kind !== "opening") return undefined;
+  const room = floor.rooms.find((r) => sameHomeMapId(r.id, pick.roomId));
+  if (room === undefined) return undefined;
+  const height = room.height > 0 ? room.height : 2.4;
+  if (pick.kind === "wall") {
+    const w = homeOneWallsOf(floor, room)[pick.wall];
+    return w === undefined ? undefined : { a: w.a, b: w.b, z0: 0, z1: height };
+  }
+  const o = room.openings[pick.opening];
+  return o === undefined ? undefined : { a: o.a, b: o.b, z0: o.z0, z1: Math.min(o.z1, height) };
+}
+
+/** A face's four edges as line points, and a pane to wash it. */
+function pieceFaceLines(face: NonNullable<ReturnType<typeof homeMapPieceFace>>): number[] {
+  const { a, b, z0, z1 } = face;
+  return [a[0]!, z0, a[1]!, b[0]!, z0, b[1]!, b[0]!, z1, b[1]!, a[0]!, z1, a[1]!, a[0]!, z0, a[1]!];
+}
+
+function pieceFacePane(face: NonNullable<ReturnType<typeof homeMapPieceFace>>, material: THREE.Material): THREE.Mesh {
+  const { a, b, z0, z1 } = face;
+  const length = Math.hypot(b[0]! - a[0]!, b[1]! - a[1]!);
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(length, 0.01), Math.max(z1 - z0, 0.01)), material);
+  pane.position.set((a[0]! + b[0]!) / 2, (z0 + z1) / 2, (a[1]! + b[1]!) / 2);
+  pane.rotation.y = -Math.atan2(b[1]! - a[1]!, b[0]! - a[0]!);
+  return pane;
+}
 
 /** How far a press may move, in CSS pixels, and still be a click rather
  * than a turn of the view. */
@@ -881,7 +982,8 @@ export class HomeMapScene3D {
       ...[...this.lamps.values()].map((l) => l.bulb),
     ];
     for (const hit of this.raycaster.intersectObjects(targets, true)) {
-      const material = (hit.object as THREE.Mesh).material as THREE.Material | undefined;
+      const seen = (hit.object.userData.fadesWith as THREE.Mesh | undefined) ?? (hit.object as THREE.Mesh);
+      const material = seen.material as THREE.Material | undefined;
       if (material !== undefined && !Array.isArray(material) && material.transparent && material.opacity < 0.5) continue;
       for (let o: THREE.Object3D | null = hit.object; o !== null; o = o.parent) {
         const pick = o.userData.pick as HomeMap3DPick | undefined;
@@ -926,11 +1028,13 @@ export class HomeMapScene3D {
     const floor = this.input?.floor;
     const room = pick === undefined || pick.kind === "pin" || floor === undefined ? undefined : floor.rooms.find((r) => sameHomeMapId(r.id, pick.roomId));
     const object = pick?.kind === "object" ? room?.objects[pick.object] : undefined;
+    const face = floor === undefined ? undefined : homeMapPieceFace(floor, pick);
     const lamp = pick?.kind === "pin" ? this.lamps.get(pick.pinId) : undefined;
     const bulb = lamp?.bulb.position;
     const key = object !== undefined ? JSON.stringify(["thing", object.c, object.size, object.turn, object.lift ?? 0])
       : bulb !== undefined ? JSON.stringify(["light", bulb.x, bulb.y, bulb.z])
       : room !== undefined && pick?.kind === "room" ? JSON.stringify(["room", room.outline])
+      : face !== undefined ? JSON.stringify(["face", face])
       : "";
     if (key === this.hoverKey) return;
     this.hoverKey = key;
@@ -981,6 +1085,12 @@ export class HomeMapScene3D {
       const edge = new LineGeometry();
       edge.setPositions([...room.outline, room.outline[0]!].flatMap(([x, y]) => [x, 0.02, y]));
       group.add(floorWash, new Line2(edge, line()));
+      mark = group;
+    } else if (face !== undefined) {
+      const group = new THREE.Group();
+      const edge = new LineGeometry();
+      edge.setPositions(pieceFaceLines(face));
+      group.add(pieceFacePane(face, wash(0.28, THREE.DoubleSide)), new Line2(edge, line()));
       mark = group;
     }
     if (mark !== undefined) {
@@ -1114,7 +1224,7 @@ export class HomeMapScene3D {
     const radius = Math.max(Math.hypot(b.maxX - b.minX, b.maxY - b.minY, tall) / 2, 1.5);
     const vfov = (this.camera.fov * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
-    const distance = (radius * 1.1) / Math.sin(Math.min(vfov, hfov) / 2);
+    const distance = (radius * 0.95) / Math.sin(Math.min(vfov, hfov) / 2);
     // Seen from the plan's foot turned by `turn`, as the model looks are,
     // tipped about 40 degrees down.
     const t = (turn * Math.PI) / 180;
@@ -1137,14 +1247,14 @@ export class HomeMapScene3D {
     const roomIds = new Set<string>();
     for (const room of floor.rooms) {
       roomIds.add(room.id);
-      const key = homeMapRoomKey(room);
+      const key = homeMapRoomKey(room, floor);
       const had = this.rooms.get(room.id);
       if (had?.key === key) continue;
       if (had !== undefined) {
         this.scene.remove(had.group);
         disposeTree(had.group);
       }
-      const built = buildRoom(room);
+      const built = buildRoom(room, floor);
       built.group.userData.pick = { kind: "room", roomId: room.id } satisfies HomeMap3DPick;
       this.scene.add(built.group);
       this.rooms.set(room.id, { key, ...built });
@@ -1409,13 +1519,15 @@ export class HomeMapScene3D {
     return true;
   }
 
-  /** The picked room's floor, or each picked thing's box, outlined in
-   * blue. True when the outline changed. */
+  /** The picked room's floor, each picked thing's box, or the picked wall,
+   * door or window, outlined in blue. True when the outline changed. */
   private setMark(floor: HomeMapFloor, mark: HomeMap3DInput["mark"]): boolean {
     const roomOf = (id: string) => floor.rooms.find((r) => sameHomeMapId(r.id, id));
     const room = mark === undefined || !("roomId" in mark) ? undefined : roomOf(mark.roomId);
     const objects = mark === undefined || !("things" in mark) ? [] : mark.things.flatMap((t) => roomOf(t.roomId)?.objects[t.object] ?? []);
+    const face = mark === undefined || !("piece" in mark) ? undefined : homeMapPieceFace(floor, mark.piece);
     const key = objects.length > 0 ? JSON.stringify(["things", objects.map((o) => [o.c, o.size, o.turn, o.lift ?? 0])])
+      : face !== undefined ? JSON.stringify(["face", face])
       : room !== undefined ? JSON.stringify(["room", room.outline]) : "";
     if (key === this.markKey) return false;
     this.markKey = key;
@@ -1462,6 +1574,16 @@ export class HomeMapScene3D {
       line.computeLineDistances();
       line.renderOrder = 10;
       this.mark = line;
+    } else if (face !== undefined) {
+      const group = new THREE.Group();
+      const geometry = new LineGeometry();
+      geometry.setPositions(pieceFaceLines(face));
+      const line = new Line2(geometry, material());
+      line.computeLineDistances();
+      const pane = pieceFacePane(face, new THREE.MeshBasicMaterial({ color: BLUE, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+      group.add(pane, line);
+      group.traverse((o) => { o.renderOrder = 10; });
+      this.mark = group;
     }
     if (this.mark !== undefined) this.overlay.add(this.mark);
     return true;
