@@ -320,19 +320,16 @@ export class WaTemplateEditor extends LitElement {
     });
   }
 
+  /** Large is a popover of the same element, so the code editor and its undo
+   * stay as they are. Not a `<dialog>`: the page editor takes an open dialog
+   * to mean its keyboard shortcuts are off. */
   private openLarge(): void {
-    const dialog = this.querySelector<HTMLDialogElement>("dialog.te-d");
-    if (dialog === null) return;
-    dialog.close();
-    dialog.showModal();
+    this.querySelector<HTMLElement>(".te-d")?.showPopover();
     this.requestUpdate();
   }
 
   private closeLarge(): void {
-    const dialog = this.querySelector<HTMLDialogElement>("dialog.te-d");
-    if (dialog === null) return;
-    dialog.close();
-    dialog.show();
+    this.querySelector<HTMLElement>(".te-d")?.hidePopover();
     this.requestUpdate();
   }
 
@@ -351,11 +348,11 @@ export class WaTemplateEditor extends LitElement {
       if (picture.stale && last?.tileId === d.tileId && last.device === picture.device) face = last.face;
       else if (!picture.stale) this.lastFace = { tileId: d.tileId, device: picture.device, face: picture.face };
     }
-    const large = this.querySelector<HTMLDialogElement>("dialog.te-d")?.matches(":modal") === true;
+    const large = this.querySelector<HTMLElement>(".te-d")?.matches(":popover-open") === true;
     const p = this.prefs;
     const viewButton = (view: TemplateCodeView, words: string) => html`<button type="button" class=${p.view === view ? "on" : ""} aria-pressed=${p.view === view ? "true" : "false"} @click=${() => this.setPrefs({ view })}>${words}</button>`;
     const chip = (key: "rows" | "format" | "wrap", words: string, title: string) => html`<button type="button" class="te-chip ${p[key] ? "on" : ""}" title=${title} aria-pressed=${p[key] ? "true" : "false"} @click=${() => this.setPrefs({ [key]: !p[key] })}>${words}</button>`;
-    return html`<dialog class="te-d" @cancel=${(e: Event) => { e.preventDefault(); this.closeLarge(); }}>
+    return html`<div class="te-d" popover="manual" @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented && large) this.closeLarge(); }}>
       <div class="te-root">
         ${large ? html`<div class="te-large-h"><b>Template</b><button type="button" class="small" @click=${() => this.closeLarge()}>Done</button></div>` : nothing}
         ${d.examples}
@@ -391,11 +388,10 @@ export class WaTemplateEditor extends LitElement {
           </div>
         </div>
       </div>
-    </dialog>`;
+    </div>`;
   }
 
   protected override firstUpdated(): void {
-    this.querySelector<HTMLDialogElement>("dialog.te-d")?.show();
     void this.mount();
   }
 
@@ -420,16 +416,16 @@ if (!customElements.get("wa-template-editor")) customElements.define("wa-templat
 
 export const templateEditorStyles = css`
   wa-template-editor { display: block; min-width: 0; container-type: inline-size; }
-  dialog.te-d { position: static; display: block; width: auto; max-width: none; margin: 0; padding: 0; border: 0; background: none; color: inherit; }
-  dialog.te-d:modal { position: fixed; inset: 24px; width: auto; height: auto; max-height: none; padding: 16px; border: 1px solid var(--wa-line-strong); border-radius: 14px; background: var(--wa-card); overflow: auto; }
-  dialog.te-d::backdrop { background: rgba(0, 0, 0, 0.6); }
+  .te-d { position: static; display: block; width: auto; height: auto; margin: 0; padding: 0; border: 0; background: none; color: inherit; overflow: visible; }
+  .te-d:popover-open { position: fixed; inset: 24px; width: auto; height: auto; padding: 16px; border: 1px solid var(--wa-line-strong); border-radius: 14px; background: var(--wa-card); overflow: auto; }
+  .te-d::backdrop { background: rgba(0, 0, 0, 0.6); }
   .te-root { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .te-large-h { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
   .te-grid { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   @container (min-width: 620px) {
     .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
   }
-  dialog.te-d:modal .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
+  .te-d:popover-open .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
   .te-left, .te-right { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .te-well { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 10px 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-well, #000); }
   .te-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--wa-panel); }
@@ -437,6 +433,7 @@ export const templateEditorStyles = css`
   .te-seg button { font: inherit; font-size: 11.5px; font-weight: 600; min-height: 22px; padding: 2px 9px; border: 0; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer; }
   .te-seg button.on { background: var(--wa-seg-on, var(--wa-hover)); color: var(--wa-ink); }
   .te-tile { position: relative; display: flex; justify-content: center; max-width: 100%; }
+  .te-tile [data-tp] { pointer-events: auto; }
   .te-tile.found [data-tp] { cursor: pointer; border-radius: 5px; outline: 1.5px solid transparent; outline-offset: 1px; transition: outline-color .12s; }
   .te-tile.found [data-tp]:hover { outline-color: color-mix(in srgb, currentColor 50%, transparent); }
   .te-tile.found [data-tp].on { outline-color: var(--wa-hue-orange); }
