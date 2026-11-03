@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { homeMapDoorChoices, homeMapDoorPairs, homeMapDoorPartner, homeMapOpenDoors } from "../src/home-map/door-pairs.js";
-import { connectDoors, fitRooms, homeMapFitIssues, homeMapFitOf, meetDoors, scanIssues, snapRoom, turnRoom } from "../src/home-map/edit-ops.js";
+import { connectDoors, fitRooms, homeMapDoorLineUps, homeMapFitIssues, homeMapFitOf, meetDoors, moveRoom, placeDoors, scanIssues, snapRoom, turnRoom } from "../src/home-map/edit-ops.js";
 import { homeOneWallPieces, homeOneWallPlaces, homeOneWallsOf } from "../src/home-map/geometry.js";
 import { homeMapSplitStacked } from "../src/home-map/editor-view.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapRoom } from "../src/home-map/model.js";
@@ -129,12 +129,82 @@ describe("Fit rooms", () => {
   });
 });
 
+/** The floor as placed by hand: the offices up against the back of the house,
+ * the hall deeper, so the doors no longer meet though every room is right. */
+function placed(): HomeMapFloor {
+  const f = floor();
+  const shift = (r: HomeMapRoom, dy: number): HomeMapRoom => {
+    const at = (p: readonly number[]) => [p[0]!, p[1]! + dy] as [number, number];
+    return { ...r, outline: r.outline.map(at), walls: r.walls.map((w) => ({ ...w, a: at(w.a), b: at(w.b) })), openings: r.openings.map((o) => ({ ...o, a: at(o.a), b: at(o.b) })) };
+  };
+  f.rooms[OFFICE_A] = shift(f.rooms[OFFICE_A]!, -0.43);
+  f.rooms[OFFICE_B] = shift(f.rooms[OFFICE_B]!, -0.43);
+  const hall = f.rooms[HALL]!;
+  f.rooms[HALL] = {
+    ...hall,
+    outline: [[4.58, 3.01], [7.68, 3.01], [7.68, 6.19], [4.58, 6.19]],
+    walls: [{ a: [4.58, 5.11], b: [4.58, 3.01], t: 0.1 }, { a: [7.68, 6.19], b: [6.86, 6.19], t: 0.1 }, { a: [4.58, 3.01], b: [7.68, 3.01], t: 0.1 }, { a: [7.68, 3.01], b: [7.68, 6.19], t: 0.1 }],
+    openings: hall.openings.map((o, i) => (i === 1 ? { ...o, a: [7.68, 4.36], b: [7.68, 4.85] } : i === 2 ? { ...o, a: [7.68, 5.32], b: [7.68, 6.04] } : o)),
+  } as HomeMapRoom;
+  return f;
+}
+
+describe("lining doors up, the rooms staying", () => {
+  it("pairs the doors on one wall in order, and offers either side's", () => {
+    const ways = homeMapDoorLineUps(placed());
+    expect(ways).toHaveLength(2);
+    expect(ways[0]!.pairs).toBe(2);
+    // The two offices keep their doors, as each has only the one.
+    expect(ways[0]!.keep.sort()).toEqual([id(1), id(5)]);
+    expect(ways[0]!.move).toEqual([id(6)]);
+    expect(ways[1]!.keep).toEqual([id(6)]);
+  });
+
+  it("leaves every room where it stands, and all doors meet", () => {
+    const f = placed();
+    const way = homeMapDoorLineUps(f)[0]!;
+    const after = placeDoors(home(f), way.spots)!.floors[0]!;
+    f.rooms.forEach((r, i) => expect(after.rooms[i]!.outline).toEqual(r.outline));
+    const pairs = homeMapDoorPairs(after);
+    expect(pairs.met).toBe(10);
+    expect(homeMapDoorLineUps(after)).toEqual([]);
+  });
+
+  it("keeps a door on the wall two rooms share, narrower where they share little", () => {
+    const f = placed();
+    const way = homeMapDoorLineUps(f)[0]!;
+    expect(way.narrow).toBe(true);
+    const office = way.spots.find((s) => s.roomId === id(1))!;
+    const ys = [office.a[1], office.b[1]].sort((p, q) => p - q);
+    // The first office and the hall share the wall from y 3.01 to 3.43.
+    expect(ys[0]).toBeCloseTo(3.01, 2);
+    expect(ys[1]).toBeCloseTo(3.43, 2);
+    const other = way.spots.find((s) => s.roomId === id(5))!;
+    expect(Math.abs(other.b[1] - other.a[1])).toBeCloseTo(0.76, 2);
+  });
+
+  it("offers nothing where the rooms share no wall", () => {
+    const moved = moveRoom(home(placed()), id(6), 0, 9)!;
+    expect(homeMapDoorLineUps(moved.floors[0]!)).toEqual([]);
+  });
+});
+
 describe("connecting two doors", () => {
-  it("moves the room so its door lands on the other, and they meet", () => {
-    const pulled = home();
+  it("moves a room standing apart so its door lands on the other, and they meet", () => {
+    const pulled = moveRoom(home(), id(6), 3, 2)!;
     const next = connectDoors(pulled, id(6), 0, id(4), 1)!;
     const pairs = homeMapDoorPairs(next.floors[0]!);
     expect(homeMapDoorPartner(pairs, id(6), 0)?.roomId).toBe(id(4));
+    expect(next.floors[0]!.rooms[HALL]!.outline[0]![0]).toBeCloseTo(4.58, 1);
+  });
+
+  it("moves only the door on one wall, its room staying", () => {
+    const doc = home();
+    const next = connectDoors(doc, id(6), 2, id(1), 0)!;
+    const after = next.floors[0]!;
+    expect(after.rooms[HALL]!.outline).toEqual(floor().rooms[HALL]!.outline);
+    expect(after.rooms[OFFICE_A]!.outline).toEqual(floor().rooms[OFFICE_A]!.outline);
+    expect(homeMapDoorPartner(homeMapDoorPairs(after), id(6), 2)?.roomId).toBe(id(1));
   });
 
   it("turns a room scanned on another heading to fit", () => {

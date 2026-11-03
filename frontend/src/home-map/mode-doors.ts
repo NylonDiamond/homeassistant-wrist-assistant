@@ -5,17 +5,20 @@
 // belong. On the plan a door with no partner has an amber dot and two that
 // meet a green one (`door-pairs.ts`). A click on an amber door, on the plan or
 // in 3D, starts Connect: the doors it could open to turn blue with their room
-// names, and a click on one moves its room there, turned if it must be
-// (`connectDoors`). Escape, or a click anywhere else, stops it.
+// names, and a click on one makes the two meet (`connectDoors`): on one wall
+// already this door goes to the other and the room stays; else its room moves,
+// turned if it must be. Escape, or a click anywhere else, stops it.
 //
 // The Fit rooms card stands on top of the side panel whatever is picked: how
-// many doors meet and the one thing to do next, the move the doors point to
-// when there is one (`homeMapFitOf`), with Show me, which draws it live and
-// saves nothing, and what the scan check still finds (`homeMapFitIssues`).
+// many doors meet and the one thing to do next, with Another way when there are
+// more: doors that stand on one wall lined up with the rooms left where they
+// stand (`homeMapDoorLineUps`), then the move of rooms the doors point to
+// (`homeMapFitOf`). Show me draws it live and saves nothing. Under it, what the
+// scan check still finds (`homeMapFitIssues`).
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { type HomeMapDoor, homeMapDoorChoices, homeMapDoorPairs, homeMapDoorPartner, homeMapOpenDoors } from "./door-pairs.js";
-import { type HomeMapFit, connectDoors, fitAllIssues, fitRooms, homeMapFitIssues, homeMapFitOf } from "./edit-ops.js";
+import { type HomeMapDoorLineUp, type HomeMapFit, type HomeMapOp, connectDoors, fitAllIssues, fitRooms, homeMapDoorLineUps, homeMapFitIssues, homeMapFitOf, placeDoors } from "./edit-ops.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
 import { homeMapCount, homeMapMeters, homeMapShortcut } from "./editor-view.js";
 import { type HomeMapFloor, type HomeMapRoom, type HomePoint, homeMapRoomName, sameHomeMapId } from "./model.js";
@@ -53,7 +56,42 @@ export function homeMapFitWords(fit: HomeMapFit, floor: HomeMapFloor): string {
   return `Move ${namesInWords(names)} ${homeMapMeters(far)} ${way}: ${doors}.`;
 }
 
+/** A door line up, in words. */
+export function homeMapLineUpWords(way: HomeMapDoorLineUp, floor: HomeMapFloor): string {
+  const name = (ids: readonly string[]) => namesInWords(ids.flatMap((id) => {
+    const room = floor.rooms.find((r) => sameHomeMapId(r.id, id));
+    return room === undefined ? [] : [homeMapRoomName(room)];
+  }));
+  const doors = way.pairs === 1 ? "The door" : `${way.pairs} doors`;
+  const of = way.pairs === 1 ? `of ${name(way.move)} moves` : `of ${name(way.move)} move`;
+  const narrow = way.narrow ? " A door gets narrower, as the rooms share little wall." : "";
+  return `${doors} ${of} to meet ${name(way.keep)}. The rooms stay.${narrow}`;
+}
+
+/** One thing Fit rooms can do. */
+interface FitOffer {
+  words: string;
+  button: string;
+  op: HomeMapOp;
+}
+
+/** What Fit rooms can do on a floor, best first. */
+export function homeMapFitOffers(floor: HomeMapFloor): FitOffer[] {
+  const ways: FitOffer[] = homeMapDoorLineUps(floor).map((way) => ({
+    words: homeMapLineUpWords(way, floor),
+    button: way.pairs === 1 ? "Move the door" : "Move the doors",
+    op: (d) => placeDoors(d, way.spots),
+  }));
+  const fit = homeMapFitOf(floor);
+  if (fit !== undefined) {
+    ways.push({ words: homeMapFitWords(fit, floor), button: fit.moves.length === 1 ? "Move the room" : "Move the rooms", op: (d) => fitRooms(d, fit.moves) });
+  }
+  return ways;
+}
+
 export class DoorMode {
+  /** Which of Fit rooms' offers the card shows. */
+  private offer = 0;
   /** The door Connect started from. */
   connecting: { roomId: string; opening: number } | undefined;
   /** Show me: Fit rooms' move drawn as a preview. */
@@ -146,7 +184,7 @@ export class DoorMode {
     const from = this.connecting;
     if (from === undefined) return nothing;
     const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, from.roomId));
-    return html`<span class="hme-pill-name">Click the door that ${room === undefined ? "it" : homeMapRoomName(room)} opens to</span>
+    return html`<span class="hme-pill-name">Click the door that ${room === undefined ? "it" : homeMapRoomName(room)} should meet</span>
       <button type="button" class="hme-tb" @click=${() => { this.connecting = undefined; ctx.redraw(); }}>Cancel</button>`;
   }
 
@@ -195,31 +233,41 @@ export class DoorMode {
     const issues = homeMapFitIssues(floor);
     const total = pairs.doors.length;
     if (total === 0 && issues.length === 0) return nothing;
-    const fit = homeMapFitOf(floor);
+    const offers = homeMapFitOffers(floor);
+    const offer = offers.length === 0 ? undefined : offers[this.offer % offers.length];
     const open = homeMapOpenDoors(pairs).length;
-    const moves = fit?.moves ?? [];
     const flipShow = () => {
+      if (offer === undefined) return;
       this.showing = !this.showing;
-      ctx.preview(this.showing ? (d) => fitRooms(d, moves) : undefined);
+      ctx.preview(this.showing ? offer.op : undefined);
       ctx.redraw();
     };
     const move = () => {
+      if (offer === undefined) return;
       this.showing = false;
+      this.offer = 0;
       ctx.preview(undefined);
-      ctx.apply((d) => fitRooms(d, moves), { select: null });
+      ctx.apply(offer.op, { select: null });
     };
-    const state = fit !== undefined || open > 0 ? "hot" : issues.length > 0 ? "" : "good";
+    const another = () => {
+      this.offer = (this.offer + 1) % offers.length;
+      const next = offers[this.offer];
+      if (this.showing && next !== undefined) ctx.preview(next.op);
+      ctx.redraw();
+    };
+    const state = offer !== undefined || open > 0 ? "hot" : issues.length > 0 ? "" : "good";
     const floorId = floor.id;
     return html`<section class="hme-card hme-fit ${state}">
       <div class="hme-h">Fit rooms${total === 0 ? nothing : html`<span class="hme-h-end">${pairs.met} of ${homeMapCount(total, "door")}</span>`}</div>
       ${total === 0 ? nothing : html`<div class="hme-fit-bar" role="img" aria-label=${`${pairs.met} of ${homeMapCount(total, "door")} meet`}>
         <i class=${open === 0 ? "full" : ""} style=${`width:${(pairs.met / total) * 100}%`}></i></div>`}
-      ${fit !== undefined ? html`<p class="hme-text">${homeMapFitWords(fit, floor)}</p>
+      ${offer !== undefined ? html`<p class="hme-text">${offer.words}</p>
         <div class="hme-fit-acts">
           <button type="button" class="hme-tb" aria-pressed=${this.showing ? "true" : "false"} @click=${flipShow}>${this.showing ? "Hide" : "Show me"}</button>
-          <button type="button" class="hme-tb hme-blue" @click=${move}>${moves.length === 1 ? "Move it" : "Move them"}</button>
-        </div>`
-        : open > 0 ? html`<p class="hme-text">Amber doors have no partner. Click one, then the door it opens to.</p>`
+          <button type="button" class="hme-tb hme-blue" @click=${move}>${offer.button}</button>
+        </div>
+        ${offers.length < 2 ? nothing : html`<button type="button" class="hme-tb hme-wide hme-fit-other" @click=${another}>Another way (${(this.offer % offers.length) + 1} of ${offers.length})</button>`}`
+        : open > 0 ? html`<p class="hme-text">Amber doors have no partner. Click one, then the door it should meet.</p>`
         : total > 0 ? html`<p class="hme-text dim">All doors meet.</p>` : nothing}
       ${issues.map((issue) => html`<div class="hme-fix">
         <span class="hme-fix-dot ${issue.kind === "missingDoor" ? "gray" : ""}"></span>
@@ -247,7 +295,7 @@ export class DoorMode {
           <span class="hme-fix-dot ${to === undefined ? "" : "green"}"></span>
           <button type="button" class="hme-door-name" @click=${pick}>${to === undefined ? "No partner" : `To ${homeMapRoomName(to)}`}</button>
           <span class="mono dim">${homeMapMeters(door.width)}</span>
-          ${partner === undefined ? html`<button type="button" class="hme-tb" title="Click the door it opens to on the plan or in 3D" @click=${() => this.start(ctx, door.roomId, door.index)}>Connect</button>` : nothing}
+          ${partner === undefined ? html`<button type="button" class="hme-tb" title="Click the door it should meet, on the plan or in 3D" @click=${() => this.start(ctx, door.roomId, door.index)}>Connect</button>` : nothing}
         </div>`;
       })}
     </section>`;
@@ -266,7 +314,7 @@ export class DoorMode {
     }
     const on = this.connecting !== undefined && sameHomeMapId(this.connecting.roomId, room.id) && this.connecting.opening === opening;
     return html`<section class="hme-card hme-fit hot"><div class="hme-h">Opens to</div>
-      ${on ? html`<p class="hme-text">Click the blue door it opens to. <b>${homeMapRoomName(room)}</b> moves there.</p>
+      ${on ? html`<p class="hme-text">Click the blue door it should meet. On one wall this door moves there and the room stays. Else <b>${homeMapRoomName(room)}</b> moves.</p>
         <button type="button" class="hme-tb hme-wide" @click=${() => { this.connecting = undefined; ctx.redraw(); }}>Cancel</button>`
         : html`<button type="button" class="hme-tb hme-blue hme-wide" @click=${() => this.start(ctx, room.id, opening)}>Connect to a door</button>`}
     </section>`;

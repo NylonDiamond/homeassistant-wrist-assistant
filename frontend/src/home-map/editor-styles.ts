@@ -481,6 +481,7 @@ export const editorStyles = css`
   .hme-fit-bar i.full { background: #30d158; }
   .hme-fit-acts { display: flex; gap: 6px; margin-top: 8px; }
   .hme-fit-acts .hme-tb { flex: 1; }
+  .hme-tb.hme-fit-other { margin-top: 6px; height: 30px; }
   .hme-door-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
   .hme-door-name { flex: 1; min-width: 0; border: 0; background: none; padding: 0; color: var(--wa-soft); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hme-door-name:hover { color: var(--wa-ink); }

@@ -330,7 +330,7 @@ export class HomeMapEditPage implements HomeMapPart {
         <details class="hme-tips">
           <summary>Keys and tips <span aria-hidden="true">›</span></summary>
           <p class="hme-text">Click picks what is on top: a device, then a thing (a sofa, a TV, a desk), then the room under them. Drag it to move it.</p>
-          <p class="hme-text dim">A dragged room locks to the doors of the rooms round it. Click an amber door, then the door it opens to, to attach its room. Drag the round handle above a room to turn it, or a square handle on its box to resize it. Click a wall, door or window to change it.</p>
+          <p class="hme-text dim">A dragged room locks to the doors of the rooms round it. Click an amber door, then the door it should meet. Drag the round handle above a room to turn it, or a square handle on its box to resize it. Click a wall, door or window to change it.</p>
           <p class="hme-text dim">Shift, Cmd or Ctrl and a click picks several devices; Cmd or Ctrl and a click picks several things, to colour or hide them together. Drag a device from Add onto the plan to place it.</p>
           <p class="hme-text dim">Press <kbd>?</kbd> or the ? button in the bar for every key.</p>
           <dl class="hme-keys">
@@ -405,7 +405,7 @@ export function homeMapKeyGroups(mac: boolean): HomeMapKeyGroup[] {
       title: "Mouse",
       keys: [
         ["Click", "Pick what is on top: a device, a door or window, a wall, a thing, then the room"],
-        ["Click an amber door", "Connect it: then click the door it opens to"],
+        ["Click an amber door", "Connect it: then click the door it should meet"],
         [`Shift or ${cmd} click`, "Pick several devices"],
         [`${cmd} click`, "Pick several things"],
         ["Shift drag", "Pick every device in a box"],
