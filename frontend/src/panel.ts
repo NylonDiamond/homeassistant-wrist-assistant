@@ -15125,7 +15125,7 @@ export class WristAssistantPanel extends LitElement {
     // one, so switching view moves nothing but what is inside.
     const surface = (body: unknown) => html`<div class="pk-surface pk-page on-board" role="region" aria-label="Your complications">
       <div class="pk-pin"><div class="pk-head">
-        ${focus === undefined ? renderViewSwitch(phoneView("complications", this.compView), (v) => this.setCompView(v), "complications") : nothing}
+        ${renderViewSwitch("board", (v) => this.setCompView(v), "complications")}
         ${renderDensitySwitch(boardDensity(), (d) => { setBoardDensity(d); this.requestUpdate(); })}
         <label class="pk-search">
           ${uiIcon("search")}

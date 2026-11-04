@@ -259,7 +259,8 @@ describe("the list page", () => {
   it("moves Board and Cards into the card toolbar, for both views", () => {
     expect(method("  private renderListPage() {")).not.toContain("renderViewSwitch");
     expect(method("  private renderPickerSurface(")).toContain('renderViewSwitch(phoneView("complications", this.compView)');
-    expect(method("  private renderCompBoard(")).toContain('renderViewSwitch(phoneView("complications", this.compView)');
+    // The board says Board on a focused device too, so Cards is one click away.
+    expect(method("  private renderCompBoard(")).toContain('renderViewSwitch("board", (v) => this.setCompView(v), "complications")');
   });
 
   it("says Preview, In a face and Close up", () => {
