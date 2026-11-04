@@ -35,11 +35,22 @@ The iPhone app is the easy path.
 
 1. Install the Wrist Assistant iPhone app.
 2. Follow the onboarding steps in the app.
-3. The iPhone app installs the Home Assistant integration automatically for you.
+3. The iPhone app installs the Home Assistant integration through HACS for you. Home Assistant 2026.11 and later block HACS, so there install it from Marketplace (below) first.
 
-A watch can also pair on its own, without the iPhone app. Install the integration with HACS (below), then pair the watch with a code from the panel (see "Pairing a device").
+A watch can also pair on its own, without the iPhone app. Install the integration with Marketplace or HACS (below), then pair the watch with a code from the panel (see "Pairing a device").
 
-### HACS
+### Marketplace (Home Assistant 2026.11 and later)
+
+Home Assistant 2026.11 replaces HACS with Marketplace, which is built in, and no longer loads HACS. Wrist Assistant is in its catalog, so you need no GitHub account.
+
+1. Go to `Settings` -> `Marketplace`. The first time, read and accept its warning.
+2. Search for `Wrist Assistant`.
+3. Install it and restart Home Assistant.
+4. Go to `Settings` -> `Devices & Services`.
+5. Add the `Wrist Assistant` integration.
+6. Open `Wrist Assistant` in the sidebar and choose `Pair a device` on the Home tab.
+
+### HACS (Home Assistant before 2026.11)
 
 1. Open HACS.
 2. Go to `Integrations`.
@@ -96,12 +107,13 @@ Beta builds are published as GitHub pre-releases. Home Assistant hides them unle
 opt in, so nothing changes until you turn this on. Betas pair with the TestFlight beta
 of the iPhone app, and some features need both.
 
-### With HACS
+### With Marketplace or HACS
 
-HACS creates a `Pre-release` switch for each downloaded repository, and ships it
-disabled so nobody lands on a beta by accident. Turning it on is a one-time job.
+Marketplace (HACS before Home Assistant 2026.11) creates a `Pre-release` switch for each
+downloaded repository, and ships it disabled so nobody lands on a beta by accident.
+Turning it on is a one-time job.
 
-1. Go to `Settings` -> `Devices & Services` -> `HACS` and open its devices list.
+1. Go to `Settings` -> `Devices & Services` -> `Marketplace` (or `HACS`) and open its devices list.
 2. Open the `Wrist Assistant` device.
 3. On the Diagnostic card, click `+1 disabled entity`, then click `Pre-release`.
 4. Open the settings gear and press `Enable`. Wait about 30 seconds.
@@ -114,7 +126,7 @@ Leave the switch on until the next stable release is out. If you turn it off whi
 running a beta, Home Assistant offers you the newest stable version, which may be older
 than what you have, and presents it as an update.
 
-### Without HACS
+### By hand
 
 Download `Source code (zip)` from the newest release marked `Pre-release` on the
 [releases page](https://github.com/NylonDiamond/homeassistant-wrist-assistant/releases),
@@ -123,8 +135,8 @@ Home Assistant. There is no update notice this way.
 
 ### Going back to stable
 
-Turn the `Pre-release` switch off after the stable release ships, then use HACS
-`Redownload` and pick the stable version if you are still on a beta.
+Turn the `Pre-release` switch off after the stable release ships. If you are still on a
+beta, install the stable version from Marketplace, or use HACS `Redownload` and pick it.
 
 ## Watch notifications
 
