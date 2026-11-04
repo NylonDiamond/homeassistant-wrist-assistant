@@ -4921,6 +4921,10 @@ async def _op_move_finished(ctx: _OpContext) -> Response:
     A first call wakes the watch's parked poll, as the panel's button does, and
     that poll answers ``may_await_move: false``. A phone's later upload for a
     kind with no record still lands. Writes no record.
+
+    It also ends the wait of the iPhone's other watches on this home, and wakes
+    their polls: it holds one watch's pair per home, so it can never move for
+    them. The reply speaks only of the named watch.
     """
     if not _caller_is_iphone(ctx):
         return ctx.signed_json(
@@ -4940,12 +4944,14 @@ async def _op_move_finished(ctx: _OpContext) -> Response:
             {"ok": False, "error": "not_owner", "message": "This iPhone does not own that watch."},
             status=403,
         )
+    others = secrets.finish_moves_of_other_watches(watch_id, ctx.watch_id)
     coordinator = getattr(ctx.domain_data, "coordinator", None)
     polling = bool(coordinator is not None and coordinator.is_polling(watch_id))
-    if changed:
+    if changed or others:
         await secrets.async_save_now()
         if coordinator is not None:
-            coordinator.wake_watch(watch_id)
+            for ended in ([watch_id] if changed else []) + others:
+                coordinator.wake_watch(ended)
     return ctx.signed_json(
         {"ok": True, "watch_id": watch_id, "changed": changed, "polling": polling}
     )

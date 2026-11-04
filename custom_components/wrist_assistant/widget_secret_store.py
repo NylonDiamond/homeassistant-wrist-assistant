@@ -689,6 +689,28 @@ class WidgetSecretStore:
         _LOGGER.info("watch_id=%s: its iPhone finished its move", watch_id)
         return True
 
+    def finish_moves_of_other_watches(self, watch_id: str, iphone_id: str) -> list[str]:
+        """After an iPhone finished its move for ``watch_id``: end the wait of
+        every other watch naming that iPhone as its owner, the ids it changed.
+        An iPhone holds one watch's pair per home, so it can never move for
+        them. Only the owning iPhone reaches this (:meth:`finish_move` answers
+        first). The caller writes the file and wakes their polls."""
+        ended = [
+            other
+            for other, entry in self._secrets.items()
+            if other != watch_id
+            and iphone_id
+            and entry.device_kind == DEVICE_KIND_WATCH
+            and entry.owner_iphone_id == iphone_id
+            and not entry.move_finished
+        ]
+        for other in ended:
+            self._secrets[other].move_finished = True
+            _LOGGER.info("watch_id=%s: its iPhone finished with another watch", other)
+        if ended:
+            self._schedule_save()
+        return ended
+
     def owner_iphone_moves(self, watch_id: str) -> bool:
         """Whether the iPhone that paired this watch already runs an app that
         moves: it has polled as itself (`phone_pages`). The panel then does not

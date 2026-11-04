@@ -140,6 +140,56 @@ def test_the_owner_ends_the_wait_and_wakes_the_watch(env) -> None:
     assert env.secrets.get("w1").move_wait_ended is False
 
 
+def test_the_owner_also_ends_the_wait_of_its_other_watches(env) -> None:
+    """The iPhone holds one watch's pair per home, so it can never move for the
+    other watch, which would wait out the grace on a finished phone."""
+    env.secrets.register(
+        "w2", SECRET_B, env.mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    env.secrets.register(
+        "w3", SECRET_B, env.mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p2", user_id="u1"
+    )
+    env.log.clear()
+    assert env.secrets.may_await_move("w2") is True
+
+    reply = _call(env, "p1", {"watch_id": "w1"})
+
+    assert reply.body == {"ok": True, "watch_id": "w1", "changed": True, "polling": False}
+    assert env.secrets.may_await_move("w1") is False
+    assert env.secrets.may_await_move("w2") is False
+    assert env.disk.data["secrets"]["w2"]["move_finished"] is True
+    assert sorted(env.coordinator.woken) == ["w1", "w2"]
+    assert env.log.count("save") == 1
+    # Another iPhone's watch is not this iPhone's to end.
+    assert env.secrets.may_await_move("w3") is True
+    assert env.secrets.get("w3").move_finished is False
+
+
+def test_another_iphone_cannot_end_the_wait_of_any_watch(env) -> None:
+    env.secrets.register(
+        "w2", SECRET_B, env.mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    reply = _call(env, "p2", {"watch_id": "w1"})
+    assert reply.status == 403
+    assert env.secrets.may_await_move("w1") is True
+    assert env.secrets.may_await_move("w2") is True
+    assert env.coordinator.woken == []
+
+
+def test_a_retry_still_ends_the_wait_of_a_watch_paired_since(env) -> None:
+    _call(env, "p1", {"watch_id": "w1"})
+    env.secrets.register(
+        "w2", SECRET_B, env.mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    env.coordinator.woken.clear()
+
+    reply = _call(env, "p1", {"watch_id": "w1"})
+
+    assert reply.body["changed"] is False, "the reply speaks only of the named watch"
+    assert env.secrets.may_await_move("w2") is False
+    assert env.coordinator.woken == ["w2"]
+
+
 def test_it_is_on_disk_before_the_reply(env) -> None:
     reply = _call(env, "p1", {"watch_id": "w1"})
     assert reply.status == 200
