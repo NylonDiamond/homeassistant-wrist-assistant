@@ -175,7 +175,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
@@ -1513,6 +1513,23 @@ class _LibrarySave(NamedTuple):
 # panel's create path asks (see WatchConfigStore.panel_save). The same shape
 # answers whether an owner is an iPhone (see WatchConfigStore._for_owner).
 PairedCheck = Callable[[str], bool]
+# Given the owners that pick a library item, whether whoever is saving may put
+# it on a device of theirs (``panel_access.may_take_item``).
+ItemJudge = Callable[[list[str]], bool]
+
+
+def _takeable(
+    lib: Mapping[str, Any], kind: str, ids: list[str], may_take: ItemJudge
+) -> list[str]:
+    """The ``ids`` of a page or status page kind whoever is saving may take.
+    An id the library does not hold stays, for the code after to skip."""
+    who = pickers(lib, kind)
+    index = {k.upper(): k for k in who}
+    return [
+        i
+        for i in ids
+        if (stored := index.get(i.upper())) is None or may_take(who[stored])
+    ]
 
 
 class WatchConfigStore:
@@ -2477,11 +2494,15 @@ class WatchConfigStore:
         force: Any = False,
         seed: bool = False,
         updated_by: str,
+        may_take: ItemJudge | None = None,
     ) -> WatchConfigRecord:
         """Save one document, compare-and-swap on the revision.
 
         Accepted when ``base_revision`` equals the stored revision (0 when
         there is no record), or when ``force`` is true.
+
+        ``may_take`` answers for the device that signed (:func:`library.map_back`):
+        a page it may not take gets a new id here and never changes the item.
 
         ``seed`` is a watch's own copy of a kind its Home Assistant holds no
         record of, sent once so the panel shows the watch's real settings
@@ -2554,7 +2575,9 @@ class WatchConfigStore:
             # builds for this device; when that is not the document as sent
             # (a stale link key dropped, a page given a new id), the hash is
             # the server's, so it describes what is stored.
-            prep = self._prepare_library_save(owner_watch_id, kind, document, existing, panel=False)
+            prep = self._prepare_library_save(
+                owner_watch_id, kind, document, existing, panel=False, may_take=may_take
+            )
             if not prep.kept:
                 document_hash = canonical_hash(prep.document)
             document, size = prep.document, prep.size
@@ -2621,8 +2644,12 @@ class WatchConfigStore:
         *,
         base_revision: Any,
         link_failures: list[str] | None = None,
+        may_take: ItemJudge | None = None,
     ) -> WatchConfigRecord:
         """Save a document edited in the panel, compare-and-swap on the revision.
+
+        ``may_take`` answers for the signed-in user (:func:`library.map_back`):
+        a page they may not take gets a new id here and never changes the item.
 
         Stricter than a device save, on purpose:
 
@@ -2676,9 +2703,13 @@ class WatchConfigStore:
                     f"there is no stored {kind} record and this watch is not "
                     "paired; pair it before starting its config here"
                 )
-            return self._panel_write(owner_watch_id, kind, document, size, None, link_failures)
+            return self._panel_write(
+                owner_watch_id, kind, document, size, None, link_failures, may_take=may_take
+            )
         self._check_panel_base(existing, base_revision, "save")
-        return self._panel_write(owner_watch_id, kind, document, size, existing, link_failures)
+        return self._panel_write(
+            owner_watch_id, kind, document, size, existing, link_failures, may_take=may_take
+        )
 
     def _panel_write(
         self,
@@ -2690,6 +2721,7 @@ class WatchConfigStore:
         link_failures: list[str] | None,
         *,
         restored: bool = False,
+        may_take: ItemJudge | None = None,
     ) -> WatchConfigRecord:
         """A panel save or restore once every check passed: a library kind
         goes into the library first and is stored as the library builds it;
@@ -2698,7 +2730,13 @@ class WatchConfigStore:
         prep = None
         if kind in LIBRARY_KINDS:
             prep = self._prepare_library_save(
-                owner_watch_id, kind, document, existing, panel=True, restored=restored
+                owner_watch_id,
+                kind,
+                document,
+                existing,
+                panel=True,
+                restored=restored,
+                may_take=may_take,
             )
             document, size = prep.document, prep.size
         if existing is None:
@@ -2723,9 +2761,17 @@ class WatchConfigStore:
         *,
         panel: bool,
         restored: bool = False,
+        may_take: ItemJudge | None = None,
     ) -> _LibrarySave:
         """Map one owner's saved document back into the library
         (:func:`library.map_back`), changing nothing yet.
+
+        * ``may_take`` is who is saving: a page under a held id the owner
+          does not pick and they may not take gets a new id, and the ids
+          this owner was already given new ones for are renamed first, like
+          a restore's, so saving the same old id again edits the owner's
+          own copy rather than making another. It also limits the pages a
+          menus save brings to other devices.
 
         * A first record of the kind (``existing`` None: the iPhone's
           one-time upload of a watch's setup, or a panel start) forks: a
@@ -2752,7 +2798,7 @@ class WatchConfigStore:
         before_doc = existing.document if existing is not None else None
         screen = self._screen_of(owner_watch_id)
         sent: dict[str, Any] = document
-        if existing is None or restored:
+        if existing is None or restored or may_take is not None:
             renames = held_renames(self._library, owner_watch_id)
             if existing is not None:
                 for held_kind, ids in renames.items():
@@ -2771,12 +2817,13 @@ class WatchConfigStore:
                 fork_conflicts=existing is None,
                 owner_name=self._owner_name(owner_watch_id),
                 screen=screen,
+                may_take=may_take,
             )
             lib = result.library
             if result.renamed:
                 lib = hold_renames(lib, owner_watch_id, result.renamed)
             if kind == "menus":
-                lib = self._with_slot_pages(lib, owner_watch_id, before_doc, sent)
+                lib = self._with_slot_pages(lib, owner_watch_id, before_doc, sent, may_take)
         except LibraryError as err:
             raise WatchConfigValidationError(err.message) from err
         stored = materialise(lib, owner_watch_id, kind, sent, screen)
@@ -2830,6 +2877,7 @@ class WatchConfigStore:
         owner_watch_id: str,
         before_doc: dict[str, Any] | None,
         saved_doc: dict[str, Any],
+        may_take: ItemJudge | None = None,
     ) -> dict[str, Any]:
         """The library with the pages a menus save newly opens put on the
         other devices that use the same menu: each page a Go to page slot
@@ -2838,7 +2886,8 @@ class WatchConfigStore:
         Status page slot opens, appended where a device lacks it. A slot the
         menu already had brings nothing, even where the page was taken off:
         that was the device's own choice. A watch whose iPhone may still
-        move its own pages here is left alone."""
+        move its own pages here is left alone. A page ``may_take`` says no
+        to stays where it is: a slot naming its id brings it to nobody."""
         picked = lib["picks"].get(owner_watch_id, {}).get("menus", {})
         for unit, menu_id in picked.items():
             others = [
@@ -2848,7 +2897,7 @@ class WatchConfigStore:
                 and other not in self._failed_owners
                 and held.get("menus", {}).get(unit) == menu_id
             ]
-            lib = self._bring_slot_pages(lib, unit, before_doc, saved_doc, others)
+            lib = self._bring_slot_pages(lib, unit, before_doc, saved_doc, others, may_take)
         return lib
 
     def _bring_slot_pages(
@@ -2858,10 +2907,12 @@ class WatchConfigStore:
         before_doc: dict[str, Any] | None,
         saved_doc: dict[str, Any],
         owners: list[str],
+        may_take: ItemJudge | None = None,
     ) -> dict[str, Any]:
         """``lib`` with the pages the ``unit`` sections of ``saved_doc`` newly
         open (beside ``before_doc``'s) put on each of ``owners`` that lacks
-        them, with what they reach (:meth:`_with_slot_pages`)."""
+        them, with what they reach (:meth:`_with_slot_pages`), less any
+        ``may_take`` says no to."""
         if not owners:
             return lib
         old_pages, old_status = menu_targets(before_doc, [unit])
@@ -2880,6 +2931,9 @@ class WatchConfigStore:
             return lib
         reach_pages, reach_status = library_reach(lib, pages)
         status_ids = list(dict.fromkeys([*reach_status, *status]))
+        if may_take is not None:
+            reach_pages = _takeable(lib, "pages", reach_pages, may_take)
+            status_ids = _takeable(lib, "status_pages", status_ids, may_take)
         for other in owners:
             lib = self._pick_all(lib, other, reach_pages, status_ids, quiet=True)
         return lib
@@ -2922,6 +2976,7 @@ class WatchConfigStore:
         *,
         base_revision: Any,
         link_failures: list[str] | None = None,
+        may_take: ItemJudge | None = None,
     ) -> WatchConfigRecord:
         """Make a history entry's document the record's next revision.
 
@@ -2964,7 +3019,14 @@ class WatchConfigStore:
         document, _trimmed = self._for_owner(owner_watch_id, kind, document)
         size = validate_document(kind, document, check_items=True)
         return self._panel_write(
-            owner_watch_id, kind, document, size, existing, link_failures, restored=True
+            owner_watch_id,
+            kind,
+            document,
+            size,
+            existing,
+            link_failures,
+            restored=True,
+            may_take=may_take,
         )
 
     @staticmethod
@@ -3676,9 +3738,13 @@ class WatchConfigStore:
         *,
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
         knows_screens: bool = False,
+        may_take: ItemJudge | None = None,
     ) -> dict[str, Any]:
         """Save one library item edited in the library itself
         (``library/item/save``), compare and swap on the item's revision.
+
+        ``may_take`` limits the pages a menu's new slots bring to its devices
+        (:meth:`_bring_slot_pages`).
 
         ``base_revision`` is compared first: one other than the item's
         revision is a ``conflict`` whatever the document holds, so a stale
@@ -3748,7 +3814,7 @@ class WatchConfigStore:
                 for owner in pickers(lib, "menus")[stored]
                 if owner not in self._failed_owners
             ]
-            lib = self._bring_slot_pages(lib, unit, before, content, users)
+            lib = self._bring_slot_pages(lib, unit, before, content, users, may_take)
         self._apply_library(lib, updated_by, strict=True)
         _LOGGER.info("Saved %s %s in the library", kind, stored)
         return {"revision": item_revision(self._library, kind, stored)}
@@ -3764,11 +3830,14 @@ class WatchConfigStore:
         start: Any = None,
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
         may_read: Callable[[str], bool] | None = None,
+        may_take: ItemJudge | None = None,
     ) -> dict[str, Any]:
         """Tick or untick a library item on one device (``library/pick``).
 
         ``may_read`` limits the devices a first menus record may be started
         from to those the caller may manage (every device when None).
+        ``may_take`` limits the status pages a page brings along, so a tile
+        naming another person's status page never puts it on this device.
 
         Pages and status pages: ``on`` true appends the item to the device's
         order, visible; putting a page on also puts on the status pages its
@@ -3821,6 +3890,8 @@ class WatchConfigStore:
                 if not isinstance(on, bool):
                     raise WatchConfigValidationError("on must be true or false")
                 status = library_reach(self._library, [item_id])[1] if kind == "pages" and on else []
+                if may_take is not None:
+                    status = _takeable(self._library, "status_pages", status, may_take)
                 change = pick_page(self._library, owner_watch_id, kind, item_id, on, status)
         except LibraryError as err:
             raise WatchConfigLinkError(err.code, err.message) from err

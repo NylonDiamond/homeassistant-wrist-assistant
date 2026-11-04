@@ -1316,6 +1316,7 @@ def _merge_owner(
     links: _Links | None = None,
     owner_name: str | None = None,
     screen: str = WATCH_SCREEN,
+    may_join: Callable[[str, str], bool] | None = None,
 ) -> _Merged:
     """Fold one owner's documents into ``lib`` (a private copy, changed in
     place) and make them that owner's picks, for the kinds ``docs`` holds.
@@ -1329,6 +1330,11 @@ def _merge_owner(
     linked copy of the same page), and every reference to it in ``docs`` is
     rewritten. That can make another page differ, so the walk repeats until
     nothing more is renamed.
+
+    ``may_join`` (kind, stored id), when given, is whether this save may
+    make the owner pick an item it holds a copy of. An equal copy it says
+    no to is another page too: a pick gives the right to read and change the
+    item, and a starter status page's id and content are known to anyone.
 
     Menus, per unit: the picked menu takes the sections when ``own`` holds
     the unit, or stays picked when its sections are equal. Otherwise a
@@ -1351,7 +1357,11 @@ def _merge_owner(
                     continue
                 key = _key(page["id"])
                 held = index.get(key)
-                if held is None or _joins(lib, kind, page, held, links, screen) or key in own.get(kind, ()):
+                if held is None or key in own.get(kind, ()):
+                    continue
+                if (may_join is None or may_join(kind, held)) and _joins(
+                    lib, kind, page, held, links, screen
+                ):
                     continue
                 first = origin.get((kind, key), key)
                 fork = None if (kind, key) in moved else _fork_for(lib, kind, page, first, links, screen)
@@ -1685,6 +1695,7 @@ def map_back(
     fork_conflicts: bool = False,
     owner_name: str | None = None,
     screen: str = WATCH_SCREEN,
+    may_take: Callable[[list[str]], bool] | None = None,
 ) -> MapBack:
     """Turn one owner's saved ``kind`` document into library and picks
     writes.
@@ -1714,29 +1725,48 @@ def map_back(
     ``screens`` (every device's) writes its tiles' places into that screen
     only and keeps the other (:func:`_merge_saved_page`); one saved with
     them (the panel's) is taken whole.
+
+    ``may_take`` is who is saving, for a save someone asked for: given the
+    owners that pick an item, whether that person may put it on this owner.
+    With it, a page or status page edits its item only when this owner picks
+    it or ``may_take`` says yes. Any other page under a held id, an equal
+    copy too, is another page and gets a new id, in any save. None is a save
+    with nobody behind it (a record found changed on disk), which edits as
+    its id says. A menu never needs it: a save only ever edits the menus the
+    owner picks.
     """
     _check_kind(kind)
     _check_screen(screen)
     if not isinstance(document, Mapping):
         raise LibraryError("invalid", "document must be an object")
     lib = copy.deepcopy(dict(library))
+    allowed = None if may_take is None else _item_judge(library, owner_id, may_take)
     if not fork_conflicts:
+        own: Container[str] = _ALL if allowed is None else _taken_ids(library, kind, document, allowed)
         merged = _merge_owner(
             lib,
             owner_id,
             {kind: document},
-            {kind: _ALL},
+            {kind: own},
             owner_name=owner_name,
             screen=screen,
+            may_join=allowed,
         )
-    else:
+    if fork_conflicts or merged.renamed:
+        # A page that got a new id is opened from the owner's other records
+        # too, so those are folded back with it, as a first record's are.
+        lib = copy.deepcopy(dict(library))
+        owned = _own_items(library, owner_id, kind)
+        if not fork_conflicts:
+            owned[kind] = own
         merged = _merge_owner(
             lib,
             owner_id,
             _owner_docs(library, owner_id, kind, document, screen),
-            _own_items(library, owner_id, kind),
+            owned,
             owner_name=owner_name,
             screen=screen,
+            may_join=allowed,
         )
     lib = stamp_item_revisions(library, lib)
     touched = changed_owners(
@@ -1746,6 +1776,44 @@ def map_back(
         lambda owner: screen if owner == owner_id else None,
     )
     return MapBack(lib, touched, merged.renamed)
+
+
+def _item_judge(
+    library: Mapping[str, Any], owner: str, may_take: Callable[[list[str]], bool]
+) -> Callable[[str, str], bool]:
+    """Whether a save of ``owner`` may touch one page or status page
+    (kind, stored id): the owner picks it, or ``may_take`` says yes for the
+    owners that do."""
+    held = library["picks"].get(owner, {})
+    picked = {
+        kind: {_key(pick["id"]) for pick in held.get(kind, []) if "page" not in pick}
+        for kind in LIST_KEYS
+    }
+    who = {kind: pickers(library, kind) for kind in LIST_KEYS}
+
+    def allowed(kind: str, stored: str) -> bool:
+        return _key(stored) in picked[kind] or may_take(who[kind].get(stored, []))
+
+    return allowed
+
+
+def _taken_ids(
+    library: Mapping[str, Any],
+    kind: str,
+    document: Mapping[str, Any],
+    allowed: Callable[[str, str], bool],
+) -> Container[str]:
+    """What a normal save of ``kind`` edits: the document's pages whose items
+    this save may touch, by compared id, or every unit for menus (a save
+    only edits the menus the owner picks)."""
+    if kind == "menus":
+        return set(MENU_UNITS)
+    index = _index(library[kind])
+    return {
+        key
+        for page in _items(document, LIST_KEYS[kind])
+        if (stored := index.get(key := _key(page["id"]))) is not None and allowed(kind, stored)
+    }
 
 
 def _owner_docs(

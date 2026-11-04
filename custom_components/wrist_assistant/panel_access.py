@@ -78,6 +78,55 @@ def may_manage_owner(
     )
 
 
+def may_take_item(
+    hass: HomeAssistant, connection: ActiveConnection, owners: list[str]
+) -> bool:
+    """Whether the signed-in user may put a library item on a device of
+    theirs, given the owners that pick it: an administrator any item, anyone
+    else an item a device they manage already has. An item no device has is
+    an administrator's."""
+    return is_admin(connection) or any(
+        may_manage_owner(hass, connection, owner) for owner in owners
+    )
+
+
+def device_may_take_item(
+    secrets: Any,
+    device_id: str,
+    user_id: str | None,
+    is_admin_user: bool,
+    owners: list[str],
+) -> bool:
+    """:func:`may_take_item` for a device's signed save, which has no
+    connection, so its bound user answers: their administrator's right, the
+    Library, and any device bound to them. A device bound to no user has
+    nobody to answer for it. It may take only what the device itself has, or
+    another unbound device of the same iPhone has, since an old pair of an
+    iPhone and its watch shares a setup. No device bound to a user is ever
+    such a device, so nobody with a login can reach this by claiming a phone.
+    """
+    if is_admin_user or device_id in owners:
+        return True
+    if secrets is None:
+        return False
+    if user_id is not None:
+        return any(
+            owner == LIBRARY_OWNER_ID
+            or ((entry := secrets.get(owner)) is not None and entry.user_id == user_id)
+            for owner in owners
+        )
+    mine = secrets.get(device_id)
+    if mine is None or mine.user_id is not None:
+        return False
+    my_phone = mine.owner_iphone_id or device_id
+    return any(
+        (entry := secrets.get(owner)) is not None
+        and entry.user_id is None
+        and (entry.owner_iphone_id or owner) == my_phone
+        for owner in owners
+    )
+
+
 def require_owner(
     hass: HomeAssistant,
     connection: ActiveConnection,

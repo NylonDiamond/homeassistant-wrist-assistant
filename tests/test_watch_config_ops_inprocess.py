@@ -96,9 +96,24 @@ def _device(kind: str, user_id: str | None = None, owner: str | None = None) -> 
 
 
 class _Ctx:
-    def __init__(self, store: Any, watch_id: str, payload: dict, secrets: Any = None) -> None:
+    def __init__(
+        self,
+        store: Any,
+        watch_id: str,
+        payload: dict,
+        secrets: Any = None,
+        user: Any = None,
+    ) -> None:
         self.watch_id = watch_id
         self.payload = payload
+        self.user_id = user.id if user is not None else None
+
+        async def _get_user(_user_id: str) -> Any:
+            return user
+
+        self.hass = types.SimpleNamespace(
+            auth=types.SimpleNamespace(async_get_user=_get_user)
+        )
         self.domain_data = types.SimpleNamespace(
             watch_config_store=store,
             widget_secret_store=secrets if secrets is not None else _Secrets(),
@@ -106,6 +121,17 @@ class _Ctx:
 
     def signed_json(self, payload: dict, status: int = 200) -> _Response:
         return _Response(status=status, body=payload)
+
+
+def _library_owner_id() -> str:
+    """The Library's owner id as ``const.py`` writes it. The stubbed const the
+    store loads over does not hold it."""
+    for node in ast.parse((_PKG_DIR / "const.py").read_text()).body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            target = node.targets[0] if isinstance(node, ast.Assign) else node.target
+            if getattr(target, "id", None) == "LIBRARY_OWNER_ID":
+                return ast.literal_eval(node.value)
+    raise AssertionError("const.py holds no LIBRARY_OWNER_ID")
 
 
 def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
@@ -120,6 +146,12 @@ def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in _NAMES
     ]
     assert sorted(n.name for n in wanted) == sorted(_NAMES)
+    access = _PKG_DIR / "panel_access.py"
+    wanted += [
+        node
+        for node in ast.parse(access.read_text(), filename=str(access)).body
+        if isinstance(node, ast.FunctionDef) and node.name == "device_may_take_item"
+    ]
     code = compile(
         ast.Module(body=wanted, type_ignores=[]),
         str(_MODULE),
@@ -137,6 +169,7 @@ def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
         "short_hash": store_mod.short_hash,
         "is_iphone_entry": notif_mod.is_iphone_entry,
         "phone_watch_ids": notif_mod.phone_watch_ids,
+        "LIBRARY_OWNER_ID": _library_owner_id(),
     }
     exec(code, namespace)  # noqa: S102
     return namespace

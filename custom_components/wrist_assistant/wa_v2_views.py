@@ -197,6 +197,7 @@ from .page_images_store import (
 )
 from .page_links import listed_page_ids
 from .pairing_ws import async_pair_status, store_paired_device
+from .panel_access import device_may_take_item
 from .sealed_box import (
     PAIRED_SECRET_BYTES,
     SealedBoxError,
@@ -4995,6 +4996,12 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     first = not _caller_is_iphone(ctx) and store.holds_no_record(
         ctx.watch_id, ctx.payload.get("kind")
     )
+    # A library page this device does not pick is edited only by the rule a
+    # panel save follows, answered by the device's bound user. The lookup is
+    # an in-memory dictionary read, not I/O.
+    user = await ctx.hass.auth.async_get_user(ctx.user_id) if ctx.user_id else None
+    admin = bool(user is not None and user.is_active and user.is_admin)
+    secrets = ctx.domain_data.widget_secret_store
     try:
         record = store.put(
             ctx.watch_id,
@@ -5005,6 +5012,9 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
             force=ctx.payload.get("force", False),
             seed=ctx.payload.get("seed") is True,
             updated_by=ctx.watch_id,
+            may_take=lambda owners: device_may_take_item(
+                secrets, ctx.watch_id, ctx.user_id, admin, owners
+            ),
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)

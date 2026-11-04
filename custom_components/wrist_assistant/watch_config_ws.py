@@ -104,7 +104,7 @@ from .listener_relay import (
     listener_relay,
 )
 from .page_links import LINK_UNITS
-from .panel_access import is_admin, may_manage_owner, require_owner
+from .panel_access import is_admin, may_manage_owner, may_take_item, require_owner
 from .watch_config_store import (
     WatchConfigChange,
     WatchConfigDelivery,
@@ -464,6 +464,7 @@ def ws_watch_config_save(
             msg["document"],
             base_revision=msg["base_revision"],
             link_failures=failed,
+            may_take=lambda owners: may_take_item(hass, connection, owners),
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
@@ -597,6 +598,7 @@ def ws_watch_config_restore(
             msg["revision"],
             base_revision=msg["base_revision"],
             link_failures=failed,
+            may_take=lambda owners: may_take_item(hass, connection, owners),
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
@@ -885,9 +887,7 @@ def _may_take_item(
     starter status pages have fixed ids). An id the library does not hold is
     let through, so the store answers ``not_found``."""
     owners = store.library_item_owners(kind, item_id)
-    if owners is None or is_admin(connection):
-        return True
-    if any(may_manage_owner(hass, connection, owner) for owner in owners):
+    if owners is None or may_take_item(hass, connection, owners):
         return True
     connection.send_error(msg["id"], "unauthorized", "no device of yours has this item")
     return False
@@ -950,6 +950,7 @@ def ws_library_pick(
             may_read=None
             if is_admin(connection)
             else lambda owner: may_manage_owner(hass, connection, owner),
+            may_take=lambda owners: may_take_item(hass, connection, owners),
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
@@ -1162,6 +1163,7 @@ def ws_library_item_save(
             msg["base_revision"],
             msg["document"],
             knows_screens=msg.get("knows_screens", False),
+            may_take=lambda owners: may_take_item(hass, connection, owners),
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
