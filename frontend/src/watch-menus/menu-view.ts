@@ -973,7 +973,7 @@ function httpTargetHints(host: MenusViewHost, list: readonly MenuHTTPTarget[], s
     return html`<div class="hint ts-under">${WATCH_NO_HTTP_ACTIONS_TEXT} ${httpActionsLink()}</div>`;
   }
   if (!host.catalogKnown && host.httpLibrary !== "held") {
-    return html`<div class="hint ts-under">Open the iPhone app to list its HTTP actions here.</div>`;
+    return html`<div class="hint ts-under">No HTTP actions to list yet.</div>`;
   }
   return nothing;
 }

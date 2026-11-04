@@ -1025,18 +1025,18 @@ describe("the Run HTTP Action target", () => {
     only.uiState.set("me:sel:anywhere", HTTP_SLOT);
     const text = flat(renderMenuInspector(only));
     expect(text).toContain(">Not in the list</option>");
-    // With the library held, the iPhone's line is not asked for.
-    expect(text).not.toContain("Open the iPhone app to list its HTTP actions here.");
+    // With the library held, the empty line is not shown.
+    expect(text).not.toContain("No HTTP actions to list yet.");
     const both = { ...only, catalogKnown: true };
     expect(flat(renderMenuInspector(both))).toContain(">Not on the iPhone</option>");
   });
 
-  it("an empty list points at the HTTP actions screen; an older integration keeps the iPhone's line", () => {
+  it("an empty list points at the HTTP actions screen; an older integration says there is nothing to list", () => {
     const empty = field(inspector(NO_MENU_TARGETS, { catalogKnown: true, httpLibrary: "empty" }));
     expect(empty).toContain("No HTTP actions yet. Add one on the HTTP actions screen.");
     expect(empty).toContain("Open HTTP actions");
     const old = field(inspector(NO_MENU_TARGETS, { catalogKnown: false }));
-    expect(old).toContain("Open the iPhone app to list its HTTP actions here.");
+    expect(old).toContain("No HTTP actions to list yet.");
     expect(old).not.toContain("Open HTTP actions");
     // The catalog alone: the same list, no iPhone marks, only the phone's
     // own warning as the page editor shows it.

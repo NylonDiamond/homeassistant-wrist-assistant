@@ -198,7 +198,7 @@ describe("the join", () => {
     expect(watchCatalogKnows(alone, "httpAction")).toBe(true);
     expect(watchCatalogKnows(alone, "statusPage")).toBe(false);
     expect(watchNoPhoneLibraryText(alone)).toBe(WATCH_NO_PHONE_STATUS_PAGES_TEXT);
-    expect(WATCH_NO_PHONE_STATUS_PAGES_TEXT).toBe("Open the iPhone app to list its status pages here.");
+    expect(WATCH_NO_PHONE_STATUS_PAGES_TEXT).toBe("No status pages to list yet.");
     // With the watch's own status pages too.
     const both = watchCatalogWithHttpLibrary(watchCatalogWithStatusPages(undefined, [{ id: PORCH, name: "House" }]), LIBRARY)!;
     expect(watchCatalogKnows(both, "statusPage")).toBe(true);
@@ -280,7 +280,7 @@ describe("the words", () => {
   it("the empty line points at the HTTP actions screen first", () => {
     expect(WATCH_NO_HTTP_ACTIONS_TEXT).toBe("No HTTP actions yet. Add one on the HTTP actions screen.");
     expect(watchNoPhoneLibraryText(watchCatalogWithStatusPages(undefined, []))).toBe(WATCH_NO_PHONE_LIBRARY_TEXT);
-    expect(WATCH_NO_PHONE_LIBRARY_TEXT).toBe("Open the iPhone app to list its HTTP actions here.");
+    expect(WATCH_NO_PHONE_LIBRARY_TEXT).toBe("No HTTP actions to list yet.");
   });
 });
 

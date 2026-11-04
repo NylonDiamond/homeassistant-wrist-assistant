@@ -107,7 +107,7 @@ export const WATCH_LIBRARY_TILE_KINDS: Readonly<Record<WatchLibraryKind, string>
 };
 
 /** The line shown in place of the library lists when there is no catalog. */
-export const WATCH_NO_CATALOG_TEXT = "Open the iPhone app to list its HTTP actions and status pages here.";
+export const WATCH_NO_CATALOG_TEXT = "No HTTP actions or status pages to list yet.";
 
 /** What a tile whose library entry the catalog does not list says. */
 export const WATCH_NOT_ON_IPHONE_TEXT = "Not on the iPhone";
@@ -252,11 +252,11 @@ export function notInStatusPagesText(device: SettingDevice = "watch"): string {
 
 /** The line in place of the HTTP action list when the watch's status pages
  * are known and no iPhone catalog is. */
-export const WATCH_NO_PHONE_LIBRARY_TEXT = "Open the iPhone app to list its HTTP actions here.";
+export const WATCH_NO_PHONE_LIBRARY_TEXT = "No HTTP actions to list yet.";
 
 /** The line in place of the status page list when the home's HTTP actions
  * are known and no iPhone catalog is. */
-export const WATCH_NO_PHONE_STATUS_PAGES_TEXT = "Open the iPhone app to list its status pages here.";
+export const WATCH_NO_PHONE_STATUS_PAGES_TEXT = "No status pages to list yet.";
 
 /** The line in place of the list Home Assistant does not know without an
  * iPhone catalog: the HTTP actions unless the home's library lists them, the

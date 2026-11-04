@@ -114,7 +114,7 @@ describe("no catalog", () => {
   it("is a record at revision 0, or none", () => {
     expect(watchCatalogFromRecord(record({ revision: 0, document: undefined }))).toBeUndefined();
     expect(watchCatalogFromRecord(undefined)).toBeUndefined();
-    expect(WATCH_NO_CATALOG_TEXT).toBe("Open the iPhone app to list its HTTP actions and status pages here.");
+    expect(WATCH_NO_CATALOG_TEXT).toBe("No HTTP actions or status pages to list yet.");
     expect(watchCatalogListedText(undefined)).toBeUndefined();
   });
 });
