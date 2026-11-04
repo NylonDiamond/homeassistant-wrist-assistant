@@ -90,7 +90,8 @@ import {
   watchTemplateColumns,
   watchTemplateText,
 } from "./app-model.js";
-import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_ICON_SLOT, templateColumnRows, templateColumnsFontSize } from "./template-rows.js";
+import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize } from "./template-rows.js";
+import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, templateTextFit, templateTextUnits } from "./template-fit.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { FIT_STRIP_ROWS, fitDrawnTile, fitPageRows, fitRowTop, fitSmallestTile, fitsOnScreen, fittedLayout, fitState, PHONE_FIT_BOTTOM_ROOM, WATCH_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
@@ -2114,33 +2115,6 @@ export function watchTemplateTileLook(tile: WatchPageTile, input: Pick<WatchPage
   return { kind: "text", text: result.value, multiLine: result.value.includes("\n"), ink, pending: false };
 }
 
-/** The watch's body size in points, which a template's text starts at. */
-const TEMPLATE_FONT_PT = 16;
-/** SwiftUI's `minimumScaleFactor(0.4)` on it. */
-const TEMPLATE_MIN_FONT_PT = TEMPLATE_FONT_PT * 0.4;
-
-/**
- * The size a template's text is drawn at, in points: the body size, shrunk
- * (to 40% at most) until the text fits the box in five lines, as SwiftUI
- * wraps and then scales it. Widths are estimated (0.58 of the size a
- * character, an icon a little over one size), which is close enough for a
- * picture.
- */
-export function watchTemplateFontSize(text: string, widthPt: number, heightPt: number): number {
-  const lines = text.split("\n").map((line) => {
-    let units = 0;
-    for (const segment of templateRichTextSegments(line)) units += segment.kind === "icon" ? 1.15 : [...segment.text].length * 0.58;
-    return units;
-  });
-  const w = Math.max(1, widthPt);
-  const h = Math.max(1, heightPt);
-  for (let size = TEMPLATE_FONT_PT; size > TEMPLATE_MIN_FONT_PT; size -= 0.4) {
-    const rows = lines.reduce((sum, units) => sum + Math.max(1, Math.ceil((units * size) / w)), 0);
-    if (rows <= 5 && Math.min(rows, 5) * size * 1.2 <= h) return Math.round(size * 10) / 10;
-  }
-  return TEMPLATE_MIN_FONT_PT;
-}
-
 /** The rendered text with its `[icon:]` markers drawn as symbols the size of
  * the text, each in its own color or the text's. A symbol the provider does
  * not know draws nothing, as `Image(systemName:)` does. The stage's
@@ -2156,50 +2130,89 @@ export function watchTemplateRichText(text: string, ink: string, px: number, ico
   });
 }
 
-/** A symbol of a template's text, as `watchTemplateRichText` draws one. */
-function templateGlyph(symbol: string, spec: string | undefined, ink: string, px: number, icons: IconProvider | undefined): TemplateResult | typeof nothing {
+/** A symbol of a template's text, its viewBox shown whole in a box of `wide`
+ * by `tall` points. `drop` moves it down from the text's baseline. */
+function templateGlyph(symbol: string, spec: string | undefined, ink: string, wide: number, tall: number, icons: IconProvider | undefined, drop?: number): TemplateResult | typeof nothing {
   const own = spec === undefined ? undefined : templateIconColor(spec);
-  const glyph = icons?.render(symbol, px, own?.hex ?? ink);
+  const longest = Math.max(wide, tall);
+  const glyph = icons?.render(knownSymbol(icons, symbol), longest, own?.hex ?? ink);
   if (glyph === undefined) return nothing;
-  const fade = own !== undefined && own.alpha < 1 ? `opacity:${own.alpha}` : "";
-  return html`<svg class="wp-tpl-icon" width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} style=${fade} aria-hidden="true">${glyph}</svg>`;
+  const style = [own !== undefined && own.alpha < 1 ? `opacity:${own.alpha}` : "", drop === undefined ? "" : `vertical-align:${-drop}px`].filter((part) => part !== "").join(";");
+  return html`<svg class="wp-tpl-icon" width=${wide} height=${tall} viewBox=${`${(longest - wide) / 2} ${(longest - tall) / 2} ${wide} ${tall}`} style=${style} aria-hidden="true">${glyph}</svg>`;
 }
 
-/** The rendered text as `watchTemplateRichText` draws it, with each run marked
- * with its row, cell and part, so the template editor can find its code. */
-function watchTemplateTextParts(text: string, ink: string, px: number, icons: IconProvider | undefined): (TemplateResult | string)[] {
-  const out: (TemplateResult | string)[] = [];
-  let row = 0;
-  text.split("\n").forEach((line, i) => {
-    if (i > 0) out.push("\n");
-    if (line.trim() === "") {
-      out.push(line);
-      return;
-    }
-    let cell = -1;
-    for (const segment of templateRichTextSegments(line)) {
-      if (segment.kind === "icon") {
-        cell = cell < 0 && out.length === 0 ? 0 : cell + 1;
-        out.push(html`<span data-tr=${row} data-tc=${cell} data-tp="icon">${templateGlyph(segment.symbol, segment.color, ink, px, icons)}</span>`);
-      } else if (segment.text.trim() === "") {
-        out.push(segment.text);
-      } else {
-        if (cell < 0) cell = 0;
-        out.push(html`<span data-tr=${row} data-tc=${cell} data-tp="text">${segment.text}</span>`);
+/** How high over the baseline the middle of an icon in the text stands, as a
+ * part of its size: the middle of the capitals. */
+const TEMPLATE_ICON_MIDDLE = 0.36;
+
+/** How much wider a text draws in this browser's font than in the device's, as
+ * a part of the size, or undefined where nothing can measure it. */
+const browserUnits = new Map<string, number>();
+function browserTextUnits(text: string): number | undefined {
+  if (typeof OffscreenCanvas === "undefined") return undefined;
+  const known = browserUnits.get(text);
+  if (known !== undefined) return known;
+  const context = new OffscreenCanvas(1, 1).getContext("2d");
+  if (context === null) return undefined;
+  context.font = `600 100px ${WATCH_ROUNDED_FAMILY}`;
+  const units = context.measureText(text).width / 100;
+  if (browserUnits.size > 500) browserUnits.clear();
+  browserUnits.set(text, units);
+  return units;
+}
+
+/** The letter spacing that gives a run the device's width in this browser's
+ * font, so its lines end where the device's do, whichever font the panel got. */
+function templateRunSpacing(text: string, device: TemplateFitDevice): string {
+  const count = [...text].length;
+  const drawn = browserTextUnits(text);
+  if (drawn === undefined || count === 0) return "";
+  const spacing = (templateTextUnits(text, device) - drawn) / count;
+  return Math.abs(spacing) < 0.002 ? "" : `letter-spacing:${Math.round(spacing * 1000) / 1000}em`;
+}
+
+/** A symbol's width as a part of the size it is drawn at, 1 when unknown. */
+function templateIconWidth(icons: IconProvider | undefined, symbol: string): number {
+  const box = glyphBox(icons, symbol);
+  return box === undefined ? 1 : box[0] / WATCH_SYMBOL_EXPORT_SIZE;
+}
+
+/** The lines of a template's plain text as the device breaks them, each run
+ * marked with its row, cell and part, so the template editor can find its
+ * code. The icons stay at the device's full size while the words shrink. */
+function templateFitLines(fit: TemplateFit, device: TemplateFitDevice, ink: string, s: number, icons: IconProvider | undefined): TemplateResult[] {
+  return fit.lines.map((line) => {
+    const tall = (line.hasIcon ? fit.iconRow : fit.textRow) * s;
+    return html`<span class="wp-tpl-line" style=${`height:${tall}px;line-height:${tall}px`}>${line.pieces.map((piece) => {
+      if (piece.kind === "text") {
+        const spacing = templateRunSpacing(piece.text, device);
+        return piece.marked
+          ? html`<span data-tr=${piece.row} data-tc=${piece.cell} data-tp="text" style=${spacing}>${piece.text}</span>`
+          : html`<span style=${spacing}>${piece.text}</span>`;
       }
-    }
-    row++;
+      const box = glyphBox(icons, piece.symbol) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
+      const wide = (box[0] / WATCH_SYMBOL_EXPORT_SIZE) * fit.iconSize * s;
+      const high = (box[1] / WATCH_SYMBOL_EXPORT_SIZE) * fit.iconSize * s;
+      const drop = high / 2 - TEMPLATE_ICON_MIDDLE * fit.iconSize * s;
+      return html`<span data-tr=${piece.row} data-tc=${piece.cell} data-tp="icon">${templateGlyph(piece.symbol, piece.color, ink, wide, high, icons, drop)}</span>`;
+    })}</span>`;
   });
-  return out;
 }
 
-/** The rows of a template's rendered text, standing in columns. */
-function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], ink: string, size: number, shadow: string, icons: IconProvider | undefined): TemplateResult {
+/** The rows of a template's rendered text, standing in columns. An icon fits
+ * its slot keeping its shape, as `TemplateColumnsText` draws it. */
+function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device: TemplateFitDevice, ink: string, size: number, s: number, shadow: string, icons: IconProvider | undefined): TemplateResult {
   const columns = Math.max(...rows.map((row) => row.length));
-  const style = [`font-size:${size}px`, `color:${ink}`, `grid-template-columns:repeat(${columns},auto)`, `column-gap:${TEMPLATE_COLUMN_GAP}em`, shadow].filter((part) => part !== "").join(";");
+  const px = size * s;
+  const style = [`font-size:${px}px`, `color:${ink}`, `grid-template-columns:repeat(${columns},auto)`, `column-gap:${TEMPLATE_COLUMN_GAP}em`, `line-height:${TEMPLATE_COLUMN_ROW}`, shadow].filter((part) => part !== "").join(";");
+  const slot = (symbol: string): [number, number] => {
+    const box = glyphBox(icons, symbol) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
+    const fit = Math.min((TEMPLATE_ICON_SLOT * px) / box[0], (TEMPLATE_ICON_TALL * px) / box[1]);
+    return [box[0] * fit, box[1] * fit];
+  };
   return html`<span class="wp-tpl-grid" style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
-    cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, size, icons)}</span>`}${
-    cell.text === "" ? nothing : html`<span data-tr=${r} data-tc=${c} data-tp="text">${cell.text}</span>`}</span>`))}</span>`;
+    cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
+    cell.text === "" ? nothing : html`<span data-tr=${r} data-tc=${c} data-tp="text" style=${templateRunSpacing(cell.text, device)}>${cell.text}</span>`}</span>`))}</span>`;
 }
 
 /** The most rows a template tile draws on the iPhone and on a watch. */
@@ -2209,18 +2222,27 @@ function templateRowLimit(tile: WatchPageTile, input: Pick<WatchPagePreviewInput
   return typeof lines === "number" ? Math.min(8, Math.max(1, Math.round(lines))) : 5;
 }
 
+/** Which device's text a preview draws. */
+function templateDevice(input: Pick<WatchPagePreviewInput, "phone">): TemplateFitDevice {
+  return input.phone === undefined ? "watch" : "iphone";
+}
+
+/** The side padding of `SimpleTemplateTile`. It has none over and under. */
+const TEMPLATE_TILE_PAD = 4;
+
 /** A template's rendered text as a share of the device's full size, 0.4 to 1,
  * for the template editor's "Text is small". */
 export function watchTemplateTextScale(tile: WatchPageTile, width: number, height: number, input: Pick<WatchPagePreviewInput, "templates" | "page" | "phone">): number {
   const look = watchTemplateTileLook(tile, input);
   if (look.kind !== "text" || look.pending) return 1;
-  const padX = 4 + Math.min(2, width / 8);
-  const padY = Math.min(6, height / 4);
+  const device = templateDevice(input);
+  const metrics = TEMPLATE_FIT_METRICS[device];
+  const limit = templateRowLimit(tile, input);
+  const room = width - TEMPLATE_TILE_PAD * 2;
   const rows = templateColumnRows(look.text, watchTemplateColumns(tile));
-  const box = { width: width - padX * 2, height: height - padY * 2 };
-  const size = rows === undefined ? watchTemplateFontSize(look.text, box.width, box.height)
-    : templateColumnsFontSize(rows.slice(0, templateRowLimit(tile, input)), box.width, box.height, TEMPLATE_FONT_PT);
-  return size / TEMPLATE_FONT_PT;
+  return rows === undefined
+    ? templateTextFit(look.text, room, height, limit, device).size / metrics.body
+    : templateColumnsFontSize(rows.slice(0, limit), room, height, metrics.columnsBody, device) / metrics.columnsBody;
 }
 
 /** A template tile as the watch draws it: its ground, border, pattern and
@@ -2241,8 +2263,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     : watchTileFill(tileColor, fillInk, true, alpha, { width, height });
   const border = watchTileBorder(tile, true, watchTileFallbackInk(tile, input.page, input.states));
   const look = watchTemplateTileLook(tile, input);
-  const padX = 4 + Math.min(2, width / 8);
-  const padY = Math.min(6, height / 4);
+  const padX = TEMPLATE_TILE_PAD;
   let content: TemplateResult;
   if (look.kind === "placeholder") {
     const px = watchTileIconSize(tile, width, height) * s;
@@ -2250,24 +2271,25 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
   } else if (look.kind === "error") {
     content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * s, "#FFCC00")}</span>`;
   } else {
-    const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, templateRowLimit(tile, input));
-    const size = (columnRows === undefined
-      ? watchTemplateFontSize(look.text, width - padX * 2, height - padY * 2)
-      : templateColumnsFontSize(columnRows, width - padX * 2, height - padY * 2, TEMPLATE_FONT_PT)) * s;
+    const device = templateDevice(input);
+    const limit = templateRowLimit(tile, input);
+    const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
     // The iPhone look: the text in the tile's ink, with no glow
     // (`SimpleTemplateTile.followsTileInk`). An icon's own color stays.
     const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : look.ink;
-    const style = [
-      `font-size:${size}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`,
-      ...(iphone ? [] : [`text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`]),
-    ].join(";");
-    content = columnRows !== undefined
-      ? templateColumnsFace(columnRows, textInk, size, iphone ? "" : `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`, input.icons)
-      : html`<span class="wp-tpl-text" style=${style}>${watchTemplateTextParts(look.text, textInk, size, input.icons)}</span>`;
+    const shadow = iphone ? "" : `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`;
+    if (columnRows !== undefined) {
+      const size = templateColumnsFontSize(columnRows, width - padX * 2, height, TEMPLATE_FIT_METRICS[device].columnsBody, device);
+      content = templateColumnsFace(columnRows, device, textInk, size, s, shadow, input.icons);
+    } else {
+      const fit = templateTextFit(look.text, width - padX * 2, height, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
+      const style = [`font-size:${fit.size * s}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
+      content = html`<span class="wp-tpl-text" style=${style}>${templateFitLines(fit, device, textInk, s, input.icons)}</span>`;
+    }
   }
   const rim = iphone ? `box-shadow:${phoneLitTileRim(s)};` : "";
   return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
-    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:${padY * s}px ${padX * s}px`}>
+    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:0 ${padX * s}px`}>
     ${tileUnderlay(tile, input, true, { width, height }, s)}
     ${content}
     ${renderTileRim(border, width, height, s, radiusPt)}
@@ -4344,10 +4366,11 @@ export const watchPagePreviewStyles = css`
   .wp-art-band { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; border-radius: inherit; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85)); pointer-events: none; }
   .wp-tpl { display: flex; flex-direction: column; justify-content: center; align-items: center; }
   .wp-tpl-text {
-    position: relative; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden;
-    width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.2;
+    position: relative; display: block; width: 100%;
     font-family: ${unsafeCSS(WATCH_ROUNDED_FAMILY)}; font-weight: 600;
   }
+  /* templateTextFit breaks the lines, as the device does. */
+  .wp-tpl-line { display: block; white-space: pre; }
   .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .wp-tpl-grid {
     position: relative; display: grid; width: 100%; justify-content: space-between; align-items: center; line-height: 1.2;

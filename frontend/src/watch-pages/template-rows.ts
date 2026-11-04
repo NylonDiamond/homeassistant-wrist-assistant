@@ -12,6 +12,7 @@
 // `TemplateRichTextTests.swift` pins the same cases.
 
 import { templateRichTextSegments } from "./rich-text.js";
+import { type TemplateFitDevice, templateTextUnits } from "./template-fit.js";
 
 /** One cell: its icon, when it starts with one, and the words after it with
  * the white space around them gone. */
@@ -57,21 +58,26 @@ export function templateColumnRows(text: string, on: boolean): TemplateCell[][] 
 export const TEMPLATE_ICON_SLOT = 1.45;
 export const TEMPLATE_CELL_GAP = 0.22;
 export const TEMPLATE_COLUMN_GAP = 0.35;
+/** A row's height as a part of the text size: the font's line, measured. */
+export const TEMPLATE_COLUMN_ROW = 1.193;
+/** A cell's icon fits a box this tall, as a part of the text size. */
+export const TEMPLATE_ICON_TALL = 1.1;
 
 /**
  * The size the columns are drawn at, in points: `largest`, shrunk (to 40% at
  * most, as the plain text) until the widest cell of each column and the rows
- * fit the box. Widths are estimated as the plain text's are.
+ * fit the box. Widths are the device's own (`template-fit.ts`), and a row is
+ * as tall as its font's line, as a grid of `.system(size:)` text is.
  */
-export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])[], widthPt: number, heightPt: number, largest: number): number {
+export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])[], widthPt: number, heightPt: number, largest: number, device: TemplateFitDevice = "iphone"): number {
   const widths: number[] = [];
   for (const row of rows) {
     row.forEach((cell, i) => {
-      const units = (cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP)) + [...cell.text].length * 0.58;
+      const units = (cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP)) + templateTextUnits(cell.text, device);
       widths[i] = Math.max(widths[i] ?? 0, units);
     });
   }
   const total = widths.reduce((sum, w) => sum + w, 0) + Math.max(0, widths.length - 1) * TEMPLATE_COLUMN_GAP;
-  const fit = Math.min(largest, Math.max(1, widthPt) / Math.max(1, total), Math.max(1, heightPt) / (Math.max(1, rows.length) * 1.2));
+  const fit = Math.min(largest, Math.max(1, widthPt) / Math.max(1, total), Math.max(1, heightPt) / (Math.max(1, rows.length) * TEMPLATE_COLUMN_ROW));
   return Math.round(Math.max(largest * 0.4, fit) * 10) / 10;
 }

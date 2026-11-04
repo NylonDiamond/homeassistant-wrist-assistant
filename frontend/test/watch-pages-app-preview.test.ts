@@ -27,7 +27,6 @@ import {
   phoneLitTileInk,
   renderWatchTileFace,
   watchSpecialTileLook,
-  watchTemplateFontSize,
   watchTemplateTileLook,
   watchTilePreviewActive,
   setPreviewOneLookDefault,
@@ -323,13 +322,6 @@ describe("a template tile in the preview", () => {
     });
   });
 
-  it("shrinks its text to fit five lines, down to 40% of the body size", () => {
-    expect(watchTemplateFontSize("21", 80, 50)).toBe(16);
-    const long = watchTemplateFontSize("Living room 21 °C, kitchen 19 °C, bedroom 18 °C", 80, 50);
-    expect(long).toBeLessThan(16);
-    expect(long).toBeGreaterThanOrEqual(6.4);
-    expect(watchTemplateFontSize("x\n".repeat(40), 20, 10)).toBe(6.4);
-  });
 });
 
 describe("a music hub tile in the preview", () => {
