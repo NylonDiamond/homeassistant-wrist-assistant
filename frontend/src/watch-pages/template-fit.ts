@@ -44,7 +44,7 @@ const UNITS: Readonly<Record<TemplateFitDevice, Readonly<Record<string, number>>
  * 17 apart), where a 46 mm simulator at its default says 16. */
 export const TEMPLATE_FIT_METRICS: Readonly<Record<TemplateFitDevice, { body: number; columnsBody: number; row: number }>> = {
   iphone: { body: 17, columnsBody: 17, row: 22 / 17 },
-  watch: { body: 15, columnsBody: 16, row: 17 / 15 },
+  watch: { body: 15, columnsBody: 15, row: 17 / 15 },
 };
 
 /** The smallest share of the size SwiftUI draws text at. */

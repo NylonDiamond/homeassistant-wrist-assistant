@@ -90,7 +90,7 @@ import {
   watchTemplateColumns,
   watchTemplateText,
 } from "./app-model.js";
-import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize } from "./template-rows.js";
+import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans } from "./template-rows.js";
 import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, templateTextFit, templateTextUnits } from "./template-fit.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
@@ -2210,7 +2210,7 @@ function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device:
     const fit = Math.min((TEMPLATE_ICON_SLOT * px) / box[0], (TEMPLATE_ICON_TALL * px) / box[1]);
     return [box[0] * fit, box[1] * fit];
   };
-  return html`<span class="wp-tpl-grid" style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
+  return html`<span class="wp-tpl-grid" style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
     cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
     cell.text === "" ? nothing : html`<span data-tr=${r} data-tc=${c} data-tp="text" style=${templateRunSpacing(cell.text, device)}>${cell.text}</span>`}</span>`))}</span>`;
 }

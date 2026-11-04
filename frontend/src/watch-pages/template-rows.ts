@@ -6,7 +6,8 @@
 // The one rule: an icon starts a cell. Words before a row's first icon are a
 // cell of their own. The number of columns is the row with the most cells, a
 // column is as wide as its widest cell, and a shorter row leaves its last
-// columns empty.
+// columns empty. A row of one cell runs across them all, so a long line does
+// not widen the first column.
 //
 // No DOM here: the preview draws the rows (`preview.ts`), and the app's
 // `TemplateRichTextTests.swift` pins the same cases.
@@ -54,6 +55,13 @@ export function templateColumnRows(text: string, on: boolean): TemplateCell[][] 
   return rows.some((row) => row.length > 1) ? rows : undefined;
 }
 
+/** Whether a row runs across all the columns: a row of one cell has nothing
+ * to line up, and a long one would push the other columns off the tile. The
+ * app's `TemplateRichText.spansColumns` says the same. */
+export function templateRowSpans(row: readonly TemplateCell[]): boolean {
+  return row.length === 1;
+}
+
 /** A cell's icon slot and the gap after it, as parts of the text size. */
 export const TEMPLATE_ICON_SLOT = 1.45;
 export const TEMPLATE_CELL_GAP = 0.22;
@@ -70,14 +78,19 @@ export const TEMPLATE_ICON_TALL = 1.1;
  * as tall as its font's line, as a grid of `.system(size:)` text is.
  */
 export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])[], widthPt: number, heightPt: number, largest: number, device: TemplateFitDevice = "iphone"): number {
+  const cellUnits = (cell: TemplateCell) => (cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP)) + templateTextUnits(cell.text, device);
   const widths: number[] = [];
+  let across = 0;
   for (const row of rows) {
+    if (templateRowSpans(row)) {
+      across = Math.max(across, ...row.map(cellUnits));
+      continue;
+    }
     row.forEach((cell, i) => {
-      const units = (cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP)) + templateTextUnits(cell.text, device);
-      widths[i] = Math.max(widths[i] ?? 0, units);
+      widths[i] = Math.max(widths[i] ?? 0, cellUnits(cell));
     });
   }
-  const total = widths.reduce((sum, w) => sum + w, 0) + Math.max(0, widths.length - 1) * TEMPLATE_COLUMN_GAP;
+  const total = Math.max(across, widths.reduce((sum, w) => sum + w, 0) + Math.max(0, widths.length - 1) * TEMPLATE_COLUMN_GAP);
   const fit = Math.min(largest, Math.max(1, widthPt) / Math.max(1, total), Math.max(1, heightPt) / (Math.max(1, rows.length) * TEMPLATE_COLUMN_ROW));
   return Math.round(Math.max(largest * 0.4, fit) * 10) / 10;
 }

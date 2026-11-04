@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setWatchTemplateColumns, watchTemplateColumns } from "../src/watch-pages/app-model.js";
-import { templateColumnRows, templateColumnsFontSize, templateRows } from "../src/watch-pages/template-rows.js";
+import { templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows } from "../src/watch-pages/template-rows.js";
 import { alignTemplate, findTemplatePart, nearestName, namedEntityIds, scanTemplateSource, sourceRowAt, templateNameIssues, templateTokenValues } from "../src/watch-pages/template-source.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 
@@ -42,6 +42,20 @@ describe("template rows", () => {
     expect(templateColumnRows(two, true)).toHaveLength(2);
     expect(templateColumnRows("[icon:a] 1 [icon:b] 2", true)).toBeUndefined();
     expect(templateColumnRows("one\ntwo", true)).toBeUndefined();
+  });
+
+  it("runs a row of one cell across the columns", () => {
+    const rows = templateColumnRows("[icon:a] Aanb [icon:b] 1\n2026-04-08T21:24:11\n[icon:c] Kant", true) ?? [];
+    expect(rows.map(templateRowSpans)).toEqual([false, true, true]);
+  });
+
+  it("keeps a long row of one cell out of the columns' widths", () => {
+    const short = templateRows("[icon:a] A [icon:b] 1");
+    const withLong = templateRows("[icon:a] A [icon:b] 1\nabcdefghij");
+    expect(templateColumnsFontSize(withLong, 500, 500, 16, "iphone")).toBe(templateColumnsFontSize(short, 500, 500, 16, "iphone"));
+    // It still has to fit, so it can shrink them all, but no more than its own width asks.
+    const room = 130;
+    expect(templateColumnsFontSize(templateRows("[icon:a] A [icon:b] 1\n2026-04-08T21:24:11.382181+00:00"), room, 500, 16, "iphone")).toBeCloseTo(room / 17.27, 0);
   });
 
   it("sizes columns by the widest cell of each, and stops at 40%", () => {
