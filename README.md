@@ -74,28 +74,29 @@ To remove a single watch or iPhone for good, open it on the panel's Devices tab 
 
 The integration adds a `Wrist Assistant` page to the Home Assistant sidebar. Everyone who signs in to Home Assistant sees it and manages their own devices. Administrators can also pair a device for someone else.
 
-The panel has three tabs:
+The panel has six tabs:
 
-- **Devices** lists your paired watches and iPhones. `Pair` adds one. Open a device to see how it is doing, or to remove it with `Remove device`.
-- **Watch app** sets up one watch at a time. Pick the watch, then: `Pages` (the screens you swipe between and their tiles), `Menus` (the Anywhere menu, the Entity quick menu and the page switcher), `Status pages`, `Rooms` (switching pages by room, and point control), `Voice`, `HTTP actions`, `Cameras` (how each camera is framed in alerts) and `Settings`. Notification style and delivery are under `Settings`, `Notifications`.
+- **Devices** lists your paired watches and iPhones. `Pair` adds one. Open a device to see how it is doing, or to remove it with `Remove device`. Open a watch to set it up: its `Pages`, `Menus`, `Status pages`, `Rooms` (switching pages by room, and point control), `Voice`, `Complications` and `Settings`. Notification style and delivery are under `Settings`, `Notifications`.
+- **Pages**, **Status pages** and **Menus** show every watch's and iPhone's pages, status pages and menus (the Anywhere menu, the Entity quick menu and the page switcher) in one place.
 - **Complications** builds complications for the watch face, and widgets for the iPhone Lock Screen, Home Screen and Control Center. The watch's old Control Center lists live here now: each tile is a complication control.
+- **Shared** holds what no one device owns: `HTTP actions`, `Camera framing` (how each camera is framed in alerts) and the Home map.
 
 A watch picks up a save the next time it checks. If the watch has none yet, the panel offers a start: an empty page, or the default settings and menus.
 
-A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, the Watch app's `Settings` says so instead of offering them.
+A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, the watch's `Settings` says so instead of offering them.
 
 Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
 
 ### Pairing a device
 
-On the Devices tab, press `Pair`. The same card is also in the Watch app, under `Settings`, `Pairing and security`. It pairs two ways:
+On the Devices tab, press `Pair`. The same card is also on a watch's `Settings`, under `Pairing and security`. It pairs two ways:
 
 1. **An iPhone: `Show a QR code`.** On the iPhone, open Wrist Assistant, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code.
 2. **A watch, or an iPhone, with a code: `Type a code`.** On the device, choose `Pair with Home Assistant`. It shows a six character code. Type it in the panel and choose `Look up`, check that the device named is yours, then press `Pair`. Codes last 10 minutes.
 
 A device you pair is yours. An administrator can pick someone else under `Whose watch is this?`.
 
-If your Home Assistant sits behind a proxy that asks for a client certificate (mTLS), import it once in the iPhone app. The phone hands it to Home Assistant, which keeps it for your Home Assistant user, and each of your watches gets it from there, including a watch paired with a code. You can also upload it in the panel, under the Watch app's `Settings`, `Pairing and security`. A watch fetches it over a path the proxy does not guard, so pair it on your home address the first time. The certificate and its password are stored privately and never appear in a diagnostics download.
+If your Home Assistant sits behind a proxy that asks for a client certificate (mTLS), import it once in the iPhone app. The phone hands it to Home Assistant, which keeps it for your Home Assistant user, and each of your watches gets it from there, including a watch paired with a code. You can also upload it in the panel, on a watch's `Settings`, under `Pairing and security`. A watch fetches it over a path the proxy does not guard, so pair it on your home address the first time. The certificate and its password are stored privately and never appear in a diagnostics download.
 
 A watch can send its logs to Home Assistant from `Connection Health` on the watch. To read them, open the watch's device page (`Settings` -> `Devices & Services` -> `Wrist Assistant`) and choose `Download diagnostics`. Tokens, passwords and the certificate are removed from the download.
 
