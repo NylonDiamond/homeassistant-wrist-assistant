@@ -1636,6 +1636,8 @@ export class WaAllPages extends LitElement {
         page, pages, screen: PIC_SCREEN, scale,
         ...(states === undefined ? {} : { states }), ...(icons === undefined ? {} : { icons }),
         ...(appVersion === undefined ? {} : { appVersion }),
+        // The tiles' icon photos, as the iPhone's picture draws them.
+        photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn, photoOnMask: this.photoOnMask,
       })}</span>
     </span>`;
   }

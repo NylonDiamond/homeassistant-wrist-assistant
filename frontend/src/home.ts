@@ -700,7 +700,7 @@ export const homeStyles = css`
 
   /* The picked device. */
   .hb-main { flex: 999 1 520px; min-width: 0; box-sizing: border-box; padding: 18px clamp(16px, 3vw, 32px) 48px; container-type: inline-size; }
-  .hb-detail { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .hb-detail { max-width: 940px; margin: 0; display: flex; flex-direction: column; gap: 18px; }
   .hb-main > .home-welcome-slot { max-width: 940px; margin: 0 auto 18px; }
   /* Its bar: whose it is and its name, the arrows to the device before and
      after it, Rename and Remove. */

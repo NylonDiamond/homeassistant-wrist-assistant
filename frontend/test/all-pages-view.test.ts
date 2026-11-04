@@ -482,6 +482,28 @@ describe("the Pages tab", () => {
     expect(cardOf(PAGE1)).not.toContain("data-card-screen");
   });
 
+  it("draws a tile's icon photo on a card's watch picture and on its iPhone picture", async () => {
+    const t = tab();
+    const page = t.home.lib.pages[PAGE1]!.item as unknown as { items: { iconPhotoId?: string }[] };
+    page.items[0]!.iconPhotoId = "photo-1";
+    showTab(t, "all");
+    await t.ready();
+    const photos = t.el.photos as { url: (id: string) => string | undefined; size: (id: string) => { width: number; height: number } | undefined };
+    photos.url = (id) => (id === "photo-1" ? "blob:tile-photo" : undefined);
+    photos.size = (id) => (id === "photo-1" ? { width: 100, height: 100 } : undefined);
+    showCards(t);
+    const cardOf = () => {
+      const cards = t.whole();
+      const card = cards.slice(cards.indexOf(`data-card=${PAGE1}`));
+      return card.slice(0, card.indexOf("lt-ticks"));
+    };
+    expect(cardOf()).not.toContain("ap-pic-phone");
+    expect(cardOf()).toContain("blob:tile-photo");
+    t.el.cardPicks = new Map([[PAGE1.toUpperCase(), "iphone"]]);
+    expect(cardOf()).toContain("ap-pic-phone");
+    expect(cardOf()).toContain("blob:tile-photo");
+  });
+
   it("shows the update card once, until it is dismissed", async () => {
     const t = tab();
     showTab(t, "all");
