@@ -953,6 +953,7 @@ export function seedMayLand(owner: Partial<FirstSaveOwner> | undefined): boolean
 export function noRecordWords(owner: Partial<FirstSaveOwner> | undefined, kind: string): { status: string; title: string } | undefined {
   if (owner === undefined || deviceKindOf(owner) !== "watch") return undefined;
   if (waitsForWatchSeed(owner) && SEEDED_KINDS.has(kind)) return { status: WAITING_FOR_WATCH_STATUS, title: `${WAITING_FOR_WATCH_TEXT} Saving now replaces what is on the watch.` };
+  if (kind === "behavior" && owner.standard_settings === false) return { status: KEEPS_OWN_SETTINGS_STATUS, title: KEEPS_OWN_SETTINGS_TEXT };
   if (owner.holds_old_setup !== true) return undefined;
   if (kind !== "behavior") return { status: NOT_SAVED_HERE_STATUS, title: NOT_SAVED_HERE_TEXT };
   return owner.standard_settings === true
@@ -966,6 +967,9 @@ export function noRecordWords(owner: Partial<FirstSaveOwner> | undefined, kind: 
 export function firstSaveAskText(owner: Partial<FirstSaveOwner> | undefined, kinds: readonly string[]): string | undefined {
   if (owner === undefined || deviceKindOf(owner) !== "watch" || owner.has_iphone === true) return undefined;
   if (waitsForWatchSeed(owner) && kinds.some((k) => SEEDED_KINDS.has(k))) return SEED_PENDING_ASK_TEXT;
+  // The watch's own word that it runs its own settings is a fact, whatever
+  // paired it. A watch that has never said (null, or no field) stays below.
+  if (kinds.includes("behavior") && owner.standard_settings === false) return REPLACE_OWN_SETTINGS_ASK_TEXT;
   if (owner.holds_old_setup !== true) return undefined;
   if (kinds.includes("behavior") && owner.standard_settings !== true) return REPLACE_OWN_SETTINGS_ASK_TEXT;
   if (!seedMayLand(owner)) return undefined;

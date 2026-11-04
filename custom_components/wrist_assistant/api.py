@@ -478,6 +478,10 @@ class DeltaCoordinator:
         # for an iPhone or an unknown id. None until setup attaches it
         # (attach_move_wait).
         self._move_wait_of: Callable[[str], bool | None] | None = None
+        # What the store holds of a device's own report rides the poll as
+        # `stored_metadata`, so the device can report again when the store fell
+        # behind. None until setup attaches it (attach_stored_metadata).
+        self._stored_metadata_of: Callable[[str], dict[str, Any] | None] | None = None
         # watch_id → the value its last reply with a body carried, kept like
         # _http_actions_sent. A change earns a poll one empty reply.
         self._move_wait_sent: dict[str, bool] = {}
@@ -1065,6 +1069,25 @@ class DeltaCoordinator:
             _LOGGER.debug("No move wait for %s", watch_id, exc_info=True)
             return None
 
+    @callback
+    def attach_stored_metadata(
+        self, stored_metadata: Callable[[str], dict[str, Any] | None]
+    ) -> None:
+        """Wire in ``stored_metadata(watch_id)``, the store's copy of what a
+        device last reported. It goes out on every reply with a body."""
+        self._stored_metadata_of = stored_metadata
+
+    def stored_metadata(self, watch_id: str) -> dict[str, Any] | None:
+        """The value for a reply, or None to leave the field out: nothing
+        attached, an unknown id, or a lookup that failed."""
+        if self._stored_metadata_of is None:
+            return None
+        try:
+            return self._stored_metadata_of(watch_id)
+        except Exception:  # noqa: BLE001 (a failed lookup must not fail the poll)
+            _LOGGER.debug("No stored metadata for %s", watch_id, exc_info=True)
+            return None
+
     def _move_wait_behind(self, watch_id: str) -> bool:
         """True when the value changed since the last reply with a body (or
         the baseline noted before the watch parked)."""
@@ -1433,6 +1456,12 @@ class DeltaCoordinator:
         change earns one empty reply on the next poll. A lean reply carries it
         whole, as the poll does not report it. Older apps ignore the key.
 
+        A reply with a body also carries ``stored_metadata``: what Home
+        Assistant holds of the polling device's own report
+        (``WidgetSecretStore.stored_metadata``). A device whose report differs
+        sends ``update_metadata`` again. Whole on a lean reply too. Older apps
+        ignore the key.
+
         ``held`` is what the device says it holds of those values (see
         HeldConfig), the addresses hash included. A poll whose report lags a current number is
         answered at once with an empty reply carrying it, like a poll whose
@@ -1570,6 +1599,9 @@ class DeltaCoordinator:
         if waits is not None:
             body["may_await_move"] = waits
             self._move_wait_sent[watch_id] = waits
+        stored = self.stored_metadata(watch_id)
+        if stored is not None:
+            body["stored_metadata"] = stored
         if self._voices_wanted(watch_id, voices_hash):
             body["voices_wanted"] = True
 
@@ -1593,8 +1625,8 @@ class DeltaCoordinator:
           only the kinds that differ.
         * ``watch_config_hashes`` always whole, as a full reply carries it:
           the watch does not report the hashes it holds. The same for
-          ``http_actions_hash``, and for ``home_map_rev`` and
-          ``may_await_move``, which the poll does not report either.
+          ``http_actions_hash``, and for ``home_map_rev``, ``may_await_move``
+          and ``stored_metadata``, which the poll does not report either.
         * ``epoch`` only when the poll's is not this coordinator's.
 
         The device fills a missing number in from the request it sent, so

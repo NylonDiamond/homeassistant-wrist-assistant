@@ -136,7 +136,11 @@ export interface OwnerSummary {
       so its seed may still be landing. After that a kind with no record has
       nothing coming. It changes words and an ask, and refuses nothing. */
   seed_may_land?: boolean | null;
-  /** The watch said it runs only the standard settings. */
+  /** What the watch said of its settings: true, it runs only the standard
+      settings. False, it runs its own, so a first Save asks. Null when it has
+      not said, and absent from integrations older than the field. An
+      integration before the watch's false was kept sends false for "has not
+      said" too, and that integration ships with this panel. */
   standard_settings?: boolean | null;
   /** The Home Assistant user this device is bound to (a watch through its
       paired iPhone when its own key predates binding), null when none.

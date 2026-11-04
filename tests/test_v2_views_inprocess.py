@@ -71,6 +71,16 @@ _NAMES = (
     "_op_complications_restore",
     "WAVersionView",
     "WARegisterSecretView",
+    "WAActionView",
+    "WAStreamView",
+    "WABatchSnapshotView",
+    "WANotificationSnapshotView",
+    "WANotificationSnapshotLiveView",
+    "WAPairStartView",
+    "WAPairStatusView",
+    "WAPairRedeemView",
+    "_not_loaded_status",
+    "_not_loaded_reply",
 )
 
 DOMAIN = "wrist_assistant"
@@ -126,7 +136,8 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
     wanted = [
         node
         for node in tree.body
-        if isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef)) and node.name in _NAMES
+        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef, ast.ClassDef))
+        and node.name in _NAMES
     ]
     assert sorted(n.name for n in wanted) == sorted(_NAMES)
     code = compile(
@@ -270,6 +281,48 @@ def test_version_answers_404_once_the_entry_is_deleted(env) -> None:
     reply = asyncio.run(view.get(None))
     assert reply.status == 404
     assert reply.body == {"ok": False, "error": "not_found"}
+
+
+@pytest.mark.parametrize(
+    ("view", "method", "args"),
+    [
+        ("WAActionView", "post", (None,)),
+        ("WAStreamView", "get", (None, "token")),
+        ("WABatchSnapshotView", "get", (None, "token")),
+        ("WANotificationSnapshotView", "get", (None, "token")),
+        ("WANotificationSnapshotLiveView", "get", (None, "token")),
+        ("WARegisterSecretView", "post", (None,)),
+        ("WAPairStartView", "post", (None,)),
+        ("WAPairStatusView", "post", (None,)),
+        ("WAPairRedeemView", "post", (None,)),
+    ],
+)
+@pytest.mark.parametrize(("entries", "status"), [([], 404), (["entry"], 503)])
+def test_every_view_says_the_same_with_no_data(env, view, method, args, entries, status) -> None:
+    """No entry is a missing integration, and an entry loading or failed is
+    try again. An app asks ``/version`` only after a delta 404, so a view that
+    still said 503 here would never let it find out the entry is gone."""
+    hass = types.SimpleNamespace(
+        data={}, config_entries=types.SimpleNamespace(async_entries=lambda _domain: entries)
+    )
+    built = env.views[view](hass, object()) if view == "WAActionView" else env.views[view](hass)
+    assert asyncio.run(getattr(built, method)(*args)).status == status
+
+
+def test_no_view_answers_a_fixed_503_for_a_missing_integration() -> None:
+    """The delta view imports from the package first, so it is read here: it is
+    the one a watch hears, and it asks ``/version`` only after its 404."""
+    source = _MODULE.read_text()
+    delta = source[source.index("class WADeltaView("):]
+    head = delta[: delta.index("_read_capped_body(request, DELTA_MAX_BODY_BYTES)")]
+    assert "return _not_loaded_reply(self._hass)" in head
+    # Every line that names it goes through the one helper.
+    lines = source.splitlines()
+    for at, line in enumerate(lines):
+        if '"Integration not loaded"' not in line:
+            continue
+        around = " ".join(lines[at - 1 : at + 2])
+        assert "503" not in around, line
 
 
 def test_version_answers_503_while_the_entry_is_reloading(env) -> None:

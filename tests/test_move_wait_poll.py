@@ -100,7 +100,45 @@ def test_a_change_with_no_wake_is_found_by_the_next_poll(coordinator) -> None:  
     asyncio.run(run())
 
 
+def test_a_reply_with_a_body_says_what_the_store_holds(coordinator) -> None:  # noqa: F811
+    """A device skips ``update_metadata`` while its report has not changed, so
+    this is how it hears that a restored backup or a new pair left the store
+    behind. Whole on a lean reply, for a watch and for an iPhone."""
+    _module, hass, coord = coordinator
+    ent = "light.stored"
+    hass.states.set(ent, "off")
+    stored = {
+        "w1": {"app_version": "3.0.1", "standard_settings": None},
+        "iphone:1": {"app_version": "3.0.1"},
+    }
+
+    async def run() -> None:
+        # With nothing attached the field stays out, as on an older integration.
+        _s, body = await _poll(coord, entities=[ent])
+        assert "stored_metadata" not in body
+        coord.attach_stored_metadata(stored.get)
+        _s, body = await _poll(coord, entities=[ent])
+        assert body["stored_metadata"] == stored["w1"]
+        _s, body = await _poll(coord, entities=[ent], lean=True, force_delta=True)
+        assert body["stored_metadata"] == stored["w1"]
+        _s, body = await _poll(coord, watch_id="iphone:1", entities=[ent])
+        assert body["stored_metadata"] == {"app_version": "3.0.1"}
+        # An unknown id, and a lookup that fails, leave it out.
+        _s, body = await _poll(coord, watch_id="other", entities=[ent])
+        assert "stored_metadata" not in body
+
+        def fails(_watch_id: str) -> None:
+            raise RuntimeError("no")
+
+        coord.attach_stored_metadata(fails)
+        _s, body = await _poll(coord, entities=[ent])
+        assert "stored_metadata" not in body
+
+    asyncio.run(run())
+
+
 def test_setup_asks_the_store_for_a_watch_only() -> None:
     init = _INIT.read_text()
+    assert "coordinator.attach_stored_metadata(widget_secret_store.stored_metadata)" in init
     assert "coordinator.attach_move_wait(" in init
     assert "widget_secret_store.is_paired_watch(watch_id)" in init

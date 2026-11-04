@@ -143,6 +143,8 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "_note_signed_use",
         "_came_through_cloud",
         "_confirmed_pairing_waiting_reason",
+        "_not_loaded_status",
+        "_not_loaded_reply",
     }
     wanted = [
         node
@@ -209,7 +211,8 @@ def env():
                 DOMAIN: types.SimpleNamespace(
                     widget_secret_store=secret_store, pair_request_store=pair_store
                 )
-            }
+            },
+            config_entries=types.SimpleNamespace(async_entries=lambda _domain: ["entry"]),
         )
         classes = _view_classes(pair_mod, logbook_mod.log_hmac_failure)
         yield types.SimpleNamespace(

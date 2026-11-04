@@ -254,10 +254,26 @@ describe("a first Save of settings", () => {
     expect(STANDARD_SETTINGS_STATUS).toBe("Using the standard settings, not saved yet");
   });
 
+  it("asks on a watch that said it runs its own settings, whatever paired it", () => {
+    // A watch forgotten, changed on the wrist and paired by code: the forget
+    // lost `holds_old_setup`, and the watch's word still stands.
+    const own = { holds_old_setup: false, seed_pending: false, has_iphone: false, standard_settings: false };
+    expect(firstSaveAskText(owner("w", own), ["behavior"])).toBe(REPLACE_OWN_SETTINGS_ASK_TEXT);
+    expect(noRecordWords(owner("w", own), "behavior")?.status).toBe(KEEPS_OWN_SETTINGS_STATUS);
+    // Only its settings: it has said nothing of another kind.
+    expect(firstSaveAskText(owner("w", own), ["pages"])).toBeUndefined();
+    expect(noRecordWords(owner("w", own), "voice")).toBeUndefined();
+    // Never on a watch still in the wait, or on an iPhone.
+    expect(firstSaveAskText(owner("w", { ...own, has_iphone: true }), ["behavior"])).toBeUndefined();
+    expect(firstSaveAskText(owner("p", { ...own, device_kind: "iphone" }), ["behavior"])).toBeUndefined();
+  });
+
   it("stays as it is on a watch a code first paired", () => {
     const fresh = { holds_old_setup: false, seed_pending: false, has_iphone: false };
-    expect(firstSaveAskText(owner("w", fresh), ["behavior"])).toBeUndefined();
-    expect(noRecordWords(owner("w", fresh), "behavior")).toBeUndefined();
+    for (const said of [{}, { standard_settings: null }, { standard_settings: true }]) {
+      expect(firstSaveAskText(owner("w", { ...fresh, ...said }), ["behavior"])).toBeUndefined();
+      expect(noRecordWords(owner("w", { ...fresh, ...said }), "behavior")).toBeUndefined();
+    }
     expect(noRecordWords(owner("w", fresh), "voice")).toBeUndefined();
     // And on an integration older than these fields.
     expect(firstSaveAskText(owner("w"), ["behavior"])).toBeUndefined();

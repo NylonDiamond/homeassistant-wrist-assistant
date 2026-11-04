@@ -460,7 +460,7 @@ def test_an_unbound_device_cannot_name_an_admin_s_iphone_and_run_as_the_admin(en
 
 
 @pytest.mark.parametrize(
-    ("value", "expected"), [(True, True), (False, False), ("yes", False), (1, False), (None, False)]
+    ("value", "expected"), [(True, True), (False, False), ("yes", None), (1, None), (None, None)]
 )
 def test_only_a_boolean_says_the_standard_settings(env, value, expected) -> None:
     env.store.register("watch-a", SECRET_B, "watch-self-provision", user_id="alice")

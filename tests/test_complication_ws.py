@@ -559,7 +559,8 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "holds_old_setup": True,
         "seed_pending": False,
         "seed_may_land": False,
-        "standard_settings": False,
+        # The watch has not said.
+        "standard_settings": None,
         # Neither key is bound to a Home Assistant user.
         "user_id": None,
         "user_gone": False,
@@ -632,7 +633,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "holds_old_setup": False,
             "seed_pending": False,
             "seed_may_land": False,
-            "standard_settings": False,
+            "standard_settings": None,
             "user_id": None,
             "user_gone": False,
             "polling": False,

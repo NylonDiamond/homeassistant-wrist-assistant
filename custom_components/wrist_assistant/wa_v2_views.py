@@ -603,7 +603,7 @@ class WAActionView(HomeAssistantView):
     async def post(self, request: Request) -> Response:
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return Response(status=503, text="Integration not loaded")
+            return _not_loaded_reply(self._hass)
 
         # Every check that needs no body comes first, so a stranger who
         # knows no paired watch never gets a body read, and the read is then
@@ -714,6 +714,23 @@ DELTA_MAX_CUSTOM_ENTITIES = 2000
 # The longest `caps_hash` or `epoch` read from a lean poll. Both are 16 hex
 # digits as this server writes them; anything longer reads as absent.
 _DELTA_TOKEN_MAX_CHARS = 64
+
+
+def _not_loaded_status(hass: HomeAssistant) -> int:
+    """What a view answers while the integration has no data to serve.
+
+    404 with no config entry: the views stay registered after the entry is
+    deleted, until the next restart, and nothing is loading then, so an app
+    must read a missing integration. 503 with an entry that is loading or that
+    failed, which says try again. An app asks ``/version`` only after a delta
+    404, so every view has to agree.
+    """
+    return 503 if hass.config_entries.async_entries(DOMAIN) else 404
+
+
+def _not_loaded_reply(hass: HomeAssistant) -> Response:
+    """`_not_loaded_status` for a view that answers plain text."""
+    return Response(status=_not_loaded_status(hass), text="Integration not loaded")
 
 
 async def _read_capped_body(request: Request, limit: int) -> bytes | None:
@@ -850,7 +867,7 @@ class WADeltaView(HomeAssistantView):
 
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return Response(status=503, text="Integration not loaded")
+            return _not_loaded_reply(self._hass)
 
         body = await _read_capped_body(request, DELTA_MAX_BODY_BYTES)
         if body is None:
@@ -916,7 +933,8 @@ class WADeltaView(HomeAssistantView):
         # what lets the panel offer the phone for pages.
         domain_data.widget_secret_store.note_phone_pages(watch_id)
         # A watch from before the setup move polling after its wait ended has
-        # had its chance to send its own setup (`seed_pending`).
+        # had its chance to send its own setup (`seed_pending`), if its app is
+        # new enough to send one.
         domain_data.widget_secret_store.note_move_end_heard(watch_id)
         if since is not None and not isinstance(since, (str, int)):
             return Response(status=400, text="since must be a cursor")
@@ -3188,6 +3206,11 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
     watch says whether it runs only the standard settings. Anything else there
     is ignored.
 
+    A device skips this op while what it reports has not changed. A reply with
+    a body from the delta poll carries what is stored (`stored_metadata`), so a
+    device can send this again when a restored backup or a new pair left the
+    stored values behind.
+
     An `owner_iphone_id` in the body, which older apps still send, is
     ignored and the stored one kept. There is no owner phone any more, and a
     signer that could name one could name another person's iPhone and, while
@@ -3429,7 +3452,7 @@ class WAStreamView(HomeAssistantView):
     async def get(self, request: Request, token: str) -> StreamResponse:
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return Response(text="Integration not loaded", status=503)
+            return _not_loaded_reply(self._hass)
 
         entry = domain_data.stream_token_store.claim(token)
         if entry is None:
@@ -3506,7 +3529,7 @@ class WABatchSnapshotView(HomeAssistantView):
     async def get(self, request: Request, token: str) -> StreamResponse:
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return Response(text="Integration not loaded", status=503)
+            return _not_loaded_reply(self._hass)
 
         entry = domain_data.batch_snapshot_token_store.claim(token)
         if entry is None:
@@ -3617,7 +3640,7 @@ class WANotificationSnapshotView(HomeAssistantView):
     async def get(self, request: Request, token: str) -> Response:
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return Response(text="Integration not loaded", status=503)
+            return _not_loaded_reply(self._hass)
 
         frame = await _notification_snapshot_frame(domain_data, token)
         if frame is None:
@@ -3660,7 +3683,7 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
     async def get(self, request: Request, token: str) -> Response:
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return Response(text="Integration not loaded", status=503)
+            return _not_loaded_reply(self._hass)
 
         frame = await _notification_snapshot_live_frame(self._hass, domain_data, token)
         if frame is None:
@@ -3701,7 +3724,9 @@ class WARegisterSecretView(HomeAssistantView):
     async def post(self, request: Request) -> Response:
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
         if domain_data is None:
-            return self.json_message("Integration not loaded", status_code=503)
+            return self.json_message(
+                "Integration not loaded", status_code=_not_loaded_status(self._hass)
+            )
 
         try:
             payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
@@ -3891,7 +3916,9 @@ class WAPairStartView(HomeAssistantView):
         domain_data = self._hass.data.get(DOMAIN)
         pair_store = getattr(domain_data, "pair_request_store", None)
         if pair_store is None:
-            return self.json_message("Integration not loaded", status_code=503)
+            return self.json_message(
+                "Integration not loaded", status_code=_not_loaded_status(self._hass)
+            )
 
         try:
             payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
@@ -4011,7 +4038,9 @@ class WAPairStatusView(HomeAssistantView):
         domain_data = self._hass.data.get(DOMAIN)
         pair_store = getattr(domain_data, "pair_request_store", None)
         if pair_store is None:
-            return self.json_message("Integration not loaded", status_code=503)
+            return self.json_message(
+                "Integration not loaded", status_code=_not_loaded_status(self._hass)
+            )
         try:
             payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
         except _BodyTooLarge:
@@ -4027,7 +4056,9 @@ class WAPairStatusView(HomeAssistantView):
             return self.json_message("watch_id too long", status_code=400)
         secret_store = getattr(domain_data, "widget_secret_store", None)
         if secret_store is None:
-            return self.json_message("Integration not loaded", status_code=503)
+            return self.json_message(
+                "Integration not loaded", status_code=_not_loaded_status(self._hass)
+            )
         state, sealed = await async_pair_status(self._hass, pair_store, secret_store, watch_id)
         return self.json(
             {"state": state, **(sealed or {}), "server_time": int(time.time())}
@@ -4093,7 +4124,9 @@ class WAPairRedeemView(HomeAssistantView):
         offer_store = getattr(domain_data, "pair_offer_store", None)
         secret_store = getattr(domain_data, "widget_secret_store", None)
         if offer_store is None or secret_store is None:
-            return self._refuse(503, "unavailable", "Integration not loaded")
+            return self._refuse(
+                _not_loaded_status(self._hass), "unavailable", "Integration not loaded"
+            )
 
         try:
             payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
@@ -4243,7 +4276,8 @@ class WAVersionView(HomeAssistantView):
     While the config entry is not loaded (a reload is under way) it answers 503
     with `{"ok": false, "error": "restarting"}` rather than a reply with no
     capabilities, so the app retries instead of taking the home for an old
-    integration.
+    integration. With no entry at all it answers 404 `{"ok": false, "error":
+    "not_found"}`, like every other view (`_not_loaded_status`).
 
     **Path stability contract.** This URL lives at `/api/wrist_assistant/version`
     on purpose — outside any `/vN/` segment — so apps too old to talk to the
@@ -4267,12 +4301,9 @@ class WAVersionView(HomeAssistantView):
         domain_data = self._hass.data.get(DOMAIN)
         coordinator = getattr(domain_data, "coordinator", None)
         if coordinator is None:
-            # The view stays registered after the entry is deleted, until the
-            # next restart. With no entry nothing is loading, and an app must
-            # read that as a missing integration, not one that will not load.
-            if not self._hass.config_entries.async_entries(DOMAIN):
-                return self.json({"ok": False, "error": "not_found"}, status_code=404)
-            return self.json({"ok": False, "error": "restarting"}, status_code=503)
+            status = _not_loaded_status(self._hass)
+            error = "not_found" if status == 404 else "restarting"
+            return self.json({"ok": False, "error": error}, status_code=status)
         # Pull the version off the loaded integration object instead of a
         # hand-synced const. Keeps the user-facing version string in lockstep
         # with manifest.json — the iOS "Update integration" banner copy quotes

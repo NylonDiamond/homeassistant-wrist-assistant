@@ -829,6 +829,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             else None
         )
     )
+    # What a device last reported rides its poll, so it reports again after a
+    # restored backup or a new pair left the store behind.
+    coordinator.attach_stored_metadata(widget_secret_store.stored_metadata)
     # Step 6, once per install: an iPhone's push token filed under its
     # companion watch moves to the phone's own id, where it now lives and
     # where routing pairs it with the watches of the same user.

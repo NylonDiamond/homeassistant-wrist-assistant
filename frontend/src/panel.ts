@@ -1611,13 +1611,22 @@ export class WristAssistantPanel extends LitElement {
   @state() private pairNext?: string;
   /** The pairing card in Home's welcome, in a home with no devices yet: its
    * third step, for the device picked on its stage. Open while the welcome
-   * is on screen (`syncHomeWelcome`). A device paired on it is picked on
-   * Home with a green "Paired" line, the way the dialog's iPhone is. */
+   * is on screen (`syncHomeWelcome`). A watch paired on it gets the dialog's
+   * what next. An iPhone is picked on Home with a green "Paired" line, the way
+   * the dialog's iPhone is. */
   private welcomePair = new PairWatchCard(() => this.requestUpdate(), async (deviceId, stale, kind) => {
     await this.loadOwners();
     if (deviceId === undefined) return;
     if (kind === "watch") this.pickWatch(deviceId);
     if (stale() || this.ownerOf(deviceId) === undefined) return;
+    // A watch gets the pair dialog's what next (`renderPairNext`), as it would
+    // paired there: a new watch has nothing on it yet.
+    if (kind === "watch") {
+      this.openPairDialog();
+      this.pairNext = deviceId;
+      void this.loadDeviceAddresses(deviceId);
+      return;
+    }
     this.openHomeDevice(deviceId);
     this.devicePaired = deviceId;
   });

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
@@ -184,8 +185,8 @@ class WidgetSecretEntry:
     move_end_heard: bool = False
     """The watch has polled here since its wait ended, so it has had its chance
     to send its own setup (`note_move_end_heard`, :func:`watch_seed_pending`).
-    Dropped by a `register()` that names another iPhone. Kept on disk only
-    while True."""
+    A poll from an app too old to send one does not count. Dropped by a
+    `register()` that names another iPhone. Kept on disk only while True."""
 
     move_end_heard_at: datetime | None = None
     """When that first poll came, UTC, which starts `SEED_LANDING_WINDOW`
@@ -199,10 +200,10 @@ class WidgetSecretEntry:
     by code, so its label no longer says so. See `holds_old_setup`. Kept on
     disk only while True."""
 
-    standard_settings: bool = False
-    """The watch said it runs the standard settings: nobody ever changed them
-    (``update_metadata``). Only the watch says so; False says nothing either
-    way. Kept on disk only while True."""
+    standard_settings: bool | None = None
+    """What the watch said of its settings (``update_metadata``). True: it runs
+    the standard settings, nobody ever changed them. False: it runs its own.
+    None: it has not said. Kept on disk only once said."""
 
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
@@ -297,7 +298,11 @@ class WidgetSecretStore:
                     move_end_heard=entry.get("move_end_heard") is True,
                     move_end_heard_at=_stored_time(entry.get("move_end_heard_at")),
                     old_link_setup=entry.get("old_link_setup") is True,
-                    standard_settings=entry.get("standard_settings") is True,
+                    standard_settings=(
+                        entry["standard_settings"]
+                        if isinstance(entry.get("standard_settings"), bool)
+                        else None
+                    ),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -366,7 +371,11 @@ class WidgetSecretStore:
                         else {}
                     ),
                     **({"old_link_setup": True} if entry.old_link_setup else {}),
-                    **({"standard_settings": True} if entry.standard_settings else {}),
+                    **(
+                        {"standard_settings": entry.standard_settings}
+                        if entry.standard_settings is not None
+                        else {}
+                    ),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -470,7 +479,7 @@ class WidgetSecretStore:
                 else None
             ),
             old_link_setup=existing is not None and existing.holds_old_setup,
-            standard_settings=existing is not None and existing.standard_settings,
+            standard_settings=existing.standard_settings if existing is not None else None,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -754,17 +763,33 @@ class WidgetSecretStore:
         """:func:`watch_seed_may_land`, now."""
         return watch_seed_may_land(self._secrets, watch_id, dt_util.utcnow())
 
+    def stored_metadata(self, watch_id: str) -> dict[str, str | bool | None] | None:
+        """What this store holds of a device's own report, for its poll's reply
+        (``stored_metadata``). ``app_version`` is "" when none is stored. A
+        watch also gets ``standard_settings``, null until it has said. None for
+        an unknown id."""
+        entry = self._secrets.get(watch_id)
+        if entry is None:
+            return None
+        stored: dict[str, str | bool | None] = {"app_version": entry.app_version or ""}
+        if entry.device_kind == DEVICE_KIND_WATCH:
+            stored["standard_settings"] = entry.standard_settings
+        return stored
+
     def note_move_end_heard(self, watch_id: str) -> bool:
         """Record that a watch from before the move polled after its wait
         ended, and when. Called on every ``/v2/delta`` poll; once set it costs
         one lookup. Returns whether it changed. An iPhone, a code paired watch,
-        a watch still waiting and an unknown id change nothing."""
+        a watch still waiting and an unknown id change nothing. Nor does a
+        watch whose app is too old to send its setup: its later update has to
+        get the whole of ``SEED_LANDING_WINDOW``."""
         entry = self._secrets.get(watch_id)
         if (
             entry is None
             or entry.move_end_heard
             or not entry.holds_old_setup
             or self.may_await_move(watch_id)
+            or too_old_to_seed(entry.app_version)
         ):
             return False
         entry.move_end_heard = True
@@ -1001,6 +1026,23 @@ def watch_move_may_still_come(
     return now - phone.phone_pages_at < MOVE_GRACE
 
 
+# The first app that can move or seed a setup, as the panel's
+# `MIN_VERSION_FOR_SETUP_MOVE` says.
+MIN_VERSION_TO_SEED = (3, 1, 0)
+
+_VERSION = re.compile(r"\s*v?(\d+)\.(\d+)(?:\.(\d+))?")
+
+
+def too_old_to_seed(app_version: str | None) -> bool:
+    """Whether an app at this version cannot send its setup. Unknown or
+    unparseable reads as no, as the panel's `setupMoveNeedsUpdate` does."""
+    match = _VERSION.match(app_version) if isinstance(app_version, str) else None
+    if match is None:
+        return False
+    major, minor, patch = match.groups()
+    return (int(major), int(minor), int(patch or 0)) < MIN_VERSION_TO_SEED
+
+
 def watch_seed_pending(
     entries: Mapping[str, WidgetSecretEntry], watch_id: str, now: datetime
 ) -> bool:
@@ -1010,7 +1052,8 @@ def watch_seed_pending(
     The panel asks first before a first record then, as that record would stop
     the watch's seed and replace what the watch holds. It only changes words
     and an ask: Home Assistant refuses nothing because of it, and no time ends
-    it. A poll does, the first one after the wait ended. False while the wait
+    it. A poll does, the first one after the wait ended from an app that can
+    send it (:func:`too_old_to_seed`). False while the wait
     lasts (:func:`watch_move_may_still_come` covers that), for a watch a code
     first paired, for an iPhone and for an unknown id.
     """

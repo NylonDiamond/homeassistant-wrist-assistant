@@ -422,3 +422,95 @@ def test_an_unbound_device_takes_nothing_from_a_bound_one(env) -> None:
     _signed_put(env, "watch-claims", _pages(_page("Taken")), None)
     assert _name(env) == "Alice page"
     assert _owners(env) == ["phone-alice"]
+
+
+# ── a phone handing over its old setup (R5-028) ──────────────────────────
+
+OLD_PHONE_PAGE = "6F1C2D0E-0000-4000-8000-0000000000AA"
+
+
+def test_a_phone_s_own_put_hands_over_old_pages_for_the_panel_to_link(env) -> None:
+    """A phone with no valid watch key signs as itself. Its old pages land in
+    its own record, and the panel can link them to a watch of the same person.
+    No new op: ``watch_config_put`` already does this."""
+    _save(env, ALICE, "watch-alice", _pages(_page()))
+    _signed_put(env, "phone-alice", _pages(_page("Old phone page", OLD_PHONE_PAGE)), _user("alice"))
+
+    assert _ids(env, "phone-alice") == [OLD_PHONE_PAGE]
+    assert _owners(env, OLD_PHONE_PAGE) == ["phone-alice"]
+    assert OLD_PHONE_PAGE not in _ids(env, "watch-alice")
+    _untouched(env)
+
+    _ok(
+        _run(
+            env,
+            env.ws.ws_library_pick,
+            ALICE,
+            type="x",
+            owner_id="watch-alice",
+            kind="pages",
+            item_id=OLD_PHONE_PAGE,
+            on=True,
+        )
+    )
+    assert OLD_PHONE_PAGE in _ids(env, "watch-alice")
+    assert sorted(_owners(env, OLD_PHONE_PAGE)) == ["phone-alice", "watch-alice"]
+
+
+def test_a_phone_s_hand_over_never_writes_to_another_person_s_device(env) -> None:
+    """The R5-058 rules hold: the signing id is the only owner, another
+    person's page id forks, and the panel will not link it to their watch."""
+    _save(env, ALICE, "watch-alice", _pages(_page()))
+    bob = _user("bob")
+    before = copy.deepcopy(env.watch_config.get("watch-alice", "pages").document)
+    # Alice's page id in Bob's phone's old setup, and a body naming her watch.
+    views = ops._handlers(sys.modules[type(env.watch_config).__module__])
+    payload = {
+        "kind": "pages",
+        "base_revision": 0,
+        "hash": HASH,
+        "document": _pages(_page("Bob's old page")),
+        "watch_id": "watch-alice",
+        "owner_watch_id": "watch-alice",
+    }
+    ctx = ops._Ctx(env.watch_config, "phone-bob", payload, env.devices, bob)
+    assert asyncio.run(views["_op_watch_config_put"](ctx)).status == 200
+
+    _untouched(env)
+    assert env.watch_config.get("watch-alice", "pages").document == before
+    [forked] = _ids(env, "phone-bob")
+    assert forked != PAGE
+    assert _owners(env, forked) == ["phone-bob"]
+
+    assert _refused(
+        _run(
+            env,
+            env.ws.ws_library_pick,
+            BOB,
+            type="x",
+            owner_id="watch-alice",
+            kind="pages",
+            item_id=forked,
+            on=True,
+        )
+    )
+    assert forked not in _ids(env, "watch-alice")
+
+
+def test_a_phone_s_second_hand_over_at_base_zero_meets_the_usual_conflict(env) -> None:
+    """Base 0 and no force, so a hand over never replaces a record the phone
+    already has."""
+    alice = _user("alice")
+    _signed_put(env, "phone-alice", _pages(_page("Kept", OLD_PHONE_PAGE)), alice)
+    views = ops._handlers(sys.modules[type(env.watch_config).__module__])
+    payload = {
+        "kind": "pages",
+        "base_revision": 0,
+        "hash": HASH,
+        "document": _pages(_page("Replaced", OLD_PHONE_PAGE)),
+    }
+    ctx = ops._Ctx(env.watch_config, "phone-alice", payload, env.devices, alice)
+    reply = asyncio.run(views["_op_watch_config_put"](ctx))
+    assert reply.status == 409
+    assert reply.body["error"] == "conflict"
+    assert _name(env, OLD_PHONE_PAGE) == "Kept"

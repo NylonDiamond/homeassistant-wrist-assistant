@@ -356,7 +356,13 @@ def env(sealed):
             return instance.value
 
         namespace = _extract(
-            {"WAPairRedeemView", "_REDEEM_MAX_BOX_CHARS", "_op_rekey", "_REKEY_MAX_BOX_CHARS"},
+            {
+                "WAPairRedeemView",
+                "_REDEEM_MAX_BOX_CHARS",
+                "_op_rekey",
+                "_REKEY_MAX_BOX_CHARS",
+                "_not_loaded_status",
+            },
             {
                 "Any": Any,
                 "base64": base64,
@@ -671,7 +677,11 @@ def test_503_while_not_loaded_or_without_an_instance_id(env) -> None:
     assert (_redeem(env, body).status, _redeem(env, body).body["error"]) == (503, "unavailable")
     assert env.penv.offer_store.state_of(offer.offer_id)[0] == "open"
     env.penv.hass.data.clear()
+    env.penv.hass.config_entries = types.SimpleNamespace(async_entries=lambda _domain: ["entry"])
     assert _redeem(env, body).status == 503
+    # With no config entry at all, the integration is missing.
+    env.penv.hass.config_entries = types.SimpleNamespace(async_entries=lambda _domain: [])
+    assert _redeem(env, body).status == 404
 
 
 def test_the_token_never_reaches_the_log(env, caplog) -> None:

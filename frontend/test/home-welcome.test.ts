@@ -143,10 +143,22 @@ describe("the welcome's wiring", () => {
     expect(method(SOURCE, "  override disconnectedCallback() {")).toContain("this.closeHomeWelcome();");
   });
 
-  it("picks the new device on Home with its green Paired line", () => {
+  it("picks a new iPhone on Home with its green Paired line", () => {
     const card = SOURCE.slice(SOURCE.indexOf("private welcomePair = new PairWatchCard("), SOURCE.indexOf("private welcomePairOpen = false;"));
     expect(card).toContain("this.openHomeDevice(deviceId);");
     expect(card).toContain("this.devicePaired = deviceId;");
+  });
+
+  it("opens What next for a new watch, the same as the pair dialog", () => {
+    const card = SOURCE.slice(SOURCE.indexOf("private welcomePair = new PairWatchCard("), SOURCE.indexOf("private welcomePairOpen = false;"));
+    const watch = card.indexOf(`if (kind === "watch") {\n      this.openPairDialog();\n      this.pairNext = deviceId;\n      void this.loadDeviceAddresses(deviceId);\n      return;\n    }`);
+    expect(watch).toBeGreaterThan(-1);
+    expect(watch).toBeLessThan(card.indexOf("this.openHomeDevice(deviceId);"));
+    // The dialog draws What next from `pairNext` on Home, with or without a welcome.
+    const dialog = method(SOURCE, "  private renderPairDialog() {");
+    expect(dialog).toContain("this.renderPairNextBody(this.pairNext)");
+    // The dialog forgets `pairNext` when it opens, so it has to be set after.
+    expect(method(SOURCE, "  private openPairDialog() {")).toContain("this.pairNext = undefined;");
   });
 
   it("never uses a dash to break a sentence", () => {

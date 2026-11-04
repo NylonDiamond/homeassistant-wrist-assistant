@@ -333,6 +333,87 @@ def test_seed_may_land_for_ten_minutes_after_the_first_poll(env) -> None:
     assert secrets.seed_may_land("w1") is False
 
 
+def test_a_too_old_watch_s_poll_does_not_start_the_ten_minutes(env) -> None:
+    """A 3.0.1 watch cannot seed. If its poll started the window, the window
+    could run out before its later update, and the panel would then say flatly
+    that the watch holds nothing."""
+    secrets = env.secrets
+    secrets.finish_move("w1", "p1")
+    secrets.get("w1").app_version = "3.0.1"
+    assert secrets.note_move_end_heard("w1") is False
+    assert secrets.get("w1").move_end_heard is False
+    assert secrets.get("w1").move_end_heard_at is None
+    assert secrets.seed_may_land("w1") is False
+    # Still its chance to come.
+    assert secrets.seed_pending("w1") is True
+
+    # The update reports first, and the next poll starts them.
+    secrets.update_metadata("w1", app_version="3.2.0")
+    assert secrets.note_move_end_heard("w1") is True
+    assert secrets.seed_may_land("w1") is True
+    assert secrets.seed_pending("w1") is False
+
+
+@pytest.mark.parametrize(
+    ("version", "too_old"),
+    [
+        ("3.0.1", True),
+        ("v3.0.1", True),
+        ("2.8", True),
+        (" 3.0.1 (3)", True),
+        ("3.1.0", False),
+        ("3.1", False),
+        ("3.2.0", False),
+        ("4.0.0-beta", False),
+        (None, False),
+        ("", False),
+        ("not a version", False),
+    ],
+)
+def test_too_old_to_seed_reads_a_version_as_the_panel_does(env, version, too_old) -> None:
+    assert env.mod.MIN_VERSION_TO_SEED == (3, 1, 0)
+    panel = (_MODULE.parents[2] / "frontend" / "src" / "version.ts").read_text()
+    assert 'MIN_VERSION_FOR_SETUP_MOVE = "3.1.0"' in panel
+    assert env.mod.too_old_to_seed(version) is too_old
+
+
+def test_the_stored_metadata_says_what_a_device_last_reported(env) -> None:
+    secrets = env.secrets
+    assert secrets.stored_metadata("missing") is None
+    # A watch that has not said gets null, and what it says comes back.
+    secrets.get("w1").app_version = None
+    assert secrets.stored_metadata("w1") == {"app_version": "", "standard_settings": None}
+    secrets.update_metadata("w1", app_version="3.2.0", standard_settings=False)
+    assert secrets.stored_metadata("w1") == {"app_version": "3.2.0", "standard_settings": False}
+    # An iPhone has no settings to report here.
+    secrets.update_metadata("p1", app_version="3.2.0")
+    assert secrets.stored_metadata("p1") == {"app_version": "3.2.0"}
+
+
+def test_a_watch_s_word_on_its_settings_outlives_a_restart_and_a_new_key(env) -> None:
+    secrets = env.secrets
+    assert secrets.get("w1").standard_settings is None
+    secrets.update_metadata("w1", standard_settings=False)
+    saved = secrets._serialize()
+    assert saved["secrets"]["w1"]["standard_settings"] is False
+
+    env.disk.data = saved
+    again = env.mod.WidgetSecretStore(object())
+    again._store = env.disk
+    asyncio.run(again.async_load())
+    assert again.get("w1").standard_settings is False
+
+    again.register(
+        "w1", SECRET_B, env.mod.LABEL_WATCH_CODE_PAIR, owner_iphone_id="p1", user_id="u1"
+    )
+    assert again.get("w1").standard_settings is False
+    # A forget drops it: the watch has to say it again, and until then a new
+    # pair has not said.
+    again.remove("w1")
+    again.register("w1", SECRET_B, env.mod.LABEL_WATCH_CODE_PAIR, user_id="u1")
+    assert again.get("w1").standard_settings is None
+
+
 def test_seed_may_land_is_for_a_watch_from_before_the_move(env) -> None:
     secrets = env.secrets
     for watch_id in ("w-code", "p1", "missing"):
