@@ -25,10 +25,10 @@ import { SETUP_MOVE_PUBLIC_VERSION } from "../src/version.js";
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 
 describe("the way out of the wait", () => {
-  it("says it in short words, and warns the iPhone's copy will not move later", () => {
+  it("says it in short words, and says to open the watch first", () => {
     expect(NO_IPHONE_QUESTION).toBe("No longer have that iPhone?");
     expect(USE_WATCH_BUTTON).toBe("Use what is on the watch");
-    expect(USE_WATCH_CONFIRM_TEXT).toContain("Your iPhone's copy will not move here later.");
+    expect(USE_WATCH_CONFIRM_TEXT).toContain("Open Wrist Assistant on the watch next");
     expect(waitingWatchText("Kitchen Watch")).toBe("Kitchen Watch is waiting for its iPhone.");
   });
 

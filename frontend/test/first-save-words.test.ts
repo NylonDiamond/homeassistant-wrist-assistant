@@ -11,7 +11,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
 import { type Library, libraryOf } from "../src/library/model.js";
-import { mayAddFirst, mayAddFirstToAny, watchesToSendFirst } from "../src/move-wait-out.js";
+import { attentionText, homeDeviceRows, homeDevices, homeGroupSummary } from "../src/home.js";
+import { mayAddFirst, mayAddFirstToAny, mayMakeFirst, watchesToSendFirst } from "../src/move-wait-out.js";
+import { syncRowWords } from "../src/sync-pill.js";
+import { IPHONE_UPDATE_LABEL } from "../src/watch-app-sync.js";
 import { allPhonesMove, devicesWaitText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "../src/watch-pages/devices.js";
 import { homeOwesHttpActions } from "../src/watch-http-actions/http-actions-editor.js";
 import { menusEmptyText, menusWaitText } from "../src/watch-menus/all-menus-model.js";
@@ -26,17 +29,20 @@ import {
   REPLACE_OWN_SETTINGS_ASK_TEXT,
   SEED_PENDING_ASK_TEXT,
   STANDARD_SETTINGS_STATUS,
+  START_FRESH_CONFIRM_TEXT,
   USE_WATCH_CONFIRM_TEXT,
   USE_WATCH_PHONE_MOVES_CONFIRM_TEXT,
   WAITING_FOR_WATCH_STATUS,
   WAIT_FOR_IPHONE_TEXT,
   WAIT_FOR_UPDATE_TEXT,
+  WAIT_OTHER_PHONE_TEXT,
   WAIT_PHONE_MOVES_TEXT,
   WAIT_WATCH_UPDATE_TEXT,
   firstSaveAskText,
   mayFirstSave,
   noRecordStart,
   noRecordWords,
+  phoneMovesOf,
   useWatchConfirmText,
   useWatchQuestion,
   waitForIphoneText,
@@ -257,13 +263,209 @@ describe("a first Save of settings", () => {
 
   it("does not call another kind on such a watch new", () => {
     expect(noRecordWords(owner("w", old), "voice")?.status).toBe(NOT_SAVED_HERE_STATUS);
-    expect(firstSaveAskText(owner("w", old), ["voice"])).toBeUndefined();
     expect(firstSaveAskText(owner("w", old), [])).toBeUndefined();
+    expect(firstSaveAskText(owner("w", old), ["rooms"])).toBeUndefined();
   });
 
   it("does not ask twice after Start fresh, or on an iPhone", () => {
     expect(firstSaveAskText(owner("w", { ...old, has_iphone: true }), ["behavior"])).toBeUndefined();
     expect(firstSaveAskText(owner("p", { ...old, device_kind: "iphone" }), ["behavior"])).toBeUndefined();
     expect(noRecordWords(owner("p", { ...old, device_kind: "iphone" }), "behavior")).toBeUndefined();
+  });
+});
+
+describe("a seed that stopped after the first poll", () => {
+  // The watch polled, so `seed_pending` is over, but nothing says its seed
+  // landed: a short session or a failed put ends with no record.
+  const polled = { holds_old_setup: true, seed_pending: false, has_iphone: false };
+
+  it("still asks before the first record of any kind the watch seeds", () => {
+    for (const kind of ["notification_style", "pages", "menus", "voice", "status_pages", "control_center"]) {
+      expect(firstSaveAskText(owner("w", polled), [kind])).toBe(SEED_PENDING_ASK_TEXT);
+    }
+    expect(firstSaveAskText(owner("w", polled), ["behavior"])).toBe(REPLACE_OWN_SETTINGS_ASK_TEXT);
+  });
+
+  it("no longer says to wait, as nothing would end that line", () => {
+    expect(waitsForWatchSeed(owner("w", polled))).toBe(false);
+    expect(watchesToSendFirst([owner("w", polled)], emptyLibrary(), "pages")).toEqual([]);
+    expect(noRecordWords(owner("w", polled), "pages")?.status).toBe(NOT_SAVED_HERE_STATUS);
+  });
+
+  it("asks before a first tick, and a person can always go on", () => {
+    const w = owner("W1", polled);
+    const no = vi.fn(() => false);
+    expect(mayAddFirst([w], emptyLibrary(), "W1", "pages", no)).toBe(false);
+    expect(no).toHaveBeenCalledWith(SEED_PENDING_ASK_TEXT);
+    const yes = vi.fn(() => true);
+    expect(mayAddFirst([w], emptyLibrary(), "W1", "pages", yes)).toBe(true);
+    expect(yes).toHaveBeenCalledOnce();
+  });
+
+  it("ends per kind once a record of that kind exists", () => {
+    const w = owner("W1", polled);
+    const never = vi.fn(() => false);
+    expect(mayAddFirst([w], holding("W1", "pages"), "W1", "pages", never)).toBe(true);
+    expect(never).not.toHaveBeenCalled();
+    const asked = vi.fn(() => false);
+    expect(mayAddFirst([w], holding("W1", "pages"), "W1", "menus", asked)).toBe(false);
+    expect(asked).toHaveBeenCalledOnce();
+  });
+
+  it("ends for the settings when the watch reports it has none of its own, and only for them", () => {
+    const standard = { ...polled, standard_settings: true };
+    expect(firstSaveAskText(owner("w", standard), ["behavior"])).toBeUndefined();
+    expect(firstSaveAskText(owner("w", standard), ["pages"])).toBe(SEED_PENDING_ASK_TEXT);
+    expect(firstSaveAskText(owner("w", standard), ["behavior", "notification_style"])).toBe(SEED_PENDING_ASK_TEXT);
+  });
+
+  it("never asks on a watch a code first paired", () => {
+    const never = vi.fn(() => false);
+    expect(mayAddFirst([owner("W1", { holds_old_setup: false, has_iphone: false })], emptyLibrary(), "W1", "pages", never)).toBe(true);
+    expect(never).not.toHaveBeenCalled();
+  });
+});
+
+describe("a default user's 3.0.1 watch after the phone finished", () => {
+  const row = { has_iphone: false, seed_pending: true, holds_old_setup: true, app_version: "3.0.1", token: 1, applied_token: 1, complication_count: 1 } as Partial<OwnerSummary>;
+  const rowsOf = (o: OwnerSummary) => homeDeviceRows(homeDevices([o], (d) => d.owner_watch_id, (d) => d.owner_watch_id));
+
+  it("keeps waiting, with the words about the watch, whatever has_iphone says", () => {
+    expect(noRecordStart(owner("w", row))).toBe("wait");
+    expect(phoneMovesOf(owner("w", row))).toBe(true);
+    expect(waitForIphoneText("3.0.1", phoneMovesOf(owner("w", row)))).toBe(WAIT_WATCH_UPDATE_TEXT);
+    expect(waitForIphoneText("3.0.1", phoneMovesOf(owner("w", { ...row, owner_iphone_moves: false })))).toBe(WAIT_WATCH_UPDATE_TEXT);
+    expect(waitForIphoneText("3.0.1", phoneMovesOf(owner("w", { ...row, has_iphone: true, owner_iphone_moves: true })))).toBe(WAIT_WATCH_UPDATE_TEXT);
+    expect(linkDevicesOf([owner("w", row)], false)[0]?.phoneMoves).toBe(true);
+  });
+
+  it("does not say an iPhone that may still be old is up to date", () => {
+    expect(waitForIphoneText("3.0.1", phoneMovesOf(owner("w", { ...row, has_iphone: true, owner_iphone_moves: false })))).toBe(WAIT_FOR_UPDATE_TEXT);
+  });
+
+  it("does not count as Synced, with or without a record, and names the release", () => {
+    const [device] = rowsOf(owner("w", row));
+    expect(device?.sync).toBe("waiting");
+    expect(device?.waitingFor).toEqual([IPHONE_UPDATE_LABEL]);
+    expect(syncRowWords(device!)).toBe("Waiting: Wrist Assistant 3.2");
+    expect(homeGroupSummary(["waiting"]).text).toBe("1 waiting");
+    // The phone's move counts as collected, as it signs as the watch.
+    const held = homeDeviceRows(
+      homeDevices([owner("w", row)], (d) => d.owner_watch_id, (d) => d.owner_watch_id),
+      new Map([["w", { waiting: [], delivered: true }]]),
+    );
+    expect(syncRowWords(held[0]!)).toBe("Waiting: Wrist Assistant 3.2");
+  });
+
+  it("leaves a watch that is only old, and an up to date one, as they were", () => {
+    const alone = owner("w", { has_iphone: false, holds_old_setup: false, app_version: "3.0.1" });
+    expect(noRecordStart(alone)).toBe("start");
+    expect(phoneMovesOf(alone)).toBeUndefined();
+    expect(noRecordStart(owner("w", { has_iphone: false, holds_old_setup: true, app_version: "3.2.0" }))).toBe("start");
+    expect(noRecordStart(owner("p", { ...row, device_kind: "iphone" }))).toBe("start");
+  });
+
+  it("New page says why it cannot go on, as only that update helps", () => {
+    const never = vi.fn(() => true);
+    const may = mayMakeFirst([owner("W1", row)], emptyLibrary(), "w1", "pages", never);
+    expect(may).toEqual({ go: false, note: WAIT_WATCH_UPDATE_TEXT });
+    expect(never).not.toHaveBeenCalled();
+  });
+});
+
+describe("New page's first record", () => {
+  it("asks what Start fresh asks while a watch waits for its iPhone", () => {
+    const w = owner("W1", { has_iphone: true });
+    const no = vi.fn(() => false);
+    expect(mayMakeFirst([w], emptyLibrary(), "W1", "pages", no)).toEqual({ go: false });
+    expect(no).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
+    expect(mayMakeFirst([w], emptyLibrary(), "W1", "pages", () => true)).toEqual({ go: true });
+  });
+
+  it("asks what a first tick asks on a watch from before the move", () => {
+    const no = vi.fn(() => false);
+    const w = owner("W1", { has_iphone: false, holds_old_setup: true, seed_pending: true });
+    expect(mayMakeFirst([w], emptyLibrary(), "W1", "status_pages", no)).toEqual({ go: false });
+    expect(no).toHaveBeenCalledWith(SEED_PENDING_ASK_TEXT);
+  });
+
+  it("asks nothing of a fresh watch, or of a device that holds the kind", () => {
+    const never = vi.fn(() => false);
+    expect(mayMakeFirst([owner("W1", { has_iphone: false, holds_old_setup: false })], emptyLibrary(), "W1", "pages", never)).toEqual({ go: true });
+    expect(mayMakeFirst([owner("W1", { has_iphone: true })], holding("W1", "pages"), "W1", "pages", never)).toEqual({ go: true });
+    expect(never).not.toHaveBeenCalled();
+  });
+});
+
+describe("the iPhone paired again under a new id", () => {
+  const k2 = { has_iphone: true, owner_iphone_moves: false, another_iphone_moves: true };
+
+  it("does not say to update, nor assume the iPhone is gone", () => {
+    expect(phoneMovesOf(owner("w", k2))).toBe("another");
+    expect(waitForIphoneText("3.2.0", "another")).toBe(WAIT_OTHER_PHONE_TEXT);
+    expect(WAIT_OTHER_PHONE_TEXT).not.toContain("Update Wrist Assistant");
+    expect(WAIT_OTHER_PHONE_TEXT).toContain("use what is on the watch");
+    expect(useWatchQuestion("another")).toBe(NOTHING_MORE_QUESTION);
+    expect(useWatchConfirmText("another")).toBe(USE_WATCH_PHONE_MOVES_CONFIRM_TEXT);
+  });
+
+  it("names the watch when the watch is what is too old", () => {
+    expect(waitForIphoneText("3.0.1", "another")).toBe(WAIT_WATCH_UPDATE_TEXT);
+    expect(waitForIphoneText("3.0.1", "another")).not.toContain("Once your iPhone has it");
+  });
+
+  it("reaches the lists and the HTTP actions line, and the wait goes on", () => {
+    const devices = linkDevicesOf([owner("w", k2)], false);
+    expect(devices[0]?.phoneMoves).toBe("another");
+    expect(allPhonesMove(devices, new Set(["w"]))).toBe(true);
+    expect(noRecordStart(owner("w", k2))).toBe("wait");
+    expect(homeOwesHttpActions([owner("w", k2)])).toBe(false);
+    expect(devicesWaitText("3.2.0", "another")).toContain(WAIT_OTHER_PHONE_TEXT);
+  });
+
+  it("prefers what the watch's own iPhone says", () => {
+    expect(phoneMovesOf(owner("w", { ...k2, owner_iphone_moves: true }))).toBe(true);
+    expect(phoneMovesOf(owner("w", { has_iphone: true, owner_iphone_moves: false }))).toBe(false);
+    expect(phoneMovesOf(owner("w", { has_iphone: true }))).toBeUndefined();
+  });
+});
+
+describe("the ask after Use what is on the watch", () => {
+  it("says to open the watch first, and promises nothing about the iPhone's copy", () => {
+    expect(USE_WATCH_CONFIRM_TEXT).toContain("Open Wrist Assistant on the watch next, before you update or open your iPhone.");
+    expect(USE_WATCH_CONFIRM_TEXT).toContain("Until the watch has sent it, what your iPhone sends lands first.");
+    expect(USE_WATCH_CONFIRM_TEXT).not.toContain("will not move here later");
+    expect(USE_WATCH_PHONE_MOVES_CONFIRM_TEXT).toContain("Open Wrist Assistant on the watch next.");
+  });
+});
+
+describe("Home while the watch's own setup may still come", () => {
+  const seed = { has_iphone: false, seed_pending: true, holds_old_setup: true, app_version: "3.2.0", token: 1, applied_token: 1, complication_count: 1 } as Partial<OwnerSummary>;
+  const rows = (o: OwnerSummary, watchApp = new Map()) => homeDeviceRows(homeDevices([o], (d) => d.owner_watch_id, (d) => d.owner_watch_id), watchApp);
+
+  it("says Waiting for the watch in the device's header, not Synced", () => {
+    const [device] = rows(owner("w", seed));
+    expect(device?.sync).toBe("waiting");
+    expect(syncRowWords(device!)).toBe(WAITING_FOR_WATCH_STATUS);
+    expect(attentionText(device!, undefined)).toBe(WAITING_FOR_WATCH_STATUS);
+    expect(syncRowWords(rows(owner("w", seed), new Map([["w", { waiting: [], delivered: true }]]))[0]!)).toBe(WAITING_FOR_WATCH_STATUS);
+  });
+
+  it("says it beside the person's name too, not All synced", () => {
+    expect(homeGroupSummary(["waiting"], 1)).toEqual({ text: WAITING_FOR_WATCH_STATUS, tone: "waiting" });
+    expect(homeGroupSummary(["synced", "waiting"], 1).text).toBe(WAITING_FOR_WATCH_STATUS);
+    // Another device waits for something else: the count says both.
+    expect(homeGroupSummary(["waiting", "waiting"], 1).text).toBe("2 waiting");
+    expect(homeGroupSummary(["synced"]).text).toBe("All synced");
+  });
+
+  it("ends with the wait, and never on a watch a code first paired", () => {
+    expect(syncRowWords(rows(owner("w", { ...seed, seed_pending: false }))[0]!)).toBe("Synced");
+    expect(syncRowWords(rows(owner("w", { ...seed, holds_old_setup: false, seed_pending: false }))[0]!)).toBe("Synced");
+  });
+
+  it("keeps its dashed line clear of the Pages row", () => {
+    expect(readFileSync(join(SRC, "home-lineup.ts"), "utf8")).toContain(`class="hl-empty hl-seed-wait"`);
+    expect(readFileSync(join(SRC, "home-lineup-look.ts"), "utf8")).toMatch(/\.hl-seed-wait \{ margin-bottom: 18px; \}/);
   });
 });

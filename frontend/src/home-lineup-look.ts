@@ -165,6 +165,8 @@ export const homeLineupStyles = css`
   .hl-change:hover { background: var(--wa-hover); }
   .hl-change:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hl-empty { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
+  /* The line over the groups, as far from them as they are from each other. */
+  .hl-seed-wait { margin-bottom: 18px; }
   /* An empty box: what is missing and, centered under it, the one button that
      goes to set it up. */
   .hl-box { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 14px; text-align: center; }

@@ -19,7 +19,7 @@ import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
 import { matchesSearch } from "../watch-pages/all-pages-model.js";
 import { type LinkDevice, allPhonesMove, anyNeedsUpdate, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
-import { waitForIphoneText } from "../watch-settings.js";
+import { type PhoneMoves, waitForIphoneText } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "./model.js";
 
@@ -57,7 +57,7 @@ export const MENUS_WAIT_TEXT = menusWaitText(undefined);
 
 /** `MENUS_WAIT_TEXT` for a device reporting `appVersion`, in the wait words
  * for its version (`waitForIphoneText`). */
-export function menusWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+export function menusWaitText(appVersion: string | null | undefined, phoneMoves?: PhoneMoves): string {
   return `${waitForIphoneText(appVersion, phoneMoves)} Its menus can change after that.`;
 }
 

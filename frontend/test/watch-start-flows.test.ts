@@ -12,11 +12,18 @@
 // No DOM: the page editor is made but never connected (so it never draws or
 // reloads), and both are read by flattening the Lit templates they return.
 
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { renderHeadStatus } from "../src/head-bar.js";
 import { WaPageEditor } from "../src/watch-pages/page-editor.js";
+import "../src/watch-pages/all-pages.js";
+import { askNewPageOn, resetDeviceTabsForTest } from "../src/library/device-tabs.js";
+import { resetNewPageDevicesForTest } from "../src/watch-pages/new-page-sheet.js";
+import { OWNERS, fakeHome, standUp } from "./library-tab-fake.js";
+import { CHEN, JESSE, PHONE } from "./library-fixture.js";
 import { dropAllWatchPages } from "../src/watch-pages/kept.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
 import { anyWatchSettingsDirty, dropWatchSettingsDrafts } from "../src/watch-settings-draft.js";
@@ -39,6 +46,7 @@ import {
   START_FRESH_BUTTON,
   START_FRESH_CONFIRM_TEXT,
   WAIT_FOR_IPHONE_TEXT,
+  WAIT_WATCH_UPDATE_TEXT,
   WATCH_SETTINGS_CATALOG,
   catalogSettings,
   pagesUnreadableText,
@@ -459,5 +467,165 @@ describe("which records are unreadable", () => {
     expect(watchRecordUnreadable(record(0), read)).toBe(false);
     expect(watchRecordUnreadable(record(1, { pages: [] }), read)).toBe(false);
     expect(watchRecordUnreadable(record(1), read)).toBe(true);
+  });
+});
+
+// ── New page on a watch with no record ───────────────────────────────────
+
+describe("New page on a watch with no record", () => {
+  const NEW = "new-watch";
+  type Row = Partial<OwnerSummary>;
+  const device = { ownerId: NEW, name: "New Watch", kind: "watch" as const };
+
+  /** The tab focused on a second watch, or a fresh one, in the view asked. */
+  function tab(kind: "pages" | "status_pages", view: "cards" | "board", row: Row = {}, admin = true) {
+    const home = fakeHome(admin);
+    const library: unknown[][] = [];
+    const owners = [...OWNERS, { owner_watch_id: NEW, device_name: "New Watch", device_kind: "watch", has_iphone: false, holds_old_setup: false, app_version: "3.2.0", ...row }] as unknown as OwnerSummary[];
+    const t = standUp("wa-all-pages", home, { kind, owners, onOpenLibrary: (...a: unknown[]) => library.push(a) });
+    t.call("setView", view);
+    t.el.focusOwner = NEW;
+    const saves = () => home.sent.filter((m) => m.type === "wrist_assistant/watch_config/save");
+    return { ...t, home, library, saves };
+  }
+
+  function emptyHome(t: ReturnType<typeof tab>) {
+    t.home.lib.pages = {};
+    t.home.lib.status_pages = {};
+    for (const owner of Object.keys(t.home.lib.picks)) delete t.home.lib.picks[owner];
+  }
+
+  afterEach(() => {
+    resetDeviceTabsForTest();
+    resetNewPageDevicesForTest();
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it.each([
+    ["pages", "cards"],
+    ["pages", "board"],
+    ["status_pages", "cards"],
+    ["status_pages", "board"],
+  ] as const)("makes the first record on a second watch while the library holds pages: %s, %s", async (kind, view) => {
+    const t = tab(kind, view);
+    await t.ready();
+    expect(t.whole()).toContain(kind === "pages" ? "New page" : "New status page");
+    await t.call("newPage", device);
+    const [save] = t.saves();
+    expect(save).toMatchObject({ owner_watch_id: NEW, kind, base_revision: 0 });
+    const list = (save!.document as Record<string, { id: string; name: string }[]>)[kind === "pages" ? "pages" : "statusPages"]!;
+    expect(list).toHaveLength(1);
+    expect(t.library).toEqual([[kind, list[0]!.id, NEW]]);
+    expect(t.el.picksNote).toBeUndefined();
+  });
+
+  it.each(["pages", "status_pages"] as const)("makes the first record on a fresh watch in Cards, on an empty home: %s", async (kind) => {
+    const t = tab(kind, "cards");
+    emptyHome(t);
+    await t.ready();
+    await t.call("newPage", device);
+    expect(t.saves()).toHaveLength(1);
+    expect(t.saves()[0]).toMatchObject({ owner_watch_id: NEW, base_revision: 0 });
+    expect(t.library).toHaveLength(1);
+  });
+
+  it("works for someone who is no administrator, as it is the device's own record", async () => {
+    const t = tab("pages", "cards", {}, false);
+    await t.ready();
+    await t.call("newPage", device);
+    expect(t.saves()).toHaveLength(1);
+    expect(t.home.sent.some((m) => m.type === "wrist_assistant/library/item/create")).toBe(false);
+  });
+
+  it("asks first on a watch from before the move, also after its first poll, and a person can go on", async () => {
+    for (const seed_pending of [true, false]) {
+      const t = tab("pages", "cards", { holds_old_setup: true, seed_pending });
+      await t.ready();
+      const no = answer(false);
+      await t.call("newPage", device);
+      expect(no).toHaveBeenCalledWith(SEED_PENDING_ASK_TEXT);
+      expect(t.saves()).toHaveLength(0);
+      answer(true);
+      await t.call("newPage", device);
+      expect(t.saves()).toHaveLength(1);
+    }
+  });
+
+  it("asks what Start fresh asks while the watch waits for its iPhone, and a person can go on", async () => {
+    const t = tab("status_pages", "cards", { has_iphone: true });
+    await t.ready();
+    const no = answer(false);
+    await t.call("newPage", device);
+    expect(no).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
+    expect(t.saves()).toHaveLength(0);
+    answer(true);
+    await t.call("newPage", device);
+    expect(t.saves()).toHaveLength(1);
+  });
+
+  it("says why in Cards when only the watch's update helps, not a silent no", async () => {
+    const t = tab("pages", "cards", { holds_old_setup: true, app_version: "3.0.1" });
+    await t.ready();
+    await t.call("newPage", device);
+    expect(t.saves()).toHaveLength(0);
+    expect(t.whole()).toContain(`Not made on New Watch. ${WAIT_WATCH_UPDATE_TEXT}`);
+  });
+
+  it("draws a refused save's note in Cards", async () => {
+    const t = tab("pages", "cards");
+    await t.ready();
+    t.home.refuse.set("wrist_assistant/watch_config/save", { code: "unavailable", message: "Home Assistant is busy." });
+    await t.call("newPage", device);
+    expect(t.whole()).toContain("Not made on New Watch. Home Assistant is busy.");
+  });
+
+  describe("from What next", () => {
+    it("opens the form at once with that watch ticked, and only that watch", async () => {
+      const t = tab("pages", "cards");
+      await t.ready();
+      askNewPageOn(NEW);
+      t.call("openNewPageAsked");
+      expect(t.el.pageForm).toMatchObject({ owners: [NEW], start: "empty" });
+      expect(t.saves()).toHaveLength(0);
+      // Asked once: drawing again opens nothing new.
+      t.el.pageForm = undefined;
+      t.call("openNewPageAsked");
+      expect(t.el.pageForm).toBeUndefined();
+    });
+
+    it("makes the page on that watch alone when the form says Create", async () => {
+      const t = tab("pages", "cards");
+      await t.ready();
+      askNewPageOn(NEW);
+      t.call("openNewPageAsked");
+      await t.call("makePage");
+      const picks = t.home.sent.filter((m) => m.type === "wrist_assistant/library/pick");
+      expect(picks.map((m) => m.owner_id)).toEqual([NEW]);
+      for (const other of [CHEN, JESSE, PHONE]) expect(picks.some((m) => m.owner_id === other)).toBe(false);
+    });
+
+    it("waits for the watch to be listed and the library to be read", async () => {
+      const t = tab("pages", "cards");
+      askNewPageOn(NEW);
+      t.call("openNewPageAsked");
+      expect(t.el.pageForm).toBeUndefined();
+      await t.ready();
+      t.call("openNewPageAsked");
+      expect(t.el.pageForm).toMatchObject({ owners: [NEW] });
+    });
+
+    it("makes the first record for someone who may not make a library page", async () => {
+      const t = tab("pages", "cards", {}, false);
+      await t.ready();
+      askNewPageOn(NEW);
+      t.call("openNewPageAsked");
+      expect(t.el.pageForm).toBeUndefined();
+      await vi.waitFor(() => expect(t.saves()).toHaveLength(1));
+    });
+
+    it("is what the panel's New page asks for", () => {
+      const panel = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
+      expect(panel).toContain("askNewPageOn(watchId);");
+    });
   });
 });

@@ -24,7 +24,7 @@ import type { WatchConfigRecord, WatchUnitPlace } from "../ha-api.js";
 import { type LinkDevice, type PageDevicePlace, joinWords } from "../watch-pages/devices.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { AWAITING_MOVE_TEXT, waitForIphoneText } from "../watch-settings.js";
+import { AWAITING_MOVE_TEXT, type PhoneMoves, waitForIphoneText } from "../watch-settings.js";
 import { type VoiceDocument, asWatchVoiceDocument, watchVoiceDefaults, watchVoicePhrases, withVoiceKey, withoutVoiceKey } from "./model.js";
 
 /** The top-level key Home Assistant writes the link ids under. */
@@ -85,7 +85,7 @@ export const VOICE_DEVICES_WAIT_TEXT = voiceDevicesWaitText(undefined);
 
 /** `VOICE_DEVICES_WAIT_TEXT` for a watch reporting `appVersion`, in the
  * wait words for its version (`waitForIphoneText`). */
-export function voiceDevicesWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+export function voiceDevicesWaitText(appVersion: string | null | undefined, phoneMoves?: PhoneMoves): string {
   return `${waitForIphoneText(appVersion, phoneMoves)} Phrases can go on this watch after that.`;
 }
 export const VOICE_DEVICES_WAIT_TAG = "waiting for iPhone";

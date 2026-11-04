@@ -101,10 +101,32 @@ export function noteBoardFocus(list: string, ownerId: string | undefined): void 
   else boardFocus.set(list, ownerId);
 }
 
-/** For a test: forget both. */
+/** How long What next's New page waits for the Pages tab to take it. Only so a
+ * tab that never came does not open a form much later. */
+const NEW_PAGE_ASK_MS = 30_000;
+
+/** What next's New page: the watch whose form the Pages tab opens on arrival. */
+let newPageAsk: { ownerId: string; at: number } | undefined;
+
+export function askNewPageOn(ownerId: string): void {
+  newPageAsk = { ownerId, at: Date.now() };
+}
+
+/** The watch New page was asked for, while the ask is fresh. */
+export function newPageAsked(): string | undefined {
+  if (newPageAsk !== undefined && Date.now() - newPageAsk.at > NEW_PAGE_ASK_MS) newPageAsk = undefined;
+  return newPageAsk?.ownerId;
+}
+
+export function takeNewPageAsked(): void {
+  newPageAsk = undefined;
+}
+
+/** For a test: forget all of it. */
 export function resetDeviceTabsForTest(): void {
   onShelf.clear();
   boardFocus.clear();
+  newPageAsk = undefined;
 }
 
 /** "+N more" on an element with no menu of its own: open or shut, and shut by

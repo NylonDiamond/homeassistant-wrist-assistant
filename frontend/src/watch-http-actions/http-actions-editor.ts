@@ -165,7 +165,7 @@ export function httpActionsSavedBy(record: Pick<HttpActionsRecord, "updated_by">
 export function homeOwesHttpActions(owners: readonly OwnerSummary[]): boolean {
   return owners.some((o) => !o.is_orphan && (
     (deviceKindOf(o) === "iphone" && setupMoveNeedsUpdate(o.app_version))
-    || (deviceKindOf(o) === "watch" && o.has_iphone === true && o.owner_iphone_moves !== true)
+    || (deviceKindOf(o) === "watch" && o.has_iphone === true && o.owner_iphone_moves !== true && o.another_iphone_moves !== true)
   ));
 }
 

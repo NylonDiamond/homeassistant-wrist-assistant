@@ -26,7 +26,7 @@ import {
 } from "../src/watch-pages/device-differences.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
 import { type TickChip, renderTickChip, renderTickChips, renderTicks } from "../src/library/ticks.js";
-import { NO_RECORD_TEXT, changeDevicePicks, changedPicks } from "../src/watch-pages/all-pages-picks.js";
+import { changeDevicePicks, changedPicks, unreadablePicksText } from "../src/watch-pages/all-pages-picks.js";
 import { duplicateMenuTitle, duplicatedMenuText } from "../src/watch-menus/all-menus-model.js";
 import { CHEN, DEVICES, JESSE, LIGHTS, LONELY, PAGE1, PHONE, STARTER, summary } from "./library-fixture.js";
 import { flat } from "./library-editor-home.js";
@@ -88,12 +88,60 @@ describe("New page on a focused device", () => {
     expect(changedPicks("status_pages", { schemaVersion: 1 }, { add })).toEqual({ schemaVersion: 1, statusPages: [add] });
   });
 
-  it("refuses a device with no record yet, which its app sets up first", async () => {
+  it("makes a device's first record over revision 0, holding only the new page", async () => {
+    const saved: [number, unknown][] = [];
+    const add = { id: "N1", name: "New Page 2", items: [] };
     const result = await changeDevicePicks({
       read: async () => ({ revision: 0, document: {} }),
+      save: async (_o, _k, base, document) => { saved.push([base, document]); return { revision: 1 }; },
+    }, CHEN, "pages", { add });
+    expect(result).toEqual({ ok: true, changed: true });
+    expect(saved).toEqual([[0, { schemaVersion: 1, pages: [add] }]]);
+  });
+
+  it("makes a status page's first record the same way", async () => {
+    const saved: unknown[] = [];
+    const add = { id: "N1", name: "Status", rows: [] };
+    await changeDevicePicks({
+      read: async () => ({ revision: 0 }),
+      save: async (_o, _k, _b, document) => { saved.push(document); return { revision: 1 }; },
+    }, CHEN, "status_pages", { add });
+    expect(saved).toEqual([{ schemaVersion: 1, statusPages: [add] }]);
+  });
+
+  it("adds to the record a seed made meanwhile, never over it", async () => {
+    const lights = { id: LIGHTS, name: "Lights", items: [] };
+    const add = { id: "N1", name: "New Page 2", items: [] };
+    const reads = [{ revision: 0, document: {} }, { revision: 1, document: { schemaVersion: 1, pages: [lights] } }];
+    const saved: [number, unknown][] = [];
+    const result = await changeDevicePicks({
+      read: async () => reads.shift()!,
+      save: async (_o, _k, base, document) => {
+        saved.push([base, document]);
+        if (base === 0) throw { code: "conflict", message: "conflict" };
+        return { revision: 2 };
+      },
+    }, CHEN, "pages", { add });
+    expect(result).toEqual({ ok: true, changed: true });
+    expect(saved.at(-1)).toEqual([1, { schemaVersion: 1, pages: [lights, add] }]);
+  });
+
+  it("changes nothing when asked to hide or move on a device with no record", async () => {
+    const io = {
+      read: async () => ({ revision: 0, document: {} }),
+      save: async () => { throw new Error("no save"); },
+    };
+    expect(await changeDevicePicks(io, CHEN, "pages", { hidden: true, id: LIGHTS })).toEqual({ ok: true, changed: false });
+    expect(await changeDevicePicks(io, CHEN, "pages", { id: LIGHTS, before: null })).toEqual({ ok: true, changed: false });
+  });
+
+  it("refuses a record it cannot read, and says what helps", async () => {
+    const result = await changeDevicePicks({
+      read: async () => ({ revision: 3 }),
       save: async () => { throw new Error("no save"); },
     }, CHEN, "pages", { add: { id: "N1", name: "New Page 2", items: [] } });
-    expect(result).toEqual({ ok: false, code: "no_record", message: NO_RECORD_TEXT });
+    expect(result).toEqual({ ok: false, code: "unreadable", message: unreadablePicksText("pages") });
+    expect(unreadablePicksText("pages")).not.toContain("Open Wrist Assistant on it once");
   });
 });
 

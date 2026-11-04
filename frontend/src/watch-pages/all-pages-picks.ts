@@ -10,6 +10,7 @@
 // never touched here, and a system page keeps its place in the list.
 
 import type { WatchConfigRecord } from "../ha-api.js";
+import { integrationStoreName } from "../integration-store.js";
 import { sameId } from "../library/model.js";
 import { asStatusPagesDocument } from "../watch-status-pages/model.js";
 import { setWatchPageHidden } from "./edit.js";
@@ -83,8 +84,10 @@ export interface PicksIO {
   save(ownerId: string, kind: CardKind, baseRevision: number, document: JsonObject): Promise<{ revision: number }>;
 }
 
-/** Why New page cannot add to a device with no record yet. */
-export const NO_RECORD_TEXT = "It has no pages yet. Open Wrist Assistant on it once, then try again.";
+/** Why New page cannot add to a record this panel cannot read. */
+export function unreadablePicksText(kind: CardKind): string {
+  return `Home Assistant holds ${kind === "status_pages" ? "status pages" : "pages"} for it that this panel cannot read. Update Wrist Assistant in ${integrationStoreName()}, then reload.`;
+}
 
 /** The most times one change is sent before conflicts end it. */
 export const PICKS_ATTEMPTS = 3;
@@ -94,7 +97,9 @@ export type PicksResult = { ok: true; changed: boolean } | { ok: false; code: st
 /**
  * Make one change on a device's record: read it, change it, save it over
  * the revision read, and on a conflict read again and make it again. A
- * change that changes nothing is not saved (`changed` false).
+ * change that changes nothing is not saved (`changed` false). An add on a
+ * device with no record makes its first record, over revision 0: the same
+ * write its editor's first Save makes. The caller asks first (`mayMakeFirst`).
  */
 export async function changeDevicePicks(io: PicksIO, ownerId: string, kind: CardKind, change: PickChange): Promise<PicksResult> {
   for (let attempt = 1; ; attempt++) {
@@ -105,12 +110,12 @@ export async function changeDevicePicks(io: PicksIO, ownerId: string, kind: Card
       const { code = "unknown", message } = watchCommandError(err);
       return { ok: false, code, message };
     }
-    const doc = record.revision > 0
-      ? (kind === "status_pages" ? asStatusPagesDocument(record.document) : asWatchPagesDocument(record.document))
-      : undefined;
-    // A device with no record yet (a new watch, one waiting for its
-    // iPhone's move) is set up by its app first; an add would start it over.
-    if (doc === undefined) return "add" in change ? { ok: false, code: "no_record", message: NO_RECORD_TEXT } : { ok: true, changed: false };
+    const first = record.revision <= 0;
+    const doc = first
+      ? { schemaVersion: 1, [listKey(kind)]: [] }
+      : (kind === "status_pages" ? asStatusPagesDocument(record.document) : asWatchPagesDocument(record.document));
+    if (first && !("add" in change)) return { ok: true, changed: false };
+    if (doc === undefined) return "add" in change ? { ok: false, code: "unreadable", message: unreadablePicksText(kind) } : { ok: true, changed: false };
     const next = changedPicks(kind, doc, change);
     if (next === doc) return { ok: true, changed: false };
     try {

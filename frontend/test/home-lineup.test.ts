@@ -10,7 +10,7 @@ import { libraryOf } from "../src/library/model.js";
 import { lineupGroups } from "../src/home-lineup.js";
 import { LINEUP_HIDDEN_TAG, LINEUP_OWN_TAG, renderLineupGroup } from "../src/home-lineup-look.js";
 import type { LibraryKind } from "../src/library/client.js";
-import { WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
+import { WAIT_FOR_IPHONE_TEXT, WAIT_WATCH_UPDATE_TEXT } from "../src/watch-settings.js";
 import { CAMERA, CHEN, CHEN_MENU, JESSE, LIGHTS, PAGE1, SMART, summary } from "./library-fixture.js";
 import { flat } from "./library-editor-home.js";
 
@@ -49,6 +49,19 @@ describe("a device's lineup on Home", () => {
     expect(calls).toEqual(["edit:pages:AAAA0000-0000-4000-8000-000000000002", `edit:menus:${CHEN_MENU}`, "change:status_pages"]);
     expect(out[2]!.lines[1]!.action!.title).toBe("Edit Entity quick menu");
     expect(out[2]!.lines.map((l) => l.key)).toEqual(["anywhere", "entity"]);
+  });
+
+  it("says a too old watch waits for its update, not that it uses no menu, once its iPhone is done", () => {
+    const out = lineupGroups(libraryOf({ ...summary(), picks: {} }), "w", "watch", {
+      waitsForIphone: true,
+      phoneMoves: true,
+      appVersion: "3.0.1",
+      onEdit: () => {}, onChange: () => {},
+    });
+    const menus = out.find((g) => g.key === "menus")!;
+    expect(menus.empty).toContain(WAIT_WATCH_UPDATE_TEXT);
+    expect(menus.empty).not.toContain("uses no menu");
+    expect(menus.add).toBeUndefined();
   });
 
   it("draws its page pictures at the width it is handed, an iPhone's narrower", () => {

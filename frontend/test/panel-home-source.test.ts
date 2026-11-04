@@ -89,7 +89,8 @@ describe("Home's household state", () => {
   it("is no card of its own: each person's box says how their devices stand", () => {
     expect(SOURCE).not.toContain("renderHomeStatus");
     expect(SOURCE).not.toContain("hb-sum");
-    expect(group).toContain("const sum = homeGroupSummary(syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed).map(syncStateOf));");
+    expect(group).toContain("const shown = syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed);");
+    expect(group).toContain("const sum = homeGroupSummary(shown.map(syncStateOf), ");
   });
 });
 

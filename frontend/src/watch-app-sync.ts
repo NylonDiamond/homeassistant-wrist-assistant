@@ -37,7 +37,7 @@
 import type { HttpActionsDelivery, WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
 import { SETUP_MOVE_PUBLIC_VERSION, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
-import { type SettingDevice, deliveryState, rejectedNow } from "./watch-settings.js";
+import { type SettingDevice, WATCH_SEED_LABEL, deliveryState, rejectedNow } from "./watch-settings.js";
 
 /** One watch app record, named the way Home's note names it. */
 export interface WatchAppPart {
@@ -225,17 +225,24 @@ export interface DeviceVerdict {
  * claim more than it has (`IPHONE_MOVE_LABEL`). While the watch's app is
  * too old for that move, it waits for the update instead
  * (`iphoneMoveLabel`).
+ *
+ * `waitsForUpdate`: a watch from before the move too old to read anything from
+ * here waits for that update whatever Home Assistant holds, since a record its
+ * iPhone sent as the watch counts as collected though the watch never read it.
+ * `seedWaits`: the watch's own setup may still come (`WATCH_SEED_LABEL`).
  */
 export function deviceVerdict(
   complications: DeviceSync,
   watchApp: WatchAppSync | undefined,
   waitsForIphone = false,
   appVersion?: string | null,
+  more: { waitsForUpdate?: boolean; seedWaits?: boolean } = {},
 ): DeviceVerdict {
   const waitingFor = [
     ...(complications === "waiting" ? ["complications"] : []),
     ...(watchApp?.waiting ?? []),
-    ...(waitsForIphone && watchApp?.noRecord === true ? [iphoneMoveLabel(appVersion)] : []),
+    ...(more.waitsForUpdate === true || (waitsForIphone && watchApp?.noRecord === true) ? [iphoneMoveLabel(appVersion)] : []),
+    ...(more.seedWaits === true ? [WATCH_SEED_LABEL] : []),
   ];
   const rejected = watchApp?.rejected ?? [];
   const sync: DeviceSync = waitingFor.length > 0 ? "waiting"

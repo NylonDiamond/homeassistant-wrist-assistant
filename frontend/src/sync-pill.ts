@@ -23,6 +23,7 @@ import type { DeviceSync } from "./send-state.js";
 import { isPlainClick } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
 import { waitingForText } from "./watch-app-sync.js";
+import { WAITING_FOR_WATCH_STATUS, WATCH_SEED_LABEL } from "./watch-settings.js";
 
 /** A device unseen this many days or more, that would otherwise wait, is
  * asleep. */
@@ -84,6 +85,7 @@ export function syncRowWords(d: Pick<SyncPillDevice, "sync" | "waitingFor" | "re
     case "asleep": return `Asleep · ${asleepDaysWords(seenDays(d.seenSeconds) ?? ASLEEP_AFTER_DAYS)}`;
     case "waiting":
       if ((d.rejected?.length ?? 0) > 0) return NOT_SYNCED_TEXT;
+      if (d.waitingFor.includes(WATCH_SEED_LABEL)) return WAITING_FOR_WATCH_STATUS;
       return d.waitingFor.length === 0 ? "Waiting" : `Waiting: ${waitingForText(d.waitingFor)}`;
     case "synced": return "Synced";
     case "idle": return "Nothing waiting";

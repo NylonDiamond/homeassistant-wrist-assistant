@@ -11,7 +11,7 @@
 
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, setupMoveNeedsUpdate, versionForCopy } from "../version.js";
-import { noRecordStart, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
+import { type PhoneMoves, noRecordStart, phoneMovesOf, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
 
 /** One device as the lists and editors name it. */
 export interface LinkDevice {
@@ -22,9 +22,9 @@ export interface LinkDevice {
   /** The Wrist Assistant version it last reported, for the wait lines
    * (`waitForIphoneText`). Absent when not known. */
   appVersion?: string | null;
-  /** The iPhone that paired this watch already runs an app that moves, for
-   * the wait lines (`owner_iphone_moves`). Absent when not known. */
-  phoneMoves?: boolean | null;
+  /** What the wait lines know of this watch's iPhone (`phoneMovesOf`). Absent
+   * when not known. */
+  phoneMoves?: PhoneMoves;
 }
 
 /** Every device a page can be on: the Watch app's devices (the watches
@@ -32,13 +32,16 @@ export interface LinkDevice {
  * names them. */
 export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean): LinkDevice[] {
   const devices = watchAppDevices(owners, phones);
-  return devices.map((o) => ({
-    ownerId: o.owner_watch_id,
-    name: watchName(o, devices),
-    kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch",
-    ...(o.app_version === undefined ? {} : { appVersion: o.app_version }),
-    ...(o.owner_iphone_moves === undefined ? {} : { phoneMoves: o.owner_iphone_moves }),
-  }));
+  return devices.map((o) => {
+    const phoneMoves = phoneMovesOf(o);
+    return {
+      ownerId: o.owner_watch_id,
+      name: watchName(o, devices),
+      kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch",
+      ...(o.app_version === undefined ? {} : { appVersion: o.app_version }),
+      ...(phoneMoves === undefined ? {} : { phoneMoves }),
+    };
+  });
 }
 
 /**
@@ -125,7 +128,7 @@ export const DEVICES_WAIT_TEXT = devicesWaitText(undefined);
 
 /** `DEVICES_WAIT_TEXT` for a watch reporting `appVersion`, in the wait
  * words for its version (`waitForIphoneText`). */
-export function devicesWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+export function devicesWaitText(appVersion: string | null | undefined, phoneMoves?: PhoneMoves): string {
   return `${waitForIphoneText(appVersion, phoneMoves)} Pages can go on this watch after that.`;
 }
 
@@ -134,7 +137,7 @@ export function devicesWaitText(appVersion: string | null | undefined, phoneMove
  * from this watch yet. Waiting for your iPhone. …". `what` is the list's
  * noun, `device` the watch as the line names it, `appVersion` the version
  * it reported. */
-export function waitingEmptyText(what: string, device = "this watch", appVersion?: string | null, phoneMoves?: boolean | null): string {
+export function waitingEmptyText(what: string, device = "this watch", appVersion?: string | null, phoneMoves?: PhoneMoves): string {
   return `No ${what} from ${device} yet. ${waitForIphoneText(appVersion, phoneMoves)}`;
 }
 
@@ -166,7 +169,7 @@ export function anyNeedsUpdate(devices: readonly LinkDevice[], waiting: Readonly
  * an app that moves. False with none waiting. */
 export function allPhonesMove(devices: readonly LinkDevice[], waiting: ReadonlySet<string>): boolean {
   const shown = devices.filter((d) => waiting.has(d.ownerId));
-  return shown.length > 0 && shown.every((d) => d.phoneMoves === true);
+  return shown.length > 0 && shown.every((d) => d.phoneMoves === true || d.phoneMoves === "another");
 }
 
 /**

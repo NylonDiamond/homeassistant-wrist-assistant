@@ -51,6 +51,7 @@ two marks and leaves the library, which belongs to the home.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 import time
@@ -74,6 +75,10 @@ from .http_actions import (
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
+
+# How long a hand-over's reply waits for its write. Past this it goes out
+# anyway, and the delayed save finishes the job.
+_SAVE_BEFORE_REPLY_SECONDS = 5
 
 # How far above the stored revision (and the stored floor) the next start's
 # revisions begin: far more saves than one debounce chain, the most a hard
@@ -283,6 +288,28 @@ class HTTPActionsStore:
             return
         self._save_pending = True
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    async def async_save_before_reply(self) -> None:
+        """Write the file now, for a hand-over that added something.
+
+        The phone stamps the hand-over as done when it hears 200 and never
+        sends it again, so a crash inside the debounce would lose the library
+        for good. A failed or slow write never changes the reply: it is logged
+        and the delayed save is set going again. Nothing after shutdown, which
+        wrote the last state.
+        """
+        if self._closed or self._load_failed:
+            return
+        self._save_pending = False
+        try:
+            async with asyncio.timeout(_SAVE_BEFORE_REPLY_SECONDS):
+                await self._store.async_save(self._serialize())
+        except asyncio.CancelledError:
+            self._schedule_save()
+            raise
+        except Exception:  # noqa: BLE001 (the delayed save retries it)
+            _LOGGER.warning("Could not write the HTTP action library before replying", exc_info=True)
+            self._schedule_save()
 
     async def async_shutdown(self) -> None:
         """Called on unload: write a save still waiting out its debounce

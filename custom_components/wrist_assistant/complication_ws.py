@@ -429,6 +429,18 @@ def ws_parts_delete(
     connection.send_result(msg["id"], {"ok": True})
 
 
+def _seed_still_due(domain_data: Any, secret_store: Any, device_id: str) -> bool:
+    """The owner row's ``seed_pending``: the store's rule, and Home Assistant
+    still lacks at least one of the records the panel's Devices tab lists. A
+    record of each means nothing more is waited for there, whoever made it."""
+    if not secret_store.seed_pending(device_id):
+        return False
+    records = getattr(domain_data, "watch_config_store", None)
+    if records is None:
+        return True
+    return any(records.holds_no_record(device_id, kind) for kind in ("pages", "status_pages", "menus"))
+
+
 async def _gone_user_ids(hass: HomeAssistant, user_ids: set[str]) -> set[str]:
     """The ids among ``user_ids`` that Home Assistant no longer has a user
     for. A device bound to one is refused with ``user_gone`` on every signed
@@ -480,8 +492,10 @@ async def ws_owners(
     (`may_await_move`), so the panel's watch editors wait for that move
     instead of offering to start a fresh record over it. ``owner_iphone_moves``
     says that iPhone already runs an app that moves, so the wait lines do not
-    tell anyone to update it. ``holds_old_setup``, ``seed_pending`` and
-    ``standard_settings`` tell the panel what a first Save would replace.
+    tell anyone to update it. ``another_iphone_moves`` says another iPhone of
+    the same Home Assistant user already runs such an app, for the same words,
+    and it changes nothing about the wait. ``holds_old_setup``, ``seed_pending``
+    and ``standard_settings`` tell the panel what a first Save would replace.
 
     ``user_id`` is the Home Assistant user the device's key is bound to, or a
     watch's paired iPhone's user when the watch's own key predates binding;
@@ -628,13 +642,18 @@ async def ws_owners(
                 # app that moves (it polled as itself). The panel then never
                 # says to update it, whatever the wait says. False for a phone.
                 "owner_iphone_moves": secret_store.owner_iphone_moves(device_id),
+                # Whether another iPhone of this watch's user runs such an
+                # app: the same iPhone paired again, most often. Only words
+                # read it. False for a phone.
+                "another_iphone_moves": secret_store.another_iphone_moves(device_id),
                 # A watch from before the setup move, which holds a setup of
                 # its own that Home Assistant may not have seen. The panel
                 # asks before a first Save replaces it. False for a phone.
                 "holds_old_setup": entry.holds_old_setup,
-                # The wait has ended and that watch has not polled since, so
-                # its own setup may still come. Only words and an ask follow.
-                "seed_pending": secret_store.seed_pending(device_id),
+                # The wait has ended, that watch has not polled since, and Home
+                # Assistant still lacks a record its Devices tab lists, so its
+                # own setup may still come. Only words and an ask follow.
+                "seed_pending": _seed_still_due(domain_data, secret_store, device_id),
                 # The watch said it runs only the standard settings.
                 "standard_settings": entry.standard_settings,
                 # The Home Assistant user this device belongs to, through its

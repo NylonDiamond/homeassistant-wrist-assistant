@@ -118,13 +118,19 @@ export interface OwnerSummary {
       False on a phone. Absent from integrations older than the field, where
       the wait lines say what they always said. */
   owner_iphone_moves?: boolean | null;
+  /** True when another iPhone of this watch's Home Assistant user already runs
+      an app that moves: most often the same iPhone, paired again under a new
+      id. Only the wait lines read it, and it ends no wait. False on a phone.
+      Absent from integrations older than the field. */
+  another_iphone_moves?: boolean | null;
   /** True for a watch from before the setup move: the old phone link set it
       up, so it holds a setup of its own Home Assistant may not have seen. The
       panel asks before a first Save replaces it. A watch a code first paired
       says false. */
   holds_old_setup?: boolean | null;
-  /** True from the end of such a watch's wait until its next poll: its own
-      setup may still come. It changes words and an ask, and refuses nothing. */
+  /** True from the end of such a watch's wait until its next poll, or until
+      Home Assistant holds its pages, status pages and menus: its own setup may
+      still come. It changes words and an ask, and refuses nothing. */
   seed_pending?: boolean | null;
   /** The watch said it runs only the standard settings. */
   standard_settings?: boolean | null;

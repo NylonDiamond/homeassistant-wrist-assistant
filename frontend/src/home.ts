@@ -15,7 +15,7 @@ import type { PanelRoute } from "./watch-pages/hook.js";
 import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
-import { noRecordStart } from "./watch-settings.js";
+import { WAITING_FOR_WATCH_STATUS, noRecordStart, waitsForWatchSeed, waitsForWatchUpdate } from "./watch-settings.js";
 
 /** A home device as the sync rule reads it, with the id it came from. */
 export interface IdHomeDevice extends HomeDevice {
@@ -23,6 +23,11 @@ export interface IdHomeDevice extends HomeDevice {
   /** Its iPhone may still move the watch's setup here (`noRecordStart` is
    * `wait`), so a watch with no record yet waits for it (`deviceVerdict`). */
   waitsForIphone?: boolean;
+  /** Its app is too old for what it holds to come here or for it to read
+   * anything from here (`waitsForWatchUpdate`). */
+  waitsForUpdate?: boolean;
+  /** Its own setup may still come here (`waitsForWatchSeed`). */
+  seedWaits?: boolean;
   /** The Wrist Assistant version it reported, which picks that wait's
    * words (`iphoneMoveLabel`). */
   appVersion?: string | null;
@@ -49,6 +54,8 @@ export function homeDevices(
     count: o.complication_count,
     orphan: o.is_orphan,
     waitsForIphone: noRecordStart(o) === "wait",
+    waitsForUpdate: waitsForWatchUpdate(o),
+    seedWaits: waitsForWatchSeed(o),
     appVersion: o.app_version,
   }));
 }
@@ -118,7 +125,7 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
     if (complications === undefined) continue;
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
-    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id), kind === "watch" && d.waitsForIphone === true, d.appVersion);
+    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id), kind === "watch" && d.waitsForIphone === true, d.appVersion, { waitsForUpdate: kind === "watch" && d.waitsForUpdate === true, seedWaits: kind === "watch" && d.seedWaits === true });
     rows.push(rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
@@ -308,13 +315,16 @@ export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | unde
 
 /** What a person's box says of their devices, by each one's state
  * (`syncStateOf`): how many wait, else that all are synced, else how the rest
- * stand. An asleep device never counts as waiting. The tone colors the dot. */
-export function homeGroupSummary(states: readonly SyncPillState[]): { text: string; tone: "waiting" | "synced" | "" } {
+ * stand. An asleep device never counts as waiting. The tone colors the dot.
+ * `seedWaits` is how many of those waiting wait only for their own setup to
+ * come: when that is all of them, the box says so. */
+export function homeGroupSummary(states: readonly SyncPillState[], seedWaits = 0): { text: string; tone: "waiting" | "synced" | "" } {
   const count = (s: SyncPillState) => states.filter((x) => x === s).length;
   const waiting = count("waiting");
   const synced = count("synced");
   const asleep = count("asleep");
   const all = states.length;
+  if (waiting > 0 && seedWaits === waiting) return { text: WAITING_FOR_WATCH_STATUS, tone: "waiting" };
   if (waiting > 0) return { text: `${waiting} waiting`, tone: "waiting" };
   if (synced === all) return { text: "All synced", tone: "synced" };
   if (asleep === all) return { text: `${asleep} asleep`, tone: "" };
@@ -644,7 +654,8 @@ export const homeStyles = css`
     flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere;
     font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-label);
   }
-  .hb-person-sum { flex: none; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--wa-muted); }
+  .hb-person-sum { flex: 0 1 auto; min-width: 0; max-width: 62%; display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 11px; color: var(--wa-muted); text-align: right; }
+  .hb-person-sum .home-dot { flex: none; }
   .hb-person-note { padding: 0 8px 4px; font-size: 11px; color: var(--wa-muted); }
   /* A device's row: its small drawing, its name, what it holds and when it
      was heard from, and a dot in its sync color. The picked one is lit in

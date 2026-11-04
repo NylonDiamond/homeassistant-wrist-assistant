@@ -210,6 +210,61 @@ def test_an_empty_hand_over_answers_revision_0(env) -> None:
     assert env.store.has_handed_over("watch-A")
 
 
+class _Disk:
+    """A ``Store`` that says what was written at once and what later."""
+
+    def __init__(self, write=None) -> None:
+        self.saved: list[Any] = []
+        self.delayed = 0
+        self.write = write
+
+    def async_delay_save(self, *_a: object, **_k: object) -> None:
+        self.delayed += 1
+
+    async def async_save(self, data: Any) -> None:
+        if self.write is not None:
+            await self.write()
+        self.saved.append(data)
+
+
+def test_a_hand_over_that_adds_actions_is_on_disk_before_the_reply(env) -> None:
+    env.store._store = disk = _Disk()
+    doc = library(action(), action(id=ID_B))
+    reply = op(env, "_op_http_actions_hand_over", {"document": doc})
+    assert (reply.status, reply.body) == (200, {"ok": True, "revision": 1, "added": 2})
+    assert len(disk.saved) == 1
+    assert disk.saved[0]["revision"] == 1
+    assert disk.saved[0]["handed_over"] == ["watch-A"]
+    # A hand-over that changes nothing is no reason to wait on the disk.
+    op(env, "_op_http_actions_hand_over", {"document": doc})
+    assert len(disk.saved) == 1
+    op(env, "_op_http_actions_hand_over", {"document": library()}, watch_id="watch-B")
+    assert len(disk.saved) == 1
+
+
+def test_a_failed_write_changes_no_reply_and_the_delayed_save_retries_it(env) -> None:
+    async def boom() -> None:
+        raise OSError("disk full")
+
+    env.store._store = disk = _Disk(boom)
+    reply = op(env, "_op_http_actions_hand_over", {"document": library(action())})
+    assert (reply.status, reply.body) == (200, {"ok": True, "revision": 1, "added": 1})
+    assert disk.saved == []
+    assert disk.delayed > 0
+
+
+def test_a_slow_write_changes_no_reply_and_the_delayed_save_retries_it(env, monkeypatch) -> None:
+    async def slow() -> None:
+        await asyncio.sleep(30)
+
+    monkeypatch.setitem(type(env.store).async_save_before_reply.__globals__, "_SAVE_BEFORE_REPLY_SECONDS", 0.01)
+    env.store._store = disk = _Disk(slow)
+    reply = op(env, "_op_http_actions_hand_over", {"document": library(action())})
+    assert (reply.status, reply.body) == (200, {"ok": True, "revision": 1, "added": 1})
+    assert disk.saved == []
+    assert disk.delayed > 0
+
+
 @pytest.mark.parametrize("user_id", ["retired", None, "deleted"])
 def test_only_a_device_bound_to_an_active_user_may_hand_over(env, user_id) -> None:
     env.store.save(library(action()), base_revision=0)

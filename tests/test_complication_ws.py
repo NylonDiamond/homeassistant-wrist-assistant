@@ -555,6 +555,7 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         # Its iPhone has not polled as itself, so the wait lines may say to
         # update it. Set up by the old link, and not polled since any wait.
         "owner_iphone_moves": False,
+        "another_iphone_moves": False,
         "holds_old_setup": True,
         "seed_pending": False,
         "standard_settings": False,
@@ -626,6 +627,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "phone_pages": False,
             "has_iphone": False,
             "owner_iphone_moves": False,
+            "another_iphone_moves": False,
             "holds_old_setup": False,
             "seed_pending": False,
             "standard_settings": False,
@@ -1047,6 +1049,51 @@ def test_the_owner_row_says_what_the_panel_words_read(env) -> None:
 
     assert env.secrets.note_move_end_heard("watch-old") is True
     assert next(r for r in env.owners() if r["owner_watch_id"] == "watch-old")["seed_pending"] is False
+
+
+def test_the_owner_row_says_when_another_iphone_of_the_same_user_moves(env) -> None:
+    """Someone who paired the updated iPhone again under a new id. It changes
+    the words only: the wait lasts, and that iPhone may not end it."""
+    env.add_phone("phone-old", user_id="jesse")
+    env.add_phone("phone-new", user_id="jesse")
+    env.add_phone("phone-chen", user_id="chen")
+    env.add_watch("watch-old", owner_iphone_id="phone-old", user_id="jesse")
+
+    def row() -> dict:
+        return next(r for r in env.owners() if r["owner_watch_id"] == "watch-old")
+
+    assert row()["another_iphone_moves"] is False
+    # Another person's iPhone says nothing about this watch.
+    env.secrets.note_phone_pages("phone-chen")
+    assert row()["another_iphone_moves"] is False
+
+    env.secrets.note_phone_pages("phone-new")
+    assert row()["another_iphone_moves"] is True
+    assert row()["owner_iphone_moves"] is False
+    assert row()["has_iphone"] is True
+    assert env.secrets.finish_move("watch-old", "phone-new") is None
+    assert row()["has_iphone"] is True
+    assert next(r for r in env.owners() if r["owner_watch_id"] == "phone-new")["another_iphone_moves"] is False
+
+
+def test_seed_pending_ends_once_home_assistant_holds_what_the_devices_tab_lists(env) -> None:
+    env.add_phone("phone-1", user_id="jesse")
+    env.add_watch("watch-old", owner_iphone_id="phone-1", user_id="jesse")
+    env.secrets.note_phone_pages("phone-1")
+    env.secrets.finish_move("watch-old", "phone-1")
+
+    def pending() -> bool:
+        return next(r for r in env.owners() if r["owner_watch_id"] == "watch-old")["seed_pending"]
+
+    held: set[str] = set()
+    records = env.hass.data[DOMAIN].watch_config_store
+    records.holds_no_record = lambda _owner, kind: kind not in held
+    assert pending() is True
+    for kind in ("pages", "status_pages"):
+        held.add(kind)
+        assert pending() is True
+    held.add("menus")
+    assert pending() is False
 
 
 def test_only_a_paired_watch_can_end_the_wait(env) -> None:

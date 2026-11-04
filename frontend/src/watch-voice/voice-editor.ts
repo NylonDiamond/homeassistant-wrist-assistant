@@ -97,7 +97,7 @@ import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { renderMoveWaitOut, renderMoveWaitOuts } from "../move-wait-out.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayFirstSave, mayStart, noRecordStart, noRecordWords, offersStartFresh, settingsWatches, waitForIphoneText, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayFirstSave, mayStart, noRecordStart, noRecordWords, offersStartFresh, phoneMovesOf, settingsWatches, waitForIphoneText, watchName } from "../watch-settings.js";
 import {
   chooseStartFresh,
   firstSaveNote,
@@ -1527,7 +1527,7 @@ export class WaVoiceEditor extends LitElement {
       // iPhone's move may still come, so it waits, and "Start fresh instead"
       // is a small link that asks first.
       const shown = this.shownWatch();
-      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${waitForIphoneText(shown?.app_version, shown?.owner_iphone_moves)}</span>
+      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${waitForIphoneText(shown?.app_version, phoneMovesOf(shown))}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
         ${renderMoveWaitOut(this.hass, shown)}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when voice settings are here again.</span>

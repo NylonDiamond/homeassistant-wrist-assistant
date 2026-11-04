@@ -255,6 +255,46 @@ def test_seed_pending_is_for_a_watch_from_before_the_move(env) -> None:
     assert secrets.seed_pending("w1") is True
 
 
+def test_another_iphone_of_the_user_moving_ends_nothing(env) -> None:
+    secrets = env.secrets
+    assert secrets.another_iphone_moves("w1") is False
+    secrets.note_phone_pages("p2")
+    assert secrets.another_iphone_moves("w1") is True
+    assert secrets.owner_iphone_moves("w1") is False
+    assert secrets.may_await_move("w1") is True
+    # Who may end the wait has not changed.
+    assert secrets.finish_move("w1", "p2") is None
+    assert secrets.get("w1").move_finished is False
+    # Its own iPhone moving is the other field's to say.
+    secrets.note_phone_pages("p1")
+    assert secrets.owner_iphone_moves("w1") is True
+    # A watch with no owner, an iPhone and an unknown id say nothing.
+    assert secrets.another_iphone_moves("w-code") is False
+    assert secrets.another_iphone_moves("p1") is False
+    assert secrets.another_iphone_moves("missing") is False
+
+
+def test_a_write_before_a_reply_never_raises_and_is_tried_again(env, monkeypatch) -> None:
+    secrets = env.secrets
+
+    async def boom(_data: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(env.disk, "async_save", boom)
+    env.log.clear()
+    asyncio.run(secrets.async_save_before_reply())
+    assert env.log == ["delay"]
+
+    async def slow(_data: Any) -> None:
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(env.disk, "async_save", slow)
+    monkeypatch.setitem(type(secrets).async_save_before_reply.__globals__, "_SAVE_BEFORE_REPLY_SECONDS", 0.01)
+    env.log.clear()
+    asyncio.run(secrets.async_save_before_reply())
+    assert env.log == ["delay"]
+
+
 def test_an_old_watch_stays_old_when_paired_again_by_code_or_its_iphone_goes(env) -> None:
     mod = env.mod
     secrets = env.secrets

@@ -158,7 +158,7 @@ import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { COMP_SEARCH_PLACEHOLDER, EMPTY_DESIGN_TEXT, type DesignSearchText, deleteEmptyAsk, deleteEmptyDone, designSearchText, designTextMatches, deviceStripNote, foldShelf, isEmptyDesign, queueAfterFailure, queueDeviceTick, queueOrder, shelfFoldCount } from "./complication-cards.js";
-import { deviceTabsStyles, focusedOnBoard, noteBoardFocus, renderDeviceTabs, tabIcon } from "./library/device-tabs.js";
+import { askNewPageOn, deviceTabsStyles, focusedOnBoard, noteBoardFocus, renderDeviceTabs, tabIcon } from "./library/device-tabs.js";
 import { compile, elementKeys, keyFor, mergeSplitRenders, parseValueDocument, splitDocuments, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -441,7 +441,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
-import { MOVE_WAIT_ENDED_EVENT, noRecordStart, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
+import { MOVE_WAIT_ENDED_EVENT, WATCH_SEED_LABEL, firstSaveAskText, noRecordStart, phoneMovesOf, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
@@ -20762,7 +20762,8 @@ export class WristAssistantPanel extends LitElement {
   private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, pick: string, elapsed: number) {
     const color = "var(--wa-hue-grey)";
     const name = g.person?.label ?? "Other devices";
-    const sum = homeGroupSummary(syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed).map(syncStateOf));
+    const shown = syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed);
+    const sum = homeGroupSummary(shown.map(syncStateOf), shown.filter((d) => syncStateOf(d) === "waiting" && d.waitingFor.includes(WATCH_SEED_LABEL)).length);
     return html`<section class="hb-group" style=${`--c:${color}`}>
       <div class="hb-person">
         <span class="hb-avatar" aria-hidden="true">${g.person?.picture
@@ -20924,8 +20925,9 @@ export class WristAssistantPanel extends LitElement {
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
       appVersion: this.ownerOf(ownerId)?.app_version,
-      phoneMoves: this.ownerOf(ownerId)?.owner_iphone_moves === true,
+      phoneMoves: phoneMovesOf(this.ownerOf(ownerId)),
       seedWaits: waitsForWatchSeed(this.ownerOf(ownerId)),
+      asksFirst: firstSaveAskText(this.ownerOf(ownerId), ["pages"]) !== undefined,
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
       // Its buttons promise add, order and hide, which only the column has.
       onChange: (kind) => { noteBoardFocus(kind, ownerId); this.goTo(listFocusPath(listOf(kind), ownerId)); },
@@ -21730,6 +21732,8 @@ export class WristAssistantPanel extends LitElement {
         if (!isPlainClick(e)) return;
         e.preventDefault();
         this.closePairDialog();
+        // The form at once, so "New page, then Create" is all it takes.
+        askNewPageOn(watchId);
         this.pickWatch(watchId);
         this.goTo(path);
       },

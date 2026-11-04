@@ -315,6 +315,48 @@ def test_link_watch_beside_a_phone_page_under_the_same_id(env) -> None:
     assert owners == sorted([PHONE, WATCH])
 
 
+def test_a_first_link_is_on_disk_before_the_reply_and_a_later_one_keeps_the_debounce(env) -> None:
+    written: list[str] = []
+    real = env.store.async_save_first_record
+
+    async def spy(owner: str) -> None:
+        written.append(owner)
+        await real(owner)
+
+    env.store.async_save_first_record = spy
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    assert written == [PHONE]
+    assert PHONE not in env.store._pending_owners
+    assert env.store._library_save_pending is False
+
+    again = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert again.status == 200
+    assert written == [PHONE]
+
+
+def test_a_failed_first_link_write_changes_no_reply_and_is_tried_again(env) -> None:
+    async def boom(_owner: str) -> None:
+        raise OSError("disk full")
+
+    env.store.async_save_first_record = boom
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    assert PHONE in env.store._pending_owners
+    assert env.store._library_save_pending is True
+
+
+def test_a_slow_first_link_write_changes_no_reply(env, monkeypatch) -> None:
+    async def slow(_owner: str) -> None:
+        await asyncio.sleep(30)
+
+    monkeypatch.setitem(type(env.store).async_save_before_reply.__globals__, "_SAVE_BEFORE_REPLY_SECONDS", 0.01)
+    env.store.async_save_first_record = slow
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    assert PHONE in env.store._pending_owners
+
+
 # ── static: dispatch table, capability ───────────────────────────────────
 
 

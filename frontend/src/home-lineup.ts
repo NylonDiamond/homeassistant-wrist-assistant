@@ -21,7 +21,7 @@ import { inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
 import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
 import { waitingEmptyText } from "./watch-pages/devices.js";
 import { renderMoveWaitOut } from "./move-wait-out.js";
-import { SEED_PENDING_ASK_TEXT, WAITING_FOR_WATCH_TEXT } from "./watch-settings.js";
+import { type PhoneMoves, SEED_PENDING_ASK_TEXT, WAITING_FOR_WATCH_TEXT } from "./watch-settings.js";
 import { picksIO } from "./watch-pages/all-pages-io.js";
 import { keptWatchPagesDraft } from "./watch-pages/kept.js";
 import { type UntickAsk, askUntick, tickItem } from "./watch-pages/library-editing-io.js";
@@ -59,10 +59,12 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) deviceName = "";
   /** The watch's iPhone may still move its setup here (`LineupDraw`). */
   @property({ attribute: false }) waitsForIphone = false;
-  /** That iPhone already runs an app that moves (`LineupDraw`). */
-  @property({ attribute: false }) phoneMoves = false;
+  /** What the wait lines know of that iPhone (`LineupDraw`). */
+  @property({ attribute: false }) phoneMoves: PhoneMoves | undefined = false;
   /** The watch's own setup may still come here (`waitsForWatchSeed`). */
   @property({ attribute: false }) seedWaits = false;
+  /** A first record on this watch asks first (`firstSaveAskText`). */
+  @property({ attribute: false }) asksFirst = false;
   /** The app version the device reported (`LineupDraw`). */
   @property({ attribute: false }) appVersion?: string | null;
 
@@ -122,7 +124,7 @@ export class WaHomeLineup extends LitElement {
       return html`<p class="hl-empty">${state === "failed" ? (this.lib.store?.readError ?? "Could not read the library.") : state === "unsupported" ? "This integration has no library to read." : "Reading the pages…"}</p>`;
     }
     const waits = this.waitsForIphone && (["pages", "status_pages", "menus"] as const).some((k) => !holdsRecord(library, this.ownerId, k));
-    return html`${waits ? renderMoveWaitOut(this.hassNow, { owner_watch_id: this.ownerId, device_name: this.deviceName, app_version: this.appVersion ?? null, owner_iphone_moves: this.phoneMoves }) : nothing}${this.seedWaits && (["pages", "status_pages", "menus"] as const).some((k) => !holdsRecord(library, this.ownerId, k)) ? html`<p class="hl-empty" role="status">${WAITING_FOR_WATCH_TEXT}</p>` : nothing}<div class="hl-groups">${lineupGroups(library, this.ownerId, this.kind, {
+    return html`${waits ? renderMoveWaitOut(this.hassNow, { owner_watch_id: this.ownerId, device_name: this.deviceName, app_version: this.appVersion ?? null, owner_iphone_moves: this.phoneMoves === true, another_iphone_moves: this.phoneMoves === "another" }) : nothing}${this.seedWaits && (["pages", "status_pages", "menus"] as const).some((k) => !holdsRecord(library, this.ownerId, k)) ? html`<p class="hl-empty hl-seed-wait" role="status">${WAITING_FOR_WATCH_TEXT}</p>` : nothing}<div class="hl-groups">${lineupGroups(library, this.ownerId, this.kind, {
       ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
@@ -353,7 +355,7 @@ export class WaHomeLineup extends LitElement {
     const store = this.lib.store;
     if (store === undefined || this.busy !== undefined) return;
     const read = this.lib.library;
-    if (this.seedWaits && read !== undefined && !holdsRecord(read, this.ownerId, kind) && !window.confirm(SEED_PENDING_ASK_TEXT)) return;
+    if (this.asksFirst && read !== undefined && !holdsRecord(read, this.ownerId, kind) && !window.confirm(SEED_PENDING_ASK_TEXT)) return;
     this.busy = id;
     this.said = undefined;
     try {
@@ -444,8 +446,8 @@ export interface LineupDraw {
    * `wait`): a kind Home Assistant holds no record of says it waits for
    * that iPhone rather than that there is none. */
   waitsForIphone?: boolean;
-  /** That iPhone already runs an app that moves, for the wait line. */
-  phoneMoves?: boolean;
+  /** What the wait line knows of that iPhone (`phoneMovesOf`). */
+  phoneMoves?: PhoneMoves;
   /** The app version the device reported, which decides whether its page
    * pictures draw One Look (`previewOneLook`). */
   appVersion?: string | null;

@@ -167,6 +167,7 @@ pick up.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -263,6 +264,10 @@ _MIGRATION_WRITER = "library"
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
+
+# How long a reply waits for a write it would like on disk first. Past this it
+# goes out anyway, and the delayed save finishes the job.
+_SAVE_BEFORE_REPLY_SECONDS = 5
 
 # How far above the highest stored revision (and the stored floor) the next
 # start's revisions begin: far more saves than one debounce chain, the most a
@@ -2204,6 +2209,31 @@ class WatchConfigStore:
         if self._library_save_pending:
             self._library_save_pending = False
             await self._library_file.async_save(self._serialize_library())
+
+    async def async_save_before_reply(self, owner_watch_id: str) -> None:
+        """:meth:`async_save_first_record` for a reply that goes out anyway.
+
+        A failed or slow write never changes what the caller answers. It is
+        logged, and the delayed saves are set going again, so the next one
+        retries what this one did not finish.
+        """
+        try:
+            async with asyncio.timeout(_SAVE_BEFORE_REPLY_SECONDS):
+                await self.async_save_first_record(owner_watch_id)
+        except asyncio.CancelledError:
+            self._schedule_every_save(owner_watch_id)
+            raise
+        except Exception:  # noqa: BLE001 (the delayed save retries it)
+            _LOGGER.warning(
+                "Could not write %s's records before replying", owner_watch_id, exc_info=True
+            )
+            self._schedule_every_save(owner_watch_id)
+
+    def _schedule_every_save(self, owner_watch_id: str) -> None:
+        """Set the owner's file, the index and the library saving again."""
+        self._schedule_owner_save(owner_watch_id)
+        self._schedule_index_save()
+        self._schedule_library_save()
 
     async def async_shutdown(self) -> None:
         """Called on unload: write every save still waiting out its debounce

@@ -63,7 +63,7 @@ import { type BoardCell, type BoardColumn, type BoardDrag, type BoardMenuItem, t
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
-import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
+import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, newPageAsked, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked, takeNewPageAsked } from "../library/device-tabs.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import { keptStatusPagesDraft } from "../watch-status-pages/draft.js";
 import { renderStatusPagePicture, statusPagesViewStyles } from "../watch-status-pages/view.js";
@@ -113,7 +113,7 @@ import {
 } from "./all-pages-bulk.js";
 import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-picks.js";
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
-import { mayAddFirst, mayAddFirstToAny, renderLibraryWaitOuts } from "../move-wait-out.js";
+import { mayAddFirst, mayAddFirstToAny, mayMakeFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { keptWatchPagesDraft } from "./kept.js";
 import { type LinkDevice, type PagesRecordFacts, allPhonesMove, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
@@ -405,6 +405,31 @@ export class WaAllPages extends LitElement {
     // The board's pages say where a device on the free plan shows only its
     // first page.
     if (this.kind === "pages") for (const d of this.devices) if (!this.freeAsked.has(d.ownerId)) void this.readFree(d.ownerId);
+    this.openNewPageAsked();
+  }
+
+  /** What next's New page: the form at once, with that watch ticked, as soon
+   * as the watch is listed and the library read. Someone who may not make a
+   * page, or a watch that cannot be ticked yet, gets the top right New page. */
+  private openNewPageAsked(): void {
+    if (this.embedded || this.kind !== "pages") return;
+    const asked = newPageAsked();
+    if (asked === undefined) return;
+    const readState = this.lib.readState;
+    if (readState === "failed" || readState === "unsupported") {
+      takeNewPageAsked();
+      return;
+    }
+    const library = this.lib.library;
+    const device = this.devices.find((d) => sameId(d.ownerId, asked));
+    if (library === undefined || device === undefined) return;
+    takeNewPageAsked();
+    if (!this.mayMake || this.waiting(library).has(device.ownerId)) {
+      void this.newPage(device);
+      return;
+    }
+    this.pageForm = newPageForm(this.nextCardName(), [device.ownerId]);
+    void this.updateComplete.then(() => openNewPageSheet(this.renderRoot));
   }
 
   private kindChanged(): void {
@@ -540,6 +565,12 @@ export class WaAllPages extends LitElement {
     const kind = this.kind;
     if (dirtyHere(device.ownerId, kind)) {
       this.picksNote = { kind: "warn", text: picksDirtyText(kind, device.name) };
+      return;
+    }
+    // Its first record may replace what the watch runs, so that asks first.
+    const may = mayMakeFirst(this.owners, this.lib.library, device.ownerId, kind);
+    if (!may.go) {
+      this.picksNote = may.note === undefined ? undefined : { kind: "warn", text: `Not made on ${device.name}. ${may.note}` };
       return;
     }
     const id = newId();
@@ -1108,7 +1139,7 @@ export class WaAllPages extends LitElement {
         </div>
         <div class="pk-body" id=${view === "cards" ? "pk-tabpanel" : nothing} role=${view === "cards" ? "tabpanel" : nothing}>
           ${library === undefined ? html`<p class="ap-empty">${lead}</p>`
-            : view === "cards" ? this.renderAll(library, devices)
+            : view === "cards" ? html`${this.renderPicksNote()}${this.renderAll(library, devices)}`
             : device !== undefined ? this.renderFocus(library, deviceView(library, device, what, this.search), devices)
             : this.renderBoardAll(library, devices)}
         </div>
@@ -1223,7 +1254,7 @@ export class WaAllPages extends LitElement {
     if (device !== undefined) {
       return html`<div class="ap-new">
         <button type="button" class="ap-new-btn" title=${`Add ${aCard(this.kind)} on ${device.name}`}
-          ?disabled=${this.picksBusy} @click=${() => void this.newPage(device)}>
+          ?disabled=${this.picksBusy || this.lib.library === undefined} @click=${() => void this.newPage(device)}>
           ${uiIcon("plus")}<span>${label}</span></button>
       </div>`;
     }
@@ -1570,7 +1601,7 @@ export class WaAllPages extends LitElement {
     const rows = picks.map((pick, i) => this.boardRow(library, pick.entry, devices, waiting, { device, pick, drag: this.rowDrag(pick, i, ids, device, drag), order: { at: i, ids: drag ? ids : [] } }));
     const rest = view.rest.map((entry) => this.boardRow(library, entry, devices, waiting, { device }));
     return html`${this.renderFocusHead(device, total)}
-      ${this.picksNote === undefined ? nothing : html`<p class="lt-line ${this.picksNote.kind}" role="status">${this.picksNote.text}</p>`}
+      ${this.renderPicksNote()}
       ${this.renderBoardOf(library, devices, [
         {
           key: "on", title: onDeviceTitle(device), count: total, hint: orderHint(device), rows,
@@ -1585,6 +1616,11 @@ export class WaAllPages extends LitElement {
         }] : []),
       ], device.ownerId)}
       <p class="lt-line bd-foot-line">${total} ${total === 1 ? cardNoun(this.kind) : many} on ${device.name}.</p>`;
+  }
+
+  /** What the last New page or change on a device said. */
+  private renderPicksNote(): TemplateResult | typeof nothing {
+    return this.picksNote === undefined ? nothing : html`<p class="lt-line ${this.picksNote.kind}" role="status">${this.picksNote.text}</p>`;
   }
 
   /** The focused device's banner: which device comes first, its order, its

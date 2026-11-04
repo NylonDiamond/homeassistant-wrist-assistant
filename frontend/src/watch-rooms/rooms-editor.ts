@@ -95,6 +95,7 @@ import {
   noRecordStart,
   noRecordTitle,
   offersStartFresh,
+  phoneMovesOf,
   waitForIphoneText,
   savedByLine,
   watchAppDevices,
@@ -1047,7 +1048,7 @@ export class WaRoomsEditor extends LitElement {
       // asks first.
       const shown = watches.find((w) => w.owner_watch_id === this.watchId);
       return html`<div class="pe-empty"><b>${this.device === "iphone" ? noRecordTitle("rooms", "iphone") : home ? HOME_ROOMS_NO_RECORD_TITLE : ROOMS_NO_RECORD_TITLE}</b>
-        <span>${home ? waitForIphoneText(shown?.app_version, shown?.owner_iphone_moves) : roomsWaitText(shown?.app_version, shown?.owner_iphone_moves)}</span>
+        <span>${home ? waitForIphoneText(shown?.app_version, phoneMovesOf(shown)) : roomsWaitText(shown?.app_version, phoneMovesOf(shown))}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
         ${renderMoveWaitOut(this.hass, shown)}
       </div>`;

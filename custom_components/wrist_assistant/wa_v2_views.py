@@ -3230,6 +3230,8 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
             return Response(status=400, text=f"{key} too long")
 
     device_name = fields["device_name"]
+    known = ctx.domain_data.widget_secret_store.get(ctx.watch_id)
+    version_was = known.app_version if known is not None else None
     ok = ctx.domain_data.widget_secret_store.update_metadata(
         ctx.watch_id,
         app_version=fields["app_version"],
@@ -3246,6 +3248,12 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
         # Entry vanished between HMAC validation and dispatch (concurrent
         # removal). Signed 410 tells the watch its registration is gone.
         return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
+
+    # A new version is what the panel's wait lines read, and a device may not
+    # report it again, so it is on disk before the reply. It happens once per
+    # app update, and every other refresh keeps the debounce.
+    if fields["app_version"] is not None and fields["app_version"] != version_was:
+        await ctx.domain_data.widget_secret_store.async_save_before_reply()
 
     # Same registry propagation as the register_secret view: surface a renamed
     # watch immediately instead of waiting for the next HA restart. Manual
@@ -5115,6 +5123,10 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
     that is not one of the phone's user's; nothing is written then. The 409
     for ``id_taken`` stays below but no longer happens: one id is one
     library page.
+
+    A first link, for a phone with no pages record yet, is on disk before the
+    reply, as the phone does not offer it again after a 200. A later link
+    keeps the debounce. A failed or slow write changes no reply.
     """
     secrets = ctx.domain_data.widget_secret_store
     store = ctx.domain_data.watch_config_store
@@ -5128,6 +5140,7 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
             {"ok": False, "error": "invalid_watch", "message": "watch_id must be one of this iPhone's watches"},
             status=400,
         )
+    first = store.holds_no_record(ctx.watch_id, "pages")
     try:
         result = store.link_device(watch_id, ctx.watch_id, updated_by=ctx.watch_id)
     except WatchConfigLinkError as err:
@@ -5141,6 +5154,8 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
+    if first:
+        await store.async_save_before_reply(ctx.watch_id)
     return ctx.signed_json({"ok": True, "pages": len(result["page_ids"])})
 
 
@@ -5261,6 +5276,10 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     a new key. A second hand-over from an owner already listed changes
     nothing and answers the stored revision with ``added`` 0. An empty
     library still lists the owner.
+
+    A hand-over that changed the library is on disk before the reply, as the
+    phone stamps it done on a 200 and never sends it again. One that changed
+    nothing keeps the debounce. A failed or slow write changes no reply.
     """
     store = getattr(ctx.domain_data, "http_actions_store", None)
     if store is None:
@@ -5302,10 +5321,13 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
         document = inner.get("document")
     else:
         document = ctx.payload.get("document")
+    revision_was = store.revision
     try:
         revision, added = store.hand_over(ctx.watch_id, document)
     except HTTPActionsStoreError as err:
         return _http_actions_store_refusal(ctx, err)
+    if revision != revision_was:
+        await store.async_save_before_reply()
     return ctx.signed_json({"ok": True, "revision": revision, "added": added})
 
 

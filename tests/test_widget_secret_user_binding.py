@@ -397,6 +397,46 @@ def _update_metadata(env, watch_id: str, payload: dict) -> _Response:
     return asyncio.run(namespace["_op_update_metadata"](_MetadataCtx(env, watch_id, payload)))
 
 
+class _Disk:
+    """A ``Store`` that counts what was written at once and what later."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.saved = 0
+        self.delayed = 0
+        self.fail = fail
+
+    def async_delay_save(self, *_a: object, **_k: object) -> None:
+        self.delayed += 1
+
+    async def async_save(self, _data: Any) -> None:
+        if self.fail:
+            raise OSError("disk full")
+        self.saved += 1
+
+
+def test_a_new_version_is_on_disk_before_the_reply_and_a_repeat_keeps_the_debounce(env) -> None:
+    env.store.register("phone-1", SECRET_A, "iphone-self-provision", user_id="root", app_version="3.0.1")
+    env.store._store = disk = _Disk()
+
+    assert _update_metadata(env, "phone-1", {"app_version": "3.2.0"}).status == 200
+    assert disk.saved == 1
+    # A launch that reports the same version, and one that reports none.
+    assert _update_metadata(env, "phone-1", {"app_version": "3.2.0"}).status == 200
+    assert _update_metadata(env, "phone-1", {"device_name": "Kitchen"}).status == 200
+    assert disk.saved == 1
+    assert disk.delayed > 0
+
+
+def test_a_failed_version_write_changes_no_reply_and_is_tried_again(env) -> None:
+    env.store.register("phone-1", SECRET_A, "iphone-self-provision", user_id="root", app_version="3.0.1")
+    env.store._store = disk = _Disk(fail=True)
+
+    reply = _update_metadata(env, "phone-1", {"app_version": "3.2.0"})
+    assert reply.status == 200
+    assert reply.body["app_version"] == "3.2.0"
+    assert disk.delayed > 0
+
+
 def test_an_unbound_device_cannot_name_an_admin_s_iphone_and_run_as_the_admin(env) -> None:
     """The attack: a legacy device bound to no one names an admin's iPhone
     (its id is in the device registry) and would then be bound to the admin."""

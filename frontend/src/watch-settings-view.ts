@@ -100,6 +100,7 @@ import {
   START_FRESH_BUTTON,
   WATCH_SETTINGS_CATALOG,
   offersStartFresh,
+  phoneMovesOf,
   waitForIphoneText,
   buildSaveDocument,
   catalogFor,
@@ -1245,7 +1246,7 @@ export class WatchSettings implements ReactiveController {
     if (this.behaviorDocument !== undefined) return undefined;
     // While the iPhone's move may still come it waits, and a small link that
     // asks first opens the cards anyway.
-    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${waitForIphoneText(this.shownOwner?.app_version, this.shownOwner?.owner_iphone_moves)}</span></div>
+    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${waitForIphoneText(this.shownOwner?.app_version, phoneMovesOf(this.shownOwner))}</span></div>
       ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ws-start" ?disabled=${this.saving}
         title="Open the settings on the app's defaults. Nothing is saved until you press Save."
         @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
@@ -1505,7 +1506,7 @@ export class WatchSettings implements ReactiveController {
     // No record and nothing to wait for: the cards open on the defaults.
     // Else the page waits for the iPhone's move, with the same small link.
     if (this.styleDocument === undefined) {
-      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${waitForIphoneText(this.shownOwner?.app_version, this.shownOwner?.owner_iphone_moves)}</span></div>
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${waitForIphoneText(this.shownOwner?.app_version, phoneMovesOf(this.shownOwner))}</span></div>
         ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ns-start" ?disabled=${this.saving}
           title="Open the notification style on the app's defaults. Nothing is saved until you press Save."
           @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}

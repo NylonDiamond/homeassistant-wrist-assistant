@@ -14,6 +14,7 @@ watch's requests.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 from collections.abc import Callable, Mapping
@@ -30,6 +31,10 @@ from .const import WIDGET_SECRET_STORAGE_KEY, WIDGET_SECRET_STORAGE_VERSION
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 2
+
+# How long a reply waits for a write it would like on disk first. Past this it
+# goes out anyway, and the delayed save finishes the job.
+_SAVE_BEFORE_REPLY_SECONDS = 5
 
 # Label values the iOS / watchOS app uses when self-provisioning. Surfaced as
 # constants so sensor.py can infer device_kind without re-spelling the strings.
@@ -584,6 +589,20 @@ class WidgetSecretStore:
         self._save_pending = False
         await self._store.async_save(self._serialize())
 
+    async def async_save_before_reply(self) -> None:
+        """:meth:`async_save_now` for a reply that goes out anyway. A failed or
+        slow write never changes the reply: it is logged and the delayed save
+        is set going again."""
+        try:
+            async with asyncio.timeout(_SAVE_BEFORE_REPLY_SECONDS):
+                await self.async_save_now()
+        except asyncio.CancelledError:
+            self._schedule_save()
+            raise
+        except Exception:  # noqa: BLE001 (the delayed save retries it)
+            _LOGGER.warning("Could not write the device keys before replying", exc_info=True)
+            self._schedule_save()
+
     def is_paired_watch(self, watch_id: str) -> bool:
         """Whether ``watch_id`` is a paired watch, not an iPhone and not
         unknown. The watch config store asks this before the panel may make a
@@ -662,6 +681,30 @@ class WidgetSecretStore:
             return False
         phone = self._secrets.get(entry.owner_iphone_id)
         return phone is not None and phone.device_kind == DEVICE_KIND_IPHONE and phone.phone_pages
+
+    def another_iphone_moves(self, watch_id: str) -> bool:
+        """Whether another iPhone of this watch's Home Assistant user already
+        runs an app that moves, while the iPhone the watch names as its owner
+        does not count. That is someone who paired the updated iPhone again
+        under a new id. Only words read this: the panel then does not tell that
+        person to update an iPhone that is up to date. It ends no wait, and it
+        gives that iPhone no right to send ``move_finished``. False for an
+        iPhone, an unknown id, a watch with no owner and a watch with no user.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None or entry.device_kind != DEVICE_KIND_WATCH or not entry.owner_iphone_id:
+            return False
+        owner = self._secrets.get(entry.owner_iphone_id)
+        user_id = entry.user_id or (owner.user_id if owner is not None else None)
+        if not user_id:
+            return False
+        return any(
+            phone.device_kind == DEVICE_KIND_IPHONE
+            and phone.phone_pages
+            and phone.user_id == user_id
+            and phone_id != entry.owner_iphone_id
+            for phone_id, phone in self._secrets.items()
+        )
 
     def seed_pending(self, watch_id: str) -> bool:
         """:func:`watch_seed_pending`, now."""
