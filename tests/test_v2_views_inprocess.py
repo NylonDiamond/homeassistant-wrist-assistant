@@ -262,8 +262,19 @@ def test_a_clean_restore_reports_an_empty_skipped_list(env) -> None:
 # ── version view during a reload ─────────────────────────────────────────
 
 
+def test_version_answers_404_once_the_entry_is_deleted(env) -> None:
+    entries = types.SimpleNamespace(async_entries=lambda _domain: [])
+    hass = types.SimpleNamespace(data={}, config_entries=entries)
+    view = env.views["WAVersionView"](hass)
+
+    reply = asyncio.run(view.get(None))
+    assert reply.status == 404
+    assert reply.body == {"ok": False, "error": "not_found"}
+
+
 def test_version_answers_503_while_the_entry_is_reloading(env) -> None:
-    hass = types.SimpleNamespace(data={})
+    entries = types.SimpleNamespace(async_entries=lambda _domain: ["entry"])
+    hass = types.SimpleNamespace(data={}, config_entries=entries)
     view = env.views["WAVersionView"](hass)
 
     reply = asyncio.run(view.get(None))

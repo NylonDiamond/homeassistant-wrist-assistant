@@ -49,6 +49,7 @@ import {
   MENUS_BOARD_FOOT,
   MENUS_BOARD_HINT,
   MENUS_FOOT,
+  MENUS_FOOT_ON_DEVICE,
   NEW_MENU_ADMIN_TEXT,
   newMenuFullText,
   makeFirstMenuText,
@@ -484,7 +485,7 @@ export class WaAllMenus extends LitElement {
             : device !== undefined ? this.renderFocus(library, device, devices)
             : this.renderBoardAll(library, devices)}
         </div>
-        <div class="pk-foot"><span class="pk-foot-hint">${view === "cards" ? MENUS_FOOT : device === undefined ? MENUS_BOARD_FOOT : menusDeviceFoot(device)}</span></div>
+        <div class="pk-foot"><span class="pk-foot-hint">${view === "cards" ? (this.makesOn !== undefined ? MENUS_FOOT_ON_DEVICE : MENUS_FOOT) : device === undefined ? MENUS_BOARD_FOOT : menusDeviceFoot(device)}</span></div>
       </div>
     </div></div>`;
   }

@@ -34,6 +34,9 @@ export function allMenusLead(total: number): string {
 /** The surface's foot on Cards. */
 export const MENUS_FOOT = "Click a menu to edit it. Tick a device on a card and that device uses this menu from now on. New menu starts on no device yet.";
 
+/** The same, where New menu goes on the device in focus (`makesOn`). */
+export const MENUS_FOOT_ON_DEVICE = "Click a menu to edit it. Tick a device on a card and that device uses this menu from now on. New menu goes on this device.";
+
 /** The foot on the board. */
 export const MENUS_BOARD_FOOT = "Click a menu to edit it. Pick a dot and that device uses this menu from now on. Press Focus on a device to see its menus first.";
 

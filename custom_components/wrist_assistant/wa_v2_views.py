@@ -4267,6 +4267,11 @@ class WAVersionView(HomeAssistantView):
         domain_data = self._hass.data.get(DOMAIN)
         coordinator = getattr(domain_data, "coordinator", None)
         if coordinator is None:
+            # The view stays registered after the entry is deleted, until the
+            # next restart. With no entry nothing is loading, and an app must
+            # read that as a missing integration, not one that will not load.
+            if not self._hass.config_entries.async_entries(DOMAIN):
+                return self.json({"ok": False, "error": "not_found"}, status_code=404)
             return self.json({"ok": False, "error": "restarting"}, status_code=503)
         # Pull the version off the loaded integration object instead of a
         # hand-synced const. Keeps the user-facing version string in lockstep
