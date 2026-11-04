@@ -186,7 +186,7 @@ describe("the page's cards on an iPhone", () => {
     const page = (mine.pages as JsonObject[])[0]!;
     const text = flat(call("renderPageCards", page, undefined));
     expect(text).toContain("On the iPhone");
-    expect(text).toContain("Click a tile on the iPhone to edit it.");
+    expect(text).toContain("Click a tile to edit it.");
     expect(text).not.toContain("On the watch");
     expect(text).not.toContain("tile on the watch");
   });

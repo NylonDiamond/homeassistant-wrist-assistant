@@ -534,7 +534,7 @@ describe("the inspector with no tile", () => {
     expect(card(body, "Look")).toContain(swatch("look"));
     expect(card(body, "On the watch")).toContain(`--c:${SECTION_COLOR.place}`);
     expect(body).not.toContain(`aria-label="Page name"`);
-    const order = ["<h4>Look", "<h4>On the watch", "<h4>In the page switcher", "Click a tile on the watch to edit it.", "Delete page"].map((p) => body.indexOf(p));
+    const order = ["<h4>Look", "<h4>On the watch", "<h4>In the page switcher", "Click a tile to edit it.", "Delete page"].map((p) => body.indexOf(p));
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(body).not.toContain("above the watch");
     // No duplicate page action exists, so none is offered.
@@ -545,7 +545,7 @@ describe("the inspector with no tile", () => {
     const body = flat(inspector(editor(hallPage())));
     expect(body).toContain(`<div class="pe-insp-cols">`);
     expect(body).not.toContain("--pe-cols");
-    const cols = body.slice(body.indexOf(`<div class="pe-insp-cols"`), body.indexOf("Click a tile on the watch to edit it."));
+    const cols = body.slice(body.indexOf(`<div class="pe-insp-cols"`), body.indexOf("Click a tile to edit it."));
     expect(titles(cols)).toEqual(["On each device", "Look", "On the watch", "In the page switcher"]);
     const sheet = (st: unknown): string => (Array.isArray(st) ? st.map(sheet).join("\n") : String((st as { cssText?: string } | undefined)?.cssText ?? ""));
     const css = sheet((customElements.get("wa-page-editor") as unknown as { styles: unknown }).styles).replace(/\s+/g, " ");
@@ -558,7 +558,7 @@ describe("the inspector with no tile", () => {
     const text = flat(inspector(editor(hallPage({ items: [] }))));
     expect(text).toContain("No tiles yet.");
     expect(text).toContain("Add a tile</span></button>");
-    expect(text).not.toContain("Click a tile on the watch to edit it.");
+    expect(text).not.toContain("Click a tile to edit it.");
   });
 
   it("holds the Smart Page switch in On the watch with its line, and no Hidden: Hide here is each device's own", () => {
@@ -587,7 +587,7 @@ describe("the inspector with no tile", () => {
     expect(watch).toContain(`id="sm-body-page"`);
     expect(watch).toContain("Live Updates");
     expect(watch.indexOf(">Smart page<")).toBeLessThan(watch.indexOf("Live Updates"));
-    expect(text).toContain("Click a tile on the watch to pick its rule.");
+    expect(text).toContain("Click a tile to pick its rule.");
     expect(text).not.toContain("above the watch");
   });
 });

@@ -204,9 +204,7 @@ describe("the guards on the stage", () => {
     expect(t.el.addTileOpen).toBe(false);
     t.call("selectAll");
     expect((t.el.multi as Set<string>).size).toBe(0);
-    const add = flat(t.call("renderStageAddTile", t.pageNow()));
-    expect(add).toContain("disabled");
-    expect(add).toContain("This is a map page");
+    expect(t.body()).not.toContain("pe-add-slot");
   });
 
   it("draw the map over the whole iPhone page, with the reason line, and nothing to drag", () => {

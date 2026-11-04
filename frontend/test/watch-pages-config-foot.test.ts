@@ -310,7 +310,7 @@ describe("the page editor", () => {
     // The real name is the inspector's first row.
     expect(side.indexOf(`<label class="field pe-page-name">`)).toBeLessThan(side.indexOf("<h4>Look"));
     // Look, then On the watch, then the line and Delete page.
-    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page"].map((p) => side.indexOf(p));
+    const order = ["<h4>Look", "<h4>On the watch", "Click a tile to edit it.", "Delete page"].map((p) => side.indexOf(p));
     expect(order.every((i) => i > -1)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
     expect(side).not.toContain("above the watch");

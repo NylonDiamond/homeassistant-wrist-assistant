@@ -73,11 +73,11 @@ export function screenOnlyTileIds(page: WatchPage | undefined, screen: WatchScre
   return out;
 }
 
-/** The title under a picture: the kind, then the devices of that kind that
- * show the page ("Watch · Jesse's Watch, Chen's Watch"), or the kind alone
- * while none does. */
+/** The title under a picture, after its device icon: the devices of that
+ * kind that show the page ("Jesse's Watch, Chen's Watch"), or the kind while
+ * none does. */
 export function screenTitleText(screen: WatchScreen, names: readonly string[]): string {
-  return names.length === 0 ? screenTitleWord(screen) : `${screenTitleWord(screen)} · ${names.join(", ")}`;
+  return names.length === 0 ? screenTitleWord(screen) : names.join(", ");
 }
 
 /** The status line under a picture: `text`, and the words of its one button

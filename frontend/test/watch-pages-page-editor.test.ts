@@ -620,34 +620,17 @@ describe("the stage's quiet tiles", () => {
     expect(giveWatchTileId(doc, "P-OLD", { entityId: "x.y" } as WatchPageTile).id).toBeUndefined();
   });
 
-  it("puts a big + Add tile at the top of the stage, opening the Add tile dialog; none in the dock; once side by side; none on a smart page", () => {
-    const { el, body, owners } = editor();
+  it("has no blue + Add tile on the stage: the dashed spot on each picture opens the dialog", () => {
+    const { el, body } = editor();
     stubBrowser(el);
     const text = body();
-    // In the stage's head, over the device, and no longer in the dock.
-    const top = text.slice(text.indexOf(`<div class="pe-stage-top">`), text.indexOf(`<div class="pe-stage-body">`));
-    expect(top).toContain(`class="pe-stage-add"`);
-    expect(text.slice(text.indexOf(`<div class="stage-tools pe-dock"`))).not.toContain("pe-stage-add");
-    expect(text.match(/class="pe-stage-add"/g)).toHaveLength(1);
-    const drawn = (el.renderBody as (w: unknown) => unknown).call(el, owners);
-    const add = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pe-stage-add"`));
-    listener(add!, "click")({} as Event);
-    expect(el.addTileOpen).toBe(true);
-    el.addTileOpen = false;
-    // Big and blue, with a glow of its own color.
-    const css = rule(sheet(), ".pe-stage-add");
-    expect(css).toContain("font-size: 14px");
-    expect(css).toContain("padding: 9px 20px 9px 16px");
-    expect(css).toMatch(/box-shadow: 0 4px 18px color-mix\(in srgb, var\(--wa-hue-blue\) 40%/);
-    // Side by side: still one, over both.
+    expect(text).not.toContain("pe-stage-add");
+    expect(text).toContain(`class="pe-add-slot"`);
     el.phones = true;
     el.sideBySide = true;
     const both = body();
-    expect(both.match(/class="pe-stage-add"/g)).toHaveLength(1);
-    expect(both.indexOf(`class="pe-stage-add"`)).toBeLessThan(both.indexOf(`data-screen=iphone`));
-    // A smart page fills itself.
-    const smart = editor(undefined, { schemaVersion: 1, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument);
-    expect(smart.body()).not.toContain("pe-stage-add");
+    expect(both).not.toContain("pe-stage-add");
+    expect(both.match(/class="pe-add-slot"/g)).toHaveLength(2);
   });
 
   it("draws a dashed + Add tile spot where a new tile lands, which opens the dialog and is no tile", () => {
@@ -1763,7 +1746,7 @@ describe("the two pictures", () => {
     return { ...made, kept, draft, page, screens, press, drop, clickOn };
   }
 
-  it("draws an edit screen for each kind, the watch first, with a title and a status line, and no editing or preview labels", () => {
+  it("draws an edit screen for each kind, the watch first, with a title, and no status line while they match, and no editing or preview labels", () => {
     const { body } = both();
     const text = body();
     expect(text.indexOf(`data-screen=watch`)).toBeGreaterThan(-1);
@@ -1771,8 +1754,8 @@ describe("the two pictures", () => {
     expect(text).not.toContain("lib-duo-other");
     expect(text).not.toContain("lib-duo-tag");
     expect(text).toMatch(/<span class="lib-duo-l pe-screen-title"[^>]*><svg[\s\S]*?<\/svg>Watch<\/span>/);
-    expect(text).toContain(`<span class="pe-screen-status">Same order as the iPhone`);
-    expect(text).toContain(`<span class="pe-screen-status">Same order as the watch`);
+    // Two pictures in the same order show that themselves.
+    expect(text).not.toContain("pe-screen-status");
     // Each device stands in its own box, with one Screen 1 mark.
     expect(text).toContain(`class="pe-device watch"`);
     expect(text).toContain(`class="pe-device iphone"`);
@@ -1804,7 +1787,7 @@ describe("the two pictures", () => {
     const moved = draft().document;
     clickOn("pe-screen-use");
     expect(draft().document).not.toBe(moved);
-    expect(body()).toContain(`<span class="pe-screen-status">Same order as the watch`);
+    expect(body()).not.toContain("pe-screen-status");
     draft().undo();
     expect(draft().document).toBe(moved);
     // Before any picture is pressed the button sits under the watch's.

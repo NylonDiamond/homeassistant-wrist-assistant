@@ -151,8 +151,8 @@ describe("the lines under each picture", () => {
   };
 
   it("names the kind and the devices of that kind that show the page", () => {
-    expect(screenTitleText("watch", ["Jesse's Watch", "Chen's Watch"])).toBe("Watch · Jesse's Watch, Chen's Watch");
-    expect(screenTitleText("iphone", ["Jesse's iPhone"])).toBe("iPhone · Jesse's iPhone");
+    expect(screenTitleText("watch", ["Jesse's Watch", "Chen's Watch"])).toBe("Jesse's Watch, Chen's Watch");
+    expect(screenTitleText("iphone", ["Jesse's iPhone"])).toBe("Jesse's iPhone");
     expect(screenTitleText("iphone", [])).toBe("iPhone");
   });
 

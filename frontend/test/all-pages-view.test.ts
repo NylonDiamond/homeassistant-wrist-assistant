@@ -453,13 +453,33 @@ describe("the Pages tab", () => {
     board = t.whole();
     expect(board.split(`<tr class=bd-row `).length - 1).toBe(1);
     expect(board).toContain(`data-row=${PAGE1.toUpperCase()}`);
-    // Cards: both pictures, and the line under the name.
+    // Cards: one picture with an icon per screen, and the line under the name.
     showCards(t);
     t.el.screensFilter = "all";
-    const cards = t.whole();
-    const card = cards.slice(cards.indexOf(`data-card=${PAGE1}`));
-    expect(card.slice(0, card.indexOf("lt-ticks"))).toContain("ap-card-pics");
-    expect(card.slice(0, card.indexOf("lt-ticks"))).toContain(`<small class="ap-screens">iPhone arranged differently</small>`);
+    const cardOf = (id: string) => {
+      const cards = t.whole();
+      const card = cards.slice(cards.indexOf(`data-card=${id}`));
+      return card.slice(0, card.indexOf("lt-ticks"));
+    };
+    expect(cardOf(PAGE1)).toContain(`<small class="ap-screens">iPhone arranged differently</small>`);
+    expect(cardOf(PAGE1)).not.toContain("ap-card-pics");
+    expect(cardOf(PAGE1)).not.toContain("ap-pic-phone");
+    expect(cardOf(PAGE1).match(/<button[^>]*data-card-screen=/g)).toHaveLength(2);
+    // A click on an icon draws that screen, on that card alone.
+    t.el.cardPicks = new Map([[PAGE1.toUpperCase(), "iphone"]]);
+    expect(cardOf(PAGE1)).toContain("ap-pic-phone");
+    expect(cardOf(LIGHTS)).not.toContain("ap-pic-phone");
+    t.el.cardPicks = new Map();
+    expect(cardOf(PAGE1)).not.toContain("ap-pic-phone");
+    // A page only the watch shows: one plain icon and the watch's picture.
+    expect(cardOf(LIGHTS)).not.toContain("ap-pic-phone");
+    expect(cardOf(LIGHTS)).not.toMatch(/<button[^>]*data-card-screen=/);
+    expect(cardOf(LIGHTS).match(/data-card-screen=/g)).toHaveLength(1);
+    // Screens differ compares: both pictures, large, no icons.
+    t.el.screensFilter = "differ";
+    expect(t.whole()).toContain("ap-grid differ");
+    expect(cardOf(PAGE1)).toContain("ap-card-pics large");
+    expect(cardOf(PAGE1)).not.toContain("data-card-screen");
   });
 
   it("shows the update card once, until it is dismissed", async () => {

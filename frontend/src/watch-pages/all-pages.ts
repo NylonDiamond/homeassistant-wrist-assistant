@@ -118,7 +118,7 @@ import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, d
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
-import { type WatchPage, isSmartWatchPage, watchPageTiles, watchPagesOf, watchScreenPage } from "./model.js";
+import { type WatchPage, type WatchScreen, isSmartWatchPage, watchPageTiles, watchPagesOf, watchScreenPage } from "./model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
 import { newMapWatchPage, watchMapPageFloorId, watchMapPageRefusal } from "./map-page.js";
@@ -135,6 +135,8 @@ import {
   type PagesScreensFilter,
   SCREENS_DIFFER_TEXT,
   TWO_SCREENS_CARD_TEXT,
+  cardScreens,
+  cardShownScreen,
   dismissTwoScreensCard,
   keepsPage,
   pageScreensLine,
@@ -161,10 +163,15 @@ import {
 const PIC_W = 200;
 /** The tallest a picture grows before it is cut, in CSS pixels. */
 const PIC_MAX_H = 320;
-/** A card's two pictures, side by side: the watch's and the iPhone's, in
- * CSS pixels, and the iPhone's alone in a home with no watch. */
+/** The two pictures of a row's peek, side by side: the watch's and the
+ * iPhone's, in CSS pixels. */
 const CARD_WATCH_W = 120;
 const CARD_PHONE_W = 80;
+/** A card's two pictures under Screens differ, where they are compared. */
+const CARD_DIFFER_WATCH_W = 172;
+const CARD_DIFFER_PHONE_W = 116;
+/** A card's iPhone picture alone, and how tall it is for a page no watch can
+ * show. */
 const CARD_PHONE_ALONE_W = 150;
 const CARD_PHONE_ALONE_H = 280;
 /** The room kept above the top tile and under the lowest, in points. */
@@ -292,6 +299,8 @@ export class WaAllPages extends LitElement {
   @state() private copyForm?: CopyForm;
   /** The Pages tab's filter: every page, or Screens differ. */
   @state() private screensFilter: PagesScreensFilter = "all";
+  /** The screen each card was switched to with its icons, by `itemKey`. */
+  @state() private cardPicks: ReadonlyMap<string, WatchScreen> = new Map();
   /** Select mode: a click picks a card instead of opening it. */
   @state() private selecting = false;
   /** The picked cards, by `itemKey`. Only those shown count. */
@@ -1071,7 +1080,7 @@ export class WaAllPages extends LitElement {
     const shown = this.shownOf(library);
     if (shown.length === 0) return html`<p class="ap-empty">${this.emptyHere(devices)}</p>`;
     const waiting = this.waiting(library);
-    return html`<div class="ap-grid" role="list">${shown.map((entry) => this.renderCard(library, entry, devices, waiting))}</div>`;
+    return html`<div class="ap-grid ${this.comparingScreens() ? "differ" : ""}" role="list">${shown.map((entry) => this.renderCard(library, entry, devices, waiting))}</div>`;
   }
 
   /** An empty library's block: how a page works, with New page for whoever
@@ -1236,9 +1245,12 @@ export class WaAllPages extends LitElement {
         ${selecting ? nothing : this.renderItemDelete(entry, "ap-del")}
       </div>
       ${this.screensLineOf(entry, devices) === undefined ? nothing : html`<small class="ap-screens">${this.screensLineOf(entry, devices)}</small>`}
-      <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
-        ${entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderThumbs(library, entry, opensOn, devices)}
-      </button>
+      <div class="ap-thumb-wrap">
+        <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} style=${this.thumbWellStyle(entry, devices)} @click=${click}>
+          ${entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderCardPictures(library, entry, opensOn, devices)}
+        </button>
+        ${entry.kind === "status_pages" ? nothing : this.renderCardScreenIcons(entry, devices)}
+      </div>
       ${this.renderCardTicks(library, entry, devices, waiting)}
       ${asking ? this.renderItemAsk(entry, devices) : nothing}
     </div>`;
@@ -1634,31 +1646,96 @@ export class WaAllPages extends LitElement {
     return pageCrop(page, this.hassNow?.states, this.icons).height * (width / PIC_SCREEN.width);
   }
 
+  /** Whether the list is comparing the two screens: Screens differ is on. */
+  private comparingScreens(): boolean {
+    return this.kind === "pages" && this.screensFilter === "differ";
+  }
+
+  /** A page's card draws both screens at once: Screens differ is on and two
+   * kinds of device can show it. */
+  private cardDrawsBoth(kinds: readonly WatchScreen[]): boolean {
+    return kinds.length === 2 && this.comparingScreens();
+  }
+
+  /** How tall the watch's picture of a page is at a card's `width`. */
+  private cardWatchHeight(entry: LibraryItem, width: number): number {
+    return Math.min(this.thumbHeight(watchScreenPage(entry.item as WatchPage, "watch"), width), PIC_MAX_H);
+  }
+
+  /** A page whose card swaps screens keeps one height for both, so a swap
+   * never moves the cards below it. The well's padding is 10px each way. */
+  private thumbWellStyle(entry: LibraryItem, devices: readonly LinkDevice[]): string | typeof nothing {
+    if (entry.kind === "status_pages") return nothing;
+    const kinds = cardScreens(entry.owners, devices);
+    return kinds.length === 2 && !this.cardDrawsBoth(kinds) ? `min-height:${Math.round(this.cardWatchHeight(entry, PIC_W)) + 20}px` : nothing;
+  }
+
   /**
-   * A page's card pictures: the watch's arrangement and the iPhone's, side
-   * by side and one height, for each kind of device the home has. A home of
-   * watches alone, or of iPhones alone, shows that one picture.
+   * A page's card picture: one screen, the first the page shows on or the one
+   * picked with the card's icons (`renderCardScreenIcons`). Under Screens
+   * differ, which is for comparing, the watch's and the iPhone's side by side.
    */
-  private renderThumbs(library: Library, entry: LibraryItem, on: LinkDevice | undefined, devices: readonly LinkDevice[]): TemplateResult {
-    const kinds = previewKinds(devices);
-    if (!kinds.includes("iphone")) return this.renderThumb(library, entry, on);
+  private renderCardPictures(library: Library, entry: LibraryItem, on: LinkDevice | undefined, devices: readonly LinkDevice[]): TemplateResult {
+    const kinds = cardScreens(entry.owners, devices);
+    if (this.cardDrawsBoth(kinds)) return this.renderThumbs(library, entry, on, devices, true);
+    if (cardShownScreen(kinds, this.cardPicks.get(itemKey(entry))) === "watch") {
+      return this.renderThumb(library, entry, on?.kind === "watch" ? on : undefined);
+    }
+    const height = kinds.includes("watch") ? this.cardWatchHeight(entry, PIC_W) : CARD_PHONE_ALONE_H;
+    return html`<span class="ap-pic ap-pic-phone">${this.renderPhoneThumb(entry, devices, CARD_PHONE_ALONE_W, height)}</span>`;
+  }
+
+  /**
+   * The icons in the corner of a page's card picture, in a home with both
+   * kinds of device: a button per screen on a page both can show, a click on
+   * which draws that screen; one plain icon on a page only one kind shows.
+   * None while the card draws both.
+   */
+  private renderCardScreenIcons(entry: LibraryItem, devices: readonly LinkDevice[]): TemplateResult | typeof nothing {
+    const kinds = cardScreens(entry.owners, devices);
+    if (previewKinds(devices).length < 2 || this.cardDrawsBoth(kinds)) return nothing;
+    const key = itemKey(entry);
+    const shown = cardShownScreen(kinds, this.cardPicks.get(key));
+    const icon = (kind: WatchScreen) => uiIcon(kind === "watch" ? "watch" : "phone");
+    const word = (kind: WatchScreen) => (kind === "watch" ? "watch" : "iPhone");
+    if (kinds.length < 2) {
+      return html`<span class="ap-screen-icons"><span class="ap-screen-icon on ${shown}" data-card-screen=${shown} title=${`On ${shown === "watch" ? "a" : "an"} ${word(shown)} only`}>${icon(shown)}</span></span>`;
+    }
+    return html`<span class="ap-screen-icons" role="group" aria-label="Show this page on">${kinds.map((kind) => html`<button type="button"
+      class="ap-screen-icon ${kind} ${kind === shown ? "on" : ""}" data-card-screen=${kind} aria-pressed=${kind === shown ? "true" : "false"}
+      title=${`Show it on the ${word(kind)}`} aria-label=${`Show it on the ${word(kind)}`}
+      @click=${(e: Event) => { e.stopPropagation(); this.cardPicks = new Map(this.cardPicks).set(key, kind); }}>${icon(kind)}</button>`)}</span>`;
+  }
+
+  /** The iPhone's arrangement of a page, as a device that shows it draws it. */
+  private renderPhoneThumb(entry: LibraryItem, devices: readonly LinkDevice[], width: number, maxHeight: number): TemplateResult {
     const phone = devices.find((d) => d.kind === "iphone" && entry.owners.some((o) => sameId(o, d.ownerId)));
-    const watchOn = on?.kind === "watch" ? on : undefined;
-    const both = kinds.includes("watch");
-    const watchW = both ? CARD_WATCH_W : 0;
-    const height = both ? Math.min(this.thumbHeight(watchScreenPage(entry.item as WatchPage, "watch"), watchW), PIC_MAX_H) : CARD_PHONE_ALONE_H;
     const appVersion = this.appVersionOf(phone);
-    const iphone = renderPageRowPicture({
-      page: entry.item as WatchPage, width: both ? CARD_PHONE_W : CARD_PHONE_ALONE_W, maxHeight: Math.max(1, Math.round(height)), tick: this.iconsTick, iphone: true,
+    return renderPageRowPicture({
+      page: entry.item as WatchPage, width, maxHeight: Math.max(1, Math.round(maxHeight)), tick: this.iconsTick, iphone: true,
       ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       ...(appVersion === undefined ? {} : { appVersion }),
       photo: this.photoUrl, photoSize: this.photoSize, photoGlow: this.photoGlow, photoOn: this.photoOn, photoOnMask: this.photoOnMask, photoTick: this.photoTick,
       homeMap: this.homeMapDoc(),
     });
-    return html`<span class="ap-pics ap-card-pics">
-      ${both ? this.renderThumb(library, entry, watchOn, watchW) : nothing}
-      <span class="ap-pic ap-pic-phone">${iphone}</span>
+  }
+
+  /**
+   * A page's two pictures, the watch's arrangement and the iPhone's, side by
+   * side and one height, for a row's peek and a card under Screens differ
+   * (`large`). A home of watches alone, or of iPhones alone, shows that one.
+   */
+  private renderThumbs(library: Library, entry: LibraryItem, on: LinkDevice | undefined, devices: readonly LinkDevice[], large = false): TemplateResult {
+    const kinds = previewKinds(devices);
+    if (!kinds.includes("iphone")) return this.renderThumb(library, entry, on);
+    const both = kinds.includes("watch");
+    const watchW = large ? CARD_DIFFER_WATCH_W : CARD_WATCH_W;
+    const phoneW = !both ? CARD_PHONE_ALONE_W : large ? CARD_DIFFER_PHONE_W : CARD_PHONE_W;
+    const height = both ? this.cardWatchHeight(entry, watchW) : CARD_PHONE_ALONE_H;
+    return html`<span class="ap-pics ap-card-pics ${large ? "large" : ""}">
+      ${both ? this.renderThumb(library, entry, on?.kind === "watch" ? on : undefined, watchW) : nothing}
+      <span class="ap-pic ap-pic-phone">${this.renderPhoneThumb(entry, devices, phoneW, height)}</span>
     </span>`;
   }
 
@@ -1692,6 +1769,27 @@ export class WaAllPages extends LitElement {
     .ap-pics { display: inline-flex; align-items: flex-start; gap: 4px; }
     .ap-card-pics { gap: 8px; }
     .ap-pic.ap-pic-phone { box-shadow: none; border-radius: 0; }
+    /* Screens differ: cards wide enough for both pictures at a size to read,
+       and on a screen narrower than that, one under the other. */
+    .ap-grid.differ { grid-template-columns: repeat(auto-fill, minmax(min(336px, 100%), 1fr)); }
+    .ap-card-pics.large { flex-wrap: wrap; justify-content: center; max-width: 100%; }
+    /* The icons in the corner of a card's picture: which screen it draws. */
+    .ap-thumb-wrap { position: relative; }
+    .ap-screen-icons {
+      position: absolute; top: 6px; right: 6px; z-index: 2; display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px;
+      background: color-mix(in srgb, var(--wa-card) 88%, transparent); border: 1px solid var(--wa-line-strong);
+    }
+    .ap-screen-icon {
+      display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
+      background: none; color: var(--wa-muted);
+    }
+    button.ap-screen-icon { cursor: pointer; }
+    button.ap-screen-icon:hover { color: var(--wa-ink); }
+    button.ap-screen-icon:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .ap-screen-icon.on { background: var(--wa-field); }
+    .ap-screen-icon.on.watch { color: var(--wa-hue-purple); }
+    .ap-screen-icon.on.iphone { color: var(--wa-hue-pink); }
+    .ap-screen-icon svg.ui-icon { width: 14px; height: 14px; }
     /* The one line about a page's two screens, under its name. */
     .ap-screens { display: block; margin: -2px 0 6px; font-size: 11.5px; color: var(--wa-muted); }
     /* All, or Screens differ. */

@@ -235,6 +235,7 @@ import {
   type WatchScreen,
   WATCH_SCREENS,
   otherWatchScreen,
+  watchScreensAlike,
   tileGeometry,
   tileDrawsOn,
   tileEntityId,
@@ -3767,11 +3768,10 @@ export class WaPageEditor extends LitElement {
    * how to reach a tile, or on a smart page a rule. */
   private renderNoTileCard(page: WatchPage): TemplateResult {
     const empty = !isSmartWatchPage(page) && watchPageTiles(page).length === 0;
-    const on = deviceWord(this.linkKind);
-    const text = isSmartWatchPage(page) ? `Click a tile on the ${on} to pick its rule.`
+    const text = isSmartWatchPage(page) ? "Click a tile to pick its rule."
       : isMapWatchPage(page) ? WATCH_MAP_PAGE_WORDS.stage
       : empty ? NO_TILES_TEXT
-      : `Click a tile on the ${on} to edit it.`;
+      : "Click a tile to edit it.";
     return html`<div class="pe-no-tile">
       <span class="pe-no-tile-ic" aria-hidden="true">${uiIcon("tap")}</span>
       <p>${text}</p>
@@ -3785,31 +3785,6 @@ export class WaPageEditor extends LitElement {
     const off = this.busy || this.editingOff(page);
     return html`<button type="button" class="pe-btn pe-add-first" aria-haspopup="dialog" ?disabled=${off}
       title=${this.saving ? SAVING_TEXT : "Add a tile to this page"} @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add a tile</span></button>`;
-  }
-
-  /** Why the Add tile dialog would not open now, or undefined when it
-   * would: a map page holds its Home map tile alone, a save is running, or
-   * Watch view is on. A smart page fills itself and has no Add tile at all.
-   * The stage's button and its dashed spot both read it, so they agree with
-   * `openAddTile`. */
-  private addTileRefusal(page: WatchPage): string | undefined {
-    if (isMapWatchPage(page)) return watchAddRefusalText("mapPage");
-    if (this.saving) return SAVING_TEXT;
-    if (this.editingOff(page)) return `Turn off ${this.viewName} to add a tile.`;
-    if (this.busy) return "Finish the drag first.";
-    return undefined;
-  }
-
-  /** The big blue "+ Add tile" at the top of the stage, the stage's one
-   * loud button, which opens the Add tile dialog. None on a smart page,
-   * which fills itself; greyed on a map page, which holds its Home map tile
-   * alone, saying so. */
-  private renderStageAddTile(page: WatchPage): TemplateResult | typeof nothing {
-    if (isSmartWatchPage(page)) return nothing;
-    const refusal = this.addTileRefusal(page);
-    return html`<button type="button" class="pe-stage-add" aria-haspopup="dialog" ?disabled=${refusal !== undefined}
-      title=${refusal ?? "Add a tile to this page. It lands at the first free place."}
-      @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add tile</span></button>`;
   }
 
   // ── sizes and pictures ─────────────────────────────────────────────────
@@ -4099,8 +4074,9 @@ export class WaPageEditor extends LitElement {
         width += screen.width * (1 + 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO) + WATCH_CROWN_RATIO);
         height = Math.max(height, screen.height + screen.width * 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO + WATCH_BAND_RATIO));
       }
-      // The Screen 1 mark on the device's outer side.
-      fixedWidth += SCREEN_END_ROOM;
+      // The Screen 1 mark on the device's outer side (one device alone keeps
+      // the same room on its other side, so it stays centered).
+      fixedWidth += kinds.length === 1 ? SCREEN_END_ROOM * 2 : SCREEN_END_ROOM;
       if (screenOffChips(page, kind).length > 0) chips = true;
     }
     // Under each device: the title and the status line (a line and a gap
@@ -4183,9 +4159,8 @@ export class WaPageEditor extends LitElement {
   /**
    * The canvas card: the stage alone, with no head (the editor bar over it
    * holds the page's name, devices, Undo and Redo, and its ··· menu the
-   * page's facts and the tile's Duplicate and Delete). At its top the big
-   * blue + Add tile (`renderStageAddTile`), and under it the help while Help
-   * is on; in the middle the device, as large as the stage holds
+   * page's facts and the tile's Duplicate and Delete). At its top the help
+   * while Help is on; in the middle the device, as large as the stage holds
    * (`stageDrawing`), with a dashed + Add tile spot where a new tile lands
    * (`renderAddSlot`); at its foot the picked tile's states to try
    * (`renderLiveStrip`) in a row of their own, and the dock
@@ -4271,7 +4246,7 @@ export class WaPageEditor extends LitElement {
     const fold = scrolls && this.helpOn;
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       <div class="stage-area pe-stage-area">
-        <div class="pe-stage-top">${this.renderStageAddTile(page)}${this.renderTryPill()}</div>
+        <div class="pe-stage-top">${this.renderTryPill()}</div>
         ${status !== undefined || help !== undefined || fold ? html`<div class="under pe-under">
           ${status !== undefined ? html`<span class="tail">${status}</span>` : nothing}
           ${help !== undefined ? html`<span class="tail pe-hint">${help}</span>` : nothing}
@@ -4293,8 +4268,8 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * While a choice is tried in the inspector (`tryTileEdit`), a pill under
-   * the stage's + Add tile naming it: "Previewing Glow: Always · click to keep". It
+   * While a choice is tried in the inspector (`tryTileEdit`), a pill at
+   * the stage's top naming it: "Previewing Glow: Always · click to keep". It
    * floats over the stage, so the device never moves for it, and lets the
    * pointer through.
    */
@@ -4380,7 +4355,8 @@ export class WaPageEditor extends LitElement {
    * that show the page; the status line, "Same order as the iPhone" or
    * "Arranged differently", with "Use the iPhone's order" (one edit, so Undo
    * takes it back) under the picture last pressed on only, said while the
-   * other kind is drawn or shows the page;
+   * other kind is drawn or shows the page, except that two pictures in the
+   * same order show that themselves and say nothing;
    * and "Not on the
    * watch:" with a chip per tile Off there, a click on which puts it on, or,
    * for a kind the screen cannot draw, a grey chip saying which draws it.
@@ -4389,7 +4365,8 @@ export class WaPageEditor extends LitElement {
     const title = screenTitleText(screen, this.screenNames(screen));
     // Said while the other kind is drawn too, or shows the page somewhere;
     // a map page's line, how this kind draws it, always.
-    const status = both || isMapWatchPage(page) || this.screenNames(otherWatchScreen(screen)).length > 0 ? screenStatus(page, screen) : undefined;
+    const sameInView = both && !isMapWatchPage(page) && watchScreensAlike(page);
+    const status = !sameInView && (both || isMapWatchPage(page) || this.screenNames(otherWatchScreen(screen)).length > 0) ? screenStatus(page, screen) : undefined;
     // One button for the two pictures: "Use the iPhone's order" sits under
     // the picture last pressed or dragged on (`clickedScreen`, the watch's
     // until then); the other says "Arranged differently" alone.
@@ -4713,12 +4690,11 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The dashed "+ Add tile" spot on the edit screen (`addSlotRect`): one
-   * tile's cell drawn in the accent, which opens the Add tile dialog as the
-   * stage's button does. It is no tile: nothing on the page holds it, so it
-   * is never picked, dragged, counted, saved or dropped on, and a press on
-   * it never starts a drag or clears the pick. Not drawn while the dialog
-   * would not open (`addTileRefusal`: a save running) or while a tile,
-   * an edge or a part is dragged, though its rows stay (`editStage`). A
+   * tile's cell drawn in the accent, the stage's way to the Add tile dialog.
+   * It is no tile: nothing on the page holds it, so it is never picked,
+   * dragged, counted, saved or dropped on, and a press on it never starts a
+   * drag or clears the pick. Not drawn while a save runs or while a tile, an
+   * edge or a part is dragged, though its rows stay (`editStage`). A
    * press on a tile that has not moved yet leaves it, so a plain click on a
    * tile never makes it blink.
    */
@@ -6081,6 +6057,11 @@ export class WaPageEditor extends LitElement {
        its words wrap. */
     .pe-layout.pe-wide .lib-duo { flex-wrap: nowrap; justify-content: safe center; }
     .pe-layout.pe-wide .lib-duo-side { min-width: min-content; }
+    /* The Screen 1 mark stands outside its device, 49px past its outer edge.
+       A side holds that room, so the stage's edge never cuts the mark. */
+    .pe-layout.pe-wide .lib-duo-side.watch { padding-left: 49px; }
+    .pe-layout.pe-wide .lib-duo-side.iphone { padding-right: 49px; }
+    .pe-layout.pe-wide .lib-duo-side:only-child { padding-inline: 49px; }
     .pe-layout.pe-wide .pe-screen-title { white-space: normal; }
     /* A device on the stage. The watch has band stubs that fade out, and each
        device a quiet mark on its outer side where its first screen ends, in
@@ -6179,9 +6160,8 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 460px) {
       .canvas-card.lit .stage-area.pe-stage-area { padding-inline: 4px; }
     }
-    /* What a choice pointed at in the inspector tries, under the + Add tile
-       at the stage's top: over the stage, out of the flow and the pointer's
-       way. */
+    /* What a choice pointed at in the inspector tries, at the stage's top:
+       over the stage, out of the flow and the pointer's way. */
     .pe-try-pill {
       position: absolute; top: calc(100% + 8px); left: 50%; z-index: 9; transform: translateX(-50%);
       display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; max-width: calc(100% - 16px);

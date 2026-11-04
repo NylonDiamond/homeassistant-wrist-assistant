@@ -36,6 +36,22 @@ export function pageScreensDiffer(page: WatchPage): boolean {
   return !watchScreensAlike(page) || userOffTiles(page, "watch") > 0 || userOffTiles(page, "iphone") > 0;
 }
 
+/**
+ * The kinds of device a page's card can draw, the watch first: those that
+ * show the page, or, while none does, every kind the home has.
+ */
+export function cardScreens(owners: readonly string[], devices: readonly LinkDevice[]): WatchScreen[] {
+  const kinds = (list: readonly LinkDevice[]) => (["watch", "iphone"] as const).filter((kind) => list.some((d) => d.kind === kind));
+  const on = kinds(devices.filter((d) => owners.some((o) => sameId(o, d.ownerId))));
+  return on.length > 0 ? on : kinds(devices);
+}
+
+/** The one screen a card draws: the one picked on it while the page still
+ * shows there, else the first the card can draw. */
+export function cardShownScreen(kinds: readonly WatchScreen[], picked: WatchScreen | undefined): WatchScreen {
+  return picked !== undefined && kinds.includes(picked) ? picked : (kinds[0] ?? "watch");
+}
+
 /** "1 tile" or "3 tiles". */
 const tilesText = (n: number): string => `${n} ${n === 1 ? "tile" : "tiles"}`;
 
