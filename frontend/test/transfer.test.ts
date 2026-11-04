@@ -23,7 +23,7 @@ import {
   parseConfig,
 } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
-import { NEWER_VERSION_TEXT } from "../src/friendly-error.js";
+import { newerVersionText } from "../src/friendly-error.js";
 import { addFamily } from "../src/layouts.js";
 import {
   type ShareSlot,
@@ -696,7 +696,7 @@ describe("import refusals", () => {
     const parsed = parseImportText(JSON.stringify({ schemaVersion: 99, name: "X" }), MAX_SCHEMA);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.error).toBe(newerVersionText());
     expect(parsed.error).not.toContain("schema");
     expect(parsed.detail).toContain("schema v99");
   });
@@ -708,7 +708,7 @@ describe("import refusals", () => {
     const parsed = parseImportText(JSON.stringify(raw), MAX_SCHEMA);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.error).toBe(newerVersionText());
     expect(parsed.detail).toContain("$.somethingNew");
   });
 });

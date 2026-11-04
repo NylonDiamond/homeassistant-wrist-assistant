@@ -153,7 +153,7 @@ import {
   watchName,
   watchRecordUnreadable,
 } from "../watch-settings.js";
-import { renderLibraryWaitOuts } from "../move-wait-out.js";
+import { mayAddFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { type LinkDevice, deviceWord, linkDevicesOf, pictureOwnerId } from "./devices.js";
 import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newCopyForm, openCopyDialog, renderCopyDialog, runCopy, tickCopyForm } from "./make-copy.js";
 import { newItemDialogStyles } from "../library/new-dialog.js";
@@ -3336,6 +3336,7 @@ export class WaPageEditor extends LitElement {
     this.untickAsk = undefined;
     const names = { item: entry.name, device: this.deviceName(ownerId) };
     if (on) {
+      if (!mayAddFirst(this.ownerList, this.lib.library, ownerId, "pages")) return;
       void tickItem(this.hass, store, ownerId, "pages", entry.id, true, names);
       return;
     }

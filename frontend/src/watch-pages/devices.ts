@@ -22,6 +22,9 @@ export interface LinkDevice {
   /** The Wrist Assistant version it last reported, for the wait lines
    * (`waitForIphoneText`). Absent when not known. */
   appVersion?: string | null;
+  /** The iPhone that paired this watch already runs an app that moves, for
+   * the wait lines (`owner_iphone_moves`). Absent when not known. */
+  phoneMoves?: boolean | null;
 }
 
 /** Every device a page can be on: the Watch app's devices (the watches
@@ -34,6 +37,7 @@ export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean):
     name: watchName(o, devices),
     kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch",
     ...(o.app_version === undefined ? {} : { appVersion: o.app_version }),
+    ...(o.owner_iphone_moves === undefined ? {} : { phoneMoves: o.owner_iphone_moves }),
   }));
 }
 
@@ -121,8 +125,8 @@ export const DEVICES_WAIT_TEXT = devicesWaitText(undefined);
 
 /** `DEVICES_WAIT_TEXT` for a watch reporting `appVersion`, in the wait
  * words for its version (`waitForIphoneText`). */
-export function devicesWaitText(appVersion: string | null | undefined): string {
-  return `${waitForIphoneText(appVersion)} Pages can go on this watch after that.`;
+export function devicesWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+  return `${waitForIphoneText(appVersion, phoneMoves)} Pages can go on this watch after that.`;
 }
 
 /** What a watch's empty list says while it waits for its iPhone to move
@@ -130,15 +134,22 @@ export function devicesWaitText(appVersion: string | null | undefined): string {
  * from this watch yet. Waiting for your iPhone. …". `what` is the list's
  * noun, `device` the watch as the line names it, `appVersion` the version
  * it reported. */
-export function waitingEmptyText(what: string, device = "this watch", appVersion?: string | null): string {
-  return `No ${what} from ${device} yet. ${waitForIphoneText(appVersion)}`;
+export function waitingEmptyText(what: string, device = "this watch", appVersion?: string | null, phoneMoves?: boolean | null): string {
+  return `No ${what} from ${device} yet. ${waitForIphoneText(appVersion, phoneMoves)}`;
 }
 
 /** What an empty tab adds while a watch waits for its iPhone, as the HTTP
  * actions tab says it of its actions. `needsUpdate` when a waiting watch's
  * app is too old for the move (`setupMoveNeedsUpdate`), so the line names
- * the release rather than only "open it once". */
-export function waitingLibraryText(what: string, needsUpdate = false): string {
+ * the release rather than only "open it once". `phonesMove` when every waiting
+ * watch's iPhone already runs an app that moves (`allPhonesMove`), so no line
+ * says to update one. */
+export function waitingLibraryText(what: string, needsUpdate = false, phonesMove = false): string {
+  if (phonesMove) {
+    return needsUpdate
+      ? `Your iPhone is up to date. Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`
+      : `Your iPhone is up to date. If its ${what} do not come here, use what is on the watch.`;
+  }
   if (needsUpdate) {
     return `Needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Once your iPhone has it, open the app once and its ${what} move here by themselves.`;
   }
@@ -149,6 +160,13 @@ export function waitingLibraryText(what: string, needsUpdate = false): string {
  * `waitingLibraryText`. */
 export function anyNeedsUpdate(devices: readonly LinkDevice[], waiting: ReadonlySet<string>): boolean {
   return devices.some((d) => waiting.has(d.ownerId) && setupMoveNeedsUpdate(d.appVersion));
+}
+
+/** Whether every one of these waiting devices has an iPhone that already runs
+ * an app that moves. False with none waiting. */
+export function allPhonesMove(devices: readonly LinkDevice[], waiting: ReadonlySet<string>): boolean {
+  const shown = devices.filter((d) => waiting.has(d.ownerId));
+  return shown.length > 0 && shown.every((d) => d.phoneMoves === true);
 }
 
 /**

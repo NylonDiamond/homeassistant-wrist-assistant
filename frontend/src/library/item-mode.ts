@@ -127,7 +127,7 @@ export function libraryDeleteText(devices: number, here?: string): string {
 // editor quietly draws on the home's first device of that kind, which lends
 // its screen size, catalog, settings and voice. With no device of that
 // kind it draws on the 46 mm reference watch, or the reference iPhone, and
-// the Add tile sheet says to open the iPhone app for its lists.
+// the Add tile sheet's lists say there is nothing to list yet.
 
 /** The kind of device a library item is previewed on. */
 export type PreviewKind = "watch" | "iphone";

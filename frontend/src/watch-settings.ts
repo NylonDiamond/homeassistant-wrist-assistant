@@ -24,6 +24,7 @@
 
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
+import { integrationStoreName } from "./integration-store.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, phoneShowsPages, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
 
 /**
@@ -684,12 +685,32 @@ export const WAIT_FOR_IPHONE_TEXT =
 export const WAIT_FOR_UPDATE_TEXT =
   `Needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.`;
 
-/** The no-record line for this watch: `WAIT_FOR_UPDATE_TEXT` while its app
- * is too old for the move, else `WAIT_FOR_IPHONE_TEXT`. Every wait line the
- * watch screens and lists show goes through this. */
-export function waitForIphoneText(appVersion: string | null | undefined): string {
-  return setupMoveNeedsUpdate(appVersion) ? WAIT_FOR_UPDATE_TEXT : WAIT_FOR_IPHONE_TEXT;
+/** The no-record line while the iPhone that paired the watch already runs an
+ * app that moves (`owner_iphone_moves`): telling that person to update it
+ * would be false. Its move may still be on the way, or it may have nothing to
+ * send, so this says neither. */
+export const WAIT_PHONE_MOVES_TEXT =
+  "Your iPhone is up to date. Open Wrist Assistant on it once if you have not. If nothing more comes here, use what is on the watch.";
+
+/** The same while the watch itself is what is too old: its iPhone is done, or
+ * nearly, and the watch cannot send its own setup yet. */
+export const WAIT_WATCH_UPDATE_TEXT =
+  `Your iPhone is up to date. Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its setup here. Until then it keeps its current setup.`;
+
+/** The no-record line for this watch. Every wait line the watch screens and
+ * lists show goes through this. `phoneMoves` is the owner row's
+ * `owner_iphone_moves`: only an explicit `true` changes the words, so an
+ * integration older than the field says what it always said. */
+export function waitForIphoneText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+  const tooOld = setupMoveNeedsUpdate(appVersion);
+  if (phoneMoves === true) return tooOld ? WAIT_WATCH_UPDATE_TEXT : WAIT_PHONE_MOVES_TEXT;
+  return tooOld ? WAIT_FOR_UPDATE_TEXT : WAIT_FOR_IPHONE_TEXT;
 }
+
+/** What a refused write says, where the panel does not know which watch it
+ * was about. True whatever that watch's iPhone runs. */
+export const AWAITING_MOVE_TEXT =
+  "Waiting for your iPhone. Open Wrist Assistant on it once, and update it first if it is older. Try again after that.";
 
 /** The small link that opens the editor anyway while the move may still
  * come. */
@@ -711,12 +732,36 @@ export function offersStartFresh(owner: Pick<OwnerSummary, "app_version"> | unde
  * fresh instead" replaces the watch's setup. This keeps it: the watch sends
  * its own copy here. */
 export const NO_IPHONE_QUESTION = "No longer have that iPhone?";
+/** The same when that iPhone is there and already runs an app that moves, so
+ * the question does not assume it is gone. */
+export const NOTHING_MORE_QUESTION = "Nothing more coming from your iPhone?";
 export const USE_WATCH_BUTTON = "Use what is on the watch";
+
+/** The question for this watch's way out. */
+export function useWatchQuestion(phoneMoves: boolean | null | undefined): string {
+  return phoneMoves === true ? NOTHING_MORE_QUESTION : NO_IPHONE_QUESTION;
+}
+
+/** The part of the way out's ask about settings. A watch may be unable to send
+ * them, as it can seed only a copy it took from this home, and then the panel
+ * shows the standard ones. */
+const USE_WATCH_SETTINGS_TEXT =
+  "If it cannot send its settings, it keeps them, and your first Save of settings here replaces them.";
 
 /** What the way out asks first. The watch may hold less than its iPhone: a
  * free plan's watch may keep one page. */
 export const USE_WATCH_CONFIRM_TEXT =
-  "Use what is on the watch? It sends its setup here the next time its app opens. Your iPhone's copy will not move here later.";
+  `Use what is on the watch? It sends its setup here the next time its app opens. ${USE_WATCH_SETTINGS_TEXT} Your iPhone's copy will not move here later.`;
+
+/** The same with an iPhone that already runs an app that moves. It may have
+ * nothing left to send, so this does not promise it holds a copy. */
+export const USE_WATCH_PHONE_MOVES_CONFIRM_TEXT =
+  `Use what is on the watch? It sends its setup here the next time its app opens. ${USE_WATCH_SETTINGS_TEXT} Anything your iPhone has not sent yet may be left out.`;
+
+/** What the way out asks for this watch. */
+export function useWatchConfirmText(phoneMoves: boolean | null | undefined): string {
+  return phoneMoves === true ? USE_WATCH_PHONE_MOVES_CONFIRM_TEXT : USE_WATCH_CONFIRM_TEXT;
+}
 
 /** Fired, composed, when a wait has ended. The panel reads the owners again. */
 export const MOVE_WAIT_ENDED_EVENT = "wa-move-wait-ended";
@@ -755,6 +800,111 @@ export function newDeviceText(device: SettingDevice): string {
   return `New ${noun}. The ${noun} keeps what it has until you save here. Your first Save replaces it.`;
 }
 
+// ── a first Save on a watch from before the setup move ───────────────────
+//
+// A watch the old phone link set up runs a setup of its own. When the wait for
+// its iPhone is over, the panel's editors open ready on the defaults, and a
+// first Save replaces what the watch has. Two things make that a surprise, and
+// the owner row says when each applies.
+//
+// `seed_pending`: the wait has just ended and the watch has not polled since,
+// so its own setup may still come. A record made first stops that seed for
+// good, and the watch then takes the record over its own copy.
+//
+// `holds_old_setup` with no settings record: the watch cannot always send its
+// settings, so the page shows the standard ones while the watch runs its own.
+// Only the watch can say it runs the standard ones (`standard_settings`).
+//
+// Both are an ask, never a refusal: a person can always go on. A watch a code
+// first paired has neither, and reads "New watch" as before.
+
+/** What the watch's seed can make a first record of. */
+const SEEDED_KINDS: ReadonlySet<string> = new Set(["behavior", "notification_style", "pages", "menus", "voice", "status_pages", "control_center"]);
+
+/** What a first Save rule reads of a watch's row. */
+export type FirstSaveOwner = Pick<OwnerSummary, "app_version" | "device_kind" | "has_iphone" | "holds_old_setup" | "seed_pending" | "standard_settings">;
+
+/** The header's words while the watch's own setup may still come. */
+export const WAITING_FOR_WATCH_STATUS = "Waiting for the watch to send its setup";
+
+/** The line under them. */
+export const WAITING_FOR_WATCH_TEXT = "Waiting for the watch to send its setup. Open Wrist Assistant on the watch first.";
+
+/** The same, on a screen about several watches. */
+export function waitingForNamedWatchText(name: string): string {
+  return `Waiting for ${name} to send its setup. Open Wrist Assistant on that watch first.`;
+}
+
+/** What a first Save or a new page asks while the watch's setup may still come. */
+export const SEED_PENDING_ASK_TEXT =
+  "Your watch has not sent its setup yet. Open Wrist Assistant on the watch first. Saving now replaces what is on the watch. Go on anyway?";
+
+/** The header's words for a settings page whose watch runs its own settings. */
+export const KEEPS_OWN_SETTINGS_STATUS = "Keeps its own settings, not saved here yet";
+
+/** The line under them. */
+export const KEEPS_OWN_SETTINGS_TEXT =
+  "This watch keeps its own settings until you save here. The settings shown are the standard ones, not the watch's. Your first Save replaces them.";
+
+/** What a first Save of those settings asks. */
+export const REPLACE_OWN_SETTINGS_ASK_TEXT =
+  "Replace the settings on your watch? It runs its own settings now, and this page shows the standard ones. Saving sends all of them to the watch. Go on?";
+
+/** The header's words for a watch that said it runs the standard settings. */
+export const STANDARD_SETTINGS_STATUS = "Using the standard settings, not saved yet";
+
+/** The line under them. */
+export const STANDARD_SETTINGS_TEXT = "This watch uses the standard settings. Nothing is saved here until your first Save.";
+
+/** The header's words for another kind on such a watch: it is not a new watch. */
+export const NOT_SAVED_HERE_STATUS = "Not saved here yet";
+
+/** The line under them. */
+export const NOT_SAVED_HERE_TEXT = "This watch keeps what it has until you save here. Your first Save replaces it.";
+
+/** Whether this watch's own setup may still come here. Not a watch still in
+ * the wait, whose lines say so, and not one too old to send anything, as that
+ * would say to wait for what never comes. */
+export function waitsForWatchSeed(owner: Partial<FirstSaveOwner> | undefined): boolean {
+  return owner !== undefined
+    && deviceKindOf(owner) === "watch"
+    && owner.has_iphone !== true
+    && owner.seed_pending === true
+    && !setupMoveNeedsUpdate(owner.app_version);
+}
+
+/** What the header says of a kind with no record on this watch, in place of
+ * "New watch", or undefined when that is right. */
+export function noRecordWords(owner: Partial<FirstSaveOwner> | undefined, kind: string): { status: string; title: string } | undefined {
+  if (owner === undefined || deviceKindOf(owner) !== "watch") return undefined;
+  if (waitsForWatchSeed(owner) && SEEDED_KINDS.has(kind)) return { status: WAITING_FOR_WATCH_STATUS, title: `${WAITING_FOR_WATCH_TEXT} Saving now replaces what is on the watch.` };
+  if (owner.holds_old_setup !== true) return undefined;
+  if (kind !== "behavior") return { status: NOT_SAVED_HERE_STATUS, title: NOT_SAVED_HERE_TEXT };
+  return owner.standard_settings === true
+    ? { status: STANDARD_SETTINGS_STATUS, title: STANDARD_SETTINGS_TEXT }
+    : { status: KEEPS_OWN_SETTINGS_STATUS, title: KEEPS_OWN_SETTINGS_TEXT };
+}
+
+/** What a first Save of these kinds asks on this watch, or undefined for none.
+ * Not while the wait lasts: "Start fresh instead" has already asked. */
+export function firstSaveAskText(owner: Partial<FirstSaveOwner> | undefined, kinds: readonly string[]): string | undefined {
+  if (owner === undefined || deviceKindOf(owner) !== "watch" || owner.has_iphone === true) return undefined;
+  if (waitsForWatchSeed(owner) && kinds.some((k) => SEEDED_KINDS.has(k))) return SEED_PENDING_ASK_TEXT;
+  if (kinds.includes("behavior") && owner.holds_old_setup === true && owner.standard_settings !== true) return REPLACE_OWN_SETTINGS_ASK_TEXT;
+  return undefined;
+}
+
+/** Whether a first Save of these kinds may go ahead (`firstSaveAskText`). With
+ * nothing to ask it does; tests pass their own `ask`. */
+export function mayFirstSave(
+  owner: Partial<FirstSaveOwner> | undefined,
+  kinds: readonly string[],
+  ask: (text: string) => boolean = (text) => window.confirm(text),
+): boolean {
+  const text = firstSaveAskText(owner, kinds);
+  return text === undefined || ask(text);
+}
+
 /** The header's word when the settings are saved but the notification style
  * is not: the device is not new, only that one record is. */
 export const STYLE_NOT_SAVED_STATUS = "Notification style not saved yet";
@@ -772,7 +922,7 @@ export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
  * panel cannot read, such as one from a newer schema. The editor does not
  * open ready: a save over revision 0 would only meet a conflict. */
 export function pagesUnreadableText(device: SettingDevice): string {
-  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update Wrist Assistant in Marketplace or HACS, then reload.`;
+  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update Wrist Assistant in ${integrationStoreName()}, then reload.`;
 }
 
 /** `pagesUnreadableText` for a watch. */

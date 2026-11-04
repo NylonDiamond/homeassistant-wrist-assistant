@@ -39,7 +39,7 @@ import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
 import { ALL_FILTER, type PagesFilter, libraryEditTitle, onDeviceTitle, resolveFilter, restTitle } from "../watch-pages/all-pages-model.js";
-import { renderLibraryWaitOuts } from "../move-wait-out.js";
+import { mayAddFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
 import { type LinkDevice, type PagesRecordFacts, awaitingMove, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
@@ -305,6 +305,7 @@ export class WaAllMenus extends LitElement {
   private async duplicate(menu: LibraryMenu, device: LinkDevice): Promise<void> {
     const store = this.lib.store;
     if (store === undefined || this.copying !== undefined) return;
+    if (!mayAddFirst(this.owners, this.lib.library, device.ownerId, "menus")) return;
     const name = copyMenuName(device.name);
     this.copying = menu.id;
     this.newNote = undefined;
@@ -325,6 +326,7 @@ export class WaAllMenus extends LitElement {
   private use(menu: LibraryMenu, ownerId: string): void {
     const store = this.lib.store;
     if (store === undefined) return;
+    if (!mayAddFirst(this.owners, this.lib.library, ownerId, "menus")) return;
     const device = this.devices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "The device";
     void store.pickMenu(ownerId, menu.unit, menu.id, { device });
   }
@@ -529,7 +531,10 @@ export class WaAllMenus extends LitElement {
       locked: (ownerId) => {
         if (hasItem(library, ownerId, "menus", menu.id)) return undefined;
         if (dirtyHere(ownerId)) return menusDirtyText(devices.find((d) => d.ownerId === ownerId)?.name ?? "This device");
-        if (waiting.has(ownerId)) return menusWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion);
+        if (waiting.has(ownerId)) {
+          const device = devices.find((d) => d.ownerId === ownerId);
+          return menusWaitText(device?.appVersion, device?.phoneMoves);
+        }
         return undefined;
       },
     };
@@ -612,7 +617,7 @@ export class WaAllMenus extends LitElement {
       columns: devices.map((device) => ({
         device, color: this.colorOf(device.ownerId),
         count: MENU_UNITS.filter((u) => menuFor(library, device.ownerId, u) !== undefined).length,
-        ...(waiting.has(device.ownerId) ? { blocked: boardColumnBlock(device.appVersion, menusWaitText(device.appVersion)) } : {}),
+        ...(waiting.has(device.ownerId) ? { blocked: boardColumnBlock(device.appVersion, menusWaitText(device.appVersion, device.phoneMoves)) } : {}),
       })),
       ...(focus === undefined ? {} : { focus }),
       onFocus: (ownerId) => this.setFocus(ownerId),

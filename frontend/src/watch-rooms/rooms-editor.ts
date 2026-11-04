@@ -89,7 +89,9 @@ import {
   deliveryState,
   deviceNoun,
   followWatch,
+  mayFirstSave,
   mayStart,
+  noRecordWords,
   noRecordStart,
   noRecordTitle,
   offersStartFresh,
@@ -794,6 +796,9 @@ export class WaRoomsEditor extends LitElement {
     // A first save over revision 0 that Home Assistant refuses as
     // `no_record` means the watch is not paired (`firstSaveNote`).
     const first = draft.revision <= 0;
+    // On the main house the rooms ride in the settings record, so its first
+    // Save replaces the watch's settings and asks first.
+    if (first && !mayFirstSave(this.watches.find((w) => w.owner_watch_id === watchId), [kind])) return;
     const running = saveRoomsDraft(draft, {
       save: (base, document) => saveWatchConfig(hass, watchId, kind, base, document).catch((err: unknown) => {
         throw flatError(err);
@@ -940,7 +945,7 @@ export class WaRoomsEditor extends LitElement {
       ${this.barHost === undefined ? html`<span class="rm-title">Rooms</span>` : nothing}
       <span class="spacer"></span>
       ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
-      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: this.newWatch, dirty, saved: renderConfigSaved(this.record, undefined, this.device), device: this.device }) : nothing}
+      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: this.newWatch, dirty, saved: renderConfigSaved(this.record, undefined, this.device), device: this.device, newWords: noRecordWords(this.watches.find((w) => w.owner_watch_id === this.watchId), this.kind) }) : nothing}
       ${this.renderSyncPill(draft)}
       ${editing ? html`
         <button class="tb-btn icon rm-undo" ?disabled=${!draft.canUndo || this.saving} title=${`Undo (${MOD}Z)`} aria-label="Undo"
@@ -1042,7 +1047,7 @@ export class WaRoomsEditor extends LitElement {
       // asks first.
       const shown = watches.find((w) => w.owner_watch_id === this.watchId);
       return html`<div class="pe-empty"><b>${this.device === "iphone" ? noRecordTitle("rooms", "iphone") : home ? HOME_ROOMS_NO_RECORD_TITLE : ROOMS_NO_RECORD_TITLE}</b>
-        <span>${home ? waitForIphoneText(shown?.app_version) : roomsWaitText(shown?.app_version)}</span>
+        <span>${home ? waitForIphoneText(shown?.app_version, shown?.owner_iphone_moves) : roomsWaitText(shown?.app_version, shown?.owner_iphone_moves)}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
         ${renderMoveWaitOut(this.hass, shown)}
       </div>`;

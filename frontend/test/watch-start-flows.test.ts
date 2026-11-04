@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
+import { renderHeadStatus } from "../src/head-bar.js";
 import { WaPageEditor } from "../src/watch-pages/page-editor.js";
 import { dropAllWatchPages } from "../src/watch-pages/kept.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
@@ -22,7 +23,15 @@ import { anyWatchSettingsDirty, dropWatchSettingsDrafts } from "../src/watch-set
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
 import {
   type CatalogSetting,
+  KEEPS_OWN_SETTINGS_STATUS,
+  KEEPS_OWN_SETTINGS_TEXT,
   NEW_WATCH_TEXT,
+  REPLACE_OWN_SETTINGS_ASK_TEXT,
+  SEED_PENDING_ASK_TEXT,
+  STANDARD_SETTINGS_STATUS,
+  STANDARD_SETTINGS_TEXT,
+  WAITING_FOR_WATCH_STATUS,
+  WAITING_FOR_WATCH_TEXT,
   NOTHING_TO_SAVE_TEXT,
   PAGES_UNREADABLE_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
@@ -127,6 +136,13 @@ const owner = (id: string, extra: Partial<OwnerSummary> = {}): OwnerSummary => (
 
 /** `window.confirm` for the start fresh question, and nothing else. */
 const realWindow = (globalThis as { window?: unknown }).window;
+/** The header's status for the page as it stands, as the Watch app's header
+ * draws it. */
+function renderedStatus(inside: unknown): string {
+  const words = (inside as { newWords?: { status: string; title: string } }).newWords;
+  return flatten(renderHeadStatus({ newWatch: true, dirty: false, ...(words === undefined ? {} : { newWords: words }) }));
+}
+
 function answer(yes: boolean) {
   const confirm = vi.fn(() => yes);
   (globalThis as { window?: unknown }).window = { confirm, setTimeout: () => 1, clearTimeout: () => undefined };
@@ -341,6 +357,62 @@ describe("Watch settings on a new watch", () => {
     expect([...inside.edits]).toEqual([["wrapPages", flipped]]);
     expect(inside.note).toBeUndefined();
     expect(bar()).toContain("1 unsaved change");
+  });
+
+  it("says a watch from before the move keeps its own settings, and asks before the first Save", async () => {
+    const { inside, ha, text } = await page(record(0, undefined, "behavior"), undefined, { has_iphone: false, holds_old_setup: true });
+    expect(text()).toContain(KEEPS_OWN_SETTINGS_TEXT);
+    expect(text()).not.toContain(NEW_WATCH_TEXT);
+    expect(renderedStatus(inside)).toContain(KEEPS_OWN_SETTINGS_STATUS);
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+
+    const no = answer(false);
+    await inside.save();
+    expect(no).toHaveBeenCalledWith(REPLACE_OWN_SETTINGS_ASK_TEXT);
+    expect(ha.saves()).toHaveLength(0);
+    expect([...inside.edits]).toHaveLength(1);
+
+    const yes = answer(true);
+    await inside.save();
+    expect(yes).toHaveBeenCalledOnce();
+    expect(ha.saves()).toHaveLength(1);
+  });
+
+  it("says Waiting for the watch while its setup may still come, and lets a person go on", async () => {
+    const { inside, ha, text } = await page(record(0, undefined, "behavior"), undefined, { has_iphone: false, holds_old_setup: true, seed_pending: true });
+    expect(text()).toContain(WAITING_FOR_WATCH_TEXT);
+    expect(renderedStatus(inside)).toContain(WAITING_FOR_WATCH_STATUS);
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+
+    const no = answer(false);
+    await inside.save();
+    expect(no).toHaveBeenCalledWith(SEED_PENDING_ASK_TEXT);
+    expect(ha.saves()).toHaveLength(0);
+
+    answer(true);
+    await inside.save();
+    expect(ha.saves()).toHaveLength(1);
+  });
+
+  it("reads Using the standard settings when the watch said so, and asks nothing", async () => {
+    const { inside, ha, text } = await page(record(0, undefined, "behavior"), undefined, { has_iphone: false, holds_old_setup: true, standard_settings: true });
+    expect(text()).toContain(STANDARD_SETTINGS_TEXT);
+    expect(renderedStatus(inside)).toContain(STANDARD_SETTINGS_STATUS);
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+    const ask = answer(false);
+    await inside.save();
+    expect(ask).not.toHaveBeenCalled();
+    expect(ha.saves()).toHaveLength(1);
+  });
+
+  it("stays New watch, asking nothing, on a watch a code first paired", async () => {
+    const { inside, ha, text } = await page(record(0, undefined, "behavior"), undefined, { has_iphone: false, holds_old_setup: false });
+    expect(text()).toContain(NEW_WATCH_TEXT);
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+    const ask = answer(false);
+    await inside.save();
+    expect(ask).not.toHaveBeenCalled();
+    expect(ha.saves()).toHaveLength(1);
   });
 
   it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", async () => {

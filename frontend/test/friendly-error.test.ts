@@ -4,9 +4,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  NEWER_VERSION_TEXT,
+  newerVersionText,
   NOT_READY_TEXT,
-  UPDATE_INTEGRATION_TEXT,
+  updateIntegrationText,
   friendlyError,
   rawErrorText,
   rawErrorTitle,
@@ -50,8 +50,8 @@ describe("friendlyError", () => {
 
   it("sends a newer design to Marketplace or HACS", () => {
     expect(friendlyError({ code: "invalid", message: "document.schemaVersion 12 is newer than this integration supports (9)" }))
-      .toBe(NEWER_VERSION_TEXT);
-    expect(friendlyError({ code: "unknown_command", message: "Unknown command." })).toBe(UPDATE_INTEGRATION_TEXT);
+      .toBe(newerVersionText());
+    expect(friendlyError({ code: "unknown_command", message: "Unknown command." })).toBe(updateIntegrationText());
   });
 
   it("reads a command that died with the connection", () => {

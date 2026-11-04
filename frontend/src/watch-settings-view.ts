@@ -110,7 +110,10 @@ import {
   errorCode,
   formValues,
   initialWatch,
+  mayFirstSave,
   mayStart,
+  noRecordWords,
+  waitsForWatchSeed,
   motionAction,
   noRecordStart,
   optionsFor,
@@ -649,6 +652,13 @@ export class WatchSettings implements ReactiveController {
       this.changed();
       return;
     }
+    // A first record of either kind may replace what the watch runs. It asks
+    // first, and a person can always go on.
+    const firsts = [
+      ...(behavior && (this.record?.revision ?? 0) <= 0 ? ["behavior"] : []),
+      ...(style && (this.styleRecord?.revision ?? 0) <= 0 ? [NOTIFICATION_STYLE_KIND] : []),
+    ];
+    if (this.device === "watch" && !mayFirstSave(this.shownOwner, firsts)) return;
     this.saving = true;
     this.note = undefined;
     this.changed();
@@ -1002,7 +1012,7 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="ws-page">
       <div class="ws-top">
         ${options.inHead === true ? nothing : this.renderBar(name, options.narrow === true, elsewhere)}
-        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.onlyStyleIsNew ? styleNotSavedText(this.device) : newDeviceText(this.device)}</span></div>` : nothing}
+        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.newWords?.title ?? newDeviceText(this.device)}</span></div>` : nothing}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
@@ -1235,7 +1245,7 @@ export class WatchSettings implements ReactiveController {
     if (this.behaviorDocument !== undefined) return undefined;
     // While the iPhone's move may still come it waits, and a small link that
     // asks first opens the cards anyway.
-    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${waitForIphoneText(this.shownOwner?.app_version)}</span></div>
+    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${waitForIphoneText(this.shownOwner?.app_version, this.shownOwner?.owner_iphone_moves)}</span></div>
       ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ws-start" ?disabled=${this.saving}
         title="Open the settings on the app's defaults. Nothing is saved until you press Save."
         @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
@@ -1495,7 +1505,7 @@ export class WatchSettings implements ReactiveController {
     // No record and nothing to wait for: the cards open on the defaults.
     // Else the page waits for the iPhone's move, with the same small link.
     if (this.styleDocument === undefined) {
-      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${waitForIphoneText(this.shownOwner?.app_version)}</span></div>
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${waitForIphoneText(this.shownOwner?.app_version, this.shownOwner?.owner_iphone_moves)}</span></div>
         ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ns-start" ?disabled=${this.saving}
           title="Open the notification style on the app's defaults. Nothing is saved until you press Save."
           @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
@@ -1627,6 +1637,18 @@ export class WatchSettings implements ReactiveController {
     return this.isNew && !this.behaviorIsNew && this.styleIsNew;
   }
 
+  /** What the head says in place of "New watch", when that would not be
+   * true: the watch's setup may still come, the watch runs its own settings
+   * or the standard ones, or only the notification style is new. */
+  private get newWords(): { status: string; title: string } | undefined {
+    const owner = this.device === "watch" ? this.shownOwner : undefined;
+    const words = this.behaviorIsNew
+      ? noRecordWords(owner, "behavior")
+      : waitsForWatchSeed(owner) ? noRecordWords(owner, NOTIFICATION_STYLE_KIND) : undefined;
+    if (words !== undefined) return words;
+    return this.onlyStyleIsNew ? { status: STYLE_NOT_SAVED_STATUS, title: styleNotSavedText(this.device) } : undefined;
+  }
+
   /** Whether Save can run (`settingsCanSave`). */
   private get canSave(): boolean {
     return settingsCanSave({
@@ -1672,7 +1694,7 @@ export class WatchSettings implements ReactiveController {
             dirty: changes > 0,
             changes,
             device: this.device,
-            newWords: this.onlyStyleIsNew ? { status: STYLE_NOT_SAVED_STATUS, title: styleNotSavedText(this.device) } : undefined,
+            newWords: this.newWords,
           })}
         ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery(true) : nothing}`
       : changes > 0

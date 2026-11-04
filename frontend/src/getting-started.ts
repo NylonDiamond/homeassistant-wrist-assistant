@@ -10,7 +10,7 @@
 
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { deviceKindOf, setupMoveNeedsUpdate } from "./version.js";
-import { PAIR_CODE_LENGTH, noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
+import { PAIR_CODE_LENGTH, noRecordStart, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 
 /** Wrist Assistant's App Store page, the one the README and the website link. */
 export const APP_STORE_URL = "https://apps.apple.com/us/app/wrist-assistant/id6759152098";
@@ -60,7 +60,8 @@ export interface GettingStarted {
  * The page step is never marked Next while every watch without pages here
  * already has some on the way: its app is older than the setup move
  * (`setupMoveNeedsUpdate`), so its pages still live on the iPhone, or its
- * iPhone may still move them here (`noRecordStart` is `wait`). A long time
+ * iPhone may still move them here (`noRecordStart` is `wait`), or the watch
+ * itself may still send them (`waitsForWatchSeed`). A long time
  * user is not new, and a first page made now would make the move skip
  * theirs. The step itself stays not done.
  */
@@ -73,7 +74,7 @@ export function gettingStarted(
   const watches = settingsWatches(owners);
   const page = pages !== undefined && watches.some((w) => pages.has(w.owner_watch_id));
   const pagesComing = watches.length > 0
-    && watches.every((w) => setupMoveNeedsUpdate(w.app_version) || noRecordStart(w) === "wait");
+    && watches.every((w) => setupMoveNeedsUpdate(w.app_version) || noRecordStart(w) === "wait" || waitsForWatchSeed(w));
   const steps: GettingStartedStep[] = [
     { id: "app", done: devices.length > 0 },
     { id: "pair", done: watches.length > 0 },

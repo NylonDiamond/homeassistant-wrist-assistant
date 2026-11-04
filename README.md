@@ -45,10 +45,8 @@ Home Assistant 2026.11 replaces HACS with Marketplace, which is built in, and no
 
 1. Go to `Settings` -> `Marketplace`. The first time, read and accept its warning.
 2. Search for `Wrist Assistant`.
-3. Install it and restart Home Assistant.
-4. Go to `Settings` -> `Devices & Services`.
-5. Add the `Wrist Assistant` integration.
-6. Open `Wrist Assistant` in the sidebar and choose `Pair a device` on the Home tab.
+3. Install it. Marketplace offers to add the integration by itself, so go through its dialog. If it does not offer that, restart Home Assistant, go to `Settings` -> `Devices & Services`, and add the `Wrist Assistant` integration.
+4. Open `Wrist Assistant` in the sidebar, then on the Devices tab press `Pair`.
 
 ### HACS (Home Assistant before 2026.11)
 
@@ -58,7 +56,7 @@ Home Assistant 2026.11 replaces HACS with Marketplace, which is built in, and no
 4. Install it and restart Home Assistant.
 5. Go to `Settings` -> `Devices & Services`.
 6. Add the `Wrist Assistant` integration.
-7. Open `Wrist Assistant` in the sidebar and choose `Pair a device` on the Home tab.
+7. Open `Wrist Assistant` in the sidebar, then on the Devices tab press `Pair`.
 
 ### Manual
 
@@ -70,7 +68,7 @@ Home Assistant 2026.11 replaces HACS with Marketplace, which is built in, and no
 
 Deleting the integration in `Settings` -> `Devices & Services` keeps everything it stored: device pairings, watch pages and settings, custom complications, HTTP actions, page photos and client certificates. Adding it again picks all of that up, so your watch and iPhone reconnect without pairing again.
 
-To remove a single watch or iPhone for good, open it on the panel's Home tab and choose `Remove device`, or delete its device in Home Assistant. To wipe everything, delete the integration, stop Home Assistant, delete every file and folder whose name starts with `wrist_assistant` in the `.storage` folder of your configuration directory, and start Home Assistant again.
+To remove a single watch or iPhone for good, open it on the panel's Devices tab and choose `Remove device`, or delete its device in Home Assistant. To wipe everything, delete the integration, stop Home Assistant, delete every file and folder whose name starts with `wrist_assistant` in the `.storage` folder of your configuration directory, and start Home Assistant again.
 
 ## The Wrist Assistant panel
 
@@ -78,7 +76,7 @@ The integration adds a `Wrist Assistant` page to the Home Assistant sidebar. Eve
 
 The panel has three tabs:
 
-- **Home** lists your paired watches and iPhones. `Pair a device` adds one. Open a device to see how it is doing, or to remove it with `Remove device`.
+- **Devices** lists your paired watches and iPhones. `Pair` adds one. Open a device to see how it is doing, or to remove it with `Remove device`.
 - **Watch app** sets up one watch at a time. Pick the watch, then: `Pages` (the screens you swipe between and their tiles), `Menus` (the Anywhere menu, the Entity quick menu and the page switcher), `Status pages`, `Rooms` (switching pages by room, and point control), `Voice`, `HTTP actions`, `Cameras` (how each camera is framed in alerts) and `Settings`. Notification style and delivery are under `Settings`, `Notifications`.
 - **Complications** builds complications for the watch face, and widgets for the iPhone Lock Screen, Home Screen and Control Center. The watch's old Control Center lists live here now: each tile is a complication control.
 
@@ -90,7 +88,7 @@ Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPh
 
 ### Pairing a device
 
-On the Home tab, choose `Pair a device`. The same card is also in the Watch app, under `Settings`, `Pairing and security`. It pairs two ways:
+On the Devices tab, press `Pair`. The same card is also in the Watch app, under `Settings`, `Pairing and security`. It pairs two ways:
 
 1. **An iPhone: `Show a QR code`.** On the iPhone, open Wrist Assistant, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code.
 2. **A watch, or an iPhone, with a code: `Type a code`.** On the device, choose `Pair with Home Assistant`. It shows a six character code. Type it in the panel and choose `Look up`, check that the device named is yours, then press `Pair`. Codes last 10 minutes.
@@ -206,7 +204,7 @@ data:
 
 ## Security and privacy
 
-**Pairing.** When the iPhone app pairs a watch, the integration stores a per-device secret and binds it to the Home Assistant user who was signed in. A device paired by code works the same way: the device makes its own secret, and the integration binds it to the Home Assistant user who typed the code in the panel (or, for an administrator, the person picked under `Whose watch is this?`). Nothing is paired until someone signed in to Home Assistant confirms the code, a code lasts 10 minutes, and the panel warns when the request came from outside your network. Every call from a paired device then runs as its user, the same way the Home Assistant Companion app works. A watch paired by a non-admin cannot call admin-only services (restart, add-on control, and so on). Only the user who paired a device, or an admin, can pair it again. If a phone or watch is lost, open it on the panel's Home tab and choose `Remove device`; disabling the user in Home Assistant also cuts off every device they paired.
+**Pairing.** When the iPhone app pairs a watch, the integration stores a per-device secret and binds it to the Home Assistant user who was signed in. A device paired by code works the same way: the device makes its own secret, and the integration binds it to the Home Assistant user who typed the code in the panel (or, for an administrator, the person picked under `Whose watch is this?`). Nothing is paired until someone signed in to Home Assistant confirms the code, a code lasts 10 minutes, and the panel warns when the request came from outside your network. Every call from a paired device then runs as its user, the same way the Home Assistant Companion app works. A watch paired by a non-admin cannot call admin-only services (restart, add-on control, and so on). Only the user who paired a device, or an admin, can pair it again. If a phone or watch is lost, open it on the panel's Devices tab and choose `Remove device`; disabling the user in Home Assistant also cuts off every device they paired.
 
 **Push relay.** Apple push notifications must be signed with the app's APNs key, which cannot ship inside a public integration. Notifications are therefore sent through a relay at `push.wrist-assistant.com`, run by the developer, which signs them and hands them to Apple. The relay receives the notification title, body, action buttons and data, the device push token, and the watch id. It keeps nothing after Apple accepts the message. Camera images in notifications are never sent to the relay: the push carries a short-lived link back to your own Home Assistant, and the device fetches the image from there.
 

@@ -97,7 +97,7 @@ import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { renderMoveWaitOut, renderMoveWaitOuts } from "../move-wait-out.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, offersStartFresh, settingsWatches, waitForIphoneText, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayFirstSave, mayStart, noRecordStart, noRecordWords, offersStartFresh, settingsWatches, waitForIphoneText, watchName } from "../watch-settings.js";
 import {
   chooseStartFresh,
   firstSaveNote,
@@ -868,6 +868,7 @@ export class WaVoiceEditor extends LitElement {
     // A first save over revision 0 that Home Assistant refuses as
     // `no_record` means the watch is not paired (`firstSaveNote`).
     const first = draft.revision <= 0;
+    if (first && !mayFirstSave(this.shownWatch(), ["voice"])) return;
     // The linked watches Home Assistant could not bring up to date.
     let failures: WatchConfigLinkFailure[] = [];
     const running = saveWatchVoiceDraft(draft, {
@@ -1325,7 +1326,7 @@ export class WaVoiceEditor extends LitElement {
         @click=${() => (this.onBack ? this.onBack() : navigateWatchVoice(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <span class="spacer"></span>
       ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
-      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: this.newWatch, dirty, saved: renderConfigSaved(this.record) }) : nothing}
+      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: this.newWatch, dirty, saved: renderConfigSaved(this.record), newWords: noRecordWords(this.shownWatch(), "voice") }) : nothing}
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
@@ -1526,7 +1527,7 @@ export class WaVoiceEditor extends LitElement {
       // iPhone's move may still come, so it waits, and "Start fresh instead"
       // is a small link that asks first.
       const shown = this.shownWatch();
-      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${waitForIphoneText(shown?.app_version)}</span>
+      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${waitForIphoneText(shown?.app_version, shown?.owner_iphone_moves)}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
         ${renderMoveWaitOut(this.hass, shown)}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when voice settings are here again.</span>

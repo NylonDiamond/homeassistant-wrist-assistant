@@ -697,8 +697,8 @@ export const ROOMS_WAIT_TEXT = roomsWaitText(undefined);
 
 /** `ROOMS_WAIT_TEXT` for a watch reporting `appVersion`, in the wait words
  * for its version (`waitForIphoneText`). */
-export function roomsWaitText(appVersion: string | null | undefined): string {
-  return `Rooms are part of the watch's settings. ${waitForIphoneText(appVersion)}`;
+export function roomsWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+  return `Rooms are part of the watch's settings. ${waitForIphoneText(appVersion, phoneMoves)}`;
 }
 export const ROOMS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
 export const ZONES_UNREADABLE_TEXT = "The point control targets stored for this watch cannot be read, so they are shown as none and left as they are. Update the integration to change them here.";

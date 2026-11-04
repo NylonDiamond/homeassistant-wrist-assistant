@@ -233,7 +233,8 @@ import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
 import { documentNamesPartMdi } from "./part-icons.js";
-import { NEWER_VERSION_TEXT, NOT_READY_TEXT, friendlyError, rawErrorText } from "./friendly-error.js";
+import { NOT_READY_TEXT, friendlyError, newerVersionText, rawErrorText } from "./friendly-error.js";
+import { noteHaVersion } from "./integration-store.js";
 import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from "./revision-words.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
@@ -440,7 +441,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
-import { MOVE_WAIT_ENDED_EVENT, noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
+import { MOVE_WAIT_ENDED_EVENT, noRecordStart, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
@@ -6704,6 +6705,8 @@ export class WristAssistantPanel extends LitElement {
   private lastInspectKey?: string;
 
   protected override willUpdate(changed: PropertyValues) {
+    // The update lines name the place this Home Assistant updates from.
+    if (changed.has("hass")) noteHaVersion(this.hass?.config?.version);
     this.settleCompFocus();
     // The first draw lands where the panel should open: a reload that is
     // about to reopen a complication, or a share link, goes to the
@@ -7719,10 +7722,10 @@ export class WristAssistantPanel extends LitElement {
       // The version numbers and key names mean nothing to most people, so
       // they are the banner's tooltip (`readOnlyDetail`), not its line.
       if (schema > this.maxSchemaVersion) {
-        this.readOnlyReason = NEWER_VERSION_TEXT;
+        this.readOnlyReason = newerVersionText();
         this.readOnlyDetail = `This design is schema v${schema}. This integration reads up to v${this.maxSchemaVersion}.`;
       } else if (unknown.length > 0) {
-        this.readOnlyReason = `${NEWER_VERSION_TEXT} Saving here would drop the parts this panel does not know.`;
+        this.readOnlyReason = `${newerVersionText()} Saving here would drop the parts this panel does not know.`;
         this.readOnlyDetail = `Fields this panel does not know: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}.`;
       } else {
         // A document that still draws several shapes on a device whose app
@@ -20921,6 +20924,8 @@ export class WristAssistantPanel extends LitElement {
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
       appVersion: this.ownerOf(ownerId)?.app_version,
+      phoneMoves: this.ownerOf(ownerId)?.owner_iphone_moves === true,
+      seedWaits: waitsForWatchSeed(this.ownerOf(ownerId)),
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
       // Its buttons promise add, order and hide, which only the column has.
       onChange: (kind) => { noteBoardFocus(kind, ownerId); this.goTo(listFocusPath(listOf(kind), ownerId)); },

@@ -21,6 +21,7 @@ import { inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
 import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
 import { waitingEmptyText } from "./watch-pages/devices.js";
 import { renderMoveWaitOut } from "./move-wait-out.js";
+import { SEED_PENDING_ASK_TEXT, WAITING_FOR_WATCH_TEXT } from "./watch-settings.js";
 import { picksIO } from "./watch-pages/all-pages-io.js";
 import { keptWatchPagesDraft } from "./watch-pages/kept.js";
 import { type UntickAsk, askUntick, tickItem } from "./watch-pages/library-editing-io.js";
@@ -58,6 +59,10 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) deviceName = "";
   /** The watch's iPhone may still move its setup here (`LineupDraw`). */
   @property({ attribute: false }) waitsForIphone = false;
+  /** That iPhone already runs an app that moves (`LineupDraw`). */
+  @property({ attribute: false }) phoneMoves = false;
+  /** The watch's own setup may still come here (`waitsForWatchSeed`). */
+  @property({ attribute: false }) seedWaits = false;
   /** The app version the device reported (`LineupDraw`). */
   @property({ attribute: false }) appVersion?: string | null;
 
@@ -117,7 +122,7 @@ export class WaHomeLineup extends LitElement {
       return html`<p class="hl-empty">${state === "failed" ? (this.lib.store?.readError ?? "Could not read the library.") : state === "unsupported" ? "This integration has no library to read." : "Reading the pages…"}</p>`;
     }
     const waits = this.waitsForIphone && (["pages", "status_pages", "menus"] as const).some((k) => !holdsRecord(library, this.ownerId, k));
-    return html`${waits ? renderMoveWaitOut(this.hassNow, { owner_watch_id: this.ownerId, device_name: this.deviceName, app_version: this.appVersion ?? null }) : nothing}<div class="hl-groups">${lineupGroups(library, this.ownerId, this.kind, {
+    return html`${waits ? renderMoveWaitOut(this.hassNow, { owner_watch_id: this.ownerId, device_name: this.deviceName, app_version: this.appVersion ?? null, owner_iphone_moves: this.phoneMoves }) : nothing}${this.seedWaits && (["pages", "status_pages", "menus"] as const).some((k) => !holdsRecord(library, this.ownerId, k)) ? html`<p class="hl-empty" role="status">${WAITING_FOR_WATCH_TEXT}</p>` : nothing}<div class="hl-groups">${lineupGroups(library, this.ownerId, this.kind, {
       ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
@@ -130,6 +135,7 @@ export class WaHomeLineup extends LitElement {
       pageWidth: this.pageW,
       onMenuPictureReady: () => this.requestUpdate(),
       waitsForIphone: this.waitsForIphone,
+      phoneMoves: this.phoneMoves,
       ...(this.appVersion === undefined ? {} : { appVersion: this.appVersion }),
       arrange: {
         order: (kind) => (this.drag?.kind === kind && this.drag.order !== undefined ? this.drag.order
@@ -346,6 +352,8 @@ export class WaHomeLineup extends LitElement {
   private async putBack(kind: OrderedKind, id: string, next: string | null): Promise<void> {
     const store = this.lib.store;
     if (store === undefined || this.busy !== undefined) return;
+    const read = this.lib.library;
+    if (this.seedWaits && read !== undefined && !holdsRecord(read, this.ownerId, kind) && !window.confirm(SEED_PENDING_ASK_TEXT)) return;
     this.busy = id;
     this.said = undefined;
     try {
@@ -436,6 +444,8 @@ export interface LineupDraw {
    * `wait`): a kind Home Assistant holds no record of says it waits for
    * that iPhone rather than that there is none. */
   waitsForIphone?: boolean;
+  /** That iPhone already runs an app that moves, for the wait line. */
+  phoneMoves?: boolean;
   /** The app version the device reported, which decides whether its page
    * pictures draw One Look (`previewOneLook`). */
   appVersion?: string | null;
@@ -498,7 +508,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
   const moving = (k: LibraryKind): boolean => draw.waitsForIphone === true && !holdsRecord(library, ownerId, k);
   /** A kind's empty line: its iPhone's move still to come, or none yet. */
   const empty = (k: LibraryKind, what: string, none: string): string =>
-    moving(k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion) : none;
+    moving(k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion, draw.phoneMoves) : none;
   /** A kind's button in its empty box: its board, on this device. */
   const add = (k: LibraryKind, label: string, title: string): Pick<LineupGroup, "add"> =>
     moving(k) ? {} : { add: { label, title, onClick: () => draw.onChange(k) } };

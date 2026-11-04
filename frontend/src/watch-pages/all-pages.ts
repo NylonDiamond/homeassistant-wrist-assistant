@@ -113,10 +113,10 @@ import {
 } from "./all-pages-bulk.js";
 import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-picks.js";
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
-import { renderLibraryWaitOuts } from "../move-wait-out.js";
+import { mayAddFirst, mayAddFirstToAny, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { keptWatchPagesDraft } from "./kept.js";
-import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
+import { type LinkDevice, type PagesRecordFacts, allPhonesMove, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
@@ -621,6 +621,7 @@ export class WaAllPages extends LitElement {
     }
     const document = newPageDocument(form, ctx, newId());
     if (document === undefined) return;
+    if (!mayAddFirstToAny(this.owners, this.lib.library, form.owners, "pages")) return;
     const { note: _dropped, ...asked } = form;
     this.pageForm = { ...asked, busy: true };
     const made = await store.createItem("pages", document);
@@ -680,7 +681,11 @@ export class WaAllPages extends LitElement {
     const ctx = this.pageSheetContext();
     return renderNewPageSheet(form, {
       ...ctx, devices,
-      locked: (ownerId) => (waiting.has(ownerId) ? devicesWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion) : undefined),
+      locked: (ownerId) => {
+        if (!waiting.has(ownerId)) return undefined;
+        const device = devices.find((d) => d.ownerId === ownerId);
+        return devicesWaitText(device?.appVersion, device?.phoneMoves);
+      },
       waitOuts: library === undefined ? nothing : renderLibraryWaitOuts(this.hassNow, this.owners, library, "pages"),
     }, {
       onName: (name) => set({ ...form, name }),
@@ -760,6 +765,7 @@ export class WaAllPages extends LitElement {
   private async tick(entry: LibraryItem, ownerId: string, on: boolean): Promise<void> {
     const store = this.lib.store;
     if (store === undefined) return;
+    if (on && !mayAddFirst(this.owners, this.lib.library, ownerId, entry.kind)) return;
     this.dropTickNote(itemKey(entry));
     this.untickAsk = undefined;
     const names = { item: entry.name, device: this.devices.find((d) => d.ownerId === ownerId)?.name ?? "the device" };
@@ -905,7 +911,7 @@ export class WaAllPages extends LitElement {
       const library = this.lib.library;
       if (device !== undefined) {
         return library !== undefined && this.waiting(library).has(device.ownerId)
-          ? waitingEmptyText(many, device.name, device.appVersion)
+          ? waitingEmptyText(many, device.name, device.appVersion, device.phoneMoves)
           : `No ${many} on ${device.name} yet.`;
       }
       if (shelfPicked(this.kind)) return `Every ${cardNoun(this.kind)} is on a device.`;
@@ -1161,7 +1167,7 @@ export class WaAllPages extends LitElement {
     const waiting = waitingIds.size > 0;
     return html`<div class="ap-empty-lib">
       <p>${emptyLibraryText(this.kind, may)}</p>
-      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds))}</p>` : nothing}
+      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds), allPhonesMove(devices, waitingIds))}</p>` : nothing}
       ${may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
         ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing}
     </div>`;
@@ -1276,7 +1282,10 @@ export class WaAllPages extends LitElement {
       locked: (ownerId) => {
         const on = hasItem(library, ownerId, entry.kind, entry.id);
         if (on && dirtyHere(ownerId, entry.kind)) return picksDirtyText(entry.kind, devices.find((d) => d.ownerId === ownerId)?.name ?? "This device");
-        if (!on && waiting.has(ownerId)) return devicesWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion);
+        if (!on && waiting.has(ownerId)) {
+          const device = devices.find((d) => d.ownerId === ownerId);
+          return devicesWaitText(device?.appVersion, device?.phoneMoves);
+        }
         return undefined;
       },
     };
@@ -1356,7 +1365,7 @@ export class WaAllPages extends LitElement {
     const waiting = this.waiting(library);
     return devices.map((device) => ({
       device, color: this.colorOf(device.ownerId), count: countFor(library, device.ownerId, this.kind),
-      ...(waiting.has(device.ownerId) ? { blocked: boardColumnBlock(device.appVersion, devicesWaitText(device.appVersion)) } : {}),
+      ...(waiting.has(device.ownerId) ? { blocked: boardColumnBlock(device.appVersion, devicesWaitText(device.appVersion, device.phoneMoves)) } : {}),
     }));
   }
 
@@ -1566,7 +1575,7 @@ export class WaAllPages extends LitElement {
         {
           key: "on", title: onDeviceTitle(device), count: total, hint: orderHint(device), rows,
           empty: waiting.has(device.ownerId) && this.search.trim() === ""
-            ? waitingEmptyText(many, device.name, device.appVersion)
+            ? waitingEmptyText(many, device.name, device.appVersion, device.phoneMoves)
             : noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake),
         },
         // A home with nothing in it has no rest to list.

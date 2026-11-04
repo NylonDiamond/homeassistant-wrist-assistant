@@ -157,10 +157,16 @@ export function httpActionsSavedBy(record: Pick<HttpActionsRecord, "updated_by">
   return owner === undefined ? "handed over by a phone" : `handed over by ${owner.paired_iphone_name ?? owner.device_name ?? "a phone"}`;
 }
 
-/** Whether the home has a phone that could hand its actions over: an iPhone
- * of its own, or a watch paired to one. */
-export function homeHasPhone(owners: readonly OwnerSummary[]): boolean {
-  return owners.some((o) => !o.is_orphan && (deviceKindOf(o) === "iphone" || (o.paired_iphone_name ?? "") !== ""));
+/** Whether a phone of the home may still hand actions over once it updates:
+ * an iPhone too old for the setup move, or a watch still waiting on an iPhone
+ * that has not run an app that moves. An iPhone already on one has handed over
+ * what it held, the moment it first opened, so a fresh home says nothing. A
+ * panel cannot read what a phone holds, so that is as near as it gets. */
+export function homeOwesHttpActions(owners: readonly OwnerSummary[]): boolean {
+  return owners.some((o) => !o.is_orphan && (
+    (deviceKindOf(o) === "iphone" && setupMoveNeedsUpdate(o.app_version))
+    || (deviceKindOf(o) === "watch" && o.has_iphone === true && o.owner_iphone_moves !== true)
+  ));
 }
 
 /** Whether a device of the home is too old for the setup move
@@ -675,7 +681,7 @@ export class WaHttpActionsEditor extends LitElement {
       return html`<div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
         <span>An HTTP action is a web request a watch asks Home Assistant to send. ${HTTP_ACTIONS_SHARED_TEXT}</span>
         <span class="ha-start"><button class="pe-btn pe-primary" @click=${() => this.startLibrary()}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button></span>
-        ${homeHasPhone(this.allOwners) ? html`<span class="pe-muted">${httpActionsPhoneText(homeNeedsUpdate(this.allOwners))}</span>` : nothing}
+        ${homeOwesHttpActions(this.allOwners) ? html`<span class="pe-muted">${httpActionsPhoneText(homeNeedsUpdate(this.allOwners))}</span>` : nothing}
       </div></div>`;
     }
     const certs = httpActionList(draft.document).filter((a) => a.presentsClientCertificate === true).length;

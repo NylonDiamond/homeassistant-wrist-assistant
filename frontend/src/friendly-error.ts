@@ -13,15 +13,22 @@
 // Modelled on `pairErrorText` (watch-settings.ts) and `galleryErrorMessage`
 // (gallery.ts).
 
+import { integrationStoreName } from "./integration-store.js";
+
 /** The words for an integration that is still loading, the most common
  * refusal right after Home Assistant restarts. */
 export const NOT_READY_TEXT = "Wrist Assistant is still starting. Try again in a moment.";
-/** An integration older than this panel, which does not know a command. */
-export const UPDATE_INTEGRATION_TEXT = "Update the Wrist Assistant integration in Marketplace or HACS, then reload this page.";
+/** An integration older than this panel, which does not know a command. The
+ * place is the one this Home Assistant has (`integrationStoreName`). */
+export function updateIntegrationText(): string {
+  return `Update the Wrist Assistant integration in ${integrationStoreName()}, then reload this page.`;
+}
 /** A design written by a newer panel than this one: a schema version past
  * what it reads, or keys it does not know. The version numbers and key names
  * go in a tooltip or a fold, never in this line. */
-export const NEWER_VERSION_TEXT = "Made with a newer Wrist Assistant. Update the integration in Marketplace or HACS, then reload this page.";
+export function newerVersionText(): string {
+  return `Made with a newer Wrist Assistant. Update the integration in ${integrationStoreName()}, then reload this page.`;
+}
 
 /** The code and message of an error, wherever the socket put them. A command
  * that dies with the connection rejects with the whole result, so the error
@@ -52,7 +59,7 @@ export function friendlyError(err: unknown): string {
   if (lower === "integration not ready") return NOT_READY_TEXT;
   if (lower === "not a device paired to this user") return "This device belongs to someone else.";
   if (lower === "connection lost" || code === "3") return "Lost the connection to Home Assistant. Try again once it is back.";
-  if (code === "unknown_command") return UPDATE_INTEGRATION_TEXT;
+  if (code === "unknown_command") return updateIntegrationText();
   if (code === "timeout") return "Home Assistant took too long to answer. Try again.";
 
   // Complications and their history.
@@ -68,7 +75,7 @@ export function friendlyError(err: unknown): string {
   if (full) return `This device already has ${full[1]} complications, the most it can hold. Remove one first.`;
   const held = /^slot \d+ already holds "(.*)" for the .* shape on this device; pick another slot$/.exec(m);
   if (held) return `"${held[1]}" is already in that slot. Pick another slot.`;
-  if (/^document\.schemaVersion \d+ is newer than this integration supports/.test(m)) return NEWER_VERSION_TEXT;
+  if (/^document\.schemaVersion \d+ is newer than this integration supports/.test(m)) return newerVersionText();
 
   // Devices.
   if (/^no registered device with id /.test(lower) || /is not a registered device; pair it first/.test(lower)) {

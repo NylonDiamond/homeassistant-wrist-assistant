@@ -19,7 +19,7 @@
 
 import type { HassLike, WatchConfigLinkFailure, WatchConfigTemplateBudget } from "../ha-api.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
+import { AWAITING_MOVE_TEXT } from "../watch-settings.js";
 
 const LIB = "wrist_assistant/library";
 
@@ -317,7 +317,7 @@ export function libraryErrorText(err: unknown): string {
     case "in_use": return "A device still uses this menu. Pick another menu for it first.";
     case "conflict": return "Someone else changed this in the meantime. It was read again.";
     case "no_record": return "No device uses this menu yet, so it cannot start this device's menus.";
-    case "awaiting_move": return `${WAIT_FOR_IPHONE_TEXT} Try again after that.`;
+    case "awaiting_move": return AWAITING_MOVE_TEXT;
     case "unauthorized": return "Your Home Assistant user is not allowed to change that device.";
     case "unavailable": return "Home Assistant could not read the library. Try again in a moment.";
     default: return message;

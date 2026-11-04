@@ -24,7 +24,7 @@ import type { WatchConfigRecord, WatchUnitPlace } from "../ha-api.js";
 import { type LinkDevice, type PageDevicePlace, joinWords } from "../watch-pages/devices.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { WAIT_FOR_IPHONE_TEXT, waitForIphoneText } from "../watch-settings.js";
+import { AWAITING_MOVE_TEXT, waitForIphoneText } from "../watch-settings.js";
 import { type VoiceDocument, asWatchVoiceDocument, watchVoiceDefaults, watchVoicePhrases, withVoiceKey, withoutVoiceKey } from "./model.js";
 
 /** The top-level key Home Assistant writes the link ids under. */
@@ -85,8 +85,8 @@ export const VOICE_DEVICES_WAIT_TEXT = voiceDevicesWaitText(undefined);
 
 /** `VOICE_DEVICES_WAIT_TEXT` for a watch reporting `appVersion`, in the
  * wait words for its version (`waitForIphoneText`). */
-export function voiceDevicesWaitText(appVersion: string | null | undefined): string {
-  return `${waitForIphoneText(appVersion)} Phrases can go on this watch after that.`;
+export function voiceDevicesWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+  return `${waitForIphoneText(appVersion, phoneMoves)} Phrases can go on this watch after that.`;
 }
 export const VOICE_DEVICES_WAIT_TAG = "waiting for iPhone";
 
@@ -120,7 +120,7 @@ export function voiceDevicePlaces(
     const isHere = device.ownerId === here;
     const on = holders.has(device.ownerId);
     if (isHere) return { device, on: true, here: true, stuck: VOICE_DEVICES_HERE_TEXT };
-    if (!on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: voiceDevicesWaitText(device.appVersion), tag: VOICE_DEVICES_WAIT_TAG };
+    if (!on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: voiceDevicesWaitText(device.appVersion, device.phoneMoves), tag: VOICE_DEVICES_WAIT_TAG };
     return { device, on, here: false };
   });
 }
@@ -214,7 +214,7 @@ export function voiceLinkErrorText(err: unknown): string {
     case "not_found": return "This watch's voice settings are not saved yet. Save first, then try again.";
     case "unit_taken": return "That watch has phrases of its own.";
     case "not_for_iphone": return "An iPhone keeps no phrases.";
-    case "awaiting_move": return `${WAIT_FOR_IPHONE_TEXT} Try again after that.`;
+    case "awaiting_move": return AWAITING_MOVE_TEXT;
     case "unknown_command": return "This version of the integration cannot share phrases between watches. Update it first.";
     default: return message;
   }

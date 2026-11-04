@@ -13,10 +13,10 @@ import { type HassLike, type OwnerSummary, endMoveWait } from "./ha-api.js";
 import type { LibraryKind } from "./library/client.js";
 import { type Library, holdsRecord } from "./library/model.js";
 import { type PagesRecordFacts, awaitingMove } from "./watch-pages/devices.js";
-import { MOVE_WAIT_ENDED_EVENT, NO_IPHONE_QUESTION, USE_WATCH_BUTTON, USE_WATCH_CONFIRM_TEXT, offersUseWatch, waitingWatchText } from "./watch-settings.js";
+import { MOVE_WAIT_ENDED_EVENT, USE_WATCH_BUTTON, mayFirstSave, offersUseWatch, useWatchConfirmText, useWatchQuestion, waitingForNamedWatchText, waitingWatchText, waitsForWatchSeed } from "./watch-settings.js";
 
 /** What the way out needs of the watch that waits. */
-export type MoveWaitOwner = Pick<OwnerSummary, "owner_watch_id" | "app_version" | "device_name">;
+export type MoveWaitOwner = Pick<OwnerSummary, "owner_watch_id" | "app_version" | "device_name" | "owner_iphone_moves">;
 
 export class WaMoveWaitOut extends LitElement {
   static override properties = {
@@ -56,7 +56,7 @@ export class WaMoveWaitOut extends LitElement {
     const hass = this.hass;
     const owner = this.owner;
     if (hass === undefined || owner === undefined || this.busy) return;
-    if (!window.confirm(USE_WATCH_CONFIRM_TEXT)) return;
+    if (!window.confirm(useWatchConfirmText(owner.owner_iphone_moves))) return;
     this.busy = true;
     this.failed = undefined;
     try {
@@ -71,7 +71,7 @@ export class WaMoveWaitOut extends LitElement {
 
   protected override render(): TemplateResult | typeof nothing {
     if (!offersUseWatch(this.owner)) return nothing;
-    return html`${this.named && this.owner !== undefined ? html`${waitingWatchText(this.owner.device_name ?? this.owner.owner_watch_id)} ` : nothing}${NO_IPHONE_QUESTION}
+    return html`${this.named && this.owner !== undefined ? html`${waitingWatchText(this.owner.device_name ?? this.owner.owner_watch_id)} ` : nothing}${useWatchQuestion(this.owner?.owner_iphone_moves)}
       <button type="button" ?disabled=${this.busy} @click=${() => void this.use()}>${USE_WATCH_BUTTON}</button>
       ${this.failed === undefined ? nothing : html`<div class="failed" role="alert">${this.failed}</div>`}`;
   }
@@ -106,5 +106,43 @@ export function renderLibraryWaitOuts(
 ): TemplateResult | typeof nothing {
   const facts = new Map<string, PagesRecordFacts>();
   for (const o of owners) facts.set(o.owner_watch_id, { held: holdsRecord(library, o.owner_watch_id, kind), free: false });
-  return renderMoveWaitOuts(hass, owners, awaitingMove(owners, facts));
+  const outs = renderMoveWaitOuts(hass, owners, awaitingMove(owners, facts));
+  const seeds = watchesToSendFirst(owners, library, kind);
+  if (seeds.length === 0) return outs;
+  return html`${outs}${seeds.map((o) => html`<p class="seed-wait" role="status" style="margin:8px 0;font-size:13px;line-height:1.4;color:var(--wa-muted)">${waitingForNamedWatchText(o.device_name ?? o.owner_watch_id)}</p>`)}`;
+}
+
+/** The watches whose own setup may still bring a first record of `kind`: the
+ * wait for their iPhone has ended, they have not polled since, and Home
+ * Assistant holds none (`waitsForWatchSeed`). */
+export function watchesToSendFirst(owners: readonly OwnerSummary[], library: Library, kind: LibraryKind): OwnerSummary[] {
+  return owners.filter((o) => waitsForWatchSeed(o) && !holdsRecord(library, o.owner_watch_id, kind));
+}
+
+/** Whether something may go on these devices, asking first when it would make
+ * a first record before a watch sent its setup. Asked once, however many
+ * watches it covers. A person can always go on. Tests pass their own `ask`. */
+export function mayAddFirstToAny(
+  owners: readonly OwnerSummary[],
+  library: Library | undefined,
+  ownerIds: readonly string[],
+  kind: LibraryKind,
+  ask?: (text: string) => boolean,
+): boolean {
+  if (library === undefined) return true;
+  const up = (id: string) => id.toUpperCase();
+  const ids = new Set(ownerIds.map(up));
+  const first = watchesToSendFirst(owners, library, kind).find((o) => ids.has(up(o.owner_watch_id)));
+  return first === undefined || mayFirstSave(first, [kind], ask);
+}
+
+/** `mayAddFirstToAny` for one device. */
+export function mayAddFirst(
+  owners: readonly OwnerSummary[],
+  library: Library | undefined,
+  ownerId: string,
+  kind: LibraryKind,
+  ask?: (text: string) => boolean,
+): boolean {
+  return mayAddFirstToAny(owners, library, [ownerId], kind, ask);
 }

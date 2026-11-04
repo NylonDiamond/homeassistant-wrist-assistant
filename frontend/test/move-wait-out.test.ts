@@ -6,15 +6,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { newerVersionText, updateIntegrationText } from "../src/friendly-error.js";
 import { type HassLike, endMoveWait } from "../src/ha-api.js";
+import { integrationStoreName, noteHaVersion } from "../src/integration-store.js";
 import {
   NO_IPHONE_QUESTION,
   USE_WATCH_BUTTON,
   USE_WATCH_CONFIRM_TEXT,
   noRecordStart,
   offersUseWatch,
+  pagesUnreadableText,
   waitingWatchText,
 } from "../src/watch-settings.js";
 import { SETUP_MOVE_PUBLIC_VERSION } from "../src/version.js";
@@ -69,9 +72,33 @@ describe("the way out of the wait", () => {
 });
 
 describe("the words about updating the integration", () => {
-  it("name Marketplace in every string the panel shows", async () => {
-    const { UPDATE_INTEGRATION_TEXT, NEWER_VERSION_TEXT } = await import("../src/friendly-error.js");
-    expect(UPDATE_INTEGRATION_TEXT).toContain("Marketplace or HACS");
-    expect(NEWER_VERSION_TEXT).toContain("Marketplace or HACS");
+  afterEach(() => noteHaVersion(undefined));
+
+  it.each([
+    ["2026.11.0", "Marketplace"],
+    ["2026.11.0b4", "Marketplace"],
+    ["2026.12.1", "Marketplace"],
+    ["2027.1.0", "Marketplace"],
+    ["2026.10.3", "HACS"],
+    ["2025.12.0", "HACS"],
+  ])("on Home Assistant %s name %s", (version, store) => {
+    expect(integrationStoreName(version)).toBe(store);
+    noteHaVersion(version);
+    for (const line of [updateIntegrationText(), newerVersionText(), pagesUnreadableText("watch")]) {
+      expect(line).toContain(`in ${store},`);
+      expect(line).not.toContain(store === "HACS" ? "Marketplace" : "HACS");
+    }
+  });
+
+  it("name both until the version is known, as a guess could name what the box lacks", () => {
+    expect(integrationStoreName(undefined)).toBe("Marketplace or HACS");
+    expect(integrationStoreName("dev")).toBe("Marketplace or HACS");
+    expect(updateIntegrationText()).toContain("Marketplace or HACS");
+    expect(newerVersionText()).toContain("Marketplace or HACS");
+  });
+
+  it("are told the version by the panel as hass arrives", () => {
+    const panel = readFileSync(join(SRC, "panel.ts"), "utf8");
+    expect(panel).toContain('if (changed.has("hass")) noteHaVersion(this.hass?.config?.version);');
   });
 });

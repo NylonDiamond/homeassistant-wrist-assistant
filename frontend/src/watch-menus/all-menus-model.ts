@@ -18,7 +18,7 @@
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
 import { matchesSearch } from "../watch-pages/all-pages-model.js";
-import { type LinkDevice, anyNeedsUpdate, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
+import { type LinkDevice, allPhonesMove, anyNeedsUpdate, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
 import { waitForIphoneText } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "./model.js";
@@ -57,8 +57,8 @@ export const MENUS_WAIT_TEXT = menusWaitText(undefined);
 
 /** `MENUS_WAIT_TEXT` for a device reporting `appVersion`, in the wait words
  * for its version (`waitForIphoneText`). */
-export function menusWaitText(appVersion: string | null | undefined): string {
-  return `${waitForIphoneText(appVersion)} Its menus can change after that.`;
+export function menusWaitText(appVersion: string | null | undefined, phoneMoves?: boolean | null): string {
+  return `${waitForIphoneText(appVersion, phoneMoves)} Its menus can change after that.`;
 }
 
 /** A device whose menu editor holds unsaved edits: moving it to another
@@ -149,14 +149,15 @@ export function menusEmptyText(devices: readonly LinkDevice[], search: string, w
   if (search.trim() !== "") return "No menu or device has that name.";
   const any = typeof waiting === "boolean" ? waiting : waiting.size > 0;
   const needsUpdate = typeof waiting !== "boolean" && anyNeedsUpdate(devices, waiting);
-  return any ? `None yet. ${waitingLibraryText("menus", needsUpdate)}` : "None yet.";
+  const phonesMove = typeof waiting !== "boolean" && allPhonesMove(devices, waiting);
+  return any ? `None yet. ${waitingLibraryText("menus", needsUpdate, phonesMove)}` : "None yet.";
 }
 
 /** What a focused device says while it uses no menu: that its iPhone's
  * move is still to come when it waits for one, else that it uses none. */
 export function noMenuText(device: LinkDevice, search: string, waiting: boolean): string {
   if (search.trim() !== "") return `No menu ${device.name} uses has that name.`;
-  return waiting ? waitingEmptyText("menus", device.name, device.appVersion) : `${device.name} uses no menu yet.`;
+  return waiting ? waitingEmptyText("menus", device.name, device.appVersion, device.phoneMoves) : `${device.name} uses no menu yet.`;
 }
 
 /** The Duplicate button's tooltip on a focused device's shared menu. */

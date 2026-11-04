@@ -35,6 +35,10 @@ export interface HomeLineupInput {
   /** The watch's iPhone may still move its setup here: an empty kind says
    * it waits for that iPhone. */
   waitsForIphone: boolean;
+  /** That iPhone already runs an app that moves, for the wait lines. */
+  phoneMoves: boolean;
+  /** The watch's own setup may still come here (`waitsForWatchSeed`). */
+  seedWaits: boolean;
   icons: IconProvider;
   iconsTick: number;
   onEdit: (kind: LibraryKind, id: string) => void;
@@ -48,5 +52,5 @@ export function renderHomeLineup(input: HomeLineupInput): TemplateResult {
   if (!ready && !loadFailed) void loadLineup().then(input.onLoaded, input.onLoaded);
   if (!ready) return html`<p class="hl-empty">${loadFailed ? "This part of the page did not load. Reload the page to try again." : "Loading…"}</p>`;
   return html`<wa-home-lineup .hass=${input.hass} .ownerId=${input.ownerId} .deviceName=${input.deviceName} .kind=${input.kind} .phones=${input.phones}
-    .waitsForIphone=${input.waitsForIphone} .appVersion=${input.appVersion} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
+    .waitsForIphone=${input.waitsForIphone} .phoneMoves=${input.phoneMoves} .seedWaits=${input.seedWaits} .appVersion=${input.appVersion} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
 }

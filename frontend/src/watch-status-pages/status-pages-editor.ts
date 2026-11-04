@@ -86,7 +86,7 @@ import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../rendere
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
-import { renderLibraryWaitOuts } from "../move-wait-out.js";
+import { mayAddFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { type LinkDevice, linkDevicesOf } from "../watch-pages/devices.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import type { JsonObject } from "../watch-pages/model.js";
@@ -921,6 +921,7 @@ export class WaStatusPagesEditor extends LitElement {
     this.untickAsk = undefined;
     const names = { item: entry.name, device: this.deviceName(ownerId) };
     if (on) {
+      if (!mayAddFirst(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.lib.library, ownerId, "status_pages")) return;
       void tickItem(this.hass, store, ownerId, "status_pages", entry.id, true, names);
       return;
     }

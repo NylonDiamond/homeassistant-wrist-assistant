@@ -33,6 +33,9 @@ export interface HassLike {
       reads `tts.<platform>_say` from it. Optional, as the registries are. */
   services?: Record<string, Record<string, unknown>>;
   language?: string;
+  /** Home Assistant's own config; its version says where the integration
+      updates (`integration-store.ts`). */
+  config?: { version?: string };
   /** The frontend's theme state; `darkMode` is what the panel's dark skin keys off. */
   themes?: { darkMode?: boolean };
   /** "always_hidden" when the user has hidden Home Assistant's sidebar for
@@ -106,9 +109,25 @@ export interface OwnerSummary {
       for it rather than offer a start over it (`noRecordStart`). It is the
       rule that refuses the watch's own seed, so it goes false a day after that
       iPhone first polled as itself, and when a person says the iPhone is gone
-      (`endMoveWait`, or forgetting it). False on a phone, absent from the
-      Library row and from integrations older than the field. */
+      (`endMoveWait`, or forgetting it), or when that iPhone says its move is
+      finished. False on a phone, absent from the Library row and from
+      integrations older than the field. */
   has_iphone?: boolean | null;
+  /** True when the iPhone that paired this watch already runs an app that
+      moves (it polled as itself). The wait lines then do not say to update it.
+      False on a phone. Absent from integrations older than the field, where
+      the wait lines say what they always said. */
+  owner_iphone_moves?: boolean | null;
+  /** True for a watch from before the setup move: the old phone link set it
+      up, so it holds a setup of its own Home Assistant may not have seen. The
+      panel asks before a first Save replaces it. A watch a code first paired
+      says false. */
+  holds_old_setup?: boolean | null;
+  /** True from the end of such a watch's wait until its next poll: its own
+      setup may still come. It changes words and an ask, and refuses nothing. */
+  seed_pending?: boolean | null;
+  /** The watch said it runs only the standard settings. */
+  standard_settings?: boolean | null;
   /** The Home Assistant user this device is bound to (a watch through its
       paired iPhone when its own key predates binding), null when none.
       Absent from the Library and orphan rows and from integrations older

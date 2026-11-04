@@ -38,7 +38,7 @@ import {
   schemaVersionFor,
 } from "./model.js";
 import { type SlotHolder, freeSlotForFamily } from "./copies.js";
-import { NEWER_VERSION_TEXT } from "./friendly-error.js";
+import { newerVersionText } from "./friendly-error.js";
 import { familiesFor, importableFamilies, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { familyTitle } from "./renderer.js";
 import { type DeviceOwnerLike, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls } from "./version.js";
@@ -309,9 +309,8 @@ const DECODE_FAILED = "This does not look like a complication.";
 
 /** The two refusals that are about the panel being behind, not the text being
  * wrong. Importing either would only open read-only anyway. Both say the same
- * plain line (`NEWER_VERSION_TEXT`); the schema numbers and key names go in
+ * plain line (`newerVersionText`); the schema numbers and key names go in
  * `detail`, which the dialog folds away. */
-const UPDATE_INTEGRATION = NEWER_VERSION_TEXT;
 
 /** A refusal's `detail` is the exact reason, for a fold under the line. */
 export type ImportParse =
@@ -356,7 +355,7 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
   if (typeof schema === "number" && schema > maxSchemaVersion) {
     return {
       ok: false,
-      error: UPDATE_INTEGRATION,
+      error: newerVersionText(),
       detail: `This complication is schema v${schema}. This panel reads up to v${maxSchemaVersion}.`,
     };
   }
@@ -386,7 +385,7 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
     const rest = unknown.length > 3 ? `, and ${unknown.length - 3} more` : "";
     return {
       ok: false,
-      error: UPDATE_INTEGRATION,
+      error: newerVersionText(),
       detail: `It uses keys this panel does not know: ${shown}${rest}.`,
     };
   }
@@ -972,7 +971,7 @@ export function parseBackupText(text: string, maxSchemaVersion: number): BackupP
 
   const version = object.version;
   if (typeof version === "number" && version > BACKUP_VERSION) {
-    return { ok: false, error: `This backup was made by a newer panel. ${UPDATE_INTEGRATION}` };
+    return { ok: false, error: `This backup was made by a newer panel. ${newerVersionText()}` };
   }
   if (!Array.isArray(object.complications)) {
     return { ok: false, error: "This backup is damaged: it has no list of complications." };
