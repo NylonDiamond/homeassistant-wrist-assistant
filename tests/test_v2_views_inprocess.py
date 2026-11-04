@@ -279,6 +279,20 @@ def test_version_answers_503_while_the_entry_is_reloading(env) -> None:
     assert reply.body["instance_id"] == "instance-uuid"
 
 
+def test_the_version_route_opens_before_the_entry_loads_and_only_once() -> None:
+    """R5-021: a route that opens with the entry answered 404 while the entry
+    loaded, and an app reads a 404 as an old integration."""
+    source = (Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant" / "__init__.py").read_text()
+    functions = {
+        node.name: ast.get_source_segment(source, node)
+        for node in ast.parse(source).body
+        if isinstance(node, ast.AsyncFunctionDef)
+    }
+    assert "register_view(WAVersionView(hass))" in functions["async_setup"]
+    assert "WAVersionView(hass)" not in functions["async_setup_entry"]
+    assert source.count("CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)") == 1
+
+
 # ── register_secret ──────────────────────────────────────────────────────
 
 

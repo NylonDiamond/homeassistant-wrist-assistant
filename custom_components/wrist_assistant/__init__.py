@@ -789,6 +789,19 @@ async def _clear_stale_statistic_units_once(
     )
 
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
+    """Open the version route as soon as Home Assistant sets this integration
+    up, before the entry loads its stores. Until now it was 404 there, which
+    an app reads as an integration too old to have the route. With no entry
+    loaded it answers 503 ``restarting``. It needs nothing from the entry and
+    outlives a reload, so it is registered once, here."""
+    hass.http.register_view(WAVersionView(hass))
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     coordinator = DeltaCoordinator(hass)
@@ -1253,8 +1266,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a
-        # pending request) and a user confirms in the panel. WAVersionView
-        # is unauthenticated metadata for the apps' version check.
+        # pending request) and a user confirms in the panel. WAVersionView,
+        # the unauthenticated metadata for the apps' version check, is already
+        # registered (async_setup).
         nonce_cache = WANonceCache(ttl_seconds=WA_HMAC_NONCE_TTL_SECONDS)
         hass.data[f"{DOMAIN}_nonce_cache"] = nonce_cache
         hass.http.register_view(WARegisterSecretView(hass))
@@ -1264,7 +1278,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # opens only for the device, and the redeem only with the QR token.
         hass.http.register_view(WAPairStatusView(hass))
         hass.http.register_view(WAPairRedeemView(hass))
-        hass.http.register_view(WAVersionView(hass))
         hass.http.register_view(WAActionView(hass, nonce_cache))
         hass.http.register_view(WADeltaView(hass, nonce_cache))
         # Stream view auths via single-use token instead of HMAC headers —
