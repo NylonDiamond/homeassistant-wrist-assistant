@@ -172,8 +172,8 @@ const CARD_DIFFER_WATCH_W = 172;
 const CARD_DIFFER_PHONE_W = 116;
 /** A card's iPhone picture alone, and how tall it is for a page no watch can
  * show. */
-const CARD_PHONE_ALONE_W = 150;
-const CARD_PHONE_ALONE_H = 280;
+const CARD_PHONE_ALONE_W = 190;
+const CARD_PHONE_ALONE_H = 320;
 /** The room kept above the top tile and under the lowest, in points. */
 const PIC_PAD_PT = 6;
 
