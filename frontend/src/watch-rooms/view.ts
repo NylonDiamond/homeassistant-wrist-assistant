@@ -156,16 +156,21 @@ function flip(host: RoomsViewHost, key: string, now: boolean): void {
 
 // ── Room sensor ──────────────────────────────────────────────────────────
 
-/** What the sensor says now, and whether the watch reads it as a room. */
-export function sensorReading(hass: HassLike, sensor: string): { line: string; tone: "ok" | "warn" | "none" } {
-  if (sensor === "") return { line: NO_SENSOR_TEXT, tone: "none" };
+/** The word for the device this page is about. */
+function deviceWord(host: Pick<RoomsViewHost, "phone">): string {
+  return host.phone === true ? "iPhone" : "watch";
+}
+
+/** What the sensor says now, and whether the device reads it as a room. */
+export function sensorReading(hass: HassLike, sensor: string, device = "watch"): { line: string; tone: "ok" | "warn" | "none" } {
+  if (sensor === "") return { line: noSensorText(device), tone: "none" };
   const state = hass.states[sensor];
   if (state === undefined) return { line: "Home Assistant has no entity with this id now.", tone: "warn" };
   const room = roomFromState(sensor, state);
   const raw = typeof state.state === "string" ? state.state : "";
-  if (room === undefined) return { line: `Now "${raw}", which the watch does not read as a room.`, tone: "warn" };
+  if (room === undefined) return { line: `Now "${raw}", which the ${device} does not read as a room.`, tone: "warn" };
   const key = normalizedRoomKey(room);
-  return { line: `Now in ${room}${key === "" ? ", whose name has no letter or digit the watch can match" : ""}.`, tone: key === "" ? "warn" : "ok" };
+  return { line: `Now in ${room}${key === "" ? `, whose name has no letter or digit the ${device} can match` : ""}.`, tone: key === "" ? "warn" : "ok" };
 }
 
 /** Bermuda, the integration that makes an area sensor from Bluetooth, is
@@ -175,10 +180,18 @@ export const BERMUDA_URL = "https://github.com/agittins/bermuda";
 /** With no sensor picked the watch looks for one itself, by name
  * (`detectCurrentRoomName` in the watch app scores "bermuda", "area",
  * "room" and the like), which can find the wrong one or none. */
-export const NO_SENSOR_TEXT = "No room sensor picked. The watch looks for one by its name, such as a Bermuda area sensor. Pick one to be sure.";
+export function noSensorText(device = "watch"): string {
+  return `No room sensor picked. The ${device} looks for one by its name, such as a Bermuda area sensor. Pick one to be sure.`;
+}
+
+export const NO_SENSOR_TEXT = noSensorText();
 
 /** Why Bermuda, in the card that stands at the top until a sensor is picked. */
-export const BERMUDA_PITCH = "Bermuda uses Bluetooth to tell which room your watch is in. Rooms works best with its area sensor. Add Bermuda to Home Assistant, then pick its sensor here.";
+export function bermudaPitch(device = "watch"): string {
+  return `Bermuda uses Bluetooth to tell which room your ${device} is in. Rooms works best with its area sensor. Add Bermuda to Home Assistant, then pick its sensor here.`;
+}
+
+export const BERMUDA_PITCH = bermudaPitch();
 
 /** A Bermuda area sensor: Bermuda marks its sensors with its own device
  * class, and its names often say Bermuda. */
@@ -199,10 +212,10 @@ function withBermudaLink(line: string): TemplateResult | string {
 
 // ── pages ────────────────────────────────────────────────────────────────
 
-function pageOptions(pages: readonly RoomPageChoice[], stored: string, lead: [string, string][]): [string, string][] {
+function pageOptions(host: Pick<RoomsViewHost, "phone">, pages: readonly RoomPageChoice[], stored: string, lead: [string, string][]): [string, string][] {
   const options: [string, string][] = [...lead, ...pages.map((p): [string, string] => [p.id, p.name])];
   if (stored !== "" && !lead.some(([v]) => v === stored) && findPageChoice(pages, stored) === undefined) {
-    options.push([stored, "A page not on this watch"]);
+    options.push([stored, `A page not on this ${deviceWord(host)}`]);
   }
   return options;
 }
@@ -215,7 +228,7 @@ function pageValue(pages: readonly RoomPageChoice[], stored: string): string {
 /** A stored page's name, "" for none. */
 function pageNameOf(host: RoomsViewHost, stored: string): string {
   if (stored === "") return "";
-  return findPageChoice(host.pages, stored)?.name ?? "A page not on this watch";
+  return findPageChoice(host.pages, stored)?.name ?? `A page not on this ${deviceWord(host)}`;
 }
 
 /** The watch's page a stored id names, without regard to case. */
@@ -340,23 +353,23 @@ function renderStatusCard(host: RoomsViewHost): TemplateResult {
   if (view.sensor === "") {
     return html`<section class="rm-card rm-lit rm-start" aria-label="Start here">
       <span class="rm-eyebrow">Start here${dirty}</span>
-      <h3 class="rm-start-title">Tell the watch which room you are in</h3>
-      <p class="rm-pitch">${BERMUDA_PITCH}</p>
+      <h3 class="rm-start-title">Tell the ${deviceWord(host)} which room you are in</h3>
+      <p class="rm-pitch">${bermudaPitch(deviceWord(host))}</p>
       <div class="rm-start-row">
         ${renderSensorField(host)}
         <a class="rm-btn rm-bermuda-link" href=${BERMUDA_URL} target="_blank" rel="noopener noreferrer">Get Bermuda</a>
       </div>
-      <p class="rm-help">${withBermudaLink(NO_SENSOR_TEXT)}</p>
+      <p class="rm-help">${withBermudaLink(noSensorText(deviceWord(host)))}</p>
       <div class="rm-start-switch">${renderSwitching(host)}</div>
     </section>`;
   }
   const changing = isOpen(host, "sensorOpen");
   const bermuda = isBermudaSensor(host.hass, view.sensor);
-  const reading = sensorReading(host.hass, view.sensor);
+  const reading = sensorReading(host.hass, view.sensor, deviceWord(host));
   return html`<section class="rm-card rm-lit rm-status" aria-label="Switch pages by room">
     <span class="rm-ichip" aria-hidden="true">${uiIcon("home")}</span>
     <div class="rm-status-text">
-      <p class="rm-now">The watch opens a room's page when the room sensor says you walked in.${dirty}</p>
+      <p class="rm-now">The ${deviceWord(host)} opens a room's page when the room sensor says you walked in.${dirty}</p>
       <div class="rm-sensor-line">
         ${bermuda
           ? html`<span class="rm-bermuda-ok">${uiIcon("check")}<span>${nameOf(host.hass, view.sensor)}, a Bermuda sensor</span></span>`
@@ -413,14 +426,14 @@ function renderRuleRow(host: RoomsViewHost, room: RoomListEntry, on: boolean): T
   const line = roomPointLine(host, room);
   return html`<li class="rm-row ${on ? "on" : ""}" @click=${() => pick(host, room.key)}>
     <span class="rm-row-room">
-      <button type="button" class="rm-row-name" aria-pressed=${on ? "true" : "false"} title="Show this room on the watch"
+      <button type="button" class="rm-row-name" aria-pressed=${on ? "true" : "false"} title=${`Show this room on the ${deviceWord(host)}`}
         @click=${(e: Event) => { e.stopPropagation(); pick(host, room.key); }}>${room.name}</button>
       ${line === "" ? nothing : html`<span class="rm-row-sub">${line}</span>`}
     </span>
     <span class="rm-arrow" aria-hidden="true">${uiIcon("arrow")}</span>
     <span class="rm-row-page">
       ${renderPageThumb(host, stored)}
-      ${pageSelect(`Page for ${room.name}`, value, pageOptions(host.pages, value, [["", "No page"]]), (v) => {
+      ${pageSelect(`Page for ${room.name}`, value, pageOptions(host, host.pages, value, [["", "No page"]]), (v) => {
         host.write(roomPageWrites(host.document, room.key, v));
         pick(host, room.key);
       }, host.busy)}
@@ -445,7 +458,7 @@ function renderAddRoom(host: RoomsViewHost, listed: readonly RoomListEntry[]): T
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
     <button type="button" class="rm-btn" ?disabled=${key === "" || exists} @click=${add}>${uiIcon("plus")}<span>Add</span></button>
   </div>
-  ${text.trim() !== "" && key === "" ? html`<p class="rm-help warn">The watch matches room names by their letters a to z and digits, and this name has none.</p>` : nothing}
+  ${text.trim() !== "" && key === "" ? html`<p class="rm-help warn">The ${deviceWord(host)} matches room names by their letters a to z and digits, and this name has none.</p>` : nothing}
   ${exists ? html`<p class="rm-help">That room is in the list.</p>` : html`<p class="rm-help">For a name the sensor says that is not an area in Home Assistant.</p>`}`;
 }
 
@@ -460,7 +473,7 @@ function renderFallbackRow(host: RoomsViewHost): TemplateResult {
     <span class="rm-arrow" aria-hidden="true">${uiIcon("arrow")}</span>
     <span class="rm-row-page">
       ${renderPageThumb(host, fallback === "page" ? host.view.fallback : "")}
-      ${pageSelect("Page anywhere else", value, pageOptions(host.pages, value, [[STAY_ON_CURRENT_PAGE, FALLBACK_LABELS.stay], ["", FALLBACK_LABELS.first]]),
+      ${pageSelect("Page anywhere else", value, pageOptions(host, host.pages, value, [[STAY_ON_CURRENT_PAGE, FALLBACK_LABELS.stay], ["", FALLBACK_LABELS.first]]),
         (v) => host.write(fallbackWrites(v)), host.busy)}
     </span>
     <span class="rm-row-end"></span>
@@ -475,7 +488,7 @@ function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], 
   return html`<section class="rm-card rm-rules" aria-label="Room pages">
     <div class="rm-rules-head">
       <span class="rm-cap">When I walk into${dirtyDot(anyDirty(host, [ROOM_KEYS.mappings, ROOM_KEYS.fallback]))}</span>
-      <span class="rm-cap rm-cap-page">the watch opens</span>
+      <span class="rm-cap rm-cap-page">the ${deviceWord(host)} opens</span>
     </div>
     ${listed.length === 0
       ? html`<div class="rm-none">
@@ -731,7 +744,7 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
       <div class="rm-stage-head"><span class="rm-eyebrow">Preview</span><b class="rm-stage-title">No rooms yet</b></div>
       <div class="stage-area rm-stage-area rm-empty">
         <div class="rm-empty-watch" aria-hidden="true">${uiIcon("home")}</div>
-        <span class="rm-empty-text">Add a room and give it a page. When you walk in, the watch opens that page.</span>
+        <span class="rm-empty-text">Add a room and give it a page. When you walk in, the ${deviceWord(host)} opens that page.</span>
       </div>
     </div>`;
   }
@@ -739,8 +752,8 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
   // A room with no page opens Anywhere else: that page when it is one.
   const fallback = host.view.fallback;
   const shown = stored !== "" ? stored : fallbackChoice(fallback) === "page" ? fallback : "";
-  const note = stored !== "" ? "" : shown !== "" ? "No page for this room, so the watch opens Anywhere else." : "";
-  return html`<div class="card canvas-card lit rm-canvas" aria-label=${`What the watch opens in ${room.name}`}>
+  const note = stored !== "" ? "" : shown !== "" ? `No page for this room, so the ${deviceWord(host)} opens Anywhere else.` : "";
+  return html`<div class="card canvas-card lit rm-canvas" aria-label=${`What the ${deviceWord(host)} opens in ${room.name}`}>
     <div class="rm-stage-head">
       <span class="rm-eyebrow">Preview</span>
       <b class="rm-stage-title">${room.name}</b>
@@ -749,7 +762,7 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
     <div class="stage-area rm-stage-area">
       <div class="rm-stage-body" style=${`--rm-screen-h: ${screenHeightPx(host, scale)}px`}>${renderRoomWatch(host, shown, "No page for this room. The watch uses Anywhere else.")}</div>
     </div>
-    <p class="rm-stage-foot">Click a room to see what the watch opens there.</p>
+    <p class="rm-stage-foot">Click a room to see what the ${deviceWord(host)} opens there.</p>
   </div>`;
 }
 

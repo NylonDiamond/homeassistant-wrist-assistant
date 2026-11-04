@@ -380,7 +380,11 @@ async def _pick_user(
     if requested is None or requested == caller_id:
         return caller_id, None
     if caller is None or not caller.is_admin:
-        return None, ("unauthorized", f"Only an administrator can pair a {noun} for another user.")
+        article = "an" if noun.lower().startswith("i") else "a"
+        return None, (
+            "unauthorized",
+            f"Only an administrator can pair {article} {noun} for another user.",
+        )
     user = await hass.auth.async_get_user(requested)
     if user is None or not user.is_active or getattr(user, "system_generated", False):
         return None, ("invalid_user", f"Pick an active Home Assistant user for this {noun}.")

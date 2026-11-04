@@ -808,6 +808,14 @@ describe("the list, the stage and the inspector", () => {
     expect(text).toContain(NO_SENSOR_TEXT.slice(0, NO_SENSOR_TEXT.indexOf("Bermuda")));
   });
 
+  it("speak of the iPhone on an iPhone's Rooms", () => {
+    const phone = { ...host({}), phone: true };
+    const text = flat(renderRoomsBody(phone));
+    for (const s of ["Tell the iPhone which room you are in", "which room your iPhone is in", "The iPhone looks for one", "the iPhone opens"]) expect(text).toContain(s);
+    for (const s of ["Tell the watch", "your watch is in", "the watch opens"]) expect(text).not.toContain(s);
+    expect(sensorReading({ states: { "sensor.area": { state: "x".repeat(0) } } } as unknown as HassLike, "", "iPhone").line).toContain("The iPhone looks");
+  });
+
   it("put Bermuda and the sensor field first while no sensor is picked", () => {
     const text = flat(renderRoomsBody(host({})));
     expect(text).toContain("Start here");
