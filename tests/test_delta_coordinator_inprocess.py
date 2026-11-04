@@ -954,6 +954,48 @@ def test_a_removal_with_attribute_diffs_still_says_unavailable(coordinator) -> N
     asyncio.run(run())
 
 
+def test_a_removal_after_unavailable_is_sent_and_clears_the_baselines(coordinator) -> None:
+    """R5-051: the removal's state word equals the unavailable already sent,
+    and it was dropped as no change, so the tile stayed Offline. It goes out
+    with its attributes whole. The change after it goes out whole too, even
+    when it is the same unavailable, so the watch stops showing it as removed."""
+    module, hass, coord = coordinator
+    ent = "sensor.gone"
+    hass.states.set(ent, "1")
+    hass.states._by_id[ent].attributes = {"friendly_name": "Gone"}
+    diffs = {"attribute_diffs": True, "compact": True}
+
+    async def run() -> None:
+        _status, body = await _poll(coord, entities=[ent], **diffs)
+        _change(hass, coord, ent, "unavailable")
+        _status, body = await _poll(
+            coord, since=body["next_cursor"], entities=[ent], timeout=0, **diffs
+        )
+        assert [e["state"] for e in body["events"]] == ["unavailable"]
+        assert "removed" not in body["events"][0]
+
+        hass.states._by_id[ent].attributes = {"friendly_name": "Gone"}
+        _remove(hass, coord, ent)
+        _status, body = await _poll(
+            coord, since=body["next_cursor"], entities=[ent], timeout=0, **diffs
+        )
+        [event] = body["events"]
+        assert event["state"] == "unavailable" and event["removed"] is True
+        assert event["attributes"] == {"friendly_name": "Gone"}
+        assert event["attrs_full"] is True
+
+        _change(hass, coord, ent, "unavailable")
+        _status, body = await _poll(
+            coord, since=body["next_cursor"], entities=[ent], timeout=0, **diffs
+        )
+        [event] = body["events"]
+        assert event["state"] == "unavailable"
+        assert "removed" not in event
+        assert event["attrs_full"] is True
+
+    asyncio.run(run())
+
+
 def test_a_removal_of_an_entity_no_watch_shows_wakes_nobody(coordinator) -> None:
     module, hass, coord = coordinator
     shown, other = "light.shown", "light.other"

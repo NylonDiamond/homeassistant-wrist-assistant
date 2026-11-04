@@ -2208,8 +2208,18 @@ class DeltaCoordinator:
         merging into them. Returns None when the state word matches the last
         one sent and no attribute moved: the watch already holds all of it
         (only ``last_updated`` and the context moved, which it never shows).
+
+        A removal always goes out whole, and clears the entity's baselines:
+        its state word equals an ``unavailable`` already sent, and only the
+        ``removed`` key tells the watch the entity is gone. With no baseline
+        left, the entity's next change goes out too, so a watch stops showing
+        an entity as removed when it comes back unavailable.
         """
         entity_id = payload.get("entity_id", "")
+        if payload.get("removed") is True:
+            session.last_sent_attrs.pop(entity_id, None)
+            session.last_sent_state.pop(entity_id, None)
+            return {**payload, "attrs_full": True}
         if compact:
             full_attrs = payload.get("attributes", {})
         else:
