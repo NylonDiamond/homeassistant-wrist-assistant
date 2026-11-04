@@ -914,6 +914,9 @@ class WADeltaView(HomeAssistantView):
         # Only an iPhone app with phone pages polls as itself, so this is
         # what lets the panel offer the phone for pages.
         domain_data.widget_secret_store.note_phone_pages(watch_id)
+        # A watch from before the setup move polling after its wait ended has
+        # had its chance to send its own setup (`seed_pending`).
+        domain_data.widget_secret_store.note_move_end_heard(watch_id)
         if since is not None and not isinstance(since, (str, int)):
             return Response(status=400, text="since must be a cursor")
         if entities is not None and not isinstance(entities, list):
@@ -3178,8 +3181,11 @@ async def _op_verify_identity(ctx: _OpContext) -> Response:
 async def _op_update_metadata(ctx: _OpContext) -> Response:
     """HMAC-signed metadata refresh for an already-registered watch.
 
-    Body: `{app_version?, app_build?, device_name?, screen_size?}` — all
-    optional strings; omitted/empty fields are left unchanged.
+    Body: `{app_version?, app_build?, device_name?, screen_size?,
+    standard_settings?}`. The first four are optional strings; omitted/empty
+    fields are left unchanged. `standard_settings` is an optional boolean: the
+    watch says whether it runs only the standard settings. Anything else there
+    is ignored.
 
     An `owner_iphone_id` in the body, which older apps still send, is
     ignored and the stored one kept. There is no owner phone any more, and a
@@ -3230,6 +3236,11 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
         app_build=fields["app_build"],
         device_name=device_name,
         screen_size=fields["screen_size"],
+        standard_settings=(
+            ctx.payload["standard_settings"]
+            if isinstance(ctx.payload.get("standard_settings"), bool)
+            else None
+        ),
     )
     if not ok:
         # Entry vanished between HMAC validation and dispatch (concurrent
@@ -4880,6 +4891,57 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     return response
 
 
+async def _op_move_finished(ctx: _OpContext) -> Response:
+    """An iPhone says its move for one watch is finished.
+
+    The iPhone sends this once it has retired its copy of the watch's key.
+    Until now only a person or the 24 hour grace ended the wait, so a phone with
+    nothing to move left the watch waiting on a phone that was already done.
+
+    Body:  {"watch_id": <str>}
+    Reply: {"ok": true, "watch_id": <str>, "changed": <bool>, "polling": <bool>}
+
+    Signed as the iPhone itself. Only the iPhone the watch names as its owner
+    (``owner_iphone_id``) may do this. Anyone else gets a signed 403
+    ``not_an_iphone`` (a watch) or ``not_owner`` (another iPhone, an unknown id,
+    or an id that is not a watch), and nothing changes. A body with no usable id
+    is a signed 400 ``invalid_watch``.
+
+    The file is written before the reply, so a 200 outlives a restart. The same
+    call again answers 200 with ``changed`` false, and writes and wakes nothing.
+    A first call wakes the watch's parked poll, as the panel's button does, and
+    that poll answers ``may_await_move: false``. A phone's later upload for a
+    kind with no record still lands. Writes no record.
+    """
+    if not _caller_is_iphone(ctx):
+        return ctx.signed_json(
+            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone finishes a move."},
+            status=403,
+        )
+    watch_id = ctx.payload.get("watch_id")
+    if not isinstance(watch_id, str) or not watch_id:
+        return ctx.signed_json(
+            {"ok": False, "error": "invalid_watch", "message": "watch_id is required"},
+            status=400,
+        )
+    secrets = ctx.domain_data.widget_secret_store
+    changed = secrets.finish_move(watch_id, ctx.watch_id)
+    if changed is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "not_owner", "message": "This iPhone does not own that watch."},
+            status=403,
+        )
+    coordinator = getattr(ctx.domain_data, "coordinator", None)
+    polling = bool(coordinator is not None and coordinator.is_polling(watch_id))
+    if changed:
+        await secrets.async_save_now()
+        if coordinator is not None:
+            coordinator.wake_watch(watch_id)
+    return ctx.signed_json(
+        {"ok": True, "watch_id": watch_id, "changed": changed, "polling": polling}
+    )
+
+
 async def _op_watch_config_put(ctx: _OpContext) -> Response:
     """Save the caller's watch config of one kind, compare-and-swap.
 
@@ -4898,6 +4960,12 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
              record) and ``force`` is not true; signed 400 for a malformed
              request; signed 503 when the stored file could not be read.
 
+    A device saving a first record as a watch (the phone's move signs as the
+    watch, and the watch's seed does too) hears 200 only once the record is on
+    disk (``async_save_first_record``). The phone stamps the kind and deletes
+    its key on that 200, and never sends the kind again. It happens once per
+    kind, so the cost is small.
+
     ``seed: true`` (capability ``watch_config_seed``) is a watch sending its
     own copy of ``behavior`` or ``notification_style`` once, when its get
     answered no record: it makes the first record and nothing else (base 0,
@@ -4915,8 +4983,12 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     keeps only the phone's settings, hashed by the server when that drops a
     key (``WatchConfigStore.put``).
     """
+    store = ctx.domain_data.watch_config_store
+    first = not _caller_is_iphone(ctx) and store.holds_no_record(
+        ctx.watch_id, ctx.payload.get("kind")
+    )
     try:
-        record = ctx.domain_data.watch_config_store.put(
+        record = store.put(
             ctx.watch_id,
             ctx.payload.get("kind"),
             ctx.payload.get("document"),
@@ -4928,6 +5000,8 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
+    if first:
+        await store.async_save_first_record(ctx.watch_id)
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 
@@ -5881,6 +5955,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "notifications_status": _op_notifications_status,
     "send_test_notification": _op_send_test_notification,
     "pro_open_on_phone": _op_pro_open_on_phone,
+    # An iPhone says its move for a watch is finished.
+    "move_finished": _op_move_finished,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
     "snapshots_open": _op_snapshots_open,

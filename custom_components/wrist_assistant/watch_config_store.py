@@ -2173,6 +2173,38 @@ class WatchConfigStore:
             lambda: self._serialize_owner(owner_watch_id), _SAVE_DEBOUNCE_SECONDS
         )
 
+    def holds_no_record(self, owner_watch_id: Any, kind: Any) -> bool:
+        """Whether this owner has no record of this kind in memory. False for
+        an id or a kind that is not a string. The save itself still refuses
+        anything malformed."""
+        return (
+            isinstance(owner_watch_id, str)
+            and isinstance(kind, str)
+            and self._records.get(owner_watch_id, {}).get(kind) is None
+        )
+
+    async def async_save_first_record(self, owner_watch_id: str) -> None:
+        """Write a device's first record of a kind now, not after the debounce.
+
+        The caller answers only after this, because a phone that hears 200
+        stamps the kind and deletes its key: a crash inside the debounce would
+        lose the record for good. Writes the owner's file, and the index and
+        the library when they wait too, since a new owner is found through the
+        index and a page's content lives in the library. Each of these cancels
+        its delayed save. Nothing after shutdown, which wrote the last state.
+        """
+        if self._closed:
+            return
+        if owner_watch_id in self._pending_owners:
+            self._pending_owners.discard(owner_watch_id)
+            await self._file(owner_watch_id).async_save(self._serialize_owner(owner_watch_id))
+        if self._index_save_pending:
+            self._index_save_pending = False
+            await self._index.async_save(self._serialize_index())
+        if self._library_save_pending:
+            self._library_save_pending = False
+            await self._library_file.async_save(self._serialize_library())
+
     async def async_shutdown(self) -> None:
         """Called on unload: write every save still waiting out its debounce
         now, which cancels the delayed ones, and save nothing after.

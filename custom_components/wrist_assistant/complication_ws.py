@@ -478,7 +478,10 @@ async def ws_owners(
 
     ``has_iphone`` says an iPhone may still move the watch's own setup here
     (`may_await_move`), so the panel's watch editors wait for that move
-    instead of offering to start a fresh record over it.
+    instead of offering to start a fresh record over it. ``owner_iphone_moves``
+    says that iPhone already runs an app that moves, so the wait lines do not
+    tell anyone to update it. ``holds_old_setup``, ``seed_pending`` and
+    ``standard_settings`` tell the panel what a first Save would replace.
 
     ``user_id`` is the Home Assistant user the device's key is bound to, or a
     watch's paired iPhone's user when the watch's own key predates binding;
@@ -621,6 +624,19 @@ async def ws_owners(
                 # rather than offering to start a fresh record over it.
                 # False for a phone.
                 "has_iphone": secret_store.may_await_move(device_id),
+                # Whether the iPhone that paired this watch already runs an
+                # app that moves (it polled as itself). The panel then never
+                # says to update it, whatever the wait says. False for a phone.
+                "owner_iphone_moves": secret_store.owner_iphone_moves(device_id),
+                # A watch from before the setup move, which holds a setup of
+                # its own that Home Assistant may not have seen. The panel
+                # asks before a first Save replaces it. False for a phone.
+                "holds_old_setup": entry.holds_old_setup,
+                # The wait has ended and that watch has not polled since, so
+                # its own setup may still come. Only words and an ask follow.
+                "seed_pending": secret_store.seed_pending(device_id),
+                # The watch said it runs only the standard settings.
+                "standard_settings": entry.standard_settings,
                 # The Home Assistant user this device belongs to, through its
                 # paired iPhone for a watch whose own key was never bound.
                 "user_id": entry.user_id

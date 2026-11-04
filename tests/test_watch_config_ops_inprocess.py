@@ -276,6 +276,90 @@ def test_get_refuses_an_unknown_or_missing_kind(env, payload) -> None:
 # ── put ──────────────────────────────────────────────────────────────────
 
 
+def test_a_first_record_signed_as_the_watch_is_on_disk_before_the_reply(env) -> None:
+    """The phone's move signs as the watch. On this 200 the phone stamps the
+    kind and deletes its key, so a crash in the debounce would lose the record
+    for good. Here the delayed save never reaches the disk, as if the box died."""
+    saved: list[str] = []
+
+    def nothing(*_a: object, **_k: object) -> None:
+        return None
+
+    def recording(store: Any, label: str) -> Any:
+        async def async_save(data: Any) -> None:
+            saved.append(label)
+
+        store.async_delay_save = nothing
+        store.async_save = async_save
+        return store
+
+    recording(env.store._index, "index")
+    recording(env.store._library_file, "library")
+    file = recording(env.store._file(WATCH), "owner")
+    env.store._file = lambda owner: file
+
+    reply = _put(env, _put_body())
+
+    assert reply.status == 200
+    assert "owner" in saved and "index" in saved and "library" in saved
+    assert env.store._pending_owners == set()
+
+    # The next save of the kind is the usual debounced one.
+    saved.clear()
+    reply = _put(env, _put_body(base=reply.body["revision"], digest=HASH_2))
+    assert reply.status == 200
+    assert saved == []
+
+
+def test_a_first_record_of_a_second_kind_is_written_at_once_too(env) -> None:
+    saved: list[str] = []
+    real = env.store._file(WATCH)
+    original = real.async_save
+
+    async def async_save(data: Any) -> None:
+        saved.append("owner")
+        await original(data)
+
+    real.async_save = async_save
+    env.store._file = lambda owner: real
+    assert _put(env, _put_body()).status == 200
+    assert saved == ["owner"]
+    behavior = _put(env, _put_body({"schemaVersion": 1}, kind="behavior"))
+    assert behavior.status == 200
+    assert saved == ["owner", "owner"]
+
+
+def test_a_refused_first_record_writes_nothing_at_once(env) -> None:
+    saved: list[str] = []
+    real = env.store._file(WATCH)
+
+    async def async_save(data: Any) -> None:
+        saved.append("owner")
+
+    real.async_save = async_save
+    env.store._file = lambda owner: real
+    assert _put(env, _put_body(base=3)).status == 409
+    assert saved == []
+
+
+def test_an_iphone_s_own_first_record_keeps_the_usual_debounce(env) -> None:
+    """Nothing is deleted on the phone's own record's 200."""
+    env.secrets.entries["phone-1"] = _device("iphone", user_id="u1")
+    saved: list[str] = []
+    real = env.store._file("phone-1")
+
+    async def async_save(data: Any) -> None:
+        saved.append("owner")
+
+    real.async_save = async_save
+    env.store._file = lambda owner: real
+    reply = asyncio.run(
+        env.views["_op_watch_config_put"](_Ctx(env.store, "phone-1", _put_body(), env.secrets))
+    )
+    assert reply.status == 200
+    assert saved == []
+
+
 def test_put_on_the_stored_revision_is_accepted(env) -> None:
     _put(env, _put_body())
     reply = _put(env, _put_body(_doc("v2"), base=1, digest=HASH_2))

@@ -581,6 +581,11 @@ PHONE_PAGES_LINK_CAPABILITY = "phone_pages_link"
 # companion_watch_id, reads the notification style signed as itself, and
 # may drop its copy of the watch key.
 PUSH_PAIRED_BY_USER_CAPABILITY = "push_paired_by_user"
+# What the integration advertises once it takes the signed `move_finished` op:
+# an iPhone says it has retired its copy of a watch's key, so the wait for its
+# move ends at once. An iPhone sends the op only when it sees this. An older
+# integration keeps the 24 hour rule (MOVE_GRACE) and the app sends nothing.
+MOVE_FINISHED_CAPABILITY = "move_finished"
 # The longest Show tile template a device sends in a delta poll, in code
 # points (Python `len`): `DELTA_MAX_TEMPLATE_CHARS` in wa_v2_views.py, and the
 # app's `TemplateCondition.subscribable`. A longer one is never sent, so the

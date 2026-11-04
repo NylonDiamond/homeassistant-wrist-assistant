@@ -1155,6 +1155,9 @@ class _NoDiskStore:
     def async_delay_save(self, *_a: object, **_k: object) -> None:
         pass
 
+    async def async_save(self, *_a: object, **_k: object) -> None:
+        pass
+
     async def async_remove(self) -> None:
         pass
 

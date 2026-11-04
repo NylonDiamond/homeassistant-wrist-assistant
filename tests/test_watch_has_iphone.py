@@ -41,7 +41,12 @@ def _watch(
     label: str | None = "watch-self-provision",
 ) -> Any:
     return types.SimpleNamespace(
-        device_kind="watch", label=label, user_id=user_id, owner_iphone_id=owner, move_wait_ended=False
+        device_kind="watch",
+        label=label,
+        user_id=user_id,
+        owner_iphone_id=owner,
+        move_wait_ended=False,
+        move_finished=False,
     )
 
 
@@ -55,6 +60,12 @@ def test_the_iphone_that_paired_the_watch_counts_known_or_not(mod) -> None:
     assert mod.watch_has_iphone({"w1": _watch(None, owner="p1"), "p1": _phone(None)}, "w1") is True
     assert mod.watch_has_iphone({"w1": _watch(None, owner="p-elsewhere")}, "w1") is True
     assert mod.watch_has_iphone({"w1": _watch("u1", owner="p-elsewhere")}, "w1") is True
+
+
+def test_its_own_iphone_finishing_ends_the_wait(mod) -> None:
+    watch = _watch("u1", owner="p1")
+    watch.move_finished = True
+    assert mod.watch_has_iphone({"w1": watch, "p1": _phone("u1")}, "w1") is False
 
 
 def test_a_relay_provisioned_watch_waits_for_its_phone(mod) -> None:

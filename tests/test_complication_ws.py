@@ -552,6 +552,12 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         # It names the iPhone that paired it, so that phone may still move
         # its setup here.
         "has_iphone": True,
+        # Its iPhone has not polled as itself, so the wait lines may say to
+        # update it. Set up by the old link, and not polled since any wait.
+        "owner_iphone_moves": False,
+        "holds_old_setup": True,
+        "seed_pending": False,
+        "standard_settings": False,
         # Neither key is bound to a Home Assistant user.
         "user_id": None,
         "user_gone": False,
@@ -619,6 +625,10 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             # Its app has not polled as itself yet.
             "phone_pages": False,
             "has_iphone": False,
+            "owner_iphone_moves": False,
+            "holds_old_setup": False,
+            "seed_pending": False,
+            "standard_settings": False,
             "user_id": None,
             "user_gone": False,
             "polling": False,
@@ -1008,6 +1018,35 @@ def test_use_what_is_on_the_watch_ends_the_wait_and_wakes_the_poll(env) -> None:
     assert env.secrets.get("watch-A").owner_iphone_id == "phone-gone"
     assert next(r for r in env.owners() if r["owner_watch_id"] == "watch-A")["has_iphone"] is False
     assert env.call(env.ws.ws_end_move_wait, watch_id="watch-A")["changed"] is False
+
+
+def test_the_owner_row_says_what_the_panel_words_read(env) -> None:
+    """An old watch whose iPhone runs a moving app, and a watch a code paired."""
+    env.add_phone("phone-1", user_id="jesse")
+    env.add_watch("watch-old", owner_iphone_id="phone-1", user_id="jesse")
+    env.add_code_watch("watch-new", user_id="jesse")
+
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["watch-old"]["owner_iphone_moves"] is False
+    assert rows["watch-old"]["holds_old_setup"] is True
+    assert rows["watch-new"]["holds_old_setup"] is False
+    assert rows["phone-1"]["holds_old_setup"] is False
+
+    env.secrets.note_phone_pages("phone-1")
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["watch-old"]["owner_iphone_moves"] is True
+    # Moving, but its wait still lasts, as nothing ended it.
+    assert rows["watch-old"]["has_iphone"] is True
+    assert rows["watch-old"]["seed_pending"] is False
+
+    assert env.secrets.finish_move("watch-old", "phone-1") is True
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["watch-old"]["has_iphone"] is False
+    assert rows["watch-old"]["seed_pending"] is True
+    assert rows["watch-new"]["seed_pending"] is False
+
+    assert env.secrets.note_move_end_heard("watch-old") is True
+    assert next(r for r in env.owners() if r["owner_watch_id"] == "watch-old")["seed_pending"] is False
 
 
 def test_only_a_paired_watch_can_end_the_wait(env) -> None:

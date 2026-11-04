@@ -52,6 +52,7 @@ from .const import (
     HOME_MAP_CAPABILITY,
     HOME_MAP_SCANS_CAPABILITY,
     HTTP_ACTIONS_CAPABILITY,
+    MOVE_FINISHED_CAPABILITY,
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
     PANEL_CONFIGURATION_URL,
@@ -1173,6 +1174,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # and test push replies, and the phone signed notification style read.
     # The phone stops naming a watch only when it sees this.
     coordinator.register_capability(PUSH_PAIRED_BY_USER_CAPABILITY)
+    # An iPhone says its move is finished (the signed `move_finished` op). It
+    # sends that only when it sees this.
+    coordinator.register_capability(MOVE_FINISHED_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,

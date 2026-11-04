@@ -108,6 +108,9 @@ class _Secrets:
         self.noted_phone_pages.append(watch_id)
         return True
 
+    def note_move_end_heard(self, watch_id: str) -> bool:
+        return False
+
 
 def _entry(kind: str) -> Any:
     return types.SimpleNamespace(
