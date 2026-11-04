@@ -17,11 +17,11 @@
  * refusal right after Home Assistant restarts. */
 export const NOT_READY_TEXT = "Wrist Assistant is still starting. Try again in a moment.";
 /** An integration older than this panel, which does not know a command. */
-export const UPDATE_INTEGRATION_TEXT = "Update the Wrist Assistant integration in HACS, then reload this page.";
+export const UPDATE_INTEGRATION_TEXT = "Update the Wrist Assistant integration in Marketplace or HACS, then reload this page.";
 /** A design written by a newer panel than this one: a schema version past
  * what it reads, or keys it does not know. The version numbers and key names
  * go in a tooltip or a fold, never in this line. */
-export const NEWER_VERSION_TEXT = "Made with a newer Wrist Assistant. Update the integration in HACS, then reload this page.";
+export const NEWER_VERSION_TEXT = "Made with a newer Wrist Assistant. Update the integration in Marketplace or HACS, then reload this page.";
 
 /** The code and message of an error, wherever the socket put them. A command
  * that dies with the connection rejects with the whole result, so the error

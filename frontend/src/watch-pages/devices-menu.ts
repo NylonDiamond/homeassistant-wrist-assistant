@@ -22,6 +22,8 @@ export interface DevicesMenuInput {
   busy: boolean;
   /** What the last switch did. */
   note?: WatchPagesNote;
+  /** What goes under the switches: the way out of a watch's wait. */
+  under?: TemplateResult | typeof nothing;
   /** Extra classes on the menu, for where it hangs. */
   className?: string;
   /** Each device's color (`deviceColorVar`), on its glyph and the row's
@@ -62,6 +64,7 @@ export function renderPageDevicesMenu(input: DevicesMenuInput): TemplateResult {
     }))}
     ${busy ? html`<div class="pe-dev-note">Saving…</div>` : nothing}
     ${note === undefined ? nothing : html`<div class="pe-dev-note ${note.kind}" role="status">${note.text}</div>`}
+    ${input.under ?? nothing}
     <div class="pk-dup-note">${input.foot ?? DEVICES_MENU_NOTE}</div>
     <button type="button" class="pk-dup-done" @click=${() => input.onDone()}>Done</button>
   </div>`;

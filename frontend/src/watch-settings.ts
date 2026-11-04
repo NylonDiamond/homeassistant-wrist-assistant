@@ -707,6 +707,31 @@ export function offersStartFresh(owner: Pick<OwnerSummary, "app_version"> | unde
   return !setupMoveNeedsUpdate(owner?.app_version);
 }
 
+/** The way out of a wait whose iPhone is gone (`move-wait-out.ts`). "Start
+ * fresh instead" replaces the watch's setup. This keeps it: the watch sends
+ * its own copy here. */
+export const NO_IPHONE_QUESTION = "No longer have that iPhone?";
+export const USE_WATCH_BUTTON = "Use what is on the watch";
+
+/** What the way out asks first. The watch may hold less than its iPhone: a
+ * free plan's watch may keep one page. */
+export const USE_WATCH_CONFIRM_TEXT =
+  "Use what is on the watch? It sends its setup here the next time its app opens. Your iPhone's copy will not move here later.";
+
+/** Fired, composed, when a wait has ended. The panel reads the owners again. */
+export const MOVE_WAIT_ENDED_EVENT = "wa-move-wait-ended";
+
+/** Which watch waits, on a screen about several. */
+export function waitingWatchText(name: string): string {
+  return `${name} is waiting for its iPhone.`;
+}
+
+/** Whether a watch can take the way out. Not while its app is too old to send
+ * its setup: its line says to update it, and then this is offered. */
+export function offersUseWatch(owner: Pick<OwnerSummary, "app_version"> | undefined): boolean {
+  return owner !== undefined && !setupMoveNeedsUpdate(owner.app_version);
+}
+
 
 /** Whether a start may go ahead. While waiting it asks first, with the one
  * modal the panel uses (`window.confirm`); tests pass their own `ask`. */
@@ -747,7 +772,7 @@ export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
  * panel cannot read, such as one from a newer schema. The editor does not
  * open ready: a save over revision 0 would only meet a conflict. */
 export function pagesUnreadableText(device: SettingDevice): string {
-  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update Wrist Assistant in HACS, then reload.`;
+  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update Wrist Assistant in Marketplace or HACS, then reload.`;
 }
 
 /** `pagesUnreadableText` for a watch. */

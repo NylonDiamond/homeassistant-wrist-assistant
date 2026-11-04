@@ -352,6 +352,13 @@ def test_a_member_forgets_only_their_own_device(env) -> None:
     assert env.base.secrets.get("watch-alice") is None
 
 
+def test_a_member_ends_the_move_wait_only_of_their_own_watch(env) -> None:
+    assert _refused(_run(env, env.ws.ws_end_move_wait, ALICE, watch_id="watch-bob"))
+    assert env.base.secrets.get("watch-bob").move_wait_ended is False
+    _ok(_run(env, env.ws.ws_end_move_wait, ALICE, watch_id="watch-alice"))
+    assert env.base.secrets.get("watch-alice").move_wait_ended is True
+
+
 def test_a_member_renames_only_their_own_device(env) -> None:
     # A paired device with no registry entry yet (the listener has not run)
     # has nothing to rename, and says so rather than failing.

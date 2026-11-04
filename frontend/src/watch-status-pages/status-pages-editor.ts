@@ -86,6 +86,7 @@ import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../rendere
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
+import { renderLibraryWaitOuts } from "../move-wait-out.js";
 import { type LinkDevice, linkDevicesOf } from "../watch-pages/devices.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import type { JsonObject } from "../watch-pages/model.js";
@@ -709,7 +710,9 @@ export class WaStatusPagesEditor extends LitElement {
    * title sets too, then On each device. */
   private renderPageHead(): TemplateResult {
     const page = this.draft === undefined ? undefined : this.shownPage();
-    return html`${page === undefined ? nothing : renderNameRow(this.nameField(page))}${this.renderDevicesCard()}`;
+    const lib = this.lib.library;
+    return html`${page === undefined ? nothing : renderNameRow(this.nameField(page))}${this.renderDevicesCard()}
+      ${lib === undefined ? nothing : renderLibraryWaitOuts(this.hass, this.owners.length > 0 ? this.owners : (this.ownList ?? []), lib, "status_pages")}`;
   }
 
   /** The shown page, without needing a whole view host. */

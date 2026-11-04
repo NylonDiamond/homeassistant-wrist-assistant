@@ -261,6 +261,8 @@ export interface NewPageSheetInput extends NewPageContext {
   /** Why a device cannot take a page now (a watch waiting for its
    * iPhone's move), or undefined. */
   locked?: (ownerId: string) => string | undefined;
+  /** What goes under the devices: the way out of a watch's wait. */
+  waitOuts?: TemplateResult | typeof nothing;
 }
 
 const START_TITLES: Record<NewPageStart, string> = { empty: "Empty", room: "From a room", page: "From a page", map: "Home map" };
@@ -348,6 +350,7 @@ export function renderNewPageSheet(form: NewPageForm, input: NewPageSheetInput, 
         ${input.devices.length === 0 ? nothing : html`<section class="new-step np-step">
           <div class="new-step-head"><span class="new-step-title">Show on</span><span class="new-step-hint">Ticked like your last new page.</span></div>
           ${renderDevices(form, input, h)}
+          ${input.waitOuts ?? nothing}
         </section>`}
         <section class="new-step np-step">
           <div class="new-step-head"><span class="new-step-title">Start</span></div>

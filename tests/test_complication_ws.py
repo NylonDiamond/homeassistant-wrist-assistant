@@ -26,7 +26,7 @@ import sys
 import types
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -975,6 +975,61 @@ def test_forgetting_a_device_drops_its_live_session_first(env) -> None:
     )
     assert [code for _id, code, _msg in connection.errors] == ["not_found"]
     assert env.coordinator.dropped == ["watch-A"]
+
+
+def test_has_iphone_follows_the_rule_that_refuses_the_seed(env) -> None:
+    """A watch whose phone polled for longer than the grace seeds, so the
+    panel stops waiting at the same moment. A 3.0.1 phone that never polled
+    keeps the watch waiting."""
+    env.add_phone("phone-new", user_id="jesse")
+    env.add_phone("phone-old", user_id="jesse")
+    env.add_watch("watch-new", owner_iphone_id="phone-new", user_id="jesse")
+    env.add_watch("watch-old", owner_iphone_id="phone-old", user_id="jesse")
+    env.secrets.note_phone_pages("phone-new")
+    env.secrets.get("phone-new").phone_pages_at -= env.secrets_mod.MOVE_GRACE + timedelta(seconds=1)
+
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["watch-new"]["has_iphone"] is False
+    assert rows["watch-old"]["has_iphone"] is True
+    for owner in ("watch-new", "watch-old"):
+        assert rows[owner]["has_iphone"] == env.secrets.may_await_move(owner)
+
+
+def test_use_what_is_on_the_watch_ends_the_wait_and_wakes_the_poll(env) -> None:
+    env.add_watch("watch-A", owner_iphone_id="phone-gone", user_id="jesse")
+    env.coordinator.polling.add("watch-A")
+    assert next(r for r in env.owners() if r["owner_watch_id"] == "watch-A")["has_iphone"] is True
+
+    result = env.call(env.ws.ws_end_move_wait, watch_id="watch-A")
+    assert result == {"ok": True, "watch_id": "watch-A", "changed": True, "polling": True}
+    assert env.coordinator.woken == [("watch-A", False)]
+    assert env.secrets.may_await_move("watch-A") is False
+    # Nothing but the wait moved.
+    assert env.secrets.get("watch-A").owner_iphone_id == "phone-gone"
+    assert next(r for r in env.owners() if r["owner_watch_id"] == "watch-A")["has_iphone"] is False
+    assert env.call(env.ws.ws_end_move_wait, watch_id="watch-A")["changed"] is False
+
+
+def test_only_a_paired_watch_can_end_the_wait(env) -> None:
+    env.add_phone("phone-1", user_id="jesse")
+    for watch_id in ("phone-1", "watch-missing"):
+        connection = _Connection()
+        env.ws.ws_end_move_wait(env.hass, connection, {"id": 2, "watch_id": watch_id})
+        assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+    assert env.coordinator.woken == []
+
+
+def test_forgetting_an_iphone_ends_the_wait_and_wakes_its_watches(env) -> None:
+    env.add_phone("phone-1", user_id="jesse")
+    env.add_watch("watch-A", owner_iphone_id="phone-1", user_id="jesse")
+    env.add_watch("watch-B", owner_iphone_id="phone-2", user_id="jesse")
+
+    env.call(env.ws.ws_forget_device, watch_id="phone-1", force=True)
+
+    assert env.secrets.get("watch-A").owner_iphone_id is None
+    assert env.secrets.may_await_move("watch-A") is False
+    assert env.secrets.may_await_move("watch-B") is True
+    assert env.coordinator.woken == [("watch-A", False)]
 
 
 def test_forgetting_a_device_closes_its_camera_streams(env) -> None:

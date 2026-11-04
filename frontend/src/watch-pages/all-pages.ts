@@ -113,6 +113,7 @@ import {
 } from "./all-pages-bulk.js";
 import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-picks.js";
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
+import { renderLibraryWaitOuts } from "../move-wait-out.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { keptWatchPagesDraft } from "./kept.js";
 import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
@@ -680,6 +681,7 @@ export class WaAllPages extends LitElement {
     return renderNewPageSheet(form, {
       ...ctx, devices,
       locked: (ownerId) => (waiting.has(ownerId) ? devicesWaitText(devices.find((d) => d.ownerId === ownerId)?.appVersion) : undefined),
+      waitOuts: library === undefined ? nothing : renderLibraryWaitOuts(this.hassNow, this.owners, library, "pages"),
     }, {
       onName: (name) => set({ ...form, name }),
       onDevice: (ownerId, on) => set(tickNewPageDevice(form, devices, ownerId, on)),
@@ -1091,6 +1093,7 @@ export class WaAllPages extends LitElement {
       ${this.copyForm === undefined ? nothing : this.renderCopy(this.copyForm)}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       ${this.renderTwoScreensCard(library)}
+      ${library === undefined ? nothing : renderLibraryWaitOuts(this.hassNow, this.owners, library, what)}
       <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label=${`Your ${many}`}>
         <div class="pk-pin">
           ${this.renderHead(library, device, view)}
@@ -1135,7 +1138,7 @@ export class WaAllPages extends LitElement {
     const body = libraryItems(library, this.kind).length === 0
       ? html`<p class="ap-empty">No ${many} yet.</p>`
       : this.renderBoardAll(library, devices);
-    return html`${this.saved ? html`<span class="bd-saved ap-embed-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}${body}`;
+    return html`${this.saved ? html`<span class="bd-saved ap-embed-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}${renderLibraryWaitOuts(this.hassNow, this.owners, library, this.kind)}${body}`;
   }
 
   /** Cards: one card per item of the library, in its order. */

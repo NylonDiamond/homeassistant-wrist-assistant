@@ -48,7 +48,7 @@ describe("friendlyError", () => {
     expect(text).toBe('"Kitchen" is already in that slot. Pick another slot.');
   });
 
-  it("sends a newer design to HACS", () => {
+  it("sends a newer design to Marketplace or HACS", () => {
     expect(friendlyError({ code: "invalid", message: "document.schemaVersion 12 is newer than this integration supports (9)" }))
       .toBe(NEWER_VERSION_TEXT);
     expect(friendlyError({ code: "unknown_command", message: "Unknown command." })).toBe(UPDATE_INTEGRATION_TEXT);

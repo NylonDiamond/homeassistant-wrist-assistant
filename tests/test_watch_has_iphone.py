@@ -41,7 +41,7 @@ def _watch(
     label: str | None = "watch-self-provision",
 ) -> Any:
     return types.SimpleNamespace(
-        device_kind="watch", label=label, user_id=user_id, owner_iphone_id=owner
+        device_kind="watch", label=label, user_id=user_id, owner_iphone_id=owner, move_wait_ended=False
     )
 
 

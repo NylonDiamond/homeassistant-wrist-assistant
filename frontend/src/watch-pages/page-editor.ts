@@ -153,6 +153,7 @@ import {
   watchName,
   watchRecordUnreadable,
 } from "../watch-settings.js";
+import { renderLibraryWaitOuts } from "../move-wait-out.js";
 import { type LinkDevice, deviceWord, linkDevicesOf, pictureOwnerId } from "./devices.js";
 import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newCopyForm, openCopyDialog, renderCopyDialog, runCopy, tickCopyForm } from "./make-copy.js";
 import { newItemDialogStyles } from "../library/new-dialog.js";
@@ -5016,6 +5017,7 @@ export class WaPageEditor extends LitElement {
     // page under them, across.
     return html`<div class="pe-page-insp">
       ${renderNameRow(this.nameField(page))}
+      ${this.lib.library === undefined ? nothing : renderLibraryWaitOuts(this.hass, this.ownerList, this.lib.library, "pages")}
       <div class="pe-insp-cols">
         ${this.renderDevicesCard()}
         ${this.renderRulesCard(page)}

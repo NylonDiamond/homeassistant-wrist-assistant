@@ -8,8 +8,9 @@ for a watch whose iPhone cannot move anything (no copy of the watch's key),
 or the panel shows no pages for good and its first save replaces the watch's
 own. It ends once the iPhone that paired the watch has polled as itself for
 ``MOVE_GRACE``: only the app that moves does that, and it moves on its first
-launch. The panel's ``has_iphone`` (``watch_has_iphone``) is not changed by
-it. No Home Assistant: the module is loaded the way
+launch. It also ends when a person says that iPhone is gone, by forgetting it
+or with "Use what is on the watch". The panel's ``has_iphone`` is this same
+rule. No Home Assistant: the module is loaded the way
 ``test_widget_secret_user_binding.py`` loads it.
 """
 
@@ -90,12 +91,86 @@ def test_a_phone_marked_before_the_stamp_waits_for_its_next_poll(mod) -> None:
     assert mod.watch_move_may_still_come(entries, "w-old", NOW) is True
 
 
-def test_the_panel_keeps_waiting_whatever_the_grace_says(mod) -> None:
-    """``has_iphone`` is not this rule: the panel's editors still wait, so a
-    panel save never races the watch's seed."""
-    entries = _entries(mod, phone_pages=True, phone_pages_at=NOW - timedelta(days=3))
-    assert mod.watch_move_may_still_come(entries, "w-old", NOW) is False
-    assert mod.watch_has_iphone(entries, "w-old") is True
+def test_a_person_ends_the_wait_and_nothing_else_does(mod) -> None:
+    """Neither a missing owner entry nor any amount of time ends the wait for
+    a phone that never polled as itself: a phone on 3.0.1 may have no entry,
+    and its move must still land. Only "Use what is on the watch" does."""
+    secrets = mod.WidgetSecretStore(object())
+    secrets.register(
+        "w-old", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p-gone", user_id="u1"
+    )
+    assert secrets.may_await_move("w-old") is True
+    entries = {"w-old": secrets.get("w-old")}
+    assert mod.watch_move_may_still_come(entries, "w-old", NOW + timedelta(days=3650)) is True
+
+    assert secrets.end_move_wait("w-old") is True
+    assert secrets.may_await_move("w-old") is False
+    # It changes no other field: push tokens and ownership read that one.
+    assert secrets.get("w-old").owner_iphone_id == "p-gone"
+    # Once is enough.
+    assert secrets.end_move_wait("w-old") is False
+
+
+def test_ending_the_wait_is_for_a_paired_watch_only(mod) -> None:
+    secrets = mod.WidgetSecretStore(object())
+    secrets.register("p1", SECRET_A, mod.LABEL_IPHONE_SELF_PROVISION, user_id="u1")
+    assert secrets.end_move_wait("p1") is None
+    assert secrets.end_move_wait("missing") is None
+
+
+def test_the_ended_wait_survives_a_register_of_the_same_iphone_and_the_file(mod) -> None:
+    secrets = mod.WidgetSecretStore(object())
+    secrets.register(
+        "w-old", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    assert "move_wait_ended" not in secrets._serialize()["secrets"]["w-old"]
+    secrets.end_move_wait("w-old")
+    assert secrets._serialize()["secrets"]["w-old"]["move_wait_ended"] is True
+    # A re-key by the same iPhone keeps the person's choice.
+    secrets.register(
+        "w-old", SECRET_A, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    assert secrets.may_await_move("w-old") is False
+    # Another iPhone taking the watch over holds a key the person never gave up.
+    secrets.register(
+        "w-old", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p2", user_id="u1"
+    )
+    assert secrets.may_await_move("w-old") is True
+
+
+def test_forgetting_an_iphone_ends_the_wait_of_the_watches_that_named_it(mod) -> None:
+    secrets = mod.WidgetSecretStore(object())
+    secrets.register("p1", SECRET_A, mod.LABEL_IPHONE_SELF_PROVISION, user_id="u1")
+    secrets.register(
+        "w-1", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    secrets.register(
+        "w-2", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p2", user_id="u1"
+    )
+    assert secrets.remove("p1") == ["w-1"]
+    assert secrets.get("w-1").owner_iphone_id is None
+    assert secrets.may_await_move("w-1") is False
+    # Another iPhone's watch still waits, and forgetting a watch frees nothing.
+    assert secrets.may_await_move("w-2") is True
+    assert secrets.remove("w-1") == []
+    assert secrets.remove("missing") == []
+
+
+def test_the_panel_stops_waiting_when_the_grace_ends(mod) -> None:
+    """``has_iphone`` comes from this one rule, ``may_await_move``: the panel
+    and the watch's seed never disagree on whether the wait is over. A panel
+    save that races the seed meets the usual conflict over revision 0."""
+    secrets = mod.WidgetSecretStore(object())
+    secrets.register("p1", SECRET_A, mod.LABEL_IPHONE_SELF_PROVISION, user_id="u1")
+    secrets.register(
+        "w-old", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    secrets.note_phone_pages("p1")
+    assert secrets.may_await_move("w-old") is True
+    secrets.get("p1").phone_pages_at -= mod.MOVE_GRACE + timedelta(seconds=1)
+    assert secrets.may_await_move("w-old") is False
+    # The narrower fact still reads true; nothing outside this module asks it.
+    assert mod.watch_has_iphone(secrets.all_entries, "w-old") is True
 
 
 def test_the_first_poll_stamps_the_grace_and_later_polls_keep_it(mod) -> None:

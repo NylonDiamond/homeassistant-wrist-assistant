@@ -74,6 +74,8 @@ export interface TicksInput {
   /** Pages: a right click on a ticked chip asks for Make a copy for that
    * device (`make-copy.ts`), and its tooltip says so. None when not given. */
   onCopy?: (ownerId: string) => void;
+  /** What goes under the row: the way out of a watch's wait. */
+  under?: TemplateResult | typeof nothing;
 }
 
 /** What a ticked page chip's tooltip adds when it can make a copy. */
@@ -230,6 +232,7 @@ export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boo
     ...(input.lead === undefined ? {} : { lead: input.lead }),
     ...(input.saves === undefined ? {} : { saves: input.saves }),
     ...(copy === undefined ? {} : { onCopy: copy }),
+    ...(input.under === undefined ? {} : { under: input.under }),
   }, onPick);
 }
 
@@ -283,6 +286,8 @@ export interface TickChipsOptions {
   ask?: TickAsk;
   /** A right click on a ticked chip (`TicksInput.onCopy`). */
   onCopy?: (ownerId: string) => void;
+  /** What goes under the row (`TicksInput.under`). */
+  under?: TemplateResult | typeof nothing;
 }
 
 /**
@@ -327,6 +332,7 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
     ${opts.note === undefined ? nothing : opts.noteKind === "ok"
       ? html`<p class="lt-note ok" role="status">${opts.note}</p>`
       : html`<p class="lt-note" role="alert">${opts.note}</p>`}
+    ${opts.under ?? nothing}
   </div>`;
 }
 

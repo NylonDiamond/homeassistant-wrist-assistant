@@ -20,6 +20,7 @@ import { watchFrameStyles } from "./watch-frame.js";
 import { inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
 import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
 import { waitingEmptyText } from "./watch-pages/devices.js";
+import { renderMoveWaitOut } from "./move-wait-out.js";
 import { picksIO } from "./watch-pages/all-pages-io.js";
 import { keptWatchPagesDraft } from "./watch-pages/kept.js";
 import { type UntickAsk, askUntick, tickItem } from "./watch-pages/library-editing-io.js";
@@ -115,7 +116,8 @@ export class WaHomeLineup extends LitElement {
       const state = this.lib.readState;
       return html`<p class="hl-empty">${state === "failed" ? (this.lib.store?.readError ?? "Could not read the library.") : state === "unsupported" ? "This integration has no library to read." : "Reading the pages…"}</p>`;
     }
-    return html`<div class="hl-groups">${lineupGroups(library, this.ownerId, this.kind, {
+    const waits = this.waitsForIphone && (["pages", "status_pages", "menus"] as const).some((k) => !holdsRecord(library, this.ownerId, k));
+    return html`${waits ? renderMoveWaitOut(this.hassNow, { owner_watch_id: this.ownerId, device_name: this.deviceName, app_version: this.appVersion ?? null }) : nothing}<div class="hl-groups">${lineupGroups(library, this.ownerId, this.kind, {
       ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,

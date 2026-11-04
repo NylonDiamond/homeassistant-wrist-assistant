@@ -30,6 +30,7 @@ Commands:
 
     wrist_assistant/complications/owners
     wrist_assistant/devices/forget            {watch_id, force?}
+    wrist_assistant/devices/end_move_wait     {watch_id}
     wrist_assistant/complications/list        {owner_watch_id}
     wrist_assistant/complications/get         {owner_watch_id, id}
     wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
@@ -170,7 +171,6 @@ from .watch_config_store import WatchConfigPhoneKindError, WatchConfigStoreError
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_LIBRARY,
-    watch_has_iphone,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -195,6 +195,7 @@ _CMD_LIST_ITEMS = f"{DOMAIN}/complications/list_items"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
+_CMD_END_MOVE_WAIT = f"{DOMAIN}/devices/end_move_wait"
 _CMD_RENAME = f"{DOMAIN}/devices/rename"
 # As long as a name gets before the device sheet and the sidebar cut it off.
 _RENAME_MAX_CHARS = 100
@@ -331,6 +332,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
+    websocket_api.async_register_command(hass, ws_end_move_wait)
     websocket_api.async_register_command(hass, ws_rename_device)
     websocket_api.async_register_command(hass, ws_device_addresses)
     websocket_api.async_register_command(hass, ws_set_device_addresses)
@@ -475,7 +477,7 @@ async def ws_owners(
     guessing from two names that may well match each other.
 
     ``has_iphone`` says an iPhone may still move the watch's own setup here
-    (`watch_has_iphone`), so the panel's watch editors wait for that move
+    (`may_await_move`), so the panel's watch editors wait for that move
     instead of offering to start a fresh record over it.
 
     ``user_id`` is the Home Assistant user the device's key is bound to, or a
@@ -613,11 +615,12 @@ async def ws_owners(
                 # as itself, `note_phone_pages`). The panel offers a phone for
                 # pages only then. False for a watch.
                 "phone_pages": entry.phone_pages,
-                # Whether an iPhone may still move this watch's setup here
-                # (`watch_has_iphone`): the panel then waits for that move
+                # Whether an iPhone may still move this watch's setup here:
+                # the one rule that also refuses the watch's own seed
+                # (`may_await_move`). The panel then waits for that move
                 # rather than offering to start a fresh record over it.
                 # False for a phone.
-                "has_iphone": watch_has_iphone(entries, device_id),
+                "has_iphone": secret_store.may_await_move(device_id),
                 # The Home Assistant user this device belongs to, through its
                 # paired iPhone for a watch whose own key was never bound.
                 "user_id": entry.user_id
@@ -775,7 +778,9 @@ def ws_forget_device(
     # Its camera streams end too, and any stream token it has not used yet
     # stops working, as on the removal from HA's device page.
     domain_data.camera_stream_coordinator.close_device(watch_id)
-    domain_data.widget_secret_store.remove(watch_id)
+    # A forgotten iPhone ends the wait of the watches that named it.
+    for released in domain_data.widget_secret_store.remove(watch_id):
+        domain_data.coordinator.wake_watch(released)
     domain_data.notification_store.remove(watch_id)
     # Its designs move to the Library and everything else it held (presets,
     # pages, occupied slots, the applied token) goes. A complication is its
@@ -820,6 +825,51 @@ def ws_forget_device(
             "complications_moved_to_library": moved,
             "watch_config_removed": watch_config_removed,
         },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_END_MOVE_WAIT,
+        vol.Required("watch_id"): str,
+    }
+)
+@callback
+def ws_end_move_wait(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The panel's "Use what is on the watch": stop waiting for this watch's
+    iPhone, which a person says is gone.
+
+    Writes no record. The next delta reply says ``may_await_move: false``, and
+    the watch then seeds its own copy, so this wakes its parked poll. A watch
+    with no parked poll hears on its next one. The panel's wait lines read
+    ``has_iphone``, false from now on. Repeating it changes nothing. A phone's
+    move that does come later still lands for any kind that has no record.
+
+    ``not_found`` for an id that is not a paired watch. The owner check is the
+    one ``devices/rename`` makes. Result: ``{ok, watch_id, changed, polling}``,
+    with ``polling`` whether the watch holds a poll here now.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    watch_id = msg["watch_id"]
+    if not require_owner(hass, connection, msg, watch_id):
+        return
+    changed = domain_data.widget_secret_store.end_move_wait(watch_id)
+    if changed is None:
+        connection.send_error(
+            msg["id"], "not_found", f"no paired watch with id {watch_id}"
+        )
+        return
+    coordinator = domain_data.coordinator
+    polling = coordinator.is_polling(watch_id)
+    coordinator.wake_watch(watch_id)
+    connection.send_result(
+        msg["id"],
+        {"ok": True, "watch_id": watch_id, "changed": changed, "polling": polling},
     )
 
 

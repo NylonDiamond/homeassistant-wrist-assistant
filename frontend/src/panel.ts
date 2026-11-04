@@ -440,7 +440,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
-import { noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
+import { MOVE_WAIT_ENDED_EVENT, noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
 import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
@@ -6287,6 +6287,7 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("hashchange", this.takeShareLink);
     document.addEventListener("visibilitychange", this.homeVisible);
     for (const type of UNSAVED_NUDGES) this.addEventListener(type, this.unsavedSoon, { capture: true });
+    this.addEventListener(MOVE_WAIT_ENDED_EVENT, this.moveWaitEnded);
     this.takeShareLink();
     void this.loadOwners();
     void this.listenToHome();
@@ -6552,6 +6553,7 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("pointerdown", this.watchRowOutside, { capture: true });
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
+    this.removeEventListener(MOVE_WAIT_ENDED_EVENT, this.moveWaitEnded);
     window.removeEventListener("hashchange", this.takeShareLink);
     document.removeEventListener("visibilitychange", this.homeVisible);
     void this.unsubscribe?.().catch(() => undefined);
@@ -11713,6 +11715,12 @@ export class WristAssistantPanel extends LitElement {
    * reaches the dots at once. Taken on the way down, so an editor that stops
    * the event still lets it through here.
    */
+  /** A way out of a watch's wait was taken (`move-wait-out.ts`): every wait
+   * line reads the owners, so a new read clears them. */
+  private moveWaitEnded = () => {
+    void this.loadOwners();
+  };
+
   private unsavedSoon = () => {
     window.setTimeout(this.checkUnsaved, 0);
   };

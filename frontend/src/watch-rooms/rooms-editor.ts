@@ -82,6 +82,7 @@ import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
+import { renderMoveWaitOut } from "../move-wait-out.js";
 import {
   type SettingDevice,
   START_FRESH_BUTTON,
@@ -1043,6 +1044,7 @@ export class WaRoomsEditor extends LitElement {
       return html`<div class="pe-empty"><b>${this.device === "iphone" ? noRecordTitle("rooms", "iphone") : home ? HOME_ROOMS_NO_RECORD_TITLE : ROOMS_NO_RECORD_TITLE}</b>
         <span>${home ? waitForIphoneText(shown?.app_version) : roomsWaitText(shown?.app_version)}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
+        ${renderMoveWaitOut(this.hass, shown)}
       </div>`;
     }
     const draft = this.draft;

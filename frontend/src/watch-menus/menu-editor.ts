@@ -56,6 +56,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { live } from "lit/directives/live.js";
+import { renderLibraryWaitOuts } from "../move-wait-out.js";
 import { type LinkDevice, linkDevicesOf } from "../watch-pages/devices.js";
 import { type MenuUnit, libraryErrorText } from "../library/client.js";
 import {
@@ -1180,6 +1181,7 @@ export class WaMenuEditor extends LitElement {
       ...(admin === undefined ? {} : { admin }),
       ...(inBar ? { hint: false as const } : {}),
       locked: (ownerId) => this.menuTickLocked(ownerId),
+      under: renderLibraryWaitOuts(this.hass, this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.lib.library!, "menus"),
     }, (ownerId) => {
       const device = this.linkDevices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "The device";
       void store.pickMenu(ownerId, used.unit, used.id, { device });

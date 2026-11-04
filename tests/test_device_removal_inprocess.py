@@ -92,11 +92,19 @@ class _Recorder:
         return _call
 
 
+class _Secrets(_Recorder):
+    """Removing a device returns the watches it released: none here."""
+
+    def remove(self, watch_id: str) -> list[str]:
+        self._journal.append((f"{self._label}.remove", watch_id))
+        return []
+
+
 def _domain_data(journal: list[tuple[str, str]]) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         coordinator=_Recorder(journal, "coordinator"),
         camera_stream_coordinator=_Recorder(journal, "cameras"),
-        widget_secret_store=_Recorder(journal, "secrets"),
+        widget_secret_store=_Secrets(journal, "secrets"),
         notification_store=_Recorder(journal, "notifications"),
         complication_store=_Recorder(journal, "complications"),
         watch_config_store=_Recorder(journal, "watch_config"),

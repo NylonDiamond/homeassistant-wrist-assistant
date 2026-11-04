@@ -103,9 +103,11 @@ export interface OwnerSummary {
       that paired it, and its key did not come from a pairing code. Another
       iPhone of the watch's user does not count. The phone's one-time move sends a
       kind only while Home Assistant holds none, so the watch editors wait
-      for it rather than offer a start over it (`noRecordStart`). False on a
-      phone, absent from the Library row and from integrations older than the
-      field. */
+      for it rather than offer a start over it (`noRecordStart`). It is the
+      rule that refuses the watch's own seed, so it goes false a day after that
+      iPhone first polled as itself, and when a person says the iPhone is gone
+      (`endMoveWait`, or forgetting it). False on a phone, absent from the
+      Library row and from integrations older than the field. */
   has_iphone?: boolean | null;
   /** The Home Assistant user this device is bound to (a watch through its
       paired iPhone when its own key predates binding), null when none.
@@ -421,6 +423,18 @@ export async function forgetDevice(hass: HassLike, watchId: string) {
     device_removed: boolean;
     complications_moved_to_library: number;
   }>({ type: "wrist_assistant/devices/forget", watch_id: watchId, force: true });
+}
+
+/** A person says this watch's iPhone is gone: Home Assistant stops waiting for
+ * that iPhone's move, and the watch sends its own setup here. Writes no record.
+ * The owner row's `has_iphone` is false from now on. */
+export async function endMoveWait(hass: HassLike, watchId: string) {
+  return hass.connection.sendMessagePromise<{
+    ok: boolean;
+    watch_id: string;
+    changed: boolean;
+    polling: boolean;
+  }>({ type: "wrist_assistant/devices/end_move_wait", watch_id: watchId });
 }
 
 export async function saveRecord(

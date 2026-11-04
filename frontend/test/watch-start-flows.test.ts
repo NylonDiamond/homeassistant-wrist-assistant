@@ -186,7 +186,7 @@ describe("the page editor over a record it cannot read", () => {
     expect(PAGES_UNREADABLE_TEXT).toBe(pagesUnreadableText("watch"));
     expect(pagesUnreadableText("watch")).toContain("pages for this watch");
     expect(pagesUnreadableText("iphone")).toContain("pages for this iPhone");
-    expect(pagesUnreadableText("iphone")).toContain("Update Wrist Assistant in HACS, then reload.");
+    expect(pagesUnreadableText("iphone")).toContain("Update Wrist Assistant in Marketplace or HACS, then reload.");
   });
 });
 

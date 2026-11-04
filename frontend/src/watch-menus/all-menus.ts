@@ -39,6 +39,7 @@ import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
 import { ALL_FILTER, type PagesFilter, libraryEditTitle, onDeviceTitle, resolveFilter, restTitle } from "../watch-pages/all-pages-model.js";
+import { renderLibraryWaitOuts } from "../move-wait-out.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
 import { type LinkDevice, type PagesRecordFacts, awaitingMove, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
@@ -430,6 +431,7 @@ export class WaAllMenus extends LitElement {
       ${this.newForm === undefined ? nothing : this.renderNewDialog(this.newForm)}
       ${this.newNote === undefined ? nothing : html`<p class="lt-line ${this.newNote.kind}" role="status">${this.newNote.text}</p>`}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
+      ${library === undefined ? nothing : renderLibraryWaitOuts(this.hassNow, this.owners, library, "menus")}
       <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label="Your menus">
         <div class="pk-pin">
           ${this.renderHead(view)}
@@ -458,7 +460,7 @@ export class WaAllMenus extends LitElement {
       return html`<p class="ap-empty">${why}</p>`;
     }
     if (devices.length === 0) return html`<p class="ap-empty">No device can have menus.</p>`;
-    return this.renderBoardAll(library, devices);
+    return html`${renderLibraryWaitOuts(this.hassNow, this.owners, library, "menus")}${this.renderBoardAll(library, devices)}`;
   }
 
   /** Cards: the menus in two sections, Anywhere menus first, each under its

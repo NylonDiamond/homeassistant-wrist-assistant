@@ -96,6 +96,7 @@ import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailure
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
+import { renderMoveWaitOut, renderMoveWaitOuts } from "../move-wait-out.js";
 import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, offersStartFresh, settingsWatches, waitForIphoneText, watchName } from "../watch-settings.js";
 import {
   chooseStartFresh,
@@ -1132,6 +1133,7 @@ export class WaVoiceEditor extends LitElement {
         ...(blocked === undefined ? {} : { blocked }),
         busy: this.linking,
         ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
+        under: renderMoveWaitOuts(this.hass, this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.waitingWatches()),
         className: "at-card",
         colorOf: (ownerId) => this.colorOf(ownerId),
         titleOf: voiceDeviceTitle,
@@ -1526,6 +1528,7 @@ export class WaVoiceEditor extends LitElement {
       const shown = this.shownWatch();
       return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${waitForIphoneText(shown?.app_version)}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
+        ${renderMoveWaitOut(this.hass, shown)}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when voice settings are here again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchVoiceDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;

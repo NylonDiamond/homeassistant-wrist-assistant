@@ -160,6 +160,13 @@ class WidgetSecretEntry:
     """The internet address, kept like `local_url`. On ``auto`` it follows
     the external URL, else the Home Assistant Cloud one."""
 
+    move_wait_ended: bool = False
+    """A person said this watch's iPhone is gone, so nothing waits for that
+    iPhone's move any more (`end_move_wait`, :func:`watch_has_iphone`). Only a
+    person's choice sets it; no time or missing entry does. A `register()`
+    keeps it while the watch names the same iPhone, and drops it for another
+    one, whose move may yet come. Kept on disk only while True."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -236,6 +243,7 @@ class WidgetSecretStore:
                     phone_pages_at=_stored_time(entry.get("phone_pages_at")),
                     local_url=_stored_address(entry.get("local_url")),
                     remote_url=_stored_address(entry.get("remote_url")),
+                    move_wait_ended=entry.get("move_wait_ended") is True,
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -295,6 +303,7 @@ class WidgetSecretStore:
                         if entry.remote_url is not None
                         else {}
                     ),
+                    **({"move_wait_ended": True} if entry.move_wait_ended else {}),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -377,6 +386,11 @@ class WidgetSecretStore:
             phone_pages_at=existing.phone_pages_at if existing is not None else None,
             local_url=existing.local_url if existing is not None else None,
             remote_url=existing.remote_url if existing is not None else None,
+            move_wait_ended=(
+                existing is not None
+                and existing.move_wait_ended
+                and existing.owner_iphone_id == owner_iphone_id
+            ),
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -525,11 +539,31 @@ class WidgetSecretStore:
         """Whether an iPhone may still move this watch's setup here
         (:func:`watch_move_may_still_come`). The watch config store asks this
         before a link or the watch's own seed makes a watch's first record of
-        a kind, which would leave that move nothing to send. Narrower than
-        the owner list's ``has_iphone`` (:func:`watch_has_iphone`): the panel
-        keeps waiting, while the watch may fill an empty record with its own
-        copy once the move has had its chance."""
+        a kind, which would leave that move nothing to send. The owner list's
+        ``has_iphone`` and the delta reply's ``may_await_move`` say this same
+        thing, so the panel and the watch never disagree on whether the wait
+        is over."""
         return watch_move_may_still_come(self._secrets, watch_id, dt_util.utcnow())
+
+    def end_move_wait(self, watch_id: str) -> bool | None:
+        """Stop waiting for this watch's iPhone: a person said it is gone.
+
+        Backs the panel's "Use what is on the watch". The watch's own seed
+        then lands and the panel opens ready. ``owner_iphone_id`` stays as it
+        is: other code reads it for push tokens and for whose device this is,
+        and the iPhone may still be around. Returns whether it changed, or
+        None for an id that is not a paired watch. No listeners are told: the
+        device entities do not show it; the caller wakes the watch's poll.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None or entry.device_kind != DEVICE_KIND_WATCH:
+            return None
+        if entry.move_wait_ended:
+            return False
+        entry.move_wait_ended = True
+        self._schedule_save()
+        _LOGGER.info("watch_id=%s no longer waits for its iPhone's move", watch_id)
+        return True
 
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:
         """Record whether this Home Assistant is `watch_id`'s main house.
@@ -657,10 +691,22 @@ class WidgetSecretStore:
             return None
         return entry.owner_iphone_id
 
-    def remove(self, watch_id: str) -> None:
-        if self._secrets.pop(watch_id, None) is not None:
-            self._schedule_save()
-            self._notify_listeners()
+    def remove(self, watch_id: str) -> list[str]:
+        """Forget a device. A forgotten iPhone leaves the watches that named
+        it with no owner, which ends their wait for its move at once: a person
+        chose it, and a phone that comes back must pair them again to name
+        them. Returns those watch ids, so the caller can wake their polls."""
+        removed = self._secrets.pop(watch_id, None)
+        if removed is None:
+            return []
+        released: list[str] = []
+        for other_id, entry in self._secrets.items():
+            if entry.owner_iphone_id == watch_id:
+                entry.owner_iphone_id = None
+                released.append(other_id)
+        self._schedule_save()
+        self._notify_listeners()
+        return released
 
     @property
     def all_watch_ids(self) -> list[str]:
@@ -772,13 +818,19 @@ def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) ->
     same Home Assistant user does not count either: a household where one person
     pairs every watch by code would otherwise wait on every one of them.
 
+    Never once a person said that iPhone is gone: they pressed "Use what is on
+    the watch" (``move_wait_ended``), or forgot the iPhone, which clears the
+    field (`WidgetSecretStore.remove`). A missing entry alone says nothing, as
+    a phone on an old app may have none.
+
     False for an iPhone entry and an unknown id. Pure over the entries, so it
-    is tested without Home Assistant.
+    is tested without Home Assistant. A part of
+    :func:`watch_move_may_still_come`, which is the rule everything else asks.
     """
     entry = entries.get(watch_id)
     if entry is None or entry.device_kind == DEVICE_KIND_IPHONE:
         return False
-    if entry.label == LABEL_WATCH_CODE_PAIR:
+    if entry.label == LABEL_WATCH_CODE_PAIR or entry.move_wait_ended:
         return False
     return bool(entry.owner_iphone_id)
 

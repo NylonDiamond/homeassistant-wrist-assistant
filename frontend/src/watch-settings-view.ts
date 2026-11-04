@@ -48,6 +48,7 @@
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
+import { renderMoveWaitOut } from "./move-wait-out.js";
 import { checkField, colorField, entityField, entityRefFor, percentSliderField, selectField, settingTitle, sliderField } from "./editors.js";
 import {
   type DeviceAddresses,
@@ -1237,7 +1238,8 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${waitForIphoneText(this.shownOwner?.app_version)}</span></div>
       ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ws-start" ?disabled=${this.saving}
         title="Open the settings on the app's defaults. Nothing is saved until you press Save."
-        @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}`;
+        @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
+      ${renderMoveWaitOut(this.hass, this.shownOwner)}`;
   }
 
   /** One catalog section as an inspector card that is always open: the
@@ -1496,7 +1498,8 @@ export class WatchSettings implements ReactiveController {
       return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${waitForIphoneText(this.shownOwner?.app_version)}</span></div>
         ${offersStartFresh(this.shownOwner) ? html`<button class="link start-fresh ns-start" ?disabled=${this.saving}
           title="Open the notification style on the app's defaults. Nothing is saved until you press Save."
-          @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}`);
+          @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
+        ${renderMoveWaitOut(this.hass, this.shownOwner)}`);
     }
     return undefined;
   }

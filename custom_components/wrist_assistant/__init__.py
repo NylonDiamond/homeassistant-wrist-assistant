@@ -806,6 +806,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.attach_addresses(
         lambda watch_id: addresses_hash_for(hass, widget_secret_store, watch_id)
     )
+    # Whether a watch's iPhone may still move its setup here rides its poll,
+    # so a watch that was told to wait hears when the wait is over.
+    coordinator.attach_move_wait(
+        lambda watch_id: (
+            widget_secret_store.may_await_move(watch_id)
+            if widget_secret_store.is_paired_watch(watch_id)
+            else None
+        )
+    )
     # Step 6, once per install: an iPhone's push token filed under its
     # companion watch moves to the phone's own id, where it now lives and
     # where routing pairs it with the watches of the same user.
@@ -1654,7 +1663,9 @@ async def async_remove_config_entry_device(
         # And its camera streams: a running one stops, and a stream token it
         # was handed but has not used can no longer open one.
         domain_data.camera_stream_coordinator.close_device(watch_id)
-        domain_data.widget_secret_store.remove(watch_id)
+        # A forgotten iPhone ends the wait of the watches that named it.
+        for released in domain_data.widget_secret_store.remove(watch_id):
+            domain_data.coordinator.wake_watch(released)
         domain_data.notification_store.remove(watch_id)
         # Same teardown the panel's Forget action performs. The device's
         # designs move to the Library (Unassigned in the panel) rather than

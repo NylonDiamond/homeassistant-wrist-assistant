@@ -473,6 +473,14 @@ class DeltaCoordinator:
         # watch_id → the addresses hash its last reply with a body carried,
         # kept like _http_actions_sent.
         self._addresses_sent: dict[str, str] = {}
+        # Whether a watch's iPhone may still move its setup here rides the
+        # poll as `may_await_move`: ``_move_wait_of(watch_id)`` gives it, None
+        # for an iPhone or an unknown id. None until setup attaches it
+        # (attach_move_wait).
+        self._move_wait_of: Callable[[str], bool | None] | None = None
+        # watch_id → the value its last reply with a body carried, kept like
+        # _http_actions_sent. A change earns a poll one empty reply.
+        self._move_wait_sent: dict[str, bool] = {}
         # watch_id → for each of "watch_config", "http_actions",
         # "client_certificate" and "addresses", the value a reply carried to
         # a poll whose own report (HeldConfig) was behind it. A report still
@@ -630,6 +638,7 @@ class DeltaCoordinator:
         self._home_map_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
         self._addresses_sent.pop(watch_id, None)
+        self._move_wait_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
         self._just_paired.add(watch_id)
 
@@ -817,6 +826,7 @@ class DeltaCoordinator:
             or self._home_map_behind(watch_id)
             or self._client_certificate_behind(watch_id, held)
             or self._addresses_behind(watch_id, held)
+            or self._move_wait_behind(watch_id)
         )
 
     def _note_config_baseline(self, watch_id: str) -> None:
@@ -839,6 +849,10 @@ class DeltaCoordinator:
             current_hash = self.addresses_hash(watch_id)
             if current_hash is not None:
                 self._addresses_sent[watch_id] = current_hash
+        if watch_id not in self._move_wait_sent:
+            waits = self.may_await_move(watch_id)
+            if waits is not None:
+                self._move_wait_sent[watch_id] = waits
 
     @callback
     def http_actions_changed(self, _revision: int) -> None:
@@ -1030,6 +1044,35 @@ class DeltaCoordinator:
             held.addresses is not None and held.addresses != current,
             current,
         )
+
+    # ── the wait for the iPhone's move on the poll ───────────────────
+
+    @callback
+    def attach_move_wait(self, may_await_move: Callable[[str], bool | None]) -> None:
+        """Wire in ``may_await_move(watch_id)``, the store's rule for a watch
+        and None for any other id. Its value goes out on every reply with a
+        body. The wake when a person ends the wait is the caller's."""
+        self._move_wait_of = may_await_move
+
+    def may_await_move(self, watch_id: str) -> bool | None:
+        """The value for a reply, or None to leave the field out: nothing
+        attached, not a watch, or a lookup that failed."""
+        if self._move_wait_of is None:
+            return None
+        try:
+            return self._move_wait_of(watch_id)
+        except Exception:  # noqa: BLE001 (a failed lookup must not fail the poll)
+            _LOGGER.debug("No move wait for %s", watch_id, exc_info=True)
+            return None
+
+    def _move_wait_behind(self, watch_id: str) -> bool:
+        """True when the value changed since the last reply with a body (or
+        the baseline noted before the watch parked)."""
+        current = self.may_await_move(watch_id)
+        if current is None:
+            return False
+        sent = self._move_wait_sent.get(watch_id)
+        return sent is not None and current != sent
 
     # ── the watch's voice list on the poll ────────────────────────────
 
@@ -1276,6 +1319,7 @@ class DeltaCoordinator:
         self._home_map_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
         self._addresses_sent.pop(watch_id, None)
+        self._move_wait_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
         # A device paired again under the same id is a first sync again.
         self._first_sync_logged.discard(watch_id)
@@ -1380,6 +1424,14 @@ class DeltaCoordinator:
         the one it holds. A set from the panel or the device wakes its parked
         poll; a change to Home Assistant's own Network settings moves the
         hash on its own and the next poll finds it.
+
+        A reply with a body to a watch also carries ``may_await_move``: whether
+        its iPhone may still move its setup here, the rule that refuses its
+        seed ``awaiting_move`` (``watch_move_may_still_come``). A watch holding
+        back its seeds after that refusal seeds again as soon as this is
+        false. A person ending the wait wakes its parked poll, and any other
+        change earns one empty reply on the next poll. A lean reply carries it
+        whole, as the poll does not report it. Older apps ignore the key.
 
         ``held`` is what the device says it holds of those values (see
         HeldConfig), the addresses hash included. A poll whose report lags a current number is
@@ -1514,6 +1566,10 @@ class DeltaCoordinator:
                 reported.addresses is not None and reported.addresses != addresses,
                 addresses,
             )
+        waits = self.may_await_move(watch_id)
+        if waits is not None:
+            body["may_await_move"] = waits
+            self._move_wait_sent[watch_id] = waits
         if self._voices_wanted(watch_id, voices_hash):
             body["voices_wanted"] = True
 
@@ -1537,8 +1593,8 @@ class DeltaCoordinator:
           only the kinds that differ.
         * ``watch_config_hashes`` always whole, as a full reply carries it:
           the watch does not report the hashes it holds. The same for
-          ``http_actions_hash``, and for ``home_map_rev``, which the poll
-          does not report either.
+          ``http_actions_hash``, and for ``home_map_rev`` and
+          ``may_await_move``, which the poll does not report either.
         * ``epoch`` only when the poll's is not this coordinator's.
 
         The device fills a missing number in from the request it sent, so
@@ -2404,6 +2460,7 @@ class DeltaCoordinator:
             self._home_map_sent.pop(watch_id, None)
             self._client_certificate_sent.pop(watch_id, None)
             self._addresses_sent.pop(watch_id, None)
+            self._move_wait_sent.pop(watch_id, None)
             self._held_repeated.pop(watch_id, None)
             # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
             # polling again after a long idle arrives with a fresh stamp and a
