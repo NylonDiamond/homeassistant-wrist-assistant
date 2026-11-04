@@ -21,6 +21,7 @@ import type { UntickAsk } from "../src/watch-pages/library-editing-io.js";
 import { forgetWatchPagesDraft, keptWatchPagesSelection, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { LIBRARY_PREVIEW_KEY } from "../src/library/item-mode.js";
+import { SHELF_TAB, resetDeviceTabsForTest } from "../src/library/device-tabs.js";
 import { CAMERA, CHEN, CHEN_MENU, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, SYSTEM } from "./library-fixture.js";
 import { type Msg, OWNERS, fakeHome, settle, standUp } from "./library-tab-fake.js";
 import type { OwnerSummary } from "../src/ha-api.js";
@@ -56,7 +57,13 @@ function showCards(t: ReturnType<typeof tab>) {
   t.call("setView", "cards");
 }
 
+/** The cards shown, by their keys, in order. */
+function cardKeys(text: string): string[] {
+  return [...text.matchAll(/data-card=([0-9A-Fa-f-]+)/g)].map((m) => m[1]!.toUpperCase());
+}
+
 afterEach(() => {
+  resetDeviceTabsForTest();
   resetNewPageDevicesForTest();
   resetTwoScreensCardForTest();
   try {
@@ -85,6 +92,117 @@ describe("the Pages tab", () => {
     for (const gone of ["pk-tab", ">Device<", "Watches (", "Link", "Not linked", "Same as"]) expect(text).not.toContain(gone);
   });
 
+  it("filters the cards by device with a row of tabs, in the device's own order, with no order to drag", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    showCards(t);
+    await t.ready();
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+    expect(t.whole()).toMatch(/pk-tab-name">All<\/span>\s*<span class="pk-tab-count">5</);
+    expect(t.whole()).toMatch(/pk-tab-name">Jesse Apple Watch<\/span>\s*<span class="pk-tab-count">2</);
+    expect(cardKeys(t.whole())).toHaveLength(5);
+    t.call("pickTab", JESSE);
+    expect(t.el.focusOwner).toBe(JESSE);
+    // The device's own order, not the library's, and no system page.
+    expect(cardKeys(t.whole())).toEqual([SMART, PAGE1].map((id) => id.toUpperCase()));
+    expect(t.whole()).not.toContain("<table");
+    expect(t.whole()).not.toContain("Drag to order");
+    expect(t.whole()).toContain("Multi select");
+    expect(t.whole()).toContain("Screens differ");
+    t.call("pickTab", "all");
+    expect(t.el.focusOwner).toBeUndefined();
+    expect(cardKeys(t.whole())).toHaveLength(5);
+  });
+
+  it("lists the pages on no device under Not on a device, set apart from the devices", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    showCards(t);
+    await t.ready();
+    expect(t.whole()).toContain("pk-tab chip");
+    t.call("pickTab", SHELF_TAB);
+    expect(cardKeys(t.whole())).toEqual([LONELY.toUpperCase()]);
+    // A device's tab takes over from it.
+    t.call("pickTab", CHEN);
+    expect(t.el.focusOwner).toBe(CHEN);
+    expect(cardKeys(t.whole())).not.toContain(LONELY.toUpperCase());
+  });
+
+  it("carries the device between Cards and Board: its cards, then its focused column", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    showCards(t);
+    await t.ready();
+    t.call("pickTab", JESSE);
+    t.call("setView", "board");
+    expect(t.whole()).toContain("Drag to order");
+    expect(t.whole()).not.toContain(`class="pk-tabs"`);
+    t.call("setView", "cards");
+    expect(t.el.focusOwner).toBe(JESSE);
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+    expect(cardKeys(t.whole())).toHaveLength(2);
+  });
+
+  it("opens a device's address on its cards, unless its column's Focus was clicked or Board was picked", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    showCards(t);
+    await t.ready();
+    // The way in from a device's own screens: the view stays Cards.
+    t.el.focusOwner = CHEN;
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+    t.el.focusOwner = undefined;
+    // The Focus pill: the column, while the view kept is still Cards.
+    t.call("setFocus", CHEN);
+    expect(t.whole()).toContain("Drag to order");
+    // Another device, from its own screens: its cards.
+    t.el.focusOwner = JESSE;
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+    // Back to the column, then Cards: the pill's wish is over.
+    t.call("setFocus", CHEN);
+    t.call("setView", "cards");
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+  });
+
+  it("draws an iPhone's tab with the iPhone's picture and a watch's with the watch's, and a card's icons still swap it", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    showCards(t);
+    await t.ready();
+    const cardOf = () => {
+      const cards = t.whole();
+      const card = cards.slice(cards.indexOf(`data-card=${PAGE1}`));
+      return card.slice(0, card.indexOf("lt-ticks"));
+    };
+    t.call("pickTab", PHONE);
+    expect(cardKeys(t.whole())).toContain(PAGE1.toUpperCase());
+    expect(cardOf()).toContain("ap-pic-phone");
+    t.el.cardPicks = new Map([[PAGE1.toUpperCase(), "watch"]]);
+    expect(cardOf()).not.toContain("ap-pic-phone");
+  });
+
+  it("says when a device's tab has nothing on it, and keeps Multi select's picks to what the tab shows", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    showCards(t);
+    await t.ready();
+    t.home.lib.picks[CHEN]!.pages = [];
+    await (t.el.lib as { store: { refresh: () => Promise<void> } }).store.refresh();
+    await settle();
+    t.call("pickTab", CHEN);
+    expect(cardKeys(t.whole())).toEqual([]);
+    expect(t.whole()).toContain("No pages on Chen Watch yet.");
+    // A device with nothing on it folds behind +N more until it is picked.
+    t.call("pickTab", "all");
+    expect(t.whole()).toContain("+1 more");
+    t.call("startSelect");
+    const lonely = (t.el.lib as { library: { pages: { id: string; name: string }[] } }).library.pages.find((e) => e.id === LONELY)!;
+    t.call("pick", lonely, false);
+    expect((t.el.selected as Set<string>).size).toBe(1);
+    t.call("pickTab", JESSE);
+    expect((t.el.selected as Set<string>).size).toBe(0);
+  });
+
   it("focuses a device from its column head, through the host's address", async () => {
     const focused: (string | undefined)[] = [];
     const t = tab();
@@ -93,10 +211,10 @@ describe("the Pages tab", () => {
     await t.ready();
     t.call("setFocus", CHEN);
     expect(focused).toEqual([CHEN]);
-    // Cards leaves a focused device.
+    // Cards keeps the device: its tab is on, not the column.
     showTab(t, CHEN);
     t.call("setView", "cards");
-    expect(focused).toEqual([CHEN, undefined]);
+    expect(focused).toEqual([CHEN]);
   });
 
   it("says a box's write in the Undo toast, with no Saved beside the head", async () => {

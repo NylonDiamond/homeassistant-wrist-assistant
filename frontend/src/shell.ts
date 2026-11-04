@@ -259,9 +259,9 @@ export function deviceScreenPath(kind: "watch" | "iphone", screen: WatchScreen, 
   return deviceListPath(screen.id, owner) ?? (kind === "iphone" ? iphoneScreenPath(screen, owner) : watchScreenPath(screen, owner));
 }
 
-/** A device's own Pages, Status pages or Menus screen is its column on the
- * board now (plan step 4): that tab's address, focused on the device, or on
- * every device with no owner. Undefined for any other screen. */
+/** A device's own Pages, Status pages or Menus screen is that tab's address,
+ * on the device: its tab over the cards or its column on the board, as the view
+ * kept says. With no owner, every device. Undefined for any other screen. */
 export function deviceListPath(id: WatchScreen["id"], owner: string | undefined): string | undefined {
   const base = id === "pages" ? ALL_PAGES_PATH : id === "status-pages" ? ALL_STATUS_PAGES_PATH : id === "menus" ? ALL_MENUS_PATH : undefined;
   return base === undefined ? undefined : listFocusPath(base, owner);

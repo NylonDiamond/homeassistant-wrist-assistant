@@ -63,6 +63,7 @@ import { type BoardCell, type BoardColumn, type BoardDrag, type BoardMenuItem, t
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
+import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import { keptStatusPagesDraft } from "../watch-status-pages/draft.js";
 import { renderStatusPagePicture, statusPagesViewStyles } from "../watch-status-pages/view.js";
@@ -208,11 +209,12 @@ const BOARD_PICTURE_W = 44;
 const BOARD_PHONE_PICTURE_W = 28;
 
 /** Where each tab's Board or Cards is remembered in this browser, as the
- * Complications list remembers its On device | Shape only toggle. The Pages
- * tab keeps the key it always had. */
+ * Complications list remembers its On device | Shape only toggle. Version 2
+ * starts every browser on Cards once: version 1 could hold a Board nobody
+ * picked, from when Board came first. */
 const VIEW_STORE_KEYS: Record<CardKind, string> = {
-  pages: "wrist-assistant-panel.all-pages.v1",
-  status_pages: "wrist-assistant-panel.all-status-pages.v1",
+  pages: "wrist-assistant-panel.all-pages.v2",
+  status_pages: "wrist-assistant-panel.all-status-pages.v2",
 };
 
 /** The device kinds a new page's dialog offers to preview on: the ones the
@@ -393,7 +395,11 @@ export class WaAllPages extends LitElement {
     // old one.
     if (changed.has("kind") && changed.get("kind") !== undefined) this.kindChanged();
     // Focused on another device: a selection belongs to every device.
-    if (changed.has("focusOwner") && this.focusOwner !== undefined) this.endSelect(true);
+    // On Cards a device is only a filter: the picks it hides drop out.
+    if (changed.has("focusOwner")) {
+      if (this.view === "board" && this.focusOwner !== undefined) this.endSelect(true);
+      else this.pruneSelected();
+    }
     if (this.embedded && changed.has("searchText")) this.search = this.searchText;
     // The board's pages say where a device on the free plan shows only its
     // first page.
@@ -408,6 +414,7 @@ export class WaAllPages extends LitElement {
     this.pageForm = undefined;
     this.copyForm = undefined;
     this.screensFilter = "all";
+    this.tabsMenu.toggle(false);
     this.picksNote = undefined;
     this.tickNotes = new Map();
     this.untickAsk = undefined;
@@ -425,14 +432,19 @@ export class WaAllPages extends LitElement {
     return filter === ALL_FILTER ? undefined : this.devices.find((d) => d.ownerId === filter);
   }
 
-  /** Board or Cards, kept for each tab apart (`keptView`). A focused device
-   * is always the board: its column is the focus. */
+  /** Board or Cards, kept for each tab apart (`keptView`). A device's address
+   * follows the view: its tab's cards, or on the board its focused column. A
+   * click on a column's Focus pill always means the column. */
   private get view(): ListView {
-    return this.embedded || this.filterDevice() !== undefined ? "board" : phoneView(this.kind, keptView(this.kind).view);
+    if (this.embedded || focusedOnBoard(this.kind, this.filterDevice()?.ownerId)) return "board";
+    return phoneView(this.kind, keptView(this.kind).view);
   }
 
   /** Whether this tab is wide enough for big row pictures. */
   private roomy = new WideWatch(this);
+
+  /** "+N more" over the cards. */
+  private tabsMenu = new DeviceTabsMenu(this);
 
   private colorsFor = deviceColorsCache();
 
@@ -459,15 +471,45 @@ export class WaAllPages extends LitElement {
   private setFocus(ownerId: string | undefined): void {
     if (ownerId !== undefined) this.endSelect(true);
     this.picksNote = undefined;
+    noteBoardFocus(this.kind, ownerId);
     this.onFocus?.(ownerId);
   }
 
-  /** Board or Cards, remembered. Cards leaves a focused device. */
+  /** Board or Cards, remembered. A device's tab stays on: Cards draws its
+   * cards, Board its focused column. */
   private setView(view: ListView): void {
     noteViewPick(this.kind, view);
     keepView(this.kind, { view });
-    if (view === "cards" && this.filterDevice() !== undefined) this.setFocus(undefined);
+    if (view === "cards") noteBoardFocus(this.kind, undefined);
     this.requestUpdate();
+  }
+
+  /** A device tab, All, or Not on a device, clicked over the cards. */
+  private pickTab(key: string): void {
+    pickShelf(this.kind, key === SHELF_TAB);
+    this.onFocus?.(key === ALL_FILTER || key === SHELF_TAB ? undefined : key);
+    this.pruneSelected();
+    this.requestUpdate();
+  }
+
+  /** The tab on screen over the cards. */
+  private currentTab(): string {
+    return this.filterDevice()?.ownerId ?? (shelfPicked(this.kind) ? SHELF_TAB : ALL_FILTER);
+  }
+
+  private renderTabs(library: Library, devices: readonly LinkDevice[]): TemplateResult {
+    const current = this.currentTab();
+    const items = libraryItems(library, this.kind);
+    return renderDeviceTabs({
+      tabs: libraryDeviceTabs({
+        devices, current, total: items.length,
+        countOf: (ownerId) => countFor(library, ownerId, this.kind),
+        shelved: items.filter((e) => e.owners.length === 0).length,
+      }),
+      current, open: this.tabsMenu.open, onToggle: this.tabsMenu.toggle,
+      onPick: (key) => this.pickTab(key),
+      styleOf: (key) => { const color = this.colorOf(key); return color === undefined ? nothing : `--dc:${color}`; },
+    });
   }
 
   /** "Saved", beside the head, for a moment. */
@@ -832,10 +874,21 @@ export class WaAllPages extends LitElement {
     return library === undefined ? [] : this.shownOf(library);
   }
 
-  /** The library's items under the search and, on the Pages tab, its
-   * Screens differ filter. */
+  /** The items of the tab on screen under the search. On Cards a device's tab
+   * lists its picks in its own order. The board's every-device list has no tab. */
+  private onTab(library: Library): LibraryItem[] {
+    if (this.view === "cards") {
+      const device = this.filterDevice();
+      if (device !== undefined) return deviceView(library, device, this.kind, this.search).picks.map((p) => p.entry);
+      if (shelfPicked(this.kind)) return shownItems(library, this.kind, this.search).filter((e) => e.owners.length === 0);
+    }
+    return shownItems(library, this.kind, this.search);
+  }
+
+  /** The library's items on the tab, under the search and, on the Pages tab,
+   * its Screens differ filter. */
   private shownOf(library: Library): LibraryItem[] {
-    const shown = shownItems(library, this.kind, this.search);
+    const shown = this.onTab(library);
     if (this.kind !== "pages" || this.screensFilter === "all") return shown;
     return shown.filter((e) => keepsPage(this.screensFilter, e.item as WatchPage));
   }
@@ -844,6 +897,17 @@ export class WaAllPages extends LitElement {
    * it is what left nothing. */
   private emptyHere(devices: readonly LinkDevice[]): string {
     if (this.kind === "pages" && this.screensFilter !== "all" && this.search.trim() === "") return NO_SCREENS_DIFFER_TEXT;
+    if (this.view === "cards" && this.search.trim() === "") {
+      const device = this.filterDevice();
+      const many = cardNoun(this.kind, 2);
+      const library = this.lib.library;
+      if (device !== undefined) {
+        return library !== undefined && this.waiting(library).has(device.ownerId)
+          ? waitingEmptyText(many, device.name, device.appVersion)
+          : `No ${many} on ${device.name} yet.`;
+      }
+      if (shelfPicked(this.kind)) return `Every ${cardNoun(this.kind)} is on a device.`;
+    }
     return emptyText(devices, this.search, this.kind);
   }
 
@@ -1030,15 +1094,16 @@ export class WaAllPages extends LitElement {
       <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label=${`Your ${many}`}>
         <div class="pk-pin">
           ${this.renderHead(library, device, view)}
-          ${this.selecting && device === undefined && view !== "board" ? this.renderBar(devices) : nothing}
+          ${view === "cards" && library !== undefined && devices.length > 0 ? this.renderTabs(library, devices) : nothing}
+          ${this.selecting && view !== "board" ? this.renderBar(devices) : nothing}
         </div>
-        <div class="pk-body">
+        <div class="pk-body" id=${view === "cards" ? "pk-tabpanel" : nothing} role=${view === "cards" ? "tabpanel" : nothing}>
           ${library === undefined ? html`<p class="ap-empty">${lead}</p>`
+            : view === "cards" ? this.renderAll(library, devices)
             : device !== undefined ? this.renderFocus(library, deviceView(library, device, what, this.search), devices)
-            : view === "board" ? this.renderBoardAll(library, devices)
-            : this.renderAll(library, devices)}
+            : this.renderBoardAll(library, devices)}
         </div>
-        <div class="pk-foot"><span class="pk-foot-hint">${footText(what, device, this.selecting && device === undefined, view)}</span></div>
+        <div class="pk-foot"><span class="pk-foot-hint">${footText(what, device, this.selecting && (device === undefined || view === "cards"), view)}</span></div>
       </div>
     </div></div>`;
   }
@@ -1112,12 +1177,12 @@ export class WaAllPages extends LitElement {
     return html`<div class="pk-head">
       ${renderViewSwitch(view, (v) => this.setView(v), many)}
       ${view === "board" ? renderDensitySwitch(boardDensity(), (d) => { setBoardDensity(d); this.requestUpdate(); }) : nothing}
-      ${device === undefined ? html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      ${device === undefined || view === "cards" ? html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         title=${on ? `Back to opening one ${cardNoun(this.kind)} at a time` : `Pick several ${many} to delete together`}
         ?disabled=${busy || library === undefined} @click=${() => (on ? this.endSelect() : this.startSelect())}>
         ${uiIcon("checklist")}<span>Multi select</span></button>` : nothing}
       ${this.saved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
-      ${this.kind === "pages" && device === undefined ? this.renderScreensFilter() : nothing}
+      ${this.kind === "pages" && (device === undefined || view === "cards") ? this.renderScreensFilter() : nothing}
       <label class="pk-search">
         ${uiIcon("search")}
         <input type="search" class="pk-search-input" .value=${this.search} placeholder="Search by name" aria-label=${`Search ${many}`}
@@ -1224,7 +1289,8 @@ export class WaAllPages extends LitElement {
     const selecting = this.selecting;
     const key = itemKey(entry);
     const picked = selecting && this.selected.has(key);
-    const opensOn = openDevice(entry, devices);
+    // On a device's tab the picture is that device's.
+    const opensOn = this.filterDevice() ?? openDevice(entry, devices);
     const title = this.openTitle(entry);
     const click = (e: MouseEvent) => this.cardClick(e, entry);
     const asking = !selecting && this.itemAsk === key;
@@ -1680,11 +1746,17 @@ export class WaAllPages extends LitElement {
   private renderCardPictures(library: Library, entry: LibraryItem, on: LinkDevice | undefined, devices: readonly LinkDevice[]): TemplateResult {
     const kinds = cardScreens(entry.owners, devices);
     if (this.cardDrawsBoth(kinds)) return this.renderThumbs(library, entry, on, devices, true);
-    if (cardShownScreen(kinds, this.cardPicks.get(itemKey(entry))) === "watch") {
+    if (cardShownScreen(kinds, this.cardPick(entry)) === "watch") {
       return this.renderThumb(library, entry, on?.kind === "watch" ? on : undefined);
     }
     const height = kinds.includes("watch") ? this.cardWatchHeight(entry, PIC_W) : CARD_PHONE_ALONE_H;
     return html`<span class="ap-pic ap-pic-phone">${this.renderPhoneThumb(entry, devices, CARD_PHONE_ALONE_W, height)}</span>`;
+  }
+
+  /** The screen a card asks for: the one picked on it, else the kind of
+   * device whose tab is on. */
+  private cardPick(entry: LibraryItem): WatchScreen | undefined {
+    return this.cardPicks.get(itemKey(entry)) ?? this.filterDevice()?.kind;
   }
 
   /**
@@ -1697,7 +1769,7 @@ export class WaAllPages extends LitElement {
     const kinds = cardScreens(entry.owners, devices);
     if (previewKinds(devices).length < 2 || this.cardDrawsBoth(kinds)) return nothing;
     const key = itemKey(entry);
-    const shown = cardShownScreen(kinds, this.cardPicks.get(key));
+    const shown = cardShownScreen(kinds, this.cardPick(entry));
     const icon = (kind: WatchScreen) => uiIcon(kind === "watch" ? "watch" : "phone");
     const word = (kind: WatchScreen) => (kind === "watch" ? "watch" : "iPhone");
     if (kinds.length < 2) {
@@ -1765,7 +1837,7 @@ export class WaAllPages extends LitElement {
    * this tab's own: New page, Multi select and its bar, and a page's
    * picture. */
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
-    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, copyDialogStyles, boardStyles, boardStackStyles, css`
+    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, copyDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, css`
     .ap-embed-saved { position: absolute; right: 0; top: -26px; }
     /* A page's two pictures, the watch's and the iPhone's, side by side. */
     .ap-pics { display: inline-flex; align-items: flex-start; gap: 4px; }

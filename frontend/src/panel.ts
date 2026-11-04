@@ -157,7 +157,8 @@ import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
-import { COMP_SEARCH_PLACEHOLDER, EMPTY_DESIGN_TEXT, type DesignSearchText, deleteEmptyAsk, deleteEmptyDone, designSearchText, designTextMatches, deviceStripNote, foldShelf, isEmptyDesign, queueAfterFailure, queueDeviceTick, queueOrder, shelfFoldCount, splitPickerTabs } from "./complication-cards.js";
+import { COMP_SEARCH_PLACEHOLDER, EMPTY_DESIGN_TEXT, type DesignSearchText, deleteEmptyAsk, deleteEmptyDone, designSearchText, designTextMatches, deviceStripNote, foldShelf, isEmptyDesign, queueAfterFailure, queueDeviceTick, queueOrder, shelfFoldCount } from "./complication-cards.js";
+import { deviceTabsStyles, noteBoardFocus, renderDeviceTabs, tabIcon } from "./library/device-tabs.js";
 import { compile, elementKeys, keyFor, mergeSplitRenders, parseValueDocument, splitDocuments, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -824,12 +825,6 @@ export function shapeDevicesTag(key: string): { text: string; icons: readonly ("
 function shapeGroupRank(order: readonly string[], key: string): number {
   const i = order.indexOf(key);
   return i < 0 ? order.length : i;
-}
-
-/** The glyph a picker tab or section heading wears: the device itself, the
- * shelf for the library, and the grid for the All tab, which is no device. */
-function tabIcon(kind: DeviceKind | "all"): UiIconName {
-  return kind === "all" ? "grid" : kind === "iphone" ? "phone" : kind === "library" ? "layers" : "watch";
 }
 
 /** What Unassigned is for, said where it is rather than in a tooltip: nobody
@@ -3001,56 +2996,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-chip:disabled { opacity: .35; cursor: default; }
     .pk-chip.on { border-color: var(--wa-accent); color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
 
-    /* The device tabs under the head: All, a tab per device, Unassigned
-       last. Each one carries its own count, so an empty device says so
-       before it is opened.
-
-       They wrap onto a second row rather than scrolling sideways. A household
-       of four people has eight device tabs, and a sideways scroller hides
-       half of them behind a bar nobody thinks to drag: the whole point of the
-       row is that the home is visible at a glance. */
-    .pk-tabs {
-      display: flex; align-items: stretch; flex-wrap: wrap; gap: 0 2px; flex: none;
-      padding: 0 8px; border-bottom: 1px solid var(--wa-line);
-    }
-    /* A hairline between things of two kinds: the view from the preview in
-       the head, the devices from Not on a device in the tabs. */
-    .pk-vsep { width: 1px; height: 20px; flex: none; align-self: center; margin: 0 6px; background: var(--wa-line-strong); }
-    /* Not on a device is a state, not a device, so it is a chip and no tab. */
-    .pk-tab.chip {
-      align-self: center; height: 28px; box-sizing: border-box; padding: 0 11px; margin: 4px 0; gap: 6px;
-      border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-card); color: var(--wa-soft, var(--wa-ink));
-    }
-    .pk-tab.chip.on { border-color: var(--wa-ink); color: var(--wa-ink); }
-    .pk-tab.chip:focus-visible { border-radius: 999px; }
-    /* "+2 more": the devices holding nothing, a click away. */
-    .pk-more { position: relative; display: inline-flex; align-items: center; flex: none; margin: 0 2px; }
-    .pk-more-btn {
-      display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px; cursor: pointer;
-      font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted);
-      border: 1px dashed var(--wa-line-strong); border-radius: 999px; background: transparent;
-    }
-    .pk-more-btn:hover, .pk-more-btn[aria-expanded="true"] { color: var(--wa-ink); border-color: var(--wa-muted); }
-    .pk-more-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pk-more-btn svg { width: 11px; height: 11px; }
-    .pop-menu.pk-more-menu { top: calc(100% + 6px); left: 0; right: auto; width: max-content; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); z-index: 6; }
-    .pk-more-menu .row { display: flex; align-items: center; gap: 7px; width: 100%; }
-    .pk-more-menu .pk-tab-glyph svg { width: 14px; height: 14px; }
-    .pk-more-menu .pk-tab-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* Every tab alike but for its device's color (\`--dc\`, \`device-colors.ts\`)
-       on the glyph and the selected one's underline, as on the Pages tab. */
-    .pk-tab {
-      display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
-      font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap;
-      padding: 10px 7px; border: 0; background: transparent;
-      border-bottom: 2px solid transparent; margin-bottom: -1px;
-    }
-    .pk-tab:hover { color: var(--wa-ink); }
-    .pk-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 7px 7px 0 0; }
-    .pk-tab.on { color: var(--wa-ink); font-weight: 600; border-bottom-color: var(--dc, var(--wa-ink)); }
-    .pk-tab svg { width: 15px; height: 15px; }
-    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--dc, var(--wa-muted)); }
-    .pk-tab-count { font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
+    ${deviceTabsStyles}
     /* One shape at a time, in the head beside the search. A menu rather than
        a chip each: eight pills for a question most visits never ask. */
     .pk-shape { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -11999,7 +11945,8 @@ export class WristAssistantPanel extends LitElement {
       actions: nothing as typeof nothing, phones: this.phonePages, libraryItem: ref,
       onLoaded: () => this.requestUpdate(),
       onOpenItem: (id: string) => this.goTo(libraryItemPath(ref.kind, id, ref.from)),
-      onOpenBoard: (ownerId: string) => this.goTo(listFocusPath(list, ownerId)),
+      // It promises the order, which only the column has, whichever view is kept.
+      onOpenBoard: (ownerId: string) => { noteBoardFocus(ref.kind, ownerId); this.goTo(listFocusPath(list, ownerId)); },
     };
     if (ref.kind === "menus") return renderWatchMenusView(input);
     if (ref.kind === "status_pages") return renderWatchStatusPagesView(input);
@@ -13102,31 +13049,12 @@ export class WristAssistantPanel extends LitElement {
    * and stay neutral.
    */
   private renderPickerTabs(tabs: readonly PickerTab[], current: string) {
-    const row = splitPickerTabs(tabs, current);
-    const open = this.openMenu === "tabs";
-    const tabButton = (tab: PickerTab, extra = "") => html`<button type="button" role="tab" class="pk-tab ${extra} ${tab.key === current ? "on" : ""}"
-        style=${this.deviceStyle(tab.key)} id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
-        aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
-        <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
-        <span class="pk-tab-name">${tab.label}</span>
-        <span class="pk-tab-count">${tab.count}</span>
-      </button>`;
-    return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
-      ${row.all === undefined ? nothing : tabButton(row.all)}
-      ${row.shown.map((tab) => tabButton(tab))}
-      ${row.more.length === 0 ? nothing : html`<span class="pk-more" data-menu="tabs" role="presentation"
-        @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); this.toggleMenu("tabs", false); } }}>
-        <button type="button" class="pk-more-btn" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-          title="The devices with nothing on them" @click=${() => this.toggleMenu("tabs")}>+${row.more.length} more${uiIcon("chevron")}</button>
-        ${open ? html`<div class="pop-menu pk-more-menu" role="menu" aria-label="The devices with nothing on them">
-          ${row.more.map((tab) => html`<button type="button" class="row" role="menuitem" style=${this.deviceStyle(tab.key)}
-            @click=${() => { this.toggleMenu("tabs", false); this.pickPickerTab(tab.key); }}>
-            <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
-            <span class="pk-tab-name">${tab.label}</span><span class="pk-tab-count">${tab.count}</span></button>`)}
-        </div>` : nothing}
-      </span>`}
-      ${row.shelf === undefined ? nothing : html`<span class="pk-vsep" aria-hidden="true"></span>${tabButton(row.shelf, "chip")}`}
-    </div>`;
+    return renderDeviceTabs({
+      tabs, current, open: this.openMenu === "tabs",
+      onToggle: (open) => this.toggleMenu("tabs", open),
+      onPick: (key) => this.pickPickerTab(key),
+      styleOf: (key) => this.deviceStyle(key),
+    });
   }
 
   /**
@@ -20957,7 +20885,8 @@ export class WristAssistantPanel extends LitElement {
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
       appVersion: this.ownerOf(ownerId)?.app_version,
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
-      onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),
+      // Its buttons promise add, order and hide, which only the column has.
+      onChange: (kind) => { noteBoardFocus(kind, ownerId); this.goTo(listFocusPath(listOf(kind), ownerId)); },
       onLoaded: () => this.requestUpdate(),
     }) : nothing;
     return html`<h3 class="home-title">On this ${word}</h3>

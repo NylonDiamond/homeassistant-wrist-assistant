@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { laterHidden, laterToast, resetLaterForTest, sendLaterNow, undoLater } from "../src/delete-later.js";
 
 import { libraryOf, type LibraryMenu } from "../src/library/model.js";
+import { resetDeviceTabsForTest } from "../src/library/device-tabs.js";
 import "../src/watch-menus/all-menus.js";
 import {
   ALL_MENUS_LEAD,
@@ -152,7 +153,10 @@ describe("the tab's words", () => {
 });
 
 describe("the Menus tab", () => {
-  afterEach(resetLaterForTest);
+  afterEach(() => {
+    resetLaterForTest();
+    resetDeviceTabsForTest();
+  });
 
   function tab(admin = true) {
     const home = fakeHome(admin);
@@ -191,6 +195,39 @@ describe("the Menus tab", () => {
     expect(text).toContain("Use this menu on Chen Watch. Replaces Chen's menu there.");
     expect(text.split(`aria-label=Delete `).length - 1).toBe(4);
     for (const gone of ["pk-tab", ">Device<", "Link", "Same as"]) expect(text).not.toContain(gone);
+  });
+
+  it("filters the cards by device with a row of tabs, and carries the device to Board's column", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    show(t);
+    await t.ready();
+    const cards = () => t.whole().split(`class="ap-card `).length - 1;
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+    expect(cards()).toBe(4);
+    t.call("pickTab", CHEN);
+    expect(t.el.focusOwner).toBe(CHEN);
+    expect(cards()).toBe(2);
+    expect(t.whole()).not.toContain("<table");
+    t.call("setView", "board");
+    expect(t.whole()).toContain("<table");
+    t.call("setView", "cards");
+    t.call("pickTab", "all");
+    expect(cards()).toBe(4);
+  });
+
+  it("opens a device's address on its cards, and on its column once Focus is clicked", async () => {
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => { t.el.focusOwner = o; };
+    show(t);
+    await t.ready();
+    t.el.focusOwner = CHEN;
+    expect(t.whole()).toContain(`class="pk-tabs"`);
+    t.el.focusOwner = undefined;
+    t.call("setFocus", CHEN);
+    expect(t.whole()).not.toContain(`class="pk-tabs"`);
+    t.call("setView", "cards");
+    t.el.focusOwner = undefined;
   });
 
   it("draws a card per menu with its name and round ticks under Used by, and no Devices, Link or Same as", async () => {

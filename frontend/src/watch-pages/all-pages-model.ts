@@ -66,11 +66,12 @@ export function emptyLibraryText(kind: CardKind, admin: boolean): string {
 }
 
 /** The line in the surface's foot. On the board (`view`) a click on a
- * device's Focus pill focuses it; Cards has no column to click. */
+ * device's Focus pill focuses it. Cards has no column to click, and with a
+ * device's tab on it has no order to drag: that is the board's. */
 export function footText(kind: CardKind, device: LinkDevice | undefined, selecting = false, view: "board" | "cards" = "board"): string {
   const one = cardNoun(kind);
   if (selecting) return `Click ${cardNoun(kind, 2)} to pick them. Shift+click picks every ${one} between two.`;
-  if (device !== undefined) {
+  if (device !== undefined && view === "board") {
     const word = deviceWord(device.kind);
     return kind === "status_pages"
       ? `Click a status page to edit it. Drag to order. The order is this ${word}'s own.`

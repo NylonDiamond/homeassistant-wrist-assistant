@@ -270,11 +270,12 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(tab).toContain("renderSharedTabView({");
     expect(tab).toContain("onOpen: (path) => this.goTo(path),");
     // The Library is HTTP actions and Cameras only: no Photos or Parts screen.
-    // The panel takes only four sheets from `./library/`: the complication
-    // editor's device strip over the preview, which draws the same tick
-    // chips a page's editor does, the board the Complications tab draws
-    // (plan step 5), and the words a tick's Undo toast says.
-    expect(SOURCE.match(/from "\.\/library\/[^"]+"/g) ?? []).toEqual(['from "./library/item-mode.js"', 'from "./library/ticks.js"', 'from "./library/board.js"', 'from "./library/store.js"']);
+    // The panel takes only five sheets from `./library/`: the device tabs its
+    // list shares with the library's tabs, the complication editor's device
+    // strip over the preview, which draws the same tick chips a page's editor
+    // does, the board the Complications tab draws (plan step 5), and the words
+    // a tick's Undo toast says.
+    expect(SOURCE.match(/from "\.\/library\/[^"]+"/g) ?? []).toEqual(['from "./library/device-tabs.js"', 'from "./library/item-mode.js"', 'from "./library/ticks.js"', 'from "./library/board.js"', 'from "./library/store.js"']);
     expect(SOURCE).not.toContain(`case "photos":`);
     expect(SOURCE).not.toContain(`case "parts":`);
   });

@@ -28,7 +28,7 @@ import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { LIBRARY_UNSUPPORTED_TEXT, type MenuUnit } from "../library/client.js";
 import { MENU_UNITS } from "../library/client.js";
 import { UNDO_AFTER_TEXT } from "../delete-later.js";
-import { type Library, type LibraryMenu, hasItem, holdsRecord, libraryMenus, menuDocument, menuFor, pagesDocumentFor, sameId } from "../library/model.js";
+import { type Library, type LibraryMenu, countFor, hasItem, holdsRecord, libraryMenus, menuDocument, menuFor, pagesDocumentFor, sameId } from "../library/model.js";
 import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
@@ -37,6 +37,7 @@ import { type BoardCell, type BoardMenuItem, type BoardRow, type BoardSection, C
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
+import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
 import { ALL_FILTER, type PagesFilter, libraryEditTitle, onDeviceTitle, resolveFilter, restTitle } from "../watch-pages/all-pages-model.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
@@ -84,7 +85,7 @@ const BOARD_PICTURE_H = 50;
 
 /** Where the tab's view is remembered in this browser, as the Pages tab
  * remembers its. */
-const VIEW_STORE_KEY = "wrist-assistant-panel.all-menus.v1";
+const VIEW_STORE_KEY = "wrist-assistant-panel.all-menus.v2";
 
 /** Board or Cards, as last left. */
 interface KeptView {
@@ -210,6 +211,9 @@ export class WaAllMenus extends LitElement {
   /** Whether this tab is wide enough for big row pictures. */
   private roomy = new WideWatch(this);
 
+  /** "+N more" over the cards. */
+  private tabsMenu = new DeviceTabsMenu(this);
+
   private colorsFor = deviceColorsCache();
 
   /** A device's color (`device-colors.ts`), the one it wears on every tab. */
@@ -230,9 +234,12 @@ export class WaAllMenus extends LitElement {
     return filter === ALL_FILTER ? undefined : this.devices.find((d) => d.ownerId === filter);
   }
 
-  /** Board or Cards. A focused device is always the board. */
+  /** Board or Cards. A device's address follows the view: its tab's cards, or
+   * on the board its focused column. A click on a column's Focus pill always
+   * means the column. */
   private get view(): ListView {
-    return this.embedded || this.filterDevice() !== undefined ? "board" : phoneView("menus", keptView().view);
+    if (this.embedded || focusedOnBoard("menus", this.filterDevice()?.ownerId)) return "board";
+    return phoneView("menus", keptView().view);
   }
 
   /** The watches that wait for their iPhone to move their menus here: none
@@ -249,15 +256,40 @@ export class WaAllMenus extends LitElement {
   private setFocus(ownerId: string | undefined): void {
     this.newForm = undefined;
     this.deleteAsk = undefined;
+    noteBoardFocus("menus", ownerId);
     this.onFocus?.(ownerId);
   }
 
-  /** Board or Cards, remembered. Cards leaves a focused device. */
+  /** Board or Cards, remembered. A device's tab stays on: Cards draws its
+   * cards, Board its focused column. */
   private setView(view: ListView): void {
     noteViewPick("menus", view);
     keepView({ view });
-    if (view === "cards" && this.filterDevice() !== undefined) this.setFocus(undefined);
+    if (view === "cards") noteBoardFocus("menus", undefined);
     this.requestUpdate();
+  }
+
+  /** A device tab, All, or Not on a device, clicked over the cards. */
+  private pickTab(key: string): void {
+    this.deleteAsk = undefined;
+    pickShelf("menus", key === SHELF_TAB);
+    this.onFocus?.(key === ALL_FILTER || key === SHELF_TAB ? undefined : key);
+    this.requestUpdate();
+  }
+
+  private renderTabs(library: Library, devices: readonly LinkDevice[]): TemplateResult {
+    const current = this.filterDevice()?.ownerId ?? (shelfPicked("menus") ? SHELF_TAB : ALL_FILTER);
+    const menus = libraryMenus(library);
+    return renderDeviceTabs({
+      tabs: libraryDeviceTabs({
+        devices, current, total: menus.length,
+        countOf: (ownerId) => countFor(library, ownerId, "menus"),
+        shelved: menus.filter((m) => m.owners.length === 0).length,
+      }),
+      current, open: this.tabsMenu.open, onToggle: this.tabsMenu.toggle,
+      onPick: (key) => this.pickTab(key),
+      styleOf: (key) => { const color = this.colorOf(key); return color === undefined ? nothing : `--dc:${color}`; },
+    });
   }
 
   /** Open a menu in the one editor, the library's, whichever devices use
@@ -399,15 +431,18 @@ export class WaAllMenus extends LitElement {
       ${this.newNote === undefined ? nothing : html`<p class="lt-line ${this.newNote.kind}" role="status">${this.newNote.text}</p>`}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label="Your menus">
-        <div class="pk-pin">${this.renderHead(view)}</div>
-        <div class="pk-body">
+        <div class="pk-pin">
+          ${this.renderHead(view)}
+          ${view === "cards" && library !== undefined && devices.length > 0 ? this.renderTabs(library, devices) : nothing}
+        </div>
+        <div class="pk-body" id=${view === "cards" ? "pk-tabpanel" : nothing} role=${view === "cards" ? "tabpanel" : nothing}>
           ${library === undefined ? html`<p class="ap-empty">${lead}</p>`
             : devices.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search)}</p>`
+            : view === "cards" ? this.renderSections(library, devices)
             : device !== undefined ? this.renderFocus(library, device, devices)
-            : view === "board" ? this.renderBoardAll(library, devices)
-            : this.renderSections(library, devices)}
+            : this.renderBoardAll(library, devices)}
         </div>
-        <div class="pk-foot"><span class="pk-foot-hint">${device === undefined ? (view === "board" ? MENUS_BOARD_FOOT : MENUS_FOOT) : menusDeviceFoot(device)}</span></div>
+        <div class="pk-foot"><span class="pk-foot-hint">${view === "cards" ? MENUS_FOOT : device === undefined ? MENUS_BOARD_FOOT : menusDeviceFoot(device)}</span></div>
       </div>
     </div></div>`;
   }
@@ -429,7 +464,11 @@ export class WaAllMenus extends LitElement {
   /** Cards: the menus in two sections, Anywhere menus first, each under its
    * heading with its count. */
   private renderSections(library: Library, devices: readonly LinkDevice[]): TemplateResult {
-    const shown = shownMenus(library, this.search, devices);
+    const device = this.filterDevice();
+    const shelf = shelfPicked("menus");
+    const shown = shownMenus(library, this.search, devices).filter((m) => (device !== undefined
+      ? m.owners.some((o) => sameId(o, device.ownerId))
+      : !shelf || m.owners.length === 0));
     const waiting = this.waiting(library);
     return html`${menuSections(shown).map(({ unit, menus }) => html`<section class="am-section" aria-labelledby=${`am-section-${unit}`}>
       <div class="am-section-head">
@@ -500,7 +539,8 @@ export class WaAllMenus extends LitElement {
   }
 
   private renderCard(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>): TemplateResult {
-    const opensOn = openMenuDevice(menu, devices);
+    // On a device's tab the picture is that device's.
+    const opensOn = this.filterDevice() ?? openMenuDevice(menu, devices);
     const title = libraryEditTitle(menu.name);
     const asking = this.deleteAsk === menu.id;
     return html`<div class="ap-card ${asking ? "asking" : ""}" role="listitem" data-card=${menu.id}>
@@ -668,7 +708,7 @@ export class WaAllMenus extends LitElement {
       ], device.ownerId)}`;
   }
 
-  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, css`
+  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, css`
     :host([embedded]) { position: relative; }
     /* On the board the device heads are what stays on screen, right under
        the tab bar, so the toolbar scrolls away (\`.bd-pin\`). */

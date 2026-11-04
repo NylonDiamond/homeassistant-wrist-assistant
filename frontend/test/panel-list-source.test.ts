@@ -304,8 +304,9 @@ describe("the list page", () => {
   });
 
   it("folds devices with nothing into +N more, Not on a device set apart", () => {
-    const tabs = method("  private renderPickerTabs(");
-    expect(tabs).toContain("splitPickerTabs(tabs, current)");
+    expect(method("  private renderPickerTabs(")).toContain("renderDeviceTabs({");
+    const tabs = readFileSync(join(__dirname, "..", "src", "library", "device-tabs.ts"), "utf8");
+    expect(tabs).toContain("splitPickerTabs(input.tabs, current)");
     expect(tabs).toContain("+${row.more.length} more");
     expect(tabs).toContain('tabButton(row.shelf, "chip")');
   });
