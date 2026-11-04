@@ -21,7 +21,7 @@ import { inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
 import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
 import { waitingEmptyText } from "./watch-pages/devices.js";
 import { renderMoveWaitOut } from "./move-wait-out.js";
-import { type PhoneMoves, SEED_PENDING_ASK_TEXT, WAITING_FOR_WATCH_TEXT } from "./watch-settings.js";
+import { type PhoneMoves, SEED_MAY_LAND_EMPTY_TEXT, SEED_PENDING_ASK_TEXT, WAITING_FOR_WATCH_TEXT } from "./watch-settings.js";
 import { picksIO } from "./watch-pages/all-pages-io.js";
 import { keptWatchPagesDraft } from "./watch-pages/kept.js";
 import { type UntickAsk, askUntick, tickItem } from "./watch-pages/library-editing-io.js";
@@ -63,6 +63,8 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) phoneMoves: PhoneMoves | undefined = false;
   /** The watch's own setup may still come here (`waitsForWatchSeed`). */
   @property({ attribute: false }) seedWaits = false;
+  /** Its seed may still be landing (`seedMayLand`). */
+  @property({ attribute: false }) seedMayLand = false;
   /** A first record on this watch asks first (`firstSaveAskText`). */
   @property({ attribute: false }) asksFirst = false;
   /** The app version the device reported (`LineupDraw`). */
@@ -138,6 +140,7 @@ export class WaHomeLineup extends LitElement {
       onMenuPictureReady: () => this.requestUpdate(),
       waitsForIphone: this.waitsForIphone,
       phoneMoves: this.phoneMoves,
+      seedMayLand: this.seedMayLand,
       ...(this.appVersion === undefined ? {} : { appVersion: this.appVersion }),
       arrange: {
         order: (kind) => (this.drag?.kind === kind && this.drag.order !== undefined ? this.drag.order
@@ -448,6 +451,10 @@ export interface LineupDraw {
   waitsForIphone?: boolean;
   /** What the wait line knows of that iPhone (`phoneMovesOf`). */
   phoneMoves?: PhoneMoves;
+  /** The watch's seed may still be landing (`seedMayLand`): a kind Home
+   * Assistant holds no record of says nothing flat about what is on the watch,
+   * as the watch may well hold some. */
+  seedMayLand?: boolean;
   /** The app version the device reported, which decides whether its page
    * pictures draw One Look (`previewOneLook`). */
   appVersion?: string | null;
@@ -508,9 +515,12 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
   /** Whether a kind is empty only for now: this watch's iPhone may still move
    * its setup here. Its box says so and offers no button to start another. */
   const moving = (k: LibraryKind): boolean => draw.waitsForIphone === true && !holdsRecord(library, ownerId, k);
-  /** A kind's empty line: its iPhone's move still to come, or none yet. */
+  /** A kind's empty line: its iPhone's move still to come, the watch's own
+   * seed perhaps still landing, or none yet. */
   const empty = (k: LibraryKind, what: string, none: string): string =>
-    moving(k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion, draw.phoneMoves) : none;
+    moving(k) ? waitingEmptyText(what, `this ${word}`, draw.appVersion, draw.phoneMoves)
+      : draw.seedMayLand === true && !holdsRecord(library, ownerId, k) ? SEED_MAY_LAND_EMPTY_TEXT
+      : none;
   /** A kind's button in its empty box: its board, on this device. */
   const add = (k: LibraryKind, label: string, title: string): Pick<LineupGroup, "add"> =>
     moving(k) ? {} : { add: { label, title, onClick: () => draw.onChange(k) } };

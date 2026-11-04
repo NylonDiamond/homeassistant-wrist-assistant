@@ -39,6 +39,9 @@ export interface NewPageForm {
   note?: WatchPagesNote;
   /** The devices ticked to show it. */
   owners: readonly string[];
+  /** The line beside them that says why those are ticked. None when nothing
+   * true needs saying. */
+  ticksHint?: string;
   start: NewPageStart;
   /** From a room: the Home Assistant area. */
   areaId?: string;
@@ -169,9 +172,16 @@ export function newPageOwners(devices: readonly LinkDevice[], kept: readonly str
   return free.filter((d) => kept.some((k) => sameId(k, d.ownerId))).map((d) => d.ownerId);
 }
 
-/** A new form: the name, the devices as the last page, Empty. */
-export function newPageForm(name: string, owners: readonly string[]): NewPageForm {
-  return { name, busy: false, owners, start: "empty" };
+/** The hint when the ticks did follow the last new page. */
+export const NEW_PAGE_LAST_HINT = "Ticked like your last new page.";
+
+/** The hint on What next's form, which ticks the watch just paired. */
+export const NEW_PAGE_PAIRED_HINT = "Ticked for the watch you just paired.";
+
+/** A new form: the name, the devices to start ticked and what to say of them,
+ * Empty. */
+export function newPageForm(name: string, owners: readonly string[], ticksHint?: string): NewPageForm {
+  return { name, busy: false, owners, start: "empty", ...(ticksHint === undefined ? {} : { ticksHint }) };
 }
 
 /** The form with a device ticked or unticked, in device order. */
@@ -348,7 +358,7 @@ export function renderNewPageSheet(form: NewPageForm, input: NewPageSheetInput, 
             ?disabled=${form.busy} @input=${(e: Event) => h.onName((e.target as HTMLInputElement).value)} />
         </section>
         ${input.devices.length === 0 ? nothing : html`<section class="new-step np-step">
-          <div class="new-step-head"><span class="new-step-title">Show on</span><span class="new-step-hint">Ticked like your last new page.</span></div>
+          <div class="new-step-head"><span class="new-step-title">Show on</span>${form.ticksHint === undefined ? nothing : html`<span class="new-step-hint">${form.ticksHint}</span>`}</div>
           ${renderDevices(form, input, h)}
           ${input.waitOuts ?? nothing}
         </section>`}

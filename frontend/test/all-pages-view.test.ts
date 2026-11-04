@@ -399,7 +399,8 @@ describe("the Pages tab", () => {
     const dialog = whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new lib-new-page"`), whole.indexOf("</dialog>"));
     expect(dialog).toContain("<h2>New page</h2>");
     expect(dialog).toContain("Show on");
-    expect(dialog).toContain("Ticked like your last new page.");
+    // There is no last new page yet, so it does not claim to follow one.
+    expect(dialog).not.toContain("Ticked like your last new page.");
     expect(dialog).toContain("Jesse Apple Watch");
     expect(dialog).toContain("iPhone 15 Pro");
     for (const start of ["Empty", "From a room", "From a page", "Home map"]) expect(dialog).toContain(start);
@@ -423,6 +424,7 @@ describe("the Pages tab", () => {
     // The next new page is ticked like this one.
     t.call("toggleNew");
     expect((t.el.pageForm as { owners: string[] }).owners).toEqual([PHONE]);
+    expect(t.whole()).toContain("Ticked like your last new page.");
     t.call("toggleNew");
     if (was) Object.defineProperty(globalThis, "sessionStorage", was);
     else delete (globalThis as { sessionStorage?: unknown }).sessionStorage;

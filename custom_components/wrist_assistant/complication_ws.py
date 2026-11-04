@@ -494,8 +494,9 @@ async def ws_owners(
     says that iPhone already runs an app that moves, so the wait lines do not
     tell anyone to update it. ``another_iphone_moves`` says another iPhone of
     the same Home Assistant user already runs such an app, for the same words,
-    and it changes nothing about the wait. ``holds_old_setup``, ``seed_pending``
-    and ``standard_settings`` tell the panel what a first Save would replace.
+    and it changes nothing about the wait. ``holds_old_setup``, ``seed_pending``,
+    ``seed_may_land`` and ``standard_settings`` tell the panel what a first Save
+    would replace.
 
     ``user_id`` is the Home Assistant user the device's key is bound to, or a
     watch's paired iPhone's user when the watch's own key predates binding;
@@ -654,6 +655,10 @@ async def ws_owners(
                 # Assistant still lacks a record its Devices tab lists, so its
                 # own setup may still come. Only words and an ask follow.
                 "seed_pending": _seed_still_due(domain_data, secret_store, device_id),
+                # That watch has polled, within the last minutes, so its seed
+                # may still be landing. After that a kind with no record has
+                # nothing coming. Only words and an ask follow.
+                "seed_may_land": secret_store.seed_may_land(device_id),
                 # The watch said it runs only the standard settings.
                 "standard_settings": entry.standard_settings,
                 # The Home Assistant user this device belongs to, through its

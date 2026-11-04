@@ -147,7 +147,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone, waitsOnlyForOwnSetup } from "./home.js";
 import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
 import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
@@ -441,7 +441,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
-import { MOVE_WAIT_ENDED_EVENT, WATCH_SEED_LABEL, firstSaveAskText, noRecordStart, phoneMovesOf, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
+import { MOVE_WAIT_ENDED_EVENT, firstSaveAskText, noRecordStart, phoneMovesOf, seedMayLand, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
@@ -12340,6 +12340,8 @@ export class WristAssistantPanel extends LitElement {
           ...o, token: f.token, applied_token: f.applied_token, complication_count: f.complication_count,
           // Home's line about each device, kept as current as the pill.
           polling: f.polling, last_seen_seconds: f.last_seen_seconds, pending_changes: f.pending_changes, user_id: f.user_id,
+          // Both end by themselves, so a page left open does not keep asking.
+          seed_pending: f.seed_pending, seed_may_land: f.seed_may_land,
         } : o;
       });
       this.ownersReadAt = Date.now();
@@ -20763,7 +20765,7 @@ export class WristAssistantPanel extends LitElement {
     const color = "var(--wa-hue-grey)";
     const name = g.person?.label ?? "Other devices";
     const shown = syncPillDevices(g.rows, (id) => this.ownerOf(id), elapsed);
-    const sum = homeGroupSummary(shown.map(syncStateOf), shown.filter((d) => syncStateOf(d) === "waiting" && d.waitingFor.includes(WATCH_SEED_LABEL)).length);
+    const sum = homeGroupSummary(shown.map(syncStateOf), shown.filter((d) => syncStateOf(d) === "waiting" && waitsOnlyForOwnSetup(d)).length);
     return html`<section class="hb-group" style=${`--c:${color}`}>
       <div class="hb-person">
         <span class="hb-avatar" aria-hidden="true">${g.person?.picture
@@ -20927,6 +20929,7 @@ export class WristAssistantPanel extends LitElement {
       appVersion: this.ownerOf(ownerId)?.app_version,
       phoneMoves: phoneMovesOf(this.ownerOf(ownerId)),
       seedWaits: waitsForWatchSeed(this.ownerOf(ownerId)),
+      seedMayLand: seedMayLand(this.ownerOf(ownerId)),
       asksFirst: firstSaveAskText(this.ownerOf(ownerId), ["pages"]) !== undefined,
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
       // Its buttons promise add, order and hide, which only the column has.

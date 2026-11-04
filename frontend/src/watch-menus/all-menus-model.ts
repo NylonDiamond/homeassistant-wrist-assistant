@@ -18,7 +18,7 @@
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
 import { matchesSearch } from "../watch-pages/all-pages-model.js";
-import { type LinkDevice, allPhonesMove, anyNeedsUpdate, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
+import { type LinkDevice, anyNeedsUpdate, deviceWord, joinWords, waitingEmptyText, waitingLibraryText, waitingPhoneMoves } from "../watch-pages/devices.js";
 import { type PhoneMoves, waitForIphoneText } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "./model.js";
@@ -149,8 +149,8 @@ export function menusEmptyText(devices: readonly LinkDevice[], search: string, w
   if (search.trim() !== "") return "No menu or device has that name.";
   const any = typeof waiting === "boolean" ? waiting : waiting.size > 0;
   const needsUpdate = typeof waiting !== "boolean" && anyNeedsUpdate(devices, waiting);
-  const phonesMove = typeof waiting !== "boolean" && allPhonesMove(devices, waiting);
-  return any ? `None yet. ${waitingLibraryText("menus", needsUpdate, phonesMove)}` : "None yet.";
+  const phoneMoves = typeof waiting === "boolean" ? undefined : waitingPhoneMoves(devices, waiting);
+  return any ? `None yet. ${waitingLibraryText("menus", needsUpdate, phoneMoves)}` : "None yet.";
 }
 
 /** What a focused device says while it uses no menu: that its iPhone's

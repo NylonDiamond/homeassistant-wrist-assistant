@@ -15,13 +15,13 @@ import type { PanelRoute } from "./watch-pages/hook.js";
 import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
-import { WAITING_FOR_WATCH_STATUS, noRecordStart, waitsForWatchSeed, waitsForWatchUpdate } from "./watch-settings.js";
+import { WAITING_FOR_WATCH_STATUS, WATCH_SEED_LABEL, noRecordStart, waitsForWatchSeed, waitsForWatchUpdate } from "./watch-settings.js";
 
 /** A home device as the sync rule reads it, with the id it came from. */
 export interface IdHomeDevice extends HomeDevice {
   id: string;
   /** Its iPhone may still move the watch's setup here (`noRecordStart` is
-   * `wait`), so a watch with no record yet waits for it (`deviceVerdict`). */
+   * `wait`), so a watch lacking part of it waits for it (`deviceVerdict`). */
   waitsForIphone?: boolean;
   /** Its app is too old for what it holds to come here or for it to read
    * anything from here (`waitsForWatchUpdate`). */
@@ -117,7 +117,8 @@ export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected"
  * or an iPhone on a home with phone pages) takes the worse of that and its
  * complications (`deviceVerdict`); every other device is judged on its
  * complications alone. A watch whose iPhone may still move its setup here,
- * with none of it in Home Assistant yet, waits for that iPhone. */
+ * while Home Assistant lacks its pages, status pages or menus, waits for that
+ * iPhone. */
 export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: ReadonlyMap<string, WatchAppSync> = new Map()): HomeDeviceRow[] {
   const rows: HomeDeviceRow[] = [];
   for (const d of devices) {
@@ -311,6 +312,12 @@ export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | unde
   const n = owner?.pending_changes;
   if (typeof n !== "number" || n <= 0) return undefined;
   return `${n} ${n === 1 ? "change" : "changes"} to pick up`;
+}
+
+/** Whether a device waits for its own setup to come and for nothing else, and
+ * has no save it could not use: what `homeGroupSummary`'s `seedWaits` counts. */
+export function waitsOnlyForOwnSetup(row: { waitingFor: readonly string[]; rejected?: readonly string[] }): boolean {
+  return row.waitingFor.length === 1 && row.waitingFor[0] === WATCH_SEED_LABEL && (row.rejected?.length ?? 0) === 0;
 }
 
 /** What a person's box says of their devices, by each one's state

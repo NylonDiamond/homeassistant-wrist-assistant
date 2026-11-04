@@ -10,7 +10,7 @@ import { libraryOf } from "../src/library/model.js";
 import { lineupGroups } from "../src/home-lineup.js";
 import { LINEUP_HIDDEN_TAG, LINEUP_OWN_TAG, renderLineupGroup } from "../src/home-lineup-look.js";
 import type { LibraryKind } from "../src/library/client.js";
-import { WAIT_FOR_IPHONE_TEXT, WAIT_WATCH_UPDATE_TEXT } from "../src/watch-settings.js";
+import { SEED_MAY_LAND_EMPTY_TEXT, WAIT_FOR_IPHONE_TEXT, WAIT_WATCH_UPDATE_TEXT } from "../src/watch-settings.js";
 import { CAMERA, CHEN, CHEN_MENU, JESSE, LIGHTS, PAGE1, SMART, summary } from "./library-fixture.js";
 import { flat } from "./library-editor-home.js";
 
@@ -154,6 +154,22 @@ describe("a device's lineup on Home", () => {
     // A new watch with nothing to wait for still says there is none yet.
     expect(groups("nobody").out.map((g) => g.empty)).toEqual(["No pages on this watch yet.", "No status pages on this watch yet.", "This watch uses no menu yet."]);
     expect(PANEL).toContain(`waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait"`);
+  });
+
+  it("makes no flat claim about the watch while its seed may still be landing", () => {
+    const draw = { seedMayLand: true, onEdit: () => undefined, onChange: () => undefined };
+    expect(SEED_MAY_LAND_EMPTY_TEXT).toBe("Nothing here from this watch yet. Open Wrist Assistant on it.");
+    const landing = lineupGroups(libraryOf(summary()), "nobody", "watch", draw);
+    expect(landing.map((g) => g.empty)).toEqual([SEED_MAY_LAND_EMPTY_TEXT, SEED_MAY_LAND_EMPTY_TEXT, SEED_MAY_LAND_EMPTY_TEXT]);
+    // It may still start one, as nothing waits.
+    expect(landing.every((g) => g.add !== undefined)).toBe(true);
+    // A kind with a record keeps its own line.
+    const held = lineupGroups(libraryOf(summary()), CHEN, "watch", draw);
+    expect(held.map((g) => g.empty)).toEqual(groups(CHEN).out.map((g) => g.empty));
+    // After those minutes the words are the plain ones again.
+    const over = lineupGroups(libraryOf(summary()), "nobody", "watch", { ...draw, seedMayLand: false });
+    expect(over.map((g) => g.empty)).toEqual(groups("nobody").out.map((g) => g.empty));
+    expect(PANEL).toContain("seedMayLand: seedMayLand(this.ownerOf(ownerId))");
   });
 
   it("draws a group with its count, its Open in Pages, and a tag on a hidden line", () => {

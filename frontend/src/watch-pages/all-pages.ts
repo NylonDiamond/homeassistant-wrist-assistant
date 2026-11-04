@@ -116,7 +116,7 @@ import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { mayAddFirst, mayAddFirstToAny, mayMakeFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { keptWatchPagesDraft } from "./kept.js";
-import { type LinkDevice, type PagesRecordFacts, allPhonesMove, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
+import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, devicesWaitText, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText, waitingPhoneMoves } from "./devices.js";
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
@@ -148,6 +148,8 @@ import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newC
 import {
   type NewPageForm,
   keepNewPageDevices,
+  NEW_PAGE_LAST_HINT,
+  NEW_PAGE_PAIRED_HINT,
   lastNewPageDevices,
   newPageDocument,
   newPageForm,
@@ -428,7 +430,7 @@ export class WaAllPages extends LitElement {
       void this.newPage(device);
       return;
     }
-    this.pageForm = newPageForm(this.nextCardName(), [device.ownerId]);
+    this.pageForm = newPageForm(this.nextCardName(), [device.ownerId], NEW_PAGE_PAIRED_HINT);
     void this.updateComplete.then(() => openNewPageSheet(this.renderRoot));
   }
 
@@ -610,7 +612,8 @@ export class WaAllPages extends LitElement {
       // The Pages tab's sheet: the devices ticked as the last new page.
       const library = this.lib.library;
       const waiting = library === undefined ? new Set<string>() : this.waiting(library);
-      this.pageForm = newPageForm(this.nextCardName(), newPageOwners(this.devices, lastNewPageDevices(), (id) => waiting.has(id)));
+      const kept = lastNewPageDevices();
+      this.pageForm = newPageForm(this.nextCardName(), newPageOwners(this.devices, kept, (id) => waiting.has(id)), kept === undefined ? undefined : NEW_PAGE_LAST_HINT);
       void this.updateComplete.then(() => openNewPageSheet(this.renderRoot));
       return;
     }
@@ -1198,7 +1201,7 @@ export class WaAllPages extends LitElement {
     const waiting = waitingIds.size > 0;
     return html`<div class="ap-empty-lib">
       <p>${emptyLibraryText(this.kind, may)}</p>
-      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds), allPhonesMove(devices, waitingIds))}</p>` : nothing}
+      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds), waitingPhoneMoves(devices, waitingIds))}</p>` : nothing}
       ${may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
         ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing}
     </div>`;

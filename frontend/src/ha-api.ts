@@ -132,6 +132,10 @@ export interface OwnerSummary {
       Home Assistant holds its pages, status pages and menus: its own setup may
       still come. It changes words and an ask, and refuses nothing. */
   seed_pending?: boolean | null;
+  /** True for the 10 minutes after that next poll: a seed pass takes seconds,
+      so its seed may still be landing. After that a kind with no record has
+      nothing coming. It changes words and an ask, and refuses nothing. */
+  seed_may_land?: boolean | null;
   /** The watch said it runs only the standard settings. */
   standard_settings?: boolean | null;
   /** The Home Assistant user this device is bound to (a watch through its

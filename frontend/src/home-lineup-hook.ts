@@ -40,6 +40,9 @@ export interface HomeLineupInput {
   phoneMoves: PhoneMoves | undefined;
   /** The watch's own setup may still come here (`waitsForWatchSeed`). */
   seedWaits: boolean;
+  /** Its seed may still be landing, so an empty kind makes no flat claim about
+   * the watch (`seedMayLand`). */
+  seedMayLand: boolean;
   /** A first record on this watch asks first (`firstSaveAskText`). */
   asksFirst: boolean;
   icons: IconProvider;
@@ -55,5 +58,5 @@ export function renderHomeLineup(input: HomeLineupInput): TemplateResult {
   if (!ready && !loadFailed) void loadLineup().then(input.onLoaded, input.onLoaded);
   if (!ready) return html`<p class="hl-empty">${loadFailed ? "This part of the page did not load. Reload the page to try again." : "Loading…"}</p>`;
   return html`<wa-home-lineup .hass=${input.hass} .ownerId=${input.ownerId} .deviceName=${input.deviceName} .kind=${input.kind} .phones=${input.phones}
-    .waitsForIphone=${input.waitsForIphone} .phoneMoves=${input.phoneMoves} .seedWaits=${input.seedWaits} .asksFirst=${input.asksFirst} .appVersion=${input.appVersion} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
+    .waitsForIphone=${input.waitsForIphone} .phoneMoves=${input.phoneMoves} .seedWaits=${input.seedWaits} .seedMayLand=${input.seedMayLand} .asksFirst=${input.asksFirst} .appVersion=${input.appVersion} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
 }

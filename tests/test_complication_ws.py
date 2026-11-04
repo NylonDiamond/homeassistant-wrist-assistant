@@ -558,6 +558,7 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "another_iphone_moves": False,
         "holds_old_setup": True,
         "seed_pending": False,
+        "seed_may_land": False,
         "standard_settings": False,
         # Neither key is bound to a Home Assistant user.
         "user_id": None,
@@ -630,6 +631,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "another_iphone_moves": False,
             "holds_old_setup": False,
             "seed_pending": False,
+            "seed_may_land": False,
             "standard_settings": False,
             "user_id": None,
             "user_gone": False,
@@ -1045,10 +1047,23 @@ def test_the_owner_row_says_what_the_panel_words_read(env) -> None:
     rows = {r["owner_watch_id"]: r for r in env.owners()}
     assert rows["watch-old"]["has_iphone"] is False
     assert rows["watch-old"]["seed_pending"] is True
+    assert rows["watch-old"]["seed_may_land"] is False
     assert rows["watch-new"]["seed_pending"] is False
 
     assert env.secrets.note_move_end_heard("watch-old") is True
-    assert next(r for r in env.owners() if r["owner_watch_id"] == "watch-old")["seed_pending"] is False
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["watch-old"]["seed_pending"] is False
+    # Its seed may still be landing, for a few minutes.
+    assert rows["watch-old"]["seed_may_land"] is True
+    assert rows["watch-new"]["seed_may_land"] is False
+    assert rows["phone-1"]["seed_may_land"] is False
+
+    env.secrets.get("watch-old").move_end_heard_at -= env.secrets_mod.SEED_LANDING_WINDOW
+    old = next(r for r in env.owners() if r["owner_watch_id"] == "watch-old")
+    assert old["seed_may_land"] is False
+    # It ends only that: the wait stays over and the watch stays one from before.
+    assert old["has_iphone"] is False
+    assert old["holds_old_setup"] is True
 
 
 def test_the_owner_row_says_when_another_iphone_of_the_same_user_moves(env) -> None:

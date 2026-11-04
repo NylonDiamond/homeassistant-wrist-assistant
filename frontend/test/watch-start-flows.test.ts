@@ -21,7 +21,7 @@ import { renderHeadStatus } from "../src/head-bar.js";
 import { WaPageEditor } from "../src/watch-pages/page-editor.js";
 import "../src/watch-pages/all-pages.js";
 import { askNewPageOn, resetDeviceTabsForTest } from "../src/library/device-tabs.js";
-import { resetNewPageDevicesForTest } from "../src/watch-pages/new-page-sheet.js";
+import { NEW_PAGE_LAST_HINT, NEW_PAGE_PAIRED_HINT, resetNewPageDevicesForTest } from "../src/watch-pages/new-page-sheet.js";
 import { OWNERS, fakeHome, standUp } from "./library-tab-fake.js";
 import { CHEN, JESSE, PHONE } from "./library-fixture.js";
 import { dropAllWatchPages } from "../src/watch-pages/kept.js";
@@ -46,7 +46,7 @@ import {
   START_FRESH_BUTTON,
   START_FRESH_CONFIRM_TEXT,
   WAIT_FOR_IPHONE_TEXT,
-  WAIT_WATCH_UPDATE_TEXT,
+  WAIT_WATCH_ONLY_UPDATE_TEXT,
   WATCH_SETTINGS_CATALOG,
   catalogSettings,
   pagesUnreadableText,
@@ -537,9 +537,9 @@ describe("New page on a watch with no record", () => {
     expect(t.home.sent.some((m) => m.type === "wrist_assistant/library/item/create")).toBe(false);
   });
 
-  it("asks first on a watch from before the move, also after its first poll, and a person can go on", async () => {
-    for (const seed_pending of [true, false]) {
-      const t = tab("pages", "cards", { holds_old_setup: true, seed_pending });
+  it("asks first on a watch from before the move, also just after its first poll, and a person can go on", async () => {
+    for (const row of [{ seed_pending: true }, { seed_pending: false, seed_may_land: true }]) {
+      const t = tab("pages", "cards", { holds_old_setup: true, ...row });
       await t.ready();
       const no = answer(false);
       await t.call("newPage", device);
@@ -549,6 +549,15 @@ describe("New page on a watch with no record", () => {
       await t.call("newPage", device);
       expect(t.saves()).toHaveLength(1);
     }
+  });
+
+  it("asks nothing once that watch's seed has had its minutes", async () => {
+    const t = tab("pages", "cards", { holds_old_setup: true, seed_pending: false, seed_may_land: false });
+    await t.ready();
+    const ask = answer(false);
+    await t.call("newPage", device);
+    expect(ask).not.toHaveBeenCalled();
+    expect(t.saves()).toHaveLength(1);
   });
 
   it("asks what Start fresh asks while the watch waits for its iPhone, and a person can go on", async () => {
@@ -568,7 +577,7 @@ describe("New page on a watch with no record", () => {
     await t.ready();
     await t.call("newPage", device);
     expect(t.saves()).toHaveLength(0);
-    expect(t.whole()).toContain(`Not made on New Watch. ${WAIT_WATCH_UPDATE_TEXT}`);
+    expect(t.whole()).toContain(`Not made on New Watch. ${WAIT_WATCH_ONLY_UPDATE_TEXT}`);
   });
 
   it("draws a refused save's note in Cards", async () => {
@@ -587,6 +596,9 @@ describe("New page on a watch with no record", () => {
       t.call("openNewPageAsked");
       expect(t.el.pageForm).toMatchObject({ owners: [NEW], start: "empty" });
       expect(t.saves()).toHaveLength(0);
+      // Its ticks did not follow the last new page, so it does not say so.
+      expect(t.whole()).toContain(NEW_PAGE_PAIRED_HINT);
+      expect(t.whole()).not.toContain(NEW_PAGE_LAST_HINT);
       // Asked once: drawing again opens nothing new.
       t.el.pageForm = undefined;
       t.call("openNewPageAsked");

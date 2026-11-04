@@ -11,7 +11,7 @@
 
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, setupMoveNeedsUpdate, versionForCopy } from "../version.js";
-import { type PhoneMoves, noRecordStart, phoneMovesOf, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
+import { type PhoneMoves, WAIT_OTHER_PHONE_TEXT, noRecordStart, phoneMovesOf, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
 
 /** One device as the lists and editors name it. */
 export interface LinkDevice {
@@ -144,11 +144,15 @@ export function waitingEmptyText(what: string, device = "this watch", appVersion
 /** What an empty tab adds while a watch waits for its iPhone, as the HTTP
  * actions tab says it of its actions. `needsUpdate` when a waiting watch's
  * app is too old for the move (`setupMoveNeedsUpdate`), so the line names
- * the release rather than only "open it once". `phonesMove` when every waiting
- * watch's iPhone already runs an app that moves (`allPhonesMove`), so no line
- * says to update one. */
-export function waitingLibraryText(what: string, needsUpdate = false, phonesMove = false): string {
-  if (phonesMove) {
+ * the release rather than only "open it once". `phoneMoves` is what the waiting
+ * watches share (`waitingPhoneMoves`), so no line says to update an iPhone that
+ * is up to date, or that an iPhone with nothing to send may still send it. */
+export function waitingLibraryText(what: string, needsUpdate = false, phoneMoves?: PhoneMoves): string {
+  if (phoneMoves === "watch-only") {
+    return `Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`;
+  }
+  if (phoneMoves === "another" && !needsUpdate) return WAIT_OTHER_PHONE_TEXT;
+  if (phoneMoves === true || phoneMoves === "another") {
     return needsUpdate
       ? `Your iPhone is up to date. Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`
       : `Your iPhone is up to date. If its ${what} do not come here, use what is on the watch.`;
@@ -170,6 +174,16 @@ export function anyNeedsUpdate(devices: readonly LinkDevice[], waiting: Readonly
 export function allPhonesMove(devices: readonly LinkDevice[], waiting: ReadonlySet<string>): boolean {
   const shown = devices.filter((d) => waiting.has(d.ownerId));
   return shown.length > 0 && shown.every((d) => d.phoneMoves === true || d.phoneMoves === "another");
+}
+
+/** What one line about all these waiting devices may say of their iPhones, for
+ * `waitingLibraryText`. A word only when every one of them shares it, and
+ * `true` when each iPhone runs an app that moves in one way or the other. */
+export function waitingPhoneMoves(devices: readonly LinkDevice[], waiting: ReadonlySet<string>): PhoneMoves {
+  const shown = devices.filter((d) => waiting.has(d.ownerId));
+  if (shown.length > 0 && shown.every((d) => d.phoneMoves === "another")) return "another";
+  if (shown.length > 0 && shown.every((d) => d.phoneMoves === "watch-only")) return "watch-only";
+  return allPhonesMove(devices, waiting);
 }
 
 /**

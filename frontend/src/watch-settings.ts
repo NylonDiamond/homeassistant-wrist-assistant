@@ -717,17 +717,24 @@ export const WAIT_WATCH_UPDATE_TEXT =
 export const WAIT_OTHER_PHONE_TEXT =
   "One of your iPhones is up to date, but it did not set up this watch, so it has nothing to send for it. If nothing more comes here, use what is on the watch.";
 
+/** The same for a too old watch with no iPhone left to wait for, whose iPhone
+ * may be old or gone: the wait was ended by hand, or the iPhone was forgotten.
+ * It names the watch's update and makes no claim about the iPhone. */
+export const WAIT_WATCH_ONLY_UPDATE_TEXT =
+  `Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its setup here. Until then it keeps its current setup.`;
+
 /** What the wait lines know of the iPhone. `true`: the iPhone the watch names
  * runs an app that moves, or has finished. `"another"`: it does not, and
- * another iPhone of the same person does. Anything else says nothing, so an
- * integration older than these fields says what it always said. */
-export type PhoneMoves = boolean | null | "another";
+ * another iPhone of the same person does. `"watch-only"`: only the watch's own
+ * update is awaited, and nothing is known of its iPhone. Anything else says
+ * nothing, so an integration older than these fields says what it always
+ * said. */
+export type PhoneMoves = boolean | null | "another" | "watch-only";
 
-/** `PhoneMoves` from a watch's row. A watch that waits for its own update with
- * no iPhone left to wait for reads as `true`, so its line names the watch. */
+/** `PhoneMoves` from a watch's row. */
 export function phoneMovesOf(owner: MoveWaitFacts | undefined): PhoneMoves | undefined {
   if (owner?.owner_iphone_moves === true) return true;
-  if (owner?.has_iphone !== true && waitsForWatchUpdate(owner)) return true;
+  if (owner?.has_iphone !== true && waitsForWatchUpdate(owner)) return "watch-only";
   if (owner?.another_iphone_moves === true) return "another";
   return owner?.owner_iphone_moves;
 }
@@ -736,6 +743,7 @@ export function phoneMovesOf(owner: MoveWaitFacts | undefined): PhoneMoves | und
  * lists show goes through this. `phoneMoves` comes from `phoneMovesOf`. */
 export function waitForIphoneText(appVersion: string | null | undefined, phoneMoves?: PhoneMoves): string {
   const tooOld = setupMoveNeedsUpdate(appVersion);
+  if (phoneMoves === "watch-only") return WAIT_WATCH_ONLY_UPDATE_TEXT;
   if (phoneMoves === true) return tooOld ? WAIT_WATCH_UPDATE_TEXT : WAIT_PHONE_MOVES_TEXT;
   if (phoneMoves === "another") return tooOld ? WAIT_WATCH_UPDATE_TEXT : WAIT_OTHER_PHONE_TEXT;
   return tooOld ? WAIT_FOR_UPDATE_TEXT : WAIT_FOR_IPHONE_TEXT;
@@ -847,12 +855,19 @@ export function newDeviceText(device: SettingDevice): string {
 // good, and the watch then takes the record over its own copy. The header says
 // so only until that poll, as nothing says when a seed has finished.
 //
-// `holds_old_setup` with no record of a kind the watch seeds: that first poll
-// proves nothing, as a short session or a failed put ends it with the seed
-// unsent. So the first record of the kind asks for as long as the kind has
-// none. A record of the kind ends it, and so does `standard_settings` for the
-// settings, the one kind where the watch reports it has nothing of its own.
-// The watch does not report that for the other kinds.
+// `seed_may_land`: that first poll proves nothing by itself, as the seed is
+// still on its way, or a short session or a failed put ends it with the seed
+// unsent. So for 10 minutes after the poll a first record of a kind the watch
+// seeds still asks. A seed pass takes seconds, and the watch reports nothing
+// for a kind it has none of, so after that a kind with no record has nothing
+// coming, and asking would only send someone to open a watch with nothing to
+// send. A record of the kind ends it sooner. This ends a question, and it is
+// no timer on the wait.
+//
+// The settings are apart. `holds_old_setup` with no settings record asks for as
+// long as there is none, as the watch cannot always send them and runs its own.
+// `standard_settings` ends that, the one kind where the watch reports it has
+// nothing of its own.
 //
 // With no settings record the watch cannot always send its settings, so the
 // page shows the standard ones while the watch runs its own.
@@ -864,7 +879,7 @@ export function newDeviceText(device: SettingDevice): string {
 const SEEDED_KINDS: ReadonlySet<string> = new Set(["behavior", "notification_style", "pages", "menus", "voice", "status_pages", "control_center"]);
 
 /** What a first Save rule reads of a watch's row. */
-export type FirstSaveOwner = Pick<OwnerSummary, "app_version" | "device_kind" | "has_iphone" | "holds_old_setup" | "seed_pending" | "standard_settings">;
+export type FirstSaveOwner = Pick<OwnerSummary, "app_version" | "device_kind" | "has_iphone" | "holds_old_setup" | "seed_pending" | "seed_may_land" | "standard_settings">;
 
 /** What a device waits for on Home while its own setup may still come. */
 export const WATCH_SEED_LABEL = "the watch to send its setup";
@@ -883,6 +898,10 @@ export function waitingForNamedWatchText(name: string): string {
 /** What a first Save or a new page asks while the watch's setup may still come. */
 export const SEED_PENDING_ASK_TEXT =
   "Your watch has not sent its setup yet. Open Wrist Assistant on the watch first. Saving now replaces what is on the watch. Go on anyway?";
+
+/** A kind's empty line while the watch's seed may still be landing
+ * (`seedMayLand`). It holds no claim about what is on the watch. */
+export const SEED_MAY_LAND_EMPTY_TEXT = "Nothing here from this watch yet. Open Wrist Assistant on it.";
 
 /** The header's words for a settings page whose watch runs its own settings. */
 export const KEEPS_OWN_SETTINGS_STATUS = "Keeps its own settings, not saved here yet";
@@ -918,6 +937,16 @@ export function waitsForWatchSeed(owner: Partial<FirstSaveOwner> | undefined): b
     && !setupMoveNeedsUpdate(owner.app_version);
 }
 
+/** Whether this watch from before the move polled so lately since its wait
+ * ended that its seed may still be landing (`seed_may_land`). */
+export function seedMayLand(owner: Partial<FirstSaveOwner> | undefined): boolean {
+  return owner !== undefined
+    && deviceKindOf(owner) === "watch"
+    && owner.has_iphone !== true
+    && owner.holds_old_setup === true
+    && owner.seed_may_land === true;
+}
+
 /** What the header says of a kind with no record on this watch, in place of
  * "New watch", or undefined when that is right. */
 export function noRecordWords(owner: Partial<FirstSaveOwner> | undefined, kind: string): { status: string; title: string } | undefined {
@@ -938,6 +967,7 @@ export function firstSaveAskText(owner: Partial<FirstSaveOwner> | undefined, kin
   if (waitsForWatchSeed(owner) && kinds.some((k) => SEEDED_KINDS.has(k))) return SEED_PENDING_ASK_TEXT;
   if (owner.holds_old_setup !== true) return undefined;
   if (kinds.includes("behavior") && owner.standard_settings !== true) return REPLACE_OWN_SETTINGS_ASK_TEXT;
+  if (owner.seed_pending !== true && !seedMayLand(owner)) return undefined;
   return kinds.some((k) => k !== "behavior" && SEEDED_KINDS.has(k)) ? SEED_PENDING_ASK_TEXT : undefined;
 }
 

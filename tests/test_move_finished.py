@@ -255,6 +255,105 @@ def test_seed_pending_is_for_a_watch_from_before_the_move(env) -> None:
     assert secrets.seed_pending("w1") is True
 
 
+def test_seed_may_land_for_ten_minutes_after_the_first_poll(env) -> None:
+    secrets = env.secrets
+    assert secrets.seed_may_land("w1") is False
+    # Still waiting, so a poll starts nothing.
+    secrets.note_move_end_heard("w1")
+    assert secrets.seed_may_land("w1") is False
+    assert secrets.get("w1").move_end_heard_at is None
+
+    secrets.finish_move("w1", "p1")
+    # The wait is over, but the watch has not polled: that is seed_pending.
+    assert secrets.seed_may_land("w1") is False
+    assert secrets.note_move_end_heard("w1") is True
+    assert secrets.seed_may_land("w1") is True
+
+    entry = secrets.get("w1")
+    first = entry.move_end_heard_at
+    # A later poll is not the first, so it does not start them again.
+    assert secrets.note_move_end_heard("w1") is False
+    assert entry.move_end_heard_at == first
+
+    entry.move_end_heard_at = first - env.mod.SEED_LANDING_WINDOW + timedelta(seconds=30)
+    assert secrets.seed_may_land("w1") is True
+    entry.move_end_heard_at = first - env.mod.SEED_LANDING_WINDOW - timedelta(seconds=1)
+    assert secrets.seed_may_land("w1") is False
+    assert secrets.note_move_end_heard("w1") is False
+    assert secrets.seed_may_land("w1") is False
+
+
+def test_seed_may_land_is_for_a_watch_from_before_the_move(env) -> None:
+    secrets = env.secrets
+    for watch_id in ("w-code", "p1", "missing"):
+        assert secrets.note_move_end_heard(watch_id) is False
+        assert secrets.seed_may_land(watch_id) is False
+
+
+def test_the_first_poll_s_time_survives_a_restart(env) -> None:
+    secrets = env.secrets
+    secrets.finish_move("w1", "p1")
+    secrets.note_move_end_heard("w1")
+    first = secrets.get("w1").move_end_heard_at
+    env.disk.data = secrets._serialize()
+    assert env.disk.data["secrets"]["w1"]["move_end_heard_at"] == first.isoformat()
+
+    env.mod.dt_util.parse_datetime = datetime.fromisoformat
+    again = env.mod.WidgetSecretStore(object())
+    again._store = env.disk
+    asyncio.run(again.async_load())
+
+    assert again.get("w1").move_end_heard_at == first
+    assert again.seed_may_land("w1") is True
+    # A restart does not start the ten minutes again, as the poll is not new.
+    again.get("w1").move_end_heard_at = first - env.mod.SEED_LANDING_WINDOW - timedelta(seconds=1)
+    assert again.note_move_end_heard("w1") is False
+    assert again.seed_may_land("w1") is False
+
+
+def test_a_watch_that_polled_before_the_time_was_kept_has_no_ten_minutes(env) -> None:
+    secrets = env.secrets
+    secrets.finish_move("w1", "p1")
+    secrets.note_move_end_heard("w1")
+    saved = secrets._serialize()
+    del saved["secrets"]["w1"]["move_end_heard_at"]
+    env.disk.data = saved
+
+    again = env.mod.WidgetSecretStore(object())
+    again._store = env.disk
+    asyncio.run(again.async_load())
+
+    assert again.get("w1").move_end_heard is True
+    assert again.get("w1").move_end_heard_at is None
+    assert again.seed_may_land("w1") is False
+    assert again.seed_pending("w1") is False
+
+
+def test_the_first_poll_s_time_keeps_with_the_same_iphone_and_goes_with_another(env) -> None:
+    secrets = env.secrets
+    mod = env.mod
+    secrets.finish_move("w1", "p1")
+    secrets.note_move_end_heard("w1")
+    first = secrets.get("w1").move_end_heard_at
+
+    secrets.register("w1", SECRET_A, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1")
+    assert secrets.get("w1").move_end_heard_at == first
+
+    secrets.register("w1", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p2", user_id="u1")
+    assert secrets.get("w1").move_end_heard is False
+    assert secrets.get("w1").move_end_heard_at is None
+    assert secrets.seed_may_land("w1") is False
+
+
+def test_seed_may_land_ends_only_a_question_and_not_the_wait(env) -> None:
+    secrets = env.secrets
+    entry = secrets.get("w1")
+    # A wait that lasts is not touched by a time, however old.
+    entry.move_end_heard_at = datetime(2020, 1, 1, tzinfo=UTC)
+    assert secrets.may_await_move("w1") is True
+    assert secrets.seed_may_land("w1") is False
+
+
 def test_another_iphone_of_the_user_moving_ends_nothing(env) -> None:
     secrets = env.secrets
     assert secrets.another_iphone_moves("w1") is False

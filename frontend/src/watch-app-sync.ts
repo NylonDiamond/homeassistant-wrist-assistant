@@ -73,6 +73,10 @@ export const HTTP_ACTIONS_PART_LABEL = "HTTP actions";
  * after Voice. */
 const HTTP_ACTIONS_AFTER: WatchConfigPanelKind = "voice";
 
+/** The kinds whose lack means an iPhone's move has not finished, as Home's
+ * lineup reads them. */
+const MOVED_KINDS: readonly WatchConfigPanelKind[] = ["pages", "status_pages", "menus"];
+
 /** Where one watch's watch app records have got to. */
 export interface WatchAppSync {
   /** The parts a device has not collected yet, by label, in part order. */
@@ -83,10 +87,10 @@ export interface WatchAppSync {
   /** The parts whose stored save the watch reported it could not use
    * (`rejectedNow`), by label, in part order. Absent when there are none. */
   rejected?: string[];
-  /** Home Assistant holds no record of any part for the device yet (the
-   * HTTP action library aside, which is the home's). Absent when it holds
-   * one. A watch whose iPhone may still move its setup here then waits for
-   * that (`deviceVerdict`). */
+  /** Home Assistant holds no record yet of the device's pages, its status
+   * pages or its menus, one or more of them. Absent when it holds all three. A
+   * watch whose iPhone may still move its setup here then waits for that
+   * (`deviceVerdict`), as a move cut short lands only some of them. */
   noRecord?: true;
 }
 
@@ -121,12 +125,12 @@ function partsSync(parts: readonly WatchAppPart[], records: ReadonlyMap<string, 
     count(records.get(part.kind), part.label);
     if (part.kind === HTTP_ACTIONS_AFTER) count(httpActions, HTTP_ACTIONS_PART_LABEL);
   }
-  const held = parts.some((part) => deliveryState(records.get(part.kind)) !== "none");
+  const lacksOne = MOVED_KINDS.some((kind) => deliveryState(records.get(kind)) === "none");
   return {
     waiting,
     delivered,
     ...(rejected.length === 0 ? {} : { rejected }),
-    ...(held ? {} : { noRecord: true as const }),
+    ...(lacksOne ? { noRecord: true as const } : {}),
   };
 }
 
@@ -219,9 +223,9 @@ export interface DeviceVerdict {
  * so in place of "Synced" (`homeDeviceLabel`).
  *
  * A watch whose iPhone may still move its setup here (`waitsForIphone`,
- * the watch editors' `noRecordStart` rule) while Home Assistant holds none
- * of it yet waits for that iPhone, whatever its complications say: its
- * pages, menus and settings are still on the iPhone, so "Synced" would
+ * the watch editors' `noRecordStart` rule) while Home Assistant lacks its
+ * pages, status pages or menus waits for that iPhone, whatever its
+ * complications say: the rest may still be on the iPhone, so "Synced" would
  * claim more than it has (`IPHONE_MOVE_LABEL`). While the watch's app is
  * too old for that move, it waits for the update instead
  * (`iphoneMoveLabel`).

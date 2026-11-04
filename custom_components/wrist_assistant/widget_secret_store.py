@@ -187,6 +187,13 @@ class WidgetSecretEntry:
     Dropped by a `register()` that names another iPhone. Kept on disk only
     while True."""
 
+    move_end_heard_at: datetime | None = None
+    """When that first poll came, UTC, which starts `SEED_LANDING_WINDOW`
+    (:func:`watch_seed_may_land`). None for a watch that has not polled since
+    its wait ended, and for one that did before this field, whose window is
+    long over. Kept and dropped with `move_end_heard`. Kept on disk only while
+    set."""
+
     old_link_setup: bool = False
     """The old phone link set this watch up, and it has since been paired again
     by code, so its label no longer says so. See `holds_old_setup`. Kept on
@@ -288,6 +295,7 @@ class WidgetSecretStore:
                     move_wait_ended=entry.get("move_wait_ended") is True,
                     move_finished=entry.get("move_finished") is True,
                     move_end_heard=entry.get("move_end_heard") is True,
+                    move_end_heard_at=_stored_time(entry.get("move_end_heard_at")),
                     old_link_setup=entry.get("old_link_setup") is True,
                     standard_settings=entry.get("standard_settings") is True,
                 )
@@ -352,6 +360,11 @@ class WidgetSecretStore:
                     **({"move_wait_ended": True} if entry.move_wait_ended else {}),
                     **({"move_finished": True} if entry.move_finished else {}),
                     **({"move_end_heard": True} if entry.move_end_heard else {}),
+                    **(
+                        {"move_end_heard_at": entry.move_end_heard_at.isoformat()}
+                        if entry.move_end_heard_at is not None
+                        else {}
+                    ),
                     **({"old_link_setup": True} if entry.old_link_setup else {}),
                     **({"standard_settings": True} if entry.standard_settings else {}),
                 }
@@ -450,6 +463,11 @@ class WidgetSecretStore:
                 existing is not None
                 and existing.move_end_heard
                 and existing.owner_iphone_id == owner_iphone_id
+            ),
+            move_end_heard_at=(
+                existing.move_end_heard_at
+                if existing is not None and existing.owner_iphone_id == owner_iphone_id
+                else None
             ),
             old_link_setup=existing is not None and existing.holds_old_setup,
             standard_settings=existing is not None and existing.standard_settings,
@@ -710,11 +728,15 @@ class WidgetSecretStore:
         """:func:`watch_seed_pending`, now."""
         return watch_seed_pending(self._secrets, watch_id, dt_util.utcnow())
 
+    def seed_may_land(self, watch_id: str) -> bool:
+        """:func:`watch_seed_may_land`, now."""
+        return watch_seed_may_land(self._secrets, watch_id, dt_util.utcnow())
+
     def note_move_end_heard(self, watch_id: str) -> bool:
         """Record that a watch from before the move polled after its wait
-        ended. Called on every ``/v2/delta`` poll; once set it costs one
-        lookup. Returns whether it changed. An iPhone, a code paired watch, a
-        watch still waiting and an unknown id change nothing."""
+        ended, and when. Called on every ``/v2/delta`` poll; once set it costs
+        one lookup. Returns whether it changed. An iPhone, a code paired watch,
+        a watch still waiting and an unknown id change nothing."""
         entry = self._secrets.get(watch_id)
         if (
             entry is None
@@ -724,6 +746,7 @@ class WidgetSecretStore:
         ):
             return False
         entry.move_end_heard = True
+        entry.move_end_heard_at = dt_util.utcnow()
         self._schedule_save()
         return True
 
@@ -973,6 +996,33 @@ def watch_seed_pending(
     if entry is None or not entry.holds_old_setup or entry.move_end_heard:
         return False
     return not watch_move_may_still_come(entries, watch_id, now)
+
+
+# How long after a watch's first poll since its wait ended its seed may still
+# be landing. A seed pass takes seconds, so after this a kind with no record has
+# nothing coming: the watch sends nothing for a kind it holds no copy of.
+SEED_LANDING_WINDOW = timedelta(minutes=10)
+
+
+def watch_seed_may_land(
+    entries: Mapping[str, WidgetSecretEntry], watch_id: str, now: datetime
+) -> bool:
+    """Whether a watch from before the setup move polled so lately since its
+    wait ended that its own setup may still be landing.
+
+    The panel asks first before a first record of a kind then, and does not say
+    flatly that the watch has none. Only that question and those words end with
+    this. It is no timer on the wait: :func:`watch_move_may_still_come` does not
+    read it, and Home Assistant refuses nothing because of it. False before
+    that poll (:func:`watch_seed_pending` covers that), for a watch a code first
+    paired, for an iPhone and for an unknown id.
+    """
+    entry = entries.get(watch_id)
+    if entry is None or not entry.holds_old_setup or entry.move_end_heard_at is None:
+        return False
+    if watch_move_may_still_come(entries, watch_id, now):
+        return False
+    return now - entry.move_end_heard_at < SEED_LANDING_WINDOW
 
 
 def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) -> bool:
