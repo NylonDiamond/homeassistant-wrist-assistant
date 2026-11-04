@@ -106,7 +106,7 @@ describe("Board or Cards", () => {
 describe("the panel's Complications board", () => {
   it("draws the board on the list page unless Cards is picked, and always on a focused device", () => {
     expect(PANEL).toContain(`const view = phoneView("complications", this.compView);`);
-    expect(PANEL).toContain(`const board = focus !== undefined || view === "board";`);
+    expect(PANEL).toContain(`const board = view === "board" || focusedOnBoard("complications", focus);`);
     expect(PANEL).toContain(`board ? this.renderCompBoard(focus) : this.renderPickerSurface("page")`);
   });
 
@@ -118,6 +118,22 @@ describe("the panel's Complications board", () => {
 
   it("lists under a focused device only what could go on it: a box there, never a dash", () => {
     expect(PANEL).toContain("const fits = (it: CompBoardItem) => it.locked === undefined && this.compBoardCell(it, device, false).chip !== undefined;");
+  });
+
+  it("moves a device's address to its tab on Cards, and keeps it for a kept Board or a column's Focus", () => {
+    const settle = PANEL.slice(PANEL.indexOf("  private settleCompFocus() {"), PANEL.indexOf("  /** A column's Focus: that device's column"));
+    expect(settle).toContain(`focusedOnBoard("complications", focus)) return;`);
+    expect(settle).toContain(`phoneView("complications", this.compView) === "board") return;`);
+    expect(settle).toContain("this.pickPickerTab(focus);");
+    expect(settle).toContain("this.goTo(COMPLICATIONS_PATH, true);");
+    expect(PANEL).toContain("    this.settleCompFocus();\n");
+    expect(PANEL.match(/onFocus: \(ownerId\) => this\.focusCompColumn\(ownerId\),/g)).toHaveLength(2);
+  });
+
+  it("carries the device between Cards and Board", () => {
+    const set = PANEL.slice(PANEL.indexOf("  private setCompView(view: CompListView) {"), PANEL.indexOf("  /** A device's address on Cards is only a way in"));
+    expect(set).toContain("this.pickPickerTab(focus);");
+    expect(set).toContain("this.goTo(listFocusPath(COMPLICATIONS_PATH, tab.ownerId));");
   });
 
   it("moves a watch's old Complications and Control Center addresses to its board column", () => {

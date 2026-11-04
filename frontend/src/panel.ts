@@ -158,7 +158,7 @@ import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { COMP_SEARCH_PLACEHOLDER, EMPTY_DESIGN_TEXT, type DesignSearchText, deleteEmptyAsk, deleteEmptyDone, designSearchText, designTextMatches, deviceStripNote, foldShelf, isEmptyDesign, queueAfterFailure, queueDeviceTick, queueOrder, shelfFoldCount } from "./complication-cards.js";
-import { deviceTabsStyles, noteBoardFocus, renderDeviceTabs, tabIcon } from "./library/device-tabs.js";
+import { deviceTabsStyles, focusedOnBoard, noteBoardFocus, renderDeviceTabs, tabIcon } from "./library/device-tabs.js";
 import { compile, elementKeys, keyFor, mergeSplitRenders, parseValueDocument, splitDocuments, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -6702,6 +6702,7 @@ export class WristAssistantPanel extends LitElement {
   private lastInspectKey?: string;
 
   protected override willUpdate(changed: PropertyValues) {
+    this.settleCompFocus();
     // The first draw lands where the panel should open: a reload that is
     // about to reopen a complication, or a share link, goes to the
     // Complications tab in place of Home, rewriting the address rather than
@@ -15012,7 +15013,7 @@ export class WristAssistantPanel extends LitElement {
     const full = this.freeSlot() < 0;
     const focus = this.compFocus();
     const view = phoneView("complications", this.compView);
-    const board = focus !== undefined || view === "board";
+    const board = view === "board" || focusedOnBoard("complications", focus);
     return html`<div class="cl-page"><div class="cl-wrap">
       <div class="cl-head">
         <div class="cl-head-text">
@@ -15045,14 +15046,42 @@ export class WristAssistantPanel extends LitElement {
     return this.compBoardDevices().find((d) => d.ownerId.toUpperCase() === owner.toUpperCase())?.ownerId;
   }
 
-  /** Board or Cards, remembered. Cards leaves a focused device. */
+  /** Board or Cards, remembered. The device carries over: Cards opens on the
+   * focused device's tab, and Board on the device tab's column. */
   private setCompView(view: CompListView) {
     noteViewPick("complications", view);
     this.compView = view;
     // Board on a phone, kept already: the pick alone changes what shows.
     this.requestUpdate();
     saveCompView(() => window.localStorage, view);
-    if (view === "cards" && this.compFocus() !== undefined) this.goTo(COMPLICATIONS_PATH);
+    if (view === "cards") {
+      const focus = this.compFocus();
+      noteBoardFocus("complications", undefined);
+      if (focus !== undefined) {
+        this.pickPickerTab(focus);
+        this.goTo(COMPLICATIONS_PATH);
+      }
+      return;
+    }
+    const tab = this.compBoardDevices().find((d) => d.ownerId === this.listDevice);
+    if (tab !== undefined && this.compFocus() === undefined) this.goTo(listFocusPath(COMPLICATIONS_PATH, tab.ownerId));
+  }
+
+  /** A device's address on Cards is only a way in: the page moves to that
+   * device's tab and drops it. A column's Focus and a kept Board stay on it. */
+  private settleCompFocus() {
+    if (this.draft !== undefined) return;
+    const focus = this.compFocus();
+    if (focus === undefined || focusedOnBoard("complications", focus)) return;
+    if (phoneView("complications", this.compView) === "board") return;
+    this.pickPickerTab(focus);
+    this.goTo(COMPLICATIONS_PATH, true);
+  }
+
+  /** A column's Focus: that device's column, whichever view is kept. */
+  private focusCompColumn(ownerId: string | undefined) {
+    noteBoardFocus("complications", ownerId);
+    this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId));
   }
 
   /** Every device the board has a column for: the home's watches and
@@ -15145,7 +15174,7 @@ export class WristAssistantPanel extends LitElement {
         thing: "Complication",
         columns,
         ...(device === undefined ? {} : { focus: device.ownerId }),
-        onFocus: (ownerId) => this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId)),
+        onFocus: (ownerId) => this.focusCompColumn(ownerId),
         wide: this.compRoomy.wide,
         focusTitle: (d) => `Show ${d.name}'s ${compNoun(d.kind, 2)} first`,
         sections,
@@ -15205,7 +15234,7 @@ export class WristAssistantPanel extends LitElement {
       label: "Complications on each device",
       thing: "Complication",
       columns: this.compBoardColumns(devices),
-      onFocus: (ownerId) => this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId)),
+      onFocus: (ownerId) => this.focusCompColumn(ownerId),
       wide: this.compRoomy.wide,
       focusTitle: (d) => `Show ${d.name}'s ${compNoun(d.kind, 2)} first, on the Complications tab`,
       sections: this.compAllSections(this.compBoardItems(q), devices, q !== "" ? `Nothing matches "${query.trim()}".` : "No complications yet."),
@@ -15219,7 +15248,7 @@ export class WristAssistantPanel extends LitElement {
       device, color: this.deviceColorOf(device.ownerId),
       text: `${total} ${compNoun(device.kind, total)}`,
       onOwn: (screen: DeviceOwnScreen) => this.openOwnScreen(device.ownerId, device.kind, screen),
-      onAll: () => this.goTo(COMPLICATIONS_PATH),
+      onAll: () => this.focusCompColumn(undefined),
     });
   }
 
