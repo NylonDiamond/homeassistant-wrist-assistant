@@ -30,6 +30,8 @@ import {
   menusWaitText,
   noMenuText,
   NEW_MENU_ADMIN_TEXT,
+  makeFirstMenuText,
+  newMenuFullText,
   menuInUseText,
   newMenuMadeText,
   newMenuName,
@@ -131,6 +133,9 @@ describe("the tab's words", () => {
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
     // A watch still waiting for its iPhone: its menus are on their way.
     expect(menusEmptyText(DEVICES, "")).toBe("None yet.");
+    // Someone who is not an administrator reads how, with no hover to find it.
+    expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(false))).toBe("None yet. Open your watch or iPhone's tab, then use New menu to make its first one.");
+    expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(true))).toBe("None yet. Use New menu to make one.");
     expect(menusEmptyText(DEVICES, "", true)).toBe("None yet. Update Wrist Assistant on your iPhone and open it once. Its menus move here by themselves.");
     expect(noMenuText(JESSE_D, "", true)).toBe(`No menus from ${JESSE_D.name} yet. ${WAIT_FOR_IPHONE_TEXT}`);
     expect(noMenuText(JESSE_D, "", false)).toBe(`${JESSE_D.name} uses no menu yet.`);
@@ -363,11 +368,50 @@ describe("the Menus tab", () => {
     expect(t.whole()).toContain("Not made. Bad menu.");
   });
 
-  it("is greyed for anyone who is not an administrator", async () => {
+  it("is greyed on every device for anyone who is not an administrator", async () => {
     const t = tab(false);
     show(t);
     await t.ready();
     expect(t.whole()).toContain(NEW_MENU_ADMIN_TEXT);
+  });
+
+  /** A device with no menus record, as a fresh watch has. */
+  function withoutMenus(t: ReturnType<typeof tab>, owner: string): void {
+    const picks = t.home.lib.picks[owner] as { menus?: unknown };
+    delete picks.menus;
+    for (const menu of Object.values(t.home.lib.menus)) menu.owners = menu.owners.filter((o) => o !== owner);
+    t.home.held.delete(`${owner}/menus`);
+  }
+
+  it("makes a focused device's first menu for someone who is not an administrator", async () => {
+    const t = tab(false);
+    withoutMenus(t, CHEN);
+    show(t, "cards", CHEN);
+    await t.ready();
+    const name = DEVICES.find((d) => d.ownerId === CHEN)!.name;
+    const before = t.whole();
+    expect(before).toContain(`Make a menu for ${name}`);
+    expect(before).not.toContain(NEW_MENU_ADMIN_TEXT);
+    expect(before).toContain("Use New menu to make one.");
+    t.call("toggleNew");
+    expect(t.whole()).toContain(`an Anywhere menu on ${name}.`);
+    await t.call("makeMenu");
+    const [sent] = t.sentOf("library/menus/create");
+    expect(sent).toMatchObject({ unit: "anywhere", owner_id: CHEN });
+    expect(sent!.start).toEqual(watchMenusDefaults());
+    expect(t.el.newForm).toBeUndefined();
+    const made = Object.entries(t.home.lib.menus).find(([, m]) => m.owners.includes(CHEN))!;
+    expect(t.library).toEqual([[made[0], CHEN]]);
+  });
+
+  it("leaves a kind of menu a focused device already uses alone", async () => {
+    const t = tab(false);
+    show(t, "cards", CHEN);
+    await t.ready();
+    const name = DEVICES.find((d) => d.ownerId === CHEN)!.name;
+    expect(t.whole()).toContain(newMenuFullText(name));
+    t.call("toggleNew");
+    expect((t.el.newForm as { usedUnits: string[] }).usedUnits).toEqual(["anywhere", "entity"]);
   });
 
   it("puts a new menu on a device with a tick", async () => {

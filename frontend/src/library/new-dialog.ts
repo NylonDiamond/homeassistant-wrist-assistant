@@ -29,6 +29,11 @@ export interface NewItemForm {
   note?: WatchPagesNote;
   /** Menus: which kind the menu is. */
   unit?: MenuUnit;
+  /** Menus: the device it goes straight onto, by name. No device: it waits
+   * for a tick. */
+  onDevice?: string;
+  /** Menus: the kinds that device already uses, which it may not make. */
+  usedUnits?: readonly MenuUnit[];
   /** Pages and status pages: the device kind the editor opens on, when the
    * home has both kinds to choose from. */
   preview?: NewPreview;
@@ -79,6 +84,7 @@ export function newItemSummary(kind: LibraryKind, form: NewItemForm): string {
   if (name === "") return "Type a name to start.";
   if (kind === "menus") {
     const unit = form.unit ?? "anywhere";
+    if (form.onDevice !== undefined) return `${name}, an ${MENU_UNIT_TITLES[unit]} on ${form.onDevice}.`;
     return `${name}, an ${MENU_UNIT_TITLES[unit]} on no device yet. Tick a device any time.`;
   }
   const noun = kind === "pages" && form.mapPage === true ? "map page" : newItemNoun(kind);
@@ -190,7 +196,7 @@ export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previe
           ${stepHead(2, "Which kind", named ? "A device uses one of each. It starts as the app's own menu of that kind." : "Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Kind of menu">
             ${(["anywhere", "entity"] as const).map((unit) => card((form.unit ?? "anywhere") === unit, MENU_UNIT_TITLES[unit], menuUnitNote(unit), ringArt(unit),
-              () => h.onUnit?.(unit), form.busy))}
+              () => h.onUnit?.(unit), form.busy || form.usedUnits?.includes(unit) === true))}
           </div>
         </section>` : html`<section class="new-step step-shapes ${wait}" aria-disabled=${named ? "false" : "true"}>
           ${stepHead(kinds ? 3 : 2, "Preview on", named ? "Only the picture the editor opens with. Nothing is put on a device; the ticks do that." : "Waits for a name.")}

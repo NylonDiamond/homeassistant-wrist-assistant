@@ -132,7 +132,19 @@ export function newMenuMadeText(name: string): string {
 }
 
 /** Why New menu is not offered to someone who is not an administrator. */
-export const NEW_MENU_ADMIN_TEXT = "Only a Home Assistant administrator can make a new menu.";
+export const NEW_MENU_ADMIN_TEXT = "To make a menu, open your watch or iPhone's tab first. Only a Home Assistant administrator can make one here.";
+
+/** How someone who is no administrator makes a first menu, in plain view,
+ * since a greyed button's title never reaches a touch screen. */
+export function makeFirstMenuText(focused: boolean): string {
+  return focused ? "Use New menu to make one." : "Open your watch or iPhone's tab, then use New menu to make its first one.";
+}
+
+/** Why New menu is off for someone who is no administrator, on a device
+ * that uses a menu of each kind. */
+export function newMenuFullText(device: string): string {
+  return `${device} already has both menus. Edit them instead.`;
+}
 
 /** A new menu's sections: the app's own menu for the unit
  * (`menu-defaults.json`), exactly the keys a menus document holds for it. */
@@ -144,13 +156,14 @@ export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchM
  * iPhone to move its menus here (`awaitingMove`), so they are on their way.
  * Given as the set of waiting ids, a waiting watch too old for the move
  * names the release (`waitingLibraryText`). */
-export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting: boolean | ReadonlySet<string> = false): string {
+export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting: boolean | ReadonlySet<string> = false, makeHint?: string): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Devices tab.";
   if (search.trim() !== "") return "No menu or device has that name.";
   const any = typeof waiting === "boolean" ? waiting : waiting.size > 0;
   const needsUpdate = typeof waiting !== "boolean" && anyNeedsUpdate(devices, waiting);
   const phoneMoves = typeof waiting === "boolean" ? undefined : waitingPhoneMoves(devices, waiting);
-  return any ? `None yet. ${waitingLibraryText("menus", needsUpdate, phoneMoves)}` : "None yet.";
+  if (any) return `None yet. ${waitingLibraryText("menus", needsUpdate, phoneMoves)}`;
+  return makeHint === undefined ? "None yet." : `None yet. ${makeHint}`;
 }
 
 /** What a focused device says while it uses no menu: that its iPhone's

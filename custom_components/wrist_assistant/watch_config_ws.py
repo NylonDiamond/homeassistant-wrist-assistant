@@ -994,13 +994,14 @@ def ws_library_menus_copy(
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LIBRARY_MENUS_CREATE,
         vol.Required("unit"): str,
         vol.Required("name"): str,
         vol.Required("sections"): dict,
+        vol.Optional("owner_id"): str,
+        vol.Optional("start"): dict,
     }
 )
 @callback
@@ -1011,23 +1012,50 @@ def ws_library_menus_create(
     menu). A tick (``library/pick``) then puts it on a device; no device
     moves off its menu here.
 
-    Request: {unit: "anywhere" | "entity", name, sections}
-    Result:  {"id": <new menu id>, "revisions": {}}
+    Request: {unit: "anywhere" | "entity", name, sections, owner_id?, start?}
+    Result:  {"id": <new menu id>, "revisions": {<owner id>: {<kind>: <revision>}}}
 
     ``sections`` is the menu's sections exactly as a menus document holds
     them for the unit: ``quickAction`` and ``pageSwitcher`` for
     ``anywhere``, ``entityRadial`` for ``entity`` (the panel sends the app's
     defaults), checked as every menus document is
-    (``WatchConfigStore.library_create_menu``). Administrators only (a menu
-    no device uses is an administrator's). Refused ``invalid`` (an unknown
-    unit, an empty name, sections of another shape) and ``unauthorized``.
+    (``WatchConfigStore.library_create_menu``). With no ``owner_id``, only
+    for an administrator (a menu no device uses is an administrator's), and
+    ``revisions`` is empty.
+
+    ``owner_id`` makes the menu that device's first of the unit, for anyone
+    who may manage the device: a focused device's New menu, as New page
+    makes a page there. ``start`` is ``library/pick``'s, for a device with
+    no menus record. Refused as a pick is, ``in_use`` when the device already
+    uses a menu of the unit, and nothing is made.
+
+    Refused ``invalid`` (an unknown unit, an empty name, sections of another
+    shape) and ``unauthorized``.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    owner = msg.get("owner_id")
+    if owner is None:
+        if not is_admin(connection):
+            connection.send_error(
+                msg["id"], "unauthorized", "only an administrator may make a menu no device uses"
+            )
+            return
+    elif not require_owner(hass, connection, msg, owner):
+        return
     try:
-        result = store.library_create_menu(msg["unit"], msg["name"], msg["sections"])
+        result = store.library_create_menu(
+            msg["unit"],
+            msg["name"],
+            msg["sections"],
+            owner_id=owner,
+            start=msg.get("start"),
+            may_read=None
+            if is_admin(connection)
+            else lambda other: may_manage_owner(hass, connection, other),
+        )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return

@@ -69,6 +69,79 @@ def _menu_of(ctx, owner: str, unit: str = "anywhere") -> str:
     return ctx.store.library_summary()["picks"][owner]["menus"][unit]
 
 
+# ── library/menus/create on a focused device ─────────────────────────────
+
+
+def _new_menu(**extra) -> dict:
+    return {
+        "unit": "anywhere",
+        "name": "Mine",
+        "sections": {
+            key: value
+            for key, value in _menus().items()
+            if key in ("quickAction", "pageSwitcher")
+        },
+        **extra,
+    }
+
+
+def test_a_member_makes_a_first_menu_on_their_own_device_and_nowhere_else(ctx) -> None:
+    """R5-027: a person's own device needs a way to its first menu. A menu on no
+    device, or on someone else's, stays out of reach."""
+    assert _codes(ctx, ctx.ws.ws_library_menus_create, ALICE, **_new_menu()) == ["unauthorized"]
+    assert _codes(
+        ctx, ctx.ws.ws_library_menus_create, BOB, **_new_menu(owner_id=WATCH, start=_menus())
+    ) == ["unauthorized"]
+    assert ctx.store.library_summary()["menus"] == {}
+
+    made = _ok(
+        ctx, ctx.ws.ws_library_menus_create, ALICE, **_new_menu(owner_id=WATCH, start=_menus())
+    )
+    assert _menu_of(ctx, WATCH) == made["id"]
+    assert ctx.store.library_summary()["menus"][made["id"]]["owners"] == [WATCH]
+    assert made["revisions"] == {WATCH: {"menus": ctx.store.get(WATCH, "menus").revision}}
+    # It reads back, as the editor it opens in does.
+    assert _ok(ctx, ctx.ws.ws_library_item, ALICE, kind="menus", item_id=made["id"])
+
+
+def test_a_new_menu_never_moves_a_device_off_the_one_it_uses(ctx) -> None:
+    """That one would be left on no device, out of its person's reach."""
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    used = _menu_of(ctx, WATCH)
+    count = len(ctx.store.library_summary()["menus"])
+    assert _codes(ctx, ctx.ws.ws_library_menus_create, ALICE, **_new_menu(owner_id=WATCH)) == [
+        "in_use"
+    ]
+    assert _menu_of(ctx, WATCH) == used
+    assert len(ctx.store.library_summary()["menus"]) == count
+
+
+@pytest.mark.parametrize(
+    ("owner", "code"),
+    [("ghost", "unauthorized"), ("library", "unknown_device")],
+)
+def test_a_member_makes_no_menu_for_something_that_is_no_device_of_theirs(ctx, owner, code) -> None:
+    assert _codes(
+        ctx, ctx.ws.ws_library_menus_create, ALICE, **_new_menu(owner_id=owner, start=_menus())
+    ) == [code]
+    assert ctx.store.library_summary()["menus"] == {}
+
+
+def test_a_refused_first_menu_makes_nothing(ctx) -> None:
+    """A watch waiting on its iPhone's move, and a device with no menus record
+    and no start, leave no stray menu behind."""
+    ctx.awaiting.add(WATCH)
+    assert _codes(
+        ctx, ctx.ws.ws_library_menus_create, ALICE, **_new_menu(owner_id=WATCH, start=_menus())
+    ) == ["awaiting_move"]
+    assert ctx.store.library_summary()["menus"] == {}
+    ctx.awaiting.clear()
+    assert _codes(ctx, ctx.ws.ws_library_menus_create, ALICE, **_new_menu(owner_id=WATCH)) == [
+        "no_record"
+    ]
+    assert ctx.store.library_summary()["menus"] == {}
+
+
 # ── library/pick ─────────────────────────────────────────────────────────
 
 

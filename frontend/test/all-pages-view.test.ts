@@ -710,6 +710,14 @@ describe("the Pages tab", () => {
 });
 
 describe("a focused device", () => {
+  it("never sends someone to an administrator while its New page works", async () => {
+    const t = tab("pages", false);
+    showTab(t, JESSE);
+    await t.ready();
+    expect(t.whole()).not.toContain("Ask a Home Assistant administrator");
+    expect(t.whole()).toContain("<span>New page</span>");
+  });
+
   it("lists the device's pages in its order, each with a picture and Hide here in its column, then the rest dimmed", async () => {
     const t = tab();
     showTab(t, JESSE);

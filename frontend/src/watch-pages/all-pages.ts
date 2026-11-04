@@ -1610,7 +1610,8 @@ export class WaAllPages extends LitElement {
           key: "on", title: onDeviceTitle(device), count: total, hint: orderHint(device), rows,
           empty: waiting.has(device.ownerId) && this.search.trim() === ""
             ? waitingEmptyText(many, device.name, device.appVersion, device.phoneMoves)
-            : noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake),
+            // A focused device's New page works for anyone who manages it.
+            : noPicksText(device, this.kind, this.search, view.rest.length),
         },
         // A home with nothing in it has no rest to list.
         ...(showsRest(total, view.rest.length, this.search) ? [{

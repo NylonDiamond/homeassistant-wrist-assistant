@@ -75,7 +75,7 @@ _MODULES = [
 # administrator's, like every library item no device has.
 _ADMIN = {
     _MODULE.name: {"ws_gallery_key"},
-    _WATCH_CONFIG_MODULE.name: {"ws_library_menus_create", "ws_library_item_create"},
+    _WATCH_CONFIG_MODULE.name: {"ws_library_item_create"},
     _HTTP_ACTIONS_MODULE.name: {"ws_http_actions_save", "ws_http_actions_test"},
 }
 
@@ -120,6 +120,9 @@ _OWNER = {
         "ws_library_pick": "require_owner",
         "ws_library_menus_clear": "require_owner",
         "ws_library_menus_copy": "require_owner",
+        # Names a device for its first menu; with none, an administrator only
+        # (test_library_ws.py pins both).
+        "ws_library_menus_create": "require_owner",
         "ws_library_fork_page": "require_owner",
         "ws_library_menus_rename": "_may_change_item",
         "ws_library_menus_delete": "_may_change_item",

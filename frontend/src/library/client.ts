@@ -169,11 +169,17 @@ export async function copyLibraryMenu(hass: HassLike, ownerId: string, unit: Men
 /** New menu: a library menu named `name` that no device uses yet, made of
  * `sections`, which hold exactly the unit's keys (`MENU_UNIT_SECTIONS`) as a
  * menus document holds them. A tick then puts it on a device. Administrators
- * only. Refusals: `invalid` (an empty name, an unknown unit, sections of the
- * wrong shape), `unauthorized`, and `unknown_command` from an integration
- * older than it. */
-export async function createLibraryMenu(hass: HassLike, unit: MenuUnit, name: string, sections: LibraryObject) {
-  return hass.connection.sendMessagePromise<LibraryMenuCreateReply>({ type: `${LIB}/menus/create`, unit, name, sections });
+ * only, unless `on` names a device the caller manages: then it is that
+ * device's first menu of the unit, with `on.start` as its menus record when it
+ * holds none. Refusals: `invalid` (an empty name, an unknown unit, sections of
+ * the wrong shape), `unauthorized`, `in_use` (the device already uses a menu
+ * of the unit), and `unknown_command` from an integration older than it. */
+export async function createLibraryMenu(hass: HassLike, unit: MenuUnit, name: string, sections: LibraryObject, on?: { ownerId: string; start?: LibraryObject }) {
+  return hass.connection.sendMessagePromise<LibraryMenuCreateReply>({
+    type: `${LIB}/menus/create`, unit, name, sections,
+    ...(on === undefined ? {} : { owner_id: on.ownerId }),
+    ...(on?.start === undefined ? {} : { start: on.start }),
+  });
 }
 
 /** Rename a library menu. No device's record holds a menu's name, so no

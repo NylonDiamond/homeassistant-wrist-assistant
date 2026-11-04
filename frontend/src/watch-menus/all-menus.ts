@@ -39,7 +39,7 @@ import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
 import { ALL_FILTER, type PagesFilter, libraryEditTitle, onDeviceTitle, resolveFilter, restTitle } from "../watch-pages/all-pages-model.js";
-import { mayAddFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
+import { mayAddFirst, mayMakeFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
 import { type LinkDevice, type PagesRecordFacts, awaitingMove, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
@@ -50,6 +50,8 @@ import {
   MENUS_BOARD_HINT,
   MENUS_FOOT,
   NEW_MENU_ADMIN_TEXT,
+  newMenuFullText,
+  makeFirstMenuText,
   allMenusLead,
   duplicateMenuTitle,
   duplicatedMenuText,
@@ -338,6 +340,25 @@ export class WaAllMenus extends LitElement {
     return this.hassNow?.user?.is_admin !== false;
   }
 
+  /** The focused device a person who is no administrator may make a first
+   * menu on, as New page makes a page there. The list holds only devices they
+   * manage. An administrator's New menu goes on no device, so none moves. */
+  private get makesOn(): LinkDevice | undefined {
+    return this.mayMake ? undefined : this.filterDevice();
+  }
+
+  /** What an empty list adds for someone who is no administrator. */
+  private get makeHint(): string | undefined {
+    return this.mayMake ? undefined : makeFirstMenuText(this.makesOn !== undefined);
+  }
+
+  /** The kinds of menu `device` already uses, which New menu leaves alone:
+   * moving off one would leave it where only an administrator can reach it. */
+  private usedUnits(device: LinkDevice): MenuUnit[] {
+    const library = this.lib.library;
+    return library === undefined ? [] : MENU_UNITS.filter((u) => menuFor(library, device.ownerId, u) !== undefined);
+  }
+
   /** Open New menu's form, or close it. */
   private toggleNew(): void {
     if (this.newForm?.busy) return;
@@ -345,9 +366,14 @@ export class WaAllMenus extends LitElement {
       this.newForm = undefined;
       return;
     }
-    const unit: MenuUnit = "anywhere";
+    const device = this.makesOn;
+    const used = device === undefined ? [] : this.usedUnits(device);
+    const unit: MenuUnit = MENU_UNITS.find((u) => !used.includes(u)) ?? "anywhere";
     this.newNote = undefined;
-    this.newForm = { unit, name: newMenuName(this.lib.library, unit), busy: false };
+    this.newForm = {
+      unit, name: newMenuName(this.lib.library, unit), busy: false,
+      ...(device === undefined ? {} : { onDevice: device.name, usedUnits: used }),
+    };
     void this.updateComplete.then(() => openNewItemDialog(this.renderRoot));
   }
 
@@ -363,7 +389,8 @@ export class WaAllMenus extends LitElement {
    * New menu: a library menu under the name given, the app's own menu for
    * the unit (`library/menus/create`), that no device uses yet. The library
    * is read again after it, so its card shows with no device ticked. No
-   * device moves off its menu.
+   * device moves off its menu. For someone who is no administrator it is the
+   * focused device's first menu of the kind instead (`makesOn`).
    */
   private async makeMenu(): Promise<void> {
     const form = this.newForm;
@@ -374,17 +401,28 @@ export class WaAllMenus extends LitElement {
       this.newForm = { ...form, note: { kind: "warn", text: "Give the menu a name." } };
       return;
     }
+    const device = this.makesOn;
+    if (device !== undefined) {
+      // Its first record may replace what the watch runs, so that asks first.
+      const may = mayMakeFirst(this.owners, this.lib.library, device.ownerId, "menus");
+      if (!may.go) {
+        if (may.note !== undefined) this.newForm = { ...form, note: { kind: "warn", text: `Not made on ${device.name}. ${may.note}` } };
+        return;
+      }
+    }
     const { note: _dropped, ...asked } = form;
     this.newForm = { ...asked, busy: true };
-    const made = await store.createMenu(form.unit, name, newMenuSections(form.unit));
+    const made = await store.createMenu(form.unit, name, newMenuSections(form.unit), device?.ownerId);
     if (!made.ok) {
       this.newForm = { ...form, busy: false, note: { kind: "err", text: `Not made. ${made.text}` } };
       return;
     }
     this.newForm = undefined;
-    // Straight into the new menu, in the library: no device uses it yet.
-    if (this.onOpenLibrary !== undefined) this.onOpenLibrary(made.reply.id);
-    else this.newNote = { kind: "ok", text: newMenuMadeText(name) };
+    // Straight into the new menu, in the library.
+    if (this.onOpenLibrary !== undefined) {
+      if (device === undefined) this.onOpenLibrary(made.reply.id);
+      else this.onOpenLibrary(made.reply.id, device.ownerId);
+    } else this.newNote = { kind: "ok", text: newMenuMadeText(name) };
   }
 
   /** Delete a menu no device uses, after its question, with Undo: it hides
@@ -478,18 +516,24 @@ export class WaAllMenus extends LitElement {
       <div class="am-section-head">
         <h2 class="am-section-title" id=${`am-section-${unit}`}>${MENU_SECTION_TITLES[unit]} <span class="am-section-n">${menus.length}</span></h2>
       </div>
-      ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, waiting)}</p>`
+      ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, waiting, this.makeHint)}</p>`
         : html`<div class="ap-grid" role="list">${menus.map((menu) => this.renderCard(library, menu, devices, waiting))}</div>`}
     </section>`)}`;
   }
 
   /** "+ New menu", beside the lead (mock frame 1c). Greyed for anyone who
-   * is not an administrator. */
+   * is not an administrator, but for the first menu of a focused device. */
   private renderNewButton(): TemplateResult {
-    const may = this.mayMake;
+    const device = this.makesOn;
+    const room = device !== undefined && this.usedUnits(device).length < MENU_UNITS.length;
+    const may = this.mayMake || room;
     const open = this.newForm !== undefined;
+    const title = this.mayMake ? "Make a new menu no device uses yet"
+      : device === undefined ? NEW_MENU_ADMIN_TEXT
+      : room ? `Make a menu for ${device.name}`
+      : newMenuFullText(device.name);
     return html`<button type="button" class="am-new-btn ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-      ?disabled=${!may || this.newForm?.busy === true} title=${may ? "Make a new menu no device uses yet" : NEW_MENU_ADMIN_TEXT}
+      ?disabled=${!may || this.newForm?.busy === true} title=${title}
       @click=${() => this.toggleNew()}>${uiIcon("plus")}<span>New menu</span></button>`;
   }
 
@@ -638,7 +682,7 @@ export class WaAllMenus extends LitElement {
     return this.renderBoardOf(library, devices, menuSections(shown).map(({ unit, menus }) => ({
       key: unit, title: MENU_SECTION_TITLES[unit], count: menus.length, hint: MENUS_BOARD_HINT,
       rows: menus.map((menu) => this.boardRow(library, menu, devices, waiting)),
-      empty: menusEmptyText(devices, this.search, waiting),
+      empty: menusEmptyText(devices, this.search, waiting, this.makeHint),
     })));
   }
 

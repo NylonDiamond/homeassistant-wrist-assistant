@@ -4110,7 +4110,16 @@ class WatchConfigStore:
             "link_failures": failed,
         }
 
-    def library_create_menu(self, unit: Any, name: Any, sections: Any) -> dict[str, Any]:
+    def library_create_menu(
+        self,
+        unit: Any,
+        name: Any,
+        sections: Any,
+        *,
+        owner_id: str | None = None,
+        start: Any = None,
+        may_read: Callable[[str], bool] | None = None,
+    ) -> dict[str, Any]:
         """A new library menu that no device uses yet (the Menus tab's New
         menu, ``library/menus/create``); a tick then puts it on a device.
 
@@ -4121,13 +4130,27 @@ class WatchConfigStore:
         slot list a list of slots with unique ids. No record is written, so
         no device changes and ``revisions`` is empty.
 
+        With ``owner_id`` the menu goes straight onto that device as its first
+        of the unit (:meth:`library_pick`, with ``start`` and ``may_read``),
+        or nothing is made. A device already using a menu of the unit is
+        refused ``in_use``: moving it off would leave that menu on no device,
+        where only an administrator could reach it again.
+
         Refused ``invalid`` for an unknown unit, an empty name or sections of
-        another shape. Returns ``{"id": <new menu id>, "revisions": {}}``."""
+        another shape. Returns ``{"id": <new menu id>, "revisions": {}}``, with
+        the records written under ``revisions`` for a device."""
         self._check_library()
         if not isinstance(unit, str) or unit not in MENU_UNITS:
             raise WatchConfigValidationError(f"unit must be one of {', '.join(MENU_UNITS)}")
         if not isinstance(sections, dict):
             raise WatchConfigValidationError("sections must be an object")
+        if owner_id is not None:
+            self._check_link_owner(owner_id)
+            if unit in self._library["picks"].get(owner_id, {}).get("menus", {}):
+                raise WatchConfigLinkError(
+                    "in_use", f"{owner_id} already uses a menu of this kind"
+                )
+        before = self._library
         try:
             created = create_menu(self._library, unit, name, sections)
         except LibraryError as err:
@@ -4137,7 +4160,16 @@ class WatchConfigStore:
         validate_document("menus", _menus_probe(sections))
         self._set_library(created.library)
         _LOGGER.info("Made the %s menu %s in the library", unit, created.id)
-        return {"id": created.id, "revisions": {}}
+        if owner_id is None:
+            return {"id": created.id, "revisions": {}}
+        try:
+            picked = self.library_pick(
+                owner_id, "menus", created.id, unit=unit, start=start, may_read=may_read
+            )
+        except WatchConfigStoreError:
+            self._set_library(before)
+            raise
+        return {"id": created.id, "revisions": picked["revisions"]}
 
     def library_rename_menu(self, menu_id: Any, name: Any) -> None:
         """Rename a library menu (``library/menus/rename``). No record holds a

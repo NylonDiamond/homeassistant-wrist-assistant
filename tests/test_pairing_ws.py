@@ -464,6 +464,19 @@ def test_a_non_admin_cannot_take_another_user_s_watch(env) -> None:
     assert env.pair_store.get(pending.code) is pending
 
 
+@pytest.mark.parametrize(
+    ("noun", "words"), [("watch", "pair a watch"), ("iPhone", "pair an iPhone")]
+)
+def test_a_refusal_to_pair_for_another_user_reads_right(env, noun, words) -> None:
+    _user_id, refusal = asyncio.run(
+        env.ws._pick_user(env.hass, _User("alice"), "bob", noun=noun)
+    )
+    assert refusal == (
+        "unauthorized",
+        f"Only an administrator can {words} for another user.",
+    )
+
+
 def test_a_non_admin_is_never_told_to_tick_replace_for_someone_else_s_watch(env) -> None:
     """Without Replace too, the refusal is that it needs an administrator:
     ticking Replace could never get them past it."""

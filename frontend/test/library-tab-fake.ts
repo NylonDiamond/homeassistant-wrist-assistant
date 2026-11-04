@@ -207,16 +207,18 @@ export function fakeHome(admin = true) {
       return { id, revision: 1 };
     }
     if (type === "wrist_assistant/library/menus/create") {
-      // Administrators only, as Home Assistant's `require_admin`.
-      if (!admin) throw { code: "unauthorized", message: "Unauthorized" };
+      // A menu on no device is an administrator's. A person's own device may
+      // make its first, which the fake only lists as owned.
+      const owner = msg.owner_id as string | undefined;
+      if (!admin && owner === undefined) throw { code: "unauthorized", message: "Unauthorized" };
       const unit = msg.unit as MenuUnit;
       const name = (msg.name as string).trim();
       const sections = msg.sections as JsonObject;
       const keys = unit === "entity" ? ["entityRadial"] : unit === "anywhere" ? ["pageSwitcher", "quickAction"] : undefined;
       if (keys === undefined || name === "" || Object.keys(sections).sort().join() !== keys.join()) throw { code: "invalid", message: "invalid menu" };
       const id = `EEEE0000-0000-4000-8000-${String(n).padStart(6, "0")}${String(Object.keys(lib.menus).length).padStart(6, "0")}`;
-      lib.menus[id] = { name, kind: unit, sections: structuredClone(sections), owners: [] };
-      return { id, revisions: {} };
+      lib.menus[id] = { name, kind: unit, sections: structuredClone(sections), owners: owner === undefined ? [] : [owner] };
+      return { id, revisions: owner === undefined ? {} : { [owner]: { menus: 1 } } };
     }
     if (type === "wrist_assistant/library/menus/delete" || (type === "wrist_assistant/library/delete" && msg.kind === "menus")) {
       const id = msg.item_id as string;

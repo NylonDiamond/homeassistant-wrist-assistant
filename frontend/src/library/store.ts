@@ -447,9 +447,13 @@ export class LibraryStore {
   }
 
   /** New menu: a library menu of `unit` named `name`, made of `sections`,
-   * that no device uses until one is ticked. */
-  createMenu(unit: MenuUnit, name: string, sections: LibraryObject): Promise<LibraryWrite<LibraryMenuCreateReply>> {
-    return this.write(undefined, undefined, undefined, () => createLibraryMenu(this.hass, unit, name, sections));
+   * that no device uses until one is ticked. With `ownerId` it is that
+   * device's first menu of the unit at once. */
+  createMenu(unit: MenuUnit, name: string, sections: LibraryObject, ownerId?: string): Promise<LibraryWrite<LibraryMenuCreateReply>> {
+    const on = ownerId === undefined ? undefined
+      : this.library !== undefined && !holdsRecord(this.library, ownerId, "menus") ? { ownerId, start: watchMenusDefaults() }
+      : { ownerId };
+    return this.write(undefined, undefined, undefined, () => createLibraryMenu(this.hass, unit, name, sections, on));
   }
 
   /** New page, or New status page: a page in the library, from `document`
