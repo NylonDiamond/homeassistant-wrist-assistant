@@ -444,8 +444,27 @@ describe("seedControlFromEntity", () => {
   it("takes a lock's two faces the right way round", () => {
     const seeded = seedControlFromEntity(fresh(), door, undefined, "Kitchen lamp");
     expect(seeded.title).toEqual(literal("Front door"));
-    expect(seeded.symbol).toBe("lock.fill");
-    expect(seeded.symbolOff).toBe("lock.open.fill");
+    // A toggle reads unlocked as on, so on is the open padlock.
+    expect(seeded.symbol).toBe("lock.open.fill");
+    expect(seeded.symbolOff).toBe("lock.fill");
+  });
+
+  it("draws a saved lock toggle with the old backwards pair the right way round", () => {
+    const saved = (state: string) => resolveControl(spec({
+      kind: "toggle",
+      symbol: "lock.fill",
+      symbolOff: "lock.open.fill",
+      state: literal(state),
+    }), context({}));
+    expect(saved("unlocked").symbol).toBe("lock.open.fill");
+    expect(saved("locked").symbol).toBe("lock.fill");
+    // Any other pair is what its author asked for.
+    expect(resolveControl(spec({
+      kind: "toggle",
+      symbol: "door.left.hand.open",
+      symbolOff: "door.left.hand.closed",
+      state: literal("unlocked"),
+    }), context({})).symbol).toBe("door.left.hand.open");
   });
 
   it("leaves no off symbol for a domain whose two faces are one glyph", () => {
@@ -484,7 +503,7 @@ describe("seedControlFromEntity", () => {
     const second = seedControlFromEntity(edited, door, lamp, "Kitchen lamp");
     expect(second.title).toEqual(literal("Front door"));
     expect(second.state).toEqual({ kind: { kind: "entityState", entityId: "lock.front", displayName: "Front door", domain: "lock" } });
-    expect(second.symbol).toBe("lock.fill");
+    expect(second.symbol).toBe("lock.open.fill");
     // Typed by hand between the two picks, so it stands.
     expect(second.symbolOff).toBe("moon");
     // The value line is never seeded, so it survives either way.
@@ -539,7 +558,7 @@ describe("the card's Target picker", () => {
       p.action = { type: "callService", serviceDomain: "lock", serviceName: "open", target: { entityId: "lock.front", displayName: "Front door", domain: "lock" } };
     });
     expect(cfg.control!.title).toEqual(literal("Front door"));
-    expect(cfg.control!.symbol).toBe("lock.fill");
+    expect(cfg.control!.symbol).toBe("lock.open.fill");
   });
 
   it("leaves everything alone when the edit is not a new entity", () => {

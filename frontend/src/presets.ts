@@ -531,6 +531,17 @@ export function domainSymbolPair(ref: EntityRef): SymbolPair | undefined {
 }
 
 /**
+ * The pair a control draws. A layer's on test for a lock reads `locked`, which
+ * is what `DOMAIN_SYMBOLS` is written for. A toggle control reads `unlocked` as
+ * on (`controlIsOn`), so its faces are the other way round: drawn with the
+ * layer's pair, an unlocked door shows the closed padlock.
+ */
+function controlSymbolPair(ref: EntityRef, toggle: boolean): SymbolPair | undefined {
+  const pair = domainSymbolPair(ref);
+  return toggle && pair !== undefined && domainOf(ref) === "lock" ? { on: pair.off, off: pair.on } : pair;
+}
+
+/**
  * The test that means "this entity is on".
  *
  * `isOn` is a literal state check on the watch, so a lock (locked/unlocked), a
@@ -614,9 +625,9 @@ export function seedControlFromEntity(
   // off. An existing state is left where it is, the same as the card does when
   // the Kind row changes.
   if (toggle && (next.state === undefined || statesEntity(next.state, was))) next.state = entityStateValue(ref);
-  const pair = domainSymbolPair(ref);
+  const pair = controlSymbolPair(ref, toggle);
   if (pair !== undefined) {
-    const before = was === undefined ? undefined : domainSymbolPair(was);
+    const before = was === undefined ? undefined : controlSymbolPair(was, toggle);
     if (next.symbol.trim() === "" || next.symbol === CONTROL_DEFAULT_SYMBOL
       || (before !== undefined && next.symbol === before.on)) next.symbol = pair.on;
     if (toggle && (next.symbolOff === undefined || (before !== undefined && next.symbolOff === before.off))) {

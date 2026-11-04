@@ -2943,12 +2943,18 @@ export function resolveControl(spec: ControlSpec, ctx: ResolveContext, config?: 
   // the on ones, which is the only thing a fire-and-forget press can draw.
   const stateText = kind === "toggle" ? line(spec.state) : undefined;
   const isOn = kind === "toggle" ? controlIsOn(stateText) : false;
+  // The panel used to seed a lock's toggle with these two the wrong way round,
+  // and saved documents keep them. A toggle reads `unlocked` as on, so this exact
+  // pair draws swapped, here and in the apps' `resolveControl`.
+  const backwardsLock = kind === "toggle" && spec.symbol === "lock.fill" && spec.symbolOff === "lock.open.fill";
   const out: ResolvedControl = {
     kind,
     title,
-    symbol: kind === "toggle" && !isOn && spec.symbolOff !== undefined && spec.symbolOff !== ""
-      ? spec.symbolOff
-      : spec.symbol,
+    symbol: backwardsLock
+      ? (isOn ? "lock.open.fill" : "lock.fill")
+      : kind === "toggle" && !isOn && spec.symbolOff !== undefined && spec.symbolOff !== ""
+        ? spec.symbolOff
+        : spec.symbol,
     isOn,
   };
   if (valueLabel !== undefined) out.valueLabel = valueLabel;
