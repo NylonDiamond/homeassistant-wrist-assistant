@@ -944,7 +944,8 @@ export function seedMayLand(owner: Partial<FirstSaveOwner> | undefined): boolean
     && deviceKindOf(owner) === "watch"
     && owner.has_iphone !== true
     && owner.holds_old_setup === true
-    && owner.seed_may_land === true;
+    && owner.seed_may_land === true
+    && !setupMoveNeedsUpdate(owner.app_version);
 }
 
 /** What the header says of a kind with no record on this watch, in place of
@@ -967,7 +968,7 @@ export function firstSaveAskText(owner: Partial<FirstSaveOwner> | undefined, kin
   if (waitsForWatchSeed(owner) && kinds.some((k) => SEEDED_KINDS.has(k))) return SEED_PENDING_ASK_TEXT;
   if (owner.holds_old_setup !== true) return undefined;
   if (kinds.includes("behavior") && owner.standard_settings !== true) return REPLACE_OWN_SETTINGS_ASK_TEXT;
-  if (owner.seed_pending !== true && !seedMayLand(owner)) return undefined;
+  if (!seedMayLand(owner)) return undefined;
   return kinds.some((k) => k !== "behavior" && SEEDED_KINDS.has(k)) ? SEED_PENDING_ASK_TEXT : undefined;
 }
 

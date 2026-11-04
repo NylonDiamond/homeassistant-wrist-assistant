@@ -340,6 +340,23 @@ describe("a seed in the minutes after the first poll", () => {
   });
 });
 
+describe("a watch too old to send its setup", () => {
+  // Opening it cannot send anything, so it gets the update words and no ask.
+  const tooOld = { holds_old_setup: true, seed_may_land: true, has_iphone: false, app_version: "3.0.1" };
+
+  it("asks nothing before a first record, in or after the minutes its seed may land", () => {
+    for (const kind of ["notification_style", "pages", "menus", "voice", "status_pages", "control_center"]) {
+      expect(firstSaveAskText(owner("w", tooOld), [kind])).toBeUndefined();
+      expect(firstSaveAskText(owner("w", { ...tooOld, seed_pending: true }), [kind])).toBeUndefined();
+    }
+  });
+
+  it("does not say its seed may be landing", () => {
+    expect(seedMayLand(owner("w", tooOld))).toBe(false);
+    expect(seedMayLand(owner("w", { ...tooOld, app_version: "3.2.0" }))).toBe(true);
+  });
+});
+
 describe("a watch from before the move, once those minutes are over", () => {
   // A kind with no record has nothing coming: the watch sends nothing for a
   // kind it holds no copy of, so opening it would change nothing.

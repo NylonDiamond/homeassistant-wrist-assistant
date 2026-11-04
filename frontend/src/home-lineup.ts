@@ -140,7 +140,7 @@ export class WaHomeLineup extends LitElement {
       onMenuPictureReady: () => this.requestUpdate(),
       waitsForIphone: this.waitsForIphone,
       phoneMoves: this.phoneMoves,
-      seedMayLand: this.seedMayLand,
+      seedMayLand: this.seedMayLand || this.seedWaits,
       ...(this.appVersion === undefined ? {} : { appVersion: this.appVersion }),
       arrange: {
         order: (kind) => (this.drag?.kind === kind && this.drag.order !== undefined ? this.drag.order
