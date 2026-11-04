@@ -194,7 +194,7 @@ describe("Home's picked device", () => {
     expect(detail).not.toContain("hb-doors");
     const lineup = method("  private renderHomeLineup(row: HomeDeviceRow) {");
     expect(lineup).toContain("onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),");
-    expect(lineup).toContain("onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),");
+    expect(lineup).toContain("onChange: (kind) => { noteBoardFocus(kind, ownerId); this.goTo(listFocusPath(listOf(kind), ownerId)); },");
     expect(lineup).toContain("${renderLineupGroup(this.homeCompGroup(row))}");
     const comps = method("  private homeCompGroup(row: HomeDeviceRow): LineupGroup {");
     expect(comps).toContain(`onClick: () => void this.openDeviceList(ownerId, "all")`);
