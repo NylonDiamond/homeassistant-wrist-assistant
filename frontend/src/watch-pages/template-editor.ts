@@ -100,6 +100,12 @@ function readPrefs(): Prefs {
   }
 }
 
+/** A coloured run's CSS (`[color:SPEC]`), or nothing for the text's own. */
+function runStyle(spec: string | undefined): string {
+  const c = spec === undefined ? undefined : templateIconColor(spec);
+  return c === undefined ? "" : `color:${c.hex}${c.alpha < 1 ? `;opacity:${c.alpha}` : ""}`;
+}
+
 export class WaTemplateEditor extends LitElement {
   static override properties = { data: { attribute: false } };
 
@@ -171,6 +177,7 @@ export class WaTemplateEditor extends LitElement {
     return drawn === undefined ? nothing : html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${drawn}</svg>`;
   }
 
+  /** An icon's colour as drawn (its own, else its run's), else the text's. */
   private cellColor(cell: TemplateCell | undefined): string {
     const spec = cell?.icon?.color;
     return (spec === undefined ? undefined : templateIconColor(spec)?.hex) ?? "currentColor";
@@ -240,10 +247,10 @@ export class WaTemplateEditor extends LitElement {
     const number = html`<span class="te-chv" aria-hidden="true">▸</span><span class="te-rn">${row + 1}</span>`;
     if (aligned !== undefined) {
       const key = `${row}:${JSON.stringify(aligned.cells.map((c) => c.cell))}`;
-      return { key, draw: html`${number}<span class="te-rr">${aligned.cells.map((c) => html`${c.cell.icon === undefined ? nothing : html`<span class="te-g" style=${`color:${this.cellColor(c.cell)}`}>${this.glyph(c.cell.icon.symbol, 14, this.cellColor(c.cell))}</span>`}<span>${c.cell.text}</span>`)}</span>` };
+      return { key, draw: html`${number}<span class="te-rr">${aligned.cells.map((c) => html`${c.cell.icon === undefined ? nothing : html`<span class="te-g" style=${`color:${this.cellColor(c.cell)}`}>${this.glyph(c.cell.icon.symbol, 14, this.cellColor(c.cell))}</span>`}<span>${c.cell.runs.length === 0 ? c.cell.text : c.cell.runs.map((run) => html`<span style=${runStyle(run.color)}>${run.text}</span>`)}</span>`)}</span>` };
     }
     const tokens = scan.rows[row]?.tokens ?? [];
-    const words = tokens.map((t) => (t.kind === "text" ? t.src : t.kind === "icon" ? t.symbol ?? "" : "{ }")).join(" ");
+    const words = tokens.filter((t) => t.silent !== true).map((t) => (t.kind === "text" ? t.src : t.kind === "icon" ? t.symbol ?? "" : "{ }")).join(" ");
     return { key: `${row}:${words}`, draw: html`${number}<span class="te-rr plain">${words === "" ? "Empty row" : words}</span>` };
   }
 
@@ -561,7 +568,7 @@ export class WaTemplateEditor extends LitElement {
             ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><button type="button" class="te-issue-go" title="Show it in the code" @click=${() => this.code?.select(issue.from, issue.to)}>${issue.text}</button>${issue.fix === undefined ? nothing
               : html`<button type="button" class="te-chip" @click=${() => this.code?.change(issue.fix!.from, issue.fix!.to, issue.fix!.insert)}>${issue.fix.words}</button>`}</div>`)}</div>`}
             ${refused === undefined ? nothing : html`<div class="te-issue" role="status"><span>${refused}</span></div>`}
-            <div class="te-hint">${this.moveNote !== undefined ? this.moveNote : this.notFound ? "That part comes out of logic, so no one place in the code writes it." : d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon: or {{ for suggestions."}</div>
+            <div class="te-hint">${this.moveNote !== undefined ? this.moveNote : this.notFound ? "That part comes out of logic, so no one place in the code writes it." : d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon:, [color: or {{ for suggestions."}</div>
             ${d.helpers}
           </div>
         </div>

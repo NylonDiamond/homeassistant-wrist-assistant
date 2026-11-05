@@ -128,7 +128,7 @@ import {
   oneLookPhonePagesInset,
   phoneTileGapOfPage,
 } from "./one-look/metrics.js";
-import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
+import { type OneLookPreviewModel, oneLookPreviewModel, oneLookTemplateSurface, renderOneLookTile } from "./one-look/render.js";
 import { oneLookLuminance, oneLookParseHex } from "./one-look/colour.js";
 import type { OneLookPhotoLight } from "./one-look/glow.js";
 
@@ -2196,6 +2196,14 @@ function templateIconWidth(icons: IconProvider | undefined, symbol: string): num
   return box === undefined ? 1 : box[0] / WATCH_SYMBOL_EXPORT_SIZE;
 }
 
+/** A colour marker's colour as CSS (`[color:SPEC]`, read as an icon's), or
+ * nothing for the ink. */
+function templateRunColor(spec: string | undefined): string {
+  const c = spec === undefined ? undefined : templateIconColor(spec);
+  if (c === undefined) return "";
+  return c.alpha < 1 ? `color:${rgba(c.hex, c.alpha)}` : `color:${c.hex}`;
+}
+
 /** The lines of a template's plain text as the device breaks them, each run
  * marked with its row, cell and part, so the template editor can find its
  * code. The icons stay at the device's full size while the words shrink. */
@@ -2204,10 +2212,10 @@ function templateFitLines(fit: TemplateFit, device: TemplateFitDevice, ink: stri
     const tall = (line.hasIcon ? fit.iconRow : fit.textRow) * s;
     return html`<span class="wp-tpl-line" style=${`height:${tall}px;line-height:${tall}px`}>${line.pieces.map((piece) => {
       if (piece.kind === "text") {
-        const spacing = templateRunSpacing(piece.text, device);
+        const style = [templateRunSpacing(piece.text, device), templateRunColor(piece.color)].filter((part) => part !== "").join(";");
         return piece.marked
-          ? html`<span data-tr=${piece.row} data-tc=${piece.cell} data-tp="text" style=${spacing}>${piece.text}</span>`
-          : html`<span style=${spacing}>${piece.text}</span>`;
+          ? html`<span data-tr=${piece.row} data-tc=${piece.cell} data-tp="text" style=${style}>${piece.text}</span>`
+          : html`<span style=${style}>${piece.text}</span>`;
       }
       const box = glyphBox(icons, piece.symbol) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
       const wide = (box[0] / WATCH_SYMBOL_EXPORT_SIZE) * fit.iconSize * s;
@@ -2231,7 +2239,9 @@ function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device:
   };
   return html`<span class="wp-tpl-grid" style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
     cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
-    cell.text === "" ? nothing : html`<span data-tr=${r} data-tc=${c} data-tp="text" style=${templateRunSpacing(cell.text, device)}>${cell.text}</span>`}</span>`))}</span>`;
+    cell.text === "" ? nothing : cell.runs.length === 0
+      ? html`<span data-tr=${r} data-tc=${c} data-tp="text" style=${templateRunSpacing(cell.text, device)}>${cell.text}</span>`
+      : html`<span data-tr=${r} data-tc=${c} data-tp="text">${cell.runs.map((run) => html`<span style=${[templateRunSpacing(run.text, device), templateRunColor(run.color)].filter((part) => part !== "").join(";")}>${run.text}</span>`)}</span>`}</span>`))}</span>`;
 }
 
 /** The most rows a template tile draws on the iPhone and on a watch. */
@@ -2278,15 +2288,61 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
  * effect, and only the template's text (or the placeholder or the warning)
  * inside. */
 function templateFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
+  const look = watchTemplateTileLook(tile, input);
+  const oneLook = previewOneLook(input);
+  // The template's text, or the placeholder's mark or the warning, in a room
+  // of `vw` by `vh` points drawn at `zs` pixels a point (on the iPhone the
+  // watch's tile at its virtual size, zoomed: `OneLookZoom`). Its line cap
+  // stays the iPhone's own key.
+  const contentOf = (vw: number, vh: number, zs: number, textInk: string, shadow: string, mark: { ink: string; faded: boolean }): TemplateResult => {
+    if (look.kind === "placeholder") {
+      const px = watchTileIconSize(tile, vw, vh) * zs;
+      return html`<span style=${`${mark.faded ? "opacity:0.4;" : ""}display:flex`}>${symbolMark(input.icons, look.symbol, px, mark.ink)}</span>`;
+    }
+    if (look.kind === "error") {
+      return html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * zs, "#FFCC00")}</span>`;
+    }
+    const device = templateDevice(input);
+    const limit = templateRowLimit(tile, input);
+    const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
+    if (columnRows !== undefined) {
+      const size = templateColumnsFontSize(columnRows, vw - TEMPLATE_TILE_PAD * 2, vh, TEMPLATE_FIT_METRICS[device].columnsBody, device);
+      return templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons);
+    }
+    const fit = templateTextFit(look.text, vw - TEMPLATE_TILE_PAD * 2, vh, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
+    const style = [`font-size:${fit.size * zs}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
+    return html`<span class="wp-tpl-text" style=${style}>${templateFitLines(fit, device, textInk, zs, input.icons)}</span>`;
+  };
+
+  if (oneLook !== undefined) {
+    // One Look, both devices (`SimpleTemplateTile`, the app's
+    // `docs/one_size_table_2026-11.md`, "Template tiles on One Look"): the
+    // tile's colour tints only its surface, the One Look surface any tile
+    // draws for it (graphite with no colour), and the text is that surface's
+    // ink with One Look's text shadow, never the tile's colour.
+    const surface = oneLookTemplateSurface({ tile, input, stub: false, device: oneLook, look: undefined, width, height, cell, unit, box, s });
+    const f = surface.face;
+    const zs = f.s;
+    const shadow = surface.textShadow ? `text-shadow:0 ${0.5 * zs}px ${1.5 * zs}px rgba(0, 0, 0, 0.25)` : "";
+    const content = contentOf(f.width, f.height, zs, surface.ink, shadow, { ink: surface.ink2, faded: false });
+    const border = watchTileBorder(tile, surface.active, watchTileFallbackInk(tile, input.page, input.states));
+    return html`<div class="wp-tile wp-tpl ol-tile" title=${hint ?? nothing}
+      style=${`${box}border-radius:${Math.round(surface.radius * zs * 100) / 100}px;background:${surface.ground};padding:0 ${TEMPLATE_TILE_PAD * zs}px`}>
+      ${surface.layers}
+      ${tileUnderlay(tile, input, surface.active, { width: f.width, height: f.height }, zs)}
+      ${content}
+      ${surface.rim}
+      ${renderTileRim(border, f.width, f.height, zs, surface.radius)}
+    </div>`;
+  }
+
+  // Off One Look (an app before 3.2), the old looks: always lit, as
+  // `SimpleTemplateTile` passes `isActive: true`. The iPhone look keeps the
+  // iPhone's lit surface and the tile's ink; the watch's the glass and the
+  // text in the tile's colour with its glow.
   const radiusPt = previewTileCornerRadius(input, cell.width, cell.height, undefined, unit);
   const radius = radiusPt * s;
-  // Always lit, as `SimpleTemplateTile` passes `isActive: true`. On a One
-  // Look page both devices draw the watch's template tile, the iPhone's
-  // zoomed: the watch's surface, and the text in the tile's colour with its
-  // glow (Jesse, 2026-11-05: `SimpleTemplateTile` takes the watch look under
-  // One Look). Only the iPhone look without One Look (an app before 3.2)
-  // keeps the iPhone's lit surface and the tile's ink.
-  const iphone = phoneDrawsIphoneLook(input.phone) && previewOneLook(input) === undefined;
+  const iphone = phoneDrawsIphoneLook(input.phone);
   const tileColor = parseTileColor(tile.color);
   const fillInk = flatInk(tile.color, themeInk(input.page, "entitySensor").hex);
   const alpha = watchTileColorOpacity(tile);
@@ -2295,41 +2351,19 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     ? phoneLitTileFill(tileColor, fillInk, alpha, { width, height }, s, onGlass)
     : watchTileFill(tileColor, fillInk, true, alpha, { width, height });
   const border = watchTileBorder(tile, true, watchTileFallbackInk(tile, input.page, input.states));
-  const look = watchTemplateTileLook(tile, input);
-  // On the iPhone the text is the watch's at the tile's room over the zoom,
-  // drawn the zoom bigger, its side padding inside (`OneLookZoom`). Its line
-  // cap stays the iPhone's own key.
   const zoom = look.kind === "placeholder" ? 1 : templateZoom(input, unit);
-  const vw = width / zoom;
-  const vh = height / zoom;
   const zs = s * zoom;
-  const padX = TEMPLATE_TILE_PAD * zoom;
-  let content: TemplateResult;
-  if (look.kind === "placeholder") {
-    const px = watchTileIconSize(tile, width, height) * s;
-    content = html`<span style="opacity:0.4;display:flex">${symbolMark(input.icons, look.symbol, px, look.ink)}</span>`;
-  } else if (look.kind === "error") {
-    content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * zs, "#FFCC00")}</span>`;
-  } else {
-    const device = templateDevice(input, zoom);
-    const limit = templateRowLimit(tile, input);
-    const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
-    // The iPhone look: the text in the tile's ink, with no glow
-    // (`SimpleTemplateTile.followsTileInk`). An icon's own color stays.
-    const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : look.ink;
-    const shadow = iphone ? "" : `text-shadow:0 0 ${4 * zs}px ${rgba(look.ink, 0.3)}`;
-    if (columnRows !== undefined) {
-      const size = templateColumnsFontSize(columnRows, vw - TEMPLATE_TILE_PAD * 2, vh, TEMPLATE_FIT_METRICS[device].columnsBody, device);
-      content = templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons);
-    } else {
-      const fit = templateTextFit(look.text, vw - TEMPLATE_TILE_PAD * 2, vh, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
-      const style = [`font-size:${fit.size * zs}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
-      content = html`<span class="wp-tpl-text" style=${style}>${templateFitLines(fit, device, textInk, zs, input.icons)}</span>`;
-    }
-  }
+  // The iPhone look: the text in the tile's ink, with no glow
+  // (`SimpleTemplateTile.followsTileInk`). An icon's own color stays.
+  const lookInk = look.kind === "error" ? "#FFFFFF" : look.ink;
+  const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : lookInk;
+  const shadow = iphone ? "" : `text-shadow:0 0 ${4 * zs}px ${rgba(lookInk, 0.3)}`;
+  const content = look.kind === "placeholder"
+    ? contentOf(width, height, s, textInk, shadow, { ink: lookInk, faded: true })
+    : contentOf(width / zoom, height / zoom, zs, textInk, shadow, { ink: lookInk, faded: true });
   const rim = iphone ? `box-shadow:${phoneLitTileRim(s)};` : "";
   return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
-    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:0 ${padX * s}px`}>
+    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:0 ${TEMPLATE_TILE_PAD * zoom * s}px`}>
     ${tileUnderlay(tile, input, true, { width, height }, s)}
     ${content}
     ${renderTileRim(border, width, height, s, radiusPt)}

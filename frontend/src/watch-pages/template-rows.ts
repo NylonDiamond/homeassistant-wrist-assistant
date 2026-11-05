@@ -12,35 +12,74 @@
 // No DOM here: the preview draws the rows (`preview.ts`), and the app's
 // `TemplateRichTextTests.swift` pins the same cases.
 
-import { templateRichTextSegments } from "./rich-text.js";
+import { templateIconDrawnColor, templateStyledSegments } from "./rich-text.js";
 import { TEMPLATE_INTER_ROW, type TemplateFitDevice, templateTextUnits } from "./template-fit.js";
 
-/** One cell: its icon, when it starts with one, and the words after it with
- * the white space around them gone. */
+/** Words in one colour inside a cell (undefined: the ink). */
+export interface TemplateRun {
+  text: string;
+  color: string | undefined;
+}
+
+/** One cell: its icon, when it starts with one, with the colour it draws in
+ * (its own, else its run's), and the words after it with the white space
+ * around them gone. `runs` holds the words by colour when any of them has
+ * one, and is empty otherwise; `text` is always the words alone. */
 export interface TemplateCell {
   icon?: { symbol: string; color: string | undefined };
   text: string;
+  runs: TemplateRun[];
 }
 
-/** The text's rows of cells, in order. A line of nothing but white space is
- * no row: it is what a template's line breaks leave behind. */
+/** A cell's runs with the white space at its two ends cut, and the runs left
+ * empty dropped (`TemplateRichText.trimmed`). */
+function trimmedRuns(given: readonly TemplateRun[]): TemplateRun[] {
+  const runs = given.map((r) => ({ ...r }));
+  while (runs.length > 0) {
+    const cut = runs[0]!.text.replace(/^\s+/u, "");
+    if (cut === "") runs.shift();
+    else { runs[0]!.text = cut; break; }
+  }
+  while (runs.length > 0) {
+    const cut = runs[runs.length - 1]!.text.replace(/\s+$/u, "");
+    if (cut === "") runs.pop();
+    else { runs[runs.length - 1]!.text = cut; break; }
+  }
+  return runs.filter((r) => r.text !== "");
+}
+
+/** The text's rows of cells, in order (`TemplateRichText.rows`). An icon
+ * starts a cell, and words before a row's first icon are a cell of their own.
+ * A line whose text, with the markers gone, is only white space is no row: it
+ * is what a template's line breaks leave behind. */
 export function templateRows(text: string): TemplateCell[][] {
   const rows: TemplateCell[][] = [];
   for (const line of text.split("\n")) {
-    if (line.trim() === "") continue;
-    const cells: TemplateCell[] = [];
-    for (const segment of templateRichTextSegments(line)) {
-      if (segment.kind === "icon") {
-        cells.push({ icon: { symbol: segment.symbol, color: segment.color }, text: "" });
+    const styled = templateStyledSegments(line);
+    if (styled.every((seg) => seg.kind === "text" && seg.text.trim() === "")) continue;
+    const cells: { icon?: { symbol: string; color: string | undefined }; runs: TemplateRun[] }[] = [];
+    for (const seg of styled) {
+      if (seg.kind === "icon") {
+        cells.push({ icon: { symbol: seg.symbol, color: templateIconDrawnColor(seg.color, seg.run) }, runs: [] });
         continue;
       }
-      const words = segment.text.trim();
-      if (words === "") continue;
-      const last = cells[cells.length - 1];
-      if (last === undefined) cells.push({ text: words });
-      else last.text = last.text === "" ? words : `${last.text} ${words}`;
+      if (cells.length === 0) {
+        if (seg.text.trim() === "") continue;
+        cells.push({ runs: [] });
+      }
+      cells[cells.length - 1]!.runs.push({ text: seg.text, color: seg.color });
     }
-    rows.push(cells);
+    const row: TemplateCell[] = [];
+    for (const cell of cells) {
+      const runs = trimmedRuns(cell.runs);
+      if (cell.icon === undefined && runs.length === 0) continue;
+      row.push({
+        ...(cell.icon === undefined ? {} : { icon: cell.icon }),
+        text: runs.map((r) => r.text).join(""),
+        runs: runs.some((r) => r.color !== undefined) ? runs : [],
+      });
+    }
+    rows.push(row);
   }
   return rows;
 }

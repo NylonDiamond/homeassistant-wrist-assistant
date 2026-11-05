@@ -28,7 +28,7 @@
 // No DOM here: the preview draws what this returns (`preview.ts`).
 
 import { tileTextEms } from "../tile-font-width.js";
-import { templateRichTextSegments } from "./rich-text.js";
+import { templateIconDrawnColor, templateStyledSegments } from "./rich-text.js";
 
 /** The device whose fit a template's text takes: the watch's on both, since
  * the iPhone draws a template tile as the watch does at its virtual size,
@@ -64,7 +64,7 @@ export function templateTextUnits(text: string, _device: TemplateFitDevice): num
  * as `templateRows` counts them, which the template editor finds code by. */
 export type TemplateFitPiece =
   | { kind: "icon"; symbol: string; color: string | undefined; row: number; cell: number }
-  | { kind: "text"; text: string; row: number; cell: number; marked: boolean };
+  | { kind: "text"; text: string; row: number; cell: number; marked: boolean; color?: string };
 
 export interface TemplateFitLine {
   pieces: TemplateFitPiece[];
@@ -90,24 +90,29 @@ interface Item {
   row: number;
   cell: number;
   marked: boolean;
+  /** The text's colour marker (`[color:SPEC]`), undefined for the ink. */
+  color?: string;
 }
 
-/** A template's text as runs, line by line. */
+/** A template's text as runs, line by line, with the colour markers read:
+ * they take no width, and an icon's colour is its own, else its run's. */
 function itemsOf(text: string, iconWidth: (symbol: string) => number): Item[][] {
   let row = 0;
   return text.split("\n").map((line) => {
-    if (line.trim() === "") return [];
+    const styled = templateStyledSegments(line);
+    if (styled.every((seg) => seg.kind === "text" && seg.text.trim() === "")) return [];
     let cell = -1;
     const items: Item[] = [];
-    for (const segment of templateRichTextSegments(line)) {
+    for (const segment of styled) {
       if (segment.kind === "icon") {
         cell++;
-        items.push({ piece: { kind: "icon", symbol: segment.symbol, color: segment.color, row, cell }, iconWidth: iconWidth(segment.symbol), row, cell, marked: true });
+        const color = templateIconDrawnColor(segment.color, segment.run);
+        items.push({ piece: { kind: "icon", symbol: segment.symbol, color, row, cell }, iconWidth: iconWidth(segment.symbol), row, cell, marked: true });
       } else if (segment.text.trim() === "") {
-        items.push({ piece: undefined, text: segment.text, row, cell: Math.max(0, cell), marked: false });
+        items.push({ piece: undefined, text: segment.text, row, cell: Math.max(0, cell), marked: false, ...(segment.color === undefined ? {} : { color: segment.color }) });
       } else {
         if (cell < 0) cell = 0;
-        items.push({ piece: undefined, text: segment.text, row, cell, marked: true });
+        items.push({ piece: undefined, text: segment.text, row, cell, marked: true, ...(segment.color === undefined ? {} : { color: segment.color }) });
       }
     }
     row++;
@@ -134,8 +139,8 @@ class Wrapper {
 
   private place(text: string, item: Item): void {
     const last = this.line.pieces[this.line.pieces.length - 1];
-    if (last?.kind === "text" && last.row === item.row && last.cell === item.cell && last.marked === item.marked) last.text += text;
-    else this.line.pieces.push({ kind: "text", text, row: item.row, cell: item.cell, marked: item.marked });
+    if (last?.kind === "text" && last.row === item.row && last.cell === item.cell && last.marked === item.marked && last.color === item.color) last.text += text;
+    else this.line.pieces.push({ kind: "text", text, row: item.row, cell: item.cell, marked: item.marked, ...(item.color === undefined ? {} : { color: item.color }) });
     this.x += this.wide(text);
   }
 

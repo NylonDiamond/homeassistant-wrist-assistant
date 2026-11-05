@@ -1445,3 +1445,66 @@ export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
     ${borderLayer(model, f, active, radius)}
   </div>`;
 }
+
+// ── a template tile on One Look ──────────────────────────────────────────
+
+/** A template tile's surface on a One Look page (`SimpleTemplateTile`'s One
+ * Look body, the app's `docs/one_size_table_2026-11.md`, "Template tiles on
+ * One Look"): the One Look surface every tile draws for the tile's colour
+ * (graphite, as an Off tile, with none), laid out as a tile with no name,
+ * state or icon; its ink for the text and the placeholder's mark; and One
+ * Look's text shadow, which the watch's look does not draw. On the iPhone the
+ * watch's tile, zoomed: the face it returns is in virtual points at the zoom
+ * times the pixel scale. */
+export interface OneLookTemplateSurface {
+  face: OneLookTileFaceInput;
+  palette: OneLookPalette;
+  /** The CSS background, and the layers and the rim drawn over it. */
+  ground: string;
+  layers: TemplateResult | typeof nothing;
+  rim: TemplateResult;
+  /** The tile's corner radius, in virtual points. */
+  radius: number;
+  /** The surface draws coloured (`palette.surface`), which the tile's
+   * active-only border and effects read. */
+  active: boolean;
+  ink: string;
+  ink2: string;
+  textShadow: boolean;
+}
+
+export function oneLookTemplateSurface(given: OneLookTileFaceInput): OneLookTemplateSurface {
+  const f = oneLookZoomedFace(given);
+  const { tile, device } = f;
+  const unit = f.unit > 0 ? f.unit : f.cell.width;
+  const colSpan = f.spans?.colSpan ?? Math.max(1, Math.round((f.cell.width + 2) / (unit + 2)));
+  const rowSpan = f.spans?.rowSpan ?? Math.max(1, Math.round((f.cell.height + 2) / (unit + 2)));
+  const hue = typeof tile.color === "string" && tile.color !== "" ? tile.color : undefined;
+  // `surfaceModel`: the tile's colour, colour opacity and dim when off, role
+  // plain, and calm (graphite) with no colour.
+  const palette = oneLookPalette({
+    role: { kind: "plain" },
+    ...(hue === undefined ? {} : { hue }),
+    calm: hue === undefined,
+    dimWhenOff: tile.dimWhenOff !== false,
+    colorOpacity: watchTileColorOpacity(tile),
+  });
+  const zoom = f.zoom ?? 1;
+  const oldUnit = f.platform === undefined ? unit : oneLookVirtualUnit(unit * zoom, colSpan, zoom);
+  const style = oneLookTileStyle(tile, colSpan, rowSpan, oneLookOldSizes(tile, oneLookCellSize(colSpan, rowSpan, oldUnit), colSpan, oldUnit, "watch"));
+  const layout = resolveOneLookLayout({
+    device, size: { width: f.width, height: f.height }, colSpan, rowSpan,
+    name: "", state: NO_STATE, hasIcon: false, accessory: "none",
+    centred: oneLookCentredGlyph(device), style,
+  }, measurerFor(device, f.input.icons));
+  const { ground, layers } = fillLayers({ layout, palette } as OneLookPreviewModel, f.s);
+  const rim = html`<span class="ol-rim" style=${`padding:${r2(oneLookMetrics(device).rim * f.s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>`;
+  return {
+    face: f, palette, ground, layers, rim,
+    radius: oneLookCornerRadius(oneLookMetrics(device), layout.size),
+    active: palette.surface === "coloured",
+    ink: oneLookInkCss(palette.ink),
+    ink2: oneLookInkCss(palette.ink2),
+    textShadow: palette.textShadow && device === "phone",
+  };
+}

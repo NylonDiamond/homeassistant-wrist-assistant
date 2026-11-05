@@ -7793,8 +7793,8 @@
     "drawnIcon": "play.fill",
     "state": {
      "kind": "word",
-     "word": "Ran 5h ago",
-     "short": "5h ago"
+     "word": "Ran 4h ago",
+     "short": "4h ago"
     },
     "stateHidden": false,
     "accessory": "none",
@@ -7846,7 +7846,7 @@
     "state": {
      "x": 5.94,
      "y": 5.94,
-     "width": 57.3375,
+     "width": 57.9176,
      "height": 13.2
     },
     "stateSize": 11,
@@ -8940,8 +8940,8 @@
     "drawnIcon": "play.fill",
     "state": {
      "kind": "word",
-     "word": "Ran 5h ago",
-     "short": "5h ago"
+     "word": "Ran 4h ago",
+     "short": "4h ago"
     },
     "stateHidden": false,
     "accessory": "none",
@@ -8993,7 +8993,7 @@
     "state": {
      "x": 10.65,
      "y": 10.65,
-     "width": 101.2496,
+     "width": 102.274,
      "height": 23.3093
     },
     "stateSize": 19.4244,

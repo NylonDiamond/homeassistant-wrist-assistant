@@ -17,7 +17,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { svg } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -48,6 +48,8 @@ const WRITE = process.env.WA_WRITE_PARITY_FIXTURES === "1";
 const TOLERANCE = 0.5;
 
 interface Inputs {
+  /** When the states were read. */
+  snapshotAt: string;
   document: WatchPagesDocument;
   states: Record<string, { state: string; attributes: Record<string, unknown> }>;
   templates: Record<string, string>;
@@ -59,6 +61,11 @@ interface Inputs {
 }
 
 const inputs = JSON.parse(readFileSync(join(dir, "pages.json"), "utf8")) as Inputs;
+
+// The states are a snapshot: a state read against the time ("Ran 5h ago")
+// reads at the snapshot's time, so the files do not drift with the clock.
+vi.useFakeTimers({ toFake: ["Date"] });
+vi.setSystemTime(new Date(inputs.snapshotAt));
 
 const shipped = join(__dirname, "..", "..", "custom_components", "wrist_assistant", "frontend");
 

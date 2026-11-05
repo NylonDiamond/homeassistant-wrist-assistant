@@ -7,6 +7,15 @@
 // a 3, 6 or 8 digit hex code, with or without `#`. A color the watch cannot
 // read leaves the symbol in the text's color, so a typo never hides it.
 //
+// Coloured text (2026-11-05, the app's `docs/one_size_table_2026-11.md`,
+// "The colour marker"): `[color:SPEC]` starts a run of text in that colour,
+// `[/color]` ends it, another `[color:...]` replaces it, and a line break ends
+// it. SPEC is read as an icon's colour; an unknown or empty one ends the run.
+// The word `color` is lower case, as `icon` is. The markers draw nothing and
+// take no width: `templateRichTextSegments` reads the text with them gone. An
+// icon with no colour of its own takes its run's colour; a run started after
+// an icon does not colour that icon.
+//
 // No DOM here: the preview draws the segments (`preview.ts`), and the cases
 // of `TemplateRichTextTests.swift` pin the reading.
 
@@ -30,15 +39,84 @@ const MARKER = /\[icon:([^\]]+)\]/g;
  * Unicode white space JavaScript's `\s` knows. */
 const WORDS = /\s+/u;
 
+/** A colour marker, as Swift's `/\[color:[^\]]*\]|\[\/color\]/`. */
+const COLOR_MARKER = /\[color:[^\]]*\]|\[\/color\]/g;
+
+/** Any marker, as Swift's `styledSegments` reads them: an icon, a colour, an
+ * end. */
+const ANY_MARKER = /\[icon:([^\]]+)\]|\[color:([^\]]*)\]|\[\/color\]/g;
+
+/** A piece of the text with its colour markers read (`StyledSegment`):
+ * words in a run's colour (undefined: the ink), or an icon with its own
+ * colour and the colour of the run it sits in. */
+export type TemplateStyledSegment =
+  | { kind: "text"; text: string; color: string | undefined }
+  | { kind: "icon"; symbol: string; color: string | undefined; run: string | undefined };
+
+/** An icon's colour as drawn: its own, else its run's. */
+export function templateIconDrawnColor(own: string | undefined, run: string | undefined): string | undefined {
+  return own ?? run;
+}
+
+/** An icon marker's symbol and own colour, or undefined for a marker with no
+ * word (`[icon: ]`), which stays as text. */
+function iconOf(body: string): { symbol: string; color: string | undefined } | undefined {
+  const words = body.split(WORDS).filter((w) => w !== "");
+  const symbol = words[0];
+  if (symbol === undefined) return undefined;
+  const option = words.slice(1).find((w) => w.toLowerCase().startsWith("color:"));
+  const color = option === undefined ? undefined : option.slice("color:".length);
+  return { symbol, color: color === undefined || color === "" ? undefined : color };
+}
+
 /**
- * The text cut into runs, in order. Inside a marker the words split on
+ * The text's pieces with their colours (`TemplateRichText.styledSegments`):
+ * each line read from the ink, the line breaks kept as text in the ink. Next
+ * to each other, words of one colour are one piece.
+ */
+export function templateStyledSegments(text: string): TemplateStyledSegment[] {
+  const out: TemplateStyledSegment[] = [];
+  const add = (string: string, color: string | undefined) => {
+    if (string === "") return;
+    const last = out[out.length - 1];
+    if (last?.kind === "text" && last.color === color) last.text += string;
+    else out.push({ kind: "text", text: string, color });
+  };
+  text.split("\n").forEach((line, index) => {
+    if (index > 0) add("\n", undefined);
+    let color: string | undefined;
+    let at = 0;
+    ANY_MARKER.lastIndex = 0;
+    for (let match = ANY_MARKER.exec(line); match !== null; match = ANY_MARKER.exec(line)) {
+      add(line.slice(at, match.index), color);
+      if (match[1] !== undefined) {
+        const icon = iconOf(match[1]);
+        if (icon === undefined) add(match[0], color);
+        else out.push({ kind: "icon", symbol: icon.symbol, color: icon.color, run: color });
+      } else if (match[2] !== undefined) {
+        // A colour the tile can draw starts a run; any other ends it.
+        const trimmed = match[2].trim();
+        color = templateIconColor(trimmed) === undefined ? undefined : trimmed;
+      } else {
+        color = undefined;
+      }
+      at = match.index + match[0].length;
+    }
+    add(line.slice(at), color);
+  });
+  return out;
+}
+
+/**
+ * The text cut into runs, in order, with the colour markers gone. Inside a marker the words split on
  * white space: the first is the symbol (symbol names never hold a space),
  * the first later word that starts `color:` in any case gives the color, as
  * written after the colon. A marker with no word (`[icon: ]`) stays as text.
  * Text between markers is kept as it is, newlines too; empty runs are left
  * out.
  */
-export function templateRichTextSegments(text: string): TemplateRichTextSegment[] {
+export function templateRichTextSegments(given: string): TemplateRichTextSegment[] {
+  const text = given.replace(COLOR_MARKER, "");
   const out: TemplateRichTextSegment[] = [];
   let at = 0;
   MARKER.lastIndex = 0;

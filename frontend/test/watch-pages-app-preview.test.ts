@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type HassEntityState, type HassLike, type RenderResult, fetchCloudStatus, fetchConfigEntries } from "../src/ha-api.js";
 import { DEFAULT_PHONE, phonePagesLayout } from "../src/phone-frame.js";
+import { oneLookInkCss, oneLookPalette } from "../src/watch-pages/one-look/colour.js";
 import type { IconProvider } from "../src/renderer.js";
 import {
   MUSIC_ASSISTANT_DOMAIN,
@@ -321,18 +322,40 @@ describe("a template tile in the preview", () => {
     expect(face(tile(), { ok: true, value: "[icon:power color:#FF880080]" }, icons("power"))).toContain("opacity:0.502");
   });
 
-  describe("on a One Look iPhone page", () => {
+  describe("on a One Look page, both devices", () => {
     const phone = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
-    const oneLookFace = (t: WatchPageTile, value: string, provider?: IconProvider) =>
-      text(renderWatchTileFace(t, { width: 90, height: 60 }, { page, pages: [], screen: { width: 198, height: 242 }, scale: 1, phone, oneLook: true, icons: provider, templates: renders({ ok: true, value }) }, 21));
+    const oneLookFace = (t: WatchPageTile, value: string | undefined, onPhone: boolean, provider?: IconProvider) =>
+      text(renderWatchTileFace(t, { width: 90, height: 60 }, {
+        page, pages: [], screen: { width: 198, height: 242 }, scale: 1, oneLook: true, icons: provider,
+        ...(onPhone ? { phone } : {}),
+        ...(value === undefined ? {} : { templates: renders({ ok: true, value }) }),
+      }, 21));
+    const inkOf = (hue: string | undefined) => oneLookInkCss(oneLookPalette({ role: { kind: "plain" }, ...(hue === undefined ? {} : { hue }), calm: hue === undefined }).ink);
 
-    it("draws the watch's tile, zoomed: its glass, and the text in the tile's colour with its glow", () => {
-      const drawn = oneLookFace(tile({ color: "#FFFFFF" }), "[icon:power] 21", icons("power"));
-      expect(drawn).toContain("rgba(255, 255, 255, 0.52)");
-      expect(drawn).not.toContain("linear-gradient(rgba(255, 255, 255, 1), rgba(255, 255, 255, 1))");
-      expect(drawn).toContain("color:#FFFFFF");
-      expect(drawn).toContain("text-shadow");
-      expect(drawn).not.toContain("color:#14161A");
+    for (const onPhone of [false, true]) {
+      it(`draws the One Look surface for the tile's colour and the text in its ink${onPhone ? ", the iPhone's zoomed" : ""}`, () => {
+        const drawn = oneLookFace(tile({ color: "#FFFFFF" }), "[icon:power] 21", onPhone, icons("power"));
+        expect(drawn).toContain("wp-tile wp-tpl ol-tile");
+        expect(drawn).toContain("ol-rim");
+        // Not the old glass, nor the tile's colour as the text with its glow.
+        expect(drawn).not.toContain("rgba(255, 255, 255, 0.52)");
+        expect(drawn).not.toMatch(/text-shadow:0 0 /);
+        expect(drawn).toContain(`color:${inkOf("#FFFFFF")}`);
+        // An icon with no colour of its own draws in the ink.
+        expect(drawn).toContain(`power ${inkOf("#FFFFFF")}`);
+      });
+    }
+
+    it("is graphite with no colour, its text in that surface's ink", () => {
+      const drawn = oneLookFace(tile({}), "21", false);
+      expect(drawn).toContain(`color:${inkOf(undefined)}`);
+    });
+
+    it("draws a coloured run and an icon in it in the run's colour", () => {
+      const drawn = oneLookFace(tile({ color: "#102040" }), "[color:red]Hot[/color] 21° [icon:power]", false, icons("power"));
+      expect(drawn).toContain("color:#FF3B30");
+      expect(drawn).toContain(">Hot<");
+      expect(drawn).not.toContain("[color:");
     });
   });
 

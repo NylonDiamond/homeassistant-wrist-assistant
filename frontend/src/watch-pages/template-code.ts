@@ -243,7 +243,7 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
     if ((m = before.match(/\[icon:([\w.]*)$/)) !== null) {
       return { from: ctx.pos - m[1]!.length, options: context.symbols(), validFor: /^[\w.]*$/ };
     }
-    if ((m = before.match(/\[icon:[\w.]+\s+color:(\w*)$/)) !== null) {
+    if ((m = before.match(/\[icon:[\w.]+\s+color:(\w*)$/)) !== null || (m = before.match(/\[color:(\w*)$/)) !== null) {
       return { from: ctx.pos - m[1]!.length, options: context.colors(), validFor: /^\w*$/ };
     }
     if ((m = before.match(/\{\{\s*([\w.]*)$/)) !== null) {

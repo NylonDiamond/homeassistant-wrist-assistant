@@ -255,7 +255,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     examples,
     helpers: html`<div class="tpl-box">${help.recipes}${help.entitySearch}${help.asks}
       <div class="hint">Home Assistant renders this. Write {{ … }} around each part that reads something, like {{ states('sensor.power') }}.</div>
-      <div class="hint">Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue].</div></div>`,
+      <div class="hint">Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue]. Color words with [color:red]Hot[/color]; a line break ends the color too.</div></div>`,
   };
   return html`<div class="tpl-box" data-tpl=${key}><wa-template-editor .data=${data}></wa-template-editor></div>`;
 }

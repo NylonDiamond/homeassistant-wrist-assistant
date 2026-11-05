@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { setWatchTemplateColumns, watchTemplateColumns } from "../src/watch-pages/app-model.js";
 import { templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows } from "../src/watch-pages/template-rows.js";
+import { templateRichTextSegments, templateStyledSegments } from "../src/watch-pages/rich-text.js";
+import { templateTextFit } from "../src/watch-pages/template-fit.js";
 import { alignTemplate, findTemplatePart, nearestName, namedEntityIds, scanTemplateSource, sourceRowAt, templateNameIssues, templateTokenValues } from "../src/watch-pages/template-source.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 
@@ -12,28 +14,120 @@ const documentWith = (entityId: string): WatchPagesDocument => ({
 } as unknown as WatchPagesDocument);
 const tileOf = (d: WatchPagesDocument) => (d as unknown as { pages: { items: Record<string, unknown>[] }[] }).pages[0]!.items[0]!;
 
+// The app's `TemplateRichTextTests`, "Coloured text": the same inputs and
+// what the app reads from them (`TemplateRichText.styledSegments`, `segments`,
+// `rows`, `columnRows`).
+describe("coloured text: [color:SPEC] ... [/color]", () => {
+  const t = (text: string, color: string | undefined = undefined) => ({ kind: "text", text, color });
+  const cell = (symbol: string | undefined, color: string | undefined, text: string, runs: { text: string; color: string | undefined }[] = []) =>
+    ({ ...(symbol === undefined ? {} : { icon: { symbol, color } }), text, runs });
+
+  it("starts a run at a colour marker and ends it at the close", () => {
+    expect(templateStyledSegments("[color:red]Hot[/color] 21°")).toEqual([t("Hot", "red"), t(" 21°")]);
+    // The markers draw nothing and take no width: the words alone.
+    expect(templateRichTextSegments("[color:red]Hot[/color] 21°")).toEqual([{ kind: "text", text: "Hot 21°" }]);
+    expect(templateRows("[color:red]Hot[/color] 21°")).toEqual([[cell(undefined, undefined, "Hot 21°", [{ text: "Hot", color: "red" }, { text: " 21°", color: undefined }])]]);
+  });
+
+  it("lets a template pick the colour", () => {
+    expect(templateStyledSegments("[color:red]80°")).toEqual([t("80°", "red")]);
+    expect(templateStyledSegments("70°")).toEqual([t("70°")]);
+  });
+
+  it("replaces the run with a new colour, and reads hex and case as an icon's own", () => {
+    expect(templateStyledSegments("[color:Red]a[color:#36C]b[color: 3366CCFF ]c[/color]d")).toEqual([
+      t("a", "Red"), t("b", "#36C"), t("c", "3366CCFF"), t("d"),
+    ]);
+  });
+
+  it("drops an unknown colour, and the text after it is the ink", () => {
+    expect(templateStyledSegments("[color:nope]Warm")).toEqual([t("Warm")]);
+    expect(templateStyledSegments("[color:red]a[color:nope]b")).toEqual([t("a", "red"), t("b")]);
+    expect(templateStyledSegments("[color:]x")).toEqual([t("x")]);
+    // A close with nothing open is dropped too.
+    expect(templateStyledSegments("a[/color]b")).toEqual([t("ab")]);
+  });
+
+  it("ends an unclosed run at the line break", () => {
+    expect(templateStyledSegments("[color:orange]a b\nc")).toEqual([t("a b", "orange"), t("\nc")]);
+    expect(templateRows("[color:orange]a b\nc")).toEqual([
+      [cell(undefined, undefined, "a b", [{ text: "a b", color: "orange" }])],
+      [cell(undefined, undefined, "c")],
+    ]);
+  });
+
+  it("gives an icon in a run its colour unless it has its own", () => {
+    expect(templateStyledSegments("[color:green][icon:leaf] 3 [icon:drop color:blue] 4")).toEqual([
+      { kind: "icon", symbol: "leaf", color: undefined, run: "green" },
+      t(" 3 ", "green"),
+      { kind: "icon", symbol: "drop", color: "blue", run: "green" },
+      t(" 4", "green"),
+    ]);
+    // The plain segments keep each icon's own colour only.
+    expect(templateRichTextSegments("[color:green][icon:leaf] 3")).toEqual([{ kind: "icon", symbol: "leaf", color: undefined }, { kind: "text", text: " 3" }]);
+    expect(templateRows("[color:green][icon:leaf] 3 [icon:drop color:blue] 4")[0]?.map((c) => c.icon?.color)).toEqual(["green", "blue"]);
+  });
+
+  it("carries a run across the cells of a line in Line up columns", () => {
+    const rows = templateColumnRows("[icon:a] [color:red]1 [icon:b] 2[/color] x\n[icon:c] 3", true);
+    expect(rows).toEqual([
+      [
+        // The run starts after the first icon, so that icon is ink.
+        cell("a", undefined, "1", [{ text: "1", color: "red" }]),
+        cell("b", "red", "2 x", [{ text: "2", color: "red" }, { text: " x", color: undefined }]),
+      ],
+      [cell("c", undefined, "3")],
+    ]);
+    // The markers change no row or column: the same as without them.
+    const plain = templateColumnRows("[icon:a] 1 [icon:b] 2 x\n[icon:c] 3", true);
+    expect(rows?.map((r) => r.map((c) => c.text))).toEqual(plain?.map((r) => r.map((c) => c.text)));
+    expect(rows?.map((r) => r.map((c) => c.icon?.symbol))).toEqual(plain?.map((r) => r.map((c) => c.icon?.symbol)));
+  });
+
+  it("reads the markers in the code as taking no room, so the editor still finds each part's code", () => {
+    const scan = scanTemplateSource("[color:red]Hot[/color] 21°");
+    expect(scan.rows[0]!.tokens.map((t) => [t.kind, t.src, t.silent === true])).toEqual([
+      ["logic", "[color:red]", true], ["text", "Hot", false], ["logic", "[/color]", true], ["text", "21°", false],
+    ]);
+    const [cell] = templateRows("[color:red]Hot[/color] 21°")[0]!;
+    expect(findTemplatePart(scan, cell!, "text")).toEqual({ from: 11, to: 14 });
+  });
+
+  it("makes no row of a line of only markers", () => {
+    expect(templateRows("a\n[color:red][/color]\nb")).toHaveLength(2);
+  });
+
+  it("reads only a lower case marker, as the app does, and keeps the markers out of the fit", () => {
+    expect(templateStyledSegments("[Color:red]a")).toEqual([t("[Color:red]a")]);
+    const plain = templateTextFit("Hot 21°", 92, 66, 5, "watch");
+    const marked = templateTextFit("[color:red]Hot[/color] 21°", 92, 66, 5, "watch");
+    expect(marked.size).toBe(plain.size);
+    expect(marked.lines.map((l) => l.pieces.map((p) => (p.kind === "text" ? p.text : "")).join(""))).toEqual(plain.lines.map((l) => l.pieces.map((p) => (p.kind === "text" ? p.text : "")).join("")));
+  });
+});
+
 describe("template rows", () => {
   it("starts a cell at each icon, the rule the app's TemplateRichTextTests pin", () => {
     expect(templateRows("[icon:sofa.fill] Woon [icon:thermometer.medium color:green] 22,1° [icon:drop.fill] 49%")).toEqual([[
-      { icon: { symbol: "sofa.fill", color: undefined }, text: "Woon" },
-      { icon: { symbol: "thermometer.medium", color: "green" }, text: "22,1°" },
-      { icon: { symbol: "drop.fill", color: undefined }, text: "49%" },
+      { icon: { symbol: "sofa.fill", color: undefined }, text: "Woon", runs: [] },
+      { icon: { symbol: "thermometer.medium", color: "green" }, text: "22,1°", runs: [] },
+      { icon: { symbol: "drop.fill", color: undefined }, text: "49%", runs: [] },
     ]]);
   });
 
   it("makes words before the first icon a cell of their own", () => {
     expect(templateRows("Woon [icon:drop.fill] 49%")).toEqual([[
-      { text: "Woon" },
-      { icon: { symbol: "drop.fill", color: undefined }, text: "49%" },
+      { text: "Woon", runs: [] },
+      { icon: { symbol: "drop.fill", color: undefined }, text: "49%", runs: [] },
     ]]);
   });
 
   it("drops lines of white space, and keeps a row of words as one cell", () => {
-    expect(templateRows("a b\n  \n\nc")).toEqual([[{ text: "a b" }], [{ text: "c" }]]);
+    expect(templateRows("a b\n  \n\nc")).toEqual([[{ text: "a b", runs: [] }], [{ text: "c", runs: [] }]]);
   });
 
   it("keeps an icon with nothing after it", () => {
-    expect(templateRows("[icon:power]")).toEqual([[{ icon: { symbol: "power", color: undefined }, text: "" }]]);
+    expect(templateRows("[icon:power]")).toEqual([[{ icon: { symbol: "power", color: undefined }, text: "", runs: [] }]]);
   });
 
   it("stands in columns only with the key on, two rows and two columns", () => {
@@ -163,9 +257,9 @@ describe("the source of a template", () => {
 
   it("guesses at a part when logic stops the two lining up, and says nothing when no one place wrote it", () => {
     const scan = scanTemplateSource("{% if a %}[icon:power] On{% endif %}");
-    expect(findTemplatePart(scan, { icon: { symbol: "power", color: undefined }, text: "On" }, "icon")).toEqual({ from: 10, to: 22 });
-    expect(findTemplatePart(scan, { text: "On" }, "text")).toEqual({ from: 23, to: 25 });
-    expect(findTemplatePart(scan, { text: "Sam" }, "text")).toBeUndefined();
+    expect(findTemplatePart(scan, { icon: { symbol: "power", color: undefined }, text: "On", runs: [] }, "icon")).toEqual({ from: 10, to: 22 });
+    expect(findTemplatePart(scan, { text: "On", runs: [] }, "text")).toEqual({ from: 23, to: 25 });
+    expect(findTemplatePart(scan, { text: "Sam", runs: [] }, "text")).toBeUndefined();
   });
 
   it("says nothing when the two cannot be lined up with certainty", () => {

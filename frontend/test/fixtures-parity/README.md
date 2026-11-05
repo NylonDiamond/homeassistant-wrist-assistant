@@ -37,7 +37,9 @@ phone's own look, zoomed as the phone draws it (`OneLookZoom`).
   accessory, the content box, the corner radius and the arranged parts.
 
 `parity-fixtures.test.ts` lays each tile out again through the previews' own
-path and holds every number to `app.json` within half a point.
+path and holds every number to `app.json` within half a point. It reads the
+states at `snapshotAt`, so a state told against the time ("Ran 5h ago") does
+not drift with the clock.
 
 ## What it does not cover
 

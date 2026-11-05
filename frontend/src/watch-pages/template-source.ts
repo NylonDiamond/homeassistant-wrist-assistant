@@ -81,6 +81,16 @@ export function scanTemplateSource(doc: string): SourceScan {
       i = close + 1;
       continue;
     }
+    // A colour marker (`[color:SPEC]`, `[/color]`) draws nothing and takes
+    // no room: silent, as a `{% set %}`, so the words around it are the
+    // cells' words alone.
+    const colour = /^\[color:[^\]\n]*\]|^\[\/color\]/.exec(doc.slice(i, i + 200));
+    if (colour !== null) {
+      endText(i);
+      row().tokens.push({ kind: "logic", from: i, to: i + colour[0].length, src: colour[0], silent: true });
+      i += colour[0].length;
+      continue;
+    }
     if (doc.startsWith("{{", i) || doc.startsWith("{%", i) || doc.startsWith("{#", i)) {
       const logic = doc[i + 1] !== "{";
       const closer = doc[i + 1] === "#" ? "#}" : logic ? "%}" : "}}";
