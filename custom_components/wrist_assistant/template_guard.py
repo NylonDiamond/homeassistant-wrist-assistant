@@ -307,7 +307,9 @@ class TemplateGuard:
 
     def _charge(self, caller: str, seconds: float) -> None:
         left = self._budget_left(caller)
-        self._budgets[caller] = _Budget(left - seconds, self._clock())
+        # One long step in C can run for any time. The debt stops at a full
+        # budget, so a caller is never shut out for longer than a refill.
+        self._budgets[caller] = _Budget(max(left - seconds, -self._budget_seconds), self._clock())
         self._budgets.move_to_end(caller)
         while len(self._budgets) > _MAX_BUDGETS:
             # The longest untouched entry. Forgetting it gives it a full budget
