@@ -620,11 +620,14 @@ def test_a_caller_past_its_budget_hears_429_and_another_does_not(_fast_guard):
                 break
             await asyncio.sleep(0.01)
         with pytest.raises(OpError) as refused:
-            await bundle_ops.async_template_result(hass, {"template": "{{ x }}"}, caller="user:a")
+            await bundle_ops.async_template_result(hass, {"template": "slow"}, caller="user:a")
+        # A fast template is not what spent it, and still answers.
+        fast = await bundle_ops.async_template_result(hass, {"template": "{{ x }}"}, caller="user:a")
         fine = await bundle_ops.async_template_result(hass, {"template": "{{ x }}"}, caller="user:b")
-        return refused.value, fine
+        return refused.value, fast, fine
 
-    refused, fine = asyncio.run(scenario())
+    refused, fast, fine = asyncio.run(scenario())
     assert refused.status == 429
     assert refused.body["ok"] is False
+    assert fast["ok"] is True
     assert fine["ok"] is True

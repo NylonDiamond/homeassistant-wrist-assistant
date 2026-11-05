@@ -263,12 +263,31 @@ def test_the_home_runs_at_most_its_limit_and_then_waits_then_refuses() -> None:
     assert asyncio.run(scenario()).status == guard_mod.BUSY
 
 
-def test_the_budget_runs_out_refuses_at_once_and_comes_back() -> None:
+def _burn(seconds: float, value="done"):
+    """A job that uses this much CPU, however long the wall clock takes."""
+
+    def job():
+        end = time.thread_time() + seconds
+        while time.thread_time() < end:
+            sum(range(100))
+        return value
+
+    return job
+
+
+async def _settled(guard) -> None:
+    for _ in range(300):
+        if not guard._running:
+            return
+        await asyncio.sleep(0.01)
+
+
+def test_a_spent_budget_refuses_a_known_slow_template_at_once_and_comes_back() -> None:
     now = [0.0]
-    started_threads: list[int] = []
+    ran: list[str] = []
 
     def counted():
-        started_threads.append(1)
+        ran.append("slow")
         return "ok"
 
     async def scenario():
@@ -279,24 +298,144 @@ def test_the_budget_runs_out_refuses_at_once_and_comes_back() -> None:
             budget_seconds=0.1,
             budget_refill_per_second=1.0,
         )
-        first = (await guard.async_run("a", [_spin()]))[0]
+        first = (await guard.async_run("a", [_spin()], keys=["slow"]))[0]
         assert first.status == guard_mod.TIMEOUT
-        for _ in range(100):
-            if not guard._running:
-                break
-            await asyncio.sleep(0.01)
-        # Spent. The next one starts no thread at all.
-        refused = (await guard.async_run("a", [counted]))[0]
+        await _settled(guard)
+        # Spent. Nothing to run, so no thread and no slot.
+        refused = (await guard.async_run("a", [counted], keys=["slow"]))[0]
         assert refused.status == guard_mod.BUDGET
         assert refused.refused
-        assert started_threads == []
+        assert ran == []
         # Someone else still has theirs.
         assert (await guard.async_run("b", [_quick()]))[0].ok
         now[0] += 60
-        return (await guard.async_run("a", [counted]))[0]
+        return (await guard.async_run("a", [counted], keys=["slow"]))[0]
 
     assert asyncio.run(scenario()).ok
-    assert started_threads == [1]
+    assert ran == ["slow"]
+
+
+def test_a_spent_budget_still_answers_a_fast_template_beside_a_slow_one() -> None:
+    async def scenario():
+        guard = _guard(budget_seconds=0.1, budget_refill_per_second=0.0)
+        guard._charge("a", 1.0)
+        started = time.monotonic()
+        outcomes = await guard.async_run(
+            "a", [_spin(), _quick("fast"), _quick("also")], keys=["slow", "fast", "also"]
+        )
+        took = time.monotonic() - started
+        await _settled(guard)
+        return outcomes, took, guard
+
+    outcomes, took, guard = asyncio.run(scenario())
+    # The slow one is refused, not timed out: the caller keeps what it had.
+    assert outcomes[0].status == guard_mod.BUDGET
+    assert outcomes[0].refused
+    assert [o.value for o in outcomes[1:]] == ["fast", "also"]
+    # On the short limit, not the 3 s one.
+    assert took < guard_mod.SPENT_RENDER_SECONDS + 0.6
+    assert hash("slow") in guard._budgets["a"].slow
+
+
+def test_a_spent_budget_refuses_a_render_over_the_line_that_finished_in_time() -> None:
+    async def scenario():
+        guard = _guard(budget_seconds=0.1, budget_refill_per_second=0.0)
+        guard._charge("a", 1.0)
+        return (await guard.async_run("a", [_burn(0.08)], keys=["middling"]))[0]
+
+    assert asyncio.run(scenario()).status == guard_mod.BUDGET
+
+
+def test_a_slow_template_that_turned_fast_comes_off_the_list() -> None:
+    now = [0.0]
+
+    async def scenario():
+        guard = Guard(
+            clock=lambda: now[0] + time.monotonic(),
+            budget_seconds=0.05,
+            budget_refill_per_second=1.0,
+        )
+        await guard.async_run("a", [_burn(0.2)], keys=["t"])
+        await _settled(guard)
+        assert hash("t") in guard._budgets["a"].slow
+        now[0] += 60
+        assert (await guard.async_run("a", [_quick()], keys=["t"]))[0].ok
+        await _settled(guard)
+        assert hash("t") not in guard._budgets["a"].slow
+
+    asyncio.run(scenario())
+
+
+def test_only_renders_over_the_line_are_charged() -> None:
+    async def scenario():
+        guard = _guard(budget_seconds=10.0, budget_refill_per_second=0.0)
+        # Fast renders cost nothing at all, in any number.
+        assert all(o.ok for o in await guard.async_run("a", [_quick()] * 200))
+        await _settled(guard)
+        assert "a" not in guard._budgets
+        # A slow one is charged all it used, not only the part over the line.
+        assert (await guard.async_run("a", [_burn(0.12)]))[0].ok
+        await _settled(guard)
+        return guard._budget_left("a")
+
+    assert 9.6 < asyncio.run(scenario()) <= 9.88
+
+
+def test_a_stopped_render_is_charged_under_the_line_too() -> None:
+    async def scenario():
+        guard = _guard(
+            budget_seconds=10.0,
+            budget_refill_per_second=0.0,
+            budget_free_seconds=100.0,
+            render_seconds=0.1,
+        )
+        assert (await guard.async_run("a", [_spin()]))[0].status == guard_mod.TIMEOUT
+        await _settled(guard)
+        return guard._budget_left("a")
+
+    assert asyncio.run(scenario()) < 9.95
+
+
+def test_a_device_of_many_slow_renders_hits_the_limit_and_the_loop_keeps_answering() -> None:
+    async def scenario():
+        guard = _guard(budget_seconds=0.5, budget_refill_per_second=0.0, batch_seconds=2.0)
+        late: list[float] = []
+
+        async def beat():
+            while True:
+                before = time.monotonic()
+                await asyncio.sleep(0.01)
+                late.append(time.monotonic() - before - 0.01)
+
+        beater = asyncio.create_task(beat())
+        rounds = []
+        keys = [f"slow-{i}" for i in range(5)] + ["fast"]
+        for _ in range(4):
+            jobs = [_burn(0.08) for _ in range(5)] + [_quick("fast")]
+            rounds.append(await guard.async_run("a", jobs, keys=keys))
+            await _settled(guard)
+        beater.cancel()
+        return rounds, late
+
+    rounds, late = asyncio.run(scenario())
+    assert all(o.ok for o in rounds[0])
+    # Spent, and then known: all five slow ones refused, the fast one answered.
+    assert [o.status for o in rounds[-1][:5]] == [guard_mod.BUDGET] * 5
+    assert rounds[-1][5].value == "fast"
+    # The loop waited for its turn at the GIL and nothing longer.
+    assert max(late) < 0.15
+
+
+def test_a_panel_user_s_previews_have_their_own_limits() -> None:
+    assert guard_mod.preview_caller_for("u1") != guard_mod.caller_for("u1")
+    assert guard_mod.preview_caller_for(None) != guard_mod.caller_for(None)
+
+    async def scenario():
+        guard = _guard(budget_seconds=0.1, budget_refill_per_second=0.0)
+        guard._charge(guard_mod.preview_caller_for("u1"), 1.0)
+        assert guard._budget_left(guard_mod.caller_for("u1")) == 0.1
+
+    asyncio.run(scenario())
 
 
 def test_one_long_render_leaves_at_most_one_budget_of_debt() -> None:

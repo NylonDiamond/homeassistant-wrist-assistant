@@ -2492,7 +2492,10 @@ class DeltaCoordinator:
         jobs = [functools.partial(self._render_template_tracked, s) for s in sources]
         if not getattr(getattr(self.hass, "config", None), "debug", False):
             return await template_guard.async_guarded_jobs(
-                caller, jobs, size_of=lambda pair: template_guard.output_chars(pair[0])
+                caller,
+                jobs,
+                size_of=lambda pair: template_guard.output_chars(pair[0]),
+                keys=sources,
             )
         outcomes: list[template_guard.Outcome] = []
         for source, job in zip(sources, jobs):

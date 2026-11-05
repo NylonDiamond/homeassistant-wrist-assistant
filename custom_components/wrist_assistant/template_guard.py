@@ -23,9 +23,18 @@ What a caller gets:
   nothing yet when the join at its end asks for a terabyte in one C step.
 * Limits per caller. One running at a time, ``MAX_WAITING_PER_CALLER`` in line
   behind it, and a time budget (``BUDGET_SECONDS``, refilled at
-  ``BUDGET_REFILL_PER_SECOND``) charged with the CPU time each render used. A
-  device bound to a user shares that user's limits, so pairing more devices
-  buys no more.
+  ``BUDGET_REFILL_PER_SECOND``) for slow renders. A device bound to a user
+  shares that user's limits, so pairing more devices buys no more. The panel's
+  previews have their own (``preview_caller_for``), so someone typing in the
+  editor never spends what their phone and watch rely on.
+* The budget is for slow renders only. A render under ``BUDGET_FREE_SECONDS`` of
+  CPU costs nothing, however many a home has. A slower one, and any render that
+  was stopped, is charged all it used. With the budget spent, a render that is
+  known to be slow is refused without running, and any other runs on a short
+  limit (``SPENT_RENDER_SECONDS``): a fast template keeps working and a slow one
+  is refused (``BUDGET``). What stays open by design is that a caller of many
+  renders just under the line is held only by its one slot, one thread, and the
+  home's ``MAX_RUNNING``.
 * Limits for the home. ``MAX_RUNNING`` threads at once and ``MAX_WAITING`` in
   line, because each running thread takes its turn at the GIL with the loop.
 
@@ -76,6 +85,15 @@ WAIT_SECONDS = 5.0
 BUDGET_SECONDS = 12.0
 BUDGET_REFILL_PER_SECOND = 0.2
 _MAX_BUDGETS = 256
+# A render under this much CPU costs its caller nothing. The same line as the
+# slow render warning in ``api``.
+BUDGET_FREE_SECONDS = 0.05
+# How long any render may take once the caller's budget is spent. On the wall
+# clock, since the watcher reads no thread's CPU, so it leaves a fast render
+# room to wait its turn at the GIL.
+SPENT_RENDER_SECONDS = 0.25
+# How many slow templates are remembered per caller, to refuse at no cost.
+_MAX_SLOW_KEYS = 64
 
 # How often a running render is looked at, memory included. A render that ends
 # first is never looked at at all, which is nearly every render.
@@ -121,6 +139,13 @@ def caller_for(user_id: str | None, device_id: str | None = None) -> str:
     if user_id:
         return f"user:{user_id}"
     return f"device:{device_id or 'unknown'}"
+
+
+def preview_caller_for(user_id: str | None) -> str:
+    """The name a panel user's previews are kept under: apart from the limits
+    their phone and watch use, since typing in the editor renders far more
+    often than a device does."""
+    return f"preview:{user_id or 'unknown'}"
 
 
 @dataclass(slots=True)
@@ -221,6 +246,8 @@ def limit_output(template: Any, limit: int = OUTPUT_CHARS) -> Any:
 class _Budget:
     seconds: float
     at: float
+    # Hashes of the templates last seen over the free line, oldest first.
+    slow: OrderedDict[int, None] = field(default_factory=OrderedDict)
 
 
 @dataclass(slots=True)
@@ -241,6 +268,9 @@ class _Run:
     output_chars: int
     batch_output_chars: int
     size_of: Callable[[Any], int]
+    free_seconds: float
+    spent: bool
+    keys: Sequence[str] | None
     thread: threading.Thread | None = None
     index: int | None = None
     started: float = 0.0
@@ -249,6 +279,8 @@ class _Run:
     cpu: float = 0.0
     output: int = 0
     last_raise: float = 0.0
+    slow: list[int] = field(default_factory=list)
+    fast: list[int] = field(default_factory=list)
     ended: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -272,6 +304,8 @@ class TemplateGuard:
         max_waiting_per_caller: int = MAX_WAITING_PER_CALLER,
         budget_seconds: float = BUDGET_SECONDS,
         budget_refill_per_second: float = BUDGET_REFILL_PER_SECOND,
+        budget_free_seconds: float = BUDGET_FREE_SECONDS,
+        spent_render_seconds: float = SPENT_RENDER_SECONDS,
     ) -> None:
         self._clock = clock
         self._resident_bytes = resident_bytes
@@ -286,6 +320,8 @@ class TemplateGuard:
         self._max_waiting_per_caller = max_waiting_per_caller
         self._budget_seconds = budget_seconds
         self._budget_refill = budget_refill_per_second
+        self._budget_free = budget_free_seconds
+        self._spent_render = spent_render_seconds
         self._budgets: OrderedDict[str, _Budget] = OrderedDict()
         self._running: dict[str, int] = {}
         self._waiters: deque[_Waiter] = deque()
@@ -309,12 +345,34 @@ class TemplateGuard:
         left = self._budget_left(caller)
         # One long step in C can run for any time. The debt stops at a full
         # budget, so a caller is never shut out for longer than a refill.
-        self._budgets[caller] = _Budget(max(left - seconds, -self._budget_seconds), self._clock())
-        self._budgets.move_to_end(caller)
+        debt = max(left - seconds, -self._budget_seconds)
+        budget = self._budgets.get(caller)
+        if budget is None:
+            self._budgets[caller] = _Budget(debt, self._clock())
+        else:
+            budget.seconds = debt
+            budget.at = self._clock()
+            self._budgets.move_to_end(caller)
         while len(self._budgets) > _MAX_BUDGETS:
             # The longest untouched entry. Forgetting it gives it a full budget
             # back, which only a caller quiet this long is due anyway.
             self._budgets.popitem(last=False)
+
+    def _note_speeds(self, run: _Run) -> None:
+        """Remember what this run learned of its templates. A template that
+        was slow and is fast now comes off the list the next time it runs,
+        which is at the latest when the budget has refilled."""
+        budget = self._budgets.get(run.caller)
+        if budget is None or run.keys is None:
+            return
+        for index in run.slow:
+            key = hash(run.keys[index])
+            budget.slow[key] = None
+            budget.slow.move_to_end(key)
+        for index in run.fast:
+            budget.slow.pop(hash(run.keys[index]), None)
+        while len(budget.slow) > _MAX_SLOW_KEYS:
+            budget.slow.popitem(last=False)
 
     # ── slots ────────────────────────────────────────────────────────────
 
@@ -376,18 +434,28 @@ class TemplateGuard:
         jobs: Sequence[Callable[[], Any]],
         *,
         size_of: Callable[[Any], int] = output_chars,
+        keys: Sequence[str] | None = None,
     ) -> list[Outcome]:
         """Run ``jobs`` in order in one worker thread, one outcome for each.
 
         A job that raises an ``Exception`` gets ``ERROR`` with its text, and
         the jobs after it still run. Past the batch limit the rest are
         ``SKIPPED``. ``size_of`` reads a job's answer for the output limits.
-        Nothing raises to the caller but a cancel.
+        ``keys`` names each job's template, so that one known to be slow can be
+        refused without running while the budget is spent. Nothing raises to
+        the caller but a cancel.
         """
         if not jobs:
             return []
-        if self._budget_left(caller) <= 0:
-            return [_refusal(BUDGET) for _ in jobs]
+        spent = self._budget_left(caller) <= 0
+        results: list[Outcome | None] = [None] * len(jobs)
+        if spent and keys is not None:
+            budget = self._budgets.get(caller)
+            known = budget.slow if budget is not None else ()
+            refused = [_refusal(BUDGET) if hash(key) in known else None for key in keys]
+            if all(refused):
+                return [outcome for outcome in refused if outcome is not None]
+            results = refused
         why_not = await self._acquire(caller)
         if why_not is not None:
             return [_refusal(why_not) for _ in jobs]
@@ -396,12 +464,15 @@ class TemplateGuard:
         run = _Run(
             caller=caller,
             jobs=jobs,
-            results=[None] * len(jobs),
-            render_seconds=self._render_seconds,
+            results=results,
+            render_seconds=min(self._render_seconds, self._spent_render) if spent else self._render_seconds,
             batch_seconds=self._batch_seconds,
             output_chars=self._output_chars,
             batch_output_chars=self._batch_output_chars,
             size_of=size_of,
+            free_seconds=self._budget_free,
+            spent=spent,
+            keys=keys,
         )
         answer: asyncio.Future[None] = loop.create_future()
         thread = threading.Thread(
@@ -467,7 +538,7 @@ class TemplateGuard:
                     run.halted = True
                     run.stop_reason = TIMEOUT
                 elif index is not None and now - run.started > run.render_seconds:
-                    run.stop_reason = TIMEOUT
+                    run.stop_reason = BUDGET if run.spent else TIMEOUT
                 elif (
                     base is not None
                     and resident is not None
@@ -477,8 +548,13 @@ class TemplateGuard:
                     run.stop_reason = MEMORY
                 if run.stop_reason is not None:
                     give_up_at = now + _STOP_GRACE_SECONDS
-                    _LOGGER.warning(
-                        "Stopped a template render for %s (%s)", run.caller, run.stop_reason
+                    # A spent caller's stops are the budget at work, and come
+                    # as often as it asks.
+                    _LOGGER.log(
+                        logging.DEBUG if run.stop_reason == BUDGET else logging.WARNING,
+                        "Stopped a template render for %s (%s)",
+                        run.caller,
+                        run.stop_reason,
                     )
                     self._stop(run)
                     continue
@@ -495,7 +571,9 @@ class TemplateGuard:
                     run.caller,
                     now - started,
                 )
-        self._charge(run.caller, run.cpu)
+        if run.cpu > 0:
+            self._charge(run.caller, run.cpu)
+        self._note_speeds(run)
         self._give_slot(run.caller)
         if not answer.done():
             answer.set_result(None)
@@ -525,10 +603,14 @@ def _work_jobs(run: _Run) -> None:
     for index, job in enumerate(run.jobs):
         if run.halted:
             return
+        if run.results[index] is not None:
+            # Refused before the run, with nothing spent.
+            continue
         run.started = time.monotonic()
         run.stop_reason = None
         run.index = index
         cpu_from = time.thread_time()
+        stopped = False
         try:
             value = job()
             chars = run.size_of(value)
@@ -538,13 +620,24 @@ def _work_jobs(run: _Run) -> None:
                 run.output += chars
                 outcome = Outcome(OK, value=value)
         except _Stop:
+            stopped = True
             reason = run.stop_reason or TIMEOUT
             outcome = Outcome(reason, error=_TEXT[reason])
         except Exception as err:  # noqa: BLE001 (each job answers for itself)
             outcome = Outcome(ERROR, error=str(err) or type(err).__name__)
         finally:
             used = time.thread_time() - cpu_from
-            run.cpu += used
+            slow = used > run.free_seconds
+            if slow or stopped:
+                run.cpu += used
+        if slow:
+            run.slow.append(index)
+            # Past the line with nothing left to spend is the limit, even when
+            # it finished within the short time a spent caller gets.
+            if run.spent and outcome.ok:
+                outcome = _refusal(BUDGET)
+        elif not stopped:
+            run.fast.append(index)
         outcome.seconds = used
         # The index goes first: a stop only ever aims at a job in progress.
         run.index = None
@@ -576,6 +669,7 @@ async def async_guarded_jobs(
     jobs: Sequence[Callable[[], Any]],
     *,
     size_of: Callable[[Any], int] = output_chars,
+    keys: Sequence[str] | None = None,
 ) -> list[Outcome]:
     """Run ``jobs`` under the shared guard."""
-    return await GUARD.async_run(caller, jobs, size_of=size_of)
+    return await GUARD.async_run(caller, jobs, size_of=size_of, keys=keys)

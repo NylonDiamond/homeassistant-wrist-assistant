@@ -499,7 +499,7 @@ async def async_template_result(
     def render() -> Any:
         return limit_output(Template(template_str, hass)).async_render(variables=variables)
 
-    outcome = (await async_guarded_jobs(caller or caller_for(None), [render]))[0]
+    outcome = (await async_guarded_jobs(caller or caller_for(None), [render], keys=[template_str]))[0]
     if not outcome.ok:
         raise OpError(
             outcome.error or "template failed",
