@@ -498,6 +498,23 @@ class ConfirmedPairWaiting(Exception):
         self.expires_in = expires_in
 
 
+def _remote_group(remote: str | None) -> str | None:
+    """What an address counts as for the per-address cap: itself, or its /64
+    for IPv6, since one client there holds billions of addresses."""
+    if remote is None:
+        return None
+    try:
+        address = ipaddress.ip_address(remote)
+    except ValueError:
+        return remote
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:
+        return str(mapped)
+    if address.version == 6:
+        return str(ipaddress.ip_network((address, 64), strict=False))
+    return str(address)
+
+
 class PairRequestStore:
     """Bounded TTL store of pending pairings, keyed by code, and of the
     sealed boxes of confirmed ones, keyed by watch id."""
@@ -506,7 +523,9 @@ class PairRequestStore:
     # One address may hold only this many requests at once, so a single
     # client cannot fill the whole store. A home rarely pairs more than one
     # watch at a time; behind a proxy that hides client addresses every
-    # watch shares the proxy's, and four is still room enough.
+    # watch shares the proxy's, and four is still room enough. An IPv6 client
+    # holds a whole /64, so that network counts as one address
+    # (``_remote_group``).
     _MAX_PER_REMOTE = 4
     # A free code is found on the first try unless the generator is broken:
     # 64 entries out of 32^6 codes.
@@ -541,13 +560,20 @@ class PairRequestStore:
         kind: str = PAIR_KIND_WATCH,
         public_key: bytes | None = None,
         now: float | None = None,
-    ) -> PendingPair | None:
-        """Store a pending pairing and return it, or None when the store is
-        full or ``remote`` already holds its share of requests.
+    ) -> PendingPair:
+        """Store a pending pairing and return it.
 
         An earlier request for the same watch is replaced, and does not count
         against either cap, so a watch that asks again is never refused by
-        its own old code. A refused start leaves the store as it was.
+        its own old code.
+
+        Past a cap the new request takes the place of an older one rather than
+        being refused. Refusing let a few unsigned requests lock an address out
+        of pairing for ten minutes, and a few addresses lock out the home. An
+        address past its share gives up its own oldest. A full store gives up
+        the oldest from an address outside the home network, and from inside it
+        only when no other is left. Either way the numbers stay under the caps,
+        and whoever lost a code hears ``expired`` and asks for a new one.
 
         ``remote_public`` defaults to what ``remote_is_public`` says of
         ``remote``; the view passes it when it knows more (a request through
@@ -585,15 +611,6 @@ class PairRequestStore:
         replaced = [
             code for code, pending in self._entries.items() if pending.watch_id == fields.watch_id
         ]
-        if len(self._entries) - len(replaced) >= self._MAX_ENTRIES:
-            return None
-        same_remote = sum(
-            1
-            for pending in self._entries.values()
-            if pending.remote == remote and pending.watch_id != fields.watch_id
-        )
-        if same_remote >= self._MAX_PER_REMOTE:
-            return None
         for _ in range(self._MAX_CODE_ATTEMPTS):
             code = normalize_pair_code(self._code_factory())
             if code not in self._entries or code in replaced:
@@ -602,6 +619,7 @@ class PairRequestStore:
             raise RuntimeError("could not find a free pairing code")
         for old_code in replaced:
             del self._entries[old_code]
+        self._make_room(remote)
         pending = PendingPair(
             code=code,
             fields=fields,
@@ -614,6 +632,21 @@ class PairRequestStore:
         )
         self._entries[code] = pending
         return pending
+
+    def _make_room(self, remote: str | None) -> None:
+        """Give up what ``start`` must, oldest first, for a request from
+        ``remote``."""
+        group = _remote_group(remote)
+        same_remote = [
+            old for old, pending in self._entries.items() if _remote_group(pending.remote) == group
+        ]
+        while len(same_remote) >= self._MAX_PER_REMOTE:
+            del self._entries[same_remote.pop(0)]
+        if len(self._entries) >= self._MAX_ENTRIES:
+            outside = next(
+                (old for old, pending in self._entries.items() if pending.remote_public), None
+            )
+            del self._entries[outside if outside is not None else next(iter(self._entries))]
 
     def confirm_sealed(
         self,

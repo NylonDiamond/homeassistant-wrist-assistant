@@ -56,6 +56,7 @@ import asyncio
 import base64
 import functools
 import gzip
+import hmac
 import json
 import logging
 import math
@@ -3725,6 +3726,11 @@ class WARegisterSecretView(HomeAssistantView):
     someone else can only be re-registered by that same user or by an admin;
     otherwise a second account could silently replace a device's key and take
     over its identity, push registration and complications.
+
+    An entry bound to no one (paired before binding) belongs to whoever holds
+    its key, so a non-admin may bind it only by sending that same key, which is
+    what the automatic re-provision after an upgrade does. A different key
+    needs an admin.
     """
 
     url = "/api/wrist_assistant/v2/register_secret"
@@ -3784,6 +3790,22 @@ class WARegisterSecretView(HomeAssistantView):
             return self.json_message(
                 "This device is paired by another user. Ask an admin to forget "
                 "it in the Wrist Assistant panel first.",
+                status_code=403,
+            )
+        if (
+            existing is not None
+            and existing.user_id is None
+            and not is_admin
+            and not hmac.compare_digest(existing.secret_b64.encode(), secret_b64.encode())
+        ):
+            _LOGGER.warning(
+                "Refused register_secret for watch_id=%s: a new key for a device "
+                "bound to no one needs an admin",
+                watch_id,
+            )
+            return self.json_message(
+                "This device was paired before devices belonged to a person. Ask "
+                "an admin to forget it in the Wrist Assistant panel first.",
                 status_code=403,
             )
 
@@ -3897,7 +3919,7 @@ class WAPairStartView(HomeAssistantView):
       it, which answers 401 until then.
 
     The reply is a six-character code for a user to type into the panel,
-    with `server_time` (Unix seconds, on every reply, the 429 too) so a
+    with `server_time` (Unix seconds, on every reply) so a
     device whose secret then fails `verify_identity` can tell a clock off by
     more than the signing window from a refusal. This view only stores the
     request: it writes nothing to the secret
@@ -3905,8 +3927,10 @@ class WAPairStartView(HomeAssistantView):
     signs until a user confirms it (`pairing_ws.py`).
 
     Requests last ten minutes, one per device (a new start replaces the old
-    one), at most four per address and 64 in all wait at once; past either
-    it answers 429. While a confirmed sealed box waits for the id it answers
+    one), at most four per address and 64 in all wait at once. A new start
+    past either takes the place of the oldest (`PairRequestStore.start`), so
+    nobody can lock a home out of pairing, and this view has no 429 left for
+    them. While a confirmed sealed box waits for the id it answers
     409 `confirmed_pairing_waiting` with `retry_after` (seconds, also in a
     `Retry-After` header) and `reason` (a sentence the device can show; the
     same text is in `message` too) and leaves the box alone, since this
@@ -3980,15 +4004,6 @@ class WAPairStartView(HomeAssistantView):
                 },
                 status_code=409,
                 headers={"Retry-After": str(waiting.expires_in)},
-            )
-        if pending is None:
-            return self.json(
-                {
-                    "ok": False,
-                    "error": "too_many_pending",
-                    "server_time": int(time.time()),
-                },
-                status_code=429,
             )
         _LOGGER.debug(
             "Pairing code issued for %s watch_id=%s from %s (%s)",

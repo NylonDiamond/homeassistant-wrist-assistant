@@ -464,6 +464,21 @@ def test_a_non_admin_cannot_take_another_user_s_watch(env) -> None:
     assert env.pair_store.get(pending.code) is pending
 
 
+def test_a_non_admin_cannot_re_key_a_watch_bound_to_no_one(env) -> None:
+    """The same rule as register_secret: a confirm brings a new key, and an
+    unbound device is nobody's to re-key but an administrator's."""
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision")
+    pending = _pending(env)
+    connection = _call(
+        env, env.ws.ws_pair_confirm, user=_User("alice"), code=pending.code, replace=True
+    )
+    [(_id, code, _message)] = connection.errors
+    assert code == "paired_by_no_one"
+    assert env.secret_store.get(WATCH).secret_b64 == SECRET_B
+    assert env.secret_store.get(WATCH).user_id is None
+    assert env.pair_store.get(pending.code) is pending
+
+
 @pytest.mark.parametrize(
     ("noun", "words"), [("watch", "pair a watch"), ("iPhone", "pair an iPhone")]
 )

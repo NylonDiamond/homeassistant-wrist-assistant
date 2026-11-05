@@ -469,10 +469,11 @@ async def ws_pair_confirm(
         return
     existing = secret_store.get(watch_id)
     is_admin = bool(user is not None and user.is_admin)
-    # A non-admin may re-key only a device that is theirs or bound to no one,
-    # exactly what register_secret lets any signed-in user do; a device bound
-    # to someone else needs an administrator. Checked before Replace, which
-    # they could tick and still never get past this.
+    # A non-admin may re-key only a device that is theirs; a device bound to
+    # someone else or to no one needs an administrator, as in register_secret,
+    # where a non-admin binds an unbound device only with its own key. A
+    # confirm always brings a new key. Checked before Replace, which they could
+    # tick and still never get past this.
     if (
         existing is not None
         and existing.user_id is not None
@@ -485,6 +486,15 @@ async def ws_pair_confirm(
             "paired_by_other_user",
             f"This {noun} is paired to another person. Only an administrator "
             "can replace that pairing.",
+        )
+        return
+    if existing is not None and existing.user_id is None and not is_admin:
+        _LOGGER.warning("Refused pair confirm for watch_id=%s: bound to no one", watch_id)
+        connection.send_error(
+            msg["id"],
+            "paired_by_no_one",
+            f"This {noun} was paired before devices belonged to a person. Only "
+            "an administrator can replace that pairing.",
         )
         return
     if existing is not None and msg.get("replace") is not True:

@@ -10,7 +10,7 @@ The device registry and the Logbook helpers raise if touched. Pinned:
   Logbook are never touched;
 * every refusal matches ``register_secret`` for the same body, status and
   text, since both go through one validator;
-* 429 ``too_many_pending`` when the store is full or one address already
+* a code even when the store is full or one address already
   holds four requests, 503 while not loaded; the address is stored;
 * ``WAActionView``'s refused-signature path writes no Logbook row for a
   known watch while it has a code pending (it is polling with its new pair),
@@ -340,34 +340,27 @@ def test_bad_json_is_refused(env) -> None:
     assert reply.body == {"message": "Invalid JSON body"}
 
 
-def test_a_full_store_answers_429(env) -> None:
-    for index in range(env.pair_mod.PairRequestStore._MAX_ENTRIES):
+def test_a_full_store_still_gives_a_code(env) -> None:
+    cap = env.pair_mod.PairRequestStore._MAX_ENTRIES
+    for index in range(cap):
         reply = _start(env, _body(watch_id=f"watch-{index}"), remote=f"10.0.{index}.1")
         assert reply.status == 200
     reply = _start(env, _body(watch_id="one-too-many"), remote="10.1.0.1")
-    assert reply.status == 429
-    assert reply.body == {
-        "ok": False, "error": "too_many_pending", "server_time": SERVER_TIME
-    }
+    assert reply.status == 200
+    assert len(env.pair_store) == cap
     _assert_nothing_written(env)
 
 
-def test_one_address_past_four_requests_answers_429(env) -> None:
-    for index in range(4):
+def test_one_address_past_four_requests_still_gets_a_code(env) -> None:
+    for index in range(70):
         assert _start(env, _body(watch_id=f"watch-{index}")).status == 200
-    reply = _start(env, _body(watch_id="fifth"))
-    assert reply.status == 429
-    assert reply.body == {
-        "ok": False, "error": "too_many_pending", "server_time": SERVER_TIME
-    }
     assert len(env.pair_store) == 4
 
     # The same watch asking again from that address still gets a code.
-    assert _start(env, _body(watch_id="watch-0")).status == 200
+    assert _start(env, _body(watch_id="watch-69")).status == 200
     assert len(env.pair_store) == 4
     # And another address is not held back by it.
-    assert _start(env, _body(watch_id="fifth"), remote="192.0.2.11").status == 200
-    _assert_nothing_written(env)
+    assert _start(env, _body(watch_id="other"), remote="10.9.9.9").status == 200
 
 
 def test_503_while_the_integration_is_not_loaded(env) -> None:

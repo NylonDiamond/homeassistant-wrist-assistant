@@ -169,24 +169,48 @@ def test_a_new_start_replaces_the_watch_s_earlier_request(mod) -> None:
 # ── the cap ──────────────────────────────────────────────────────────────
 
 
-def test_the_store_refuses_past_its_cap_and_a_replace_still_fits(mod) -> None:
+def test_a_full_store_gives_up_its_oldest_and_a_replace_still_fits(mod) -> None:
     clock = _Clock()
     store = mod.PairRequestStore(clock=clock)
     cap = mod.PairRequestStore._MAX_ENTRIES
     assert cap == 64
-    for index in range(cap):
-        assert store.start(_fields(mod, f"watch-{index}"), remote=f"10.0.0.{index}") is not None
-    assert store.start(_fields(mod, "one-too-many"), remote="10.0.1.1") is None
+    codes = [
+        store.start(_fields(mod, f"watch-{index}"), remote=f"10.0.0.{index}").code
+        for index in range(cap)
+    ]
+    newest = store.start(_fields(mod, "one-too-many"), remote="10.0.1.1")
+    assert newest is not None
     assert len(store) == cap
+    # The oldest made room, and its device hears `expired` and asks again.
+    assert store.get(codes[0]) is None
+    assert store.status("watch-0")[0] == "expired"
+    assert store.get(codes[1]) is not None
 
-    # A watch asking again is never refused by its own old request.
-    assert store.start(_fields(mod, "watch-0"), remote="10.0.0.0") is not None
+    # A watch asking again takes only its own old request's place.
+    assert store.start(_fields(mod, "watch-1"), remote="10.0.0.1") is not None
     assert len(store) == cap
+    assert store.get(codes[2]) is not None
 
-    # Once the requests expire there is room again.
-    clock.now += 601
-    assert store.start(_fields(mod, "one-too-many"), remote="10.0.1.1") is not None
-    assert len(store) == 1
+
+def test_a_full_store_gives_up_an_outside_address_before_the_home_s(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock())
+    cap = mod.PairRequestStore._MAX_ENTRIES
+    home = store.start(_fields(mod, "home-watch"), remote="10.0.0.1")
+    for index in range(cap - 1):
+        store.start(_fields(mod, f"far-{index}"), remote=f"8.8.{index}.1")
+    store.start(_fields(mod, "far-last"), remote="8.8.200.1")
+    assert len(store) == cap
+    assert store.get(home.code) is home
+    assert store.status("far-0")[0] == "expired"
+
+
+def test_a_flood_from_outside_never_locks_the_home_out(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock())
+    for index in range(500):
+        assert store.start(_fields(mod, f"far-{index}"), remote=f"8.8.{index % 250}.{index // 250}") is not None
+    assert len(store) == mod.PairRequestStore._MAX_ENTRIES
+    home = store.start(_fields(mod, "home-watch"), remote="192.168.1.20")
+    assert store.get(home.code) is home
 
 
 def test_one_address_holds_at_most_four_requests(mod) -> None:
@@ -194,36 +218,47 @@ def test_one_address_holds_at_most_four_requests(mod) -> None:
     store = mod.PairRequestStore(clock=clock)
     per_remote = mod.PairRequestStore._MAX_PER_REMOTE
     assert per_remote == 4
-    for index in range(per_remote):
-        assert store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.9") is not None
-    assert store.start(_fields(mod, "fifth"), remote="10.0.0.9") is None
+    codes = [
+        store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.9").code
+        for index in range(per_remote)
+    ]
+    # The fifth takes the place of that address's oldest.
+    assert store.start(_fields(mod, "fifth"), remote="10.0.0.9") is not None
     assert len(store) == per_remote
+    assert store.get(codes[0]) is None
+    assert store.get(codes[1]) is not None
 
     # Another address is unaffected.
-    assert store.start(_fields(mod, "fifth"), remote="10.0.0.8") is not None
+    other = store.start(_fields(mod, "sixth"), remote="10.0.0.8")
+    assert other is not None
+    store.start(_fields(mod, "seventh"), remote="10.0.0.9")
+    assert store.get(other.code) is other
 
     # A watch asking again from the full address replaces its own entry and
     # does not count twice.
-    again = store.start(_fields(mod, "watch-0", device_name="Again"), remote="10.0.0.9")
-    assert again is not None
+    again = store.start(_fields(mod, "watch-2", device_name="Again"), remote="10.0.0.9")
     assert again.fields.device_name == "Again"
     assert sum(1 for p in store._entries.values() if p.remote == "10.0.0.9") == per_remote
 
-    # Expired requests free the address.
-    clock.now += 601
-    assert store.start(_fields(mod, "sixth"), remote="10.0.0.9") is not None
+
+def test_one_address_never_spends_the_whole_store(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock())
+    for index in range(70):
+        store.start(_fields(mod, f"watch-{index}"), remote="8.8.8.8")
+    assert len(store) == mod.PairRequestStore._MAX_PER_REMOTE
 
 
-def test_a_refused_start_keeps_the_watch_s_earlier_request(mod) -> None:
-    store = mod.PairRequestStore(
-        clock=_Clock(), code_factory=_codes("AAAAAA", "BBBBBB", "CCCCCC", "DDDDDD", "EEEEEE")
-    )
-    first = store.start(_fields(mod, "mover"), remote="10.0.0.1")
-    for index in range(4):
-        store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.2")
-    # The watch moves to the full address: refused, and its old code stays.
-    assert store.start(_fields(mod, "mover"), remote="10.0.0.2") is None
-    assert store.get(first.code) is first
+def test_a_whole_ipv6_network_counts_as_one_address(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock())
+    for index in range(70):
+        store.start(_fields(mod, f"watch-{index}"), remote=f"2001:db8:1:2::{index + 1:x}")
+    assert len(store) == mod.PairRequestStore._MAX_PER_REMOTE
+    # Another network has its own share, and a mapped address reads as IPv4.
+    store.start(_fields(mod, "other"), remote="2001:db8:1:3::1")
+    assert len(store) == mod.PairRequestStore._MAX_PER_REMOTE + 1
+    assert mod._remote_group("::ffff:8.8.8.8") == "8.8.8.8"
+    assert mod._remote_group("not an address") == "not an address"
+    assert mod._remote_group(None) is None
 
 
 # ── where a request came from ────────────────────────────────────────────

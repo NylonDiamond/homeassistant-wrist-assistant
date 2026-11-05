@@ -27,6 +27,7 @@ import ast
 import asyncio
 import base64
 import contextlib
+import hmac
 import importlib.util
 import inspect
 import logging
@@ -192,6 +193,7 @@ def _register_view_class() -> type:
         "Response": _Response,
         "HomeAssistantView": _View,
         "DOMAIN": "wrist_assistant",
+        "hmac": hmac,
         "LIBRARY_OWNER_ID": "library",
         "WA_PROTOCOL_VERSION": 2,
         "DEFAULT_HMAC_ALGO": "hmac-sha256",
@@ -280,6 +282,26 @@ def test_a_legacy_entry_can_be_claimed_through_the_view(env) -> None:
     reply = _post(env, {}, BOB)
     assert reply.status == 200, reply.body
     assert env.store.get("watch-1").user_id == "bob"
+
+
+def test_a_non_admin_cannot_put_a_new_key_on_a_legacy_entry(env) -> None:
+    """An entry bound to no one belongs to whoever holds its key. A signed-in
+    user with a different key would take the device's identity."""
+    env.store.register("watch-1", SECRET_A, "test")
+    reply = _post(env, {"secret_b64": SECRET_B}, BOB)
+    assert reply.status == 403
+    entry = env.store.get("watch-1")
+    assert entry.secret_b64 == SECRET_A
+    assert entry.user_id is None
+
+
+def test_an_admin_may_put_a_new_key_on_a_legacy_entry(env) -> None:
+    env.store.register("watch-1", SECRET_A, "test")
+    reply = _post(env, {"secret_b64": SECRET_B}, ROOT)
+    assert reply.status == 200, reply.body
+    entry = env.store.get("watch-1")
+    assert entry.secret_b64 == SECRET_B
+    assert entry.user_id == "root"
 
 
 def test_overlong_fields_are_refused(env) -> None:
