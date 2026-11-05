@@ -562,7 +562,7 @@
           "devices": ["watch", "iphone"],
           "type": "enum",
           "label": "Swipe to the next camera",
-          "help": "Slide along the bottom edge to change camera.",
+          "help": "Slide along the bottom of the picture to change camera. On the watch, slide along the bottom edge.",
           "default": "Medium",
           "options": [
             {"value": "Off", "label": "Off"},
