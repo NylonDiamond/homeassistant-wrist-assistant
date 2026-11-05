@@ -23,6 +23,7 @@ import contextlib
 import copy
 import importlib.util
 import sys
+import time
 import types
 import uuid
 from dataclasses import dataclass, field
@@ -227,6 +228,7 @@ def _loaded_modules():
         # Only `ws_render_values` reaches for this, and the real one pulls in
         # the whole bundle path; the name is what the import needs.
         _stub(f"{_PKG}.bundle_ops", template_text=str)
+        _load("template_guard")
         # The parts library has its own tests; the ws module only needs the
         # two names to import.
         _stub(
@@ -1804,3 +1806,71 @@ def test_unsubscribing_after_a_reload_stops_the_events(env) -> None:
     phone.subscriptions.pop(7)()
     env.save_document("watch-A")
     assert phone.events == []
+
+
+# ── the preview's renders ────────────────────────────────────────────────
+
+
+class _PreviewTemplate:
+    def __init__(self, source: str, _hass: Any) -> None:
+        self.source = source
+
+    def async_render(self, parse_result: bool = True) -> Any:
+        if self.source == "slow":
+            end = time.monotonic() + 30
+            while time.monotonic() < end:
+                pass
+        if self.source == "boom":
+            raise ValueError("unknown filter")
+        return self.source
+
+
+def test_a_preview_renders_each_key_on_its_own(env, monkeypatch) -> None:
+    monkeypatch.setattr(env.ws, "Template", _PreviewTemplate)
+    guard_mod = sys.modules[f"{_PKG}.template_guard"]
+    monkeypatch.setattr(
+        guard_mod, "GUARD", guard_mod.TemplateGuard(render_seconds=0.1, batch_seconds=1.0)
+    )
+    results = env.call(
+        env.ws.ws_render_values,
+        templates={
+            "good": "fine",
+            "bad": "boom",
+            "empty": "  ",
+            "slow": "slow",
+            "huge": "x" * (guard_mod.MAX_TEMPLATE_CHARS + 1),
+            "after": "still fine",
+        },
+    )["results"]
+    assert results["good"] == {"ok": True, "value": "fine"}
+    assert results["bad"] == {"ok": False, "error": "unknown filter"}
+    assert results["empty"] == {"ok": False, "error": "empty template"}
+    assert results["slow"] == {"ok": False, "error": guard_mod.TIME_LIMIT_TEXT}
+    assert results["huge"] == {"ok": False, "error": guard_mod.template_too_long_text()}
+    assert results["after"] == {"ok": True, "value": "still fine"}
+
+
+def test_a_preview_past_its_key_limit_answers_for_the_rest(env, monkeypatch) -> None:
+    monkeypatch.setattr(env.ws, "Template", _PreviewTemplate)
+    limit = env.ws.RENDER_VALUES_MAX_KEYS
+    results = env.call(
+        env.ws.ws_render_values, templates={f"k{i}": "fine" for i in range(limit + 2)}
+    )["results"]
+    assert len(results) == limit + 2
+    assert results["k0"] == {"ok": True, "value": "fine"}
+    assert results[f"k{limit}"]["ok"] is False
+    assert "at most" in results[f"k{limit}"]["error"]
+
+
+def test_a_preview_is_charged_to_the_signed_in_user(env, monkeypatch) -> None:
+    monkeypatch.setattr(env.ws, "Template", _PreviewTemplate)
+    guard_mod = sys.modules[f"{_PKG}.template_guard"]
+    seen: list[str] = []
+
+    async def jobs(caller, work, **_kw):
+        seen.append(caller)
+        return [guard_mod.Outcome(guard_mod.OK, value="v") for _ in work]
+
+    monkeypatch.setattr(env.ws, "async_guarded_jobs", jobs)
+    env.call(env.ws.ws_render_values, templates={"a": "fine"})
+    assert seen == ["user:root"]

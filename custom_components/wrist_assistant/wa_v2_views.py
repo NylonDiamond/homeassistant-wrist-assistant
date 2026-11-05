@@ -218,6 +218,7 @@ from .wa_pair_requests import (
     validate_pair_fields,
     validate_pair_start,
 )
+from .template_guard import caller_for
 from .watch_addresses import (
     INVALID_URL_ERROR,
     InvalidAddressError,
@@ -1102,6 +1103,7 @@ class WADeltaView(HomeAssistantView):
                 or custom_entity_ids is not None
             ),
             templates=templates,
+            template_caller=caller_for(secret_entry.user_id, validated.watch_id),
             custom_entity_ids=custom_entity_ids,
             complications_token=complications_token,
             voices_hash=voices_hash,
@@ -1443,6 +1445,12 @@ async def _op_list(ctx: _OpContext) -> Response:
     return ctx.signed_json(result)
 
 
+def _template_caller(ctx: _OpContext) -> str:
+    """Who a signed template render counts against: the device's bound user,
+    so one person's devices share one set of limits."""
+    return caller_for(ctx.user_id, ctx.watch_id)
+
+
 async def _op_bundle(ctx: _OpContext) -> Response:
     """Every text source on one watch face, in a single signed round trip.
 
@@ -1472,7 +1480,10 @@ async def _op_bundle(ctx: _OpContext) -> Response:
     except BundleRequestError as err:
         return Response(status=400, text=str(err))
 
-    return ctx.signed_json(await async_run_bundle(ctx.hass, asked))
+    template_result = functools.partial(async_template_result, caller=_template_caller(ctx))
+    return ctx.signed_json(
+        await async_run_bundle(ctx.hass, asked, template_result=template_result)
+    )
 
 
 async def _op_states_batch(ctx: _OpContext) -> Response:
@@ -1734,7 +1745,9 @@ async def _op_template(ctx: _OpContext) -> Response:
     JSON types.
     """
     try:
-        result = await async_template_result(ctx.hass, ctx.payload)
+        result = await async_template_result(
+            ctx.hass, ctx.payload, caller=_template_caller(ctx)
+        )
     except OpError as err:
         return _op_failed(ctx, err)
     return ctx.signed_json(result)

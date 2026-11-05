@@ -157,6 +157,7 @@ def delta():
             "WANonceCache": object,
             "WristAssistantData": object,
             "DOMAIN": DOMAIN,
+            "caller_for": lambda user_id, device_id: f"{user_id}/{device_id}",
             "_LOGGER": logging.getLogger("test_delta_view_phone"),
             "orjson": types.SimpleNamespace(
                 loads=json.loads,

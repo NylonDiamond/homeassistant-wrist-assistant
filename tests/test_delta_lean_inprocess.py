@@ -32,6 +32,7 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import time
 import types
 from datetime import timedelta
 from pathlib import Path
@@ -766,6 +767,197 @@ def test_a_template_error_and_an_empty_render_are_two_answers(coordinator) -> No
         _change(hass, coord, sensor, "True")
         status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
         assert not body or not body.get("events")
+
+    asyncio.run(run())
+
+
+# ── a template renders off the loop, under its limits ────────────────────
+
+
+def _spin_template(hass: Any, sensor: str, slow_sources: set[str], counts: dict[str, int]):
+    class _Template:
+        def __init__(self, source: str, _hass: Any) -> None:
+            self.source = source
+
+        def async_render_to_info(self) -> _RenderInfo:
+            counts[self.source] = counts.get(self.source, 0) + 1
+            if self.source in slow_sources:
+                end = time.monotonic() + 30
+                while time.monotonic() < end:
+                    pass
+            return _RenderInfo(hass.states.get(sensor).state, {sensor})
+
+    return _Template
+
+
+def _fast_guard(module: Any, monkeypatch: Any, **kwargs: Any) -> None:
+    guard_mod = module.template_guard
+    kwargs.setdefault("render_seconds", 0.1)
+    kwargs.setdefault("batch_seconds", 0.5)
+    monkeypatch.setattr(guard_mod, "GUARD", guard_mod.TemplateGuard(**kwargs))
+
+
+def test_a_slow_template_reads_as_an_error_and_is_left_alone(coordinator, monkeypatch) -> None:
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    counts: dict[str, int] = {}
+    module.Template = _spin_template(hass, sensor, {"slow"}, counts)
+    _fast_guard(module, monkeypatch)
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[], templates={"bad": "slow", "good": "fine"})
+        by_id = {e["entity_id"]: e for e in body["events"]}
+        assert by_id["template.bad"]["error"] is True
+        assert by_id["template.good"]["lines"] == ["1"]
+
+        # Polls and changes after it leave the slow one alone for a while.
+        _change(hass, coord, sensor, "2")
+        status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert [e["entity_id"] for e in body["events"]] == ["template.good"]
+        assert counts["slow"] == 1
+
+        # A poll that sends the same templates again does not earn another
+        # run either, and still hears that this one has no value.
+        status, body = await _poll(
+            coord, since=body["next_cursor"], timeout=0, templates={"bad": "slow", "good": "fine"}
+        )
+        assert counts["slow"] == 1
+        by_id = {e["entity_id"]: e for e in body["events"]}
+        assert by_id["template.bad"]["error"] is True
+
+        # Then it gets another try.
+        session = coord._sessions["w1"]
+        session.template_held_back["slow"] = hass.loop.time() - 1
+        status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert counts["slow"] == 2
+
+    asyncio.run(run())
+
+
+def test_the_loop_answers_while_a_delta_template_runs(coordinator, monkeypatch) -> None:
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    module.Template = _spin_template(hass, sensor, {"slow"}, {})
+    _fast_guard(module, monkeypatch, render_seconds=0.3)
+
+    async def run() -> None:
+        late: list[float] = []
+
+        async def beat() -> None:
+            while True:
+                before = time.monotonic()
+                await asyncio.sleep(0.01)
+                late.append(time.monotonic() - before - 0.01)
+
+        beater = asyncio.create_task(beat())
+        await _poll(coord, entities=[], templates={"bad": "slow"})
+        beater.cancel()
+        assert len(late) > 5
+        assert max(late) < 0.15
+
+    asyncio.run(run())
+
+
+def test_a_refused_render_keeps_the_value_and_comes_due_again(coordinator, monkeypatch) -> None:
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    module.Template = _spin_template(hass, sensor, set(), {})
+    guard_mod = module.template_guard
+    _fast_guard(module, monkeypatch)
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[], templates={"t1": "fine"})
+        assert body["events"][0]["lines"] == ["1"]
+        session = coord._sessions["w1"]
+
+        real = guard_mod.GUARD.async_run
+
+        async def refuse(_caller, jobs, **_kw):
+            return [guard_mod.Outcome(guard_mod.BUDGET, error="later") for _ in jobs]
+
+        guard_mod.GUARD.async_run = refuse
+        _change(hass, coord, sensor, "2")
+        status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert not body or not body.get("events")
+        assert session.template_values["t1"] == "1"
+        assert "t1" not in session.template_deps
+
+        guard_mod.GUARD.async_run = real
+        status, body = await _poll(coord, since=coord._cursor, timeout=0)
+        assert body["events"][0]["lines"] == ["2"]
+
+    asyncio.run(run())
+
+
+def test_a_render_a_newer_poll_overtook_writes_nothing(coordinator, monkeypatch) -> None:
+    """Its reply has no reader, so the newer poll must still find the change."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    module.Template = _spin_template(hass, sensor, set(), {})
+    guard_mod = module.template_guard
+    _fast_guard(module, monkeypatch)
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[], templates={"t1": "fine"})
+        session = coord._sessions["w1"]
+        cursor = body["next_cursor"]
+        _change(hass, coord, sensor, "2")
+
+        real = guard_mod.GUARD.async_run
+        overtaken = asyncio.Event()
+        entered = asyncio.Event()
+
+        async def held(caller, jobs, **kw):
+            entered.set()
+            await overtaken.wait()
+            return await real(caller, jobs, **kw)
+
+        guard_mod.GUARD.async_run = held
+        old_poll = asyncio.create_task(_poll(coord, since=cursor, timeout=0))
+        await entered.wait()
+        guard_mod.GUARD.async_run = real
+        status, body = await _poll(coord, since=cursor, timeout=0)
+        assert body["events"][0]["lines"] == ["2"]
+        overtaken.set()
+        await old_poll
+        assert session.template_values["t1"] == "2"
+
+    asyncio.run(run())
+
+
+def test_a_change_during_the_first_renders_wakes_the_poll(coordinator, monkeypatch) -> None:
+    """The poll was not waiting yet, so nothing else would wake it."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    other = "light.other"
+    hass.states.set(sensor, "1")
+    hass.states.set(other, "off")
+    module.Template = _spin_template(hass, sensor, set(), {})
+    guard_mod = module.template_guard
+    _fast_guard(module, monkeypatch)
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[other], templates={"t1": "fine"})
+        cursor = body["next_cursor"]
+        session = coord._sessions["w1"]
+        session.template_deps.pop("t1")
+
+        real = guard_mod.GUARD.async_run
+
+        async def change_during(caller, jobs, **kw):
+            answer = await real(caller, jobs, **kw)
+            _change(hass, coord, other, "on")
+            return answer
+
+        guard_mod.GUARD.async_run = change_during
+        status, body = await asyncio.wait_for(_poll(coord, since=cursor, timeout=5), 2)
+        guard_mod.GUARD.async_run = real
+        assert status == 200
+        assert other in [e["entity_id"] for e in body["events"]]
 
     asyncio.run(run())
 

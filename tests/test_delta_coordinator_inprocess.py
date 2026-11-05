@@ -139,6 +139,12 @@ def _load_api():
         log_first_sync=lambda *a, **k: None,
         log_session_dropped=lambda *a, **k: None,
     )
+    guard_spec = importlib.util.spec_from_file_location(
+        "wa_test_pkg.template_guard", _API_PATH.with_name("template_guard.py")
+    )
+    guard = importlib.util.module_from_spec(guard_spec)
+    sys.modules["wa_test_pkg.template_guard"] = guard
+    guard_spec.loader.exec_module(guard)
     spec = importlib.util.spec_from_file_location("wa_test_pkg.api", _API_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules["wa_test_pkg.api"] = module

@@ -110,7 +110,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import functools
 import logging
+from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
@@ -121,7 +123,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.template import Template, TemplateError
+from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
 from .bundle_ops import template_text as _template_text
@@ -155,6 +157,12 @@ from .list_items import (
 from .listener_relay import COMPLICATIONS, listener_relay
 from .panel_access import is_admin, may_manage_owner, require_owner
 from .parts_store import PartsStore, PartsStoreError
+from .template_guard import (
+    MAX_TEMPLATE_CHARS,
+    async_guarded_jobs,
+    caller_for,
+    template_too_long_text,
+)
 from .statistics_series import (
     PERIODS,
     STAT_TYPES,
@@ -184,6 +192,9 @@ _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
 _CMD_OWNER_SUBSCRIBE = f"{DOMAIN}/complications/owner_subscribe"
 _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
+# The most templates one preview asks for at once. A page has at most the
+# delta's 100 subscriptions, each with a Show only when beside it.
+RENDER_VALUES_MAX_KEYS = 256
 # The save history of one record. Named apart from `_CMD_HISTORY` below, which
 # is recorder data for a chart and has nothing to do with past revisions.
 _CMD_SAVE_HISTORY = f"{DOMAIN}/complications/history"
@@ -1703,8 +1714,8 @@ def ws_move_owner(
         vol.Required("templates"): {str: str},
     }
 )
-@callback
-def ws_render_values(
+@websocket_api.async_response
+async def ws_render_values(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Render a batch of Jinja templates for the preview.
@@ -1718,19 +1729,40 @@ def ws_render_values(
     result to text the way the watch's decoder does (``bundle_ops``'s
     ``template_text``, which ``op=bundle`` uses too), so the browser and the
     wrist read one string rather than two formattings of one render.
+
+    The renders run under ``template_guard``'s limits, off the event loop and
+    charged to this user, the same limits a device of theirs has. A template
+    stopped by one of them is that key's error.
     """
     results: dict[str, dict[str, Any]] = {}
+    keys: list[str] = []
+    jobs: list[Callable[[], Any]] = []
     for key, template_str in msg["templates"].items():
         if not template_str.strip():
             results[key] = {"ok": False, "error": "empty template"}
-            continue
-        try:
-            value = Template(template_str, hass).async_render(parse_result=True)
-        except TemplateError as err:
-            results[key] = {"ok": False, "error": str(err)}
-            continue
-        results[key] = {"ok": True, "value": _template_text(value)}
+        elif len(template_str) > MAX_TEMPLATE_CHARS:
+            results[key] = {"ok": False, "error": template_too_long_text()}
+        elif len(keys) >= RENDER_VALUES_MAX_KEYS:
+            results[key] = {
+                "ok": False,
+                "error": f"A preview renders at most {RENDER_VALUES_MAX_KEYS} templates at once",
+            }
+        else:
+            keys.append(key)
+            jobs.append(functools.partial(_render_native, hass, template_str))
+    caller = caller_for(getattr(connection.user, "id", None))
+    outcomes = await async_guarded_jobs(caller, jobs)
+    for key, outcome in zip(keys, outcomes):
+        if outcome.ok:
+            results[key] = {"ok": True, "value": _template_text(outcome.value)}
+        else:
+            results[key] = {"ok": False, "error": outcome.error}
     connection.send_result(msg["id"], {"results": results})
+
+
+def _render_native(hass: HomeAssistant, template_str: str) -> Any:
+    """One preview render. Runs in the guard's worker thread."""
+    return Template(template_str, hass).async_render(parse_result=True)
 
 
 @websocket_api.websocket_command(

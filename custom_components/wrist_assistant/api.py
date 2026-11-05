@@ -9,6 +9,7 @@ handlers call directly.
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import logging
 import math
@@ -24,6 +25,7 @@ from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
+from . import template_guard
 from .logbook_events import log_first_sync
 
 DEFAULT_TIMEOUT_SECONDS = 45
@@ -60,6 +62,13 @@ DELTA_WATCH_CONFIG_KINDS = (
 # Assistant's own STATE_UNAVAILABLE, spelled out so the module reads nothing
 # more from homeassistant.const than it did.
 REMOVED_ENTITY_STATE = "unavailable"
+
+# A render this long is worth a line in the log.
+_SLOW_RENDER_SECONDS = 0.05
+# How long a template stopped by a limit is left alone, and how many a session
+# keeps. A poll that keeps sending new slow ones meets the caller's budget.
+_TEMPLATE_HOLD_BACK_SECONDS = 60.0
+_TEMPLATE_HOLD_BACK_MAX = 256
 
 _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
@@ -125,6 +134,15 @@ class WatchSession:
     # The last value sent per template, None for a render that raised.
     template_values: dict[str, str | None] = field(default_factory=dict)
     template_deps: dict[str, _TemplateDeps] = field(default_factory=dict)
+    # Who this session's renders count against (`template_guard.caller_for`).
+    template_caller: str | None = None
+    # Template sources stopped by a limit, each with the loop time it may run
+    # again. By source rather than by tile, since a poll that sends its
+    # templates clears the rest of what is kept per tile.
+    template_held_back: dict[str, float] = field(default_factory=dict)
+    # Counts polls, so a render that finishes after a newer poll came in knows
+    # its answer has no reader and leaves the kept values alone.
+    poll_serial: int = 0
     last_seen: datetime = field(default_factory=dt_util.utcnow)
     first_seen: datetime = field(default_factory=dt_util.utcnow)
     last_poll_interval: timedelta | None = None
@@ -1365,6 +1383,7 @@ class DeltaCoordinator:
         attribute_diffs: bool = False,
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
+        template_caller: str | None = None,
         custom_entity_ids: list[str] | None = None,
         complications_token: int | None = None,
         voices_hash: str | None = None,
@@ -1500,6 +1519,7 @@ class DeltaCoordinator:
             attribute_diffs=attribute_diffs,
             include_summary=include_summary,
             templates=templates,
+            template_caller=template_caller,
             custom_entity_ids=custom_entity_ids,
             applied_complications_token=complications_token,
             held=held,
@@ -1689,7 +1709,7 @@ class DeltaCoordinator:
                         "Could not mark %s %s delivered", watch_id, kind, exc_info=True
                     )
 
-    def _collect(
+    async def _collect(
         self,
         session: WatchSession,
         since_cursor: int,
@@ -1699,7 +1719,13 @@ class DeltaCoordinator:
         attribute_diffs: bool,
     ) -> tuple[list[dict[str, Any]], int]:
         """The watch's entity changes past ``since_cursor`` and its templates
-        whose value moved, with the cursor to hand back."""
+        whose value moved, with the cursor to hand back.
+
+        The entities are scanned first and the renders awaited after, so the
+        cursor never claims more than was scanned. A change during the renders
+        is past that cursor: it reaches the next collect, which renders what
+        depends on it. With no template due, this never gives up the loop.
+        """
         changed_ids = self._changed_entity_ids(since_cursor)
         events, cursor = self._collect_events(
             since_cursor=since_cursor,
@@ -1710,7 +1736,7 @@ class DeltaCoordinator:
             session=session if attribute_diffs else None,
             attribute_diffs=attribute_diffs,
         )
-        events.extend(self._evaluate_templates(session, changed_ids=changed_ids))
+        events.extend(await self._evaluate_templates(session, changed_ids=changed_ids))
         return events, cursor
 
     async def _handle_poll_inner(
@@ -1728,6 +1754,7 @@ class DeltaCoordinator:
         attribute_diffs: bool = False,
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
+        template_caller: str | None = None,
         custom_entity_ids: list[str] | None = None,
         applied_complications_token: int | None = None,
         held: HeldConfig | None = None,
@@ -1752,6 +1779,8 @@ class DeltaCoordinator:
         if not is_new_session:
             session.last_poll_interval = now - session.last_seen
         session.last_seen = now
+        session.poll_serial += 1
+        session.template_caller = template_caller or template_guard.caller_for(None, watch_id)
 
         # Session listeners (the diagnostic sensors, new-watch discovery) only
         # show which sessions exist and each one's entity list, so they run
@@ -1884,7 +1913,7 @@ class DeltaCoordinator:
                 session.entities, slim=slim, compact=compact,
                 session=session if attribute_diffs else None, attribute_diffs=attribute_diffs,
             )
-            snapshot_events.extend(self._snapshot_templates(session))
+            snapshot_events.extend(await self._snapshot_templates(session))
             return 200, reply(snapshot_events, snapshot_cursor)
 
         since_cursor, invalid_since = self._parse_since(
@@ -1895,8 +1924,8 @@ class DeltaCoordinator:
 
         request_cursor = since_cursor
 
-        def collect(cursor: int) -> tuple[list[dict[str, Any]], int]:
-            return self._collect(
+        async def collect(cursor: int) -> tuple[list[dict[str, Any]], int]:
+            return await self._collect(
                 session, cursor, slim=slim, compact=compact, attribute_diffs=attribute_diffs
             )
 
@@ -1917,18 +1946,18 @@ class DeltaCoordinator:
                 resync_required=False,
             )
 
-        def timed_out() -> tuple[int, dict[str, Any] | None]:
+        async def timed_out() -> tuple[int, dict[str, Any] | None]:
             """Last scan before a held poll gives up.
 
             A change can land in the same loop tick the wait timed out, and
             the cursor about to go back must not skip it.
             """
-            events, cursor = collect(since_cursor)
+            events, cursor = await collect(since_cursor)
             if events:
                 return 200, reply(events, cursor)
             return quiet_reply(cursor)
 
-        events, next_cursor = collect(since_cursor)
+        events, next_cursor = await collect(since_cursor)
         if events:
             return 200, reply(events, next_cursor, include_details=force_delta)
 
@@ -1981,16 +2010,20 @@ class DeltaCoordinator:
             previous_waiter.set()
         self._waiters[watch_id] = waiter_event
         self._rebuild_watcher_index(watch_id)
+        # A change while the first collect's templates rendered woke nobody:
+        # this poll was not waiting yet.
+        if self._cursor > since_cursor:
+            waiter_event.set()
 
         try:
             while True:
                 remaining = deadline - self.hass.loop.time()
                 if remaining <= 0:
-                    return timed_out()
+                    return await timed_out()
                 try:
                     await asyncio.wait_for(waiter_event.wait(), timeout=remaining)
                 except TimeoutError:
-                    return timed_out()
+                    return await timed_out()
 
                 waiter_event.clear()
                 # Superseded by a newer poll (or shutdown/force_resync)? Let
@@ -2007,7 +2040,10 @@ class DeltaCoordinator:
                         return 204, None
                     waiter_event.clear()
 
-                events, next_cursor = collect(since_cursor)
+                events, next_cursor = await collect(since_cursor)
+                if self._waiters.get(watch_id) is not waiter_event:
+                    # A newer poll came in during the renders.
+                    return 204, None
                 if events:
                     return 200, reply(events, next_cursor)
                 # Woken by a complication commit (or a panel nudge) or a
@@ -2348,24 +2384,16 @@ class DeltaCoordinator:
     def _render_template_tracked(
         self, template_str: str,
     ) -> tuple[str | None, _TemplateDeps]:
-        """Render a template and return (value, dependencies).
+        """Render a template and return (value, dependencies). Runs in the
+        guard's worker thread (`_async_render_session`).
 
         The value is None when the render raised, so the event can say so
         (`_template_event`): a tile's "Show only when" template shows the
         tile on an error, and an empty render is a different answer.
         """
-        import time as _time
-
         tpl = Template(template_str, self.hass)
         tpl.hass = self.hass
-        t0 = _time.monotonic()
         info = tpl.async_render_to_info()
-        elapsed_ms = (_time.monotonic() - t0) * 1000
-        if elapsed_ms > 50:
-            _LOGGER.warning(
-                "Slow template render (%.0fms): %.120s",
-                elapsed_ms, template_str,
-            )
         # The dependencies are read before the result: a render that raised
         # still recorded what it read, and keeping them is what makes the
         # template render again when one of those entities changes. Empty
@@ -2385,6 +2413,105 @@ class DeltaCoordinator:
             return None, deps
         value = str(rendered).strip() if rendered is not None else ""
         return value, deps
+
+    async def _async_outcomes(
+        self, caller: str, sources: list[str]
+    ) -> list[template_guard.Outcome]:
+        """The guard's outcome for each source.
+
+        Home Assistant in debug mode refuses ``async_render_to_info`` off the
+        loop. There, as its own ``render_template`` command does, a timed
+        render in a thread decides first and the loop renders what passed. Only
+        a developer's box runs like that.
+        """
+        jobs = [functools.partial(self._render_template_tracked, s) for s in sources]
+        if not getattr(getattr(self.hass, "config", None), "debug", False):
+            return await template_guard.async_guarded_jobs(
+                caller, jobs, size_of=lambda pair: template_guard.output_chars(pair[0])
+            )
+        outcomes: list[template_guard.Outcome] = []
+        for source, job in zip(sources, jobs):
+            try:
+                late = await Template(source, self.hass).async_render_will_timeout(
+                    template_guard.RENDER_SECONDS
+                )
+            except Exception:  # noqa: BLE001 (the render below reports it)
+                late = False
+            if late:
+                outcomes.append(
+                    template_guard.Outcome(
+                        template_guard.TIMEOUT, error=template_guard.TIME_LIMIT_TEXT
+                    )
+                )
+                continue
+            try:
+                outcomes.append(template_guard.Outcome(template_guard.OK, value=job()))
+            except Exception as err:  # noqa: BLE001 (each job answers for itself)
+                outcomes.append(template_guard.Outcome(template_guard.ERROR, error=str(err)))
+        return outcomes
+
+    async def _async_render_session(
+        self, session: WatchSession, due: dict[str, str]
+    ) -> dict[str, tuple[str | None, _TemplateDeps | None]] | None:
+        """Render ``due`` ({tile id: source}) for a session, off the loop.
+
+        Answers {tile id: (value, deps)}, leaving out a tile the guard refused
+        for now, which says nothing about the template. A tile stopped by a
+        limit has the value None and no deps, and its source is held back for
+        ``_TEMPLATE_HOLD_BACK_SECONDS``, so one slow template does not spend a
+        watch's time on every poll. None when a newer poll came in during the
+        renders: it renders for itself, and writing these values would have it
+        take them as already sent.
+        """
+        serial = session.poll_serial
+        tiles = list(due)
+        sources = [due[tile] for tile in tiles]
+        caller = session.template_caller or template_guard.caller_for(None, session.watch_id)
+        outcomes = await self._async_outcomes(caller, sources)
+        if session.poll_serial != serial:
+            return None
+        rendered: dict[str, tuple[str | None, _TemplateDeps | None]] = {}
+        now = self.hass.loop.time()
+        for tile, source, outcome in zip(tiles, sources, outcomes):
+            if outcome.refused:
+                continue
+            if outcome.ok:
+                value, deps = outcome.value
+                if outcome.seconds > _SLOW_RENDER_SECONDS:
+                    _LOGGER.warning(
+                        "Slow template render (%.0fms): %.120s",
+                        outcome.seconds * 1000,
+                        source,
+                    )
+                rendered[tile] = (value, deps)
+            elif outcome.status == template_guard.ERROR:
+                _LOGGER.debug("Template render failed: %s: %.120s", outcome.error, source)
+                rendered[tile] = (None, _TemplateDeps(frozenset(), frozenset(), False))
+            else:
+                _LOGGER.warning("Template stopped: %s: %.120s", outcome.error, source)
+                self._hold_back(session, source, now)
+                rendered[tile] = (None, None)
+        return rendered
+
+    @staticmethod
+    def _hold_back(session: WatchSession, source: str, now: float) -> None:
+        held = session.template_held_back
+        held[source] = now + _TEMPLATE_HOLD_BACK_SECONDS
+        if len(held) > _TEMPLATE_HOLD_BACK_MAX:
+            for kept_source in [s for s, until in held.items() if until <= now]:
+                del held[kept_source]
+        while len(held) > _TEMPLATE_HOLD_BACK_MAX:
+            del held[next(iter(held))]
+
+    @staticmethod
+    def _is_held_back(session: WatchSession, source: str, now: float) -> bool:
+        until = session.template_held_back.get(source)
+        if until is None:
+            return False
+        if until <= now:
+            del session.template_held_back[source]
+            return False
+        return True
 
     @staticmethod
     def _template_event(tile_id: str, value: str | None, now_ts: float) -> dict[str, Any]:
@@ -2407,7 +2534,7 @@ class DeltaCoordinator:
             event["error"] = True
         return event
 
-    def _evaluate_templates(
+    async def _evaluate_templates(
         self, session: WatchSession, changed_ids: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Render subscribed templates and return events for changed values.
@@ -2419,54 +2546,79 @@ class DeltaCoordinator:
         if not session.templates:
             return []
 
-        changed: list[dict[str, Any]] = []
-        now_ts = dt_util.utcnow().timestamp()
-
         # Pre-compute changed domains once for all templates
         changed_domains: set[str] | None = None
         if changed_ids:
             changed_domains = {eid.split(".", 1)[0] for eid in changed_ids}
 
+        changed: list[dict[str, Any]] = []
+        now_ts = dt_util.utcnow().timestamp()
+        loop_now = self.hass.loop.time()
+        due: dict[str, str] = {}
         for tile_id, template_str in session.templates.items():
             # Skip render if deps are cached and no relevant entity changed
             cached_deps = session.template_deps.get(tile_id)
             if cached_deps is not None and changed_ids is not None:
                 if not self._template_needs_render(cached_deps, changed_ids, changed_domains):
                     continue
+            if self._is_held_back(session, template_str, loop_now):
+                # A poll that sent its templates again cleared the value. It
+                # still hears that this one has none.
+                if tile_id not in session.template_values:
+                    session.template_values[tile_id] = None
+                    changed.append(self._template_event(tile_id, None, now_ts))
+                continue
+            due[tile_id] = template_str
+        if not due:
+            return changed
 
-            value: str | None
-            try:
-                value, deps = self._render_template_tracked(template_str)
+        rendered = await self._async_render_session(session, due)
+        if rendered is None:
+            return []
+
+        for tile_id in due:
+            if tile_id not in rendered:
+                # Refused for now: what it read is unknown, so it is due again.
+                session.template_deps.pop(tile_id, None)
+                continue
+            value, deps = rendered[tile_id]
+            if deps is None:
+                session.template_deps.pop(tile_id, None)
+            else:
                 session.template_deps[tile_id] = deps
-            except Exception:
-                value = None
-                session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
-
             if tile_id not in session.template_values or session.template_values[tile_id] != value:
                 session.template_values[tile_id] = value
                 changed.append(self._template_event(tile_id, value, now_ts))
 
         return changed
 
-    def _snapshot_templates(
+    async def _snapshot_templates(
         self, session: WatchSession
     ) -> list[dict[str, Any]]:
         """Render all subscribed templates for a full snapshot response."""
         if not session.templates:
             return []
 
+        loop_now = self.hass.loop.time()
+        due = {
+            tile_id: template_str
+            for tile_id, template_str in session.templates.items()
+            if not self._is_held_back(session, template_str, loop_now)
+        }
+        rendered = await self._async_render_session(session, due) if due else {}
+        if rendered is None:
+            return []
+
         results: list[dict[str, Any]] = []
         now_ts = dt_util.utcnow().timestamp()
-
-        for tile_id, template_str in session.templates.items():
-            value: str | None
-            try:
-                value, deps = self._render_template_tracked(template_str)
+        for tile_id in session.templates:
+            # A snapshot answers for every template. One with no render to
+            # show reads as an error, and stays due without deps.
+            value, deps = rendered.get(tile_id, (None, None))
+            if deps is None:
+                session.template_deps.pop(tile_id, None)
+            else:
                 session.template_deps[tile_id] = deps
-            except Exception:
-                value = None
-                session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
-
             session.template_values[tile_id] = value
             results.append(self._template_event(tile_id, value, now_ts))
 

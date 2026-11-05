@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -554,3 +555,76 @@ def test_template_text_writes_what_the_watch_writes():
 def test_a_rendered_object_is_flattened_the_same_way_in_a_bundle():
     body = run(async_run_bundle(_FakeHass(), request(template="{{ dict }}")))
     assert body["template"] == '{"a":1,"b":2}'
+
+
+# ── a template runs under its limits ─────────────────────────────────────
+
+
+class _SlowTemplate(_StubTemplate):
+    """Loops in Python, as a long Jinja loop does, for a source named `slow`."""
+
+    def async_render(self, variables: object = None) -> object:
+        if self.source == "slow":
+            end = time.monotonic() + 30
+            while time.monotonic() < end:
+                pass
+        return super().async_render(variables)
+
+
+@pytest.fixture
+def _fast_guard(monkeypatch):
+    guard_mod = sys.modules[f"{_PKG_NAME}.template_guard"]
+    guard = guard_mod.TemplateGuard(render_seconds=0.1, batch_seconds=0.3, budget_seconds=0.1)
+    monkeypatch.setattr(guard_mod, "GUARD", guard)
+    sys.modules["homeassistant.helpers.template"].Template = _SlowTemplate
+    return guard
+
+
+def test_a_long_template_is_stopped_with_a_template_error(_fast_guard):
+    with pytest.raises(OpError) as caught:
+        asyncio.run(bundle_ops.async_template_result(_FakeHass(), {"template": "slow"}))
+    assert caught.value.status == 400
+    assert "maximum execution time" in caught.value.body["error"]
+
+
+def test_a_stopped_template_costs_a_bundle_that_one_section(_fast_guard):
+    hass = _FakeHass(_FakeState("light.a", "on"))
+    body = asyncio.run(async_run_bundle(hass, request(template="slow", states=["light.a"])))
+    assert body["template"] is None
+    assert "maximum execution time" in body["errors"]["template"]
+    assert body["states"]["light.a"]["state"] == "on"
+
+
+def test_a_template_over_the_size_limit_is_refused_before_it_runs(_fast_guard):
+    guard_mod = sys.modules[f"{_PKG_NAME}.template_guard"]
+    source = "x" * (guard_mod.MAX_TEMPLATE_CHARS + 1)
+    with pytest.raises(OpError) as caught:
+        asyncio.run(bundle_ops.async_template_result(_FakeHass(), {"template": source}))
+    assert caught.value.status == 400
+    # A large but sane body is not.
+    body = asyncio.run(
+        bundle_ops.async_template_result(
+            _FakeHass(), {"template": "x" * guard_mod.MAX_TEMPLATE_CHARS}
+        )
+    )
+    assert body["ok"] is True
+
+
+def test_a_caller_past_its_budget_hears_429_and_another_does_not(_fast_guard):
+    async def scenario():
+        hass = _FakeHass()
+        with pytest.raises(OpError):
+            await bundle_ops.async_template_result(hass, {"template": "slow"}, caller="user:a")
+        for _ in range(100):
+            if not _fast_guard._running:
+                break
+            await asyncio.sleep(0.01)
+        with pytest.raises(OpError) as refused:
+            await bundle_ops.async_template_result(hass, {"template": "{{ x }}"}, caller="user:a")
+        fine = await bundle_ops.async_template_result(hass, {"template": "{{ x }}"}, caller="user:b")
+        return refused.value, fine
+
+    refused, fine = asyncio.run(scenario())
+    assert refused.status == 429
+    assert refused.body["ok"] is False
+    assert fine["ok"] is True

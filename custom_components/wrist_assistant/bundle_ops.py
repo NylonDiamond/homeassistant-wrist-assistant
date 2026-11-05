@@ -46,6 +46,12 @@ from .history_series import (
     normalize_mode,
 )
 from .list_items import ListItemsError, async_list_items
+from .template_guard import (
+    MAX_TEMPLATE_CHARS,
+    async_guarded_jobs,
+    caller_for,
+    template_too_long_text,
+)
 from .statistics_series import (
     RECORDER_UNAVAILABLE,
     StatisticsSeriesError,
@@ -446,7 +452,7 @@ async def async_list_result(
 
 
 async def async_template_result(
-    hass: HomeAssistant, payload: dict[str, Any]
+    hass: HomeAssistant, payload: dict[str, Any], *, caller: str | None = None
 ) -> dict[str, Any]:
     """Render a Jinja template. Payload: `{template, variables?}`.
 
@@ -468,9 +474,15 @@ async def async_template_result(
     tapped), template tiles and the Music Assistant favourites use this op,
     and the delta's template subscriptions render the same way.
 
+    It renders under `template_guard`'s limits, off the event loop. `caller`
+    is who those limits are kept for (`template_guard.caller_for`). A template
+    that runs over or answers too much is a 400, as any template error is. A
+    render refused for now (too many at once, the caller's time used up) is a
+    429.
+
     Reply: `{"ok": true, "result": <native>}`.
     """
-    from homeassistant.helpers.template import Template, TemplateError
+    from homeassistant.helpers.template import Template
 
     template_str = payload.get("template")
     variables = payload.get("variables")
@@ -479,15 +491,21 @@ async def async_template_result(
     if variables is not None and not isinstance(variables, dict):
         raise OpError("variables must be an object")
 
-    try:
-        tpl = Template(template_str, hass)
-        result = tpl.async_render(variables=variables)
-    except TemplateError as err:
-        raise OpError(
-            str(err), status=400, body={"ok": False, "error": str(err)}
-        ) from err
+    if len(template_str) > MAX_TEMPLATE_CHARS:
+        text = template_too_long_text()
+        raise OpError(text, status=400, body={"ok": False, "error": text})
 
-    return {"ok": True, "result": result}
+    def render() -> Any:
+        return Template(template_str, hass).async_render(variables=variables)
+
+    outcome = (await async_guarded_jobs(caller or caller_for(None), [render]))[0]
+    if not outcome.ok:
+        raise OpError(
+            outcome.error or "template failed",
+            status=429 if outcome.refused else 400,
+            body={"ok": False, "error": outcome.error},
+        )
+    return {"ok": True, "result": outcome.value}
 
 
 # ── the bundle ───────────────────────────────────────────────────────────
