@@ -187,13 +187,13 @@ describe("the catalog", () => {
 
   // The integration keeps only the `iphone` keys on a phone's settings, and
   // its own copy of that list is held to this file by a Python test.
-  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 32", () => {
+  it("says for every row which devices read it: the watch for all but the Page look and Tile gap, the iPhone for 33", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
       expect([["watch"], ["watch", "iphone"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
-    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(32);
-    expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
+    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(33);
+    expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook", "phoneTileGap"]);
     expect(
       settings
         .filter((s) => !s.devices!.includes("iphone"))

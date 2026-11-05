@@ -8,7 +8,7 @@
 import type { HassEntityState } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import { REFERENCE_CASE } from "../renderer.js";
-import { phoneModelForScreenSize, phonePageLookOf, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
+import { phoneModelForScreenSize, phonePageLookOf, phonePagesLayout, phonePagesScreen, phoneTileGapOf } from "../phone-frame.js";
 import type { SettingDevice } from "../watch-settings.js";
 import type { WatchCatalog } from "./catalog.js";
 import { sameWatchId } from "./edit.js";
@@ -67,7 +67,7 @@ export interface ArrangeFrame {
  * when the page does not hold the tile.
  */
 export function arrangeFrame(source: ArrangeFrameSource, tile: WatchPageTile): ArrangeFrame | undefined {
-  const phone = source.device === "iphone" ? phonePagesLayout(phoneModelForScreenSize(undefined), { look: phonePageLookOf(source.behavior) }) : undefined;
+  const phone = source.device === "iphone" ? phonePagesLayout(phoneModelForScreenSize(undefined), { look: phonePageLookOf(source.behavior), tileGap: phoneTileGapOf(source.behavior) }) : undefined;
   const screen = phone === undefined ? REFERENCE_CASE.screen : phonePagesScreen(phone);
   // The device's own screen of the page: the tile's cell there, or none when
   // it is Off on that screen.

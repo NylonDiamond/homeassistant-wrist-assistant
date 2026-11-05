@@ -210,6 +210,10 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
       "watch": { icon: "applewatch" },
     },
   },
+  phoneTileGap: {
+    icon: "arrow.left.and.right", // panel's own; the iPhone's own row
+    options: same("arrow.left.and.right", ["small", "medium", "large"]),
+  },
   pageTransitionStyle: {
     icon: "rectangle.2.swap", // panel's own; the app's Default choice
     demo: "pageTransition",

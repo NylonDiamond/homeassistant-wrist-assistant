@@ -284,6 +284,19 @@
           ]
         },
         {
+          "key": "phoneTileGap",
+          "devices": ["iphone"],
+          "type": "enum",
+          "label": "Tile gap",
+          "help": "The space between tiles. Small is the same as the watch.",
+          "default": "small",
+          "options": [
+            {"value": "small", "label": "Small"},
+            {"value": "medium", "label": "Medium"},
+            {"value": "large", "label": "Large"}
+          ]
+        },
+        {
           "key": "pageTitleMode",
           "devices": ["watch", "iphone"],
           "type": "enum",

@@ -366,7 +366,7 @@ const CARD_STATES = {
   "script.movie": { entity_id: "script.movie", state: "off", attributes: {} },
 };
 
-function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers?: { name: string; version: string | null }[]; device?: "watch" | "iphone" } = {}) {
+function tileHost(t: Record<string, unknown>, opts: { behavior?: Record<string, unknown>; oneLook?: boolean; pickers?: { name: string; version: string | null }[]; device?: "watch" | "iphone" } = {}) {
   const draft = new WatchPagesDraft({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Living", items: [{ id: TILE_ID, gridCol: 0, gridRow: 0, ...t }] }] }, 1);
   const pageNow = () => (draft.document.pages as WatchPage[])[0]!;
   const host = {
@@ -379,7 +379,7 @@ function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers
     otherPages: [],
     catalog: undefined,
     cameraRefreshDefaults: { on: true, debounce: "5" },
-    behavior: undefined,
+    behavior: opts.behavior,
     musicAssistant: undefined,
     cloudTTS: undefined,
     templateRenders: new Map(),
@@ -685,7 +685,8 @@ describe("a layout on a small iPhone tile", () => {
   });
 
   it("starts the tools from a layout that draws its parts, written only when one changes", () => {
-    const { host, draft } = tileHost(TINY, { device: "iphone" });
+    // At the Large Tile gap, the tile that is too small to draw its name.
+    const { host, draft } = tileHost(TINY, { device: "iphone", behavior: { phoneTileGap: "large" } });
     // What it draws now, and what it does not draw stays hidden, with nothing
     // written: the look lit is still Standard.
     const before = text(card(host));
@@ -713,7 +714,7 @@ describe("a layout on a small iPhone tile", () => {
   it("names what a resize took, and stays quiet when it took nothing", () => {
     const model = (t: Record<string, unknown>, device: "watch" | "iphone" = "iphone") => {
       const { host } = tileHost(t, { device });
-      return arrangeFrame({ page: host.page, pages: [host.page], device, states: host.hass.states as never, icons: host.icons }, host.tile)?.model;
+      return arrangeFrame({ page: host.page, pages: [host.page], device, states: host.hass.states as never, icons: host.icons, behavior: { phoneTileGap: "large" } }, host.tile)?.model;
     };
     expect(arrangeResizeNote(model({ ...KITCHEN, colSpan: 4, rowSpan: 4 }), model({ ...KITCHEN, colSpan: 3, rowSpan: 4 }), undefined)).toBeUndefined();
     expect(arrangeResizeNote(model({ ...KITCHEN, colSpan: 4, rowSpan: 4 }), model(TINY), undefined))

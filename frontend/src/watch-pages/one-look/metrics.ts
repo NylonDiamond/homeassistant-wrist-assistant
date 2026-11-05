@@ -115,7 +115,7 @@ export const ONE_LOOK_PHONE: OneLookMetrics = Object.freeze({
   bigSize: 40, bigSubSize: 13, bigSubGap: 3, bigGap: 18,
   chartLineWidth: 2.2, rim: 1, pearlGlow: 12, underGlow: true,
   cornerRadiusMax: 22, cornerRadiusK: 1 / 3, cornerStyle: "continuous",
-  cellInset: 5, sidePadding: 11,
+  cellInset: 0.5, sidePadding: 15.5,
 });
 
 export const ONE_LOOK_WATCH: OneLookMetrics = Object.freeze({
@@ -196,21 +196,34 @@ export function oneLookScaledText(m: OneLookMetrics, scale: number, name = 1, fa
 
 // The grid under One Look (`OneLookGrid`). The app keeps its 2 pt pitch,
 // which packing and header shifts count on, and draws each tile in from its
-// cell instead: 2 + 2 x 5 apart on the iPhone, 2 + 2 x 0.5 on the watch.
+// cell instead: 2 + 2 x 0.5 apart on the watch, and on the iPhone as far as
+// its Tile gap setting asks (`phoneTileGap`, 3 unless set).
 
 export const ONE_LOOK_COLUMNS = 12;
 /** `PageGridLayout.tileSpacing`: the pitch between cells. */
 export const ONE_LOOK_TILE_SPACING = 2;
 
-/** How far a tile is drawn in from its cell, a side. A divider and a
- * spacer keep their whole cell. */
-export function oneLookCellInset(device: OneLookDevice, isDivider = false, isSpacer = false): number {
-  return isDivider || isSpacer ? 0 : oneLookMetrics(device).cellInset;
+/** An iPhone's Tile gap (`PhoneTileGap`), the `phoneTileGap` setting. */
+export type PhoneTileGap = "small" | "medium" | "large";
+
+/** What an absent setting means. */
+export const PHONE_TILE_GAP_STANDARD: PhoneTileGap = "small";
+
+/** Each gap as drawn, in points (`PhoneTileGap.points`). */
+export const PHONE_TILE_GAP_POINTS: Readonly<Record<PhoneTileGap, number>> = Object.freeze({ small: 3, medium: 6, large: 12 });
+
+/** How far a tile is drawn in from its cell, a side: on the iPhone what makes
+ * the gap `gap` asks for, on the watch its own. A divider and a spacer keep
+ * their whole cell. */
+export function oneLookCellInset(device: OneLookDevice, isDivider = false, isSpacer = false, gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): number {
+  if (isDivider || isSpacer) return 0;
+  return device === "phone" ? (PHONE_TILE_GAP_POINTS[gap] - ONE_LOOK_TILE_SPACING) / 2 : oneLookMetrics(device).cellInset;
 }
 
-/** The gap between two tiles as drawn: 12 on the iPhone, 3 on the watch. */
-export function oneLookVisibleGap(device: OneLookDevice): number {
-  return ONE_LOOK_TILE_SPACING + 2 * oneLookCellInset(device);
+/** The gap between two tiles as drawn: `gap`'s on the iPhone, 3 on the
+ * watch. */
+export function oneLookVisibleGap(device: OneLookDevice, gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): number {
+  return ONE_LOOK_TILE_SPACING + 2 * oneLookCellInset(device, false, false, gap);
 }
 
 /** The padding the grid itself keeps at the screen's sides: the watch's
@@ -220,9 +233,11 @@ export function oneLookGridSidePadding(device: OneLookDevice): number {
 }
 
 /** The grid's square unit on a screen this wide, inside the device's side
- * padding: 29.83 on a 402 pt iPhone, 15.5 on a 211 pt watch. */
-export function oneLookGridUnit(screenWidth: number, device: OneLookDevice): number {
-  const width = screenWidth - 2 * oneLookMetrics(device).sidePadding;
+ * padding: 29.08 on a 402 pt iPhone at the standard gap, 15.5 on a 211 pt
+ * watch. */
+export function oneLookGridUnit(screenWidth: number, device: OneLookDevice, gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): number {
+  const m = oneLookMetrics(device);
+  const width = screenWidth - 2 * (m.sidePadding + m.cellInset - oneLookCellInset(device, false, false, gap));
   return (width - (ONE_LOOK_COLUMNS - 1) * ONE_LOOK_TILE_SPACING) / ONE_LOOK_COLUMNS;
 }
 
@@ -236,23 +251,28 @@ export function oneLookCellSize(colSpan: number, rowSpan: number, unit: number):
 
 /** A tile's drawn size from its cell: the cell less `cellInset` a side
  * (`OneLookLayout.drawnSize(cell:device:)`). */
-export function oneLookDrawnSizeOfCell(cell: { width: number; height: number }, device: OneLookDevice): { width: number; height: number } {
-  const inset = oneLookMetrics(device).cellInset;
+export function oneLookDrawnSizeOfCell(cell: { width: number; height: number }, device: OneLookDevice, gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): { width: number; height: number } {
+  const inset = oneLookCellInset(device, false, false, gap);
   return { width: Math.max(0, cell.width - 2 * inset), height: Math.max(0, cell.height - 2 * inset) };
 }
 
 /** A tile's drawn size at its spans on a grid of `unit`. */
-export function oneLookDrawnSize(colSpan: number, rowSpan: number, unit: number, device: OneLookDevice): { width: number; height: number } {
-  return oneLookDrawnSizeOfCell(oneLookCellSize(colSpan, rowSpan, unit), device);
+export function oneLookDrawnSize(colSpan: number, rowSpan: number, unit: number, device: OneLookDevice, gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): { width: number; height: number } {
+  return oneLookDrawnSizeOfCell(oneLookCellSize(colSpan, rowSpan, unit), device, gap);
 }
 
 /** The padding the iPhone's pages keep each side of a One Look grid, so the
- * tiles' drawn edges stay where the page look puts them: `tileEdge` (16
- * with the iPhone look, 6 with the watch look) less the cell inset. */
-export function oneLookPhonePagesInset(tileEdge: number): number {
-  return Math.max(0, tileEdge - ONE_LOOK_PHONE.cellInset);
+ * tiles' drawn edges stay where the page look puts them at any gap:
+ * `tileEdge` (16 with the iPhone look, 6 with the watch look) less the cell
+ * inset. */
+export function oneLookPhonePagesInset(tileEdge: number, gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): number {
+  return Math.max(0, tileEdge - oneLookCellInset("phone", false, false, gap));
 }
 
 /** The room under the last row of an iPhone One Look page with the iPhone
- * look and the dock under it, so the last tile scrolls clear of the dock. */
-export const ONE_LOOK_PHONE_BOTTOM_PADDING = 7;
+ * look and the dock under it, so the last tile scrolls clear of the dock at
+ * any gap: 12 from the tile's edge, less what its cell holds under it
+ * (`OneLookGrid.phoneBottomPadding`). */
+export function oneLookPhoneBottomPadding(gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): number {
+  return 12 - oneLookCellInset("phone", false, false, gap);
+}

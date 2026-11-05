@@ -94,7 +94,7 @@ import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COL
 import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, templateTextFit, templateTextUnits } from "./template-fit.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
-import { FIT_STRIP_ROWS, fitDrawnTile, fitPageRows, fitRowTop, fitSmallestTile, fitsOnScreen, fittedLayout, fitState, PHONE_FIT_BOTTOM_ROOM, WATCH_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
+import { FIT_STRIP_ROWS, fitDrawnTile, fitPageRows, fitRowTop, fitSmallestTile, fitsOnScreen, fittedLayout, fitState, WATCH_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
 import {
   PHONE_GRID_TOP_INSET,
   PHONE_GROUPED_BACKGROUND,
@@ -121,6 +121,7 @@ import {
   oneLookCornerRadius,
   oneLookGridSidePadding,
   oneLookMetrics,
+  oneLookPhoneBottomPadding,
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
 import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
@@ -341,16 +342,16 @@ export const WATCH_SCREEN_SIDE_INSET = WATCH_GRID_SIDE_INSET;
  * Under One Look each tile is drawn in from its cell on both devices, and the
  * grid moves out by as much so the drawn edges stay where they were
  * (`OneLookGrid`): the watch keeps 1.5, and the iPhone's pages pad the grid
- * with the look's tile edge less the cell inset (11 with the iPhone look, 1
- * with the Watch look), which is that much wider than the pages area this
- * picture lays out on, so the room here is negative. */
+ * with the look's tile edge less the cell inset (15.5 with the iPhone look
+ * and 5.5 with the Watch look at the standard gap), against the pages area
+ * this picture lays out on, so the room here can go either way. */
 export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): number {
   const oneLook = previewOneLook(input);
   if (oneLook === "watch") return oneLookGridSidePadding(oneLook);
   if (oneLook === "phone") {
     const iphone = phoneDrawsIphoneLook(input.phone);
     const edge = iphone ? PHONE_VAULT_GUTTER : PHONE_PAGES_SIDE_INSET;
-    return oneLookPhonePagesInset(edge) - (iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET);
+    return oneLookPhonePagesInset(edge, input.phone?.tileGap) - (iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET);
   }
   return input.phone === undefined ? WATCH_SCREEN_SIDE_INSET : 0;
 }
@@ -358,14 +359,14 @@ export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone"
 /** The room above a picture's grid on a page that is not full screen, in
  * points: the watch's 34 for its clock, or in an iPhone's pages area the
  * phone's 4 (`WatchScreenMetrics.gridTopInset` on iOS), in either look.
- * Under One Look the iPhone's grid starts higher by what its cell inset adds
- * over the look's own (`gridTopInset(oneLook:lookCellInset:)`): 3 with the
- * iPhone look, 0 with the Watch look. */
+ * Under One Look the iPhone's grid starts off by what its cell inset adds
+ * over the look's own (`gridTopInset(oneLook:lookCellInset:gap:)`), so the
+ * first tile stays where it was at any gap. */
 export function watchPreviewTopInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): number {
   if (input.phone === undefined) return WATCH_GRID_TOP_INSET;
   if (previewOneLook(input) === "phone") {
     const lookInset = phoneDrawsIphoneLook(input.phone) ? PHONE_TILE_CELL_INSET : 0;
-    return Math.max(0, PHONE_GRID_TOP_INSET + lookInset - oneLookCellInset("phone"));
+    return Math.max(0, PHONE_GRID_TOP_INSET + lookInset - oneLookCellInset("phone", false, false, input.phone.tileGap));
   }
   return PHONE_GRID_TOP_INSET;
 }
@@ -551,7 +552,7 @@ export function previewTileCornerRadius(
 ): number {
   const oneLook = previewOneLook(input);
   if (oneLook !== undefined) {
-    const by = inset ?? oneLookCellInset(oneLook);
+    const by = inset ?? oneLookCellInset(oneLook, false, false, input.phone?.tileGap);
     return oneLookCornerRadius(oneLookMetrics(oneLook), { width: Math.max(0, widthPt - 2 * by), height: Math.max(0, heightPt - 2 * by) });
   }
   return phoneDrawsIphoneLook(input.phone) ? phoneTileCornerRadius(widthPt, heightPt) : watchTileCornerRadius(widthPt, heightPt);
@@ -567,7 +568,7 @@ export function previewTileCellInset(input: Pick<WatchPagePreviewInput, "phone" 
   const oneLook = previewOneLook(input);
   if (oneLook !== undefined) {
     const kind = tileKind(tileEntityId(tile));
-    return oneLookCellInset(oneLook, kind === "divider", kind === "spacer");
+    return oneLookCellInset(oneLook, kind === "divider", kind === "spacer", input.phone?.tileGap);
   }
   if (!phoneDrawsIphoneLook(input.phone)) return 0;
   const kind = tileKind(tileEntityId(tile));
@@ -4031,7 +4032,7 @@ export function watchFitHeight(input: WatchPagePreviewInput, page: WatchPage): n
   if (input.phone === undefined) return input.screen.height - top - WATCH_FIT_BOTTOM_ROOM;
   const dock = previewOneLook(input) === "phone" && input.phone !== undefined && phoneDrawsIphoneLook(input.phone)
     && input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true).length >= 2;
-  return input.screen.height - top - (dock ? PHONE_FIT_BOTTOM_ROOM : 0);
+  return input.screen.height - top - (dock ? oneLookPhoneBottomPadding(input.phone.tileGap) : 0);
 }
 
 /** How Fit to screen treats a page on the device `input` draws, for the panel

@@ -20,9 +20,11 @@ import {
   phonePagesLayout,
   phonePagesScreen,
   phoneTileCellInset,
+  phoneTileGapOf,
   phoneTileCornerRadius,
   renderPhoneDock,
 } from "../src/phone-frame.js";
+import { catalogSettings, WATCH_SETTINGS_CATALOG } from "../src/watch-settings.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
 import {
   previewTileCellInset,
@@ -408,5 +410,28 @@ describe("a watch", () => {
     expect(plain).not.toContain("wa-phone");
     expect(plain).not.toContain("wa-phone-grouped");
     expect(plain).not.toContain("border-radius:22px");
+  });
+});
+
+describe("an iPhone's Tile gap (phoneTileGap)", () => {
+  it("reads as Small unless the phone's settings say otherwise", () => {
+    expect(phoneTileGapOf(undefined)).toBe("small");
+    expect(phoneTileGapOf({})).toBe("small");
+    expect(phoneTileGapOf({ phoneTileGap: "medium" })).toBe("medium");
+    expect(phoneTileGapOf({ phoneTileGap: "large" })).toBe("large");
+    expect(phoneTileGapOf({ phoneTileGap: "huge" })).toBe("small");
+  });
+
+  it("is kept on a phone's layout only when it is not the default", () => {
+    expect(Object.hasOwn(phonePagesLayout(undefined, { look: "iphone" }), "tileGap")).toBe(false);
+    expect(Object.hasOwn(phonePagesLayout(undefined, { look: "iphone", tileGap: "small" }), "tileGap")).toBe(false);
+    expect(phonePagesLayout(undefined, { look: "iphone", tileGap: "large" }).tileGap).toBe("large");
+  });
+
+  it("is a row on the iPhone's Pages card and no watch's setting", () => {
+    const row = catalogSettings(WATCH_SETTINGS_CATALOG).find((s) => s.key === "phoneTileGap")!;
+    expect(row.devices).toEqual(["iphone"]);
+    expect(row.default).toBe("small");
+    expect(row.options!.map((o) => o.value)).toEqual(["small", "medium", "large"]);
   });
 });

@@ -56,7 +56,9 @@ import {
   oneLookGridSidePadding,
   oneLookGridUnit,
   oneLookMetrics,
+  oneLookPhoneBottomPadding,
   oneLookPhonePagesInset,
+  PHONE_TILE_GAP_POINTS,
   oneLookScaledText,
   oneLookUnitTextSize,
   oneLookVisibleGap,
@@ -106,14 +108,13 @@ const SCREENS: readonly Screen[] = ["phone402", "ultra211", "watch45mm198", "wat
 const WIDTH: Record<Screen, number> = { phone402: 402, ultra211: 211, watch45mm198: 198, watch41mm176: 176 };
 const deviceOf = (screen: Screen): OneLookDevice => (screen === "phone402" ? "phone" : "watch");
 
-/** A tile's drawn size on a screen: the grid's square unit (the width less
- * 22, over 12) inside the side padding, the 2 pt pitch, less the cell inset a
- * side. */
+/** A tile's drawn size on a screen: the grid's square unit inside the side
+ * padding, the 2 pt pitch, less the cell inset a side. The numbers in this
+ * file are the mock's, whose iPhone gap is 12: the Large Tile gap. */
 function drawn(screen: Screen, colSpan: number, rowSpan: number): { width: number; height: number } {
   const device = deviceOf(screen);
-  const m = oneLookMetrics(device);
-  const unit = (WIDTH[screen] - 2 * m.sidePadding - 22) / 12;
-  return oneLookDrawnSizeOfCell({ width: colSpan * unit + (colSpan - 1) * 2, height: rowSpan * unit + (rowSpan - 1) * 2 }, device);
+  const unit = oneLookGridUnit(WIDTH[screen], device, "large");
+  return oneLookDrawnSizeOfCell({ width: colSpan * unit + (colSpan - 1) * 2, height: rowSpan * unit + (rowSpan - 1) * 2 }, device, "large");
 }
 
 const percent = (figure: string): StateLine => ({ kind: "number", figure, unit: "%" });
@@ -205,22 +206,39 @@ describe("One Look metrics", () => {
 
 describe("One Look grid", () => {
   it("keeps its gaps and columns", () => {
-    near(oneLookVisibleGap("phone"), 12);
+    near(oneLookVisibleGap("phone"), 3);
+    near(oneLookVisibleGap("phone", "medium"), 6);
+    near(oneLookVisibleGap("phone", "large"), 12);
     near(oneLookVisibleGap("watch"), 3);
+    near(oneLookVisibleGap("watch", "large"), 3);
     const phoneUnit = oneLookGridUnit(402, "phone");
     const watchUnit = oneLookGridUnit(211, "watch");
-    near(phoneUnit, 29.83);
+    near(phoneUnit, 29.08);
+    near(oneLookGridUnit(402, "phone", "large"), 29.83);
     near(watchUnit, 15.5);
-    near(oneLookDrawnSize(1, 1, phoneUnit, "phone").width, 19.83);
+    near(oneLookDrawnSize(1, 1, phoneUnit, "phone").width, 28.08);
     near(oneLookDrawnSize(1, 1, watchUnit, "watch").width, 14.5);
     expect(oneLookGridSidePadding("watch")).toBe(1.5);
     expect(oneLookGridSidePadding("phone")).toBe(0);
     expect(oneLookCellInset("phone", true)).toBe(0);
     expect(oneLookCellInset("watch", false, true)).toBe(0);
-    expect(oneLookCellInset("phone")).toBe(5);
-    expect(oneLookCellInset("watch")).toBe(0.5);
+    expect(oneLookCellInset("phone")).toBe(0.5);
+    expect(oneLookCellInset("phone", false, false, "large")).toBe(5);
+    expect(oneLookCellInset("watch", false, false, "large")).toBe(0.5);
     expect(oneLookPhonePagesInset(16)).toBe(ONE_LOOK_PHONE.sidePadding);
-    expect(oneLookPhonePagesInset(6) + oneLookCellInset("phone")).toBe(6);
+    for (const gap of ["small", "medium", "large"] as const) {
+      expect(oneLookPhonePagesInset(16, gap) + oneLookCellInset("phone", false, false, gap)).toBe(16);
+      expect(oneLookPhonePagesInset(6, gap) + oneLookCellInset("phone", false, false, gap)).toBe(6);
+      expect(oneLookPhoneBottomPadding(gap) + oneLookCellInset("phone", false, false, gap)).toBe(12);
+    }
+    expect(oneLookPhoneBottomPadding("large")).toBe(7);
+  });
+
+  it("keeps three tiles across the same width at every Tile gap", () => {
+    for (const gap of ["small", "medium", "large"] as const) {
+      const three = oneLookDrawnSize(4, 4, oneLookGridUnit(402, "phone", gap), "phone", gap).width;
+      near(3 * three + 2 * PHONE_TILE_GAP_POINTS[gap], 402 - 2 * 16);
+    }
   });
 
   it("puts every tile where the mock puts it", () => {
@@ -228,16 +246,16 @@ describe("One Look grid", () => {
       const device = deviceOf(screen);
       const [pad, gap] = device === "phone" ? [16, 12] : [2, 3];
       const col = (WIDTH[screen] - 2 * pad - 11 * gap) / 12;
-      const m = oneLookMetrics(device);
-      const unit = oneLookGridUnit(WIDTH[screen], device);
+      const unit = oneLookGridUnit(WIDTH[screen], device, "large");
+      const inset = oneLookCellInset(device, false, false, "large");
       for (let c = 0; c < 12; c++) {
         for (let span = 1; span <= 12 - c; span++) {
-          const x = m.sidePadding + c * (unit + ONE_LOOK_TILE_SPACING) + oneLookCellInset(device);
+          const x = pad - inset + c * (unit + ONE_LOOK_TILE_SPACING) + inset;
           near(x, pad + c * (col + gap));
-          near(oneLookDrawnSize(span, 4, unit, device).width, span * col + (span - 1) * gap);
+          near(oneLookDrawnSize(span, 4, unit, device, "large").width, span * col + (span - 1) * gap);
         }
       }
-      expect(oneLookDrawnSize(6, 4, unit, device)).toEqual(drawn(screen, 6, 4));
+      expect(oneLookDrawnSize(6, 4, unit, device, "large")).toEqual(drawn(screen, 6, 4));
     }
   });
 

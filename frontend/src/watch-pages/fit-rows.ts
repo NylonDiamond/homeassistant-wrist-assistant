@@ -30,9 +30,6 @@ export function fitSmallestTile(screen: WatchScreen): number {
   return screen === "iphone" ? FIT_SMALLEST_TILE_HEIGHT : FIT_SMALLEST_WATCH_TILE_HEIGHT;
 }
 
-/** One Look's room under a page's last row, with the dock under it
- * (`OneLookGrid.phoneBottomPadding`). */
-export const PHONE_FIT_BOTTOM_ROOM = 7;
 /** A row with a header pulls the rows below it up by these shares of a row,
  * as on any page (`PageGridLayout`). */
 const FIRST_HEADER_SHIFT = 0.6;

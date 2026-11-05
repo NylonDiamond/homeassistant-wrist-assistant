@@ -298,6 +298,7 @@ import {
   phoneFrameStyles,
   phoneModelForScreenSize,
   phonePageLookOf,
+  phoneTileGapOf,
   phonePagesDotsOf,
   phonePagesLayout,
   phonePagesScreen,
@@ -3108,6 +3109,7 @@ export class WaPageEditor extends LitElement {
         page, pages: [page], device: g.screen,
         ...(states === undefined ? {} : { states }),
         ...(this.icons === undefined ? {} : { icons: this.icons }),
+        ...(this.behavior === undefined ? {} : { behavior: this.behavior }),
       }, tile)?.model;
     };
     const tile = watchPageTiles(after).find((t) => sameWatchId(tileIdOf(t), g.tileId));
@@ -3880,6 +3882,7 @@ export class WaPageEditor extends LitElement {
       : watchPagesOf(this.contextPages(document)).filter((p) => p.isHidden !== true && p.isSystemPage !== true).length;
     return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size), {
       look: phonePageLookOf(this.behavior),
+      tileGap: phoneTileGapOf(this.behavior),
       // Before a draft, the phone's own defaults.
       ...(document === undefined ? {} : { dots: phonePagesDotsOf(this.behavior, visible) }),
     });
