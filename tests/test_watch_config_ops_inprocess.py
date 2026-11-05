@@ -1273,6 +1273,119 @@ def test_a_phone_s_own_get_marks_its_own_record_delivered(household) -> None:
     assert household.store.get(WATCH, "pages").delivered_revision == 0
 
 
+# ── an iPhone reads the voice of its user's watches ──────────────────────
+
+
+VOICE = "voice"
+
+
+def _voice(env, watch_id: str, label: str, updated_at: str) -> None:
+    assert _put(env, _put_body(_batch_2(VOICE, label), kind=VOICE), watch_id=watch_id).status == 200
+    record = env.store.get(watch_id, VOICE)
+    record.updated_at = updated_at
+    record.delivered_revision, record.delivered_at = 0, None
+
+
+@pytest.fixture
+def voices(env):
+    env.secrets.entries.update(
+        {
+            PHONE: _device("iphone", "user-1"),
+            WATCH: _device("watch", "user-1"),
+            OTHER: _device("watch", "user-1"),
+            "watch-C": _device("watch", "user-2"),
+            "iphone-2": _device("iphone", "user-2"),
+        }
+    )
+    _voice(env, WATCH, "Older", "2026-10-06T08:00:00Z")
+    _voice(env, OTHER, "Newer", "2026-10-06T09:00:00Z")
+    _voice(env, "watch-C", "Someone else", "2026-10-06T10:00:00Z")
+    return env
+
+
+def test_a_phone_reads_the_newest_voice_of_its_user_s_watches(voices) -> None:
+    reply = _get(voices, {"kind": VOICE}, watch_id=PHONE)
+    assert reply.status == 200
+    assert reply.body["kind"] == VOICE
+    assert reply.body["document"] == _batch_2(VOICE, "Newer")
+    assert reply.body["updated_at"] == "2026-10-06T09:00:00Z"
+    assert reply.body["short_hash"] == reply.body["hash"][:16]
+
+
+def test_a_phone_never_reads_another_user_s_voice(voices) -> None:
+    """The newest voice in the home is user-2's, and user-1's phone never sees
+    it. A user with no watch of their own reads nothing at all."""
+    assert _get(voices, {"kind": VOICE}, watch_id=PHONE).body["document"] != _batch_2(
+        VOICE, "Someone else"
+    )
+    voices.secrets.entries["iphone-3"] = _device("iphone", "user-3")
+    reply = _get(voices, {"kind": VOICE}, watch_id="iphone-3")
+    assert reply.status == 200
+    assert reply.body["revision"] == 0
+    assert reply.body["hash"] is None
+    assert "document" not in reply.body
+
+
+def test_a_watch_of_another_user_that_names_this_phone_stays_unread(voices) -> None:
+    """Naming a phone as owner counts only for a watch bound to no one."""
+    voices.secrets.entries["iphone-3"] = _device("iphone", "user-3")
+    voices.secrets.entries["watch-C"] = _device("watch", "user-2", owner="iphone-3")
+    reply = _get(voices, {"kind": VOICE}, watch_id="iphone-3")
+    assert reply.body["revision"] == 0
+    assert "document" not in reply.body
+
+
+def test_a_phone_with_no_user_reads_only_a_watch_that_names_it(voices) -> None:
+    voices.secrets.entries["iphone-3"] = _device("iphone", None)
+    voices.secrets.entries["watch-D"] = _device("watch", None, owner="iphone-3")
+    assert _get(voices, {"kind": VOICE}, watch_id="iphone-3").body["revision"] == 0
+    _voice(voices, "watch-D", "Named", "2026-10-06T07:00:00Z")
+    reply = _get(voices, {"kind": VOICE}, watch_id="iphone-3")
+    assert reply.body["document"] == _batch_2(VOICE, "Named")
+    # The style keeps its guard: this phone reads none.
+    assert _get(voices, {"kind": STYLE}, watch_id="iphone-3").body["revision"] == 0
+
+
+def test_the_phone_s_voice_read_changes_nothing_on_the_watch(voices) -> None:
+    before = {w: voices.store.get(w, VOICE).revision for w in (WATCH, OTHER, "watch-C")}
+    _get(voices, {"kind": VOICE}, watch_id=PHONE)
+    _get(voices, {"kind": VOICE, "since_revision": 1, "unreadable_revision": 1}, watch_id=PHONE)
+    for watch_id, revision in before.items():
+        record = voices.store.get(watch_id, VOICE)
+        assert record.revision == revision
+        assert record.delivered_revision == 0
+        assert record.rejected_revision == 0
+    assert voices.secrets.main_house == {}
+    assert voices.store.get(PHONE, VOICE) is None
+
+
+def test_the_phone_s_voice_read_leaves_out_the_document_when_up_to_date(voices) -> None:
+    reply = _get(voices, {"kind": VOICE, "since_revision": 1}, watch_id=PHONE)
+    assert reply.body["revision"] == 1
+    assert "document" not in reply.body
+
+
+def test_a_phone_still_cannot_write_a_watch_s_voice(voices) -> None:
+    voices.store = voices.mod.WatchConfigStore(_Hass(), is_iphone=lambda owner: owner == PHONE)
+    asyncio.run(voices.store.async_load())
+    reply = _put(voices, _put_body(_batch_2(VOICE, "Mine"), kind=VOICE), watch_id=PHONE)
+    assert reply.status == 400
+    assert reply.body["error"] == "not_for_iphone"
+    assert voices.store.get(PHONE, VOICE) is None
+
+
+def test_a_watch_as_signer_reads_only_its_own_voice(voices) -> None:
+    reply = _get(voices, {"kind": VOICE}, watch_id=WATCH)
+    assert reply.body["document"] == _batch_2(VOICE, "Older")
+
+
+def test_the_voice_read_capability_is_advertised() -> None:
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(PHONE_VOICE_READ_CAPABILITY)" in init
+    assert 'PHONE_VOICE_READ_CAPABILITY = "phone_voice_read"' in const
+
+
 def test_a_phone_s_own_put_of_a_watch_only_kind_is_a_signed_400(env) -> None:
     """The store refuses it (``not_for_iphone``); the op hands that back as
     any other refusal, and nothing is stored."""

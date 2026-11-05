@@ -241,6 +241,26 @@ def test_a_background_push_to_every_watch_sends_each_its_own_token(mod) -> None:
 # ── the helpers the replies and sensors read ─────────────────────────────
 
 
+def test_the_phones_reading_a_watch_s_voice_are_the_reverse_of_its_list(mod) -> None:
+    secrets = {
+        "p1": _phone("u1"),
+        "p2": _phone("u1"),
+        "p3": _phone("u2"),
+        "p4": _phone(None),
+        "w1": _watch("u1"),
+        "w2": _watch(None, owner="p4"),
+        "w3": _watch("u2", owner="p1"),
+    }
+    assert mod.phones_reading_voice(secrets, "w1") == ["p1", "p2"]
+    assert mod.phones_reading_voice(secrets, "w2") == ["p4"]
+    # A bound watch is read by its own user's phones, whichever it names.
+    assert mod.phones_reading_voice(secrets, "w3") == ["p3"]
+    assert mod.phones_reading_voice(secrets, "gone") == []
+    for phone in ("p1", "p2", "p3", "p4"):
+        for watch in mod.phone_watch_ids(secrets, phone):
+            assert phone in mod.phones_reading_voice(secrets, watch)
+
+
 def test_phone_watch_ids_lists_the_user_s_watches_and_unbound_owned_ones(mod) -> None:
     secrets = {
         "p1": _phone("u1"),

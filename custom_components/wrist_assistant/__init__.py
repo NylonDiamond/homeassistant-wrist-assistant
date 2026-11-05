@@ -57,6 +57,7 @@ from .const import (
     PAGE_IMAGES_CAPABILITY,
     PANEL_CONFIGURATION_URL,
     PHONE_PAGES_CAPABILITY,
+    PHONE_VOICE_READ_CAPABILITY,
     PHONE_PAGES_LINK_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
     PLATFORMS,
@@ -105,6 +106,8 @@ from .notification_snapshot import NotificationSnapshotStore
 from .notifications import (
     NotificationTokenStore,
     TokenEntry,
+    phone_watch_ids,
+    phones_reading_voice,
     purge_dead_token,
     resolve_push_routes,
 )
@@ -945,6 +948,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         watch_config_store.async_add_listener(coordinator.watch_config_changed)
     )
+    # An iPhone owns no voice. Its reply names the voice it reads from its
+    # user's watches, and a save of one of those wakes it.
+    coordinator.attach_phone_voice(
+        read=lambda device_id: (
+            watch_config_store.newest_record(
+                phone_watch_ids(widget_secret_store.all_entries, device_id), "voice"
+            )
+            if widget_secret_store.is_paired_iphone(device_id)
+            else None
+        ),
+        readers=lambda watch_id: phones_reading_voice(
+            widget_secret_store.all_entries, watch_id
+        ),
+    )
     # Each watch's installed speech voices, for the panel's Watch voice
     # picker. The poll asks a watch for its list when the hash it reports is
     # not the stored one; an unreadable file is logged and starts empty.
@@ -1145,6 +1162,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # that poll, and the panel lists phones in the Pages editor, only when
     # they see this.
     coordinator.register_capability(PHONE_PAGES_CAPABILITY)
+    # An iPhone reads the voice of its user's watches (`_phone_style_record`,
+    # `DeltaCoordinator.attach_phone_voice`). The phone asks only when it sees
+    # this.
+    coordinator.register_capability(PHONE_VOICE_READ_CAPABILITY)
     # Pages on several devices (library.py): one library page each device
     # picks, and the signed phone_pages_offer and phone_pages_link_watch
     # ops. The phone offers a watch's pages only when it sees this.

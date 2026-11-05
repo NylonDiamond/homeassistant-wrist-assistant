@@ -4773,38 +4773,30 @@ def _note_main_house(ctx: _OpContext, kind: str) -> None:
 
 
 def _phone_style_record(ctx: _OpContext, kind: Any) -> Any:
-    """The notification style an iPhone signing as itself reads, or None.
+    """What an iPhone signing as itself reads of its watches, or None.
 
     Step 6: the phone no longer signs as its watch to read the style it draws
     alerts with. For kind ``notification_style`` from an iPhone entry bound to
     a Home Assistant user, the record is the one saved last among the watches
     whose Fast alerts reach this phone (its user's watches, see
     `phone_watch_ids`); a tie on the save time goes to the higher revision,
-    then the higher id. None (the get answers as for any signer, from the
-    signer's own record) for any other kind, a watch, a phone bound to no
-    user, or when none of those watches holds a style record. A watch whose
-    stored config could not be read is skipped.
+    then the higher id. Kind ``voice`` (capability ``phone_voice_read``) reads
+    the same way, and also for a phone bound to no user, which
+    `phone_watch_ids` gives only the unbound watches that name it as their
+    owner. None (the get answers as for any signer, from the signer's own
+    record) for any other kind, a watch, a phone bound to no user reading the
+    style, or when none of those watches holds a record. A watch whose stored
+    config could not be read is skipped.
     """
-    if kind != "notification_style" or not _caller_is_iphone(ctx):
+    if kind not in ("notification_style", "voice") or not _caller_is_iphone(ctx):
         return None
     secrets = ctx.domain_data.widget_secret_store
     caller = secrets.get(ctx.watch_id)
-    if getattr(caller, "user_id", None) is None:
+    if kind == "notification_style" and getattr(caller, "user_id", None) is None:
         return None
-    store = ctx.domain_data.watch_config_store
-    newest = None
-    newest_key: tuple = ()
-    for watch_id in phone_watch_ids(secrets.all_entries, ctx.watch_id):
-        try:
-            record = store.get(watch_id, kind)
-        except WatchConfigStoreError:
-            continue
-        if record is None:
-            continue
-        key = (record.updated_at or "", record.revision, watch_id)
-        if newest is None or key > newest_key:
-            newest, newest_key = record, key
-    return newest
+    return ctx.domain_data.watch_config_store.newest_record(
+        phone_watch_ids(secrets.all_entries, ctx.watch_id), kind
+    )
 
 
 async def _op_watch_config_get(ctx: _OpContext) -> Response:
@@ -4814,8 +4806,8 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ever read its own record: the phone signing with the watch's pair, or the
     watch itself pulling with that same signature (the record may have come
     from the iPhone mirror or from the panel). One exception (step 6): an
-    iPhone signing as itself for ``notification_style`` reads the newest
-    style among its user's watches, read only (`_phone_style_record`).
+    iPhone signing as itself for ``notification_style`` or ``voice`` reads the
+    newest record among its user's watches, read only (`_phone_style_record`).
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
@@ -4902,8 +4894,8 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     store = ctx.domain_data.watch_config_store
     phone_record = _phone_style_record(ctx, kind)
     if phone_record is not None:
-        # Step 6, the phone's read of its user's notification style. Read
-        # only: no delivery mark (the watch has not collected it), no report
+        # Step 6, the phone's read of its user's notification style or voice.
+        # Read only: no delivery mark (the watch has not collected it), no report
         # filed, and the phone's entry is no house of any watch.
         reply = {
             "ok": True,

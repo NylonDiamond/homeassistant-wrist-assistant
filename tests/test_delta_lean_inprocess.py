@@ -32,6 +32,7 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import threading
 import time
 import types
 from datetime import timedelta
@@ -860,6 +861,37 @@ def test_the_loop_answers_while_a_delta_template_runs(coordinator, monkeypatch) 
     asyncio.run(run())
 
 
+def test_home_assistant_in_debug_mode_times_first_and_renders_on_the_loop(coordinator) -> None:
+    """In debug mode ``async_render_to_info`` refuses any thread but the loop."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    hass.config = types.SimpleNamespace(debug=True)
+    loop_thread = threading.get_ident()
+
+    class _Template:
+        def __init__(self, source: str, _hass: Any) -> None:
+            self.source = source
+
+        async def async_render_will_timeout(self, timeout: float) -> bool:
+            assert timeout == module.template_guard.RENDER_SECONDS
+            return self.source == "slow"
+
+        def async_render_to_info(self) -> _RenderInfo:
+            assert threading.get_ident() == loop_thread
+            return _RenderInfo(hass.states.get(sensor).state, {sensor})
+
+    module.Template = _Template
+
+    async def run() -> None:
+        _, body = await _poll(coord, entities=[], templates={"bad": "slow", "good": "fine"})
+        by_id = {e["entity_id"]: e for e in body["events"]}
+        assert by_id["template.bad"]["error"] is True
+        assert by_id["template.good"]["lines"] == ["1"]
+
+    asyncio.run(run())
+
+
 def test_a_refused_render_keeps_the_value_and_comes_due_again(coordinator, monkeypatch) -> None:
     module, hass, coord = coordinator
     sensor = "sensor.source"
@@ -958,6 +990,74 @@ def test_a_change_during_the_first_renders_wakes_the_poll(coordinator, monkeypat
         guard_mod.GUARD.async_run = real
         assert status == 200
         assert other in [e["entity_id"] for e in body["events"]]
+
+    asyncio.run(run())
+
+
+# ── a lost reply keeps no template value ─────────────────────────────────
+
+
+def test_a_lost_reply_sends_a_template_s_value_again(coordinator) -> None:
+    """R5-025. A reply marks its values as sent when it is built. A device that
+    polls from before that reply never got it."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    light = "light.other"
+    hass.states.set(sensor, "21")
+    hass.states.set(light, "off")
+    module.Template = _spin_template(hass, sensor, set(), {})
+    lean = {"attribute_diffs": True, "lean": True, "entities": None, "timeout": 0}
+
+    async def run() -> None:
+        _, body = await _poll(
+            coord, entities=[sensor], attribute_diffs=True, lean=True, templates={"t1": "x"}
+        )
+        cursor = body["next_cursor"]
+        _change(hass, coord, sensor, "22")
+        _, lost = await _poll(coord, since=cursor, epoch=coord.epoch, **lean)
+        assert "template.t1" in [e["entity_id"] for e in lost["events"]]
+
+        # The same cursor again, with no list: the value comes again, once.
+        _, again = await _poll(coord, since=cursor, epoch=coord.epoch, **lean)
+        assert [e["lines"] for e in again["events"] if e["entity_id"] == "template.t1"] == [["22"]]
+        _, after = await _poll(coord, since=again["next_cursor"], epoch=coord.epoch, **lean)
+        assert not after or not after.get("events")
+
+    asyncio.run(run())
+
+
+def test_attrs_reset_sends_a_template_s_value_again(coordinator) -> None:
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "21")
+    module.Template = _spin_template(hass, sensor, set(), {})
+    lean = {"attribute_diffs": True, "lean": True, "entities": None, "timeout": 0}
+
+    async def run() -> None:
+        _, body = await _poll(
+            coord, entities=[sensor], attribute_diffs=True, lean=True, templates={"t1": "x"}
+        )
+        cursor = body["next_cursor"]
+        _, reset = await _poll(coord, since=cursor, epoch=coord.epoch, attrs_reset=True, **lean)
+        assert [e["lines"] for e in reset["events"] if e["entity_id"] == "template.t1"] == [["21"]]
+
+    asyncio.run(run())
+
+
+def test_a_poll_without_diffs_does_not_resend_every_template(coordinator) -> None:
+    """Why the clear is not in ``clear_baselines``, which runs on every such poll."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "21")
+    counts: dict[str, int] = {}
+    module.Template = _spin_template(hass, sensor, set(), counts)
+
+    async def run() -> None:
+        _, body = await _poll(coord, entities=[sensor], templates={"t1": "x"})
+        cursor = body["next_cursor"]
+        result = await _poll(coord, since=cursor, timeout=0)
+        assert result[1] is None or not result[1].get("events")
+        assert counts["x"] == 1
 
     asyncio.run(run())
 

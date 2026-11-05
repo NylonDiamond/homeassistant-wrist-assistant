@@ -2425,3 +2425,112 @@ def test_a_panel_save_for_a_phone_wakes_the_phone_and_never_its_watch(coordinato
         assert store.get("phone-1", "behavior").revision == behavior.revision
 
     asyncio.run(run())
+
+
+# ── an iPhone reads the voice of its user's watches ──────────────────────
+
+
+def _attach_phone_voice(coord, store, *, phones: dict[str, list[str]]) -> None:
+    """``phones``: each phone's watches, as ``phone_watch_ids`` answers them."""
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    coord.attach_phone_voice(
+        read=lambda device_id: (
+            store.newest_record(phones[device_id], "voice") if device_id in phones else None
+        ),
+        readers=lambda watch_id: [p for p, watches in phones.items() if watch_id in watches],
+    )
+
+
+def test_a_phone_s_reply_names_the_voice_it_reads_and_a_watch_its_own(coordinator) -> None:
+    _module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    _attach_phone_voice(coord, store, phones={"phone-1": ["w1"]})
+    _device_put(store, "voice", owner="w1")
+    _device_put(store, "voice", owner="w1", base=1, digest=_HASH_2)
+    _device_put(store, "voice", owner="w-other")
+
+    async def run() -> None:
+        _, phone = await _poll(coord, watch_id="phone-1", entities=[], timeout=0)
+        assert phone["watch_config"]["voice"] == 2
+        assert phone["watch_config_hashes"]["voice"] == _HASH_2[:16]
+        # Every other kind stays the phone's own.
+        assert phone["watch_config"]["pages"] == 0
+
+        _, watch = await _poll(coord, watch_id="w-other", entities=[], timeout=0)
+        assert watch["watch_config"]["voice"] == 1
+
+        # A phone with no such record: revision 0 and no hash.
+        coord.attach_phone_voice(read=lambda _id: None, readers=lambda _id: [])
+        _, none = await _poll(coord, watch_id="phone-2", entities=[], timeout=0)
+        assert none["watch_config"]["voice"] == 0
+        assert "voice" not in none.get("watch_config_hashes", {})
+
+    asyncio.run(run())
+
+
+def test_a_phone_never_hears_another_user_s_voice_on_the_poll(coordinator) -> None:
+    _module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    _attach_phone_voice(coord, store, phones={"phone-1": ["w1"], "phone-2": ["w2"]})
+    _device_put(store, "voice", owner="w2")
+
+    async def run() -> None:
+        _, phone = await _poll(coord, watch_id="phone-1", entities=[], timeout=0)
+        assert phone["watch_config"]["voice"] == 0
+        assert "voice" not in phone.get("watch_config_hashes", {})
+
+    asyncio.run(run())
+
+
+def test_a_voice_save_wakes_the_phone_s_parked_poll_and_no_other_phone(coordinator) -> None:
+    _module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    _attach_phone_voice(coord, store, phones={"phone-1": ["w1"], "phone-2": ["w2"]})
+    woken: list[tuple[str, bool]] = []
+    real = coord.wake_watch
+
+    def wake(watch_id: str, *, renotify: bool = False) -> None:
+        woken.append((watch_id, renotify))
+        real(watch_id, renotify=renotify)
+
+    coord.wake_watch = wake
+
+    async def run() -> None:
+        _, body = await _poll(coord, watch_id="phone-1", entities=[], timeout=0)
+        parked = asyncio.create_task(
+            _poll(coord, watch_id="phone-1", since=body["next_cursor"], timeout=5)
+        )
+        await asyncio.sleep(0.02)
+        _device_put(store, "voice", owner="w1")
+        status, reply = await asyncio.wait_for(parked, 2)
+        assert status == 200
+        assert reply["watch_config"]["voice"] == 1
+
+    asyncio.run(run())
+    assert woken == [("w1", False), ("phone-1", False)]
+
+    woken.clear()
+    _device_put(store, "pages", owner="w1")
+    assert woken == [("w1", False)]
+
+
+def test_a_phone_s_report_of_the_voice_marks_nothing_on_the_watch(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    _attach_phone_voice(coord, store, phones={"phone-1": ["w1"]})
+    _device_put(store, "voice", owner="w1")
+    store.get("w1", "voice").delivered_revision = 0
+
+    async def run() -> None:
+        await _poll(
+            coord,
+            watch_id="phone-1",
+            entities=[],
+            timeout=0,
+            held=module.HeldConfig(watch_config={"voice": 1}),
+        )
+
+    asyncio.run(run())
+    assert store.get("w1", "voice").delivered_revision == 0
+    assert store.get("phone-1", "voice") is None

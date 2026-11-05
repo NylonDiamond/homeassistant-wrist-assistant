@@ -175,7 +175,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
@@ -2368,6 +2368,27 @@ class WatchConfigStore:
         kind = validate_kind(kind)
         self._check_available(owner_watch_id)
         return self._records.get(owner_watch_id, {}).get(kind)
+
+    def newest_record(self, owner_ids: Iterable[str], kind: Any) -> WatchConfigRecord | None:
+        """The record of ``kind`` saved last among ``owner_ids``, or ``None``.
+
+        A tie on the save time goes to the higher revision, then the higher id.
+        An owner whose stored config could not be read is skipped. Reading
+        changes nothing on the record.
+        """
+        newest: WatchConfigRecord | None = None
+        newest_key: tuple = ()
+        for owner_id in owner_ids:
+            try:
+                record = self.get(owner_id, kind)
+            except WatchConfigStoreError:
+                continue
+            if record is None:
+                continue
+            key = (record.updated_at or "", record.revision, owner_id)
+            if newest is None or key > newest_key:
+                newest, newest_key = record, key
+        return newest
 
     def revisions(self, owner_watch_id: str) -> dict[str, int]:
         """The owner's current revision of every kind it holds a record of.

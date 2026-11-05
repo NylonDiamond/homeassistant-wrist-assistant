@@ -613,6 +613,16 @@ def phone_watch_ids(secrets: Mapping[str, Any], phone_id: str) -> list[str]:
     return sorted(watch_ids)
 
 
+def phones_reading_voice(secrets: Mapping[str, Any], watch_id: str) -> list[str]:
+    """The iPhones that read this watch's voice, sorted: the reverse of
+    `phone_watch_ids`, so a save reaches exactly the phones allowed to read it."""
+    return sorted(
+        phone_id
+        for phone_id, secret in secrets.items()
+        if is_iphone_entry(secret) and watch_id in phone_watch_ids(secrets, phone_id)
+    )
+
+
 @dataclass(slots=True)
 class PushRoute:
     """One send: a token, the id it is filed under, and what led to it.

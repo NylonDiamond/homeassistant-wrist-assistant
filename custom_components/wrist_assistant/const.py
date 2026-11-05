@@ -567,6 +567,12 @@ WATCH_ADDRESSES_CAPABILITY = "watch_addresses"
 # delivery mode or main house filed under it. The phone polls for its pages,
 # and the panel offers them, only when it sees this.
 PHONE_PAGES_CAPABILITY = "phone_pages"
+# An iPhone reads the voice defaults of its user's watches, read only: the
+# signed watch_config_get of `voice`, signed as itself, answers from those
+# watches, and the delta reply names that record's revision and hash. The phone
+# asks only when it sees this. It owns no voice record, and
+# WATCH_CONFIG_PHONE_KINDS stays as it is.
+PHONE_VOICE_READ_CAPABILITY = "phone_voice_read"
 # What the integration advertises once a page can sit on several devices: one
 # page in the home's library (library.py), picked by each device, so a save on
 # any of them reaches all, and the signed phone_pages_offer and

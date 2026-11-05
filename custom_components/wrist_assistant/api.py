@@ -63,6 +63,9 @@ DELTA_WATCH_CONFIG_KINDS = (
 # more from homeassistant.const than it did.
 REMOVED_ENTITY_STATE = "unavailable"
 
+# `watch_config_store.short_hash`: what a reply names beside a revision.
+_SHORT_HASH_DIGITS = 16
+
 # A render this long is worth a line in the log.
 _SLOW_RENDER_SECONDS = 0.05
 # How long a template stopped by a limit is left alone, and how many a session
@@ -168,6 +171,10 @@ class WatchSession:
         self.last_sent_attrs.clear()
         self.last_sent_state.clear()
         self.diff_cursor = None
+
+    def clear_template_values(self) -> None:
+        self.template_values.clear()
+        self.template_deps.clear()
 
 
 @dataclass(slots=True)
@@ -514,6 +521,8 @@ class DeltaCoordinator:
         # setup attaches it (attach_device_check), and then a poll for an id
         # it says no to gets a bodiless 204 and opens no session.
         self._device_known: Callable[[str], bool] | None = None
+        self._phone_voice_read: Callable[[str], Any] | None = None
+        self._phone_voice_readers: Callable[[str], Iterable[str]] | None = None
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -673,11 +682,39 @@ class DeltaCoordinator:
         adds watch_config_changed as a store listener."""
         self._watch_config_store = store
 
+    @callback
+    def attach_phone_voice(
+        self,
+        read: Callable[[str], Any],
+        readers: Callable[[str], Iterable[str]],
+    ) -> None:
+        """Wire in an iPhone's read of its user's watches' voice.
+
+        ``read`` answers the record a device id reads, None for a watch or for
+        a phone with nothing to read. ``readers`` answers the phones that read
+        a watch's voice. Setup holds the secret store these need.
+        """
+        self._phone_voice_read = read
+        self._phone_voice_readers = readers
+
+    def _phone_voice_record(self, watch_id: str) -> Any:
+        read = self._phone_voice_read
+        if read is None:
+            return None
+        try:
+            return read(watch_id)
+        except Exception:  # noqa: BLE001 (a read must not fail the poll)
+            _LOGGER.debug("No voice to read for %s", watch_id, exc_info=True)
+            return None
+
     def watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
         """The signer's own revision of every kind in DELTA_WATCH_CONFIG_KINDS,
         0 for a kind it holds no record of. None when no store is attached or
         this owner's file could not be read: the reply then leaves the field
-        out rather than saying "no record", which would be wrong."""
+        out rather than saying "no record", which would be wrong.
+
+        One kind is not an iPhone's own: its ``voice`` is the record it reads
+        from its user's watches (``attach_phone_voice``), 0 with none."""
         store = self._watch_config_store
         if store is None:
             return None
@@ -686,13 +723,18 @@ class DeltaCoordinator:
         except Exception:  # noqa: BLE001 (an unreadable file must not fail the poll)
             _LOGGER.debug("No watch config revisions for %s", watch_id, exc_info=True)
             return None
-        return {kind: int(held.get(kind, 0)) for kind in DELTA_WATCH_CONFIG_KINDS}
+        revisions = {kind: int(held.get(kind, 0)) for kind in DELTA_WATCH_CONFIG_KINDS}
+        voice = self._phone_voice_record(watch_id)
+        if voice is not None:
+            revisions["voice"] = int(voice.revision)
+        return revisions
 
     def watch_config_hashes(self, watch_id: str) -> dict[str, str] | None:
         """The signer's short hash (``watch_config_store.short_hash``, the
         first 16 hex digits of the record's SHA-256) of every kind in
         DELTA_WATCH_CONFIG_KINDS that has a record with a hash. None when
-        ``watch_config_revisions`` is None."""
+        ``watch_config_revisions`` is None. An iPhone's ``voice`` is the record
+        it reads, as there."""
         store = self._watch_config_store
         if store is None:
             return None
@@ -701,7 +743,11 @@ class DeltaCoordinator:
         except Exception:  # noqa: BLE001 (an unreadable file must not fail the poll)
             _LOGGER.debug("No watch config hashes for %s", watch_id, exc_info=True)
             return None
-        return {kind: held[kind] for kind in DELTA_WATCH_CONFIG_KINDS if kind in held}
+        hashes = {kind: held[kind] for kind in DELTA_WATCH_CONFIG_KINDS if kind in held}
+        voice = self._phone_voice_record(watch_id)
+        if voice is not None and voice.hash:
+            hashes["voice"] = voice.hash[:_SHORT_HASH_DIGITS]
+        return hashes
 
     def _watch_config_behind(
         self, watch_id: str, held: HeldConfig | None = None
@@ -780,10 +826,21 @@ class DeltaCoordinator:
         forget or move). ``renotify`` stays False: it only re-arms the
         complication token, which this change did not touch. An owner with no
         parked poll is a no-op, as for every wake.
+
+        A save of a watch's ``voice`` also wakes the phones that read it, so a
+        panel save reaches an open iPhone at once.
         """
         if change.kind not in DELTA_WATCH_CONFIG_KINDS:
             return
         self.wake_watch(change.owner_watch_id, renotify=False)
+        if change.kind == "voice" and self._phone_voice_readers is not None:
+            try:
+                phones = list(self._phone_voice_readers(change.owner_watch_id))
+            except Exception:  # noqa: BLE001 (a wake must not fail a save)
+                _LOGGER.debug("No phones to wake for %s", change.owner_watch_id, exc_info=True)
+                return
+            for phone_id in phones:
+                self.wake_watch(phone_id, renotify=False)
 
     # ── the home's HTTP action library on the poll ────────────────────
 
@@ -1814,8 +1871,16 @@ class DeltaCoordinator:
         # diffs (nothing then keeps them in step), and when it polls from a
         # cursor older than the last reply written with diffs: that reply
         # moved the baselines and never reached it.
+        #
+        # The two that mean a reply was lost or a cache was emptied also clear
+        # the template values, which are marked as sent when a reply is built.
+        # The next collect then renders each template and sends each value,
+        # once. Not in ``clear_baselines``: that also runs for a poll without
+        # diffs, every poll, and every template would answer every time.
         if attrs_reset or not attribute_diffs:
             session.clear_baselines()
+            if attrs_reset:
+                session.clear_template_values()
         elif (
             session.diff_cursor is not None
             and since is not None
@@ -1826,12 +1891,12 @@ class DeltaCoordinator:
             )
             if invalid_since or since_cursor < session.diff_cursor:
                 session.clear_baselines()
+                session.clear_template_values()
 
         # Store template subscriptions (sent alongside entities)
         if templates is not None:
             session.templates = {k: v for k, v in templates.items() if isinstance(k, str) and isinstance(v, str)}
-            session.template_values.clear()
-            session.template_deps.clear()
+            session.clear_template_values()
 
         if sessions_changed:
             self._fire_session_callbacks()

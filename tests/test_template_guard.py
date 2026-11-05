@@ -299,6 +299,15 @@ def test_the_budget_runs_out_refuses_at_once_and_comes_back() -> None:
     assert started_threads == [1]
 
 
+def test_one_long_render_leaves_at_most_one_budget_of_debt() -> None:
+    now = [0.0]
+    guard = Guard(clock=lambda: now[0], budget_seconds=12.0, budget_refill_per_second=0.2)
+    guard._charge("a", 500.0)
+    assert guard._budget_left("a") == -12.0
+    now[0] += 61
+    assert guard._budget_left("a") > 0
+
+
 def test_quick_renders_cost_next_to_nothing() -> None:
     async def scenario():
         guard = _guard(budget_seconds=1.0, budget_refill_per_second=0.0)
