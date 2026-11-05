@@ -1300,8 +1300,7 @@
       "role": "entitySwitch"
     },
     "template": {
-      "icon": "chevron.left.forwardslash.chevron.right",
-      "hex": "#CCD8E6"
+      "icon": "chevron.left.forwardslash.chevron.right"
     },
     "text": {
       "icon": "text.cursor",

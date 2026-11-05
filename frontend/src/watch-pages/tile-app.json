@@ -5,7 +5,6 @@
     "add": {
       "entityIdPrefix": "template.",
       "icon": "chevron.left.forwardslash.chevron.right",
-      "hex": "#CCD8E6",
       "customLabel": "Template",
       "templateString": "the text of the preset addPreset",
       "addPreset": "home_status",

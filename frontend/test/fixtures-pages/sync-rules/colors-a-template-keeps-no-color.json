@@ -1,0 +1,22 @@
+{
+  "name": "A template tile with no color keeps none, so it draws on One Look's graphite surface as an Off tile; one with a color keeps it",
+  "rule": "applyDefaultTileColors",
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000C", "name": "Home", "themeOverride": "midnight", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000301", "entityId": "template.5C0E0000-0000-4000-8000-000000000311"},
+        {"id": "5C0E0000-0000-4000-8000-000000000302", "entityId": "template.5C0E0000-0000-4000-8000-000000000312", "color": "#CCD8E6"},
+        {"id": "5C0E0000-0000-4000-8000-000000000303", "entityId": "automation.demo_morning"}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000C", "name": "Home", "themeOverride": "midnight", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000301", "entityId": "template.5C0E0000-0000-4000-8000-000000000311"},
+        {"id": "5C0E0000-0000-4000-8000-000000000302", "entityId": "template.5C0E0000-0000-4000-8000-000000000312", "color": "#CCD8E6"},
+        {"id": "5C0E0000-0000-4000-8000-000000000303", "entityId": "automation.demo_morning", "color": "#FFFFFF"}
+      ]}
+    ]
+  }
+}

@@ -2556,7 +2556,9 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     mixed: differ && !atDefault,
     trial: colorTrial(host, "Color", { swatch: colorEdit, default: defaultEdit }),
     default: {
-      title: defaultColor === undefined || host.domainStyle === true ? `The ${hostDeviceNoun(host)} picks one` : `The theme's color for this kind of tile, ${defaultColor}`,
+      // A template has no colour by default: graphite, as an Off tile.
+      title: tileKind(tileEntityId(host.tile)) === "template" && host.domainStyle !== true ? TEMPLATE_DEFAULT_COLOR_TITLE
+        : defaultColor === undefined || host.domainStyle === true ? `The ${hostDeviceNoun(host)} picks one` : `The theme's color for this kind of tile, ${defaultColor}`,
       on: atDefault,
       pick: resetColor,
     },
@@ -2566,6 +2568,9 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     wrap: (body) => typingField(host, "color", body),
   })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;
 }
+
+/** What Default means on a template tile's colour. */
+export const TEMPLATE_DEFAULT_COLOR_TITLE = "No color: the graphite of an Off tile";
 
 function renderIconSize(host: TileSettingsHost): TemplateResult {
   const s = watchTileIconSettings(host.tile);

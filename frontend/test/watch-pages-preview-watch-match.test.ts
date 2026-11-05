@@ -218,6 +218,10 @@ describe("the colors the watch is sent (WatchPagesSyncRules.applyDefaultTileColo
     expect(watchSyncedTile({ id: "L", entityId: "light.a", color: "#123456" }, page()).color).toBe("#123456");
     expect(watchSyncedTile({ id: "L", entityId: "light.a" }, page()).color).toBe(neon.entityLight);
     expect(watchSyncedTile({ id: "L", entityId: "light.a", color: null }, page()).color).toBe(neon.entityLight);
+    // A template keeps no colour (`colors-a-template-keeps-no-color.json`): it
+    // draws on One Look's graphite surface, as an Off tile.
+    expect(watchSyncedTile({ id: "T", entityId: "template.X" }, page()).color).toBeUndefined();
+    expect(watchSyncedTile({ id: "T", entityId: "template.X", color: "#CCD8E6" }, page()).color).toBe("#CCD8E6");
   });
 
   it("are what the tiles draw in", () => {

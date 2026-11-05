@@ -31,11 +31,12 @@ import {
   phoneLitTileInk,
   renderWatchTileFace,
   watchSpecialTileLook,
+  watchSyncedTile,
   watchTemplateTileLook,
   watchTilePreviewActive,
   setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
-import { watchThemeRoleColors } from "../src/watch-pages/tile-new.js";
+import { newWatchAppTile, watchKindColor, watchThemeRoleColors } from "../src/watch-pages/tile-new.js";
 
 // These pin the old tile look, which a device below One Look's version
 // still draws; One Look's own are in one-look-render.test.ts.
@@ -277,8 +278,9 @@ describe("a template tile in the preview", () => {
     expect(watchTemplateTileLook(tile({ templateString: "" }), { page })).toEqual({ kind: "placeholder", symbol: WATCH_TEMPLATE_PLACEHOLDER_SYMBOL, ink: sensor });
     const drawn = face(tile({ templateString: "" }), undefined, icons(WATCH_TEMPLATE_PLACEHOLDER_SYMBOL, "star"));
     expect(drawn).toContain("opacity:0.4");
-    // Drawn, the tile has the color the sync rules give a template: white.
-    expect(drawn).toContain(`${WATCH_TEMPLATE_PLACEHOLDER_SYMBOL} #FFFFFF`);
+    // Drawn with no colour of its own (the sync rules give a template none),
+    // the mark takes the sensor colour, as the app's `tileColor` does.
+    expect(drawn).toContain(`${WATCH_TEMPLATE_PLACEHOLDER_SYMBOL} ${sensor}`);
     // Never its own icon or label.
     expect(drawn).not.toContain("star");
     expect(drawn).not.toContain("Mine");
@@ -294,7 +296,7 @@ describe("a template tile in the preview", () => {
     const drawn = face(tile(), { ok: true, value: "21 lights" });
     expect(drawn).toContain("21 lights");
     expect(drawn).toContain("text-align:center");
-    expect(drawn).toContain("color:#FFFFFF");
+    expect(drawn).toContain(`color:${sensor}`);
     expect(drawn).not.toContain("Mine");
     expect(face(tile(), { ok: true, value: "A\nB" })).toContain("text-align:left");
   });
@@ -314,7 +316,7 @@ describe("a template tile in the preview", () => {
   it("draws each [icon:] marker as a symbol in its own color or the text's", () => {
     const drawn = face(tile(), { ok: true, value: "[icon:lightbulb.fill color:yellow] 20 on [icon:power] [icon:nope color:red]" }, icons("lightbulb.fill", "power"));
     expect(drawn).toContain("lightbulb.fill #FFCC00");
-    expect(drawn).toContain("power #FFFFFF");
+    expect(drawn).toContain(`power ${sensor}`);
     expect(drawn).toContain(" 20 on ");
     expect(drawn).not.toContain("nope");
     expect(drawn).not.toContain("[icon:");
@@ -346,9 +348,25 @@ describe("a template tile in the preview", () => {
       });
     }
 
-    it("is graphite with no colour, its text in that surface's ink", () => {
-      const drawn = oneLookFace(tile({}), "21", false);
-      expect(drawn).toContain(`color:${inkOf(undefined)}`);
+    it("is graphite with no colour, its text in that surface's ink, on both devices", () => {
+      for (const onPhone of [false, true]) {
+        const drawn = oneLookFace(tile({}), "21", onPhone);
+        expect(drawn).toContain(`color:${inkOf(undefined)}`);
+        // The same ground as an Off tile's graphite.
+        const graphite = oneLookPalette({ role: { kind: "plain" }, calm: true });
+        expect(graphite.surface).toBe("graphite");
+      }
+    });
+
+    it("adds a new template with no colour, and its Default chip means no colour", () => {
+      const added = newWatchAppTile("template");
+      expect(added.color).toBeUndefined();
+      expect(watchKindColor(String(added.entityId), "sunnyBeachDay")).toBeUndefined();
+      // The watch's pull leaves it without one, as the app's
+      // `applyDefaultTileColors` does.
+      expect(watchSyncedTile(added, page).color).toBeUndefined();
+      // A template that stores a colour keeps it.
+      expect(watchSyncedTile({ ...added, color: "#CCD8E6" }, page).color).toBe("#CCD8E6");
     });
 
     it("draws a coloured run and an icon in it in the run's colour", () => {

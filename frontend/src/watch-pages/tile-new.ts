@@ -147,7 +147,9 @@ const TABLE = WATCH_TILE_DEFAULTS;
 interface AppAddSpec {
   entityIdPrefix: string;
   icon: string;
-  hex: string;
+  /** None for a template: it draws on One Look's graphite surface, as an Off
+   * tile (`GridItemConfig.template()`). */
+  hex?: string;
   customLabel: string;
 }
 
@@ -917,7 +919,7 @@ export function newWatchAppTile(
     id: newIdFrom(options),
     entityId,
     icon: spec.icon,
-    color: spec.hex,
+    ...(spec.hex === undefined ? {} : { color: spec.hex }),
     customLabel: spec.customLabel,
     colSpan: TABLE.tile.colSpan,
     rowSpan: TABLE.tile.rowSpan,
@@ -951,7 +953,7 @@ export function newWatchPhoneTile(kind: WatchPhoneAddKind, options?: WatchEditOp
     id: newIdFrom(options),
     entityId,
     icon: spec.icon,
-    color: spec.hex,
+    ...(spec.hex === undefined ? {} : { color: spec.hex }),
     customLabel: spec.customLabel,
     colSpan: spec.colSpan,
     rowSpan: spec.rowSpan,
@@ -988,7 +990,7 @@ export function newWatchHomeMapTile(floor: WatchHomeMapFloorAdd, options?: Watch
     id: newIdFrom(options),
     entityId: watchHomeMapEntityId(floor.id),
     icon: spec.icon,
-    color: spec.hex,
+    ...(spec.hex === undefined ? {} : { color: spec.hex }),
     customLabel: spec.customLabel,
     colSpan: spec.colSpan,
     rowSpan: spec.rowSpan,
