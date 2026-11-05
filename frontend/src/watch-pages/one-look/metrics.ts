@@ -114,7 +114,7 @@ export const ONE_LOOK_PHONE: OneLookMetrics = Object.freeze({
   gapTop: 6,
   bigSize: 40, bigSubSize: 13, bigSubGap: 3, bigGap: 18,
   chartLineWidth: 2.2, rim: 1, pearlGlow: 12, underGlow: true,
-  cornerRadiusMax: 22, cornerRadiusK: 0.2, cornerStyle: "continuous",
+  cornerRadiusMax: 22, cornerRadiusK: 1 / 3, cornerStyle: "continuous",
   cellInset: 5, sidePadding: 11,
 });
 

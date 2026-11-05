@@ -182,7 +182,7 @@ export const PHONE_TILE_RADIUS = 22;
  * cell's size (`TileLookMetrics.cornerRadius`): 22, less on a cell under
  * 66 points on its short side, a third of it, never under 4. */
 export function phoneTileCornerRadius(widthPt: number, heightPt: number): number {
-  return Math.min(PHONE_TILE_RADIUS, Math.max(4, Math.round(Math.min(widthPt, heightPt) / 3)));
+  return Math.min(PHONE_TILE_RADIUS, Math.max(4, Math.min(widthPt, heightPt) / 3));
 }
 
 /** How far the iPhone look draws a tile in from its grid cell, in points

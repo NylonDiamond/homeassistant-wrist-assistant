@@ -44,6 +44,16 @@ describe("template rows", () => {
     expect(templateColumnRows("one\ntwo", true)).toBeUndefined();
   });
 
+  it("lines up a single column from two rows that start with an icon", () => {
+    const rows = templateColumnRows("[icon:heater] Woonkamer 20°\n[icon:power] Aanbouw uit\n[icon:power] Zolder uit", true);
+    expect(rows).toHaveLength(3);
+    expect(rows?.every(templateRowSpans)).toBe(true);
+    expect(templateColumnRows("Rooms\n[icon:a] One\n[icon:b] Two", true)).toHaveLength(3);
+    expect(templateColumnRows("[icon:a] One\n[icon:b] Two", false)).toBeUndefined();
+    expect(templateColumnRows("[icon:a] One\nTwo", true)).toBeUndefined();
+    expect(templateColumnRows("One [icon:a]\nTwo [icon:b]", true)).toHaveLength(2);
+  });
+
   it("runs a row of one cell across the columns", () => {
     const rows = templateColumnRows("[icon:a] Aanb [icon:b] 1\n2026-04-08T21:24:11\n[icon:c] Kant", true) ?? [];
     expect(rows.map(templateRowSpans)).toEqual([false, true, true]);

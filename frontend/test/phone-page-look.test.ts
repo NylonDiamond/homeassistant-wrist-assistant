@@ -192,9 +192,9 @@ describe("the iPhone look", () => {
     const text = phonePicture(LIVING);
     expect(text).toContain("border-radius:22px");
     expect(text).not.toContain("border-radius:8px");
-    // A 1 by 1 tile's cell, 29.67 points, takes 10, not the drawn tile's 7.
+    // A 1 by 1 tile's cell, 29.67 points, takes a third of it, not the drawn tile's 7.
     const small: WatchPage = { ...LIVING, items: [{ ...ITEMS[0]!, colSpan: 1, rowSpan: 1 }] };
-    expect(phonePicture(small)).toContain("border-radius:10px");
+    expect(phonePicture(small)).toMatch(/border-radius:9\.8\d*px/);
   });
 
   it("draws each tile 4 points in from its cell, a header and a spacer keeping the whole cell", () => {

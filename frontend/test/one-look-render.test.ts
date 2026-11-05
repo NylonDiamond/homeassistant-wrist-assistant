@@ -132,9 +132,9 @@ describe("One Look's grid in a picture (OneLookGrid)", () => {
     expect(previewTileCellInset({ phone }, tile("spacer.1"), 189, 125)).toBe(0);
   });
 
-  it("rounds a tile by its drawn size: up to 22 at a fifth on the iPhone, up to 12 at 0.17 on the watch", () => {
+  it("rounds a tile by its drawn size: up to 22 at a third on the iPhone, up to 12 at 0.17 on the watch", () => {
     expect(previewTileCornerRadius({ phone }, PHONE_CELL.width, PHONE_CELL.height)).toBe(22);
-    expect(previewTileCornerRadius({ phone }, 60, 60)).toBeCloseTo(10, 5);
+    expect(previewTileCornerRadius({ phone }, 60, 60)).toBeCloseTo(50 / 3, 5);
     expect(previewTileCornerRadius({}, WATCH_CELL.width, WATCH_CELL.height)).toBeCloseTo(11.39, 2);
     expect(previewTileCornerRadius({}, 30, 30, 0)).toBeCloseTo(5.1, 5);
   });

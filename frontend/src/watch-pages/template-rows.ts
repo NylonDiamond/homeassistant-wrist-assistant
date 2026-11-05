@@ -46,13 +46,17 @@ export function templateRows(text: string): TemplateCell[][] {
 }
 
 /** The rows to stand in columns, or undefined while there is nothing to line
- * up: the key is off, or the text has one row or one column. The tile then
+ * up: the key is off, the text has one row, or it has one column and fewer than
+ * two rows start with an icon. Two such rows are worth lining up, as icons of
+ * different widths push their words to different places. The tile otherwise
  * draws its text as it always did. */
 export function templateColumnRows(text: string, on: boolean): TemplateCell[][] | undefined {
   if (!on) return undefined;
   const rows = templateRows(text);
   if (rows.length < 2) return undefined;
-  return rows.some((row) => row.length > 1) ? rows : undefined;
+  const hasColumns = rows.some((row) => row.length > 1);
+  const hasIconRows = rows.filter((row) => row[0]?.icon !== undefined).length > 1;
+  return hasColumns || hasIconRows ? rows : undefined;
 }
 
 /** Whether a row runs across all the columns: a row of one cell has nothing
