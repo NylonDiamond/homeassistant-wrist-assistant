@@ -469,14 +469,14 @@ describe("a default user's 3.0.1 watch after the phone finished", () => {
     const [device] = rowsOf(owner("w", row));
     expect(device?.sync).toBe("waiting");
     expect(device?.waitingFor).toEqual([IPHONE_UPDATE_LABEL]);
-    expect(syncRowWords(device!)).toBe("Waiting: Wrist Assistant 3.2");
+    expect(syncRowWords(device!)).toBe("Waiting: Wrist Assistant 3.2 on the watch");
     expect(homeGroupSummary(["waiting"]).text).toBe("1 waiting");
     // The phone's move counts as collected, as it signs as the watch.
     const held = homeDeviceRows(
       homeDevices([owner("w", row)], (d) => d.owner_watch_id, (d) => d.owner_watch_id),
       new Map([["w", { waiting: [], delivered: true }]]),
     );
-    expect(syncRowWords(held[0]!)).toBe("Waiting: Wrist Assistant 3.2");
+    expect(syncRowWords(held[0]!)).toBe("Waiting: Wrist Assistant 3.2 on the watch");
   });
 
   it("leaves a watch that is only old, and an up to date one, as they were", () => {

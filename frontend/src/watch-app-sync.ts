@@ -192,9 +192,9 @@ export async function readWatchAppSync(read: (kind: WatchConfigPanelKind) => Pro
 export const IPHONE_MOVE_LABEL = "your iPhone";
 
 /** The same wait while the watch's app is too old for the move
- * (`setupMoveNeedsUpdate`): "Waiting for Wrist Assistant 3.2", since
- * opening the iPhone app would not help before then. */
-export const IPHONE_UPDATE_LABEL = `Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)}`;
+ * (`setupMoveNeedsUpdate`): "Waiting for Wrist Assistant 3.2 on the watch",
+ * since opening the iPhone app would not help before then. */
+export const IPHONE_UPDATE_LABEL = `Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} on the watch`;
 
 /** The wait label for a watch reporting `appVersion`. */
 export function iphoneMoveLabel(appVersion: string | null | undefined): string {

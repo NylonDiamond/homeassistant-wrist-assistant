@@ -299,8 +299,8 @@ describe("Home's rows with the watch app", () => {
       ["w2", [IPHONE_MOVE_LABEL]],
       ["w3", [IPHONE_MOVE_LABEL]],
     ]);
-    expect(attentionText(rows[0]!, undefined)).toBe("Waiting for Wrist Assistant 3.2");
-    expect(iphoneMoveLabel("3.0.1")).toBe("Wrist Assistant 3.2");
+    expect(attentionText(rows[0]!, undefined)).toBe("Waiting for Wrist Assistant 3.2 on the watch");
+    expect(iphoneMoveLabel("3.0.1")).toBe("Wrist Assistant 3.2 on the watch");
     expect(iphoneMoveLabel("3.2.0")).toBe("your iPhone");
     expect(deviceVerdict("synced", { waiting: [], delivered: false, noRecord: true }, true, "3.0.1").waitingFor).toEqual([IPHONE_UPDATE_LABEL]);
   });
