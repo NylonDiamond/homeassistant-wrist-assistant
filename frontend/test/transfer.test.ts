@@ -633,22 +633,58 @@ describe("what a shared design runs when tapped", () => {
     return cfg;
   }
 
-  it("lists service and HTTP taps, in document order, and nothing else", () => {
+  it("lists every tap that changes something, in document order, and nothing else", () => {
     const actions = importActions(withTaps());
-    // The base document carries one tap of its own, so the new ones are 3 and 4.
-    expect(actions.map((a) => a.where)).toEqual(["The complication", "Tap 3", "Tap 4 (on a layer)"]);
+    // The base document carries one toggle of its own, so the new ones are 2 to 4.
+    expect(actions.map((a) => a.where)).toEqual(["The complication", "Tap 1", "Tap 2", "Tap 3", "Tap 4 (on a layer)"]);
     expect(actions[0]!.runs).toBe("an HTTP action, Webhook (sensor.hook)");
-    expect(actions[1]!.runs).toBe('lock.unlock with {"area_id": "kitchen"}');
-    expect(actions[2]!.runs).toBe("switch.turn_on on Pump (switch.pump)");
+    expect(actions[2]!.runs).toBe("a toggle of Porch (light.porch)");
+    expect(actions[3]!.runs).toBe('lock.unlock with {"area_id": "kitchen"}');
+    expect(actions[4]!.runs).toBe("switch.turn_on on Pump (switch.pump)");
   });
 
-  it("is empty for a design whose taps only toggle and open", () => {
+  it("names a toggle, a scene and a script, since each reaches the home", () => {
     const cfg = documentWithOneEntityTwice();
-    const toggle = newElement("tap");
-    (toggle.payload as TapElement).action = { type: "toggleEntity", entityId: "light.porch", displayName: "Porch", domain: "light" };
-    cfg.elements = [...cfg.elements, toggle];
+    const tap = (action: TapElement["action"]) => {
+      const el = newElement("tap");
+      (el.payload as TapElement).action = action;
+      return el;
+    };
+    cfg.elements = [
+      ...cfg.elements.filter((el) => el.kind !== "tap"),
+      tap({ type: "toggleEntity", entityId: "lock.front", displayName: "Front door", domain: "lock" }),
+      tap({ type: "runScene", entityId: "scene.away", displayName: "Away", domain: "scene" }),
+      tap({ type: "runScript", entityId: "script.alarm", displayName: "", domain: "script" }),
+    ];
+    cfg.tapAction = { type: "openApp" };
+    expect(importActions(cfg).map((a) => a.runs)).toEqual([
+      "a toggle of Front door (lock.front)",
+      "the scene Away (scene.away)",
+      "the script script.alarm",
+    ]);
+  });
+
+  it("is empty for a design whose taps only open and refresh", () => {
+    const cfg = documentWithOneEntityTwice();
+    cfg.elements = cfg.elements.filter((el) => el.kind !== "tap");
     cfg.tapAction = { type: "openApp" };
     expect(importActions(cfg)).toEqual([]);
+  });
+
+  it("refuses text whose color carries CSS, at any depth", () => {
+    const ok = exportText(documentWithOneEntityTwice(), "backup");
+    expect(parseImportText(ok, MAX_SCHEMA).ok).toBe(true);
+    for (const bad of [
+      "red;background:url(https://example.com/x)",
+      "url(https://example.com/x)",
+      "#FFF}body{display:none",
+    ]) {
+      const object = JSON.parse(ok) as Record<string, unknown>;
+      object.elements = [{ kind: "text", payload: { fill: { stops: [{ at: 0, colorHex: bad }] }, color: bad } }];
+      const parsed = parseImportText(JSON.stringify(object), MAX_SCHEMA);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) expect(parsed.error).toContain("not a color");
+    }
   });
 
   it("still lists them on the shared text, and names a slot as the reader's pick", () => {
@@ -657,9 +693,9 @@ describe("what a shared design runs when tapped", () => {
     expect(shared.ok).toBe(true);
     if (!shared.ok) return;
     const actions = importActions(shared.config);
-    expect(actions).toHaveLength(3);
-    expect(actions[1]!.runs).toBe('lock.unlock with {"area_id": "kitchen"}');
-    expect(actions[2]!.runs).toMatch(/^switch\.turn_on on the entity you pick for /);
+    expect(actions).toHaveLength(5);
+    expect(actions[3]!.runs).toBe('lock.unlock with {"area_id": "kitchen"}');
+    expect(actions[4]!.runs).toMatch(/^switch\.turn_on on the entity you pick for /);
   });
 });
 

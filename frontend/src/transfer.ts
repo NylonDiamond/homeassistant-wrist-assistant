@@ -336,6 +336,29 @@ function readableParseFailure(message: string): string {
  * replaces them with the reader's own: honouring the sender's is how two
  * documents end up claiming one slot.
  */
+/**
+ * Whether a color in pasted text carries CSS of its own.
+ *
+ * The panel writes a document's colors straight into `style=` in many places,
+ * and only some of them check first. A color such as
+ * `red;background:url(https://example.com/x)` would make a reader's browser ask
+ * another server for a picture as the preview opens. Pasted text is the one way
+ * somebody else's document gets here, so it is stopped at this door. A color is
+ * a `#` and digits, so nothing real is turned away.
+ */
+function hasCssInAColor(value: unknown, depth = 0): boolean {
+  if (depth > 64 || typeof value !== "object" || value === null) return false;
+  if (Array.isArray(value)) return value.some((item) => hasCssInAColor(item, depth + 1));
+  return Object.entries(value).some(([key, item]) =>
+    typeof item === "string"
+      ? COLOR_KEY.test(key) && CSS_IN_A_COLOR.test(item)
+      : hasCssInAColor(item, depth + 1));
+}
+
+const COLOR_KEY = /(Hex|Color)$|^color$/;
+const CSS_IN_A_COLOR = /[;{}<>\\]|url\s*\(|expression\s*\(|image-set\s*\(/i;
+const BAD_COLOR = "This text has a color in it that is not a color, so it was not imported.";
+
 export function parseImportText(text: string, maxSchemaVersion: number): ImportParse {
   const trimmed = text.trim();
   if (trimmed === "") return { ok: false, error: EMPTY };
@@ -350,6 +373,7 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
     return { ok: false, error: NOT_AN_OBJECT };
   }
   const object = raw as Record<string, unknown>;
+  if (hasCssInAColor(object)) return { ok: false, error: BAD_COLOR };
 
   const schema = object.schemaVersion;
   if (typeof schema === "number" && schema > maxSchemaVersion) {
@@ -674,6 +698,10 @@ export function importActions(cfg: CustomComplicationConfig): ImportAction[] {
 
 function describeRun(action: TapAction | undefined): string | undefined {
   if (action === undefined) return undefined;
+  // These reach the same things a service does: a toggle on a lock opens it.
+  if (action.type === "toggleEntity") return `a toggle of ${targetWords(action)}`;
+  if (action.type === "runScene") return `the scene ${targetWords(action)}`;
+  if (action.type === "runScript") return `the script ${targetWords(action)}`;
   if (action.type === "callService") {
     let words = `${action.serviceDomain}.${action.serviceName}`;
     if (action.target !== undefined && action.target.entityId !== "") words += ` on ${targetWords(action.target)}`;

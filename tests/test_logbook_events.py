@@ -143,6 +143,37 @@ def test_a_named_watch_gets_entries_on_its_registered_entity(env) -> None:
     assert {entry["name"] for entry in env.entries} == {"Jesse's Apple Watch"}
 
 
+def test_refused_signatures_write_one_row_per_watch_and_reason_per_window(env, monkeypatch) -> None:
+    now = [1000.0]
+    monkeypatch.setattr(env.mod.time, "monotonic", lambda: now[0])
+    env.mod._hmac_rows.clear()
+    hass = make_hass({WATCH: "watch", PHONE: "iphone"})
+
+    def refuse(watch_id: str = WATCH, reason: str = "bad_signature") -> None:
+        env.mod.log_hmac_failure(hass, watch_id=watch_id, reason=reason, is_known_watch=True)
+
+    for _ in range(50):
+        refuse()
+    assert len(env.entries) == 1
+    # Another reason and another device each have their own row.
+    refuse(reason="stale_timestamp")
+    refuse(PHONE)
+    assert len(env.entries) == 3
+    # And the first comes round again after the window.
+    now[0] += env.mod.HMAC_ROW_WINDOW_SECONDS
+    refuse()
+    assert len(env.entries) == 4
+
+
+def test_the_refused_signature_memory_stays_small(env, monkeypatch) -> None:
+    monkeypatch.setattr(env.mod, "_HMAC_ROWS_MAX", 8)
+    env.mod._hmac_rows.clear()
+    hass = make_hass({f"w{i}": "watch" for i in range(40)})
+    for i in range(40):
+        env.mod.log_hmac_failure(hass, watch_id=f"w{i}", reason="x", is_known_watch=True)
+    assert len(env.mod._hmac_rows) <= 8
+
+
 def test_an_unregistered_sensor_falls_back_to_the_unnamed_id(env) -> None:
     hass = make_hass({WATCH: "watch"})
     env.mod.log_first_sync(hass, watch_id=WATCH)

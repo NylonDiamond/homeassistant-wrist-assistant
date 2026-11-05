@@ -16,6 +16,7 @@ pair / sync / drop history without any further config.
 from __future__ import annotations
 
 import logging
+import time
 
 from homeassistant.components import logbook
 from homeassistant.core import HomeAssistant
@@ -198,6 +199,12 @@ def log_session_dropped(hass: HomeAssistant, *, watch_id: str, reason: str) -> N
     )
 
 
+# When ``log_hmac_failure`` last wrote a row, by watch id and reason.
+HMAC_ROW_WINDOW_SECONDS = 600.0
+_HMAC_ROWS_MAX = 1024
+_hmac_rows: dict[tuple[str, str], float] = {}
+
+
 def log_hmac_failure(
     hass: HomeAssistant,
     *,
@@ -224,6 +231,19 @@ def log_hmac_failure(
     # refresh. A real replay is refused all the same; it just is not logged.
     if reason in {"missing_headers", "invalid_version", "unsupported_version", "replayed_nonce"}:
         return
+    # This runs before anything proves who is asking, and a watch id is no
+    # secret, so anyone could otherwise write a row per request. One row per
+    # watch and reason per window says the same thing.
+    now = time.monotonic()
+    last = _hmac_rows.get((watch_id, reason))
+    if last is not None and now - last < HMAC_ROW_WINDOW_SECONDS:
+        return
+    if len(_hmac_rows) >= _HMAC_ROWS_MAX:
+        for key in [k for k, at in _hmac_rows.items() if now - at >= HMAC_ROW_WINDOW_SECONDS]:
+            del _hmac_rows[key]
+        if len(_hmac_rows) >= _HMAC_ROWS_MAX:
+            _hmac_rows.clear()
+    _hmac_rows[(watch_id, reason)] = now
     kind = _kind_of(hass, watch_id)
     name = _device_name(hass, watch_id, kind=kind)
     logbook.async_log_entry(
