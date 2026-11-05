@@ -255,7 +255,8 @@ import {
   watchScreenPage,
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS, setWatchMapPage, watchMapPageFloorId, watchMapPageRefusal, watchMapPageRemovedCount } from "./map-page.js";
-import { setWatchPageFitToScreen } from "./page-settings-model.js";
+import { setWatchPageFitToScreen, setWatchPageTileGap } from "./page-settings-model.js";
+import { phoneTileGapOfPage } from "./one-look/metrics.js";
 import { fitDrawnTile, fitPageRows, fitSmallestTile, fitsOnScreen, fitStateWords, fitTileNote, layoutOnFitRows, type FitRows } from "./fit-rows.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
@@ -298,7 +299,6 @@ import {
   phoneFrameStyles,
   phoneModelForScreenSize,
   phonePageLookOf,
-  phoneTileGapOf,
   phonePagesDotsOf,
   phonePagesLayout,
   phonePagesScreen,
@@ -312,6 +312,7 @@ import {
   tileHeadHasEntity,
   tileInspectorParts,
   tileSettingsStyles,
+  stylingEnumField,
 } from "./tile-settings.js";
 import {
   TILE_HEAD_BOX_PARTS,
@@ -3109,7 +3110,6 @@ export class WaPageEditor extends LitElement {
         page, pages: [page], device: g.screen,
         ...(states === undefined ? {} : { states }),
         ...(this.icons === undefined ? {} : { icons: this.icons }),
-        ...(this.behavior === undefined ? {} : { behavior: this.behavior }),
       }, tile)?.model;
     };
     const tile = watchPageTiles(after).find((t) => sameWatchId(tileIdOf(t), g.tileId));
@@ -3835,7 +3835,8 @@ export class WaPageEditor extends LitElement {
    * drawn. */
   private get gridSideInset(): number {
     const phone = this.phoneLayoutOf(undefined);
-    return watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), appVersion: this.screenLookVersion(this.previewKind) });
+    const page = this.currentPage();
+    return watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), ...(page === undefined ? {} : { page }), appVersion: this.screenLookVersion(this.previewKind) });
   }
 
   /** The app version the preview device reported, which decides whether
@@ -3882,7 +3883,6 @@ export class WaPageEditor extends LitElement {
       : watchPagesOf(this.contextPages(document)).filter((p) => p.isHidden !== true && p.isSystemPage !== true).length;
     return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size), {
       look: phonePageLookOf(this.behavior),
-      tileGap: phoneTileGapOf(this.behavior),
       // Before a draft, the phone's own defaults.
       ...(document === undefined ? {} : { dots: phonePagesDotsOf(this.behavior, visible) }),
     });
@@ -4424,6 +4424,7 @@ export class WaPageEditor extends LitElement {
       ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${useWords === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
         title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${useWords}</button>`}</span>`}
       ${this.renderFitSwitch(page, input, screen)}
+      ${this.renderTileGapChoice(page, screen)}
       ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen)}>
         <span class="pe-screen-off-l">${screenOffLead(screen)}:</span>
         ${chips.map((c) => {
@@ -5140,6 +5141,21 @@ export class WaPageEditor extends LitElement {
     ${on ? html`<span class="pe-screen-status pe-screen-fit-state">${fitStateWords(watchFitState({ ...input, page: screenDrawnPage(page, screen) }), device)}</span>` : nothing}`;
   }
 
+  /**
+   * The Tile gap choice under the iPhone's picture, which it changes: how far
+   * apart the iPhone draws this page's tiles. The watch's gap is always 3, so
+   * it has no such choice. Never on a map page, which has no tiles to space.
+   */
+  private renderTileGapChoice(page: WatchPage, screen: WatchScreen): TemplateResult | typeof nothing {
+    if (screen !== "iphone" || isMapWatchPage(page)) return nothing;
+    return stylingEnumField("Tile gap", "tileGap", phoneTileGapOfPage(page), (gap) => {
+      const document = this.draft?.document;
+      if (document === undefined || this.busy) return;
+      const next = setWatchPageTileGap(document, watchPageId(page), gap);
+      if (next !== document) this.edit(next);
+    });
+  }
+
   /** The line above Inside the tile while Fit to screen squashes the selected
    * tile on the picture it was last pressed on: the tile's settings stay
    * editable, as they also apply on the other device. */
@@ -5656,7 +5672,7 @@ export class WaPageEditor extends LitElement {
         : undefined;
       const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
       const appVersion = this.screenLookVersion(kind);
-      const sideInset = watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), appVersion });
+      const sideInset = watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), page: raw, appVersion });
       const shown = screenDrawnPage(raw, kind);
       const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset });
       const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));

@@ -20,16 +20,18 @@ import {
   phonePagesLayout,
   phonePagesScreen,
   phoneTileCellInset,
-  phoneTileGapOf,
   phoneTileCornerRadius,
   renderPhoneDock,
 } from "../src/phone-frame.js";
-import { catalogSettings, WATCH_SETTINGS_CATALOG } from "../src/watch-settings.js";
-import type { WatchPage } from "../src/watch-pages/model.js";
+import type { WatchPage, WatchPagesDocument, WatchPageTile } from "../src/watch-pages/model.js";
+import { oneLookCellInset, phoneTileGapOfPage } from "../src/watch-pages/one-look/metrics.js";
+import { setWatchPageTileGap } from "../src/watch-pages/page-settings-model.js";
 import {
   previewTileCellInset,
   previewTileCornerRadius,
   renderWatchPagePreview,
+  watchPreviewSideInset,
+  watchPreviewTopInset,
   watchPageHasDefaultBlackBackground,
   watchScreenBackground,
   watchTileCornerRadius,
@@ -413,25 +415,42 @@ describe("a watch", () => {
   });
 });
 
-describe("an iPhone's Tile gap (phoneTileGap)", () => {
-  it("reads as Small unless the phone's settings say otherwise", () => {
-    expect(phoneTileGapOf(undefined)).toBe("small");
-    expect(phoneTileGapOf({})).toBe("small");
-    expect(phoneTileGapOf({ phoneTileGap: "medium" })).toBe("medium");
-    expect(phoneTileGapOf({ phoneTileGap: "large" })).toBe("large");
-    expect(phoneTileGapOf({ phoneTileGap: "huge" })).toBe("small");
+describe("a page's Tile gap (tileGap)", () => {
+  it("reads as Small unless the page says otherwise", () => {
+    expect(phoneTileGapOfPage(undefined)).toBe("small");
+    expect(phoneTileGapOfPage({})).toBe("small");
+    expect(phoneTileGapOfPage({ tileGap: "medium" })).toBe("medium");
+    expect(phoneTileGapOfPage({ tileGap: "large" })).toBe("large");
+    expect(phoneTileGapOfPage({ tileGap: "huge" })).toBe("small");
   });
 
-  it("is kept on a phone's layout only when it is not the default", () => {
-    expect(Object.hasOwn(phonePagesLayout(undefined, { look: "iphone" }), "tileGap")).toBe(false);
-    expect(Object.hasOwn(phonePagesLayout(undefined, { look: "iphone", tileGap: "small" }), "tileGap")).toBe(false);
-    expect(phonePagesLayout(undefined, { look: "iphone", tileGap: "large" }).tileGap).toBe("large");
+  it("is stored only when it is not the default, and takes no value it does not offer", () => {
+    const page = { id: "A", name: "A", items: [] };
+    const document = { schemaVersion: 1, pages: [page] } as unknown as WatchPagesDocument;
+    const large = setWatchPageTileGap(document, "A", "large");
+    expect((large.pages as WatchPage[])[0]!.tileGap).toBe("large");
+    const back = setWatchPageTileGap(large, "A", "small");
+    expect(Object.hasOwn((back.pages as WatchPage[])[0]!, "tileGap")).toBe(false);
+    expect(setWatchPageTileGap(document, "A", "huge")).toBe(document);
   });
 
-  it("is a row on the iPhone's Pages card and no watch's setting", () => {
-    const row = catalogSettings(WATCH_SETTINGS_CATALOG).find((s) => s.key === "phoneTileGap")!;
-    expect(row.devices).toEqual(["iphone"]);
-    expect(row.default).toBe("small");
-    expect(row.options!.map((o) => o.value)).toEqual(["small", "medium", "large"]);
+  it("is drawn on the page that asks for it and no other", () => {
+    const phone = phonePagesLayout(undefined, { look: "iphone" });
+    const light = { id: "L", entityId: "light.a", gridCol: 0, gridRow: 0, colSpan: 4, rowSpan: 4 } as unknown as WatchPageTile;
+    expect(previewTileCellInset({ phone, oneLook: true }, light, 189, 125)).toBe(0.5);
+    expect(previewTileCellInset({ phone, oneLook: true, page: { tileGap: "medium" } }, light, 189, 125)).toBe(2);
+    expect(previewTileCellInset({ phone, oneLook: true, page: { tileGap: "large" } }, light, 189, 125)).toBe(5);
+    // The watch's gap is its own.
+    expect(previewTileCellInset({ oneLook: true, page: { tileGap: "large" } }, light, 103, 68)).toBe(0.5);
+  });
+
+  it("keeps the tiles' outer edge and top at any gap", () => {
+    const phone = phonePagesLayout(undefined, { look: "iphone" });
+    for (const tileGap of ["small", "medium", "large"]) {
+      const input = { phone, oneLook: true, page: { tileGap } };
+      const inset = oneLookCellInset("phone", false, false, phoneTileGapOfPage(input.page));
+      expect(watchPreviewSideInset(input) + inset).toBe(watchPreviewSideInset({ phone, oneLook: true }) + 0.5);
+      expect(watchPreviewTopInset(input) + inset).toBe(watchPreviewTopInset({ phone, oneLook: true }) + 0.5);
+    }
   });
 });

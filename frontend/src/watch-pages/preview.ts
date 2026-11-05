@@ -123,6 +123,7 @@ import {
   oneLookMetrics,
   oneLookPhoneBottomPadding,
   oneLookPhonePagesInset,
+  phoneTileGapOfPage,
 } from "./one-look/metrics.js";
 import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
 import { oneLookLuminance, oneLookParseHex } from "./one-look/colour.js";
@@ -212,6 +213,10 @@ export interface WatchPagePreviewInput {
  * device draws the old look: `oneLook` when given, else the device's app
  * version (`oneLookFor`). The iPhone draws One Look in both its page looks,
  * as the app does. */
+/** What the sizes that follow a page's Tile gap read: the page, when there is
+ * one (`phoneTileGapOfPage`). */
+export type PreviewGapInput = Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion"> & { readonly page?: object };
+
 export function previewOneLook(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): OneLookDevice | undefined {
   if (!(input.oneLook ?? oneLookByDefault ?? oneLookFor(input.appVersion))) return undefined;
   return input.phone === undefined ? "watch" : "phone";
@@ -345,13 +350,13 @@ export const WATCH_SCREEN_SIDE_INSET = WATCH_GRID_SIDE_INSET;
  * with the look's tile edge less the cell inset (15.5 with the iPhone look
  * and 5.5 with the Watch look at the standard gap), against the pages area
  * this picture lays out on, so the room here can go either way. */
-export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): number {
+export function watchPreviewSideInset(input: PreviewGapInput): number {
   const oneLook = previewOneLook(input);
   if (oneLook === "watch") return oneLookGridSidePadding(oneLook);
   if (oneLook === "phone") {
     const iphone = phoneDrawsIphoneLook(input.phone);
     const edge = iphone ? PHONE_VAULT_GUTTER : PHONE_PAGES_SIDE_INSET;
-    return oneLookPhonePagesInset(edge, input.phone?.tileGap) - (iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET);
+    return oneLookPhonePagesInset(edge, phoneTileGapOfPage(input.page)) - (iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET);
   }
   return input.phone === undefined ? WATCH_SCREEN_SIDE_INSET : 0;
 }
@@ -362,11 +367,11 @@ export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone"
  * Under One Look the iPhone's grid starts off by what its cell inset adds
  * over the look's own (`gridTopInset(oneLook:lookCellInset:gap:)`), so the
  * first tile stays where it was at any gap. */
-export function watchPreviewTopInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): number {
+export function watchPreviewTopInset(input: PreviewGapInput): number {
   if (input.phone === undefined) return WATCH_GRID_TOP_INSET;
   if (previewOneLook(input) === "phone") {
     const lookInset = phoneDrawsIphoneLook(input.phone) ? PHONE_TILE_CELL_INSET : 0;
-    return Math.max(0, PHONE_GRID_TOP_INSET + lookInset - oneLookCellInset("phone", false, false, input.phone.tileGap));
+    return Math.max(0, PHONE_GRID_TOP_INSET + lookInset - oneLookCellInset("phone", false, false, phoneTileGapOfPage(input.page)));
   }
   return PHONE_GRID_TOP_INSET;
 }
@@ -545,14 +550,14 @@ export function watchTileCornerRadius(widthPt: number, heightPt: number): number
  * side, the device's cell inset unless a caller that already has the drawn
  * size says 0. */
 export function previewTileCornerRadius(
-  input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">,
+  input: PreviewGapInput,
   widthPt: number,
   heightPt: number,
   inset?: number,
 ): number {
   const oneLook = previewOneLook(input);
   if (oneLook !== undefined) {
-    const by = inset ?? oneLookCellInset(oneLook, false, false, input.phone?.tileGap);
+    const by = inset ?? oneLookCellInset(oneLook, false, false, phoneTileGapOfPage(input.page));
     return oneLookCornerRadius(oneLookMetrics(oneLook), { width: Math.max(0, widthPt - 2 * by), height: Math.max(0, heightPt - 2 * by) });
   }
   return phoneDrawsIphoneLook(input.phone) ? phoneTileCornerRadius(widthPt, heightPt) : watchTileCornerRadius(widthPt, heightPt);
@@ -564,11 +569,11 @@ export function previewTileCornerRadius(
  * picture keep the whole cell. Under One Look every tile but a header or a
  * spacer is drawn in by its device's inset, on the watch too, with no clamp
  * on small tiles (`OneLookGrid.cellInset`). */
-export function previewTileCellInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">, tile: WatchPageTile, widthPt: number, heightPt: number): number {
+export function previewTileCellInset(input: PreviewGapInput, tile: WatchPageTile, widthPt: number, heightPt: number): number {
   const oneLook = previewOneLook(input);
   if (oneLook !== undefined) {
     const kind = tileKind(tileEntityId(tile));
-    return oneLookCellInset(oneLook, kind === "divider", kind === "spacer", input.phone?.tileGap);
+    return oneLookCellInset(oneLook, kind === "divider", kind === "spacer", phoneTileGapOfPage(input.page));
   }
   if (!phoneDrawsIphoneLook(input.phone)) return 0;
   const kind = tileKind(tileEntityId(tile));
@@ -4032,7 +4037,7 @@ export function watchFitHeight(input: WatchPagePreviewInput, page: WatchPage): n
   if (input.phone === undefined) return input.screen.height - top - WATCH_FIT_BOTTOM_ROOM;
   const dock = previewOneLook(input) === "phone" && input.phone !== undefined && phoneDrawsIphoneLook(input.phone)
     && input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true).length >= 2;
-  return input.screen.height - top - (dock ? oneLookPhoneBottomPadding(input.phone.tileGap) : 0);
+  return input.screen.height - top - (dock ? oneLookPhoneBottomPadding(phoneTileGapOfPage(page)) : 0);
 }
 
 /** How Fit to screen treats a page on the device `input` draws, for the panel

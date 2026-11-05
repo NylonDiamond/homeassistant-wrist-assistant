@@ -58,7 +58,6 @@ import { css, html, svg, type TemplateResult, nothing, unsafeCSS } from "lit";
 
 import type { IconProvider } from "./renderer.js";
 import { renderWatchFrame } from "./watch-frame.js";
-import { PHONE_TILE_GAP_STANDARD, type PhoneTileGap } from "./watch-pages/one-look/metrics.js";
 
 /** One iPhone screen: its size, the safe area the app's chrome keeps clear
  * of, the corner radius of its display, and its Dynamic Island, all in
@@ -175,13 +174,6 @@ export function phonePageLookOf(behavior: Readonly<Record<string, unknown>> | un
   return behavior?.phonePageLook === "watch" ? "watch" : "iphone";
 }
 
-/** The gap a phone's behavior document asks for (`phoneTileGap`). Absent or
- * any other value is the default, as the app reads it. */
-export function phoneTileGapOf(behavior: Readonly<Record<string, unknown>> | undefined): PhoneTileGap {
-  const gap = behavior?.phoneTileGap;
-  return gap === "small" || gap === "medium" || gap === "large" ? gap : PHONE_TILE_GAP_STANDARD;
-}
-
 /** The iPhone look's tile corners in points on a tile big enough for them
  * (`TileLookMetrics.phoneCornerRadius`). */
 export const PHONE_TILE_RADIUS = 22;
@@ -221,8 +213,6 @@ export interface PhonePagesLayout {
   switcher?: PhoneRect;
   /** Set only for the iPhone look; absent is the Watch look. */
   look?: "iphone";
-  /** The phone's Tile gap, set only when it is not the default. */
-  tileGap?: PhoneTileGap;
   /** The top row, from the grid button's left edge to the gear's right
    * edge: the buttons line up with the tiles' edges. */
   topRow: PhoneRect;
@@ -267,7 +257,7 @@ export function phonePagesBottomBarHeight(iphone: boolean, dots: PhonePagesDotsP
  * dots on, at the bottom, two or more pages. */
 export function phonePagesLayout(
   model: PhoneModel = DEFAULT_PHONE,
-  options?: { switcher?: boolean; look?: PhonePageLook; dots?: PhonePagesDotsPlace; tileGap?: PhoneTileGap },
+  options?: { switcher?: boolean; look?: PhonePageLook; dots?: PhonePagesDotsPlace },
 ): PhonePagesLayout {
   const { width, height } = model.screen;
   const iphone = options?.look === "iphone";
@@ -290,7 +280,6 @@ export function phonePagesLayout(
     model,
     ...(switcher === undefined ? {} : { switcher }),
     ...(iphone ? { look: "iphone" as const } : {}),
-    ...(options?.tileGap === undefined || options.tileGap === PHONE_TILE_GAP_STANDARD ? {} : { tileGap: options.tileGap }),
     topRow, area, bottomBar,
   };
 }

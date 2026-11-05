@@ -95,14 +95,14 @@ describe("iPhone settings", () => {
     const sections = catalogFor("iphone");
     expect(sections.map((s) => s.id)).toEqual(["gestures", "navigation", "controls", "camera"]);
     const settings = sections.flatMap((s) => s.settings);
-    expect(settings).toHaveLength(33);
+    expect(settings).toHaveLength(32);
     expect(settings.every((s) => s.devices?.includes("iphone"))).toBe(true);
     // The Page look leads the iPhone's Pages card.
     expect(sections.find((s) => s.id === "navigation")!.settings[0]!.key).toBe("phonePageLook");
   });
 
-  it("leave a watch's page as it was, without the iPhone's Page look and Tile gap", () => {
-    const withoutLook = WATCH_SETTINGS_CATALOG.sections.map((s) => ({ ...s, settings: s.settings.filter((x) => x.key !== "phonePageLook" && x.key !== "phoneTileGap") }));
+  it("leave a watch's page as it was, without the iPhone's Page look", () => {
+    const withoutLook = WATCH_SETTINGS_CATALOG.sections.map((s) => ({ ...s, settings: s.settings.filter((x) => x.key !== "phonePageLook") }));
     expect(catalogFor("watch")).toEqual(withoutLook);
   });
 

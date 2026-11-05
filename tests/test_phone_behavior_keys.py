@@ -57,17 +57,16 @@ def _document_keys(setting: dict) -> set[str]:
 
 def test_every_catalog_setting_says_which_devices_read_it() -> None:
     settings = _catalog_settings()
-    assert len(settings) == 47
+    assert len(settings) == 46
     for setting in settings:
         assert setting.get("devices") in (["watch"], ["watch", "iphone"], ["iphone"]), setting["key"]
 
 
-def test_only_the_page_look_and_tile_gap_are_iphone_only_settings() -> None:
-    """``phonePageLook`` and ``phoneTileGap`` are the rows only the iPhone
-    reads: how it draws its pages, like an iPhone app (the default) or like a
-    big watch, and how far apart it draws its tiles."""
+def test_only_the_page_look_is_an_iphone_only_setting() -> None:
+    """``phonePageLook`` is the one row only the iPhone reads: how it draws
+    its pages, like an iPhone app (the default) or like a big watch."""
     iphone_only = [s for s in _catalog_settings() if s["devices"] == ["iphone"]]
-    assert [s["key"] for s in iphone_only] == ["phonePageLook", "phoneTileGap"]
+    assert [s["key"] for s in iphone_only] == ["phonePageLook"]
     look = iphone_only[0]
     assert look["type"] == "enum"
     assert look["default"] == "iphone"
@@ -80,7 +79,7 @@ def test_the_phone_keys_are_the_catalog_s_iphone_keys() -> None:
         if "iphone" in setting["devices"]:
             from_catalog |= _document_keys(setting)
     assert _const_set("PHONE_BEHAVIOR_KEYS") == from_catalog
-    assert len(from_catalog) == 33
+    assert len(from_catalog) == 32
 
 
 def test_no_watch_only_key_is_a_phone_key() -> None:

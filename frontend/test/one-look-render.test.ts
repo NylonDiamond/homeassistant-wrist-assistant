@@ -78,7 +78,7 @@ function provider(boxes: Record<string, [number, number]> = BOXES): IconProvider
 /** The watch's bulb: an image of extent 1.3 and aspect 0.7. */
 const WATCH_BULB: Record<string, [number, number]> = { ...BOXES, lightbulb: [14.3, 23.32], "lightbulb.fill": [14.3, 23.32] };
 
-const page: WatchPage = { id: "P", name: "P", items: [] };
+const page: WatchPage = { id: "P", name: "P", items: [], tileGap: "large" };
 const entity = (entityId: string, state: string, attributes: Record<string, unknown> = {}): Record<string, HassEntityState> => ({
   [entityId]: { entity_id: entityId, state, attributes, last_changed: "", last_updated: "" },
 });
@@ -87,7 +87,8 @@ const tile = (entityId: string, extra: Partial<WatchPageTile> = {}): WatchPageTi
 /** The iPhone look on the default iPhone: a 6 x 4 cell is 189 by 125.33 on
  * One Look's 29.83 point unit, drawn 5 in a side at 179 by 115.33. */
 // The numbers in this file are the mock's, whose iPhone gap is 12: the Large Tile gap.
-const phone = phonePagesLayout(undefined, { look: "iphone", tileGap: "large" });
+const LARGE_GAP = { tileGap: "large" };
+const phone = phonePagesLayout(undefined, { look: "iphone" });
 const PHONE_UNIT = (380 - 22) / 12;
 const PHONE_CELL = { width: 6 * PHONE_UNIT + 10, height: 4 * PHONE_UNIT + 6 };
 /** The Ultra: a 15.5 point unit, a 6 x 4 cell 103 by 68, drawn at 102 by
@@ -127,17 +128,16 @@ describe("One Look's grid in a picture (OneLookGrid)", () => {
   it("draws a tile in from its cell on both devices, a header and a spacer keeping the whole cell", () => {
     const light = tile("light.a");
     expect(previewTileCellInset({}, light, 103, 68)).toBe(0.5);
-    expect(previewTileCellInset({ phone }, light, 189, 125)).toBe(5);
-    expect(previewTileCellInset({ phone: phonePagesLayout(undefined, { look: "watch", tileGap: "large" }) }, light, 189, 125)).toBe(5);
-    expect(previewTileCellInset({ phone: phonePagesLayout(undefined, { look: "iphone", tileGap: "medium" }) }, light, 189, 125)).toBe(2);
-    expect(previewTileCellInset({ phone: phonePagesLayout(undefined, { look: "iphone" }) }, light, 189, 125)).toBe(0.5);
+    expect(previewTileCellInset({ phone, page: LARGE_GAP }, light, 189, 125)).toBe(5);
+    expect(previewTileCellInset({ phone: phonePagesLayout(undefined, { look: "watch" }), page: LARGE_GAP }, light, 189, 125)).toBe(5);
     expect(previewTileCellInset({ phone }, tile("divider.line.light"), 189, 125)).toBe(0);
     expect(previewTileCellInset({ phone }, tile("spacer.1"), 189, 125)).toBe(0);
   });
 
   it("rounds a tile by its drawn size: up to 22 at a third on the iPhone, up to 12 at 0.17 on the watch", () => {
     expect(previewTileCornerRadius({ phone }, PHONE_CELL.width, PHONE_CELL.height)).toBe(22);
-    expect(previewTileCornerRadius({ phone }, 60, 60)).toBeCloseTo(50 / 3, 5);
+    expect(previewTileCornerRadius({ phone, page: LARGE_GAP }, 60, 60)).toBeCloseTo(50 / 3, 5);
+    expect(previewTileCornerRadius({ phone }, 60, 60)).toBeCloseTo(59 / 3, 5);
     expect(previewTileCornerRadius({}, WATCH_CELL.width, WATCH_CELL.height)).toBeCloseTo(11.39, 2);
     expect(previewTileCornerRadius({}, 30, 30, 0)).toBeCloseTo(5.1, 5);
   });
@@ -145,15 +145,15 @@ describe("One Look's grid in a picture (OneLookGrid)", () => {
   it("moves the grid out by the cell inset so the drawn edges stay where the look puts them", () => {
     expect(watchPreviewSideInset({})).toBe(1.5);
     // The iPhone look's pages area is 12 in; One Look pads the grid 11.
-    expect(watchPreviewSideInset({ phone })).toBe(-1);
-    expect(watchPreviewTopInset({ phone })).toBe(3);
+    expect(watchPreviewSideInset({ phone, page: LARGE_GAP })).toBe(-1);
+    expect(watchPreviewTopInset({ phone, page: LARGE_GAP })).toBe(3);
     // The Watch look's is 6 in; One Look pads it 1.
-    const watchLook = phonePagesLayout(undefined, { look: "watch", tileGap: "large" });
-    expect(watchPreviewSideInset({ phone: watchLook })).toBe(-5);
-    expect(watchPreviewTopInset({ phone: watchLook })).toBe(0);
+    const watchLook = phonePagesLayout(undefined, { look: "watch" });
+    expect(watchPreviewSideInset({ phone: watchLook, page: LARGE_GAP })).toBe(-5);
+    expect(watchPreviewTopInset({ phone: watchLook, page: LARGE_GAP })).toBe(0);
     expect(watchPreviewTopInset({})).toBe(34);
     // One Look's unit on the iPhone look: (402 - 22 - 22) / 12.
-    expect((phonePagesScreen(phone).width - 2 * watchPreviewSideInset({ phone }) - 22) / 12).toBeCloseTo(29.833, 3);
+    expect((phonePagesScreen(phone).width - 2 * watchPreviewSideInset({ phone, page: LARGE_GAP }) - 22) / 12).toBeCloseTo(29.833, 3);
     // The standard gap draws each tile in less, so the grid pads itself more,
     // and the tiles' outer edges stay on the same 16.
     const standard = phonePagesLayout(undefined, { look: "iphone" });

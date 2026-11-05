@@ -197,17 +197,24 @@ export function oneLookScaledText(m: OneLookMetrics, scale: number, name = 1, fa
 // The grid under One Look (`OneLookGrid`). The app keeps its 2 pt pitch,
 // which packing and header shifts count on, and draws each tile in from its
 // cell instead: 2 + 2 x 0.5 apart on the watch, and on the iPhone as far as
-// its Tile gap setting asks (`phoneTileGap`, 3 unless set).
+// the page's Tile gap asks (its `tileGap` key, 3 unless set).
 
 export const ONE_LOOK_COLUMNS = 12;
 /** `PageGridLayout.tileSpacing`: the pitch between cells. */
 export const ONE_LOOK_TILE_SPACING = 2;
 
-/** An iPhone's Tile gap (`PhoneTileGap`), the `phoneTileGap` setting. */
+/** A page's Tile gap on the iPhone (`PhoneTileGap`), its `tileGap` key. */
 export type PhoneTileGap = "small" | "medium" | "large";
 
-/** What an absent setting means. */
+/** What an absent key means. */
 export const PHONE_TILE_GAP_STANDARD: PhoneTileGap = "small";
+
+/** The gap a page asks for. Absent or any other value is the default, as the
+ * app reads it. */
+export function phoneTileGapOfPage(page: object | undefined): PhoneTileGap {
+  const gap = (page as { readonly tileGap?: unknown } | undefined)?.tileGap;
+  return gap === "medium" || gap === "large" ? gap : PHONE_TILE_GAP_STANDARD;
+}
 
 /** Each gap as drawn, in points (`PhoneTileGap.points`). */
 export const PHONE_TILE_GAP_POINTS: Readonly<Record<PhoneTileGap, number>> = Object.freeze({ small: 3, medium: 6, large: 12 });

@@ -66,11 +66,11 @@ function closeRect(got: OneLookRect | undefined, want: Rect | undefined, what: s
  * stage lay it out, with live states. */
 function frameOf(f: Fixture, withArrange: boolean) {
   const tile: WatchPageTile = withArrange ? { ...f.tile, arrange: f.arrange } : { ...f.tile };
-  const page: WatchPage = { id: "A11A0000-0000-4000-8000-0000000000AA", name: "Arrange", items: [tile] };
+  // The fixtures are cut at the iPhone's 12 pt gap: the Large Tile gap.
+  const page: WatchPage = { id: "A11A0000-0000-4000-8000-0000000000AA", name: "Arrange", tileGap: "large", items: [tile] };
   const states: Record<string, HassEntityState> = {};
   for (const [id, s] of Object.entries(f.states)) states[id] = { entity_id: id, state: s.state, attributes: s.attributes, last_changed: "", last_updated: "" };
-  // The fixtures are cut at the iPhone's 12 pt gap: the Large Tile gap.
-  const frame = arrangeFrame({ page, pages: [page], device: f.device, states, stateMode: "live", behavior: { phoneTileGap: "large" } }, tile);
+  const frame = arrangeFrame({ page, pages: [page], device: f.device, states, stateMode: "live" }, tile);
   if (frame === undefined) throw new Error(`${f.name}: the tile is not on its page`);
   return frame;
 }

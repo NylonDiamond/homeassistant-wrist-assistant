@@ -18,6 +18,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md, "3d build contract";
 // the background photo, docs/pages_in_home_assistant_step4.md, "4d batch 6".
 
+import { PHONE_TILE_GAP_STANDARD } from "./one-look/metrics.js";
 import pageKeys from "./page-keys.json";
 import { findWatchPage } from "./edit.js";
 import { sameWatchPagesJson } from "./merge.js";
@@ -437,6 +438,13 @@ export function setWatchPageFullScreen(document: WatchPagesDocument, pageId: str
 export function setWatchPageFitToScreen(document: WatchPagesDocument, pageId: string, on: boolean, screen: WatchScreen = "iphone"): WatchPagesDocument {
   if (typeof on !== "boolean") return document;
   return setPageKey(document, pageId, screen === "iphone" ? "fitToScreen" : "watchFitToScreen", () => (on ? true : null));
+}
+
+/** The page's Tile gap, read only by the iPhone. The default removes the key,
+ * which the iPhone reads as the default. */
+export function setWatchPageTileGap(document: WatchPagesDocument, pageId: string, gap: string): WatchPagesDocument {
+  if (!watchStylingChoices("tileGap").some((c) => c.value === gap)) return document;
+  return setPageKey(document, pageId, "tileGap", () => (gap === PHONE_TILE_GAP_STANDARD ? null : gap));
 }
 
 /** The setter of each Page row, by the key it writes. */
