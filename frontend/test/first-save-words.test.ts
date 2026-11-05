@@ -177,6 +177,17 @@ describe("a watch's own setup that may still come", () => {
     expect(waitsForWatchSeed(owner("p", { ...pending, device_kind: "iphone" }))).toBe(false);
   });
 
+  it("never asks or says waiting for a watch too old to send anything, whatever the row says", () => {
+    for (const seed_pending of [true, false]) {
+      const old = owner("w", { ...pending, seed_pending, app_version: "3.0.1" });
+      expect(firstSaveAskText(old, ["pages"])).toBeUndefined();
+      expect(firstSaveAskText(old, ["notification_style"])).toBeUndefined();
+      expect(noRecordWords(old, "voice")?.status).not.toBe(WAITING_FOR_WATCH_STATUS);
+      // It waits for its update instead, with those words.
+      expect(noRecordStart(old)).toBe("wait");
+    }
+  });
+
   it("opens the editors ready, so nothing refuses a person", () => {
     expect(noRecordStart(owner("w", pending))).toBe("start");
   });

@@ -557,7 +557,7 @@ export function onComparison(ref: EntityRef): Comparison {
   }
 }
 
-function domainOf(ref: EntityRef): string {
+export function domainOf(ref: EntityRef): string {
   return ref.domain || ref.entityId.split(".")[0] || "";
 }
 

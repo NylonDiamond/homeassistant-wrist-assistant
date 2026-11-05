@@ -177,6 +177,40 @@ describe("splitDocument", () => {
     expect(children[1]!.inline).toEqual(parent.inline);
   });
 
+  // A control placed in Control Center saves the document's id and cannot follow
+  // a new one. A face saves its slot, so the shapes can take new ids.
+  it("leaves a placed control's id on the control and gives every shape a new one", () => {
+    const parent = { ...fixture("living_room.json"), control: fixture("control.json").control };
+    const children = splitDocument(parent, counter());
+    expect(children.map((c) => [c.id, c.supportedFamilies])).toEqual([
+      ["NEW-1", ["rectangular"]],
+      ["NEW-2", ["circular"]],
+      ["NEW-3", ["corner"]],
+      [parent.id, []],
+    ]);
+    expect(children[3]!.control).toEqual(parent.control);
+    for (const shape of children.slice(0, 3)) expect(shape.control).toBeUndefined();
+  });
+
+  it("puts the control at the slot it is given and leaves the shapes at the old one", () => {
+    const parent = fixture("control.json");
+    const [shape, control] = splitDocument(parent, counter(), 40);
+    expect(shape!.slotIndex).toBe(parent.slotIndex);
+    expect(control!.slotIndex).toBe(40);
+    // A slot above 7 needs the schema that says so.
+    expect(encodeConfig(control!).schemaVersion).toBeGreaterThanOrEqual(5);
+    // With no slot given, it stays beside them.
+    const [, beside] = splitDocument(parent, counter());
+    expect(beside!.slotIndex).toBe(parent.slotIndex);
+  });
+
+  it("never moves a control that is not being cut off from shapes", () => {
+    const parent = fixture("control_only.json");
+    const [only] = splitDocument(parent, counter(), 40);
+    expect(only!.id).toBe(parent.id);
+    expect(only!.slotIndex).toBe(parent.slotIndex);
+  });
+
   it("gives the first shape in family order the record id and the rest new ones", () => {
     const parent = fixture("text_arc.json");
     expect(supportedFamilies(parent)).toEqual(["rectangular", "circular", "small"]);
@@ -200,11 +234,9 @@ describe("splitDocument", () => {
     const parent = fixture("control.json");
     const children = splitDocument(parent, counter());
     expect(children).toHaveLength(2);
-    expect(children[0]!.id).toBe(parent.id);
     expect(children[0]!.supportedFamilies).toEqual(["circular"]);
     expect(children[0]!.control).toBeUndefined();
     const control = children[1]!;
-    expect(control.id).toBe("NEW-1");
     expect(control.supportedFamilies).toEqual([]);
     expect(control.perFamily).toEqual({});
     // A control has no canvas, so no layer rides along on it.
@@ -620,6 +652,56 @@ describe("splitOwner", () => {
       ["circular"],
       ["corner"],
     ]);
+  });
+
+  describe("a document with a shape and a control", () => {
+    const raw = rawFixture("control.json");
+    const id = String(raw.id);
+    /** The first slot this fixture does not sit in. */
+    const seat = raw.slotIndex === 0 ? 1 : 0;
+
+    it("keeps a control placed on the old id working", async () => {
+      const fake = fakeHass({ documents: { "watch-1": [raw] } });
+      const result = await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter());
+      expect(result.problem).toBeUndefined();
+      // What the app's control looks up: the document with this id, and its control.
+      expect(fake.document("watch-1", id)!.control).toEqual(raw.control);
+      expect(fake.document("watch-1", id)!.supportedFamilies).toEqual([]);
+      // The record that keeps the id goes first, based on the revision that was read.
+      expect(result.writes.map((w) => [w.kind, w.id])).toEqual([["parent", id], ["child", "NEW-1"]]);
+      expect(result.writes[0]!.previous).toBe(3);
+      expect(fake.sent.filter((m) => m.type === `${D}/save`).map((m) => m.base_revision)).toEqual([3, null]);
+      // A face holds the slot, and the shape stays there on its own.
+      const shape = fake.document("watch-1", "NEW-1")!;
+      expect(shape.slotIndex).toBe(raw.slotIndex);
+      expect(shape.supportedFamilies).toEqual(raw.supportedFamilies);
+      expect(shape.control).toBeUndefined();
+      expect(fake.document("watch-1", id)!.slotIndex).toBe(seat);
+    });
+
+    it("gives two controls two slots, past what other records and homes hold", async () => {
+      const other = { ...raw, id: "AAAAAAAA-0000-4000-8000-000000000001", slotIndex: 7, name: "Other" };
+      const fake = fakeHass({ documents: { "watch-1": [{ ...raw, slotIndex: 0 }, other] } });
+      await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter(), [{ slot: 1 }, { slot: 3 }]);
+      expect(fake.document("watch-1", id)!.slotIndex).toBe(2);
+      expect(fake.document("watch-1", String(other.id))!.slotIndex).toBe(4);
+    });
+
+    it("leaves the control beside its shape when no slot is free", async () => {
+      const fake = fakeHass({ documents: { "watch-1": [raw] } });
+      const everySlot = Array.from({ length: 64 }, (_, slot) => ({ slot }));
+      const result = await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter(), everySlot);
+      expect(result.problem).toBeUndefined();
+      expect(fake.document("watch-1", id)!.slotIndex).toBe(raw.slotIndex);
+      expect(fake.document("watch-1", id)!.control).toEqual(raw.control);
+    });
+
+    it("leaves a document already split alone", async () => {
+      const fake = fakeHass({ documents: { "watch-1": [rawFixture("control_only.json")] } });
+      const result = await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter());
+      expect(result.writes).toEqual([]);
+      expect(fake.sent.filter((m) => m.type === `${D}/save`)).toEqual([]);
+    });
   });
 
   it("writes nothing at all when one record's history cannot be read", async () => {

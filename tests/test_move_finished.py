@@ -344,11 +344,13 @@ def test_a_too_old_watch_s_poll_does_not_start_the_ten_minutes(env) -> None:
     assert secrets.get("w1").move_end_heard is False
     assert secrets.get("w1").move_end_heard_at is None
     assert secrets.seed_may_land("w1") is False
-    # Still its chance to come.
-    assert secrets.seed_pending("w1") is True
+    # A watch that never updates has nothing on its way, so nothing asks.
+    assert secrets.seed_pending("w1") is False
 
-    # The update reports first, and the next poll starts them.
+    # The update reports first, which brings its chance back, and the next poll
+    # starts them.
     secrets.update_metadata("w1", app_version="3.2.0")
+    assert secrets.seed_pending("w1") is True
     assert secrets.note_move_end_heard("w1") is True
     assert secrets.seed_may_land("w1") is True
     assert secrets.seed_pending("w1") is False

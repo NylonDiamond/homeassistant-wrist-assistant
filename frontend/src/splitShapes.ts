@@ -21,6 +21,7 @@ import {
   type CustomComplicationConfig,
   type FamilyKind,
   DRAWABLE_FAMILIES,
+  freeSlotFrom,
   newId,
   normalizeOwnership,
   parseConfig,
@@ -198,12 +199,22 @@ export function planFor(cfg: CustomComplicationConfig): SplitPlan {
 /**
  * One document per shape, plus one for the control.
  *
- * The first shape in the canonical family order keeps the record id, so
- * history, the gallery's `replaces` and anything else pointing at this
- * complication still point at something. Every other child, and the
- * control-only child, gets a new id from `nextId`.
+ * One child keeps the record id, so history, the gallery's `replaces` and
+ * anything else pointing at this complication still point at something, and
+ * every other child gets a new id from `nextId`. With no control that is the
+ * first shape in the canonical family order. With a control it is the control:
+ * a control placed in Control Center saves this document's id and cannot follow
+ * a new one, so a new id would blank the tile. A shape can give the id up,
+ * since a face or a widget saves its slot and finds the shape's document there.
  *
- * Every child keeps the whole envelope: the slot (a slot holds one document
+ * `controlSlot` is where the control goes when it is cut off from shapes. The
+ * record that keeps its id keeps its place in an app's store, so at the old slot
+ * the control would come first, and the app lets the first document there speak
+ * for a face that draws every shape: its name, its refresh and its pages. A
+ * control asks for nothing a slot gives, so it sits at a slot of its own and
+ * the shapes keep the slot the face saved.
+ *
+ * Every other child keeps the whole envelope: the slot (a slot holds one document
  * per shape now, so the children sit together), `hidden`, the name unchanged,
  * the data sources, the refresh interval, the tap action and the pages. What
  * differs is the drawing: each child keeps the layers its own shape owns, its
@@ -227,6 +238,7 @@ export function planFor(cfg: CustomComplicationConfig): SplitPlan {
 export function splitDocument(
   cfg: CustomComplicationConfig,
   nextId: () => string = newId,
+  controlSlot?: number,
 ): CustomComplicationConfig[] {
   const source = normalizedForSplit(cfg);
   const families = supportedFamilies(source);
@@ -252,7 +264,7 @@ export function splitDocument(
     // the control speaks for, which goes with the control.
     delete child.control;
     if (cut) delete child.legacyControlEntityId;
-    child.id = children.length === 0 ? cfg.id : nextId();
+    child.id = children.length === 0 && source.control === undefined ? cfg.id : nextId();
     child.schemaVersion = schemaVersionFor(child);
     children.push(child);
   }
@@ -269,7 +281,8 @@ export function splitDocument(
     control.elements = [];
     control.perFamily = {};
     delete control.groups;
-    control.id = children.length === 0 ? cfg.id : nextId();
+    control.id = cfg.id;
+    if (cut && controlSlot !== undefined) control.slotIndex = controlSlot;
     control.schemaVersion = schemaVersionFor(control);
     children.push(control);
   }
@@ -412,6 +425,16 @@ async function backupReady(
   }
 }
 
+/** The slots one owner's live records hold. */
+function heldSlots(records: readonly ComplicationRecord[]): Set<number> {
+  const held = new Set<number>();
+  for (const record of records) {
+    const slot = record.deleted ? undefined : record.document?.slotIndex;
+    if (typeof slot === "number") held.add(slot);
+  }
+  return held;
+}
+
 /** The document to send, through the panel's own save path so each child is
  * normalised and its data sources re-derived exactly as a hand save would. */
 function encodeForSave(cfg: CustomComplicationConfig, revision: number | null): Record<string, unknown> {
@@ -453,6 +476,7 @@ export async function splitOwner(
   owner: OwnerSummary,
   records: readonly ComplicationRecord[],
   nextId: () => string = newId,
+  occupied: readonly { slot: number }[] = [],
 ): Promise<{ writes: SplitWrite[]; split: string[]; problem?: string }> {
   const ownerId = owner.owner_watch_id;
   const targets: Target[] = targetsIn(records).split.map((t): Target => ({ ...t, plan: "split" }));
@@ -490,14 +514,26 @@ export async function splitOwner(
 
   const writes: SplitWrite[] = [];
   const split: string[] = [];
+  const held = heldSlots(records);
   for (const target of targets) {
-    const children = splitDocument(target.config, nextId);
+    // No free slot leaves the control beside its shapes, where the store takes
+    // it and a placed control still finds it.
+    const seat = target.config.control !== undefined && supportedFamilies(target.config).length > 0
+      ? freeSlotFrom(held, occupied)
+      : -1;
+    if (seat >= 0) held.add(seat);
+    const children = splitDocument(target.config, nextId, seat >= 0 ? seat : undefined);
     const name = target.config.name;
-    // The parent goes first, because its save is what files the pre-split
-    // document as the revision Undo restores.
+    // The record that keeps the id goes first, because its save is what files
+    // the pre-split document as the revision Undo restores, and what frees the
+    // shapes for the children that take them.
+    const ordered = [
+      ...children.filter((c) => c.id === target.config.id),
+      ...children.filter((c) => c.id !== target.config.id),
+    ];
     let failed: string | undefined;
-    for (const [index, child] of children.entries()) {
-      const parent = index === 0;
+    for (const child of ordered) {
+      const parent = child.id === target.config.id;
       try {
         const result = await saveRecord(
           hass,
@@ -611,13 +647,13 @@ export async function autoSplitShapes(
   for (const owner of owners) {
     if (!ownerCanSplit(owner)) continue;
     if (!takeOwnerTurn(owner.owner_watch_id)) continue;
-    let records: readonly ComplicationRecord[];
+    let list: Awaited<ReturnType<typeof fetchList>>;
     try {
-      records = (await fetchList(hass, owner.owner_watch_id)).records;
+      list = await fetchList(hass, owner.owner_watch_id);
     } catch {
       continue;
     }
-    const result = await splitOwner(hass, owner, records);
+    const result = await splitOwner(hass, owner, list.records, newId, list.occupied ?? list.presets ?? []);
     writes = [...writes, ...result.writes];
     split.push(...result.split);
     if (result.problem !== undefined) problems.push(result.problem);

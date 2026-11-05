@@ -450,14 +450,22 @@ describe("seedControlFromEntity", () => {
   });
 
   it("draws a saved lock toggle with the old backwards pair the right way round", () => {
-    const saved = (state: string) => resolveControl(spec({
+    const saved = (state: string, entityId = "lock.front", domain = "lock") => resolveControl(spec({
       kind: "toggle",
       symbol: "lock.fill",
       symbolOff: "lock.open.fill",
       state: literal(state),
+      action: { type: "toggleEntity", entityId, displayName: "", domain },
     }), context({}));
     expect(saved("unlocked").symbol).toBe("lock.open.fill");
     expect(saved("locked").symbol).toBe("lock.fill");
+    // A ref with no domain reads it from the entity id.
+    expect(saved("unlocked", "lock.front", "").symbol).toBe("lock.open.fill");
+    // The same pair on anything but a lock is what its author asked for.
+    expect(saved("on", "switch.gate", "switch").symbol).toBe("lock.fill");
+    expect(saved("off", "switch.gate", "switch").symbol).toBe("lock.open.fill");
+    expect(saved("open", "cover.gate", "").symbol).toBe("lock.fill");
+    expect(saved("closed", "cover.gate", "").symbol).toBe("lock.open.fill");
     // Any other pair is what its author asked for.
     expect(resolveControl(spec({
       kind: "toggle",

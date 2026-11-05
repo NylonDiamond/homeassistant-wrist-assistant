@@ -1053,12 +1053,20 @@ def watch_seed_pending(
     the watch's seed and replace what the watch holds. It only changes words
     and an ask: Home Assistant refuses nothing because of it, and no time ends
     it. A poll does, the first one after the wait ended from an app that can
-    send it (:func:`too_old_to_seed`). False while the wait
-    lasts (:func:`watch_move_may_still_come` covers that), for a watch a code
-    first paired, for an iPhone and for an unknown id.
+    send it. False while the wait lasts (:func:`watch_move_may_still_come`
+    covers that), for a watch a code first paired, for an iPhone and for an
+    unknown id. False as well for an app too old to send it
+    (:func:`too_old_to_seed`), which may never update: nothing is on its way, so
+    nothing is asked, and only the update words stand. Its update report makes
+    this true again until the next poll.
     """
     entry = entries.get(watch_id)
-    if entry is None or not entry.holds_old_setup or entry.move_end_heard:
+    if (
+        entry is None
+        or not entry.holds_old_setup
+        or entry.move_end_heard
+        or too_old_to_seed(entry.app_version)
+    ):
         return False
     return not watch_move_may_still_come(entries, watch_id, now)
 

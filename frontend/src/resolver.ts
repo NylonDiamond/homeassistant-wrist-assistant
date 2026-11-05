@@ -134,6 +134,7 @@ import {
   type ChartFillStyle,
 } from "./model.js";
 import { keyFor, listExpressionKey, listKey, normaliseScalar } from "./compiler.js";
+import { domainOf } from "./presets.js";
 import { CALENDAR_ITEM_ICON, TODO_ITEM_ICON, entityItemIcon, forecastItemIcon } from "./list-icons.js";
 
 export interface EntityState {
@@ -2945,8 +2946,10 @@ export function resolveControl(spec: ControlSpec, ctx: ResolveContext, config?: 
   const isOn = kind === "toggle" ? controlIsOn(stateText) : false;
   // The panel used to seed a lock's toggle with these two the wrong way round,
   // and saved documents keep them. A toggle reads `unlocked` as on, so this exact
-  // pair draws swapped, here and in the apps' `resolveControl`.
-  const backwardsLock = kind === "toggle" && spec.symbol === "lock.fill" && spec.symbolOff === "lock.open.fill";
+  // pair draws swapped, here and in the apps' `resolveControl`. Only on a lock: the
+  // seed never wrote this pair for anything else, so there it is its author's choice.
+  const backwardsLock = kind === "toggle" && spec.symbol === "lock.fill" && spec.symbolOff === "lock.open.fill"
+    && spec.action.type === "toggleEntity" && domainOf(spec.action) === "lock";
   const out: ResolvedControl = {
     kind,
     title,

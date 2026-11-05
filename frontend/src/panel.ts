@@ -1615,10 +1615,14 @@ export class WristAssistantPanel extends LitElement {
    * what next. An iPhone is picked on Home with a green "Paired" line, the way
    * the dialog's iPhone is. */
   private welcomePair = new PairWatchCard(() => this.requestUpdate(), async (deviceId, stale, kind) => {
+    // Asked before the devices are read: the new device ends the welcome, so
+    // the redraw that follows closes this card, and it would then always read
+    // as left. Home is what says the person has really gone since.
+    const left = stale();
     await this.loadOwners();
     if (deviceId === undefined) return;
     if (kind === "watch") this.pickWatch(deviceId);
-    if (stale() || this.ownerOf(deviceId) === undefined) return;
+    if (left || tabOfRoute(this.route) !== "home" || this.ownerOf(deviceId) === undefined) return;
     // A watch gets the pair dialog's what next (`renderPairNext`), as it would
     // paired there: a new watch has nothing on it yet.
     if (kind === "watch") {
