@@ -1,7 +1,7 @@
 // `<wa-template-editor>`: a template tile's editor. The tile as each device
 // draws it on top, Line up columns under it, then the code. A press on a part
 // of the tile finds that part's code, and the caret in the code lights the part
-// on the tile.
+// on the tile. A drag of a row moves its line in the code (`template-move.ts`).
 //
 // It draws into its parent's root, not a shadow root of its own, so the tile
 // face takes the page editor's preview rules and the code editor its colors.
@@ -14,6 +14,7 @@ import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { WATCH_APP } from "./app-model.js";
 import type { RenderResult } from "../ha-api.js";
 import type { TemplateCode, TemplateCodeOptions, TemplateCodeView } from "./template-code.js";
+import { type TemplateRowBox, moveTemplateRow, templateRowDropIndex, templateRowShifts } from "./template-move.js";
 import { type TemplateCell, templateRows } from "./template-rows.js";
 import { type AlignedRow, type SourceIssue, type SourceScan, alignTemplate, findTemplatePart, scanTemplateSource, templateNameIssues, templateTokenValues } from "./template-source.js";
 import { templateIconColor } from "./rich-text.js";
@@ -59,6 +60,24 @@ const PREFS_KEY = "wrist-assistant-panel.template-editor.v1";
 const SMALL_TEXT = 0.6;
 const TILE_W = 280;
 const TILE_H = 230;
+/** A press has to go this far, in points, before it is a drag and not a click. */
+const DRAG_START = 5;
+/** How long a moved row waits for Home Assistant's new answer, in ms. */
+const MOVE_HOLD = 4000;
+/** How long rows take to glide back, in ms. As `.te-tile.moving`. */
+const MOVE_SETTLE = 160;
+
+/** A row on the picture while it is dragged. */
+interface DragRow extends TemplateRowBox {
+  parts: HTMLElement[];
+}
+
+interface RowDrag {
+  row: number;
+  startY: number;
+  rows?: DragRow[];
+  to: number;
+}
 
 interface Prefs extends TemplateCodeOptions {
   device: "watch" | "iphone" | undefined;
@@ -97,6 +116,13 @@ export class WaTemplateEditor extends LitElement {
   /** The last press on the tile found no one place in the code. */
   private notFound = false;
   private lastFace: { tileId: string; device: string; face: TemplateResult } | undefined;
+  private drag: RowDrag | undefined;
+  /** A drag just ended, and its click must not find a part's code. */
+  private skipClick = false;
+  /** Why the last drag could not move its row. */
+  private moveNote: string | undefined;
+  /** A moved row stands in its new place until the new picture comes. */
+  private held: { text: string; timer: number } | undefined;
 
   /** Draws into the parent's root: see the top of this file. */
   protected override createRenderRoot(): HTMLElement {
@@ -105,6 +131,9 @@ export class WaTemplateEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.endDragListeners();
+    this.drag = undefined;
+    this.releaseHeld();
     this.code?.destroy();
     this.code = undefined;
     this.tileId = undefined;
@@ -173,8 +202,9 @@ export class WaTemplateEditor extends LitElement {
       changed: (text) => this.data.write(text, true),
       selected: (from, to, head, focused) => {
         this.selection = { from, to, head, focused };
-        if (focused && this.notFound) {
+        if (focused && (this.notFound || this.moveNote !== undefined)) {
           this.notFound = false;
+          this.moveNote = undefined;
           this.requestUpdate();
         }
         this.data.remember(head, this.getRootNode());
@@ -252,6 +282,7 @@ export class WaTemplateEditor extends LitElement {
     const { from, to, focused } = this.selection;
     const aligned = this.aligned(this.scan());
     tile.classList.toggle("found", this.renderedRows() !== undefined);
+    tile.classList.toggle("can-move", (aligned?.length ?? 0) > 1);
     const at = (range: { from: number; to: number } | undefined): boolean => {
       if (range === undefined || !focused) return false;
       return from === to ? from >= range.from && from <= range.to : from < range.to && to > range.from;
@@ -263,6 +294,10 @@ export class WaTemplateEditor extends LitElement {
   }
 
   private pressTile(event: Event): void {
+    if (this.skipClick) {
+      this.skipClick = false;
+      return;
+    }
     const part = (event.target as Element).closest?.<HTMLElement>("[data-tp]");
     if (!part || this.code === undefined) return;
     const row = Number(part.dataset["tr"]);
@@ -275,6 +310,153 @@ export class WaTemplateEditor extends LitElement {
     this.notFound = range === undefined;
     this.requestUpdate();
     if (range !== undefined) this.code.select(range.from, range.to);
+  }
+
+  private startRowDrag(event: PointerEvent): void {
+    this.skipClick = false;
+    if (this.moveNote !== undefined) this.noteMove(undefined);
+    if (event.button !== 0 || this.drag !== undefined || this.held !== undefined || this.code === undefined) return;
+    const part = (event.target as Element).closest?.<HTMLElement>("[data-tp]");
+    if (!part) return;
+    const row = Number(part.dataset["tr"]);
+    this.drag = { row, startY: event.clientY, to: row };
+    window.addEventListener("pointermove", this.onDragMove);
+    window.addEventListener("pointerup", this.onDragEnd);
+    window.addEventListener("pointercancel", this.onDragCancel);
+    window.addEventListener("keydown", this.onDragKey, true);
+  }
+
+  private endDragListeners(): void {
+    window.removeEventListener("pointermove", this.onDragMove);
+    window.removeEventListener("pointerup", this.onDragEnd);
+    window.removeEventListener("pointercancel", this.onDragCancel);
+    window.removeEventListener("keydown", this.onDragKey, true);
+  }
+
+  /** The tile's rows in order, or undefined when they are not whole. A row
+   * moves as its cells, or as its lines, since a run of text does not take a
+   * transform. */
+  private dragRows(tile: HTMLElement): DragRow[] | undefined {
+    const byRow = new Map<number, Set<HTMLElement>>();
+    tile.querySelectorAll<HTMLElement>("[data-tp]").forEach((part) => {
+      const row = Number(part.dataset["tr"]);
+      if (!byRow.has(row)) byRow.set(row, new Set());
+      byRow.get(row)!.add(part.closest<HTMLElement>(".wp-tpl-cell, .wp-tpl-line") ?? part);
+    });
+    const rows: DragRow[] = [];
+    for (let i = 0; i < byRow.size; i++) {
+      const parts = byRow.get(i);
+      if (parts === undefined) return undefined;
+      const boxes = [...parts].map((p) => p.getBoundingClientRect());
+      const top = Math.min(...boxes.map((b) => b.top));
+      rows.push({ parts: [...parts], top, height: Math.max(...boxes.map((b) => b.bottom)) - top });
+    }
+    return rows;
+  }
+
+  private readonly onDragMove = (event: PointerEvent): void => {
+    const drag = this.drag;
+    const tile = this.querySelector<HTMLElement>(".te-tile");
+    if (drag === undefined || tile === null) return;
+    const dy = event.clientY - drag.startY;
+    if (drag.rows === undefined) {
+      if (Math.abs(dy) < DRAG_START) return;
+      const aligned = this.aligned(this.scan());
+      const rows = aligned === undefined ? undefined : this.dragRows(tile);
+      if (rows === undefined || rows.length < 2) {
+        if (aligned === undefined && (this.renderedRows()?.length ?? 0) > 1) this.noteMove("This template has logic, so its rows move only in the code.");
+        this.endDragListeners();
+        this.drag = undefined;
+        return;
+      }
+      drag.rows = rows;
+      tile.classList.add("moving");
+      for (const part of rows[drag.row]!.parts) part.classList.add("te-lift");
+    }
+    event.preventDefault();
+    const rows = drag.rows;
+    const own = rows[drag.row]!;
+    const last = rows[rows.length - 1]!;
+    const y = Math.min(last.top + last.height - own.height - own.top, Math.max(rows[0]!.top - own.top, dy));
+    for (const part of own.parts) part.style.transform = `translateY(${y}px)`;
+    const to = templateRowDropIndex(rows, drag.row, own.top + y);
+    if (to === drag.to) return;
+    drag.to = to;
+    this.placeRows(rows, templateRowShifts(rows, drag.row, to), drag.row);
+  };
+
+  private readonly onDragEnd = (): void => {
+    const drag = this.drag;
+    this.endDragListeners();
+    this.drag = undefined;
+    if (drag?.rows === undefined) return;
+    this.skipClick = true;
+    const tile = this.querySelector<HTMLElement>(".te-tile");
+    for (const part of drag.rows[drag.row]!.parts) part.classList.remove("te-lift");
+    const scan = this.scan();
+    const aligned = this.aligned(scan);
+    const text = this.code?.text();
+    const move = drag.to === drag.row || aligned === undefined || text === undefined ? undefined : moveTemplateRow(text, scan, aligned, drag.row, drag.to);
+    if (move === undefined || !move.ok || tile === null) {
+      if (move?.ok === false) this.noteMove(move.reason === "trim" ? "A {%- or -%} joins these lines, so move them in the code." : "These rows share a value from {% set %}, so move them in the code.");
+      this.settleRows(drag.rows);
+      return;
+    }
+    this.placeRows(drag.rows, templateRowShifts(drag.rows, drag.row, drag.to));
+    this.moveNote = undefined;
+    const { from, to, insert } = move.change;
+    this.held = { text: text!.slice(0, from) + insert + text!.slice(to), timer: window.setTimeout(() => this.releaseHeld(), MOVE_HOLD) };
+    this.data.ended();
+    this.code!.change(from, to, insert);
+    this.data.ended();
+  };
+
+  private readonly onDragCancel = (): void => {
+    const drag = this.drag;
+    this.endDragListeners();
+    this.drag = undefined;
+    if (drag?.rows === undefined) return;
+    this.skipClick = true;
+    for (const part of drag.rows[drag.row]!.parts) part.classList.remove("te-lift");
+    this.settleRows(drag.rows);
+  };
+
+  private readonly onDragKey = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.onDragCancel();
+  };
+
+  private placeRows(rows: readonly DragRow[], shifts: readonly number[], except?: number): void {
+    rows.forEach((row, i) => {
+      if (i === except) return;
+      for (const part of row.parts) part.style.transform = shifts[i] === 0 ? "" : `translateY(${shifts[i]}px)`;
+    });
+  }
+
+  /** Glides the rows back to their own places. */
+  private settleRows(rows: readonly DragRow[]): void {
+    this.placeRows(rows, rows.map(() => 0));
+    window.setTimeout(() => {
+      if (this.drag === undefined && this.held === undefined) this.querySelector(".te-tile")?.classList.remove("moving");
+    }, MOVE_SETTLE);
+  }
+
+  /** The new picture is here, or never came: the rows stop standing in. Before
+   * the next paint, and with no glide, so a row does not jump. */
+  private releaseHeld(): void {
+    if (this.held === undefined) return;
+    window.clearTimeout(this.held.timer);
+    this.held = undefined;
+    const tile = this.querySelector<HTMLElement>(".te-tile");
+    tile?.classList.remove("moving");
+    tile?.querySelectorAll<HTMLElement>(".wp-tpl-cell, .wp-tpl-line, [data-tp]").forEach((part) => { part.style.transform = ""; });
+  }
+
+  private noteMove(words: string | undefined): void {
+    this.moveNote = words;
+    this.requestUpdate();
   }
 
   /** Remembers where the cells are, so they can glide to their new places. */
@@ -363,7 +545,8 @@ export class WaTemplateEditor extends LitElement {
                 <button type="button" class=${picture.device === "watch" ? "on" : ""} @click=${() => this.setPrefs({ device: "watch" })}>Watch</button>
                 <button type="button" class=${picture.device === "iphone" ? "on" : ""} @click=${() => this.setPrefs({ device: "iphone" })}>iPhone</button>
               </div>` : nothing}
-              <div class="te-tile" @click=${(e: Event) => this.pressTile(e)}>${face}</div>
+              <div class="te-tile" @pointerdown=${(e: PointerEvent) => this.startRowDrag(e)} @click=${(e: Event) => this.pressTile(e)}>${face}</div>
+              ${(this.aligned(scan)?.length ?? 0) > 1 ? html`<div class="te-move">Drag a row to move it.</div>` : nothing}
               ${small ? html`<div class="te-small" role="status">Text is small on the ${picture.device === "watch" ? "Watch" : "iPhone"}.</div>` : nothing}
             </div>`}
             <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
@@ -383,7 +566,7 @@ export class WaTemplateEditor extends LitElement {
             ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><button type="button" class="te-issue-go" title="Show it in the code" @click=${() => this.code?.select(issue.from, issue.to)}>${issue.text}</button>${issue.fix === undefined ? nothing
               : html`<button type="button" class="te-chip" @click=${() => this.code?.change(issue.fix!.from, issue.fix!.to, issue.fix!.insert)}>${issue.fix.words}</button>`}</div>`)}</div>`}
             ${refused === undefined ? nothing : html`<div class="te-issue" role="status"><span>${refused}</span></div>`}
-            <div class="te-hint">${this.notFound ? "That part comes out of logic, so no one place in the code writes it." : d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon: or {{ for suggestions."}</div>
+            <div class="te-hint">${this.moveNote !== undefined ? this.moveNote : this.notFound ? "That part comes out of logic, so no one place in the code writes it." : d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon: or {{ for suggestions."}</div>
             ${d.helpers}
           </div>
         </div>
@@ -401,12 +584,14 @@ export class WaTemplateEditor extends LitElement {
       if (this.tileId !== d.tileId) {
         this.tileId = d.tileId;
         this.code.reset(d.text);
+        if (this.moveNote !== undefined) this.noteMove(undefined);
       } else if (this.code.text() !== d.text) {
         this.code.setText(d.text, d.caret());
       } else {
         this.code.refresh();
       }
     }
+    if (this.held !== undefined && (d.text !== this.held.text || d.render !== undefined)) this.releaseHeld();
     this.lightTile();
     this.runFlip();
   }
@@ -437,6 +622,13 @@ export const templateEditorStyles = css`
   .te-tile.found [data-tp] { cursor: pointer; border-radius: 5px; outline: 1.5px solid transparent; outline-offset: 1px; transition: outline-color .12s; }
   .te-tile.found [data-tp]:hover { outline-color: color-mix(in srgb, currentColor 50%, transparent); }
   .te-tile.found [data-tp].on { outline-color: var(--wa-hue-orange); }
+  .te-tile.can-move { user-select: none; -webkit-user-select: none; }
+  .te-tile.can-move [data-tp] { cursor: grab; touch-action: none; }
+  .te-tile.moving, .te-tile.moving [data-tp] { cursor: grabbing; }
+  .te-tile.moving .wp-tpl-cell, .te-tile.moving .wp-tpl-line { position: relative; transition: transform .16s cubic-bezier(.2,.8,.2,1); }
+  .te-tile.moving .te-lift { z-index: 1; transition: none; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .4)); }
+  @media (prefers-reduced-motion: reduce) { .te-tile.moving .wp-tpl-cell, .te-tile.moving .wp-tpl-line { transition: none; } }
+  .te-move { font-size: 11.5px; color: var(--wa-muted); }
   .te-guide { position: absolute; top: 6px; bottom: 6px; width: 1px; background: var(--wa-hue-orange); opacity: 0; animation: te-guide 1.1s ease-out; pointer-events: none; }
   @keyframes te-guide { 20% { opacity: .8; } 70% { opacity: .5; } 100% { opacity: 0; } }
   .te-small { font-size: 12px; color: var(--wa-hue-orange); }
