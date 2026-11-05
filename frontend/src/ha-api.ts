@@ -211,7 +211,8 @@ export interface SaveResult {
 
 export type RenderResult =
   | { ok: true; value: string }
-  | { ok: false; error: string };
+  /** `refused`: not rendered for now, which says nothing about the template. */
+  | { ok: false; error: string; refused?: boolean };
 
 const D = "wrist_assistant/complications";
 

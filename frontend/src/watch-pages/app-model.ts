@@ -98,8 +98,8 @@ export function watchCloudTTSAvailable(status: unknown): boolean {
 // ── template renders ─────────────────────────────────────────────────────
 
 /** How long the preview waits after the shown page's templates change
- * before it asks, and how often it asks again: the watch keeps a rendered
- * value 30 seconds. */
+ * before it asks about the ones that changed, and how often it asks again
+ * about all of them: the watch keeps a rendered value 30 seconds. */
 export const WATCH_TEMPLATE_DEBOUNCE_MS = 500;
 export const WATCH_TEMPLATE_REFRESH_MS = 30_000;
 
@@ -149,6 +149,42 @@ export function watchTemplateSignature(requests: Readonly<Record<string, string>
   return JSON.stringify(Object.keys(requests).sort().map((id) => [id, requests[id]]));
 }
 
+/** What a pause in typing asks about: only the requests whose text is not
+ * the one last asked, so the tile being edited renders and the others wait
+ * for the 30 second clock. */
+export function watchTemplatesToAsk(
+  asked: Readonly<Record<string, string>>,
+  requests: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [id, text] of Object.entries(requests)) {
+    if (!Object.hasOwn(asked, id) || asked[id] !== text) out[id] = text;
+  }
+  return out;
+}
+
+/** Whether Home Assistant refused to render this for now, which says nothing
+ * about the template (an older integration calls it an error, and never says
+ * this). */
+export function watchRenderRefused(result: RenderResult | undefined): boolean {
+  return isJsonObject(result) && result.ok === false && result.refused === true;
+}
+
+/** The keys still refused after an answer, of those still on the page. */
+export function watchRefusedRenders(
+  held: ReadonlySet<string>,
+  requests: Readonly<Record<string, string>>,
+  answer: Readonly<Record<string, RenderResult>>,
+): Set<string> {
+  const out = new Set([...held].filter((id) => Object.hasOwn(requests, id)));
+  for (const [id, result] of Object.entries(answer)) {
+    if (!Object.hasOwn(requests, id)) continue;
+    if (watchRenderRefused(result)) out.add(id);
+    else out.delete(id);
+  }
+  return out;
+}
+
 /** One template tile's render with the text it was asked for. */
 export interface WatchTemplateRender {
   text: string;
@@ -158,7 +194,7 @@ export interface WatchTemplateRender {
 /** The renders after an answer to `requests`: the earlier ones with the
  * answer's laid over them, each with the text it was asked for, so a tile
  * the answer leaves out keeps its last value (shown only while its text is
- * still that one). */
+ * still that one). A refusal lands nowhere, so the tile keeps what it had. */
 export function watchMergedRenders(
   held: ReadonlyMap<string, WatchTemplateRender>,
   requests: Readonly<Record<string, string>>,
@@ -166,7 +202,7 @@ export function watchMergedRenders(
 ): Map<string, WatchTemplateRender> {
   const out = new Map(held);
   for (const [id, result] of Object.entries(answer)) {
-    if (!Object.hasOwn(requests, id)) continue;
+    if (!Object.hasOwn(requests, id) || watchRenderRefused(result)) continue;
     if (isJsonObject(result) && (result.ok === true ? typeof result.value === "string" : result.ok === false)) out.set(id, { text: requests[id]!, result });
   }
   return out;

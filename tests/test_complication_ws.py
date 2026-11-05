@@ -1862,7 +1862,24 @@ def test_a_preview_past_its_key_limit_answers_for_the_rest(env, monkeypatch) -> 
     assert "at most" in results[f"k{limit}"]["error"]
 
 
-def test_a_preview_is_charged_to_the_signed_in_user(env, monkeypatch) -> None:
+def test_a_refused_preview_says_so_and_a_stopped_one_does_not(env, monkeypatch) -> None:
+    monkeypatch.setattr(env.ws, "Template", _PreviewTemplate)
+    guard_mod = sys.modules[f"{_PKG}.template_guard"]
+
+    async def jobs(_caller, work, **_kw):
+        assert len(work) == 2
+        return [
+            guard_mod.Outcome(guard_mod.BUDGET, error="spent"),
+            guard_mod.Outcome(guard_mod.TIMEOUT, error="stopped"),
+        ]
+
+    monkeypatch.setattr(env.ws, "async_guarded_jobs", jobs)
+    results = env.call(env.ws.ws_render_values, templates={"a": "x", "b": "y"})["results"]
+    assert results["a"] == {"ok": False, "error": "spent", "refused": True}
+    assert results["b"] == {"ok": False, "error": "stopped"}
+
+
+def test_a_preview_is_charged_apart_from_the_user_s_devices(env, monkeypatch) -> None:
     monkeypatch.setattr(env.ws, "Template", _PreviewTemplate)
     guard_mod = sys.modules[f"{_PKG}.template_guard"]
     seen: list[str] = []
@@ -1873,4 +1890,4 @@ def test_a_preview_is_charged_to_the_signed_in_user(env, monkeypatch) -> None:
 
     monkeypatch.setattr(env.ws, "async_guarded_jobs", jobs)
     env.call(env.ws.ws_render_values, templates={"a": "fine"})
-    assert seen == ["user:root"]
+    assert seen == ["preview:root"]

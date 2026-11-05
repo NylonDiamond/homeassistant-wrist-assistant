@@ -120,9 +120,11 @@ import {
   watchCloudTTSAvailable,
   watchHasConfigEntry,
   watchMergedRenders,
+  watchRefusedRenders,
   watchMusicAssistantPresent,
   watchSaveSpeakerWarning,
   watchTemplateRequests,
+  watchTemplatesToAsk,
   watchTemplateSignature,
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
@@ -865,10 +867,20 @@ export class WaPageEditor extends LitElement {
   /** The `(tile id, text)` set last asked about (`watchTemplateSignature`);
    * a draw that finds another one asks again after the debounce. */
   private templateSignature?: string;
-  /** Bumped by every render call: an answer that a newer call outran is
-   * dropped. */
+  /** The texts last asked about: a pause in typing asks only about what
+   * differs from these (`watchTemplatesToAsk`). */
+  private templateAsked: Readonly<Record<string, string>> = {};
+  /** Bumped by every render call. */
   private templateRun = 0;
+  /** The call that last asked about each key: an answer for a key that a newer
+   * call asked about again is dropped, and the rest of it lands. */
+  private templateKeyRun = new Map<string, number>();
+  /** The keys Home Assistant refused to render for now, which keep their last
+   * value. While there are any the page says so. */
+  @state() private templateRefused: ReadonlySet<string> = new Set();
   private templateDebounce?: number;
+  /** Whether the debounce waiting to fire asks about everything. */
+  private templateDebounceAll = false;
   private templateInterval?: number;
   @state() private loading = false;
   @state() private loadError?: string;
@@ -1209,7 +1221,7 @@ export class WaPageEditor extends LitElement {
     // Music Assistant or the cloud may have come or gone meanwhile, and a
     // template's entities moved without the preview hearing.
     this.loadHomeData();
-    if (this.templateSignature !== undefined) this.scheduleTemplates(0);
+    if (this.templateSignature !== undefined) this.scheduleTemplates(0, true);
   };
 
   /** Follow the save of the page on screen to its end, whoever started it:
@@ -1688,9 +1700,9 @@ export class WaPageEditor extends LitElement {
   // ── template renders ───────────────────────────────────────────────────
 
   /** After a draw: when the shown page's set of template tiles and texts is
-   * not the one last asked about, ask again after the debounce, and every
-   * 30 seconds from then (`panel.ts`'s `scheduleTemplates`). A page with no
-   * template stops the clock. */
+   * not the one last asked about, ask about what changed after the debounce.
+   * The 30 second clock, which asks about all of them, runs on through typing.
+   * A page with no template stops the clock. */
   private followTemplates(): void {
     if (!this.isConnected || !this.hass) return;
     const page = this.draft === undefined ? undefined : this.currentPage();
@@ -1702,14 +1714,19 @@ export class WaPageEditor extends LitElement {
       this.stopTemplates(false);
       return;
     }
-    this.scheduleTemplates(WATCH_TEMPLATE_DEBOUNCE_MS);
+    this.scheduleTemplates(WATCH_TEMPLATE_DEBOUNCE_MS, false);
   }
 
-  private scheduleTemplates(delay: number): void {
+  private scheduleTemplates(delay: number, all: boolean): void {
     if (this.templateDebounce !== undefined) window.clearTimeout(this.templateDebounce);
-    this.templateDebounce = window.setTimeout(() => void this.refreshTemplates(), delay);
-    if (this.templateInterval !== undefined) window.clearInterval(this.templateInterval);
-    this.templateInterval = window.setInterval(() => void this.refreshTemplates(), WATCH_TEMPLATE_REFRESH_MS);
+    this.templateDebounceAll ||= all;
+    this.templateDebounce = window.setTimeout(() => {
+      const askAll = this.templateDebounceAll;
+      this.templateDebounce = undefined;
+      this.templateDebounceAll = false;
+      void this.refreshTemplates(askAll);
+    }, delay);
+    this.templateInterval ??= window.setInterval(() => void this.refreshTemplates(true), WATCH_TEMPLATE_REFRESH_MS);
   }
 
   /** Stop both clocks and drop any answer still out. `forget` also forgets
@@ -1718,25 +1735,34 @@ export class WaPageEditor extends LitElement {
     if (this.templateDebounce !== undefined) window.clearTimeout(this.templateDebounce);
     if (this.templateInterval !== undefined) window.clearInterval(this.templateInterval);
     this.templateDebounce = undefined;
+    this.templateDebounceAll = false;
     this.templateInterval = undefined;
     this.templateRun++;
+    this.templateAsked = {};
+    this.templateKeyRun.clear();
+    this.templateRefused = new Set();
     if (forget) this.templateSignature = undefined;
   }
 
-  /** Render the shown page's templates now. A newer call drops this one's
-   * answer; a failed call keeps the last values. */
-  private async refreshTemplates(): Promise<void> {
-    this.templateDebounce = undefined;
+  /** Render the shown page's templates now, all of them or only those whose
+   * text changed. A newer call asking about a key drops this one's answer for
+   * it; a failed call or a refusal keeps the last values. */
+  private async refreshTemplates(all: boolean): Promise<void> {
     const hass = this.hass;
     if (!hass || !this.isConnected) return;
-    const run = ++this.templateRun;
     const watchId = this.watchId;
-    const requests = watchTemplateRequests(this.draft === undefined ? undefined : this.currentPage());
+    const page = watchTemplateRequests(this.draft === undefined ? undefined : this.currentPage());
+    const requests = all ? page : watchTemplatesToAsk(this.templateAsked, page);
+    this.templateAsked = page;
     if (Object.keys(requests).length === 0) return;
+    const run = ++this.templateRun;
+    for (const key of Object.keys(requests)) this.templateKeyRun.set(key, run);
     try {
-      const answer = await renderTemplates(hass, requests);
-      if (run !== this.templateRun || watchId !== this.watchId) return;
+      const reply = await renderTemplates(hass, requests);
+      if (watchId !== this.watchId) return;
+      const answer = Object.fromEntries(Object.entries(reply).filter(([key]) => this.templateKeyRun.get(key) === run));
       this.templateRenders = watchMergedRenders(this.templateRenders, requests, answer);
+      this.templateRefused = watchRefusedRenders(this.templateRefused, page, answer);
     } catch {
       // Kept: a dropped socket is no news about the templates.
     }
@@ -3369,6 +3395,7 @@ export class WaPageEditor extends LitElement {
         ${this.barHost === undefined ? this.renderTopBar(draft) : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
+        ${this.templateRefused.size > 0 ? html`<div class="pe-note warn" role="status"><span>Home Assistant is busy with slow templates, so some tiles keep their last value here. The preview asks again within 30 seconds.</span></div>` : nothing}
       </div>
       ${this.renderBody(watches)}
       ${this.libraryDeleteAsk !== undefined && draft ? this.renderLibraryDeleteAsk(this.libraryDeleteAsk, draft.document) : nothing}

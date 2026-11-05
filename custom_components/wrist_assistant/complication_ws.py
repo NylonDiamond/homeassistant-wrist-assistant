@@ -160,8 +160,8 @@ from .parts_store import PartsStore, PartsStoreError
 from .template_guard import (
     MAX_TEMPLATE_CHARS,
     async_guarded_jobs,
-    caller_for,
     limit_output,
+    preview_caller_for,
     template_too_long_text,
 )
 from .statistics_series import (
@@ -1732,11 +1732,14 @@ async def ws_render_values(
     wrist read one string rather than two formattings of one render.
 
     The renders run under ``template_guard``'s limits, off the event loop and
-    charged to this user, the same limits a device of theirs has. A template
-    stopped by one of them is that key's error.
+    charged to this user's previews, apart from the budget their devices use. A
+    template stopped by one of them is that key's error. A render refused for
+    now says nothing about the template, and carries ``refused`` so the panel
+    keeps what it had.
     """
     results: dict[str, dict[str, Any]] = {}
     keys: list[str] = []
+    sources: list[str] = []
     jobs: list[Callable[[], Any]] = []
     for key, template_str in msg["templates"].items():
         if not template_str.strip():
@@ -1750,12 +1753,15 @@ async def ws_render_values(
             }
         else:
             keys.append(key)
+            sources.append(template_str)
             jobs.append(functools.partial(_render_native, hass, template_str))
-    caller = caller_for(getattr(connection.user, "id", None))
-    outcomes = await async_guarded_jobs(caller, jobs)
+    caller = preview_caller_for(getattr(connection.user, "id", None))
+    outcomes = await async_guarded_jobs(caller, jobs, keys=sources)
     for key, outcome in zip(keys, outcomes):
         if outcome.ok:
             results[key] = {"ok": True, "value": _template_text(outcome.value)}
+        elif outcome.refused:
+            results[key] = {"ok": False, "error": outcome.error, "refused": True}
         else:
             results[key] = {"ok": False, "error": outcome.error}
     connection.send_result(msg["id"], {"results": results})

@@ -20,6 +20,9 @@ import {
   watchTemplateRender,
   watchTemplateRequests,
   watchTemplateSignature,
+  watchTemplatesToAsk,
+  watchRefusedRenders,
+  watchRenderRefused,
 } from "../src/watch-pages/app-model.js";
 import { type WatchPage, type WatchPageTile, tileSymbol } from "../src/watch-pages/model.js";
 import {
@@ -141,6 +144,40 @@ describe("which templates the editor renders", () => {
     expect(watchTemplateSignature({ A: "x", B: "y!" })).not.toBe(a);
     expect(watchTemplateSignature({ A: "x" })).not.toBe(a);
     expect(watchTemplateSignature({ A: "x", C: "y" })).not.toBe(a);
+  });
+
+  it("after a pause in typing asks only about the text that changed", () => {
+    const asked = { A: "a", B: "b", C: "c" };
+    expect(watchTemplatesToAsk(asked, { A: "a", B: "b!", C: "c" })).toEqual({ B: "b!" });
+    // A new tile is new, a gone one asks nothing, and the first ask is all of them.
+    expect(watchTemplatesToAsk(asked, { A: "a", D: "d" })).toEqual({ D: "d" });
+    expect(watchTemplatesToAsk(asked, { A: "a" })).toEqual({});
+    expect(watchTemplatesToAsk({}, asked)).toEqual(asked);
+  });
+
+  it("keeps what a tile had when its render is refused, and remembers that it was", () => {
+    const held = new Map<string, WatchTemplateRender>([
+      ["A", { text: "a", result: { ok: true, value: "1" } }],
+    ]);
+    const refusal = { ok: false, error: "Too many slow templates", refused: true } as const;
+    const requests = { A: "a", B: "b", C: "c" };
+    const answer = { A: refusal, B: refusal, C: { ok: true, value: "3" } } as const;
+    const next = watchMergedRenders(held, requests, answer);
+    // No triangle: A keeps its value, B has nothing yet and draws "...".
+    expect(next.get("A")).toEqual(held.get("A"));
+    expect(next.has("B")).toBe(false);
+    expect(next.get("C")?.result).toEqual({ ok: true, value: "3" });
+
+    const refused = watchRefusedRenders(new Set(), requests, answer);
+    expect([...refused].sort()).toEqual(["A", "B"]);
+    // A later answer clears only the keys it answers, and a gone tile goes.
+    const after = watchRefusedRenders(refused, { A: "a" }, { A: { ok: true, value: "1" } });
+    expect([...after]).toEqual([]);
+    expect([...watchRefusedRenders(refused, requests, { A: { ok: true, value: "1" } })]).toEqual(["B"]);
+    // A real template error is not a refusal, and still shows.
+    const broken = { ok: false, error: "UndefinedError" } as const;
+    expect(watchRenderRefused(broken)).toBe(false);
+    expect(watchMergedRenders(held, requests, { A: broken }).get("A")?.result).toEqual(broken);
   });
 
   it("lays an answer over the last renders, keeping a tile it leaves out, each with its text", () => {
