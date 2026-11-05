@@ -91,7 +91,8 @@ import {
   watchTemplateText,
 } from "./app-model.js";
 import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans } from "./template-rows.js";
-import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, templateTextFit, templateTextUnits } from "./template-fit.js";
+import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, TEMPLATE_INTER_ROW, templateTextFit, templateTextUnits } from "./template-fit.js";
+import { TILE_FONT_STACK, onTileFontLoaded, tileFontLoaded } from "../font.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { FIT_STRIP_ROWS, fitDrawnTile, fitPageRows, fitRowTop, fitSmallestTile, fitsOnScreen, fittedLayout, fitState, WATCH_FIT_BOTTOM_ROOM, type FitState } from "./fit-rows.js";
@@ -119,6 +120,8 @@ import {
   type OneLookDevice,
   oneLookCellInset,
   oneLookCornerRadius,
+  oneLookZoomedCornerRadius,
+  oneLookZoomFactor,
   oneLookGridSidePadding,
   oneLookMetrics,
   oneLookPhoneBottomPadding,
@@ -554,11 +557,16 @@ export function previewTileCornerRadius(
   widthPt: number,
   heightPt: number,
   inset?: number,
+  unit?: number,
 ): number {
   const oneLook = previewOneLook(input);
   if (oneLook !== undefined) {
     const by = inset ?? oneLookCellInset(oneLook, false, false, phoneTileGapOfPage(input.page));
-    return oneLookCornerRadius(oneLookMetrics(oneLook), { width: Math.max(0, widthPt - 2 * by), height: Math.max(0, heightPt - 2 * by) });
+    const drawn = { width: Math.max(0, widthPt - 2 * by), height: Math.max(0, heightPt - 2 * by) };
+    // On the iPhone the zoomed watch's corners (`OneLookZoom.cornerRadius`),
+    // from the grid's unit.
+    if (unit !== undefined) return oneLookZoomedCornerRadius(oneLook, drawn, unit);
+    return oneLookCornerRadius(oneLookMetrics(oneLook), drawn);
   }
   return phoneDrawsIphoneLook(input.phone) ? phoneTileCornerRadius(widthPt, heightPt) : watchTileCornerRadius(widthPt, heightPt);
 }
@@ -2151,24 +2159,29 @@ function templateGlyph(symbol: string, spec: string | undefined, ink: string, wi
  * part of its size: the middle of the capitals. */
 const TEMPLATE_ICON_MIDDLE = 0.36;
 
-/** How much wider a text draws in this browser's font than in the device's, as
- * a part of the size, or undefined where nothing can measure it. */
+/** How wide a text draws in this browser, as a part of the size, or
+ * undefined where nothing can measure it. The text is drawn in Inter, as on
+ * the devices, so once Inter has loaded this matches the model's width; only
+ * before that, in the fallback, does it differ. A width in the fallback is
+ * not kept. */
 const browserUnits = new Map<string, number>();
+onTileFontLoaded(() => browserUnits.clear());
 function browserTextUnits(text: string): number | undefined {
   if (typeof OffscreenCanvas === "undefined") return undefined;
   const known = browserUnits.get(text);
   if (known !== undefined) return known;
   const context = new OffscreenCanvas(1, 1).getContext("2d");
   if (context === null) return undefined;
-  context.font = `600 100px ${WATCH_ROUNDED_FAMILY}`;
+  context.font = `600 100px ${TILE_FONT_STACK}`;
   const units = context.measureText(text).width / 100;
+  if (!tileFontLoaded()) return units;
   if (browserUnits.size > 500) browserUnits.clear();
   browserUnits.set(text, units);
   return units;
 }
 
-/** The letter spacing that gives a run the device's width in this browser's
- * font, so its lines end where the device's do, whichever font the panel got. */
+/** The letter spacing that gives a run the device's width in this browser,
+ * so its lines end where the device's do, whichever font the panel got. */
 function templateRunSpacing(text: string, device: TemplateFitDevice): string {
   const count = [...text].length;
   const drawn = browserTextUnits(text);
@@ -2228,9 +2241,17 @@ function templateRowLimit(tile: WatchPageTile, input: Pick<WatchPagePreviewInput
   return typeof lines === "number" ? Math.min(8, Math.max(1, Math.round(lines))) : 5;
 }
 
-/** Which device's text a preview draws. */
-function templateDevice(input: Pick<WatchPagePreviewInput, "phone">): TemplateFitDevice {
-  return input.phone === undefined ? "watch" : "iphone";
+/** How much bigger a template tile's text is drawn than it is fitted: on a
+ * One Look iPhone page the zoom (`OneLookZoom`, `OneLookZoomedFill`), as
+ * the text is the watch's at the tile's room over it; 1 elsewhere. */
+function templateZoom(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">, unit: number | undefined): number {
+  return unit !== undefined && previewOneLook(input) === "phone" ? oneLookZoomFactor("phone", unit) : 1;
+}
+
+/** Which device's text a preview draws: the watch's when zoomed, as the
+ * iPhone draws a One Look template tile as the watch does. */
+function templateDevice(input: Pick<WatchPagePreviewInput, "phone">, zoom = 1): TemplateFitDevice {
+  return input.phone === undefined || zoom !== 1 ? "watch" : "iphone";
 }
 
 /** The side padding of `SimpleTemplateTile`. It has none over and under. */
@@ -2238,10 +2259,13 @@ const TEMPLATE_TILE_PAD = 4;
 
 /** A template's rendered text as a share of the device's full size, 0.4 to 1,
  * for the template editor's "Text is small". */
-export function watchTemplateTextScale(tile: WatchPageTile, width: number, height: number, input: Pick<WatchPagePreviewInput, "templates" | "page" | "phone">): number {
+export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, drawnHeight: number, input: Pick<WatchPagePreviewInput, "templates" | "page" | "phone" | "oneLook" | "appVersion">, unit?: number): number {
   const look = watchTemplateTileLook(tile, input);
   if (look.kind !== "text" || look.pending) return 1;
-  const device = templateDevice(input);
+  const zoom = templateZoom(input, unit);
+  const width = drawnWidth / zoom;
+  const height = drawnHeight / zoom;
+  const device = templateDevice(input, zoom);
   const metrics = TEMPLATE_FIT_METRICS[device];
   const limit = templateRowLimit(tile, input);
   const room = width - TEMPLATE_TILE_PAD * 2;
@@ -2255,7 +2279,7 @@ export function watchTemplateTextScale(tile: WatchPageTile, width: number, heigh
  * effect, and only the template's text (or the placeholder or the warning)
  * inside. */
 function templateFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
-  const radiusPt = previewTileCornerRadius(input, cell.width, cell.height);
+  const radiusPt = previewTileCornerRadius(input, cell.width, cell.height, undefined, unit);
   const radius = radiusPt * s;
   // Always lit, as `SimpleTemplateTile` passes `isActive: true`. With the
   // iPhone look it keeps the app's lit surface: One Look leaves a template out.
@@ -2269,28 +2293,35 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     : watchTileFill(tileColor, fillInk, true, alpha, { width, height });
   const border = watchTileBorder(tile, true, watchTileFallbackInk(tile, input.page, input.states));
   const look = watchTemplateTileLook(tile, input);
-  const padX = TEMPLATE_TILE_PAD;
+  // On a One Look iPhone page the text is the watch's at the tile's room over
+  // the zoom, drawn the zoom bigger, its side padding inside (`OneLookZoom`).
+  // Its line cap stays the iPhone's own key.
+  const zoom = look.kind === "placeholder" ? 1 : templateZoom(input, unit);
+  const vw = width / zoom;
+  const vh = height / zoom;
+  const zs = s * zoom;
+  const padX = TEMPLATE_TILE_PAD * zoom;
   let content: TemplateResult;
   if (look.kind === "placeholder") {
     const px = watchTileIconSize(tile, width, height) * s;
     content = html`<span style="opacity:0.4;display:flex">${symbolMark(input.icons, look.symbol, px, look.ink)}</span>`;
   } else if (look.kind === "error") {
-    content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * s, "#FFCC00")}</span>`;
+    content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * zs, "#FFCC00")}</span>`;
   } else {
-    const device = templateDevice(input);
+    const device = templateDevice(input, zoom);
     const limit = templateRowLimit(tile, input);
     const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
     // The iPhone look: the text in the tile's ink, with no glow
     // (`SimpleTemplateTile.followsTileInk`). An icon's own color stays.
     const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : look.ink;
-    const shadow = iphone ? "" : `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`;
+    const shadow = iphone ? "" : `text-shadow:0 0 ${4 * zs}px ${rgba(look.ink, 0.3)}`;
     if (columnRows !== undefined) {
-      const size = templateColumnsFontSize(columnRows, width - padX * 2, height, TEMPLATE_FIT_METRICS[device].columnsBody, device);
-      content = templateColumnsFace(columnRows, device, textInk, size, s, shadow, input.icons);
+      const size = templateColumnsFontSize(columnRows, vw - TEMPLATE_TILE_PAD * 2, vh, TEMPLATE_FIT_METRICS[device].columnsBody, device);
+      content = templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons);
     } else {
-      const fit = templateTextFit(look.text, width - padX * 2, height, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
-      const style = [`font-size:${fit.size * s}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
-      content = html`<span class="wp-tpl-text" style=${style}>${templateFitLines(fit, device, textInk, s, input.icons)}</span>`;
+      const fit = templateTextFit(look.text, vw - TEMPLATE_TILE_PAD * 2, vh, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
+      const style = [`font-size:${fit.size * zs}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
+      content = html`<span class="wp-tpl-text" style=${style}>${templateFitLines(fit, device, textInk, zs, input.icons)}</span>`;
     }
   }
   const rim = iphone ? `box-shadow:${phoneLitTileRim(s)};` : "";
@@ -3503,9 +3534,9 @@ const FAKE_CHART: readonly [number, number][] = [[0, 0.72], [0.18, 0.58], [0.36,
  * field with its placeholder (and a send button when it submits with one),
  * a web card a globe on a card with the address's host.
  */
-function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
+function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }, unit?: number): TemplateResult {
   const kind = tileKind(tileEntityId(tile));
-  const radius = previewTileCornerRadius(input, cell.width, cell.height) * s;
+  const radius = previewTileCornerRadius(input, cell.width, cell.height, undefined, unit) * s;
   const ink = flatInk(tile.color, "#0A84FF");
   const side = Math.min(width, height);
   const frame = (cls: string, body: TemplateResult, ground: string) => html`<div class="wp-tile wp-phone-face ${cls}" data-phone-face=${kind}
@@ -3572,8 +3603,8 @@ function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: 
  * such floor, the house symbol stands in for the picture and the line says
  * which.
  */
-function homeMapFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
-  const radius = previewTileCornerRadius(input, cell.width, cell.height) * s;
+function homeMapFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined, cell = { width, height }, unit?: number): TemplateResult {
+  const radius = previewTileCornerRadius(input, cell.width, cell.height, undefined, unit) * s;
   const keyed = tile as WatchPageTile & Record<string, unknown>;
   const floor = watchHomeMapDrawnFloor(keyed, input.homeMap);
   const room = watchHomeMapRoomOf(keyed, floor);
@@ -3683,13 +3714,13 @@ function tileFace(
 
   // A Home map tile keeps its own face, its floor's plan, on both devices
   // and in either look.
-  if (kind === "home_map") return homeMapFace(tile, width, height, box, input, s, titled ? hint : undefined, cell);
+  if (kind === "home_map") return homeMapFace(tile, width, height, box, input, s, titled ? hint : undefined, cell, unit);
   // A kind only the iPhone draws: its outline on a watch, a simple face on
   // an iPhone.
   if (!tileDrawsOn(tile, "watch")) {
     return input.phone === undefined
       ? phoneOnlyOutline(tile, width, height, box, input, s, titled ? hint : undefined)
-      : phoneTileFace(tile, width, height, box, input, s, titled ? hint : undefined, cell);
+      : phoneTileFace(tile, width, height, box, input, s, titled ? hint : undefined, cell, unit);
   }
   // One Look draws every other kind, cameras included; only templates keep
   // their own face. On the iPhone a tile is drawn as stored: only the
@@ -4373,14 +4404,14 @@ export const watchPagePreviewStyles = css`
   .wp-tpl { display: flex; flex-direction: column; justify-content: center; align-items: center; }
   .wp-tpl-text {
     position: relative; display: block; width: 100%;
-    font-family: ${unsafeCSS(WATCH_ROUNDED_FAMILY)}; font-weight: 600;
+    font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600;
   }
   /* templateTextFit breaks the lines, as the device does. */
   .wp-tpl-line { display: block; white-space: pre; }
   .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .wp-tpl-grid {
-    position: relative; display: grid; width: 100%; justify-content: space-between; align-items: center; line-height: 1.2;
-    font-family: ${unsafeCSS(WATCH_ROUNDED_FAMILY)}; font-weight: 600; overflow: hidden;
+    position: relative; display: grid; width: 100%; justify-content: space-between; align-items: center; line-height: ${TEMPLATE_INTER_ROW};
+    font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; overflow: hidden;
   }
   .wp-tpl-cell { display: inline-flex; align-items: center; min-width: 0; white-space: pre; }
   .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }

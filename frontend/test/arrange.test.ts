@@ -34,6 +34,7 @@ import {
   setArrangePickedPart,
 } from "../src/watch-pages/arrange-model.js";
 import { setWatchTileArrange, setWatchTileIconSize } from "../src/watch-pages/tile-settings-model.js";
+import { oneLookRectsIntersect } from "../src/watch-pages/one-look/layout.js";
 import { renderArrangeSection } from "../src/watch-pages/arrange-card.js";
 import {
   tileArrangeShown,
@@ -170,7 +171,7 @@ const onWatch = (t: WatchPageTile, cols = 6, rows = 4, states = lit("light.kitch
 describe("an Icon Size past what fits", () => {
   const model = (size: number | undefined) => watchTileOneLookModel(light(size === undefined ? {} : { iconSizeOverride: size }), cellOf(6, 4), watchInput(lit("light.kitchen")), UNIT)!;
 
-  it("grows the icon about its centre, over the text, which stays where it was", () => {
+  it("grows the icon about its centre until its ink meets the text, which stays where it was", () => {
     const fits = model(48).layout;
     const grown = model(150).layout;
     expect(grown.mode).toBe("centred");
@@ -179,14 +180,21 @@ describe("an Icon Size past what fits", () => {
     expect(grown.name).toEqual(fits.name);
     expect(grown.discRect.x + grown.discRect.width / 2).toBeCloseTo(fits.discRect.x + fits.discRect.width / 2, 5);
     expect(grown.discRect.y + grown.discRect.height / 2).toBeCloseTo(fits.discRect.y + fits.discRect.height / 2, 5);
-    expect(grown.discRect.height).toBeGreaterThan(grown.size.height);
+    expect(grown.discRect.width).toBeGreaterThanOrEqual(fits.discRect.width);
     expect(grown.glyphSize / fits.glyphSize).toBeCloseTo(grown.discRect.width / fits.discRect.width, 5);
+    // It stops where its ink would meet the name or the state (2026-11-05:
+    // a big bulb ran into "House").
+    const ink = grown.glyphInk!;
+    const band = { x: 0, y: grown.textOrigin.y, width: grown.size.width, height: grown.textHeight };
+    const shrunk = { x: ink.x + 0.01, y: ink.y + 0.01, width: ink.width - 0.02, height: ink.height - 0.02 };
+    expect(oneLookRectsIntersect(shrunk, band)).toBe(false);
+    expect(oneLookRectsIntersect(shrunk, grown.stateRect!)).toBe(false);
   });
 
-  it("grows a little for a little: no jump just past the old largest", () => {
+  it("grows no less than the layout's own: never smaller just past the old largest", () => {
     const edge = model(48).layout.discRect.width;
     const past = model(50).layout.discRect.width;
-    expect(past).toBeGreaterThan(edge);
+    expect(past).toBeGreaterThanOrEqual(edge);
     expect(past - edge).toBeLessThan(5);
   });
 
@@ -280,7 +288,11 @@ describe("One Look draws the arrangement", () => {
     const unit = (380 - 22) / 12;
     const cell = { width: 6 * unit + 10, height: 4 * unit + 6 };
     const model = watchTileOneLookModel(light({ arrange: { v: 1, parts: { icon: { spot: "br" } } } }), cell, input, unit)!;
-    expect(model.device).toBe("phone");
+    // On the iPhone, laid out as the zoomed watch (`OneLookZoom`): its own
+    // Arrangement is the iPhone's feature, so it is placed.
+    expect(model.platform).toBe("phone");
+    expect(model.device).toBe("watch");
+    expect(model.zoom).toBeGreaterThan(1);
     const r = model.arrange!.icon!.rect;
     expect(r.x + r.width).toBeCloseTo(model.layout.size.width - model.layout.insetH, 5);
     expect(r.y + r.height).toBeCloseTo(model.layout.size.height - model.layout.insetV, 5);

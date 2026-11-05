@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { UI_FONT_FAMILY, UI_FONT_FILES, installUiFont, uiFontFaces } from "../src/font.js";
+import { TILE_FONT_FAMILY, TILE_FONT_FILES, UI_FONT_FAMILY, UI_FONT_FILES, installUiFont, tileFontFaces, uiFontFaces } from "../src/font.js";
 import { rangeFill } from "../src/form-styles.js";
 
 const BASE = "https://ha.example/wrist_assistant_static/wrist-assistant-panel.js?v=1";
@@ -45,6 +45,34 @@ describe("the UI font", () => {
     expect(added).toHaveLength(1);
     expect(added[0]!.textContent).toContain("@font-face");
     installUiFont(undefined, BASE);
+  });
+});
+
+describe("the tile font", () => {
+  it("declares exactly the files the build copies, one for each weight, with the licence", () => {
+    const build = readFileSync(join(__dirname, "..", "build.mjs"), "utf8");
+    for (const { file } of TILE_FONT_FILES) {
+      expect(file.startsWith("fonts/")).toBe(true);
+      expect(build).toContain(`"${file.slice("fonts/".length)}"`);
+      expect(readFileSync(join(__dirname, "..", file)).length).toBeGreaterThan(50_000);
+    }
+    expect(build).toContain(`"LICENSE-inter.txt"`);
+    expect(TILE_FONT_FILES.map((f) => f.weight)).toEqual([400, 500, 600, 700]);
+  });
+
+  it("points every face beside the bundle, and is declared with the UI font", () => {
+    const faces = tileFontFaces(BASE);
+    expect(faces.match(/@font-face/g)).toHaveLength(TILE_FONT_FILES.length);
+    expect(faces).toContain(`font-family: "${TILE_FONT_FAMILY}";`);
+    expect(faces).toContain(`url("https://ha.example/wrist_assistant_static/fonts/inter-semibold.woff2")`);
+    const added: { id: string; textContent: string }[] = [];
+    const doc = {
+      getElementById: (id: string) => added.find((s) => s.id === id) ?? null,
+      createElement: () => ({ id: "", textContent: "" }),
+      head: { append: (s: { id: string; textContent: string }) => { added.push(s); } },
+    } as unknown as Document;
+    installUiFont(doc, BASE);
+    expect(added[0]!.textContent).toContain(`font-family: "${TILE_FONT_FAMILY}";`);
   });
 });
 

@@ -1,9 +1,15 @@
 // How a device fits a template tile's text in its tile, line by line: a model
 // of SwiftUI's `minimumScaleFactor(0.4)` on the `Text` of the app's
-// `TemplateTileOverlay`, read off renders of that view on the iPhone simulator
-// and off a real watch.
+// `TemplateTileOverlay`.
 //
-// What the model holds to, each seen on a render:
+// Both apps draw that text in the bundled Inter SemiBold (`TileFont`), so
+// the widths are the same on the iPhone and the watch. They come from the
+// font file itself, its advances and its kerning (`tile-font-width.ts`), not
+// from renders. A row's height is Inter's line height from its metrics
+// (ascender 1984 and descender 494 of 2048 units). That height has not yet
+// been measured on a real watch; the SF fonts' rows were.
+//
+// What the model holds to, each seen on a render in the system font:
 //   - The words shrink, to 40% at most. An icon inside the text does not: it
 //     stays at the full size, and a row with one stays a full row tall.
 //   - The size is the largest where every line fits, the lines stay within the
@@ -14,37 +20,29 @@
 //   - At 40% with no fit, a word breaks anywhere, and the lines that do not fit
 //     are dropped, the last one left ending in "…".
 //
+// On a One Look iPhone page the tile is the watch's, zoomed (`OneLookZoom`):
+// the preview fits it as the watch, from the watch's 15 pt body at the tile's
+// room over the zoom, and draws it the zoom bigger. Only the line cap stays
+// the iPhone's own key. The iPhone's own metrics are left for the old look.
+//
 // No DOM here: the preview draws what this returns (`preview.ts`).
 
+import { tileTextEms } from "../tile-font-width.js";
 import { templateRichTextSegments } from "./rich-text.js";
 
 export type TemplateFitDevice = "watch" | "iphone";
 
-/** Character widths as parts of the size, Semibold Rounded, measured on the
- * simulators (`UIFont`, watchOS 27 and iOS 27). The watch's font is narrower. */
-const UNITS: Readonly<Record<TemplateFitDevice, Readonly<Record<string, number>>>> = {
-  iphone: {
-    a: .531, b: .581, c: .529, d: .58, e: .539, f: .337, g: .577, h: .568, i: .227, j: .227, k: .519, l: .228, m: .841, n: .558, o: .557, p: .577, q: .577, r: .344, s: .497, t: .336, u: .558, v: .511, w: .763, x: .506, y: .522, z: .492,
-    A: .668, B: .627, C: .703, D: .692, E: .565, F: .541, G: .719, H: .718, I: .25, J: .535, K: .644, L: .536, M: .851, N: .709, O: .745, P: .603, Q: .745, R: .625, S: .618, T: .594, U: .703, V: .661, W: .95, X: .667, Y: .646, Z: .626,
-    "0": .638, "1": .467, "2": .59, "3": .616, "4": .632, "5": .61, "6": .627, "7": .563, "8": .633, "9": .628,
-    " ": .2, ".": .269, ",": .269, ":": .269, ";": .269, "-": .437, "+": .632, "/": .36, "%": .846, "°": .431, "—": 1, "'": .221, "(": .36, ")": .36,
-  },
-  watch: {
-    a: .51, b: .565, c: .5, d: .564, e: .518, f: .339, g: .562, h: .559, i: .242, j: .241, k: .502, l: .239, m: .845, n: .557, o: .535, p: .561, q: .564, r: .351, s: .48, t: .347, u: .555, v: .473, w: .742, x: .496, y: .484, z: .464,
-    A: .591, B: .59, C: .6, D: .624, E: .526, F: .497, G: .612, H: .661, I: .249, J: .495, K: .59, L: .473, M: .772, N: .65, O: .635, P: .56, Q: .636, R: .591, S: .565, T: .501, U: .64, V: .586, W: .829, X: .554, Y: .538, Z: .55,
-    "0": .557, "1": .386, "2": .533, "3": .544, "4": .564, "5": .566, "6": .547, "7": .515, "8": .57, "9": .547,
-    " ": .172, ".": .236, ",": .196, ":": .249, ";": .248, "-": .36, "+": .561, "/": .331, "%": .723, "°": .248, "—": .976, "'": .193, "(": .331, ")": .331,
-  },
-};
+/** Inter's line height as a part of the size: (1984 + 494) / 2048. */
+export const TEMPLATE_INTER_ROW = 2478 / 2048;
 
 /** The sizes each device starts from, in points, and a row's height as a part
  * of the size. The iPhone's are its default text size. A watch's body size
  * follows its model and text size, which the panel cannot read: 15 is the size
- * a real watch's tile measured (its text stops at 6 points and its rows stand
- * 17 apart), where a 46 mm simulator at its default says 16. */
+ * a real watch's tile measured, where a 46 mm simulator at its default says
+ * 16. The row is Inter's on both, the same font. */
 export const TEMPLATE_FIT_METRICS: Readonly<Record<TemplateFitDevice, { body: number; columnsBody: number; row: number }>> = {
-  iphone: { body: 17, columnsBody: 17, row: 22 / 17 },
-  watch: { body: 15, columnsBody: 15, row: 17 / 15 },
+  iphone: { body: 17, columnsBody: 17, row: TEMPLATE_INTER_ROW },
+  watch: { body: 15, columnsBody: 15, row: TEMPLATE_INTER_ROW },
 };
 
 /** The smallest share of the size SwiftUI draws text at. */
@@ -52,15 +50,11 @@ export const TEMPLATE_MIN_SCALE = 0.4;
 
 const OTHER_CHAR = 0.56;
 const WIDE_CHAR = 1;
-/** A measured line against the sum of its characters: the font's kerning. */
-const KERNING: Readonly<Record<TemplateFitDevice, number>> = { iphone: 0.9964, watch: 0.9936 };
 
-/** A text's width as a part of the size. */
-export function templateTextUnits(text: string, device: TemplateFitDevice): number {
-  const units = UNITS[device];
-  let sum = 0;
-  for (const ch of text) sum += units[ch] ?? ((ch.codePointAt(0) ?? 0) >= 0x2e80 ? WIDE_CHAR : OTHER_CHAR);
-  return sum * KERNING[device];
+/** A text's width as a part of the size, in Inter SemiBold. The device no
+ * longer changes it: both draw the same font. */
+export function templateTextUnits(text: string, _device: TemplateFitDevice): number {
+  return tileTextEms(text, "semibold", (ch) => ((ch.codePointAt(0) ?? 0) >= 0x2e80 ? WIDE_CHAR : OTHER_CHAR));
 }
 
 /** One run of a drawn line. `row` and `cell` are the template's row and cell,

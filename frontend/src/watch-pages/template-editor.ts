@@ -1,5 +1,6 @@
-// `<wa-template-editor>`: a template tile's editor. The tile as each device
-// draws it on top, Line up columns under it, then the code. A press on a part
+// `<wa-template-editor>`: a template tile's editor. The tile on top, one
+// picture for both devices (the iPhone draws a template tile as the watch
+// does, zoomed: `OneLookZoom`), Line up columns under it, then the code. A press on a part
 // of the tile finds that part's code, and the caret in the code lights the part
 // on the tile. A drag of a row moves its line in the code (`template-move.ts`).
 //
@@ -10,7 +11,8 @@
 // a template's task first opens. Until then the text shows in a plain box, so
 // the text can be read and changed from the first draw.
 
-import { css, html, LitElement, nothing, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type TemplateResult, unsafeCSS } from "lit";
+import { TILE_FONT_STACK } from "../font.js";
 import { WATCH_APP } from "./app-model.js";
 import type { RenderResult } from "../ha-api.js";
 import type { TemplateCode, TemplateCodeOptions, TemplateCodeView } from "./template-code.js";
@@ -79,12 +81,10 @@ interface RowDrag {
   to: number;
 }
 
-interface Prefs extends TemplateCodeOptions {
-  device: "watch" | "iphone" | undefined;
-}
+type Prefs = TemplateCodeOptions;
 
 function readPrefs(): Prefs {
-  const start: Prefs = { view: "full", format: true, wrap: true, rows: true, device: undefined };
+  const start: Prefs = { view: "full", format: true, wrap: true, rows: true };
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
     if (typeof raw !== "object" || raw === null) return start;
@@ -94,7 +94,6 @@ function readPrefs(): Prefs {
       format: r["format"] !== false,
       wrap: r["wrap"] !== false,
       rows: r["rows"] !== false,
-      device: r["device"] === "watch" || r["device"] === "iphone" ? r["device"] : undefined,
     };
   } catch {
     return start;
@@ -271,8 +270,10 @@ export class WaTemplateEditor extends LitElement {
     return { key: `j:${from}:${value ?? ""}`, draw: html`<span class="te-pill j">{ }${value === undefined || value === "" ? nothing : html` <b>${value}</b>`}</span>` };
   }
 
+  /** The one picture: the iPhone and the watch fit a template the same way
+   * now, so the device the page editor shows draws it. */
   private currentPicture(): TemplateTilePicture | undefined {
-    return this.data.picture(this.prefs.device, TILE_W, TILE_H) ?? this.data.picture(undefined, TILE_W, TILE_H);
+    return this.data.picture(undefined, TILE_W, TILE_H);
   }
 
   /** Lights the tile's parts the caret is in, and marks parts that can be found. */
@@ -518,8 +519,6 @@ export class WaTemplateEditor extends LitElement {
   protected override render(): TemplateResult {
     const d = this.data;
     const picture = this.currentPicture();
-    const watch = d.picture("watch", TILE_W, TILE_H) !== undefined;
-    const iphone = d.picture("iphone", TILE_W, TILE_H) !== undefined;
     const scan = this.scan();
     const issues = [...(scan.open === undefined ? [] : [scan.open]), ...this.nameIssues(scan, this.selection.focused && this.selection.from === this.selection.to ? this.selection.head : -1)];
     const refused = d.render?.ok === false && scan.open === undefined ? d.render.error : undefined;
@@ -541,13 +540,9 @@ export class WaTemplateEditor extends LitElement {
         <div class="te-grid">
           <div class="te-left">
             ${picture === undefined ? nothing : html`<div class="te-well">
-              ${watch && iphone ? html`<div class="te-seg" role="group" aria-label="Device">
-                <button type="button" class=${picture.device === "watch" ? "on" : ""} @click=${() => this.setPrefs({ device: "watch" })}>Watch</button>
-                <button type="button" class=${picture.device === "iphone" ? "on" : ""} @click=${() => this.setPrefs({ device: "iphone" })}>iPhone</button>
-              </div>` : nothing}
               <div class="te-tile" @pointerdown=${(e: PointerEvent) => this.startRowDrag(e)} @click=${(e: Event) => this.pressTile(e)}>${face}</div>
               ${(this.aligned(scan)?.length ?? 0) > 1 ? html`<div class="te-move">Drag a row to move it.</div>` : nothing}
-              ${small ? html`<div class="te-small" role="status">Text is small on the ${picture.device === "watch" ? "Watch" : "iPhone"}.</div>` : nothing}
+              ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
@@ -667,7 +662,7 @@ export const templateEditorStyles = css`
   .cm-line.te-rowline:last-child { border-bottom: 0; }
   .cm-line.te-openrow { padding: 0 0 0 27px; }
   .cm-line.te-openrow:has(+ .te-rh), .cm-line.te-openrow:last-child { padding-bottom: 9px; border-bottom: 1px solid var(--wa-line); }
-  .te-rh { display: flex; align-items: center; gap: 8px; margin: 0 -10px; padding: 8px 12px; border-bottom: 1px solid var(--wa-line); font: 600 13.5px ui-rounded, "SF Pro Rounded", system-ui, sans-serif; color: var(--wa-ink); white-space: nowrap; overflow: hidden; cursor: pointer; user-select: none; }
+  .te-rh { display: flex; align-items: center; gap: 8px; margin: 0 -10px; padding: 8px 12px; border-bottom: 1px solid var(--wa-line); font: 600 13.5px ${unsafeCSS(TILE_FONT_STACK)}; color: var(--wa-ink); white-space: nowrap; overflow: hidden; cursor: pointer; user-select: none; }
   .te-rh:hover { background: var(--wa-hover); }
   .te-rh.open { padding-bottom: 3px; border-bottom: 0; }
   .te-rh.cut { opacity: .5; }

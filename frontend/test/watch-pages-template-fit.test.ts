@@ -6,30 +6,37 @@ const ROOMS = "[icon:books.vertical.fill] Aanb [icon:thermometer.medium] — [ic
 
 const words = (fit: TemplateFit): string[] => fit.lines.map((line) => line.pieces.map((p) => (p.kind === "text" ? p.text : "[i]")).join("").trim());
 
-// The cases below were read off renders of `TemplateRichText.render` under the
-// modifiers of `TemplateTileOverlay` on the iPhone simulator, and off a real
-// watch's tile of 100 by 66 points.
+// The cases below were first read off renders of `TemplateRichText.render`
+// under the modifiers of `TemplateTileOverlay` on the iPhone simulator, and
+// off a real watch's tile of 100 by 66 points, in the system fonts. Both apps
+// now draw the text in Inter, so the sizes and breaks here are the model's
+// in Inter's own widths and line height, not yet read off a device.
 describe("a template's text fitted as a device fits it", () => {
   it("shrinks to the size that keeps a time stamp on its one line, on the iPhone", () => {
     const fit = templateTextFit(`${ROOMS}\n${STAMP}`, 166, 111, 5, "iphone");
     expect(words(fit)).toHaveLength(3);
     expect(words(fit)[2]).toBe(STAMP);
-    expect(fit.size).toBeGreaterThanOrEqual(9.4);
-    expect(fit.size).toBeLessThanOrEqual(9.6);
+    expect(fit.size).toBe(9.2);
   });
 
   it("keeps the icons at the full size while the words shrink", () => {
     const fit = templateTextFit(`${ROOMS}\n${STAMP}`, 166, 111, 5, "iphone");
     expect(fit.iconSize).toBe(17);
     expect(fit.size).toBeLessThan(fit.iconSize);
-    expect(fit.iconRow).toBeCloseTo(22, 1);
+    // Inter's line at 17 points: 17 x 2478 / 2048.
+    expect(fit.iconRow).toBeCloseTo(20.57, 2);
   });
 
-  it("draws the same time stamp on one line of a real watch's tile", () => {
+  it("breaks the same time stamp at the smallest size on a real watch's tile, Inter's digits being wider", () => {
     const fit = templateTextFit(`${ROOMS}\n${STAMP}`, 92, 66, 5, "watch");
-    expect(words(fit)[2]).toBe(STAMP);
     expect(fit.size).toBeCloseTo(6, 1);
-    expect(templateTextUnits(STAMP, "watch") * fit.size).toBeLessThanOrEqual(92);
+    expect(templateTextUnits(STAMP, "watch") * fit.size).toBeGreaterThan(92);
+    expect(words(fit).slice(2).join("")).toBe(STAMP);
+    expect(words(fit)).toHaveLength(4);
+  });
+
+  it("measures the same on both devices, which draw the same font", () => {
+    expect(templateTextUnits(STAMP, "watch")).toBe(templateTextUnits(STAMP, "iphone"));
   });
 
   it("keeps a short text at the full size", () => {

@@ -34,6 +34,7 @@ import { arrangeStageParts } from "./arrange-model.js";
 import { type WatchPagePreviewInput, watchTileOneLookModel } from "./preview.js";
 import type { WatchPageTile } from "./model.js";
 import type { OneLookRect } from "./one-look/layout.js";
+import { oneLookZoomedRect } from "./one-look/metrics.js";
 
 // ── the parts of the large tile ──────────────────────────────────────────
 
@@ -144,8 +145,9 @@ export function tileHeadPartRects(tile: WatchPageTile, cell: { width: number; he
   const stage = arrangeStageParts(tile, cell, input, unit);
   if (stage === undefined) return undefined;
   const parts: TileHeadPartRects["parts"] = { ...stage.parts };
-  const bar = watchTileOneLookModel(tile, cell, input, unit)?.layout.barRect;
-  if (bar !== undefined && bar.width > 0 && bar.height > 0) parts.bar = bar;
+  const model = watchTileOneLookModel(tile, cell, input, unit);
+  const bar = model?.layout.barRect;
+  if (model !== undefined && bar !== undefined && bar.width > 0 && bar.height > 0) parts.bar = oneLookZoomedRect(bar, model.zoom);
   return { inset: stage.inset, parts };
 }
 

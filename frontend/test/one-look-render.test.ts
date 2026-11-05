@@ -27,6 +27,7 @@ import {
   watchPreviewTopInset,
 } from "../src/watch-pages/preview.js";
 import { oneLookOldSizes, oneLookTileTextScale } from "../src/watch-pages/one-look/render.js";
+import { oneLookZoomFactor } from "../src/watch-pages/one-look/metrics.js";
 import { renderPageRowPicture } from "../src/library/row-picture.js";
 
 /** A template's text with its values, as lit would write it. */
@@ -188,32 +189,36 @@ describe("a light in One Look", () => {
   const states = entity("light.kitchen", "on", { brightness: 189 });
   const t = tile("light.kitchen", { customLabel: "Kitchen", color: "#8F7BEA" });
 
+  // The iPhone draws the watch's tile at its virtual size, the zoom bigger
+  // (`OneLookZoom`): 1.854 on this grid, its row of 380 over the 46 mm
+  // watch's 205. Every number below is the watch's times that.
   it("puts the glyph where the old look drew its bulb, as big (D17)", () => {
     const html = onPhone(t, states);
     expect(html).toContain('data-ol-mode=centred');
-    expect(place(styleOf(html, "ol-glyph"))).toEqual({ x: 51.24, y: 15.41, w: 76.51, h: 76.51 });
+    expect(place(styleOf(html, "ol-glyph"))).toEqual({ x: 49.19, y: 11.79, w: 80.62, h: 80.62 });
     // The image fitted in the middle 86%: its ink 1.01 em of an image 1.25
-    // em tall, so 52.64 points of the 65.8 point square.
-    expect(html).toMatch(/<svg width=53\.17 height=53\.17 viewBox=0 0 13\.53 22\.22 data-n=lightbulb\.fill fill=#FFF8EA>/);
+    // em tall.
+    expect(html).toMatch(/<svg width=56\.02 height=56\.02 viewBox=0 0 13\.53 22\.22 data-n=lightbulb\.fill fill=#FFF8EA>/);
     // The halo behind the bare glyph: 1.5 times it, brighter while lit.
-    expect(place(styleOf(html, "ol-halo"))).toEqual({ x: 32.12, y: -3.72, w: 114.77, h: 114.77 });
+    expect(place(styleOf(html, "ol-halo"))).toEqual({ x: 29.03, y: -8.36, w: 120.93, h: 120.93 });
     expect(styleOf(html, "ol-halo")).toContain("rgba(255, 255, 255, 0.32)");
   });
 
   it("writes its state top left and its name centred at the bottom on one line", () => {
     const html = onPhone(t, states);
-    expect(place(styleOf(html, "ol-state"))).toEqual({ x: 12.69, y: 17, w: 30.72, h: 23.1 });
+    expect(place(styleOf(html, "ol-state"))).toEqual({ x: 10.38, y: 17.61, w: 49.05, h: 25.95 });
     expect(html).toContain('class="ol-figure"');
-    expect(html).toMatch(/font:700 21px\/1 "SF Pro Rounded"[^>]*>74<\/span><span class="ol-unit"[^>]*>%<\/span>/);
-    expect(place(styleOf(html, "ol-text centred"))).toEqual({ x: 8, y: 84.95, w: 163, h: 17.7 });
-    expect(html).toMatch(/class="ol-name" style=height:17\.7px;font:500 15px\/17\.7px "SF Pro Text"[^>]*>Kitchen<\/span>/);
+    // The watch's 14 pt figure and 10 pt name, zoomed.
+    expect(html).toMatch(/font:700 25\.95px\/1 "WA Inter"[^>]*>74<\/span><span class="ol-unit"[^>]*>%<\/span>/);
+    expect(place(styleOf(html, "ol-text centred"))).toEqual({ x: 5.56, y: 83.08, w: 167.88, h: 21.87 });
+    expect(html).toMatch(/class="ol-name" style=height:21\.87px;font:500 18\.54px\/21\.87px "WA Inter"[^>]*>Kitchen<\/span>/);
   });
 
   it("fills the bar across the top to its brightness, a pale tint of its colour", () => {
     const html = onPhone(t, states);
-    expect(place(styleOf(html, "ol-bar"))).toEqual({ x: 12, y: 8, w: 155, h: 4 });
-    // 74% of 155.
-    expect(styleOf(html, "ol-bar-fill")).toContain("width:114.7px");
+    expect(place(styleOf(html, "ol-bar"))).toEqual({ x: 11.12, y: 7.41, w: 156.76, h: 5.56 });
+    // 74% of 156.76.
+    expect(styleOf(html, "ol-bar-fill")).toContain("width:116px");
     expect(styleOf(html, "ol-bar-fill")).toMatch(/background:rgba\(\d+, \d+, \d+, 0\.7\)/);
   });
 
@@ -222,7 +227,7 @@ describe("a light in One Look", () => {
     const html = onWatch(desk, entity("light.desk", "on", { brightness: 204 }));
     expect(place(styleOf(html, "ol-bar"))).toEqual({ x: 6, y: 4, w: 90, h: 3 });
     expect(place(styleOf(html, "ol-glyph"))).toEqual({ x: 26.54, y: 6.04, w: 48.92, h: 48.92 });
-    expect(place(styleOf(html, "ol-state"))).toEqual({ x: 6.03, y: 9.5, w: 20.9, h: 14 });
+    expect(place(styleOf(html, "ol-state"))).toEqual({ x: 6.03, y: 9.5, w: 28.22, h: 14 });
     expect(place(styleOf(html, "ol-text centred"))).toEqual({ x: 3, y: 49.17, w: 96, h: 11.8 });
     // No soft shadow under text on the watch.
     expect(html).not.toContain("text-shadow");
@@ -266,7 +271,8 @@ describe("the other parts", () => {
   it("draws a moved button where its layout puts it, and none while it is hidden", () => {
     const moved = tile("media_player.music", { customLabel: "Music", arrange: { v: 1, parts: { button: { spot: "bl", scale: 1.2 } } } });
     const at = place(styleOf(onPhone(moved, entity("media_player.music", "playing")), "ol-acc"));
-    expect(at.w).toBeCloseTo(36, 0);
+    // The watch's 20 pt disc at 1.2, zoomed 1.854 (`OneLookZoom`).
+    expect(at.w).toBeCloseTo(44.49, 1);
     expect(at.x).toBeLessThan(40);
     expect(at.y).toBeGreaterThan(40);
     const gone = tile("media_player.music", { customLabel: "Music", arrange: { v: 1, parts: { button: { hidden: true } } } });
@@ -285,7 +291,8 @@ describe("the other parts", () => {
     const music = tile("media_player.music", { customLabel: "Music" });
     const html = onPhone(music, entity("media_player.music", "playing"));
     expect(html).toContain("data-accessory=playPause");
-    expect(place(styleOf(html, "ol-acc"))).toEqual({ x: 136.31, y: 12.69, w: 30, h: 30 });
+    // The watch's 20 pt disc, zoomed.
+    expect(place(styleOf(html, "ol-acc"))).toEqual({ x: 131.55, y: 10.38, w: 37.07, h: 37.07 });
     expect(html).toContain("data-symbol=pause.fill");
     expect(html).toMatch(/>Playing<\/span>/);
   });
@@ -293,8 +300,8 @@ describe("the other parts", () => {
   it("scales the round button by Status Icon Size", () => {
     const music = tile("media_player.music", { customLabel: "Music", statusIconSizeOverride: 21 });
     const html = onPhone(music, entity("media_player.music", "paused"));
-    // 21 over the old 15 is 1.4, the most it grows.
-    expect(place(styleOf(html, "ol-acc")).w).toBe(42);
+    // 21 over the old 15 is 1.4, the most it grows: the watch's 28, zoomed.
+    expect(place(styleOf(html, "ol-acc")).w).toBeCloseTo(51.9, 1);
     expect(html).toContain("data-symbol=play.fill");
   });
 
@@ -304,9 +311,10 @@ describe("the other parts", () => {
     expect(html).toContain('class="ol-photo"');
     // D15's 48.6 point photo, centred 3 above the middle, shrunk until it
     // clears the name. D15 has the name at One Look's 11.5; a drawn tile's
-    // is the old look's 10 (11.8 high, its top at 49.17), which leaves the
-    // photo 35.34 across.
-    expect(place(styleOf(html, "ol-photo"))).toEqual({ x: 33.33, y: 12.83, w: 35.34, h: 35.34 });
+    // is the old look's 10 (11.8 high, its top at 49.17). With "Away" in
+    // Inter, measured from the font's own widths, that leaves the photo
+    // 27.18 across.
+    expect(place(styleOf(html, "ol-photo"))).toEqual({ x: 37.41, y: 16.91, w: 27.18, h: 27.18 });
     expect(html).toMatch(/>Away<\/span>/);
   });
 
@@ -379,9 +387,12 @@ describe("every kind at every size", () => {
           const html = text(renderWatchTileFace(t, cell, input, unit));
           expect(html, `${device} ${id} ${c}x${r}`).toContain("ol-tile");
           const name = place(styleOf(html, "ol-text(?: centred)?"));
+          // The layout's half point of slack is in its own points, which the
+          // iPhone draws the zoom bigger (`OneLookZoom`).
+          const slack = 0.51 * oneLookZoomFactor(device, unit);
           if (Number.isFinite(name.x)) {
-            expect(name.y + name.h, `${device} ${id} ${c}x${r} text`).toBeLessThanOrEqual(cell.height - 2 * inset + 0.51);
-            expect(name.y, `${device} ${id} ${c}x${r} text`).toBeGreaterThanOrEqual(-0.51);
+            expect(name.y + name.h, `${device} ${id} ${c}x${r} text`).toBeLessThanOrEqual(cell.height - 2 * inset + slack);
+            expect(name.y, `${device} ${id} ${c}x${r} text`).toBeGreaterThanOrEqual(-slack);
           }
         }
       }

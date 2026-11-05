@@ -37,6 +37,7 @@ import {
   oneLookCutoutPlace,
   oneLookCutoutRect,
   oneLookPreviewModel,
+  oneLookZoomedFace,
   renderOneLookTile,
 } from "../src/watch-pages/one-look/render.js";
 import type { WatchPagePreviewInput, WatchSpecialLook } from "../src/watch-pages/preview.js";
@@ -458,9 +459,11 @@ describe("every tile", () => {
     expect(glyph(on)).not.toContain("opacity");
   });
 
-  it("rings a person's round photo: white at 28%, 1 pt on the watch, 1.5 pt on the iPhone", () => {
-    for (const [device, width] of [["watch", "1px"], ["phone", "1.5px"]] as const) {
+  it("rings a person's round photo: white at 28%, the watch's 1 pt, which the iPhone draws zoomed", () => {
+    for (const device of ["watch", "phone"] as const) {
       const f = face({ id: "T", entityId: "person.jesse", customLabel: "Jesse", colSpan: 6, rowSpan: 4 }, entity("person.jesse", "home"), {}, device);
+      // The iPhone draws the watch's tile the zoom bigger (`OneLookZoom`).
+      const width = `${Math.round(oneLookZoomedFace(f).s * 100) / 100}px`;
       f.look = { symbol: undefined, filled: false, ink: { kind: "solid", hex: "#FFFFFF" }, opacity: 1, photo: "blob:person", active: true } as unknown as WatchSpecialLook;
       const out = html(renderOneLookTile(f));
       const photoAt = place(styleOf(out, "ol-photo"));

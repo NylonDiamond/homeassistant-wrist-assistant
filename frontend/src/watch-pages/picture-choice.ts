@@ -473,7 +473,7 @@ export function lineStyleLine(style: string): TemplateResult {
 /** The CSS weight of each label weight. */
 const WEIGHT_CSS: Readonly<Record<string, number>> = { light: 300, regular: 400, medium: 500, semibold: 600, bold: 700 };
 
-/** "Aa" in a label weight, in the watch's own font. */
+/** "Aa" in a label weight, in the tile font both devices draw names in. */
 export function weightSample(weight: string): TemplateResult {
   return html`<span class="pc-aa" style=${`font-family:${ONE_LOOK_FONT_FAMILIES.watch.standard};font-weight:${WEIGHT_CSS[weight] ?? 400}`}>Aa</span>`;
 }
@@ -483,8 +483,8 @@ export function designSample(design: string): TemplateResult {
   return html`<span class="pc-aa" style=${designStyle(design)}>Aa</span>`;
 }
 
-/** The inline CSS that draws words in a label weight, in the watch's own
- * font: a Weight button's words. */
+/** The inline CSS that draws words in a label weight, in the tile font both
+ * devices draw names in: a Weight button's words. */
 export function weightStyle(weight: string): string {
   return `font-family:${ONE_LOOK_FONT_FAMILIES.watch.standard};font-weight:${WEIGHT_CSS[weight] ?? 400}`;
 }

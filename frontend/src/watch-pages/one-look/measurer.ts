@@ -1,10 +1,20 @@
 // The panel's measurer for One Look (`UIFontMeasurer` in the app's
-// `OneLookText.swift`): text widths from a canvas in the device's own system
-// font, and SF Symbol image sizes from the panel's bundled symbols. Without
-// a canvas (the tests run in node) it falls back to the app's own estimate,
-// 0.55 em a character, so a layout still resolves the same way every time.
+// `OneLookText.swift`): text widths from a canvas in the tile font, Inter,
+// and SF Symbol image sizes from the panel's bundled symbols. Without a
+// canvas (the tests run in node) Inter's own advances and kerning
+// (`tile-font-width.ts`) stand in for it, so a layout resolves the same way
+// every time and as the apps' CoreText measures it; that is what the shared
+// fixtures are written with. A chosen rounded, monospaced or serif design has
+// no table and falls back to the app's estimate, 0.55 em a character.
+//
+// Both apps draw a tile's text in the same bundled Inter (`TileFont`), so
+// the watch and the iPhone measure alike, and so does the panel, which loads
+// the same cuts (`font.ts`). A width measured before Inter has loaded is in
+// the fallback font, so it is not kept; once Inter loads, the cache empties.
 
+import { TILE_FONT_STACK, onTileFontLoaded, tileFontLoaded } from "../../font.js";
 import type { IconProvider } from "../../renderer.js";
+import { tileTextEms } from "../../tile-font-width.js";
 import type { OneLookDevice } from "./metrics.js";
 import {
   ONE_LOOK_DEFAULT_GLYPH_ASPECT,
@@ -15,25 +25,30 @@ import {
   type TextMeasurer,
 } from "./text.js";
 
-/** The system font a design is drawn in on each device: SF Compact on the
- * watch, SF Pro on the iPhone. The watch's two are the same stacks as
- * `WATCH_FONT_FAMILY` and `WATCH_ROUNDED_FAMILY` in preview.ts, the
- * iPhone's the one phone-frame.ts gives its screen; monospaced and serif
- * are the stacks the old look's Font Design draws with. */
+/** The font a design is drawn in on each device. The default design is the
+ * tile font, Inter, on both. A tile's chosen Font Design keeps the system's:
+ * SF Compact Rounded on the watch and SF Pro Rounded on the iPhone, and the
+ * stacks the old look's monospaced and serif draw with. One Look's own
+ * numbers and units are Inter too (`ONE_LOOK_OWN_FAMILY`). */
 export const ONE_LOOK_FONT_FAMILIES: Readonly<Record<OneLookDevice, Readonly<Record<OneLookTextDesign, string>>>> = {
   watch: {
-    standard: '"SF Compact Text", "SF Compact", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    standard: TILE_FONT_STACK,
     rounded: '"SF Compact Rounded", ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif',
     monospaced: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
     serif: 'ui-serif, "New York", Georgia, "Times New Roman", serif',
   },
   phone: {
-    standard: '"SF Pro Text", "SF Pro", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    standard: TILE_FONT_STACK,
     rounded: '"SF Pro Rounded", ui-rounded, "SF Compact Rounded", "Nunito", system-ui, sans-serif',
     monospaced: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
     serif: 'ui-serif, "New York", Georgia, "Times New Roman", serif',
   },
 };
+
+/** One Look's own text, which no Font Design changes: the numbers, units
+ * and words of a state line and a big value. The apps draw these in Inter
+ * whatever the tile's design (`TileFont.font(size:weight:fallback:)`). */
+export const ONE_LOOK_OWN_FAMILY = TILE_FONT_STACK;
 
 const CSS_WEIGHTS: Readonly<Record<OneLookTextWeight, number>> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
 
@@ -46,6 +61,13 @@ export function oneLookCssWeight(weight: OneLookTextWeight): number {
  * character, with no tracking. */
 export function oneLookEstimatedWidth(text: string, size: number): number {
   return graphemes(text).length * size * 0.55;
+}
+
+/** A run's width in Inter from the font's own tables, with the tracking
+ * after every character as CoreText's kern adds it. A character the tables
+ * do not hold counts 0.55 em, the app's estimate. */
+export function oneLookInterWidth(text: string, size: number, weight: OneLookTextWeight, tracking: number): number {
+  return tileTextEms(text, weight, () => 0.55) * size + graphemes(text).length * tracking * size;
 }
 
 /** The point size the bundled symbols' viewBoxes are measured at
@@ -96,6 +118,13 @@ export function oneLookSymbolImage(
   if (box === undefined || !(box[0] > 0) || !(box[1] > 0)) return undefined;
   const inkWidth = box[0] / SYMBOL_EXPORT_SIZE;
   const inkHeight = box[1] / SYMBOL_EXPORT_SIZE;
+  // The devices' own image, where the table has it (`imageSize`): the
+  // margin around the ink differs by symbol.
+  const real = icons.imageSize?.(symbol) ?? icons.imageSize?.(known?.(symbol) ?? symbol);
+  if (real !== undefined) {
+    const wide = real.aspect >= 1;
+    return { width: wide ? real.extent : real.extent * real.aspect, height: wide ? real.extent / real.aspect : real.extent, inkWidth, inkHeight };
+  }
   return { width: inkWidth + ONE_LOOK_SYMBOL_MARGIN_W, height: inkHeight + ONE_LOOK_SYMBOL_MARGIN_H, inkWidth, inkHeight };
 }
 
@@ -118,14 +147,27 @@ function canvas(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D 
  * runs. The app keeps the same. */
 const CACHE_LIMIT = 4096;
 const widths = new Map<string, number>();
+onTileFontLoaded(() => widths.clear());
 
-function cached(key: string, measure: () => number): number {
+/** A width from the cache, else measured. A width in the tile font is kept
+ * only once that font has loaded. */
+function cached(key: string, keep: boolean, measure: () => number): number {
   const hit = widths.get(key);
   if (hit !== undefined) return hit;
   const width = measure();
+  if (!keep) return width;
   if (widths.size >= CACHE_LIMIT) widths.clear();
   widths.set(key, width);
   return width;
+}
+
+/** The devices' own size for a symbol (`IconProvider.imageSize`), under
+ * its name, else the name the provider keeps it under; undefined when the
+ * table lacks both, which falls back to the outline and its margin. */
+function deviceSize(options: OneLookMeasurerOptions, symbol: string): { aspect: number; extent: number } | undefined {
+  const sizes = options.icons?.imageSize;
+  if (sizes === undefined || symbol.trim() === "") return undefined;
+  return options.icons!.imageSize!(symbol) ?? (options.known === undefined ? undefined : options.icons!.imageSize!(options.known(symbol)));
 }
 
 export interface OneLookMeasurerOptions {
@@ -140,7 +182,7 @@ export interface OneLookMeasurerOptions {
 
 /**
  * A measurer for a device's tiles. Text is measured at its own point size
- * (system fonts change their letter shapes with size, as SF does between
+ * (a system font changes its letter shapes with size, as SF does between
  * Text and Display), plus the tracking after every character as CoreText's
  * kern adds it. Widths are cached by everything that shapes them; symbol
  * sizes are read fresh, as a provider that is still loading answers later.
@@ -150,9 +192,10 @@ export function oneLookMeasurer(device: OneLookDevice, options: OneLookMeasurerO
   const g = options.estimate === true ? null : canvas();
   const measure = (text: string, size: number, weight: OneLookTextWeight, design: OneLookTextDesign, tracking: number): number => {
     if (text === "" || !(size > 0)) return 0;
-    if (g === null) return oneLookEstimatedWidth(text, size);
-    const font = `${CSS_WEIGHTS[weight]} ${size}px ${families[design]}`;
-    return cached(`${font}|${tracking}|${text}`, () => {
+    const family = families[design];
+    if (g === null) return family === TILE_FONT_STACK ? oneLookInterWidth(text, size, weight, tracking) : oneLookEstimatedWidth(text, size);
+    const font = `${CSS_WEIGHTS[weight]} ${size}px ${family}`;
+    return cached(`${font}|${tracking}|${text}`, family !== TILE_FONT_STACK || tileFontLoaded(), () => {
       g.font = font;
       const width = g.measureText(text).width;
       if (!(width > 0)) return oneLookEstimatedWidth(text, size);
@@ -160,13 +203,18 @@ export function oneLookMeasurer(device: OneLookDevice, options: OneLookMeasurerO
     });
   };
   return {
-    width: (text, size, weight, rounded, tracking) => measure(text, size, weight, rounded ? "rounded" : "standard", tracking),
+    // One Look's own runs: Inter, rounded or not, as the apps draw them.
+    width: (text, size, weight, _rounded, tracking) => measure(text, size, weight, "standard", tracking),
     widthDesign: measure,
     glyphAspect(symbol) {
+      const real = deviceSize(options, symbol);
+      if (real !== undefined) return real.aspect;
       const image = oneLookSymbolImage(options.icons, symbol, options.known);
       return image === undefined ? ONE_LOOK_DEFAULT_GLYPH_ASPECT : image.width / image.height;
     },
     glyphExtent(symbol) {
+      const real = deviceSize(options, symbol);
+      if (real !== undefined) return real.extent;
       const image = oneLookSymbolImage(options.icons, symbol, options.known);
       return image === undefined ? ONE_LOOK_DEFAULT_GLYPH_EXTENT : Math.max(image.width, image.height);
     },

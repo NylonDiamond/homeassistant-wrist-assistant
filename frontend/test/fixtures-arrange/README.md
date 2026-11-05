@@ -93,9 +93,11 @@ icon. See `short-icon-only.json`.
 | `arrange` | The key. |
 | `expected` | For each part in `native`: its `rect`, the `scale` it is drawn at, `hidden`, and for the name its `align` (only when `applies`). |
 
-The rects in `native` come from the panel's layout, which measures text with
-its own estimate; an app's layout measures with real fonts and lands
-elsewhere. So an app checks the math from the file's own `size`, `content`
+The rects in `native` come from the panel's layout. Names, states and
+numbers are in the tile font, Inter, on both devices, and the panel measures
+them from Inter's own advances and kerning, as the apps' CoreText does, so an
+app's layout lands on the same rects. A chosen rounded, monospaced or serif
+design is still the panel's estimate there. So an app checks the math from the file's own `size`, `content`
 and `native` against `expected`, never its own layout's rects. Numbers are
 rounded to 4 decimals; compare within 0.001.
 

@@ -9,7 +9,8 @@ import { svg } from "lit";
 import { describe, expect, it } from "vitest";
 
 import type { IconProvider } from "../src/renderer.js";
-import { WATCH_FONT_FAMILY, WATCH_ROUNDED_FAMILY } from "../src/watch-pages/preview.js";
+import { TILE_FONT_STACK } from "../src/font.js";
+import { WATCH_ROUNDED_FAMILY } from "../src/watch-pages/preview.js";
 import {
   ONE_LOOK_DEFAULT_STYLE,
   oneLookCentredGlyphMax,
@@ -39,9 +40,11 @@ import {
 } from "../src/watch-pages/one-look/layout.js";
 import {
   ONE_LOOK_FONT_FAMILIES,
+  ONE_LOOK_OWN_FAMILY,
   ONE_LOOK_SYMBOL_MARGIN_H,
   ONE_LOOK_SYMBOL_MARGIN_W,
   oneLookEstimatedWidth,
+  oneLookInterWidth,
   oneLookMeasurer,
   oneLookSymbolImage,
 } from "../src/watch-pages/one-look/measurer.js";
@@ -1252,9 +1255,18 @@ describe("One Look row names", () => {
 });
 
 describe("One Look's panel measurer", () => {
-  it("falls back to the app's estimate without a canvas", () => {
+  it("measures Inter from its own tables without a canvas, and a chosen design by the estimate", () => {
     const m = oneLookMeasurer("watch");
-    expect(m.width("Kitchen", 10, "semibold", false, -0.01)).toBeCloseTo(oneLookEstimatedWidth("Kitchen", 10), 10);
+    // Inter SemiBold's advances for "Kitchen" (7610 of 2048 units an em),
+    // less the tracking after each of its 7 letters.
+    expect(m.width("Kitchen", 10, "semibold", false, -0.01)).toBeCloseTo(76100 / 2048 - 0.7, 10);
+    expect(m.width("Kitchen", 10, "semibold", false, -0.01)).toBeCloseTo(oneLookInterWidth("Kitchen", 10, "semibold", -0.01), 10);
+    // One Look's own rounded runs are Inter too, as the apps draw them.
+    expect(m.width("100", 10, "bold", true, 0)).toBeCloseTo(m.width("100", 10, "bold", false, 0), 10);
+    // Kerning counts: "AV" is narrower than its two letters.
+    expect(m.width("AV", 10, "semibold", false, 0)).toBeLessThan(m.width("A", 10, "semibold", false, 0) + m.width("V", 10, "semibold", false, 0));
+    // A chosen design has no table: the app's estimate.
+    expect(m.widthDesign!("Kitchen", 10, "semibold", "rounded", -0.01)).toBeCloseTo(oneLookEstimatedWidth("Kitchen", 10), 10);
     expect(oneLookEstimatedWidth("Kitchen", 10)).toBeCloseTo(7 * 10 * 0.55, 10);
     expect(m.width("", 21, "bold", true, -0.01)).toBe(0);
     // And the ladders run on it.
@@ -1285,8 +1297,10 @@ describe("One Look's panel measurer", () => {
     expect(oneLookSymbolImage(icons, "bulb", (n) => (n === "bulb" ? "lightbulb" : n))?.inkHeight).toBeCloseTo(23.68 / 22, 10);
   });
 
-  it("measures the watch in the preview's own fonts", () => {
-    expect(ONE_LOOK_FONT_FAMILIES.watch.standard).toBe(WATCH_FONT_FAMILY);
+  it("measures both devices in the tile font, and a chosen rounded design in the watch's own", () => {
+    expect(ONE_LOOK_FONT_FAMILIES.watch.standard).toBe(TILE_FONT_STACK);
+    expect(ONE_LOOK_FONT_FAMILIES.phone.standard).toBe(TILE_FONT_STACK);
+    expect(ONE_LOOK_OWN_FAMILY).toBe(TILE_FONT_STACK);
     expect(ONE_LOOK_FONT_FAMILIES.watch.rounded).toBe(WATCH_ROUNDED_FAMILY);
   });
 });

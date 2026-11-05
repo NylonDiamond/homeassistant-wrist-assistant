@@ -28,8 +28,10 @@ import {
   normalizeTileArrange,
   oneLookArrangeContent,
   oneLookArrangeNative,
+  oneLookHeldIcon,
 } from "../src/watch-pages/one-look/arrange.js";
 import type { OneLookRect } from "../src/watch-pages/one-look/layout.js";
+import { oneLookZoomedRect } from "../src/watch-pages/one-look/metrics.js";
 
 const dir = join(__dirname, "fixtures-arrange");
 const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
@@ -84,7 +86,12 @@ function computed(f: Fixture): Required<Pick<Fixture, "cell" | "unit" | "size" |
   const layout = model.layout;
   const applies = layout.mode === "centred";
   const read = normalizeTileArrange(f.arrange);
-  const content = rect4(oneLookArrangeContent(layout));
+  // In the drawn tile's points: an iPhone tile is laid out as the watch at
+  // its virtual size and drawn the zoom bigger (`OneLookZoom`), and the
+  // placement math is the same at any scale.
+  const z = model.zoom;
+  const size = { width: layout.size.width * z, height: layout.size.height * z };
+  const content = rect4(oneLookZoomedRect(oneLookArrangeContent(layout), z));
   const native: Partial<Record<ArrangePart, Rect>> = {};
   const expected: Partial<Record<ArrangePart, Placed>> = {};
   if (applies) {
@@ -92,9 +99,9 @@ function computed(f: Fixture): Required<Pick<Fixture, "cell" | "unit" | "size" |
     for (const part of ARRANGE_PARTS) {
       const r = rects[part];
       if (r === undefined) continue;
-      native[part] = rect4(r);
+      native[part] = rect4(oneLookZoomedRect(r, z));
       const entry = read?.parts[part];
-      const placed = arrangePartRect(layout.size, content, native[part]!, part, entry);
+      const placed = arrangePartRect(size, content, native[part]!, part, entry);
       expected[part] = {
         rect: rect4(placed.rect), scale: placed.scale, hidden: placed.hidden,
         ...(part === "name" ? { align: arrangeNameAlign(entry, "center") } : {}),
@@ -103,7 +110,7 @@ function computed(f: Fixture): Required<Pick<Fixture, "cell" | "unit" | "size" |
   }
   return {
     cell: { width: r4(cell.width), height: r4(cell.height) }, unit: r4(unit),
-    size: { width: r4(layout.size.width), height: r4(layout.size.height) },
+    size: { width: r4(size.width), height: r4(size.height) },
     applies, content, native, expected,
   };
 }
@@ -191,7 +198,12 @@ describe("the shared Arrangement fixtures", () => {
             expect(got, part).toBeUndefined();
             continue;
           }
-          closeRect(got?.rect, want.rect, `drawn ${part}`);
+          // The icon's ink is then held inside the content box (`heldIcon`).
+          const z = model.zoom;
+          const wantRect = part === "icon"
+            ? oneLookHeldIcon({ rect: want.rect, scale: want.scale, hidden: want.hidden }, f.native![part]!, model.layout.glyphInk === undefined ? undefined : oneLookZoomedRect(model.layout.glyphInk, z), f.content!).rect
+            : want.rect;
+          closeRect(got === undefined ? undefined : oneLookZoomedRect(got.rect, z), wantRect, `drawn ${part}`);
           expect(got!.hidden).toBe(want.hidden);
         }
       });

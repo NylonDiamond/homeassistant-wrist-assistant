@@ -79,7 +79,7 @@ import {
   ONE_LOOK_UNIT_OPACITY,
 } from "./colour.js";
 import { type OneLookKindState, oneLookBarValue, oneLookFillLevel, oneLookTileState } from "./state.js";
-import { ONE_LOOK_CHOICES, type OneLookDevice, oneLookCentredGlyph, oneLookCornerRadius, oneLookMetrics } from "./metrics.js";
+import { ONE_LOOK_CHOICES, type OneLookDevice, oneLookCentredGlyph, oneLookCellSize, oneLookCornerRadius, oneLookLook, oneLookMetrics, oneLookVirtualUnit, oneLookZoomFactor } from "./metrics.js";
 import {
   type OneLookLayout,
   type OneLookLayoutInputInit,
@@ -94,7 +94,7 @@ import {
   oneLookStyleFactor,
   resolveOneLookLayout,
 } from "./layout.js";
-import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
+import { ONE_LOOK_FONT_FAMILIES, ONE_LOOK_OWN_FAMILY, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
 import { type OneLookArranged, arrangeHidesText, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
 import { type OneLookPhotoLight, oneLookGlowColour, oneLookLightPlacement } from "./glow.js";
 import { type OneLookTint, oneLookTintIsWhite, oneLookTintOf, oneLookTintRGB8 } from "./tint.js";
@@ -143,6 +143,40 @@ export interface OneLookTileFaceInput {
    * in for it, and the accessory beside it (as the apps hide it, touch area
    * and all). The bar and the chart are never hidden. */
   hidden?: TileHiddenParts;
+  /** The device the tile is really on, set once the face is zoomed
+   * (`oneLookZoomedFace`): `device` is then the look's. */
+  platform?: OneLookDevice;
+  /** The tile's spans, kept from the drawn grid when the face is zoomed (the
+   * 2 pt pitch does not scale, so the virtual cell would read them wrong). */
+  spans?: { colSpan: number; rowSpan: number };
+  /** The zoom a zoomed face is drawn at: `s` already holds it. */
+  zoom?: number;
+}
+
+/**
+ * The face as the tile is laid out and drawn (`OneLookZoom`): on the
+ * iPhone, the watch's tile at its virtual size (the drawn size, the cell and
+ * the unit over the zoom), drawn at the zoom times the pixel scale, so every
+ * point of the layout is drawn the zoom bigger. On the watch, and a face
+ * already zoomed, the face itself. `box` stays the drawn tile's place.
+ */
+export function oneLookZoomedFace(f: OneLookTileFaceInput): OneLookTileFaceInput {
+  if (f.platform !== undefined) return f;
+  const look = oneLookLook(f.device);
+  const zoom = oneLookZoomFactor(f.device, f.unit);
+  if (zoom === 1 && look === f.device) return f;
+  const unit = f.unit > 0 ? f.unit : f.cell.width;
+  const spans = {
+    colSpan: Math.max(1, Math.round((f.cell.width + 2) / (unit + 2))),
+    rowSpan: Math.max(1, Math.round((f.cell.height + 2) / (unit + 2))),
+  };
+  return {
+    ...f,
+    device: look, platform: f.device, spans, zoom,
+    width: f.width / zoom, height: f.height / zoom,
+    cell: { width: f.cell.width / zoom, height: f.cell.height / zoom },
+    unit: f.unit / zoom, s: f.s * zoom,
+  };
 }
 
 /** The iPhone's Page look a tile's old sizes are read in; the watch is
@@ -152,7 +186,13 @@ type PageLook = "iphone" | "watch";
 /** A tile as One Look draws it, everything resolved: what `renderOneLookTile`
  * draws, and what tests read. */
 export interface OneLookPreviewModel {
+  /** The look's device: the watch on both devices (`OneLookZoom`). */
   device: OneLookDevice;
+  /** The device the tile is on. */
+  platform: OneLookDevice;
+  /** How much bigger the tile is drawn than its layout: the layout's rects
+   * are in the virtual watch tile's points (`OneLookZoom.scaled`). */
+  zoom: number;
   pageLook: PageLook;
   kind: OneLookKindState;
   /** The symbol as drawn (its fill, outline or slashed form), "" for none,
@@ -572,6 +612,12 @@ const bareMeasurers = new Map<OneLookDevice, TextMeasurer>();
 
 /** One measurer per device and symbol provider, so its widths stay cached
  * across every tile and picture. */
+/** The measurer the previews lay a tile out with: the device's text, and
+ * the picture's symbols with the devices' sizes. */
+export function oneLookPreviewMeasurer(device: OneLookDevice, icons: IconProvider | undefined): TextMeasurer {
+  return measurerFor(device, icons);
+}
+
 function measurerFor(device: OneLookDevice, icons: IconProvider | undefined): TextMeasurer {
   if (icons === undefined) {
     let m = bareMeasurers.get(device);
@@ -698,20 +744,27 @@ function sameLine(a: StateLine, b: StateLine): boolean {
  * layout at its drawn size and the palette. Undefined for a kind that keeps
  * its own face.
  */
-export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewModel | undefined {
+export function oneLookPreviewModel(given: OneLookTileFaceInput): OneLookPreviewModel | undefined {
+  const f = oneLookZoomedFace(given);
+  const zoom = f.zoom ?? 1;
   const { tile, input, device } = f;
+  // The device the tile is on: its features (charts, artwork, its own
+  // Arrangement) are the iPhone's; its look is `device`'s.
+  const platform = f.platform ?? device;
   const states = input.states;
   const entityId = tileEntityId(tile);
   const kind = tileKind(entityId);
   const ks = oneLookTileState(tile, states, Date.now(), { httpNeedsAttention: httpNeedsAttention(tile, input.catalog) });
   if (ks === undefined) return undefined;
   const entity = entityOf(states, entityId);
+  // A zoomed tile takes the old sizes the watch would: at its virtual unit,
+  // in the watch's look (`takeOldSizes`).
   const pageLook: PageLook = device === "phone" && phoneDrawsIphoneLook(input.phone) ? "iphone" : "watch";
   // The spans from the cell, so a tile drawn at a size of its own (a resize
   // being dragged) is read at that size.
   const unit = f.unit > 0 ? f.unit : f.cell.width;
-  const colSpan = Math.max(1, Math.round((f.cell.width + 2) / (unit + 2)));
-  const rowSpan = Math.max(1, Math.round((f.cell.height + 2) / (unit + 2)));
+  const colSpan = f.spans?.colSpan ?? Math.max(1, Math.round((f.cell.width + 2) / (unit + 2)));
+  const rowSpan = f.spans?.rowSpan ?? Math.max(1, Math.round((f.cell.height + 2) / (unit + 2)));
 
   const { base, drawn } = symbolOf(f, kind, ks, entity);
   const icon = drawn === "" ? "" : ks.isUnavailable ? slashedSymbol(input.icons, drawn) : drawn;
@@ -726,7 +779,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   else if (!ks.placeholder && f.look?.art !== undefined) {
     picture = "artwork";
     pictureUrl = f.look.art;
-  } else if (device === "phone" && kind === "media_player" && !isWatchTvRemote(entityId, states) && watchMediaArtwork(tile)) {
+  } else if (platform === "phone" && kind === "media_player" && !isWatchTvRemote(entityId, states) && watchMediaArtwork(tile)) {
     const art = pictureOf(states, entityId);
     if (art !== undefined) {
       picture = "artwork";
@@ -739,11 +792,16 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   const httpValue = kind === "http_action" && tile.httpResponseDisplay === "tileValue";
   const showsName = (httpValue ? tile.httpTileValueShowName !== false : tileShowsLabel(tile)) && picture !== "camera";
   const name = showsName ? nameOf(f, kind, ks) : "";
-  const chart = device === "phone" && !ks.placeholder && (kind === "sensor" || kind === "binary_sensor")
+  const chart = platform === "phone" && !ks.placeholder && (kind === "sensor" || kind === "binary_sensor")
     && watchSensorChart(tile) !== undefined && rowSpan >= 4 ? PREVIEW_CHART : undefined;
   const isChart = chart !== undefined;
 
-  const style = oneLookTileStyle(tile, colSpan, rowSpan, oneLookOldSizes(tile, f.cell, colSpan, unit, pageLook));
+  // A zoomed tile's old sizes are the watch's at its virtual unit
+  // (`OneLookZoom.virtualUnit`), from its spans' cell there, as the app's
+  // `kindLayout` takes them.
+  const oldUnit = f.platform === undefined ? unit : oneLookVirtualUnit(unit * zoom, colSpan, zoom);
+  const oldCell = f.platform === undefined ? f.cell : oneLookCellSize(colSpan, rowSpan, oldUnit);
+  const style = oneLookTileStyle(tile, colSpan, rowSpan, oneLookOldSizes(tile, oldCell, colSpan, oldUnit, pageLook));
   const bar = oneLookBarStyle(tile);
   const measurer = f.measurer ?? measurerFor(device, input.icons);
   const centred = oneLookCentredGlyph(device) && picture === "none" && !isChart;
@@ -765,7 +823,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
     ...(ks.bigValue === undefined || onlyIcon ? {} : { bigValue: ks.bigValue }),
     centred,
     topBar: centred && reservesBar,
-    ownLayout: device === "phone" && centred && normalizeTileArrange(tile.arrange) !== undefined,
+    ownLayout: platform === "phone" && centred && normalizeTileArrange(tile.arrange) !== undefined,
     // A cut-out photo is laid out by its own aspect, not the icon's (a wide
     // photo must not rise beside the state as a narrow bulb may).
     glyphAspect: !centred ? 1 : cutout !== undefined ? oneLookCutoutAspect(cutout.aspect) : glyphAspectOf(measurer, base),
@@ -803,7 +861,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
   // Only a light is tinted, from its live colour and brightness.
   const tint = kind === "light" && !ks.placeholder ? oneLookTintOf(entity?.attributes) : undefined;
   return {
-    device, pageLook, kind: ks, icon, baseIcon: base,
+    device, platform, zoom, pageLook, kind: ks, icon, baseIcon: base,
     ...(photo === undefined ? {} : { photo }),
     ...(cutout === undefined ? {} : { cutout }),
     picture, ...(pictureUrl === undefined ? {} : { pictureUrl }),
@@ -868,21 +926,22 @@ function textShadow(on: boolean, s: number): string {
   return on ? `;text-shadow:0 ${r2(0.5 * s)}px ${r2(1.5 * s)}px rgba(0, 0, 0, 0.25)` : "";
 }
 
-/** A state line: the number in bold rounded with its unit at 84% and the
- * tail after it, or a word (the amber dot before it when it asks). The
+/** A state line: the number in bold with its unit at 84% and the tail
+ * after it, or a word (the amber dot before it when it asks), all in the
+ * tile font (`ONE_LOOK_OWN_FAMILY`). The
  * figure is tracked as the apps track it (`nameTracking`, round four section
  * 15.2), as the fitter measured it. */
 function stateLine(state: StateFit, palette: OneLookPalette, device: OneLookDevice, s: number): TemplateResult {
-  const family = ONE_LOOK_FONT_FAMILIES[device];
+  const family = ONE_LOOK_OWN_FAMILY;
   const ink = oneLookInkCss(palette.ink);
   const ink2 = oneLookInkCss(palette.ink2);
   const p = state.parts;
   if (p.kind === "number") {
-    return html`<span class="ol-line"><span class="ol-figure" style=${`font:700 ${r2(state.size * s)}px/1 ${family.rounded};letter-spacing:${oneLookMetrics(device).nameTracking}em;color:${ink}`}>${p.figure}</span>${p.unit === undefined ? nothing
-      : html`<span class="ol-unit" style=${`font:600 ${r2(state.unitSize * s)}px/1 ${family.rounded};color:${ink};opacity:${ONE_LOOK_UNIT_OPACITY}`}>${p.unit}</span>`}${p.tail === undefined ? nothing
-      : html`<span class="ol-tail" style=${`font:400 ${r2(state.tailSize * s)}px/1 ${family.standard};color:${ink2}`}>${` ${p.tail}`}</span>`}</span>`;
+    return html`<span class="ol-line"><span class="ol-figure" style=${`font:700 ${r2(state.size * s)}px/1 ${family};letter-spacing:${oneLookMetrics(device).nameTracking}em;color:${ink}`}>${p.figure}</span>${p.unit === undefined ? nothing
+      : html`<span class="ol-unit" style=${`font:600 ${r2(state.unitSize * s)}px/1 ${family};color:${ink};opacity:${ONE_LOOK_UNIT_OPACITY}`}>${p.unit}</span>`}${p.tail === undefined ? nothing
+      : html`<span class="ol-tail" style=${`font:400 ${r2(state.tailSize * s)}px/1 ${family};color:${ink2}`}>${` ${p.tail}`}</span>`}</span>`;
   }
-  return html`<span class="ol-line ol-word" style=${`font:400 ${r2(state.size * s)}px/1 ${family.standard};color:${ink2}`}>${p.amber
+  return html`<span class="ol-line ol-word" style=${`font:400 ${r2(state.size * s)}px/1 ${family};color:${ink2}`}>${p.amber
     ? html`<span class="ol-amber" style=${`background:${oneLookHex(ONE_LOOK_AMBER_DOT)}`}></span>` : nothing}${p.word}</span>`;
 }
 
@@ -942,7 +1001,7 @@ function bigValueLayer(model: OneLookPreviewModel, s: number): TemplateResult | 
   const rect = layout.bigRect;
   if (big === undefined || rect === undefined) return nothing;
   const m = oneLookLayoutMetrics(layout, device);
-  const family = ONE_LOOK_FONT_FAMILIES[device].rounded;
+  const family = ONE_LOOK_OWN_FAMILY;
   const shadow = textShadow(palette.textShadow && device === "phone" && model.style.stateShadow, s);
   return html`<span class="ol-big" style=${`${rectCss(rect, s)}${shadow}`}>
     <span style=${`height:${r2(m.bigSize * 1.02 * s)}px;font:700 ${r2(m.bigSize * s)}px/${r2(m.bigSize * 1.02 * s)}px ${family};letter-spacing:-0.02em;color:${oneLookInkCss(palette.ink)}`}>${big.figure}</span>
@@ -1289,7 +1348,10 @@ function borderLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, active
  * user's border. Outside it, on the iPhone, the under-glow of a lit coloured
  * tile.
  */
-export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
+export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
+  // On the iPhone the watch's tile at its virtual size, drawn the zoom
+  // bigger (`OneLookZoom`): every point below is a virtual one.
+  const f = oneLookZoomedFace(given);
   const model = oneLookPreviewModel(f);
   if (model === undefined) return html`<div class="wp-tile ol-tile" style=${f.box}></div>`;
   const { layout, palette, device } = model;

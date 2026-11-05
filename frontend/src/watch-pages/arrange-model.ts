@@ -24,7 +24,7 @@ import {
 } from "./preview.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type OneLookRect, type OneLookSize, oneLookAccessoryHasOwnAction } from "./one-look/layout.js";
-import { oneLookCornerRadius, oneLookMetrics } from "./one-look/metrics.js";
+import { oneLookCornerRadius, oneLookMetrics, oneLookZoomedRect } from "./one-look/metrics.js";
 import {
   ARRANGE_OFFSET_RANGE,
   ARRANGE_PARTS,
@@ -300,9 +300,19 @@ export function arrangeStageParts(tile: WatchPageTile, cell: { width: number; he
       : part === "name" ? nameTextBox(rect, model, input.phone === undefined ? "watch" : "phone")
       : rect;
   }
+  // In the drawn tile's points: an iPhone tile is laid out as the watch at
+  // its virtual size and drawn the zoom bigger (`OneLookZoom.scaled`).
+  const z = model.zoom;
+  const up = (r: OneLookRect): OneLookRect => oneLookZoomedRect(r, z);
+  const mapped = <K extends string>(rects: Partial<Record<K, OneLookRect>>): Partial<Record<K, OneLookRect>> => {
+    const out: Partial<Record<K, OneLookRect>> = {};
+    for (const [k, r] of Object.entries(rects) as [K, OneLookRect | undefined][]) if (r !== undefined) out[k] = up(r);
+    return out;
+  };
   return {
-    size: layout.size, radius: oneLookCornerRadius(oneLookMetrics(model.device), layout.size),
-    inset: previewTileCellInset(input, tile, cell.width, cell.height), parts, content: oneLookArrangeContent(layout), native,
+    size: { width: layout.size.width * z, height: layout.size.height * z },
+    radius: oneLookCornerRadius(oneLookMetrics(model.device), layout.size) * z,
+    inset: previewTileCellInset(input, tile, cell.width, cell.height), parts: mapped(parts), content: up(oneLookArrangeContent(layout)), native: mapped(native),
   };
 }
 

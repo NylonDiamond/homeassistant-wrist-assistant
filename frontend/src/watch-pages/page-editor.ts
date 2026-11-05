@@ -4869,7 +4869,7 @@ export class WaPageEditor extends LitElement {
     // The ring of a selected tile follows the tile's own corners, which are
     // the watch's, or 22 points in an iPhone's iPhone look
     // (`previewTileCornerRadius`).
-    const radius = previewTileCornerRadius(input, width / s, height / s) * s;
+    const radius = previewTileCornerRadius(input, width / s, height / s, undefined, unit) * s;
     const box = `left:${left}px;top:${top}px;width:${width}px;height:${height}px;border-radius:${radius}px;${shift}`;
     const spacer = tileKind(tileEntityId(tile)) === "spacer";
     // A tile the watch leaves out now, as Live preview draws the states: faded
@@ -5879,7 +5879,7 @@ export class WaPageEditor extends LitElement {
     return {
       device: picture.kind === "iphone" ? "iphone" : "watch",
       face: html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${renderWatchTileFace(drawn, cell, input, layout.unit)}</span>`,
-      textScale: watchTemplateTextScale(drawn, cell.width, cell.height, input),
+      textScale: watchTemplateTextScale(drawn, cell.width, cell.height, input, layout.unit),
       rowLimit: picture.kind === "iphone" && typeof lines === "number" ? lines : 5,
       stale: look.kind === "error" || (look.kind === "text" && look.pending),
     };

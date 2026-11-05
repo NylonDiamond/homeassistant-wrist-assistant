@@ -68,7 +68,7 @@ describe("the device a picture is drawn for", () => {
     expect(pictureOwnerId(devices, "watch", undefined)).toBeUndefined();
   });
 
-  it("draws the Office lamp on the Ultra as the watch does: about 47 points, 57% of the tile", () => {
+  it("draws the Office lamp on the Ultra for the Apple Watch, the first watch that shows the page", () => {
     const tile: WatchPageTile = {
       id: "A5D0758D-EF8F-4081-8E8E-FF6A4EF5465F", entityId: "light.jesse_office_lights", customLabel: "Jesse Office Lights",
       icon: "lightbulb", color: "#E9C46A", colSpan: 6, rowSpan: 4, gridRow: 0, gridCol: 0, showLabel: true,
@@ -97,11 +97,12 @@ describe("the device a picture is drawn for", () => {
     const owner = pictureOwnerId(devices, "watch", [APPLE_WATCH, IPHONE]);
     expect(owner).toBe(APPLE_WATCH);
     const { lamp, tile: box } = draw(owner);
-    // The ink square of the 55 point glyph box, the lamp fitted in it.
-    expect(lamp.w).toBeGreaterThan(46);
-    expect(lamp.w).toBeLessThan(48.5);
+    // The ink square of the glyph box, the lamp fitted in it. In Inter the
+    // state "100%" is wide, so beside it the glyph would shrink to about 21
+    // points across; it goes under the state instead, where it keeps about
+    // 34 (2026-11-05, `ONE_LOOK_UNDER_GAIN`).
+    expect(lamp.w).toBeCloseTo(33.56, 1);
     expect(lamp.h).toBeCloseTo(lamp.w * 310 / 384, 1);
-    expect(lamp.h / box.h).toBeGreaterThan(0.55);
-    expect(lamp.h / box.h).toBeLessThan(0.62);
+    expect(box.h).toBe(66);
   });
 });

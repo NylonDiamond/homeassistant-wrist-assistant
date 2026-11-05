@@ -273,6 +273,37 @@ export interface OneLookArranged {
  * Only the parts the key lists are placed; the rest stay native. The
  * centred layout's name is centred natively.
  */
+/**
+ * The arranged icon moved, not resized, until its ink is inside the content
+ * box (`OneLookArrange.heldIcon`, Fix 3, 2026-11-05: Jesse's Smart Plug
+ * Dimmer put its box past the tile's right edge). The ink is the native ink
+ * (`glyphInk`, else the whole box) scaled with the box about its centre,
+ * keeping its offset from the box's centre. On each axis: an ink that fits
+ * the box's span moves just enough to be inside it; a wider or taller one
+ * is centred on the box.
+ */
+export function oneLookHeldIcon(placed: ArrangedPart, native: OneLookRect, nativeInk: OneLookRect | undefined, content: OneLookRect): ArrangedPart {
+  if (!(native.width > 0 && native.height > 0 && content.width > 0 && content.height > 0)) return placed;
+  const k = placed.rect.width / native.width;
+  const ink0 = nativeInk ?? native;
+  const inkW = ink0.width * k;
+  const inkH = ink0.height * k;
+  const mid = (r: OneLookRect) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+  const p = mid(placed.rect), n = mid(native), i = mid(ink0);
+  const inkX = p.x + (i.x - n.x) * k - inkW / 2;
+  const inkY = p.y + (i.y - n.y) * k - inkH / 2;
+  const shift = (start: number, length: number, low: number, span: number): number => {
+    if (length >= span) return low + (span - length) / 2 - start;
+    if (start < low) return low - start;
+    if (start + length > low + span) return low + span - (start + length);
+    return 0;
+  };
+  const dx = shift(inkX, inkW, content.x, content.width);
+  const dy = shift(inkY, inkH, content.y, content.height);
+  if (dx === 0 && dy === 0) return placed;
+  return { ...placed, rect: { ...placed.rect, x: placed.rect.x + dx, y: placed.rect.y + dy } };
+}
+
 export function oneLookArrangeLayout(layout: OneLookLayout, arrange: TileArrange | undefined): OneLookArranged | undefined {
   if (arrange === undefined || layout.mode !== "centred") return undefined;
   const content = oneLookArrangeContent(layout);
@@ -282,7 +313,8 @@ export function oneLookArrangeLayout(layout: OneLookLayout, arrange: TileArrange
     const entry = arrange.parts[part];
     const rect = native[part];
     if (entry === undefined || rect === undefined) continue;
-    const placed = arrangePartRect(layout.size, content, rect, part, entry);
+    let placed = arrangePartRect(layout.size, content, rect, part, entry);
+    if (part === "icon") placed = oneLookHeldIcon(placed, rect, layout.glyphInk, content);
     if (part === "name") out.name = { ...placed, align: arrangeNameAlign(entry, "center") };
     else out[part] = placed;
   }

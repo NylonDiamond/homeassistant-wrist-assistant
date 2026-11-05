@@ -346,6 +346,9 @@ export const ONE_LOOK_PILL_PAD_V = 0.12;
 export const ONE_LOOK_OLD_PLACE_INK_TRIM = 0.08;
 /** The gap the old place's glyph keeps from the text and the bar. */
 export const ONE_LOOK_OLD_PLACE_GAP = 1;
+/** How much bigger, in points of its box, the old place's glyph must be
+ * under the state than beside it to move there (`underGain`). */
+export const ONE_LOOK_UNDER_GAIN = 0.5;
 /** How small a number state may shrink to leave the glyph its size. */
 export const ONE_LOOK_STATE_GIVE_WAY = 0.7;
 /** A person's photo's diameter over the icon size. */
@@ -483,7 +486,25 @@ function grownGlyph(layout: Unscaled, input: OneLookLayoutInput): Unscaled {
   const box = layout.discRect;
   if (!(grow > 0) || layout.mode !== "centred" || !layout.glyphAtOldPlace || !(box.width > 0)) return layout;
   const more = input.glyphIsPhoto ? grow * ONE_LOOK_OLD_PLACE_PHOTO_SHARE : grow * input.glyphExtent / ONE_LOOK_GLYPH_INK_SHARE;
-  const factor = (box.width + more) / box.width;
+  let factor = (box.width + more) / box.width;
+  // It grows only while its ink still clears the name, the state, the bar
+  // and the accessory, each across or up and down, by the old place's gap
+  // (2026-11-05: a big bulb ran into "House"). Never smaller than the
+  // layout's own.
+  const ink = layout.glyphInk;
+  if (ink !== undefined && ink.width > 0 && ink.height > 0) {
+    const nameBand: OneLookRect | undefined = layout.name.lines.length === 0 || layout.textHeight <= 0
+      ? undefined
+      : { x: 0, y: layout.textOrigin.y, width: layout.size.width, height: layout.textHeight };
+    for (const o of [nameBand, layout.stateRect, layout.barRect, layout.accessoryRect]) {
+      if (o === undefined) continue;
+      const dx = Math.abs(midX(ink) - midX(o)) - o.width / 2 - ONE_LOOK_OLD_PLACE_GAP;
+      const dy = Math.abs(midY(ink) - midY(o)) - o.height / 2 - ONE_LOOK_OLD_PLACE_GAP;
+      factor = Math.min(factor, Math.max(2 * dx / ink.width, 2 * dy / ink.height));
+    }
+    factor = Math.max(1, factor);
+  }
+  if (!(factor > 1)) return layout;
   const about = (r: OneLookRect): OneLookRect => ({
     x: midX(r) - r.width * factor / 2, y: midY(r) - r.height * factor / 2, width: r.width * factor, height: r.height * factor,
   });
@@ -871,16 +892,33 @@ function centred(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
     }
     const stateBox: OneLookRect | undefined = state === undefined ? undefined : { x: inset, y: top, width: clearW, height: stateLH };
     let placed = stateBox === undefined ? full : place([bar, stateBox, accRect, nameBox]);
-    // On a small tile the state's line can reach past the middle, so the
-    // glyph at its floor still runs into it (a cover's bar pushes the state
-    // down too). It moves to the middle of the room between the state and the
-    // name, rather than leave the tile.
-    if (stateBox !== undefined && textH > 0 && oneLookRectsIntersect(placed.ink, stateBox)) {
-      placed = oneLookOldPlaceGlyph({
-        size: input.size, points, offset: (top + topBand + textTop) / 2 - h / 2,
+    if (stateBox !== undefined && textH > 0) {
+      // The middle of the room between the state and the name.
+      const middle = (top + topBand + textTop) / 2 - h / 2;
+      const under = (box: OneLookRect) => oneLookOldPlaceGlyph({
+        size: input.size, points, offset: middle,
         extent: input.glyphExtent, aspect: input.glyphAspect, photo: input.glyphIsPhoto,
-        floor, obstacles: [bar, stateBox, accRect, nameBox].filter((o): o is OneLookRect => o !== undefined),
+        floor, obstacles: [bar, box, accRect, nameBox].filter((o): o is OneLookRect => o !== undefined),
       });
+      if (oneLookRectsIntersect(placed.ink, stateBox)) {
+        // On a small tile the state's line can reach past the middle, so the
+        // glyph at its floor still runs into it (a cover's bar pushes the
+        // state down too). It moves to the middle of the room between the
+        // state and the name, rather than leave the tile.
+        placed = under(stateBox);
+      } else if (!photoWord && wholeState !== undefined) {
+        // A wide state ("100%" in Inter) can shrink the glyph a lot beside
+        // it, a wide photo most. Under the state, in that middle, only the
+        // height counts, so the glyph takes that place when it is more than
+        // `ONE_LOOK_UNDER_GAIN` bigger there, and the state keeps its whole
+        // size (2026-11-05).
+        const low = under({ x: inset, y: top, width: wholeW, height: stateLH });
+        if (low.box.width > placed.box.width + ONE_LOOK_UNDER_GAIN) {
+          placed = low;
+          state = wholeState;
+          stateW = wholeW;
+        }
+      }
     }
     // The photo gave way for a wider word, so this one may take back its
     // whole size in the room left of it.

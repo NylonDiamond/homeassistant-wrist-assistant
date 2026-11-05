@@ -16,6 +16,7 @@ import type { HassEntityState } from "../src/ha-api.js";
 import { renderPageRowPicture } from "../src/library/row-picture.js";
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
 import type { OneLookPalette } from "../src/watch-pages/one-look/colour.js";
+import { ONE_LOOK_OLD_PLACE_INK_TRIM } from "../src/watch-pages/one-look/layout.js";
 import type { WatchPagePreviewInput } from "../src/watch-pages/preview.js";
 import {
   type OneLookTileFaceInput,
@@ -179,9 +180,9 @@ describe("an icon photo on a One Look tile", () => {
     expect(at.y + at.h / 2).toBeCloseTo(disc.y + disc.height / 2, 1);
   });
 
-  it("draws a 2-across light tile's lamp as the watch does, from under the bar down to the name", () => {
+  it("draws a 2-across light tile's lamp clear of the bar, the state and the name", () => {
     // Jesse's "Jesse Office Lights": a watch 6x4 light tile, on, with a
-    // 384 by 310 lamp. The app (`takeOldSizes`, `oldPlaceGlyph`,
+    // 384 by 310 lamp. Measured on the watch in the system font, the app (`takeOldSizes`, `oldPlaceGlyph`,
     // `OneLookCutout.boxSide` with no disc): icon size min(36, 68 x 0.54)
     // = 36, the bulb's extent 1.316 (its image over its point size), so the
     // glyph box is 36 x 1.316 / 0.86 = 55.1, clear of the bar, the state
@@ -202,14 +203,26 @@ describe("an icon photo on a One Look tile", () => {
     expect(l.mode).toBe("centred");
     expect(l.glyphAtOldPlace).toBe(true);
     expect(model.style.iconSize).toBe(36);
-    expect(l.discRect.width).toBeCloseTo(36 * (23.68 / 22 + 0.24) / 0.86, 3);
+    // In Inter the state "100%" is wide ("%" most of all): beside it the
+    // glyph would shrink to 26.38. Under the state, in the middle of the
+    // room above the name, it is bigger, so it goes there and the state
+    // stays whole (2026-11-05, `ONE_LOOK_UNDER_GAIN`).
+    const w = l.discRect.width;
+    expect(w).toBeGreaterThan(26.38 + 0.5);
+    expect(w).toBeCloseTo(40.59, 1);
     const at = place(styleOf(text(renderOneLookTile(f)), "ol-cutout"));
-    expect(at.w).toBeCloseTo(47.4, 1);
-    expect(at.h).toBeCloseTo(47.4 * 310 / 384, 1);
-    expect(at.h / l.size.height).toBeGreaterThan(0.55);
+    expect(at.w).toBeCloseTo(w * 0.86, 1);
+    expect(at.h).toBeCloseTo(at.w * 310 / 384, 1);
     expect(at.y).toBeGreaterThanOrEqual(l.barRect!.y + l.barRect!.height);
-    expect(at.y + at.h).toBeLessThanOrEqual(l.textOrigin.y);
-    expect(at.x).toBeGreaterThan(l.stateRect!.x + l.stateRect!.width - 2);
+    // The layout keeps the glyph's ink clear of the name. A cut-out photo is
+    // drawn over the whole ink square, while the layout trims a symbol's ink
+    // by 8% a side (`ONE_LOOK_OLD_PLACE_INK_TRIM`, as the app does), so the
+    // photo may reach into the state's and the name's line boxes by that
+    // trim, clear of their letters.
+    expect(l.glyphInk!.y + l.glyphInk!.height).toBeLessThanOrEqual(l.textOrigin.y);
+    expect(at.y + at.h).toBeLessThanOrEqual(l.textOrigin.y + w * ONE_LOOK_OLD_PLACE_INK_TRIM);
+    expect(l.glyphInk!.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height);
+    expect(at.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height - w * ONE_LOOK_OLD_PLACE_INK_TRIM);
   });
 
   it("moves with the tile's Arrangement, as the icon does", () => {

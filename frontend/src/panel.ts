@@ -228,7 +228,7 @@ import { type AddressDevice, type AddressDraft, type AddressSlot, ADDRESSES_TITL
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
-import { installUiFont } from "./font.js";
+import { installUiFont, loadTileFont, tileFontLoaded } from "./font.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
@@ -6270,6 +6270,14 @@ export class WristAssistantPanel extends LitElement {
     // Beside the bundle, wherever it was served from, the same way the
     // symbol files are found. Only the entry may read import.meta.
     installUiFont(this.ownerDocument, import.meta.url);
+    // Tiles are measured in Inter. Until it loads they are measured in the
+    // fallback and not kept; once it has, every preview draws again, the
+    // way a symbol catalogue that arrives late draws them again.
+    void loadTileFont(this.ownerDocument).then(() => {
+      if (!tileFontLoaded()) return;
+      this.iconsTick++;
+      this.requestUpdate();
+    });
     // Every draft's icon parts read the Material Design catalogue this panel
     // owns. Asked only for a name an icon part writes out, so a document that
     // names none never loads the catalogue.

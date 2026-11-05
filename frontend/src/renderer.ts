@@ -257,6 +257,12 @@ export interface IconProvider {
   /** Settles once the MDI catalogue has arrived or failed to, starting the
    * load. A save waits on it before writing icon part drawings. */
   mdiLoaded?(): Promise<void>;
+  /** An SF Symbol's image as the devices measure it (`UIImage(systemName:)`,
+   * `UIFontMeasurer.glyphAspect` and `glyphExtent`): its width over its
+   * height, and its longer side over the point size it is drawn at. Undefined
+   * for a symbol the table lacks, or while it loads. One Look lays a glyph
+   * out by these. */
+  imageSize?(name: string): { aspect: number; extent: number } | undefined;
 }
 
 export interface RenderOptions {

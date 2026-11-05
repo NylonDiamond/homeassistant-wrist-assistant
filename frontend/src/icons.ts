@@ -16,6 +16,7 @@ import type { IconProvider } from "./renderer.js";
 import { parseColor } from "./renderer.js";
 import { SYMBOL_DIGEST } from "./symbol-digest.js";
 import { MDI_DIGEST } from "./mdi-digest.js";
+import { type SymbolImageSize, SymbolSizes } from "./symbol-sizes.js";
 import { MDI_PREFIX } from "./symbols.js";
 
 interface CustomIconResult {
@@ -397,12 +398,19 @@ export class BundledIconProvider implements IconProvider {
  */
 export class SplitIconProvider implements IconProvider {
   private readonly mdi: BundledIconProvider;
+  /** The devices' symbol sizes, whichever provider draws the SF side. */
+  private readonly sizes: SymbolSizes;
 
   constructor(
     private readonly sf: IconProvider,
     onReady: () => void
   ) {
     this.mdi = new BundledIconProvider(onReady, "mdi-icons.json.gz", MDI_DIGEST);
+    this.sizes = new SymbolSizes(onReady);
+  }
+
+  imageSize(name: string): SymbolImageSize | undefined {
+    return name.trim().startsWith(MDI_PREFIX) ? undefined : this.sizes.get(name);
   }
 
   render(symbol: string, size: number, colorHex: string): TemplateResult | undefined {

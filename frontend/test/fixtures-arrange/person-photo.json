@@ -38,10 +38,10 @@
   },
   "native": {
     "icon": {
-      "x": 32.2,
-      "y": 19.575,
-      "width": 36.1,
-      "height": 36.1
+      "x": 33.825,
+      "y": 21.2,
+      "width": 32.85,
+      "height": 32.85
     },
     "name": {
       "x": 3,
@@ -52,7 +52,7 @@
     "state": {
       "x": 7,
       "y": 7,
-      "width": 24.2,
+      "width": 30.3793,
       "height": 13.2
     }
   },
@@ -73,10 +73,10 @@
   "expected": {
     "icon": {
       "rect": {
-        "x": 62.61,
+        "x": 65.21,
         "y": 9.4975,
-        "width": 28.88,
-        "height": 28.88
+        "width": 26.28,
+        "height": 26.28
       },
       "scale": 0.8,
       "hidden": false
@@ -96,7 +96,7 @@
       "rect": {
         "x": 7,
         "y": 7,
-        "width": 24.2,
+        "width": 30.3793,
         "height": 13.2
       },
       "scale": 1,

@@ -406,7 +406,7 @@ describe("a look on a One Look tile", () => {
     expect(styleOf(half, "ol-light ol-light-emit")).toContain(`opacity:${Math.round(0.85 * 0.8 * (0.25 + 0.75 * b) * 10000) / 10000}`);
   });
 
-  it("the tile keeps its lit fill, sheen, Fill style bar, under-glow, rim and inks, as any lit tile", () => {
+  it("the tile keeps its lit fill, sheen, Fill style bar, rim and inks, as any lit tile", () => {
     const rim = (out: string) => /class="ol-rim" style=([^>]*)>/.exec(out)?.[1];
     const name = (out: string) => /class="ol-name" style=([^>]*)>/.exec(out)?.[1];
     // Everything under the content (the fill, its layers, the underlay).
@@ -422,7 +422,9 @@ describe("a look on a One Look tile", () => {
     }
     const day = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()), { device: "phone" })));
     const off = html(renderOneLookTile(face(lamp(), "off", lit(undefined), { device: "phone" })));
-    expect(tileStyle(day)).toContain("box-shadow");
+    // The iPhone draws the watch's tile, zoomed (`OneLookZoom`): the watch
+    // casts no under-glow.
+    expect(tileStyle(day)).not.toContain("box-shadow");
     expect(tileStyle(day)).not.toBe(tileStyle(off));
     expect(rim(day)).not.toBe(rim(off));
   });

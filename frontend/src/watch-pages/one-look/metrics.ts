@@ -283,3 +283,74 @@ export function oneLookPhonePagesInset(tileEdge: number, gap: PhoneTileGap = PHO
 export function oneLookPhoneBottomPadding(gap: PhoneTileGap = PHONE_TILE_GAP_STANDARD): number {
   return 12 - oneLookCellInset("phone", false, false, gap);
 }
+
+// ── One size table (`OneLookZoom`) ───────────────────────────────────────
+// Jesse, 2026-11-05 (the app's `docs/one_size_table_2026-11.md`): the iPhone
+// draws every One Look tile exactly as the watch would, only bigger. A tile
+// is laid out with the watch's metrics and rules at its virtual watch size,
+// the iPhone tile's drawn size over the zoom, and drawn scaled up by it. The
+// iPhone's own features (live cameras, sensor charts, its Arrangement, the
+// grid's gaps, the dock, media artwork) read the platform, not the look.
+// Both repos change this together.
+
+export const ONE_LOOK_ZOOM_ON = true;
+
+/** The reference watch the iPhone's tiles are drawn as: the 46 mm, 208 pt
+ * wide (`OneLookZoom.referenceWatchWidth`). */
+export const ONE_LOOK_REFERENCE_WATCH_WIDTH = 208;
+
+/** The body size a zoomed template tile's text starts from, before the zoom
+ * (`OneLookZoom.referenceBody`): `TEMPLATE_FIT_METRICS.watch.body`. */
+export const ONE_LOOK_REFERENCE_BODY = 15;
+
+/** The reference watch's grid row: 12 units and 11 gaps of 2 inside its side
+ * padding, 205 pt (`OneLookZoom.referenceRowWidth`). */
+export function oneLookReferenceRowWidth(): number {
+  const unit = oneLookGridUnit(ONE_LOOK_REFERENCE_WATCH_WIDTH, "watch");
+  return ONE_LOOK_COLUMNS * unit + (ONE_LOOK_COLUMNS - 1) * ONE_LOOK_TILE_SPACING;
+}
+
+/** The device whose look a platform's tiles draw in (`OneLookZoom.look`). */
+export function oneLookLook(platform: OneLookDevice): OneLookDevice {
+  return ONE_LOOK_ZOOM_ON ? "watch" : platform;
+}
+
+/** How much bigger the iPhone draws a tile than its virtual watch tile: its
+ * grid's row over the reference watch's (`OneLookZoom.factor`). 1 on the
+ * watch; about 1.81 on a 402 pt iPhone. */
+export function oneLookZoomFactor(platform: OneLookDevice, unit: number): number {
+  if (!ONE_LOOK_ZOOM_ON || platform !== "phone" || !(unit > 0)) return 1;
+  const row = ONE_LOOK_COLUMNS * unit + (ONE_LOOK_COLUMNS - 1) * ONE_LOOK_TILE_SPACING;
+  return row / oneLookReferenceRowWidth();
+}
+
+/** The unit a zoomed tile's old sizes are taken at
+ * (`OneLookZoom.virtualUnit`): the one whose cell, with the grid's 2 pt
+ * gaps, is the virtual tile's cell across. The gaps do not scale, so it is
+ * not `unit / zoom`. */
+export function oneLookVirtualUnit(unit: number, colSpan: number, zoom: number): number {
+  if (zoom === 1 || !(colSpan > 0)) return unit;
+  const gaps = (colSpan - 1) * ONE_LOOK_TILE_SPACING;
+  const cell = colSpan * unit + gaps;
+  return Math.max(1, (cell / zoom - gaps) / colSpan);
+}
+
+/** A size over the zoom: the virtual watch tile (`OneLookZoom.virtual`). */
+export function oneLookVirtualSize(size: { width: number; height: number }, zoom: number): { width: number; height: number } {
+  if (!(zoom > 0) || zoom === 1) return size;
+  return { width: size.width / zoom, height: size.height / zoom };
+}
+
+/** A tile's corner radius at its drawn size on a platform: the look's radius
+ * at the virtual size, scaled back up (`OneLookZoom.cornerRadius`). */
+export function oneLookZoomedCornerRadius(platform: OneLookDevice, drawn: { width: number; height: number }, unit: number): number {
+  const z = oneLookZoomFactor(platform, unit);
+  return oneLookCornerRadius(oneLookMetrics(oneLookLook(platform)), oneLookVirtualSize(drawn, z)) * z;
+}
+
+/** A rect in the virtual tile's points, in the drawn tile's
+ * (`OneLookZoom.scaled`). */
+export function oneLookZoomedRect<R extends { x: number; y: number; width: number; height: number }>(rect: R, zoom: number): R {
+  if (zoom === 1) return rect;
+  return { ...rect, x: rect.x * zoom, y: rect.y * zoom, width: rect.width * zoom, height: rect.height * zoom };
+}

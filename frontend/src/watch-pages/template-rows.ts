@@ -13,7 +13,7 @@
 // `TemplateRichTextTests.swift` pins the same cases.
 
 import { templateRichTextSegments } from "./rich-text.js";
-import { type TemplateFitDevice, templateTextUnits } from "./template-fit.js";
+import { TEMPLATE_INTER_ROW, type TemplateFitDevice, templateTextUnits } from "./template-fit.js";
 
 /** One cell: its icon, when it starts with one, and the words after it with
  * the white space around them gone. */
@@ -70,8 +70,9 @@ export function templateRowSpans(row: readonly TemplateCell[]): boolean {
 export const TEMPLATE_ICON_SLOT = 1.45;
 export const TEMPLATE_CELL_GAP = 0.22;
 export const TEMPLATE_COLUMN_GAP = 0.35;
-/** A row's height as a part of the text size: the font's line, measured. */
-export const TEMPLATE_COLUMN_ROW = 1.193;
+/** A row's height as a part of the text size: Inter's line, from its
+ * metrics (`TEMPLATE_INTER_ROW`). */
+export const TEMPLATE_COLUMN_ROW = TEMPLATE_INTER_ROW;
 /** A cell's icon fits a box this tall, as a part of the text size. */
 export const TEMPLATE_ICON_TALL = 1.1;
 
