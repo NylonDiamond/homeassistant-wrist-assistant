@@ -2393,7 +2393,7 @@ class DeltaCoordinator:
         """
         tpl = Template(template_str, self.hass)
         tpl.hass = self.hass
-        info = tpl.async_render_to_info()
+        info = template_guard.limit_output(tpl).async_render_to_info()
         # The dependencies are read before the result: a render that raised
         # still recorded what it read, and keeping them is what makes the
         # template render again when one of those entities changes. Empty

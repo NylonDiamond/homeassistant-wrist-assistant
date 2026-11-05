@@ -161,6 +161,7 @@ from .template_guard import (
     MAX_TEMPLATE_CHARS,
     async_guarded_jobs,
     caller_for,
+    limit_output,
     template_too_long_text,
 )
 from .statistics_series import (
@@ -1762,7 +1763,7 @@ async def ws_render_values(
 
 def _render_native(hass: HomeAssistant, template_str: str) -> Any:
     """One preview render. Runs in the guard's worker thread."""
-    return Template(template_str, hass).async_render(parse_result=True)
+    return limit_output(Template(template_str, hass)).async_render(parse_result=True)
 
 
 @websocket_api.websocket_command(

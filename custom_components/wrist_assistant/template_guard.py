@@ -17,7 +17,10 @@ What a caller gets:
 * Size limits. ``MAX_TEMPLATE_CHARS`` in, ``OUTPUT_CHARS`` out (Home Assistant's
   own ``MAX_TEMPLATE_OUTPUT``, which older versions lack), ``BATCH_OUTPUT_CHARS``
   across one request, and ``MEMORY_GROWTH_BYTES`` of process growth while a
-  render runs, since a template can build a huge string it never prints.
+  render runs, since a template can build a huge string it never prints. The
+  output is counted as it is made (``limit_output``). Home Assistant checks only
+  the finished string, and a loop printing one long string many times has built
+  nothing yet when the join at its end asks for a terabyte in one C step.
 * Limits per caller. One running at a time, ``MAX_WAITING_PER_CALLER`` in line
   behind it, and a time budget (``BUDGET_SECONDS``, refilled at
   ``BUDGET_REFILL_PER_SECOND``) charged with the CPU time each render used. A
@@ -32,8 +35,9 @@ until the thread ends. A slot is given back only when the thread has really
 ended, so a render that will not stop keeps its caller's slot.
 
 What this cannot stop: one long step in C. The stop lands between two Python
-bytecodes, and a huge integer power or a backtracking regular expression holds
-the GIL for all of that one step, so the loop waits with it. No thread can
+bytecodes, and a huge integer power, a backtracking regular expression or a
+huge join inside a ``{% set %}`` block holds the GIL for all of that one step, so
+the loop waits with it, and memory goes where that step sends it. No thread can
 avoid that. Home Assistant's own command has the same limit.
 
 The module keeps Home Assistant out of its imports. A job is any callable, and
@@ -173,6 +177,44 @@ def output_chars(value: Any) -> int:
     if value is None:
         return 0
     return len(value) if isinstance(value, str) else len(str(value))
+
+
+class _CappedOutput:
+    """Stands in for a compiled template, counting its output as it is made."""
+
+    __slots__ = ("_compiled", "_limit")
+
+    def __init__(self, compiled: Any, limit: int) -> None:
+        self._compiled = compiled
+        self._limit = limit
+
+    def render(self, *args: Any, **kwargs: Any) -> str:
+        made = 0
+        parts: list[str] = []
+        for chunk in self._compiled.generate(*args, **kwargs):
+            made += len(chunk)
+            if made > self._limit:
+                raise ValueError(_TEXT[TOO_LARGE])
+            parts.append(chunk)
+        return "".join(parts)
+
+
+def limit_output(template: Any, limit: int = OUTPUT_CHARS) -> Any:
+    """Have a Home Assistant ``Template`` count its output as it renders, and
+    hand it back. Called in the worker thread, since this compiles.
+
+    This reaches into two private names of ``Template``. On a version that
+    moved them it changes nothing, and the limits after the render still hold.
+    A template that does not compile is left for its render to report.
+    """
+    if getattr(template, "is_static", True):
+        return template
+    try:
+        compiled = template._compiled or template._ensure_compiled()  # noqa: SLF001
+        template._compiled = _CappedOutput(compiled, limit)  # noqa: SLF001
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("No running count of a template's output", exc_info=True)
+    return template
 
 
 @dataclass(slots=True)

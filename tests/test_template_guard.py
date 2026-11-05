@@ -347,6 +347,68 @@ def test_a_caller_cancelled_in_line_gives_back_its_place() -> None:
     assert outcome.ok
 
 
+class _Compiled:
+    def __init__(self, chunks: int) -> None:
+        self.chunks = chunks
+        self.made = 0
+
+    def generate(self, **_kwargs):
+        for _ in range(self.chunks):
+            self.made += 1
+            yield "x" * 10
+
+
+class _HaTemplate:
+    """The private names of Home Assistant's ``Template`` the count reaches for."""
+
+    is_static = False
+
+    def __init__(self, compiled) -> None:
+        self._compiled = None
+        self._made = compiled
+
+    def _ensure_compiled(self):
+        self._compiled = self._made
+        return self._compiled
+
+
+def test_output_is_counted_as_it_is_made_and_stops_at_the_limit() -> None:
+    compiled = _Compiled(1_000_000)
+    template = guard_mod.limit_output(_HaTemplate(compiled), 100)
+    with pytest.raises(ValueError, match="exceeded maximum size"):
+        template._compiled.render()
+    # The rest of the million was never made, and nothing was joined.
+    assert compiled.made == 11
+
+
+def test_output_under_the_limit_is_the_same_output() -> None:
+    template = guard_mod.limit_output(_HaTemplate(_Compiled(3)), 100)
+    assert template._compiled.render() == "x" * 30
+
+
+def test_the_count_leaves_alone_what_it_cannot_reach() -> None:
+    class Static:
+        is_static = True
+
+    class Moved:
+        is_static = False
+
+    class Broken(_HaTemplate):
+        def _ensure_compiled(self):
+            raise ValueError("does not compile")
+
+    static = Static()
+    assert guard_mod.limit_output(static) is static
+    moved = Moved()
+    assert guard_mod.limit_output(moved) is moved
+    assert not hasattr(moved, "_compiled")
+    broken = Broken(None)
+    assert guard_mod.limit_output(broken)._compiled is None
+    # A stand-in with no such names at all reads as static.
+    plain = object()
+    assert guard_mod.limit_output(plain) is plain
+
+
 def test_a_user_s_devices_share_one_name() -> None:
     assert guard_mod.caller_for("u1", "watch-1") == guard_mod.caller_for("u1", "phone-1") == "user:u1"
     assert guard_mod.caller_for(None, "watch-1") == "device:watch-1"

@@ -50,6 +50,7 @@ from .template_guard import (
     MAX_TEMPLATE_CHARS,
     async_guarded_jobs,
     caller_for,
+    limit_output,
     template_too_long_text,
 )
 from .statistics_series import (
@@ -496,7 +497,7 @@ async def async_template_result(
         raise OpError(text, status=400, body={"ok": False, "error": text})
 
     def render() -> Any:
-        return Template(template_str, hass).async_render(variables=variables)
+        return limit_output(Template(template_str, hass)).async_render(variables=variables)
 
     outcome = (await async_guarded_jobs(caller or caller_for(None), [render]))[0]
     if not outcome.ok:
