@@ -12,7 +12,9 @@ signs nothing.
 order, a hard cap, and an injectable clock. One request per watch id; a new
 start for the same watch replaces the old one. Each request remembers the
 address it came from, so one address can hold only a few at once and the
-user sees where a code came from before confirming it. A restart drops
+user sees where a code came from before confirming it. A code past a cap may
+give way to a newer one only after ``PAIR_REQUEST_FLOOR_SECONDS``, long enough
+to type it; until then a new start hears ``PairStartRefused``. A restart drops
 them all, which only means the watch asks for a new code.
 
 ``validate_pair_fields`` is the one set of rules for the fields a pairing
@@ -75,7 +77,7 @@ import math
 import re
 import secrets
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
@@ -90,6 +92,9 @@ from .widget_hmac import DEFAULT_HMAC_ALGO, SUPPORTED_HMAC_ALGOS
 PAIR_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 PAIR_CODE_LENGTH = 6
 PAIR_REQUEST_TTL_SECONDS = 600
+# How long a code is safe from a newer start taking its place past a cap, so a
+# flood from the device's own address cannot wipe a code before it is typed.
+PAIR_REQUEST_FLOOR_SECONDS = 60
 # How often the watch is told to check whether the code was confirmed.
 PAIR_POLL_AFTER_SECONDS = 3
 # How long a confirmed sealed pairing's box waits for its device to fetch it.
@@ -498,6 +503,18 @@ class ConfirmedPairWaiting(Exception):
         self.expires_in = expires_in
 
 
+class PairStartRefused(Exception):
+    """A start refused because every code in its way is too young to give up,
+    or its address has started too many just now. The store is left as it was.
+
+    ``retry_after`` is the whole seconds until a start may be taken.
+    """
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(f"no room for a new pairing for {retry_after} s")
+        self.retry_after = retry_after
+
+
 def _remote_group(remote: str | None) -> str | None:
     """What an address counts as for the per-address cap: itself, or its /64
     for IPv6, since one client there holds billions of addresses."""
@@ -527,6 +544,14 @@ class PairRequestStore:
     # holds a whole /64, so that network counts as one address
     # (``_remote_group``).
     _MAX_PER_REMOTE = 4
+    # How many starts one address may make in a window, the same watch asking
+    # again included. Past the cap the floor holds them back already; this also
+    # holds a client that keeps restarting one id. A refused start is not
+    # counted, so a flood does not put the end of its own wait further off.
+    _MAX_STARTS_PER_REMOTE = 12
+    _STARTS_WINDOW_SECONDS = 60
+    # How many addresses that count is kept for, last used kept longest.
+    _MAX_START_COUNTS = 512
     # A free code is found on the first try unless the generator is broken:
     # 64 entries out of 32^6 codes.
     _MAX_CODE_ATTEMPTS = 32
@@ -535,6 +560,7 @@ class PairRequestStore:
         self,
         *,
         ttl_seconds: float = PAIR_REQUEST_TTL_SECONDS,
+        floor_seconds: float = PAIR_REQUEST_FLOOR_SECONDS,
         sealed_ttl_seconds: float = PAIR_SEALED_COPY_TTL_SECONDS,
         clock: Callable[[], float] = time.time,
         code_factory: Callable[[], str] = new_pair_code,
@@ -543,7 +569,10 @@ class PairRequestStore:
         # Every copy has the same TTL from its confirm, so insertion order is
         # expiry order here as well.
         self._sealed: OrderedDict[str, SealedCopy] = OrderedDict()
+        # The times of each address's recent starts, oldest first.
+        self._starts: OrderedDict[str | None, deque[float]] = OrderedDict()
         self._ttl = ttl_seconds
+        self._floor = floor_seconds
         self._sealed_ttl = sealed_ttl_seconds
         self._clock = clock
         self._code_factory = code_factory
@@ -567,13 +596,21 @@ class PairRequestStore:
         against either cap, so a watch that asks again is never refused by
         its own old code.
 
-        Past a cap the new request takes the place of an older one rather than
-        being refused. Refusing let a few unsigned requests lock an address out
-        of pairing for ten minutes, and a few addresses lock out the home. An
+        Past a cap the new request takes the place of an older one that has
+        lived ``PAIR_REQUEST_FLOOR_SECONDS``. Refusing outright let a few
+        unsigned requests lock an address out of pairing for ten minutes, and a
+        few addresses lock out the home; replacing at once let a flood from a
+        device's own address wipe its code before anyone could type it. An
         address past its share gives up its own oldest. A full store gives up
         the oldest from an address outside the home network, and from inside it
-        only when no other is left. Either way the numbers stay under the caps,
-        and whoever lost a code hears ``expired`` and asks for a new one.
+        only when none from outside is left. A request from inside the home
+        need not wait for an outside code's floor, so no flood from outside can
+        keep the home waiting. Whoever lost a code hears ``expired`` and asks
+        for a new one.
+
+        With nothing old enough to give up, or past ``_MAX_STARTS_PER_REMOTE``
+        starts from one address in a window, the start is refused with
+        ``PairStartRefused`` and the store is left as it was.
 
         ``remote_public`` defaults to what ``remote_is_public`` says of
         ``remote``; the view passes it when it knows more (a request through
@@ -608,45 +645,82 @@ class PairRequestStore:
             raise ConfirmedPairWaiting(
                 fields.watch_id, max(1, math.ceil(waiting.expires_at - current))
             )
+        is_public = remote_is_public(remote) if remote_public is None else remote_public
         replaced = [
             code for code, pending in self._entries.items() if pending.watch_id == fields.watch_id
         ]
+        self._check_rate(remote, current)
+        given_up = self._make_room(remote, is_public, replaced, current)
         for _ in range(self._MAX_CODE_ATTEMPTS):
             code = normalize_pair_code(self._code_factory())
             if code not in self._entries or code in replaced:
                 break
         else:
             raise RuntimeError("could not find a free pairing code")
-        for old_code in replaced:
+        for old_code in (*replaced, *given_up):
             del self._entries[old_code]
-        self._make_room(remote)
+        self._note_start(remote, current)
         pending = PendingPair(
             code=code,
             fields=fields,
             created_at=current,
             expires_at=current + self._ttl,
             remote=remote,
-            remote_public=remote_is_public(remote) if remote_public is None else remote_public,
+            remote_public=is_public,
             kind=kind,
             public_key=public_key,
         )
         self._entries[code] = pending
         return pending
 
-    def _make_room(self, remote: str | None) -> None:
-        """Give up what ``start`` must, oldest first, for a request from
-        ``remote``."""
-        group = _remote_group(remote)
-        same_remote = [
-            old for old, pending in self._entries.items() if _remote_group(pending.remote) == group
-        ]
-        while len(same_remote) >= self._MAX_PER_REMOTE:
-            del self._entries[same_remote.pop(0)]
-        if len(self._entries) >= self._MAX_ENTRIES:
-            outside = next(
-                (old for old, pending in self._entries.items() if pending.remote_public), None
+    def _check_rate(self, remote: str | None, now: float) -> None:
+        """Refuse a start past what one address may make in a window."""
+        times = self._starts.get(_remote_group(remote))
+        if times is None:
+            return
+        while times and times[0] <= now - self._STARTS_WINDOW_SECONDS:
+            times.popleft()
+        if len(times) >= self._MAX_STARTS_PER_REMOTE:
+            raise PairStartRefused(
+                max(1, math.ceil(times[0] + self._STARTS_WINDOW_SECONDS - now))
             )
-            del self._entries[outside if outside is not None else next(iter(self._entries))]
+
+    def _note_start(self, remote: str | None, now: float) -> None:
+        group = _remote_group(remote)
+        self._starts.setdefault(group, deque()).append(now)
+        self._starts.move_to_end(group)
+        while len(self._starts) > self._MAX_START_COUNTS:
+            self._starts.popitem(last=False)
+
+    def _make_room(
+        self, remote: str | None, is_public: bool, replaced: list[str], now: float
+    ) -> list[str]:
+        """The codes ``start`` must give up for a request from ``remote``,
+        oldest first, leaving the store as it is. ``replaced`` are going anyway
+        and count against neither cap. Raises ``PairStartRefused`` when one that
+        must go is too young."""
+        group = _remote_group(remote)
+        kept = {code: p for code, p in self._entries.items() if code not in replaced}
+        give_up: list[str] = []
+        same_remote = [code for code, p in kept.items() if _remote_group(p.remote) == group]
+        if len(same_remote) >= self._MAX_PER_REMOTE:
+            oldest = same_remote[0]
+            self._refuse_if_young(kept[oldest], now)
+            give_up.append(oldest)
+            del kept[oldest]
+        if len(kept) >= self._MAX_ENTRIES:
+            outside = next((code for code, p in kept.items() if p.remote_public), None)
+            candidate = outside if outside is not None else next(iter(kept))
+            # Nothing young from outside may stand in the way of the home.
+            if is_public or not kept[candidate].remote_public:
+                self._refuse_if_young(kept[candidate], now)
+            give_up.append(candidate)
+        return give_up
+
+    def _refuse_if_young(self, pending: PendingPair, now: float) -> None:
+        wait = pending.created_at + self._floor - now
+        if wait > 0:
+            raise PairStartRefused(max(1, math.ceil(wait)))
 
     def confirm_sealed(
         self,
@@ -801,6 +875,7 @@ class PairRequestStore:
     def shutdown(self) -> None:
         self._entries.clear()
         self._sealed.clear()
+        self._starts.clear()
 
 
 # ── QR offers ────────────────────────────────────────────────────────────

@@ -214,6 +214,7 @@ from .wa_pair_requests import (
     REGISTER_ID_MAX_LEN,
     REGISTER_TEXT_MAX_LEN,
     ConfirmedPairWaiting,
+    PairStartRefused,
     normalize_offer_id,
     remote_is_public,
     validate_pair_fields,
@@ -4004,6 +4005,25 @@ class WAPairStartView(HomeAssistantView):
                 },
                 status_code=409,
                 headers={"Retry-After": str(waiting.expires_in)},
+            )
+        except PairStartRefused as refused:
+            # No older request was given up. `too_many_pending` and a 429 are
+            # what every app build already reads.
+            _LOGGER.debug(
+                "Pairing start from %s refused for %d s", request.remote, refused.retry_after
+            )
+            message = "Too many pairings are waiting. Try again soon."
+            return self.json(
+                {
+                    "ok": False,
+                    "error": "too_many_pending",
+                    "reason": message,
+                    "message": message,
+                    "retry_after": refused.retry_after,
+                    "server_time": int(time.time()),
+                },
+                status_code=429,
+                headers={"Retry-After": str(refused.retry_after)},
             )
         _LOGGER.debug(
             "Pairing code issued for %s watch_id=%s from %s (%s)",

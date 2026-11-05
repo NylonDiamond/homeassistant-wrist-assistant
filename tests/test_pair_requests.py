@@ -169,7 +169,14 @@ def test_a_new_start_replaces_the_watch_s_earlier_request(mod) -> None:
 # ── the cap ──────────────────────────────────────────────────────────────
 
 
-def test_a_full_store_gives_up_its_oldest_and_a_replace_still_fits(mod) -> None:
+def _refused_start(mod, store, *args, **kwargs) -> int:
+    """A start that must be refused, and the wait it was told."""
+    with pytest.raises(mod.PairStartRefused) as refused:
+        store.start(*args, **kwargs)
+    return refused.value.retry_after
+
+
+def test_a_full_store_gives_up_its_oldest_past_the_floor_and_a_replace_still_fits(mod) -> None:
     clock = _Clock()
     store = mod.PairRequestStore(clock=clock)
     cap = mod.PairRequestStore._MAX_ENTRIES
@@ -178,39 +185,145 @@ def test_a_full_store_gives_up_its_oldest_and_a_replace_still_fits(mod) -> None:
         store.start(_fields(mod, f"watch-{index}"), remote=f"10.0.0.{index}").code
         for index in range(cap)
     ]
+    # All of them are too young, and nothing gives way for the wait.
+    assert _refused_start(mod, store, _fields(mod, "one-too-many"), remote="10.0.1.1") == 60
+    assert store.get(codes[0]) is not None
+
+    # A watch asking again takes only its own old request's place, floor or not.
+    assert store.start(_fields(mod, "watch-1"), remote="10.0.0.1") is not None
+    assert len(store) == cap
+    assert store.get(codes[2]) is not None
+
+    clock.now += mod.PAIR_REQUEST_FLOOR_SECONDS
     newest = store.start(_fields(mod, "one-too-many"), remote="10.0.1.1")
     assert newest is not None
     assert len(store) == cap
     # The oldest made room, and its device hears `expired` and asks again.
     assert store.get(codes[0]) is None
     assert store.status("watch-0")[0] == "expired"
-    assert store.get(codes[1]) is not None
-
-    # A watch asking again takes only its own old request's place.
-    assert store.start(_fields(mod, "watch-1"), remote="10.0.0.1") is not None
-    assert len(store) == cap
     assert store.get(codes[2]) is not None
 
 
 def test_a_full_store_gives_up_an_outside_address_before_the_home_s(mod) -> None:
-    store = mod.PairRequestStore(clock=_Clock())
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
     cap = mod.PairRequestStore._MAX_ENTRIES
     home = store.start(_fields(mod, "home-watch"), remote="10.0.0.1")
     for index in range(cap - 1):
         store.start(_fields(mod, f"far-{index}"), remote=f"8.8.{index}.1")
+    # From outside, it waits out the floor like anyone.
+    _refused_start(mod, store, _fields(mod, "far-last"), remote="8.8.200.1")
+    clock.now += mod.PAIR_REQUEST_FLOOR_SECONDS
     store.start(_fields(mod, "far-last"), remote="8.8.200.1")
     assert len(store) == cap
     assert store.get(home.code) is home
     assert store.status("far-0")[0] == "expired"
 
 
+def test_an_outside_start_never_takes_the_home_s_place_while_outside_codes_are_young(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
+    cap = mod.PairRequestStore._MAX_ENTRIES
+    home = store.start(_fields(mod, "home-watch"), remote="10.0.0.1")
+    clock.now += mod.PAIR_REQUEST_FLOOR_SECONDS
+    for index in range(cap - 1):
+        store.start(_fields(mod, f"far-{index}"), remote=f"8.8.{index}.1")
+    # The home's code is past its floor. The young outside ones still come first.
+    _refused_start(mod, store, _fields(mod, "far-last"), remote="8.8.200.1")
+    assert store.get(home.code) is home
+
+
 def test_a_flood_from_outside_never_locks_the_home_out(mod) -> None:
     store = mod.PairRequestStore(clock=_Clock())
+    taken = 0
     for index in range(500):
-        assert store.start(_fields(mod, f"far-{index}"), remote=f"8.8.{index % 250}.{index // 250}") is not None
+        try:
+            store.start(_fields(mod, f"far-{index}"), remote=f"8.8.{index % 250}.{index // 250}")
+            taken += 1
+        except mod.PairStartRefused:
+            pass
+    assert taken == mod.PairRequestStore._MAX_ENTRIES
     assert len(store) == mod.PairRequestStore._MAX_ENTRIES
+    # At once: the home does not wait for an outside code's floor.
     home = store.start(_fields(mod, "home-watch"), remote="192.168.1.20")
     assert store.get(home.code) is home
+    assert len(store) == mod.PairRequestStore._MAX_ENTRIES
+
+
+def test_a_store_full_of_live_codes_from_many_addresses_lets_a_real_request_in_after_the_floor(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
+    cap = mod.PairRequestStore._MAX_ENTRIES
+    for index in range(cap):
+        store.start(_fields(mod, f"near-{index}"), remote=f"10.0.{index}.1")
+    clock.now += 30
+    assert _refused_start(mod, store, _fields(mod, "real"), remote="192.168.1.20") == 30
+    # Asking again exactly when told is enough, and the refusal cost nothing.
+    clock.now += 30
+    real = store.start(_fields(mod, "real"), remote="192.168.1.20")
+    assert store.get(real.code) is real
+    assert len(store) == cap
+
+
+def test_a_flood_from_the_device_s_own_address_leaves_its_code_alone_for_the_floor(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
+    real = store.start(_fields(mod, "real"), remote="10.0.0.9")
+    refused = 0
+    # Ten a second, the rate that wiped it in under half a second before.
+    for index in range(590):
+        clock.now += 0.1
+        try:
+            store.start(_fields(mod, f"flood-{index}"), remote="10.0.0.9")
+        except mod.PairStartRefused as err:
+            refused += 1
+            assert 1 <= err.retry_after <= mod.PAIR_REQUEST_FLOOR_SECONDS
+    assert refused == 587
+    assert store.get(real.code) is real
+    assert store.status("real") == ("pending", None)
+
+    # Past the floor it may give way, and the device hears `expired`.
+    clock.now = real.created_at + mod.PAIR_REQUEST_FLOOR_SECONDS
+    store.start(_fields(mod, "flood-next"), remote="10.0.0.9")
+    assert store.get(real.code) is None
+    assert store.status("real") == ("expired", None)
+
+
+def test_a_flood_from_one_address_leaves_every_other_address_free(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock())
+    for index in range(100):
+        try:
+            store.start(_fields(mod, f"flood-{index}"), remote="10.0.0.9")
+        except mod.PairStartRefused:
+            pass
+    other = store.start(_fields(mod, "other"), remote="10.0.0.8")
+    assert store.get(other.code) is other
+
+
+def test_one_id_restarting_from_one_address_is_held_to_the_rate_and_keeps_its_last_code(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
+    limit = mod.PairRequestStore._MAX_STARTS_PER_REMOTE
+    for _ in range(limit):
+        last = store.start(_fields(mod, "again"), remote="10.0.0.9")
+        clock.now += 1
+    wait = _refused_start(mod, store, _fields(mod, "again"), remote="10.0.0.9")
+    assert wait == mod.PairRequestStore._STARTS_WINDOW_SECONDS - limit
+    assert store.get(last.code) is last
+    # A refused start is not counted, so asking again when told is enough.
+    clock.now += wait
+    assert store.start(_fields(mod, "again"), remote="10.0.0.9") is not None
+
+
+def test_the_start_counts_are_capped(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock())
+    cap = mod.PairRequestStore._MAX_START_COUNTS
+    for index in range(cap + 5):
+        try:
+            store.start(_fields(mod, f"w{index}"), remote=f"2001:db8:{index:x}::1")
+        except mod.PairStartRefused:
+            pass
+    assert len(store._starts) <= cap
 
 
 def test_one_address_holds_at_most_four_requests(mod) -> None:
@@ -222,7 +335,10 @@ def test_one_address_holds_at_most_four_requests(mod) -> None:
         store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.9").code
         for index in range(per_remote)
     ]
-    # The fifth takes the place of that address's oldest.
+    # The fifth waits for the floor, then takes the place of that address's oldest.
+    _refused_start(mod, store, _fields(mod, "fifth"), remote="10.0.0.9")
+    assert store.get(codes[0]) is not None
+    clock.now += mod.PAIR_REQUEST_FLOOR_SECONDS
     assert store.start(_fields(mod, "fifth"), remote="10.0.0.9") is not None
     assert len(store) == per_remote
     assert store.get(codes[0]) is None
@@ -242,16 +358,23 @@ def test_one_address_holds_at_most_four_requests(mod) -> None:
 
 
 def test_one_address_never_spends_the_whole_store(mod) -> None:
-    store = mod.PairRequestStore(clock=_Clock())
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
     for index in range(70):
+        clock.now += mod.PAIR_REQUEST_FLOOR_SECONDS
         store.start(_fields(mod, f"watch-{index}"), remote="8.8.8.8")
     assert len(store) == mod.PairRequestStore._MAX_PER_REMOTE
 
 
 def test_a_whole_ipv6_network_counts_as_one_address(mod) -> None:
-    store = mod.PairRequestStore(clock=_Clock())
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
     for index in range(70):
-        store.start(_fields(mod, f"watch-{index}"), remote=f"2001:db8:1:2::{index + 1:x}")
+        clock.now += mod.PAIR_REQUEST_FLOOR_SECONDS / 4
+        try:
+            store.start(_fields(mod, f"watch-{index}"), remote=f"2001:db8:1:2::{index + 1:x}")
+        except mod.PairStartRefused:
+            pass
     assert len(store) == mod.PairRequestStore._MAX_PER_REMOTE
     # Another network has its own share, and a mapped address reads as IPv4.
     store.start(_fields(mod, "other"), remote="2001:db8:1:3::1")
@@ -641,7 +764,9 @@ def test_waiting_boxes_are_capped(mod) -> None:
     store = mod.PairRequestStore(clock=_Clock())
     cap = mod.PairRequestStore._MAX_ENTRIES
     for index in range(cap + 3):
-        store.confirm_sealed(store.start(_fields(mod, f"watch-{index}")), _BOX)
+        store.confirm_sealed(
+            store.start(_fields(mod, f"watch-{index}"), remote=f"10.0.{index}.1"), _BOX
+        )
     assert store.status("watch-0") == ("expired", None)
     assert store.status(f"watch-{cap + 2}")[0] == "confirmed"
     assert len(store._sealed) == cap

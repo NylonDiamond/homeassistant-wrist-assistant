@@ -171,6 +171,7 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "validate_pair_fields": pair_mod.validate_pair_fields,
         "validate_pair_start": pair_mod.validate_pair_start,
         "ConfirmedPairWaiting": pair_mod.ConfirmedPairWaiting,
+        "PairStartRefused": pair_mod.PairStartRefused,
         "remote_is_public": pair_mod.remote_is_public,
         "REGISTER_ID_MAX_LEN": pair_mod.REGISTER_ID_MAX_LEN,
         "PAIR_START_FIELDS": pair_mod.PAIR_START_FIELDS,
@@ -340,27 +341,42 @@ def test_bad_json_is_refused(env) -> None:
     assert reply.body == {"message": "Invalid JSON body"}
 
 
-def test_a_full_store_still_gives_a_code(env) -> None:
+def test_a_full_store_gives_a_code_past_the_floor(env) -> None:
     cap = env.pair_mod.PairRequestStore._MAX_ENTRIES
     for index in range(cap):
         reply = _start(env, _body(watch_id=f"watch-{index}"), remote=f"10.0.{index}.1")
         assert reply.status == 200
+    assert _start(env, _body(watch_id="one-too-many"), remote="10.1.0.1").status == 429
+    env.clock.now += env.pair_mod.PAIR_REQUEST_FLOOR_SECONDS
     reply = _start(env, _body(watch_id="one-too-many"), remote="10.1.0.1")
     assert reply.status == 200
     assert len(env.pair_store) == cap
     _assert_nothing_written(env)
 
 
-def test_one_address_past_four_requests_still_gets_a_code(env) -> None:
-    for index in range(70):
+def test_one_address_past_four_requests_hears_when_to_ask_again(env) -> None:
+    first = _start(env, _body(watch_id="watch-0")).body["code"]
+    for index in range(1, 4):
         assert _start(env, _body(watch_id=f"watch-{index}")).status == 200
+    env.clock.now += 20
+
+    reply = _start(env, _body(watch_id="fifth"))
+    assert reply.status == 429
+    # The word and the status every app build reads as "try again later".
+    assert reply.body["error"] == "too_many_pending"
+    assert reply.body["retry_after"] == 40
+    assert reply.headers["Retry-After"] == "40"
+    assert reply.body["server_time"] == SERVER_TIME
+    assert "code" not in reply.body
+    assert env.pair_store.get(first) is not None
     assert len(env.pair_store) == 4
 
     # The same watch asking again from that address still gets a code.
-    assert _start(env, _body(watch_id="watch-69")).status == 200
+    assert _start(env, _body(watch_id="watch-3")).status == 200
     assert len(env.pair_store) == 4
     # And another address is not held back by it.
     assert _start(env, _body(watch_id="other"), remote="10.9.9.9").status == 200
+    _assert_nothing_written(env)
 
 
 def test_503_while_the_integration_is_not_loaded(env) -> None:
