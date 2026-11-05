@@ -321,7 +321,22 @@ describe("a template tile in the preview", () => {
     expect(face(tile(), { ok: true, value: "[icon:power color:#FF880080]" }, icons("power"))).toContain("opacity:0.502");
   });
 
-  describe("with the iPhone look", () => {
+  describe("on a One Look iPhone page", () => {
+    const phone = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
+    const oneLookFace = (t: WatchPageTile, value: string, provider?: IconProvider) =>
+      text(renderWatchTileFace(t, { width: 90, height: 60 }, { page, pages: [], screen: { width: 198, height: 242 }, scale: 1, phone, oneLook: true, icons: provider, templates: renders({ ok: true, value }) }, 21));
+
+    it("draws the watch's tile, zoomed: its glass, and the text in the tile's colour with its glow", () => {
+      const drawn = oneLookFace(tile({ color: "#FFFFFF" }), "[icon:power] 21", icons("power"));
+      expect(drawn).toContain("rgba(255, 255, 255, 0.52)");
+      expect(drawn).not.toContain("linear-gradient(rgba(255, 255, 255, 1), rgba(255, 255, 255, 1))");
+      expect(drawn).toContain("color:#FFFFFF");
+      expect(drawn).toContain("text-shadow");
+      expect(drawn).not.toContain("color:#14161A");
+    });
+  });
+
+  describe("with the iPhone look, before One Look", () => {
     const phone = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
     const iphoneFace = (t: WatchPageTile, value: string, provider?: IconProvider) =>
       text(renderWatchTileFace(t, { width: 90, height: 60 }, { page, pages: [], screen: { width: 198, height: 242 }, scale: 1, phone, icons: provider, templates: renders({ ok: true, value }) }, 21));

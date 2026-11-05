@@ -2280,9 +2280,13 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
 function templateFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined, cell = { width, height }): TemplateResult {
   const radiusPt = previewTileCornerRadius(input, cell.width, cell.height, undefined, unit);
   const radius = radiusPt * s;
-  // Always lit, as `SimpleTemplateTile` passes `isActive: true`. With the
-  // iPhone look it keeps the app's lit surface: One Look leaves a template out.
-  const iphone = phoneDrawsIphoneLook(input.phone);
+  // Always lit, as `SimpleTemplateTile` passes `isActive: true`. On a One
+  // Look page both devices draw the watch's template tile, the iPhone's
+  // zoomed: the watch's surface, and the text in the tile's colour with its
+  // glow (Jesse, 2026-11-05: `SimpleTemplateTile` takes the watch look under
+  // One Look). Only the iPhone look without One Look (an app before 3.2)
+  // keeps the iPhone's lit surface and the tile's ink.
+  const iphone = phoneDrawsIphoneLook(input.phone) && previewOneLook(input) === undefined;
   const tileColor = parseTileColor(tile.color);
   const fillInk = flatInk(tile.color, themeInk(input.page, "entitySensor").hex);
   const alpha = watchTileColorOpacity(tile);
@@ -2292,9 +2296,9 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     : watchTileFill(tileColor, fillInk, true, alpha, { width, height });
   const border = watchTileBorder(tile, true, watchTileFallbackInk(tile, input.page, input.states));
   const look = watchTemplateTileLook(tile, input);
-  // On a One Look iPhone page the text is the watch's at the tile's room over
-  // the zoom, drawn the zoom bigger, its side padding inside (`OneLookZoom`).
-  // Its line cap stays the iPhone's own key.
+  // On the iPhone the text is the watch's at the tile's room over the zoom,
+  // drawn the zoom bigger, its side padding inside (`OneLookZoom`). Its line
+  // cap stays the iPhone's own key.
   const zoom = look.kind === "placeholder" ? 1 : templateZoom(input, unit);
   const vw = width / zoom;
   const vh = height / zoom;
