@@ -25,9 +25,10 @@ phone's own look, zoomed as the phone draws it (`OneLookZoom`).
 - `symbols.json`: written by the panel. Every SF Symbol it ships, and every one
   these tiles name.
 - `symbol-sizes.json`: written by the app. Each of those symbols as the devices
-  measure a glyph (`UIFontMeasurer.glyphAspect` and `glyphExtent`). The panel
-  ships it as `symbol-sizes.json.gz` (`build-symbol-sizes.mjs`) and lays its
-  glyphs out by it.
+  measure a glyph (`UIFontMeasurer.glyphAspect` and `glyphExtent`), then its
+  image and ink box as the device draws One Look's glyph, at the medium weight.
+  The panel ships it as `symbol-sizes.json.gz` (`build-symbol-sizes.mjs`), lays
+  its glyphs out by it and draws each outline stretched onto that ink box.
 - `app.json`: written by the app (`OneLookParityTests`). Each tile laid out as
   the device draws it, `OneLookTileModel.kindLayout`, with its item decoded as
   the device decodes the pages document, the real Inter and the real symbol

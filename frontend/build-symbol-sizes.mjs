@@ -1,6 +1,7 @@
 // Turns the devices' symbol sizes into the gzipped table the panel ships
 // beside its bundle (`src/symbol-sizes.ts`). The app measures every symbol
-// the panel ships, as `UIImage(systemName:)` gives it, into
+// the panel ships, as `UIImage(systemName:)` gives it, with its ink box at
+// the medium weight One Look draws its glyph in, into
 // test/fixtures-parity/symbol-sizes.json (`OneLookParityTests` with
 // TEST_RUNNER_WA_UPDATE_FIXTURES=1, then the app's
 // `./scripts/sync-complication-fixtures.sh --push`).
@@ -19,8 +20,11 @@ const sizes = JSON.parse(readFileSync(SRC, "utf8"));
 const round = (v) => Math.round(v * 10000) / 10000;
 const out = {};
 for (const name of Object.keys(sizes).sort()) {
-  const [aspect, extent] = sizes[name];
-  if (aspect > 0 && extent > 0) out[name] = [round(aspect), round(extent)];
+  // [aspect, extent], then the medium weight image and its ink box when the
+  // device drew one: [imageWidth, imageHeight, inkX, inkY, inkWidth, inkHeight].
+  const entry = sizes[name];
+  const [aspect, extent] = entry;
+  if (aspect > 0 && extent > 0) out[name] = entry.map(round);
 }
 const json = Buffer.from(JSON.stringify(out));
 const gz = gzipSync(json, { level: 9 });

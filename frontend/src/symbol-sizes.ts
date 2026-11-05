@@ -7,11 +7,15 @@
 // `build-symbol-sizes.mjs` turns it into the gzipped file served beside the
 // bundle, loaded on first use.
 
+import type { SymbolInk } from "./renderer.js";
 import { SYMBOL_SIZES_DIGEST } from "./symbol-sizes-digest.js";
 
 export interface SymbolImageSize {
   readonly aspect: number;
   readonly extent: number;
+  /** The image and its ink at the medium weight One Look's glyph is drawn
+   * in, when the table has them. */
+  readonly ink?: SymbolInk;
 }
 
 export class SymbolSizes {
@@ -31,12 +35,18 @@ export class SymbolSizes {
     return this.sizes.get(name.trim());
   }
 
-  /** Fill the table from its JSON (`{ name: [aspect, extent] }`). */
+  /** Fill the table from its JSON (`{ name: [aspect, extent, imageWidth,
+   * imageHeight, inkX, inkY, inkWidth, inkHeight] }`, the last six only
+   * where the device drew the symbol). */
   fill(data: unknown): void {
     if (data === null || typeof data !== "object") return;
     for (const [name, v] of Object.entries(data as Record<string, unknown>)) {
       if (Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "number" && v[0] > 0 && v[1] > 0) {
-        this.sizes.set(name, { aspect: v[0], extent: v[1] });
+        const n = v as number[];
+        const ink = n.length >= 8 && n.slice(2, 8).every((x) => typeof x === "number") && n[4]! >= 0 && n[6]! > 0 && n[7]! > 0
+          ? { imageWidth: n[2]!, imageHeight: n[3]!, x: n[4]!, y: n[5]!, width: n[6]!, height: n[7]! }
+          : undefined;
+        this.sizes.set(name, { aspect: n[0]!, extent: n[1]!, ...(ink === undefined ? {} : { ink }) });
       }
     }
     this.state = "loaded";

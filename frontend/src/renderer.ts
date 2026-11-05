@@ -232,6 +232,17 @@ export function fitBox(slot: CanvasSize, family: DrawableFamily, box?: CanvasSiz
 }
 
 /** Draws an SF Symbol by name. Returns undefined when the symbol is unknown. */
+/** A symbol's image and its ink inside it as the devices draw One Look's
+ * glyph (medium weight), as parts of the point size. */
+export interface SymbolInk {
+  readonly imageWidth: number;
+  readonly imageHeight: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface IconProvider {
   render(symbol: string, size: number, colorHex: string): TemplateResult | undefined;
   /** Whether this provider draws anything at all. */
@@ -262,7 +273,7 @@ export interface IconProvider {
    * height, and its longer side over the point size it is drawn at. Undefined
    * for a symbol the table lacks, or while it loads. One Look lays a glyph
    * out by these. */
-  imageSize?(name: string): { aspect: number; extent: number } | undefined;
+  imageSize?(name: string): { aspect: number; extent: number; ink?: SymbolInk } | undefined;
 }
 
 export interface RenderOptions {

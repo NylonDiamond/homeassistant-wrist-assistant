@@ -82,7 +82,7 @@ export const TEMPLATE_ICON_TALL = 1.1;
  * fit the box. Widths are the device's own (`template-fit.ts`), and a row is
  * as tall as its font's line, as a grid of `.system(size:)` text is.
  */
-export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])[], widthPt: number, heightPt: number, largest: number, device: TemplateFitDevice = "iphone"): number {
+export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])[], widthPt: number, heightPt: number, largest: number, device: TemplateFitDevice = "watch"): number {
   const cellUnits = (cell: TemplateCell) => (cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP)) + templateTextUnits(cell.text, device);
   const widths: number[] = [];
   let across = 0;

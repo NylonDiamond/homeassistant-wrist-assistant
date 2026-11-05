@@ -20,28 +20,31 @@
 //   - At 40% with no fit, a word breaks anywhere, and the lines that do not fit
 //     are dropped, the last one left ending in "…".
 //
-// On a One Look iPhone page the tile is the watch's, zoomed (`OneLookZoom`):
-// the preview fits it as the watch, from the watch's 15 pt body at the tile's
-// room over the zoom, and draws it the zoom bigger. Only the line cap stays
-// the iPhone's own key. The iPhone's own metrics are left for the old look.
+// On the iPhone the tile is the watch's, zoomed (`OneLookZoom`): the preview
+// fits it as the watch, from the fixed 15 pt body at the tile's room over the
+// zoom, and draws it the zoom bigger. Only the line cap stays the iPhone's own
+// key.
 //
 // No DOM here: the preview draws what this returns (`preview.ts`).
 
 import { tileTextEms } from "../tile-font-width.js";
 import { templateRichTextSegments } from "./rich-text.js";
 
-export type TemplateFitDevice = "watch" | "iphone";
+/** The device whose fit a template's text takes: the watch's on both, since
+ * the iPhone draws a template tile as the watch does at its virtual size,
+ * zoomed (`OneLookZoom`, the app's `docs/one_size_table_2026-11.md`, "Text
+ * Size does not reach tiles"). */
+export type TemplateFitDevice = "watch";
 
 /** Inter's line height as a part of the size: (1984 + 494) / 2048. */
 export const TEMPLATE_INTER_ROW = 2478 / 2048;
 
-/** The sizes each device starts from, in points, and a row's height as a part
- * of the size. The iPhone's are its default text size. A watch's body size
- * follows its model and text size, which the panel cannot read: 15 is the size
- * a real watch's tile measured, where a 46 mm simulator at its default says
- * 16. The row is Inter's on both, the same font. */
+/** The size the text starts from, in points, plain and in columns, and a
+ * row's height as a part of the size: the fixed 15 pt body both apps start
+ * a template tile from whatever the device's Text Size
+ * (`OneLookZoom.referenceBody`), and Inter's line. The iPhone's own 17 is
+ * gone: its tile is the watch's, scaled up. */
 export const TEMPLATE_FIT_METRICS: Readonly<Record<TemplateFitDevice, { body: number; columnsBody: number; row: number }>> = {
-  iphone: { body: 17, columnsBody: 17, row: TEMPLATE_INTER_ROW },
   watch: { body: 15, columnsBody: 15, row: TEMPLATE_INTER_ROW },
 };
 

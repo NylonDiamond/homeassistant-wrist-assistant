@@ -62,10 +62,10 @@ describe("template rows", () => {
   it("keeps a long row of one cell out of the columns' widths", () => {
     const short = templateRows("[icon:a] A [icon:b] 1");
     const withLong = templateRows("[icon:a] A [icon:b] 1\nabcdefghij");
-    expect(templateColumnsFontSize(withLong, 500, 500, 16, "iphone")).toBe(templateColumnsFontSize(short, 500, 500, 16, "iphone"));
+    expect(templateColumnsFontSize(withLong, 500, 500, 16, "watch")).toBe(templateColumnsFontSize(short, 500, 500, 16, "watch"));
     // It still has to fit, so it can shrink them all, but no more than its own width asks.
     const room = 130;
-    expect(templateColumnsFontSize(templateRows("[icon:a] A [icon:b] 1\n2026-04-08T21:24:11.382181+00:00"), room, 500, 16, "iphone")).toBeCloseTo(room / 17.27, 0);
+    expect(templateColumnsFontSize(templateRows("[icon:a] A [icon:b] 1\n2026-04-08T21:24:11.382181+00:00"), room, 500, 16, "watch")).toBeCloseTo(room / 17.27, 0);
   });
 
   it("sizes columns by the widest cell of each, and stops at 40%", () => {

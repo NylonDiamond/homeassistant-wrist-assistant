@@ -895,6 +895,51 @@ function inkParts(ink: OneLookInk): { hex: string; opacity: number } {
  * provider does not know draws nothing; with no provider at all a faint dot
  * shows where it goes.
  */
+/** Where a glyph's ink is drawn in its box, from the box's top left, in
+ * points, and the outline's square around it with the scale that stretches
+ * its ink onto that box. With the devices' ink box for the symbol
+ * (`IconProvider.imageSize`, `SymbolInk`) it is where the device draws it
+ * (`OneLookViews.Glyph`, medium weight): at the old place at the font size
+ * `box x 0.86 / extent`, else the image fitted into the 86% square, centred
+ * in the box. Without, the outline's ink fitted as before. */
+export function oneLookGlyphInkRect(
+  icons: IconProvider | undefined,
+  symbol: string,
+  box: number,
+  draw?: { oldPlace: boolean; extent: number },
+): { ink: OneLookRect; square: OneLookRect; sx: number; sy: number } | undefined {
+  if (symbol === "" || !(box > 0)) return undefined;
+  const name = knownSymbol(icons, symbol);
+  const image = oneLookSymbolImage(icons, name);
+  if (image === undefined) return undefined;
+  const real = icons?.imageSize?.(symbol)?.ink ?? icons?.imageSize?.(name)?.ink;
+  const outlineAspect = image.inkWidth / image.inkHeight;
+  if (real === undefined) {
+    const k = (box * ONE_LOOK_GLYPH_INK_SHARE) / Math.max(image.width, image.height);
+    const side = Math.max(image.inkWidth, image.inkHeight) * k;
+    const w = outlineAspect < 1 ? side * outlineAspect : side;
+    const h = outlineAspect < 1 ? side : side / outlineAspect;
+    return { ink: { x: (box - w) / 2, y: (box - h) / 2, width: w, height: h }, square: { x: (box - side) / 2, y: (box - side) / 2, width: side, height: side }, sx: 1, sy: 1 };
+  }
+  const em = draw?.oldPlace === true
+    ? (box * ONE_LOOK_GLYPH_INK_SHARE) / Math.max(0.5, draw.extent)
+    : (box * ONE_LOOK_GLYPH_INK_SHARE) / Math.max(real.imageWidth, real.imageHeight);
+  const ox = (box - real.imageWidth * em) / 2;
+  const oy = (box - real.imageHeight * em) / 2;
+  const ink = { x: ox + real.x * em, y: oy + real.y * em, width: real.width * em, height: real.height * em };
+  // The outline drawn in a square, fitted to its longer side, then stretched
+  // so its ink lands on the device's.
+  const side = Math.max(ink.width, ink.height);
+  const fittedW = outlineAspect < 1 ? side * outlineAspect : side;
+  const fittedH = outlineAspect < 1 ? side : side / outlineAspect;
+  return {
+    ink,
+    square: { x: ink.x + ink.width / 2 - side / 2, y: ink.y + ink.height / 2 - side / 2, width: side, height: side },
+    sx: ink.width / fittedW,
+    sy: ink.height / fittedH,
+  };
+}
+
 function glyphMark(
   icons: IconProvider | undefined,
   symbol: string,
@@ -903,6 +948,7 @@ function glyphMark(
   ink: OneLookInk,
   s: number,
   shadow: boolean,
+  draw?: { oldPlace: boolean; extent: number },
 ): TemplateResult | typeof nothing {
   if (symbol === "" || !(box > 0)) return nothing;
   const place = rectCss({ x: at.x, y: at.y, width: box, height: box }, s);
@@ -910,15 +956,18 @@ function glyphMark(
   const fade = opacity >= 1 ? "" : `;opacity:${Math.round(opacity * 1000) / 1000}`;
   const lift = shadow ? `;filter:drop-shadow(0 ${r2(s)}px ${r2(4 * s)}px rgba(0, 0, 0, 0.5))` : "";
   const name = knownSymbol(icons, symbol);
-  const image = oneLookSymbolImage(icons, name);
-  if (image === undefined) {
+  const fit = oneLookGlyphInkRect(icons, symbol, box, draw);
+  if (fit === undefined) {
     if (icons !== undefined) return nothing;
     const d = r2(box * ONE_LOOK_GLYPH_INK_SHARE * 0.4 * s);
     return html`<span class="ol-glyph" data-symbol=${symbol} style=${`${place}${fade}`}><span class="ol-dot-glyph" style=${`width:${d}px;height:${d}px;background:${hex}`}></span></span>`;
   }
-  const k = (box * ONE_LOOK_GLYPH_INK_SHARE) / Math.max(image.width, image.height);
-  const side = r2(Math.max(image.inkWidth, image.inkHeight) * k * s);
-  return html`<span class="ol-glyph" data-symbol=${symbol} style=${`${place}${fade}${lift}`}>${icons?.render(name, side, hex) ?? nothing}</span>`;
+  const side = r2(fit.square.width * s);
+  if (fit.sx === 1 && fit.sy === 1 && Math.abs(fit.square.x - (box - fit.square.width) / 2) < 0.001 && Math.abs(fit.square.y - (box - fit.square.height) / 2) < 0.001) {
+    return html`<span class="ol-glyph" data-symbol=${symbol} style=${`${place}${fade}${lift}`}>${icons?.render(name, side, hex) ?? nothing}</span>`;
+  }
+  const stretch = Math.abs(fit.sx - 1) < 0.0005 && Math.abs(fit.sy - 1) < 0.0005 ? "" : `;transform:scale(${Math.round(fit.sx * 10000) / 10000}, ${Math.round(fit.sy * 10000) / 10000})`;
+  return html`<span class="ol-glyph" data-symbol=${symbol} style=${`${place}${fade}${lift}`}><span class="ol-glyph-ink" style=${`position:absolute;display:flex;left:${r2(fit.square.x * s)}px;top:${r2(fit.square.y * s)}px;width:${side}px;height:${side}px${stretch}`}>${icons?.render(name, side, hex) ?? nothing}</span></span>`;
 }
 
 /** The soft shadow under text on a coloured fill, the iPhone's only. */
@@ -1220,7 +1269,7 @@ function discLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: 
   }
   const ink = oneLookGlyphInk(palette, layout.drawsDisc, oneLookCentredGlyph(device));
   const g = layout.glyphSize;
-  return html`${back}${glyphMark(input.icons, model.icon, g, { x: cx - g / 2, y: cy - g / 2 }, ink, s, model.style.glyphShadow)}`;
+  return html`${back}${glyphMark(input.icons, model.icon, g, { x: cx - g / 2, y: cy - g / 2 }, ink, s, model.style.glyphShadow, { oldPlace: layout.glyphAtOldPlace, extent: layout.glyphExtent })}`;
 }
 
 const ACCESSORY_SYMBOLS: Readonly<Record<string, string>> = { fan: "fan.fill" };

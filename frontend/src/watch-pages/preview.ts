@@ -2241,17 +2241,16 @@ function templateRowLimit(tile: WatchPageTile, input: Pick<WatchPagePreviewInput
   return typeof lines === "number" ? Math.min(8, Math.max(1, Math.round(lines))) : 5;
 }
 
-/** How much bigger a template tile's text is drawn than it is fitted: on a
- * One Look iPhone page the zoom (`OneLookZoom`, `OneLookZoomedFill`), as
- * the text is the watch's at the tile's room over it; 1 elsewhere. */
-function templateZoom(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">, unit: number | undefined): number {
-  return unit !== undefined && previewOneLook(input) === "phone" ? oneLookZoomFactor("phone", unit) : 1;
+/** How much bigger a template tile's text is drawn than it is fitted: on an
+ * iPhone the zoom (`OneLookZoom`, `OneLookZoomedFill`), as the text is the
+ * watch's at the tile's room over it; 1 on a watch. */
+function templateZoom(input: Pick<WatchPagePreviewInput, "phone">, unit: number | undefined): number {
+  return unit !== undefined && input.phone !== undefined ? oneLookZoomFactor("phone", unit) : 1;
 }
 
-/** Which device's text a preview draws: the watch's when zoomed, as the
- * iPhone draws a One Look template tile as the watch does. */
-function templateDevice(input: Pick<WatchPagePreviewInput, "phone">, zoom = 1): TemplateFitDevice {
-  return input.phone === undefined || zoom !== 1 ? "watch" : "iphone";
+/** Which device's fit a preview draws: the watch's, on both. */
+function templateDevice(_input: Pick<WatchPagePreviewInput, "phone">, _zoom = 1): TemplateFitDevice {
+  return "watch";
 }
 
 /** The side padding of `SimpleTemplateTile`. It has none over and under. */

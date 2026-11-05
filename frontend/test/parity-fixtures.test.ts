@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
 import { phoneModelForScreenSize, phonePagesLayout, phonePagesScreen } from "../src/phone-frame.js";
-import type { WatchTemplateRender } from "../src/watch-pages/app-model.js";
+import { type WatchTemplateRender, watchTemplateColumns } from "../src/watch-pages/app-model.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { tileEntityId, tileKind } from "../src/watch-pages/model.js";
 import {
@@ -31,12 +31,16 @@ import {
   watchPreviewSideInset,
   watchPreviewTopInset,
   watchReflowPage,
+  watchTemplateTextScale,
+  watchTemplateTileLook,
   watchTileOneLookModel,
 } from "../src/watch-pages/preview.js";
+import { TEMPLATE_FIT_METRICS, templateTextFit } from "../src/watch-pages/template-fit.js";
+import { templateColumnRows, templateColumnsFontSize } from "../src/watch-pages/template-rows.js";
 import { oneLookArrangeContent } from "../src/watch-pages/one-look/arrange.js";
 import type { OneLookRect } from "../src/watch-pages/one-look/layout.js";
-import { oneLookZoomedCornerRadius } from "../src/watch-pages/one-look/metrics.js";
-import { type OneLookPreviewModel, oneLookPreviewMeasurer } from "../src/watch-pages/one-look/render.js";
+import { oneLookZoomFactor, oneLookZoomedCornerRadius } from "../src/watch-pages/one-look/metrics.js";
+import { type OneLookPreviewModel, oneLookGlyphInkRect, oneLookPreviewMeasurer } from "../src/watch-pages/one-look/render.js";
 import { SymbolSizes } from "../src/symbol-sizes.js";
 
 const dir = join(__dirname, "fixtures-parity");
@@ -157,6 +161,8 @@ function entries(): { entry: Entry; model: OneLookPreviewModel; input: WatchPage
           // the app lays out exactly this.
           model: {
             name: model.name, icon: model.baseIcon, filled: ks.filled,
+            // The symbol as drawn (its fill, outline or slashed form).
+            drawnIcon: model.icon,
             state: ks.state, stateHidden: ks.stateHidden,
             ...(ks.stateWithoutBig === undefined ? {} : { stateWithoutBig: ks.stateWithoutBig }),
             ...(ks.bigValue === undefined ? {} : { bigValue: ks.bigValue }),
@@ -187,7 +193,22 @@ function numbers(model: OneLookPreviewModel, input: WatchPagePreviewInput, unit:
     if (placed !== undefined) arranged[part] = { rect: up(placed.rect, z), scale: placed.scale, hidden: placed.hidden };
   }
   void input;
+  // Where the glyph's ink is drawn, as the picture draws it (`discLayer`,
+  // `glyphMark`): only a symbol glyph, not a photo or a picture.
+  let drawnInk: Record<string, number> | undefined;
+  const placed = model.arrange?.icon;
+  if (model.icon !== "" && model.photo === undefined && model.cutout === undefined && model.picture === "none" && l.glyphSize > 0 && placed?.hidden !== true) {
+    const rect = placed?.rect ?? l.discRect;
+    const g = l.glyphSize * (placed?.scale ?? 1);
+    const fit = oneLookGlyphInkRect(icons, model.icon, g, { oldPlace: l.glyphAtOldPlace, extent: l.glyphExtent });
+    if (fit !== undefined) {
+      const x0 = rect.x + rect.width / 2 - g / 2;
+      const y0 = rect.y + rect.height / 2 - g / 2;
+      drawnInk = up({ x: x0 + fit.ink.x, y: y0 + fit.ink.y, width: fit.ink.width, height: fit.ink.height }, z);
+    }
+  }
   return {
+    drawnInk,
     mode: l.mode,
     size: { width: r4(l.size.width * z), height: r4(l.size.height * z) },
     disc: up(l.discRect, z), ink: up(l.glyphInk, z), glyphSize: r4(l.glyphSize * z),
@@ -208,6 +229,31 @@ describe("the parity fixtures: the previews draw a real home's tiles as the devi
   it("finds One Look tiles on both devices", () => {
     expect(all.filter((e) => e.entry.device === "watch").length).toBeGreaterThan(20);
     expect(all.filter((e) => e.entry.device === "phone").length).toBeGreaterThan(20);
+  });
+
+  it("fits a template on the iPhone as the watch does, at the tile's room over the zoom", () => {
+    let checked = 0;
+    for (const page of inputs.document.pages as WatchPage[]) {
+      const input = inputFor(page, "iphone");
+      const packed = watchReflowPage(page, input.states, 12, input.templates, "iphone");
+      const layout = watchPreviewLayout(packed, input.screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
+      for (const placed of layout.tiles) {
+        if (tileKind(tileEntityId(placed.tile)) !== "template") continue;
+        const look = watchTemplateTileLook(placed.tile, input);
+        if (look.kind !== "text" || look.pending) continue;
+        const z = oneLookZoomFactor("phone", layout.unit);
+        expect(z).toBeGreaterThan(1.5);
+        const lines = typeof placed.tile.templateLines === "number" ? Math.min(8, Math.max(1, Math.round(placed.tile.templateLines))) : 5;
+        const rows = templateColumnRows(look.text, watchTemplateColumns(placed.tile))?.slice(0, lines);
+        const body = TEMPLATE_FIT_METRICS.watch;
+        const want = rows === undefined
+          ? templateTextFit(look.text, placed.width / z - 8, placed.height / z, lines, "watch").size / body.body
+          : templateColumnsFontSize(rows, placed.width / z - 8, placed.height / z, body.columnsBody, "watch") / body.columnsBody;
+        expect(watchTemplateTextScale(placed.tile, placed.width, placed.height, input, layout.unit)).toBeCloseTo(want, 6);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   if (WRITE) {

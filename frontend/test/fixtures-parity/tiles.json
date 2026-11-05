@@ -69,6 +69,7 @@
     "name": "Elt Jtxlsg Loew",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -87,6 +88,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -212,6 +219,7 @@
     "name": "Att Qjrkpud",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -230,6 +238,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -355,6 +369,7 @@
     "name": "Afr Urijno Tivyrn",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -375,6 +390,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -500,6 +521,7 @@
     "name": "Ojf hucreom ftpzlx",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -518,6 +540,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -645,6 +673,7 @@
     "name": "Fohbe Olltka Ilsnlp",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -791,6 +820,7 @@
     "name": "Kday'z Eljfda Lixytc",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -811,6 +841,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -936,6 +972,7 @@
     "name": "Givtxg roaw ttqgic",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -954,6 +991,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1079,6 +1122,7 @@
     "name": "Frfapfuba libdix",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -1097,6 +1141,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1222,6 +1272,7 @@
     "name": "Cujezu Ijqdl Pmlidh",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -1240,6 +1291,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.5746,
+     "y": 11.4384,
+     "width": 21.2445,
+     "height": 37.1779
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1376,6 +1433,7 @@
     "name": "Qwali Qlaq Piwmut",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -1396,6 +1454,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.945,
+     "y": 5.1275,
+     "width": 28.4676,
+     "height": 49.8184
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1532,6 +1596,7 @@
     "name": "Uulneul Vmefr Ziux Ciwwoj",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb.slash",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -1550,6 +1615,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 38.9066,
+     "y": 15.8422,
+     "width": 22.5607,
+     "height": 29.1147
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1682,6 +1753,7 @@
     "name": "Xauba",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -1700,6 +1772,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.3045,
+     "y": 4.1178,
+     "width": 29.7423,
+     "height": 52.049
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1837,6 +1915,7 @@
     "name": "2",
     "icon": "network",
     "filled": true,
+    "drawnIcon": "network",
     "state": {
      "kind": "none"
     },
@@ -1853,6 +1932,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -1965,6 +2050,7 @@
     "name": "Ybus",
     "icon": "person",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Away"
@@ -2115,6 +2201,7 @@
     "name": "ruzqe",
     "icon": "person",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Home"
@@ -2276,6 +2363,7 @@
     "name": "Hyaes",
     "icon": "message.and.waveform",
     "filled": true,
+    "drawnIcon": "message.and.waveform.fill",
     "state": {
      "kind": "none"
     },
@@ -2292,6 +2380,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 29.0997,
+     "y": 11.4134,
+     "width": 42.3005,
+     "height": 34.6095
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -2404,6 +2498,7 @@
     "name": "Elt Jtxlsg Loew",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -2422,6 +2517,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -2547,6 +2648,7 @@
     "name": "Att Qjrkpud",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -2565,6 +2667,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -2690,6 +2798,7 @@
     "name": "Afr Urijno Tivyrn",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -2710,6 +2819,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -2835,6 +2950,7 @@
     "name": "Ojf hucreom ftpzlx",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -2853,6 +2969,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -2980,6 +3102,7 @@
     "name": "Fohbe Olltka Ilsnlp",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -3126,6 +3249,7 @@
     "name": "Kday'z Eljfda Lixytc",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -3146,6 +3270,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -3271,6 +3401,7 @@
     "name": "Givtxg roaw ttqgic",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -3289,6 +3420,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -3414,6 +3551,7 @@
     "name": "Frfapfuba libdix",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -3432,6 +3570,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -3557,6 +3701,7 @@
     "name": "Cujezu Ijqdl Pmlidh",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -3575,6 +3720,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 70.1957,
+     "y": 20.3042,
+     "width": 38.4165,
+     "height": 67.2289
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -3711,6 +3862,7 @@
     "name": "Qwali Qlaq Piwmut",
     "icon": "lightbulb",
     "filled": true,
+    "drawnIcon": "lightbulb.fill",
     "state": {
      "kind": "number",
      "figure": "100",
@@ -3731,6 +3883,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 63.6323,
+     "y": 8.8921,
+     "width": 51.4781,
+     "height": 90.0867
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -3867,6 +4025,7 @@
     "name": "Uulneul Vmefr Ziux Ciwwoj",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb.slash",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -3885,6 +4044,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 68.7629,
+     "y": 27.9869,
+     "width": 41.2438,
+     "height": 53.2253
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -4017,6 +4182,7 @@
     "name": "Xauba",
     "icon": "lightbulb",
     "filled": false,
+    "drawnIcon": "lightbulb",
     "state": {
      "kind": "word",
      "word": "Off"
@@ -4035,6 +4201,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 62.474,
+     "y": 7.3549,
+     "width": 53.7831,
+     "height": 94.1204
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -4172,6 +4344,7 @@
     "name": "2",
     "icon": "network",
     "filled": true,
+    "drawnIcon": "network",
     "state": {
      "kind": "none"
     },
@@ -4188,6 +4361,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.2919,
+     "y": 21.9788,
+     "width": 64.2064,
+     "height": 63.8886
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -4300,6 +4479,7 @@
     "name": "Ybus",
     "icon": "person",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Away"
@@ -4450,6 +4630,7 @@
     "name": "ruzqe",
     "icon": "person",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Home"
@@ -4611,6 +4792,7 @@
     "name": "Hyaes",
     "icon": "message.and.waveform",
     "filled": true,
+    "drawnIcon": "message.and.waveform.fill",
     "state": {
      "kind": "none"
     },
@@ -4627,6 +4809,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 51.2539,
+     "y": 20.2589,
+     "width": 76.4921,
+     "height": 62.5845
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -4739,6 +4927,7 @@
     "name": "Cosus",
     "icon": "switch.2",
     "filled": false,
+    "drawnIcon": "switch.2",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -4756,6 +4945,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.9617,
+     "y": 19.3616,
+     "width": 28.5765,
+     "height": 28.7285
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -4875,6 +5070,7 @@
     "name": "Ekijpmac",
     "icon": "lock.open",
     "filled": true,
+    "drawnIcon": "lock.open.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -4892,6 +5088,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.1126,
+     "y": 19.0617,
+     "width": 30.2747,
+     "height": 29.2256
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5011,6 +5213,7 @@
     "name": "Nrudgaai",
     "icon": "blinds.horizontal.closed",
     "filled": true,
+    "drawnIcon": "blinds.horizontal.closed",
     "state": {
      "kind": "word",
      "word": "Closed"
@@ -5029,6 +5232,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 37.1582,
+     "y": 22.9264,
+     "width": 26.2258,
+     "height": 25.2314
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5154,6 +5363,7 @@
     "name": "Mrhis Ulj Baijltof",
     "icon": "fan",
     "filled": true,
+    "drawnIcon": "fan.fill",
     "state": {
      "kind": "word",
      "word": "On"
@@ -5171,6 +5381,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 31.9369,
+     "y": 11.7442,
+     "width": 36.6854,
+     "height": 36.6854
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5290,6 +5506,7 @@
     "name": "Coesfu Ayvtplogi Gsdzktuntvo huxfgug",
     "icon": "button.programmable",
     "filled": true,
+    "drawnIcon": "button.programmable",
     "state": {
      "kind": "none"
     },
@@ -5306,6 +5523,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5418,6 +5641,7 @@
     "name": "Hagd Cejk Vrjog",
     "icon": "light.beacon.max",
     "filled": true,
+    "drawnIcon": "light.beacon.max.fill",
     "state": {
      "kind": "none"
     },
@@ -5434,6 +5658,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 28.7706,
+     "y": 11.7606,
+     "width": 42.84,
+     "height": 36.54
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5546,6 +5776,7 @@
     "name": "Aoiv Vaq Ley",
     "icon": "hurricane",
     "filled": true,
+    "drawnIcon": "hurricane",
     "state": {
      "kind": "word",
      "word": "Docked · 100%",
@@ -5564,6 +5795,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 41.2977,
+     "y": 19.2271,
+     "width": 17.6736,
+     "height": 29.085
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5683,6 +5920,7 @@
     "name": "Fawp Momuj",
     "icon": "leaf",
     "filled": true,
+    "drawnIcon": "leaf.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -5700,6 +5938,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 33.7701,
+     "y": 19.9839,
+     "width": 32.8584,
+     "height": 27.7914
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5819,6 +6063,7 @@
     "name": "Jtapr Gouj",
     "icon": "lock.open",
     "filled": true,
+    "drawnIcon": "lock.open.fill",
     "state": {
      "kind": "word",
      "word": "Unlocked"
@@ -5836,6 +6081,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.1126,
+     "y": 19.0617,
+     "width": 30.2747,
+     "height": 29.2256
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -5955,6 +6206,7 @@
     "name": "Cosus",
     "icon": "switch.2",
     "filled": false,
+    "drawnIcon": "switch.2",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -5972,6 +6224,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 63.8192,
+     "y": 34.3947,
+     "width": 49.8616,
+     "height": 50.1268
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6091,6 +6349,7 @@
     "name": "Ekijpmac",
     "icon": "lock.open",
     "filled": true,
+    "drawnIcon": "lock.open.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -6108,6 +6367,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 62.3377,
+     "y": 33.8715,
+     "width": 52.8247,
+     "height": 50.9941
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6227,6 +6492,7 @@
     "name": "Nrudgaai",
     "icon": "blinds.horizontal.closed",
     "filled": true,
+    "drawnIcon": "blinds.horizontal.closed",
     "state": {
      "kind": "word",
      "word": "Closed"
@@ -6245,6 +6511,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 66.0364,
+     "y": 40.8555,
+     "width": 45.5005,
+     "height": 43.7754
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6370,6 +6642,7 @@
     "name": "Mrhis Ulj Baijltof",
     "icon": "fan",
     "filled": true,
+    "drawnIcon": "fan.fill",
     "state": {
      "kind": "word",
      "word": "On"
@@ -6387,6 +6660,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 56.6565,
+     "y": 20.8322,
+     "width": 64.2906,
+     "height": 64.2906
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6506,6 +6785,7 @@
     "name": "Coesfu Ayvtplogi Gsdzktuntvo huxfgug",
     "icon": "button.programmable",
     "filled": true,
+    "drawnIcon": "button.programmable",
     "state": {
      "kind": "none"
     },
@@ -6522,6 +6802,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 56.275,
+     "y": 20.6707,
+     "width": 64.7385,
+     "height": 64.418
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6634,6 +6920,7 @@
     "name": "Hagd Cejk Vrjog",
     "icon": "light.beacon.max",
     "filled": true,
+    "drawnIcon": "light.beacon.max.fill",
     "state": {
      "kind": "none"
     },
@@ -6650,6 +6937,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 50.6089,
+     "y": 20.4374,
+     "width": 76.0713,
+     "height": 64.8843
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6762,6 +7055,7 @@
     "name": "Aoiv Vaq Ley",
     "icon": "hurricane",
     "filled": true,
+    "drawnIcon": "hurricane",
     "state": {
      "kind": "word",
      "word": "Docked · 100%",
@@ -6780,6 +7074,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 73.1296,
+     "y": 34.16,
+     "width": 30.8377,
+     "height": 50.7487
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -6899,6 +7199,7 @@
     "name": "Fawp Momuj",
     "icon": "leaf",
     "filled": true,
+    "drawnIcon": "leaf.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -6916,6 +7217,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 59.9952,
+     "y": 35.4806,
+     "width": 57.3328,
+     "height": 48.4917
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -7035,6 +7342,7 @@
     "name": "Jtapr Gouj",
     "icon": "lock.open",
     "filled": true,
+    "drawnIcon": "lock.open.fill",
     "state": {
      "kind": "word",
      "word": "Unlocked"
@@ -7052,6 +7360,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 62.3377,
+     "y": 33.8715,
+     "width": 52.8247,
+     "height": 50.9941
+    },
     "mode": "centred",
     "size": {
      "width": 177.5,
@@ -7171,6 +7485,7 @@
     "name": "Mx aquqoo",
     "icon": "thermometer",
     "filled": true,
+    "drawnIcon": "thermometer",
     "state": {
      "kind": "number",
      "figure": "70°",
@@ -7189,6 +7504,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 41.2601,
+     "y": 11.5194,
+     "width": 22.1104,
+     "height": 36.8507
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -7327,6 +7648,7 @@
     "name": "Masth",
     "icon": "music.note.house",
     "filled": true,
+    "drawnIcon": "music.note.house.fill",
     "state": {
      "kind": "none"
     },
@@ -7344,6 +7666,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 29.1374,
+     "y": 11.3713,
+     "width": 42.2251,
+     "height": 37.2574
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -7462,10 +7790,11 @@
     "name": "Oirina Fex",
     "icon": "play",
     "filled": true,
+    "drawnIcon": "play.fill",
     "state": {
      "kind": "word",
-     "word": "Ran 4h ago",
-     "short": "4h ago"
+     "word": "Ran 5h ago",
+     "short": "5h ago"
     },
     "stateHidden": false,
     "accessory": "none",
@@ -7480,6 +7809,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.3574,
+     "y": 19.5681,
+     "width": 25.3044,
+     "height": 28.3208
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -7511,7 +7846,7 @@
     "state": {
      "x": 5.94,
      "y": 5.94,
-     "width": 57.9176,
+     "width": 57.3375,
      "height": 13.2
     },
     "stateSize": 11,
@@ -7599,6 +7934,7 @@
     "name": "Ortlxe Nedlldhj Bvusuk",
     "icon": "scroll",
     "filled": true,
+    "drawnIcon": "scroll.fill",
     "state": {
      "kind": "none"
     },
@@ -7615,6 +7951,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 31.2906,
+     "y": 11.2206,
+     "width": 37.98,
+     "height": 37.62
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -7727,6 +8069,7 @@
     "name": "Royt Rrwut",
     "icon": "timer",
     "filled": true,
+    "drawnIcon": "timer",
     "state": {
      "kind": "none"
     },
@@ -7743,6 +8086,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -7855,6 +8204,7 @@
     "name": "Elayuj4 03E66 Verrejg",
     "icon": "battery.50",
     "filled": true,
+    "drawnIcon": "battery.50",
     "state": {
      "kind": "number",
      "figure": "21",
@@ -7873,6 +8223,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 23.8494,
+     "y": 17.6394,
+     "width": 52.74,
+     "height": 24.66
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -7993,6 +8349,7 @@
     "name": "Uleyai4 03E66 Dufkog Sreyrhe",
     "icon": "carbon.dioxide.cloud",
     "filled": true,
+    "drawnIcon": "carbon.dioxide.cloud.fill",
     "state": {
      "kind": "number",
      "figure": "630",
@@ -8012,6 +8369,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 80.5206,
+     "y": 29.33,
+     "width": 42.84,
+     "height": 34.02
+    },
     "mode": "centred",
     "size": {
      "width": 204,
@@ -8131,6 +8494,7 @@
     "name": "Hemu",
     "icon": "cloud.sun",
     "filled": true,
+    "drawnIcon": "cloud.sun.fill",
     "state": {
      "kind": "none"
     },
@@ -8150,6 +8514,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 77.2806,
+     "y": 10.92,
+     "width": 51.66,
+     "height": 36
+    },
     "mode": "centred",
     "size": {
      "width": 204,
@@ -8262,6 +8632,7 @@
     "name": "Mx aquqoo",
     "icon": "thermometer",
     "filled": true,
+    "drawnIcon": "thermometer",
     "state": {
      "kind": "number",
      "figure": "70°",
@@ -8280,6 +8651,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 73.2435,
+     "y": 20.4505,
+     "width": 39.9823,
+     "height": 66.6372
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -8418,6 +8795,7 @@
     "name": "Masth",
     "icon": "music.note.house",
     "filled": true,
+    "drawnIcon": "music.note.house.fill",
     "state": {
      "kind": "none"
     },
@@ -8435,6 +8813,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 51.6754,
+     "y": 20.4945,
+     "width": 75.6492,
+     "height": 66.7493
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -8553,10 +8937,11 @@
     "name": "Oirina Fex",
     "icon": "play",
     "filled": true,
+    "drawnIcon": "play.fill",
     "state": {
      "kind": "word",
-     "word": "Ran 4h ago",
-     "short": "4h ago"
+     "word": "Ran 5h ago",
+     "short": "5h ago"
     },
     "stateHidden": false,
     "accessory": "none",
@@ -8571,6 +8956,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 69.6767,
+     "y": 34.6843,
+     "width": 46.0511,
+     "height": 51.5406
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -8602,7 +8993,7 @@
     "state": {
      "x": 10.65,
      "y": 10.65,
-     "width": 102.274,
+     "width": 101.2496,
      "height": 23.3093
     },
     "stateSize": 19.4244,
@@ -8690,6 +9081,7 @@
     "name": "Ortlxe Nedlldhj Bvusuk",
     "icon": "scroll",
     "filled": true,
+    "drawnIcon": "scroll.fill",
     "state": {
      "kind": "none"
     },
@@ -8706,6 +9098,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 56.0205,
+     "y": 20.7074,
+     "width": 67.0671,
+     "height": 66.4314
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -8818,6 +9216,7 @@
     "name": "Royt Rrwut",
     "icon": "timer",
     "filled": true,
+    "drawnIcon": "timer",
     "state": {
      "kind": "none"
     },
@@ -8834,6 +9233,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.2919,
+     "y": 21.9788,
+     "width": 64.2064,
+     "height": 63.8886
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -8946,6 +9351,7 @@
     "name": "Elayuj4 03E66 Verrejg",
     "icon": "battery.50",
     "filled": true,
+    "drawnIcon": "battery.50",
     "state": {
      "kind": "number",
      "figure": "21",
@@ -8964,6 +9370,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 42.8804,
+     "y": 32.0421,
+     "width": 93.1311,
+     "height": 43.546
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -9084,6 +9496,7 @@
     "name": "Uleyai4 03E66 Dufkog Sreyrhe",
     "icon": "carbon.dioxide.cloud",
     "filled": true,
+    "drawnIcon": "carbon.dioxide.cloud.fill",
     "state": {
      "kind": "number",
      "figure": "630",
@@ -9103,6 +9516,12 @@
     "chart": true
    },
    "panel": {
+    "drawnInk": {
+     "x": 31.6066,
+     "y": 35.018,
+     "width": 32.0541,
+     "height": 25.4547
+    },
     "mode": "stacked",
     "size": {
      "width": 361,
@@ -9211,6 +9630,7 @@
     "name": "Hemu",
     "icon": "cloud.sun",
     "filled": true,
+    "drawnIcon": "cloud.sun.fill",
     "state": {
      "kind": "none"
     },
@@ -9230,6 +9650,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 136.8492,
+     "y": 20.1766,
+     "width": 91.224,
+     "height": 63.5707
+    },
     "mode": "centred",
     "size": {
      "width": 361,
@@ -9342,6 +9768,7 @@
     "name": "FK Olriye",
     "icon": "av.remote",
     "filled": true,
+    "drawnIcon": "av.remote.fill",
     "state": {
      "kind": "word",
      "word": "On"
@@ -9359,6 +9786,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 40.8281,
+     "y": 11.423,
+     "width": 18.8437,
+     "height": 37.2083
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -9478,6 +9911,7 @@
     "name": "Paisluew kxoapaf",
     "icon": "play.circle",
     "filled": true,
+    "drawnIcon": "play.circle.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -9496,6 +9930,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.7785,
+     "y": 19.3713,
+     "width": 28.8488,
+     "height": 28.706
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -9616,6 +10056,7 @@
     "name": "Apzla FV",
     "icon": "av.remote",
     "filled": true,
+    "drawnIcon": "av.remote.fill",
     "state": {
      "kind": "none"
     },
@@ -9632,6 +10073,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 40.8281,
+     "y": 11.423,
+     "width": 18.8437,
+     "height": 37.2083
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -9744,6 +10191,7 @@
     "name": "Yoyieem Buhl",
     "icon": "play.circle",
     "filled": true,
+    "drawnIcon": "play.circle.fill",
     "state": {
      "kind": "none"
     },
@@ -9762,6 +10210,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -9886,6 +10340,7 @@
     "name": "2024 Njusqjrov Mfisetbevp",
     "icon": "location",
     "filled": true,
+    "drawnIcon": "location.fill",
     "state": {
      "kind": "none"
     },
@@ -9902,6 +10357,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 31.9494,
+     "y": 13.08,
+     "width": 34.02,
+     "height": 33.84
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -10014,6 +10475,7 @@
     "name": "Hemu",
     "icon": "mappin.and.ellipse",
     "filled": true,
+    "drawnIcon": "mappin.and.ellipse",
     "state": {
      "kind": "none"
     },
@@ -10030,6 +10492,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 34.5211,
+     "y": 14.0598,
+     "width": 31.4577,
+     "height": 34.6353
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -10142,6 +10610,7 @@
     "name": "Ebeafu Hajley 2 Oztjon",
     "icon": "bolt.badge.clock",
     "filled": true,
+    "drawnIcon": "bolt.badge.clock.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -10159,6 +10628,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.2727,
+     "y": 19.4713,
+     "width": 23.558,
+     "height": 28.4976
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -10278,6 +10753,7 @@
     "name": "Iuypo19bsalfov@vmuji.puw",
     "icon": "calendar",
     "filled": true,
+    "drawnIcon": "calendar",
     "state": {
      "kind": "none"
     },
@@ -10294,6 +10770,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.43,
+     "y": 13.6794,
+     "width": 35.64,
+     "height": 32.76
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -10406,6 +10888,7 @@
     "name": "ruzqe",
     "icon": "person",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Home"
@@ -10542,6 +11025,7 @@
     "name": "FK Olriye",
     "icon": "av.remote",
     "filled": true,
+    "drawnIcon": "av.remote.fill",
     "state": {
      "kind": "word",
      "word": "On"
@@ -10559,6 +11043,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 72.4624,
+     "y": 20.2762,
+     "width": 34.0751,
+     "height": 67.2839
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -10678,6 +11168,7 @@
     "name": "Paisluew kxoapaf",
     "icon": "play.circle",
     "filled": true,
+    "drawnIcon": "play.circle.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -10696,6 +11187,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 63.1635,
+     "y": 34.3261,
+     "width": 52.5016,
+     "height": 52.2416
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -10816,6 +11313,7 @@
     "name": "Apzla FV",
     "icon": "av.remote",
     "filled": true,
+    "drawnIcon": "av.remote.fill",
     "state": {
      "kind": "none"
     },
@@ -10832,6 +11330,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 72.4624,
+     "y": 20.2762,
+     "width": 34.0751,
+     "height": 67.2839
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -10944,6 +11448,7 @@
     "name": "Yoyieem Buhl",
     "icon": "play.circle",
     "filled": true,
+    "drawnIcon": "play.circle.fill",
     "state": {
      "kind": "none"
     },
@@ -10962,6 +11467,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.2919,
+     "y": 21.9788,
+     "width": 64.2064,
+     "height": 63.8886
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -11086,6 +11597,7 @@
     "name": "2024 Njusqjrov Mfisetbevp",
     "icon": "location",
     "filled": true,
+    "drawnIcon": "location.fill",
     "state": {
      "kind": "none"
     },
@@ -11102,6 +11614,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.1838,
+     "y": 23.9909,
+     "width": 60.0743,
+     "height": 59.7565
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -11214,6 +11732,7 @@
     "name": "Hemu",
     "icon": "mappin.and.ellipse",
     "filled": true,
+    "drawnIcon": "mappin.and.ellipse",
     "state": {
      "kind": "none"
     },
@@ -11230,6 +11749,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 61.0575,
+     "y": 25.0445,
+     "width": 56.8851,
+     "height": 62.6311
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -11342,6 +11867,7 @@
     "name": "Ebeafu Hajley 2 Oztjon",
     "icon": "bolt.badge.clock",
     "filled": true,
+    "drawnIcon": "bolt.badge.clock.fill",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -11359,6 +11885,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 69.5474,
+     "y": 34.5096,
+     "width": 42.8198,
+     "height": 51.7981
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -11478,6 +12010,7 @@
     "name": "Iuypo19bsalfov@vmuji.puw",
     "icon": "calendar",
     "filled": true,
+    "drawnIcon": "calendar",
     "state": {
      "kind": "none"
     },
@@ -11494,6 +12027,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 58.0325,
+     "y": 25.0493,
+     "width": 62.935,
+     "height": 57.8494
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -11606,6 +12145,7 @@
     "name": "ruzqe",
     "icon": "person",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Home"
@@ -11742,6 +12282,7 @@
     "name": "Meiloc Zekvuts",
     "icon": "togglepower",
     "filled": true,
+    "drawnIcon": "togglepower",
     "state": {
      "kind": "word",
      "word": "On"
@@ -11759,6 +12300,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -11878,6 +12425,7 @@
     "name": "Glcthq teom poxt Eirtpu Duzi ejeiw pujewo",
     "icon": "slider.horizontal.3",
     "filled": true,
+    "drawnIcon": "slider.horizontal.3",
     "state": {
      "kind": "number",
      "figure": "50",
@@ -11896,6 +12444,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.1906,
+     "y": 14.6406,
+     "width": 36.18,
+     "height": 30.78
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12015,6 +12569,7 @@
     "name": "2024 Craqkffux Wffserkond Xllweio vlanal",
     "icon": "list.bullet",
     "filled": true,
+    "drawnIcon": "list.bullet",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -12032,6 +12587,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.1906,
+     "y": 21.0906,
+     "width": 36.18,
+     "height": 26.46
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12151,6 +12712,7 @@
     "name": "Lubsu19 Xowa",
     "icon": "text.cursor",
     "filled": true,
+    "drawnIcon": "text.cursor",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -12168,6 +12730,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 36.0488,
+     "y": 19.1236,
+     "width": 28.4955,
+     "height": 29.2008
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12287,6 +12855,7 @@
     "name": "tudi yuuytor",
     "icon": "number.circle",
     "filled": true,
+    "drawnIcon": "number.circle.fill",
     "state": {
      "kind": "number",
      "figure": "10"
@@ -12304,6 +12873,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12423,6 +12998,7 @@
     "name": "Uthpi Ztuoh - Iebsa Ujofm Jlmo Resrnhj",
     "icon": "clock",
     "filled": true,
+    "drawnIcon": "clock.fill",
     "state": {
      "kind": "none"
     },
@@ -12439,6 +13015,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.0106,
+     "y": 11.9406,
+     "width": 36.36,
+     "height": 36.18
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12551,6 +13133,7 @@
     "name": "weqo-ec ufelw autuwottup ifwaj",
     "icon": "calendar.badge.clock",
     "filled": true,
+    "drawnIcon": "calendar.badge.clock",
     "state": {
      "kind": "none"
     },
@@ -12567,6 +13150,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 29.73,
+     "y": 10.6806,
+     "width": 43.02,
+     "height": 36
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12679,6 +13268,7 @@
     "name": "2024 Zjaxyitux Wtiqatxuvb Rroqf ieji neof",
     "icon": "door.left.hand.open",
     "filled": true,
+    "drawnIcon": "door.left.hand.open",
     "state": {
      "kind": "word",
      "word": "Closed"
@@ -12696,6 +13286,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 39.2269,
+     "y": 19.3545,
+     "width": 22.0461,
+     "height": 29.9197
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -12815,6 +13411,7 @@
     "name": "Meiloc Zekvuts",
     "icon": "togglepower",
     "filled": true,
+    "drawnIcon": "togglepower",
     "state": {
      "kind": "word",
      "word": "On"
@@ -12832,6 +13429,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.2919,
+     "y": 21.9788,
+     "width": 64.2064,
+     "height": 63.8886
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -12951,6 +13554,7 @@
     "name": "Glcthq teom poxt Eirtpu Duzi ejeiw pujewo",
     "icon": "slider.horizontal.3",
     "filled": true,
+    "drawnIcon": "slider.horizontal.3",
     "state": {
      "kind": "number",
      "figure": "50",
@@ -12969,6 +13573,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.6097,
+     "y": 26.7467,
+     "width": 63.8886,
+     "height": 54.353
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13088,6 +13698,7 @@
     "name": "2024 Craqkffux Wffserkond Xllweio vlanal",
     "icon": "list.bullet",
     "filled": true,
+    "drawnIcon": "list.bullet",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -13105,6 +13716,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.6097,
+     "y": 38.1364,
+     "width": 63.8886,
+     "height": 46.7245
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13224,6 +13841,7 @@
     "name": "Lubsu19 Xowa",
     "icon": "text.cursor",
     "filled": true,
+    "drawnIcon": "text.cursor",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -13241,6 +13859,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 63.6554,
+     "y": 33.8753,
+     "width": 51.8586,
+     "height": 53.1422
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13360,6 +13984,7 @@
     "name": "tudi yuuytor",
     "icon": "number.circle",
     "filled": true,
+    "drawnIcon": "number.circle.fill",
     "state": {
      "kind": "number",
      "figure": "10"
@@ -13377,6 +14002,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.2919,
+     "y": 21.9788,
+     "width": 64.2064,
+     "height": 63.8886
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13496,6 +14127,7 @@
     "name": "Uthpi Ztuoh - Iebsa Ujofm Jlmo Resrnhj",
     "icon": "clock",
     "filled": true,
+    "drawnIcon": "clock.fill",
     "state": {
      "kind": "none"
     },
@@ -13512,6 +14144,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.2919,
+     "y": 21.9788,
+     "width": 64.2064,
+     "height": 63.8886
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13624,6 +14262,7 @@
     "name": "weqo-ec ufelw autuwottup ifwaj",
     "icon": "calendar.badge.clock",
     "filled": true,
+    "drawnIcon": "calendar.badge.clock",
     "state": {
      "kind": "none"
     },
@@ -13640,6 +14279,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 53.2647,
+     "y": 19.7539,
+     "width": 75.967,
+     "height": 63.5707
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13752,6 +14397,7 @@
     "name": "2024 Zjaxyitux Wtiqatxuvb Rroqf ieji neof",
     "icon": "door.left.hand.open",
     "filled": true,
+    "drawnIcon": "door.left.hand.open",
     "state": {
      "kind": "word",
      "word": "Closed"
@@ -13769,6 +14415,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 69.4641,
+     "y": 34.2973,
+     "width": 40.0717,
+     "height": 54.3831
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -13888,6 +14540,7 @@
     "name": "Cubn Zujn Warraz",
     "icon": "figure.walk",
     "filled": true,
+    "drawnIcon": "figure.walk",
     "state": {
      "kind": "word",
      "word": "Clear"
@@ -13905,6 +14558,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 90.7688,
+     "y": 11.423,
+     "width": 22.3569,
+     "height": 36.2502
+    },
     "mode": "centred",
     "size": {
      "width": 204,
@@ -14024,6 +14683,7 @@
     "name": "Zcegx FZvogo Wejbz Horlujx",
     "icon": "battery.25",
     "filled": true,
+    "drawnIcon": "battery.25",
     "state": {
      "kind": "number",
      "figure": "15",
@@ -14042,6 +14702,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 7.7545,
+     "y": 12.8259,
+     "width": 12.4764,
+     "height": 5.8337
+    },
     "mode": "strip",
     "size": {
      "width": 100.5,
@@ -14149,6 +14815,7 @@
     "name": "Fjtovieze Apxapogcb",
     "icon": "person.fill",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Not occupied",
@@ -14167,6 +14834,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 10.2427,
+     "y": 18.3359,
+     "width": 11.2378,
+     "height": 12.0551
+    },
     "mode": "strip",
     "size": {
      "width": 100.5,
@@ -14275,6 +14948,7 @@
     "name": "Etudoi4 03U66 Comlxfrg",
     "icon": "humidity",
     "filled": true,
+    "drawnIcon": "humidity.fill",
     "state": {
      "kind": "number",
      "figure": "26",
@@ -14293,6 +14967,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 32.1294,
+     "y": 29.33,
+     "width": 38.16,
+     "height": 31.32
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -14412,6 +15092,7 @@
     "name": "Aiszj Dtaan - Fohqu Yatlugj Femkotajotu",
     "icon": "thermometer.medium",
     "filled": true,
+    "drawnIcon": "thermometer.medium",
     "state": {
      "kind": "number",
      "figure": "81",
@@ -14430,6 +15111,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 15.8307,
+     "y": 20.0605,
+     "width": 21.0144,
+     "height": 35.024
+    },
     "mode": "centred",
     "size": {
      "width": 48.75,
@@ -14553,6 +15240,7 @@
     "name": "Hyaes",
     "icon": "message.and.waveform",
     "filled": true,
+    "drawnIcon": "message.and.waveform.fill",
     "state": {
      "kind": "none"
     },
@@ -14569,6 +15257,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 3.3606,
+     "y": 19.1578,
+     "width": 42.0288,
+     "height": 34.3872
+    },
     "mode": "centred",
     "size": {
      "width": 48.75,
@@ -14681,6 +15375,7 @@
     "name": "Yufsi Soziief",
     "icon": "hand.point.up.left",
     "filled": true,
+    "drawnIcon": "hand.point.up.left.fill",
     "state": {
      "kind": "none"
     },
@@ -14697,6 +15392,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.0094,
+     "y": 12.9,
+     "width": 30.42,
+     "height": 33.48
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -14809,6 +15510,7 @@
     "name": "Axhfhr",
     "icon": "waveform.and.mic",
     "filled": true,
+    "drawnIcon": "waveform.and.mic",
     "state": {
      "kind": "none"
     },
@@ -14825,6 +15527,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 33.1969,
+     "y": 11.1489,
+     "width": 35.9599,
+     "height": 35.306
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -14937,6 +15645,7 @@
     "name": "Cubn Zujn Warraz",
     "icon": "figure.walk",
     "filled": true,
+    "drawnIcon": "figure.walk",
     "state": {
      "kind": "word",
      "word": "Clear"
@@ -14954,6 +15663,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 160.1907,
+     "y": 20.2762,
+     "width": 40.4281,
+     "height": 65.5513
+    },
     "mode": "centred",
     "size": {
      "width": 361,
@@ -15073,6 +15788,7 @@
     "name": "Zcegx FZvogo Wejbz Horlujx",
     "icon": "battery.25",
     "filled": true,
+    "drawnIcon": "battery.25",
     "state": {
      "kind": "number",
      "figure": "15",
@@ -15091,6 +15807,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 13.6934,
+     "y": 23.6698,
+     "width": 22.0316,
+     "height": 10.3014
+    },
     "mode": "strip",
     "size": {
      "width": 179,
@@ -15198,6 +15920,7 @@
     "name": "Fjtovieze Apxapogcb",
     "icon": "person.fill",
     "filled": true,
+    "drawnIcon": "person.fill",
     "state": {
      "kind": "word",
      "word": "Not occupied",
@@ -15216,6 +15939,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 18.3169,
+     "y": 33.3358,
+     "width": 19.8443,
+     "height": 21.2875
+    },
     "mode": "strip",
     "size": {
      "width": 179,
@@ -15324,6 +16053,7 @@
     "name": "Etudoi4 03U66 Comlxfrg",
     "icon": "humidity",
     "filled": true,
+    "drawnIcon": "humidity.fill",
     "state": {
      "kind": "number",
      "figure": "26",
@@ -15342,6 +16072,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 57.5017,
+     "y": 52.5583,
+     "width": 67.385,
+     "height": 55.3065
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -15461,6 +16197,7 @@
     "name": "Aiszj Dtaan - Fohqu Yatlugj Femkotajotu",
     "icon": "thermometer.medium",
     "filled": true,
+    "drawnIcon": "thermometer.medium",
     "state": {
      "kind": "number",
      "figure": "81",
@@ -15479,6 +16216,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 28.7148,
+     "y": 35.8479,
+     "width": 37.5936,
+     "height": 62.656
+    },
     "mode": "centred",
     "size": {
      "width": 88,
@@ -15602,6 +16345,7 @@
     "name": "Hyaes",
     "icon": "message.and.waveform",
     "filled": true,
+    "drawnIcon": "message.and.waveform.fill",
     "state": {
      "kind": "none"
     },
@@ -15618,6 +16362,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 6.4064,
+     "y": 34.2331,
+     "width": 75.1872,
+     "height": 61.5168
+    },
     "mode": "centred",
     "size": {
      "width": 88,
@@ -15730,6 +16480,7 @@
     "name": "Yufsi Soziief",
     "icon": "hand.point.up.left",
     "filled": true,
+    "drawnIcon": "hand.point.up.left.fill",
     "state": {
      "kind": "none"
     },
@@ -15746,6 +16497,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 62.5873,
+     "y": 23.673,
+     "width": 53.7173,
+     "height": 59.1208
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -15858,6 +16615,7 @@
     "name": "Axhfhr",
     "icon": "waveform.and.mic",
     "filled": true,
+    "drawnIcon": "waveform.and.mic",
     "state": {
      "kind": "none"
     },
@@ -15874,6 +16632,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 58.6628,
+     "y": 19.7805,
+     "width": 65.0263,
+     "height": 63.844
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -15986,6 +16750,7 @@
     "name": "Jfchiy",
     "icon": "list.bullet.rectangle.portrait",
     "filled": true,
+    "drawnIcon": "list.bullet.rectangle.portrait.fill",
     "state": {
      "kind": "none"
     },
@@ -16002,6 +16767,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.8028,
+     "y": 11.6971,
+     "width": 28.8357,
+     "height": 36.6058
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -16114,6 +16885,7 @@
     "name": "Naw Goqu 1",
     "icon": "rectangle.stack.fill",
     "filled": true,
+    "drawnIcon": "rectangle.stack.fill",
     "state": {
      "kind": "none"
     },
@@ -16130,6 +16902,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 33.97,
+     "y": 11.3491,
+     "width": 32.5601,
+     "height": 34.931
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -16242,6 +17020,7 @@
     "name": "Naw Goqu 1",
     "icon": "rectangle.on.rectangle",
     "filled": true,
+    "drawnIcon": "rectangle.on.rectangle",
     "state": {
      "kind": "none"
     },
@@ -16258,6 +17037,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 28.11,
+     "y": 11.6994,
+     "width": 44.28,
+     "height": 36.54
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -16370,6 +17155,7 @@
     "name": "Qoujv & Middewz",
     "icon": "list.bullet.rectangle.portrait",
     "filled": true,
+    "drawnIcon": "list.bullet.rectangle.portrait.fill",
     "state": {
      "kind": "none"
     },
@@ -16386,6 +17172,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 35.8028,
+     "y": 11.6971,
+     "width": 28.8357,
+     "height": 36.6058
+    },
     "mode": "centred",
     "size": {
      "width": 100.5,
@@ -16498,6 +17290,7 @@
     "name": "Jfchiy",
     "icon": "list.bullet.rectangle.portrait",
     "filled": true,
+    "drawnIcon": "list.bullet.rectangle.portrait.fill",
     "state": {
      "kind": "none"
     },
@@ -16514,6 +17307,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 63.3751,
+     "y": 20.7719,
+     "width": 52.1437,
+     "height": 66.1944
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -16626,6 +17425,7 @@
     "name": "Naw Goqu 1",
     "icon": "rectangle.stack.fill",
     "filled": true,
+    "drawnIcon": "rectangle.stack.fill",
     "state": {
      "kind": "none"
     },
@@ -16642,6 +17442,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 60.0608,
+     "y": 20.1426,
+     "width": 58.8785,
+     "height": 63.1657
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -16754,6 +17560,7 @@
     "name": "Naw Goqu 1",
     "icon": "rectangle.on.rectangle",
     "filled": true,
+    "drawnIcon": "rectangle.on.rectangle",
     "state": {
      "kind": "none"
     },
@@ -16770,6 +17577,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 50.404,
+     "y": 21.5529,
+     "width": 78.192,
+     "height": 64.5243
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -16882,6 +17695,7 @@
     "name": "Qoujv & Middewz",
     "icon": "list.bullet.rectangle.portrait",
     "filled": true,
+    "drawnIcon": "list.bullet.rectangle.portrait.fill",
     "state": {
      "kind": "none"
     },
@@ -16898,6 +17712,12 @@
     "chart": false
    },
    "panel": {
+    "drawnInk": {
+     "x": 63.3751,
+     "y": 20.7719,
+     "width": 52.1437,
+     "height": 66.1944
+    },
     "mode": "centred",
     "size": {
      "width": 179,
@@ -17010,6 +17830,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -17126,6 +17947,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -17242,6 +18064,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -17359,6 +18182,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -17475,6 +18299,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -17591,6 +18416,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -17709,6 +18535,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -17827,6 +18654,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -17945,6 +18773,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -18061,6 +18890,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -18177,6 +19007,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -18294,6 +19125,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -18410,6 +19242,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -18526,6 +19359,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -18644,6 +19478,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -18762,6 +19597,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "word",
      "word": "Offline"
@@ -18915,6 +19751,7 @@
     "name": "",
     "icon": "",
     "filled": true,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -19032,6 +19869,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -19183,6 +20021,7 @@
     "name": "",
     "icon": "",
     "filled": true,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
@@ -19300,6 +20139,7 @@
     "name": "",
     "icon": "",
     "filled": false,
+    "drawnIcon": "",
     "state": {
      "kind": "none"
     },
