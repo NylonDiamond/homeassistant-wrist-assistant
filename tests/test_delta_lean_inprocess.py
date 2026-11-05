@@ -560,6 +560,76 @@ def test_a_poll_with_only_no_ops_still_ends_inside_its_timeout(coordinator) -> N
     asyncio.run(run())
 
 
+def _counted_collects(coord) -> list[int]:
+    """Counts the coordinator's collects from here on."""
+    calls: list[int] = []
+    collect = coord._collect
+
+    async def counted(*args, **kwargs):
+        calls.append(args[1])
+        return await collect(*args, **kwargs)
+
+    coord._collect = counted
+    return calls
+
+
+def test_changes_the_first_collect_covered_do_not_wake_a_held_poll(coordinator) -> None:
+    module, hass, coord = coordinator
+    ent = "sensor.covered"
+    hass.states._by_id[ent] = _State(ent, "1")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], attribute_diffs=True)
+        cursor = body["next_cursor"]
+        # A busy house: changes past the cursor, none of them news to this poll.
+        for _ in range(3):
+            _set(hass, coord, "sensor.elsewhere", "x")
+        calls = _counted_collects(coord)
+        held = asyncio.create_task(_poll(coord, since=cursor, timeout=5, attribute_diffs=True))
+        await asyncio.sleep(module.WAKE_COALESCE_SECONDS + 0.2)
+        assert not held.done()
+        # One collect, and no spare pause and scan after it.
+        assert calls == [cursor]
+        coord._waiters["w1"].set()
+        coord._waiters.pop("w1")
+        await asyncio.wait_for(held, timeout=2)
+
+    asyncio.run(run())
+
+
+def test_a_change_during_the_first_collect_s_renders_still_wakes_the_held_poll(coordinator) -> None:
+    module, hass, coord = coordinator
+    ent = "sensor.during"
+    hass.states._by_id[ent] = _State(ent, "1")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], attribute_diffs=True)
+        cursor = body["next_cursor"]
+        evaluate = coord._evaluate_templates
+        landed: list[int] = []
+
+        async def change_while_rendering(*args, **kwargs):
+            # The scan took its cursor before this, as a render's await lets a
+            # change in. Only the first collect's render does it.
+            if not landed:
+                landed.append(coord._cursor)
+                _set(hass, coord, ent, "2")
+            return await evaluate(*args, **kwargs)
+
+        coord._evaluate_templates = change_while_rendering
+        started = hass.loop.time()
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=cursor, timeout=10, attribute_diffs=True), timeout=3
+        )
+        # Woken at once, not left for the poll's whole window.
+        assert hass.loop.time() - started < module.WAKE_COALESCE_SECONDS + 1
+        assert status == 200
+        assert [e["state"] for e in body["events"]] == ["2"]
+        assert body["next_cursor"] == coord._cursor
+
+    asyncio.run(run())
+
+
 def test_a_burst_after_a_wake_goes_out_as_one_reply(coordinator) -> None:
     module, hass, coord = coordinator
     a, b = "light.scene_a", "light.scene_b"
