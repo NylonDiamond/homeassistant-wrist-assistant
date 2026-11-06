@@ -183,6 +183,8 @@ export interface OneLookLayoutInput {
   /** The glyph is a photo, a person's or the tile's cut-out: it says who or
    * what the tile is, so it stays when the state has to go. */
   readonly keepsGlyph: boolean;
+  /** A light photo keeps a fixed value slot across brightness and Off. */
+  readonly stablePhotoState?: StateLine;
   readonly style: OneLookTileStyle;
 }
 
@@ -462,6 +464,23 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
   const input = oneLookLayoutInput(given);
   const metrics = oneLookScaledText(oneLookMetrics(input.device), input.textScale, oneLookNameScale(input), input.style.stateScale, input.style.stateSize);
   const fitter = new OneLookTextFitter(input.device, measurer, metrics).styled(input.style);
+  if (input.centred && input.stablePhotoState !== undefined && input.state.kind !== "none") {
+    const stable = { ...input, state: input.stablePhotoState };
+    delete stable.stablePhotoState;
+    const layout = resolveOneLookLayout(stable, measurer);
+    if (layout.mode === "centred") {
+      if (JSON.stringify(input.state) === JSON.stringify(input.stablePhotoState) || layout.stateRect === undefined) return layout;
+      const rect = layout.stateRect;
+      const pad = input.style.statePill ? Math.round(metrics.wordSize * ONE_LOOK_PILL_PAD_H) : 0;
+      const state = fitter.fitState(input.state, rect.width - 2 * pad, input.colSpan, ONE_LOOK_STATE_GIVE_WAY);
+      if (state === undefined) {
+        const actual = { ...layout };
+        delete actual.state;
+        return actual;
+      }
+      return { ...layout, state, stateRect: { ...rect, width: Math.min(rect.width, oneLookStateWidth(state, metrics, measurer) + 2 * pad) } };
+    }
+  }
   if (input.ownLayout && input.centred) {
     const roomy = centred(input, fitter, step("centred", { hasIcon: input.hasIcon }));
     if (fits(roomy, fitter)) return keepScales(roomy, input);

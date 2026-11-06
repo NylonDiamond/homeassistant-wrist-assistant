@@ -445,6 +445,26 @@ describe("every tile", () => {
     }
   });
 
+  it("keeps a light photo in the same place and size across Off and every brightness", () => {
+    for (const device of ["watch", "phone"] as const) {
+      for (const look of [undefined, "clear"] as const) {
+        for (const aspect of [0.6, 384 / 322, 2]) {
+          const photos = { ...PHOTOS, photoSize: () => ({ width: 384, height: 384 / aspect }) };
+          const tile = thing("light.lamp", { customLabel: "Office Lights", ...(look === undefined ? {} : { iconPhotoLook: look }) });
+          const states = [lampOff, ...[1, 128, 255].map((brightness) => entity("light.lamp", "on", { brightness }))];
+          const models = states.map((state) => oneLookPreviewModel(face(tile, state, photos, device))!);
+          const reference = models.at(-1)!.layout;
+          for (const model of models) {
+            expect(model.layout.discRect, `${device} ${look} ${aspect}`).toEqual(reference.discRect);
+            expect(model.layout.glyphInk, `${device} ${look} ${aspect}`).toEqual(reference.glyphInk);
+          }
+          expect(models[0]!.layout.state?.parts.kind).toBe("word");
+          expect(models.at(-1)!.layout.state?.parts.kind).toBe("number");
+        }
+      }
+    }
+  });
+
   it("draws an off light's bulb at 70%", () => {
     const glyph = (o: string) => /class="ol-glyph" data-symbol=[^ ]* style=([^>]*)>/.exec(o)?.[1] ?? "";
     const off = html(renderOneLookTile(face({ id: "T", entityId: "light.lamp", customLabel: "Lamp", colSpan: 6, rowSpan: 4, color: "#30A0FF" }, lampOff)));

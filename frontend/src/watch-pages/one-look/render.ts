@@ -826,9 +826,10 @@ export function oneLookPreviewModel(given: OneLookTileFaceInput): OneLookPreview
     // A cut-out photo is laid out by its own aspect, not the icon's (a wide
     // photo must not rise beside the state as a narrow bulb may).
     glyphAspect: !centred ? 1 : cutout !== undefined ? oneLookCutoutAspect(cutout.aspect) : glyphAspectOf(measurer, base),
-    glyphExtent: centred ? glyphExtentOf(measurer, base) : 1.25,
+    glyphExtent: centred && cutout === undefined ? glyphExtentOf(measurer, base) : 1.25,
     glyphIsPhoto: centred && photo !== undefined,
     keepsGlyph: photo !== undefined || cutout !== undefined,
+    ...(cutout !== undefined && ks.role.kind === "light" ? { stablePhotoState: { kind: "number", figure: "100", unit: "%" } as StateLine } : {}),
     style,
   };
   let layout = resolveOneLookLayout(init, measurer);

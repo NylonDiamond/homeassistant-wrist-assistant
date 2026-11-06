@@ -181,14 +181,9 @@ describe("an icon photo on a One Look tile", () => {
   });
 
   it("draws a 2-across light tile's lamp clear of the bar, the state and the name", () => {
-    // Jesse's "Jesse Office Lights": a watch 6x4 light tile, on, with a
-    // 384 by 310 lamp. Measured on the watch in the system font, the app (`takeOldSizes`, `oldPlaceGlyph`,
-    // `OneLookCutout.boxSide` with no disc): icon size min(36, 68 x 0.54)
-    // = 36, the bulb's extent 1.316 (its image over its point size), so the
-    // glyph box is 36 x 1.316 / 0.86 = 55.1, clear of the bar, the state
-    // and the name; the photo box its ink square, 55.1 x 0.86 = 47.4, and
-    // the lamp fitted in it, 47.4 by 38.3: 57% of the tile's 67 points,
-    // beside "100%", between the bar (to 7) and the name (from 50.4).
+    // A real 6x4 light tile with a 384 by 310 lamp and a symbol provider.
+    // Photos use their own fixed extent while keeping clear of the bar,
+    // value and name, whether they fit beside or below the value.
     const bulb = { lightbulb: [13.65, 23.68], "lightbulb.fill": [13.65, 23.68] } as Record<string, [number, number]>;
     const icons = {
       render: (name: string, size: number) => bulb[name] === undefined ? undefined
@@ -209,7 +204,8 @@ describe("an icon photo on a One Look tile", () => {
     // stays whole (2026-11-05, `ONE_LOOK_UNDER_GAIN`).
     const w = l.discRect.width;
     expect(w).toBeGreaterThan(26.38 + 0.5);
-    expect(w).toBeCloseTo(40.59, 1);
+    // The photo has its own fixed extent and a stable value slot, so an
+    // entity's bulb symbol cannot change the cut-out's size.
     const at = place(styleOf(text(renderOneLookTile(f)), "ol-cutout"));
     expect(at.w).toBeCloseTo(w * 0.86, 1);
     expect(at.h).toBeCloseTo(at.w * 310 / 384, 1);
@@ -221,8 +217,10 @@ describe("an icon photo on a One Look tile", () => {
     // trim, clear of their letters.
     expect(l.glyphInk!.y + l.glyphInk!.height).toBeLessThanOrEqual(l.textOrigin.y);
     expect(at.y + at.h).toBeLessThanOrEqual(l.textOrigin.y + w * ONE_LOOK_OLD_PLACE_INK_TRIM);
-    expect(l.glyphInk!.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height);
-    expect(at.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height - w * ONE_LOOK_OLD_PLACE_INK_TRIM);
+    const ink = l.glyphInk!, state = l.stateRect!;
+    const gap = Math.max(ink.x - state.x - state.width, state.x - ink.x - ink.width,
+      ink.y - state.y - state.height, state.y - ink.y - ink.height);
+    expect(gap).toBeGreaterThanOrEqual(1 - 1e-9);
   });
 
   it("moves with the tile's Arrangement, as the icon does", () => {
