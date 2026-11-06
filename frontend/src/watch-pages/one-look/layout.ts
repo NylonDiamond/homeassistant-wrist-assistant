@@ -468,9 +468,9 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
     const stable = { ...input, state: input.stablePhotoState };
     delete stable.stablePhotoState;
     const layout = resolveOneLookLayout(stable, measurer);
-    if (layout.mode === "centred") {
-      if (JSON.stringify(input.state) === JSON.stringify(input.stablePhotoState) || layout.stateRect === undefined) return layout;
-      const rect = layout.stateRect;
+    if (JSON.stringify(input.state) === JSON.stringify(input.stablePhotoState) || layout.state === undefined) return layout;
+    const rect = layout.stateRect;
+    if (rect !== undefined) {
       const pad = input.style.statePill ? Math.round(metrics.wordSize * ONE_LOOK_PILL_PAD_H) : 0;
       const state = fitter.fitState(input.state, rect.width - 2 * pad, input.colSpan, ONE_LOOK_STATE_GIVE_WAY);
       if (state === undefined) {
@@ -480,6 +480,11 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
       }
       return { ...layout, state, stateRect: { ...rect, width: Math.min(rect.width, oneLookStateWidth(state, metrics, measurer) + 2 * pad) } };
     }
+    const actual = { ...layout };
+    const state = fitter.fitState(input.state, layout.textWidth, input.colSpan);
+    if (state === undefined) delete actual.state;
+    else actual.state = state;
+    return actual;
   }
   if (input.ownLayout && input.centred) {
     const roomy = centred(input, fitter, step("centred", { hasIcon: input.hasIcon }));
