@@ -4,6 +4,8 @@ import { templateRows } from "./template-rows.js";
 import { type TemplateLayoutPart, type TemplateTileLayout, type TemplateLayoutItem, templateLayoutParts, templateLayoutShape, resolveTemplateLayout } from "./template-layout.js";
 import { type TemplateColorChoice, templateItemSource, templateItemColorChange, applyTemplateSourceChanges } from "./template-item-source.js";
 import { templateIconColor } from "./rich-text.js";
+import { snapTemplateItems, type TemplateSnapBox } from "./template-item-snap.js";
+import type { GuideLine } from "../interact.js";
 
 interface ItemHost {
   data(): TemplateEditorData;
@@ -13,7 +15,7 @@ interface ItemHost {
   write(text: string): void;
   showCode(from: number, to: number): void;
 }
-interface ItemDrag { tile: string; startX: number; startY: number; width: number; height: number; layout: TemplateTileLayout; before?: TemplateTileLayout; moved: boolean; lead: string; modifier: boolean }
+interface ItemDrag { tile: string; startX: number; startY: number; width: number; height: number; boxes: TemplateSnapBox[]; layout: TemplateTileLayout; before?: TemplateTileLayout; moved: boolean; lead: string; modifier: boolean }
 interface ColorGroup { key: string; label: string; targets: { part: TemplateLayoutPart; choice: TemplateColorChoice }[] }
 
 /** Canvas interaction and the small inspector below it. The CodeMirror
@@ -33,6 +35,7 @@ export class TemplateItemEditor {
   private sizeStart: Map<string, number> | undefined;
   private scale = 100;
   private pointerClick = false;
+  private guides: GuideLine[] = [];
 
   constructor(private readonly host: ItemHost) {}
   private data(): TemplateEditorData { return this.host.data(); }
@@ -111,6 +114,26 @@ export class TemplateItemEditor {
     return { v: 1, shape: templateLayoutShape(rows), items };
   }
 
+  private snapBoxes(left: number, top: number, width: number, height: number): TemplateSnapBox[] {
+    if (!(width > 0 && height > 0)) return [];
+    const root = this.host.element.querySelector<HTMLElement>(".te-tile");
+    const parts = this.parts();
+    return parts.flatMap(part => {
+      const nodes = [...root?.querySelectorAll<HTMLElement>("[data-tk]") ?? []].filter(el => el.dataset["tk"] === part.key);
+      const rects = nodes.map(el => (part.kind === "icon" ? el.querySelector("svg") ?? el : el).getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+      if (rects.length === 0) return [];
+      const x0 = Math.min(...rects.map(r => r.left)), x1 = Math.max(...rects.map(r => r.right));
+      const y0 = Math.min(...rects.map(r => r.top)), y1 = Math.max(...rects.map(r => r.bottom));
+      const font = parseFloat(getComputedStyle(nodes[0]!).fontSize);
+      // Inter's ascent and descent are 1984 and 494 on a 2048 em. The
+      // baseline is this far below the center of its line box.
+      const sameLine = rects.every(r => Math.abs(r.top - y0) < 1 && Math.abs(r.bottom - y1) < 1);
+      const baseline = part.kind === "text" && sameLine && Number.isFinite(font)
+        ? ((y0 + y1) / 2 + (1984 - 494) / (2 * 2048) * font - top) / height : undefined;
+      return [{ key: part.key, x: (x0 - left) / width, y: (y0 - top) / height, width: (x1 - x0) / width, height: (y1 - y0) / height, ...(baseline === undefined ? {} : { baseline }) }];
+    });
+  }
+
   start(event: PointerEvent): void {
     this.pointerClick = true;
     const target = (event.target as Element).closest<HTMLElement>("[data-tk]");
@@ -125,7 +148,9 @@ export class TemplateItemEditor {
     const box = this.host.element.querySelector<HTMLElement>(".te-tile .wp-tpl")?.getBoundingClientRect();
     if (layout === undefined || box === undefined) { this.note = "Wait for the template preview before moving items."; this.host.update(); return; }
     const pointScale = Number(this.host.element.querySelector<HTMLElement>(".te-tile [data-tpl-scale]")?.dataset["tplScale"]);
-    this.drag = { tile: this.data().tileId, startX: event.clientX, startY: event.clientY, width: box.width - 8 * pointScale, height: box.height, layout, before: this.layout() === undefined ? undefined : structuredClone(this.layout()), moved: false, lead: key, modifier };
+    const width = box.width - 8 * pointScale;
+    this.guides = [];
+    this.drag = { tile: this.data().tileId, startX: event.clientX, startY: event.clientY, width, height: box.height, boxes: this.snapBoxes(box.left + 4 * pointScale, box.top, width, box.height), layout, before: this.layout() === undefined ? undefined : structuredClone(this.layout()), moved: false, lead: key, modifier };
     window.addEventListener("pointermove", this.move);
     window.addEventListener("pointerup", this.end);
     window.addEventListener("pointercancel", this.cancel);
@@ -146,22 +171,21 @@ export class TemplateItemEditor {
     if (!drag || drag.tile !== this.data().tileId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
     drag.moved = true; event.preventDefault();
-    let dx = (event.clientX - drag.startX) / drag.width, dy = (event.clientY - drag.startY) / drag.height;
+    const dx = (event.clientX - drag.startX) / drag.width, dy = (event.clientY - drag.startY) / drag.height;
     const lead = drag.layout.items.find(p => p.key === drag.lead)!;
-    if (this.snap && !event.altKey) { dx = Math.round((lead.x + dx) * 20) / 20 - lead.x; dy = Math.round((lead.y + dy) * 20) / 20 - lead.y; }
     const layout = structuredClone(drag.layout), own = layout.items.filter(p => this.selected.has(p.key));
-    dx = Math.max(-Math.min(...own.map(p => p.x)), Math.min(1 - Math.max(...own.map(p => p.x)), dx));
-    dy = Math.max(-Math.min(...own.map(p => p.y)), Math.min(1 - Math.max(...own.map(p => p.y)), dy));
-    own.forEach(p => { p.x += dx; p.y += dy; });
+    const result = snapTemplateItems({ moving: drag.boxes.filter(p => this.selected.has(p.key)), others: drag.boxes, centers: own, lead, width: drag.width, height: drag.height, dx, dy, on: this.snap, free: event.altKey });
+    this.guides = result.guides;
+    own.forEach(p => { p.x += result.dx; p.y += result.dy; });
     this.writeLayout(layout, true);
   };
   private stopListeners(): void {
     window.removeEventListener("pointermove", this.move); window.removeEventListener("pointerup", this.end); window.removeEventListener("pointercancel", this.cancel); window.removeEventListener("keydown", this.escape, true);
   }
-  private readonly end = (): void => { const drag = this.drag; this.stopListeners(); this.drag = undefined; if (drag && !drag.moved && !drag.modifier) this.pick([drag.lead]); this.data().ended(); this.host.update(); };
-  private readonly cancel = (): void => { const drag = this.drag; this.stopListeners(); this.drag = undefined; if (drag?.moved) this.writeLayout(drag.before, true); this.data().ended(); };
+  private readonly end = (): void => { const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = []; if (drag && !drag.moved && !drag.modifier) this.pick([drag.lead]); this.data().ended(); this.host.update(); };
+  private readonly cancel = (): void => { const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = []; if (drag?.moved) this.writeLayout(drag.before, true); this.data().ended(); this.host.update(); };
   private readonly escape = (event: KeyboardEvent): void => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.cancel(); } };
-  dispose(): void { this.stopListeners(); this.drag = undefined; }
+  dispose(): void { this.stopListeners(); this.drag = undefined; this.guides = []; }
 
   key(event: KeyboardEvent): void {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") { event.preventDefault(); this.pick(this.parts().map(p => p.key)); return; }
@@ -187,6 +211,21 @@ export class TemplateItemEditor {
       const p = parts.find(p => p.key === el.dataset["tk"]);
       el.setAttribute("aria-label", p?.kind === "icon" ? `Icon ${p.symbol}` : p?.text || "Template text");
     });
+    root.querySelector(".te-snap-guides")?.remove();
+    if (this.guides.length > 0) {
+      const tile = root.querySelector<HTMLElement>(".wp-tpl"), area = tile?.getBoundingClientRect(), frame = root.getBoundingClientRect();
+      const scale = Number(tile?.querySelector<HTMLElement>("[data-tpl-scale]")?.dataset["tplScale"]);
+      if (area && scale > 0) {
+        const overlay = document.createElement("span");
+        overlay.className = "te-snap-guides"; overlay.setAttribute("aria-hidden", "true");
+        overlay.style.cssText = `left:${area.left - frame.left + 4 * scale}px;top:${area.top - frame.top}px;width:${area.width - 8 * scale}px;height:${area.height}px`;
+        for (const guide of this.guides) {
+          const line = document.createElement("span"); line.className = `te-snap-${guide.axis}`;
+          line.style[guide.axis === "x" ? "left" : "top"] = `${guide.at * 100}%`; overlay.append(line);
+        }
+        root.append(overlay);
+      }
+    }
     // Reconcile literal label edits once HA has rendered the new text. Never
     // guess when a branch changes the set of parts or their kinds.
     const layout = this.layout();
@@ -201,7 +240,7 @@ export class TemplateItemEditor {
 
   toolbar(): TemplateResult {
     this.parts();
-    return html`<div class="te-item-tools"><label><input type="checkbox" .checked=${this.grid} @change=${(e: Event) => { this.grid = (e.target as HTMLInputElement).checked; this.host.update(); }}>Grid</label><label><input type="checkbox" .checked=${this.snap} @change=${(e: Event) => { this.snap = (e.target as HTMLInputElement).checked; }}>Snap</label><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.parts().length === 0} @click=${() => this.pick(this.parts().map(p => p.key))}>Select all</button><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.layout() === undefined} @click=${() => { this.writeLayout(undefined); this.note = undefined; this.data().ended(); }}>Reset layout</button></div><div class="te-hint">Ctrl-click to select multiple. Drag to place items.</div>`;
+    return html`<div class="te-item-tools"><label><input type="checkbox" .checked=${this.grid} @change=${(e: Event) => { this.grid = (e.target as HTMLInputElement).checked; this.host.update(); }}>Grid</label><label><input type="checkbox" .checked=${this.snap} title="Snap to nearby item edges, centers and text baselines, then the grid" @change=${(e: Event) => { this.snap = (e.target as HTMLInputElement).checked; }}>Snap</label><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.parts().length === 0} @click=${() => this.pick(this.parts().map(p => p.key))}>Select all</button><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.layout() === undefined} @click=${() => { this.writeLayout(undefined); this.note = undefined; this.data().ended(); }}>Reset layout</button></div><div class="te-hint">Ctrl-click to select multiple. Snap lines up nearby items; hold Option/Alt to move freely.</div>`;
   }
 
   private glyph(symbol: string, px = 18): TemplateResult { return html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${this.data().icons.render(symbol, px, "currentColor") ?? nothing}</svg>`; }
