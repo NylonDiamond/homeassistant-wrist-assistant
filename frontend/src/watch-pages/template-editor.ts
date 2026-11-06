@@ -465,8 +465,8 @@ export const templateEditorStyles = css`
   .te-tile.found [data-tk].te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-snap-guides { position: absolute; pointer-events: none; z-index: 5; }
   .te-snap-guides > span { position: absolute; background: #FF375F; pointer-events: none; }
-  .te-snap-x { top: 0; bottom: 0; width: 1px; }
-  .te-snap-y { left: 0; right: 0; height: 1px; }
+  .te-snap-x { width: 1px; }
+  .te-snap-y { height: 1px; }
   .te-tile.can-move { user-select: none; -webkit-user-select: none; }
   .te-tile.can-move [data-tp] { cursor: grab; touch-action: none; }
   .te-tile.moving, .te-tile.moving [data-tp] { cursor: grabbing; }

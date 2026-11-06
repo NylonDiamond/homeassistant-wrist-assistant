@@ -4,8 +4,7 @@ import { templateRows } from "./template-rows.js";
 import { type TemplateLayoutPart, type TemplateTileLayout, type TemplateLayoutItem, templateLayoutParts, templateLayoutShape, resolveTemplateLayout } from "./template-layout.js";
 import { type TemplateColorChoice, templateItemSource, templateItemColorChange, applyTemplateSourceChanges } from "./template-item-source.js";
 import { templateIconColor } from "./rich-text.js";
-import { snapTemplateItems, type TemplateSnapBox } from "./template-item-snap.js";
-import type { GuideLine } from "../interact.js";
+import { snapTemplateItems, type TemplateSnapBox, type TemplateAlignmentGuide } from "./template-item-snap.js";
 
 interface ItemHost {
   data(): TemplateEditorData;
@@ -35,7 +34,7 @@ export class TemplateItemEditor {
   private sizeStart: Map<string, number> | undefined;
   private scale = 100;
   private pointerClick = false;
-  private guides: GuideLine[] = [];
+  private guides: TemplateAlignmentGuide[] = [];
 
   constructor(private readonly host: ItemHost) {}
   private data(): TemplateEditorData { return this.host.data(); }
@@ -221,7 +220,10 @@ export class TemplateItemEditor {
         overlay.style.cssText = `left:${area.left - frame.left + 4 * scale}px;top:${area.top - frame.top}px;width:${area.width - 8 * scale}px;height:${area.height}px`;
         for (const guide of this.guides) {
           const line = document.createElement("span"); line.className = `te-snap-${guide.axis}`;
-          line.style[guide.axis === "x" ? "left" : "top"] = `${guide.at * 100}%`; overlay.append(line);
+          line.style[guide.axis === "x" ? "left" : "top"] = `${guide.at * 100}%`;
+          line.style[guide.axis === "x" ? "top" : "left"] = `${guide.from * 100}%`;
+          line.style[guide.axis === "x" ? "height" : "width"] = `${(guide.to - guide.from) * 100}%`;
+          overlay.append(line);
         }
         root.append(overlay);
       }
