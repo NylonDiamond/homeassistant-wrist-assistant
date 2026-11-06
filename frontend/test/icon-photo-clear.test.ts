@@ -13,7 +13,8 @@
 // value; on the graphite fill an off tile has and a hairline at 6%, never the
 // tile's colour, pattern or animation. Lit, a glow behind the photo and a
 // thin rim inside the edge, in a light's own colour, else the tile's, else
-// One Look amber; not lit or wrist down, the Off filter, no glow, no rim.
+// One Look amber; off retains the natural photo with no glow or rim.
+// Only the wrist-down display applies the dimming filter.
 //
 // Every tile: an off light's glyph at 70%, a ring round a person's photo.
 
@@ -26,7 +27,6 @@ import type { OneLookPhotoLight } from "../src/watch-pages/one-look/glow.js";
 import {
   type OneLookTileFaceInput,
   ONE_LOOK_CLEAR,
-  ONE_LOOK_CUTOUT_OFF_FILTER,
   oneLookClearColour,
   oneLookClearDimmed,
   oneLookCutoutActive,
@@ -138,20 +138,15 @@ describe("a tile photo's thing is on", () => {
     expect(oneLookCutoutActive({ role: { kind: "camera" }, isCalm: false, isUnavailable: false }, lit)).toBe(false);
   });
 
-  it("gray: wrist down, a light off, or graphite while its thing is not on", () => {
-    const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
-    // A light: bright only while on.
-    expect(oneLookCutoutDimmed(p("coloured", true), true, true)).toBe(false);
-    expect(oneLookCutoutDimmed(p("coloured", false), true, false)).toBe(true);
-    expect(oneLookCutoutDimmed(p("graphite", false), true, false)).toBe(true);
-    // Another kind: bright while it keeps its colour, and on graphite while on.
-    expect(oneLookCutoutDimmed(p("coloured", false), false, false)).toBe(false);
-    expect(oneLookCutoutDimmed(p("coloured", false), false, true)).toBe(false);
-    expect(oneLookCutoutDimmed(p("graphite", false), false, false)).toBe(true);
-    expect(oneLookCutoutDimmed(p("graphite", false), false, true)).toBe(false);
-    // Wrist down: always gray.
-    expect(oneLookCutoutDimmed(p("coloured", true, true), true, true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", false, true), false, true)).toBe(true);
+  it("photos retain their natural appearance until wrist down", () => {
+    for (const surface of ["coloured", "graphite"]) {
+      for (const isLit of [false, true]) {
+        for (const aod of [false, true]) {
+          const palette = { surface, isLit, aod } as unknown as OneLookPalette;
+          expect(oneLookCutoutDimmed(palette)).toBe(aod);
+        }
+      }
+    }
   });
 
   it("shows the On photo, bright, for every on state, with a colour or with none", () => {
@@ -170,9 +165,9 @@ describe("a tile photo's thing is on", () => {
     }
   });
 
-  it("an off thing with no colour is gray; one that keeps its colour stays bright", () => {
+  it("off photos keep their colour and detail on graphite and coloured tiles", () => {
     const off = html(renderOneLookTile(face(thing("switch.kettle"), entity("switch.kettle", "off"))));
-    expect(styleOf(off, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+    expect(styleOf(off, "ol-cutout")).not.toContain("filter");
     const coloured = html(renderOneLookTile(face(thing("switch.kettle", { color: "#30A0FF" }), entity("switch.kettle", "off"))));
     expect(styleOf(coloured, "ol-cutout")).not.toContain("filter");
   });
@@ -319,17 +314,16 @@ describe("the Clear look", () => {
     expect(oneLookClearColour({ hue: undefined } as unknown as OneLookPalette)).toEqual(ONE_LOOK_AMBER);
   });
 
-  it("not lit: the Off photo with the Off filter, no glow, no rim, whatever its colour", () => {
+  it("not lit: the natural Off photo, no glow or rim, whatever its colour", () => {
     for (const [id, state, color] of [["light.lamp", "off", "#30A0FF"], ["switch.kettle", "off", "#30A0FF"], ["cover.blind", "closed", undefined]] as const) {
       const out = html(renderOneLookTile(face(thing(id, { iconPhotoLook: "clear", ...(color === undefined ? {} : { color }) }), entity(id, state))));
       expect(src(out), id).toBe("blob:off");
-      expect(styleOf(out, "ol-cutout"), id).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+      expect(styleOf(out, "ol-cutout"), id).not.toContain("filter");
       expect(out, id).not.toContain("ol-clear-glow");
       expect(out, id).not.toContain("ol-clear-rim");
     }
-    expect(oneLookClearDimmed(true, false)).toBe(false);
-    expect(oneLookClearDimmed(false, false)).toBe(true);
-    expect(oneLookClearDimmed(true, true)).toBe(true);
+    expect(oneLookClearDimmed(false)).toBe(false);
+    expect(oneLookClearDimmed(true)).toBe(true);
   });
 
   it("an open cover counts as lit", () => {

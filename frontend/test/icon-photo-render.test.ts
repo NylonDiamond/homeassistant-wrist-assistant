@@ -3,7 +3,7 @@
 // disc's centre, the disc times the photo's aspect held to 1 to 1.35, with
 // the photo fitted in it (never taller than the disc) and its corners
 // rounded by 22% of the box, the halo behind it while lit, gray and dark
-// while not, the icon while the bytes are not in, and moved by the tile's
+// only with the wrist down, the icon while the bytes are not in, and moved by the tile's
 // Arrangement like the icon (app repo docs/photo_tiles_plan_2026-10.md,
 // "Drawing"). Read as the HTML lit would write, as one-look-render.test.ts
 // does. With no symbol provider, an icon draws as a dot that names its
@@ -84,22 +84,22 @@ describe("an icon photo on a One Look tile", () => {
     expect(styleOf(html, "ol-cutout")).not.toContain("filter");
   });
 
-  it("not lit: gray and dark, no halo", () => {
+  it("not lit: natural colour and detail, no halo", () => {
     const html = text(renderOneLookTile(face(lamp(), "off", have)));
-    expect(styleOf(html, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+    expect(styleOf(html, "ol-cutout")).not.toContain("filter");
     expect(ONE_LOOK_CUTOUT_OFF_FILTER).toBe("grayscale(.85) brightness(.62)");
     expect(html).not.toContain(`class="ol-halo"`);
   });
 
-  it("gray only when graphite, a light is off, or wrist down; a switch or fan that keeps its colour stays bright", () => {
-    const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
-    expect(oneLookCutoutDimmed(p("coloured", true), true)).toBe(false);
-    expect(oneLookCutoutDimmed(p("coloured", false), true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("graphite", false), true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", false), false)).toBe(false);
-    expect(oneLookCutoutDimmed(p("graphite", false), false)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", true, true), true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", false, true), false)).toBe(true);
+  it("photos retain their natural appearance until wrist down", () => {
+    for (const surface of ["coloured", "graphite"]) {
+      for (const isLit of [false, true]) {
+        for (const aod of [false, true]) {
+          const palette = { surface, isLit, aod } as unknown as OneLookPalette;
+          expect(oneLookCutoutDimmed(palette)).toBe(aod);
+        }
+      }
+    }
   });
 
   it("draws the icon while the bytes are not in, or with no photos to read", () => {
