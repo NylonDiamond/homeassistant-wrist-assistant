@@ -396,9 +396,9 @@ export function oneLookClearLit(model: Pick<OneLookPreviewModel, "kind" | "palet
   return active && !oneLookClearDimmed(model.palette.aod);
 }
 
-/** The Clear tile's ground, as CSS: the graphite fill an off tile has (135
- * deg from its light stop through its base at 55% to its shade) under its
- * 7% corner sheen, whatever the tile's colour or state. */
+/** The Clear tile's matte ground, as CSS: the graphite fill an off tile has
+ * (135 deg through its base at 55%), without a corner sheen, whatever the
+ * tile's colour or state. */
 export function oneLookClearGroundCss(size: { width: number; height: number }, s: number): string {
   const fill = oneLookFill(oneLookPalette({ role: { kind: "plain" } }), size, { x: 0, y: 0 });
   const blend = oneLookBlendCss(fill.stops);

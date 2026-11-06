@@ -156,16 +156,16 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     const p = palette({ role: LIT });
     expect(p.surface).toBe("coloured");
     expect(oneLookHex(p.base)).toBe("#D68006");
-    expect(oneLookHex(p.light)).toBe("#E6B065");
-    expect(oneLookHex(p.shade)).toBe("#B46C05");
+    expect(oneLookHex(p.light)).toBe("#D88510");
+    expect(oneLookHex(p.shade)).toBe("#C57606");
     expect(p.deepened).toBe(true);
     expect(p.isLit && p.pearlGlow).toBe(true);
     expect(p.disc).toEqual(white(0.95));
     expect(oneLookHex(p.glyph.rgb)).toBe("#B66D05");
     expect(oneLookHex(p.glow!)).toBe("#D68006");
-    expect(near(p.sheen, 0.26)).toBe(true);
+    expect(near(p.sheen, 0)).toBe(true);
     expect(near(p.sheenStop, 31)).toBe(true);
-    expect(near(p.rimOpacity, 0.45)).toBe(true);
+    expect(near(p.rimOpacity, 0.12)).toBe(true);
     expect(p.ink).toEqual(white(1));
     expect(p.ink2).toEqual(white(1));
     expect(p.textShadow).toBe(true);
@@ -189,23 +189,23 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
   it("dims a light under the Top style as the mock does", () => {
     const p6 = palette({ role: { kind: "light", on: true, brightness: 0.6 }, hue: "#8F7BEA" });
     expect(oneLookHex(p6.base)).toBe("#7D6DC9");
-    expect(oneLookHex(p6.light)).toBe("#9B8ED5");
-    expect(oneLookHex(p6.shade)).toBe("#7162B5");
+    expect(oneLookHex(p6.light)).toBe("#8071CA");
+    expect(oneLookHex(p6.shade)).toBe("#7666BD");
     expect(oneLookHex(p6.glyph.rgb)).toBe("#6A5DAB");
     expect(p6.deepened).toBe(false);
-    expect(near(p6.sheen, 0.156)).toBe(true);
+    expect(near(p6.sheen, 0)).toBe(true);
     expect(near(p6.sheenStop, 25.8)).toBe(true);
     expect(near(p6.glowOpacity, 0.432)).toBe(true);
     expect(p6.fillShare).toBeUndefined();
 
     const p3 = palette({ role: { kind: "light", on: true, brightness: 0.3 }, hue: "#8F7BEA" });
     expect(oneLookHex(p3.base)).toBe("#6F62AF");
-    expect(oneLookHex(p3.light)).toBe("#7F74B8");
-    expect(oneLookHex(p3.shade)).toBe("#64589E");
+    expect(oneLookHex(p3.light)).toBe("#7164B0");
+    expect(oneLookHex(p3.shade)).toBe("#685CA5");
 
     const amber = palette({ role: { kind: "light", on: true, brightness: 0.6 } });
     expect(oneLookHex(amber.base)).toBe("#C9862A");
-    expect(oneLookHex(amber.shade)).toBe("#A97123");
+    expect(oneLookHex(amber.shade)).toBe("#B97B27");
     expect(oneLookHex(amber.glyph.rgb)).toBe("#AB7224");
   });
 
@@ -221,7 +221,7 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     expect(palette({ role: OFF, hue: "#8F7BEA", brightnessFill: true }).fillShare).toBeUndefined();
     expect(palette({ role: PLAIN, hue: "#8F7BEA", brightnessFill: true }).fillShare).toBeUndefined();
     // The spec's computed full colours, and their track.
-    expect([full.light, full.base, full.shade].map(oneLookHex)).toEqual(["#BAADF2", "#8F7BEA", "#816FD3"]);
+    expect([full.light, full.base, full.shade].map(oneLookHex)).toEqual(["#9380EB", "#8F7BEA", "#8674DC"]);
   });
 
   it("fills another kind to its level, 0 included, and a level of 1 not at all", () => {
@@ -253,7 +253,7 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     const paused = palette({ role: { kind: "media", playing: false }, hue: "#DE9A55" });
     expect(paused.surface).toBe("coloured");
     expect(oneLookHex(paused.base)).toBe("#D97D1E");
-    expect(oneLookHex(paused.shade)).toBe("#B66919");
+    expect(oneLookHex(paused.shade)).toBe("#C8731C");
     expect(paused.disc).toEqual(white(0.3));
     expect(oneLookHex(paused.glyph.rgb)).toBe("#52300B");
     expect(paused.isLit || paused.glow !== undefined).toBe(false);
@@ -279,9 +279,9 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     expect(p.disc).toEqual(white(0.13));
     expect(p.glyph).toEqual(white(0.92));
     expect(p.ink2).toEqual(white(0.74));
-    expect(near(p.rimOpacity, 0.2)).toBe(true);
-    expect(near(p.sheen, 0.07)).toBe(true);
-    expect([p.light, p.base, p.shade].map(oneLookHex)).toEqual(["#2D2E33", "#202125", "#191A1D"]);
+    expect(near(p.rimOpacity, 0.1)).toBe(true);
+    expect(near(p.sheen, 0)).toBe(true);
+    expect([p.light, p.base, p.shade].map(oneLookHex)).toEqual(["#25262A", "#202125", "#1D1E21"]);
   });
 
   it("counts the theme's colour for every kind but lights only with option B", () => {
@@ -306,7 +306,7 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     expect(camera.ink2).toEqual(white(0.9));
     expect(camera.disc).toEqual({ rgb: [0x10, 0x10, 0x12], opacity: 0.5 });
     expect(camera.glyph).toEqual(white(1));
-    expect(near(camera.rimOpacity, 0.28)).toBe(true);
+    expect(near(camera.rimOpacity, 0.14)).toBe(true);
 
     // Quiet, the app's now: flat and dim, no hatch, no sheen.
     const quiet = palette({ role: PLAIN, hue: "#F5A524", unavailable: true, calm: true });
@@ -314,24 +314,24 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     expect(quiet.sheen).toBe(0);
     expect(quiet.light).toEqual(ONE_LOOK_OFFLINE_GROUND);
     expect(quiet.shade).toEqual(ONE_LOOK_OFFLINE_GROUND);
-    expect(near(quiet.rimOpacity, 0.1)).toBe(true);
+    expect(near(quiet.rimOpacity, 0.05)).toBe(true);
     expect(quiet.ink2).toEqual(white(0.74));
   });
 
-  it("brightens the corner and rim when pressed", () => {
+  it("brightens only the rim when pressed", () => {
     const p = palette({ role: PLAIN, hue: "#FFA500", pressed: true });
     expect(oneLookHex(p.base)).toBe("#CE8500");
-    expect(near(p.sheen, 0.416)).toBe(true);
+    expect(near(p.sheen, 0)).toBe(true);
     expect(near(p.sheenStop, 36)).toBe(true);
-    expect(near(p.rimOpacity, 0.72)).toBe(true);
-    // A full lamp pressed caps at 50%.
-    expect(near(palette({ role: LIT, hue: "#8F7BEA", pressed: true }).sheen, 0.416)).toBe(true);
+    expect(near(p.rimOpacity, 0.192)).toBe(true);
+    // Press feedback keeps the matte face free of corner glare.
+    expect(near(palette({ role: LIT, hue: "#8F7BEA", pressed: true }).sheen, 0)).toBe(true);
   });
 
   it("veils evenly wrist down", () => {
     const p = palette({ role: LIT, hue: "#8F7BEA", aod: true });
     expect(p.sheen).toBe(0);
-    expect(near(p.rimOpacity, 0.12)).toBe(true);
+    expect(near(p.rimOpacity, 0.06)).toBe(true);
     expect(near(p.veil, 0.52)).toBe(true);
     expect(p.disc).toEqual(white(0.62));
     expect(p.pearlGlow || p.glow !== undefined).toBe(false);
@@ -342,7 +342,7 @@ describe("the palette's order (OneLookPalette.resolve)", () => {
     expect(fill.sheen).toEqual({ kind: "none" });
 
     const graphite = palette({ role: PLAIN, aod: true });
-    expect(graphite.sheen === 0 && near(graphite.rimOpacity, 0.12) && near(graphite.veil, 0.52)).toBe(true);
+    expect(graphite.sheen === 0 && near(graphite.rimOpacity, 0.06) && near(graphite.veil, 0.52)).toBe(true);
     expect(graphite.ink2).toEqual(white(0.62));
   });
 
@@ -398,20 +398,12 @@ describe("the fill (OneLookFill)", () => {
   it("moves the hue stop with the text", () => {
     const stacked = oneLookFill(lavender60(), { width: 179, height: 115.3 }, { x: 12.67, y: 70 });
     expect(near(stacked.baseStop, 0.2709038396194359)).toBe(true);
-    expect(stacked.stops.map((s) => oneLookHex(s.color))).toEqual(["#9B8ED5", "#7D6DC9", "#7162B5"]);
-    expect(stacked.sheen.kind).toBe("ellipse");
-    if (stacked.sheen.kind === "ellipse") {
-      expect(near(stacked.sheen.opacity, 0.156)).toBe(true);
-      expect(near(stacked.sheen.end, 0.258)).toBe(true);
-    }
+    expect(stacked.stops.map((s) => oneLookHex(s.color))).toEqual(["#8071CA", "#7D6DC9", "#7666BD"]);
+    expect(stacked.sheen).toEqual({ kind: "none" });
 
     const strip = oneLookFill(lavender60(), { width: 179, height: 51.7 }, { x: 49.3, y: 10 }, true, 42.7);
     expect(near(strip.baseStop, 0.24704377980060682)).toBe(true);
-    expect(strip.sheen.kind).toBe("circle");
-    if (strip.sheen.kind === "circle") {
-      expect(near(strip.sheen.opacity, 0.156)).toBe(true);
-      expect(near(strip.sheen.radius, 38.43)).toBe(true);
-    }
+    expect(strip.sheen).toEqual({ kind: "none" });
 
     // Text right in the corner floors the stop at 6%; text far along caps it at 30%.
     expect(near(oneLookFill(lavender60(), { width: 400, height: 115.3 }, { x: 12, y: 5 }).baseStop, 0.06)).toBe(true);
@@ -422,7 +414,7 @@ describe("the fill (OneLookFill)", () => {
     // A text start giving a 21% share sets the stop at .2, as the mock's check used.
     const fill = oneLookFill(lavender60(), { width: 179, height: 115.3 }, { x: 30.9015, y: 30.9015 });
     expect(near(fill.baseStop, 0.2, 0.00001)).toBe(true);
-    expect(oneLookHex(oneLookFillColourAt(fill, { x: 20, y: 60 }))).toBe("#7C6CC7");
+    expect(oneLookHex(oneLookFillColourAt(fill, { x: 20, y: 60 }))).toBe("#7C6CC8");
   });
 
   it("keeps white at three to one from the hue stop on", () => {
@@ -444,9 +436,9 @@ describe("the fill (OneLookFill)", () => {
 
   it("draws graphite and camera fills", () => {
     const fill = oneLookFill(palette({ role: PLAIN }), { width: 100, height: 60 }, { x: 0, y: 0 }, true, 30);
-    expect(fill.stops.map((s) => oneLookHex(s.color))).toEqual(["#2D2E33", "#202125", "#191A1D"]);
+    expect(fill.stops.map((s) => oneLookHex(s.color))).toEqual(["#25262A", "#202125", "#1D1E21"]);
     expect(fill.baseStop).toBe(0.55);
-    expect(fill.sheen).toEqual({ kind: "ellipse", opacity: 0.07, end: 0.55 });
+    expect(fill.sheen).toEqual({ kind: "none" });
 
     const camera = oneLookFill(palette({ role: { kind: "camera" } }), { width: 100, height: 60 }, { x: 0, y: 0 });
     expect(camera.stops.every((s) => oneLookHex(s.color) === "#222222")).toBe(true);
@@ -459,9 +451,9 @@ describe("the fill (OneLookFill)", () => {
 
   it("darkens the Fill style's track toward graphite (the spec's computed hex)", () => {
     const full = oneLookFill(palette({ role: LIT, hue: "#8F7BEA" }), { width: 100, height: 60 }, { x: 60, y: 60 });
-    expect(oneLookFillTrackStops(full).map((s) => oneLookHex(s.color))).toEqual(["#615C7B", "#4F4778", "#49426E"]);
+    expect(oneLookFillTrackStops(full).map((s) => oneLookHex(s.color))).toEqual(["#504978", "#4F4778", "#4B4472"]);
     const amber = oneLookFill(palette({ role: LIT }), { width: 100, height: 60 }, { x: 60, y: 60 });
-    expect(oneLookFillTrackStops(amber).map((s) => oneLookHex(s.color))).toEqual(["#735D40", "#6C4918", "#5E4118"]);
+    expect(oneLookFillTrackStops(amber).map((s) => oneLookHex(s.color))).toEqual(["#6D4B1C", "#6C4918", "#654518"]);
   });
 });
 
@@ -494,8 +486,8 @@ describe("what the views paint", () => {
 
   it("writes the fill as CSS", () => {
     const fill = oneLookFill(palette({ role: PLAIN }), { width: 100, height: 60 }, { x: 0, y: 0 });
-    expect(oneLookBlendCss(fill.stops)).toBe("linear-gradient(135deg, #2D2E33 0%, #202125 55%, #191A1D 100%)");
-    expect(oneLookSheenCss(fill.sheen)).toBe("radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 55%)");
+    expect(oneLookBlendCss(fill.stops)).toBe("linear-gradient(135deg, #25262A 0%, #202125 55%, #1D1E21 100%)");
+    expect(oneLookSheenCss(fill.sheen)).toBeUndefined();
     expect(oneLookSheenCss({ kind: "circle", opacity: 0.2, radius: 30 }, 2)).toBe("radial-gradient(circle 60px at 0 0, rgba(255, 255, 255, 0.2) 0, rgba(255, 255, 255, 0) 100%)");
     expect(oneLookInkCss(white(0.3))).toBe("rgba(255, 255, 255, 0.3)");
     expect(oneLookInkCss(rgb("#8F7BEA"))).toBe("#8F7BEA");

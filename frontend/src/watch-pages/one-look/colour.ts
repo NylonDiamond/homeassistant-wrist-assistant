@@ -55,13 +55,13 @@ export const ONE_LOOK_LIVE_DOT: OneLookRGB = [0xff, 0x45, 0x3a];
 export const ONE_LOOK_LIVE_CHIP_OPACITY = 0.45;
 export const ONE_LOOK_CAMERA_CHIP_OPACITY = 0.3;
 
-/** The graphite fill: 135 deg from the light stop through the base at 55%
- * to the shade, with a 7% corner sheen gone by 55%. */
-export const ONE_LOOK_GRAPHITE_LIGHT: OneLookRGB = [0x2d, 0x2e, 0x33];
+/** The matte graphite fill: a quiet tonal change through the base at 55%,
+ * without a broad corner reflection. */
+export const ONE_LOOK_GRAPHITE_LIGHT: OneLookRGB = [0x25, 0x26, 0x2a];
 export const ONE_LOOK_GRAPHITE_BASE: OneLookRGB = [0x20, 0x21, 0x25];
-export const ONE_LOOK_GRAPHITE_SHADE: OneLookRGB = [0x19, 0x1a, 0x1d];
+export const ONE_LOOK_GRAPHITE_SHADE: OneLookRGB = [0x1d, 0x1e, 0x21];
 export const ONE_LOOK_GRAPHITE_STOP = 0.55;
-export const ONE_LOOK_GRAPHITE_SHEEN = 0.07;
+export const ONE_LOOK_GRAPHITE_SHEEN = 0;
 /** A camera tile's ground under its picture. */
 export const ONE_LOOK_CAMERA_GROUND: OneLookRGB = [0x22, 0x22, 0x22];
 /** A quiet offline tile's flat ground, under its content at half. */
@@ -559,8 +559,8 @@ function makePalette(key: PaletteKey): OneLookPalette {
   const base = bases[0]!;
   const last = bases[bases.length - 1]!;
   const lastDeepened = !same(last, raws[raws.length - 1]!);
-  const light = oneLookMix(base, W, 0.38 * tone);
-  const shade = oneLookMix(last, K, lastDeepened ? 0.16 : 0.1);
+  const light = oneLookMix(base, W, 0.04 * tone);
+  const shade = oneLookMix(last, K, lastDeepened ? 0.08 : 0.06);
   const press = key.pressed ? 1.6 : 1;
   const aod = key.aod;
   const glyph = lit ? oneLookPearlGlyph(base) : oneLookMix(base, K, 0.62);
@@ -575,9 +575,9 @@ function makePalette(key: PaletteKey): OneLookPalette {
     brightness,
     fillShare,
     deepened: !same(base, raws[0]!),
-    sheen: aod ? 0 : Math.min(0.5, 0.26 * tone * press),
+    sheen: 0,
     sheenStop: 18 + 13 * tone + (key.pressed ? 5 : 0),
-    rimOpacity: aod ? 0.12 : Math.min(0.9, 0.45 * press),
+    rimOpacity: aod ? 0.06 : 0.12 * press,
     ink: white(aod ? 0.86 : 1),
     ink2: white(aod ? 0.62 : 1),
     disc,
@@ -619,7 +619,7 @@ function graphite(
     deepened: false,
     sheen: camera || quiet || aod ? 0 : ONE_LOOK_GRAPHITE_SHEEN,
     sheenStop: ONE_LOOK_GRAPHITE_STOP * 100,
-    rimOpacity: aod ? 0.12 : o.rim,
+    rimOpacity: aod ? 0.06 : o.rim * 0.5,
     ink: white(aod ? 0.86 : 1),
     ink2: aod ? white(0.62) : o.ink2,
     disc: o.disc,

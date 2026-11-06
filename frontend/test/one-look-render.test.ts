@@ -238,7 +238,7 @@ describe("a light in One Look", () => {
 
   it("is graphite with its bulb in amber while off, with no bar", () => {
     const html = onPhone(tile("light.kitchen", { customLabel: "Kitchen" }), entity("light.kitchen", "off"));
-    expect(html).toContain("linear-gradient(135deg, #2D2E33 0%, #202125 55%, #191A1D 100%)");
+    expect(html).toContain("linear-gradient(135deg, #25262A 0%, #202125 55%, #1D1E21 100%)");
     expect(html).toMatch(/data-n=lightbulb fill=#F5C27A/);
     expect(html).not.toContain("ol-bar-fill");
     expect(html).toMatch(/class="ol-line ol-word"[^>]*>Off<\/span>/);

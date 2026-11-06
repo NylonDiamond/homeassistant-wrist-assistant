@@ -194,12 +194,12 @@ describe("the Clear look", () => {
     expect(waiting).toContain("data-symbol=");
   });
 
-  it("draws the graphite fill an off tile has, its sheen and a one pixel hairline at 6%, never the tile's colour, rim light or under-glow", () => {
+  it("draws the matte graphite fill and a one pixel hairline at 6%, never the tile's colour, rim light or under-glow", () => {
     for (const color of [undefined, "#30A0FF"]) {
       const out = html(renderOneLookTile(face(lamp(color === undefined ? {} : { color }), lampOn, PHOTOS, "phone")));
       const style = tileStyle(out);
-      expect(style, color).toContain("linear-gradient(135deg, #2D2E33 0%, #202125 55%, #191A1D 100%)");
-      expect(style, color).toContain("radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 55%)");
+      expect(style, color).toContain("linear-gradient(135deg, #25262A 0%, #202125 55%, #1D1E21 100%)");
+      expect(style, color).not.toContain("radial-gradient(120% 100% at 0% 0%");
       expect(style, color).toContain("box-shadow:inset 0 0 0 1px rgba(255, 255, 255, 0.06)");
       expect(style, color).not.toContain("0 12px 30px");
       expect(style, color).toContain("border-radius:");
