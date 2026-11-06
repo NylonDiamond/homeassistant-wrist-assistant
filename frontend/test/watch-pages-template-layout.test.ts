@@ -94,10 +94,16 @@ describe("align selected template items", () => {
   it.each(["vertical", "horizontal"] as const)("aligns %s without changing spacing on the other axis or unselected items", direction => {
     const before = layout(), original = structuredClone(before);
     const a = before.items[0]!, b = before.items[1]!;
-    const result = alignTemplateItems(before, new Set([a.key, b.key]), direction);
+    const result = alignTemplateItems(before, new Set([a.key, b.key]), direction, [{ key: a.key, x: .12 }, { key: b.key, x: .19 }]);
     const axis = direction === "vertical" ? "x" : "y", other = axis === "x" ? "y" : "x";
-    expect(result.items[0]![axis]).toBeCloseTo(direction === "vertical" ? .23 : .45, 12);
-    expect(result.items[1]![axis]).toBe(result.items[0]![axis]);
+    if (direction === "vertical") {
+      // Different widths keep different centers while their left edges match.
+      expect(result.items[0]!.x - .05).toBeCloseTo(.12, 12);
+      expect(result.items[1]!.x - .1).toBeCloseTo(.12, 12);
+    } else {
+      expect(result.items[0]![axis]).toBeCloseTo(.45, 12);
+      expect(result.items[1]![axis]).toBe(result.items[0]![axis]);
+    }
     expect(result.items.slice(2)).toEqual(before.items.slice(2));
     result.items.slice(0, 2).forEach((p, i) => {
       expect(p[other]).toBe(before.items[i]![other]);
@@ -106,6 +112,11 @@ describe("align selected template items", () => {
     });
     expect(before).toEqual(original);
     expect(resolveTemplateLayout(result, fixture.cases[0]!.text)).toBeDefined();
+  });
+  it("waits for every selected item to have measured bounds", () => {
+    const before = layout(), keys = new Set(before.items.slice(0, 2).map(p => p.key));
+    expect(alignTemplateItems(before, keys, "vertical")).toBe(before);
+    expect(alignTemplateItems(before, keys, "vertical", [{ key: before.items[0]!.key, x: .1 }])).toBe(before);
   });
   it("does nothing for fewer than two matching items", () => {
     const before = layout();
