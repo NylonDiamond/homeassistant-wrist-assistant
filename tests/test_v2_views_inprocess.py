@@ -826,7 +826,6 @@ def _service_env(handler: Any, window: float = 0.05) -> tuple[Any, Any, list, li
             "NOT_PERMITTED_MESSAGE",
             "NOT_PERMITTED_STATUS",
             "SERVICE_REFUSAL_WINDOW_SECONDS",
-            "_SERVICE_ERRORS_ANSWERED",
         },
         {
             "asyncio": asyncio,
@@ -977,16 +976,57 @@ def test_a_slow_call_refused_after_the_window_is_logged_as_home_assistant_does(c
     ]
 
 
-def test_a_quick_failure_of_the_handler_is_still_ok_but_logged(caplog) -> None:
+def test_a_quick_unexpected_failure_is_a_signed_error_and_logged(caplog) -> None:
     async def broken() -> None:
         raise RuntimeError("bad device")
 
     namespace, hass, _calls, _signed = _service_env(broken)
     with caplog.at_level(logging.DEBUG, logger="test_service_refusal"):
         reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
-    assert reply.status == 200 and reply.body == {"ok": True}
+    assert reply.status == 502
+    assert reply.body == {"ok": False, "error": "bad device"}
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert len(errors) == 1
+
+
+def test_a_quick_failure_without_a_message_names_its_type() -> None:
+    async def broken() -> None:
+        raise TimeoutError
+
+    namespace, hass, _calls, _signed = _service_env(broken)
+    reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
+    assert reply.status == 502
+    assert reply.body == {"ok": False, "error": "TimeoutError"}
+
+
+def test_a_quick_device_failure_is_a_signed_error() -> None:
+    async def broken() -> None:
+        raise _HomeAssistantError("device unavailable")
+
+    namespace, hass, _calls, _signed = _service_env(broken)
+
+    class RecordingCtx(_ServiceCtx):
+        signed_reply = False
+
+        def signed_json(self, payload, status=200):
+            self.signed_reply = True
+            return super().signed_json(payload, status)
+
+    ctx = RecordingCtx(hass, dict(_TAP))
+    reply = asyncio.run(namespace["_op_service"](ctx))
+    assert reply.status == 502
+    assert reply.body == {"ok": False, "error": "device unavailable"}
+    assert ctx.signed_reply
+
+
+def test_a_cancelled_service_is_not_answered_as_success() -> None:
+    async def cancelled() -> None:
+        raise asyncio.CancelledError
+
+    namespace, hass, _calls, _signed = _service_env(cancelled)
+    reply = asyncio.run(namespace["_op_service"](_ServiceCtx(hass, dict(_TAP))))
+    assert reply.status == 502
+    assert reply.body["ok"] is False
 
 
 @pytest.mark.parametrize(

@@ -75,7 +75,6 @@ from homeassistant.core import Context, HomeAssistant, ServiceResponse
 from homeassistant.exceptions import (
     HomeAssistantError,
     ServiceNotFound,
-    ServiceValidationError,
     Unauthorized,
 )
 from homeassistant.helpers import device_registry as dr
@@ -1202,18 +1201,6 @@ NOT_PERMITTED_STATUS = 409
 # on, as a non-blocking call always has.
 SERVICE_REFUSAL_WINDOW_SECONDS = 0.3
 
-# What a call that ended inside the window raises to `_op_service` rather
-# than answer `ok`. The first three are Home Assistant's own checks before
-# the handler runs (no such service, a wrong response request, data the
-# schema rejects), which a non-blocking call always raised at once; the last
-# is the user's rights.
-_SERVICE_ERRORS_ANSWERED = (
-    ServiceNotFound,
-    ServiceValidationError,
-    vol.Invalid,
-    Unauthorized,
-)
-
 
 def _log_service_failure(domain: str, service: str, err: BaseException) -> None:
     """Log a service call that failed after its device was answered, the way
@@ -1252,9 +1239,9 @@ async def _async_call_service_briefly(
     background task, so a refusal of the user (`Unauthorized`) is only
     logged and the device is told it worked. This runs the blocking call in
     a task and waits for it at most `SERVICE_REFUSAL_WINDOW_SECONDS`. An
-    error in `_SERVICE_ERRORS_ANSWERED` raised inside the window is raised
-    here for `_op_service` to answer; any other is logged and the call
-    counts as sent, as before. A call still running is left to run on, kept
+    error raised inside the window is raised here for `_op_service` to
+    answer. A known device failure must not receive a success reply. A call
+    still running is left to run on, kept
     by Home Assistant's task set like its own non-blocking calls, with a
     done callback that logs whatever it ends with.
     """
@@ -1275,13 +1262,10 @@ async def _async_call_service_briefly(
         task.add_done_callback(on_done)
         return
     if task.cancelled():
-        return
+        raise HomeAssistantError("Service call was cancelled before acceptance")
     err = task.exception()
-    if err is None:
-        return
-    if isinstance(err, _SERVICE_ERRORS_ANSWERED):
+    if err is not None:
         raise err
-    _log_service_failure(domain, service, err)
 
 
 def _not_permitted_response(ctx: _OpContext, domain: str, service: str) -> Response:
@@ -1387,6 +1371,14 @@ async def _op_service(ctx: _OpContext) -> Response:
             "Service %s.%s failed: %s", domain, service, err
         )
         return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
+    except Exception as err:  # noqa: BLE001 (a device's own exception type)
+        # A handler that failed inside the refusal window with an error of its
+        # own type (a library's timeout, a ValueError). The device is told it
+        # failed, signed and with the message, rather than an unsigned 500.
+        _log_service_failure(domain, service, err)
+        return ctx.signed_json(
+            {"ok": False, "error": str(err) or type(err).__name__}, status=502
+        )
 
 
 def _op_failed(ctx: _OpContext, err: OpError) -> Response:
