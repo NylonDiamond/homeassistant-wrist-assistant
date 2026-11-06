@@ -328,9 +328,9 @@ export function oneLookCutoutPlace(layout: Pick<OneLookLayout, "drawsDisc" | "di
   return { box, photo: fittedPhoto(box, aspect), radius: side * ONE_LOOK_CUTOUT_CORNER };
 }
 
-/** The CSS filter of an icon photo that is not lit (and of every one wrist
- * down): grayscale 85%, brightness 62%, as the apps' `.saturation(0.15)`
- * and `.brightness(-0.3)`. */
+/** The wrist-down filter: grayscale 85%, brightness 62%, as the apps'
+ * `.saturation(0.15)` and `.brightness(-0.3)`. Off photos retain their
+ * natural colour and detail while the display is awake. */
 export const ONE_LOOK_CUTOUT_OFF_FILTER = "grayscale(.85) brightness(.62)";
 
 /**
@@ -384,17 +384,16 @@ export const ONE_LOOK_CLEAR = Object.freeze({
   rimWidth: 1,
 });
 
-/** Whether a Clear look photo draws gray and dark: its thing is off, or
- * the wrist is down. The graphite fill has no colour to keep it bright. */
-export function oneLookClearDimmed(active: boolean, aod: boolean): boolean {
-  return !active || aod;
+/** Only the wrist-down display dims a Clear look photo. */
+export function oneLookClearDimmed(aod: boolean): boolean {
+  return aod;
 }
 
 /** Whether a Clear tile is lit: its thing is on (`oneLookCutoutActive`) and
  * the wrist is not down. Then its glow and its rim draw. */
 export function oneLookClearLit(model: Pick<OneLookPreviewModel, "kind" | "palette">): boolean {
   const active = oneLookCutoutActive(model.kind, model.palette);
-  return active && !oneLookClearDimmed(active, model.palette.aod);
+  return active && !oneLookClearDimmed(model.palette.aod);
 }
 
 /** The Clear tile's ground, as CSS: the graphite fill an off tile has (135
@@ -810,6 +809,7 @@ export function oneLookPreviewModel(given: OneLookTileFaceInput): OneLookPreview
   // A short tile whose layout hides its text is only an icon: the layout gets
   // no text, and draws it centred.
   const onlyIcon = rowSpan < ONE_LOOK_STRIP_ROWS && arrangeHidesText(normalizeTileArrange(tile.arrange));
+  const lightPhoto = cutout !== undefined && ks.role.kind === "light";
   const init: OneLookLayoutInputInit = {
     device,
     size: { width: f.width, height: f.height },
@@ -827,9 +827,10 @@ export function oneLookPreviewModel(given: OneLookTileFaceInput): OneLookPreview
     // A cut-out photo is laid out by its own aspect, not the icon's (a wide
     // photo must not rise beside the state as a narrow bulb may).
     glyphAspect: !centred ? 1 : cutout !== undefined ? oneLookCutoutAspect(cutout.aspect) : glyphAspectOf(measurer, base),
-    glyphExtent: centred ? glyphExtentOf(measurer, base) : 1.25,
+    glyphExtent: centred ? glyphExtentOf(measurer, lightPhoto ? "lightbulb" : base) : 1.25,
     glyphIsPhoto: centred && photo !== undefined,
     keepsGlyph: photo !== undefined || cutout !== undefined,
+    ...(lightPhoto ? { stablePhotoState: { kind: "number", figure: "100", unit: "%" } as StateLine } : {}),
     style,
   };
   let layout = resolveOneLookLayout(init, measurer);
@@ -1094,24 +1095,20 @@ export function oneLookCutoutActive(kind: Pick<OneLookKindState, "role" | "isCal
 }
 
 /**
- * Whether the icon photo draws gray and dark: the wrist is down, a light is
- * off, or the tile is graphite (off with Dim, idle, unavailable, no colour)
- * while its thing is not on (`active`, `oneLookCutoutActive`). A switch, fan
- * or any other kind that keeps its colour keeps its photo bright; one with
- * no colour is bright while it is on. The apps' `OneLookCutout.isDimmed`
- * reads the same. `active` left out is the palette's `isLit`, which is the
- * rule for a light and for media.
+ * Only the wrist-down display dims the photo. While awake, off photos keep
+ * their natural colour and detail; the surface and state communicate Off.
+ * The apps' `OneLookCutout.isDimmed` reads the same.
  */
-export function oneLookCutoutDimmed(palette: OneLookPalette, light: boolean, active: boolean = palette.isLit): boolean {
-  return palette.aod || (!active && (light || palette.surface !== "coloured"));
+export function oneLookCutoutDimmed(palette: OneLookPalette): boolean {
+  return palette.aod;
 }
 
 /** Whether an icon photo is drawn bright and lit, which is when its On
  * photo takes its place, or else its light (Light Look) is drawn: its thing
  * is on (`active`, the palette's `isLit` when left out) and the photo is not
  * dimmed. */
-export function oneLookCutoutGlows(palette: OneLookPalette, light: boolean, active: boolean = palette.isLit): boolean {
-  return active && !oneLookCutoutDimmed(palette, light, active);
+export function oneLookCutoutGlows(palette: OneLookPalette, active: boolean = palette.isLit): boolean {
+  return active && !oneLookCutoutDimmed(palette);
 }
 
 /** An alpha as CSS writes it, to four places. */
@@ -1176,20 +1173,19 @@ export function oneLookTintedOn(cutout: Pick<OneLookCutout, "url" | "on" | "onMa
  *
  * In the Clear look the photo takes the same place, but its back is the
  * Clear glow (`oneLookClearGlowCss`, on the photo box's centre) while lit,
- * never the halo or the pearl glow, and it is gray and dark whenever its
- * thing is off or the wrist is down (`oneLookClearDimmed`).
+ * never the halo or the pearl glow. It keeps its natural appearance while
+ * off, and dims only with the wrist down (`oneLookClearDimmed`).
  */
 function cutoutLayer(model: OneLookPreviewModel, layout: OneLookLayout, cutout: OneLookCutout, s: number): TemplateResult {
   const { palette, device } = model;
   const rect = layout.discRect;
   const lit = palette.isLit && !palette.aod;
   const { box, photo, radius } = oneLookCutoutPlace(layout, cutout.aspect);
-  const light = model.kind.role.kind === "light";
   const active = oneLookCutoutActive(model.kind, palette);
   const clear = oneLookDrawsClear(model);
-  const dimmed = clear ? oneLookClearDimmed(active, palette.aod) : oneLookCutoutDimmed(palette, light, active);
+  const dimmed = clear ? oneLookClearDimmed(palette.aod) : oneLookCutoutDimmed(palette);
   const filter = dimmed ? `;filter:${ONE_LOOK_CUTOUT_OFF_FILTER}` : "";
-  const glows = clear ? !dimmed : oneLookCutoutGlows(palette, light, active);
+  const glows = oneLookCutoutGlows(palette, active);
   const src = glows && cutout.on !== undefined ? cutout.on : cutout.url;
   const look = cutout.light;
   const cls = clear ? " clear" : "";

@@ -3,7 +3,7 @@
 // disc's centre, the disc times the photo's aspect held to 1 to 1.35, with
 // the photo fitted in it (never taller than the disc) and its corners
 // rounded by 22% of the box, the halo behind it while lit, gray and dark
-// while not, the icon while the bytes are not in, and moved by the tile's
+// only with the wrist down, the icon while the bytes are not in, and moved by the tile's
 // Arrangement like the icon (app repo docs/photo_tiles_plan_2026-10.md,
 // "Drawing"). Read as the HTML lit would write, as one-look-render.test.ts
 // does. With no symbol provider, an icon draws as a dot that names its
@@ -84,22 +84,22 @@ describe("an icon photo on a One Look tile", () => {
     expect(styleOf(html, "ol-cutout")).not.toContain("filter");
   });
 
-  it("not lit: gray and dark, no halo", () => {
+  it("not lit: natural colour and detail, no halo", () => {
     const html = text(renderOneLookTile(face(lamp(), "off", have)));
-    expect(styleOf(html, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+    expect(styleOf(html, "ol-cutout")).not.toContain("filter");
     expect(ONE_LOOK_CUTOUT_OFF_FILTER).toBe("grayscale(.85) brightness(.62)");
     expect(html).not.toContain(`class="ol-halo"`);
   });
 
-  it("gray only when graphite, a light is off, or wrist down; a switch or fan that keeps its colour stays bright", () => {
-    const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
-    expect(oneLookCutoutDimmed(p("coloured", true), true)).toBe(false);
-    expect(oneLookCutoutDimmed(p("coloured", false), true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("graphite", false), true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", false), false)).toBe(false);
-    expect(oneLookCutoutDimmed(p("graphite", false), false)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", true, true), true)).toBe(true);
-    expect(oneLookCutoutDimmed(p("coloured", false, true), false)).toBe(true);
+  it("photos retain their natural appearance until wrist down", () => {
+    for (const surface of ["coloured", "graphite"]) {
+      for (const isLit of [false, true]) {
+        for (const aod of [false, true]) {
+          const palette = { surface, isLit, aod } as unknown as OneLookPalette;
+          expect(oneLookCutoutDimmed(palette)).toBe(aod);
+        }
+      }
+    }
   });
 
   it("draws the icon while the bytes are not in, or with no photos to read", () => {
@@ -181,14 +181,9 @@ describe("an icon photo on a One Look tile", () => {
   });
 
   it("draws a 2-across light tile's lamp clear of the bar, the state and the name", () => {
-    // Jesse's "Jesse Office Lights": a watch 6x4 light tile, on, with a
-    // 384 by 310 lamp. Measured on the watch in the system font, the app (`takeOldSizes`, `oldPlaceGlyph`,
-    // `OneLookCutout.boxSide` with no disc): icon size min(36, 68 x 0.54)
-    // = 36, the bulb's extent 1.316 (its image over its point size), so the
-    // glyph box is 36 x 1.316 / 0.86 = 55.1, clear of the bar, the state
-    // and the name; the photo box its ink square, 55.1 x 0.86 = 47.4, and
-    // the lamp fitted in it, 47.4 by 38.3: 57% of the tile's 67 points,
-    // beside "100%", between the bar (to 7) and the name (from 50.4).
+    // A real 6x4 light tile with a 384 by 310 lamp and a symbol provider.
+    // Photos use their own fixed extent while keeping clear of the bar,
+    // value and name, whether they fit beside or below the value.
     const bulb = { lightbulb: [13.65, 23.68], "lightbulb.fill": [13.65, 23.68] } as Record<string, [number, number]>;
     const icons = {
       render: (name: string, size: number) => bulb[name] === undefined ? undefined
@@ -209,7 +204,8 @@ describe("an icon photo on a One Look tile", () => {
     // stays whole (2026-11-05, `ONE_LOOK_UNDER_GAIN`).
     const w = l.discRect.width;
     expect(w).toBeGreaterThan(26.38 + 0.5);
-    expect(w).toBeCloseTo(40.59, 1);
+    // The photo has its own fixed extent and a stable value slot, so an
+    // entity's bulb symbol cannot change the cut-out's size.
     const at = place(styleOf(text(renderOneLookTile(f)), "ol-cutout"));
     expect(at.w).toBeCloseTo(w * 0.86, 1);
     expect(at.h).toBeCloseTo(at.w * 310 / 384, 1);
@@ -221,8 +217,10 @@ describe("an icon photo on a One Look tile", () => {
     // trim, clear of their letters.
     expect(l.glyphInk!.y + l.glyphInk!.height).toBeLessThanOrEqual(l.textOrigin.y);
     expect(at.y + at.h).toBeLessThanOrEqual(l.textOrigin.y + w * ONE_LOOK_OLD_PLACE_INK_TRIM);
-    expect(l.glyphInk!.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height);
-    expect(at.y).toBeGreaterThanOrEqual(l.stateRect!.y + l.stateRect!.height - w * ONE_LOOK_OLD_PLACE_INK_TRIM);
+    const ink = l.glyphInk!, state = l.stateRect!;
+    const gap = Math.max(ink.x - state.x - state.width, state.x - ink.x - ink.width,
+      ink.y - state.y - state.height, state.y - ink.y - ink.height);
+    expect(gap).toBeGreaterThanOrEqual(1 - 1e-9);
   });
 
   it("moves with the tile's Arrangement, as the icon does", () => {

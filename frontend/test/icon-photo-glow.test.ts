@@ -39,7 +39,6 @@ import {
 } from "../src/watch-pages/one-look/glow.js";
 import {
   type OneLookTileFaceInput,
-  ONE_LOOK_CUTOUT_OFF_FILTER,
   oneLookCutoutGlows,
   oneLookCutoutOf,
   oneLookCutoutPlace,
@@ -436,10 +435,10 @@ describe("a look on a One Look tile", () => {
     expect(out).toContain("ol-light-emit");
   });
 
-  it("not lit: none of it, gray and dark as without a look", () => {
+  it("not lit: no light layers or photo filter", () => {
     const off = html(renderOneLookTile(face(lamp(), "off", lit(LIGHT()))));
     for (const l of LAYERS) expect(off).not.toContain(l);
-    expect(styleOf(off, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+    expect(styleOf(off, "ol-cutout")).not.toContain("filter");
     expect(off).toBe(html(renderOneLookTile(face(lamp(), "off", lit(undefined)))));
   });
 
@@ -458,14 +457,14 @@ describe("a look on a One Look tile", () => {
 
   it("dimmed (wrist down) or not lit: no look", () => {
     const p = (surface: string, isLit: boolean, aod = false) => ({ surface, isLit, aod }) as unknown as OneLookPalette;
-    expect(oneLookCutoutGlows(p("coloured", true), true)).toBe(true);
-    expect(oneLookCutoutGlows(p("coloured", true, true), true)).toBe(false);
-    expect(oneLookCutoutGlows(p("graphite", false), true)).toBe(false);
-    expect(oneLookCutoutGlows(p("coloured", false), false)).toBe(false);
+    expect(oneLookCutoutGlows(p("coloured", true))).toBe(true);
+    expect(oneLookCutoutGlows(p("coloured", true, true))).toBe(false);
+    expect(oneLookCutoutGlows(p("graphite", false))).toBe(false);
+    expect(oneLookCutoutGlows(p("coloured", false))).toBe(false);
     // Another kind that is on glows, coloured or graphite; not wrist down.
-    expect(oneLookCutoutGlows(p("coloured", false), false, true)).toBe(true);
-    expect(oneLookCutoutGlows(p("graphite", false), false, true)).toBe(true);
-    expect(oneLookCutoutGlows(p("graphite", false, true), false, true)).toBe(false);
+    expect(oneLookCutoutGlows(p("coloured", false), true)).toBe(true);
+    expect(oneLookCutoutGlows(p("graphite", false), true)).toBe(true);
+    expect(oneLookCutoutGlows(p("graphite", false, true), true)).toBe(false);
   });
 
   it("no look in the photo: drawn exactly as before", () => {
@@ -520,11 +519,11 @@ describe("an On photo on a One Look tile", () => {
     expect(out).toBe(html(renderOneLookTile(face(lamp(), "on", withOn()))));
   });
 
-  it("not lit: the Off photo, gray and dark", () => {
+  it("not lit: the natural Off photo", () => {
     const out = html(renderOneLookTile(face(lamp(), "off", withOn(LIGHT()))));
     expect(src(out)).toBe("blob:lamp");
     expect(out).not.toContain("blob:on");
-    expect(styleOf(out, "ol-cutout")).toContain(`filter:${ONE_LOOK_CUTOUT_OFF_FILTER}`);
+    expect(styleOf(out, "ol-cutout")).not.toContain("filter");
     expect(out).toBe(html(renderOneLookTile(face(lamp(), "off", lit(undefined)))));
   });
 
