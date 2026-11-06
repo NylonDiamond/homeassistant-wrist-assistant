@@ -1,0 +1,20 @@
+{
+  "layout": {
+    "v": 1,
+    "shape": "i",
+    "items": [
+      { "key": "0.0.icon", "row": 0, "cell": 0, "slice": "icon", "prefix": "", "suffix": "", "x": 0.12, "y": 0.5, "size": 15, "baseX": 0.12, "baseY": 0.5, "baseSize": 15 },
+      { "key": "0.0.value", "row": 0, "cell": 0, "slice": "value", "prefix": "", "suffix": "lights on", "x": 0.3, "y": 0.5, "size": 15, "baseX": 0.3, "baseY": 0.5, "baseSize": 15 },
+      { "key": "0.0.suffix", "row": 0, "cell": 0, "slice": "suffix", "prefix": "", "suffix": "lights on", "x": 0.65, "y": 0.5, "size": 15, "baseX": 0.65, "baseY": 0.5, "baseSize": 15 }
+    ]
+  },
+  "cases": [
+    { "name": "value grows without changing identity", "text": "[color:#FFE0A8][icon:lightbulb.fill] 123 lights on[/color]", "texts": ["", "123", "lights on"], "symbol": "lightbulb.fill", "colors": ["#FFE0A8", "#FFE0A8", "#FFE0A8"] },
+    { "name": "branch changes icon and individual colors", "text": "[icon:moon.fill color:blue] [color:red]0[/color] [color:green]lights on[/color]", "texts": ["", "0", "lights on"], "symbol": "moon.fill", "colors": ["blue", "red", "green"] },
+    { "name": "unicode values keep their full range", "text": "[icon:lightbulb.fill] 🌙12 lights on", "texts": ["", "🌙12", "lights on"], "symbol": "lightbulb.fill", "colors": [null, null, null] },
+    { "name": "a loop adds a row", "text": "[icon:lightbulb.fill] 1 lights on\n[icon:door.open] 2 doors open", "texts": null },
+    { "name": "a branch removes its icon", "text": "1 lights on", "texts": null },
+    { "name": "changed literal falls back rather than hiding content", "text": "[icon:lightbulb.fill] 1 lights off", "texts": null },
+    { "name": "an empty dynamic value remains safe", "text": "[icon:lightbulb.fill] lights on", "texts": ["", "", "lights on"], "symbol": "lightbulb.fill", "colors": [null, null, null] }
+  ]
+}

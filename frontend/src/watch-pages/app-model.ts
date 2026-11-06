@@ -42,6 +42,7 @@ import {
 } from "./model.js";
 import { watchCapitalized } from "./tile-new.js";
 import { WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS, watchShowWhenTemplateShows, watchTileShowWhenTemplate } from "./show-when.js";
+import { normalizeTemplateLayout, type TemplateTileLayout } from "./template-layout.js";
 
 // ── the home ─────────────────────────────────────────────────────────────
 
@@ -502,6 +503,15 @@ export function watchTemplateColumns(tile: WatchPageTile): boolean {
 
 export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
   return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? REMOVE : false) : undefined));
+}
+
+export function setWatchTemplateLayout(document: WatchPagesDocument, pageId: string, tileId: string, layout: TemplateTileLayout | undefined): WatchPagesDocument {
+  const next = normalizeTemplateLayout(layout);
+  return setKey(document, pageId, tileId, "templateLayout", tile => {
+    if (!isTemplate(tile)) return undefined;
+    if (next === undefined) return Object.hasOwn(tile, "templateLayout") ? REMOVE : undefined;
+    return JSON.stringify(tile.templateLayout) === JSON.stringify(next) ? undefined : next;
+  });
 }
 
 /** A preset chip: writes the preset's text over the tile's. */

@@ -64,7 +64,13 @@
     ],
     "presetSelected": "A preset chip is selected only while templateString equals its template, character for character. A tap writes the preset's template.",
     "write": "The editor writes templateString on every change, as typed: no trim, an emptied editor writes \"\", the key is never removed. Each opening of the phone's editor sheet is one undo step.",
-    "reset": "The Template task has no reset and no modified dot.",
+    "reset": "Reset layout removes only templateLayout. Each changed item setting has its own reset dot; source edits keep expressions and conditions intact.",
+    "layout": {
+      "key": "templateLayout",
+      "version": 1,
+      "rule": "Optional item centers and sizes in the template content box, shared by both devices. The panel's template-layout.ts and the app's TemplateTileLayout.swift resolve the same shape and text anchors. An absent, invalid, future or mismatched layout keeps the complete automatic template. Older apps ignore the key.",
+      "maxItems": 128
+    },
     "unusedKeys": ["templateRefreshInterval"],
     "lines": {
       "key": "templateLines",

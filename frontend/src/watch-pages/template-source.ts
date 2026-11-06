@@ -63,7 +63,16 @@ export function scanTemplateSource(doc: string): SourceScan {
     const raw = doc.slice(textStart, end);
     const lead = raw.length - raw.trimStart().length;
     const trimmed = raw.trim();
-    if (trimmed !== "") row().tokens.push({ kind: "text", from: textStart + lead, to: textStart + lead + trimmed.length, src: trimmed, glued: lead === 0 && row().tokens.length > 0 });
+    if (trimmed !== "") {
+      const previous = row().tokens.filter(t => t.silent !== true).at(-1);
+      let cursor = previous?.to ?? textStart, gap = "";
+      for (const token of row().tokens) {
+        if (!token.silent || token.from < cursor || token.to > textStart) continue;
+        gap += doc.slice(cursor, token.from); cursor = token.to;
+      }
+      gap += doc.slice(cursor, textStart + lead);
+      row().tokens.push({ kind: "text", from: textStart + lead, to: textStart + lead + trimmed.length, src: trimmed, glued: previous !== undefined && gap === "" });
+    }
     textStart = null;
   };
   while (i < doc.length) {
@@ -84,11 +93,16 @@ export function scanTemplateSource(doc: string): SourceScan {
     // A colour marker (`[color:SPEC]`, `[/color]`) draws nothing and takes
     // no room: silent, as a `{% set %}`, so the words around it are the
     // cells' words alone.
-    const colour = /^\[color:[^\]\n]*\]|^\[\/color\]/.exec(doc.slice(i, i + 200));
-    if (colour !== null) {
+    if (doc.startsWith("[color:", i) || doc.startsWith("[/color]", i)) {
       endText(i);
-      row().tokens.push({ kind: "logic", from: i, to: i + colour[0].length, src: colour[0], silent: true });
-      i += colour[0].length;
+      const close = markerEnd(doc, i);
+      if (close < 0) {
+        open = { kind: "open", from: i, to: doc.length, text: "This [color: has no closing ].", fix: { from: doc.length, to: doc.length, insert: "]", words: "Add ]" } };
+        i = doc.length;
+        break;
+      }
+      row().tokens.push({ kind: "logic", from: i, to: close + 1, src: doc.slice(i, close + 1), silent: true });
+      i = close + 1;
       continue;
     }
     if (doc.startsWith("{{", i) || doc.startsWith("{%", i) || doc.startsWith("{#", i)) {

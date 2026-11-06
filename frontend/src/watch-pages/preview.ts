@@ -90,7 +90,8 @@ import {
   watchTemplateColumns,
   watchTemplateText,
 } from "./app-model.js";
-import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans } from "./template-rows.js";
+import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows } from "./template-rows.js";
+import { type TemplateLayoutPart, templateLayoutParts, templatePartKey, resolveTemplateLayout } from "./template-layout.js";
 import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, TEMPLATE_INTER_ROW, templateTextFit, templateTextUnits } from "./template-fit.js";
 import { TILE_FONT_STACK, onTileFontLoaded, tileFontLoaded } from "../font.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
@@ -2210,28 +2211,36 @@ function templateRunColor(spec: string | undefined): string {
 /** The lines of a template's plain text as the device breaks them, each run
  * marked with its row, cell and part, so the template editor can find its
  * code. The icons stay at the device's full size while the words shrink. */
-function templateFitLines(fit: TemplateFit, device: TemplateFitDevice, ink: string, s: number, icons: IconProvider | undefined): TemplateResult[] {
+function templateFitLines(fit: TemplateFit, device: TemplateFitDevice, ink: string, s: number, icons: IconProvider | undefined, parts: readonly TemplateLayoutPart[] = [], rendered = ""): TemplateResult[] {
+  const cursors = new Map<string, number>();
+  const rows = templateRows(rendered);
   return fit.lines.map((line) => {
     const tall = (line.hasIcon ? fit.iconRow : fit.textRow) * s;
     return html`<span class="wp-tpl-line" style=${`height:${tall}px;line-height:${tall}px`}>${line.pieces.map((piece) => {
       if (piece.kind === "text") {
         const style = [templateRunSpacing(piece.text, device), templateRunColor(piece.color)].filter((part) => part !== "").join(";");
-        return piece.marked
-          ? html`<span data-tr=${piece.row} data-tc=${piece.cell} data-tp="text" style=${style}>${piece.text}</span>`
-          : html`<span style=${style}>${piece.text}</span>`;
+        const own = parts.filter(p => p.row === piece.row && p.cell === piece.cell && p.kind === "text");
+        if (own.length === 1 && own[0]!.slice === "whole") return html`<span data-tk=${own[0]!.key} data-tr=${piece.row} data-tc=${piece.cell} data-tp="text" style=${style}>${piece.text}</span>`;
+        const cellKey = `${piece.row}.${piece.cell}`;
+        const cursor = cursors.get(cellKey) ?? 0;
+        const lead = piece.text.length - piece.text.trimStart().length;
+        const found = piece.text.trim() === "" ? -1 : rows[piece.row]?.[piece.cell]?.text.indexOf(piece.text.trim(), cursor) ?? -1;
+        const start = found < 0 ? cursor : found - lead;
+        cursors.set(cellKey, start + piece.text.length);
+        return html`<span style=${style}>${templateMarkedText(piece.text, own, start, piece.row, piece.cell)}</span>`;
       }
       const box = glyphBox(icons, piece.symbol) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
       const wide = (box[0] / WATCH_SYMBOL_EXPORT_SIZE) * fit.iconSize * s;
       const high = (box[1] / WATCH_SYMBOL_EXPORT_SIZE) * fit.iconSize * s;
       const drop = high / 2 - TEMPLATE_ICON_MIDDLE * fit.iconSize * s;
-      return html`<span data-tr=${piece.row} data-tc=${piece.cell} data-tp="icon">${templateGlyph(piece.symbol, piece.color, ink, wide, high, icons, drop)}</span>`;
+      return html`<span data-tk=${templatePartKey(piece.row, piece.cell, "icon")} data-tr=${piece.row} data-tc=${piece.cell} data-tp="icon">${templateGlyph(piece.symbol, piece.color, ink, wide, high, icons, drop)}</span>`;
     })}</span>`;
   });
 }
 
 /** The rows of a template's rendered text, standing in columns. An icon fits
  * its slot keeping its shape, as `TemplateColumnsText` draws it. */
-function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device: TemplateFitDevice, ink: string, size: number, s: number, shadow: string, icons: IconProvider | undefined): TemplateResult {
+function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device: TemplateFitDevice, ink: string, size: number, s: number, shadow: string, icons: IconProvider | undefined, parts: readonly TemplateLayoutPart[]): TemplateResult {
   const columns = Math.max(...rows.map((row) => row.length));
   const px = size * s;
   const style = [`font-size:${px}px`, `color:${ink}`, `grid-template-columns:repeat(${columns},auto)`, `column-gap:${TEMPLATE_COLUMN_GAP}em`, `line-height:${TEMPLATE_COLUMN_ROW}`, shadow].filter((part) => part !== "").join(";");
@@ -2240,11 +2249,41 @@ function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device:
     const fit = Math.min((TEMPLATE_ICON_SLOT * px) / box[0], (TEMPLATE_ICON_TALL * px) / box[1]);
     return [box[0] * fit, box[1] * fit];
   };
-  return html`<span class="wp-tpl-grid" style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
-    cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
+  return html`<span class="wp-tpl-grid" data-tpl-scale=${s} style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
+    cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tk=${templatePartKey(r, c, "icon")} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
     cell.text === "" ? nothing : cell.runs.length === 0
-      ? html`<span data-tr=${r} data-tc=${c} data-tp="text" style=${templateRunSpacing(cell.text, device)}>${cell.text}</span>`
-      : html`<span data-tr=${r} data-tc=${c} data-tp="text">${cell.runs.map((run) => html`<span style=${[templateRunSpacing(run.text, device), templateRunColor(run.color)].filter((part) => part !== "").join(";")}>${run.text}</span>`)}</span>`}</span>`))}</span>`;
+      ? html`<span style=${templateRunSpacing(cell.text, device)}>${templateMarkedText(cell.text, parts.filter(p => p.row === r && p.cell === c && p.kind === "text"), 0, r, c)}</span>`
+      : html`<span>${(() => { let at = 0; return cell.runs.map(run => { const from = at; at += run.text.length; return html`<span style=${[templateRunSpacing(run.text, device), templateRunColor(run.color)].filter(Boolean).join(";")}>${templateMarkedText(run.text, parts.filter(p => p.row === r && p.cell === c && p.kind === "text"), from, r, c)}</span>`; }); })()}</span>`}</span>`))}</span>`;
+}
+
+function templateMarkedText(text: string, parts: readonly TemplateLayoutPart[], start: number, row: number, cell: number): TemplateResult[] {
+  const out: TemplateResult[] = [];
+  let at = 0;
+  for (const p of parts) {
+    const from = Math.max(0, p.from - start), to = Math.min(text.length, p.to - start);
+    if (to <= from || from >= text.length) continue;
+    if (from > at) out.push(html`${text.slice(at, from)}`);
+    out.push(html`<span data-tk=${p.key} data-tr=${row} data-tc=${cell} data-tp="text">${text.slice(from, to)}</span>`);
+    at = to;
+  }
+  if (at < text.length) out.push(html`${text.slice(at)}`);
+  return out;
+}
+
+function templateFreeFace(raw: unknown, text: string, ink: string, s: number, shadow: string, icons: IconProvider | undefined): TemplateResult | undefined {
+  const resolved = resolveTemplateLayout(raw, text);
+  if (resolved === undefined) return undefined;
+  return html`<span class="wp-tpl-free" data-tpl-scale=${s} style=${`left:${4 * s}px;right:${4 * s}px;color:${ink};${shadow}`}>${resolved.parts.map((part, index) => {
+    const item = resolved.layout.items[index]!, px = item.size * s;
+    const style = `left:${item.x * 100}%;top:${item.y * 100}%;font-size:${px}px;line-height:${TEMPLATE_INTER_ROW};`;
+    let content: TemplateResult | typeof nothing;
+    if (part.kind === "icon") {
+      const box = glyphBox(icons, part.symbol!) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
+      const fit = Math.min(TEMPLATE_ICON_SLOT * px / box[0], TEMPLATE_ICON_TALL * px / box[1]);
+      content = html`<span style=${`display:flex;align-items:center;justify-content:center;width:${TEMPLATE_ICON_SLOT * px}px;height:${TEMPLATE_ICON_TALL * px}px`}>${templateGlyph(part.symbol!, part.color, ink, box[0] * fit, box[1] * fit, icons)}</span>`;
+    } else content = html`${part.runs.map(run => html`<span style=${[templateRunSpacing(run.text, "watch"), templateRunColor(run.color)].filter(Boolean).join(";")}>${run.text}</span>`)}`;
+    return html`<span class="wp-tpl-part" data-tk=${part.key} data-tr=${part.row} data-tc=${part.cell} data-tp=${part.kind} style=${style}>${content}</span>`;
+  })}</span>`;
 }
 
 /** The most rows a template tile draws on the iPhone and on a watch. */
@@ -2281,6 +2320,8 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
   const metrics = TEMPLATE_FIT_METRICS[device];
   const limit = templateRowLimit(tile, input);
   const room = width - TEMPLATE_TILE_PAD * 2;
+  const free = resolveTemplateLayout(tile.templateLayout, look.text);
+  if (free !== undefined) return Math.min(1, ...free.layout.items.map(p => p.size / metrics.body));
   const rows = templateColumnRows(look.text, watchTemplateColumns(tile));
   return rows === undefined
     ? templateTextFit(look.text, room, height, limit, device).size / metrics.body
@@ -2307,14 +2348,17 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     }
     const device = templateDevice(input);
     const limit = templateRowLimit(tile, input);
+    const free = templateFreeFace(tile.templateLayout, look.text, textInk, zs, shadow, input.icons);
+    if (free !== undefined) return free;
+    const parts = templateLayoutParts(typeof tile.templateString === "string" ? tile.templateString : "", look.text);
     const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
     if (columnRows !== undefined) {
       const size = templateColumnsFontSize(columnRows, vw - TEMPLATE_TILE_PAD * 2, vh, TEMPLATE_FIT_METRICS[device].columnsBody, device);
-      return templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons);
+      return templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons, parts);
     }
     const fit = templateTextFit(look.text, vw - TEMPLATE_TILE_PAD * 2, vh, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
     const style = [`font-size:${fit.size * zs}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
-    return html`<span class="wp-tpl-text" style=${style}>${templateFitLines(fit, device, textInk, zs, input.icons)}</span>`;
+    return html`<span class="wp-tpl-text" data-tpl-scale=${zs} style=${style}>${templateFitLines(fit, device, textInk, zs, input.icons, parts, look.text)}</span>`;
   };
 
   if (oneLook !== undefined) {
@@ -4455,6 +4499,8 @@ export const watchPagePreviewStyles = css`
   }
   .wp-tpl-cell { display: inline-flex; align-items: center; min-width: 0; white-space: pre; }
   .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }
+  .wp-tpl-free { position: absolute; top: 0; bottom: 0; font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; }
+  .wp-tpl-part { position: absolute; display: inline-flex; white-space: pre; align-items: center; transform: translate(-50%, -50%); }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }
   /* A tile only the iPhone draws, on a watch: a dashed outline at its place
      with the phone glyph and "Not on a watch". */
