@@ -435,7 +435,6 @@ export const templateEditorStyles = css`
   .te-tile { position: relative; display: flex; justify-content: center; max-width: 100%; }
   .te-tile [data-tp] { pointer-events: auto; }
   .te-tile [data-tk] { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-  .te-tile [data-tk].te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-free-grid .wp-tpl::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(210, 231, 255, .13) 1px, transparent 1px), linear-gradient(to bottom, rgba(210, 231, 255, .13) 1px, transparent 1px); background-size: 5% 5%; pointer-events: none; z-index: 3; }
   .te-item-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11.5px; }
   .te-item-tools label { display: flex; align-items: center; gap: 4px; }
@@ -463,6 +462,7 @@ export const templateEditorStyles = css`
   .te-tile.found [data-tp] { cursor: pointer; border-radius: 5px; outline: 1.5px solid transparent; outline-offset: 1px; transition: outline-color .12s; }
   .te-tile.found [data-tp]:hover { outline-color: color-mix(in srgb, currentColor 50%, transparent); }
   .te-tile.found [data-tp].on { outline-color: var(--wa-hue-orange); }
+  .te-tile.found [data-tk].te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-tile.can-move { user-select: none; -webkit-user-select: none; }
   .te-tile.can-move [data-tp] { cursor: grab; touch-action: none; }
   .te-tile.moving, .te-tile.moving [data-tp] { cursor: grabbing; }
