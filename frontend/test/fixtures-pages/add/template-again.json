@@ -160,7 +160,7 @@
     "stateBarStyle": "Top",
     "stateValueLabelStyle": "Plain",
     "statusTextShadow": true,
-    "templateString": "[icon:lightbulb.fill] {{ states.light | selectattr('state','eq','on') | list | count }} lights on\n[icon:lock.open.fill] {{ states.lock | selectattr('state','eq','unlocked') | list | count }} unlocked\n[icon:person.fill] {{ states.person | selectattr('state','eq','home') | list | count }} home",
+    "templateString": "[color:#FFE0A8][icon:lightbulb.fill] {{ states.light | selectattr('state','eq','on') | list | count }} lights on[/color]\n{% set unlocked = states.lock | selectattr('state','eq','unlocked') | list | count %}[color:{{ '#FFD4CC' if unlocked > 0 else '#B5EAD7' }}][icon:lock.open.fill] {{ unlocked }} unlocked[/color]\n[color:#B5EAD7][icon:person.fill] {{ states.person | selectattr('state','eq','home') | list | count }} home[/color]",
     "tileAnimation": "none"
   }
 }

@@ -237,7 +237,18 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
       const on = watchTemplatePresetSelected(tile, p);
       return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
-    })}</div>`;
+    })}</div>
+    <aside class="ap-template-guide" aria-label="Icons and colors">
+      <div class="ap-template-example">
+        <code>[icon:lock.fill color:green]</code>
+        <span class="ap-template-result" aria-label="A green lock">${host.icons.render("lock.fill", 15, "#34C759") ?? nothing}</span>
+      </div>
+      <div class="ap-template-example">
+        <code>[color:red]Unlocked[/color]</code>
+        <span class="ap-template-result" style="color:#FF3B30">Unlocked</span>
+      </div>
+      <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
+    </aside>`;
   const data: TemplateEditorData = {
     tileId: host.tileId,
     text,
@@ -255,7 +266,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     examples,
     helpers: html`<div class="tpl-box">${help.recipes}${help.entitySearch}${help.asks}
       <div class="hint">Home Assistant renders this. Write {{ … }} around each part that reads something, like {{ states('sensor.power') }}.</div>
-      <div class="hint">Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue]. Color words with [color:red]Hot[/color]; a line break ends the color too.</div></div>`,
+      </div>`,
   };
   return html`<div class="tpl-box" data-tpl=${key}><wa-template-editor .data=${data}></wa-template-editor></div>`;
 }
@@ -641,6 +652,11 @@ export function watchAppTaskHasReset(kind: string): boolean {
 export const appSettingsStyles = css`
   .ap-faint { color: var(--wa-muted); font-size: 11.5px; font-weight: 400; }
   .ap-inbox { margin: 6px 0 2px; }
+  .ap-template-guide { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-field); }
+  .ap-template-example { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .ap-template-example code { color: var(--wa-ink); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: text; }
+  .ap-template-result { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; font-size: 11.5px; font-weight: 600; }
+  .ap-template-guide p { margin: 0; color: var(--wa-muted); font-size: 11.5px; line-height: 1.45; }
   .ap-text { align-items: flex-start; }
   .ap-text textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line); border-radius: 6px; padding: 6px 8px; box-sizing: border-box; }
