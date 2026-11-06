@@ -1,7 +1,7 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { html, svg, nothing, type TemplateResult } from "lit";
 import type { TemplateEditorData } from "./template-editor.js";
 import { templateRows } from "./template-rows.js";
-import { type TemplateLayoutPart, type TemplateTileLayout, type TemplateLayoutItem, templateLayoutParts, templateLayoutShape, resolveTemplateLayout } from "./template-layout.js";
+import { type TemplateLayoutPart, type TemplateTileLayout, type TemplateLayoutItem, templateLayoutParts, templateLayoutShape, resolveTemplateLayout, alignTemplateItems } from "./template-layout.js";
 import { type TemplateColorChoice, templateItemSource, templateItemColorChange, applyTemplateSourceChanges } from "./template-item-source.js";
 import { templateIconColor } from "./rich-text.js";
 import { snapTemplateItems, type TemplateSnapBox, type TemplateAlignmentGuide } from "./template-item-snap.js";
@@ -292,6 +292,17 @@ export class TemplateItemEditor {
     this.writeLayout(layout, true);
   }
 
+  private align(direction: "vertical" | "horizontal"): void {
+    if (this.data().busy) return;
+    const layout = this.capture();
+    if (layout === undefined) return;
+    const next = alignTemplateItems(layout, this.selected, direction);
+    if (next === layout) return;
+    this.data().ended();
+    this.writeLayout(next);
+    this.data().ended();
+  }
+
   inspector(): TemplateResult | typeof nothing {
     const chosen = this.chosen(), text = this.host.text();
     if (chosen.length === 0) return this.note === undefined ? nothing : html`<div class="te-hint">${this.note}</div>`;
@@ -306,6 +317,7 @@ export class TemplateItemEditor {
     const unsupported = chosen.some(p => p.source === undefined || templateItemSource(text, p).choices.length === 0);
     const sizeValue = chosen.length > 1 ? this.scale : items[0]?.size;
     return html`<section class="te-item-inspector" aria-label="Selected template items"><div class="te-item-head"><b>${chosen.length > 1 ? `${chosen.length} items selected` : chosen[0]!.kind === "icon" ? this.glyph(chosen[0]!.symbol!) : chosen[0]!.text}</b>${this.dot(changedPlacement, "placement", () => { const layout = this.capture(); if (layout) { layout.items.filter(p => this.selected.has(p.key)).forEach(p => { p.x = p.baseX; p.y = p.baseY; }); this.writeLayout(layout); } })}</div>
+      ${chosen.length < 2 ? nothing : html`<div class="te-item-field"><span>Align selected</span><div class="te-item-align"><button type="button" aria-label="Align vertically" title="Line up centers in one column; keep vertical spacing" ?disabled=${this.data().busy} @click=${() => this.align("vertical")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M8 1v14" stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x="5" y="10" width="6" height="3" rx="1"/></svg>`}Vertical</button><button type="button" aria-label="Align horizontally" title="Line up centers in one row; keep horizontal spacing" ?disabled=${this.data().busy} @click=${() => this.align("horizontal")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M1 8h14" stroke-dasharray="2 2"/><rect x="3" y="3" width="3" height="10" rx="1"/><rect x="10" y="5" width="3" height="6" rx="1"/></svg>`}Horizontal</button></div></div>`}
       ${singleIcon === undefined || iconSource === undefined ? nothing : html`<div class="te-item-field"><span>Icon${this.dot(iconSource.value !== this.baseline.get(`${singleIcon.key}:symbol`), "icon", () => this.editSymbol(singleIcon, this.baseline.get(`${singleIcon.key}:symbol`) ?? iconSource.value))}</span><details class="te-symbol-picker"><summary aria-label="Choose icon">${this.glyph(iconSource.value, 22)}</summary><input type="search" aria-label="Search icons" placeholder="Search icons" .value=${this.symbolSearch} @input=${(e: Event) => { this.symbolSearch = (e.target as HTMLInputElement).value; this.host.update(); }}><div class="te-symbol-grid">${symbols.map(symbol => html`<button type="button" aria-label=${symbol} title=${symbol} @click=${() => { this.editSymbol(singleIcon, symbol); this.host.element.querySelector<HTMLDetailsElement>(".te-symbol-picker")?.removeAttribute("open"); }}>${this.glyph(symbol)}</button>`)}</div></details></div>`}
       ${singleLabel === undefined || labelSource === undefined ? nothing : html`<label class="te-item-field"><span>Label${this.dot(labelSource.value !== this.baseline.get(`${singleLabel.key}:label`), "label", () => this.editLabel(singleLabel, this.baseline.get(`${singleLabel.key}:label`) ?? labelSource.value))}</span><input type="text" aria-label="Item label" .value=${labelSource.value} @change=${(e: Event) => this.editLabel(singleLabel, (e.target as HTMLInputElement).value)}></label>`}
       ${this.groups().map(group => {

@@ -449,6 +449,10 @@ export const templateEditorStyles = css`
   .te-item-field input:not([type=range]), .te-symbol-picker input { box-sizing: border-box; width: 100%; min-width: 0; background: var(--wa-field, var(--wa-input)); color: var(--wa-ink); border: 1px solid var(--wa-line-strong); border-radius: 6px; padding: 5px 7px; font: inherit; }
   .te-reset-dot { width: 20px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; cursor: pointer; flex: none; }
   .te-reset-dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-blue); }
+  .te-item-align { display: flex; gap: 6px; }
+  .te-item-align button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; padding: 6px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; cursor: pointer; }
+  .te-item-align button:hover { border-color: var(--wa-hue-blue); }
+  .te-item-align button:disabled { opacity: .45; cursor: default; }
   .te-item-size { display: flex; align-items: center; gap: 6px; }
   .te-item-field input[type=range] { width: 100%; accent-color: var(--wa-hue-blue); }
   .te-item-color { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }

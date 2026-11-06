@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures-template-layout/cases.json";
-import { normalizeTemplateLayout, resolveTemplateLayout, templateLayoutParts, templateLayoutShape } from "../src/watch-pages/template-layout.js";
+import { normalizeTemplateLayout, alignTemplateItems, resolveTemplateLayout, templateLayoutParts, templateLayoutShape } from "../src/watch-pages/template-layout.js";
 import { applyTemplateSourceChanges, templateColorChoices, templateItemColorChange, templateItemSource } from "../src/watch-pages/template-item-source.js";
 import { setWatchTemplateLayout } from "../src/watch-pages/app-model.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -81,5 +81,34 @@ describe("template item layout, shared with the native renderer", () => {
     expect(setWatchTemplateLayout(changed, "page", "tile", undefined)).toEqual(document);
     const other = { pages: [{ id: "page", items: [{ id: "tile", entityId: "light.a" }] }] } as WatchPagesDocument;
     expect(setWatchTemplateLayout(other, "page", "tile", layout)).toBe(other);
+  });
+});
+
+describe("align selected template items", () => {
+  const layout = () => {
+    const value = normalizeTemplateLayout(fixture.layout)!;
+    value.items[0]!.x = .17; value.items[0]!.y = .2;
+    value.items[1]!.x = .29; value.items[1]!.y = .7;
+    return value;
+  };
+  it.each(["vertical", "horizontal"] as const)("aligns %s without changing spacing on the other axis or unselected items", direction => {
+    const before = layout(), original = structuredClone(before);
+    const a = before.items[0]!, b = before.items[1]!;
+    const result = alignTemplateItems(before, new Set([a.key, b.key]), direction);
+    const axis = direction === "vertical" ? "x" : "y", other = axis === "x" ? "y" : "x";
+    expect(result.items[0]![axis]).toBeCloseTo(direction === "vertical" ? .23 : .45, 12);
+    expect(result.items[1]![axis]).toBe(result.items[0]![axis]);
+    expect(result.items.slice(2)).toEqual(before.items.slice(2));
+    result.items.slice(0, 2).forEach((p, i) => {
+      expect(p[other]).toBe(before.items[i]![other]);
+      expect(p.size).toBe(before.items[i]!.size);
+      expect([p.baseX, p.baseY, p.baseSize]).toEqual([before.items[i]!.baseX, before.items[i]!.baseY, before.items[i]!.baseSize]);
+    });
+    expect(before).toEqual(original);
+    expect(resolveTemplateLayout(result, fixture.cases[0]!.text)).toBeDefined();
+  });
+  it("does nothing for fewer than two matching items", () => {
+    const before = layout();
+    for (const keys of [[], [before.items[0]!.key], [before.items[0]!.key, "missing"]]) expect(alignTemplateItems(before, new Set(keys), "vertical")).toBe(before);
   });
 });
