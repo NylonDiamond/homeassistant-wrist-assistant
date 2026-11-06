@@ -232,7 +232,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
   const write = (value: string, typing: boolean) =>
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
   const help = templateHelpers(host, text, { key, use: "text", bare: false, write });
-  const examples = html`<details class="ap-template-guide">
+  const examples = html`<details class="ap-template-guide" open>
       <summary>${uiIcon("info")}<span>How to: icons and colors</span></summary>
       <div class="ap-template-guide-body">
         <table>
