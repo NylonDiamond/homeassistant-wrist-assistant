@@ -232,16 +232,10 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
   const write = (value: string, typing: boolean) =>
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
   const help = templateHelpers(host, text, { key, use: "text", bare: false, write });
-  const examples = html`<div class="ts-sub-h"><span>Examples</span></div>
-    <div class="ts-chips">${A.template.presets.map((p) => {
-      const on = watchTemplatePresetSelected(tile, p);
-      return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-        @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
-    })}</div>
-    <aside class="ap-template-guide" aria-label="How to: icons and colors">
-      <div class="ap-template-guide-title">${uiIcon("info")}<b>How to: icons and colors</b></div>
-      <p>Use these examples in the template below.</p>
-      <table>
+  const examples = html`<details class="ap-template-guide">
+      <summary>${uiIcon("info")}<span>How to: icons and colors</span></summary>
+      <div class="ap-template-guide-body">
+        <table>
         <thead><tr><th scope="col">Example syntax</th><th scope="col">Result</th></tr></thead>
         <tbody>
           <tr>
@@ -253,9 +247,16 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
             <td><span class="ap-template-result" style="color:#FF3B30">Unlocked</span></td>
           </tr>
         </tbody>
-      </table>
-      <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
-    </aside>`;
+        </table>
+        <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
+      </div>
+    </details>
+    <div class="ts-sub-h"><span>Examples</span></div>
+    <div class="ts-chips">${A.template.presets.map((p) => {
+      const on = watchTemplatePresetSelected(tile, p);
+      return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+        @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
+    })}</div>`;
   const data: TemplateEditorData = {
     tileId: host.tileId,
     text,
@@ -659,10 +660,12 @@ export function watchAppTaskHasReset(kind: string): boolean {
 export const appSettingsStyles = css`
   .ap-faint { color: var(--wa-muted); font-size: 11.5px; font-weight: 400; }
   .ap-inbox { margin: 6px 0 2px; }
-  .ap-template-guide { display: grid; gap: 8px; width: 100%; max-width: 560px; box-sizing: border-box; padding: 12px; border: 1px solid color-mix(in srgb, var(--wa-accent) 24%, var(--wa-line)); border-radius: 8px; background: color-mix(in srgb, var(--wa-accent) 5%, var(--wa-card)); }
-  .ap-template-guide-title { display: flex; align-items: center; gap: 7px; color: var(--wa-ink); font-size: 12px; }
-  .ap-template-guide-title > svg { flex: none; width: 15px; height: 15px; color: var(--wa-accent); }
-  .ap-template-guide-title b { font-weight: 600; }
+  .ap-template-guide { width: 100%; max-width: 560px; margin: 0; }
+  .ap-template-guide > summary { width: fit-content; color: var(--wa-muted); cursor: pointer; font-size: 11.5px; line-height: 24px; list-style-position: inside; }
+  .ap-template-guide > summary:hover, .ap-template-guide[open] > summary { color: var(--wa-ink); }
+  .ap-template-guide > summary::marker { color: var(--wa-accent); }
+  .ap-template-guide > summary > svg { display: inline-block; width: 13px; height: 13px; margin: 0 5px 0 2px; vertical-align: -2px; color: var(--wa-accent); }
+  .ap-template-guide-body { display: grid; gap: 6px; padding: 8px 10px; margin-top: 4px; border: 1px solid var(--wa-line); border-radius: 8px; background: color-mix(in srgb, var(--wa-accent) 4%, var(--wa-card)); }
   .ap-template-guide table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
   .ap-template-guide th { padding: 0 0 5px; color: var(--wa-muted); font-size: 11px; font-weight: 500; }
   .ap-template-guide td { padding: 6px 0; border-top: 1px solid var(--wa-line); }
