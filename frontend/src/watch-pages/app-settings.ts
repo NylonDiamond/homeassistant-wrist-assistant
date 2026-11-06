@@ -238,15 +238,22 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
       return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
     })}</div>
-    <aside class="ap-template-guide" aria-label="Icons and colors">
-      <div class="ap-template-example">
-        <code>[icon:lock.fill color:green]</code>
-        <span class="ap-template-result" aria-label="A green lock">${host.icons.render("lock.fill", 15, "#34C759") ?? nothing}</span>
-      </div>
-      <div class="ap-template-example">
-        <code>[color:red]Unlocked[/color]</code>
-        <span class="ap-template-result" style="color:#FF3B30">Unlocked</span>
-      </div>
+    <aside class="ap-template-guide" aria-label="How to: icons and colors">
+      <div class="ap-template-guide-title">${uiIcon("info")}<b>How to: icons and colors</b></div>
+      <p>Use these examples in the template below.</p>
+      <table>
+        <thead><tr><th scope="col">Example syntax</th><th scope="col">Result</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>[icon:lock.fill color:green]</code></td>
+            <td><span class="ap-template-result" aria-label="A green lock">${host.icons.render("lock.fill", 15, "#34C759") ?? nothing}</span></td>
+          </tr>
+          <tr>
+            <td><code>[color:red]Unlocked[/color]</code></td>
+            <td><span class="ap-template-result" style="color:#FF3B30">Unlocked</span></td>
+          </tr>
+        </tbody>
+      </table>
       <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
     </aside>`;
   const data: TemplateEditorData = {
@@ -652,9 +659,15 @@ export function watchAppTaskHasReset(kind: string): boolean {
 export const appSettingsStyles = css`
   .ap-faint { color: var(--wa-muted); font-size: 11.5px; font-weight: 400; }
   .ap-inbox { margin: 6px 0 2px; }
-  .ap-template-guide { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-field); }
-  .ap-template-example { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-  .ap-template-example code { color: var(--wa-ink); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: text; }
+  .ap-template-guide { display: grid; gap: 8px; width: 100%; max-width: 560px; box-sizing: border-box; padding: 12px; border: 1px solid color-mix(in srgb, var(--wa-accent) 24%, var(--wa-line)); border-radius: 8px; background: color-mix(in srgb, var(--wa-accent) 5%, var(--wa-card)); }
+  .ap-template-guide-title { display: flex; align-items: center; gap: 7px; color: var(--wa-ink); font-size: 12px; }
+  .ap-template-guide-title > svg { flex: none; width: 15px; height: 15px; color: var(--wa-accent); }
+  .ap-template-guide-title b { font-weight: 600; }
+  .ap-template-guide table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
+  .ap-template-guide th { padding: 0 0 5px; color: var(--wa-muted); font-size: 11px; font-weight: 500; }
+  .ap-template-guide td { padding: 6px 0; border-top: 1px solid var(--wa-line); }
+  .ap-template-guide th:last-child, .ap-template-guide td:last-child { width: 72px; text-align: center; }
+  .ap-template-guide code { color: var(--wa-ink); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: text; }
   .ap-template-result { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; font-size: 11.5px; font-weight: 600; }
   .ap-template-guide p { margin: 0; color: var(--wa-muted); font-size: 11.5px; line-height: 1.45; }
   .ap-text { align-items: flex-start; }

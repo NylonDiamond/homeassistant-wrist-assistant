@@ -556,7 +556,7 @@ export class WaTemplateEditor extends LitElement {
           </div>
           <div class="te-right">
             <div class="te-bar">
-              <span class="te-lab">Code</span>
+              <span class="te-lab">Your template</span>
               ${p.view === "full" ? html`${chip("rows", "Rows", "Show row numbers and the lines between rows")}${chip("format", "Format", "Show each column on its own line")}${chip("wrap", "Wrap", "Wrap long lines")}` : nothing}
               <div class="te-seg" role="group" aria-label="View">${viewButton("sections", "Sections")}${viewButton("full", "Full code")}</div>
               ${large ? nothing : html`<button type="button" class="te-chip" title="Open a larger editor" @click=${() => this.openLarge()}>Open large</button>`}
