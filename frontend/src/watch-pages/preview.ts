@@ -789,8 +789,8 @@ export function watchSyncedTileColor(entityId: string, page: WatchPage | undefin
 /** A tile as the watch receives it: with no color of its own, the color
  * `watchSyncedTileColor` gives it. */
 export function watchSyncedTile(tile: WatchPageTile, page: WatchPage | undefined): WatchPageTile {
-  // A template with no colour keeps none: it draws on One Look's graphite
-  // surface, as an Off tile (`applyDefaultTileColors` skips it too).
+  // A template with no colour keeps none, so its surface follows the
+  // template default (`applyDefaultTileColors` skips it too).
   if (tileKind(tileEntityId(tile)) === "template") return tile;
   return tile.color === undefined || tile.color === null ? { ...tile, color: watchSyncedTileColor(tileEntityId(tile), page) } : tile;
 }

@@ -1447,7 +1447,7 @@ export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
 /** A template tile's surface on a One Look page (`SimpleTemplateTile`'s One
  * Look body, the app's `docs/one_size_table_2026-11.md`, "Template tiles on
  * One Look"): the One Look surface every tile draws for the tile's colour
- * (graphite, as an Off tile, with none), laid out as a tile with no name,
+ * (the default template blue with none), laid out as a tile with no name,
  * state or icon; its ink for the text and the placeholder's mark; and One
  * Look's text shadow, which the watch's look does not draw. On the iPhone the
  * watch's tile, zoomed: the face it returns is in virtual points at the zoom
@@ -1475,13 +1475,13 @@ export function oneLookTemplateSurface(given: OneLookTileFaceInput): OneLookTemp
   const unit = f.unit > 0 ? f.unit : f.cell.width;
   const colSpan = f.spans?.colSpan ?? Math.max(1, Math.round((f.cell.width + 2) / (unit + 2)));
   const rowSpan = f.spans?.rowSpan ?? Math.max(1, Math.round((f.cell.height + 2) / (unit + 2)));
-  const hue = typeof tile.color === "string" && tile.color !== "" ? tile.color : undefined;
+  const hue = typeof tile.color === "string" && tile.color !== "" ? tile.color : "#3B5F77";
   // `surfaceModel`: the tile's colour, colour opacity and dim when off, role
-  // plain, and calm (graphite) with no colour.
+  // plain, with the default template blue when no colour is stored.
   const palette = oneLookPalette({
     role: { kind: "plain" },
-    ...(hue === undefined ? {} : { hue }),
-    calm: hue === undefined,
+    hue,
+    calm: false,
     dimWhenOff: tile.dimWhenOff !== false,
     colorOpacity: watchTileColorOpacity(tile),
   });

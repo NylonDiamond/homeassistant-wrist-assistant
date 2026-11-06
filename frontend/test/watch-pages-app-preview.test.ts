@@ -348,17 +348,15 @@ describe("a template tile in the preview", () => {
       });
     }
 
-    it("is graphite with no colour, its text in that surface's ink, on both devices", () => {
+    it("uses the default blue with no colour, its text in that surface's ink, on both devices", () => {
       for (const onPhone of [false, true]) {
         const drawn = oneLookFace(tile({}), "21", onPhone);
-        expect(drawn).toContain(`color:${inkOf(undefined)}`);
-        // The same ground as an Off tile's graphite.
-        const graphite = oneLookPalette({ role: { kind: "plain" }, calm: true });
-        expect(graphite.surface).toBe("graphite");
+        expect(drawn).toContain(`color:${inkOf("#3B5F77")}`);
+        expect(drawn).toContain("#3B5F77");
       }
     });
 
-    it("adds a new template with no colour, and its Default chip means no colour", () => {
+    it("keeps the template default implicit until a colour is chosen", () => {
       const added = newWatchAppTile("template");
       expect(added.color).toBeUndefined();
       expect(watchKindColor(String(added.entityId), "sunnyBeachDay")).toBeUndefined();
