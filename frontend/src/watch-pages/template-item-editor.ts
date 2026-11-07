@@ -25,6 +25,8 @@ export class TemplateItemEditor {
   private selected = new Set<string>();
   private grid = true;
   private snap = true;
+  private vertical: "center" | "left" = "center";
+  private measure: CanvasRenderingContext2D | null | undefined;
   private note: string | undefined;
   private drag: ItemDrag | undefined;
   private working: TemplateTileLayout | undefined;
@@ -113,23 +115,34 @@ export class TemplateItemEditor {
     return { v: 1, shape: templateLayoutShape(rows), items };
   }
 
+  /** Selection and guide bounds follow the ink, without changing the line
+   * box or the stored center used by the device renderer. */
+  private textBounds(el: HTMLElement): { left: number; top: number; width: number; height: number; right: number; bottom: number } {
+    const rect = el.getBoundingClientRect();
+    this.measure ??= document.createElement("canvas").getContext("2d");
+    if (!this.measure || !el.textContent) return rect;
+    const style = getComputedStyle(el), px = parseFloat(style.fontSize);
+    this.measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const metrics = this.measure.measureText(el.textContent);
+    const height = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+    if (!(height > 0 && height <= rect.height && Number.isFinite(px))) return rect;
+    // Inter's ascent and descent are 1984 and 494 on a 2048 em.
+    const baseline = rect.top + rect.height / 2 + (1984 - 494) / (2 * 2048) * px;
+    const top = baseline - metrics.actualBoundingBoxAscent;
+    return { left: rect.left, top, width: rect.width, height, right: rect.right, bottom: top + height };
+  }
+
   private snapBoxes(left: number, top: number, width: number, height: number): TemplateSnapBox[] {
     if (!(width > 0 && height > 0)) return [];
     const root = this.host.element.querySelector<HTMLElement>(".te-tile");
     const parts = this.parts();
     return parts.flatMap(part => {
       const nodes = [...root?.querySelectorAll<HTMLElement>("[data-tk]") ?? []].filter(el => el.dataset["tk"] === part.key);
-      const rects = nodes.map(el => (part.kind === "icon" ? el.querySelector("svg") ?? el : el).getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+      const rects = nodes.map(el => part.kind === "icon" ? (el.querySelector("svg") ?? el).getBoundingClientRect() : this.textBounds(el)).filter(r => r.width > 0 && r.height > 0);
       if (rects.length === 0) return [];
       const x0 = Math.min(...rects.map(r => r.left)), x1 = Math.max(...rects.map(r => r.right));
       const y0 = Math.min(...rects.map(r => r.top)), y1 = Math.max(...rects.map(r => r.bottom));
-      const font = parseFloat(getComputedStyle(nodes[0]!).fontSize);
-      // Inter's ascent and descent are 1984 and 494 on a 2048 em. The
-      // baseline is this far below the center of its line box.
-      const sameLine = rects.every(r => Math.abs(r.top - y0) < 1 && Math.abs(r.bottom - y1) < 1);
-      const baseline = part.kind === "text" && sameLine && Number.isFinite(font)
-        ? ((y0 + y1) / 2 + (1984 - 494) / (2 * 2048) * font - top) / height : undefined;
-      return [{ key: part.key, x: (x0 - left) / width, y: (y0 - top) / height, width: (x1 - x0) / width, height: (y1 - y0) / height, ...(baseline === undefined ? {} : { baseline }) }];
+      return [{ key: part.key, x: (x0 - left) / width, y: (y0 - top) / height, width: (x1 - x0) / width, height: (y1 - y0) / height }];
     });
   }
 
@@ -203,13 +216,22 @@ export class TemplateItemEditor {
     const root = this.host.element.querySelector<HTMLElement>(".te-tile");
     if (!root) return;
     root.classList.toggle("te-free-grid", this.grid);
+    root.querySelector(".te-pick-outlines")?.remove();
+    const outlines = document.createElement("span"), frame = root.getBoundingClientRect();
+    outlines.className = "te-pick-outlines"; outlines.setAttribute("aria-hidden", "true");
     root.querySelectorAll<HTMLElement>("[data-tk]").forEach(el => {
       const selected = this.selected.has(el.dataset["tk"]!);
       el.classList.toggle("te-picked", selected);
       el.tabIndex = 0; el.setAttribute("role", "button"); el.setAttribute("aria-pressed", String(selected));
       const p = parts.find(p => p.key === el.dataset["tk"]);
       el.setAttribute("aria-label", p?.kind === "icon" ? `Icon ${p.symbol}` : p?.text || "Template text");
+      if (selected && p?.kind === "text") {
+        const rect = this.textBounds(el), outline = document.createElement("span");
+        outline.style.cssText = `left:${rect.left - frame.left}px;top:${rect.top - frame.top}px;width:${rect.width}px;height:${rect.height}px`;
+        outlines.append(outline);
+      }
     });
+    if (outlines.childElementCount > 0) root.append(outlines);
     root.querySelector(".te-snap-guides")?.remove();
     if (this.guides.length > 0) {
       const tile = root.querySelector<HTMLElement>(".wp-tpl"), area = tile?.getBoundingClientRect(), frame = root.getBoundingClientRect();
@@ -242,7 +264,7 @@ export class TemplateItemEditor {
 
   toolbar(): TemplateResult {
     this.parts();
-    return html`<div class="te-item-tools"><label><input type="checkbox" .checked=${this.grid} @change=${(e: Event) => { this.grid = (e.target as HTMLInputElement).checked; this.host.update(); }}>Grid</label><label><input type="checkbox" .checked=${this.snap} title="Snap to nearby item edges, centers and text baselines, then the grid" @change=${(e: Event) => { this.snap = (e.target as HTMLInputElement).checked; }}>Snap</label><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.parts().length === 0} @click=${() => this.pick(this.parts().map(p => p.key))}>Select all</button><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.layout() === undefined} @click=${() => { this.writeLayout(undefined); this.note = undefined; this.data().ended(); }}>Reset layout</button></div><div class="te-hint">Ctrl-click to select multiple. Snap lines up nearby items; hold Option/Alt to move freely.</div>`;
+    return html`<div class="te-item-tools"><label><input type="checkbox" .checked=${this.grid} @change=${(e: Event) => { this.grid = (e.target as HTMLInputElement).checked; this.host.update(); }}>Grid</label><label><input type="checkbox" .checked=${this.snap} title="Snap to nearby item or group edges and centers, then the grid" @change=${(e: Event) => { this.snap = (e.target as HTMLInputElement).checked; }}>Snap</label><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.parts().length === 0} @click=${() => this.pick(this.parts().map(p => p.key))}>Select all</button><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.layout() === undefined} @click=${() => { this.writeLayout(undefined); this.note = undefined; this.data().ended(); }}>Reset layout</button></div><div class="te-hint">Ctrl-click to select multiple. Snap lines up nearby items; hold Option/Alt to move freely.</div>`;
   }
 
   private glyph(symbol: string, px = 18): TemplateResult { return html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${this.data().icons.render(symbol, px, "currentColor") ?? nothing}</svg>`; }
@@ -299,7 +321,7 @@ export class TemplateItemEditor {
     const root = this.host.element.querySelector<HTMLElement>(".te-tile .wp-tpl"), box = root?.getBoundingClientRect();
     const scale = Number(root?.querySelector<HTMLElement>("[data-tpl-scale]")?.dataset["tplScale"]);
     const bounds = box && scale > 0 ? this.snapBoxes(box.left + 4 * scale, box.top, box.width - 8 * scale, box.height) : [];
-    const next = alignTemplateItems(layout, this.selected, direction, bounds);
+    const next = alignTemplateItems(layout, this.selected, direction, bounds, this.vertical);
     if (next === layout) return;
     this.data().ended();
     this.writeLayout(next);
@@ -320,7 +342,7 @@ export class TemplateItemEditor {
     const unsupported = chosen.some(p => p.source === undefined || templateItemSource(text, p).choices.length === 0);
     const sizeValue = chosen.length > 1 ? this.scale : items[0]?.size;
     return html`<section class="te-item-inspector" aria-label="Selected template items"><div class="te-item-head"><b>${chosen.length > 1 ? `${chosen.length} items selected` : chosen[0]!.kind === "icon" ? this.glyph(chosen[0]!.symbol!) : chosen[0]!.text}</b>${this.dot(changedPlacement, "placement", () => { const layout = this.capture(); if (layout) { layout.items.filter(p => this.selected.has(p.key)).forEach(p => { p.x = p.baseX; p.y = p.baseY; }); this.writeLayout(layout); } })}</div>
-      ${chosen.length < 2 ? nothing : html`<div class="te-item-field"><span>Align selected</span><div class="te-item-align"><button type="button" aria-label="Align vertically" title="Line up left edges in one column; keep vertical spacing" ?disabled=${this.data().busy} @click=${() => this.align("vertical")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 1v14" stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x="3" y="10" width="6" height="3" rx="1"/></svg>`}Vertical</button><button type="button" aria-label="Align horizontally" title="Line up centers in one row; keep horizontal spacing" ?disabled=${this.data().busy} @click=${() => this.align("horizontal")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M1 8h14" stroke-dasharray="2 2"/><rect x="3" y="3" width="3" height="10" rx="1"/><rect x="10" y="5" width="3" height="6" rx="1"/></svg>`}Horizontal</button></div></div>`}
+      ${chosen.length < 2 ? nothing : html`<div class="te-item-field"><span>Align selected</span><div class="te-item-align"><button type="button" aria-label="Align vertically" title=${this.vertical === "left" ? "Line up left edges in one column; keep vertical spacing" : "Line up centers in one column; keep vertical spacing"} ?disabled=${this.data().busy} @click=${() => this.align("vertical")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d=${this.vertical === "left" ? "M3 1v14" : "M8 1v14"} stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x=${this.vertical === "left" ? "3" : "5"} y="10" width="6" height="3" rx="1"/></svg>`}Vertical</button><select aria-label="Vertical alignment" title="Vertical alignment" .value=${this.vertical} ?disabled=${this.data().busy} @change=${(e: Event) => { this.vertical = (e.target as HTMLSelectElement).value === "left" ? "left" : "center"; this.host.update(); }}><option value="center">Center</option><option value="left">Left</option></select><button type="button" aria-label="Align horizontally" title="Line up centers in one row; keep horizontal spacing" ?disabled=${this.data().busy} @click=${() => this.align("horizontal")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M1 8h14" stroke-dasharray="2 2"/><rect x="3" y="3" width="3" height="10" rx="1"/><rect x="10" y="5" width="3" height="6" rx="1"/></svg>`}Horizontal</button></div></div>`}
       ${singleIcon === undefined || iconSource === undefined ? nothing : html`<div class="te-item-field"><span>Icon${this.dot(iconSource.value !== this.baseline.get(`${singleIcon.key}:symbol`), "icon", () => this.editSymbol(singleIcon, this.baseline.get(`${singleIcon.key}:symbol`) ?? iconSource.value))}</span><details class="te-symbol-picker"><summary aria-label="Choose icon">${this.glyph(iconSource.value, 22)}</summary><input type="search" aria-label="Search icons" placeholder="Search icons" .value=${this.symbolSearch} @input=${(e: Event) => { this.symbolSearch = (e.target as HTMLInputElement).value; this.host.update(); }}><div class="te-symbol-grid">${symbols.map(symbol => html`<button type="button" aria-label=${symbol} title=${symbol} @click=${() => { this.editSymbol(singleIcon, symbol); this.host.element.querySelector<HTMLDetailsElement>(".te-symbol-picker")?.removeAttribute("open"); }}>${this.glyph(symbol)}</button>`)}</div></details></div>`}
       ${singleLabel === undefined || labelSource === undefined ? nothing : html`<label class="te-item-field"><span>Label${this.dot(labelSource.value !== this.baseline.get(`${singleLabel.key}:label`), "label", () => this.editLabel(singleLabel, this.baseline.get(`${singleLabel.key}:label`) ?? labelSource.value))}</span><input type="text" aria-label="Item label" .value=${labelSource.value} @change=${(e: Event) => this.editLabel(singleLabel, (e.target as HTMLInputElement).value)}></label>`}
       ${this.groups().map(group => {

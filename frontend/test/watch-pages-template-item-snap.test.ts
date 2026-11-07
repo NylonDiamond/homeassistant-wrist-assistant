@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { guideCandidates, guideThreshold, nearestGuide } from "../src/interact.js";
 import { snapTemplateItems, type TemplateSnapBox, type TemplateSnapInput } from "../src/watch-pages/template-item-snap.js";
 
-const box = (key: string, x: number, y: number, width = .2, height = .1, baseline?: number): TemplateSnapBox => ({ key, x, y, width, height, ...(baseline === undefined ? {} : { baseline }) });
+const box = (key: string, x: number, y: number, width = .2, height = .1): TemplateSnapBox => ({ key, x, y, width, height });
 const first = box("home", .234, .62);
 const neighbor = box("lights", .237, .2);
 function input(over: Partial<TemplateSnapInput> = {}): TemplateSnapInput {
@@ -26,17 +27,32 @@ describe("template item alignment guides", () => {
     expect(.698 + result.dx).toBeCloseTo(.7, 12);
   });
 
-  it("prefers a shared baseline for differently sized text", () => {
-    const result = snapTemplateItems(input({ moving: [box("a", .1, .452, .1, .1, .525)], others: [box("b", .7, .4, .1, .2, .54)], centers: [{ x: .15, y: .502 }], lead: { x: .15, y: .502 }, dx: 0, dy: .01 }));
-    expect(.525 + result.dy).toBeCloseTo(.54, 12);
-    expect(result.guides).toContainEqual(expect.objectContaining({ axis: "y", at: .54 }));
+  it("uses the complication canvas's nearest edge or center instead of extra text targets", () => {
+    const a = box("a", .1, .452, .1, .1), b = box("b", .7, .4, .1, .2);
+    const result = snapTemplateItems(input({ moving: [a], others: [b], centers: [{ x: .15, y: .502 }], lead: { x: .15, y: .502 }, dx: 0, dy: .01 }));
+    const expected = nearestGuide([.462, .512, .562], guideCandidates([{ ...b, rotationDegrees: 0 }]), "y", guideThreshold({ width: 280, height: 196 }).y)!;
+    expect(result.dy).toBeCloseTo(.01 + expected.delta, 12);
+    expect(result.guides).toContainEqual(expect.objectContaining({ axis: "y", at: expected.at }));
   });
 
   it("uses the same correction for each member of a selected group", () => {
     const a = box("a", .1, .6, .1), b = box("b", .31, .6, .1);
-    const result = snapTemplateItems(input({ moving: [a, b], others: [box("c", .317, .2, .3)], centers: [{ x: .15, y: .65 }, { x: .36, y: .65 }], lead: { x: .15, y: .65 }, dx: 0 }));
-    expect(b.x + result.dx).toBeCloseTo(.317, 12);
+    const result = snapTemplateItems(input({ moving: [a, b], others: [box("c", .107, .2, .4)], centers: [{ x: .15, y: .65 }, { x: .36, y: .65 }], lead: { x: .15, y: .65 }, dx: 0 }));
+    expect(a.x + result.dx).toBeCloseTo(.107, 12);
     expect((b.x + result.dx) - (a.x + result.dx)).toBeCloseTo(.21, 12);
+  });
+
+  it("does not attract a group by the internal edges of its members", () => {
+    const a = box("a", .1, .6, .1), b = box("b", .31, .6, .1);
+    const result = snapTemplateItems(input({ moving: [a, b], others: [box("c", .317, .2, .3)], centers: [{ x: .15, y: .65 }, { x: .36, y: .65 }], lead: { x: .15, y: .65 }, dx: 0 }));
+    expect(result.dx).toBeCloseTo(0, 12);
+    expect(result.guides.some(g => g.axis === "x")).toBe(false);
+  });
+
+  it("uses the tighter complication catch range instead of the old seven pixels", () => {
+    const result = snapTemplateItems(input({ moving: [box("a", .2, .6)], others: [box("b", .23, .2)], centers: [{ x: .3, y: .65 }], lead: { x: .3, y: .65 }, dx: .014, dy: 0 }));
+    expect(result.dx).toBeCloseTo(0, 12);
+    expect(result.guides).toEqual([]);
   });
 
   it("never snaps a selection back to its own starting points", () => {

@@ -19,21 +19,22 @@ export interface TemplateLayoutItem extends TemplatePartIdentity {
   baseX: number; baseY: number; baseSize: number;
 }
 export interface TemplateTileLayout { v: 1; shape: string; items: TemplateLayoutItem[] }
-/** Align visible left edges in a column, or centers in a row. Keep the
+/** Align centers or visible left edges in a column, or centers in a row. Keep the
  * other coordinates, sizes and automatic placement values for reset. */
-export function alignTemplateItems(layout: TemplateTileLayout, keys: ReadonlySet<string>, direction: "vertical" | "horizontal", bounds: readonly { key: string; x: number }[] = []): TemplateTileLayout {
+export function alignTemplateItems(layout: TemplateTileLayout, keys: ReadonlySet<string>, direction: "vertical" | "horizontal", bounds: readonly { key: string; x: number }[] = [], vertical: "center" | "left" = "center"): TemplateTileLayout {
   const own = layout.items.filter(p => keys.has(p.key));
   if (own.length < 2) return layout;
-  if (direction === "vertical") {
+  if (direction === "vertical" && vertical === "left") {
     const lefts = new Map(bounds.map(p => [p.key, p.x]));
     // Never guess a text width when its preview is not available yet.
     if (own.some(p => !Number.isFinite(lefts.get(p.key)))) return layout;
     const left = Math.min(...own.map(p => lefts.get(p.key)!));
     return { ...layout, items: layout.items.map(p => keys.has(p.key) ? { ...p, x: p.x + left - lefts.get(p.key)! } : p) };
   }
-  const positions = own.map(p => p.y);
+  const axis = direction === "vertical" ? "x" : "y";
+  const positions = own.map(p => p[axis]);
   const center = (Math.min(...positions) + Math.max(...positions)) / 2;
-  return { ...layout, items: layout.items.map(p => keys.has(p.key) ? { ...p, y: center } : p) };
+  return { ...layout, items: layout.items.map(p => keys.has(p.key) ? { ...p, [axis]: center } : p) };
 }
 
 export interface TemplateLayoutPart extends TemplatePartIdentity {

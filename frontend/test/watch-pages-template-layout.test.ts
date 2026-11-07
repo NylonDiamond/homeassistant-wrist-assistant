@@ -94,7 +94,7 @@ describe("align selected template items", () => {
   it.each(["vertical", "horizontal"] as const)("aligns %s without changing spacing on the other axis or unselected items", direction => {
     const before = layout(), original = structuredClone(before);
     const a = before.items[0]!, b = before.items[1]!;
-    const result = alignTemplateItems(before, new Set([a.key, b.key]), direction, [{ key: a.key, x: .12 }, { key: b.key, x: .19 }]);
+    const result = alignTemplateItems(before, new Set([a.key, b.key]), direction, [{ key: a.key, x: .12 }, { key: b.key, x: .19 }], "left");
     const axis = direction === "vertical" ? "x" : "y", other = axis === "x" ? "y" : "x";
     if (direction === "vertical") {
       // Different widths keep different centers while their left edges match.
@@ -113,10 +113,17 @@ describe("align selected template items", () => {
     expect(before).toEqual(original);
     expect(resolveTemplateLayout(result, fixture.cases[0]!.text)).toBeDefined();
   });
+  it("defaults vertical alignment to centers", () => {
+    const before = layout(), a = before.items[0]!, b = before.items[1]!;
+    const result = alignTemplateItems(before, new Set([a.key, b.key]), "vertical");
+    expect(result.items[0]!.x).toBeCloseTo(.23, 12);
+    expect(result.items[1]!.x).toBeCloseTo(.23, 12);
+    expect(result.items.map(p => p.y)).toEqual(before.items.map(p => p.y));
+  });
   it("waits for every selected item to have measured bounds", () => {
     const before = layout(), keys = new Set(before.items.slice(0, 2).map(p => p.key));
-    expect(alignTemplateItems(before, keys, "vertical")).toBe(before);
-    expect(alignTemplateItems(before, keys, "vertical", [{ key: before.items[0]!.key, x: .1 }])).toBe(before);
+    expect(alignTemplateItems(before, keys, "vertical", [], "left")).toBe(before);
+    expect(alignTemplateItems(before, keys, "vertical", [{ key: before.items[0]!.key, x: .1 }], "left")).toBe(before);
   });
   it("does nothing for fewer than two matching items", () => {
     const before = layout();

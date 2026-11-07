@@ -451,6 +451,7 @@ export const templateEditorStyles = css`
   .te-reset-dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-blue); }
   .te-item-align { display: flex; gap: 6px; }
   .te-item-align button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; padding: 6px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; cursor: pointer; }
+  .te-item-align select { min-width: 0; width: 69px; padding: 4px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; }
   .te-item-align button:hover { border-color: var(--wa-hue-blue); }
   .te-item-align button:disabled { opacity: .45; cursor: default; }
   .te-item-size { display: flex; align-items: center; gap: 6px; }
@@ -467,6 +468,9 @@ export const templateEditorStyles = css`
   .te-tile.found [data-tp]:hover { outline-color: color-mix(in srgb, currentColor 50%, transparent); }
   .te-tile.found [data-tp].on { outline-color: var(--wa-hue-orange); }
   .te-tile.found [data-tk].te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
+  .te-tile.found [data-tk][data-tp="text"].te-picked { outline: none; }
+  .te-pick-outlines { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+  .te-pick-outlines > span { position: absolute; outline: 1px solid var(--wa-hue-blue); outline-offset: 1px; border-radius: 2px; pointer-events: none; }
   .te-snap-guides { position: absolute; pointer-events: none; z-index: 5; }
   .te-snap-guides > span { position: absolute; background: #FF375F; pointer-events: none; }
   .te-snap-x { width: 1px; }
