@@ -255,8 +255,6 @@ export interface OneLookLayout {
   readonly bigRect?: OneLookRect;
   /** A chart tile's text column (46% of the width). */
   readonly chartTextWidth?: number;
-  /** For a strip's sheen: just past the disc. 0 otherwise. */
-  readonly discEdge: number;
   /** The text factors the layout was fitted at. */
   readonly textScale: number;
   readonly nameScale: number;
@@ -776,7 +774,6 @@ function stacked(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
     bigValue: bigRect === undefined ? undefined : input.bigValue,
     bigRect,
     chartTextWidth: input.isChart ? w * ONE_LOOK_CHART_TEXT_SHARE : undefined,
-    discEdge: 0,
     glyphAtOldPlace: false,
   };
 }
@@ -1007,7 +1004,6 @@ function centred(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
     nameLineHeight: nameLH,
     state,
     stateLineHeight: stateLH,
-    discEdge: 0,
     stateRect,
     barRect: bar,
     glyphInk: ink,
@@ -1114,7 +1110,6 @@ function strip(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step): U
     nameLineHeight: nameLH,
     state,
     stateLineHeight: stateLH,
-    discEdge: hasIcon ? sInset + box + m.stripGap * 0.4 : sInset,
     glyphAtOldPlace: false,
   };
 }
@@ -1158,7 +1153,6 @@ function compact(input: OneLookLayoutInput, fitter: OneLookTextFitter): Unscaled
     name: emptyName(rowBase(input, m)),
     nameLineHeight: 0,
     stateLineHeight: 0,
-    discEdge: 0,
     glyphAtOldPlace: false,
   };
 }

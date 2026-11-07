@@ -14,7 +14,8 @@ export interface TemplatePartIdentity {
   suffix: string;
 }
 export interface TemplateLayoutItem extends TemplatePartIdentity {
-  /** Centre in the complete tile, from 0 to 1. Size is in virtual watch points. */
+  /** Centre in the tile's content box (inside the template's 4 point side
+   * padding), from 0 to 1. Size is in virtual watch points. */
   x: number; y: number; size: number;
   baseX: number; baseY: number; baseSize: number;
 }

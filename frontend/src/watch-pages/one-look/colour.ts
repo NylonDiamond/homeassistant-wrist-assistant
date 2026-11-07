@@ -61,7 +61,6 @@ export const ONE_LOOK_GRAPHITE_LIGHT: OneLookRGB = [0x25, 0x26, 0x2a];
 export const ONE_LOOK_GRAPHITE_BASE: OneLookRGB = [0x20, 0x21, 0x25];
 export const ONE_LOOK_GRAPHITE_SHADE: OneLookRGB = [0x1d, 0x1e, 0x21];
 export const ONE_LOOK_GRAPHITE_STOP = 0.55;
-export const ONE_LOOK_GRAPHITE_SHEEN = 0;
 /** A camera tile's ground under its picture. */
 export const ONE_LOOK_CAMERA_GROUND: OneLookRGB = [0x22, 0x22, 0x22];
 /** A quiet offline tile's flat ground, under its content at half. */
@@ -367,10 +366,6 @@ export interface OneLookPalette {
   readonly fillShare: number | undefined;
   /** Whether the hue was deepened for white text. */
   readonly deepened: boolean;
-  /** The corner sheen's white opacity, and where the elliptical sheen ends
-   * in percent of its 1.2w x h ellipse. */
-  readonly sheen: number;
-  readonly sheenStop: number;
   readonly rimOpacity: number;
   /** The name and number ink, and the word and tail ink. */
   readonly ink: OneLookInk;
@@ -575,8 +570,6 @@ function makePalette(key: PaletteKey): OneLookPalette {
     brightness,
     fillShare,
     deepened: !same(base, raws[0]!),
-    sheen: 0,
-    sheenStop: 18 + 13 * tone + (key.pressed ? 5 : 0),
     rimOpacity: aod ? 0.06 : 0.12 * press,
     ink: white(aod ? 0.86 : 1),
     ink2: white(aod ? 0.62 : 1),
@@ -605,7 +598,7 @@ function graphite(
   const camera = o.surface === "camera";
   const quiet = o.quiet === true;
   const hatch = o.hatch === true;
-  // A quiet offline tile: one flat ground, no sheen, content at half.
+  // A quiet offline tile: one flat ground, content at half.
   const flat = camera ? ONE_LOOK_CAMERA_GROUND : quiet ? ONE_LOOK_OFFLINE_GROUND : undefined;
   return {
     surface: o.surface ?? "graphite",
@@ -617,8 +610,6 @@ function graphite(
     brightness: 1,
     fillShare: undefined,
     deepened: false,
-    sheen: camera || quiet || aod ? 0 : ONE_LOOK_GRAPHITE_SHEEN,
-    sheenStop: ONE_LOOK_GRAPHITE_STOP * 100,
     rimOpacity: aod ? 0.06 : o.rim * 0.5,
     ink: white(aod ? 0.86 : 1),
     ink2: aod ? white(0.62) : o.ink2,
@@ -776,22 +767,13 @@ export interface OneLookFillStop {
   readonly location: number;
 }
 
-export type OneLookSheen =
-  | { readonly kind: "none" }
-  /** White at `opacity` in the top left of a 1.2w x h ellipse, gone by
-   * `end` (0 to 1) of it. */
-  | { readonly kind: "ellipse"; readonly opacity: number; readonly end: number }
-  /** A strip's: a circle at the top left corner, gone at `radius` points. */
-  | { readonly kind: "circle"; readonly opacity: number; readonly radius: number };
-
-/** A tile's fill at its drawn size (`OneLookFill`): the 135 deg blend,
- * where a point's share is `(x + y) / (w + h)`, and the corner sheen. */
+/** A tile's fill at its drawn size (`OneLookFill`): the matte 135 deg
+ * blend, where a point's share is `(x + y) / (w + h)`. */
 export interface OneLookFill {
   readonly size: { readonly width: number; readonly height: number };
   readonly stops: readonly OneLookFillStop[];
   /** Where the hue stop sits, 0 to 1 along the blend. */
   readonly baseStop: number;
-  readonly sheen: OneLookSheen;
 }
 
 /**
@@ -800,19 +782,17 @@ export interface OneLookFill {
  * top left of the text block), never before 6%, so every name and state
  * sits on the hue rather than on the lifted corner. A gradient keeps its
  * stops, the first at the hue stop and the rest spread to the end, where
- * the last one's shade sits. `discEdge` is a strip's sheen reach.
+ * the last one's shade sits.
  */
 export function oneLookFill(
   palette: OneLookPalette,
   size: { width: number; height: number },
   textStart: { x: number; y: number },
-  strip = false,
-  discEdge = 0,
 ): OneLookFill {
   const box = { width: size.width, height: size.height };
   if (palette.surface === "camera") {
     const ground = ONE_LOOK_CAMERA_GROUND;
-    return { size: box, stops: [{ color: ground, location: 0 }, { color: ground, location: 1 }], baseStop: 0, sheen: { kind: "none" } };
+    return { size: box, stops: [{ color: ground, location: 0 }, { color: ground, location: 1 }], baseStop: 0 };
   }
   if (palette.surface === "graphite") {
     return {
@@ -823,7 +803,6 @@ export function oneLookFill(
         { color: palette.shade, location: 1 },
       ],
       baseStop: ONE_LOOK_GRAPHITE_STOP,
-      sheen: palette.sheen > 0 ? { kind: "ellipse", opacity: palette.sheen, end: ONE_LOOK_GRAPHITE_STOP } : { kind: "none" },
     };
   }
   const sum = size.width + size.height;
@@ -840,14 +819,10 @@ export function oneLookFill(
     }
   }
   out.push({ color: palette.shade, location: 1 });
-  let sheen: OneLookSheen;
-  if (palette.sheen <= 0) sheen = { kind: "none" };
-  else if (strip) sheen = { kind: "circle", opacity: palette.sheen, radius: discEdge * (0.75 + 0.25 * palette.brightness) };
-  else sheen = { kind: "ellipse", opacity: palette.sheen, end: palette.sheenStop / 100 };
-  return { size: box, stops: out, baseStop: stop, sheen };
+  return { size: box, stops: out, baseStop: stop };
 }
 
-/** The fill's colour at a point, sheen included (`OneLookFill.color(at:)`,
+/** The fill's colour at a point, on the blend (`OneLookFill.color(at:)`,
  * which the app's contrast checks read). */
 export function oneLookFillColourAt(fill: OneLookFill, point: { x: number; y: number }): OneLookRGB {
   const w = fill.size.width;
@@ -864,14 +839,7 @@ export function oneLookFillColourAt(fill: OneLookFill, point: { x: number; y: nu
       break;
     }
   }
-  let alpha = 0;
-  if (fill.sheen.kind === "ellipse") {
-    const d = Math.hypot(point.x / (1.2 * Math.max(w, 0.0001)), point.y / Math.max(h, 0.0001));
-    alpha = fill.sheen.opacity * Math.max(0, 1 - d / fill.sheen.end);
-  } else if (fill.sheen.kind === "circle") {
-    alpha = fill.sheen.opacity * Math.max(0, 1 - Math.hypot(point.x, point.y) / Math.max(fill.sheen.radius, 0.0001));
-  }
-  return oneLookMix(c, W, alpha);
+  return c;
 }
 
 /** The Fill style's track: the same blend with every stop darkened toward
@@ -898,17 +866,6 @@ export function oneLookInkCss(value: OneLookInk | OneLookRGB, opacity?: number):
  * point at `(x + y) / (w + h)` along it, as the app's blend does. */
 export function oneLookBlendCss(stops: readonly OneLookFillStop[]): string {
   return `linear-gradient(135deg, ${stops.map((s) => `${oneLookHex(s.color)} ${cssNumber(s.location * 100)}%`).join(", ")})`;
-}
-
-/** The corner sheen as a CSS gradient, or undefined for none. `s` is the
- * preview's pixels per point, which only the strip's circle needs. */
-export function oneLookSheenCss(sheen: OneLookSheen, s = 1): string | undefined {
-  if (sheen.kind === "none") return undefined;
-  const from = `rgba(255, 255, 255, ${cssNumber(sheen.opacity)})`;
-  if (sheen.kind === "circle") {
-    return `radial-gradient(circle ${cssNumber(sheen.radius * s)}px at 0 0, ${from} 0, rgba(255, 255, 255, 0) 100%)`;
-  }
-  return `radial-gradient(120% 100% at 0% 0%, ${from} 0%, rgba(255, 255, 255, 0) ${cssNumber(sheen.end * 100)}%)`;
 }
 
 /** The rim light's paint, a 135 deg white gradient for the inside stroke. */

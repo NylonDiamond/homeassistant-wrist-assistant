@@ -66,7 +66,6 @@ import {
   oneLookPalette,
   oneLookRimCss,
   oneLookScrimCss,
-  oneLookSheenCss,
   oneLookUnderGlowCss,
   ONE_LOOK_AMBER,
   ONE_LOOK_AMBER_DOT,
@@ -397,13 +396,10 @@ export function oneLookClearLit(model: Pick<OneLookPreviewModel, "kind" | "palet
 }
 
 /** The Clear tile's matte ground, as CSS: the graphite fill an off tile has
- * (135 deg through its base at 55%), without a corner sheen, whatever the
- * tile's colour or state. */
-export function oneLookClearGroundCss(size: { width: number; height: number }, s: number): string {
+ * (135 deg through its base at 55%), whatever the tile's colour or state. */
+export function oneLookClearGroundCss(size: { width: number; height: number }): string {
   const fill = oneLookFill(oneLookPalette({ role: { kind: "plain" } }), size, { x: 0, y: 0 });
-  const blend = oneLookBlendCss(fill.stops);
-  const sheen = oneLookSheenCss(fill.sheen, s);
-  return sheen === undefined ? blend : `${sheen}, ${blend}`;
+  return oneLookBlendCss(fill.stops);
 }
 
 /** The Clear tile's lit rim, as CSS for a layer over the tile: a line
@@ -1353,23 +1349,20 @@ function chartLayer(model: OneLookPreviewModel, s: number): TemplateResult | typ
 
 let chartSeq = 0;
 
-/** The tile's fill: the blend with its corner light, or with the Fill bar
- * style the track, the colour to the level and the white edge where it
- * ends. */
+/** The tile's fill: the matte blend, or with the Fill bar style the track,
+ * the colour to the level and the white edge where it ends. */
 function fillLayers(model: OneLookPreviewModel, s: number): { ground: string; layers: TemplateResult | typeof nothing } {
   const { layout, palette } = model;
-  const fill = oneLookFill(palette, layout.size, layout.textOrigin, layout.mode === "strip", layout.discEdge);
+  const fill = oneLookFill(palette, layout.size, layout.textOrigin);
   const blend = oneLookBlendCss(fill.stops);
-  const sheen = oneLookSheenCss(fill.sheen, s);
-  if (palette.fillShare === undefined) return { ground: sheen === undefined ? blend : `${sheen}, ${blend}`, layers: nothing };
+  if (palette.fillShare === undefined) return { ground: blend, layers: nothing };
   const w = layout.size.width;
   const share = Math.min(1, Math.max(0, palette.fillShare));
   const edge = Math.max(0, w * share - ONE_LOOK_FILL_EDGE_WIDTH);
   return {
     ground: oneLookBlendCss(oneLookFillTrackStops(fill)),
     layers: html`<span class="ol-fill" style=${`width:${r2(w * share * s)}px`}><span class="ol-layer" style=${`width:${r2(w * s)}px;background:${blend}`}></span></span>
-      <span class="ol-edge" style=${`left:${r2(edge * s)}px;width:${r2(ONE_LOOK_FILL_EDGE_WIDTH * s)}px;background:rgba(255, 255, 255, ${ONE_LOOK_FILL_EDGE_OPACITY})`}></span>
-      ${sheen === undefined ? nothing : html`<span class="ol-layer" style=${`background:${sheen}`}></span>`}`,
+      <span class="ol-edge" style=${`left:${r2(edge * s)}px;width:${r2(ONE_LOOK_FILL_EDGE_WIDTH * s)}px;background:rgba(255, 255, 255, ${ONE_LOOK_FILL_EDGE_OPACITY})`}></span>`,
   };
 }
 
@@ -1420,7 +1413,7 @@ export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
       ? html`<span class="ol-layer ol-clear-rim" style=${oneLookClearRimCss(oneLookClearGlowColour(palette, model.tint), model.tint?.level ?? 1, s)}></span>`
       : nothing;
     return html`<div class="wp-tile ol-tile clear" data-ol-mode=${layout.mode} data-ol-look="clear"
-      style=${`${f.box}border-radius:${r2(radius * s)}px;background:${oneLookClearGroundCss(layout.size, s)};box-shadow:inset 0 0 0 1px rgba(255, 255, 255, ${ONE_LOOK_CLEAR.borderOpacity})${fade < 1 ? `;opacity:${fade}` : ""}`}
+      style=${`${f.box}border-radius:${r2(radius * s)}px;background:${oneLookClearGroundCss(layout.size)};box-shadow:inset 0 0 0 1px rgba(255, 255, 255, ${ONE_LOOK_CLEAR.borderOpacity})${fade < 1 ? `;opacity:${fade}` : ""}`}
       title=${f.hint ?? nothing}>
       ${chartLayer(model, s)}
       ${content}

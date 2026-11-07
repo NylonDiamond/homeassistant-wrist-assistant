@@ -416,7 +416,6 @@ describe("One Look stacked and strip", () => {
     near(l.stateLineHeight, 23.1);
     near(maxY(oneLookTextRect(l)), 115.333 - l.insetV);
     near(l.textWidth, 179 - 2 * 12.687);
-    expect(l.discEdge).toBe(0);
   });
 
   it("holds a phone 12x4 at the inset cap", () => {
@@ -472,7 +471,6 @@ describe("One Look stacked and strip", () => {
     near(l.nameLineHeight, 15.5 * 1.16);
     near(l.stateLineHeight, 23.1 * 0.96);
     near(midY(oneLookTextRect(l)), 51.667 / 2);
-    near(l.discEdge, l.insetH + l.discRect.width + 11 * 0.4);
   });
 
   it("caps a watch strip's disc", () => {
