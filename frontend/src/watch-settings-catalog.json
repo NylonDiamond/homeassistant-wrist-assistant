@@ -507,7 +507,7 @@
           "devices": ["watch", "iphone"],
           "type": "bool",
           "label": "Run automations right away",
-          "help": "When you run an automation from the watch, do its actions without checking its conditions first. Its triggers are always skipped.",
+          "help": "When you run an automation from a tile, a Shortcut or a control on this device, do its actions without checking its conditions first. Its triggers are always skipped.",
           "default": true
         }
       ]

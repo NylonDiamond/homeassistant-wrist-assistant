@@ -90,7 +90,7 @@ import {
   watchTemplateColumns,
   watchTemplateText,
 } from "./app-model.js";
-import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows } from "./template-rows.js";
+import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows, templateSpanFontSize } from "./template-rows.js";
 import { type TemplateLayoutPart, templateLayoutParts, templatePartKey, resolveTemplateLayout } from "./template-layout.js";
 import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, TEMPLATE_INTER_ROW, templateTextFit, templateTextUnits } from "./template-fit.js";
 import { TILE_FONT_STACK, onTileFontLoaded, tileFontLoaded } from "../font.js";
@@ -2240,16 +2240,24 @@ function templateFitLines(fit: TemplateFit, device: TemplateFitDevice, ink: stri
 
 /** The rows of a template's rendered text, standing in columns. An icon fits
  * its slot keeping its shape, as `TemplateColumnsText` draws it. */
-function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device: TemplateFitDevice, ink: string, size: number, s: number, shadow: string, icons: IconProvider | undefined, parts: readonly TemplateLayoutPart[]): TemplateResult {
+function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device: TemplateFitDevice, ink: string, size: number, s: number, shadow: string, icons: IconProvider | undefined, parts: readonly TemplateLayoutPart[], room: number, largest: number): TemplateResult {
   const columns = Math.max(...rows.map((row) => row.length));
   const px = size * s;
+  // Beside real columns a row of one cell gives the grid no width
+  // (`contain: inline-size`) and its words shrink to the room, then end in
+  // an ellipsis, as the app's `TemplateColumnsText` (R5-050).
+  const spanStyle = (row: readonly TemplateCell[]): string => {
+    if (columns <= 1 || !templateRowSpans(row)) return "";
+    const words = templateSpanFontSize(row[0]!, room, size, largest, device);
+    return `contain:inline-size;overflow:hidden;--wp-span-font:${words * s}px`;
+  };
   const style = [`font-size:${px}px`, `color:${ink}`, `grid-template-columns:repeat(${columns},auto)`, `column-gap:${TEMPLATE_COLUMN_GAP}em`, `line-height:${TEMPLATE_COLUMN_ROW}`, shadow].filter((part) => part !== "").join(";");
   const slot = (symbol: string): [number, number] => {
     const box = glyphBox(icons, symbol) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
     const fit = Math.min((TEMPLATE_ICON_SLOT * px) / box[0], (TEMPLATE_ICON_TALL * px) / box[1]);
     return [box[0] * fit, box[1] * fit];
   };
-  return html`<span class="wp-tpl-grid" data-tpl-scale=${s} style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class="wp-tpl-cell" style=${`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`}>${
+  return html`<span class="wp-tpl-grid" data-tpl-scale=${s} style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class=${spanStyle(row) === "" ? "wp-tpl-cell" : "wp-tpl-cell wp-tpl-span"} style=${[`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`, spanStyle(row)].filter(Boolean).join(";")}>${
     cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tk=${templatePartKey(r, c, "icon")} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
     cell.text === "" ? nothing : cell.runs.length === 0
       ? html`<span style=${templateRunSpacing(cell.text, device)}>${templateMarkedText(cell.text, parts.filter(p => p.row === r && p.cell === c && p.kind === "text"), 0, r, c)}</span>`
@@ -2354,7 +2362,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
     if (columnRows !== undefined) {
       const size = templateColumnsFontSize(columnRows, vw - TEMPLATE_TILE_PAD * 2, vh, TEMPLATE_FIT_METRICS[device].columnsBody, device);
-      return templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons, parts);
+      return templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons, parts, vw - TEMPLATE_TILE_PAD * 2, TEMPLATE_FIT_METRICS[device].columnsBody);
     }
     const fit = templateTextFit(look.text, vw - TEMPLATE_TILE_PAD * 2, vh, limit, device, (symbol) => templateIconWidth(input.icons, symbol));
     const style = [`font-size:${fit.size * zs}px`, `color:${textInk}`, `text-align:${look.multiLine ? "left" : "center"}`, shadow].filter((part) => part !== "").join(";");
@@ -4499,6 +4507,7 @@ export const watchPagePreviewStyles = css`
   }
   .wp-tpl-cell { display: inline-flex; align-items: center; min-width: 0; white-space: pre; }
   .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }
+  .wp-tpl-span > :not(.wp-tpl-slot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--wp-span-font); }
   .wp-tpl-free { position: absolute; top: 0; bottom: 0; font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; }
   .wp-tpl-part { position: absolute; display: inline-flex; white-space: pre; align-items: center; transform: translate(-50%, -50%); }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }

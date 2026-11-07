@@ -80,6 +80,8 @@ import type { IconProvider } from "./renderer.js";
 import { renderHeadStatus } from "./head-bar.js";
 import { agoWords } from "./send-state.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
+import { WATCH_SCREENS, deviceScreenPath, navigatePanel } from "./shell.js";
+import { type OtherScreen, oldNamesOf, otherScreensFor } from "./watch-settings-old-names.js";
 import { deviceKindOf } from "./version.js";
 import {
   type BehaviorDocument,
@@ -1075,15 +1077,28 @@ export class WatchSettings implements ReactiveController {
   /** A search's cards, under the name of the group each is in. The name
    * opens that group. */
   private renderFound(cards: ReadonlyMap<SettingsCardId, unknown>) {
+    const others = otherScreensFor(searchTerms(this.query), this.device).map((o) => this.renderOtherScreen(o));
     if (cards.size === 0) {
+      if (others.length > 0) return others;
       return html`<div class="xf-lead ws-none">${uiIcon("search")}<span>No setting matches “${this.query.trim()}”. Try a shorter word, like “camera”, “sound” or “swipe”.</span></div>`;
     }
-    return SETTINGS_GROUPS.map((g) => {
+    return [...others, ...SETTINGS_GROUPS.map((g) => {
       const found = g.cards.filter((c) => cards.has(c));
       if (found.length === 0) return nothing;
       return html`<button type="button" class="ws-found" title=${`Show all of ${g.title}`} @click=${() => this.pickGroup(g.id)}>${g.title}</button>
         ${found.map((c) => cards.get(c))}`;
-    });
+    })];
+  }
+
+  /** A line for a page of its own that the search names (Rooms, Voice),
+   * with a link that opens it on this device. */
+  private renderOtherScreen(other: OtherScreen) {
+    const screen = WATCH_SCREENS.find((w) => w.id === other.screen);
+    const owner = this.ownerId;
+    if (screen === undefined || owner === undefined) return nothing;
+    const path = deviceScreenPath(this.device, screen, owner);
+    return html`<div class="xf-lead ws-elsewhere" data-screen=${other.screen}>${uiIcon("info")}<span>${other.text}
+      <button type="button" class="link" @click=${() => navigatePanel(undefined, path)}>Open ${screen.label}</button></span></div>`;
   }
 
   /** Whether the page has this card to show without a search, its record's
@@ -1767,10 +1782,11 @@ function joinNotes(notes: readonly (Note | undefined)[]): Note | undefined {
 }
 
 /** The words a search looks through for one setting: its title, help and
- * choices, and the names of its card and group. */
+ * choices, its 3.0.1 names, and the names of its card and group. */
 function settingWords(setting: CatalogSetting, card: string, group: string | undefined): (string | undefined)[] {
   return [
     setting.label, setting.help, card, group,
+    ...oldNamesOf(setting.key),
     ...(setting.options ?? []).map((o) => o.label),
     ...(setting.gestures ?? []).map((g) => g.label),
   ];
@@ -1778,7 +1794,7 @@ function settingWords(setting: CatalogSetting, card: string, group: string | und
 
 /** The same for a notification style row, with the heading it sits under. */
 function styleRowWords(row: StyleRow, heading: string, card: string, group: string | undefined): (string | undefined)[] {
-  return [row.label, row.help, heading, card, group, ...(row.options ?? []).map((o) => o.label)];
+  return [row.label, row.help, heading, card, group, ...oldNamesOf(row.key), ...(row.options ?? []).map((o) => o.label)];
 }
 
 /** The page's own rules, added to the panel's sheet. Everything else it

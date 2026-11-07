@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setWatchTemplateColumns, watchTemplateColumns } from "../src/watch-pages/app-model.js";
-import { templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows } from "../src/watch-pages/template-rows.js";
+import { templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows, templateSpanFontSize } from "../src/watch-pages/template-rows.js";
 import { templateRichTextSegments, templateStyledSegments } from "../src/watch-pages/rich-text.js";
 import { templateTextFit } from "../src/watch-pages/template-fit.js";
 import { alignTemplate, findTemplatePart, nearestName, namedEntityIds, scanTemplateSource, sourceRowAt, templateNameIssues, templateTokenValues } from "../src/watch-pages/template-source.js";
@@ -157,9 +157,29 @@ describe("template rows", () => {
     const short = templateRows("[icon:a] A [icon:b] 1");
     const withLong = templateRows("[icon:a] A [icon:b] 1\nabcdefghij");
     expect(templateColumnsFontSize(withLong, 500, 500, 16, "watch")).toBe(templateColumnsFontSize(short, 500, 500, 16, "watch"));
-    // It still has to fit, so it can shrink them all, but no more than its own width asks.
+    // Beside columns it never shrinks them, however long (R5-050): its own
+    // words shrink instead.
     const room = 130;
-    expect(templateColumnsFontSize(templateRows("[icon:a] A [icon:b] 1\n2026-04-08T21:24:11.382181+00:00"), room, 500, 16, "watch")).toBeCloseTo(room / 17.27, 0);
+    const long = templateRows("[icon:a] A [icon:b] 1\n2026-04-08T21:24:11.382181+00:00");
+    expect(templateColumnsFontSize(long, room, 500, 16, "watch")).toBe(templateColumnsFontSize(short, room, 500, 16, "watch"));
+  });
+
+  it("shrinks a long row of one cell's words to fit, down to 40%, never its icon", () => {
+    const [cell] = templateRows("[icon:a] 2026-04-08T21:24:11.382181+00:00")[0]!;
+    // Room to spare: the grid's size.
+    expect(templateSpanFontSize(cell!, 2000, 16, 16, "watch")).toBe(16);
+    // A tight room: smaller, and the words and the icon fit it.
+    const tight = templateSpanFontSize(cell!, 300, 16, 16, "watch");
+    expect(tight).toBeLessThan(16);
+    expect(tight).toBeGreaterThanOrEqual(6.4);
+    // Never under 40% of the full size; the rest ends in an ellipsis.
+    expect(templateSpanFontSize(cell!, 20, 16, 16, "watch")).toBe(6.4);
+  });
+
+  it("lets one cell rows set the size when there are no columns", () => {
+    const rows = templateColumnRows("[icon:heater] Woonkamer is warm en gezellig vandaag\n[icon:power] Aanbouw uit", true) ?? [];
+    expect(rows.every(templateRowSpans)).toBe(true);
+    expect(templateColumnsFontSize(rows, 100, 500, 16, "watch")).toBeLessThan(16);
   });
 
   it("sizes columns by the widest cell of each, and stops at 40%", () => {

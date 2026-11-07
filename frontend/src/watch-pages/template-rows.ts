@@ -115,26 +115,52 @@ export const TEMPLATE_COLUMN_ROW = TEMPLATE_INTER_ROW;
 /** A cell's icon fits a box this tall, as a part of the text size. */
 export const TEMPLATE_ICON_TALL = 1.1;
 
+/** A cell's icon slot and the gap after it, as parts of the text size. */
+function iconUnits(cell: TemplateCell): number {
+  return cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP);
+}
+
+function cellUnits(cell: TemplateCell, device: TemplateFitDevice): number {
+  return iconUnits(cell) + templateTextUnits(cell.text, device);
+}
+
 /**
  * The size the columns are drawn at, in points: `largest`, shrunk (to 40% at
  * most, as the plain text) until the widest cell of each column and the rows
  * fit the box. Widths are the device's own (`template-fit.ts`), and a row is
  * as tall as its font's line, as a grid of `.system(size:)` text is.
+ *
+ * Beside real columns a row of one cell takes no part in the width: its own
+ * words shrink instead (`templateSpanFontSize`), so one long line no longer
+ * shrinks the whole grid (R5-050). With no columns, every row is one cell
+ * and they set the size. The app's `TemplateColumnsText` does the same.
  */
 export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])[], widthPt: number, heightPt: number, largest: number, device: TemplateFitDevice = "watch"): number {
-  const cellUnits = (cell: TemplateCell) => (cell.icon === undefined ? 0 : TEMPLATE_ICON_SLOT + (cell.text === "" ? 0 : TEMPLATE_CELL_GAP)) + templateTextUnits(cell.text, device);
   const widths: number[] = [];
   let across = 0;
   for (const row of rows) {
     if (templateRowSpans(row)) {
-      across = Math.max(across, ...row.map(cellUnits));
+      across = Math.max(across, ...row.map((cell) => cellUnits(cell, device)));
       continue;
     }
     row.forEach((cell, i) => {
-      widths[i] = Math.max(widths[i] ?? 0, cellUnits(cell));
+      widths[i] = Math.max(widths[i] ?? 0, cellUnits(cell, device));
     });
   }
-  const total = Math.max(across, widths.reduce((sum, w) => sum + w, 0) + Math.max(0, widths.length - 1) * TEMPLATE_COLUMN_GAP);
+  const total = widths.length === 0 ? across : widths.reduce((sum, w) => sum + w, 0) + (widths.length - 1) * TEMPLATE_COLUMN_GAP;
   const fit = Math.min(largest, Math.max(1, widthPt) / Math.max(1, total), Math.max(1, heightPt) / (Math.max(1, rows.length) * TEMPLATE_COLUMN_ROW));
   return Math.round(Math.max(largest * 0.4, fit) * 10) / 10;
+}
+
+/**
+ * The size, in points, the words of a row of one cell beside columns draw at:
+ * the grid's `size`, or less so the row fits `widthPt`, but never under 40%
+ * of `largest`. Its icon keeps the grid's size. Past that floor the row ends
+ * in an ellipsis, as the app's `minimumScaleFactor` and tail truncation do.
+ */
+export function templateSpanFontSize(cell: TemplateCell, widthPt: number, size: number, largest: number, device: TemplateFitDevice = "watch"): number {
+  const text = templateTextUnits(cell.text, device);
+  if (text <= 0) return size;
+  const fit = (Math.max(0, widthPt) - iconUnits(cell) * size) / text;
+  return Math.round(Math.max(largest * 0.4, Math.min(size, fit)) * 10) / 10;
 }
