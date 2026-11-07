@@ -262,7 +262,10 @@ describe("the dialog", () => {
     expect(longPress).toHaveLength(5);
     expect(longPress.every((t) => t.startsWith('<button type="button" class="ws-tile'))).toBe(true);
     expect(longPress.filter((t) => t.includes("aria-pressed=true"))).toHaveLength(1);
-    expect(longPress[1]).toContain("aria-pressed=true");
+    // Very short is the default on both devices (R5-044).
+    expect(longPress[0]).toContain("aria-pressed=true");
+    expect(longPress[0]).toContain('<span class="ws-tile-name">Very short</span>');
+    expect(longPress[0]).toContain('<span class="ws-tile-detail">75ms</span>');
     expect(longPress[1]).toContain('<span class="ws-tile-name">Short</span>');
     expect(longPress[1]).toContain('<span class="ws-tile-detail">150ms</span>');
     expect(shown).toContain('role="group" aria-label=Hold time');
@@ -317,8 +320,8 @@ describe("the dialog", () => {
     // The reset dot is offered while the row is away from its default.
     const row = flatten(templates(tree(), "ws-tile-row").find((t) => t.values.includes("longPressDuration")));
     expect(row).toContain("reset-dot");
-    expect(row).toContain("Back to Short (150 ms)");
-    press("longPressDuration", "Short");
+    expect(row).toContain("Back to Very short (75 ms)");
+    press("longPressDuration", "Very short");
     expect(inside.edits.size).toBe(0);
   });
 

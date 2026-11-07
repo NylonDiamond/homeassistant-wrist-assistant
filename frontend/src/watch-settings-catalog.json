@@ -163,7 +163,7 @@
           "label": "Hold time",
           "help": "How long you press a tile before its extra options open.",
           "phoneHelp": "How long you press a tile before its extra options open. With Holding a tile opens set to iOS Menu on the iPhone, iOS sets this time itself.",
-          "default": "Short",
+          "default": "Super Fast",
           "options": [
             {"value": "Super Fast", "label": "Very short (75 ms)"},
             {"value": "Short", "label": "Short (150 ms)"},
@@ -289,7 +289,7 @@
           "devices": ["watch", "iphone"],
           "type": "enum",
           "label": "Page name",
-          "help": "The name of the page, at the top of the screen. Auto shows it for two seconds when the page opens.",
+          "help": "The name of the page, at the top of the screen. Auto shows it for two seconds when the page opens. A page shows its name only when its own Page title Display is not None.",
           "default": "On",
           "options": [
             {"value": "Off", "label": "Hide"},

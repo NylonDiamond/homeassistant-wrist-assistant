@@ -102,10 +102,10 @@ describe("the shared fixtures", () => {
 // ── the rows ─────────────────────────────────────────────────────────────
 
 describe("the rows", () => {
-  it("shows every key of the table but schemaVersion and the retired webhook button size, once each", () => {
+  it("shows every key of the table but schemaVersion, once each", () => {
     const shown = styleRows().map((r) => r.key);
     expect(new Set(shown).size).toBe(shown.length);
-    const hidden = ["schemaVersion", "storedWebhookButtonSize"];
+    const hidden = ["schemaVersion"];
     expect([...shown].sort()).toEqual(Object.keys(table.keys).filter((k) => !hidden.includes(k)).sort());
   });
 
@@ -118,6 +118,7 @@ describe("the rows", () => {
       ["Content", ["showButtonIcons", "showStateBadge", "stateBadgePosition", "stateBadgeSize", "stateBadgePill"]],
       ["Animation", ["tapAnimation"]],
       ["Delivery", ["storedDeliveryMode"]],
+      ["Webhook alerts", ["storedWebhookButtonSize"]],
     ]);
     expect(groups(1)).toEqual([
       ["Volume", ["soundVolume"]],
@@ -203,13 +204,18 @@ describe("enum writes", () => {
     expect(buildStyleSaveDocument(base, edits).storedDeliveryMode).toBe("reliable");
   });
 
-  it("shows no webhook button size, and keeps a stored one on save", () => {
-    expect(styleRow("storedWebhookButtonSize")).toBeUndefined();
+  it("reads an absent webhook button size as Medium, keeps a stored one, and saves a pick", () => {
+    expect(Object.hasOwn(base, "storedWebhookButtonSize")).toBe(false);
+    const r = row("storedWebhookButtonSize");
+    expect(styleValue(r, base)).toBe("medium");
+    expect(withStyleEdit(new Map(), base, r, "medium").size).toBe(0);
     const configured = fixture("02-configured.json");
     expect(configured.storedWebhookButtonSize).toBe("extraLarge");
-    const edits = withStyleEdit(new Map(), configured, row("cornerStyle"), "sharp");
-    expect(buildStyleSaveDocument(configured, edits).storedWebhookButtonSize).toBe("extraLarge");
-    expect(buildStyleSaveDocument(configured, new Map([["storedWebhookButtonSize", "small"]]))).toEqual(configured);
+    expect(styleValue(r, configured)).toBe("extraLarge");
+    const other = withStyleEdit(new Map(), configured, row("cornerStyle"), "sharp");
+    expect(buildStyleSaveDocument(configured, other).storedWebhookButtonSize).toBe("extraLarge");
+    const picked = withStyleEdit(new Map(), configured, r, "small");
+    expect(buildStyleSaveDocument(configured, picked).storedWebhookButtonSize).toBe("small");
   });
 
   it("never writes null", () => {

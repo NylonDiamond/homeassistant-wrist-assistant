@@ -20,7 +20,7 @@
   "entityRadialVerticalQuickRadialGestureTrigger": "Swipe Up/Down",
   "handGestureAction": "Refresh",
   "hapticIntensity": "Medium",
-  "longPressDuration": "Short",
+  "longPressDuration": "Super Fast",
   "motionGestureSensitivity": "Off",
   "motionGestureSensitivityLevel": 4,
   "pageIndicatorColorHex": "#FFFFFF",

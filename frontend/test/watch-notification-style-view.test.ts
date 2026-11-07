@@ -198,10 +198,11 @@ describe("Watch settings with the notification style", () => {
     const at = (s: string) => shown.indexOf(s);
     expect(at("data-sec=ws-camera")).toBeGreaterThan(0);
     expect(at("data-sec=ws-notifications")).toBeGreaterThan(at("data-sec=ws-camera"));
-    // Sounds is its own group. Wrist Webhooks is gone, so no card and no
-    // row for its button size is drawn.
+    // Sounds is its own group. The webhook button size is a row in the
+    // Notifications card, not a card of its own.
     expect(shown).not.toContain("data-sec=ws-wristWebhooks");
-    expect(shown).not.toContain("data-key=storedWebhookButtonSize");
+    expect(at("data-key=storedWebhookButtonSize")).toBeGreaterThan(at("data-key=storedDeliveryMode"));
+    expect(at("data-key=storedWebhookButtonSize")).toBeLessThan(at("data-sec=ws-sounds"));
     expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at(`data-sec="ws-device"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
     // The preview leads the Notifications card.

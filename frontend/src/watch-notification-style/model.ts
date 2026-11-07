@@ -116,6 +116,7 @@ export const NOTIFICATION_STYLE_ICONS: Readonly<Record<string, string>> = {
   backgroundStyle: "rectangle.fill",
   buttonFill: "rectangle.grid.1x2.fill",
   buttonSize: "arrow.up.left.and.arrow.down.right",
+  storedWebhookButtonSize: "arrow.up.left.and.arrow.down.right",
   cornerStyle: "square.on.square", // panel's own; the phone's is not shipped
   useEntityTintColor: "paintpalette.fill",
   accentColor: "paintbrush.fill", // panel's own
@@ -147,6 +148,7 @@ function parseShownWhen(text: string | undefined): StyleRow["showIf"] {
 function absentValue(key: string, entry: TableKey): StyleValue {
   if (entry.type === "sound") return ABSENT;
   if (key === table.delivery.key) return table.delivery.absentReadsAs;
+  if (key === table.webhookButtonSize.key) return table.webhookButtonSize.absentReadsAs;
   return entry.default as StyleValue;
 }
 
@@ -185,13 +187,11 @@ function tableGroups(sectionId: string): { label: string; keys: string[] }[] {
  * The dialog's two sections, in the phone's order and grouping:
  *
  * - **Notifications**: the phone's Notification Style screen (Style, Color,
- *   Content, Animation), then Delivery from its Notifications screen.
+ *   Content, Animation), then Delivery from its Notifications screen, then
+ *   the Webhook alerts button size (the table's Wrist Webhooks section).
  * - **Sounds**: Volume, then the seven sounds. The Button Press Sound sits
  *   on the phone's Style screen; here it leads the other six, so every sound
  *   is in one place.
- *
- * The table's Wrist Webhooks section (its button size) is left out: the
- * feature is gone, and the key is kept on save as it was read.
  */
 function buildSections(): StyleSection[] {
   const groups = (sectionId: string, skip: readonly string[] = []) =>
@@ -203,7 +203,7 @@ function buildSections(): StyleSection[] {
     {
       id: "notifications",
       title: "Notifications",
-      groups: [...groups("notifications", ["Sound"]), ...groups("delivery")],
+      groups: [...groups("notifications", ["Sound"]), ...groups("delivery"), ...groups("wristWebhooks")],
     },
     {
       id: "sounds",

@@ -569,8 +569,10 @@ describe("the defaults a new watch's settings open on", () => {
   it("carries the keys the app cannot decode without, at the app's own defaults", () => {
     const doc = watchBehaviorDefaults();
     // The fields of `BehaviorPreferences` that are not optional in Swift.
+    // Hold time is Very short, as both apps hold before any settings
+    // arrive (`LongPressDuration.platformDefault`, R5-044).
     const required: Record<string, unknown> = {
-      longPressDuration: "Short",
+      longPressDuration: "Super Fast",
       doubleTapSpeed: "Fast",
       hapticIntensity: "Medium",
       showPendingAnimation: true,
