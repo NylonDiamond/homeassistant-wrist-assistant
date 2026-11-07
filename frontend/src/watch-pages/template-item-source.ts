@@ -1,8 +1,17 @@
 // Conservative visual edits to Jinja: change only a literal symbol, label,
 // or a literal colour choice. Expressions and control flow are kept intact.
 import { templateIconColor } from "./rich-text.js";
-import { scanTemplateSource } from "./template-source.js";
+import { scanTemplateSource, alignTemplate } from "./template-source.js";
+import { templateRows } from "./template-rows.js";
 import type { TemplateLayoutPart } from "./template-layout.js";
+
+/** Code navigation may highlight an entire cell with several expressions,
+ * even when visual source edits cannot safely split that cell. */
+export function templateItemCodeRange(source: string, rendered: string, part: TemplateLayoutPart): { from: number; to: number } | undefined {
+  if (part.source !== undefined) return { from: part.source.from, to: part.source.to };
+  const cell = alignTemplate(scanTemplateSource(source), templateRows(rendered))?.[part.row]?.cells[part.cell];
+  return part.kind === "icon" ? cell?.icon : cell?.text;
+}
 
 export interface TemplateColorChoice { key: string; label: string; value: string; from: number; to: number }
 interface ColorSource { spec: string; from: number; to: number; own: boolean }

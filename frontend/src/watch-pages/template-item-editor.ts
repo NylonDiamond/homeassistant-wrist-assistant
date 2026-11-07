@@ -2,7 +2,7 @@ import { html, svg, nothing, type TemplateResult } from "lit";
 import type { TemplateEditorData } from "./template-editor.js";
 import { templateRows } from "./template-rows.js";
 import { type TemplateLayoutPart, type TemplateTileLayout, type TemplateLayoutItem, templateLayoutParts, templateLayoutShape, resolveTemplateLayout, alignTemplateItems } from "./template-layout.js";
-import { type TemplateColorChoice, templateItemSource, templateItemColorChange, applyTemplateSourceChanges } from "./template-item-source.js";
+import { type TemplateColorChoice, templateItemSource, templateItemCodeRange, templateItemColorChange, applyTemplateSourceChanges } from "./template-item-source.js";
 import { templateIconColor } from "./rich-text.js";
 import { templateSelectionRect, templateMarqueeSelection, type SelectionPoint } from "./template-item-selection.js";
 import { snapTemplateItems, type TemplateSnapBox, type TemplateAlignmentGuide } from "./template-item-snap.js";
@@ -25,7 +25,7 @@ export class TemplateItemEditor {
   private tile: string | undefined;
   private value = "";
   private selected = new Set<string>();
-  private grid = true;
+  private grid = false;
   private snap = true;
   private measure: CanvasRenderingContext2D | null | undefined;
   private note: string | undefined;
@@ -38,6 +38,7 @@ export class TemplateItemEditor {
   private sizeStart: Map<string, number> | undefined;
   private scale = 100;
   private pointerClick = false;
+  private pointerCode: string | undefined;
   private guides: TemplateAlignmentGuide[] = [];
 
   constructor(private readonly host: ItemHost) {}
@@ -150,14 +151,16 @@ export class TemplateItemEditor {
 
   start(event: PointerEvent): void {
     if (event.button !== 0 || this.data().busy || this.drag || this.marquee) return;
-    this.pointerClick = true;
+    this.pointerClick = true; this.pointerCode = undefined;
     const target = (event.target as Element).closest<HTMLElement>("[data-tk]");
     if (!target) { this.startMarquee(event); return; }
-    const key = target.dataset["tk"]!;
+    const key = target.dataset["tk"]!; this.pointerCode = key;
     const modifier = event.ctrlKey || event.metaKey;
     if (modifier) this.pick(this.selected.has(key) ? [...this.selected].filter(k => k !== key) : [...this.selected, key]);
     else if (!this.selected.has(key)) this.pick([key]);
-    if (!this.selected.has(key)) return;
+    if (!this.selected.has(key)) {
+      event.preventDefault(); this.pointerCode = undefined; this.highlightCode(key); return;
+    }
     event.preventDefault();
     const layout = this.capture();
     const box = this.host.element.querySelector<HTMLElement>(".te-tile .wp-tpl")?.getBoundingClientRect();
@@ -184,13 +187,25 @@ export class TemplateItemEditor {
     window.addEventListener("keydown", this.escape, true);
   }
 
+  private highlightCode(key: string): void {
+    const part = this.parts().find(p => p.key === key);
+    const range = part && templateItemCodeRange(this.host.text(), this.value, part);
+    if (range !== undefined && range.from < range.to) this.host.showCode(range.from, range.to);
+  }
+
   press(event: MouseEvent): void {
-    if (this.pointerClick && event.detail !== 0) { this.pointerClick = false; return; }
-    this.pointerClick = false;
+    if (this.pointerClick && event.detail !== 0) {
+      this.pointerClick = false;
+      const key = this.pointerCode; this.pointerCode = undefined;
+      if (key !== undefined) this.highlightCode(key);
+      return;
+    }
+    this.pointerClick = false; this.pointerCode = undefined;
     const target = (event.target as Element).closest<HTMLElement>("[data-tk]");
     if (!target) return;
     const key = target.dataset["tk"]!;
     this.pick(event.ctrlKey || event.metaKey ? this.selected.has(key) ? [...this.selected].filter(k => k !== key) : [...this.selected, key] : [key]);
+    this.highlightCode(key);
   }
 
   private readonly move = (event: PointerEvent): void => {
@@ -198,7 +213,7 @@ export class TemplateItemEditor {
     if (marquee) {
       if (event.pointerId !== marquee.pointer || marquee.tile !== this.data().tileId) return;
       if (!marquee.moved && Math.hypot(event.clientX - marquee.startX, event.clientY - marquee.startY) < 5) return;
-      marquee.moved = true; event.preventDefault();
+      marquee.moved = true; this.pointerCode = undefined; event.preventDefault();
       marquee.to = { x: (event.clientX - marquee.frame.left) / marquee.frame.width, y: (event.clientY - marquee.frame.top) / marquee.frame.height };
       this.pick(templateMarqueeSelection(marquee.boxes, templateSelectionRect(marquee.from, marquee.to), marquee.before, marquee.additive));
       return;
@@ -206,7 +221,7 @@ export class TemplateItemEditor {
     const drag = this.drag;
     if (!drag || drag.tile !== this.data().tileId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
-    drag.moved = true; event.preventDefault();
+    drag.moved = true; this.pointerCode = undefined; event.preventDefault();
     const dx = (event.clientX - drag.startX) / drag.width, dy = (event.clientY - drag.startY) / drag.height;
     const lead = drag.layout.items.find(p => p.key === drag.lead)!;
     const layout = structuredClone(drag.layout), own = layout.items.filter(p => this.selected.has(p.key));
@@ -227,10 +242,15 @@ export class TemplateItemEditor {
       this.host.update(); return;
     }
     const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = [];
+    const code = drag && !drag.moved ? this.pointerCode : undefined; this.pointerCode = undefined;
     if (drag && !drag.moved && !drag.modifier) this.pick([drag.lead]);
     this.data().ended(); this.host.update();
+    // A Control-click can finish as a context menu on macOS, with no click
+    // event. Pointer-up is the common end of every stationary item press.
+    if (code !== undefined) this.highlightCode(code);
   };
   private readonly cancel = (event?: PointerEvent): void => {
+    this.pointerCode = undefined;
     const marquee = this.marquee;
     if (marquee) {
       if (event && event.pointerId !== marquee.pointer) return;
@@ -241,7 +261,7 @@ export class TemplateItemEditor {
     this.data().ended(); this.host.update();
   };
   private readonly escape = (event: KeyboardEvent): void => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.cancel(); } };
-  dispose(): void { this.stopListeners(); this.drag = undefined; this.marquee = undefined; this.guides = []; }
+  dispose(): void { this.pointerCode = undefined; this.stopListeners(); this.drag = undefined; this.marquee = undefined; this.guides = []; }
 
   key(event: KeyboardEvent): void {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") { event.preventDefault(); this.pick(this.parts().map(p => p.key)); return; }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures-template-layout/cases.json";
 import { normalizeTemplateLayout, alignTemplateItems, resolveTemplateLayout, templateLayoutParts, templateLayoutShape } from "../src/watch-pages/template-layout.js";
-import { applyTemplateSourceChanges, templateColorChoices, templateItemColorChange, templateItemSource } from "../src/watch-pages/template-item-source.js";
+import { applyTemplateSourceChanges, templateColorChoices, templateItemColorChange, templateItemCodeRange, templateItemSource } from "../src/watch-pages/template-item-source.js";
 import { setWatchTemplateLayout } from "../src/watch-pages/app-model.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 
@@ -128,5 +128,32 @@ describe("align selected template items", () => {
   it("does nothing for fewer than two matching items", () => {
     const before = layout();
     for (const keys of [[], [before.items[0]!.key], [before.items[0]!.key, "missing"]]) expect(alignTemplateItems(before, new Set(keys), "vertical")).toBe(before);
+  });
+});
+
+describe("preview item code navigation", () => {
+  it("finds the exact icon, expression and label ranges", () => {
+    const source = "[color:red][icon:lightbulb.fill] {{ count }} lights on[/color]";
+    const rendered = "[color:red][icon:lightbulb.fill] 12 lights on[/color]";
+    const parts = templateLayoutParts(source, rendered);
+    const selected = parts.map(part => {
+      const range = templateItemCodeRange(source, rendered, part)!;
+      return source.slice(range.from, range.to);
+    });
+    expect(selected).toEqual(["[icon:lightbulb.fill]", "{{ count }}", "lights on"]);
+  });
+  it("highlights a whole multi-expression cell without enabling ambiguous source edits", () => {
+    const source = "[icon:house] {{ a }} and {{ b }} home";
+    const rendered = "[icon:house] 1 and 2 home";
+    const part = templateLayoutParts(source, rendered).find(p => p.kind === "text")!;
+    expect(part.source).toBeUndefined();
+    const range = templateItemCodeRange(source, rendered, part)!;
+    expect(source.slice(range.from, range.to)).toBe("{{ a }} and {{ b }} home");
+    expect(templateItemSource(source, part).label).toBeUndefined();
+  });
+  it("does not guess a source range for ambiguous branches", () => {
+    const source = "{% if home %}[icon:house] Home{% else %}[icon:house] Home{% endif %}";
+    const rendered = "[icon:house] Home";
+    for (const part of templateLayoutParts(source, rendered)) expect(templateItemCodeRange(source, rendered, part)).toBeUndefined();
   });
 });
