@@ -240,6 +240,7 @@ from .widget_hmac import (
     WAHMACError,
     WANonceCache,
     precheck_wa_request,
+    refusal_reply,
     sign_response,
     validate_wa_request,
 )
@@ -583,7 +584,9 @@ class WAActionView(HomeAssistantView):
     Lives at `/api/wrist_assistant/v2/action`. Validates HMAC, parses the JSON
     body, looks up the op handler in `_OP_HANDLERS`, returns the handler's
     Response. Unknown op → 400. Auth failure → 401 (uniform reason regardless
-    of which check failed; debug log carries the specific tag). One
+    of which check failed; debug log carries the specific tag), save a
+    timestamp outside the window, which says ``clock_off`` and the server's
+    time (``refusal_reply``). One
     exception: a good signature from a device whose bound Home Assistant
     user was deleted gets a signed 403 ``{"ok": false, "error":
     "user_gone", "message"}`` (``_user_gone_response``), as the delta view
@@ -615,7 +618,8 @@ class WAActionView(HomeAssistantView):
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/action): %s", err.reason)
             _log_signed_request_rejected(self._hass, domain_data, request, err.reason)
-            return Response(status=401, text="Unauthorized")
+            text, content_type = refusal_reply(err)
+            return Response(status=401, text=text, content_type=content_type)
         body = await _read_capped_body(request, ACTION_MAX_BODY_BYTES)
         if body is None:
             return Response(status=413, text="Request body too large")
@@ -630,7 +634,8 @@ class WAActionView(HomeAssistantView):
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/action): %s", err.reason)
             _log_signed_request_rejected(self._hass, domain_data, request, err.reason)
-            return Response(status=401, text="Unauthorized")
+            text, content_type = refusal_reply(err)
+            return Response(status=401, text=text, content_type=content_type)
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
         if secret_entry is None or secret_entry.secret_bytes is None:
@@ -798,18 +803,21 @@ def _delta_over_caps(payload: dict[str, Any]) -> str | None:
 
 
 def _lean_request(payload: dict[str, Any]) -> tuple[bool, str | None, str | None]:
-    """``(lean, caps_hash, epoch)`` from a delta poll. ``caps_hash`` and
-    ``epoch`` are read only with ``lean: true``; a value that is not a short
-    string reads as absent."""
-    if payload.get("lean") is not True:
-        return False, None, None
+    """``(lean, caps_hash, epoch)`` from a delta poll. ``caps_hash`` is read
+    only with ``lean: true``. ``epoch`` is read on every poll: the first poll
+    of a new client on the device is full, and its cursor can come from
+    before a restart (R5-066). A value that is not a short string reads as
+    absent."""
 
     def token(raw: Any) -> str | None:
         if isinstance(raw, str) and 0 < len(raw) <= _DELTA_TOKEN_MAX_CHARS:
             return raw
         return None
 
-    return True, token(payload.get("caps_hash")), token(payload.get("epoch"))
+    epoch = token(payload.get("epoch"))
+    if payload.get("lean") is not True:
+        return False, None, epoch
+    return True, token(payload.get("caps_hash")), epoch
 
 
 def _held_revision(raw: Any) -> int | None:
@@ -885,7 +893,8 @@ class WADeltaView(HomeAssistantView):
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/delta): %s", err.reason)
             _log_signed_request_rejected(self._hass, domain_data, request, err.reason)
-            return Response(status=401, text="Unauthorized")
+            text, content_type = refusal_reply(err)
+            return Response(status=401, text=text, content_type=content_type)
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
         if secret_entry is None or secret_entry.secret_bytes is None:

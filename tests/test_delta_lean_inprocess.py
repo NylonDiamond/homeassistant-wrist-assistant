@@ -249,8 +249,13 @@ def test_a_poll_without_lean_is_answered_as_before(coordinator) -> None:
         assert body["http_actions"] == 3 and body["client_certificate"] == 7
         assert body["epoch"] == coord.epoch and "caps_hash" not in body
         cursor = body["next_cursor"]
-        # An epoch on a poll without lean is never judged.
+        # An epoch on a poll without lean is judged too (R5-066): the first
+        # poll of a new client is full, and its cursor may predate a restart.
         status, body = await _poll(coord, since=cursor, entities=[ent], timeout=0, epoch="nope")
+        assert status == 410 and body["resync_required"] is True
+        status, body = await _poll(coord, since=cursor, entities=[ent], timeout=0, epoch=coord.epoch)
+        assert status == 204
+        status, body = await _poll(coord, since=cursor, entities=[ent], timeout=0)
         assert status == 204
 
     asyncio.run(run())
@@ -1247,10 +1252,11 @@ def test_over_cap_fields_are_refused() -> None:
     assert over({}) is None
 
 
-def test_the_view_reads_the_lean_fields_only_with_lean() -> None:
+def test_the_view_reads_caps_hash_only_with_lean_and_the_epoch_always() -> None:
     lean = _view_helpers()["_lean_request"]
-    assert lean({"caps_hash": "abc", "epoch": "def"}) == (False, None, None)
+    assert lean({"caps_hash": "abc", "epoch": "def"}) == (False, None, "def")
     assert lean({"lean": 1, "caps_hash": "abc"}) == (False, None, None)
+    assert lean({"epoch": "x" * 65}) == (False, None, None)
     assert lean({"lean": True, "caps_hash": "abc", "epoch": "def"}) == (True, "abc", "def")
     assert lean({"lean": True, "caps_hash": "", "epoch": 4}) == (True, None, None)
     assert lean({"lean": True, "caps_hash": "x" * 65}) == (True, None, None)

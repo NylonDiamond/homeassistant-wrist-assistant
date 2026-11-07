@@ -181,6 +181,8 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "dr": types.SimpleNamespace(async_get=_untouchable("the device registry")),
         "WAHMACError": _HMACError,
         "validate_wa_request": _refuse_signature,
+        # Every refusal here is a bad signature, which reads `Unauthorized`.
+        "refusal_reply": lambda _err, **_k: ("Unauthorized", "text/plain"),
         # A signed request that gets past the signature stops here, which is
         # after the pairing store has heard about it.
         "_async_bound_user_refusal": _bound_user_refused,

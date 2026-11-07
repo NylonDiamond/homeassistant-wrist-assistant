@@ -10158,12 +10158,13 @@ function markerReadingFields(
  * it. Offered only for actions that run something in the background; for the
  * rest the key stays where it is and the app ignores it. An app older than
  * `MIN_VERSION_FOR_TAP_CONFIRM` runs the action on the first tap, so the
- * option carries the Needs line for the edited device (`tapConfirmNote`). */
+ * option carries the Needs line for the edited device (`tapConfirmNote`) and
+ * cannot be turned on there (`tapConfirmLocked`, R5-056). */
 export function tapConfirmField(tap: TapElement, set: (on: boolean) => void, host?: Pick<EditorHost, "watchAppVersion" | "deviceKind">): TemplateResult | typeof nothing {
   if (!tapActionCanConfirm(tap.action)) return nothing;
   const note = host === undefined ? undefined : tapConfirmNote(host);
   return html`
-    ${checkField("Ask before running", tap.confirm === true, set, false)}
+    ${checkField("Ask before running", tap.confirm === true, set, false, { disabled: host !== undefined && tapConfirmLocked(tap, host) })}
     <div class="hint">Tap once to arm, tap again within 5 seconds to run.</div>
     ${note === undefined ? nothing : html`<div class="hint keep">${note}</div>`}`;
 }
@@ -10173,6 +10174,14 @@ export function tapConfirmField(tap: TapElement, set: (on: boolean) => void, hos
  * release that asks. Nothing when it is new enough or has not reported. */
 export function tapConfirmNote(host: Pick<EditorHost, "watchAppVersion" | "deviceKind">): string | undefined {
   return watchVersionNote(host.watchAppVersion, MIN_VERSION_FOR_TAP_CONFIRM, host.deviceKind === "iphone" ? "iPhone" : "watch");
+}
+
+/** Whether "Ask before running" is greyed out: the edited device's app is
+ * older than the release that asks, so the switch would promise a question
+ * that never comes and a lock or garage door would run on the first tap. A
+ * switch already on stays free to turn off. */
+export function tapConfirmLocked(tap: TapElement, host: Pick<EditorHost, "watchAppVersion" | "deviceKind">): boolean {
+  return tap.confirm !== true && tapConfirmNote(host) !== undefined;
 }
 
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {

@@ -20,7 +20,7 @@ import {
   setTapConfirm,
   tapActionCanConfirm,
 } from "../src/model.js";
-import { tapConfirmField, tapConfirmNote } from "../src/editors.js";
+import { tapConfirmField, tapConfirmLocked, tapConfirmNote } from "../src/editors.js";
 import { MIN_VERSION_FOR_TAP_CONFIRM } from "../src/version.js";
 import { nothing } from "lit";
 
@@ -138,5 +138,17 @@ describe("which actions can ask first", () => {
     const text = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (typeof x === "function" ? undefined : x));
     expect(text(tapConfirmField(tap, () => {}, { watchAppVersion: "3.0.1" }))).toContain("Needs Wrist Assistant 3.2 or later on your watch.");
     expect(text(tapConfirmField(tap, () => {}, { watchAppVersion: "3.2.0" }))).not.toContain("Needs Wrist Assistant");
+  });
+
+  // R5-056: the note alone let a person turn it on and save, and the old
+  // watch then ran the action at once.
+  it("cannot be turned on for a device older than 3.2, and can still be turned off", () => {
+    const { tap } = withAttachedTap();
+    expect(tapConfirmLocked(tap, { watchAppVersion: "3.0.1" })).toBe(true);
+    expect(tapConfirmLocked(tap, { watchAppVersion: "3.0.1", deviceKind: "iphone" })).toBe(true);
+    expect(tapConfirmLocked(tap, { watchAppVersion: "3.2.0" })).toBe(false);
+    expect(tapConfirmLocked(tap, { watchAppVersion: null })).toBe(false);
+    setTapConfirm(tap, true);
+    expect(tapConfirmLocked(tap, { watchAppVersion: "3.0.1" })).toBe(false);
   });
 });

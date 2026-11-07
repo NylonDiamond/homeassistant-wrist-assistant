@@ -164,3 +164,35 @@ def test_the_precheck_refuses_what_validate_refuses_without_a_body(overrides, re
         with pytest.raises(mod.WAHMACError) as full:
             _validate(mod, _headers(b"{}", **overrides))
         assert full.value.reason == reason
+
+
+# R5-065: a clock off is the one refusal that says why, with the server's
+# time, so an app behind a proxy that sets its own Date header can still tell
+# it from a pair Home Assistant no longer holds.
+def test_a_timestamp_out_of_the_window_says_clock_off_with_the_server_time() -> None:
+    import json
+
+    with _loaded_hmac() as mod:
+        with pytest.raises(mod.WAHMACError) as err:
+            _validate(mod, _headers(b"{}", **{"X-WA-Ts": str(NOW - 3600)}))
+        text, content_type = mod.refusal_reply(err.value, now=NOW)
+        assert content_type == "application/json"
+        assert json.loads(text) == {"ok": False, "error": "clock_off", "server_time": NOW}
+        # Never the exact body the apps count as a strike.
+        assert text.strip() != mod.REFUSAL_TEXT
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"X-WA-Watch": "someone-else"},
+        {"X-WA-Version": "1"},
+        {"X-WA-Op": ""},
+        {"X-WA-Sig": "0" * 64},
+    ],
+)
+def test_every_other_refusal_reads_the_same_unauthorized(overrides) -> None:
+    with _loaded_hmac() as mod:
+        with pytest.raises(mod.WAHMACError) as err:
+            _validate(mod, _headers(b"{}", **overrides))
+        assert mod.refusal_reply(err.value, now=NOW) == ("Unauthorized", "text/plain")

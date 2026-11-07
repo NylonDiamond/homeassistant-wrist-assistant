@@ -127,10 +127,13 @@ def _loaded_store():
 
 
 class _Response:
-    def __init__(self, status: int = 200, text: str = "", body: Any = None) -> None:
+    def __init__(
+        self, status: int = 200, text: str = "", body: Any = None, content_type: str | None = None
+    ) -> None:
         self.status = status
         self.text = text
         self.body = body
+        self.content_type = content_type
 
 
 class _View:

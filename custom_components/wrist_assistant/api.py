@@ -1926,12 +1926,13 @@ class DeltaCoordinator:
                 custom_entity_ids=custom_entity_ids,
             )
 
-        # A lean poll names the epoch its cursor came from. A cursor from an
-        # earlier coordinator (a restart or a reload) can be in range by
-        # chance and still mean nothing here, so it is answered with a resync.
+        # A poll names the epoch its cursor came from, lean or not (a new
+        # client's first poll is full, R5-066). A cursor from an earlier
+        # coordinator (a restart or a reload) can be in range by chance and
+        # still mean nothing here, so it is answered with a resync. A poll
+        # with no epoch is not judged: apps before 3.2 never send one.
         if (
-            lean
-            and epoch is not None
+            epoch is not None
             and since is not None
             and since != ""
             and epoch != self._epoch

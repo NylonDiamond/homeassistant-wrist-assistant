@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import time
 from collections import OrderedDict
@@ -79,6 +80,39 @@ class WAHMACError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+# The body of every unsigned 401 but one. The apps count a 401 with exactly
+# this body as a strike against the pair (`WatchPairRejectionRules`), and
+# enough strikes a minute apart drop it.
+REFUSAL_TEXT = "Unauthorized"
+
+# What the one other body says: the request's timestamp was outside the
+# window. That is a clock off on one side, which pairing again cannot fix.
+CLOCK_OFF_ERROR = "clock_off"
+
+
+def refusal_reply(err: WAHMACError, *, now: float | None = None) -> tuple[str, str]:
+    """The text and content type of the unsigned 401 a view answers for
+    ``err``.
+
+    Every reason reads ``Unauthorized``, so a probing client still cannot
+    tell a wrong signature from an unknown watch. A timestamp outside the
+    window is the one exception (R5-065): it answers
+    ``{"ok": false, "error": "clock_off", "server_time": <unix seconds>}``.
+    The apps once told it apart only by the reply's ``Date`` header, and a
+    proxy that sets its own ``Date`` hid it, so a box whose clock was off
+    made a watch drop a pair Home Assistant still held. The timestamp is
+    checked before the watch is looked up, so the reply says nothing about
+    which watches are paired, and the server's time is in every ``Date``
+    header anyway. An app older than this reply reads the new body as a 401
+    that is not the integration's own, which counts no strike either.
+    """
+    if err.reason != "ts_out_of_window":
+        return REFUSAL_TEXT, "text/plain"
+    current = time.time() if now is None else now
+    body = json.dumps({"ok": False, "error": CLOCK_OFF_ERROR, "server_time": int(current)})
+    return body, "application/json"
 
 
 @dataclass
