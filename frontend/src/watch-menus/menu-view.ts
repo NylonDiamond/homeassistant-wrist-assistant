@@ -949,10 +949,11 @@ export function menuActionTileGroups(host: Pick<MenusViewHost, "targets">, ref: 
 }
 
 /** An HTTP action as the picker names it: its name, then "needs setup"
- * (with "on the iPhone" for the phone's own) or "on the iPhone" for an
- * iPhone action in a list that leads with the home's. */
+ * (the iPhone has no editor for it any more, so the words never send anyone
+ * there) or "on the iPhone" for an iPhone action in a list that leads with
+ * the home's. */
 function httpTargetLabel(t: MenuHTTPTarget): string {
-  if (t.needsSetup === true) return `${t.name} (${t.source === "home" ? "needs setup" : "needs setup on the iPhone"})`;
+  if (t.needsSetup === true) return `${t.name} (needs setup)`;
   return t.source === "iphone" ? `${t.name} (on the iPhone)` : t.name;
 }
 

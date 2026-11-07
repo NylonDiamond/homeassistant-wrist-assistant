@@ -25,6 +25,7 @@ import {
   WATCH_SETTINGS_CATALOG,
   savedLine,
   buildSaveDocument,
+  catalogFor,
   catalogSettings,
   TWIST_LEVELS,
   conflictRevision,
@@ -228,6 +229,15 @@ describe("the catalog", () => {
       expect(s.devices, s.key).toContain("iphone");
       expect(byKey.get(s.phoneShowIf!.key)!.devices, s.key).toContain("iphone");
     }
+  });
+
+  // On an iPhone set to iOS Menu, the system's menu keeps its own timing, so
+  // Hold time there says so (R5-077). The watch keeps the plain line.
+  it("gives the iPhone its own help line where a row works differently there", () => {
+    const hold = (device: "watch" | "iphone") => catalogFor(device).flatMap((sec) => sec.settings).find((x) => x.key === "longPressDuration")!;
+    expect(hold("watch").help).toBe("How long you press a tile before its extra options open.");
+    expect(hold("iphone").help).toContain("iOS sets this time itself");
+    for (const s of settings.filter((x) => x.phoneHelp !== undefined)) expect(s.devices, s.key).toContain("iphone");
   });
 
   it("puts every dependent row after the row it depends on", () => {

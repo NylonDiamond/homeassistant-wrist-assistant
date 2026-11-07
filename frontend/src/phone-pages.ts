@@ -41,7 +41,14 @@ export function iphoneDevices(owners: readonly OwnerSummary[]): OwnerSummary[] {
 /** Whether the home has a paired iPhone whose app is too old for pages of
  * its own: the iPhone app tab then asks for an update rather than a pairing. */
 export function hasPhoneAwaitingUpdate(owners: readonly OwnerSummary[]): boolean {
-  return owners.some((o) => deviceKindOf(o) === "iphone" && !o.is_orphan && !phoneShowsPages(o));
+  return owners.some(phoneAwaitsUpdate);
+}
+
+/** Whether this one device is a paired iPhone whose app is too old for pages
+ * of its own. Its overview then says so, as the iPhone app tab does, and
+ * offers no pages to add. */
+export function phoneAwaitsUpdate(owner: OwnerSummary | undefined): boolean {
+  return owner !== undefined && deviceKindOf(owner) === "iphone" && !owner.is_orphan && !phoneShowsPages(owner);
 }
 
 /** The iPhone app screen's heading while `hasPhoneAwaitingUpdate`. */

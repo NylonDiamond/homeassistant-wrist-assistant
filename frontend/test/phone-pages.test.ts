@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { moveKindMatches } from "../src/layouts.js";
-import { PHONE_PAGES_CAPABILITY, PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "../src/phone-pages.js";
+import { PHONE_PAGES_CAPABILITY, PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phoneAwaitsUpdate, phonePagesOn } from "../src/phone-pages.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, screenTakesPhone } from "../src/shell.js";
 import { IPHONE_PICK_KEY, WATCH_PICK_KEY, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick } from "../src/watch-pick.js";
 import { httpActionsSaveNote } from "../src/watch-http-actions/save-note.js";
@@ -153,6 +153,19 @@ describe("the iPhone app's pick", () => {
     expect(watchAppDevices([...OWNERS, old], true).map((o) => o.owner_watch_id)).toEqual(["w1", "w2", "p1"]);
     expect(hasPhoneAwaitingUpdate([...OWNERS, old])).toBe(true);
     expect(hasPhoneAwaitingUpdate(OWNERS)).toBe(false);
+    expect(phoneAwaitsUpdate(old)).toBe(true);
+    expect(OWNERS.map(phoneAwaitsUpdate)).toEqual(OWNERS.map(() => false));
+    expect(phoneAwaitsUpdate(undefined)).toBe(false);
+  });
+
+  // A 3.0.1 iPhone's overview offered "Add pages" while its Settings tab said
+  // it needed a newer app (R5-074): the overview reads the same check.
+  it("the device overview says an old iPhone needs a newer app, as its tab does", () => {
+    const source = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
+    const at = source.indexOf("  private renderHomeLineup(row: HomeDeviceRow)");
+    const overview = source.slice(at, source.indexOf("\n  }\n", at));
+    expect(overview).toContain("phoneAwaitsUpdate(this.ownerOf(ownerId))");
+    expect(overview).toContain("${PHONE_PAGES_UPDATE_TEXT}");
   });
 
   // The integration ships weeks before the app release with phone pages, so

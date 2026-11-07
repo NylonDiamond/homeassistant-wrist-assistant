@@ -378,12 +378,11 @@ export function watchCatalogSubtitle(kind: WatchLibraryKind, entry: WatchCatalog
 }
 
 /** What is wrong with an entry, in the phone's words, or undefined. The
- * panel still offers it, as the phone does. An action of the home's library
- * needs setup in Home Assistant, not on the iPhone. */
+ * panel still offers it, as the phone does. The iPhone has no HTTP action
+ * editor any more, so the words never send anyone there: an action is set up
+ * on the HTTP actions screen, wherever it came from. */
 export function watchCatalogWarning(kind: WatchLibraryKind, entry: WatchCatalogEntry): string | undefined {
-  if (kind === "httpAction" && (entry as WatchCatalogHTTPAction).needsSetup) {
-    return (entry as WatchCatalogHTTPAction).source === "home" ? "Needs setup" : "Needs setup on the iPhone";
-  }
+  if (kind === "httpAction" && (entry as WatchCatalogHTTPAction).needsSetup) return "Needs setup";
   return undefined;
 }
 

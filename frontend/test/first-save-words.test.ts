@@ -155,6 +155,11 @@ describe("HTTP actions' update line", () => {
     expect(homeOwesHttpActions([owner("w", { has_iphone: true })])).toBe(true);
   });
 
+  it("stays away from a watch a code first paired, which has nothing to move", () => {
+    expect(homeOwesHttpActions([phone("p", "3.2.0"), owner("w", { has_iphone: true, holds_old_setup: false })])).toBe(false);
+    expect(homeOwesHttpActions([owner("w", { has_iphone: true, holds_old_setup: true })])).toBe(true);
+  });
+
   it("ignores an orphan and a watch that is only old itself", () => {
     expect(homeOwesHttpActions([{ ...phone("p", "3.0.1"), is_orphan: true }])).toBe(false);
     expect(homeOwesHttpActions([owner("w", { app_version: "3.0.1", has_iphone: false })])).toBe(false);

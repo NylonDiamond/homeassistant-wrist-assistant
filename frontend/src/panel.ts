@@ -442,7 +442,7 @@ import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { MOVE_WAIT_ENDED_EVENT, firstSaveAskText, noRecordStart, phoneMovesOf, seedMayLand, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
-import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
+import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phoneAwaitsUpdate, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
   formButtonStyles,
@@ -20944,7 +20944,11 @@ export class WristAssistantPanel extends LitElement {
     const ownerId = row.id;
     const word = row.kind === "watch" ? "watch" : "iPhone";
     const listOf = (kind: "pages" | "status_pages" | "menus") => kind === "menus" ? ALL_MENUS_PATH : kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
-    const library = row.kind === "watch" || this.phonePages ? renderHomeLineup({
+    // An iPhone app too old for pages of its own: say so, as the iPhone app
+    // tab does, rather than offer pages it cannot show.
+    const library = row.kind === "iphone" && phoneAwaitsUpdate(this.ownerOf(ownerId))
+      ? html`<p class="hl-empty">${PHONE_PAGES_UPDATE_TEXT}</p>`
+      : row.kind === "watch" || this.phonePages ? renderHomeLineup({
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
       appVersion: this.ownerOf(ownerId)?.app_version,

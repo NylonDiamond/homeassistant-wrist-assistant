@@ -349,7 +349,7 @@ describe("the hold and slide menus with a catalog", () => {
     const http = row.options.filter((o) => o.group !== undefined);
     expect(http.map((o) => o.group)).toEqual(["Run HTTP action", "Run HTTP action", "Run HTTP action", "Run HTTP action"]);
     expect(http.map((o) => watchHTTPSlideChoice(o.value))).toEqual(CATALOG.httpActions.map((a) => a.id));
-    expect(http.at(-1)!.label).toBe("Garage Door (needs setup on the iPhone)");
+    expect(http.at(-1)!.label).toBe("Garage Door (needs setup)");
     expect(row.options.at(-1)!.value).toBe("none");
     expect(row.options.some((o) => o.value === "httpAction")).toBe(false);
     expect(row.http).toBeUndefined();
@@ -430,7 +430,7 @@ describe("the Tile card for a library tile", () => {
     expect(menu.oldTargetName).toBe("Lights");
     expect(menu.note).toBeUndefined();
     const actions = watchLibraryTargetMenu(http(), CATALOG)!;
-    expect(actions.options.at(-1)!.label).toBe("Garage Door (Needs setup on the iPhone)");
+    expect(actions.options.at(-1)!.label).toBe("Garage Door (Needs setup)");
     expect(watchLibraryTargetMenu(tileOf({ entityId: "light.desk" }), CATALOG)).toBeUndefined();
     expect(watchLibraryTargetMenu(macro(), CATALOG)).toBeUndefined();
   });

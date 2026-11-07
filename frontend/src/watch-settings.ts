@@ -90,6 +90,9 @@ export interface CatalogSetting {
    * look and the popup background, which only the phone's Watch look
    * draws. `catalogFor("iphone")` turns it into `andShowIf`. */
   phoneShowIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
+  /** On an iPhone, the help line in place of `help`, for a row that works
+   * differently there. `catalogFor("iphone")` puts it in `help`. */
+  phoneHelp?: string;
   /** A second condition the row must also meet, set only by `catalogFor`. */
   andShowIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
 }
@@ -605,8 +608,14 @@ export function settingsTitle(device: SettingDevice): string {
  * device is the watch's alone. On an iPhone a row's `phoneShowIf` becomes
  * a second condition it must meet (`andShowIf`). */
 export function catalogFor(device: SettingDevice, catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): CatalogSection[] {
-  const forDevice = (s: CatalogSetting): CatalogSetting =>
-    device === "iphone" && s.phoneShowIf !== undefined ? { ...s, andShowIf: s.phoneShowIf } : s;
+  const forDevice = (s: CatalogSetting): CatalogSetting => {
+    if (device !== "iphone") return s;
+    return {
+      ...s,
+      ...(s.phoneShowIf === undefined ? {} : { andShowIf: s.phoneShowIf }),
+      ...(s.phoneHelp === undefined ? {} : { help: s.phoneHelp }),
+    };
+  };
   return catalog.sections
     .map((section) => ({
       ...section,

@@ -1896,7 +1896,8 @@ export class WaHomeMapEditor extends LitElement {
       ${this.dockMenuButton("look", `Look: ${real ? "3D" : MODEL_LOOK_NAMES[look ?? "night"] ?? look}`, "How the model is drawn: the tiles' looks, or real 3D")}
       <button type="button" class="hme-tb" title=${real ? "Show the whole floor from the home style's turn" : "Back to the home style's turn"} @click=${() => this.turnBack()}>⟲ Turn back</button>
       ${withLive && live !== undefined ? html`<span class="hme-vsep"></span>${live}` : nothing}
-    </div>${this.dockMenuList("look", "Look", looks, "menuitemradio")}${this.dockMenuList("sky", "Sky", skies, "menuitemradio")}${this.renderNorthMenu(north)}`;
+      ${this.dockMenuList("look", "Look", looks, "menuitemradio")}${this.dockMenuList("sky", "Sky", skies, "menuitemradio")}${this.renderNorthMenu(north)}
+    </div>`;
   }
 
   /** What the sky shows now: Now with no sun to go by is the night. */
@@ -1954,7 +1955,8 @@ export class WaHomeMapEditor extends LitElement {
       <span class="hme-vsep"></span>
       ${this.page.dock?.(ctx) ?? nothing}
       ${this.dockMenuButton("view", "View", "What the plan shows: the grid, names, live states and more")}
-    </div>${this.dockMenuList("view", "View", items, "menuitemcheckbox")}`;
+      ${this.dockMenuList("view", "View", items, "menuitemcheckbox")}
+    </div>`;
   }
 
   /** A dock's menu button, View or Look, opening or closing its list. */
@@ -1964,9 +1966,9 @@ export class WaHomeMapEditor extends LitElement {
       @click=${() => { this.dockMenu = open ? undefined : which; }}>${label} <span class="hme-caret" aria-hidden="true">▾</span></button>`;
   }
 
-  /** A dock's menu while it is open, over the dock rather than in it (the
-   * dock scrolls sideways, which would cut it off): each switch ticked
-   * when on. A View switch keeps the menu open; a look closes it. */
+  /** A dock's menu while it is open, drawn inside the dock and placed just
+   * above it, so a dock that wraps to two rows keeps it clear: each switch
+   * ticked when on. A View switch keeps the menu open; a look closes it. */
   private dockMenuList(which: "view" | "look" | "sky", label: string, items: readonly HomeMapDockItem[], role: "menuitemcheckbox" | "menuitemradio"): TemplateResult | typeof nothing {
     if (this.dockMenu !== which) return nothing;
     return html`<div class="hme-dock-pop" role="menu" aria-label=${label}>

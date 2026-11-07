@@ -165,7 +165,9 @@ export function httpActionsSavedBy(record: Pick<HttpActionsRecord, "updated_by">
 export function homeOwesHttpActions(owners: readonly OwnerSummary[]): boolean {
   return owners.some((o) => !o.is_orphan && (
     (deviceKindOf(o) === "iphone" && setupMoveNeedsUpdate(o.app_version))
-    || (deviceKindOf(o) === "watch" && o.has_iphone === true && o.owner_iphone_moves !== true && o.another_iphone_moves !== true)
+    // A watch a code first paired (`holds_old_setup` false) has no old setup
+    // for its iPhone to move, so a fresh install is never told to update.
+    || (deviceKindOf(o) === "watch" && o.has_iphone === true && o.holds_old_setup !== false && o.owner_iphone_moves !== true && o.another_iphone_moves !== true)
   ));
 }
 

@@ -255,11 +255,11 @@ describe("the words", () => {
 
   it("a library action needs setup in Home Assistant; an iPhone action keeps the iPhone's words", () => {
     expect(watchCatalogWarning("httpAction", joined.httpActions[2]!)).toBe("Needs setup");
-    expect(watchCatalogWarning("httpAction", joined.httpActions[5]!)).toBe("Needs setup on the iPhone");
-    expect(watchCatalogWarning("httpAction", GARAGE!)).toBe("Needs setup on the iPhone");
+    expect(watchCatalogWarning("httpAction", joined.httpActions[5]!)).toBe("Needs setup");
+    expect(watchCatalogWarning("httpAction", GARAGE!)).toBe("Needs setup");
     expect(watchCatalogMark("httpAction", joined.httpActions[0]!)).toBeUndefined();
     expect(watchCatalogMark("httpAction", joined.httpActions[3]!)).toBe("On the iPhone");
-    expect(watchCatalogMark("httpAction", joined.httpActions[5]!)).toBe("Needs setup on the iPhone");
+    expect(watchCatalogMark("httpAction", joined.httpActions[5]!)).toBe("Needs setup");
     // The catalog read on its own marks nothing.
     expect(watchCatalogMark("httpAction", OUTDOOR!)).toBeUndefined();
   });
@@ -298,7 +298,7 @@ describe("the page editor's menus over the joined list", () => {
       "HTTP Action (Needs setup)",
       "Outdoor Temp (On the iPhone)",
       "HTTP Action (On the iPhone)",
-      "Garage Door (Needs setup on the iPhone)",
+      "Garage Door (Needs setup)",
     ]);
     expect(menu.selected).toBe(PORCH);
     expect(menu.current).toBe(findWatchCatalogEntry(joined, "httpAction", PORCH));
@@ -324,7 +324,7 @@ describe("the page editor's menus over the joined list", () => {
     const row = watchHoldSlideMenus(lamp, joined)!.rows[0]!;
     const http = row.options.filter((o) => o.group !== undefined);
     expect(http.map((o) => o.label)).toEqual([
-      "Open Gate", "Porch Temp", "HTTP Action (needs setup)", "Outdoor Temp (on the iPhone)", "HTTP Action (on the iPhone)", "Garage Door (needs setup on the iPhone)",
+      "Open Gate", "Porch Temp", "HTTP Action (needs setup)", "Outdoor Temp (on the iPhone)", "HTTP Action (on the iPhone)", "Garage Door (needs setup)",
     ]);
     expect(watchHTTPSlideChoice(http[1]!.value)).toBe(PORCH);
     // Only the library, and the slide's action is not in it.
@@ -459,7 +459,7 @@ describe("the Target card of an HTTP action tile", () => {
   it("an iPhone action in the joined list keeps the iPhone's words and no link", () => {
     const { host } = settingsHost(httpTile(GARAGE!.id), watchCatalogWithHttpLibrary(CATALOG, LIBRARY));
     const text = flat(renderTileSettings(host, { sections: ["target"] }));
-    expect(text).toContain(`<div class="hint warn ts-under">Needs setup on the iPhone.</div>`);
+    expect(text).toContain(`<div class="hint warn ts-under">Needs setup.</div>`);
     expect(text).not.toContain("Open HTTP actions");
   });
 

@@ -104,7 +104,7 @@ describe("the phone's catalog bytes", () => {
     expect(watchCatalogSubtitle("statusPage", catalog.statusPages[1]!)).toBe("6 rows");
     expect(watchCatalogSubtitle("statusPage", catalog.statusPages[0]!)).toBe("1 row");
     expect(watchCatalogSubtitle("httpAction", catalog.httpActions[0]!)).toBeUndefined();
-    expect(watchCatalogWarning("httpAction", catalog.httpActions[3]!)).toBe("Needs setup on the iPhone");
+    expect(watchCatalogWarning("httpAction", catalog.httpActions[3]!)).toBe("Needs setup");
     expect(watchCatalogWarning("httpAction", catalog.httpActions[0]!)).toBeUndefined();
     expect(watchCatalogWarning("statusPage", catalog.statusPages[1]!)).toBeUndefined();
   });

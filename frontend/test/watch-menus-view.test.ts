@@ -994,7 +994,7 @@ describe("the Run HTTP Action target", () => {
       "Open Gate (on the iPhone)",
       "Outdoor Temp (on the iPhone)",
       "HTTP Action (on the iPhone)",
-      "Garage Door (needs setup on the iPhone)",
+      "Garage Door (needs setup)",
     ]);
     // The stored id is the library's Gate, in another case: picked, not missing.
     expect(text).toMatch(/<option value=3e4d1000-0000-4000-8000-000000000384 \?selected=true>Gate<\/option>/);
@@ -1042,7 +1042,7 @@ describe("the Run HTTP Action target", () => {
     // own warning as the page editor shows it.
     const before = field(inspector({ ...NO_MENU_TARGETS, httpActions: CATALOG.httpActions }, { catalogKnown: true }));
     expect(before).toContain(">Outdoor Temp</option>");
-    expect(before).toContain(">Garage Door (needs setup on the iPhone)</option>");
+    expect(before).toContain(">Garage Door (needs setup)</option>");
     expect(before).not.toContain("(on the iPhone)");
   });
 

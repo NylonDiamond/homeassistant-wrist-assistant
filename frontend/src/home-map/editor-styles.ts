@@ -419,7 +419,9 @@ export const editorStyles = css`
     position: absolute; left: 50%; transform: translateX(-50%); z-index: 2;
     display: flex; gap: 4px; align-items: center; padding: 4px; border-radius: 12px;
     background: rgba(28, 28, 30, 0.92); border: 1px solid #3a3a3c; white-space: nowrap;
-    max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none;
+    /* A narrow plan (Both, or a small window) wraps the bar onto a second
+     * row rather than cutting buttons off at its edge. */
+    max-width: calc(100% - 28px); flex-wrap: wrap; justify-content: center;
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
   .hme-pill { top: 14px; }
@@ -451,9 +453,10 @@ export const editorStyles = css`
   .hme-rtool-name { font-size: 10.5px; font-weight: 500; line-height: 1; white-space: nowrap; }
   .hme-rtool-sep { height: 1px; background: #3a3a3c; margin: 2px 6px; flex: none; }
   .hme-stage-hint { position: absolute; left: 86px; bottom: 22px; z-index: 1; color: #8e8e93; font-size: 11px; pointer-events: none; }
-  /* The dock's View and Look menus, over the dock. */
+  /* The dock's View and Look menus, over the dock: inside it, so they sit
+   * just above it however many rows it wraps to. */
   .hme-dock-pop {
-    position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); z-index: 4; min-width: 200px; padding: 4px;
+    position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); z-index: 4; min-width: 200px; padding: 4px;
     display: flex; flex-direction: column; gap: 1px; border-radius: 12px;
     background: rgba(28, 28, 30, 0.96); border: 1px solid #3a3a3c; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
