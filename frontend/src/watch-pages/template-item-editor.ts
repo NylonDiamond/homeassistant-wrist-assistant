@@ -4,6 +4,7 @@ import { templateRows } from "./template-rows.js";
 import { type TemplateLayoutPart, type TemplateTileLayout, type TemplateLayoutItem, templateLayoutParts, templateLayoutShape, resolveTemplateLayout, alignTemplateItems } from "./template-layout.js";
 import { type TemplateColorChoice, templateItemSource, templateItemColorChange, applyTemplateSourceChanges } from "./template-item-source.js";
 import { templateIconColor } from "./rich-text.js";
+import { templateSelectionRect, templateMarqueeSelection, type SelectionPoint } from "./template-item-selection.js";
 import { snapTemplateItems, type TemplateSnapBox, type TemplateAlignmentGuide } from "./template-item-snap.js";
 
 interface ItemHost {
@@ -15,6 +16,7 @@ interface ItemHost {
   showCode(from: number, to: number): void;
 }
 interface ItemDrag { tile: string; startX: number; startY: number; width: number; height: number; boxes: TemplateSnapBox[]; layout: TemplateTileLayout; before?: TemplateTileLayout; moved: boolean; lead: string; modifier: boolean }
+interface MarqueeDrag { tile: string; pointer: number; frame: DOMRect; from: SelectionPoint; to: SelectionPoint; startX: number; startY: number; boxes: TemplateSnapBox[]; before: string[]; additive: boolean; moved: boolean }
 interface ColorGroup { key: string; label: string; targets: { part: TemplateLayoutPart; choice: TemplateColorChoice }[] }
 
 /** Canvas interaction and the small inspector below it. The CodeMirror
@@ -25,10 +27,10 @@ export class TemplateItemEditor {
   private selected = new Set<string>();
   private grid = true;
   private snap = true;
-  private vertical: "center" | "left" = "center";
   private measure: CanvasRenderingContext2D | null | undefined;
   private note: string | undefined;
   private drag: ItemDrag | undefined;
+  private marquee: MarqueeDrag | undefined;
   private working: TemplateTileLayout | undefined;
   private seenLayout: TemplateTileLayout | undefined;
   private baseline = new Map<string, string>();
@@ -147,9 +149,10 @@ export class TemplateItemEditor {
   }
 
   start(event: PointerEvent): void {
+    if (event.button !== 0 || this.data().busy || this.drag || this.marquee) return;
     this.pointerClick = true;
     const target = (event.target as Element).closest<HTMLElement>("[data-tk]");
-    if (event.button !== 0 || !target || this.data().busy) return;
+    if (!target) { this.startMarquee(event); return; }
     const key = target.dataset["tk"]!;
     const modifier = event.ctrlKey || event.metaKey;
     if (modifier) this.pick(this.selected.has(key) ? [...this.selected].filter(k => k !== key) : [...this.selected, key]);
@@ -169,6 +172,18 @@ export class TemplateItemEditor {
     window.addEventListener("keydown", this.escape, true);
   }
 
+  private startMarquee(event: PointerEvent): void {
+    const root = this.host.element.querySelector<HTMLElement>(".te-tile"), frame = root?.querySelector<HTMLElement>(".wp-tpl")?.getBoundingClientRect();
+    if (!root || !frame || !(frame.width > 0 && frame.height > 0)) return;
+    event.preventDefault(); root.focus({ preventScroll: true });
+    const from = { x: (event.clientX - frame.left) / frame.width, y: (event.clientY - frame.top) / frame.height };
+    this.marquee = { tile: this.data().tileId, pointer: event.pointerId, frame, from, to: from, startX: event.clientX, startY: event.clientY, boxes: this.snapBoxes(frame.left, frame.top, frame.width, frame.height), before: [...this.selected], additive: event.ctrlKey || event.metaKey || event.shiftKey, moved: false };
+    window.addEventListener("pointermove", this.move);
+    window.addEventListener("pointerup", this.end);
+    window.addEventListener("pointercancel", this.cancel);
+    window.addEventListener("keydown", this.escape, true);
+  }
+
   press(event: MouseEvent): void {
     if (this.pointerClick && event.detail !== 0) { this.pointerClick = false; return; }
     this.pointerClick = false;
@@ -179,6 +194,15 @@ export class TemplateItemEditor {
   }
 
   private readonly move = (event: PointerEvent): void => {
+    const marquee = this.marquee;
+    if (marquee) {
+      if (event.pointerId !== marquee.pointer || marquee.tile !== this.data().tileId) return;
+      if (!marquee.moved && Math.hypot(event.clientX - marquee.startX, event.clientY - marquee.startY) < 5) return;
+      marquee.moved = true; event.preventDefault();
+      marquee.to = { x: (event.clientX - marquee.frame.left) / marquee.frame.width, y: (event.clientY - marquee.frame.top) / marquee.frame.height };
+      this.pick(templateMarqueeSelection(marquee.boxes, templateSelectionRect(marquee.from, marquee.to), marquee.before, marquee.additive));
+      return;
+    }
     const drag = this.drag;
     if (!drag || drag.tile !== this.data().tileId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
@@ -194,10 +218,30 @@ export class TemplateItemEditor {
   private stopListeners(): void {
     window.removeEventListener("pointermove", this.move); window.removeEventListener("pointerup", this.end); window.removeEventListener("pointercancel", this.cancel); window.removeEventListener("keydown", this.escape, true);
   }
-  private readonly end = (): void => { const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = []; if (drag && !drag.moved && !drag.modifier) this.pick([drag.lead]); this.data().ended(); this.host.update(); };
-  private readonly cancel = (): void => { const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = []; if (drag?.moved) this.writeLayout(drag.before, true); this.data().ended(); this.host.update(); };
+  private readonly end = (event?: PointerEvent): void => {
+    const marquee = this.marquee;
+    if (marquee) {
+      if (event && event.pointerId !== marquee.pointer) return;
+      this.stopListeners(); this.marquee = undefined;
+      if (!marquee.moved && !marquee.additive) this.pick([]);
+      this.host.update(); return;
+    }
+    const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = [];
+    if (drag && !drag.moved && !drag.modifier) this.pick([drag.lead]);
+    this.data().ended(); this.host.update();
+  };
+  private readonly cancel = (event?: PointerEvent): void => {
+    const marquee = this.marquee;
+    if (marquee) {
+      if (event && event.pointerId !== marquee.pointer) return;
+      this.stopListeners(); this.marquee = undefined; this.pick(marquee.before); return;
+    }
+    const drag = this.drag; this.stopListeners(); this.drag = undefined; this.guides = [];
+    if (drag?.moved) this.writeLayout(drag.before, true);
+    this.data().ended(); this.host.update();
+  };
   private readonly escape = (event: KeyboardEvent): void => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.cancel(); } };
-  dispose(): void { this.stopListeners(); this.drag = undefined; this.guides = []; }
+  dispose(): void { this.stopListeners(); this.drag = undefined; this.marquee = undefined; this.guides = []; }
 
   key(event: KeyboardEvent): void {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") { event.preventDefault(); this.pick(this.parts().map(p => p.key)); return; }
@@ -216,6 +260,16 @@ export class TemplateItemEditor {
     const root = this.host.element.querySelector<HTMLElement>(".te-tile");
     if (!root) return;
     root.classList.toggle("te-free-grid", this.grid);
+    root.querySelector(".te-selection-box")?.remove();
+    if (this.marquee?.moved) {
+      const face = root.querySelector<HTMLElement>(".wp-tpl")?.getBoundingClientRect(), frame = root.getBoundingClientRect();
+      if (face) {
+        const rect = templateSelectionRect(this.marquee.from, this.marquee.to), selection = document.createElement("span");
+        selection.className = "te-selection-box"; selection.setAttribute("aria-hidden", "true");
+        selection.style.cssText = `left:${face.left - frame.left + rect.x * face.width}px;top:${face.top - frame.top + rect.y * face.height}px;width:${rect.width * face.width}px;height:${rect.height * face.height}px`;
+        root.append(selection);
+      }
+    }
     root.querySelector(".te-pick-outlines")?.remove();
     const outlines = document.createElement("span"), frame = root.getBoundingClientRect();
     outlines.className = "te-pick-outlines"; outlines.setAttribute("aria-hidden", "true");
@@ -264,7 +318,7 @@ export class TemplateItemEditor {
 
   toolbar(): TemplateResult {
     this.parts();
-    return html`<div class="te-item-tools"><label><input type="checkbox" .checked=${this.grid} @change=${(e: Event) => { this.grid = (e.target as HTMLInputElement).checked; this.host.update(); }}>Grid</label><label><input type="checkbox" .checked=${this.snap} title="Snap to nearby item or group edges and centers, then the grid" @change=${(e: Event) => { this.snap = (e.target as HTMLInputElement).checked; }}>Snap</label><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.parts().length === 0} @click=${() => this.pick(this.parts().map(p => p.key))}>Select all</button><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.layout() === undefined} @click=${() => { this.writeLayout(undefined); this.note = undefined; this.data().ended(); }}>Reset layout</button></div><div class="te-hint">Ctrl-click to select multiple. Snap lines up nearby items; hold Option/Alt to move freely.</div>`;
+    return html`<div class="te-item-tools"><label><input type="checkbox" .checked=${this.grid} @change=${(e: Event) => { this.grid = (e.target as HTMLInputElement).checked; this.host.update(); }}>Grid</label><label><input type="checkbox" .checked=${this.snap} title="Snap to nearby item or group edges and centers, then the grid" @change=${(e: Event) => { this.snap = (e.target as HTMLInputElement).checked; }}>Snap</label><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.parts().length === 0} @click=${() => this.pick(this.parts().map(p => p.key))}>Select all</button><button type="button" class="te-item-link" ?disabled=${this.data().busy || this.layout() === undefined} @click=${() => { this.writeLayout(undefined); this.note = undefined; this.data().ended(); }}>Reset layout</button></div><div class="te-hint">Drag empty space to select items. Ctrl-click adds or removes items. Hold Option/Alt to move freely.</div>`;
   }
 
   private glyph(symbol: string, px = 18): TemplateResult { return html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${this.data().icons.render(symbol, px, "currentColor") ?? nothing}</svg>`; }
@@ -314,14 +368,14 @@ export class TemplateItemEditor {
     this.writeLayout(layout, true);
   }
 
-  private align(direction: "vertical" | "horizontal"): void {
+  private align(direction: "vertical" | "horizontal", vertical: "center" | "left" = "center"): void {
     if (this.data().busy) return;
     const layout = this.capture();
     if (layout === undefined) return;
     const root = this.host.element.querySelector<HTMLElement>(".te-tile .wp-tpl"), box = root?.getBoundingClientRect();
     const scale = Number(root?.querySelector<HTMLElement>("[data-tpl-scale]")?.dataset["tplScale"]);
     const bounds = box && scale > 0 ? this.snapBoxes(box.left + 4 * scale, box.top, box.width - 8 * scale, box.height) : [];
-    const next = alignTemplateItems(layout, this.selected, direction, bounds, this.vertical);
+    const next = alignTemplateItems(layout, this.selected, direction, bounds, vertical);
     if (next === layout) return;
     this.data().ended();
     this.writeLayout(next);
@@ -342,7 +396,11 @@ export class TemplateItemEditor {
     const unsupported = chosen.some(p => p.source === undefined || templateItemSource(text, p).choices.length === 0);
     const sizeValue = chosen.length > 1 ? this.scale : items[0]?.size;
     return html`<section class="te-item-inspector" aria-label="Selected template items"><div class="te-item-head"><b>${chosen.length > 1 ? `${chosen.length} items selected` : chosen[0]!.kind === "icon" ? this.glyph(chosen[0]!.symbol!) : chosen[0]!.text}</b>${this.dot(changedPlacement, "placement", () => { const layout = this.capture(); if (layout) { layout.items.filter(p => this.selected.has(p.key)).forEach(p => { p.x = p.baseX; p.y = p.baseY; }); this.writeLayout(layout); } })}</div>
-      ${chosen.length < 2 ? nothing : html`<div class="te-item-field"><span>Align selected</span><div class="te-item-align"><button type="button" aria-label="Align vertically" title=${this.vertical === "left" ? "Line up left edges in one column; keep vertical spacing" : "Line up centers in one column; keep vertical spacing"} ?disabled=${this.data().busy} @click=${() => this.align("vertical")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d=${this.vertical === "left" ? "M3 1v14" : "M8 1v14"} stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x=${this.vertical === "left" ? "3" : "5"} y="10" width="6" height="3" rx="1"/></svg>`}Vertical</button><select aria-label="Vertical alignment" title="Vertical alignment" .value=${this.vertical} ?disabled=${this.data().busy} @change=${(e: Event) => { this.vertical = (e.target as HTMLSelectElement).value === "left" ? "left" : "center"; this.host.update(); }}><option value="center">Center</option><option value="left">Left</option></select><button type="button" aria-label="Align horizontally" title="Line up centers in one row; keep horizontal spacing" ?disabled=${this.data().busy} @click=${() => this.align("horizontal")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M1 8h14" stroke-dasharray="2 2"/><rect x="3" y="3" width="3" height="10" rx="1"/><rect x="10" y="5" width="3" height="6" rx="1"/></svg>`}Horizontal</button></div></div>`}
+      ${chosen.length < 2 ? nothing : html`<div class="te-item-field"><span>Align selected</span><div class="te-item-align">
+        <button type="button" aria-label="Align vertical center" title="Line up centers in one column; keep vertical spacing" ?disabled=${this.data().busy} @click=${() => this.align("vertical", "center")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M8 1v14" stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x="5" y="10" width="6" height="3" rx="1"/></svg>`}<span>Vertical<br>Center</span></button>
+        <button type="button" aria-label="Align vertical left" title="Line up left edges in one column; keep vertical spacing" ?disabled=${this.data().busy} @click=${() => this.align("vertical", "left")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 1v14" stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x="3" y="10" width="6" height="3" rx="1"/></svg>`}<span>Vertical<br>Left</span></button>
+        <button type="button" aria-label="Align horizontally" title="Line up centers in one row; keep horizontal spacing" ?disabled=${this.data().busy} @click=${() => this.align("horizontal")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M1 8h14" stroke-dasharray="2 2"/><rect x="3" y="3" width="3" height="10" rx="1"/><rect x="10" y="5" width="3" height="6" rx="1"/></svg>`}<span>Horizontal</span></button>
+      </div></div>`}
       ${singleIcon === undefined || iconSource === undefined ? nothing : html`<div class="te-item-field"><span>Icon${this.dot(iconSource.value !== this.baseline.get(`${singleIcon.key}:symbol`), "icon", () => this.editSymbol(singleIcon, this.baseline.get(`${singleIcon.key}:symbol`) ?? iconSource.value))}</span><details class="te-symbol-picker"><summary aria-label="Choose icon">${this.glyph(iconSource.value, 22)}</summary><input type="search" aria-label="Search icons" placeholder="Search icons" .value=${this.symbolSearch} @input=${(e: Event) => { this.symbolSearch = (e.target as HTMLInputElement).value; this.host.update(); }}><div class="te-symbol-grid">${symbols.map(symbol => html`<button type="button" aria-label=${symbol} title=${symbol} @click=${() => { this.editSymbol(singleIcon, symbol); this.host.element.querySelector<HTMLDetailsElement>(".te-symbol-picker")?.removeAttribute("open"); }}>${this.glyph(symbol)}</button>`)}</div></details></div>`}
       ${singleLabel === undefined || labelSource === undefined ? nothing : html`<label class="te-item-field"><span>Label${this.dot(labelSource.value !== this.baseline.get(`${singleLabel.key}:label`), "label", () => this.editLabel(singleLabel, this.baseline.get(`${singleLabel.key}:label`) ?? labelSource.value))}</span><input type="text" aria-label="Item label" .value=${labelSource.value} @change=${(e: Event) => this.editLabel(singleLabel, (e.target as HTMLInputElement).value)}></label>`}
       ${this.groups().map(group => {

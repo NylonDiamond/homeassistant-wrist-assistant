@@ -360,7 +360,7 @@ export class WaTemplateEditor extends LitElement {
         <div class="te-grid">
           <div class="te-left">
             ${picture === undefined ? nothing : html`<div class="te-well">
-              <div class="te-tile" @pointerdown=${(e: PointerEvent) => this.items.start(e)} @click=${(e: MouseEvent) => this.items.press(e)} @keydown=${(e: KeyboardEvent) => this.items.key(e)} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}</div>
+              <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.items.start(e)} @click=${(e: MouseEvent) => this.items.press(e)} @keydown=${(e: KeyboardEvent) => this.items.key(e)} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}</div>
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             ${this.items.toolbar()}
@@ -432,7 +432,7 @@ export const templateEditorStyles = css`
   .te-well .te-seg { align-self: flex-end; }
   .te-seg button { font: inherit; font-size: 11.5px; font-weight: 600; min-height: 22px; padding: 2px 9px; border: 0; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer; }
   .te-seg button.on { background: var(--wa-seg-on, var(--wa-hover)); color: var(--wa-ink); }
-  .te-tile { position: relative; display: flex; justify-content: center; max-width: 100%; }
+  .te-tile { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; position: relative; display: flex; justify-content: center; max-width: 100%; }
   .te-tile [data-tp] { pointer-events: auto; }
   .te-tile [data-tk] { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
   .te-free-grid .wp-tpl::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(210, 231, 255, .13) 1px, transparent 1px), linear-gradient(to bottom, rgba(210, 231, 255, .13) 1px, transparent 1px); background-size: 5% 5%; pointer-events: none; z-index: 3; }
@@ -450,8 +450,7 @@ export const templateEditorStyles = css`
   .te-reset-dot { width: 20px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; cursor: pointer; flex: none; }
   .te-reset-dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-blue); }
   .te-item-align { display: flex; gap: 6px; }
-  .te-item-align button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; padding: 6px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; cursor: pointer; }
-  .te-item-align select { min-width: 0; width: 69px; padding: 4px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; }
+  .te-item-align button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 6px 4px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; font-size: 11px; cursor: pointer; }
   .te-item-align button:hover { border-color: var(--wa-hue-blue); }
   .te-item-align button:disabled { opacity: .45; cursor: default; }
   .te-item-size { display: flex; align-items: center; gap: 6px; }
@@ -469,6 +468,7 @@ export const templateEditorStyles = css`
   .te-tile.found [data-tp].on { outline-color: var(--wa-hue-orange); }
   .te-tile.found [data-tk].te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-tile.found [data-tk][data-tp="text"].te-picked { outline: none; }
+  .te-selection-box { position: absolute; box-sizing: border-box; border: 1px solid var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 14%, transparent); pointer-events: none; z-index: 6; }
   .te-pick-outlines { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
   .te-pick-outlines > span { position: absolute; outline: 1px solid var(--wa-hue-blue); outline-offset: 1px; border-radius: 2px; pointer-events: none; }
   .te-snap-guides { position: absolute; pointer-events: none; z-index: 5; }
