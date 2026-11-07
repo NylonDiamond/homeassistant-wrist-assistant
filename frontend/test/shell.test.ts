@@ -199,7 +199,7 @@ describe("watch screens", () => {
     // The Home map needs the integration's `home_map`, which Home's Library
     // checks before listing it.
     // One pre-release word for it everywhere: BETA.
-    expect(WATCH_SCREENS.at(-1)).toMatchObject({ id: "home-map", label: "Home map", path: HOME_MAP_PATH, shared: true, beta: true, capability: "home_map" });
+    expect(WATCH_SCREENS.at(-1)).toMatchObject({ id: "home-map", label: "Home map", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: "home_map" });
     expect(watchScreenOf(at("/home-map"))).toBe(WATCH_SCREENS[9]);
   });
 

@@ -1524,7 +1524,7 @@ export class WaHomeMapEditor extends LitElement {
     const look = homeStyleOf(doc).look;
     return html`<header class="hme-bar">
       ${this.onHome === undefined ? nothing : html`<button type="button" class="hme-back" @click=${() => this.onHome?.()}>‹ Shared</button><span class="hme-vsep"></span>`}
-      <strong class="hme-title">Home map</strong><span class="hme-beta">BETA</span>
+      <strong class="hme-title">Home map</strong><span class="hme-beta">ALPHA</span>
       <div class="hme-floor-wrap">
         <button type="button" class="hme-tb hme-floor-btn" aria-label="Switch floor" aria-haspopup="menu" aria-expanded=${this.floorMenu ? "true" : "false"}
           @click=${() => { this.floorMenu = !this.floorMenu; }}>

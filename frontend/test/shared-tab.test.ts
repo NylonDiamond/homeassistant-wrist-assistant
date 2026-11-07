@@ -95,7 +95,7 @@ describe("the Home map card", () => {
 
   it("says plainly when there is no map yet", () => {
     for (const none of [null, undefined, doc([]), doc([{ id: "f", name: "Home", story: 0, rooms: [], pins: [] }])]) {
-      expect(mapCardFacts(none)).toEqual({ words: "No map yet. Scan your home with the iPhone app." });
+      expect(mapCardFacts(none)).toEqual({ words: "No map yet. Start one by hand here, or scan your home with the iPhone app." });
     }
   });
 });

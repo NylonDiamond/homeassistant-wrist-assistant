@@ -1559,7 +1559,7 @@ import{a as xo,b as Pn,c as qr,d as Xr,e as Yr,f as Zr,g as Qr,h as Jr,i as ae,j
       ${this.onHome===void 0?v:m`<button type="button" class="hme-link" @click=${()=>this.onHome?.()}>‹ Shared</button>`}
     </div></div>`}startByHand(){let t=this.session;if(t===void 0)return;let o=eo(),n=Qi(this.hass?.floors);if(!t.begin(r=>Ji(r,{id:o,name:n.name,story:n.story})))return;t.note=void 0,this.floorId=o,this.selection=void 0,this.needFit=!0,this.userMoved=!1,this.afterChange();let i=this.context();i!==void 0&&this.page.startDrawing(i)}renderBar(t,o){let n=this.baseFloor(),i=this.session?.state??{kind:"saved"},r=Pe(),a=Oe(t).look;return m`<header class="hme-bar">
       ${this.onHome===void 0?v:m`<button type="button" class="hme-back" @click=${()=>this.onHome?.()}>‹ Shared</button><span class="hme-vsep"></span>`}
-      <strong class="hme-title">Home map</strong><span class="hme-beta">BETA</span>
+      <strong class="hme-title">Home map</strong><span class="hme-beta">ALPHA</span>
       <div class="hme-floor-wrap">
         <button type="button" class="hme-tb hme-floor-btn" aria-label="Switch floor" aria-haspopup="menu" aria-expanded=${this.floorMenu?"true":"false"}
           @click=${()=>{this.floorMenu=!this.floorMenu}}>

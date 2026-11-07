@@ -176,8 +176,9 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   // "Camera framing", not "Cameras": Settings has a Cameras group of its
   // own, and this screen only sets how each picture is cut in alerts.
   { id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
-  // One pre-release word for the Home map everywhere: BETA, read from here.
-  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: true, capability: HOME_MAP_CAPABILITY },
+  // One pre-release word for the Home map everywhere: ALPHA, as on the
+  // iPhone, the New page sheet, the Add tile list and the editor.
+  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: HOME_MAP_CAPABILITY },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the

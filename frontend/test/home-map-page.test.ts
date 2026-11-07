@@ -316,7 +316,8 @@ describe("the Home map editor", () => {
     expect(ha.sent.map((m) => m.type)).toEqual(["wrist_assistant/home_map/get", "wrist_assistant/library/summary", "wrist_assistant/home_map/scans"]);
     const shown = text();
     expect(shown).toContain("Home map");
-    expect(shown).toContain("BETA");
+    expect(shown).toContain("ALPHA");
+    expect(shown).not.toContain("BETA");
     expect(shown).toContain("Ground floor");
     expect(shown).toContain("2 rooms · 5 devices");
     // One edit page: no mode tabs, the view switch and Home style in the bar.

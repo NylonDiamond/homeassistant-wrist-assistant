@@ -111,7 +111,7 @@ export interface MapPlan {
 export function mapCardFacts(doc: HomeMapDocument | null | undefined): MapCardFacts {
   const floors = doc?.floors ?? [];
   const rooms = floors.reduce((n, f) => n + f.rooms.length, 0);
-  if (rooms === 0) return { words: "No map yet. Scan your home with the iPhone app." };
+  if (rooms === 0) return { words: "No map yet. Start one by hand here, or scan your home with the iPhone app." };
   const pins = floors.reduce((n, f) => n + f.pins.length, 0);
   const floorWords = floors.length === 1 ? `1 floor (${floors[0]!.name})` : plural(floors.length, "floor");
   const plan = floors.map(mapPlan).find((p) => p !== undefined);
