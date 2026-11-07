@@ -1,8 +1,10 @@
 force_resync:
   name: Force resync
   description: >-
-    Clear all watch sessions, forcing every connected watch to perform
-    a full state refresh on its next poll.
+    Clear every device's session. On its next poll each watch and iPhone
+    sends its list of entities again, then carries on from where it was,
+    with no change missed. It does not make a device download everything
+    again.
   fields: {}
 
 send_notification:

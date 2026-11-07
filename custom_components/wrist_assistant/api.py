@@ -1361,7 +1361,9 @@ class DeltaCoordinator:
 
     @callback
     def async_force_resync(self) -> None:
-        """Clear all sessions, forcing watches to do a full state refresh."""
+        """Clear all sessions. Each device sends its entity list again on its
+        next poll and resumes from its own cursor, so nothing is missed and
+        no full snapshot is forced (``services.yaml`` says the same)."""
         self._sessions.clear()
         self._entity_to_watchers.clear()
         self._domain_watchers.clear()

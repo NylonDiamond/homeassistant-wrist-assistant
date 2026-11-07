@@ -771,6 +771,16 @@ async def _clear_stale_statistic_units_once(
                 ir.async_delete_issue(
                     hass, "sensor", f"units_changed_{statistic_id}"
                 )
+        except (ImportError, TypeError):
+            # An older Home Assistant: no such function (ImportError), or one
+            # without the unit class argument (TypeError). Its recorder never
+            # stored the unit class this rewrites around, and a fresh install
+            # never had the old unit, so there is nothing to tidy and nothing
+            # for the user to dismiss. No warning, no traceback.
+            _LOGGER.debug(
+                "No statistics units to realign on this Home Assistant version",
+                exc_info=True,
+            )
         except Exception:  # noqa: BLE001 — cosmetic cleanup must never fail setup
             # The recorder API is stable, but should it ever change, a failed
             # statistics tidy-up should degrade to "user dismisses the repair by
@@ -808,6 +818,12 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     coordinator = DeltaCoordinator(hass)
+    # The coordinator listens to state changes from its constructor. Home
+    # Assistant runs the on_unload callbacks of a setup that fails partway,
+    # so registering its shutdown first means a failed setup never leaves
+    # that listener running. A normal unload shuts it down too, and a second
+    # shutdown does nothing.
+    entry.async_on_unload(coordinator.async_shutdown)
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
     await notification_store.async_load()
@@ -1251,6 +1267,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         coordinator.register_capability("camera_webrtc")
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
+
+    @callback
+    def _drop_runtime_data() -> None:
+        # A setup that fails after this line leaves no half built entry in
+        # hass.data. A normal unload has already popped it, and a later
+        # setup's own data is never this one.
+        if hass.data.get(DOMAIN) is runtime_data:
+            hass.data.pop(DOMAIN, None)
+
+    entry.async_on_unload(_drop_runtime_data)
     # Live panel and phone subscriptions stay open across a reload; point
     # them at this entry's stores (see listener_relay.py).
     listener_relay(hass, COMPLICATIONS).follow(complication_store)

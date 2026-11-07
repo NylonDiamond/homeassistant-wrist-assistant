@@ -612,3 +612,68 @@ def test_statistics_unit_cleanup_names_the_unit_class() -> None:
         ("sensor.watch_count", {"new_unit_class": None, "new_unit_of_measurement": None})
     ]
     assert updates == [{"stats_units_dropped": True}]
+
+
+def _run_cleanup(statistics_module: dict[str, Any]) -> tuple[list[dict[str, Any]], list[logging.LogRecord]]:
+    """Runs the statistics cleanup against a stub recorder module, returning
+    the entry updates and the log records at WARNING or above."""
+    saved = dict(sys.modules)
+    _stub("homeassistant")
+    _stub("homeassistant.components")
+    _stub("homeassistant.components.recorder")
+    _stub("homeassistant.components.recorder.statistics", **statistics_module)
+    logger = logging.getLogger("wrist_assistant_stats_old_ha")
+    seen: list[logging.LogRecord] = []
+
+    class _Keep(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            if record.levelno >= logging.WARNING:
+                seen.append(record)
+
+    handler = _Keep()
+    logger.addHandler(handler)
+    try:
+        entries = [types.SimpleNamespace(domain="sensor", unique_id="x_watch_count", entity_id="sensor.watch_count")]
+        updates: list[dict[str, Any]] = []
+        namespace: dict[str, Any] = {
+            "_STATS_UNITS_DROPPED_FLAG": "stats_units_dropped",
+            "_DROPPED_UNIT_SUFFIXES": ("_watch_count",),
+            "_LOGGER": logger,
+            "er": types.SimpleNamespace(
+                async_get=lambda hass: None,
+                async_entries_for_config_entry=lambda reg, entry_id: entries,
+            ),
+            "ir": types.SimpleNamespace(async_delete_issue=lambda *a: None),
+        }
+        _from_init(namespace, "_clear_stale_statistic_units_once")
+        hass = types.SimpleNamespace(
+            config=types.SimpleNamespace(components={"recorder"}),
+            config_entries=types.SimpleNamespace(
+                async_update_entry=lambda entry, data: updates.append(data)
+            ),
+        )
+        asyncio.run(namespace["_clear_stale_statistic_units_once"](hass, types.SimpleNamespace(entry_id="e1", data={})))
+    finally:
+        logger.removeHandler(handler)
+        for key in list(sys.modules):
+            if key not in saved:
+                del sys.modules[key]
+        sys.modules.update(saved)
+    return updates, seen
+
+
+def test_statistics_unit_cleanup_is_quiet_on_an_old_home_assistant() -> None:
+    """HA 2024.8 has no ``async_update_statistics_metadata``, and a version
+    between has it without ``new_unit_class``. Neither has anything to tidy,
+    so the cleanup logs no warning or traceback and still marks itself done
+    (R5-083)."""
+    updates, warned = _run_cleanup({})
+    assert warned == []
+    assert updates == [{"stats_units_dropped": True}]
+
+    def no_unit_class(_hass: object, statistic_id: str, *, new_unit_of_measurement: Any) -> None:
+        raise AssertionError("not reached: the call names new_unit_class")
+
+    updates, warned = _run_cleanup({"async_update_statistics_metadata": no_unit_class})
+    assert warned == []
+    assert updates == [{"stats_units_dropped": True}]

@@ -132,6 +132,24 @@ def test_the_setup_orphan_sweep_cannot_fail_setup() -> None:
     assert guarded, "release_orphans in async_setup_entry is not inside try/except"
 
 
+def test_a_failed_setup_shuts_the_coordinator_down() -> None:
+    """The coordinator subscribes to state changes in its constructor. Home
+    Assistant runs a failed setup's on_unload callbacks, so its shutdown must
+    be registered before setup can fail: the statement right after the
+    coordinator is made, ahead of the first await (R5-084)."""
+    source = (_PKG / "__init__.py").read_text()
+    tree = ast.parse(source, filename="__init__.py")
+    [setup] = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "async_setup_entry"
+    ]
+    body = [n for n in setup.body if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))]
+    assert ast.unparse(body[0]) == "coordinator = DeltaCoordinator(hass)"
+    assert ast.unparse(body[1]) == "entry.async_on_unload(coordinator.async_shutdown)"
+    assert "_drop_runtime_data" in ast.unparse(setup), "a failed setup leaves its data in hass.data"
+
+
 def test_the_iphone_complication_capability_is_advertised() -> None:
     """The app pulls its lock screen records only when it sees this.
 

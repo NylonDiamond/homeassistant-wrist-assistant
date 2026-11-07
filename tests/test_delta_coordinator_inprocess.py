@@ -2534,3 +2534,19 @@ def test_a_phone_s_report_of_the_voice_marks_nothing_on_the_watch(coordinator) -
     asyncio.run(run())
     assert store.get("w1", "voice").delivered_revision == 0
     assert store.get("phone-1", "voice") is None
+
+
+def test_force_resync_service_text_matches_what_it_does() -> None:
+    """force_resync resumes each device from its own cursor (the test above),
+    so the service must not promise a full refresh (R5-082)."""
+    from pathlib import Path
+
+    text = (
+        Path(__file__).resolve().parents[1]
+        / "custom_components"
+        / "wrist_assistant"
+        / "services.yaml"
+    ).read_text()
+    block = text.split("force_resync:", 1)[1].split("\n\n", 1)[0]
+    assert "full state refresh" not in block
+    assert "carries on from where it was" in block
