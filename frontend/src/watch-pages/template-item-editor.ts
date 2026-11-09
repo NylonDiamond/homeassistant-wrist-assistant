@@ -402,6 +402,15 @@ export class TemplateItemEditor {
     this.data().ended();
   }
 
+  /** Whether a saved layout draws the tile. One that no longer fits the
+   * template's output leaves the automatic tile, where Line up columns and
+   * Lines apply. Until the first answer, a saved layout counts. */
+  layoutDraws(): boolean {
+    this.parts();
+    const layout = this.layout();
+    return layout !== undefined && (this.value === "" || resolveTemplateLayout(layout, this.value) !== undefined);
+  }
+
   inspector(): TemplateResult | typeof nothing {
     const chosen = this.chosen(), text = this.host.text();
     if (chosen.length === 0) return this.note === undefined ? nothing : html`<div class="te-hint">${this.note}</div>`;

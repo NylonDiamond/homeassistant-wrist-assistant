@@ -368,7 +368,7 @@ export class WaTemplateEditor extends LitElement {
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             ${this.items.toolbar()}
-            ${d.layout === undefined ? html`<label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
+            ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
               <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>` : nothing}
