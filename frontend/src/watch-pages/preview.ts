@@ -91,7 +91,7 @@ import {
   watchTemplateRowLimit,
   watchTemplateText,
 } from "./app-model.js";
-import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows, templateSpanFontSize } from "./template-rows.js";
+import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateColumnsInRoom, templateRowSpans, templateRows, templateSpanFontSize } from "./template-rows.js";
 import { type TemplateLayoutPart, templateLayoutParts, templatePartKey, resolveTemplateLayout } from "./template-layout.js";
 import { type TemplateFit, type TemplateFitDevice, TEMPLATE_FIT_METRICS, TEMPLATE_INTER_ROW, templateTextFit, templateTextUnits } from "./template-fit.js";
 import { TILE_FONT_STACK, onTileFontLoaded, tileFontLoaded } from "../font.js";
@@ -2327,7 +2327,7 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
   const rows = templateColumnRows(look.text, watchTemplateColumns(tile));
   return rows === undefined
     ? templateTextFit(look.text, room, height, limit, device).size / metrics.body
-    : templateColumnsFontSize(rows.slice(0, limit), room, height, metrics.columnsBody, device) / metrics.columnsBody;
+    : templateColumnsFontSize(templateColumnsInRoom(rows.slice(0, limit), height, metrics.columnsBody), room, height, metrics.columnsBody, device) / metrics.columnsBody;
 }
 
 /** A template tile as the watch draws it: its ground, border, pattern and
@@ -2353,7 +2353,8 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     const free = templateFreeFace(tile.templateLayout, look.text, textInk, zs, shadow, input.icons);
     if (free !== undefined) return free;
     const parts = templateLayoutParts(typeof tile.templateString === "string" ? tile.templateString : "", look.text);
-    const columnRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
+    const allRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);
+    const columnRows = allRows === undefined ? undefined : templateColumnsInRoom(allRows, vh, TEMPLATE_FIT_METRICS[device].columnsBody);
     if (columnRows !== undefined) {
       const size = templateColumnsFontSize(columnRows, vw - TEMPLATE_TILE_PAD * 2, vh, TEMPLATE_FIT_METRICS[device].columnsBody, device);
       return templateColumnsFace(columnRows, device, textInk, size, zs, shadow, input.icons, parts, vw - TEMPLATE_TILE_PAD * 2, TEMPLATE_FIT_METRICS[device].columnsBody);

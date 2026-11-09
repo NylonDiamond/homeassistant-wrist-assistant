@@ -153,6 +153,16 @@ export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])
 }
 
 /**
+ * The rows that fit `heightPt` at the smallest size, 40% of `largest`: the
+ * rest are dropped from the end, as the plain text drops lines, so no row is
+ * cut in half. At least one. The app's `TemplateColumnsText.rowsInRoom`.
+ */
+export function templateColumnsInRoom<Row>(rows: readonly Row[], heightPt: number, largest: number): Row[] {
+  const fits = Math.floor(heightPt / (largest * 0.4 * TEMPLATE_COLUMN_ROW) + 0.001);
+  return rows.slice(0, Math.max(1, fits));
+}
+
+/**
  * The size, in points, the words of a row of one cell beside columns draw at:
  * the grid's `size`, or less so the row fits `widthPt`, but never under 40%
  * of `largest`. Its icon keeps the grid's size. Past that floor the row ends

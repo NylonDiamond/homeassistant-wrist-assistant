@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setWatchTemplateColumns, watchTemplateColumns } from "../src/watch-pages/app-model.js";
-import { templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows, templateSpanFontSize } from "../src/watch-pages/template-rows.js";
+import { TEMPLATE_COLUMN_ROW, templateColumnRows, templateColumnsFontSize, templateColumnsInRoom, templateRowSpans, templateRows, templateSpanFontSize } from "../src/watch-pages/template-rows.js";
 import { templateRichTextSegments, templateStyledSegments } from "../src/watch-pages/rich-text.js";
 import { templateTextFit } from "../src/watch-pages/template-fit.js";
 import { alignTemplate, findTemplatePart, nearestName, namedEntityIds, scanTemplateSource, sourceRowAt, templateNameIssues, templateTokenValues } from "../src/watch-pages/template-source.js";
@@ -288,5 +288,16 @@ describe("the source of a template", () => {
     expect(alignTemplate(scan, templateRows("[icon:power] Woon [icon:thermometer.medium] 1\n[icon:fork.knife] Keuk"))).toBeUndefined();
     expect(alignTemplate(scanTemplateSource("{% if a %}x{% endif %}"), templateRows("x"))).toBeUndefined();
     expect(alignTemplate(scanTemplateSource("a {{ b"), templateRows("a"))).toBeUndefined();
+  });
+});
+
+describe("column rows past the smallest size", () => {
+  const rows = Array.from({ length: 10 }, (_, i) => i);
+  const row = 15 * 0.4 * TEMPLATE_COLUMN_ROW;
+  it("are dropped from the end, keeping at least one", () => {
+    expect(templateColumnsInRoom(rows, row * 10, 15)).toHaveLength(10);
+    expect(templateColumnsInRoom(rows, row * 8.5, 15)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(templateColumnsInRoom(rows, 1, 15)).toEqual([0]);
+    expect(templateColumnsInRoom(rows, 5000, 15)).toHaveLength(10);
   });
 });
