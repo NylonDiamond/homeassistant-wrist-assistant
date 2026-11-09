@@ -5319,13 +5319,13 @@ _HAND_OVER_MAX_SEALED_BOX_CHARS = 4 * -(-(_HAND_OVER_MAX_BODY_BYTES + 16) // 3)
 _HAND_OVER_MAX_SEALED_BODY_BYTES = _HAND_OVER_MAX_SEALED_BOX_CHARS + 1024
 
 
-async def _async_bound_user_is_active(ctx: _OpContext) -> bool:
-    """Whether the device is bound to an active Home Assistant user, admin
-    or not.
+async def _async_bound_user_is_active_admin(ctx: _OpContext) -> bool:
+    """Whether the device is bound to an active Home Assistant administrator.
 
     An unbound entry has no user to vouch for it, and a user who was deleted
-    or deactivated vouches for nothing either. Neither may hand over. The
-    lookup is an in-memory dictionary read, not I/O.
+    or deactivated vouches for nothing either. A user who is not an admin
+    may not add to the library, as in the panel. None of them may hand over.
+    The lookup is an in-memory dictionary read, not I/O.
     """
     if ctx.user_id is None:
         return False
@@ -5333,6 +5333,7 @@ async def _async_bound_user_is_active(ctx: _OpContext) -> bool:
     return (
         user is not None
         and user.is_active
+        and user.is_admin
         and not getattr(user, "system_generated", False)
     )
 
@@ -5347,7 +5348,7 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
            ``sealed`` key is always read sealed.
     Reply: {"ok": true, "revision": <int>, "added": <actions added>}
     Refusal: signed 403 {"ok": false, "error": "forbidden", "message"} when
-             the device is bound to no active user; signed 400
+             the device is bound to no active admin; signed 400
              "invalid" for a plain body or a sealed plaintext over 256 KiB
              (a sealed body may be larger by its base64 and envelope), a
              sealed box that is malformed or does not open, a plaintext that
@@ -5357,13 +5358,13 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     The seal keeps the library's globals (tokens, passwords in headers)
     out of anything that logs or caches the request body on the way.
 
-    Any device bound to an active user may hand over, admin or not. The
-    library's globals are sent raw by Home Assistant from its own network,
-    so whoever adds an action decides where they go; but the panel's HTTP
-    actions screen lets every signed-in user edit the same library
-    (``http_actions_ws.py``), so a hand-over grants nothing the user could
-    not do there. An unbound device has no user behind it and is still
-    refused. The owner is the signing id: the phone signs as
+    Only a device bound to an active admin may hand over. Home Assistant
+    sends the library's requests from its own network and fills in its
+    globals raw, so whoever adds an action decides where they go. The
+    panel's save and test are admin only for that reason
+    (``http_actions_ws.py``), and this op must not be a way round them. A
+    refused phone keeps its library and says an admin is needed. The owner
+    is the signing id: the phone signs as
     its watch. A pure merge (``http_actions.merge_hand_over``): stored
     actions and globals are never changed, a clashing global comes in under
     a new key. A second hand-over from an owner already listed changes
@@ -5377,11 +5378,11 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     store = getattr(ctx.domain_data, "http_actions_store", None)
     if store is None:
         return _http_actions_refusal(ctx, "unavailable", "integration not ready", 503)
-    if not await _async_bound_user_is_active(ctx):
+    if not await _async_bound_user_is_active_admin(ctx):
         return _http_actions_refusal(
             ctx,
             "forbidden",
-            "only a device paired to an active Home Assistant user can hand over HTTP actions",
+            "only a device paired to an active Home Assistant admin can hand over HTTP actions",
             403,
         )
     too_large = f"the library is over {_HAND_OVER_MAX_BODY_BYTES} bytes"
@@ -5464,7 +5465,7 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
         "hash": digest,
         "short_hash": store.short_hash(),
         "handed_over": store.has_handed_over(ctx.watch_id),
-        "can_hand_over": await _async_bound_user_is_active(ctx),
+        "can_hand_over": await _async_bound_user_is_active_admin(ctx),
     }
     if listed is not None and since != revision:
         reply["document"] = listed
