@@ -345,7 +345,6 @@ PHONE_ONLY_TILE_KEYS = frozenset(
         "cameraFullScreenStream",
         "sensorChart",
         "mediaArtwork",
-        "templateLines",
     }
 )
 # `updated_by` on a record the panel saved, in place of a device's signing id.

@@ -199,7 +199,7 @@ describe("the keys only the iPhone reads", () => {
     expect(WATCH_PHONE_EXTRAS_HINT).toBe("The watch ignores these");
     // Every kind that has a key only the iPhone reads.
     const kinds = [...new Set(WATCH_PHONE_SETTING_KEYS.flatMap((key) => watchPhoneKeyKinds(key)))];
-    expect(kinds.length).toBeGreaterThanOrEqual(6);
+    expect(kinds.length).toBeGreaterThanOrEqual(5);
     const ids = kinds.map((kind) => (isVirtualTileKind(kind) ? `${kind}.C3A0E000-0000-4000-8000-0000000000B7` : `${kind}.thing`));
     for (const entityId of ids) {
       const watch = text(renderTileSettings(tileHost([tile(entityId)])));

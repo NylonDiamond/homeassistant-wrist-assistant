@@ -61,15 +61,14 @@ import {
   WATCH_MEDIA_CONTROLS_MIN_COLUMNS,
   WATCH_SENSOR_CHART_CHOICES,
   WATCH_SENSOR_CHART_MIN_ROWS,
-  WATCH_TEMPLATE_LINES,
   watchCameraFullScreenStream,
   watchCameraTileLive,
   watchCameraTileStream,
   watchMediaArtwork,
   watchPhoneKeysOf,
   watchSensorChart,
-  watchTemplateLines,
 } from "./phone-keys-model.js";
+import { WATCH_TEMPLATE_LINES, watchTemplateLines } from "./app-model.js";
 import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPage,
@@ -272,7 +271,7 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
  * The sections a tile gets on `device`'s editor: `watchTileSettingsSections`
  * with the keys only the iPhone reads (`watchPhoneKeysOf`), when the tile
  * has any. On an iPhone they are one card in their natural place: after the
- * kind's task (a camera's Live video, a template's Lines), else after State
+ * kind's task (a camera's Live video), else after State
  * (a sensor's Chart, a media player's Artwork), else before Icon. On a watch
  * they sit together in the folded "iPhone extras" card, last.
  */
@@ -319,11 +318,6 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
     label: "Artwork and controls",
     help: `Shows the album art, title and artist, with previous, play and next on tiles ${WATCH_MEDIA_CONTROLS_MIN_COLUMNS} columns and wider.`,
   },
-  templateLines: {
-    title: "Lines",
-    label: "Lines",
-    help: "The most lines the iPhone shows of the result.",
-  },
 };
 
 /** The chart menu: Off, then the ranges; a stored value the panel does not
@@ -342,7 +336,7 @@ export function watchSensorChartShortNote(tile: WatchPageTile): string | undefin
   return `This tile is ${rows} ${rows === 1 ? "row" : "rows"} tall, so the iPhone shows no chart. Make it ${WATCH_SENSOR_CHART_MIN_ROWS} or taller.`;
 }
 
-/** The Lines menu: 1 to 8, the absent value marked as the default; a stored
+/** The Lines menu: the range, the absent value marked as the default; a stored
  * value off the range shown first, disabled. */
 export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
   const { min, max, absent } = WATCH_TEMPLATE_LINES;
@@ -372,10 +366,6 @@ export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): s
       const stored = watchSensorChart(tile);
       if (stored === undefined) return "";
       return WATCH_SENSOR_CHART_CHOICES.find((c) => c.value === stored)?.label ?? stored;
-    }
-    case "templateLines": {
-      const n = watchTemplateLines(tile);
-      return n === undefined ? "" : `${String(n)} lines`;
     }
   }
 }

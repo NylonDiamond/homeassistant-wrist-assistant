@@ -321,6 +321,7 @@ interface BehaviorSwitchSpec {
 interface AppTable {
   version: number;
   template: {
+    lines: { key: string; kinds: readonly string[]; min: number; max: number; absent: number; label: string; help: string };
     add: { addPreset: string };
     presets: WatchTemplatePreset[];
     richText: {
@@ -503,6 +504,30 @@ export function watchTemplateColumns(tile: WatchPageTile): boolean {
 
 export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
   return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? REMOVE : false) : undefined));
+}
+
+/** Lines' range and what an absent key reads as. */
+export const WATCH_TEMPLATE_LINES = { min: A.template.lines.min, max: A.template.lines.max, absent: A.template.lines.absent } as const;
+
+/** The stored line limit as stored, or undefined for none. */
+export function watchTemplateLines(tile: WatchPageTile): unknown {
+  return tile.templateLines;
+}
+
+/** The most rows a template tile draws, on both devices: the key, kept in
+ * range, or the absent value. */
+export function watchTemplateRowLimit(tile: WatchPageTile): number {
+  const { min, max, absent } = WATCH_TEMPLATE_LINES;
+  const lines = tile.templateLines;
+  return typeof lines === "number" ? Math.min(max, Math.max(min, Math.round(lines))) : absent;
+}
+
+/** "Lines": a whole number in range; the absent value removes the key, so a
+ * tile left at the default carries nothing. */
+export function setWatchTemplateLines(document: WatchPagesDocument, pageId: string, tileId: string, lines: number): WatchPagesDocument {
+  const { min, max, absent } = WATCH_TEMPLATE_LINES;
+  if (!Number.isInteger(lines) || lines < min || lines > max) return document;
+  return setKey(document, pageId, tileId, "templateLines", (tile) => (isTemplate(tile) ? (lines === absent ? REMOVE : lines) : undefined));
 }
 
 export function setWatchTemplateLayout(document: WatchPagesDocument, pageId: string, tileId: string, layout: TemplateTileLayout | undefined): WatchPagesDocument {

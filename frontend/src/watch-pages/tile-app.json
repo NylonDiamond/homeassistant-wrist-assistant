@@ -76,9 +76,11 @@
       "key": "templateLines",
       "kinds": ["template"],
       "min": 1,
-      "max": 8,
+      "max": 10,
       "absent": 5,
-      "write": "A whole number from min to max; picking absent removes the key. Only the iPhone reads it (tile-devices.json keys): the most lines it shows of the result. The watch keeps its own 5."
+      "label": "Lines",
+      "help": "The most lines the tile shows.",
+      "write": "A whole number from min to max; picking absent removes the key. Both devices read it: the most lines the tile shows of the result. An older app keeps its own limit: 5 on a watch, at most 8 on an iPhone."
     },
     "columns": {
       "key": "templateColumns",

@@ -88,6 +88,7 @@ import {
   watchShowWhenTemplateAllows,
   watchTemplateRender,
   watchTemplateColumns,
+  watchTemplateRowLimit,
   watchTemplateText,
 } from "./app-model.js";
 import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateRowSpans, templateRows, templateSpanFontSize } from "./template-rows.js";
@@ -2294,13 +2295,6 @@ function templateFreeFace(raw: unknown, text: string, ink: string, s: number, sh
   })}</span>`;
 }
 
-/** The most rows a template tile draws on the iPhone and on a watch. */
-function templateRowLimit(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "phone">): number {
-  if (input.phone === undefined) return 5;
-  const lines = tile.templateLines;
-  return typeof lines === "number" ? Math.min(8, Math.max(1, Math.round(lines))) : 5;
-}
-
 /** How much bigger a template tile's text is drawn than it is fitted: on an
  * iPhone the zoom (`OneLookZoom`, `OneLookZoomedFill`), as the text is the
  * watch's at the tile's room over it; 1 on a watch. */
@@ -2326,7 +2320,7 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
   const height = drawnHeight / zoom;
   const device = templateDevice(input, zoom);
   const metrics = TEMPLATE_FIT_METRICS[device];
-  const limit = templateRowLimit(tile, input);
+  const limit = watchTemplateRowLimit(tile);
   const room = width - TEMPLATE_TILE_PAD * 2;
   const free = resolveTemplateLayout(tile.templateLayout, look.text);
   if (free !== undefined) return Math.min(1, ...free.layout.items.map(p => p.size / metrics.body));
@@ -2355,7 +2349,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
       return html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * zs, "#FFCC00")}</span>`;
     }
     const device = templateDevice(input);
-    const limit = templateRowLimit(tile, input);
+    const limit = watchTemplateRowLimit(tile);
     const free = templateFreeFace(tile.templateLayout, look.text, textInk, zs, shadow, input.icons);
     if (free !== undefined) return free;
     const parts = templateLayoutParts(typeof tile.templateString === "string" ? tile.templateString : "", look.text);

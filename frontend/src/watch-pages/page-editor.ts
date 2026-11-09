@@ -123,6 +123,7 @@ import {
   watchRefusedRenders,
   watchMusicAssistantPresent,
   watchSaveSpeakerWarning,
+  watchTemplateRowLimit,
   watchTemplateRequests,
   watchTemplatesToAsk,
   watchTemplateSignature,
@@ -5874,13 +5875,12 @@ export class WaPageEditor extends LitElement {
     const s = Math.min(maxWidth / placed.width, maxHeight / placed.height, HEAD_TILE_MAX_SCALE);
     const input = this.selectedTileInput(page, picture, s);
     const cell = { width: placed.width, height: placed.height };
-    const lines = drawn.templateLines;
     const look = watchTemplateTileLook(drawn, input);
     return {
       device: picture.kind === "iphone" ? "iphone" : "watch",
       face: html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${renderWatchTileFace(drawn, cell, input, layout.unit)}</span>`,
       textScale: watchTemplateTextScale(drawn, cell.width, cell.height, input, layout.unit),
-      rowLimit: picture.kind === "iphone" && typeof lines === "number" ? lines : 5,
+      rowLimit: watchTemplateRowLimit(drawn),
       stale: look.kind === "error" || (look.kind === "text" && look.pending),
     };
   }

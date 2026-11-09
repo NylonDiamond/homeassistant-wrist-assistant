@@ -1,21 +1,19 @@
 // The tile keys only the iPhone reads, on tiles both devices draw: a live
 // camera and the stream it plays, a chart under a sensor, a media player's
-// artwork and controls, and a template's line limit. Without any drawing:
+// artwork and controls. Without any drawing:
 // which tile gets which key, what each one reads as, and the setters.
 //
 // The keys are the device table's (`tile-devices.json` `keys`); each one's
 // rule lives in the table of the task it sits beside: `cameraTileLive`,
 // `cameraTileStream` and `cameraFullScreenStream` in `tile-special.json`
 // (`camera.live`, `camera.stream`, `camera.fullScreen`),
-// `templateLines` in `tile-app.json`
-// (`template.lines`), `sensorChart` and `mediaArtwork` in `tile-styling.json`
+// `sensorChart` and `mediaArtwork` in `tile-styling.json`
 // (`phone`). The watch decodes them and reads none, so nothing here changes
 // what a watch shows.
 //
 // Plan: app repo docs/phone_native_pages_plan_2026-10.md, phase 2; the names
 // in docs/phone_native_contract.md.
 
-import tileApp from "./tile-app.json";
 import tileSpecial from "./tile-special.json";
 import tileStyling from "./tile-styling.json";
 import { REMOVE, isBool, setKey } from "./tile-settings-model.js";
@@ -23,7 +21,7 @@ import { isWatchTvRemote, type WatchSpecialStates } from "./special-model.js";
 import { type WatchPageTile, type WatchPagesDocument, keyDevices, tileEntityId, tileKind } from "./model.js";
 
 /** A tile key only the iPhone reads, in the order the inspector lists them. */
-export type WatchPhoneKey = "cameraTileLive" | "cameraTileStream" | "cameraFullScreenStream" | "sensorChart" | "mediaArtwork" | "templateLines";
+export type WatchPhoneKey = "cameraTileLive" | "cameraTileStream" | "cameraFullScreenStream" | "sensorChart" | "mediaArtwork";
 
 /** One choice of the chart's range: a value of `TileHistoryRange`, or null
  * for Off (no key). */
@@ -40,12 +38,11 @@ interface PhoneKeyRule {
 const LIVE = tileSpecial.camera.live as PhoneKeyRule & { absent: boolean };
 const STREAM = tileSpecial.camera.stream as PhoneKeyRule & { absent: string; choices: { value: string; label: string }[] };
 const FULL_SCREEN = tileSpecial.camera.fullScreen as PhoneKeyRule & { absent: string; choices: { value: string; label: string }[] };
-const LINES = tileApp.template.lines as PhoneKeyRule & { min: number; max: number; absent: number };
 const CHART = tileStyling.phone.sensorChart as PhoneKeyRule & { choices: WatchPhoneChoice[]; minRows: number };
 const ARTWORK = tileStyling.phone.mediaArtwork as PhoneKeyRule & { absent: boolean; controlsMinColumns: number };
 
 /** Every phone key's rule, in the inspector's order. */
-const RULES: readonly PhoneKeyRule[] = [LIVE, STREAM, FULL_SCREEN, CHART, ARTWORK, LINES];
+const RULES: readonly PhoneKeyRule[] = [LIVE, STREAM, FULL_SCREEN, CHART, ARTWORK];
 
 /** The keys the panel writes here, for the key tests. */
 export const WATCH_PHONE_SETTING_KEYS: readonly WatchPhoneKey[] = RULES.map((r) => r.key);
@@ -75,9 +72,6 @@ export const WATCH_SENSOR_CHART_MIN_ROWS = CHART.minRows;
 
 /** The columns a media tile needs for the iPhone's inline controls. */
 export const WATCH_MEDIA_CONTROLS_MIN_COLUMNS = ARTWORK.controlsMinColumns;
-
-/** The line limit's range and what an absent key reads as. */
-export const WATCH_TEMPLATE_LINES = { min: LINES.min, max: LINES.max, absent: LINES.absent } as const;
 
 /**
  * The phone keys this tile gets, in order: by its kind, and only keys the
@@ -129,12 +123,6 @@ export function watchMediaArtwork(tile: WatchPageTile): boolean {
   return isBool(tile.mediaArtwork) ? tile.mediaArtwork : ARTWORK.absent;
 }
 
-/** The stored line limit as stored, or undefined for none (5 on the
- * iPhone). */
-export function watchTemplateLines(tile: WatchPageTile): unknown {
-  return tile.templateLines;
-}
-
 /** Whether the tile holds a phone key of its own: one stored that reads
  * other than its absence would. */
 export function watchPhoneKeyChanged(tile: WatchPageTile, key: WatchPhoneKey): boolean {
@@ -150,8 +138,6 @@ export function watchPhoneKeyChanged(tile: WatchPageTile, key: WatchPhoneKey): b
       return watchMediaArtwork(tile) !== ARTWORK.absent;
     case "sensorChart":
       return watchSensorChart(tile) !== undefined;
-    case "templateLines":
-      return tile.templateLines !== LINES.absent;
   }
 }
 
@@ -195,11 +181,4 @@ export function setWatchSensorChart(document: WatchPagesDocument, pageId: string
 export function setWatchMediaArtwork(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
   if (!isBool(on)) return document;
   return setKey(document, pageId, tileId, ARTWORK.key, (tile) => (offered(tile, ARTWORK.key) ? (on ? true : REMOVE) : undefined));
-}
-
-/** "Lines": a whole number from 1 to 8; the absent value (5) removes the
- * key, so a tile left at the default carries nothing. */
-export function setWatchTemplateLines(document: WatchPagesDocument, pageId: string, tileId: string, lines: number): WatchPagesDocument {
-  if (!Number.isInteger(lines) || lines < LINES.min || lines > LINES.max) return document;
-  return setKey(document, pageId, tileId, LINES.key, (tile) => (offered(tile, LINES.key) ? (lines === LINES.absent ? REMOVE : lines) : undefined));
 }

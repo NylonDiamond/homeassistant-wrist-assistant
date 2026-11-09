@@ -68,7 +68,7 @@ import type { TemplateEditorData } from "./template-editor.js";
 import { normalizeTemplateLayout } from "./template-layout.js";
 import "./template-editor.js";
 import { commit, fieldNote, linkButton, menuField, typed, typingField } from "./tile-settings.js";
-import { watchChoiceMenu, watchTileFallbackName } from "./tile-settings-options.js";
+import { watchChoiceMenu, watchTemplateLinesMenu, watchTileFallbackName } from "./tile-settings-options.js";
 import { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT } from "../watch-voice/defaults.js";
 import {
   type WatchAppChoice,
@@ -93,6 +93,7 @@ import {
   setWatchTemplatePreset,
   setWatchTemplateColumns,
   setWatchTemplateLayout,
+  setWatchTemplateLines,
   setWatchTemplateText,
   setWatchVoiceId,
   setWatchVoiceSpeakers,
@@ -264,6 +265,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     text,
     render: watchTemplateRender(host.templateRenders, tile),
     columns: watchTemplateColumns(tile),
+    lines: { label: A.template.lines.label, help: A.template.lines.help, menu: watchTemplateLinesMenu(tile) },
     layout: normalizeTemplateLayout(tile.templateLayout),
     busy: host.busy,
     hass: host.hass,
@@ -273,6 +275,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     remember: (position, root) => rememberTemplateCaret(key, position, root),
     ended: () => host.endCoalesce(),
     setColumns: (on) => commit(host, "templateColumns", (d) => setWatchTemplateColumns(d, ...at(host), on)),
+    setLines: (value) => commit(host, "templateLines", (d) => setWatchTemplateLines(d, ...at(host), Number(value))),
     setLayout: (layout, typing = false) => commit(host, "templateLayout", d => setWatchTemplateLayout(d, ...at(host), layout), typing ? { typing: true } : {}),
     picture: (device, maxWidth, maxHeight) => host.templatePicture?.(device, maxWidth, maxHeight),
     examples,

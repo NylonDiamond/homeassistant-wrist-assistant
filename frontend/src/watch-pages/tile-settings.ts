@@ -329,7 +329,6 @@ import {
   watchPhoneKeySummary,
   watchSensorChartMenu,
   watchSensorChartShortNote,
-  watchTemplateLinesMenu,
 } from "./tile-settings-options.js";
 import {
   type WatchPhoneKey,
@@ -342,7 +341,6 @@ import {
   setWatchCameraTileStream,
   setWatchMediaArtwork,
   setWatchSensorChart,
-  setWatchTemplateLines,
   watchCameraFullScreenStream,
   watchCameraTileLive,
   watchCameraTileStream,
@@ -1841,9 +1839,6 @@ function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateRes
         commit(host, key, (d) => setWatchSensorChart(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}${help}
         ${short === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${short}</div>`}`;
     }
-    case "templateLines":
-      return html`${menuField(words.label, watchTemplateLinesMenu(tile), (v) =>
-        commit(host, key, (d) => setWatchTemplateLines(d, host.pageId, host.tileId, Number(v))))}${help}`;
   }
 }
 

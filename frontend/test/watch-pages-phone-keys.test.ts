@@ -15,7 +15,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import tileApp from "../src/watch-pages/tile-app.json";
 import tileDevicesTable from "../src/watch-pages/tile-devices.json";
 import tileSpecial from "../src/watch-pages/tile-special.json";
 import tileStyling from "../src/watch-pages/tile-styling.json";
@@ -31,7 +30,6 @@ import {
   setWatchCameraTileLive,
   setWatchCameraTileStream,
   setWatchSensorChart,
-  setWatchTemplateLines,
   watchCameraFullScreenStream,
   watchCameraTileLive,
   watchCameraTileStream,
@@ -44,7 +42,6 @@ import {
   WATCH_PHONE_EXTRAS_TITLE,
   watchPhoneKeySummary,
   watchSensorChartMenu,
-  watchTemplateLinesMenu,
   watchTileSectionsFor,
 } from "../src/watch-pages/tile-settings-options.js";
 import { renderTileSettings, tileInspectorSections, tileSettingsFoldIds } from "../src/watch-pages/tile-settings.js";
@@ -177,7 +174,6 @@ describe("the rules files and the device table", () => {
       tileSpecial.camera.fullScreen.key,
       tileStyling.phone.sensorChart.key,
       tileStyling.phone.mediaArtwork.key,
-      tileApp.template.lines.key,
     ];
     expect([...declared].sort()).toEqual([...phoneKeys].sort());
     expect([...WATCH_PHONE_SETTING_KEYS].sort()).toEqual([...phoneKeys].sort());
@@ -191,7 +187,6 @@ describe("the rules files and the device table", () => {
     expect(watchPhoneKeyKinds("cameraFullScreenStream")).toEqual(["camera", "multicam"]);
     expect(watchPhoneKeyKinds("sensorChart")).toEqual(["sensor", "binary_sensor"]);
     expect(watchPhoneKeyKinds("mediaArtwork")).toEqual(["media_player"]);
-    expect(watchPhoneKeyKinds("templateLines")).toEqual(["template"]);
     for (const key of WATCH_PHONE_SETTING_KEYS) {
       for (const kind of watchPhoneKeyKinds(key)) expect(tileDevices(kind), `${key} on ${kind}`).toEqual(["watch", "iphone"]);
     }
@@ -202,7 +197,7 @@ describe("the rules files and the device table", () => {
     expect(watchPhoneKeysOf({ entityId: GROUP })).toEqual(["cameraTileLive", "cameraTileStream", "cameraFullScreenStream"]);
     expect(watchPhoneKeysOf({ entityId: "binary_sensor.door" })).toEqual(["sensorChart"]);
     expect(watchPhoneKeysOf({ entityId: "media_player.kitchen" })).toEqual(["mediaArtwork"]);
-    expect(watchPhoneKeysOf({ entityId: TEMPLATE })).toEqual(["templateLines"]);
+    expect(watchPhoneKeysOf({ entityId: TEMPLATE })).toEqual([]);
     expect(watchPhoneKeysOf({ entityId: "light.desk" })).toEqual([]);
     // A TV drawn as a remote is no media tile on either device.
     expect(watchPhoneKeysOf({ entityId: "media_player.lounge_tv" }, { "media_player.lounge_tv": { state: "on", attributes: { device_class: "tv" } } })).toEqual([]);
@@ -212,14 +207,11 @@ describe("the rules files and the device table", () => {
     const doc: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: PAGE, name: "Living", items: [
       { id: TILE, entityId: "light.desk" },
       { id: "T2", entityId: "sensor.power" },
-      { id: "T3", entityId: TEMPLATE },
     ] }] };
     expect(setWatchCameraTileLive(doc, PAGE, TILE, true)).toBe(doc);
     expect(setWatchCameraTileStream(doc, PAGE, TILE, "main")).toBe(doc);
     expect(setWatchCameraFullScreenStream(doc, PAGE, TILE, "sd")).toBe(doc);
     expect(setWatchSensorChart(doc, PAGE, "T2", "30d")).toBe(doc);
-    expect(setWatchTemplateLines(doc, PAGE, "T3", 9)).toBe(doc);
-    expect(setWatchTemplateLines(doc, PAGE, "T3", 2.5)).toBe(doc);
   });
 });
 
@@ -232,7 +224,7 @@ describe("the sections on each device", () => {
     expect(watchTileSectionsFor(camera, {}, "watch")).toEqual(["special", "icon", "text", "border", "action", "visibility", "background", "phoneExtras"]);
     expect(watchTileSectionsFor({ entityId: "sensor.power" }, {}, "iphone")).toEqual(["icon", "state", "phone", "text", "border", "action", "visibility", "background"]);
     expect(watchTileSectionsFor({ entityId: "media_player.kitchen" }, {}, "iphone").slice(0, 3)).toEqual(["icon", "state", "phone"]);
-    expect(watchTileSectionsFor({ entityId: TEMPLATE }, {}, "iphone").slice(0, 2)).toEqual(["special", "phone"]);
+    expect(watchTileSectionsFor({ entityId: TEMPLATE }, {}, "iphone").slice(0, 2)).toEqual(["special", "icon"]);
     // A tile with no phone key is as before on both devices.
     for (const device of ["watch", "iphone"] as const) {
       expect(watchTileSectionsFor({ entityId: "light.desk" }, {}, device)).toEqual(["icon", "state", "text", "border", "action", "visibility", "background"]);
@@ -441,29 +433,6 @@ describe("Artwork", () => {
       press: (root) => check(root, "Artwork and controls", true),
       wrote: (t) => expect(t.mediaArtwork).toBe(true),
     });
-  });
-});
-
-describe("Lines", () => {
-  it("is a menu of 1 to 8 on a template tile that writes templateLines, and folds on a watch", () => {
-    sectionChecks({
-      entityId: TEMPLATE,
-      extra: { templateString: "{{ 1 }}" },
-      title: "Lines",
-      label: "Lines",
-      help: "The most lines the iPhone shows of the result.",
-      before: "Template",
-      press: (root) => pick(root, "(default)", "8"),
-      wrote: (t) => expect(t.templateLines).toBe(8),
-    });
-  });
-
-  it("marks 5 as the default and removes the key when it is picked", () => {
-    expect(watchTemplateLinesMenu({ entityId: TEMPLATE }).options.map((o) => o.label)).toEqual(["1", "2", "3", "4", "5 (default)", "6", "7", "8"]);
-    expect(watchTemplateLinesMenu({ entityId: TEMPLATE }).selected).toBe("5");
-    const { host, tile } = tileHost(TEMPLATE, { templateString: "", templateLines: 3 }, "iphone");
-    pick(draw(host), "(default)", "5");
-    expect(Object.hasOwn(tile(), "templateLines")).toBe(false);
   });
 });
 

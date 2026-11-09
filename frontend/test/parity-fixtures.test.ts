@@ -22,7 +22,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
 import { phoneModelForScreenSize, phonePagesLayout, phonePagesScreen } from "../src/phone-frame.js";
-import { type WatchTemplateRender, watchTemplateColumns } from "../src/watch-pages/app-model.js";
+import { type WatchTemplateRender, watchTemplateColumns, watchTemplateRowLimit } from "../src/watch-pages/app-model.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { tileEntityId, tileKind } from "../src/watch-pages/model.js";
 import {
@@ -250,7 +250,7 @@ describe("the parity fixtures: the previews draw a real home's tiles as the devi
         if (look.kind !== "text" || look.pending) continue;
         const z = oneLookZoomFactor("phone", layout.unit);
         expect(z).toBeGreaterThan(1.5);
-        const lines = typeof placed.tile.templateLines === "number" ? Math.min(8, Math.max(1, Math.round(placed.tile.templateLines))) : 5;
+        const lines = watchTemplateRowLimit(placed.tile);
         const rows = templateColumnRows(look.text, watchTemplateColumns(placed.tile))?.slice(0, lines);
         const body = TEMPLATE_FIT_METRICS.watch;
         const want = rows === undefined
