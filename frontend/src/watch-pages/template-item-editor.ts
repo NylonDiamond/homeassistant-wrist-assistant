@@ -225,7 +225,7 @@ export class TemplateItemEditor {
     const dx = (event.clientX - drag.startX) / drag.width, dy = (event.clientY - drag.startY) / drag.height;
     const lead = drag.layout.items.find(p => p.key === drag.lead)!;
     const layout = structuredClone(drag.layout), own = layout.items.filter(p => this.selected.has(p.key));
-    const result = snapTemplateItems({ moving: drag.boxes.filter(p => this.selected.has(p.key)), others: drag.boxes, centers: own, lead, width: drag.width, height: drag.height, dx, dy, on: this.snap, free: event.altKey });
+    const result = snapTemplateItems({ moving: drag.boxes.filter(p => this.selected.has(p.key)), others: drag.boxes, centers: own, lead, width: drag.width, height: drag.height, dx, dy, on: this.snap, free: event.altKey, grid: this.grid });
     this.guides = result.guides;
     own.forEach(p => { p.x += result.dx; p.y += result.dy; });
     this.writeLayout(layout, true);

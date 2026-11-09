@@ -6,7 +6,7 @@ const box = (key: string, x: number, y: number, width = .2, height = .1): Templa
 const first = box("home", .234, .62);
 const neighbor = box("lights", .237, .2);
 function input(over: Partial<TemplateSnapInput> = {}): TemplateSnapInput {
-  return { moving: [first], others: [neighbor], centers: [{ x: .334, y: .67 }], lead: { x: .334, y: .67 }, width: 280, height: 196, dx: .01, dy: .06, on: true, free: false, ...over };
+  return { moving: [first], others: [neighbor], centers: [{ x: .334, y: .67 }], lead: { x: .334, y: .67 }, width: 280, height: 196, dx: .01, dy: .06, on: true, free: false, grid: true, ...over };
 }
 
 describe("template item alignment guides", () => {
@@ -108,5 +108,16 @@ describe("template item alignment guides", () => {
     const result = snapTemplateItems(input({ moving: [box("a", .1, .7, .1)], others: [box("b", .3, .2, .1)], centers: [{ x: .15, y: .75 }], lead: { x: .15, y: .75 }, dx: .06, dy: 0 }));
     expect(result.guides.some(g => g.axis === "x")).toBe(false);
     expect(.15 + result.dx).toBeCloseTo(.2, 12);
+  });
+
+  it("stays under the pointer when the grid is off and no guide is near", () => {
+    const result = snapTemplateItems(input({ moving: [box("a", .1, .7, .1)], others: [box("b", .3, .2, .1)], centers: [{ x: .13, y: .77 }], lead: { x: .13, y: .77 }, dx: .06, dy: -.03, grid: false }));
+    expect(result.dx).toBeCloseTo(.06, 12);
+    expect(result.dy).toBeCloseTo(-.03, 12);
+  });
+
+  it("still lands on a guide when the grid is off", () => {
+    const result = snapTemplateItems(input({ moving: [box("a", .2, .6)], others: [box("b", .223, .2)], centers: [{ x: .3, y: .65 }], lead: { x: .3, y: .65 }, dx: .02, dy: 0, grid: false }));
+    expect(result.dx).toBeCloseTo(.023, 12);
   });
 });

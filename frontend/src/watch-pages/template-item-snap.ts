@@ -18,6 +18,9 @@ export interface TemplateSnapInput {
   dy: number;
   on: boolean;
   free: boolean;
+  /** The grid is shown. Only then does an item with no guide near it step to
+   * the grid; otherwise it stays under the pointer. */
+  grid: boolean;
 }
 export interface TemplateAlignmentGuide extends GuideLine { from: number; to: number }
 export interface TemplateSnappedMove { dx: number; dy: number; guides: TemplateAlignmentGuide[] }
@@ -46,8 +49,9 @@ export function snapTemplateItems(input: TemplateSnapInput): TemplateSnappedMove
       hitX = nearestGuide(edges(group.x + dx, group.width), lines, "x", threshold.x);
       hitY = nearestGuide(edges(group.y + dy, group.height), lines, "y", threshold.y);
     }
-    dx = hitX ? dx + hitX.delta : Math.round((lead.x + dx) * 20) / 20 - lead.x;
-    dy = hitY ? dy + hitY.delta : Math.round((lead.y + dy) * 20) / 20 - lead.y;
+    const step = (start: number, delta: number) => input.grid ? Math.round((start + delta) * 20) / 20 - start : delta;
+    dx = hitX ? dx + hitX.delta : step(lead.x, dx);
+    dy = hitY ? dy + hitY.delta : step(lead.y, dy);
   }
   const snappedX = dx, snappedY = dy;
   if (centers.length > 0) {

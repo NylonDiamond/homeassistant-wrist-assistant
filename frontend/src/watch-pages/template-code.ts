@@ -59,6 +59,9 @@ export interface TemplateCode {
   /** The context's answers changed. */
   refresh(): void;
   select(from: number, to: number): void;
+  /** Selects a range and shows it inside the code box, leaving the page
+   * where it is. */
+  highlight(from: number, to: number): void;
   change(from: number, to: number, insert: string): void;
   destroy(): void;
 }
@@ -342,6 +345,12 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
     select(from, to) {
       view.focus();
       view.dispatch({ selection: { anchor: from, head: to }, effects: [setFocus.of(true), EditorView.scrollIntoView(from, { y: "center" })] });
+    },
+    highlight(from, to) {
+      view.focus();
+      view.dispatch({ selection: { anchor: from, head: to }, effects: setFocus.of(true) });
+      const line = view.lineBlockAt(from), box = view.scrollDOM;
+      if (line.top < box.scrollTop || line.bottom > box.scrollTop + box.clientHeight) box.scrollTop = line.top - (box.clientHeight - line.height) / 2;
     },
     change(from, to, insert) {
       view.dispatch({ changes: { from, to, insert } });

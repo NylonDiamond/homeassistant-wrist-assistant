@@ -117,7 +117,7 @@ export class WaTemplateEditor extends LitElement {
       else this.data.write(text, false);
       this.requestUpdate();
     },
-    showCode: (from, to) => this.code?.select(from, to),
+    showCode: (from, to) => this.code?.highlight(from, to),
   });
 
   /** Draws into the parent's root: see the top of this file. */
