@@ -188,7 +188,8 @@ describe("template rows", () => {
     const tight = templateColumnsFontSize(rows, 100, 500, 16);
     expect(tight).toBeLessThan(16);
     expect(tight).toBeGreaterThanOrEqual(6.4);
-    expect(templateColumnsFontSize(rows, 5, 5, 16)).toBe(6.4);
+    expect(templateColumnsFontSize(rows, 5, 500, 16)).toBe(6.4);
+    expect(templateColumnsFontSize(rows, 5, 5, 16)).toBe(3.2);
   });
 });
 
@@ -293,7 +294,7 @@ describe("the source of a template", () => {
 
 describe("column rows past the smallest size", () => {
   const rows = Array.from({ length: 10 }, (_, i) => i);
-  const row = 15 * 0.4 * TEMPLATE_COLUMN_ROW;
+  const row = 15 * 0.2 * TEMPLATE_COLUMN_ROW;
   it("are dropped from the end, keeping at least one", () => {
     expect(templateColumnsInRoom(rows, row * 10, 15)).toHaveLength(10);
     expect(templateColumnsInRoom(rows, row * 8.5, 15)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);

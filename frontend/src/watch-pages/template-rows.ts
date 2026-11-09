@@ -114,6 +114,8 @@ export const TEMPLATE_COLUMN_GAP = 0.35;
 export const TEMPLATE_COLUMN_ROW = TEMPLATE_INTER_ROW;
 /** A cell's icon fits a box this tall, as a part of the text size. */
 export const TEMPLATE_ICON_TALL = 1.1;
+/** The smallest share of the full size columns are drawn at, to fit their rows. */
+export const TEMPLATE_COLUMNS_SMALLEST = 0.2;
 
 /** A cell's icon slot and the gap after it, as parts of the text size. */
 function iconUnits(cell: TemplateCell): number {
@@ -125,9 +127,9 @@ function cellUnits(cell: TemplateCell, device: TemplateFitDevice): number {
 }
 
 /**
- * The size the columns are drawn at, in points: `largest`, shrunk (to 40% at
- * most, as the plain text) until the widest cell of each column and the rows
- * fit the box. Widths are the device's own (`template-fit.ts`), and a row is
+ * The size the columns are drawn at, in points: `largest`, shrunk until the
+ * widest cell of each column (to 40% at most, as the plain text) and the rows
+ * (to 20% at most, so every row picked with Lines shows) fit the box. Widths are the device's own (`template-fit.ts`), and a row is
  * as tall as its font's line, as a grid of `.system(size:)` text is.
  *
  * Beside real columns a row of one cell takes no part in the width: its own
@@ -148,17 +150,17 @@ export function templateColumnsFontSize(rows: readonly (readonly TemplateCell[])
     });
   }
   const total = widths.length === 0 ? across : widths.reduce((sum, w) => sum + w, 0) + (widths.length - 1) * TEMPLATE_COLUMN_GAP;
-  const fit = Math.min(largest, Math.max(1, widthPt) / Math.max(1, total), Math.max(1, heightPt) / (Math.max(1, rows.length) * TEMPLATE_COLUMN_ROW));
-  return Math.round(Math.max(largest * 0.4, fit) * 10) / 10;
+  const wide = Math.max(largest * 0.4, Math.max(1, widthPt) / Math.max(1, total));
+  const fit = Math.min(largest, wide, Math.max(1, heightPt) / (Math.max(1, rows.length) * TEMPLATE_COLUMN_ROW));
+  return Math.round(Math.max(largest * TEMPLATE_COLUMNS_SMALLEST, fit) * 10) / 10;
 }
 
 /**
- * The rows that fit `heightPt` at the smallest size, 40% of `largest`: the
- * rest are dropped from the end, as the plain text drops lines, so no row is
- * cut in half. At least one. The app's `TemplateColumnsText.rowsInRoom`.
+ * The rows that fit `heightPt` at the smallest size, 20% of `largest`: the
+ * rest are dropped from the end, so no row is cut in half. At least one. The app's `TemplateColumnsText.rowsInRoom`.
  */
 export function templateColumnsInRoom<Row>(rows: readonly Row[], heightPt: number, largest: number): Row[] {
-  const fits = Math.floor(heightPt / (largest * 0.4 * TEMPLATE_COLUMN_ROW) + 0.001);
+  const fits = Math.floor(heightPt / (largest * TEMPLATE_COLUMNS_SMALLEST * TEMPLATE_COLUMN_ROW) + 0.001);
   return rows.slice(0, Math.max(1, fits));
 }
 
