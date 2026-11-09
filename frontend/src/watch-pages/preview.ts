@@ -2279,10 +2279,12 @@ function templateMarkedText(text: string, parts: readonly TemplateLayoutPart[], 
   return out;
 }
 
-function templateFreeFace(raw: unknown, text: string, ink: string, s: number, shadow: string, icons: IconProvider | undefined): TemplateResult | undefined {
+function templateFreeFace(raw: unknown, text: string, ink: string, s: number, shadow: string, icons: IconProvider | undefined, limit: number): TemplateResult | undefined {
   const resolved = resolveTemplateLayout(raw, text);
   if (resolved === undefined) return undefined;
   return html`<span class="wp-tpl-free" data-tpl-scale=${s} style=${`left:${4 * s}px;right:${4 * s}px;color:${ink};${shadow}`}>${resolved.parts.map((part, index) => {
+    // A layout holds every row; the rows past Lines are not drawn.
+    if (part.row >= limit) return nothing;
     const item = resolved.layout.items[index]!, px = item.size * s;
     const style = `left:${item.x * 100}%;top:${item.y * 100}%;font-size:${px}px;line-height:${TEMPLATE_INTER_ROW};`;
     let content: TemplateResult | typeof nothing;
@@ -2323,7 +2325,7 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
   const limit = watchTemplateRowLimit(tile);
   const room = width - TEMPLATE_TILE_PAD * 2;
   const free = resolveTemplateLayout(tile.templateLayout, look.text);
-  if (free !== undefined) return Math.min(1, ...free.layout.items.map(p => p.size / metrics.body));
+  if (free !== undefined) return Math.min(1, ...free.layout.items.filter(p => p.row < limit).map(p => p.size / metrics.body));
   const rows = templateColumnRows(look.text, watchTemplateColumns(tile));
   return rows === undefined
     ? templateTextFit(look.text, room, height, limit, device).size / metrics.body
@@ -2350,7 +2352,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     }
     const device = templateDevice(input);
     const limit = watchTemplateRowLimit(tile);
-    const free = templateFreeFace(tile.templateLayout, look.text, textInk, zs, shadow, input.icons);
+    const free = templateFreeFace(tile.templateLayout, look.text, textInk, zs, shadow, input.icons, limit);
     if (free !== undefined) return free;
     const parts = templateLayoutParts(typeof tile.templateString === "string" ? tile.templateString : "", look.text);
     const allRows = templateColumnRows(look.text, watchTemplateColumns(tile))?.slice(0, limit);

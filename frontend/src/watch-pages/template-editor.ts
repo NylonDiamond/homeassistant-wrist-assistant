@@ -44,6 +44,8 @@ export interface TemplateEditorData {
   /** Home Assistant's answer for this text, once it has one. */
   render: RenderResult | undefined;
   columns: boolean;
+  /** The most rows the tile draws. */
+  rowLimit: number;
   /** Lines' words and choices, for the row under Line up columns. */
   lines: { label: string; help: string; menu: WatchMenu };
   layout?: TemplateTileLayout;

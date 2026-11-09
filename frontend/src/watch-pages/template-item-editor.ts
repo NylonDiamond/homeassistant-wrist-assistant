@@ -53,7 +53,7 @@ export class TemplateItemEditor {
     const automatic = templateLayoutParts(this.host.text(), this.value);
     const resolved = resolveTemplateLayout(this.layout(), this.value);
     if (resolved === undefined) return automatic;
-    return resolved.parts.map(part => ({ ...part, source: automatic.find(p => p.key === part.key)?.source }));
+    return resolved.parts.filter(part => part.row < data.rowLimit).map(part => ({ ...part, source: automatic.find(p => p.key === part.key)?.source }));
   }
 
   private layout(): TemplateTileLayout | undefined {
