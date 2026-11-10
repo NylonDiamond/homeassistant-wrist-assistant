@@ -607,6 +607,14 @@ def test_put_with_an_edit_pack_then_edit_get_answers_it(env) -> None:
     assert row["has_edit"] is True
 
 
+def test_the_list_says_which_photos_a_page_names(env) -> None:
+    _three_photos(env)
+    env.base.put_pages("watch-A", tiles(LAMP_UUID.lower(), None))
+    rows = {i["image_id"]: i for i in op(env, "_op_page_image_list", {}).body["images"]}
+    assert rows[LAMP_UUID]["in_use"] is True
+    assert "in_use" not in rows[FAN_UUID]
+
+
 def test_a_photo_without_a_pack_lists_no_has_edit(env) -> None:
     assert _put_icon(env, ICON_UUID, edit=None).body == {"ok": True, "status": "stored"}
     [listed] = op(env, "_op_page_image_list", {}).body["images"]

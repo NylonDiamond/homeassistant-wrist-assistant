@@ -5631,7 +5631,8 @@ async def _op_page_image_list(ctx: _OpContext) -> Response:
 
     Body:  {} or {"entity_ids": [<entity id>, ...]}
     Reply: {"images": [{"image_id", "kind": "icon", "label"?, "entity_id"?,
-            "format": "jpeg" | "png", "updated_at"?, "has_edit"?: true}]}
+            "format": "jpeg" | "png", "updated_at"?, "has_edit"?: true,
+            "in_use"?: true}]}
     Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400
              (``entity_ids`` not a list of strings), ``unavailable`` 503.
 
@@ -5639,9 +5640,12 @@ async def _op_page_image_list(ctx: _OpContext) -> Response:
     each was added). ``label`` and ``entity_id`` are left out when the photo
     has none; ``updated_at`` is when it was added, an ISO time, left out
     when the store has none. ``has_edit`` is there, true, only for a photo
-    with an edit pack (``page_image_edit_get``). ``entity_ids`` keeps only the photos made for
-    one of those entities (compared as written); null is the same as
-    absent, and an empty list keeps none.
+    with an edit pack (``page_image_edit_get``). ``in_use`` is there, true,
+    only for a photo a current page names (a tile's ``iconPhotoId`` or a
+    page's background), so the maker can mark the photos on a tile.
+    ``entity_ids`` keeps only the photos made for one of those entities
+    (compared as written); null is the same as absent, and an empty list
+    keeps none.
     """
     store = getattr(ctx.domain_data, "page_images_store", None)
     if store is None:
@@ -5671,6 +5675,8 @@ async def _op_page_image_list(ctx: _OpContext) -> Response:
         image["format"] = entry["format"]
         if isinstance(entry.get("added_at"), str) and entry["added_at"]:
             image["updated_at"] = entry["added_at"]
+        if entry.get("used_by"):
+            image["in_use"] = True
         if entry.get("has_edit"):
             image["has_edit"] = True
         images.append(image)
