@@ -91,8 +91,11 @@ import {
   watchTemplateRowLimit,
   watchTemplateText,
   watchTemplateTitle,
+  watchTemplateTitleAlign,
+  watchTemplateTitleBand,
+  watchTemplateTitleColor,
+  watchTemplateTitleMetrics,
   WATCH_TEMPLATE_TITLE,
-  WATCH_TEMPLATE_TITLE_BAND,
 } from "./app-model.js";
 import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateColumnsInRoom, templateRowSpans, templateRows, templateSpanFontSize } from "./template-rows.js";
 import { type TemplateLayoutPart, templateLayoutParts, templatePartKey, resolveTemplateLayout } from "./template-layout.js";
@@ -2305,15 +2308,21 @@ function templateFreeFace(raw: unknown, text: string, ink: string, s: number, sh
  * draws no title (`TemplateTileOverlay`). */
 function templateTitleBand(tile: WatchPageTile, text: string | undefined): number {
   if (watchTemplateTitle(tile) === undefined) return 0;
-  return text !== undefined && resolveTemplateLayout(tile.templateLayout, text) !== undefined ? 0 : WATCH_TEMPLATE_TITLE_BAND;
+  return text !== undefined && resolveTemplateLayout(tile.templateLayout, text) !== undefined ? 0 : watchTemplateTitleBand(tile);
 }
 
-/** A template tile's title line (`TemplateTileTitle`): one line in the
- * surface's second ink, at the top, `inset` further in than the text. */
+/** A template tile's title line (`TemplateTileTitle`): one line at the top,
+ * `inset` further in than the text, in its own color (as a template's color
+ * marker reads it) or else the surface's second ink. */
 function templateTitleLine(tile: WatchPageTile, ink: string, zs: number, pad: number, shadow: string, opacity = 1): TemplateResult {
   const t = WATCH_TEMPLATE_TITLE;
+  const { size, line } = watchTemplateTitleMetrics(tile);
   const side = (pad + t.inset) * zs;
-  const style = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${t.line * zs}px;line-height:${t.line * zs}px;font-size:${t.size * zs}px;color:${ink};${opacity < 1 ? `opacity:${opacity};` : ""}${shadow}`;
+  const spec = watchTemplateTitleColor(tile);
+  const own = spec === undefined ? undefined : templateIconColor(spec);
+  const color = own === undefined ? `color:${ink};${opacity < 1 ? `opacity:${opacity};` : ""}` : `color:${own.hex};${own.alpha < 1 ? `opacity:${own.alpha};` : ""}`;
+  const align = { leading: "left", center: "center", trailing: "right" }[watchTemplateTitleAlign(tile)];
+  const style = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${line * zs}px;line-height:${line * zs}px;font-size:${size * zs}px;text-align:${align};${color}${shadow}`;
   return html`<span class="wp-tpl-title" style=${style}>${watchTemplateTitle(tile)}</span>`;
 }
 
@@ -4534,7 +4543,7 @@ export const watchPagePreviewStyles = css`
   .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }
   .wp-tpl-span > :not(.wp-tpl-slot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--wp-span-font); }
   .wp-tpl-title {
-    position: absolute; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left;
+    position: absolute; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; pointer-events: none;
   }
   .wp-tpl-free { position: absolute; top: 0; bottom: 0; font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; }

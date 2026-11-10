@@ -49,7 +49,7 @@ export interface TemplateEditorData {
   /** Lines' words and choices, for the row under Line up columns. */
   lines: { label: string; help: string; menu: WatchMenu };
   /** Title's words and the text as typed, for the row over Line up columns. */
-  title: { label: string; help: string; placeholder: string; text: string };
+  title: { label: string; help: string; placeholder: string; text: string; options: TemplateResult };
   layout?: TemplateTileLayout;
   busy: boolean;
   hass: HassLike;
@@ -376,6 +376,7 @@ export class WaTemplateEditor extends LitElement {
             ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
               <input class="te-title" type="text" aria-label=${d.title.label} placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
                 @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}></label>
+              ${d.title.text.trim() === "" ? nothing : html`<div class="te-title-opts">${d.title.options}</div>`}
               <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
@@ -503,6 +504,7 @@ export const templateEditorStyles = css`
   .te-sw > span { flex: 1; min-width: 0; }
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }
   .te-sw small { font-size: 11.5px; color: var(--wa-muted); }
+  .te-title-opts { display: grid; gap: 6px; padding-left: 10px; border-left: 2px solid var(--divider-color, rgba(127, 127, 127, .35)); }
   .te-title { flex: 0 1 150px; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }
   .te-lines { flex: none; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 4px; }
   .te-switch { flex: none; position: relative; width: 36px; height: 21px; padding: 0; border: 0; border-radius: 11px; background: var(--wa-switch-off); cursor: pointer; transition: background .18s; }

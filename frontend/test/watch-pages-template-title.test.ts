@@ -4,8 +4,14 @@
 import { describe, expect, it } from "vitest";
 import {
   WATCH_TEMPLATE_TITLE,
-  WATCH_TEMPLATE_TITLE_BAND,
   setWatchTemplateTitle,
+  setWatchTemplateTitleAlign,
+  setWatchTemplateTitleColor,
+  setWatchTemplateTitleSize,
+  watchTemplateTitleAlign,
+  watchTemplateTitleBand,
+  watchTemplateTitleColor,
+  watchTemplateTitleMetrics,
   watchTemplateTitle,
   watchTemplateTitleText,
 } from "../src/watch-pages/app-model.js";
@@ -20,10 +26,28 @@ const document = (extra: Record<string, unknown> = {}, entityId = TEMPLATE) =>
 const stored = (doc: WatchPagesDocument) => (doc as unknown as { pages: { items: Record<string, unknown>[] }[] }).pages[0]!.items[0]!;
 
 describe("Title", () => {
-  it("is read by both devices, and takes 18 points off the top", () => {
-    expect(keyDevices("templateTitle")).toEqual(["watch", "iphone"]);
-    expect(WATCH_TEMPLATE_TITLE).toEqual({ size: 11, top: 3, line: 14, gap: 1, inset: 4 });
-    expect(WATCH_TEMPLATE_TITLE_BAND).toBe(18);
+  it("is read by both devices, and takes 18, 21 or 23 points off the top by its size", () => {
+    for (const key of ["templateTitle", "templateTitleAlign", "templateTitleSize", "templateTitleColor"]) expect(keyDevices(key)).toEqual(["watch", "iphone"]);
+    expect(WATCH_TEMPLATE_TITLE).toEqual({ top: 3, gap: 1, inset: 4 });
+    expect(watchTemplateTitleMetrics({ entityId: TEMPLATE })).toEqual({ size: 11, line: 14 });
+    expect(watchTemplateTitleBand({ entityId: TEMPLATE })).toBe(18);
+    expect(watchTemplateTitleBand({ entityId: TEMPLATE, templateTitleSize: "medium" })).toBe(21);
+    expect(watchTemplateTitleBand({ entityId: TEMPLATE, templateTitleSize: "large" })).toBe(23);
+    expect(watchTemplateTitleBand({ entityId: TEMPLATE, templateTitleSize: "huge" })).toBe(18);
+  });
+
+  it("aligns left unless the key says center or right, and removes the key for left", () => {
+    expect(watchTemplateTitleAlign({ entityId: TEMPLATE })).toBe("leading");
+    expect(watchTemplateTitleAlign({ entityId: TEMPLATE, templateTitleAlign: "middle" })).toBe("leading");
+    expect(stored(setWatchTemplateTitleAlign(document(), PAGE, TILE, "center")).templateTitleAlign).toBe("center");
+    expect(Object.hasOwn(stored(setWatchTemplateTitleAlign(document({ templateTitleAlign: "trailing" }), PAGE, TILE, "leading")), "templateTitleAlign")).toBe(false);
+    expect(Object.hasOwn(stored(setWatchTemplateTitleSize(document({ templateTitleSize: "large" }), PAGE, TILE, "small")), "templateTitleSize")).toBe(false);
+  });
+
+  it("keeps its own color, and goes back to the ink without one", () => {
+    expect(stored(setWatchTemplateTitleColor(document(), PAGE, TILE, "#FF9500")).templateTitleColor).toBe("#FF9500");
+    expect(Object.hasOwn(stored(setWatchTemplateTitleColor(document({ templateTitleColor: "#FF9500" }), PAGE, TILE, undefined)), "templateTitleColor")).toBe(false);
+    expect(watchTemplateTitleColor({ entityId: TEMPLATE, templateTitleColor: " " })).toBeUndefined();
   });
 
   it("writes the text as typed, and removes the key when cleared", () => {
@@ -57,6 +81,8 @@ describe("Title", () => {
     const withTitle = watchTemplateTextScale(titled, 180, 180, input(titled));
     expect(withTitle).toBeLessThan(without);
     // The same as a tile 18 points shorter with no title.
-    expect(withTitle).toBeCloseTo(watchTemplateTextScale(plain, 180, 180 - WATCH_TEMPLATE_TITLE_BAND, input(plain)), 6);
+    expect(withTitle).toBeCloseTo(watchTemplateTextScale(plain, 180, 180 - 18, input(plain)), 6);
+    const large = tile({ templateTitle: "Next 10 hours", templateTitleSize: "large" });
+    expect(watchTemplateTextScale(large, 180, 180, input(large))).toBeCloseTo(watchTemplateTextScale(plain, 180, 180 - 23, input(plain)), 6);
   });
 });

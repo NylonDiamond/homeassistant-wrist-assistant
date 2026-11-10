@@ -15,7 +15,7 @@
 // contract".
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { checkField, entityField, rememberTemplateCaret, segField, sliderField, templateCaretOf, templateHelpers, textField } from "../editors.js";
+import { checkField, colorField, entityField, rememberTemplateCaret, segField, sliderField, templateCaretOf, templateHelpers, textField } from "../editors.js";
 import type { EntityRef } from "../model.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
@@ -93,6 +93,16 @@ import {
   setWatchTemplatePreset,
   setWatchTemplateColumns,
   setWatchTemplateTitle,
+  setWatchTemplateTitleAlign,
+  setWatchTemplateTitleColor,
+  setWatchTemplateTitleSize,
+  type WatchTemplateTitleAlign,
+  type WatchTemplateTitleSize,
+  WATCH_TEMPLATE_TITLE_ALIGNS,
+  WATCH_TEMPLATE_TITLE_SIZES,
+  watchTemplateTitleAlign,
+  watchTemplateTitleColor,
+  watchTemplateTitleSize,
   setWatchTemplateLayout,
   setWatchTemplateLines,
   setWatchTemplateText,
@@ -270,7 +280,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     columns: watchTemplateColumns(tile),
     rowLimit: watchTemplateRowLimit(tile),
     lines: { label: A.template.lines.label, help: A.template.lines.help, menu: watchTemplateLinesMenu(tile) },
-    title: { label: A.template.title.label, help: A.template.title.help, placeholder: A.template.title.placeholder, text: watchTemplateTitleText(tile) },
+    title: { label: A.template.title.label, help: A.template.title.help, placeholder: A.template.title.placeholder, text: watchTemplateTitleText(tile), options: templateTitleOptions(host) },
     layout: normalizeTemplateLayout(tile.templateLayout),
     busy: host.busy,
     hass: host.hass,
@@ -290,6 +300,20 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
       </div>`,
   };
   return html`<div class="tpl-box" data-tpl=${key}><wa-template-editor .data=${data}></wa-template-editor></div>`;
+}
+
+/** A template tile's title: Align, Size and its own color. */
+function templateTitleOptions(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const align = WATCH_TEMPLATE_TITLE_ALIGNS;
+  const sizes = WATCH_TEMPLATE_TITLE_SIZES;
+  return html`
+    ${segField(align.label, watchTemplateTitleAlign(tile), align.options.map(([v, l]) => [v, l] as [WatchTemplateTitleAlign, string]),
+      (v) => commit(host, "templateTitleAlign", (d) => setWatchTemplateTitleAlign(d, ...at(host), v)), { def: align.absent })}
+    ${segField(sizes.label, watchTemplateTitleSize(tile), sizes.options.map((o) => [o.value, o.label] as [WatchTemplateTitleSize, string]),
+      (v) => commit(host, "templateTitleSize", (d) => setWatchTemplateTitleSize(d, ...at(host), v)), { def: sizes.absent })}
+    ${colorField(A.template.title.color.label, watchTemplateTitleColor(tile),
+      (v) => commit(host, "templateTitleColor", (d) => setWatchTemplateTitleColor(d, ...at(host), v)), true)}`;
 }
 
 // ── Music ────────────────────────────────────────────────────────────────

@@ -409,6 +409,16 @@
       "24h",
       "7d"
     ],
+    "TemplateTitleAlign": [
+      "leading",
+      "center",
+      "trailing"
+    ],
+    "TemplateTitleSize": [
+      "small",
+      "medium",
+      "large"
+    ],
     "MapTileZoom": [
       "fit",
       "city",
@@ -1730,6 +1740,24 @@
         },
         "templateTitle": {
           "type": "string",
+          "required": false
+        },
+        "templateTitleAlign": {
+          "type": "enum",
+          "enum": "TemplateTitleAlign",
+          "strict": false,
+          "required": false,
+          "default": "leading"
+        },
+        "templateTitleSize": {
+          "type": "enum",
+          "enum": "TemplateTitleSize",
+          "strict": false,
+          "required": false,
+          "default": "small"
+        },
+        "templateTitleColor": {
+          "type": "color",
           "required": false
         },
         "templateLayout": {

@@ -322,7 +322,12 @@ interface AppTable {
   version: number;
   template: {
     lines: { key: string; kinds: readonly string[]; min: number; max: number; absent: number; label: string; help: string };
-    title: { key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; size: number; top: number; line: number; gap: number; inset: number };
+    title: {
+      key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; top: number; gap: number; inset: number;
+      align: { key: string; label: string; absent: WatchTemplateTitleAlign; options: readonly (readonly [WatchTemplateTitleAlign, string])[] };
+      sizes: { key: string; label: string; absent: WatchTemplateTitleSize; options: readonly { value: WatchTemplateTitleSize; label: string; size: number; line: number }[] };
+      color: { key: string; label: string };
+    };
     add: { addPreset: string };
     presets: WatchTemplatePreset[];
     richText: {
@@ -507,13 +512,67 @@ export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: st
   return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? REMOVE : false) : undefined));
 }
 
-/** The title line's look, in watch points: Inter semibold of `size`, `top`
- * over its line box of `line`, `gap` under it, `inset` further in than the
- * text. The app's `TemplateTileTitle` draws the same. */
-export const WATCH_TEMPLATE_TITLE = { size: A.template.title.size, top: A.template.title.top, line: A.template.title.line, gap: A.template.title.gap, inset: A.template.title.inset } as const;
+export type WatchTemplateTitleAlign = "leading" | "center" | "trailing";
+export type WatchTemplateTitleSize = "small" | "medium" | "large";
+
+/** The title line's place, in watch points: `top` over its line box, `gap`
+ * under it, `inset` further in than the text on both sides. The app's
+ * `TemplateTileTitle` draws the same. */
+export const WATCH_TEMPLATE_TITLE = { top: A.template.title.top, gap: A.template.title.gap, inset: A.template.title.inset } as const;
+
+/** Align's and Size's choices, as stored and as the panel names them. */
+export const WATCH_TEMPLATE_TITLE_ALIGNS = A.template.title.align;
+export const WATCH_TEMPLATE_TITLE_SIZES = A.template.title.sizes;
+
+/** The title's alignment: the key, or leading for an absent or unknown one. */
+export function watchTemplateTitleAlign(tile: WatchPageTile): WatchTemplateTitleAlign {
+  const value = tile.templateTitleAlign;
+  return WATCH_TEMPLATE_TITLE_ALIGNS.options.some(([v]) => v === value) ? (value as WatchTemplateTitleAlign) : WATCH_TEMPLATE_TITLE_ALIGNS.absent;
+}
+
+/** The title's size: the key, or small for an absent or unknown one. */
+export function watchTemplateTitleSize(tile: WatchPageTile): WatchTemplateTitleSize {
+  const value = tile.templateTitleSize;
+  return WATCH_TEMPLATE_TITLE_SIZES.options.some((o) => o.value === value) ? (value as WatchTemplateTitleSize) : WATCH_TEMPLATE_TITLE_SIZES.absent;
+}
+
+/** The title's font size and line box, in watch points. */
+export function watchTemplateTitleMetrics(tile: WatchPageTile): { size: number; line: number } {
+  const size = watchTemplateTitleSize(tile);
+  const option = WATCH_TEMPLATE_TITLE_SIZES.options.find((o) => o.value === size)!;
+  return { size: option.size, line: option.line };
+}
 
 /** The points the title takes off the top of the text's room. */
-export const WATCH_TEMPLATE_TITLE_BAND = WATCH_TEMPLATE_TITLE.top + WATCH_TEMPLATE_TITLE.line + WATCH_TEMPLATE_TITLE.gap;
+export function watchTemplateTitleBand(tile: WatchPageTile): number {
+  return WATCH_TEMPLATE_TITLE.top + watchTemplateTitleMetrics(tile).line + WATCH_TEMPLATE_TITLE.gap;
+}
+
+/** The title's own color as stored, or undefined for the surface's ink. */
+export function watchTemplateTitleColor(tile: WatchPageTile): string | undefined {
+  const value = tile.templateTitleColor;
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+export function setWatchTemplateTitleAlign(document: WatchPagesDocument, pageId: string, tileId: string, align: WatchTemplateTitleAlign): WatchPagesDocument {
+  if (!WATCH_TEMPLATE_TITLE_ALIGNS.options.some(([v]) => v === align)) return document;
+  return setKey(document, pageId, tileId, "templateTitleAlign", (tile) => (isTemplate(tile) ? (align === WATCH_TEMPLATE_TITLE_ALIGNS.absent ? (Object.hasOwn(tile, "templateTitleAlign") ? REMOVE : undefined) : align) : undefined));
+}
+
+export function setWatchTemplateTitleSize(document: WatchPagesDocument, pageId: string, tileId: string, size: WatchTemplateTitleSize): WatchPagesDocument {
+  if (!WATCH_TEMPLATE_TITLE_SIZES.options.some((o) => o.value === size)) return document;
+  return setKey(document, pageId, tileId, "templateTitleSize", (tile) => (isTemplate(tile) ? (size === WATCH_TEMPLATE_TITLE_SIZES.absent ? (Object.hasOwn(tile, "templateTitleSize") ? REMOVE : undefined) : size) : undefined));
+}
+
+/** Title color: a color, or undefined to go back to the surface's ink. */
+export function setWatchTemplateTitleColor(document: WatchPagesDocument, pageId: string, tileId: string, color: string | undefined): WatchPagesDocument {
+  const value = typeof color === "string" && color.trim() !== "" ? color : undefined;
+  return setKey(document, pageId, tileId, "templateTitleColor", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (value === undefined) return Object.hasOwn(tile, "templateTitleColor") ? REMOVE : undefined;
+    return tile.templateTitleColor === value ? undefined : value;
+  });
+}
 
 /** The title as stored, for the field: the text as typed, or "". */
 export function watchTemplateTitleText(tile: WatchPageTile): string {
