@@ -5,10 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   WATCH_TEMPLATE_TITLE,
   setWatchTemplateTitle,
-  setWatchTemplateTitleAlign,
+  setWatchTemplateTitlePosition,
   setWatchTemplateTitleColor,
   setWatchTemplateTitleFontSize,
-  watchTemplateTitleAlign,
+  watchTemplateTitlePosition,
   watchTemplateTitleBand,
   watchTemplateTitleColor,
   watchTemplateTitleMetrics,
@@ -27,8 +27,8 @@ const stored = (doc: WatchPagesDocument) => (doc as unknown as { pages: { items:
 
 describe("Title", () => {
   it("is read by both devices, and takes its line box and 4 points off the top", () => {
-    for (const key of ["templateTitle", "templateTitleAlign", "templateTitleFontSize", "templateTitleColor"]) expect(keyDevices(key)).toEqual(["watch", "iphone"]);
-    expect(WATCH_TEMPLATE_TITLE).toEqual({ top: 3, gap: 1, inset: 4 });
+    for (const key of ["templateTitle", "templateTitlePosition", "templateTitleFontSize", "templateTitleColor"]) expect(keyDevices(key)).toEqual(["watch", "iphone"]);
+    expect(WATCH_TEMPLATE_TITLE).toEqual({ top: 3, gap: 1, inset: 0 });
     expect(watchTemplateTitleMetrics({ entityId: TEMPLATE })).toEqual({ size: 11, line: 14 });
     expect(watchTemplateTitleBand({ entityId: TEMPLATE })).toBe(18);
     expect(watchTemplateTitleMetrics({ entityId: TEMPLATE, templateTitleFontSize: 13 })).toEqual({ size: 13, line: 17 });
@@ -41,17 +41,21 @@ describe("Title", () => {
 
   it("writes Size in half points within 6 to 30, removes it at 11, and drops the old word key", () => {
     expect(stored(setWatchTemplateTitleFontSize(document(), PAGE, TILE, 14.3)).templateTitleFontSize).toBe(14.5);
-    expect(stored(setWatchTemplateTitleFontSize(document(), PAGE, TILE, 2)).templateTitleFontSize).toBe(6);
+    expect(stored(setWatchTemplateTitleFontSize(document(), PAGE, TILE, 2)).templateTitleFontSize).toBe(3);
     const back = stored(setWatchTemplateTitleFontSize(document({ templateTitleFontSize: 20, templateTitleSize: "large" }), PAGE, TILE, 11));
     expect(Object.hasOwn(back, "templateTitleFontSize")).toBe(false);
     expect(Object.hasOwn(back, "templateTitleSize")).toBe(false);
   });
 
-  it("aligns left unless the key says center or right, and removes the key for left", () => {
-    expect(watchTemplateTitleAlign({ entityId: TEMPLATE })).toBe("leading");
-    expect(watchTemplateTitleAlign({ entityId: TEMPLATE, templateTitleAlign: "middle" })).toBe("leading");
-    expect(stored(setWatchTemplateTitleAlign(document(), PAGE, TILE, "center")).templateTitleAlign).toBe("center");
-    expect(Object.hasOwn(stored(setWatchTemplateTitleAlign(document({ templateTitleAlign: "trailing" }), PAGE, TILE, "leading")), "templateTitleAlign")).toBe(false);
+  it("sits at the left unless Position moves it, in hundredths from 0 to 1, and drops the old word key", () => {
+    expect(watchTemplateTitlePosition({ entityId: TEMPLATE })).toBe(0);
+    expect(watchTemplateTitlePosition({ entityId: TEMPLATE, templateTitlePosition: 1.4 })).toBe(1);
+    expect(watchTemplateTitlePosition({ entityId: TEMPLATE, templateTitleAlign: "center" })).toBe(0);
+    expect(stored(setWatchTemplateTitlePosition(document(), PAGE, TILE, 0.374)).templateTitlePosition).toBe(0.37);
+    expect(stored(setWatchTemplateTitlePosition(document(), PAGE, TILE, 0.5)).templateTitlePosition).toBe(0.5);
+    const back = stored(setWatchTemplateTitlePosition(document({ templateTitlePosition: 0.5, templateTitleAlign: "center" }), PAGE, TILE, 0));
+    expect(Object.hasOwn(back, "templateTitlePosition")).toBe(false);
+    expect(Object.hasOwn(back, "templateTitleAlign")).toBe(false);
   });
 
   it("keeps its own color, and goes back to the ink without one", () => {

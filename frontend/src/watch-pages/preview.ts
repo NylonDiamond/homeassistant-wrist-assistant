@@ -91,7 +91,7 @@ import {
   watchTemplateRowLimit,
   watchTemplateText,
   watchTemplateTitle,
-  watchTemplateTitleAlign,
+  watchTemplateTitlePosition,
   watchTemplateTitleBand,
   watchTemplateTitleColor,
   watchTemplateTitleMetrics,
@@ -2312,8 +2312,9 @@ function templateTitleBand(tile: WatchPageTile, text: string | undefined): numbe
 }
 
 /** A template tile's title line (`TemplateTileTitle`): one line at the top,
- * `inset` further in than the text, in its own color (as a template's color
- * marker reads it) or else the surface's second ink. */
+ * placed across the text's width by its position (the share of the room
+ * left beside it that lies to its left), in its own color (as a template's
+ * color marker reads it) or else the surface's second ink. */
 function templateTitleLine(tile: WatchPageTile, ink: string, zs: number, pad: number, shadow: string, opacity = 1): TemplateResult {
   const t = WATCH_TEMPLATE_TITLE;
   const { size, line } = watchTemplateTitleMetrics(tile);
@@ -2321,11 +2322,12 @@ function templateTitleLine(tile: WatchPageTile, ink: string, zs: number, pad: nu
   const spec = watchTemplateTitleColor(tile);
   const own = spec === undefined ? undefined : templateIconColor(spec);
   const color = own === undefined ? `color:${ink};${opacity < 1 ? `opacity:${opacity};` : ""}` : `color:${own.hex};${own.alpha < 1 ? `opacity:${own.alpha};` : ""}`;
-  const justify = { leading: "flex-start", center: "center", trailing: "flex-end" }[watchTemplateTitleAlign(tile)];
-  const place = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${line * zs}px;line-height:${line * zs}px;justify-content:${justify}`;
+  const x = watchTemplateTitlePosition(tile);
+  const place = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${line * zs}px;line-height:${line * zs}px`;
   // The words in a box of their own, so the template editor can pick them
-  // and draw its box around the words, not the whole line.
-  return html`<span class="wp-tpl-title" style=${place}><span class="wp-tpl-title-text" style=${`font-size:${size * zs}px;${color}${shadow}`}>${watchTemplateTitle(tile)}</span></span>`;
+  // and draw its box around the words, not the whole line. The room left
+  // beside them is shared by two spacers, `x` of it to the left.
+  return html`<span class="wp-tpl-title" style=${place}><span style=${`flex:${x} 1 0`}></span><span class="wp-tpl-title-text" style=${`font-size:${size * zs}px;${color}${shadow}`}>${watchTemplateTitle(tile)}</span><span style=${`flex:${1 - x} 1 0`}></span></span>`;
 }
 
 /** How much bigger a template tile's text is drawn than it is fitted: on an
@@ -4548,7 +4550,7 @@ export const watchPagePreviewStyles = css`
     position: absolute; display: flex; align-items: center; pointer-events: none;
     font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600;
   }
-  .wp-tpl-title-text { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .wp-tpl-title-text { display: block; flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .wp-tpl-free { position: absolute; top: 0; bottom: 0; font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; }
   .wp-tpl-part { position: absolute; display: inline-flex; white-space: pre; align-items: center; transform: translate(-50%, -50%); }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }

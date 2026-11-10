@@ -409,11 +409,6 @@
       "24h",
       "7d"
     ],
-    "TemplateTitleAlign": [
-      "leading",
-      "center",
-      "trailing"
-    ],
     "MapTileZoom": [
       "fit",
       "city",
@@ -1737,12 +1732,10 @@
           "type": "string",
           "required": false
         },
-        "templateTitleAlign": {
-          "type": "enum",
-          "enum": "TemplateTitleAlign",
-          "strict": false,
+        "templateTitlePosition": {
+          "type": "number",
           "required": false,
-          "default": "leading"
+          "default": 0
         },
         "templateTitleFontSize": {
           "type": "number",

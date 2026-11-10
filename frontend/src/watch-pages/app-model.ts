@@ -324,7 +324,7 @@ interface AppTable {
     lines: { key: string; kinds: readonly string[]; min: number; max: number; absent: number; label: string; help: string };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; top: number; gap: number; inset: number;
-      align: { key: string; label: string; absent: WatchTemplateTitleAlign; options: readonly (readonly [WatchTemplateTitleAlign, string])[] };
+      position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
       fontSize: { key: string; label: string; absent: number; min: number; max: number; step: number; lineScale: number };
       color: { key: string; label: string };
     };
@@ -512,21 +512,21 @@ export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: st
   return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? REMOVE : false) : undefined));
 }
 
-export type WatchTemplateTitleAlign = "leading" | "center" | "trailing";
-
 /** The title line's place, in watch points: `top` over its line box, `gap`
  * under it, `inset` further in than the text on both sides. The app's
  * `TemplateTileTitle` draws the same. */
 export const WATCH_TEMPLATE_TITLE = { top: A.template.title.top, gap: A.template.title.gap, inset: A.template.title.inset } as const;
 
-/** Align's choices and Size's range, as stored and as the panel names them. */
-export const WATCH_TEMPLATE_TITLE_ALIGNS = A.template.title.align;
+/** Position's and Size's ranges, as stored and as the panel names them. */
+export const WATCH_TEMPLATE_TITLE_POSITION = A.template.title.position;
 export const WATCH_TEMPLATE_TITLE_FONT_SIZE = A.template.title.fontSize;
 
-/** The title's alignment: the key, or leading for an absent or unknown one. */
-export function watchTemplateTitleAlign(tile: WatchPageTile): WatchTemplateTitleAlign {
-  const value = tile.templateTitleAlign;
-  return WATCH_TEMPLATE_TITLE_ALIGNS.options.some(([v]) => v === value) ? (value as WatchTemplateTitleAlign) : WATCH_TEMPLATE_TITLE_ALIGNS.absent;
+/** Where the title sits across the text's width, 0 (left) to 1 (right): the
+ * key kept in range, or 0 for an absent or wrong one. */
+export function watchTemplateTitlePosition(tile: WatchPageTile): number {
+  const { absent, min, max } = WATCH_TEMPLATE_TITLE_POSITION;
+  const value = tile.templateTitlePosition;
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : absent;
 }
 
 /** The title's size in points: the key kept in range, or 11 for an absent
@@ -555,9 +555,18 @@ export function watchTemplateTitleColor(tile: WatchPageTile): string | undefined
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-export function setWatchTemplateTitleAlign(document: WatchPagesDocument, pageId: string, tileId: string, align: WatchTemplateTitleAlign): WatchPagesDocument {
-  if (!WATCH_TEMPLATE_TITLE_ALIGNS.options.some(([v]) => v === align)) return document;
-  return setKey(document, pageId, tileId, "templateTitleAlign", (tile) => (isTemplate(tile) ? (align === WATCH_TEMPLATE_TITLE_ALIGNS.absent ? (Object.hasOwn(tile, "templateTitleAlign") ? REMOVE : undefined) : align) : undefined));
+/** Position: 0 to 1, kept in range and to the step; the absent value removes
+ * the key. It also drops the old word key `templateTitleAlign`. */
+export function setWatchTemplateTitlePosition(document: WatchPagesDocument, pageId: string, tileId: string, position: number): WatchPagesDocument {
+  const { absent, min, max, step } = WATCH_TEMPLATE_TITLE_POSITION;
+  if (!Number.isFinite(position)) return document;
+  const value = Math.round(Math.min(max, Math.max(min, Math.round(position / step) * step)) * 1000) / 1000;
+  const cleaned = setKey(document, pageId, tileId, "templateTitleAlign", (tile) => (isTemplate(tile) && Object.hasOwn(tile, "templateTitleAlign") ? REMOVE : undefined));
+  return setKey(cleaned, pageId, tileId, "templateTitlePosition", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (value === absent) return Object.hasOwn(tile, "templateTitlePosition") ? REMOVE : undefined;
+    return tile.templateTitlePosition === value ? undefined : value;
+  });
 }
 
 /** Size: points, kept in range and to the step; the absent value removes

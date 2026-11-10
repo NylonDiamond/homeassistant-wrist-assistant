@@ -13,7 +13,7 @@
 
 import { css, html, LitElement, nothing, type TemplateResult, unsafeCSS } from "lit";
 import { TILE_FONT_STACK } from "../font.js";
-import { WATCH_APP, type WatchTemplateTitleAlign } from "./app-model.js";
+import { WATCH_APP } from "./app-model.js";
 import type { RenderResult } from "../ha-api.js";
 import type { TemplateCode, TemplateCodeOptions, TemplateCodeView } from "./template-code.js";
 import { type TemplateCell, templateRows } from "./template-rows.js";
@@ -52,7 +52,8 @@ export interface TemplateEditorData {
    * and its look, for the box under the tile while the title is picked. */
   title: {
     label: string; help: string; placeholder: string; text: string;
-    align: WatchTemplateTitleAlign; aligns: readonly (readonly [WatchTemplateTitleAlign, string])[]; alignAbsent: WatchTemplateTitleAlign;
+    /** 0 (left) to 1 (right), with Left, Center and Right as presets. */
+    position: number; positions: { absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
     size: number; sizes: { absent: number; min: number; max: number; step: number };
     /** The title's own color as stored, or undefined for the surface's ink. */
     color: string | undefined;
@@ -69,7 +70,7 @@ export interface TemplateEditorData {
   setColumns(on: boolean): void;
   setLines(value: string): void;
   setTitle(text: string): void;
-  setTitleAlign(align: WatchTemplateTitleAlign): void;
+  setTitlePosition(position: number, typing: boolean): void;
   setTitleSize(size: number, typing: boolean): void;
   setTitleColor(color: string | undefined, typing: boolean): void;
   setLayout(layout: TemplateTileLayout | undefined, typing?: boolean): void;
@@ -328,8 +329,9 @@ export class WaTemplateEditor extends LitElement {
     this.requestUpdate();
   }
 
-  /** The picked title's box, as a picked item's: Align, Size in points with
-   * its slider, and a color button. A blue dot puts each back. */
+  /** The picked title's box, as a picked item's: Position in percent with
+   * its slider and Left, Center and Right, a color button, and Size in
+   * points with its slider. A blue dot puts each back. */
   private titleInspector(): TemplateResult {
     const d = this.data, t = d.title, busy = d.busy;
     const dot = (changed: boolean, name: string, reset: () => void) => changed
@@ -337,10 +339,14 @@ export class WaTemplateEditor extends LitElement {
       : nothing;
     const own = t.color === undefined ? undefined : templateIconColor(t.color);
     const size = (e: Event) => d.setTitleSize(Number((e.target as HTMLInputElement).value), true);
+    const p = t.positions, percent = Math.round(t.position * 100);
+    const position = (e: Event) => d.setTitlePosition(Number((e.target as HTMLInputElement).value) / 100, true);
     return html`<section class="te-item-inspector" aria-label="Title">
       <div class="te-item-head"><b>${t.text.trim()}</b></div>
-      <div class="te-item-field"><span>Align${dot(t.align !== t.alignAbsent, "align", () => d.setTitleAlign(t.alignAbsent))}</span>
-        <div class="te-seg te-title-align" role="group" aria-label="Title align">${t.aligns.map(([value, words]) => html`<button type="button" class=${t.align === value ? "on" : ""} aria-pressed=${t.align === value ? "true" : "false"} ?disabled=${busy} @click=${() => d.setTitleAlign(value)}>${words}</button>`)}</div></div>
+      <div class="te-item-field"><span>Position${dot(t.position !== p.absent, "position", () => d.setTitlePosition(p.absent, false))}</span>
+        <div class="te-seg te-title-align" role="group" aria-label="Title position">${p.presets.map(([value, words]) => html`<button type="button" class=${t.position === value ? "on" : ""} aria-pressed=${t.position === value ? "true" : "false"} ?disabled=${busy} @click=${() => d.setTitlePosition(value, false)}>${words}</button>`)}</div>
+        <div class="te-item-size"><input type="number" aria-label="Title position" min=${p.min * 100} max=${p.max * 100} step=${p.step * 100} .value=${String(percent)} ?disabled=${busy} @input=${position} @blur=${() => d.ended()}><span>%</span></div>
+        <input type="range" aria-label="Title position slider" min=${p.min * 100} max=${p.max * 100} step=${p.step * 100} .value=${String(percent)} ?disabled=${busy} @input=${position} @change=${() => d.ended()}></div>
       <label class="te-item-color"><input type="color" aria-label="Title color" .value=${own?.hex ?? "#FFFFFF"} ?disabled=${busy}
         @input=${(e: Event) => d.setTitleColor((e.target as HTMLInputElement).value.toUpperCase(), true)} @blur=${() => d.ended()}><span>Color<small>${t.color ?? "Inherited"}</small></span>${dot(t.color !== undefined, "color", () => d.setTitleColor(undefined, false))}</label>
       <div class="te-item-field"><span>Size${dot(t.size !== t.sizes.absent, "size", () => d.setTitleSize(t.sizes.absent, false))}</span>
