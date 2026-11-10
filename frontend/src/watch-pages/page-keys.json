@@ -414,11 +414,6 @@
       "center",
       "trailing"
     ],
-    "TemplateTitleSize": [
-      "small",
-      "medium",
-      "large"
-    ],
     "MapTileZoom": [
       "fit",
       "city",
@@ -1749,12 +1744,10 @@
           "required": false,
           "default": "leading"
         },
-        "templateTitleSize": {
-          "type": "enum",
-          "enum": "TemplateTitleSize",
-          "strict": false,
+        "templateTitleFontSize": {
+          "type": "number",
           "required": false,
-          "default": "small"
+          "default": 11
         },
         "templateTitleColor": {
           "type": "color",

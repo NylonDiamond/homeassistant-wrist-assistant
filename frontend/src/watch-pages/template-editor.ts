@@ -13,7 +13,7 @@
 
 import { css, html, LitElement, nothing, type TemplateResult, unsafeCSS } from "lit";
 import { TILE_FONT_STACK } from "../font.js";
-import { WATCH_APP } from "./app-model.js";
+import { WATCH_APP, type WatchTemplateTitleAlign } from "./app-model.js";
 import type { RenderResult } from "../ha-api.js";
 import type { TemplateCode, TemplateCodeOptions, TemplateCodeView } from "./template-code.js";
 import { type TemplateCell, templateRows } from "./template-rows.js";
@@ -48,8 +48,15 @@ export interface TemplateEditorData {
   rowLimit: number;
   /** Lines' words and choices, for the row under Line up columns. */
   lines: { label: string; help: string; menu: WatchMenu };
-  /** Title's words and the text as typed, for the row over Line up columns. */
-  title: { label: string; help: string; placeholder: string; text: string; options: TemplateResult };
+  /** Title's words and the text as typed, for the row over Line up columns,
+   * and its look, for the box under the tile while the title is picked. */
+  title: {
+    label: string; help: string; placeholder: string; text: string;
+    align: WatchTemplateTitleAlign; aligns: readonly (readonly [WatchTemplateTitleAlign, string])[]; alignAbsent: WatchTemplateTitleAlign;
+    size: number; sizes: { absent: number; min: number; max: number; step: number };
+    /** The title's own color as stored, or undefined for the surface's ink. */
+    color: string | undefined;
+  };
   layout?: TemplateTileLayout;
   busy: boolean;
   hass: HassLike;
@@ -62,6 +69,9 @@ export interface TemplateEditorData {
   setColumns(on: boolean): void;
   setLines(value: string): void;
   setTitle(text: string): void;
+  setTitleAlign(align: WatchTemplateTitleAlign): void;
+  setTitleSize(size: number, typing: boolean): void;
+  setTitleColor(color: string | undefined, typing: boolean): void;
   setLayout(layout: TemplateTileLayout | undefined, typing?: boolean): void;
   picture(device: "watch" | "iphone" | undefined, maxWidth: number, maxHeight: number): TemplateTilePicture | undefined;
   /** Examples, drawn above the editor. */
@@ -303,13 +313,40 @@ export class WaTemplateEditor extends LitElement {
   private tilePointerDown(event: PointerEvent): void {
     if (event.button === 0 && this.onTitle(event)) {
       event.preventDefault();
-      this.titlePickedTile = this.data.tileId;
-      this.items.clearSelection();
-      this.requestUpdate();
+      this.pickTitle();
       return;
     }
     if (this.titlePickedTile !== undefined) { this.titlePickedTile = undefined; this.requestUpdate(); }
     this.items.start(event);
+  }
+
+  /** Picks the title, and no item. */
+  private pickTitle(): void {
+    if (this.titlePicked) return;
+    this.titlePickedTile = this.data.tileId;
+    this.items.clearSelection();
+    this.requestUpdate();
+  }
+
+  /** The picked title's box, as a picked item's: Align, Size in points with
+   * its slider, and a color button. A blue dot puts each back. */
+  private titleInspector(): TemplateResult {
+    const d = this.data, t = d.title, busy = d.busy;
+    const dot = (changed: boolean, name: string, reset: () => void) => changed
+      ? html`<button type="button" class="te-reset-dot" aria-label=${`Reset ${name}`} title=${`Reset ${name}`} @click=${() => { d.ended(); reset(); }}></button>`
+      : nothing;
+    const own = t.color === undefined ? undefined : templateIconColor(t.color);
+    const size = (e: Event) => d.setTitleSize(Number((e.target as HTMLInputElement).value), true);
+    return html`<section class="te-item-inspector" aria-label="Title">
+      <div class="te-item-head"><b>${t.text.trim()}</b></div>
+      <div class="te-item-field"><span>Align${dot(t.align !== t.alignAbsent, "align", () => d.setTitleAlign(t.alignAbsent))}</span>
+        <div class="te-seg te-title-align" role="group" aria-label="Title align">${t.aligns.map(([value, words]) => html`<button type="button" class=${t.align === value ? "on" : ""} aria-pressed=${t.align === value ? "true" : "false"} ?disabled=${busy} @click=${() => d.setTitleAlign(value)}>${words}</button>`)}</div></div>
+      <label class="te-item-color"><input type="color" aria-label="Title color" .value=${own?.hex ?? "#FFFFFF"} ?disabled=${busy}
+        @input=${(e: Event) => d.setTitleColor((e.target as HTMLInputElement).value.toUpperCase(), true)} @blur=${() => d.ended()}><span>Color<small>${t.color ?? "Inherited"}</small></span>${dot(t.color !== undefined, "color", () => d.setTitleColor(undefined, false))}</label>
+      <div class="te-item-field"><span>Size${dot(t.size !== t.sizes.absent, "size", () => d.setTitleSize(t.sizes.absent, false))}</span>
+        <div class="te-item-size"><input type="number" aria-label="Title size" min=${t.sizes.min} max=${t.sizes.max} step=${t.sizes.step} .value=${String(t.size)} ?disabled=${busy} @input=${size} @blur=${() => d.ended()}><span>pt</span></div>
+        <input type="range" aria-label="Title size slider" min=${t.sizes.min} max=${t.sizes.max} step=${t.sizes.step} .value=${String(t.size)} ?disabled=${busy} @input=${size} @change=${() => d.ended()}></div>
+    </section>`;
   }
 
   /** Remembers where the cells are, so they can glide to their new places. */
@@ -398,13 +435,14 @@ export class WaTemplateEditor extends LitElement {
             ${this.items.toolbar()}
             ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
               <input class="te-title" type="text" aria-label=${d.title.label} placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
+                @focus=${() => this.pickTitle()}
                 @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}></label>
               <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
               <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>` : nothing}
             ${this.titlePicked && d.title.text.trim() !== "" && !this.items.layoutDraws()
-              ? html`<section class="te-item-inspector" aria-label="Title"><div class="te-item-head"><b>Title</b></div><div class="te-title-opts">${d.title.options}</div></section>`
+              ? this.titleInspector()
               : this.items.inspector()}
           </div>
           <div class="te-right">
@@ -529,7 +567,7 @@ export const templateEditorStyles = css`
   .te-sw > span { flex: 1; min-width: 0; }
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }
   .te-sw small { font-size: 11.5px; color: var(--wa-muted); }
-  .te-title-opts { display: grid; gap: 6px; }
+  .te-title-align { align-self: flex-start; }
   .te-tile .wp-tpl-title-text { pointer-events: auto; cursor: pointer; }
   .te-tile .wp-tpl-title-text.te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-title { flex: 0 1 150px; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }

@@ -325,7 +325,7 @@ interface AppTable {
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; top: number; gap: number; inset: number;
       align: { key: string; label: string; absent: WatchTemplateTitleAlign; options: readonly (readonly [WatchTemplateTitleAlign, string])[] };
-      sizes: { key: string; label: string; absent: WatchTemplateTitleSize; options: readonly { value: WatchTemplateTitleSize; label: string; size: number; line: number }[] };
+      fontSize: { key: string; label: string; absent: number; min: number; max: number; step: number; lineScale: number };
       color: { key: string; label: string };
     };
     add: { addPreset: string };
@@ -513,16 +513,15 @@ export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: st
 }
 
 export type WatchTemplateTitleAlign = "leading" | "center" | "trailing";
-export type WatchTemplateTitleSize = "small" | "medium" | "large";
 
 /** The title line's place, in watch points: `top` over its line box, `gap`
  * under it, `inset` further in than the text on both sides. The app's
  * `TemplateTileTitle` draws the same. */
 export const WATCH_TEMPLATE_TITLE = { top: A.template.title.top, gap: A.template.title.gap, inset: A.template.title.inset } as const;
 
-/** Align's and Size's choices, as stored and as the panel names them. */
+/** Align's choices and Size's range, as stored and as the panel names them. */
 export const WATCH_TEMPLATE_TITLE_ALIGNS = A.template.title.align;
-export const WATCH_TEMPLATE_TITLE_SIZES = A.template.title.sizes;
+export const WATCH_TEMPLATE_TITLE_FONT_SIZE = A.template.title.fontSize;
 
 /** The title's alignment: the key, or leading for an absent or unknown one. */
 export function watchTemplateTitleAlign(tile: WatchPageTile): WatchTemplateTitleAlign {
@@ -530,17 +529,19 @@ export function watchTemplateTitleAlign(tile: WatchPageTile): WatchTemplateTitle
   return WATCH_TEMPLATE_TITLE_ALIGNS.options.some(([v]) => v === value) ? (value as WatchTemplateTitleAlign) : WATCH_TEMPLATE_TITLE_ALIGNS.absent;
 }
 
-/** The title's size: the key, or small for an absent or unknown one. */
-export function watchTemplateTitleSize(tile: WatchPageTile): WatchTemplateTitleSize {
-  const value = tile.templateTitleSize;
-  return WATCH_TEMPLATE_TITLE_SIZES.options.some((o) => o.value === value) ? (value as WatchTemplateTitleSize) : WATCH_TEMPLATE_TITLE_SIZES.absent;
+/** The title's size in points: the key kept in range, or 11 for an absent
+ * or wrong one. */
+export function watchTemplateTitleFontSize(tile: WatchPageTile): number {
+  const { absent, min, max } = WATCH_TEMPLATE_TITLE_FONT_SIZE;
+  const value = tile.templateTitleFontSize;
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : absent;
 }
 
-/** The title's font size and line box, in watch points. */
+/** The title's font size and line box, in watch points: the line box is the
+ * size times `lineScale`, rounded up (the app's `TemplateTileTitle.Style`). */
 export function watchTemplateTitleMetrics(tile: WatchPageTile): { size: number; line: number } {
-  const size = watchTemplateTitleSize(tile);
-  const option = WATCH_TEMPLATE_TITLE_SIZES.options.find((o) => o.value === size)!;
-  return { size: option.size, line: option.line };
+  const size = watchTemplateTitleFontSize(tile);
+  return { size, line: Math.ceil(size * WATCH_TEMPLATE_TITLE_FONT_SIZE.lineScale) };
 }
 
 /** The points the title takes off the top of the text's room. */
@@ -559,9 +560,18 @@ export function setWatchTemplateTitleAlign(document: WatchPagesDocument, pageId:
   return setKey(document, pageId, tileId, "templateTitleAlign", (tile) => (isTemplate(tile) ? (align === WATCH_TEMPLATE_TITLE_ALIGNS.absent ? (Object.hasOwn(tile, "templateTitleAlign") ? REMOVE : undefined) : align) : undefined));
 }
 
-export function setWatchTemplateTitleSize(document: WatchPagesDocument, pageId: string, tileId: string, size: WatchTemplateTitleSize): WatchPagesDocument {
-  if (!WATCH_TEMPLATE_TITLE_SIZES.options.some((o) => o.value === size)) return document;
-  return setKey(document, pageId, tileId, "templateTitleSize", (tile) => (isTemplate(tile) ? (size === WATCH_TEMPLATE_TITLE_SIZES.absent ? (Object.hasOwn(tile, "templateTitleSize") ? REMOVE : undefined) : size) : undefined));
+/** Size: points, kept in range and to the step; the absent value removes
+ * the key. It also drops the old word key `templateTitleSize`. */
+export function setWatchTemplateTitleFontSize(document: WatchPagesDocument, pageId: string, tileId: string, size: number): WatchPagesDocument {
+  const { absent, min, max, step } = WATCH_TEMPLATE_TITLE_FONT_SIZE;
+  if (!Number.isFinite(size)) return document;
+  const value = Math.min(max, Math.max(min, Math.round(size / step) * step));
+  const cleaned = setKey(document, pageId, tileId, "templateTitleSize", (tile) => (isTemplate(tile) && Object.hasOwn(tile, "templateTitleSize") ? REMOVE : undefined));
+  return setKey(cleaned, pageId, tileId, "templateTitleFontSize", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (value === absent) return Object.hasOwn(tile, "templateTitleFontSize") ? REMOVE : undefined;
+    return tile.templateTitleFontSize === value ? undefined : value;
+  });
 }
 
 /** Title color: a color, or undefined to go back to the surface's ink. */
