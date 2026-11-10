@@ -522,7 +522,7 @@ export const WATCH_TEMPLATE_TITLE_POSITION = A.template.title.position;
 export const WATCH_TEMPLATE_TITLE_FONT_SIZE = A.template.title.fontSize;
 
 /** Where the title sits across the text's width, 0 (left) to 1 (right): the
- * key kept in range, or 0 for an absent or wrong one. */
+ * key kept in range, or 0.5 (centered) for an absent or wrong one. */
 export function watchTemplateTitlePosition(tile: WatchPageTile): number {
   const { absent, min, max } = WATCH_TEMPLATE_TITLE_POSITION;
   const value = tile.templateTitlePosition;

@@ -49,13 +49,13 @@ describe("Title", () => {
     expect(Object.hasOwn(back, "templateTitleSize")).toBe(false);
   });
 
-  it("sits at the left unless Position moves it, in hundredths from 0 to 1, and drops the old word key", () => {
-    expect(watchTemplateTitlePosition({ entityId: TEMPLATE })).toBe(0);
+  it("sits centered unless Position moves it, in hundredths from 0 to 1, and drops the old word key", () => {
+    expect(watchTemplateTitlePosition({ entityId: TEMPLATE })).toBe(0.5);
     expect(watchTemplateTitlePosition({ entityId: TEMPLATE, templateTitlePosition: 1.4 })).toBe(1);
-    expect(watchTemplateTitlePosition({ entityId: TEMPLATE, templateTitleAlign: "center" })).toBe(0);
+    expect(watchTemplateTitlePosition({ entityId: TEMPLATE, templateTitleAlign: "leading" })).toBe(0.5);
     expect(stored(setWatchTemplateTitlePosition(document(), PAGE, TILE, 0.374)).templateTitlePosition).toBe(0.37);
-    expect(stored(setWatchTemplateTitlePosition(document(), PAGE, TILE, 0.5)).templateTitlePosition).toBe(0.5);
-    const back = stored(setWatchTemplateTitlePosition(document({ templateTitlePosition: 0.5, templateTitleAlign: "center" }), PAGE, TILE, 0));
+    expect(stored(setWatchTemplateTitlePosition(document(), PAGE, TILE, 0)).templateTitlePosition).toBe(0);
+    const back = stored(setWatchTemplateTitlePosition(document({ templateTitlePosition: 0, templateTitleAlign: "center" }), PAGE, TILE, 0.5));
     expect(Object.hasOwn(back, "templateTitlePosition")).toBe(false);
     expect(Object.hasOwn(back, "templateTitleAlign")).toBe(false);
   });

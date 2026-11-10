@@ -1735,7 +1735,7 @@
         "templateTitlePosition": {
           "type": "number",
           "required": false,
-          "default": 0
+          "default": 0.5
         },
         "templateTitleFontSize": {
           "type": "number",
