@@ -92,7 +92,7 @@
       "key": "templateTitle",
       "kinds": ["template"],
       "label": "Title",
-      "help": "A small line over the text. Not one of the Lines.",
+      "help": "A small line over the text. Not one of the Lines. Click it on the tile to style it.",
       "placeholder": "None",
       "write": "Plain text, as typed. Clearing the field removes the key. Both devices read it trimmed, and an empty or absent title draws nothing. An older app ignores it.",
       "rule": "One line at the top of the tile, in Inter semibold of the size's points, ended with an ellipsis when too long. It takes a band (top, then the size's line box, then gap) off the top of the room the text is fitted in, so it never counts against Lines. It is drawn inset points further in than the text, on both sides. A tile with a working templateLayout draws no title.",

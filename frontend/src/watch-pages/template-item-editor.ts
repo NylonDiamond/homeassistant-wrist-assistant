@@ -149,6 +149,13 @@ export class TemplateItemEditor {
     });
   }
 
+  /** Picks nothing: the title was picked instead. */
+  clearSelection(): void {
+    if (this.selected.size === 0) return;
+    this.selected = new Set();
+    this.host.update();
+  }
+
   start(event: PointerEvent): void {
     if (event.button !== 0 || this.data().busy || this.drag || this.marquee) return;
     this.pointerClick = true; this.pointerCode = undefined;

@@ -111,6 +111,10 @@ export class WaTemplateEditor extends LitElement {
   private cached: { text: string; scan: SourceScan } | undefined;
   private flipFrom: Map<string, DOMRect> | undefined;
   private flipGuides = false;
+  /** The title is picked on the tile: its Align, Size and Title color show
+   * in the box under the tile, where a picked item's settings show. */
+  private titlePickedTile: string | undefined;
+  private get titlePicked(): boolean { return this.titlePickedTile !== undefined && this.titlePickedTile === this.data.tileId; }
   private lastFace: { tileId: string; device: string; face: TemplateResult } | undefined;
   private readonly items = new TemplateItemEditor({
     data: () => this.data,
@@ -289,6 +293,25 @@ export class WaTemplateEditor extends LitElement {
     }
   }
 
+  /** Whether a pointer or click event landed on the title's words. */
+  private onTitle(event: Event): boolean {
+    return (event.target as Element | null)?.closest?.(".wp-tpl-title-text") != null;
+  }
+
+  /** A press on the title picks it and no item; any other press leaves the
+   * title and goes to the items. */
+  private tilePointerDown(event: PointerEvent): void {
+    if (event.button === 0 && this.onTitle(event)) {
+      event.preventDefault();
+      this.titlePickedTile = this.data.tileId;
+      this.items.clearSelection();
+      this.requestUpdate();
+      return;
+    }
+    if (this.titlePickedTile !== undefined) { this.titlePickedTile = undefined; this.requestUpdate(); }
+    this.items.start(event);
+  }
+
   /** Remembers where the cells are, so they can glide to their new places. */
   private toggleColumns(): void {
     const on = !this.data.columns;
@@ -369,19 +392,20 @@ export class WaTemplateEditor extends LitElement {
         <div class="te-grid">
           <div class="te-left">
             ${picture === undefined ? nothing : html`<div class="te-well">
-              <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.items.start(e)} @click=${(e: MouseEvent) => this.items.press(e)} @keydown=${(e: KeyboardEvent) => this.items.key(e)} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}</div>
+              <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.tilePointerDown(e)} @click=${(e: MouseEvent) => { if (!this.onTitle(e)) this.items.press(e); }} @keydown=${(e: KeyboardEvent) => this.items.key(e)} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}</div>
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             ${this.items.toolbar()}
             ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
               <input class="te-title" type="text" aria-label=${d.title.label} placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
                 @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}></label>
-              ${d.title.text.trim() === "" ? nothing : html`<div class="te-title-opts">${d.title.options}</div>`}
               <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
               <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>` : nothing}
-            ${this.items.inspector()}
+            ${this.titlePicked && d.title.text.trim() !== "" && !this.items.layoutDraws()
+              ? html`<section class="te-item-inspector" aria-label="Title"><div class="te-item-head"><b>Title</b></div><div class="te-title-opts">${d.title.options}</div></section>`
+              : this.items.inspector()}
           </div>
           <div class="te-right">
             <div class="te-bar">
@@ -421,6 +445,7 @@ export class WaTemplateEditor extends LitElement {
         this.code.refresh();
       }
     }
+    this.querySelector(".te-tile .wp-tpl-title-text")?.classList.toggle("te-picked", this.titlePicked);
     this.lightTile();
     this.runFlip();
     this.items.refresh();
@@ -504,7 +529,9 @@ export const templateEditorStyles = css`
   .te-sw > span { flex: 1; min-width: 0; }
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }
   .te-sw small { font-size: 11.5px; color: var(--wa-muted); }
-  .te-title-opts { display: grid; gap: 6px; padding-left: 10px; border-left: 2px solid var(--divider-color, rgba(127, 127, 127, .35)); }
+  .te-title-opts { display: grid; gap: 6px; }
+  .te-tile .wp-tpl-title-text { pointer-events: auto; cursor: pointer; }
+  .te-tile .wp-tpl-title-text.te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-title { flex: 0 1 150px; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }
   .te-lines { flex: none; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 4px; }
   .te-switch { flex: none; position: relative; width: 36px; height: 21px; padding: 0; border: 0; border-radius: 11px; background: var(--wa-switch-off); cursor: pointer; transition: background .18s; }

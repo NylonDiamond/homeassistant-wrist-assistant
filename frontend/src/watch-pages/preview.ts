@@ -2321,9 +2321,11 @@ function templateTitleLine(tile: WatchPageTile, ink: string, zs: number, pad: nu
   const spec = watchTemplateTitleColor(tile);
   const own = spec === undefined ? undefined : templateIconColor(spec);
   const color = own === undefined ? `color:${ink};${opacity < 1 ? `opacity:${opacity};` : ""}` : `color:${own.hex};${own.alpha < 1 ? `opacity:${own.alpha};` : ""}`;
-  const align = { leading: "left", center: "center", trailing: "right" }[watchTemplateTitleAlign(tile)];
-  const style = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${line * zs}px;line-height:${line * zs}px;font-size:${size * zs}px;text-align:${align};${color}${shadow}`;
-  return html`<span class="wp-tpl-title" style=${style}>${watchTemplateTitle(tile)}</span>`;
+  const justify = { leading: "flex-start", center: "center", trailing: "flex-end" }[watchTemplateTitleAlign(tile)];
+  const place = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${line * zs}px;line-height:${line * zs}px;justify-content:${justify}`;
+  // The words in a box of their own, so the template editor can pick them
+  // and draw its box around the words, not the whole line.
+  return html`<span class="wp-tpl-title" style=${place}><span class="wp-tpl-title-text" style=${`font-size:${size * zs}px;${color}${shadow}`}>${watchTemplateTitle(tile)}</span></span>`;
 }
 
 /** How much bigger a template tile's text is drawn than it is fitted: on an
@@ -4543,9 +4545,10 @@ export const watchPagePreviewStyles = css`
   .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }
   .wp-tpl-span > :not(.wp-tpl-slot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--wp-span-font); }
   .wp-tpl-title {
-    position: absolute; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; pointer-events: none;
+    position: absolute; display: flex; align-items: center; pointer-events: none;
+    font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600;
   }
+  .wp-tpl-title-text { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .wp-tpl-free { position: absolute; top: 0; bottom: 0; font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; }
   .wp-tpl-part { position: absolute; display: inline-flex; white-space: pre; align-items: center; transform: translate(-50%, -50%); }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }
