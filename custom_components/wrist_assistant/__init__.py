@@ -63,6 +63,7 @@ from .const import (
     PLATFORMS,
     PUSH_PAIRED_BY_USER_CAPABILITY,
     SEALED_CODE_PAIRING_CAPABILITY,
+    TILE_PHOTO_EDIT_CAPABILITY,
     TILE_PHOTO_LIST_CAPABILITY,
     TILE_PHOTOS_CAPABILITY,
     WA_HMAC_NONCE_TTL_SECONDS,
@@ -1203,6 +1204,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # entity id. The phone marks the things that already have a photo only
     # when it sees this.
     coordinator.register_capability(TILE_PHOTO_LIST_CAPABILITY)
+    # Edit packs in the same store, and the signed page_image_edit_get and
+    # page_image_replace ops. The phone offers to edit a photo it made, and
+    # moves the tiles to the edited copy, only when it sees this.
+    coordinator.register_capability(TILE_PHOTO_EDIT_CAPABILITY)
     # The home map (home_map_store.py): the signed home_map_get, home_map_put
     # and areas_get ops, `home_map_rev` on the delta reply, and the panel's
     # home_map commands. The iPhone offers a scan, and the watch the Home map

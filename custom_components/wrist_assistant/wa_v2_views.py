@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import functools
 import gzip
 import hmac
@@ -186,14 +187,19 @@ from .notifications import (
     watch_phone_ids,
 )
 from .page_images import content_type as page_image_content_type
+from .page_images import normalize_id as normalize_page_image_id
 from .page_images_store import (
     PageImagesError,
     PageImagesInvalidError,
+    PageImagesNotFoundError,
     PageImagesTooLargeError,
     PageImagesUnavailableError,
 )
 from .page_images_store import (
     decode_data as decode_page_image,
+)
+from .page_images_store import (
+    decode_edit as decode_page_image_edit,
 )
 from .page_links import listed_page_ids
 from .pairing_ws import async_pair_status, store_paired_device
@@ -5536,10 +5542,11 @@ _PAGE_IMAGE_STATUS = {
     "not_found": 404,
     "unavailable": 503,
 }
-# A put is a JSON body around a photo of at most 256 KiB as base64, which is
-# a third bigger. The raw body is held to a little over that before the
-# photo is decoded.
-_PAGE_IMAGE_PUT_MAX_BODY_BYTES = 360 * 1024
+# A put is a JSON body around a photo of at most 256 KiB and its edit pack
+# of at most 1 MiB, both as base64, which is a third bigger (about 1707
+# KiB). The raw body is held to a little over that before anything is
+# decoded.
+_PAGE_IMAGE_PUT_MAX_BODY_BYTES = 1800 * 1024
 
 
 def _page_image_refusal(ctx: _OpContext, err: PageImagesError) -> Response:
@@ -5575,17 +5582,21 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
 
     Body:  {"image_id": <UUID>, "data": <base64 JPEG or PNG>,
             "kind"?: "background" | "icon", "label"?: <text>,
-            "entity_id"?: <entity id>}
+            "entity_id"?: <entity id>, "edit"?: <base64 edit pack>}
     Reply: {"ok": true, "status": "stored" | "exists"}
     Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400 (not
              a photo id, not base64, neither a JPEG nor a PNG, a side under
              16 or over 1024 px, a kind that is neither, a label over 60
-             characters, an entity id of the wrong shape), ``too_large`` 413
-             (over 256 KiB), ``full`` 409 (500 photos), ``unavailable`` 503.
+             characters, an entity id of the wrong shape, an edit pack that
+             is not base64 or does not start with ``WAED``), ``too_large``
+             413 (a photo over 256 KiB, an edit pack over 1 MiB, a body over
+             1800 KiB), ``full`` 409 (500 photos), ``unavailable`` 503.
 
-    ``kind`` defaults to ``background``; ``label`` and ``entity_id`` are
-    optional, and null is the same as absent. ``exists`` when the id is
-    already stored or is a built-in id: the bytes and details are not
+    ``kind`` defaults to ``background``; ``label``, ``entity_id`` and
+    ``edit`` are optional, and null is the same as absent. ``edit`` is the
+    iPhone maker's edit pack (capability ``tile_photo_edit``), kept beside
+    the photo for ``page_image_edit_get``. ``exists`` when the id is already
+    stored or is a built-in id: the bytes, details and pack are not
     compared, the first write wins.
     """
     store = getattr(ctx.domain_data, "page_images_store", None)
@@ -5593,7 +5604,11 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
         return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
     if len(ctx.body) > _PAGE_IMAGE_PUT_MAX_BODY_BYTES:
         return _page_image_refusal(
-            ctx, PageImagesTooLargeError("a photo is at most 256 KB")
+            ctx,
+            PageImagesTooLargeError(
+                f"a put is at most {_PAGE_IMAGE_PUT_MAX_BODY_BYTES // 1024} KB: "
+                "a photo of at most 256 KB and its edit pack of at most 1 MB"
+            ),
         )
     try:
         image_id = ctx.payload.get("image_id")
@@ -5603,6 +5618,7 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
             kind=ctx.payload.get("kind"),
             label=ctx.payload.get("label"),
             entity_id=ctx.payload.get("entity_id"),
+            edit=decode_page_image_edit(ctx.payload.get("edit")),
         )
     except PageImagesError as err:
         return _page_image_refusal(ctx, err)
@@ -5615,14 +5631,15 @@ async def _op_page_image_list(ctx: _OpContext) -> Response:
 
     Body:  {} or {"entity_ids": [<entity id>, ...]}
     Reply: {"images": [{"image_id", "kind": "icon", "label"?, "entity_id"?,
-            "format": "jpeg" | "png", "updated_at"?}]}
+            "format": "jpeg" | "png", "updated_at"?, "has_edit"?: true}]}
     Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400
              (``entity_ids`` not a list of strings), ``unavailable`` 503.
 
     Only photos of kind ``icon``, newest first (the store's order, by when
     each was added). ``label`` and ``entity_id`` are left out when the photo
     has none; ``updated_at`` is when it was added, an ISO time, left out
-    when the store has none. ``entity_ids`` keeps only the photos made for
+    when the store has none. ``has_edit`` is there, true, only for a photo
+    with an edit pack (``page_image_edit_get``). ``entity_ids`` keeps only the photos made for
     one of those entities (compared as written); null is the same as
     absent, and an empty list keeps none.
     """
@@ -5654,8 +5671,154 @@ async def _op_page_image_list(ctx: _OpContext) -> Response:
         image["format"] = entry["format"]
         if isinstance(entry.get("added_at"), str) and entry["added_at"]:
             image["updated_at"] = entry["added_at"]
+        if entry.get("has_edit"):
+            image["has_edit"] = True
         images.append(image)
     return ctx.signed_json({"images": images})
+
+
+async def _op_page_image_edit_get(ctx: _OpContext) -> Response:
+    """An icon photo's edit pack, so the iPhone's maker can edit the photo
+    again (capability ``tile_photo_edit``). Any device with a valid pair may
+    ask, as for ``page_image_put``.
+
+    Body:  {"image_id": <UUID>}
+    Reply: 200, the pack's bytes as they are,
+           ``Content-Type: application/octet-stream``, signed like every
+           other reply.
+    Refusal: signed {"ok": false, "error", "message"}: ``not_found`` 404 (no
+             such photo, or one with no pack), ``invalid`` 400 (not a photo
+             id), ``unavailable`` 503.
+    """
+    store = getattr(ctx.domain_data, "page_images_store", None)
+    if store is None:
+        return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
+    try:
+        data = await store.async_read_edit(ctx.payload.get("image_id"))
+    except PageImagesError as err:
+        return _page_image_refusal(ctx, err)
+    return ctx.signed_bytes(data, content_type="application/octet-stream")
+
+
+def _page_image_swapped(document: Any, old_id: str, new_id: str) -> tuple[dict[str, Any], int]:
+    """A deep copy of a ``pages`` document with every tile's
+    ``iconPhotoId`` that names ``old_id`` set to ``new_id``, and how many
+    tiles changed. Only a page's ``items`` hold tiles, as for the sweep."""
+    swapped = copy.deepcopy(document) if isinstance(document, dict) else {}
+    changed = 0
+    pages = swapped.get("pages")
+    for page in pages if isinstance(pages, list) else ():
+        items = page.get("items") if isinstance(page, dict) else None
+        for item in items if isinstance(items, list) else ():
+            if isinstance(item, dict) and normalize_page_image_id(item.get("iconPhotoId")) == old_id:
+                item["iconPhotoId"] = new_id
+                changed += 1
+    return swapped, changed
+
+
+async def _op_page_image_replace(ctx: _OpContext) -> Response:
+    """Move every tile from a photo to its edited copy (capability
+    ``tile_photo_edit``). A photo id names fixed bytes, and every device
+    keeps a photo by its id, so the iPhone stores an edited photo under a new
+    id and then asks for this.
+
+    Body:  {"image_id": <old UUID>, "with": <new UUID>}
+    Reply: {"ok": true, "tiles": <tiles changed>, "owners": <owners saved>,
+            "skipped": <owners naming the old photo that were not changed>}
+    Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400 (an id
+             that is not a photo id, or ``with`` the same as ``image_id``),
+             ``not_found`` 404 (the new photo is not stored),
+             ``unavailable`` 503.
+
+    Every owner whose current pages have a tile naming the old photo as its
+    ``iconPhotoId`` is saved with the new id there, as a panel save is
+    (``WatchConfigStore.panel_save``: a new revision, the history, the
+    devices told), when the signing device may change that owner's pages
+    (``device_may_take_item``, as for ``watch_config_put``). Each owner is
+    read again right before its save, since a linked page saved for one
+    owner may already have reached the next. The counts are of what is
+    stored after: ``tiles`` and ``owners`` include a linked copy a save
+    reached, and ``skipped`` is every owner still naming the old photo (one
+    the device may not change, or whose save was refused). A refused save
+    never fails the op. The old photo stays, and the sweep removes it once nothing
+    names it.
+    """
+    store = getattr(ctx.domain_data, "page_images_store", None)
+    if store is None:
+        return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
+    old_id = normalize_page_image_id(ctx.payload.get("image_id"))
+    new_id = normalize_page_image_id(ctx.payload.get("with"))
+    if old_id is None or new_id is None:
+        return _page_image_refusal(
+            ctx, PageImagesInvalidError("image_id and with must be photo ids")
+        )
+    if old_id == new_id:
+        return _page_image_refusal(
+            ctx, PageImagesInvalidError("with must be another photo than image_id")
+        )
+    if store.entry(new_id) is None:
+        return _page_image_refusal(ctx, PageImagesNotFoundError(f"there is no photo {new_id}"))
+    pages_store = getattr(ctx.domain_data, "watch_config_store", None)
+    if pages_store is None:
+        return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
+    user = await ctx.hass.auth.async_get_user(ctx.user_id) if ctx.user_id else None
+    admin = bool(user is not None and user.is_active and user.is_admin)
+    secrets = getattr(ctx.domain_data, "widget_secret_store", None)
+
+    def may_take(owners: list[str]) -> bool:
+        return device_may_take_item(secrets, ctx.watch_id, ctx.user_id, admin, owners)
+
+    def naming() -> dict[str, int]:
+        """Each owner's count of tiles naming the old photo, where it is not
+        0."""
+        found: dict[str, int] = {}
+        for owner in pages_store.owners():
+            try:
+                record = pages_store.get(owner, "pages")
+            except WatchConfigStoreError:
+                continue
+            if record is None:
+                continue
+            _document, count = _page_image_swapped(record.document, old_id, new_id)
+            if count:
+                found[owner] = count
+        return found
+
+    before = naming()
+    for owner in before:
+        # Read again: an earlier save may have reached this owner already.
+        try:
+            record = pages_store.get(owner, "pages")
+        except WatchConfigStoreError:
+            continue
+        if record is None:
+            continue
+        document, changed = _page_image_swapped(record.document, old_id, new_id)
+        if not changed or not may_take([owner]):
+            continue
+        try:
+            pages_store.panel_save(
+                owner, "pages", document, base_revision=record.revision, may_take=may_take
+            )
+        except WatchConfigStoreError as err:
+            _LOGGER.warning(
+                "Could not move %s's tiles to photo %s: %s", owner, new_id, err.message
+            )
+    # Counted from what is stored now, so a linked copy a save reached
+    # counts too.
+    after = naming()
+    tiles = sum(count - after.get(owner, 0) for owner, count in before.items())
+    owners = sum(1 for owner, count in before.items() if after.get(owner, 0) < count)
+    skipped = len(after)
+    _LOGGER.info(
+        "Moved %d tile(s) of %d owner(s) from photo %s to %s (%d skipped)",
+        tiles,
+        owners,
+        old_id,
+        new_id,
+        skipped,
+    )
+    return ctx.signed_json({"ok": True, "tiles": tiles, "owners": owners, "skipped": skipped})
 
 
 # ── the home map (app repo docs/home_map_plan_2026-10.md) ─────────────────
@@ -6023,6 +6186,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "page_image_get": _op_page_image_get,
     "page_image_put": _op_page_image_put,
     "page_image_list": _op_page_image_list,
+    "page_image_edit_get": _op_page_image_edit_get,
+    "page_image_replace": _op_page_image_replace,
     # The home map (home_map_store.py, home_areas.py).
     "home_map_get": _op_home_map_get,
     "home_map_put": _op_home_map_put,

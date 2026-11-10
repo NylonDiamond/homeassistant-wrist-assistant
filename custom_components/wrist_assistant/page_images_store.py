@@ -29,6 +29,15 @@ The kind only sets how long the sweep keeps the photo once nothing names it;
 either kind may be named in either place. ``label`` (the tile name the phone
 made it for) and ``entity_id`` (that tile's entity) help the panel offer it.
 
+An icon photo the iPhone made may carry an edit pack: opaque bytes, at most
+``MAX_EDIT_BYTES`` and starting with ``EDIT_MAGIC``, that the phone's maker
+reads back to edit the photo again (the first photo, its On photo, the
+cut-out and the settings). It is ``<id>.edit`` beside the photo's file, and
+the entry's ``edit_bytes`` says it is there. It comes only with the put that
+stores the photo, is never replaced, and goes wherever the photo goes: a
+delete, the sweep and an uninstall remove it too. An entry without
+``edit_bytes`` has no pack.
+
 A photo is in use while any owner's ``pages`` record names it as a page's
 ``backgroundImageId`` or a tile's ``iconPhotoId``. The sweep runs at start
 and after every write of a ``pages`` record, whoever made it (setup hangs
@@ -73,12 +82,14 @@ from homeassistant.helpers.storage import Store
 
 from .const import PAGE_IMAGES_STORAGE_KEY, PAGE_IMAGES_STORAGE_VERSION
 from .page_images import (
+    EDIT_MAGIC,
     EXTENSIONS,
     FORMAT_JPEG,
     KIND_BACKGROUND,
     KIND_ICON,
     KINDS,
     MAX_CUSTOM_IMAGES,
+    MAX_EDIT_BYTES,
     MAX_IMAGE_BYTES,
     PageImageInvalid,
     check_entity_id,
@@ -103,6 +114,10 @@ _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 # Base64 is four characters per three bytes; anything longer than a photo at
 # the cap could encode to is refused before it is decoded.
 _MAX_BASE64_CHARS = (MAX_IMAGE_BYTES + 2) // 3 * 4
+# The same for an edit pack at its cap.
+_MAX_EDIT_BASE64_CHARS = (MAX_EDIT_BYTES + 2) // 3 * 4
+# The ending of an edit pack's file, beside the photo's own.
+_EDIT_EXTENSION = "edit"
 
 # Every owner's current ``pages`` document, and whether that is all of them
 # (``WatchConfigStore.documents``).
@@ -175,6 +190,38 @@ def decode_data(raw: Any) -> bytes:
         raise PageImagesInvalidError("data is not base64") from err
 
 
+def decode_edit(raw: Any) -> bytes | None:
+    """An edit pack's bytes from the base64 text the phone sends, or None
+    for none (absent or null). Too long to be a pack at the cap is
+    ``too_large``; anything that is not base64 is ``invalid``. What the bytes
+    hold is checked by :func:`check_edit`."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw:
+        raise PageImagesInvalidError("edit must be the edit pack as base64 text")
+    if len(raw) > _MAX_EDIT_BASE64_CHARS:
+        raise PageImagesTooLargeError(f"an edit pack is at most {MAX_EDIT_BYTES // 1024} KB")
+    try:
+        return base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError) as err:
+        raise PageImagesInvalidError("edit is not base64") from err
+
+
+def check_edit(data: bytes | None) -> bytes | None:
+    """An edit pack as a put sends it, checked: at most ``MAX_EDIT_BYTES``
+    (else ``too_large``) and starting with ``EDIT_MAGIC`` (else
+    ``invalid``). None stays None."""
+    if data is None:
+        return None
+    if not isinstance(data, bytes | bytearray):
+        raise PageImagesInvalidError("an edit pack must be bytes")
+    if len(data) > MAX_EDIT_BYTES:
+        raise PageImagesTooLargeError(f"an edit pack is at most {MAX_EDIT_BYTES // 1024} KB")
+    if not data.startswith(EDIT_MAGIC):
+        raise PageImagesInvalidError("this is not an edit pack")
+    return bytes(data)
+
+
 def check_details(kind: Any, label: Any, entity_id: Any) -> tuple[str, str | None, str | None]:
     """A photo's ``kind``, ``label`` and ``entity_id`` as an upload or a put
     sends them, each optional, checked and as stored (see
@@ -225,6 +272,11 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
         return None
     if kind not in KINDS:
         return None
+    # Only says whether a pack is there, so a bad one reads as none and
+    # never drops the photo.
+    edit_bytes = raw.get("edit_bytes")
+    if isinstance(edit_bytes, bool) or not isinstance(edit_bytes, int) or edit_bytes <= 0:
+        edit_bytes = None
     return {
         **fields,
         "sha256": digest,
@@ -234,7 +286,22 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
         "kind": kind,
         "label": _optional(check_label, raw.get("label")),
         "entity_id": _optional(check_entity_id, raw.get("entity_id")),
+        "edit_bytes": edit_bytes,
     }
+
+
+def _edit_name(image_id: str) -> str:
+    """The name of a photo's edit pack file."""
+    return f"{image_id}.{_EDIT_EXTENSION}"
+
+
+def _file_names(image_id: str, entry: Mapping[str, Any]) -> tuple[str, ...]:
+    """Every file a custom photo has: its own, then its edit pack's when it
+    has one."""
+    names = (_file_name(image_id, entry),)
+    if entry.get("edit_bytes"):
+        names += (_edit_name(image_id),)
+    return names
 
 
 def _file_name(image_id: str, entry: Mapping[str, Any]) -> str:
@@ -368,6 +435,11 @@ class PageImagesStore:
         wanted = {
             _file_name(image_id, entry): image_id for image_id, entry in self._index.items()
         }
+        packs = {
+            _edit_name(image_id): image_id
+            for image_id, entry in self._index.items()
+            if entry.get("edit_bytes")
+        }
 
         def on_disk() -> set[str]:
             try:
@@ -382,7 +454,16 @@ class PageImagesStore:
         if missing:
             _LOGGER.warning("Page photo file(s) missing, dropped from the index: %s", missing)
             self._schedule_save()
-        strays = sorted(present - wanted.keys())
+        # A pack whose file is gone: the photo stays, without the pack.
+        lost = sorted(
+            packs[name] for name in packs.keys() - present if packs[name] in self._index
+        )
+        for image_id in lost:
+            self._index[image_id]["edit_bytes"] = None
+        if lost:
+            _LOGGER.warning("Page photo edit pack(s) missing, the photos are kept: %s", lost)
+            self._schedule_save()
+        strays = sorted(present - wanted.keys() - packs.keys())
         if strays:
             await self._hass.async_add_executor_job(self._unlink, strays)
         self.sweep()
@@ -433,9 +514,10 @@ class PageImagesStore:
     def list(self) -> dict[str, Any]:
         """The panel's view: ``{"presets": [{id, name, width, height}],
         "images": [{id, width, height, bytes, added_at, used_by, format,
-        kind, label, entity_id}]}``, the built-in photos in the phone's order
-        and the custom ones newest first. ``label`` and ``entity_id`` are
-        None when the photo has none."""
+        kind, label, entity_id, has_edit}]}``, the built-in photos in the
+        phone's order and the custom ones newest first. ``label`` and
+        ``entity_id`` are None when the photo has none; ``has_edit`` says
+        whether it has an edit pack."""
         self._check_available()
         used, _complete = self._usage()
         # Newest first; among photos added in the same second, the one put in
@@ -462,6 +544,7 @@ class PageImagesStore:
                     "kind": entry["kind"],
                     "label": entry["label"],
                     "entity_id": entry["entity_id"],
+                    "has_edit": bool(entry.get("edit_bytes")),
                 }
                 for image_id, entry in ordered
             ],
@@ -496,6 +579,30 @@ class PageImagesStore:
         if data is None:
             raise PageImagesNotFoundError(f"the file of photo {image_id} is gone")
         return image_id, data
+
+    async def async_read_edit(self, raw_id: Any) -> bytes:
+        """The edit pack of a custom photo, the bytes as they are.
+        ``invalid`` for something that is not a photo id, ``not_found`` when
+        there is no such photo or it has no pack."""
+        self._check_available()
+        image_id = self._check_id(raw_id)
+        entry = self._index.get(image_id)
+        if entry is None:
+            raise PageImagesNotFoundError(f"there is no photo {image_id}")
+        if not entry.get("edit_bytes"):
+            raise PageImagesNotFoundError(f"photo {image_id} has no edit pack")
+        path = self._dir / _edit_name(image_id)
+
+        def read() -> bytes | None:
+            try:
+                return path.read_bytes()
+            except OSError:
+                return None
+
+        data = await self._hass.async_add_executor_job(read)
+        if data is None:
+            raise PageImagesNotFoundError(f"the edit pack of photo {image_id} is gone")
+        return data
 
     @staticmethod
     def _check_id(raw_id: Any) -> str:
@@ -574,16 +681,19 @@ class PageImagesStore:
         kind: Any = None,
         label: Any = None,
         entity_id: Any = None,
+        edit: bytes | None = None,
     ) -> str:
         """Keep a phone's photo under its own id. Returns ``"stored"``, or
         ``"exists"`` when that id is already stored or is a built-in id: the
-        bytes are not compared, the first write wins, details included.
-        ``kind``, ``label`` and ``entity_id`` are checked first either way
-        (:func:`check_details`), so a bad one is ``invalid`` whether or not
-        the id is stored."""
+        bytes are not compared, the first write wins, details and edit pack
+        included. ``kind``, ``label``, ``entity_id`` and ``edit`` are checked
+        first either way (:func:`check_details`, :func:`check_edit`), so a
+        bad one is refused whether or not the id is stored. ``edit`` is the
+        photo's edit pack, written beside it when the photo is stored now."""
         self._check_available()
         image_id = self._check_id(raw_id)
         details = check_details(kind, label, entity_id)
+        edit = check_edit(edit)
         if is_preset(image_id) or image_id in self._index:
             return "exists"
         size = self._check_bytes(data)
@@ -591,7 +701,7 @@ class PageImagesStore:
         async with self._lock:
             if image_id in self._index:
                 return "exists"
-            await self._async_add(image_id, data, size, digest, details)
+            await self._async_add(image_id, data, size, digest, details, edit=edit)
         return "stored"
 
     async def async_delete(self, raw_id: Any) -> str:
@@ -620,7 +730,7 @@ class PageImagesStore:
             entry = self._index.pop(image_id)
             self._schedule_save()
             await self._hass.async_add_executor_job(
-                self._unlink, [_file_name(image_id, entry)]
+                self._unlink, list(_file_names(image_id, entry))
             )
         _LOGGER.debug("Deleted page photo %s", image_id)
         return image_id
@@ -648,11 +758,15 @@ class PageImagesStore:
         size: tuple[str, int, int],
         digest: str,
         details: tuple[str, str | None, str | None],
+        *,
+        edit: bytes | None = None,
     ) -> dict[str, Any]:
-        """Write the file, then the entry. Called with the lock held.
-        ``size`` is the format, width and height :meth:`_check_bytes` read,
-        ``details`` the kind, label and entity id :func:`check_details`
-        kept. A new photo no page names yet starts its grace now."""
+        """Write the file (and the edit pack's, when there is one), then the
+        entry. Called with the lock held. ``size`` is the format, width and
+        height :meth:`_check_bytes` read, ``details`` the kind, label and
+        entity id :func:`check_details` kept, ``edit`` a pack
+        :func:`check_edit` passed. A new photo no page names yet starts its
+        grace now."""
         if len(self._index) >= MAX_CUSTOM_IMAGES:
             raise PageImagesFullError(
                 f"the home holds {MAX_CUSTOM_IMAGES} photos; delete some first"
@@ -660,13 +774,17 @@ class PageImagesStore:
         image_format, width, height = size
         kind, label, entity_id = details
         path = self._dir / f"{image_id}.{EXTENSIONS[image_format]}"
+        edit_path = self._dir / _edit_name(image_id)
 
         def write() -> None:
             self._dir.mkdir(parents=True, exist_ok=True)
             # Written beside and moved over, so a reader never sees half a file.
-            partial = path.with_suffix(".tmp")
-            partial.write_bytes(data)
-            os.replace(partial, path)
+            for target, content in ((path, data), (edit_path, edit)):
+                if content is None:
+                    continue
+                partial = target.with_suffix(".tmp")
+                partial.write_bytes(content)
+                os.replace(partial, target)
 
         await self._hass.async_add_executor_job(write)
         now = _iso(_utcnow())
@@ -682,6 +800,7 @@ class PageImagesStore:
             "kind": kind,
             "label": label,
             "entity_id": entity_id,
+            "edit_bytes": len(edit) if edit is not None else None,
         }
         self._index[image_id] = entry
         self._schedule_save()
@@ -724,7 +843,7 @@ class PageImagesStore:
             self._index[image_id]["unused_since"] = stamp
         for image_id in plan.clear:
             self._index[image_id]["unused_since"] = None
-        names = tuple(_file_name(image_id, self._index.pop(image_id)) for image_id in plan.delete)
+        names = tuple(_file_names(image_id, self._index.pop(image_id)) for image_id in plan.delete)
         self._schedule_save()
         if plan.delete:
             _LOGGER.info(
@@ -737,15 +856,19 @@ class PageImagesStore:
             )
         return plan.delete
 
-    async def _async_unlink_swept(self, swept: tuple[tuple[str, str], ...]) -> None:
-        """Remove the files of swept photos, each an (id, file name) pair,
-        except one whose id was stored again in the same format meanwhile: its
-        name is now the new photo's file."""
+    async def _async_unlink_swept(
+        self, swept: tuple[tuple[str, tuple[str, ...]], ...]
+    ) -> None:
+        """Remove the files of swept photos, each an (id, file names) pair,
+        except a file whose id was stored again meanwhile with a file of the
+        same name: that name is now the new photo's file (or its pack's)."""
         async with self._lock:
             names = [
                 name
-                for image_id, name in swept
-                if image_id not in self._index or _file_name(image_id, self._index[image_id]) != name
+                for image_id, files in swept
+                for name in files
+                if image_id not in self._index
+                or name not in _file_names(image_id, self._index[image_id])
             ]
             if names:
                 await self._hass.async_add_executor_job(self._unlink, names)

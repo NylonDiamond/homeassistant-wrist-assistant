@@ -54,6 +54,11 @@ MAX_IMAGE_BYTES = 256 * 1024
 MIN_SIDE = 16
 MAX_SIDE = 1024
 MAX_CUSTOM_IMAGES = 500
+# An icon photo's edit pack: what the phone's maker reads back to edit the
+# photo again (the first photo, its On photo, the cut-out and the settings).
+# Opaque here, but it must start with the magic and stay under the cap.
+MAX_EDIT_BYTES = 1024 * 1024
+EDIT_MAGIC = b"WAED"
 # How long a photo no page names is kept. It covers an upload whose page save
 # has not happened yet, and the panel's undo after a photo was taken off.
 UNUSED_GRACE = timedelta(days=7)

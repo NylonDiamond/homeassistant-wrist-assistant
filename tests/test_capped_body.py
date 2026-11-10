@@ -142,7 +142,7 @@ def test_the_caps_leave_room_for_every_op_body() -> None:
     # Every other op cap sits under the logs cap the action cap is built on.
     for cap in (
         "_HAND_OVER_MAX_SEALED_BODY_BYTES",
-        "_PAGE_IMAGE_PUT_MAX_BODY_BYTES = 360 * 1024",
+        "_PAGE_IMAGE_PUT_MAX_BODY_BYTES = 1800 * 1024",
         "_CLIENT_CERTIFICATE_PUT_MAX_BODY_BYTES = 96 * 1024",
     ):
         assert cap in source

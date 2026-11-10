@@ -490,6 +490,11 @@ TILE_PHOTOS_CAPABILITY = "tile_photos"
 # entity id, so the phone can tell which things already have a photo. The
 # phone asks only when it sees this.
 TILE_PHOTO_LIST_CAPABILITY = "tile_photo_list"
+# Edit packs for icon photos: page_image_put takes an `edit` pack beside the
+# photo, page_image_list marks the photos that have one, page_image_edit_get
+# reads it back and page_image_replace moves every tile from an old photo to
+# its edited copy. The phone offers to edit a photo only when it sees this.
+TILE_PHOTO_EDIT_CAPABILITY = "tile_photo_edit"
 # The home map (app repo docs/home_map_plan_2026-10.md), see
 # home_map_store.py: one document for the home, the floors, rooms and device
 # pins, and a rev that goes up by one on each save.

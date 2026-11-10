@@ -67,7 +67,7 @@ def ws_page_images_list(
     Result: {"presets": [{"id", "name", "width", "height"}],
              "images": [{"id", "width", "height", "bytes", "added_at",
                          "used_by": [owner id], "format", "kind", "label",
-                         "entity_id"}]}
+                         "entity_id", "has_edit"}]}
 
     Presets come in the phone's order, the home's photos newest first.
     ``used_by`` names the watches whose pages show the photo, as a page's
@@ -75,7 +75,8 @@ def ws_page_images_list(
     by itself seven days after it fell out of use, thirty for an icon photo).
     ``format`` is ``"jpeg"`` or ``"png"``, ``kind`` is ``"background"`` or
     ``"icon"``, and ``label`` and ``entity_id`` are null when the photo has
-    none. Presets are all JPEG backgrounds.
+    none. ``has_edit`` is true for a photo with an edit pack, which only the
+    iPhone's maker reads. Presets are all JPEG backgrounds.
     """
     store = _store(hass)
     if store is None:

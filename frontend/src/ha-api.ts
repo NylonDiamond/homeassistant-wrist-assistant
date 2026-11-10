@@ -1273,6 +1273,8 @@ export interface PageImageEntry {
   label?: string;
   /** The entity whose tile it was made for. */
   entity_id?: string;
+  /** It has an edit pack, which only the iPhone's maker reads. */
+  has_edit?: boolean;
 }
 
 /** How a stored photo is encoded. */

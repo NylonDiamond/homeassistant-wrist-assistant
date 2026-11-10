@@ -378,6 +378,7 @@ def test_list_has_the_presets_in_order_and_the_photos_newest_first(env) -> None:
         "kind": "background",
         "label": None,
         "entity_id": None,
+        "has_edit": False,
     }
     assert listed["images"][0]["used_by"] == []
 
@@ -949,3 +950,110 @@ def test_decode_data(env) -> None:
     # The longest text a photo at the cap encodes to is still decoded.
     at_cap = base64.b64encode(bytes(256 * 1024)).decode()
     assert len(decode(at_cap)) == 256 * 1024
+
+
+# ── edit packs ───────────────────────────────────────────────────────────
+
+PACK = b"WAED" + bytes(range(256)) * 4
+
+
+def _put_with_pack(env, image_id: str = ICON_UUID, pack: bytes = PACK) -> str:
+    return asyncio.run(env.store.async_put(image_id, png(), kind="icon", edit=pack))
+
+
+def test_a_put_with_an_edit_pack_keeps_it_beside_the_photo(env) -> None:
+    assert _put_with_pack(env) == "stored"
+    assert env.files() == [f"{ICON_UUID}.edit", f"{ICON_UUID}.png"]
+    assert env.index()[ICON_UUID]["edit_bytes"] == len(PACK)
+    assert asyncio.run(env.store.async_read_edit(ICON_UUID.lower())) == PACK
+    assert env.store.list()["images"][0]["has_edit"] is True
+
+
+def test_a_photo_without_a_pack_has_none(env) -> None:
+    asyncio.run(env.store.async_put(ICON_UUID, png(), kind="icon"))
+    assert env.files() == [f"{ICON_UUID}.png"]
+    assert env.index()[ICON_UUID]["edit_bytes"] is None
+    assert env.store.list()["images"][0]["has_edit"] is False
+    _refused(env, lambda: env.store.async_read_edit(ICON_UUID), "not_found")
+    _refused(env, lambda: env.store.async_read_edit(OTHER_UUID), "not_found")
+    _refused(env, lambda: env.store.async_read_edit("nope"), "invalid")
+
+
+def test_a_bad_pack_is_refused_before_anything_is_stored(env) -> None:
+    max_bytes = env.loaded.rules.MAX_EDIT_BYTES
+    _refused(env, lambda: _put_with_pack(env, pack=b"PNG!" + bytes(16)), "invalid")
+    _refused(env, lambda: _put_with_pack(env, pack=b"WAED" + bytes(max_bytes)), "too_large")
+    assert env.files() == []
+    assert KEY not in FakeStore.files or env.index() == {}
+    # A pack at the cap is kept.
+    assert _put_with_pack(env, pack=b"WAED" + bytes(max_bytes - 4)) == "stored"
+
+
+def test_a_put_of_a_stored_id_keeps_the_first_pack(env) -> None:
+    asyncio.run(env.store.async_put(ICON_UUID, png(), kind="icon"))
+    assert _put_with_pack(env) == "exists"
+    assert env.files() == [f"{ICON_UUID}.png"]
+    assert env.index()[ICON_UUID]["edit_bytes"] is None
+
+
+def test_delete_removes_the_pack(env) -> None:
+    _put_with_pack(env)
+    asyncio.run(env.store.async_delete(ICON_UUID))
+    assert env.files() == []
+
+
+def test_the_sweep_removes_the_pack(env) -> None:
+    _put_with_pack(env)
+    env.advance(days=31)
+    env.put_pages("watch-A", pages())
+    assert ICON_UUID not in env.index()
+    assert env.files() == []
+
+
+def test_a_swept_pack_of_an_id_stored_again_is_kept(env) -> None:
+    _put_with_pack(env)
+    env.advance(days=31)
+    second = b"WAED" + b"second"
+
+    async def race() -> None:
+        env.put_pages("watch-A", pages())  # schedules the unlink of both files
+        await env.store.async_put(ICON_UUID, png(70, 70), kind="icon", edit=second)
+        await asyncio.sleep(0)
+
+    asyncio.run(race())
+    assert env.files() == [f"{ICON_UUID}.edit", f"{ICON_UUID}.png"]
+    assert asyncio.run(env.store.async_read_edit(ICON_UUID)) == second
+
+
+def test_start_keeps_a_photo_whose_pack_is_gone_and_drops_a_stray_pack(env) -> None:
+    _put_with_pack(env)
+    (env.folder / f"{ICON_UUID}.edit").unlink()
+    (env.folder / f"{OTHER_UUID}.edit").write_bytes(PACK)
+    again = env.new_store()
+    assert [i["id"] for i in again.list()["images"]] == [ICON_UUID]
+    assert again.entry(ICON_UUID)["edit_bytes"] is None
+    assert again.list()["images"][0]["has_edit"] is False
+    assert env.files() == [f"{ICON_UUID}.png"]
+
+
+def test_start_keeps_a_pack_whose_file_is_there(env) -> None:
+    _put_with_pack(env)
+    again = env.new_store()
+    assert env.files() == [f"{ICON_UUID}.edit", f"{ICON_UUID}.png"]
+    assert asyncio.run(again.async_read_edit(ICON_UUID)) == PACK
+
+
+@pytest.mark.parametrize("raw", [0, -3, True, "12", None])
+def test_a_bad_edit_bytes_reads_as_no_pack_and_keeps_the_photo(env, raw) -> None:
+    _put_with_pack(env)
+    FakeStore.files[KEY]["images"][ICON_UUID]["edit_bytes"] = raw
+    again = env.new_store(start=False)
+    assert again.entry(ICON_UUID)["edit_bytes"] is None
+
+
+def test_decode_edit(env) -> None:
+    decode = env.loaded.store_mod.decode_edit
+    assert decode(None) is None
+    assert decode(base64.b64encode(PACK).decode()) == PACK
+    for raw, code in (("", "invalid"), (3, "invalid"), ("not base64!", "invalid"), ("A" * (1400 * 1024), "too_large")):
+        _refused(env, lambda raw=raw: decode(raw), code)

@@ -31,7 +31,15 @@ from test_page_images_store import ICON_UUID, Env, loaded_package, pages, tiles
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
-_NAMES = ("_page_image_refusal", "_op_page_image_get", "_op_page_image_put", "_op_page_image_list")
+_NAMES = (
+    "_page_image_refusal",
+    "_op_page_image_get",
+    "_op_page_image_put",
+    "_op_page_image_list",
+    "_op_page_image_edit_get",
+    "_page_image_swapped",
+    "_op_page_image_replace",
+)
 
 
 class _Response:
@@ -41,10 +49,31 @@ class _Response:
         self.content_type = content_type
 
 
+class _Auth:
+    """The users a device may be bound to: ``admins`` are administrators."""
+
+    def __init__(self) -> None:
+        self.admins: set[str] = set()
+
+    async def async_get_user(self, user_id: str) -> Any:
+        return types.SimpleNamespace(is_active=True, is_admin=user_id in self.admins)
+
+
 class _Ctx:
-    def __init__(self, domain_data: Any, payload: dict, body: bytes | None = None) -> None:
+    def __init__(
+        self,
+        domain_data: Any,
+        payload: dict,
+        body: bytes | None = None,
+        *,
+        hass: Any = None,
+        watch_id: str = "watch-A",
+        user_id: str | None = None,
+    ) -> None:
         self.domain_data = domain_data
-        self.watch_id = "watch-A"
+        self.hass = hass
+        self.watch_id = watch_id
+        self.user_id = user_id
         self.payload = payload
         self.body = json.dumps(payload).encode() if body is None else body
 
@@ -55,7 +84,18 @@ class _Ctx:
         return _Response(status, data, content_type)
 
 
-def _ops(store_mod: Any, rules: Any) -> dict[str, Any]:
+def _device_may_take_item(
+    secrets: Any, device_id: str, user_id: str | None, is_admin_user: bool, owners: list[str]
+) -> bool:
+    """A stand-in for ``panel_access.device_may_take_item``: an admin, the
+    device itself, or an owner in ``secrets`` (the owners bound to the
+    device's user, here a plain set)."""
+    if is_admin_user or device_id in owners:
+        return True
+    return secrets is not None and any(owner in secrets for owner in owners)
+
+
+def _ops(store_mod: Any, rules: Any, wc_mod: Any) -> dict[str, Any]:
     tree = ast.parse(_VIEWS.read_text(), filename=str(_VIEWS))
     wanted = [
         node
@@ -84,8 +124,15 @@ def _ops(store_mod: Any, rules: Any) -> dict[str, Any]:
         "PageImagesInvalidError": store_mod.PageImagesInvalidError,
         "PageImagesTooLargeError": store_mod.PageImagesTooLargeError,
         "PageImagesUnavailableError": store_mod.PageImagesUnavailableError,
+        "PageImagesNotFoundError": store_mod.PageImagesNotFoundError,
         "decode_page_image": store_mod.decode_data,
+        "decode_page_image_edit": store_mod.decode_edit,
         "page_image_content_type": rules.content_type,
+        "normalize_page_image_id": rules.normalize_id,
+        "copy": __import__("copy"),
+        "device_may_take_item": _device_may_take_item,
+        "WatchConfigStoreError": wc_mod.WatchConfigStoreError,
+        "_LOGGER": __import__("logging").getLogger("test_page_images_ops"),
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -110,19 +157,25 @@ def env(tmp_path):
             Required=_marker, Optional=_marker, Any=_marker
         )
         base = Env(loaded, tmp_path)
-        domain = types.SimpleNamespace(page_images_store=base.store)
+        domain = types.SimpleNamespace(
+            page_images_store=base.store,
+            watch_config_store=base.watch_config,
+            widget_secret_store=set(),
+        )
         yield types.SimpleNamespace(
             base=base,
             store=base.store,
-            ops=_ops(loaded.store_mod, loaded.rules),
+            ops=_ops(loaded.store_mod, loaded.rules, loaded.wc_mod),
+            auth=_Auth(),
             ws=loaded.load("page_images_ws"),
             domain=domain,
             hass=types.SimpleNamespace(data={"wrist_assistant": domain}),
         )
 
 
-def op(env, name: str, payload: dict, body: bytes | None = None) -> _Response:
-    return asyncio.run(env.ops[name](_Ctx(env.domain, payload, body)))
+def op(env, name: str, payload: dict, body: bytes | None = None, **ctx: Any) -> _Response:
+    hass = types.SimpleNamespace(auth=env.auth)
+    return asyncio.run(env.ops[name](_Ctx(env.domain, payload, body, hass=hass, **ctx)))
 
 
 def b64(data: bytes) -> str:
@@ -197,7 +250,7 @@ def test_put_refusals(env, payload, status, code) -> None:
 
 
 def test_a_put_body_over_the_cap_is_refused_before_it_is_read(env) -> None:
-    reply = op(env, "_op_page_image_put", {}, body=b"x" * (360 * 1024 + 1))
+    reply = op(env, "_op_page_image_put", {}, body=b"x" * (1800 * 1024 + 1))
     assert reply.status == 413 and reply.body["error"] == "too_large"
 
 
@@ -412,6 +465,7 @@ def test_ws_upload_list_get_delete(env) -> None:
             "kind": "background",
             "label": None,
             "entity_id": None,
+            "has_edit": False,
         }
     ]
 
@@ -481,6 +535,7 @@ def test_ws_upload_of_an_icon_photo_list_get_and_tile_use(env) -> None:
         "kind": "icon",
         "label": "Coffee machine",
         "entity_id": "switch.coffee",
+        "has_edit": False,
     }
 
     got = ws_call(env, env.ws.ws_page_images_get, image_id=image_id).results[1]
@@ -528,6 +583,194 @@ def test_ws_commands_are_unavailable_without_the_integration(env) -> None:
         assert code == "unavailable"
 
 
+# ── edit packs (tile_photo_edit) ─────────────────────────────────────────
+
+PACK = b"WAED" + bytes(range(256)) * 8
+NEW_UUID = "BBBBBBBB-CCCC-4DDD-8EEE-FFFFFFFFFFFF"
+
+
+def _put_icon(env, image_id: str, **extra: Any) -> _Response:
+    return op(
+        env,
+        "_op_page_image_put",
+        {"image_id": image_id, "data": b64(png()), "kind": "icon", "entity_id": "light.desk_lamp", **extra},
+    )
+
+
+def test_put_with_an_edit_pack_then_edit_get_answers_it(env) -> None:
+    assert _put_icon(env, ICON_UUID, edit=b64(PACK)).body == {"ok": True, "status": "stored"}
+    got = op(env, "_op_page_image_edit_get", {"image_id": ICON_UUID.lower()})
+    assert (got.status, got.content_type, got.body) == (200, "application/octet-stream", PACK)
+    [listed] = op(env, "_op_page_image_list", {}).body["images"]
+    assert listed["has_edit"] is True
+    [row] = env.store.list()["images"]
+    assert row["has_edit"] is True
+
+
+def test_a_photo_without_a_pack_lists_no_has_edit(env) -> None:
+    assert _put_icon(env, ICON_UUID, edit=None).body == {"ok": True, "status": "stored"}
+    [listed] = op(env, "_op_page_image_list", {}).body["images"]
+    assert "has_edit" not in listed
+
+
+@pytest.mark.parametrize(
+    ("edit", "status", "code"),
+    [
+        ("%%%", 400, "invalid"),
+        (b64(b"NOPE" + bytes(8)), 400, "invalid"),
+        (3, 400, "invalid"),
+        (b64(b"WAED" + bytes(1024 * 1024)), 413, "too_large"),
+    ],
+)
+def test_put_refuses_a_bad_edit_pack(env, edit, status, code) -> None:
+    reply = _put_icon(env, ICON_UUID, edit=edit)
+    assert reply.status == status and reply.body["error"] == code
+    assert env.base.files() == []
+
+
+def test_a_put_with_a_pack_at_the_cap_fits_the_body_cap(env) -> None:
+    base = len(png())
+    data = png(pad=256 * 1024 - base - 12)
+    pack = b"WAED" + bytes(1024 * 1024 - 4)
+    payload = {
+        "image_id": ICON_UUID,
+        "data": b64(data),
+        "kind": "icon",
+        "label": "x" * 60,
+        "entity_id": "switch." + "x" * 200,
+        "edit": b64(pack),
+    }
+    assert len(json.dumps(payload)) < 1800 * 1024
+    assert op(env, "_op_page_image_put", payload).body == {"ok": True, "status": "stored"}
+    assert op(env, "_op_page_image_edit_get", {"image_id": ICON_UUID}).body == pack
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "code"),
+    [
+        ({"image_id": ICON_UUID}, 404, "not_found"),
+        ({"image_id": "nope"}, 400, "invalid"),
+        ({}, 400, "invalid"),
+    ],
+)
+def test_edit_get_refusals(env, payload, status, code) -> None:
+    reply = op(env, "_op_page_image_edit_get", payload)
+    assert reply.status == status and reply.body["error"] == code
+    assert set(reply.body) == {"ok", "error", "message"}
+
+
+def test_edit_get_of_a_photo_with_no_pack_is_not_found(env) -> None:
+    _put_icon(env, ICON_UUID)
+    reply = op(env, "_op_page_image_edit_get", {"image_id": ICON_UUID})
+    assert reply.status == 404 and reply.body["error"] == "not_found"
+
+
+def _pages_with(*photo_ids: str | None) -> dict[str, Any]:
+    """Two pages: tiles naming ``photo_ids`` on the first, and one more tile
+    naming the first id on the second."""
+    document = tiles(*photo_ids)
+    document["pages"].append(
+        {"id": "p1", "items": [{"id": "u0", "entityId": "light.desk_lamp", "iconPhotoId": photo_ids[0]}]}
+    )
+    return document
+
+
+def _icon_ids(env, owner: str) -> list[str | None]:
+    record = env.base.watch_config.get(owner, "pages")
+    return [item.get("iconPhotoId") for page in record.document["pages"] for item in page.get("items", [])]
+
+
+def test_replace_moves_every_tile_of_every_owner_the_device_may_change(env) -> None:
+    _put_icon(env, ICON_UUID)
+    _put_icon(env, NEW_UUID)
+    env.base.put_pages("watch-A", _pages_with(ICON_UUID.lower(), None, FAN_UUID))
+    env.base.put_pages("watch-B", _pages_with(ICON_UUID))
+    env.base.put_pages("watch-C", _pages_with(ICON_UUID))
+    env.base.put_pages("watch-D", _pages_with(FAN_UUID))
+    # watch-A signs; watch-B is bound to the same user, watch-C is not.
+    env.domain.widget_secret_store = {"watch-B"}
+    revisions = {o: env.base.watch_config.get(o, "pages").revision for o in ("watch-A", "watch-B", "watch-C", "watch-D")}
+
+    reply = op(env, "_op_page_image_replace", {"image_id": ICON_UUID, "with": NEW_UUID.lower()})
+
+    assert (reply.status, reply.body) == (200, {"ok": True, "tiles": 4, "owners": 2, "skipped": 1})
+    assert _icon_ids(env, "watch-A") == [NEW_UUID, None, FAN_UUID, NEW_UUID]
+    assert _icon_ids(env, "watch-B") == [NEW_UUID, NEW_UUID]
+    assert _icon_ids(env, "watch-C") == [ICON_UUID, ICON_UUID]
+    assert _icon_ids(env, "watch-D") == [FAN_UUID, FAN_UUID]
+    for owner in ("watch-A", "watch-B"):
+        record = env.base.watch_config.get(owner, "pages")
+        assert record.revision > revisions[owner]
+        assert record.updated_by == "panel"
+    for owner in ("watch-C", "watch-D"):
+        assert env.base.watch_config.get(owner, "pages").revision == revisions[owner]
+    # The new photo is in use now; the old one only by watch-C.
+    used = {row["id"]: row["used_by"] for row in env.store.list()["images"]}
+    assert used[NEW_UUID] == ["watch-A", "watch-B"]
+    assert used[ICON_UUID] == ["watch-C"]
+
+
+def test_replace_by_an_admin_moves_every_owner(env) -> None:
+    _put_icon(env, ICON_UUID)
+    _put_icon(env, NEW_UUID)
+    env.base.put_pages("watch-B", _pages_with(ICON_UUID))
+    env.base.put_pages("watch-C", _pages_with(ICON_UUID))
+    env.auth.admins.add("user-1")
+    reply = op(env, "_op_page_image_replace", {"image_id": ICON_UUID, "with": NEW_UUID}, user_id="user-1")
+    assert reply.body == {"ok": True, "tiles": 4, "owners": 2, "skipped": 0}
+
+
+def test_replace_with_no_tile_naming_the_photo_changes_nothing(env) -> None:
+    _put_icon(env, NEW_UUID)
+    env.base.put_pages("watch-A", _pages_with(FAN_UUID))
+    revision = env.base.watch_config.get("watch-A", "pages").revision
+    reply = op(env, "_op_page_image_replace", {"image_id": ICON_UUID, "with": NEW_UUID})
+    assert reply.body == {"ok": True, "tiles": 0, "owners": 0, "skipped": 0}
+    assert env.base.watch_config.get("watch-A", "pages").revision == revision
+
+
+def test_a_refused_save_is_skipped_and_never_fails_the_replace(env, monkeypatch) -> None:
+    _put_icon(env, ICON_UUID)
+    _put_icon(env, NEW_UUID)
+    env.base.put_pages("watch-A", _pages_with(ICON_UUID))
+    wc = env.base.watch_config
+
+    def refuse(*_args: Any, **_kwargs: Any) -> None:
+        raise env.base.loaded.wc_mod.WatchConfigValidationError("refused")
+
+    monkeypatch.setattr(wc, "panel_save", refuse)
+    reply = op(env, "_op_page_image_replace", {"image_id": ICON_UUID, "with": NEW_UUID})
+    assert reply.body == {"ok": True, "tiles": 0, "owners": 0, "skipped": 1}
+    assert _icon_ids(env, "watch-A") == [ICON_UUID, ICON_UUID]
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "code"),
+    [
+        ({"image_id": ICON_UUID, "with": ICON_UUID.lower()}, 400, "invalid"),
+        ({"image_id": "nope", "with": NEW_UUID}, 400, "invalid"),
+        ({"image_id": ICON_UUID}, 400, "invalid"),
+        ({"image_id": ICON_UUID, "with": FAN_UUID}, 404, "not_found"),
+    ],
+)
+def test_replace_refusals(env, payload, status, code) -> None:
+    _put_icon(env, ICON_UUID)
+    _put_icon(env, NEW_UUID)
+    env.base.put_pages("watch-A", _pages_with(ICON_UUID))
+    reply = op(env, "_op_page_image_replace", payload)
+    assert reply.status == status and reply.body["error"] == code
+    assert set(reply.body) == {"ok", "error", "message"}
+    assert _icon_ids(env, "watch-A") == [ICON_UUID, ICON_UUID]
+
+
+def test_replace_without_the_store_is_unavailable(env) -> None:
+    env.domain.page_images_store = None
+    reply = op(env, "_op_page_image_replace", {"image_id": ICON_UUID, "with": NEW_UUID})
+    assert reply.status == 503 and reply.body["error"] == "unavailable"
+    reply = op(env, "_op_page_image_edit_get", {"image_id": ICON_UUID})
+    assert reply.status == 503 and reply.body["error"] == "unavailable"
+
+
 # ── static ───────────────────────────────────────────────────────────────
 
 
@@ -549,6 +792,8 @@ def test_the_two_ops_are_in_the_dispatch_table() -> None:
     assert table["page_image_get"] == "_op_page_image_get"
     assert table["page_image_put"] == "_op_page_image_put"
     assert table["page_image_list"] == "_op_page_image_list"
+    assert table["page_image_edit_get"] == "_op_page_image_edit_get"
+    assert table["page_image_replace"] == "_op_page_image_replace"
 
 
 def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
@@ -565,6 +810,7 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
         "register_capability(PAGE_IMAGES_CAPABILITY)",
         "register_capability(TILE_PHOTOS_CAPABILITY)",
         "register_capability(TILE_PHOTO_LIST_CAPABILITY)",
+        "register_capability(TILE_PHOTO_EDIT_CAPABILITY)",
         "async_register_page_images_commands(hass)",
         # Listed among the stores unload writes out and stops.
         '"page_images_store",',
@@ -575,9 +821,11 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
     assert 'PAGE_IMAGES_CAPABILITY = "page_images"' in const
     assert 'TILE_PHOTOS_CAPABILITY = "tile_photos"' in const
     assert 'TILE_PHOTO_LIST_CAPABILITY = "tile_photo_list"' in const
+    assert 'TILE_PHOTO_EDIT_CAPABILITY = "tile_photo_edit"' in const
     # Registered right beside page_images, the list right after tile_photos.
     lines = [line.strip() for line in init.splitlines() if "register_capability(" in line]
     photos = lines.index("coordinator.register_capability(TILE_PHOTOS_CAPABILITY)")
     assert photos > lines.index("coordinator.register_capability(PAGE_IMAGES_CAPABILITY)")
     assert lines[photos + 1] == "coordinator.register_capability(TILE_PHOTO_LIST_CAPABILITY)"
+    assert lines[photos + 2] == "coordinator.register_capability(TILE_PHOTO_EDIT_CAPABILITY)"
     assert 'PAGE_IMAGES_STORAGE_KEY = "wrist_assistant.page_images"' in const
