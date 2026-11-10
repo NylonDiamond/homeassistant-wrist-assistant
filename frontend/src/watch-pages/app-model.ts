@@ -323,7 +323,7 @@ interface AppTable {
   template: {
     lines: { key: string; kinds: readonly string[]; min: number; max: number; absent: number; label: string; help: string };
     title: {
-      key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; top: number; gap: number; inset: number;
+      key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;
       position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
       fontSize: { key: string; label: string; absent: number; min: number; max: number; step: number; lineScale: number };
       color: { key: string; label: string };
@@ -598,8 +598,25 @@ export function watchTemplateTitleText(tile: WatchPageTile): string {
   return typeof tile.templateTitle === "string" ? tile.templateTitle : "";
 }
 
-/** The title the devices draw: trimmed, or undefined for none. */
+/** Whether Show title is off: the title's words and look are kept, and
+ * neither device draws it. */
+export function watchTemplateTitleHidden(tile: WatchPageTile): boolean {
+  return tile.templateTitleHidden === true;
+}
+
+/** Show title: off writes true while the tile has a title; on removes it. */
+export function setWatchTemplateTitleHidden(document: WatchPagesDocument, pageId: string, tileId: string, hidden: boolean): WatchPagesDocument {
+  return setKey(document, pageId, tileId, "templateTitleHidden", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (!hidden) return Object.hasOwn(tile, "templateTitleHidden") ? REMOVE : undefined;
+    return tile.templateTitleHidden === true || watchTemplateTitleText(tile).trim() === "" ? undefined : true;
+  });
+}
+
+/** The title the devices draw: trimmed, or undefined for none or while
+ * Show title is off. */
 export function watchTemplateTitle(tile: WatchPageTile): string | undefined {
+  if (watchTemplateTitleHidden(tile)) return undefined;
   const title = watchTemplateTitleText(tile).trim();
   return title === "" ? undefined : title;
 }

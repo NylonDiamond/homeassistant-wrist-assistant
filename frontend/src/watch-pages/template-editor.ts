@@ -51,7 +51,9 @@ export interface TemplateEditorData {
   /** Title's words and the text as typed, for the row over Line up columns,
    * and its look, for the box under the tile while the title is picked. */
   title: {
-    label: string; help: string; placeholder: string; text: string;
+    label: string; help: string; placeholder: string; styleHint: string; text: string;
+    /** Show title is off: the words and look are kept, and not drawn. */
+    hidden: boolean;
     /** 0 (left) to 1 (right), with Left, Center and Right as presets. */
     position: number; positions: { absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
     size: number; sizes: { absent: number; min: number; max: number; step: number };
@@ -70,6 +72,7 @@ export interface TemplateEditorData {
   setColumns(on: boolean): void;
   setLines(value: string): void;
   setTitle(text: string): void;
+  setTitleHidden(hidden: boolean): void;
   setTitlePosition(position: number, typing: boolean): void;
   setTitleSize(size: number, typing: boolean): void;
   setTitleColor(color: string | undefined, typing: boolean): void;
@@ -126,6 +129,32 @@ export class WaTemplateEditor extends LitElement {
    * in the box under the tile, where a picked item's settings show. */
   private titlePickedTile: string | undefined;
   private get titlePicked(): boolean { return this.titlePickedTile !== undefined && this.titlePickedTile === this.data.tileId; }
+  /** Show title was turned on for this tile before it had any words, so its
+   * box shows while it is empty. */
+  private titleOpenTile: string | undefined;
+  /** Show title: on while the tile has a title that is not hidden, or was
+   * just turned on for a title still to be typed. */
+  private get titleOn(): boolean {
+    const t = this.data.title;
+    return !t.hidden && (t.text.trim() !== "" || this.titleOpenTile === this.data.tileId);
+  }
+
+  private toggleTitle(): void {
+    const d = this.data;
+    if (this.titleOn) {
+      if (d.title.text.trim() !== "") d.setTitleHidden(true);
+      this.titleOpenTile = undefined;
+      this.titlePickedTile = undefined;
+      this.requestUpdate();
+      return;
+    }
+    if (d.title.hidden) d.setTitleHidden(false);
+    this.titleOpenTile = d.tileId;
+    this.titlePickedTile = d.tileId;
+    this.items.clearSelection();
+    this.requestUpdate();
+    void this.updateComplete.then(() => { if (d.title.text.trim() === "") this.querySelector<HTMLInputElement>(".te-title")?.focus(); });
+  }
   private lastFace: { tileId: string; device: string; face: TemplateResult } | undefined;
   private readonly items = new TemplateItemEditor({
     data: () => this.data,
@@ -439,15 +468,16 @@ export class WaTemplateEditor extends LitElement {
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             ${this.items.toolbar()}
-            ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label} <span class="te-optional">optional</span></b><small>${d.title.help}</small></span>
-              <input class="te-title" type="text" aria-label=${d.title.label} placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
-                @focus=${() => this.pickTitle()}
-                @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}></label>
+            ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
+              <button type="button" class="te-switch ${this.titleOn ? "on" : ""}" role="switch" aria-checked=${this.titleOn ? "true" : "false"} aria-label=${d.title.label} ?disabled=${d.busy} @click=${() => this.toggleTitle()}></button></label>
+              ${this.titleOn ? html`<div class="te-title-row"><input class="te-title" type="text" aria-label="Title" placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
+                @focus=${() => { this.titleOpenTile = d.tileId; this.pickTitle(); }}
+                @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}><small>${d.title.styleHint}</small></div>` : nothing}
               <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
               <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>` : nothing}
-            ${this.titlePicked && d.title.text.trim() !== "" && !this.items.layoutDraws()
+            ${this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
               ? this.titleInspector()
               : this.items.inspector()}
           </div>
@@ -574,10 +604,11 @@ export const templateEditorStyles = css`
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }
   .te-sw small { font-size: 11.5px; color: var(--wa-muted); }
   .te-title-align { align-self: flex-start; }
-  .te-sw b .te-optional { display: inline; font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
+  .te-title-row { display: flex; flex-direction: column; gap: 4px; margin-top: -4px; }
+  .te-title-row small { font-size: 11.5px; color: var(--wa-muted); }
   .te-tile .wp-tpl-title-text { pointer-events: auto; cursor: pointer; }
   .te-tile .wp-tpl-title-text.te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
-  .te-title { flex: 0 1 150px; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }
+  .te-title { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }
   .te-lines { flex: none; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 4px; }
   .te-switch { flex: none; position: relative; width: 36px; height: 21px; padding: 0; border: 0; border-radius: 11px; background: var(--wa-switch-off); cursor: pointer; transition: background .18s; }
   .te-switch::after { content: ""; position: absolute; left: 2px; top: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform .22s cubic-bezier(.2,.8,.2,1); }

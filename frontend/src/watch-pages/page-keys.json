@@ -1746,6 +1746,11 @@
           "type": "color",
           "required": false
         },
+        "templateTitleHidden": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
         "templateLayout": {
           "type": "json",
           "required": false

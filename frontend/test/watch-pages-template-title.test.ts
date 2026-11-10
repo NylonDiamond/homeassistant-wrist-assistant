@@ -8,6 +8,8 @@ import {
   setWatchTemplateTitlePosition,
   setWatchTemplateTitleColor,
   setWatchTemplateTitleFontSize,
+  setWatchTemplateTitleHidden,
+  watchTemplateTitleHidden,
   watchTemplateTitlePosition,
   watchTemplateTitleBand,
   watchTemplateTitleColor,
@@ -27,7 +29,7 @@ const stored = (doc: WatchPagesDocument) => (doc as unknown as { pages: { items:
 
 describe("Title", () => {
   it("is read by both devices, and takes its line box and 4 points off the top", () => {
-    for (const key of ["templateTitle", "templateTitlePosition", "templateTitleFontSize", "templateTitleColor"]) expect(keyDevices(key)).toEqual(["watch", "iphone"]);
+    for (const key of ["templateTitle", "templateTitlePosition", "templateTitleFontSize", "templateTitleColor", "templateTitleHidden"]) expect(keyDevices(key)).toEqual(["watch", "iphone"]);
     expect(WATCH_TEMPLATE_TITLE).toEqual({ top: 3, gap: 1, inset: 0 });
     expect(watchTemplateTitleMetrics({ entityId: TEMPLATE })).toEqual({ size: 11, line: 14 });
     expect(watchTemplateTitleBand({ entityId: TEMPLATE })).toBe(18);
@@ -71,6 +73,22 @@ describe("Title", () => {
     }
     const empty = document();
     expect(setWatchTemplateTitle(empty, PAGE, TILE, "")).toBe(empty);
+  });
+
+  it("keeps the words and look while Show title is off, and draws nothing", () => {
+    const titled = document({ templateTitle: "Next 10 hours", templateTitleFontSize: 14 });
+    const off = stored(setWatchTemplateTitleHidden(titled, PAGE, TILE, true));
+    expect(off.templateTitleHidden).toBe(true);
+    expect(off.templateTitle).toBe("Next 10 hours");
+    expect(off.templateTitleFontSize).toBe(14);
+    expect(watchTemplateTitleHidden(off)).toBe(true);
+    expect(watchTemplateTitle(off)).toBeUndefined();
+    const on = stored(setWatchTemplateTitleHidden(document(off), PAGE, TILE, false));
+    expect(Object.hasOwn(on, "templateTitleHidden")).toBe(false);
+    expect(watchTemplateTitle(on)).toBe("Next 10 hours");
+    // Nothing to hide without words.
+    const empty = document();
+    expect(setWatchTemplateTitleHidden(empty, PAGE, TILE, true)).toBe(empty);
   });
 
   it("refuses any other kind of tile", () => {
