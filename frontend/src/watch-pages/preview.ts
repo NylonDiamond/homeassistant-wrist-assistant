@@ -90,6 +90,9 @@ import {
   watchTemplateColumns,
   watchTemplateRowLimit,
   watchTemplateText,
+  watchTemplateTitle,
+  WATCH_TEMPLATE_TITLE,
+  WATCH_TEMPLATE_TITLE_BAND,
 } from "./app-model.js";
 import { type TemplateCell, TEMPLATE_CELL_GAP, TEMPLATE_COLUMN_GAP, TEMPLATE_COLUMN_ROW, TEMPLATE_ICON_SLOT, TEMPLATE_ICON_TALL, templateColumnRows, templateColumnsFontSize, templateColumnsInRoom, templateRowSpans, templateRows, templateSpanFontSize } from "./template-rows.js";
 import { type TemplateLayoutPart, templateLayoutParts, templatePartKey, resolveTemplateLayout } from "./template-layout.js";
@@ -2297,6 +2300,23 @@ function templateFreeFace(raw: unknown, text: string, ink: string, s: number, sh
   })}</span>`;
 }
 
+/** The points a template tile's title takes off the top of its text's room:
+ * the band with a title, 0 without one or with a working item layout, which
+ * draws no title (`TemplateTileOverlay`). */
+function templateTitleBand(tile: WatchPageTile, text: string | undefined): number {
+  if (watchTemplateTitle(tile) === undefined) return 0;
+  return text !== undefined && resolveTemplateLayout(tile.templateLayout, text) !== undefined ? 0 : WATCH_TEMPLATE_TITLE_BAND;
+}
+
+/** A template tile's title line (`TemplateTileTitle`): one line in the
+ * surface's second ink, at the top, `inset` further in than the text. */
+function templateTitleLine(tile: WatchPageTile, ink: string, zs: number, pad: number, shadow: string, opacity = 1): TemplateResult {
+  const t = WATCH_TEMPLATE_TITLE;
+  const side = (pad + t.inset) * zs;
+  const style = `top:${t.top * zs}px;left:${side}px;right:${side}px;height:${t.line * zs}px;line-height:${t.line * zs}px;font-size:${t.size * zs}px;color:${ink};${opacity < 1 ? `opacity:${opacity};` : ""}${shadow}`;
+  return html`<span class="wp-tpl-title" style=${style}>${watchTemplateTitle(tile)}</span>`;
+}
+
 /** How much bigger a template tile's text is drawn than it is fitted: on an
  * iPhone the zoom (`OneLookZoom`, `OneLookZoomedFill`), as the text is the
  * watch's at the tile's room over it; 1 on a watch. */
@@ -2319,13 +2339,13 @@ export function watchTemplateTextScale(tile: WatchPageTile, drawnWidth: number, 
   if (look.kind !== "text" || look.pending) return 1;
   const zoom = templateZoom(input, unit);
   const width = drawnWidth / zoom;
-  const height = drawnHeight / zoom;
   const device = templateDevice(input, zoom);
   const metrics = TEMPLATE_FIT_METRICS[device];
   const limit = watchTemplateRowLimit(tile);
   const room = width - TEMPLATE_TILE_PAD * 2;
   const free = resolveTemplateLayout(tile.templateLayout, look.text);
   if (free !== undefined) return Math.min(1, ...free.layout.items.filter(p => p.row < limit).map(p => p.size / metrics.body));
+  const height = drawnHeight / zoom - templateTitleBand(tile, look.text);
   const rows = templateColumnRows(look.text, watchTemplateColumns(tile));
   return rows === undefined
     ? templateTextFit(look.text, room, height, limit, device).size / metrics.body
@@ -2366,6 +2386,10 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     return html`<span class="wp-tpl-text" data-tpl-scale=${zs} style=${style}>${templateFitLines(fit, device, textInk, zs, input.icons, parts, look.text)}</span>`;
   };
 
+  // The title's band: none on the placeholder, which has no template, nor
+  // with a working item layout.
+  const titleBand = (): number => (look.kind === "placeholder" ? 0 : templateTitleBand(tile, look.kind === "text" ? look.text : undefined));
+
   if (oneLook !== undefined) {
     // One Look, both devices (`SimpleTemplateTile`, the app's
     // `docs/one_size_table_2026-11.md`, "Template tiles on One Look"): the
@@ -2376,12 +2400,14 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     const f = surface.face;
     const zs = f.s;
     const shadow = surface.textShadow ? `text-shadow:0 ${0.5 * zs}px ${1.5 * zs}px rgba(0, 0, 0, 0.25)` : "";
-    const content = contentOf(f.width, f.height, zs, surface.ink, shadow, { ink: surface.ink2, faded: false });
+    const band = titleBand();
+    const content = contentOf(f.width, f.height - band, zs, surface.ink, shadow, { ink: surface.ink2, faded: false });
     const border = watchTileBorder(tile, surface.active, watchTileFallbackInk(tile, input.page, input.states));
     return html`<div class="wp-tile wp-tpl ol-tile" title=${hint ?? nothing}
-      style=${`${box}border-radius:${Math.round(surface.radius * zs * 100) / 100}px;background:${surface.ground};padding:0 ${TEMPLATE_TILE_PAD * zs}px`}>
+      style=${`${box}border-radius:${Math.round(surface.radius * zs * 100) / 100}px;background:${surface.ground};padding:${band * zs}px ${TEMPLATE_TILE_PAD * zs}px 0`}>
       ${surface.layers}
       ${tileUnderlay(tile, input, surface.active, { width: f.width, height: f.height }, zs)}
+      ${band > 0 ? templateTitleLine(tile, surface.ink2, zs, TEMPLATE_TILE_PAD, shadow) : nothing}
       ${content}
       ${surface.rim}
       ${renderTileRim(border, f.width, f.height, zs, surface.radius)}
@@ -2410,13 +2436,15 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
   const lookInk = look.kind === "error" ? "#FFFFFF" : look.ink;
   const textInk = iphone ? phoneLitTileInk(tileColor, fillInk, alpha, onGlass) : lookInk;
   const shadow = iphone ? "" : `text-shadow:0 0 ${4 * zs}px ${rgba(lookInk, 0.3)}`;
+  const band = titleBand();
   const content = look.kind === "placeholder"
     ? contentOf(width, height, s, textInk, shadow, { ink: lookInk, faded: true })
-    : contentOf(width / zoom, height / zoom, zs, textInk, shadow, { ink: lookInk, faded: true });
+    : contentOf(width / zoom, height / zoom - band, zs, textInk, shadow, { ink: lookInk, faded: true });
   const rim = iphone ? `box-shadow:${phoneLitTileRim(s)};` : "";
   return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
-    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:0 ${TEMPLATE_TILE_PAD * zoom * s}px`}>
+    style=${`${box}border-radius:${radius}px;background:${ground};${rim}padding:${band * zs}px ${TEMPLATE_TILE_PAD * zoom * s}px 0`}>
     ${tileUnderlay(tile, input, true, { width, height }, s)}
+    ${band > 0 ? templateTitleLine(tile, textInk, zs, TEMPLATE_TILE_PAD, shadow, 0.7) : nothing}
     ${content}
     ${renderTileRim(border, width, height, s, radiusPt)}
   </div>`;
@@ -4505,6 +4533,10 @@ export const watchPagePreviewStyles = css`
   .wp-tpl-cell { display: inline-flex; align-items: center; min-width: 0; white-space: pre; }
   .wp-tpl-slot { display: inline-flex; flex: none; justify-content: center; }
   .wp-tpl-span > :not(.wp-tpl-slot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--wp-span-font); }
+  .wp-tpl-title {
+    position: absolute; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left;
+    font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; pointer-events: none;
+  }
   .wp-tpl-free { position: absolute; top: 0; bottom: 0; font-family: ${unsafeCSS(TILE_FONT_STACK)}; font-weight: 600; }
   .wp-tpl-part { position: absolute; display: inline-flex; white-space: pre; align-items: center; transform: translate(-50%, -50%); }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }

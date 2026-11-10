@@ -88,6 +88,20 @@
       "write": "Absent is on. false while Line up columns is off; turning it on removes the key. Both devices read it. An older app ignores it and draws the text as it always did.",
       "rule": "Each row's cells stand in columns. An icon starts a cell, and words before a row's first icon are a cell. The number of columns is the row with the most cells, a column is as wide as its widest cell, and each cell's icon sits in a slot of one width. A line of white space is no row. With one row or one column the tile draws its text as it always did."
     },
+    "title": {
+      "key": "templateTitle",
+      "kinds": ["template"],
+      "label": "Title",
+      "help": "A small line over the text. Not one of the Lines.",
+      "placeholder": "None",
+      "write": "Plain text, as typed. Clearing the field removes the key. Both devices read it trimmed, and an empty or absent title draws nothing. An older app ignores it.",
+      "rule": "One line at the top of the tile, in Inter semibold of size points, in the surface's second ink, leading, ended with an ellipsis when too long. It takes band points (top, then a line box of line, then gap) off the top of the room the text is fitted in, so it never counts against Lines. It is drawn inset points further in than the text. A tile with a working templateLayout draws no title.",
+      "size": 11,
+      "top": 3,
+      "line": 14,
+      "gap": 1,
+      "inset": 4
+    },
     "richText": {
       "marker": "\\[icon:([^\\]]+)\\]",
       "rule": "Every marker becomes an icon; the text between markers stays text. Inside a marker the words split on whitespace: the first word is the symbol, the first later word starting color: (any case) gives the color, an empty color is none. A marker with no word stays as literal text.",

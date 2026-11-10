@@ -1728,6 +1728,10 @@
           "required": false,
           "default": true
         },
+        "templateTitle": {
+          "type": "string",
+          "required": false
+        },
         "templateLayout": {
           "type": "json",
           "required": false

@@ -322,6 +322,7 @@ interface AppTable {
   version: number;
   template: {
     lines: { key: string; kinds: readonly string[]; min: number; max: number; absent: number; label: string; help: string };
+    title: { key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; size: number; top: number; line: number; gap: number; inset: number };
     add: { addPreset: string };
     presets: WatchTemplatePreset[];
     richText: {
@@ -504,6 +505,31 @@ export function watchTemplateColumns(tile: WatchPageTile): boolean {
 
 export function setWatchTemplateColumns(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
   return setKey(document, pageId, tileId, "templateColumns", (tile) => (isTemplate(tile) ? (on ? REMOVE : false) : undefined));
+}
+
+/** The title line's look, in watch points: Inter semibold of `size`, `top`
+ * over its line box of `line`, `gap` under it, `inset` further in than the
+ * text. The app's `TemplateTileTitle` draws the same. */
+export const WATCH_TEMPLATE_TITLE = { size: A.template.title.size, top: A.template.title.top, line: A.template.title.line, gap: A.template.title.gap, inset: A.template.title.inset } as const;
+
+/** The points the title takes off the top of the text's room. */
+export const WATCH_TEMPLATE_TITLE_BAND = WATCH_TEMPLATE_TITLE.top + WATCH_TEMPLATE_TITLE.line + WATCH_TEMPLATE_TITLE.gap;
+
+/** The title as stored, for the field: the text as typed, or "". */
+export function watchTemplateTitleText(tile: WatchPageTile): string {
+  return typeof tile.templateTitle === "string" ? tile.templateTitle : "";
+}
+
+/** The title the devices draw: trimmed, or undefined for none. */
+export function watchTemplateTitle(tile: WatchPageTile): string | undefined {
+  const title = watchTemplateTitleText(tile).trim();
+  return title === "" ? undefined : title;
+}
+
+/** Title: the text as typed; a field cleared to white space removes the key. */
+export function setWatchTemplateTitle(document: WatchPagesDocument, pageId: string, tileId: string, title: string): WatchPagesDocument {
+  if (typeof title !== "string") return document;
+  return setKey(document, pageId, tileId, "templateTitle", (tile) => (isTemplate(tile) ? (title.trim() === "" ? (Object.hasOwn(tile, "templateTitle") ? REMOVE : undefined) : title) : undefined));
 }
 
 /** Lines' range and what an absent key reads as. */
