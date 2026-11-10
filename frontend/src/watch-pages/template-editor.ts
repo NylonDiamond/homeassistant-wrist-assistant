@@ -439,7 +439,7 @@ export class WaTemplateEditor extends LitElement {
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             ${this.items.toolbar()}
-            ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
+            ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label} <span class="te-optional">optional</span></b><small>${d.title.help}</small></span>
               <input class="te-title" type="text" aria-label=${d.title.label} placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
                 @focus=${() => this.pickTitle()}
                 @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}></label>
@@ -574,6 +574,7 @@ export const templateEditorStyles = css`
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }
   .te-sw small { font-size: 11.5px; color: var(--wa-muted); }
   .te-title-align { align-self: flex-start; }
+  .te-sw b .te-optional { display: inline; font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
   .te-tile .wp-tpl-title-text { pointer-events: auto; cursor: pointer; }
   .te-tile .wp-tpl-title-text.te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-title { flex: 0 1 150px; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }
