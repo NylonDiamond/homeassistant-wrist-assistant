@@ -233,7 +233,7 @@ export class WaTemplateEditor extends LitElement {
       head: (row, scan) => this.rowHead(row, scan),
       pill: (from, scan) => this.pill(from, scan),
       issues: (scan, caret) => this.nameIssues(scan, caret),
-      rowLimit: () => this.currentPicture()?.rowLimit ?? 5,
+      rowLimit: () => this.currentPicture()?.rowLimit ?? 10,
       entities: () => this.entityOptions(),
       symbols: () => (this.data.icons.names() ?? []).map((label) => ({ label, type: "icon" })),
       colors: () => WATCH_APP.template.richText.colorNames.filter((c: string) => c !== "grey").map((label: string) => ({ label, type: "color" })),

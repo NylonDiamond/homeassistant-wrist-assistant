@@ -1721,7 +1721,7 @@
         "templateLines": {
           "type": "int",
           "required": false,
-          "default": 5
+          "default": 10
         },
         "templateColumns": {
           "type": "bool",

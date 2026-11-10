@@ -2120,7 +2120,7 @@ export type WatchTemplateTileLook =
   | { kind: "placeholder"; symbol: string; ink: string }
   /** Home Assistant refused the template: a yellow warning triangle. */
   | { kind: "error"; error: string }
-  /** The rendered text in the tile's color, five lines at most, centered
+  /** The rendered text in the tile's color, up to its Lines (10 by default), centered
    * when it is one line and leading otherwise. `pending` while the first
    * answer is out ("..."). */
   | { kind: "text"; text: string; multiLine: boolean; ink: string; pending: boolean };
