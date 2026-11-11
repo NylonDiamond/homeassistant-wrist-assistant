@@ -1,0 +1,168 @@
+{
+  "add": {
+    "document": {
+      "pages": [
+        {
+          "backgroundBrightness": 0.6,
+          "backgroundColor": "#000000",
+          "complicationDisplayMode": "text",
+          "fullScreen": false,
+          "gridDensity": "standard",
+          "groups": [],
+          "hideFromSwitcher": false,
+          "id": "8C1D2E3F-4A5B-4C6D-8E7F-000000000001",
+          "isDeletable": true,
+          "isHidden": false,
+          "isSystemPage": false,
+          "items": [
+            {
+              "animationIntensity": 1,
+              "animationSize": 1,
+              "animationSpeed": 1,
+              "backgroundPattern": "none",
+              "borderActiveOnly": true,
+              "borderAnimation": "none",
+              "borderAnimationIntensity": 1,
+              "borderAnimationSize": 1,
+              "borderAnimationSpeed": 1,
+              "borderGlow": 0,
+              "borderLineStyle": "solid",
+              "borderStyle": "none",
+              "borderThickness": "extraThin",
+              "cameraDisplayMode": "icon",
+              "cameraFillOffsetX": 0,
+              "cameraFillOffsetY": 0,
+              "colSpan": 12,
+              "color": "#FFB340",
+              "colorOpacity": 1,
+              "customLabel": "Home map",
+              "effectActiveOnly": false,
+              "entityId": "home_map.7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+              "gridCol": 0,
+              "gridRow": 0,
+              "icon": "house.fill",
+              "iconShadow": false,
+              "iconTapAnimation": "replace",
+              "id": "8C1D2E3F-4A5B-4C6D-8E7F-000000000002",
+              "labelFontWeight": "light",
+              "labelShadow": true,
+              "multiCamBorderColor": "FFFFFF",
+              "multiCamBorderEnabled": false,
+              "multiCamBorderThickness": "thin",
+              "overlayColor": "#FFFFFF",
+              "overlayIntensity": 1,
+              "overlaySize": 1,
+              "overlaySpeed": 1,
+              "overlayStyle": "none",
+              "patternOpacity": 1,
+              "rowSpan": 6,
+              "showAlbumArt": true,
+              "showLabel": true,
+              "stateBarBorder": false,
+              "stateBarColorStyle": "Tile",
+              "stateBarShadow": false,
+              "stateBarStyle": "Top",
+              "stateValueLabelStyle": "Plain",
+              "statusTextShadow": true,
+              "tileAnimation": "none"
+            }
+          ],
+          "mapPage": true,
+          "name": "Home map",
+          "pageTitleDisplayStyle": "none",
+          "pageTitleIcon": "house",
+          "pageTitleTextSize": "size10",
+          "themeOverride": "neonLagoon",
+          "useGradientColors": false
+        }
+      ],
+      "schemaVersion": 1
+    },
+    "floor_id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+    "name": "Home map",
+    "page_id": "8c1d2e3f-4a5b-4c6d-8e7f-000000000001",
+    "tile_id": "8c1d2e3f-4a5b-4c6d-8e7f-000000000002"
+  },
+  "names": [
+    {
+      "floor": 0,
+      "floors": [
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+          "name": "Ground floor",
+          "pins": [],
+          "rooms": [],
+          "story": 0
+        }
+      ],
+      "name": "Home map"
+    },
+    {
+      "floor": 0,
+      "floors": [
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+          "name": "Ground floor",
+          "pins": [],
+          "rooms": [],
+          "story": 0
+        },
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000002",
+          "name": "   ",
+          "pins": [],
+          "rooms": [],
+          "story": 1
+        }
+      ],
+      "name": "Ground floor"
+    },
+    {
+      "floor": 1,
+      "floors": [
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+          "name": "Ground floor",
+          "pins": [],
+          "rooms": [],
+          "story": 0
+        },
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000002",
+          "name": "   ",
+          "pins": [],
+          "rooms": [],
+          "story": 1
+        }
+      ],
+      "name": "Floor 2"
+    },
+    {
+      "floor": 2,
+      "floors": [
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000001",
+          "name": "Ground floor",
+          "pins": [],
+          "rooms": [],
+          "story": 0
+        },
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000002",
+          "name": "   ",
+          "pins": [],
+          "rooms": [],
+          "story": 1
+        },
+        {
+          "id": "7B1E0C2A-5D3F-4A8B-9C6D-000000000003",
+          "name": "  Loft  ",
+          "pins": [],
+          "rooms": [],
+          "story": 2
+        }
+      ],
+      "name": "Loft"
+    }
+  ]
+}

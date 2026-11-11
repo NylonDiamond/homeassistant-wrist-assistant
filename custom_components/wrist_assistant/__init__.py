@@ -50,6 +50,7 @@ from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
     HOME_MAP_CAPABILITY,
+    HOME_MAP_PAGE_ADD_CAPABILITY,
     HOME_MAP_SCANS_CAPABILITY,
     HTTP_ACTIONS_CAPABILITY,
     MOVE_FINISHED_CAPABILITY,
@@ -1217,6 +1218,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # takes `scanned` and the panel reads them with home_map/scans. The
     # iPhone names the rooms a scan saved only when it sees this.
     coordinator.register_capability(HOME_MAP_SCANS_CAPABILITY)
+    # The signed home_map_page_add: an iPhone puts a map page on its own
+    # pages through the library. The iPhone offers it only when it sees this.
+    coordinator.register_capability(HOME_MAP_PAGE_ADD_CAPABILITY)
     # Each user's client certificate (client_certificate_store.py): the
     # signed client_certificate_put, client_certificate_get and
     # client_certificate_delete ops and `client_certificate` on the delta

@@ -514,6 +514,11 @@ HOME_MAP_SCANS_STORAGE_VERSION = 1
 # home_map/scans command reads them. The iPhone sends `scanned` only when it
 # sees this; an older integration reads no such key and records nothing.
 HOME_MAP_SCANS_CAPABILITY = "home_map_scans"
+# What the integration advertises once it serves the signed
+# home_map_page_add: an iPhone that holds pages puts a map page of one floor
+# on its own pages, made in the library as the panel's Add page makes it.
+# The iPhone offers its one tap only when it sees this.
+HOME_MAP_PAGE_ADD_CAPABILITY = "home_map_page_add"
 # Each Home Assistant user's client certificate for an mTLS proxy (step 4 of
 # the phone watch link removal), see client_certificate_store.py: the .p12
 # bytes, its password, its fingerprint and a revision per user. A private

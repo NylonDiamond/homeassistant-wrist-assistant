@@ -172,12 +172,14 @@ from .home_map_store import (
 )
 from .http_actions_runner import HTTPActionRefusal, run_input_problem
 from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
+from .library import new_item_id
 from .logbook_events import (
     log_hmac_failure,
     log_push_token_registered,
     log_secret_registered,
     log_secret_reprovisioned,
 )
+from .map_page import home_map_entity_id, map_floor, map_page_name, new_map_page
 from .notifications import (
     DELIVERY_MODE_MIRROR,
     PLATFORM_IOS,
@@ -5833,7 +5835,10 @@ async def _op_page_image_replace(ctx: _OpContext) -> Response:
 # pair reads it: the watch draws it flat, the iPhone in 3D. Only an iPhone
 # saves it, since only the iPhone scans rooms and places pins (the panel
 # saves over its own WebSocket). ``areas_get`` gives the iPhone the home's
-# areas for its area pick and its device tray.
+# areas for its area pick and its device tray. ``home_map_page_add``
+# (capability ``home_map_page_add``) puts a map page of one floor on the
+# signing iPhone's own pages, through the library as the panel's Add page
+# does, and never makes a first pages record.
 
 # Each refusal's HTTP status, as for the page photos. ``conflict`` is a 409
 # like the other "the stored state says no" answers.
@@ -5931,6 +5936,126 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
         return _home_map_refusal(ctx, err)
     _LOGGER.debug("%s saved the home map at revision %d", ctx.watch_id, rev)
     return ctx.signed_json({"ok": True, "rev": rev})
+
+
+# Each refusal of home_map_page_add that the op makes itself, by status. The
+# two 409s are "the stored state says no": the map has no such floor, or the
+# iPhone holds no pages yet. Any other store refusal answers as a
+# watch_config op's does (`_watch_config_refusal`).
+_HOME_MAP_PAGE_ADD_STATUS = {
+    "invalid": 400,
+    "not_an_iphone": 403,
+    "unknown_floor": 409,
+    "no_pages_record": 409,
+    "unavailable": 503,
+}
+
+
+def _home_map_page_add_refusal(ctx: _OpContext, code: str, message: str) -> Response:
+    return ctx.signed_json(
+        {"ok": False, "error": code, "message": message},
+        status=_HOME_MAP_PAGE_ADD_STATUS.get(code, 400),
+    )
+
+
+async def _op_home_map_page_add(ctx: _OpContext) -> Response:
+    """An iPhone puts a map page of one floor on its own pages.
+
+    Body:  {"floor_id": <a floor id of the stored map>, "name"?: <text>}
+    Reply: {"ok": true, "page_id": <id>, "already": <bool>,
+            "revision": <the iPhone's pages record revision now>,
+            "free_plan_note": <bool>}
+    Refusal: signed {"ok": false, "error", "message"}: ``not_an_iphone`` 403
+             (any signer but an iPhone entry, a watch's pair too),
+             ``invalid`` 400 (no ``floor_id`` text, a ``name`` that is not
+             text or is blank), ``unknown_floor`` 409 (no map, or no floor
+             of it with that id), ``no_pages_record`` 409 (the iPhone holds
+             no pages yet), ``unavailable`` 503; any other refusal of the
+             store as for ``watch_config_put`` (``_watch_config_refusal``).
+             A refusal changes nothing.
+
+    The page is the panel's Add page for an iPhone (``map_page.py``): a new
+    last page, visible, ``mapPage`` true, one Home map tile
+    ``home_map.<floor id>`` across the top, named ``name`` trimmed, else
+    "Home map", or the floor's name on a map of several floors. It is made
+    in the library and picked onto the iPhone in one change
+    (``WatchConfigStore.library_add_page``), so the iPhone's pages record
+    gets a new revision and its parked poll wakes with it. A pages record is
+    never made first: that would replace the pages the iPhone runs.
+
+    Asked again: when a page of the iPhone already holds a Home map tile of
+    that floor, the reply is ``already`` true with that page's id and
+    nothing changes. ``free_plan_note`` is true after an add that leaves the
+    iPhone two or more pages while its record says the free plan
+    (``multiple_pages`` false): the new page shows a Get Pro mark. Only for
+    the iPhone itself: the owner is always the signer.
+    """
+    pages = getattr(ctx.domain_data, "watch_config_store", None)
+    maps = getattr(ctx.domain_data, "home_map_store", None)
+    if pages is None or maps is None:
+        return _home_map_page_add_refusal(ctx, "unavailable", "integration not ready")
+    if not _caller_is_iphone(ctx):
+        return _home_map_page_add_refusal(
+            ctx, "not_an_iphone", "Only an iPhone adds a map page to its own pages."
+        )
+    floor_id = ctx.payload.get("floor_id")
+    if not isinstance(floor_id, str) or not floor_id:
+        return _home_map_page_add_refusal(ctx, "invalid", "floor_id is required")
+    name = ctx.payload.get("name")
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        return _home_map_page_add_refusal(ctx, "invalid", "name must be text that is not blank")
+    try:
+        doc, _rev = maps.get()
+    except HomeMapError as err:
+        return _home_map_refusal(ctx, err)
+    floor = map_floor(doc, floor_id)
+    if floor is None:
+        return _home_map_page_add_refusal(
+            ctx, "unknown_floor", f"the home map has no floor {floor_id}"
+        )
+    owner = ctx.watch_id
+    try:
+        record = pages.get(owner, "pages")
+        if record is None:
+            return _home_map_page_add_refusal(
+                ctx, "no_pages_record", "This iPhone holds no pages yet."
+            )
+        held = pages.page_with_tile(owner, home_map_entity_id(floor["id"]))
+        if held is not None:
+            return ctx.signed_json(
+                {
+                    "ok": True,
+                    "page_id": held,
+                    "already": True,
+                    "revision": record.revision,
+                    "free_plan_note": False,
+                }
+            )
+        page = new_map_page(
+            new_item_id(),
+            name.strip() if name is not None else map_page_name(doc, floor),
+            floor["id"],
+            new_item_id(),
+        )
+        added = pages.library_add_page(
+            owner, {"schemaVersion": 1, "pages": [page]}, updated_by=owner
+        )
+        record = pages.get(owner, "pages")
+    except WatchConfigStoreError as err:
+        if err.code in _HOME_MAP_PAGE_ADD_STATUS:
+            return _home_map_page_add_refusal(ctx, err.code, err.message)
+        return _watch_config_refusal(ctx, err)
+    free_plan = record.multiple_pages is False and len(listed_page_ids(record.document)) >= 2
+    _LOGGER.info("%s added map page %s of floor %s", owner, added["id"], floor["id"])
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "page_id": added["id"],
+            "already": False,
+            "revision": record.revision,
+            "free_plan_note": free_plan,
+        }
+    )
 
 
 async def _op_areas_get(ctx: _OpContext) -> Response:
@@ -6203,6 +6328,7 @@ _OP_HANDLERS: dict[str, Any] = {
     # The home map (home_map_store.py, home_areas.py).
     "home_map_get": _op_home_map_get,
     "home_map_put": _op_home_map_put,
+    "home_map_page_add": _op_home_map_page_add,
     "areas_get": _op_areas_get,
     "client_certificate_put": _op_client_certificate_put,
     "client_certificate_get": _op_client_certificate_get,

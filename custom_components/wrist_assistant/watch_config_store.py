@@ -4078,6 +4078,64 @@ class WatchConfigStore:
         _LOGGER.info("Made %s %s in the library", kind, created.id)
         return {"id": created.id, "revision": item_revision(self._library, kind, created.id)}
 
+    def library_add_page(
+        self,
+        owner_watch_id: Any,
+        document: Any,
+        *,
+        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+    ) -> dict[str, Any]:
+        """A new page made in the library and put on one device that already
+        holds pages, as the panel's New page and its tick do
+        (:meth:`library_create_item`, then :meth:`library_pick`). The signed
+        ``home_map_page_add`` calls it for an iPhone's own map page.
+
+        Never a first record: an owner with no pages record, or whose picks
+        hold no pages, is refused ``no_pages_record`` and nothing changes,
+        since a first record made of this page alone would replace the
+        pages the device runs (the panel's ``mayMakeFirst``). A pick that is
+        refused takes the new page out of the library again, so a refusal
+        leaves the library as it was.
+
+        Refused as those two are, and ``no_pages_record``. Returns ``{"id":
+        <the page's id>, "revisions": {owner: {kind: revision}}}``."""
+        self._check_library()
+        owner_watch_id = self._check_link_owner(owner_watch_id)
+        if self._document(owner_watch_id, "pages") is None or "pages" not in self._library[
+            "picks"
+        ].get(owner_watch_id, {}):
+            raise WatchConfigLinkError(
+                "no_pages_record",
+                f"{owner_watch_id} holds no pages yet; a first record is never made here",
+            )
+        before = self._library
+        created = self.library_create_item("pages", document)
+        try:
+            picked = self.library_pick(
+                owner_watch_id, "pages", created["id"], on=True, updated_by=updated_by
+            )
+        except WatchConfigStoreError:
+            self._set_library(before)
+            raise
+        return {"id": created["id"], "revisions": picked["revisions"]}
+
+    def page_with_tile(self, owner_watch_id: str, entity_id: str) -> str | None:
+        """The id of the first page in the owner's pages record (system pages
+        aside, hidden ones counted) holding a tile whose ``entityId`` is
+        ``entity_id``, case aside, or None."""
+        want = entity_id.upper()
+        document = self._document(owner_watch_id, "pages")
+        pages = document.get("pages") if isinstance(document, dict) else None
+        for page in pages if isinstance(pages, list) else []:
+            if not isinstance(page, dict) or page.get("isSystemPage") is True:
+                continue
+            items = page.get("items")
+            for tile in items if isinstance(items, list) else []:
+                held = tile.get("entityId") if isinstance(tile, dict) else None
+                if isinstance(held, str) and held.upper() == want and isinstance(page.get("id"), str):
+                    return page["id"]
+        return None
+
     def library_fork_page(
         self,
         item_id: Any,
