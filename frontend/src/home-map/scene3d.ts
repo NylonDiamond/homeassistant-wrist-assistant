@@ -65,6 +65,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { CopyShader } from "three/addons/shaders/CopyShader.js";
 import { homeMapHeldPins } from "./edit-ops.js";
+import { homeMapFrameFit } from "./frame-fit.js";
 import { type HomeMapSky } from "./sun.js";
 import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeOneWallsOf } from "./geometry.js";
@@ -859,6 +860,9 @@ export class HomeMapScene3D {
   private awakeUntil = 0;
   private floorId?: string;
   private framedTurn = 0;
+  /** Where the last framing put the camera, and whether the person pressed
+   * on the view since; undefined once the view is theirs or another's. */
+  private framed?: { position: THREE.Vector3; target: THREE.Vector3; touched: boolean };
   private input?: HomeMapInputSeen;
   private disposed = false;
   private press?: { id: number; x: number; y: number };
@@ -985,6 +989,9 @@ export class HomeMapScene3D {
     // The browser's own autoscroll must not take a middle press.
     this.canvas.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
     this.controls.addEventListener("change", () => this.wake());
+    // An orbit, pan or zoom of the person's own starts here; whether it
+    // moved the camera is read when the pane next changes shape.
+    this.controls.addEventListener("start", () => { if (this.framed !== undefined) this.framed.touched = true; });
     this.canvas.addEventListener("pointerdown", (e) => {
       this.wake(1500);
       this.press = e.isPrimary && e.button === 0 ? { id: e.pointerId, x: e.clientX, y: e.clientY } : undefined;
@@ -1241,10 +1248,13 @@ export class HomeMapScene3D {
     const height = Math.max(host.clientHeight, 1);
     this.renderer.setSize(width, height, false);
     this.composer.setSize(width, height);
+    const reshaped = Math.abs(this.camera.aspect - width / height) > 1e-6;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     for (const m of this.lines) m.resolution.set(width, height);
     for (const m of this.hoverLines) m.resolution.set(width, height);
+    // A new shape is framed for again, unless the view is the person's now.
+    if (reshaped && this.stillFramed()) this.frameFloor(this.framedTurn);
     this.wake();
   }
 
@@ -1323,35 +1333,45 @@ export class HomeMapScene3D {
     this.camera.position.set(view.position[0]!, view.position[1]!, view.position[2]!);
     this.controls.target.set(view.target[0]!, view.target[1]!, view.target[2]!);
     this.controls.update();
+    this.framed = undefined;
     this.wake();
   }
 
-  /** Show the whole floor again from `turn` degrees round. */
+  /** Show the whole floor again from `turn` degrees round, as near as keeps
+   * the floor's box in view (`homeMapFrameFit`). */
   frameFloor(turn: number): void {
     const floor = this.input?.floor;
     if (floor === undefined) return;
     this.framedTurn = turn;
     const b = floorBounds(floor);
     const tall = Math.max(...floor.rooms.map((r) => r.height), 2.4);
-    const target = new THREE.Vector3((b.minX + b.maxX) / 2, tall * 0.3, (b.minY + b.maxY) / 2);
-    // The sphere round the floor and its walls, kept whole in the view.
-    const radius = Math.max(Math.hypot(b.maxX - b.minX, b.maxY - b.minY, tall) / 2, 1.5);
-    const vfov = (this.camera.fov * Math.PI) / 180;
-    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
-    const distance = (radius * 0.95) / Math.sin(Math.min(vfov, hfov) / 2);
     // Seen from the plan's foot turned by `turn`, as the model looks are,
     // tipped about 40 degrees down.
-    const t = (turn * Math.PI) / 180;
-    const polar = (50 * Math.PI) / 180;
-    this.controls.target.copy(target);
+    const { distance, target, direction } = homeMapFrameFit(
+      { minX: b.minX, maxX: b.maxX, minZ: b.minY, maxZ: b.maxY, top: tall },
+      { turn, polar: (50 * Math.PI) / 180, vfov: (this.camera.fov * Math.PI) / 180, aspect: this.camera.aspect },
+    );
+    this.controls.target.set(target[0], target[1], target[2]);
     this.camera.position.set(
-      target.x + Math.sin(t) * Math.sin(polar) * distance,
-      target.y + Math.cos(polar) * distance,
-      target.z + Math.cos(t) * Math.sin(polar) * distance,
+      target[0] + direction[0] * distance,
+      target[1] + direction[1] * distance,
+      target[2] + direction[2] * distance,
     );
     this.controls.maxDistance = Math.max(distance * 3, 20);
     this.controls.update();
+    this.framed = { position: this.camera.position.clone(), target: this.controls.target.clone(), touched: false };
     this.wake();
+  }
+
+  /** Whether the camera still stands where the last framing put it: no
+   * orbit, pan or zoom since, no Look at it, no view handed over. */
+  private stillFramed(): boolean {
+    const framed = this.framed;
+    if (framed === undefined) return false;
+    if (!framed.touched) return true;
+    if (this.camera.position.distanceTo(framed.position) < 1e-3 && this.controls.target.distanceTo(framed.target) < 1e-3) return true;
+    this.framed = undefined;
+    return false;
   }
 
   /** The rooms' structure and the things in them, each built again only
@@ -1741,6 +1761,7 @@ export class HomeMapScene3D {
     this.controls.target.copy(target);
     this.camera.position.set(mid[0] + nx * distance, target.y + distance * 0.12, mid[1] + ny * distance);
     this.controls.update();
+    this.framed = undefined;
     this.wake();
   }
 
