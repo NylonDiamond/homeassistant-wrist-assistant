@@ -224,7 +224,7 @@ export class ShapeMode {
 
   /** The room's walls, each with its length and the doors and windows in
    * it; a click picks one. */
-  private wallsCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
+  wallsCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
     const walls = homeMapRoomWalls(room);
     const sel = ctx.selection;
     const roomId = room.id;
@@ -251,7 +251,7 @@ export class ShapeMode {
 
   /** Show scan as it was, and Back to the scan for a room whose shape has
    * changed since; none from an integration that keeps no scans. */
-  private scanCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult | typeof nothing {
+  scanCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult | typeof nothing {
     if (ctx.scans === undefined) return nothing;
     const roomId = room.id;
     const scan = homeMapScanOf(ctx.scans, roomId);

@@ -20,8 +20,8 @@ import {
   homeMapKindCounts,
   homeMapStateText,
   homeMapToggleWords,
-  homeMapTray,
 } from "../src/home-map/devices-model.js";
+import { homeMapRoomWaiting } from "../src/home-map/waiting.js";
 import { setHomeStyle } from "../src/home-map/edit-ops.js";
 import type { HomeMapDocument, HomeMapStates } from "../src/home-map/model.js";
 import { homeMapAutoPinIcon, homeMapGlowHex, homeMapPinGlowRadius, homeMapPinPill, homeMapPinSymbol } from "../src/home-map/pin-look.js";
@@ -111,13 +111,16 @@ describe("the Devices rail's lists", () => {
     expect(devices.find((d) => d.entityId === "sensor.wifi")?.category).toBe("diagnostic");
   });
 
-  it("groups what is not on the map by area, the floor's rooms' areas first, leaving out the map's, diagnostics, other kinds and the arealess", () => {
+  it("lists what waits in each room by its area, main devices then switches, leaving out the map's, diagnostics and other kinds", () => {
     const doc = fixture();
-    const groups = homeMapTray(doc, doc.floors[0]!, homeMapDevices(hass()));
-    expect(groups.map((g) => [g.name, g.here, g.devices.map((d) => d.entityId)])).toEqual([
-      ["Living room", true, ["light.ceiling_light", "media_player.soundbar"]],
-      ["Kitchen", true, ["switch.dishwasher"]],
-      ["Hall", false, ["binary_sensor.hall_motion"]],
+    const devices = homeMapDevices(hass());
+    const rooms = doc.floors[0]!.rooms.map((r) => {
+      const w = homeMapRoomWaiting(r, devices, doc);
+      return [r.name, w.main.map((d) => d.entityId), w.more.map((d) => d.entityId)];
+    });
+    expect(rooms).toEqual([
+      ["Living room", ["light.ceiling_light", "media_player.soundbar"], []],
+      ["Kitchen", [], ["switch.dishwasher"]],
     ]);
   });
 

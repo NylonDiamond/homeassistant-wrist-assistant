@@ -22,7 +22,7 @@ import type { HassLike } from "../src/ha-api.js";
 import { HOME_MAP_DEVICE_DRAG_TYPE, HOME_MAP_LIGHT_DRAG_TYPE, homeMapDevices } from "../src/home-map/devices-model.js";
 import { addLampLight, addPiece, homeMapHeldPin } from "../src/home-map/edit-ops.js";
 import { homeMapLampPick } from "../src/home-map/editor-mode.js";
-import { homeMapHoldSpot, homeMapLampPiece, homeMapPiece } from "../src/home-map/furniture.js";
+import { HOME_MAP_LAMP_CHOICE_MODELS, homeMapHoldSpot, homeMapLampPiece, homeMapPiece } from "../src/home-map/furniture.js";
 import { WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
 import { HOME_MAP_LAMP_CHOICE_KEY, homeMapKeepLampChoice, homeMapLastLampChoice } from "../src/home-map/mode-devices.js";
 import type { HomeMapDocument } from "../src/home-map/model.js";
@@ -309,27 +309,28 @@ describe("lamps that hold lights in the map editor", () => {
     expect(room(KITCHEN).objects[3]!.model).toBe("lampSquareCeiling");
   });
 
-  it("opens the chooser where a light is dropped, offering only a bulb outside every room", async () => {
-    const { inside, key, drag, text, floor } = await page();
+  it("puts a light dropped on the plan in a lamp of the kind last chosen, with no chooser, and alone as a bulb outside every room", async () => {
+    vi.stubGlobal("localStorage", storage({ [HOME_MAP_LAMP_CHOICE_KEY]: "table" }));
+    const { inside, drag, text, floor, room } = await page();
+    const things = room(LIVING).objects.length;
     drag("light.kitchen_cans", [2, 1.5]).drop();
     let shown = text();
-    expect(shown).toContain("In Living room. Which lamp is it in?");
-    key("Escape");
+    expect(shown).not.toContain("Which lamp is it in?");
+    expect(room(LIVING).objects).toHaveLength(things + 1);
+    expect(room(LIVING).objects.at(-1)!.model).toBe(HOME_MAP_LAMP_CHOICE_MODELS.table);
+    // The lamp is picked, so its Light card is right there to change it.
+    expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: things });
+    expect(shown).toContain(">Light<");
+    // Outside every room it is a bulb on its own.
     drag("light.kitchen_cans", [-3, 2]).drop();
     shown = text();
-    expect(shown).toContain("In no room, so just a bulb.");
-    expect(ringed(shown)).toBe("Just a bulb");
-    expect(shown.match(/hme-lampc-b " aria-pressed=false \?disabled=true\s+title=A lamp goes in a room/g)).toHaveLength(4);
-    key("ArrowRight");
-    expect(ringed(text())).toBe("Just a bulb");
-    key("Enter");
+    expect(shown).not.toContain("Which lamp is it in?");
     const pin = floor().pins.at(-1)!;
     expect(pin).toMatchObject({ entityId: "light.kitchen_cans", at: [-3, 2, 2.4] });
     expect("roomId" in pin).toBe(false);
     expect(inside.selection).toEqual({ kind: "pin", pinId: pin.id });
-    // A switch dropped is placed as before, no chooser.
+    // A switch dropped is placed as before.
     drag("switch.fan", [8, 3]).drop();
-    expect(text()).not.toContain("Which lamp is it in?");
     expect(floor().pins.at(-1)).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN });
   });
 
@@ -364,11 +365,14 @@ describe("lamps that hold lights in the map editor", () => {
     const tv = homeMapHeldPin(floor, LIVING, 2)!;
     expect(tv.entityId).toBe("media_player.living_room_tv");
     expect(tv.at).toEqual([2.8, 0.35, 0.38]);
-    // In this room lists it in the TV's row, not in a row of its own.
+    // Furniture lists it in the TV's row, not in a row of its own; On the
+    // map lists its pin.
     el.select({ kind: "room", roomId: LIVING });
     const shown = text();
-    expect(shown).toContain('<span class="hme-ly-nm">TV</span><span class="hme-ly-end">Living room TV · playing</span>');
-    expect(shown).not.toContain('<span class="hme-ly-nm">Living room TV</span>');
+    const furniture = shown.slice(shown.indexOf("data-fold=room-furniture"), shown.indexOf("data-fold=room-card"));
+    expect(furniture).toContain('<span class="hme-ly-nm">TV</span><span class="hme-ly-end">Living room TV · playing</span>');
+    expect(furniture).not.toContain('<span class="hme-ly-nm">Living room TV</span>');
+    expect(shown.slice(shown.indexOf("hme-onmap"), shown.indexOf("data-fold=room-furniture"))).toContain('<span class="hme-ly-nm">Living room TV</span>');
     // A rug under the drop never takes one: the fan is placed on the floor.
     el.apply((d) => addPiece(d, LIVING, homeMapPiece("rugRectangle")!, [4.5, 3.5]));
     drag("switch.fan", [4.5, 3.5]).drop();

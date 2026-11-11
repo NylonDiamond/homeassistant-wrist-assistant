@@ -14,25 +14,35 @@
 // room.
 //
 // The side panel, on the left of the stage, and the pill follow what is
-// picked. Fit rooms (`mode-doors.ts`) stands on top of the side panel whatever
-// is picked. Nothing picked: Start here, three steps each done, the one to do
-// now, or next (Rooms, Furniture, and Lights in lamps, whose button picks the
-// lights no lamp holds), then the floor's card and one folded line of keys and
-// tips. A room: its head, its doors, In this room (its lamps and lights, its
-// furniture, its devices, each row picking its thing, tinting it on the plan and
-// in 3D while the pointer is over it, a thing's eye hiding or showing it) with
-// Add to the room, then the room's own cards (`mode-arrange.ts`) and its walls.
-// A wall, corner or opening: its cards (`mode-shape.ts`). A thing, a lamp, a pin
-// or several: their cards. Devices and furniture come onto the map through the
-// page's Add dialog, which the shell opens (`ctx.openAdd`).
+// picked. Fit rooms (`mode-doors.ts`) stands on top of the side panel while a
+// door does not meet, and is one quiet line at its foot once every door
+// does. Nothing picked: the checklist Finish your map (`waiting.ts`): Rooms,
+// whose button draws one; Devices, whose Place devices picks the first room
+// with devices waiting, with a quiet line for the lights no lamp holds; On a
+// page, which lists each watch and iPhone with Add page (`page-step.ts`).
+// Then Rooms, one row per room with its devices on the map and waiting, and
+// the floor's card and Keys and tips, both folded. A room: the checklist's
+// strip, its head, Not on the map (its waiting devices, `mode-devices.ts`),
+// On the map (its pins), then folded Furniture, Name, area and tap, Size and
+// place, Floor and walls, Doors and windows, and The scan (`mode-arrange.ts`).
+// A wall, corner or opening: its cards (`mode-shape.ts`). A thing, a lamp, a
+// pin or several: their cards, under the tray of the room that just placed
+// the device. Devices also come onto the map through the page's Add dialog,
+// which the shell opens (`ctx.openAdd`).
 //
-// The tools stand in a column of their own on the left of the plan, each tool's
-// name under its picture and its key in its title: Pick V, Room R, Split S, Wall
-// W, Door D, Window N, Way through O, Stairs T and Measure M; F opens Add on its
-// furniture. A light a lamp holds is one thing with its lamp: a press on its pin
-// picks the lamp and drags it, and the lamp's cards start with the light's
-// (`mode-devices.ts`). Adding a light opens the lamp chooser over the page, by
-// the spot.
+// A tray row dragged onto the plan puts its device where it is dropped; a
+// click on it arms it, the plan's cursor a crosshair, and the next click on
+// the plan puts it there (Escape, or the row again, disarms). A light goes in
+// a lamp of the kind the lamp chooser last took, with no dialog; the lamp is
+// picked, so its Light card can change it.
+//
+// The tools stand in a column of their own on the left of the plan, each
+// tool's name under its picture and its key in its title: Pick V, Draw, which
+// opens the list Room R, Split S, Wall W, Door D, Window N, Opening O and
+// Stairs T (showing the one that is on), and Measure M; F opens Add on its
+// furniture. A light a lamp holds is one thing with its lamp: a press on its
+// pin picks the lamp and drags it, and the lamp's cards start with the
+// light's (`mode-devices.ts`).
 //
 // The dock under the plan holds Snap and the View menu's switches (the grid, the
 // side view, every pin's name, the scan as it was; the shell adds Live states).
@@ -42,16 +52,27 @@
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { homeMapPickOf, homeMapPickedPins } from "./devices-model.js";
-import { homeMapHeldPins } from "./edit-ops.js";
-import { type HomeMapEditorContext, type HomeMapPart, type HomeMapViewItem, homeMapPiecePicked } from "./editor-mode.js";
-import { hmeCard } from "./editor-parts.js";
+import { homeMapHeldPins, homeMapPinsOfRoom } from "./edit-ops.js";
+import { type HomeMapEditorContext, type HomeMapPart, type HomeMapViewItem, homeMapPiecePicked, homeMapRoomsPicked } from "./editor-mode.js";
+import { hmeCard, hmeFold, homeMapKeepFold } from "./editor-parts.js";
 import { homeMapCount, homeMapOnMac, homeMapShortcut } from "./editor-view.js";
 import { homeMapPiece } from "./furniture.js";
-import { ArrangeMode } from "./mode-arrange.js";
+import { ArrangeMode, HOME_MAP_ROOM_CARD_FOLD } from "./mode-arrange.js";
 import { DevicesMode } from "./mode-devices.js";
 import { DoorMode } from "./mode-doors.js";
 import { type HomeMapShapeTool, ShapeMode, homeMapShapeToolIcon } from "./mode-shape.js";
-import { type HomeMapFloor, type HomeMapRoom, type HomePoint, homeMapFloorName, sameHomeMapId } from "./model.js";
+import { type HomeMapFloor, type HomeMapRoom, type HomePoint, homeMapFloorName, homeMapRoomName, sameHomeMapId } from "./model.js";
+import {
+  HOME_MAP_CHECKLIST_TITLE,
+  type HomeMapChecklistStep,
+  homeMapChecklist,
+  homeMapChecklistActive,
+  homeMapChecklistDoneWords,
+  homeMapRoomCardWords,
+  homeMapRoomWaiting,
+  type HomeMapWaitTotals,
+  homeMapWaitTotals,
+} from "./waiting.js";
 
 /** The edit page's tools, on its tool rail. */
 export type HomeMapEditTool = "pick" | "draw" | "split" | "inner" | "door" | "window" | "opening" | "stairs" | "measure";
@@ -71,6 +92,9 @@ export const HOME_MAP_EDIT_TOOLS: readonly { id: HomeMapEditTool; name: string; 
   { id: "measure", name: "Measure", label: "Measure", key: "m" },
 ];
 
+/** The tools under the tool rail's Draw, in its list's order. */
+export const HOME_MAP_DRAW_TOOLS = HOME_MAP_EDIT_TOOLS.filter((t) => t.id !== "pick" && t.id !== "measure");
+
 /** The edit page's tool a key picks, if any. */
 export function homeMapEditToolFor(letter: string): HomeMapEditTool | undefined {
   return HOME_MAP_EDIT_TOOLS.find((t) => t.key === letter.toLowerCase())?.id;
@@ -83,24 +107,17 @@ export function homeMapOpeningsWords(room: Pick<HomeMapRoom, "openings">): strin
   return `${homeMapCount(doors, "door")} · ${homeMapCount(windows, "window")}`;
 }
 
-/** Where a floor stands on Start here's three steps: its rooms, its things,
- * its light pins and the ones no lamp holds (by pin id), and whether each
- * step is done (a room, a thing, every light in a lamp and at least one). */
-export interface HomeMapStartSteps {
-  rooms: number;
-  things: number;
-  lights: number;
-  loose: string[];
-  done: [boolean, boolean, boolean];
+/** The floor's light pins no lamp holds, by pin id: the loose lights the
+ * checklist's Devices step offers to show. */
+export function homeMapLooseLights(floor: HomeMapFloor): string[] {
+  const held = homeMapHeldPins(floor);
+  return floor.pins.filter((p) => p.entityId.startsWith("light.") && !held.has(p.id.toUpperCase())).map((p) => p.id);
 }
 
-export function homeMapStartSteps(floor: HomeMapFloor): HomeMapStartSteps {
-  const held = homeMapHeldPins(floor);
-  const lights = floor.pins.filter((p) => p.entityId.startsWith("light."));
-  const loose = lights.filter((p) => !held.has(p.id.toUpperCase())).map((p) => p.id);
-  const rooms = floor.rooms.length;
-  const things = floor.rooms.reduce((n, r) => n + r.objects.length, 0);
-  return { rooms, things, lights: lights.length, loose, done: [rooms > 0, things > 0, lights.length > 0 && loose.length === 0] };
+/** The name of a device armed by its tray row, for the line over the plan. */
+function homeMapArmedName(ctx: HomeMapEditorContext, entityId: string): string {
+  const v = ctx.hass?.states?.[entityId]?.attributes?.friendly_name;
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : entityId;
 }
 
 export class HomeMapEditPage implements HomeMapPart {
@@ -111,9 +128,15 @@ export class HomeMapEditPage implements HomeMapPart {
   readonly shape = new ShapeMode();
   readonly doors = new DoorMode();
 
+  /** The Draw button's list of tools is open. */
+  drawOpen = false;
+
   constructor() {
     this.arrange.roomDoors = (ctx, room) => this.doors.doorsCard(ctx, room);
-    this.arrange.roomWalls = (ctx, room) => this.shape.roomCards(ctx, room);
+    this.arrange.roomWalls = (ctx, room) => this.shape.wallsCard(ctx, room);
+    this.arrange.roomScan = (ctx, room) => this.shape.scanCard(ctx, room);
+    this.arrange.roomBefore = (ctx) => this.checklistStrip(ctx);
+    this.arrange.roomTray = (ctx, room) => html`${this.devices.trayCard(ctx, room)}${this.devices.onMapCard(ctx, room)}`;
     this.shape.onOpeningClick = (ctx, roomId, index) => this.doors.clicked(ctx, roomId, index);
   }
 
@@ -129,6 +152,8 @@ export class HomeMapEditPage implements HomeMapPart {
    * off; any other tool puts the last one down. */
   setTool(ctx: HomeMapEditorContext, tool: HomeMapEditTool): void {
     this.doors.stop(ctx);
+    this.drawOpen = false;
+    this.devices.armed = undefined;
     if (tool === "measure") {
       this.arrange.draw.stop();
       this.shape.setTool(ctx, "select");
@@ -170,6 +195,14 @@ export class HomeMapEditPage implements HomeMapPart {
       this.devices.cancelChooser(ctx);
       return true;
     }
+    if (this.drawOpen) {
+      this.drawOpen = false;
+      ctx.redraw();
+    }
+    if (this.devices.armed !== undefined && e.button === 0) {
+      this.devices.placeArmed(ctx, at);
+      return true;
+    }
     this.doors.endShow(ctx);
     if (this.doors.active && e.button === 0 && this.doors.pointerDown(ctx, at)) return true;
     if (this.arrange.draw.active) return this.arrange.draw.pointerDown(ctx, e, at);
@@ -197,6 +230,12 @@ export class HomeMapEditPage implements HomeMapPart {
   keyDown(ctx: HomeMapEditorContext, e: KeyboardEvent): boolean {
     if (this.devices.chooserKey(ctx, e)) return true;
     const shortcut = homeMapShortcut(e, false);
+    if (shortcut === "cancel" && (this.devices.armed !== undefined || this.drawOpen)) {
+      this.devices.armed = undefined;
+      this.drawOpen = false;
+      ctx.redraw();
+      return true;
+    }
     const letter = typeof shortcut === "object" && "letter" in shortcut ? shortcut.letter : undefined;
     if (letter === "m") {
       this.setTool(ctx, "measure");
@@ -223,7 +262,7 @@ export class HomeMapEditPage implements HomeMapPart {
   }
 
   cursor(ctx: HomeMapEditorContext): string | undefined {
-    return this.arrange.draw.active || this.shape.armed ? "crosshair" : undefined;
+    return this.arrange.draw.active || this.shape.armed || this.devices.armed !== undefined ? "crosshair" : undefined;
   }
 
   leave(ctx: HomeMapEditorContext): void {
@@ -231,6 +270,7 @@ export class HomeMapEditPage implements HomeMapPart {
     this.devices.leave();
     this.shape.leave(ctx);
     this.doors.stop(ctx);
+    this.drawOpen = false;
   }
 
   /** Snap: rooms to the doors and walls round them, corners to each other. */
@@ -255,35 +295,77 @@ export class HomeMapEditPage implements HomeMapPart {
    * the stage works. */
   stageExtra(ctx: HomeMapEditorContext): TemplateResult {
     const side = this.devices.stageExtra(ctx);
+    const armed = this.devices.armed;
     const hint = homeMapPiecePicked(ctx.selection) ? "Drag a corner · drag a wall's middle to add a corner · Esc for the room"
       : "Click picks what is on top: a door, a wall, a thing or a room";
-    return html`${this.toolRail(ctx)}${side}
-      ${side === nothing && ctx.stage.width >= 1200 ? html`<div class="hme-stage-hint">${hint}</div>` : nothing}`;
+    return html`${this.toolRail(ctx)}${this.drawList(ctx)}${side}
+      ${armed !== undefined ? html`<div class="hme-armed" role="status"><b>${homeMapArmedName(ctx, armed)}</b> Click its place on the plan.
+          <button type="button" class="hme-link" @click=${() => this.devices.arm(ctx, undefined)}>Stop</button></div>`
+        : side === nothing && ctx.stage.width >= 1200 ? html`<div class="hme-stage-hint">${hint}</div>` : nothing}`;
   }
 
   /** The tools, in their own column on the left of the plan, each with its
-   * name under its picture and its key in its title. */
+   * name under its picture and its key in its title: Pick, Draw (which opens
+   * the list of drawing tools, and shows the one that is on by its name and
+   * picture) and Measure. */
   private toolRail(ctx: HomeMapEditorContext): TemplateResult {
     const on = this.tool(ctx);
-    // A line after Pick, and before Measure.
-    const lineAfter = new Set([0, HOME_MAP_EDIT_TOOLS.length - 2]);
+    const pick = HOME_MAP_EDIT_TOOLS.find((t) => t.id === "pick")!;
+    const measure = HOME_MAP_EDIT_TOOLS.find((t) => t.id === "measure")!;
+    const drawing = HOME_MAP_DRAW_TOOLS.find((t) => t.id === on);
+    const button = (t: (typeof HOME_MAP_EDIT_TOOLS)[number]) => html`<button type="button" class="hme-rtool ${on === t.id ? "on" : ""}" aria-pressed=${on === t.id ? "true" : "false"}
+      aria-label=${t.label} title=${`${t.label} (${t.key.toUpperCase()})`} @click=${() => this.setTool(ctx, t.id)}>
+      ${toolIcon(t.id)}<span class="hme-rtool-name">${t.name}</span></button>`;
     return html`<div class="hme-toolrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">
-      ${HOME_MAP_EDIT_TOOLS.map((t, i) => html`<button type="button" class="hme-rtool ${on === t.id ? "on" : ""}" aria-pressed=${on === t.id ? "true" : "false"}
-          aria-label=${t.label} title=${`${t.label} (${t.key.toUpperCase()})`} @click=${() => this.setTool(ctx, t.id)}>
-          ${toolIcon(t.id)}<span class="hme-rtool-name">${t.name}</span></button>
-        ${lineAfter.has(i) ? html`<span class="hme-rtool-sep" aria-hidden="true"></span>` : nothing}`)}
+      ${button(pick)}
+      <span class="hme-rtool-sep" aria-hidden="true"></span>
+      <button type="button" class="hme-rtool hme-rtool-draw ${drawing !== undefined || this.drawOpen ? "on" : ""}" aria-pressed=${drawing !== undefined ? "true" : "false"}
+        aria-haspopup="menu" aria-expanded=${this.drawOpen ? "true" : "false"} aria-label=${drawing === undefined ? "Draw" : `Draw: ${drawing.label}`}
+        title=${drawing === undefined ? "Draw a room, a wall, a door, a window, a way through or stairs" : `${drawing.label} (${drawing.key.toUpperCase()})`}
+        @click=${() => { this.drawOpen = !this.drawOpen; ctx.redraw(); }}>
+        ${toolIcon(drawing?.id ?? "draw")}<span class="hme-rtool-name">${drawing?.name ?? "Draw"} ▾</span></button>
+      <span class="hme-rtool-sep" aria-hidden="true"></span>
+      ${button(measure)}
+    </div>`;
+  }
+
+  /** The Draw button's list: each drawing tool with its picture, name and
+   * key, the one that is on marked. */
+  private drawList(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    if (!this.drawOpen) return nothing;
+    const on = this.tool(ctx);
+    return html`<div class="hme-drawlist" role="menu" aria-label="Draw">
+      ${HOME_MAP_DRAW_TOOLS.map((t) => html`<button type="button" role="menuitemradio" class="hme-drawlist-item ${on === t.id ? "on" : ""}" aria-checked=${on === t.id ? "true" : "false"}
+        title=${`${t.label} (${t.key.toUpperCase()})`} @click=${() => this.setTool(ctx, t.id)}>${toolIcon(t.id)}<span>${t.name}</span><kbd>${t.key.toUpperCase()}</kbd></button>`)}
     </div>`;
   }
 
   // ── the side panel ─────────────────────────────────────────────────────
 
   inspector(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    return html`${this.doors.fitCard(ctx)}${this.pickedCards(ctx)}`;
+    return html`${this.doors.fitCard(ctx)}${this.pickedCards(ctx)}${this.doors.fitFoot(ctx)}`;
+  }
+
+  /** The room whose tray placed the device picked now, while that room has
+   * devices left to place: its tray stays over the device's cards. */
+  private trayAbove(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    const id = this.devices.trayRoom;
+    const sel = ctx.selection;
+    if (id === undefined || sel === undefined) return nothing;
+    const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
+    if (room === undefined) return nothing;
+    const inRoom = sel.kind === "object" ? sameHomeMapId(sel.roomId, id)
+      : sel.kind === "pin" ? homeMapRoomsPicked(ctx.floor, sel).some((r) => sameHomeMapId(r.id, id)) : false;
+    if (!inRoom) return nothing;
+    const w = this.devices.waitingIn(ctx, room);
+    if (w.main.length === 0 && w.more.length === 0) return nothing;
+    return html`${this.devices.trayCard(ctx, room, `Next in ${homeMapRoomName(room)}`)}
+      <button type="button" class="hme-link hme-tray-back" @click=${() => ctx.select({ kind: "room", roomId: room.id })}>‹ ${homeMapRoomName(room)}</button>`;
   }
 
   /** The cards of what is picked. */
   private pickedCards(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
-    if (this.picksPins(ctx)) return this.devices.inspector(ctx);
+    if (this.picksPins(ctx)) return html`${this.trayAbove(ctx)}${this.devices.inspector(ctx)}`;
     const sel = ctx.selection;
     if (sel === undefined) return this.startPanel(ctx);
     if (homeMapPiecePicked(sel)) {
@@ -295,43 +377,131 @@ export class HomeMapEditPage implements HomeMapPart {
     }
     // A thing's device first (a lamp's light), then the thing's own cards.
     const lamp = sel.kind === "object" ? this.devices.thingCards(ctx, sel.roomId, sel.object) : nothing;
-    return lamp === nothing ? this.arrange.inspector(ctx) : html`${lamp}${this.arrange.inspector(ctx)}`;
+    return lamp === nothing ? this.arrange.inspector(ctx) : html`${this.trayAbove(ctx)}${lamp}${this.arrange.inspector(ctx)}`;
   }
 
-  /** Nothing picked: Start here, the floor's card, and Keys and tips
-   * folded into one line. */
-  private startPanel(ctx: HomeMapEditorContext): TemplateResult {
-    const floor = ctx.floor;
-    const s = homeMapStartSteps(floor);
-    const now = s.done.indexOf(false);
-    const loose = s.loose.length;
-    const step = (i: number, title: string, text: string, action: TemplateResult | typeof nothing = nothing) => {
-      const state = s.done[i] ? "done" : i === now ? "now" : "next";
+  // ── the checklist ──────────────────────────────────────────────────────
+
+  /** The checklist's three steps, from the whole map and the library. */
+  checklist(ctx: HomeMapEditorContext, totals: HomeMapWaitTotals = homeMapWaitTotals(ctx.doc, this.devices.homeDevices(ctx))): HomeMapChecklistStep[] {
+    return homeMapChecklist(totals, ctx.pageStep?.done(ctx.doc) ?? false);
+  }
+
+  /** Whether the checklist shows: while a step is left, and after Add page
+   * made a page here, so its row can say so. */
+  private checklistShown(ctx: HomeMapEditorContext, steps: readonly HomeMapChecklistStep[]): boolean {
+    return homeMapChecklistActive(steps) !== undefined || ctx.pageStep?.addedAny === true;
+  }
+
+  /** A picked room's strip of the checklist: three cells, the active one
+   * tinted with its words; a click goes back to the whole checklist. None
+   * once every step is done. */
+  checklistStrip(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    const steps = this.checklist(ctx);
+    const active = homeMapChecklistActive(steps);
+    if (active === undefined) return nothing;
+    return html`<button type="button" class="hme-strip" title="Show the whole checklist" aria-label=${`${HOME_MAP_CHECKLIST_TITLE}: ${homeMapChecklistDoneWords(steps)}`}
+      @click=${() => ctx.select(undefined)}>
+      ${steps.map((st) => html`<span class="hme-strip-cell ${st.done ? "done" : st === active ? "now" : "next"}">
+        <b>${st.done ? "✓ " : ""}${st.title}</b>${st === active ? html`<small>${st.words}</small>` : nothing}</span>`)}
+    </button>`;
+  }
+
+  /** The first room with devices waiting, this floor's first, picked so
+   * its tray shows. */
+  private placeDevices(ctx: HomeMapEditorContext): void {
+    const devices = this.devices.homeDevices(ctx);
+    const floors = [ctx.floor, ...ctx.doc.floors.filter((f) => !sameHomeMapId(f.id, ctx.floor.id))];
+    for (const f of floors) {
+      const room = f.rooms.find((r) => homeMapRoomWaiting(r, devices, ctx.doc).main.length > 0);
+      if (room === undefined) continue;
+      if (!sameHomeMapId(f.id, ctx.floor.id)) ctx.setFloor(f.id);
+      ctx.select({ kind: "room", roomId: room.id });
+      return;
+    }
+  }
+
+  /** Finish your map: the three steps, the active one carrying its button.
+   * Rooms draws one; Devices picks the first room with devices waiting, and
+   * offers the loose lights; On a page lists each watch and iPhone with Add
+   * page. */
+  private checklistCard(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    const totals = homeMapWaitTotals(ctx.doc, this.devices.homeDevices(ctx));
+    const steps = this.checklist(ctx, totals);
+    if (!this.checklistShown(ctx, steps)) return nothing;
+    const active = homeMapChecklistActive(steps);
+    const loose = homeMapLooseLights(ctx.floor);
+    const step = (st: HomeMapChecklistStep, body: TemplateResult | typeof nothing) => {
+      const state = st.done ? "done" : st === active ? "now" : "next";
       return html`<div class="hme-step ${state}">
-        <span class="hme-step-no" aria-label=${s.done[i] ? "Done" : `Step ${i + 1}`}>${s.done[i] ? "✓" : String(i + 1)}</span>
-        <div class="hme-step-t"><b>${title}</b><span>${text}</span>${action}</div>
+        <span class="hme-step-no" aria-label=${st.done ? "Done" : `Step ${st.id}`}>${st.done ? "✓" : String(st.id)}</span>
+        <div class="hme-step-t"><b>${st.title}</b><span>${st.words}</span>${body}</div>
       </div>`;
     };
-    const roomsText = s.rooms > 0 ? `${homeMapCount(s.rooms, "room")} on ${homeMapFloorName(floor)}. Draw one with Room, or scan one with the iPhone.`
-      : "Draw one with Room, or scan one with the iPhone.";
-    const thingsText = s.things > 0 ? `${homeMapCount(s.things, "thing")}. Add more from Add › Furniture.` : "None yet. Add a sofa, a bed or a lamp from Add › Furniture.";
-    const lightsText = s.lights === 0 ? "No lights yet. Add one from Add › Devices and pick its lamp."
-      : loose > 0 ? `${homeMapCount(loose, "light")} ${loose === 1 ? "sits" : "sit"} loose. Drop each one on its lamp, or add a light from Add › Devices and pick its lamp.`
-        : `Every light sits in a lamp (${s.lights}).`;
+    const [rooms, devices, page] = steps as [HomeMapChecklistStep, HomeMapChecklistStep, HomeMapChecklistStep];
+    return hmeCard(HOME_MAP_CHECKLIST_TITLE, html`<div class="hme-steps">
+      ${step(rooms, active === rooms ? html`<button type="button" class="hme-tb hme-blue" @click=${() => this.startDrawing(ctx)}>Draw a room</button>` : nothing)}
+      ${step(devices, html`${active !== devices ? nothing : totals.waiting > 0
+          ? html`<button type="button" class="hme-tb hme-blue" @click=${() => this.placeDevices(ctx)}>Place devices</button>`
+          : html`<button type="button" class="hme-tb hme-blue" @click=${() => ctx.openAdd("devices")}>Add a device</button>`}
+        ${loose.length === 0 ? nothing : html`<span class="hme-step-quiet">${homeMapCount(loose.length, "light")} ${loose.length === 1 ? "sits" : "sit"} in no lamp.
+          <button type="button" class="hme-link" title="Pick every light no lamp holds" @click=${() => ctx.select(homeMapPickOf(loose))}>Show me the loose lights</button></span>`}`)}
+      ${step(page, active === page || ctx.pageStep?.addedAny === true ? this.pageRows(ctx) : nothing)}
+    </div>`, homeMapChecklistDoneWords(steps), "hme-start");
+  }
+
+  /** On a page's rows: each watch and iPhone, what it gets, and Add page,
+   * then Added with a link to the page. */
+  private pageRows(ctx: HomeMapEditorContext): TemplateResult {
+    const step = ctx.pageStep;
+    if (step === undefined) return html``;
+    const rows = step.rows();
+    const floor = ctx.floor.rooms.length > 0 ? ctx.floor : ctx.doc.floors.find((f) => f.rooms.length > 0);
+    if (rows.length === 0) return html`<span class="hme-step-quiet">Pair a watch or an iPhone first.</span>`;
+    return html`<div class="hme-pagerows">${rows.map((r) => html`<div class="hme-pagerow">
+      <div class="hme-pagerow-t"><b>${r.device.name}</b><span>${r.line}</span>
+        ${r.note === undefined ? nothing : html`<span class="hme-pagerow-note ${r.note.kind}" role="status">${r.note.text}</span>`}</div>
+      ${r.added !== undefined
+        ? html`<span class="hme-pagerow-done">Added${ctx.openPage === undefined ? nothing : html` · <button type="button" class="hme-link" @click=${() => ctx.openPage?.(r.added!)}>Open it</button>`}</span>`
+        : html`<button type="button" class="hme-tb" aria-label=${`Add a page to ${r.device.name}`} ?disabled=${r.busy || floor === undefined}
+            @click=${() => { if (floor !== undefined) void step.add(ctx.hass, ctx.doc, floor, r.device, (o) => ctx.confirm(o)); }}>${r.busy ? "Adding…" : "Add page"}</button>`}
+    </div>`)}</div>`;
+  }
+
+  /** Rooms: each room of the floor, its devices on the map and waiting; a
+   * click picks it, and a room with no area opens its Name, area and tap. */
+  private roomsCard(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    const floor = ctx.floor;
+    if (floor.rooms.length === 0) return nothing;
+    return hmeCard("Rooms", html`<div class="hme-ly-list">${floor.rooms.map((room) => {
+      const w = this.devices.waitingIn(ctx, room);
+      const hasArea = room.areaId !== undefined;
+      const words = homeMapRoomCardWords({ hasArea, onMap: homeMapPinsOfRoom(floor, room.id).length, wait: w.main.length, more: w.more.length });
+      const sel = { kind: "room" as const, roomId: room.id };
+      const hover = ctx.hover?.kind === "room" && sameHomeMapId(ctx.hover.roomId, room.id);
+      return html`<div class="hme-ly ${hover ? "hov" : ""}" @pointerenter=${() => ctx.setHover(sel)} @pointerleave=${() => ctx.setHover(undefined)}>
+        <button type="button" class="hme-ly-main" title=${hasArea ? "Pick it" : "Pick it and give it an area"}
+          @click=${() => { if (!hasArea) homeMapKeepFold(HOME_MAP_ROOM_CARD_FOLD, true); ctx.select(sel); }}>
+          <span class="hme-thing-ic" aria-hidden="true"></span><span class="hme-ly-nm">${homeMapRoomName(room)}</span>
+          <span class="hme-ly-end ${w.main.length > 0 ? "wait" : ""}">${words}</span></button>
+      </div>`;
+    })}</div>`, String(floor.rooms.length), "hme-rooms");
+  }
+
+  /** Nothing picked: Finish your map, the floor's rooms, then the floor's
+   * card and Keys and tips, both folded. */
+  private startPanel(ctx: HomeMapEditorContext): TemplateResult {
+    const floor = ctx.floor;
     return html`
-      ${hmeCard("Start here", html`<div class="hme-steps">
-        ${step(0, "Rooms", roomsText, s.rooms > 0 ? nothing : html`<button type="button" class="hme-link" @click=${() => this.startDrawing(ctx)}>Draw a room ›</button>`)}
-        ${step(1, "Furniture", thingsText, html`<button type="button" class="hme-link" @click=${() => ctx.openAdd("furniture")}>Add › Furniture</button>`)}
-        ${step(2, "Lights in lamps", lightsText, loose === 0 ? nothing
-          : html`<button type="button" class="hme-link" title="Pick every light no lamp holds" @click=${() => ctx.select(homeMapPickOf(s.loose))}>Show me the loose lights</button>`)}
-      </div>`, `${s.done.filter(Boolean).length} of 3 done`, "hme-start")}
-      ${this.arrange.floorCard(ctx, floor)}
+      ${this.checklistCard(ctx)}
+      ${this.roomsCard(ctx)}
+      ${hmeFold("floor", "Floor", homeMapFloorName(floor), this.arrange.floorBody(ctx, floor))}
       <section class="hme-card hme-tips-card">
         <details class="hme-tips">
           <summary>Keys and tips <span aria-hidden="true">›</span></summary>
           <p class="hme-text">Click picks what is on top: a device, then a thing (a sofa, a TV, a desk), then the room under them. Drag it to move it.</p>
           <p class="hme-text dim">A dragged room locks to the doors of the rooms round it. Click an amber door, then the door it should meet. Drag the round handle above a room to turn it, or a square handle on its box to resize it. Click a wall, door or window to change it.</p>
-          <p class="hme-text dim">Shift, Cmd or Ctrl and a click picks several devices; Cmd or Ctrl and a click picks several things, to colour or hide them together. Drag a device from Add onto the plan to place it.</p>
+          <p class="hme-text dim">Shift, Cmd or Ctrl and a click picks several devices; Cmd or Ctrl and a click picks several things, to colour or hide them together. Pick a room to see its devices that wait: drag one from its tray onto the plan, or click it, then click its place.</p>
           <p class="hme-text dim">Press <kbd>?</kbd> or the ? button in the bar for every key.</p>
           <dl class="hme-keys">
             ${homeMapKeyGroups(homeMapOnMac()).filter((g) => g.title !== "Mouse")

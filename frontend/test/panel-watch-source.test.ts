@@ -89,6 +89,10 @@ describe("the watch screens under the row", () => {
 
   it("puts every watch screen under the Watch app row, handed the shared watch, and every iPhone app screen under its own row, handed the shared iPhone", () => {
     expect(tab).toContain("if (screen !== undefined) return this.withWatchRow(this.renderWatchScreen(screen.id, this.sharedWatch));");
+    // The Home map draws its own bar with its own ‹ Shared: no row over it.
+    const homeMap = 'if (screen?.id === "home-map") return this.renderWatchScreen(screen.id, this.sharedWatch);';
+    expect(tab).toContain(homeMap);
+    expect(tab.indexOf(homeMap)).toBeLessThan(tab.indexOf("if (screen !== undefined) return this.withWatchRow("));
     expect(tab).toContain(`if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());`);
     const iphone = method("  private renderIphoneScreen() {");
     expect(iphone).toContain("return this.renderWatchScreen(screen.id, phone);");
@@ -121,7 +125,10 @@ describe("the watch screens under the row", () => {
 
   it("lets Rooms open an iPhone on a home with phone pages, and no other screen that follows a device", () => {
     expect(call("renderWatchRoomsView")).toContain("phones: this.phonePages,");
-    expect(count(screens, "phones: this.phonePages,")).toBe(1);
+    // Rooms, and the Home map's checklist, which lists the iPhones it can
+    // put a map page on; neither follows a device.
+    expect(count(screens, "phones: this.phonePages,")).toBe(2);
+    expect(call("renderHomeMapView")).toContain("phones: this.phonePages,");
     expect(method("  private withWatchRow(")).toContain("phones: this.phonePages,");
   });
 

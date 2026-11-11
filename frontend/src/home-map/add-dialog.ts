@@ -12,12 +12,15 @@
 // and All areas, each with how many devices it lists) and the devices in
 // kind groups (Lights, Sensors, Climate, Switches and plugs, Media, Covers,
 // Locks, Other), each row its icon, name, entity id, state and "on map" or
-// "N on map". With no search it lists the kinds that belong on a plan, with
-// no entity category, as the old rail did; a search finds any entity. A
-// light opens the lamp chooser (`mode-devices.ts`) in the picked room, or
-// its area's room; any other device is placed as the old rail's click
-// placed it, one on the map already being picked instead. Devices go on the
-// map one at a time; the footer counts the devices listed.
+// "On the map". With no search it lists the kinds that belong on a plan,
+// with no entity category, as the old rail did; a search finds any entity.
+// Over the search, Lights go in picks the lamp a light added here goes in,
+// the lamp chooser's remembered choice (`mode-devices.ts`). A device goes on
+// free floor in the picked room, or its area's room, clear of the room's
+// name and of its other pins by 0.4 m (`homeMapFreePinSpot`); one on the
+// map already is picked instead. The dialog stays open after a device, its
+// row now On the map, and Done closes it; the footer counts the devices
+// listed.
 //
 // A thing's Device card (`mode-devices.ts`) opens the same Devices tab to
 // choose the device the thing holds (`HomeMapDeviceChoice`): no tabs, its
@@ -30,9 +33,9 @@
 // else the dialog asks for a room; it stands against the nearest free wall,
 // facing into the room (`addPieceByWall`), and is picked.
 //
-// The dialog closes after an add, on Escape, on Close and on a press
-// outside it; the shell then gives the focus back to ＋ Add. Every edit
-// goes through `ctx.apply` as one undo step.
+// The dialog closes after a piece of furniture, on Done, on Escape, on
+// Close and on a press outside it; the shell then gives the focus back to
+// ＋ Add. Every edit goes through `ctx.apply` as one undo step.
 
 import { type TemplateResult, css, html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
@@ -44,15 +47,17 @@ import {
   homeMapDevices,
   homeMapFindDevices,
   homeMapPinOfEntity,
+  homeMapRoomOfArea,
   homeMapStateText,
 } from "./devices-model.js";
 import { addPieceByWall, homeMapPinsOfEntity } from "./edit-ops.js";
 import { type HomeMapDeviceChoice, type HomeMapEditorContext, homeMapSelectionRoom } from "./editor-mode.js";
+import { hmeSelect } from "./editor-parts.js";
 import { homeMapCount, homeMapToPlan } from "./editor-view.js";
-import { HOME_MAP_FURNITURE, type HomeMapFurniturePiece, homeMapPieceSizeText } from "./furniture.js";
+import { HOME_MAP_FURNITURE, HOME_MAP_LAMP_CHOICES, type HomeMapFurniturePiece, type HomeMapLampChoice, homeMapPieceSizeText } from "./furniture.js";
 import { homeLabelPoint, homePolygonHolds, homeRoomUnder } from "./geometry.js";
 import { homeMapPickerSections } from "./mode-arrange.js";
-import type { DevicesMode } from "./mode-devices.js";
+import { type DevicesMode, HOME_MAP_LAMP_CHOICE_LAMPS, homeMapKeepLampChoice, homeMapLampChoiceNow } from "./mode-devices.js";
 import {
   type HomeMapRoom,
   type HomeMapStates,
@@ -220,14 +225,14 @@ export function homeMapAddSections(devices: readonly HomeMapDeviceEntry[], area:
   return HOME_MAP_ADD_KINDS.filter(([k]) => byKind.has(k)).map(([kind, label]) => ({ kind, label, devices: byKind.get(kind)! }));
 }
 
-/** A device's tag in the list: a light's "N on map", any other's "on
- * map", none while it is not on the map. */
+/** A device's tag in the list: "On the map", a light on it more than
+ * once "2 on the map"; none while it is not on the map. */
 export function homeMapAddTag(doc: HomeMapEditorContext["doc"], entityId: string): string | undefined {
   if (entityId.startsWith("light.")) {
     const n = homeMapPinsOfEntity(doc, entityId).length;
-    return n === 0 ? undefined : `${n} on map`;
+    return n === 0 ? undefined : n === 1 ? "On the map" : `${n} on the map`;
   }
-  return homeMapPinOfEntity(doc, entityId) === undefined ? undefined : "on map";
+  return homeMapPinOfEntity(doc, entityId) === undefined ? undefined : "On the map";
 }
 
 /** A piece's small picture, as the furniture picker draws it. */
@@ -307,9 +312,11 @@ export class HomeMapAddDialog {
     return id === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, id));
   }
 
-  /** A device's row clicked: the dialog closes, then a light opens the lamp
-   * chooser in the dialog's room (else its area's room), and any other
-   * device is put there, or picked when it is on the map already. */
+  /** A device's row clicked: it goes on free floor in the dialog's room
+   * (else its area's room, else the middle of the view), a light in a lamp
+   * of the kind Lights go in names, and the dialog stays open for the next
+   * one, the row now saying On the map. One on the map already is picked.
+   * Choosing a thing's device hands it over and closes. */
   addDevice(ctx: HomeMapEditorContext, d: HomeMapDeviceEntry, close: () => void): void {
     const choice = this.choice;
     if (choice !== undefined) {
@@ -317,11 +324,11 @@ export class HomeMapAddDialog {
       choice.pick(d.entityId);
       return;
     }
-    const room = homeMapAddRoom(ctx);
-    const at = room === undefined ? undefined : homeLabelPoint(room) ?? homeMapRoomCenter(room);
-    close();
-    if (d.entityId.startsWith("light.")) this.devices.addLight(ctx, d.entityId, at, d.areaId);
+    const room = homeMapAddRoom(ctx) ?? homeMapRoomOfArea(ctx.floor, d.areaId);
+    const at = room === undefined ? undefined : this.devices.freeSpot(ctx, room);
+    if (d.entityId.startsWith("light.")) this.devices.placeLight(ctx, d.entityId, at ?? viewMiddle(ctx));
     else this.devices.place(ctx, d.entityId, at, d.areaId);
+    ctx.redraw();
   }
 
   /** A piece clicked: the dialog closes and the piece goes into its room
@@ -402,7 +409,14 @@ export class HomeMapAddDialog {
       : `in ${chips.find((c) => c.id === this.area)?.name ?? "this area"}`;
     const searching = this.query.trim() !== "";
     const word = choice?.lightsOnly === true ? "light" : "device";
+    const lamp = homeMapLampChoiceNow();
     return html`
+      ${choice === undefined ? html`<div class="hma-lamp"><span>Lights go in</span>${hmeSelect({
+        label: "Lights go in",
+        value: lamp,
+        options: HOME_MAP_LAMP_CHOICES.map((c) => ({ value: c, label: HOME_MAP_LAMP_CHOICE_LAMPS[c] })),
+        set: (v) => { homeMapKeepLampChoice(v as HomeMapLampChoice); ctx.redraw(); },
+      })}</div>` : nothing}
       <label class="hme-find"><span aria-hidden="true">⌕</span>
         <input type="search" placeholder="Find a ${word}" aria-label="Find a ${word}" autofocus .value=${live(this.query)} ${search}
           @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; ctx.redraw(); }} /></label>
@@ -423,6 +437,7 @@ export class HomeMapAddDialog {
       </div>
       <div class="hma-foot">
         <span class="hma-count">${homeMapCount(total, word)}</span>
+        ${choice === undefined ? html`<button type="button" class="hme-tb hme-blue hma-done" @click=${close}>Done</button>` : nothing}
       </div>`;
   }
 
@@ -431,7 +446,7 @@ export class HomeMapAddDialog {
     const tag = homeMapAddTag(ctx.doc, d.entityId);
     const choice = this.choice;
     const title = choice !== undefined ? choice.rowTitle(d.name)
-      : light ? "Add it in a lamp. A light can be on the map many times."
+      : light ? "Add it in a lamp, the kind Lights go in names. A light can be on the map many times."
       : tag === undefined ? "Put it on the map" : "On the map: click to pick it";
     const icon = homeMapAutoPinIcon(d.entityId, d.deviceClass, d.name);
     return html`<button type="button" class="hma-row ${choice === undefined && !light && tag !== undefined ? "placed" : ""}" title=${title}
@@ -531,6 +546,7 @@ export const homeMapAddDialogStyles = css`
   .hma-tag { flex: none; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--hme-sel); background: var(--hme-sel-bg); white-space: nowrap; }
   .hma-empty { padding: 14px 10px; font-size: 13px; color: var(--wa-muted); }
   .hma-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .hma-lamp { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--wa-muted); }
   .hma-count { font-size: 12.5px; color: var(--wa-muted); }
   .hma-where { font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); }
   .hma-where b { color: var(--wa-ink); font-weight: 600; }

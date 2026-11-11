@@ -1,0 +1,11 @@
+import{a as b,c as v,d as M,e as k,l as x}from"./chunk-HZ4WJQSY.js";import{e as S}from"./chunk-CY5BHZRU.js";import{b as f,d as w,m as y}from"./chunk-BGITYK7Q.js";import{b as g}from"./chunk-3SZUPCGR.js";import{b as n}from"./chunk-NPUC537M.js";import{b as l,f as u,i as p,l as h}from"./chunk-6ZDBXU6B.js";import{a as t}from"./chunk-LO2NM3CE.js";var H=[["anywhere","Anywhere menu"],["entity","Entity quick menu"],["switcher","Page switcher"]],e=class extends h{constructor(){super(...arguments);this.height=56;this.tick=0;this.symbols=new g(()=>this.requestUpdate())}host(i,o,r,c,m){let s=x(this.pages),a={hass:c,icons:m,symbols:this.symbols,document:i,targets:y,catalogKnown:!1,busy:!0,uiState:new Map,screen:r,scale:this.height/r.height,switcherPages:s.filter(d=>!d.hidden).map(({hidden:d,...E})=>E),switcherRows:s,edit:()=>!1,endCoalesce:()=>{},requestUpdate:()=>{}};return b(a,o),a}render(){let{hass:i,icons:o,screen:r}=this;if(i===void 0||o===void 0||r===void 0)return p;let c=w(this.menus)??f(),m=this.menu===void 0?H:H.filter(([s])=>s===this.menu);return u`${m.map(([s,a])=>u`<span class="mt" title=${a}>
+      ${M(this.host(c,s,r,i,o))}</span>`)}`}static{this.styles=[S,v,k,l`
+    :host { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 6px; pointer-events: none; line-height: 0; }
+    :host([menu]) { justify-content: center; }
+    .mt { flex: none; display: block; }
+    /* The screen alone, as the Pages door draws its pages: no case, no
+       crown, a hairline round the screen's corners. */
+    .mt .wa-watch { padding: 0; margin: 0; background: none; box-shadow: 0 0 0 1px var(--wa-line-strong); border-radius: var(--wf-radius, 6px); }
+    .mt .wa-watch::before, .mt .wa-watch::after { display: none; }
+    .mt .ms-label, .mt .me-count { display: none; }
+  `]}};t([n({attribute:!1})],e.prototype,"hass",2),t([n({attribute:!1})],e.prototype,"icons",2),t([n({attribute:!1})],e.prototype,"menus",2),t([n({attribute:!1})],e.prototype,"pages",2),t([n({attribute:!1})],e.prototype,"screen",2),t([n({reflect:!0})],e.prototype,"menu",2),t([n({type:Number})],e.prototype,"height",2),t([n({attribute:!1})],e.prototype,"tick",2);customElements.get("wa-menu-thumbs")||customElements.define("wa-menu-thumbs",e);export{e as a};

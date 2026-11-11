@@ -19,16 +19,18 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike } from "../src/ha-api.js";
-import { homeMapDevices, homeMapTray } from "../src/home-map/devices-model.js";
+import { homeMapDevices } from "../src/home-map/devices-model.js";
+import { homeMapRoomWaiting } from "../src/home-map/waiting.js";
 import { HOME_PLAN_COLORS, homePinGlowRadius, homePinPaint, homePlan, homePlanViewBox, homeWallPieces } from "../src/home-map/draw.js";
 import { HOME_MAP_EMPTY_TEXT, HOME_MAP_SCAN_TEXT, HOME_MAP_START_TEXT, HOME_MAP_UPDATE_TEXT, WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
 import { homeMapUnsaved } from "../src/home-map/editor-session.js";
 import { HOME_MAP_PATH, isHomeMapRoute, renderHomeMapView } from "../src/home-map/hook.js";
 import { type HomeMapDocument, type HomeMapStates, applyHomeMapEdit } from "../src/home-map/model.js";
 import { addLampLight, renameRoom, setHomeStyle } from "../src/home-map/edit-ops.js";
-import { homeMapStartSteps } from "../src/home-map/edit-page.js";
+import { homeMapLooseLights } from "../src/home-map/edit-page.js";
 import { HOME_MAP_GONE_TEXT, HOME_MAP_MERGED_TEXT, HOME_MAP_RETRY_TEXT } from "../src/home-map/save.js";
 import { forgetHomeMap, homeMapRead, setHomeMapCapable } from "../src/home-map/store.js";
+import { libraryStore } from "../src/library/store.js";
 import { NO_ICONS } from "../src/watch-pages/editor-host.js";
 
 const FIXTURE_TEXT = readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8");
@@ -329,11 +331,14 @@ describe("the Home map editor", () => {
     expect(shown).toContain("Plan of Ground floor");
     expect(shown).toContain(">Living room</text>");
     expect(shown).toContain("6.0 × 5.0 m");
-    // The tool rail, each tool named under its picture, its key in its title.
-    for (const [label, name, k] of [["Pick and move", "Pick", "V"], ["Draw a room", "Room", "R"], ["Inner wall", "Wall", "W"], ["Door", "Door", "D"], ["Window", "Window", "N"], ["Measure", "Measure", "M"]]) {
+    // The tool rail: Pick, Draw and Measure, each named under its picture,
+    // its key in its title; Draw opens the list of drawing tools.
+    for (const [label, name, k] of [["Pick and move", "Pick", "V"], ["Measure", "Measure", "M"]]) {
       expect(shown).toContain(`aria-label=${label} title=${label} (${k})`);
       expect(shown).toContain(`<span class="hme-rtool-name">${name}</span>`);
     }
+    expect(shown).toContain('<span class="hme-rtool-name">Draw ▾</span>');
+    expect(shown).not.toContain('class="hme-drawlist"');
     expect(shown).not.toContain("aria-label=Add furniture");
     // No left rail of devices: one side panel, on the left of the stage.
     expect(shown).not.toContain("hme-rail");
@@ -344,9 +349,9 @@ describe("the Home map editor", () => {
     // The pins are the page's, drawn over the plan and pickable at once.
     expect(shown).not.toContain('class="hmt-pin"');
     expect(shown).toContain('class="hme-pin"');
-    // Nothing picked: Start here, the floor's own card and how the page
+    // Nothing picked: Finish your map, the floor's own card and how the page
     // works folded into Keys and tips.
-    expect(shown).toContain(">Start here<");
+    expect(shown).toContain(">Finish your map<");
     expect(shown).toContain("Click picks what is on top");
     expect(shown).toMatch(/<details class="hme-tips">\s*<summary>Keys and tips/);
     // The view fits the floor in the stage.
@@ -384,22 +389,28 @@ describe("the Home map editor", () => {
     // A thing in another room needs no picked room first.
     press([2.7, 4.15]);
     expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: 0 });
-    // A pin picked shows its own cards, not its room's list.
+    // A pin picked shows its own cards, not its room's lists.
     press([0.8, 3.1]);
-    expect(text()).not.toContain(">In this room<");
+    expect(text()).not.toContain("hme-onmap");
   });
 
   it("picks a wall with one click on the floor as a whole, its room's handles showing, and Escape goes back to the room", async () => {
-    const { inside, press, key, text } = await page();
+    const { inside, press, key, click, text } = await page();
     let shown = text();
-    // One page, no wall editing to go into: every tool is on the rail.
+    // One page, no wall editing to go into: every drawing tool is under the
+    // rail's Draw, each with its name and key.
     expect(shown).not.toContain("Editing the walls");
     expect(shown).not.toContain("Edit walls");
     expect(shown).not.toContain("Snap to 90°");
-    for (const [label, name, k] of [["Split the room", "Split", "S"], ["Way through (no door)", "Opening", "O"], ["Stairs", "Stairs", "T"]]) {
-      expect(shown).toContain(`aria-label=${label} title=${label} (${k})`);
-      expect(shown).toContain(`<span class="hme-rtool-name">${name}</span>`);
+    click("hme-rtool-draw");
+    shown = text();
+    for (const [label, name, k] of [["Draw a room", "Room", "R"], ["Split the room", "Split", "S"], ["Inner wall", "Wall", "W"], ["Door", "Door", "D"], ["Window", "Window", "N"], ["Way through (no door)", "Opening", "O"], ["Stairs", "Stairs", "T"]]) {
+      expect(shown).toContain(`title=${label} (${k})`);
+      expect(shown).toContain(`<span>${name}</span><kbd>${k}</kbd>`);
     }
+    // Escape closes the list.
+    key("Escape");
+    expect(text()).not.toContain('class="hme-drawlist"');
     press([8, 0.03]);
     expect(inside.selection).toEqual({ kind: "wall", roomId: KITCHEN, wall: 0 });
     shown = text();
@@ -424,7 +435,10 @@ describe("the Home map editor", () => {
     const { el, inside, ha, press, key, text } = await page();
     key("r");
     expect(text()).toContain("Click to put down the first corner");
-    expect(text()).toMatch(/hme-rtool on" aria-pressed=true\s+aria-label=Draw a room/);
+    // The rail's Draw shows the tool that is on, by its name.
+    expect(text()).toMatch(/hme-rtool hme-rtool-draw on" aria-pressed=true/);
+    expect(text()).toContain("aria-label=Draw: Draw a room");
+    expect(text()).toContain('<span class="hme-rtool-name">Room ▾</span>');
     key("v");
     expect(text()).not.toContain("Click to put down the first corner");
     key("m");
@@ -669,7 +683,10 @@ describe("the Home map editor", () => {
     const { el, ha, inside, stage, screen, text } = await page();
     (ha.hass as unknown as Record<string, unknown>).entities = { "switch.fan": { area_id: "kitchen" }, "light.reading_lamp": { area_id: "living_room" } };
     /** The devices with an area not on the map yet. */
-    const tray = () => homeMapTray(el.context()!.doc, el.context()!.floor, homeMapDevices(ha.hass)).flatMap((g) => g.devices);
+    const tray = () => el.context()!.floor.rooms.flatMap((r) => {
+      const w = homeMapRoomWaiting(r, homeMapDevices(ha.hass), el.context()!.doc);
+      return [...w.main, ...w.more];
+    });
     expect(tray().map((d) => d.entityId)).toEqual(["switch.fan"]);
     // Clear of the kitchen's things: dropped on one, it would go onto it.
     const [x, y] = screen([7, 4]);
@@ -857,7 +874,8 @@ describe("the Home map editor", () => {
   });
 
   it("names each tool's and the zoom's key in its title", async () => {
-    const { text } = await page();
+    const { click, text } = await page();
+    click("hme-rtool-draw");
     const shown = text();
     for (const t of ["Pick and move (V)", "Draw a room (R)", "Inner wall (W)", "Door (D)", "Window (N)", "Measure (M)", "Zoom in (+)", "Zoom out (−)", "Fit the floor (0)"]) {
       expect(shown).toContain(t);
@@ -1040,39 +1058,50 @@ describe("the map editor's side panel", () => {
     forgetHomeMap();
   });
 
-  it("counts Start here's steps: a room, a thing, every light in a lamp", () => {
+  it("finds the floor's loose lights: every light pin no lamp holds", () => {
     const doc = fixture();
     const floor = doc.floors[0]!;
-    expect(homeMapStartSteps(floor)).toEqual({ rooms: 2, things: 6, lights: 3, loose: [READING, CEILING, PENDANTS], done: [true, true, false] });
-    expect(homeMapStartSteps({ ...floor, rooms: [], pins: [] }).done).toEqual([false, false, false]);
-    // No lights at all is not done: there is nothing in a lamp yet.
-    expect(homeMapStartSteps({ ...floor, pins: floor.pins.filter((p) => !p.entityId.startsWith("light.")) }).done).toEqual([true, true, false]);
-    // Every light in a lamp: done.
+    expect(homeMapLooseLights(floor)).toEqual([READING, CEILING, PENDANTS]);
+    expect(homeMapLooseLights({ ...floor, pins: floor.pins.filter((p) => !p.entityId.startsWith("light.")) })).toEqual([]);
+    // A light in a lamp is not loose.
     let held = addLampLight(doc, FLOOR, LIVING, "light.reading_lamp", "floor", [4.8, 2], HELD)!.doc;
     held = { ...held, floors: [{ ...held.floors[0]!, pins: held.floors[0]!.pins.filter((p) => !p.entityId.startsWith("light.") || p.id === HELD) }] };
-    expect(homeMapStartSteps(held.floors[0]!)).toMatchObject({ lights: 1, loose: [], done: [true, true, true] });
+    expect(homeMapLooseLights(held.floors[0]!)).toEqual([]);
   });
 
-  it("shows Start here with nothing picked: done, now and next, the loose lights picked by its button, then the floor and Keys and tips", async () => {
-    const { el, inside, click, text } = await page();
+  it("shows Finish your map with nothing picked: done, now and next, the loose lights picked from Devices, then Rooms, the floor and Keys and tips", async () => {
+    const { inside, click, text } = await page();
     const shown = text();
-    expect(shown).toContain('<span class="hme-h-end">2 of 3 done</span>');
-    expect(shown).toMatch(/hme-step done[\s\S]*?<b>Rooms<\/b><span>2 rooms on Ground floor\. Draw one with Room, or scan one with the iPhone\.<\/span>/);
-    expect(shown).toMatch(/hme-step done[\s\S]*?<b>Furniture<\/b><span>6 things\. Add more from Add › Furniture\.<\/span>/);
-    expect(shown).toMatch(/hme-step now[\s\S]*?<b>Lights in lamps<\/b><span>3 lights sit loose\./);
-    // The floor's card, then the tips folded into one line.
-    expect(shown).toContain(">Floor<");
+    expect(shown).toContain('<div class="hme-h">Finish your map<span class="hme-h-end">2 of 3 done</span></div>');
+    expect(shown).toMatch(/hme-step done[\s\S]*?<b>Rooms<\/b><span>2 rooms\.<\/span>/);
+    expect(shown).toMatch(/hme-step done[\s\S]*?<b>Devices<\/b><span>5 on the map\.<\/span>/);
+    expect(shown).toMatch(/hme-step now[\s\S]*?<b>On a page<\/b><span>Put the map on a page to use it each day\.<\/span>/);
+    // The Furniture and Lights in lamps steps are gone.
+    expect(shown).not.toContain("<b>Furniture</b>");
+    expect(shown).not.toContain("Lights in lamps");
+    // No watch or iPhone yet: nothing to add a page to.
+    expect(shown).toContain("Pair a watch or an iPhone first.");
+    // Rooms, each with its devices on the map.
+    expect(shown).toMatch(/<span class="hme-ly-nm">Living room<\/span>\s*<span class="hme-ly-end ">3 on the map<\/span>/);
+    expect(shown).toMatch(/<span class="hme-ly-nm">Kitchen<\/span>\s*<span class="hme-ly-end ">2 on the map<\/span>/);
+    // The floor's card and the tips, both folded.
+    expect(shown).toMatch(/<summary class="hme-h">Floor<span class="hme-h-end">Ground floor/);
     expect(shown).toContain("2 rooms · 6 things · 5 devices");
-    expect(shown.indexOf(">Start here<")).toBeLessThan(shown.indexOf(">Floor<"));
-    expect(shown.indexOf(">Floor<")).toBeLessThan(shown.indexOf("Keys and tips"));
-    // The button picks every light no lamp holds.
+    expect(shown.indexOf(">Finish your map<")).toBeLessThan(shown.indexOf("hme-card hme-rooms"));
+    expect(shown.indexOf("hme-card hme-rooms")).toBeLessThan(shown.indexOf('class="hme-h">Floor<'));
+    expect(shown.indexOf('class="hme-h">Floor<')).toBeLessThan(shown.indexOf("Keys and tips"));
+    // The tip names the tray, never Add, as the way to drag a device in.
+    expect(shown).not.toContain("Drag a device from Add onto the plan");
+    expect(shown).toContain("drag one from its tray onto the plan");
+    // Devices' quiet line picks every light no lamp holds.
+    expect(shown).toContain("3 lights sit in no lamp.");
     click("Show me the loose lights");
     expect(inside.selection).toEqual({ kind: "pins", pinIds: [READING, CEILING, PENDANTS] });
-    expect(text()).not.toContain(">Start here<");
-    // Add › Furniture opens Add on its furniture.
+    expect(text()).not.toContain(">Finish your map<");
+    // A room's row picks it.
     inside.selection = undefined;
-    click(">Add › Furniture<");
-    expect((el as unknown as { addOpen?: string }).addOpen).toBe("furniture");
+    click('<span class="hme-ly-nm">Kitchen</span>');
+    expect(inside.selection).toEqual({ kind: "room", roomId: KITCHEN });
   });
 
   it("starts an empty floor on its first step, Draw a room starting the drawing", async () => {
@@ -1080,40 +1109,53 @@ describe("the map editor's side panel", () => {
     const { click, text } = await page({ doc: empty, rev: 1 });
     const shown = text();
     expect(shown).toContain('<span class="hme-h-end">0 of 3 done</span>');
-    expect(shown).toMatch(/hme-step now[\s\S]*?<b>Rooms<\/b>/);
-    expect(shown).toMatch(/hme-step next[\s\S]*?<b>Furniture<\/b><span>None yet\./);
-    expect(shown).toMatch(/hme-step next[\s\S]*?<b>Lights in lamps<\/b><span>No lights yet\./);
+    expect(shown).toMatch(/hme-step now[\s\S]*?<b>Rooms<\/b><span>0 rooms\.<\/span>/);
+    expect(shown).toMatch(/hme-step next[\s\S]*?<b>Devices<\/b><span>Put your lights and devices on the map\.<\/span>/);
     expect(shown).not.toContain("Show me the loose lights");
-    click("Draw a room ›");
+    expect(shown).not.toContain("hme-card hme-rooms");
+    click(">Draw a room<");
     expect(text()).toContain("Click to put down the first corner");
   });
 
-  it("lists In this room for a picked room: lamps and lights, furniture and devices, and Add to the room", async () => {
+  it("lists a picked room's devices, not on the map and on it, then its folded Furniture and the rest", async () => {
     const doc = addLampLight(fixture(), FLOOR, LIVING, "light.reading_lamp", "floor", [4.8, 2], HELD)!.doc;
     const { el, inside, press, click, text } = await page({ doc, rev: 4 });
     press([5, 4.5]);
     expect(inside.selection).toEqual({ kind: "room", roomId: LIVING });
     const shown = text();
-    // The room's head: its size, its area and its floor.
+    // The checklist's strip, then the room's head: its size, its area and its floor.
+    expect(shown).toMatch(/hme-strip-cell done">\s*<b>✓ Rooms<\/b>/);
+    expect(shown).toMatch(/hme-strip-cell now">\s*<b>On a page<\/b><small>Put the map on a page to use it each day\.<\/small>/);
     expect(shown).toContain("6.0 × 5.0 m · 30.0 m² · Living room area");
-    // Four things and three devices: the light the lamp holds is its row.
-    const card = shown.slice(shown.indexOf(">In this room<"), shown.indexOf(">Room<"));
-    expect(card).toContain('<span class="hme-h-end">7</span>');
+    expect(shown.indexOf('class="hme-strip"')).toBeLessThan(shown.indexOf("Living room area"));
+    // Nothing of its area waits.
+    expect(shown).toContain(">Not on the map<");
+    expect(shown).toContain("No devices in this room's area.");
+    // On the map: every pin of the room, a lamp's light among them.
+    const onMap = shown.slice(shown.indexOf(">On the map<"), shown.indexOf("data-fold=room-furniture"));
+    expect(onMap).toContain('<span class="hme-h-end">4</span>');
+    expect([...onMap.matchAll(/<span class="hme-ly-nm">([^<]+)<\/span>/g)].map((m) => m[1])).toEqual(["Reading lamp", "light.ceiling", "lock.side_door", "Reading lamp"]);
+    // Furniture, folded: a lamp says the light it holds and its state.
+    const card = shown.slice(shown.indexOf("data-fold=room-furniture"), shown.indexOf("data-fold=room-card"));
+    expect(card).toContain('<summary class="hme-h">Furniture<span class="hme-h-end">4 things');
     const names = [...card.matchAll(/<div class="hme-ly-grp">([^<]+)<\/div>|<span class="hme-ly-nm">([^<]+)<\/span>/g)].map((m) => m[1] ?? m[2]);
-    expect(names).toEqual(["Lamps and lights", "Floor lamp", "Reading lamp", "light.ceiling", "Furniture", "Sofa", "Table", "TV", "Devices", "lock.side_door"]);
-    // A lamp says the light it holds and its state; a loose light says so.
-    expect(card).toContain('hme-ly-lamp lit');
+    expect(names).toEqual(["Lamps", "Floor lamp", "Furniture", "Sofa", "Table", "TV"]);
+    expect(card).toContain("hme-ly-lamp lit");
     expect(card).toContain('<span class="hme-ly-nm">Floor lamp</span><span class="hme-ly-end">Reading lamp · on · 78%</span>');
-    expect(card).toContain('<span class="hme-ly-nm">Reading lamp</span><span class="hme-ly-end">on · 78% · in no lamp</span>');
-    // Things have an eye, devices none.
+    // Things have an eye.
     expect(card.match(/class="hme-eye"/g)).toHaveLength(4);
     expect(card).toContain("aria-label=Hide Sofa");
-    // Add to the room opens Add, on its devices.
-    expect(card).toContain("＋ Add to Living room");
-    click("＋ Add to Living room");
-    expect((el as unknown as { addOpen?: string }).addOpen).toBe("devices");
-    // The room's own cards follow.
-    expect(shown.indexOf(">In this room<")).toBeLessThan(shown.indexOf(">Floor finish<"));
+    // Its Add opens Add on its furniture.
+    click("＋ Add furniture to Living room");
+    expect((el as unknown as { addOpen?: string }).addOpen).toBe("furniture");
+    // The room's own cards follow, each folded with a short value.
+    for (const [title, value] of [["Name, area and tap", "Living room"], ["Size and place", "6.0 × 5.0 m"], ["Floor and walls", "Wood"]]) {
+      expect(shown).toContain(`<summary class="hme-h">${title}<span class="hme-h-end">${value}`);
+    }
+    expect(shown).toContain('<summary class="hme-h">Doors and windows<span class="hme-h-end">');
+    expect(shown).toContain('<summary class="hme-h">The scan<span class="hme-h-end">');
+    expect(shown.indexOf("data-fold=room-furniture")).toBeLessThan(shown.indexOf("data-fold=room-card"));
+    expect(shown.indexOf("data-fold=room-card")).toBeLessThan(shown.indexOf("data-fold=room-finish"));
     expect(shown).toContain(">More<");
   });
 
@@ -1141,8 +1183,8 @@ describe("the map editor's side panel", () => {
     press([9.5, 4]);
     row("Fridge")(plain);
     expect(inside.selection).toEqual({ kind: "object", roomId: KITCHEN, object: 0 });
-    // The thing picked: its own cards, not the room's list.
-    expect(text()).not.toContain(">In this room<");
+    // The thing picked: its own cards, not the room's lists.
+    expect(text()).not.toContain("data-fold=room-furniture");
     expect(text()).toContain("In Kitchen · 0.75 × 0.70 × 1.80 m");
     // Cmd from the room picks the thing alone, as on the plan.
     el.select({ kind: "room", roomId: KITCHEN });
@@ -1260,5 +1302,183 @@ describe("the map editor with no map, and saves made elsewhere", () => {
     expect(ha.now().doc!.floors[0]!.rooms[1]!.name).toBe("Galley");
     expect(text()).toContain("Saved");
     expect(homeMapUnsaved()).toBe(false);
+  });
+});
+
+// ── devices first: the tray, the checklist and On a page ─────────────────
+
+/** The test's Home Assistant with a desk light and the fan in the kitchen's
+ * area, and the reading lamp in the living room's: the desk light and the
+ * fan wait, the reading lamp is on the map. Service calls are answered. */
+function withAreas(ha: ReturnType<typeof fakeHass>) {
+  const hass = ha.hass as unknown as Record<string, any>;
+  hass.states = {
+    ...hass.states,
+    "light.desk": { entity_id: "light.desk", state: "off", attributes: { friendly_name: "Desk" } },
+  };
+  hass.entities = {
+    "light.desk": { area_id: "kitchen" },
+    "switch.fan": { area_id: "kitchen" },
+    "light.reading_lamp": { area_id: "living_room" },
+  };
+  const connection = hass.connection as { sendMessagePromise: (m: Record<string, any>) => Promise<unknown> };
+  const send = connection.sendMessagePromise.bind(connection);
+  connection.sendMessagePromise = async (msg) => (msg.type === "call_service" ? (ha.sent.push(msg), {}) : send(msg));
+}
+
+/** The test's library, kept in step with the creates and ticks Add page
+ * sends: the iPhone holds no pages record, the watch one with no pages. */
+function withLibrary(ha: ReturnType<typeof fakeHass>) {
+  const pages: Record<string, { item: unknown; owners: string[] }> = {};
+  const picks: Record<string, { pages: { id: string }[] }> = { WATCH1: { pages: [] } };
+  const connection = (ha.hass as unknown as { connection: { sendMessagePromise: (m: Record<string, any>) => Promise<unknown> } }).connection;
+  const send = connection.sendMessagePromise.bind(connection);
+  connection.sendMessagePromise = async (msg) => {
+    if (msg.type === "wrist_assistant/library/summary") return structuredClone({ pages, status_pages: {}, menus: {}, picks });
+    if (msg.type === "wrist_assistant/library/item/create") {
+      ha.sent.push(msg);
+      const id = `NEW${Object.keys(pages).length + 1}`;
+      pages[id] = { item: { ...(msg.document.pages[0] as object), id }, owners: [] };
+      return { id, revision: 1 };
+    }
+    if (msg.type === "wrist_assistant/library/pick") {
+      ha.sent.push(msg);
+      pages[msg.item_id]!.owners.push(msg.owner_id);
+      (picks[msg.owner_id] ??= { pages: [] }).pages.push({ id: msg.item_id });
+      return { revisions: {} };
+    }
+    if (msg.type === "wrist_assistant/watch_config/get") return { multiple_pages: true };
+    return send(msg);
+  };
+  return { pages };
+}
+
+describe("devices first in the map editor", () => {
+  beforeEach(() => {
+    setHomeMapCapable(true);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => undefined });
+  });
+  afterEach(() => {
+    forgetHomeMap();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("lists a room's waiting devices in its tray, unfolds the switches, and says the wait count on the plan", async () => {
+    const { el, ha, click, text } = await page();
+    withAreas(ha);
+    el.select({ kind: "room", roomId: KITCHEN });
+    let shown = text();
+    const tray = shown.slice(shown.indexOf(">Not on the map<"), shown.indexOf("hme-onmap"));
+    expect(tray).toContain('<span class="hme-h-end">1 waits</span>');
+    expect(tray).toContain("Drag one onto the plan. Or click it, then click its place.");
+    expect(tray).toContain("Desk<small>Light · off</small>");
+    expect(tray).toContain(">Blink</button>");
+    expect(tray).toContain("1 switch and more");
+    expect(tray).not.toContain("Fan<small>");
+    click("1 switch and more");
+    expect(text()).toContain("Fan<small>Switch · off</small>");
+    // The plan names the kitchen with its wait count.
+    expect(shown).toContain(">Kitchen · 1 waits</text>");
+    // A room with no area says so and offers the Area menu.
+    el.apply((d) => ({ ...d, floors: d.floors.map((f) => ({ ...f, rooms: f.rooms.map((r) => (r.id === KITCHEN ? (({ areaId: _a, ...rest }) => rest)(r) : r)) })) }));
+    await el.session!.idle();
+    shown = text();
+    expect(shown).toContain("This room has no area. Pick one below to see its devices.");
+    expect(shown).toContain('<option value=kitchen');
+  });
+
+  it("arms a device with a click on its row and puts it where the plan is clicked, the room's tray staying over the new pin", async () => {
+    const { el, inside, ha, press, key, click, text } = await page();
+    withAreas(ha);
+    el.select({ kind: "room", roomId: KITCHEN });
+    // The fan is a switch: unfold it first, then arm it.
+    click("1 switch and more");
+    click("Fan<small>");
+    expect(text()).toContain("Click its place on the plan.");
+    expect(text()).toContain("cursor:crosshair");
+    // Escape disarms.
+    key("Escape");
+    expect(text()).not.toContain("Click its place on the plan.");
+    // A second click on the row disarms too.
+    click("Fan<small>");
+    click("Fan<small>");
+    expect(text()).not.toContain("Click its place on the plan.");
+    // Armed, a click on the kitchen's floor puts it there and picks it.
+    click("Fan<small>");
+    press([9.5, 4.2]);
+    await el.session!.idle();
+    const pin = ha.now().doc!.floors[0]!.pins.at(-1)!;
+    expect(pin).toMatchObject({ entityId: "switch.fan", roomId: KITCHEN });
+    expect(pin.at.slice(0, 2)).toEqual([9.5, 4.2]);
+    expect(inside.selection).toEqual({ kind: "pin", pinId: pin.id });
+    // The kitchen's tray stays over its cards, the desk light still waiting.
+    const shown = text();
+    expect(shown).toContain(">Next in Kitchen<");
+    expect(shown).toContain("Desk<small>Light · off</small>");
+    expect(shown).not.toContain("Click its place on the plan.");
+  });
+
+  it("blinks a light the other way for a second and back", async () => {
+    const { el, ha, click } = await page();
+    withAreas(ha);
+    el.select({ kind: "room", roomId: KITCHEN });
+    vi.useFakeTimers();
+    handler(el.render(), ">Blink</button>", "@click=")({ stopPropagation: () => undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    const calls = () => ha.sent.filter((m) => m.type === "call_service").map((m) => [m.domain, m.service, m.service_data?.entity_id]);
+    expect(calls()).toEqual([["light", "turn_on", "light.desk"]]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(calls()).toEqual([["light", "turn_on", "light.desk"], ["light", "turn_off", "light.desk"]]);
+  });
+
+  it("offers Place devices while nothing is on the map, picking the first room with devices waiting", async () => {
+    const doc = fixture();
+    doc.floors[0]!.pins = [];
+    const { el, inside, ha, click, text } = await page({ doc, rev: 4 });
+    withAreas(ha);
+    el.select(undefined);
+    const shown = text();
+    expect(shown).toMatch(/hme-step now[\s\S]*?<b>Devices<\/b><span>2 devices wait in your rooms\.<\/span>/);
+    expect(shown).toMatch(/<span class="hme-ly-nm">Living room<\/span>\s*<span class="hme-ly-end wait">1 waits<\/span>/);
+    expect(shown).toMatch(/<span class="hme-ly-nm">Kitchen<\/span>\s*<span class="hme-ly-end wait">1 waits<\/span>/);
+    click(">Place devices<");
+    expect(inside.selection).toEqual({ kind: "room", roomId: LIVING });
+    expect(text()).toContain("Reading lamp<small>Light · on · 78%</small>");
+  });
+
+  it("adds the map to a page from On a page: a map page on an iPhone, a Home map tile on a watch, then Added with a link", async () => {
+    const { el, inside, ha, click, text } = await page();
+    const lib = withLibrary(ha);
+    const opened: string[] = [];
+    el.onOpenPage = (id) => opened.push(id);
+    el.owners = [
+      { owner_watch_id: "WATCH1", device_name: "Kitchen Watch" },
+      { owner_watch_id: "PHONE1", device_name: "Jesse's iPhone", device_kind: "iphone", phone_pages: true },
+    ] as unknown as WaHomeMapEditor["owners"];
+    el.phones = true;
+    inside.willUpdate(new Map());
+    await libraryStore(ha.hass).refresh();
+    let shown = text();
+    expect(shown).toMatch(/hme-step now[\s\S]*?<b>On a page<\/b>/);
+    expect(shown).toContain("<b>Jesse's iPhone</b><span>A full page with the live 3D map.</span>");
+    expect(shown).toContain("<b>Kitchen Watch</b><span>A map tile on a page. A tap opens the map.</span>");
+    click("aria-label=Add a page to Jesse's iPhone");
+    await vi.waitFor(() => expect(text()).toContain("Added"));
+    const phonePage = Object.values(lib.pages)[0]!.item as { mapPage?: boolean; items: { entityId: string }[] };
+    expect(phonePage.mapPage).toBe(true);
+    expect(phonePage.items.map((t) => t.entityId)).toEqual([`home_map.${FLOOR}`]);
+    // The step is done, and the card stays to say so, with the page's link.
+    shown = text();
+    expect(shown).toContain('<span class="hme-h-end">3 of 3 done</span>');
+    click("Open it");
+    expect(opened).toEqual(["NEW1"]);
+    // The watch gets a page with one Home map tile.
+    click("aria-label=Add a page to Kitchen Watch");
+    await vi.waitFor(() => expect(lib.pages.NEW2?.owners).toEqual(["WATCH1"]));
+    const watchPage = lib.pages.NEW2!.item as { mapPage?: boolean; items: { entityId: string }[] };
+    expect(watchPage.mapPage).toBeUndefined();
+    expect(watchPage.items.map((t) => t.entityId)).toEqual([`home_map.${FLOOR}`]);
+    expect(ha.sent.filter((m) => m.type === "wrist_assistant/library/pick").map((m) => m.owner_id)).toEqual(["PHONE1", "WATCH1"]);
   });
 });

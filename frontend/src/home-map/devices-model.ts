@@ -10,7 +10,8 @@
 // not on the map lists only the kinds that belong on a plan (lights,
 // switches, climate, sensors, media, locks, covers, cameras, ...), with an
 // area and no entity category, so it is not buried in diagnostics; the find
-// box searches every entity.
+// box searches every entity. Which devices wait in a room for a pin is the
+// waiting rule of `waiting.ts`, which reads these rows.
 
 import type { HassLike } from "../ha-api.js";
 import type { HomeMapSelection } from "./editor-mode.js";
@@ -37,7 +38,7 @@ export interface HomeMapDeviceEntry {
   category?: string | undefined;
 }
 
-/** The kinds of entity the tray offers. */
+/** The kinds of entity the Add dialog lists with no search. */
 export const HOME_MAP_TRAY_DOMAINS: ReadonlySet<string> = new Set([
   "light", "switch", "fan", "climate", "humidifier", "water_heater", "sensor", "binary_sensor", "media_player",
   "lock", "cover", "valve", "camera", "vacuum", "alarm_control_panel", "siren", "input_boolean", "remote",
@@ -79,40 +80,6 @@ export function homeMapDevices(hass: Pick<HassLike, "states" | "entities" | "dev
 /** The entities with a pin on any floor of the map. */
 export function homeMapEntitiesOnMap(doc: HomeMapDocument): Set<string> {
   return new Set(doc.floors.flatMap((f) => f.pins.map((p) => p.entityId)));
-}
-
-/** One area's devices not on the map. `here`: a room of the floor shown is
- * that area. */
-export interface HomeMapTrayGroup {
-  areaId: string;
-  name: string;
-  here: boolean;
-  devices: HomeMapDeviceEntry[];
-}
-
-/**
- * Not on the map: the devices of the kinds the tray offers, with an area and
- * no entity category, that no floor has a pin for, grouped by area. The
- * areas of the floor's rooms come first, in the rooms' order, then the rest
- * by name.
- */
-export function homeMapTray(doc: HomeMapDocument, floor: HomeMapFloor, devices: readonly HomeMapDeviceEntry[]): HomeMapTrayGroup[] {
-  const onMap = homeMapEntitiesOnMap(doc);
-  const groups = new Map<string, HomeMapTrayGroup>();
-  for (const d of devices) {
-    if (onMap.has(d.entityId) || d.areaId === undefined || d.category !== undefined || !HOME_MAP_TRAY_DOMAINS.has(d.domain)) continue;
-    let group = groups.get(d.areaId);
-    if (group === undefined) groups.set(d.areaId, (group = { areaId: d.areaId, name: d.areaName ?? d.areaId, here: false, devices: [] }));
-    group.devices.push(d);
-  }
-  const roomOrder = floor.rooms.map((r) => r.areaId).filter((a): a is string => a !== undefined);
-  for (const g of groups.values()) g.here = roomOrder.includes(g.areaId);
-  return [...groups.values()].sort((a, b) => {
-    const ia = roomOrder.indexOf(a.areaId);
-    const ib = roomOrder.indexOf(b.areaId);
-    if (ia >= 0 || ib >= 0) return (ia < 0 ? Infinity : ia) - (ib < 0 ? Infinity : ib);
-    return a.name.localeCompare(b.name);
-  });
 }
 
 /** The devices whose name, id or area holds every word typed, the best

@@ -2,12 +2,15 @@
 // (`door-pairs.ts`, `edit-ops.ts`, `geometry.ts`), on a real floor scanned one
 // room at a time, its measures kept and its rooms named by what they are.
 
+import { nothing } from "lit";
 import { describe, expect, it } from "vitest";
 
 import { homeMapDoorChoices, homeMapDoorPairs, homeMapDoorPartner, homeMapOpenDoors } from "../src/home-map/door-pairs.js";
 import { connectDoors, fitRooms, homeMapBoxDragged, homeMapDoorLineUps, homeMapOpeningBox, setOpeningBox, homeMapFitIssues, homeMapFitOf, meetDoors, moveRoom, placeDoors, scanIssues, snapRoom, turnRoom } from "../src/home-map/edit-ops.js";
 import { homeOneWallPieces, homeOneWallPlaces, homeOneWallsOf } from "../src/home-map/geometry.js";
 import { homeMapSplitStacked } from "../src/home-map/editor-view.js";
+import type { HomeMapEditorContext } from "../src/home-map/editor-mode.js";
+import { DoorMode } from "../src/home-map/mode-doors.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapRoom } from "../src/home-map/model.js";
 import { homeMapClickPick, homeMapPieceAt } from "../src/home-map/plan-pick.js";
 import { homeMapRoomKey, homeMapRoomWalls3D } from "../src/home-map/scene3d.js";
@@ -168,6 +171,19 @@ describe("lining doors up, the rooms staying", () => {
     const pairs = homeMapDoorPairs(after);
     expect(pairs.met).toBe(10);
     expect(homeMapDoorLineUps(after)).toEqual([]);
+  });
+
+  it("says at the side panel's foot that every door meets, with no Fit rooms card on top, and the card back while one does not", () => {
+    const f = placed();
+    const doc = placeDoors(home(f), homeMapDoorLineUps(f)[0]!.spots)!;
+    const doors = new DoorMode();
+    const words = (r: unknown) => (r === nothing ? "" : (r as { strings: readonly string[]; values: unknown[] }).strings.reduce((t, s, i, all) => t + s + (i < all.length - 1 ? String((r as { values: unknown[] }).values[i]) : ""), ""));
+    const met = { doc, floor: doc.floors[0]! } as unknown as HomeMapEditorContext;
+    expect(words(doors.fitFoot(met))).toContain("All 10 doors meet.");
+    expect(doors.fitCard(met)).toBe(nothing);
+    const open = { doc: home(f), floor: f } as unknown as HomeMapEditorContext;
+    expect(doors.fitFoot(open)).toBe(nothing);
+    expect(doors.fitCard(open)).not.toBe(nothing);
   });
 
   it("keeps a door on the wall two rooms share, narrower where they share little", () => {

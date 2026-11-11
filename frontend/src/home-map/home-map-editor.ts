@@ -92,9 +92,8 @@ import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import { chromeTokens } from "../editor-chrome.js";
 import { formStyles, rangeFill } from "../form-styles.js";
-import { type HassLike, fetchHomeMap, fetchHomeMapIfChanged, subscribeHomeMap } from "../ha-api.js";
-import { fetchLibrarySummary } from "../library/client.js";
-import { libraryItems, libraryOf } from "../library/model.js";
+import { type HassLike, type OwnerSummary, fetchHomeMap, fetchHomeMapIfChanged, subscribeHomeMap } from "../ha-api.js";
+import { type Library, libraryItems } from "../library/model.js";
 import type { IconProvider } from "../renderer.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
@@ -129,7 +128,8 @@ import {
   homeMapToggleThing,
   sameHomeMapSelection,
 } from "./editor-mode.js";
-import { homeMapTogglePick } from "./devices-model.js";
+import { type HomeMapDeviceEntry, homeMapDevices, homeMapTogglePick } from "./devices-model.js";
+import { HomeMapPageStep } from "./page-step.js";
 import { hmeFloorThumb } from "./editor-parts.js";
 import { type HomeMapSaveState, HomeMapSession, homeMapUnsaved } from "./editor-session.js";
 import { editorStyles } from "./editor-styles.js";
@@ -149,7 +149,9 @@ import {
   homeMapZoomPercent,
 } from "./editor-view.js";
 import { HOME_MAP_ARRANGE_GRID, HOME_MAP_SHAPE_GRID } from "./draw-tool.js";
-import { homeLabelPoint, homePointBounds } from "./geometry.js";
+import { homeBoxCorners, homeBoxOf, homeLabelPoint, homePointBounds } from "./geometry.js";
+import { homeMapFreeLabelSpot } from "./free-spot.js";
+import { homeMapRoomWaiting, homeMapWaitLabel } from "./waiting.js";
 import { HomeStylePanel } from "./mode-style.js";
 import {
   type HomeMapDocument,
@@ -254,6 +256,10 @@ export class WaHomeMapEditor extends LitElement {
   @property({ attribute: false }) onHome: (() => void) | undefined = undefined;
   /** Open a library page in the page editor (Style's Used on, Edit). */
   @property({ attribute: false }) onOpenPage: ((pageId: string) => void) | undefined = undefined;
+  /** The home's watches and iPhones, for the checklist's On a page. */
+  @property({ attribute: false }) owners: readonly OwnerSummary[] = [];
+  /** Whether iPhones show pages (the panel's word), so they are listed. */
+  @property({ attribute: false }) phones = false;
 
   @state() private unsupported = false;
   @state() private loading = false;
@@ -293,7 +299,6 @@ export class WaHomeMapEditor extends LitElement {
   /** North while its slider is dragged, before it is saved. */
   @state() private northLive: number | undefined;
   @state() private modelTurn?: number;
-  @state() private pages?: HomeMapPageChoice[];
   @state() private spaceHeld = false;
   /** Bumped to draw again after a change the shell cannot see. */
   @state() private tick = 0;
@@ -307,6 +312,25 @@ export class WaHomeMapEditor extends LitElement {
   /** The one edit page, and the Home style panel. */
   readonly page = new HomeMapEditPage();
   readonly stylePanel = new HomeStylePanel();
+  /** The checklist's On a page: the library's pages and Add page. */
+  readonly pageStep = new HomeMapPageStep(() => {
+    this.tick++;
+  });
+
+  /** The home's devices, read again only when Home Assistant's own lists
+   * change. */
+  private devicesHeld: { key: readonly unknown[]; list: HomeMapDeviceEntry[] } | undefined;
+
+  private homeDevices(): HomeMapDeviceEntry[] {
+    const h = this.hass;
+    const key = [h?.states, h?.entities, h?.devices, h?.areas];
+    const held = this.devicesHeld;
+    if (held !== undefined && held.key.every((v, i) => v === key[i])) return held.list;
+    const list = homeMapDevices(h);
+    this.devicesHeld = { key, list };
+    return list;
+  }
+
   /** The Add dialog (`add-dialog.ts`): it adds devices through the page's
    * devices part and draws pieces with its furniture pictures. */
   readonly addDialog = new HomeMapAddDialog(this.page.devices, (ctx, piece, cls) => this.page.arrange.piecePic(ctx, piece, cls));
@@ -370,6 +394,7 @@ export class WaHomeMapEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.pageStep.stop();
     window.removeEventListener("keydown", this.onKey);
     window.removeEventListener("keyup", this.onKeyUp);
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisible);
@@ -386,11 +411,14 @@ export class WaHomeMapEditor extends LitElement {
     if (this.hass && this.capable && !this.askedOnce) {
       this.askedOnce = true;
       void this.load();
-      void this.loadPages();
     }
     // Once per connection: a new one (Home Assistant hands the panel a new
     // `hass` after a reload of the frontend) is listened on afresh.
     if (this.askedOnce) this.listen();
+    // The checklist's On a page follows the library while the page is open.
+    this.pageStep.owners = this.owners;
+    this.pageStep.phones = this.phones;
+    if (this.askedOnce) this.pageStep.follow(this.hass);
     const floor = this.baseFloor();
     if (this.needFit && floor !== undefined && this.stageSize.width > 0) this.fit();
   }
@@ -672,18 +700,17 @@ export class WaHomeMapEditor extends LitElement {
     }
   }
 
-  /** The library's pages, for a room's Tap opens menu. A home without the
+  /** The library's pages, for a room's Tap opens menu, from the one read
+   * the checklist's On a page follows (`page-step.ts`). A home without the
    * library offers none. */
-  private async loadPages(): Promise<void> {
-    const hass = this.hass;
-    if (!hass) return;
-    try {
-      const lib = libraryOf(await fetchLibrarySummary(hass));
-      this.pages = libraryItems(lib, "pages").map((p) => ({ id: p.id, name: p.name }));
-    } catch {
-      this.pages = [];
-    }
+  private libraryPages(): HomeMapPageChoice[] {
+    const lib = this.pageStep.library;
+    if (lib === undefined) return [];
+    if (this.pagesHeld?.lib !== lib) this.pagesHeld = { lib, pages: libraryItems(lib, "pages").map((p) => ({ id: p.id, name: p.name })) };
+    return this.pagesHeld.pages;
   }
+
+  private pagesHeld: { lib: Library; pages: HomeMapPageChoice[] } | undefined;
 
   private show(read: HomeMapRead): void {
     const hass = this.hass;
@@ -975,7 +1002,7 @@ export class WaHomeMapEditor extends LitElement {
       view,
       stage: this.stageSize,
       toggles: this.toggles,
-      pages: this.pages ?? [],
+      pages: this.libraryPages(),
       areas: homeMapAreaChoices(this.hass),
       scans: this.scans,
       furnitureBase: this.bundleUrl === undefined ? undefined : homeMapFurnitureBase(this.bundleUrl),
@@ -1006,6 +1033,8 @@ export class WaHomeMapEditor extends LitElement {
       setHover: (hover) => this.setHover(hover),
       openAdd: (tab, choice) => this.openAdd(tab, choice),
       openPage: this.onOpenPage,
+      devices: this.homeDevices(),
+      pageStep: this.pageStep,
     };
   }
 
@@ -1529,7 +1558,7 @@ export class WaHomeMapEditor extends LitElement {
         <button type="button" class="hme-tb hme-floor-btn" aria-label="Switch floor" aria-haspopup="menu" aria-expanded=${this.floorMenu ? "true" : "false"}
           @click=${() => { this.floorMenu = !this.floorMenu; }}>
           ${hmeFloorThumb(floor)}
-          <span class="hme-floor-t"><span>${homeMapFloorName(floor)}</span><small>${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(floor.pins.length, "device")}</small></span>
+          <span class="hme-floor-t"><span>${homeMapFloorName(floor)}</span><small>${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(new Set(floor.pins.map((p) => p.entityId)).size, "device")}</small></span>
           <span class="hme-caret" aria-hidden="true">▾</span>
         </button>
         ${this.floorMenu ? this.renderFloorMenu(doc, floor) : nothing}
@@ -1569,7 +1598,7 @@ export class WaHomeMapEditor extends LitElement {
     return html`<div class="hme-pop" role="menu" aria-label="Floors">
       ${doc.floors.map((f) => html`<div class="hme-pop-row ${sameHomeMapId(f.id, on.id) ? "on" : ""}">
         <button type="button" role="menuitem" class="hme-pop-main" @click=${() => this.setFloor(f.id)}>
-          ${hmeFloorThumb(f)}<span class="hme-floor-t"><span>${homeMapFloorName(f)}</span><small>${homeMapCount(f.rooms.length, "room")} · ${homeMapCount(f.pins.length, "device")}</small></span></button>
+          ${hmeFloorThumb(f)}<span class="hme-floor-t"><span>${homeMapFloorName(f)}</span><small>${homeMapCount(f.rooms.length, "room")} · ${homeMapCount(new Set(f.pins.map((p) => p.entityId)).size, "device")}</small></span></button>
         <button type="button" class="hme-pop-act" title="Rename" aria-label=${`Rename ${homeMapFloorName(f)}`} @click=${() => void this.renameFloorAsk(f)}>Rename</button>
         <button type="button" class="hme-pop-act danger" title=${doc.floors.length === 1 ? "The map keeps at least one floor" : "Delete"} aria-label=${`Delete ${homeMapFloorName(f)}`}
           ?disabled=${doc.floors.length === 1} @click=${() => void this.deleteFloorAsk(f)}>Delete</button>
@@ -1773,13 +1802,23 @@ export class WaHomeMapEditor extends LitElement {
       <rect class="hme-bg" width=${width} height=${height} fill="url(#hme-bg)" />`;
   }
 
-  /** Each room's name and size on a dark pill, where it fits. */
+  /** Each room's name on a dark pill, with how many of its devices wait
+   * ("Bedroom · 5 wait") and its size when there is room, standing in free
+   * floor: off the furniture, the pins and the names placed before it, as
+   * near the room's label point as it can (`homeMapFreeLabelSpot`). A name
+   * with no free spot is left out. Kept while nothing it reads changed. */
   private labels(ctx: HomeMapEditorContext) {
-    return ctx.floor.rooms.map((room) => {
+    const devices = ctx.devices ?? homeMapDevices(ctx.hass);
+    const key = `${floorKey(ctx.floor)}|${objectKey(ctx.doc)}|${ctx.view.scale}|${ctx.view.ox}|${ctx.view.oy}|${objectKey(devices)}`;
+    if (this.labelsHeld?.key === key) return this.labelsHeld.art;
+    const taken: { c: HomePoint; half: readonly [number, number] }[] = [];
+    const circles = ctx.floor.pins.map((p) => ({ c: ctx.toScreen(p.at), r: 15 }));
+    const art = ctx.floor.rooms.map((room) => {
       const at = homeLabelPoint(room);
       const b = homePointBounds(room.outline);
       if (at === undefined || b === undefined) return nothing;
-      const name = homeMapRoomName(room);
+      const wait = homeMapRoomWaiting(room, devices, ctx.doc).main.length;
+      const name = homeMapWaitLabel(homeMapRoomName(room), wait);
       const size = homeMapRoomSizeText(room);
       const roomW = (b.maxX - b.minX) * ctx.view.scale;
       const roomH = (b.maxY - b.minY) * ctx.view.scale;
@@ -1788,12 +1827,33 @@ export class WaHomeMapEditor extends LitElement {
       const both = Math.max(nameW, size.length * 5.8 + 22) <= roomW * 0.95 && roomH >= 48;
       const w = both ? Math.max(nameW, size.length * 5.8 + 22) : nameW;
       const h = both ? 36 : 22;
-      const [x, y] = ctx.toScreen(at);
-      return svg`<g class="hme-label"><rect x=${(x - w / 2).toFixed(1)} y=${(y - h / 2).toFixed(1)} width=${w.toFixed(1)} height=${h} rx=${both ? 9 : 7} fill="rgba(0,0,0,0.6)" />
-        <text x=${x.toFixed(1)} y=${(y + (both ? -3 : 4.5)).toFixed(1)} fill="#fff" font-size=${both ? 13 : 12} font-weight="600" text-anchor="middle">${name}</text>
-        ${both ? svg`<text x=${x.toFixed(1)} y=${(y + 11).toFixed(1)} fill="#aeaeb2" font-size="10" text-anchor="middle">${size}</text>` : nothing}</g>`;
+      const obstacles = {
+        room: room.outline.map((p) => ctx.toScreen(p)),
+        boxes: room.objects.filter((o) => o.hidden !== true && o.kind !== "rug").map((o) => homeBoxCorners(homeBoxOf(o)).map((p) => ctx.toScreen(p))),
+        circles,
+        taken,
+      };
+      const anchor = ctx.toScreen(at);
+      // With its size if it finds a spot, else the name alone.
+      let spot = homeMapFreeLabelSpot(anchor, [w / 2, h / 2], obstacles);
+      const show = both && spot !== undefined;
+      if (spot === undefined && both) spot = homeMapFreeLabelSpot(anchor, [nameW / 2, 11], obstacles);
+      if (spot === undefined) return nothing;
+      const pill = show ? ([w / 2, h / 2] as const) : ([nameW / 2, 11] as const);
+      taken.push({ c: spot, half: pill });
+      const [x, y] = spot;
+      const pw = pill[0] * 2;
+      const ph = pill[1] * 2;
+      return svg`<g class="hme-label"><rect x=${(x - pw / 2).toFixed(1)} y=${(y - ph / 2).toFixed(1)} width=${pw.toFixed(1)} height=${ph} rx=${show ? 9 : 7} fill="rgba(0,0,0,0.6)" />
+        <text x=${x.toFixed(1)} y=${(y + (show ? -3 : 4.5)).toFixed(1)} fill="#fff" font-size=${show ? 13 : 12} font-weight="600" text-anchor="middle">${name}</text>
+        ${show ? svg`<text x=${x.toFixed(1)} y=${(y + 11).toFixed(1)} fill="#aeaeb2" font-size="10" text-anchor="middle">${size}</text>` : nothing}</g>`;
     });
+    this.labelsHeld = { key, art };
+    return art;
   }
+
+  /** The names last drawn, and what they were drawn from. */
+  private labelsHeld: { key: string; art: unknown } | undefined;
 
   private measureMarks(ctx: HomeMapEditorContext) {
     const m = this.measure;

@@ -11957,6 +11957,8 @@ export class WristAssistantPanel extends LitElement {
         capable: this.homeMap,
         onHome: () => this.goTo(SHARED_PATH),
         onOpenPage: (pageId: string) => this.goTo(libraryItemPath("pages", pageId)),
+        owners: this.owners,
+        phones: this.phonePages,
         onLoaded: () => this.requestUpdate(),
       });
     }
@@ -12048,6 +12050,8 @@ export class WristAssistantPanel extends LitElement {
     // each is handed the shared watch (the address's, when it names one) and
     // follows it.
     const screen = watchScreenOf(this.route);
+    // The Home map draws its own bar with its own ‹ Shared, so no row over it.
+    if (screen?.id === "home-map") return this.renderWatchScreen(screen.id, this.sharedWatch);
     if (screen !== undefined) return this.withWatchRow(this.renderWatchScreen(screen.id, this.sharedWatch));
     // Worked out again on this draw: the bar and the stage share the one reading.
     this.frameLayout = undefined;

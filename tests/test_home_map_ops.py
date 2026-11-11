@@ -144,13 +144,22 @@ def _floor(floor_id: str, name: str, level=None):
     return types.SimpleNamespace(floor_id=floor_id, name=name, level=level)
 
 
-def _entity(entity_id: str, area_id=None, device_id=None, hidden_by=None, disabled_by=None):
+class _Category(str):
+    """Like Home Assistant's ``EntityCategory``: a string enum with a value."""
+
+    @property
+    def value(self) -> str:
+        return str.__str__(self)
+
+
+def _entity(entity_id: str, area_id=None, device_id=None, hidden_by=None, disabled_by=None, entity_category=None):
     return types.SimpleNamespace(
         entity_id=entity_id,
         area_id=area_id,
         device_id=device_id,
         hidden_by=hidden_by,
         disabled_by=disabled_by,
+        entity_category=entity_category,
     )
 
 
@@ -185,7 +194,12 @@ class _Registries:
                 _entity("light.pendants", area_id="kitchen", device_id="dev-lamp"),
                 _entity("lock.side_door", area_id="living_room"),
                 _entity("climate.thermostat", device_id="dev-hub"),
-                _entity("sensor.hub_signal", device_id="dev-hub", hidden_by="integration"),
+                _entity(
+                    "sensor.hub_signal",
+                    device_id="dev-hub",
+                    hidden_by="integration",
+                    entity_category=_Category("diagnostic"),
+                ),
                 _entity("light.old", area_id="kitchen", disabled_by="user"),
                 _entity("switch.loose", device_id="dev-none"),
                 _entity("switch.unknown_device", device_id="dev-gone"),
@@ -473,7 +487,17 @@ FLOORS = [
 ]
 
 
-def _row(entity_id, name, area_id, device_class=None, device_id=None, device_name=None, device_model=None):
+def _row(
+    entity_id,
+    name,
+    area_id,
+    device_class=None,
+    device_id=None,
+    device_name=None,
+    device_model=None,
+    entity_category=None,
+    hidden=False,
+):
     return {
         "id": entity_id,
         "name": name,
@@ -482,6 +506,8 @@ def _row(entity_id, name, area_id, device_class=None, device_id=None, device_nam
         "device_id": device_id,
         "device_name": device_name,
         "device_model": device_model,
+        "entity_category": entity_category,
+        "hidden": hidden,
     }
 
 
@@ -491,7 +517,8 @@ HUB = ("dev-hub", "Kitchen Hub", None)
 ENTITIES = [
     _row("light.ceiling", "Ceiling", "living_room", None, *LAMP),
     _row("fan.gone_area", "Gone Area", "garage"),
-    _row("sensor.hub_signal", "Hub Signal", "kitchen", "signal_strength", *HUB),
+    # Hidden, and a diagnostic entity: the waiting rule leaves it out.
+    _row("sensor.hub_signal", "Hub Signal", "kitchen", "signal_strength", *HUB, "diagnostic", True),
     # A device with no name and no model.
     _row("switch.loose", "Loose", None, None, "dev-none"),
     _row("light.pendants", "Pendants", "kitchen", None, *LAMP),
@@ -578,6 +605,23 @@ def test_entities_from_states_without_a_device_lookup_names_no_device(env) -> No
         lambda _device: None,
     )
     assert rows == [_row("media_player.tv", "TV", "living_room", "tv", "dev-tv")]
+
+
+def test_an_entity_says_its_category_and_whether_it_is_hidden(env) -> None:
+    rows = {row["id"]: row for row in env.areas.home_entities(env.hass)}
+    assert (rows["sensor.hub_signal"]["entity_category"], rows["sensor.hub_signal"]["hidden"]) == (
+        "diagnostic",
+        True,
+    )
+    assert (rows["light.ceiling"]["entity_category"], rows["light.ceiling"]["hidden"]) == (None, False)
+    # Outside the registry: no category, not hidden.
+    assert (rows["sun.sun"]["entity_category"], rows["sun.sun"]["hidden"]) == (None, False)
+    # A plain string category is read as it is, an empty one is none.
+    env.registries.entities["light.ceiling"].entity_category = "config"
+    env.registries.entities["lock.side_door"].entity_category = ""
+    rows = {row["id"]: row for row in env.areas.home_entities(env.hass)}
+    assert rows["light.ceiling"]["entity_category"] == "config"
+    assert rows["lock.side_door"]["entity_category"] is None
 
 
 def test_an_entitys_own_area_wins_over_its_devices(env) -> None:

@@ -98,6 +98,13 @@ def _text(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _category(value: Any) -> str | None:
+    """An entity category as its text: Home Assistant's ``EntityCategory``
+    is a string enum, so its value; a plain non-empty string as it is."""
+    text = getattr(value, "value", value)
+    return _text(text)
+
+
 def entities_from_states(
     states: Iterable[Any],
     entities: Iterable[Any],
@@ -105,7 +112,7 @@ def entities_from_states(
     device_entry: Callable[[str], Any | None] = lambda _device_id: None,
 ) -> list[dict[str, Any]]:
     """``[{"id", "name", "area_id", "device_class", "device_id",
-    "device_name", "device_model"}]``, every entity Home Assistant has a
+    "device_name", "device_model", "entity_category", "hidden"}]``, every entity Home Assistant has a
     state for, sorted by name ignoring case (then id), for the iPhone's
     "All Devices" pick and its "Found Devices" question after a scan.
 
@@ -120,8 +127,13 @@ def entities_from_states(
     ``name``, and ``device_model`` its ``model``; each None when there is no
     such entry, device or value. The iPhone groups a device's entities by
     ``device_id`` and reads the names and model for the words that say what
-    a scanned thing is (a TV, a fridge). Disabled entities are left out,
-    hidden ones kept.
+    a scanned thing is (a TV, a fridge). ``entity_category`` is the
+    registry entry's category as text (``"config"``, ``"diagnostic"``) and
+    ``hidden`` is True when the entry is hidden (``hidden_by`` is set); an
+    entity with no registry entry has None and False. Both sides read them
+    for which devices wait in a room on the map (the waiting rule, app repo
+    ``docs/home_map_plan_2026-10.md``, "Devices first"). Disabled entities
+    are left out, hidden ones kept.
     """
     registry = {entry.entity_id: entry for entry in entities}
     rows: list[dict[str, Any]] = []
@@ -129,11 +141,15 @@ def entities_from_states(
         entry = registry.get(state.entity_id)
         area_id = None
         device_id = None
+        category = None
+        hidden = False
         if entry is not None:
             if entry.disabled_by is not None:
                 continue
             device_id = entry.device_id
             area_id = entry.area_id
+            category = _category(getattr(entry, "entity_category", None))
+            hidden = getattr(entry, "hidden_by", None) is not None
             if area_id is None and device_id is not None:
                 area_id = device_area(device_id)
         device = device_entry(device_id) if device_id is not None else None
@@ -148,6 +164,8 @@ def entities_from_states(
                 (_text(device.name_by_user) or _text(device.name)) if device is not None else None
             ),
             "device_model": _text(device.model) if device is not None else None,
+            "entity_category": category,
+            "hidden": hidden,
         })
     rows.sort(key=lambda row: (row["name"].casefold(), row["id"]))
     return rows

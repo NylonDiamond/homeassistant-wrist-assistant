@@ -35,7 +35,7 @@ import {
   homeMapObjectAxes,
   homeMapPieceStandsFree,
 } from "../src/home-map/edit-ops.js";
-import { homeMapPiece } from "../src/home-map/furniture.js";
+import { HOME_MAP_LAMP_CHOICE_MODELS, homeMapPiece } from "../src/home-map/furniture.js";
 import { homeBoxCorners, homeBoxOf } from "../src/home-map/geometry.js";
 import { WaHomeMapEditor } from "../src/home-map/home-map-editor.js";
 import { type HomeMapDocument, type HomeMapObject, type HomeMapRoom, checkHomeMap, homeMapFloorName, homeMapPinRoom } from "../src/home-map/model.js";
@@ -424,8 +424,7 @@ describe("the Add dialog in the map editor", () => {
     expect(shown.indexOf(">Lights<span")).toBeLessThan(shown.indexOf(">Sensors<span"));
     expect(shown.indexOf(">Sensors<span")).toBeLessThan(shown.indexOf(">Locks<span"));
     expect(shown).toContain("Reading lamp</span><small class=\"mono\">light.reading_lamp</small>");
-    expect(shown).toContain('<span class="hma-tag">1 on map</span>');
-    expect(shown).toContain('<span class="hma-tag">on map</span>');
+    expect(shown).toContain('<span class="hma-tag">On the map</span>');
     expect(shown).not.toContain("Pendants</span>");
     // Another area's chip lists its devices.
     click('Kitchen<span class="hma-n">');
@@ -441,33 +440,46 @@ describe("the Add dialog in the map editor", () => {
     expect(dialog()).toContain("Nothing by that name in Kitchen.");
   });
 
-  it("adds a light through the lamp chooser in the picked room, places another device there, and picks one on the map", async () => {
+  it("adds a light in the lamp Lights go in names, stays open, places another device on free floor, and picks one on the map", async () => {
     const { el, inside, click, text, floor, room } = await page();
     el.select({ kind: "room", roomId: LIVING });
     el.openAdd();
+    // Lights go in: the lamp chooser's remembered choice, a ceiling lamp when none.
+    expect(text()).toContain("Lights go in");
+    expect(text()).toContain("aria-label=Lights go in");
+    expect(text()).toContain(">Ceiling lamp</option>");
     click('All areas<span class="hma-n">');
+    const things = room(LIVING).objects.length;
     click("Pendants</span>");
     let shown = text();
-    expect(shown).not.toContain(OPEN);
-    expect(shown).toContain("In Living room. Which lamp is it in?");
-    el.page.devices.cancelChooser(el.context()!);
-    // Any other device goes into the picked room and is picked.
-    el.select({ kind: "room", roomId: LIVING });
-    el.openAdd();
-    click('All areas<span class="hma-n">');
+    // No second dialog: the light is in a new ceiling lamp, picked, and the
+    // dialog stays open, its row now On the map.
+    expect(shown).toContain(OPEN);
+    expect(shown).not.toContain("Which lamp is it in?");
+    expect(room(LIVING).objects).toHaveLength(things + 1);
+    expect(room(LIVING).objects.at(-1)!.model).toBe(HOME_MAP_LAMP_CHOICE_MODELS.ceiling);
+    expect(inside.selection).toEqual({ kind: "object", roomId: LIVING, object: things });
+    expect(shown).toMatch(/Pendants<\/span><small class="mono">light\.pendants<\/small><\/span>[\s\S]*?<span class="hma-tag">2 on the map<\/span>/);
+    // Any other device goes on free floor in the room, 0.4 m clear of its
+    // other pins, and is picked; the dialog still open.
     const pins = floor().pins.length;
     click("Fan</span>");
-    expect(text()).not.toContain(OPEN);
+    expect(text()).toContain(OPEN);
     expect(floor().pins).toHaveLength(pins + 1);
     const fan = floor().pins.at(-1)!;
     expect(fan.entityId).toBe("switch.fan");
     expect(homeMapPinRoom(floor(), fan)?.id).toBe(room(LIVING).id);
+    for (const p of floor().pins.slice(0, -1).filter((q) => homeMapPinRoom(floor(), q)?.id === room(LIVING).id)) {
+      expect(Math.hypot(p.at[0] - fan.at[0], p.at[1] - fan.at[1])).toBeGreaterThanOrEqual(0.4 - 1e-6);
+    }
     expect(inside.selection).toEqual({ kind: "pin", pinId: fan.id });
     // A device on the map already is picked, not added again.
-    el.openAdd();
     click("Side door</span>");
     expect(floor().pins).toHaveLength(pins + 1);
     expect(inside.selection).toEqual({ kind: "pin", pinId: LOCK });
+    // Done closes it.
+    click("hma-done");
+    expect(text()).not.toContain(OPEN);
   });
 
   it("has no Place all: its footer only counts the devices listed", async () => {

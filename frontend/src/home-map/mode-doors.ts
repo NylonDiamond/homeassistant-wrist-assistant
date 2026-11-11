@@ -223,12 +223,32 @@ export class DoorMode {
 
   // ── the side panel ─────────────────────────────────────────────────────
 
+  /** Whether the floor's every door meets with nothing left to fix or
+   * offer: Fit rooms is then one quiet line at the foot (`fitFoot`), with how
+   * many doors meet. Undefined while it has a card to show, or none. */
+  private allMet(ctx: HomeMapEditorContext): number | undefined {
+    const floor = savedFloor(ctx);
+    if (floor.rooms.length < 2) return undefined;
+    const pairs = homeMapDoorPairs(floor);
+    const total = pairs.doors.length;
+    if (total === 0 || homeMapOpenDoors(pairs).length > 0 || homeMapFitIssues(floor).length > 0 || homeMapFitOffers(floor).length > 0) return undefined;
+    return total;
+  }
+
+  /** Fit rooms' quiet line at the foot of the side panel while every door
+   * meets: "All 10 doors meet." */
+  fitFoot(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
+    const met = this.allMet(ctx);
+    return met === undefined ? nothing : html`<p class="hme-fit-foot" role="status">All ${met} doors meet.</p>`;
+  }
+
   /** Fit rooms: how many doors meet, the next thing to do, and what the scan
    * check still finds. Nothing on a floor with no doors and nothing to fix,
-   * or with one room. */
+   * or with one room, and nothing while every door meets (`fitFoot` says
+   * so). */
   fitCard(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
     const floor = savedFloor(ctx);
-    if (floor.rooms.length < 2) return nothing;
+    if (floor.rooms.length < 2 || this.allMet(ctx) !== undefined) return nothing;
     const pairs = homeMapDoorPairs(floor);
     const issues = homeMapFitIssues(floor);
     const total = pairs.doors.length;

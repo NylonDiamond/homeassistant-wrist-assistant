@@ -14,7 +14,7 @@
 // download; the page arrives the first time the route is opened.
 
 import { html, type TemplateResult } from "lit";
-import type { HassLike } from "../ha-api.js";
+import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
 
@@ -59,6 +59,10 @@ export interface HomeMapViewInput {
   /** Open a library page in the page editor, for Style's Edit beside a
    * Home map tile. */
   onOpenPage?: (pageId: string) => void;
+  /** The home's watches and iPhones, and whether iPhones show pages, for
+   * the checklist's Add page. */
+  owners?: readonly OwnerSummary[];
+  phones?: boolean;
   onLoaded: () => void;
 }
 
@@ -70,7 +74,8 @@ export function renderHomeMapView(input: HomeMapViewInput): TemplateResult {
   if (!ready && !loadFailed) void loadHomeMapEditor().then(input.onLoaded, input.onLoaded);
   return ready
     ? html`<wa-home-map-editor .hass=${input.hass} ?narrow=${input.narrow} .icons=${input.icons} .iconsTick=${input.iconsTick}
-        .bundleUrl=${input.bundleUrl} .capable=${input.capable} .onHome=${input.onHome} .onOpenPage=${input.onOpenPage}></wa-home-map-editor>`
+        .bundleUrl=${input.bundleUrl} .capable=${input.capable} .onHome=${input.onHome} .onOpenPage=${input.onOpenPage}
+        .owners=${input.owners ?? []} .phones=${input.phones === true}></wa-home-map-editor>`
     : html`<div class="wp-loading">
         ${loadFailed ? html`<span>The Home map page did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
       </div>`;

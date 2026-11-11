@@ -311,6 +311,43 @@ export const editorStyles = css`
   .hme-step.next .hme-step-t b { color: var(--wa-soft); }
   .hme-step-t > span { color: var(--wa-muted); font-size: 12px; line-height: 1.45; }
   .hme-step-t .hme-link { margin-top: 4px; font-size: 12.5px; }
+  .hme-step-t > .hme-tb { margin-top: 6px; }
+  .hme-step-quiet { color: var(--wa-faint); font-size: 12px; line-height: 1.45; margin-top: 4px; }
+  .hme-step-quiet .hme-link { font-size: 12px; margin: 0 0 0 2px; }
+  /* On a page: each watch and iPhone, what it gets, and Add page. */
+  .hme-pagerows { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; align-self: stretch; }
+  .hme-pagerow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--wa-input); border: 1px solid var(--wa-line); }
+  .hme-pagerow-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .hme-pagerow-t b { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
+  .hme-pagerow-t > span { color: var(--wa-muted); font-size: 11.5px; line-height: 1.35; }
+  .hme-pagerow-note.warn, .hme-pagerow-note.err { color: var(--wa-soft); }
+  .hme-pagerow-done { flex: none; color: #30d158; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .hme-pagerow-done .hme-link { font-size: 12.5px; font-weight: 500; }
+  /* A picked room's strip of the checklist: three cells, the active one
+     tinted. */
+  .hme-strip {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; flex: none;
+    border: 1px solid var(--wa-line); background: var(--wa-card); font: inherit; text-align: left; cursor: pointer;
+  }
+  .hme-strip:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
+  .hme-strip-cell { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 9px; min-width: 0; }
+  .hme-strip-cell b { font-size: 12px; font-weight: 600; color: var(--wa-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hme-strip-cell.done b { color: #30d158; }
+  .hme-strip-cell.now { background: var(--hme-sel-bg); }
+  .hme-strip-cell.now b { color: var(--wa-ink); }
+  .hme-strip-cell small { color: var(--wa-muted); font-size: 11px; line-height: 1.3; }
+  .hme-rooms .hme-ly-end.wait { color: var(--hme-sel); }
+  .hme-fit-foot { color: var(--wa-faint); font-size: 12px; padding: 2px 6px; }
+  /* A folded card: its title and a short value, opened by a click. */
+  .hme-fold > summary { cursor: pointer; list-style: none; }
+  .hme-fold > summary::-webkit-details-marker { display: none; }
+  .hme-fold > summary:hover { color: var(--wa-ink); }
+  .hme-fold > summary:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); border-radius: 6px; }
+  .hme-fold-caret { display: inline-block; margin-left: 6px; transition: transform 0.15s; }
+  .hme-fold[open] .hme-fold-caret { transform: rotate(90deg); }
+  .hme-fold-body { display: flex; flex-direction: column; gap: 10px; }
+  /* Cards inside a folded card lose their own frame. */
+  .hme-fold-cards .hme-fold-body > .hme-card { border: 0; padding: 0; background: none; }
   .hme-tips-card { padding: 10px 16px; }
   .hme-tips > summary { cursor: pointer; color: var(--wa-soft); font-size: 13px; list-style: none; }
   .hme-tips > summary::-webkit-details-marker { display: none; }
@@ -453,6 +490,20 @@ export const editorStyles = css`
   .hme-rtool-name { font-size: 10.5px; font-weight: 500; line-height: 1; white-space: nowrap; }
   .hme-rtool-sep { height: 1px; background: #3a3a3c; margin: 2px 6px; flex: none; }
   .hme-stage-hint { position: absolute; left: 86px; bottom: 22px; z-index: 1; color: #8e8e93; font-size: 11px; pointer-events: none; }
+  /* The tool rail's Draw list, beside the rail. */
+  .hme-drawlist {
+    position: absolute; left: 70px; top: 54px; z-index: 4; min-width: 170px; padding: 4px; display: flex; flex-direction: column; gap: 1px;
+    border-radius: 12px; background: #1c1c1e; border: 1px solid #3a3a3c; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+  .hme-drawlist-item {
+    display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none;
+    color: #e5e5ea; font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+  }
+  .hme-drawlist-item:hover { background: #2c2c2e; }
+  .hme-drawlist-item.on { background: #3a3a3c; color: #fff; }
+  .hme-drawlist-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--hme-sel); }
+  .hme-drawlist-item span { flex: 1; }
+  .hme-drawlist-item kbd { font: 500 11px var(--hme-mono); color: #8e8e93; }
   /* The dock's View and Look menus, over the dock: inside it, so they sit
    * just above it however many rows it wraps to. */
   .hme-dock-pop {
@@ -540,7 +591,27 @@ export const editorStyles = css`
   .hme-range.mixed::-moz-range-progress { background: transparent; }
 
   /* ── Devices ──────────────────────────────────────────────────────── */
-  .hme-tray { gap: 6px; }
+  .hme-tray { display: flex; flex-direction: column; gap: 6px; }
+  /* A room's tray, Not on the map: a row armed by a click waits for its
+     place on the plan. */
+  .hme-tray-row { cursor: grab; }
+  .hme-tray-row.armed { border-color: var(--hme-sel); background: var(--hme-sel-bg); }
+  .hme-tb.hme-blink { height: 24px; padding: 0 8px; font-size: 11.5px; flex: none; }
+  .hme-tray-more {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 10px; border-radius: 9px;
+    border: 1px dashed var(--wa-line-strong); background: none; color: var(--wa-soft); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left;
+  }
+  .hme-tray-more:hover { color: var(--wa-ink); border-color: var(--hme-sel); }
+  .hme-tray-more:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
+  .hme-tray-how { margin-top: -4px; }
+  .hme-tray-back { align-self: flex-start; margin: -4px 4px 0; font-size: 12.5px; }
+  /* The line over the plan while a device is armed. */
+  .hme-armed {
+    position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.78); color: #fff; font-size: 12.5px; white-space: nowrap; max-width: calc(100% - 100px);
+  }
+  .hme-stage.rail .hme-armed { left: calc(50% + 33px); }
+  .hme-armed b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
   .hme-ar { font-size: 11px; font-weight: 600; color: var(--wa-muted); margin: 8px 2px 2px; display: flex; }
   .hme-ar.dim { color: var(--wa-faint); }
   .hme-ar > span { margin-left: auto; font-weight: 500; color: var(--wa-faint); }

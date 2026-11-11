@@ -200,7 +200,7 @@ describe("the room inspector's colours", () => {
   it("shows a floor and a wall row in the Floor finish card, the floor's presets by its finish", () => {
     const start = fixture();
     const text = inspect(start);
-    const card = text.slice(text.indexOf(">Floor finish<"), text.indexOf(">Walls and more<"));
+    const card = text.slice(text.indexOf(">Floor and walls<"), text.indexOf(">Doors and windows<"));
     expect(card).not.toBe("");
     expect(card).toContain(">Floor<");
     expect(card).toContain(">Walls<");

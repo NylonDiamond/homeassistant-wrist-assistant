@@ -19,6 +19,40 @@ export function hmeCard(title: string | TemplateResult, body: unknown, extra?: u
   </section>`;
 }
 
+/** Where the browser keeps whether a folded section is open, by its key. */
+export const HOME_MAP_FOLD_KEY = "wa-home-map-fold-";
+
+/** Whether a folded section was left open; closed with nothing kept or no
+ * storage. */
+export function homeMapFoldOpen(key: string): boolean {
+  try {
+    return (globalThis as { localStorage?: Storage }).localStorage?.getItem(HOME_MAP_FOLD_KEY + key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Keep whether a folded section is open, when the browser lets it. */
+export function homeMapKeepFold(key: string, open: boolean): void {
+  try {
+    (globalThis as { localStorage?: Storage }).localStorage?.setItem(HOME_MAP_FOLD_KEY + key, open ? "1" : "0");
+  } catch {
+    /* no storage: it opens closed next time */
+  }
+}
+
+/** A card folded to its title, with a short value at its right ("3
+ * things", "Carpet"), that remembers in the browser whether it was left
+ * open. */
+export function hmeFold(key: string, title: string, value: string | undefined, body: unknown, cls = ""): TemplateResult {
+  const open = homeMapFoldOpen(key);
+  return html`<details class="hme-card hme-fold ${cls}" ?open=${open} data-fold=${key}
+    @toggle=${(e: Event) => homeMapKeepFold(key, (e.currentTarget as HTMLDetailsElement).open)}>
+    <summary class="hme-h">${title}<span class="hme-h-end">${value ?? ""}<span class="hme-fold-caret" aria-hidden="true">›</span></span></summary>
+    <div class="hme-fold-body">${body}</div>
+  </details>`;
+}
+
 /** A labelled row of a card. */
 export function hmeRow(label: string, ...controls: unknown[]): TemplateResult {
   return html`<div class="hme-r"><span class="hme-l">${label}</span>${controls}</div>`;

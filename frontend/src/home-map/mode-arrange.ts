@@ -12,15 +12,18 @@
 // move, so nothing snaps, as Alt moves a room freely) and Cmd or Ctrl turns
 // the snapping off for a one sided resize. The pill turns it a quarter,
 // squares its corners, snaps it to the walls the iPhone's way, moves it to
-// another floor or deletes it. The side panel starts with the room's head
-// and In this room: its lamps and lights, its furniture and its devices,
-// each row picking its thing, tinting it on the plan and in 3D while the
-// pointer is over it, and (a thing's) hiding or showing it by its eye, a
-// hidden thing staying listed, dimmed; then Add to the room, which opens
-// the Add dialog. Then the room's name, Home Assistant area and the page a
-// tap opens; where it is (left and top, its turn, its width and depth, its
-// floor, its wall height); its floor finish with its floor and wall
-// colours; and its doors and windows, a plain box to add and Delete room.
+// another floor or deletes it. The side panel starts with the checklist's
+// strip and the room's head, then its devices (`roomTray`, the edit page's),
+// then folded sections that each remember in the browser whether they are
+// open: Furniture (its lamps and things, each row picking its thing, tinting
+// it on the plan and in 3D while the pointer is over it, and hiding or
+// showing it by its eye, a hidden thing staying listed, dimmed; then Add to
+// the room on its furniture), Name, area and tap (the room's name, Home
+// Assistant area and the page a tap opens), Size and place (left and top,
+// its turn, its width and depth, its floor, its wall height), Floor and
+// walls (its finish with its floor and wall colours), Doors and windows (its
+// doors and its walls), and The scan (the scan as it was, a plain box to add
+// and Delete room).
 //
 // A thing (a sofa, a TV, a desk) lies over its room, so a click on it picks
 // it, in any room, and a drag on it moves it at once; a room is dragged by
@@ -88,7 +91,6 @@ import {
   homeMapObjectAxes,
   homeMapPinsOfRoom,
   homeMapRoomFrame,
-  homeMapThingOfPin,
   levelObject,
   levelRoom,
   meetDoors,
@@ -122,7 +124,7 @@ import {
   turnRoom,
 } from "./edit-ops.js";
 import { HOME_MAP_ARRANGE_GRID, HomeMapDrawTool } from "./draw-tool.js";
-import { homeMapPickedPins, homeMapShared, homeMapStateText, homeMapTogglePick } from "./devices-model.js";
+import { homeMapShared, homeMapStateText } from "./devices-model.js";
 import {
   type HomeMapEditorContext,
   type HomeMapSelection,
@@ -140,6 +142,7 @@ import {
   hmeColourInput,
   hmeFields,
   hmeFinishSwatch,
+  hmeFold,
   hmeGroup,
   hmeHint,
   hmeMenuButton,
@@ -190,7 +193,6 @@ import {
   type HomeMapFinish,
   type HomeMapFloor,
   type HomeMapObject,
-  type HomeMapPin,
   type HomeMapRoom,
   type HomeMapStates,
   type HomePoint,
@@ -343,7 +345,7 @@ export function homeMapIsLamp(object: Pick<HomeMapObject, "kind" | "model" | "si
 }
 
 /** Whether a light is on now, for its dot. */
-function homeMapLightOn(entityId: string, states: HomeMapStates | undefined): boolean {
+export function homeMapLightOn(entityId: string, states: HomeMapStates | undefined): boolean {
   const look = homeMapPinLook(entityId, states);
   return look.kind === "light" && look.on;
 }
@@ -453,11 +455,22 @@ function thingTurn(object: HomeMapObject): number {
 const fmt = (v: number) => v.toFixed(1);
 const pt = (p: readonly number[]) => `${p[0]!.toFixed(1)},${p[1]!.toFixed(1)}`;
 
+/** The fold of a room's Name, area and tap: a room with no area opens it
+ * from the Rooms card. */
+export const HOME_MAP_ROOM_CARD_FOLD = "room-card";
+
 export class ArrangeMode {
   /** A room's doors card, under its head (`mode-doors.ts`). */
   roomDoors: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
-  /** A room's walls and scan cards, near the foot (`mode-shape.ts`). */
+  /** A room's walls list, in its folded Doors and windows (`mode-shape.ts`). */
   roomWalls: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
+  /** The room's scan card (`mode-shape.ts`), in its folded The scan. */
+  roomScan: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
+  /** Drawn over a picked room's head: the checklist's strip (`edit-page.ts`). */
+  roomBefore: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
+  /** Under a picked room's head: its devices, not on the map and on it
+   * (`mode-devices.ts`). */
+  roomTray: ((ctx: HomeMapEditorContext, room: HomeMapRoom) => TemplateResult | typeof nothing) | undefined;
 
   readonly draw = new HomeMapDrawTool(HOME_MAP_ARRANGE_GRID);
   /** The snap lines while a room is dragged, whether a drag is on, and
@@ -1446,7 +1459,14 @@ export class ArrangeMode {
     const pageKnown = room.pageId === undefined || ctx.pages.some((p) => sameHomeMapId(p.id, room.pageId));
     const guess = homeFloorGuess(room);
     const edit = this.edits(ctx);
+    const things = room.objects.length;
+    const doors = room.openings.filter((o) => o.kind !== "window").length;
+    const windows = room.openings.length - doors;
+    const openingsValue = room.openings.length === 0 ? undefined : `${homeMapCount(doors, "door")}, ${homeMapCount(windows, "window")}`;
+    const key = (part: string) => `room-${part}`;
     return html`
+      ${this.roomBefore?.(ctx, room) ?? nothing}
+
       <section class="hme-card hme-head">
         ${hmeRoomThumb(room, lit)}
         <div class="hme-head-t">
@@ -1456,11 +1476,11 @@ export class ArrangeMode {
         </div>
       </section>
 
-      ${this.roomDoors?.(ctx, room) ?? nothing}
+      ${this.roomTray?.(ctx, room) ?? nothing}
 
-      ${this.inRoomCard(ctx, room)}
+      ${hmeFold(key("furniture"), "Furniture", things === 0 ? undefined : homeMapCount(things, "thing"), this.furnitureList(ctx, room), "hme-inroom")}
 
-      ${hmeCard("Room", html`
+      ${hmeFold(HOME_MAP_ROOM_CARD_FOLD, "Name, area and tap", areaName, html`
         ${hmeRow("Name", hmeText({ value: room.name ?? "", label: "Name", placeholder: "Room", set: (v) => ctx.apply((d) => renameRoom(d, id, v)) }))}
         ${hmeRow("Area", hmeSelect({
           label: "Area",
@@ -1472,7 +1492,7 @@ export class ArrangeMode {
           ],
           set: (v) => ctx.apply((d) => setRoomArea(d, id, v === "" ? undefined : v)),
         }))}
-        ${hmeHint("The Home Assistant area. Add lists its devices first.")}
+        ${hmeHint("The Home Assistant area. Its devices wait in Not on the map.")}
         ${hmeRow("Tap opens", hmeSelect({
           label: "Tap opens",
           value: room.pageId ?? "",
@@ -1485,7 +1505,7 @@ export class ArrangeMode {
         }))}
         ${hmeHint("What a tap on this room does on the map tiles and the watch.")}`)}
 
-      ${hmeCard("Size and place", html`
+      ${hmeFold(key("size"), "Size and place", homeMapRoomSizeText(room), html`
         ${hmeFields(
           hmeNumber({ tag: "Width", label: "Width", value: size.width, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { width: v })) }),
           hmeNumber({ tag: "Depth", label: "Depth", value: size.depth, unit: "m", min: HOME_MAP_MIN_ROOM_SIZE, max: HOME_MAP_MAX_ROOM_SIZE, ...edit((d, v) => resizeRoom(d, id, { depth: v })) }),
@@ -1507,7 +1527,7 @@ export class ArrangeMode {
           set: (v) => void this.moveToFloor(ctx, room, v),
         }))}`)}
 
-      ${hmeCard("Floor finish", html`<div class="hme-pics">
+      ${hmeFold(key("finish"), "Floor and walls", HOME_MAP_FINISH_NAMES[room.finish ?? guess], html`<div class="hme-pics">
         ${hmePic({ label: `Auto: ${HOME_MAP_FINISH_NAMES[guess]}`, picture: hmeFinishSwatch(guess), on: room.finish === undefined, title: "Picked from the room's name and furniture", click: () => ctx.apply((d) => setRoomFinish(d, id, undefined)) })}
         ${HOME_MAP_FINISHES.map((f: HomeMapFinish) => hmePic({ label: HOME_MAP_FINISH_NAMES[f], picture: hmeFinishSwatch(f), on: room.finish === f, click: () => ctx.apply((d) => setRoomFinish(d, id, f)) }))}
       </div>
@@ -1515,9 +1535,13 @@ export class ArrangeMode {
         ${this.roomColourRow(ctx, room, "wallColor")}
         <p class="hme-foot-hint">On the plan, the night, warm and clay looks and in 3D, here, on the iPhone and on the watch. The line looks keep their own colour.</p>`)}
 
-      ${this.roomWalls?.(ctx, room) ?? nothing}
+      ${hmeFold(key("openings"), "Doors and windows", openingsValue, html`
+        ${this.roomDoors?.(ctx, room) ?? nothing}
+        ${this.roomWalls?.(ctx, room) ?? nothing}`, "hme-fold-cards")}
 
-      ${hmeCard("More", html`
+      ${hmeFold(key("scan"), "The scan", undefined, html`
+        ${this.roomScan?.(ctx, room) ?? nothing}
+        ${hmeCard("More", html`
         <div class="hme-row-end">
           ${hmeMenuButton({
             label: "＋ Add a plain box",
@@ -1529,20 +1553,19 @@ export class ArrangeMode {
             },
           })}
           <button type="button" class="hme-tb danger push" @click=${() => void this.askDelete(ctx, room)}>Delete room</button>
-        </div>`)}`;
+        </div>`)}`, "hme-fold-cards")}`;
   }
 
-  /** In this room: its lamps and lights (a lamp with the light it holds and
-   * that light's state, then any light no lamp holds), its furniture (a
-   * thing holding a device with that device's name and state in its row,
-   * "TV · Living room TV · playing") and its other devices. A row picks its
-   * thing with a click (Cmd or Ctrl
-   * adding a thing to the pick, Shift, Cmd or Ctrl a device), tints it on
-   * the plan and in 3D while the pointer is over it (`ctx.setHover`), and
-   * is ringed while the plan or 3D has it under the pointer. A thing's eye
+  /** Furniture: the room's things (a lamp with the light it holds and that
+   * light's state, a thing holding a device with that device's name and
+   * state in its row, "TV · Living room TV · playing"). A row picks its
+   * thing with a click (Cmd or Ctrl adding a thing to the pick), tints it on
+   * the plan and in 3D while the pointer is over it (`ctx.setHover`), and is
+   * ringed while the plan or 3D has it under the pointer. A thing's eye
    * hides or shows it; a hidden thing stays listed, dimmed, so it can come
-   * back. Then Add to the room, which opens the Add dialog for it. */
-  private inRoomCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
+   * back. Then Add to the room, which opens the Add dialog on its furniture.
+   * The room's devices are On the map and Not on the map, above. */
+  private furnitureList(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
     const floor = ctx.floor;
     const states = ctx.toggles.live ? ctx.hass?.states : undefined;
     const sel = ctx.selection;
@@ -1574,30 +1597,13 @@ export class ArrangeMode {
       });
       (lamp ? lamps : things).push(row);
     });
-    // A pin a thing holds is its thing's row; a pin no thing holds is its own.
-    const pins = homeMapPinsOfRoom(floor, id).filter((p) => homeMapThingOfPin(floor, p.id) === undefined);
-    const pinRow = (p: HomeMapPin) => inRoomRow(ctx, {
-      sel: { kind: "pin", pinId: p.id },
-      picked: homeMapPickedPins(sel).some((x) => sameHomeMapId(x, p.id)),
-      hidden: false,
-      icon: html`<span class="hme-dot dev ${homeMapLightOn(p.entityId, states) || !p.entityId.startsWith("light.") ? "" : "off"}" aria-hidden="true"></span>`,
-      name: homeMapPinName(p, ctx.hass),
-      end: p.entityId.startsWith("light.") ? `${homeMapStateText(p.entityId, states)} · in no lamp` : homeMapStateText(p.entityId, states),
-      title: "Pick it to set its height, glow and tap. Shift, Cmd or Ctrl and a click picks several.",
-      pick: (e) => ctx.select(e.shiftKey || e.metaKey || e.ctrlKey ? homeMapTogglePick(ctx.selection, p.id) : { kind: "pin", pinId: p.id }),
-    });
-    const lights = pins.filter((p) => p.entityId.startsWith("light.")).map(pinRow);
-    const devices = pins.filter((p) => !p.entityId.startsWith("light.")).map(pinRow);
-    const count = lamps.length + lights.length + things.length + devices.length;
     const group = (title: string, rows: readonly TemplateResult[]) => (rows.length === 0 ? nothing : html`<div class="hme-ly-grp">${title}</div>${rows}`);
-    return hmeCard("In this room", html`<div class="hme-ly-list">
-        ${count === 0 ? html`<p class="hme-empty-line">Nothing in it yet. Add furniture and devices so the map reads.</p>` : nothing}
-        ${group("Lamps and lights", [...lamps, ...lights])}
+    return html`<div class="hme-ly-list">
+        ${lamps.length + things.length === 0 ? html`<p class="hme-empty-line">No furniture yet. A bed, a sofa or a table makes the map read.</p>` : nothing}
+        ${group("Lamps", lamps)}
         ${group("Furniture", things)}
-        ${group("Devices", devices)}
       </div>
-      <button type="button" class="hme-tb hme-wide" title="Add devices or furniture to this room" @click=${() => ctx.openAdd()}>＋ Add to ${homeMapRoomName(room)}</button>`,
-    String(count), "hme-inroom");
+      <button type="button" class="hme-tb hme-wide" title="Add furniture to this room" @click=${() => ctx.openAdd("furniture")}>＋ Add furniture to ${homeMapRoomName(room)}</button>`;
   }
 
   /** A number field's `set` and `preview` for an edit by its value: saved
@@ -1787,10 +1793,15 @@ export class ArrangeMode {
 
   /** With no room picked: the floor itself, its name and what is on it. */
   floorCard(ctx: HomeMapEditorContext, floor: HomeMapFloor): TemplateResult {
+    return hmeCard("Floor", this.floorBody(ctx, floor));
+  }
+
+  /** The floor's card without its card: its name and what is on it. */
+  floorBody(ctx: HomeMapEditorContext, floor: HomeMapFloor): TemplateResult {
     const lights = homeMapLightsOn(floor, ctx.toggles.live ? ctx.hass?.states : undefined);
     const things = floor.rooms.reduce((n, r) => n + r.objects.length, 0);
-    return hmeCard("Floor", html`
+    return html`
       ${hmeRow("Name", hmeText({ value: floor.name, label: "Floor name", placeholder: homeMapFloorName(floor), set: (v) => ctx.apply((d) => renameFloor(d, floor.id, v)) }))}
-      ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(things, "thing")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`);
+      ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(things, "thing")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`;
   }
 }

@@ -2,10 +2,17 @@
 // device where it is, at its height, and say what it shows and what a tap on
 // it does.
 //
-// A device to add is a row drawn here (`deviceRow`), dragged onto the plan
-// to place it (the room it would land in lit with "Drop in <room>") or
-// clicked to put it in its area's room (`place`), one device at a time.
-// The page's Add dialog lists the devices. On the stage every pin is drawn by this part as a
+// A picked room's tray, Not on the map (`trayCard`), lists the devices that
+// wait in it (`waiting.ts`): its main devices, then "N switches and more",
+// which unfolds the rest in place, a light's row with Blink (the other way
+// for a second, then back). A row dragged onto the plan puts its device
+// where it is dropped (the room it would land in lit with "Drop in <room>");
+// a click arms it and the next click on the plan puts it there
+// (`placeArmed`). A light goes in a lamp of the kind the lamp chooser last
+// took (`placeLight`), with no dialog. The room's tray then stays over the
+// new pin's cards (`trayRoom`). On the map (`onMapCard`) lists the room's
+// pins. The page's Add dialog lists every device, and puts one on free floor
+// in its room (`freeSpot`). On the stage every pin is drawn by this part as a
 // glass pin with its icon and live state (a light that is on amber, in its
 // own colour when it has one) and its pill, over the rooms and things; a pin
 // is dragged to move it, and
@@ -36,10 +43,11 @@
 // keeping the pin on the thing). A light's row always adds another: a light
 // group can sit in six ceiling cans. Its
 // row says how many are on the map ("2 on map"), a click there picking each
-// in turn. Adding a light, by a click on its row or a drop on the plan,
-// opens the lamp chooser by the spot: Ceiling, Floor, Table, Wall or Just a
-// bulb, each with its picture, the last one taken ringed (kept in the
-// browser), Enter taking it and Escape or a click outside cancelling. A
+// in turn. Adding a light by a click on that row opens the lamp chooser by
+// the spot: Ceiling, Floor, Table, Wall or Just a bulb, each with its
+// picture, the last one taken ringed (kept in the browser, and what a light
+// from the tray or the Add dialog goes in with no chooser), Enter taking it
+// and Escape or a click outside cancelling. A
 // device dropped on a thing that holds nothing goes straight onto it (a
 // light only into a lamp), and an unheld pin dragged onto one is put on it,
 // the thing lit up while the pin is over it; a rug never takes one. A
@@ -66,6 +74,7 @@ import {
   type HomeMapDeviceEntry,
   homeMapAddPicks,
   homeMapCanToggle,
+  homeMapDevices,
   homeMapDomainWords,
   homeMapEntityAreaId,
   homeMapGroupToggle,
@@ -89,6 +98,7 @@ import {
   centerPinInRoom,
   homeMapHeldPin,
   homeMapPinsOfEntity,
+  homeMapPinsOfRoom,
   homeMapThingOfPin,
   linkDevice,
   movePin,
@@ -101,17 +111,20 @@ import {
   setPinHeight,
   setPinsFields,
   setPinsHeight,
+  setRoomArea,
   unlinkDevice,
 } from "./edit-ops.js";
+import { homeMapFreePinSpot } from "./free-spot.js";
 import type { HomeMapEditorContext, HomeMapSelection, HomeMapViewItem } from "./editor-mode.js";
 import { hmeCard, hmeChip, hmeColourInput, hmeHint, hmeNumber, hmePic, hmeRow, hmeSelect, hmeText } from "./editor-parts.js";
 import { homeMapCount, homeMapShortcut, homeMapToPlan } from "./editor-view.js";
 import { HOME_MAP_LAMP_CHOICES, HOME_MAP_LAMP_CHOICE_MODELS, type HomeMapLampChoice, homeMapLampPiece } from "./furniture.js";
 import { homeBoxCorners, homeBoxOf, homeLabelPoint, homePointBounds, homePolygonHolds, homeRoomUnder } from "./geometry.js";
-import { homeMapIsLamp, homeMapThingName } from "./mode-arrange.js";
+import { homeMapIsLamp, homeMapLightOn, homeMapThingName } from "./mode-arrange.js";
 import {
   type HomeMapFloor,
   type HomeMapPin,
+  type HomeMapRoom,
   type HomeMapPinIcon,
   type HomeMapPinTap,
   type HomeMapStates,
@@ -129,6 +142,7 @@ import {
 } from "./model.js";
 import { HOME_MAP_PIN_ICON_NAMES, homeMapAutoPinIcon, homeMapGlowHex, homeMapPinGlowRadius, homeMapPinGlyph, homeMapPinPill } from "./pin-look.js";
 import { homeMapPinAt } from "./plan-pick.js";
+import { type HomeMapRoomWaiting, homeMapMoreWords, homeMapRoomWaiting, homeMapWaitKind, homeMapWaitWords } from "./waiting.js";
 
 /** The glow ring's handle sits at this angle, down and to the right. */
 const HANDLE_ANGLE = Math.PI / 4;
@@ -141,6 +155,12 @@ const fmt = (v: number) => v.toFixed(1);
 /** The words under a device's name in its row: its kind and its state. */
 export function homeMapDeviceLine(d: HomeMapDeviceEntry, states: HomeMapStates | undefined): string {
   return `${homeMapDomainWords(d.domain)} · ${homeMapStateText(d.entityId, states)}`;
+}
+
+/** The words under a waiting device's name in the tray: "Light · on". */
+export function homeMapTrayLine(d: HomeMapDeviceEntry, states: HomeMapStates | undefined): string {
+  const kind = homeMapDomainWords(d.domain);
+  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)} · ${homeMapStateText(d.entityId, states)}`;
 }
 
 /** The words of a pin's room in the inspector: the room, and that it was
@@ -199,6 +219,21 @@ export function homeMapKeepLampChoice(choice: HomeMapLampChoice): void {
     /* no storage: the chooser starts from its default next time */
   }
 }
+
+/** The lamp a light added with no chooser goes in: the chooser's last
+ * choice, else a ceiling lamp. */
+export function homeMapLampChoiceNow(): HomeMapLampChoice {
+  return homeMapLastLampChoice() ?? "ceiling";
+}
+
+/** The lamp choices as the Add dialog's Lights go in names them. */
+export const HOME_MAP_LAMP_CHOICE_LAMPS: Readonly<Record<HomeMapLampChoice, string>> = {
+  ceiling: "Ceiling lamp",
+  floor: "Floor lamp",
+  table: "Table lamp",
+  wall: "Wall lamp",
+  bulb: "Just a bulb",
+};
 
 /** Whether an entity is a light, the only kind a lamp's bulb shines. */
 const isLight = (entityId: string) => entityId.startsWith("light.");
@@ -271,9 +306,9 @@ export class DevicesMode {
 
   // ── placing ────────────────────────────────────────────────────────────
 
-  /** Put a device on the floor shown: at `at`, else in the room of its
-   * area, else in the middle of the view. A device on the map already is
-   * picked instead, on its own floor. */
+  /** Put a device on the floor shown: at `at`, else on free floor in the
+   * room of its area (`homeMapFreePinSpot`), else in the middle of the view.
+   * A device on the map already is picked instead, on its own floor. */
   place(ctx: HomeMapEditorContext, entityId: string, at?: HomePoint, areaId?: string): boolean {
     const there = homeMapPinOfEntity(ctx.doc, entityId);
     if (there !== undefined) {
@@ -282,7 +317,7 @@ export class DevicesMode {
       return false;
     }
     const room = homeMapRoomOfArea(ctx.floor, areaId);
-    const spot = at ?? (room === undefined ? homeMapToPlan(ctx.view, [ctx.stage.width / 2, ctx.stage.height / 2]) : homeLabelPoint(room) ?? homeMapRoomCenter(room));
+    const spot = at ?? (room === undefined ? homeMapToPlan(ctx.view, [ctx.stage.width / 2, ctx.stage.height / 2]) : this.freeSpot(ctx, room));
     const id = ctx.newId().toUpperCase();
     const floorId = ctx.floor.id;
     const name = this.friendly(ctx, entityId);
@@ -342,6 +377,166 @@ export class DevicesMode {
     ctx.select(thing === undefined ? { kind: "pin", pinId: next.pin.id } : { kind: "object", roomId: thing.roomId, object: thing.object });
   }
 
+  // ── a room's tray: its devices not on the map ──────────────────────────
+
+  /** The device armed by a click on its tray row: the next click on the
+   * plan puts it there. */
+  armed: string | undefined;
+  /** The room whose tray placed the last device: its tray stays over the
+   * new pin's cards, so the next device is one drag away. */
+  trayRoom: string | undefined;
+  /** The rooms whose "switches and more" row is unfolded. */
+  private readonly moreOpen = new Set<string>();
+  /** The lights being blinked. */
+  private readonly blinking = new Set<string>();
+
+  /** The home's devices, as the context has them. */
+  homeDevices(ctx: HomeMapEditorContext): readonly HomeMapDeviceEntry[] {
+    return ctx.devices ?? homeMapDevices(ctx.hass);
+  }
+
+  /** The devices that wait in a room (`waiting.ts`). */
+  waitingIn(ctx: HomeMapEditorContext, room: Pick<HomeMapRoom, "areaId">): HomeMapRoomWaiting<HomeMapDeviceEntry> {
+    return homeMapRoomWaiting(room, this.homeDevices(ctx), ctx.doc);
+  }
+
+  /** Free floor in a room for a new pin: near its name, clear of its pins
+   * and the name's pill as the plan draws it now. */
+  freeSpot(ctx: HomeMapEditorContext, room: HomeMapRoom): HomePoint {
+    const at = homeLabelPoint(room) ?? homeMapRoomCenter(room);
+    const scale = Math.max(ctx.px(1), 1);
+    const nameW = homeMapRoomName(room).length * 7.4 + 22;
+    const label = { at, halfW: Math.min((nameW / 2 + 14) / scale, 1.2), halfH: Math.min((11 + 14) / scale, 0.5) };
+    return homeMapFreePinSpot(room, homeMapPinsOfRoom(ctx.floor, room.id), label) ?? at;
+  }
+
+  /** Arm a device, or disarm it with a second click on its row. */
+  arm(ctx: HomeMapEditorContext, entityId: string | undefined): void {
+    this.armed = this.armed === entityId ? undefined : entityId;
+    ctx.redraw();
+  }
+
+  /** A click on the plan with a device armed: it goes there, a light in a
+   * lamp of the remembered kind, onto a thing holding nothing when the click
+   * lands on one. */
+  placeArmed(ctx: HomeMapEditorContext, at: HomePoint): void {
+    const entityId = this.armed;
+    if (entityId === undefined) return;
+    this.armed = undefined;
+    const light = isLight(entityId);
+    const thing = this.emptyThingAt(ctx, at, light);
+    const room = homeRoomUnder(ctx.floor, at);
+    const ok = thing !== undefined ? this.putOn(ctx, thing, entityId) : light ? this.placeLight(ctx, entityId, at) : this.place(ctx, entityId, at);
+    if (ok) this.trayRoom = thing?.roomId ?? room?.id;
+    ctx.redraw();
+  }
+
+  /** Blink a light: the other way from now, a second, then back. */
+  blink(ctx: HomeMapEditorContext, entityId: string): void {
+    const hass = ctx.hass;
+    const state = hass?.states?.[entityId]?.state;
+    if (hass === undefined || !isLight(entityId) || state === undefined || state === "unavailable" || this.blinking.has(entityId)) return;
+    const on = state === "on";
+    this.blinking.add(entityId);
+    ctx.redraw();
+    const fail = (err: unknown) => ctx.note("warn", `Could not blink it: ${err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err)}`);
+    callService(hass, "light", on ? "turn_off" : "turn_on", { entity_id: entityId }).then(
+      () => new Promise<void>((done) => setTimeout(done, 1000)).then(() => callService(hass, "light", on ? "turn_on" : "turn_off", { entity_id: entityId })),
+    ).catch(fail).finally(() => {
+      this.blinking.delete(entityId);
+      ctx.redraw();
+    });
+  }
+
+  /** The tray's row for a waiting device: its icon, name and state words, a
+   * light's Blink. Dragged onto the plan it goes where it is dropped; a click
+   * arms it, a second click disarms it. */
+  private trayRow(ctx: HomeMapEditorContext, d: HomeMapDeviceEntry): TemplateResult {
+    const light = isLight(d.entityId);
+    const armed = this.armed === d.entityId;
+    const icon = homeMapAutoPinIcon(d.entityId, d.deviceClass, d.name);
+    const state = ctx.hass?.states?.[d.entityId]?.state;
+    const canBlink = light && state !== undefined && state !== "unavailable";
+    return html`<div class="hme-dv hme-tray-row ${armed ? "armed" : ""} ${this.dragging === d.entityId ? "dragging" : ""}" role="button" tabindex="0"
+      draggable="true" aria-pressed=${armed ? "true" : "false"}
+      title=${armed ? "Click its place on the plan. Click here again to stop." : "Drag it onto the plan, or click it, then click its place"}
+      @dragstart=${(e: DragEvent) => {
+        e.dataTransfer?.setData(HOME_MAP_DEVICE_DRAG_TYPE, d.entityId);
+        if (light) e.dataTransfer?.setData(HOME_MAP_LIGHT_DRAG_TYPE, d.entityId);
+        e.dataTransfer?.setData("text/plain", d.entityId);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+        this.dragging = d.entityId;
+        this.armed = undefined;
+        ctx.redraw();
+      }}
+      @dragend=${() => { this.dragging = undefined; this.dropAt = undefined; this.lampOver = undefined; ctx.redraw(); }}
+      @click=${() => this.arm(ctx, d.entityId)}
+      @keydown=${(e: KeyboardEvent) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); this.arm(ctx, d.entityId); } }}>
+      <span class="hme-dv-ic"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">${homeMapPinGlyph(icon, "currentColor", 24, 2)}</svg></span>
+      <span class="hme-dv-nm">${d.name}<small>${homeMapTrayLine(d, ctx.hass?.states)}</small></span>
+      ${canBlink ? html`<button type="button" class="hme-tb hme-blink" ?disabled=${this.blinking.has(d.entityId)} title="Turn it the other way for a second, to see which light it is"
+        @click=${(e: Event) => { e.stopPropagation(); this.blink(ctx, d.entityId); }}
+        @keydown=${(e: KeyboardEvent) => e.stopPropagation()}>Blink</button>` : nothing}
+      <span class="hme-dv-grip" aria-hidden="true">⋮⋮</span>
+    </div>`;
+  }
+
+  /**
+   * Not on the map: a room's waiting main devices as rows, the wait count at
+   * the header's right, a line on how to place one, and "N switches and
+   * more", which unfolds the waiting switch devices in place. Its empty
+   * words say why it has none; a room with no area offers the Area menu
+   * right there. `title` names the card ("Next in Kitchen" over a pin just
+   * placed).
+   */
+  trayCard(ctx: HomeMapEditorContext, room: HomeMapRoom, title = "Not on the map"): TemplateResult {
+    const w = this.waitingIn(ctx, room);
+    const open = this.moreOpen.has(room.id.toUpperCase());
+    const more = w.more.length === 0 ? nothing : html`<button type="button" class="hme-tray-more" aria-expanded=${open ? "true" : "false"}
+        @click=${() => { const k = room.id.toUpperCase(); if (open) this.moreOpen.delete(k); else this.moreOpen.add(k); ctx.redraw(); }}>
+        ${homeMapMoreWords(w.more.length)}<span aria-hidden="true">${open ? "▾" : "›"}</span></button>
+      ${open ? w.more.map((d) => this.trayRow(ctx, d)) : nothing}`;
+    let empty: TemplateResult | typeof nothing = nothing;
+    if (room.areaId === undefined) {
+      const roomId = room.id;
+      empty = html`<p class="hme-empty-line">This room has no area. Pick one below to see its devices.</p>
+        ${hmeRow("Area", hmeSelect({
+          label: "Area",
+          value: "",
+          options: [{ value: "", label: "None" }, ...ctx.areas.map((a) => ({ value: a.id, label: a.name }))],
+          set: (v) => { if (v !== "") ctx.apply((d) => setRoomArea(d, roomId, v)); },
+        }))}`;
+    } else if (w.main.length === 0 && w.more.length === 0) {
+      const any = this.homeDevices(ctx).some((d) => d.areaId === room.areaId && homeMapWaitKind(d) !== undefined);
+      empty = html`<p class="hme-empty-line">${any ? "Every device of this room is on the map." : "No devices in this room's area."}</p>`;
+    }
+    return hmeCard(title, html`
+      ${w.main.length === 0 && w.more.length === 0 ? nothing : html`<p class="hme-foot-hint hme-tray-how">Drag one onto the plan. Or click it, then click its place.</p>`}
+      ${empty}
+      <div class="hme-tray">${w.main.map((d) => this.trayRow(ctx, d))}${more}</div>`,
+    w.main.length === 0 ? undefined : homeMapWaitWords(w.main.length), "hme-tray-card");
+  }
+
+  /** On the map: the room's pins as rows, a click picking one (a pin a
+   * thing holds picks its thing). */
+  onMapCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
+    const pins = homeMapPinsOfRoom(ctx.floor, room.id);
+    const states = this.states(ctx);
+    const picks = homeMapPickedPins(ctx.selection);
+    return hmeCard("On the map", html`<div class="hme-ly-list">
+      ${pins.length === 0 ? html`<p class="hme-empty-line">No devices yet.</p>` : pins.map((p) => {
+        const sel: HomeMapSelection = { kind: "pin", pinId: p.id };
+        const hover = ctx.hover?.kind === "pin" && sameHomeMapId(ctx.hover.pinId, p.id);
+        const picked = picks.some((x) => sameHomeMapId(x, p.id));
+        return html`<div class="hme-ly ${picked ? "on" : ""} ${hover ? "hov" : ""}"
+          @pointerenter=${() => ctx.setHover(sel)} @pointerleave=${() => ctx.setHover(undefined)}>
+          <button type="button" class="hme-ly-main" aria-pressed=${picked ? "true" : "false"} title="Pick it. Shift, Cmd or Ctrl and a click picks several."
+            @click=${(e: MouseEvent) => ctx.select(e.shiftKey || e.metaKey || e.ctrlKey ? homeMapTogglePick(ctx.selection, p.id) : sel)}>
+            <span class="hme-dot dev ${homeMapLightOn(p.entityId, states) || !isLight(p.entityId) ? "" : "off"}" aria-hidden="true"></span><span class="hme-ly-nm">${homeMapPinName(p, ctx.hass)}</span><span class="hme-ly-end">${homeMapStateText(p.entityId, states)}</span></button>
+        </div>`;
+      })}</div>`, String(pins.length), "hme-onmap");
+  }
+
   // ── the lamp chooser ───────────────────────────────────────────────────
 
   /** Add a light: the lamp chooser opens by the spot it goes to, `at`, else
@@ -383,13 +578,28 @@ export class DevicesMode {
     if (!this.canChoose(pick)) return;
     this.chooser = undefined;
     homeMapKeepLampChoice(pick);
+    this.lightIn(ctx, c.entityId, pick, c.at, c.roomId);
+  }
+
+  /** A light put on the map at `at` in a new lamp of `choice` in the room
+   * (alone as a bulb), as one edit, the lamp (or the bulb) picked. */
+  private lightIn(ctx: HomeMapEditorContext, entityId: string, choice: HomeMapLampChoice, at: HomePoint, roomId: string | undefined): boolean {
     const id = ctx.newId().toUpperCase();
     const floorId = ctx.floor.id;
-    const room = c.roomId === undefined ? undefined : ctx.doc.floors.find((f) => sameHomeMapId(f.id, floorId))?.rooms.find((r) => sameHomeMapId(r.id, c.roomId));
-    const name = this.friendly(ctx, c.entityId);
-    const select: HomeMapSelection = pick !== "bulb" && room !== undefined ? { kind: "object", roomId: room.id, object: room.objects.length } : { kind: "pin", pinId: id };
-    const ok = ctx.apply((d) => addLampLight(d, floorId, c.roomId, c.entityId, pick, c.at, id, name)?.doc, { select });
+    const room = roomId === undefined ? undefined : ctx.doc.floors.find((f) => sameHomeMapId(f.id, floorId))?.rooms.find((r) => sameHomeMapId(r.id, roomId));
+    const name = this.friendly(ctx, entityId);
+    const select: HomeMapSelection = choice !== "bulb" && room !== undefined ? { kind: "object", roomId: room.id, object: room.objects.length } : { kind: "pin", pinId: id };
+    const ok = ctx.apply((d) => addLampLight(d, floorId, roomId, entityId, choice, at, id, name)?.doc, { select });
     if (!ok) ctx.note("warn", "That light could not be put on the map: the map holds at most 400 devices, and a room at most 256 things.");
+    return ok;
+  }
+
+  /** A light put down with no chooser: in a lamp of the kind the lamp
+   * chooser last took (a ceiling lamp when it took none), alone as a bulb
+   * outside every room. The lamp's Light card changes it after. */
+  placeLight(ctx: HomeMapEditorContext, entityId: string, at: HomePoint): boolean {
+    const room = homeRoomUnder(ctx.floor, at);
+    return this.lightIn(ctx, entityId, room === undefined ? "bulb" : homeMapLampChoiceNow(), [at[0], at[1]], room?.id);
   }
 
   /** The chooser's keys: Enter takes the ringed choice, Escape cancels, the
@@ -540,8 +750,10 @@ export class DevicesMode {
   }
 
   /** A device dropped on the plan: on a thing that holds nothing it goes
-   * straight onto it (a light only into a lamp); else a light opens the lamp
-   * chooser there, and anything else is placed there. */
+   * straight onto it (a light only into a lamp); else a light goes in a lamp
+   * of the remembered kind there (`placeLight`), and anything else is placed
+   * there. Its room's tray stays in the side panel over the new pin's cards
+   * (`trayRoom`). */
   drop(ctx: HomeMapEditorContext, at: HomePoint, e: DragEvent): void {
     const entityId = this.dragging ?? e.dataTransfer?.getData(HOME_MAP_DEVICE_DRAG_TYPE) ?? "";
     this.dragging = undefined;
@@ -553,12 +765,9 @@ export class DevicesMode {
     }
     const light = isLight(entityId);
     const thing = this.emptyThingAt(ctx, at, light);
-    if (thing === undefined) {
-      if (light) this.addLight(ctx, entityId, at);
-      else this.place(ctx, entityId, at);
-      return;
-    }
-    this.putOn(ctx, thing, entityId);
+    const room = homeRoomUnder(ctx.floor, at);
+    const ok = thing !== undefined ? this.putOn(ctx, thing, entityId) : light ? this.placeLight(ctx, entityId, at) : this.place(ctx, entityId, at);
+    if (ok) this.trayRoom = thing?.roomId ?? room?.id;
   }
 
   /** A device put onto a thing that holds nothing, the thing picked: a new
@@ -892,6 +1101,8 @@ export class DevicesMode {
     this.pickPage = false;
     this.chooser = undefined;
     this.lampOver = undefined;
+    this.armed = undefined;
+    this.trayRoom = undefined;
   }
 
   /** The dock's View menu: the side view and every pin's name. */

@@ -41,7 +41,9 @@ import type { SVGTemplateResult, TemplateResult, nothing } from "lit";
 import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { HomeMapOp, HomeMapThingRef } from "./edit-ops.js";
+import type { HomeMapDeviceEntry } from "./devices-model.js";
 import type { HomeMapView } from "./editor-view.js";
+import type { HomeMapPageStep } from "./page-step.js";
 import type { HomeMapDocument, HomeMapFloor, HomeMapScans, HomePoint } from "./model.js";
 import { homeMapRoomAt, sameHomeMapId } from "./model.js";
 import { homeMapRoomWalls, homeMapThingOfPin } from "./edit-ops.js";
@@ -274,6 +276,12 @@ export interface HomeMapEditorContext {
   /** Open a library page in the page editor; absent where the panel gives
    * no way there. */
   readonly openPage?: ((pageId: string) => void) | undefined;
+  /** The home's devices (`homeMapDevices`), read once per draw; absent, a
+   * part reads them from `hass`. */
+  readonly devices?: readonly HomeMapDeviceEntry[] | undefined;
+  /** The checklist's On a page step: the library's pages and Add page for
+   * each device (`page-step.ts`); absent where the shell keeps none. */
+  readonly pageStep?: HomeMapPageStep | undefined;
 }
 
 /** A switch of the plan's View menu: Grid, Side view, Names, the scan. */
