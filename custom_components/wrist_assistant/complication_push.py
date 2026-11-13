@@ -56,6 +56,9 @@ _PUSH_CATEGORY = "wa_complications"
 _PUSH_DATA_KEY = "wa_complications"
 # Which token entry on a device is the phone's. A watch entry can hold both.
 _IOS_PLATFORM = "ios"
+# An Android phone's own token, sent through FCM by the relay. Its widgets
+# take the same data message and run the same pull.
+_ANDROID_PLATFORM = "android"
 
 
 class ComplicationPhonePush:
@@ -229,7 +232,7 @@ class ComplicationPhonePush:
                 sound=None,
                 push_type="background",
                 environment=entry.environment,
-                platform=_IOS_PLATFORM,
+                platform=entry.platform,
             )
         except Exception:
             _LOGGER.warning(
@@ -281,6 +284,11 @@ class ComplicationPhonePush:
         own = self._notification_store.get_entry(owner_id, _IOS_PLATFORM)
         if own is not None:
             return (owner_id, own)
+        # An Android phone files its token under its own id and never under a
+        # watch, so it has no leftovers to walk.
+        android = self._notification_store.get_entry(owner_id, _ANDROID_PLATFORM)
+        if android is not None:
+            return (owner_id, android)
         for watch_id, secret in self._widget_secret_store.all_entries.items():
             if secret.device_kind != DEVICE_KIND_WATCH:
                 continue

@@ -28,6 +28,14 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import WIDGET_SECRET_STORAGE_KEY, WIDGET_SECRET_STORAGE_VERSION
+from .device_platform import (
+    PlatformError,
+    default_device_name,
+    device_model,
+    parse_platform,
+    platform_fits_kind,
+    resolve_platform,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -205,6 +213,13 @@ class WidgetSecretEntry:
     the standard settings, nobody ever changed them. False: it runs its own.
     None: it has not said. Kept on disk only once said."""
 
+    platform: str | None = None
+    """The platform the app said it runs (`device_platform.py`): ``ios``,
+    ``watchos``, ``android`` or ``wearos``. None for every Apple app, which
+    never says, and for every entry from before this field; those read as the
+    kind's Apple default (`device_platform`). Kept on disk only once said. Not
+    secret material, so a `register()` that does not name one keeps it."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -237,6 +252,12 @@ class WidgetSecretEntry:
         if self.device_kind != DEVICE_KIND_WATCH:
             return False
         return self.old_link_setup or self.label != LABEL_WATCH_CODE_PAIR
+
+    @property
+    def device_platform(self) -> str:
+        """The platform this device runs: the one it reported when that fits
+        its kind, else the kind's Apple default (``ios`` or ``watchos``)."""
+        return resolve_platform(self.device_kind, self.platform)
 
 
 class WidgetSecretStore:
@@ -302,6 +323,9 @@ class WidgetSecretStore:
                         entry["standard_settings"]
                         if isinstance(entry.get("standard_settings"), bool)
                         else None
+                    ),
+                    platform=(
+                        entry["platform"] if isinstance(entry.get("platform"), str) else None
                     ),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
@@ -376,6 +400,9 @@ class WidgetSecretStore:
                         if entry.standard_settings is not None
                         else {}
                     ),
+                    # Only once said, so an Apple device's file is the one it
+                    # always was.
+                    **({"platform": entry.platform} if entry.platform is not None else {}),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -394,6 +421,7 @@ class WidgetSecretStore:
         device_name: str | None = None,
         screen_size: str | None = None,
         user_id: str | None = None,
+        platform: str | None = None,
     ) -> Literal["new", "rekey", "idempotent"]:
         """Register or replace a secret for a watch.
 
@@ -405,6 +433,11 @@ class WidgetSecretStore:
         the automatic re-provision after an upgrade binds every existing
         device silently.
 
+        `platform` is what the app said it runs (already checked against the
+        kind by the caller). None keeps what the entry held: an Apple app
+        never names one, and a re-provision from it must not wipe an Android
+        device's.
+
         Returns:
             "new"        — first time we've seen this watch_id (first pair).
             "rekey"      — existing watch_id, but secret material or identity
@@ -414,6 +447,8 @@ class WidgetSecretStore:
         """
         existing = self._secrets.get(watch_id)
         now = dt_util.utcnow()
+        if platform is None and existing is not None:
+            platform = existing.platform
 
         if (
             existing
@@ -425,6 +460,7 @@ class WidgetSecretStore:
             and existing.owner_iphone_id == owner_iphone_id
             and existing.device_name == device_name
             and existing.screen_size == screen_size
+            and existing.platform == platform
             and existing.user_id in (None, user_id)
         ):
             # Idempotent re-provision: secret material + identity unchanged.
@@ -480,6 +516,7 @@ class WidgetSecretStore:
             ),
             old_link_setup=existing is not None and existing.holds_old_setup,
             standard_settings=existing.standard_settings if existing is not None else None,
+            platform=platform,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -502,6 +539,7 @@ class WidgetSecretStore:
         device_name: str | None = None,
         screen_size: str | None = None,
         standard_settings: bool | None = None,
+        platform: object = None,
     ) -> bool:
         """Update diagnostic metadata on an existing entry without touching the
         secret material, algo, label, user or owner iPhone.
@@ -519,7 +557,10 @@ class WidgetSecretStore:
         None means "leave unchanged" (caller omitted the field), unlike
         `register()` which replaces the whole entry. ``standard_settings`` is
         the watch saying whether it runs only the standard settings; the panel
-        words a watch with no settings record by it. Returns False when the
+        words a watch with no settings record by it. ``platform`` is what the
+        app runs, as the op received it: one of the four that fits the entry's
+        kind is stored, anything else is ignored with a warning and the stored
+        one kept. Returns False when the
         watch_id has no entry — can only happen on a race with removal, since
         the op's HMAC validation already proved the entry existed.
         """
@@ -545,6 +586,19 @@ class WidgetSecretStore:
         app_build = _within_cap("app_build", app_build)
         device_name = _within_cap("device_name", device_name)
         screen_size = _within_cap("screen_size", screen_size)
+        try:
+            platform = parse_platform(platform)
+        except PlatformError:
+            _LOGGER.warning("Ignored an unknown platform for watch_id=%s", watch_id)
+            platform = None
+        if platform is not None and not platform_fits_kind(platform, entry.device_kind):
+            _LOGGER.warning(
+                "Ignored platform %s for watch_id=%s: it does not fit a %s",
+                platform,
+                watch_id,
+                entry.device_kind,
+            )
+            platform = None
 
         changed = False
         if app_version is not None and entry.app_version != app_version:
@@ -561,6 +615,9 @@ class WidgetSecretStore:
             changed = True
         if standard_settings is not None and entry.standard_settings != standard_settings:
             entry.standard_settings = standard_settings
+            changed = True
+        if platform is not None and entry.platform != platform:
+            entry.platform = platform
             changed = True
 
         # Refresh the provision timestamp either way — like `register()`'s
@@ -1186,14 +1243,13 @@ def build_device_info(
         parent_device_fields,
     )
 
-    short_id = watch_id[:8]
     entry = secret_store.get(watch_id)
-    if kind == DEVICE_KIND_IPHONE:
-        default_name = f"iPhone {short_id}"
-        model = "iPhone"
-    else:
-        default_name = f"Watch {short_id}"
-        model = "Apple Watch"
+    # The model and the short name follow the platform the app reported:
+    # "Apple Watch" and "Watch 1a2b3c4d" for an Apple app, which never says,
+    # "Wear OS watch" and "Android phone" for the Android apps.
+    platform = entry.platform if entry is not None else None
+    default_name = default_device_name(kind, platform, watch_id)
+    model = device_model(kind, platform)
     name: str | None = (
         entry.device_name if entry is not None and entry.device_name else default_name
     )

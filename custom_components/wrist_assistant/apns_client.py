@@ -7,6 +7,7 @@ import logging
 
 from aiohttp import ClientConnectorError, ClientError, ClientSession, ClientTimeout
 
+from .device_platform import is_fcm_platform
 from .notifications import NotificationTokenStore, TokenEntry, is_dead_token_reason
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,8 +56,12 @@ class APNsClient:
     ) -> tuple[bool, str | None, str]:
         """Send a push notification through the hosted relay.
 
-        ``platform`` selects which token entry (watchos / ios) on the watch_id
-        the relay_token cache is read from and written back to.
+        ``platform`` selects which token entry (watchos / ios, or the Android
+        apps' wearos / android) on the watch_id the relay_token cache is read
+        from and written back to. The relay token carries the platform it was
+        bound with (``/v1/register``), which is how the relay picks APNs or
+        FCM; an FCM send also names it in the body, so the relay never has to
+        guess. An Apple send's body is the one it always was.
 
         Returns (success, reason, used_environment).
         """
@@ -90,6 +95,8 @@ class APNsClient:
             "sound": sound,
             "push_type": push_type,
         }
+        if is_fcm_platform(entry.platform):
+            payload["platform"] = entry.platform
 
         result = await self._post_json("/v1/push/send", payload)
         if result is None:

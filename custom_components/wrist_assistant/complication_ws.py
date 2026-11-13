@@ -612,6 +612,10 @@ async def ws_owners(
             {
                 "owner_watch_id": device_id,
                 "device_kind": entry.device_kind,
+                # What the device runs: "ios" or "watchos" for an Apple app
+                # (which never says), "android" or "wearos" for the Android
+                # apps. The panel's words, previews and version gates read it.
+                "platform": entry.device_platform,
                 "device_name": registry_name(device_id) or entry.device_name,
                 "paired_iphone_name": paired_name,
                 "paired_iphone_id": paired_id or None,
@@ -701,6 +705,7 @@ async def ws_owners(
                 # the one that went missing, and a guess here would send the
                 # panel's shape list and gate down the wrong branch.
                 "device_kind": None,
+                "platform": None,
                 "device_name": None,
                 "paired_iphone_name": None,
                 "paired_iphone_id": None,
@@ -734,6 +739,7 @@ async def ws_owners(
         {
             "owner_watch_id": LIBRARY_OWNER_ID,
             "device_kind": DEVICE_KIND_LIBRARY,
+            "platform": None,
             "device_name": "Library",
             "paired_iphone_name": None,
             "paired_iphone_id": None,

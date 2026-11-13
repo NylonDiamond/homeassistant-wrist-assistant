@@ -51,6 +51,7 @@ def _library_row(count: int = 0, token: int = 0) -> dict:
     return {
         "owner_watch_id": LIBRARY,
         "device_kind": "library",
+        "platform": None,
         "device_name": "Library",
         "paired_iphone_name": None,
         "paired_iphone_id": None,
@@ -531,6 +532,8 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
     assert row == {
         "owner_watch_id": "watch-A",
         "device_kind": "watch",
+        # An Apple app never says its platform, so a watch reads as watchOS.
+        "platform": "watchos",
         "device_name": "Apple Watch",
         "paired_iphone_name": "Jesse's iPhone",
         # The same pairing by id, which is what the panel groups a household's
@@ -614,6 +617,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
         {
             "owner_watch_id": "phone-1",
             "device_kind": "iphone",
+            "platform": "ios",
             "device_name": "Jesse's iPhone",
             # A phone is nobody's paired phone, and it reports no screen size:
             # the lock screen slot sizes are not the panel's design box.

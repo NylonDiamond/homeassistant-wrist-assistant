@@ -10,7 +10,7 @@ force_resync:
 send_notification:
   name: Send notification
   description: >-
-    Send a notification to every paired watch, or to one watch or iPhone.
+    Send a notification to every paired watch, or to one watch or phone.
     For the easy way, with buttons and a camera snapshot picked from lists,
     make a script from the bundled Watch Notification blueprint (Settings,
     Automations & scenes, Blueprints). A device can get notifications after
@@ -32,7 +32,7 @@ send_notification:
     target:
       name: Target
       description: >-
-        Watch or iPhone to send to. Omit to send to all registered watches.
+        Watch or phone to send to. Omit to send to all registered watches.
       selector:
         device:
           filter:
@@ -40,6 +40,10 @@ send_notification:
               model: Apple Watch
             - integration: wrist_assistant
               model: iPhone
+            - integration: wrist_assistant
+              model: Wear OS watch
+            - integration: wrist_assistant
+              model: Android phone
     actions:
       name: Actions
       description: >-

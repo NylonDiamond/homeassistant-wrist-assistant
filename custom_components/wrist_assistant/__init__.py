@@ -579,6 +579,8 @@ async def _deliver_push(
         # A mirrored (iOS) push with no sound delivers to the wrist silently AND
         # without a haptic — the user never perceives it. Force at least the
         # default alert sound when the chosen token is the companion iPhone.
+        # Only there: an FCM push (android, wearos) is a data message the app
+        # draws itself, and it picks its own sound, so none is forced on it.
         # A silent background push never carries a sound: the relay would put
         # it beside content-available.
         target_sound = sound

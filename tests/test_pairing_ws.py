@@ -236,6 +236,8 @@ def test_lookup_finds_a_code_as_typed(env) -> None:
         "found": True,
         "watch_id": WATCH,
         "kind": "watch",
+        # The watch said no platform, so it reads as an Apple Watch.
+        "platform": "watchos",
         "device_name": "Test Watch",
         "screen_size": "208x248",
         "app_version": "3.0.1",
@@ -1121,6 +1123,7 @@ def test_offer_status_follows_the_offer(env) -> None:
         "device_name": "Chen's iPhone",
         "user_id": "chen",
         "device_id": PHONE,
+        "platform": "ios",
     }
     # A redeemed offer keeps no token.
     assert offer.token == b""
