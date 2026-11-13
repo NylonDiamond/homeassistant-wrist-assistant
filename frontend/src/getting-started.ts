@@ -8,12 +8,16 @@
 // The words live here too, beside the rule, so a test can read them without
 // drawing the sheet.
 
+import { gateVersion } from "./device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { deviceKindOf, setupMoveNeedsUpdate } from "./version.js";
 import { PAIR_CODE_LENGTH, noRecordStart, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 
 /** Wrist Assistant's App Store page, the one the README and the website link. */
 export const APP_STORE_URL = "https://apps.apple.com/us/app/wrist-assistant/id6759152098";
+/** Its Google Play page, for an Android phone and a Wear OS watch. Linked
+ * beside the App Store everywhere the panel offers the app. */
+export { PLAY_STORE_URL } from "./device-platform.js";
 export const SETUP_GUIDE_URL = "https://docs.wrist-assistant.com/getting-started/setup/";
 export const TROUBLESHOOTING_URL = "https://docs.wrist-assistant.com/getting-started/troubleshooting/";
 export const REPORT_PROBLEM_URL = "https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues";
@@ -74,7 +78,7 @@ export function gettingStarted(
   const watches = settingsWatches(owners);
   const page = pages !== undefined && watches.some((w) => pages.has(w.owner_watch_id));
   const pagesComing = watches.length > 0
-    && watches.every((w) => setupMoveNeedsUpdate(w.app_version) || noRecordStart(w) === "wait" || waitsForWatchSeed(w));
+    && watches.every((w) => setupMoveNeedsUpdate(gateVersion(w)) || noRecordStart(w) === "wait" || waitsForWatchSeed(w));
   const steps: GettingStartedStep[] = [
     { id: "app", done: devices.length > 0 },
     { id: "pair", done: watches.length > 0 },
@@ -118,6 +122,7 @@ export function doneWords(done: number): string {
 }
 
 export const OPEN_APP_STORE_LABEL = "Open the App Store";
+export const OPEN_PLAY_STORE_LABEL = "Open Google Play";
 export const PAIR_DEVICE_LABEL = "Pair a device";
 export const NEW_PAGE_LABEL = "New page";
 /** Beside the greyed New page until a watch is paired. */
@@ -127,7 +132,7 @@ export const PAIR_FIRST_TEXT = "Pair a watch first.";
 export function helpStepWords(id: StepId, gs: Pick<GettingStarted, "steps" | "watchNames">): { title: string; text: string } {
   const done = gs.steps.find((s) => s.id === id)?.done === true;
   if (id === "app") {
-    return { title: "Get the app", text: done ? "Wrist Assistant is on the App Store." : "Install it on the watch and/or on the iPhone." };
+    return { title: "Get the app", text: done ? "Wrist Assistant is on the App Store and Google Play." : "Install it on the watch and/or on the phone." };
   }
   if (id === "pair") {
     const names = gs.watchNames;

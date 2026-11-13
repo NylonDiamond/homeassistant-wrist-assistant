@@ -36,6 +36,7 @@
 // (`all-pages-hook.ts`). What can be worked out without the element is in
 // `all-pages-model.ts`.
 
+import { gateVersion } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
@@ -1581,7 +1582,7 @@ export class WaAllPages extends LitElement {
   /** The app version a device reported, which decides whether a picture of
    * its page draws One Look; undefined for none or a page on no device. */
   private appVersionOf(device: LinkDevice | undefined): string | null | undefined {
-    return device === undefined ? undefined : this.owners.find((o) => sameId(o.owner_watch_id, device.ownerId))?.app_version;
+    return device === undefined ? undefined : gateVersion(this.owners.find((o) => sameId(o.owner_watch_id, device.ownerId)));
   }
 
   /**

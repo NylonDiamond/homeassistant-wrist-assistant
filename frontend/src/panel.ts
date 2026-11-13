@@ -151,7 +151,8 @@ import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentio
 import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
 import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
-import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
+import { gateVersion, nounFor, platformNoun, platformOf } from "./device-platform.js";
+import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { HOME_PATH } from "./shell.js";
@@ -175,7 +176,7 @@ import {
   resolveInline,
   resolveControl,
 } from "./resolver.js";
-import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
+import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, REFERENCE_WEAR_CASE, caseForScreenSize, watchCasesFor, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, groundTapReach, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
 import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, deviceKindOfShapes, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, moveKindMatches, opensInControlView, supportedFamilies } from "./layouts.js";
 import {
@@ -1638,6 +1639,7 @@ export class WristAssistantPanel extends LitElement {
   /** The App Store page as a QR code, for the welcome's first step. Made
    * once, the first time the welcome shows. */
   @state() private appStoreQr?: QrPicture;
+  @state() private playStoreQr?: QrPicture;
 
   /** The device picked on Home, by owner id. Undefined, or a device that has
    * left, shows the one heard from last (`homePickOf`). */
@@ -7395,11 +7397,13 @@ export class WristAssistantPanel extends LitElement {
     // starts on the reference phone.
     const owner = this.owners.find((o) => o.owner_watch_id === ownerId);
     const phone = deviceKindOf(owner) === "iphone";
-    const cases: PreviewCase[] = phone ? PHONE_CASES : CASES;
+    // A Wear OS watch previews in the round cases, an Apple Watch in its own.
+    const wear = !phone && platformOf(owner) === "wearos";
+    const cases: PreviewCase[] = phone ? PHONE_CASES : watchCasesFor(platformOf(owner));
     const reported = phone ? phoneCaseForScreenSize(owner?.screen_size) : caseForScreenSize(owner?.screen_size);
-    if (reported) this.previewCase = reported.label;
+    if (reported && cases.some((c) => c.label === reported.label)) this.previewCase = reported.label;
     else if (!cases.some((c) => c.label === this.previewCase)) {
-      this.previewCase = (phone ? REFERENCE_PHONE : REFERENCE_CASE).label;
+      this.previewCase = (phone ? REFERENCE_PHONE : wear ? REFERENCE_WEAR_CASE : REFERENCE_CASE).label;
     }
     this.clearDraft();
     // The previous device's list must not stand in for this one's while the
@@ -8228,7 +8232,7 @@ export class WristAssistantPanel extends LitElement {
       pages: this.pages,
       httpActions: this.httpLibrary?.actions,
       documents: this.documentList(),
-      watchAppVersion: this.selectedOwner?.app_version,
+      watchAppVersion: gateVersion(this.selectedOwner),
       deviceKind: deviceKindOf(this.selectedOwner),
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
@@ -11872,9 +11876,9 @@ export class WristAssistantPanel extends LitElement {
     if (phone === undefined || screen === undefined) {
       return html`<div class="wa-ip-empty">
         <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
-        <h2>No iPhone yet</h2>
-        <p>Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the iPhone, then scan the QR code or type its code here.</p>
-        <button type="button" class="home-btn add" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair an iPhone</span></button>
+        <h2>No phone yet</h2>
+        <p>Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the phone, then scan the QR code or type its code here.</p>
+        <button type="button" class="home-btn add" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a phone</span></button>
       </div>`;
     }
     return this.renderWatchScreen(screen.id, phone);
@@ -15624,7 +15628,7 @@ export class WristAssistantPanel extends LitElement {
       families: familiesFor(owner),
       comingSoon: comingSoonFamilies(owner),
       controls: ownerSupportsControls(owner),
-      appVersion: owner.app_version,
+      appVersion: gateVersion(owner),
     };
   }
 
@@ -20645,7 +20649,7 @@ export class WristAssistantPanel extends LitElement {
     // says so and offers Try again, never the Pair a device card.
     const failed = this.loadFailedEmpty && devices.length === 0;
     const error = this.loadError && !failed ? html`<div class="card error" title=${errTitle(this.loadError) ?? nothing}>${this.loadError}</div>` : nothing;
-    const lead = html`<p class="home-lead">Every watch and iPhone, who it belongs to, and whether it has your latest changes.</p>`;
+    const lead = html`<p class="home-lead">Every watch and phone, who it belongs to, and whether it has your latest changes.</p>`;
     const scope = this.hass?.user?.is_admin === false ? html`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>` : nothing;
     const pair = this.pairOpen ? this.renderPairDialog() : nothing;
     if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;
@@ -20665,7 +20669,7 @@ export class WristAssistantPanel extends LitElement {
         <aside class="hb-side" aria-label="Devices">
           <div class="hb-head">
             <div class="hb-head-top"><h1>Devices</h1>
-              <button type="button" class="home-btn" aria-label="Pair a device" title="Pair a watch with a code, an iPhone with a QR code" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair</span></button>
+              <button type="button" class="home-btn" aria-label="Pair a device" title="Pair a watch with a code, a phone with a QR code" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair</span></button>
             </div>
             ${lead}${scope}
           </div>
@@ -20699,6 +20703,9 @@ export class WristAssistantPanel extends LitElement {
       this.welcomePair.pick("watch", { focus: false });
       if (this.appStoreQr === undefined) {
         void qrPicture(APP_STORE_URL).then((picture) => { this.appStoreQr = picture; }).catch(() => undefined);
+      }
+      if (this.playStoreQr === undefined) {
+        void qrPicture(PLAY_STORE_URL).then((picture) => { this.playStoreQr = picture; }).catch(() => undefined);
       }
       this.requestUpdate();
     } else if (!shows) {
@@ -20737,6 +20744,7 @@ export class WristAssistantPanel extends LitElement {
         </button>`;
     };
     const qr = this.appStoreQr;
+    const playQr = this.playStoreQr;
     const step = (n: number, title: string, line: string, body: TemplateResult) => html`<li class="hw-step">
         <span class="hw-rail" aria-hidden="true"><span class="hw-num">${n}</span><span class="hw-line"></span></span>
         <div class="hw-body">
@@ -20750,27 +20758,34 @@ export class WristAssistantPanel extends LitElement {
           <a class="home-btn" href=${SETUP_GUIDE_URL} target="_blank" rel="noreferrer">Setup guide</a>
         </div>
         <ol class="hw-steps">
-          ${step(1, "Install the app", "On the iPhone, the watch, or both.", html`<div class="hw-install">
+          ${step(1, "Install the app", "On the phone, the watch, or both.", html`<div class="hw-install">
               <div class="hw-install-t">
                 <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for Wrist Assistant.</p>
+                <p>On Android, install it from Google Play on the phone. A Wear OS watch gets it from Google Play on the watch.</p>
                 <a class="home-btn" href=${APP_STORE_URL} target="_blank" rel="noreferrer">Open the App Store${uiIcon("right")}</a>
+                <a class="home-btn hw-play" href=${PLAY_STORE_URL} target="_blank" rel="noreferrer">Open Google Play${uiIcon("right")}</a>
               </div>
               <figure class="hw-qr">
                 ${qr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
                   : html`<svg viewBox=${`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for the App Store page" shape-rendering="crispEdges"><rect width=${qr.size} height=${qr.size} fill="#fff"></rect><path d=${qr.path} fill="#000"></path></svg>`}
                 <figcaption><b>Scan with your iPhone</b><span>It opens the App Store page.</span></figcaption>
               </figure>
+              <figure class="hw-qr">
+                ${playQr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
+                  : html`<svg viewBox=${`0 0 ${playQr.size} ${playQr.size}`} role="img" aria-label="QR code for the Google Play page" shape-rendering="crispEdges"><rect width=${playQr.size} height=${playQr.size} fill="#fff"></rect><path d=${playQr.path} fill="#000"></path></svg>`}
+                <figcaption><b>Scan with your Android phone</b><span>It opens the Google Play page.</span></figcaption>
+              </figure>
             </div>`)}
           ${step(2, "Pick one", "Which device are you pairing now? You can pair the other one later.", html`<div class="hb-stage hw-stage">
               <span class="hb-floor"></span>
               <div class="hw-choices" role="group" aria-label="Pick one">
-                ${choice("watch", "Apple Watch", "Pairs with a code")}
-                ${choice("iphone", "iPhone", "Pairs with a QR code")}
+                ${choice("watch", "Watch", "Pairs with a code")}
+                ${choice("iphone", "Phone", "Pairs with a QR code")}
               </div>
             </div>`)}
-          ${step(3, picked === "iphone" ? "Pair your iPhone" : "Pair your watch",
-            picked === "iphone" ? "Scan the code with the iPhone's Camera." : "The watch shows a code. Type it here.",
-            html`<section class="hw-pair" aria-label=${picked === "iphone" ? "Pair your iPhone" : "Pair your watch"}>
+          ${step(3, picked === "iphone" ? "Pair your phone" : "Pair your watch",
+            picked === "iphone" ? "Scan the code with the phone's camera." : "The watch shows a code. Type it here.",
+            html`<section class="hw-pair" aria-label=${picked === "iphone" ? "Pair your phone" : "Pair your watch"}>
               ${card.render({ bare: true })}
               <div class="hw-pair-foot">
                 <span>Stuck? <a href=${TROUBLESHOOTING_URL} target="_blank" rel="noreferrer">Something is not working</a></span>
@@ -20946,7 +20961,7 @@ export class WristAssistantPanel extends LitElement {
    * box's button, open that tab's board focused on this device. */
   private renderHomeLineup(row: HomeDeviceRow) {
     const ownerId = row.id;
-    const word = row.kind === "watch" ? "watch" : "iPhone";
+    const word = nounFor(row.kind, platformOf(this.ownerOf(ownerId) ?? { device_kind: row.kind }));
     const listOf = (kind: "pages" | "status_pages" | "menus") => kind === "menus" ? ALL_MENUS_PATH : kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
     // An iPhone app too old for pages of its own: say so, as the iPhone app
     // tab does, rather than offer pages it cannot show.
@@ -20955,7 +20970,7 @@ export class WristAssistantPanel extends LitElement {
       : row.kind === "watch" || this.phonePages ? renderHomeLineup({
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
-      appVersion: this.ownerOf(ownerId)?.app_version,
+      appVersion: gateVersion(this.ownerOf(ownerId)),
       phoneMoves: phoneMovesOf(this.ownerOf(ownerId)),
       seedWaits: waitsForWatchSeed(this.ownerOf(ownerId)),
       seedMayLand: seedMayLand(this.ownerOf(ownerId)),
@@ -20977,7 +20992,7 @@ export class WristAssistantPanel extends LitElement {
    * box, open the Complications board focused on it. */
   private homeCompGroup(row: HomeDeviceRow): LineupGroup {
     const ownerId = row.id;
-    const word = row.kind === "watch" ? "watch" : "iPhone";
+    const word = nounFor(row.kind, platformOf(this.ownerOf(ownerId) ?? { device_kind: row.kind }));
     const on = rowsOnDevice(this.pickerRows(), ownerId)
       .map((r) => ({ row: r, copy: r.copies.find((c) => c.ownerId === ownerId)! }))
       .sort((a, b) => a.copy.slot - b.copy.slot);
@@ -21431,6 +21446,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${this.deviceForgetAsk || gone ? nothing : renderDeviceOwnRow({
         route: this.route, ownerId, kind: row.kind, phones: this.phonePages,
+        platform: platformOf(this.ownerOf(ownerId) ?? { device_kind: row.kind }),
         titleOf: (screen) => ownScreenBlurb(screen.id, row.kind),
         onGo: (path) => { this.pickWatch(ownerId); this.goTo(path); },
         unsaved: own === undefined ? [] : this.unsavedNow,
@@ -23017,7 +23033,7 @@ export class WristAssistantPanel extends LitElement {
    * watch, which is what `referenceCase` says below. */
   private get previewCases(): PreviewCase[] {
     if (isLibraryOwner(this.selectedOwner)) return [...CASES, ...PHONE_CASES];
-    return deviceKindOf(this.selectedOwner) === "iphone" ? PHONE_CASES : CASES;
+    return deviceKindOf(this.selectedOwner) === "iphone" ? PHONE_CASES : watchCasesFor(platformOf(this.selectedOwner));
   }
 
   /** The measured device of the owner's kind: the 46 mm watch, or the iPhone
@@ -23025,7 +23041,8 @@ export class WristAssistantPanel extends LitElement {
    * list and the big preview agree about proportions. The Library takes the
    * watch, the device these designs are mostly built for. */
   private get referenceCase(): PreviewCase {
-    return deviceKindOf(this.selectedOwner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
+    if (deviceKindOf(this.selectedOwner) === "iphone") return REFERENCE_PHONE;
+    return platformOf(this.selectedOwner) === "wearos" ? REFERENCE_WEAR_CASE : REFERENCE_CASE;
   }
 
   private currentCase(): PreviewCase {
@@ -23477,7 +23494,11 @@ export function ownerLabel(o: OwnerSummary): string {
   // rows are not worth a migration for it.
   if (isLibraryOwner(o)) return UNASSIGNED_LABEL;
   const name = o.device_name ?? o.owner_watch_id;
-  if (deviceKindOf(o) === "iphone") return /iphone/i.test(name) ? name : `${name} (iPhone)`;
+  if (deviceKindOf(o) === "iphone") {
+    // An Android phone reads as one ("Pixel 9 (phone)"); an iPhone as before.
+    const noun = platformNoun(platformOf(o));
+    return new RegExp(noun, "i").test(name) ? name : `${name} (${noun})`;
+  }
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
 }
 
@@ -23531,7 +23552,10 @@ export function ownerLines(o: OwnerSummary): { name: string; note?: string } {
   // A watch id no device answers for any more outranks both: it says why the
   // complications under it cannot be sent anywhere.
   if (o.is_orphan) return { name, note: "no longer registered" };
-  if (deviceKindOf(o) === "iphone") return { name, note: /iphone/i.test(name) ? undefined : "iPhone" };
+  if (deviceKindOf(o) === "iphone") {
+    const noun = platformNoun(platformOf(o));
+    return { name, note: new RegExp(noun, "i").test(name) ? undefined : noun };
+  }
   return { name, note: o.paired_iphone_name ? `paired with ${o.paired_iphone_name}` : undefined };
 }
 
@@ -23552,7 +23576,10 @@ export function ownerGroups(owners: readonly OwnerSummary[]): { label: string; o
   const library = owners.filter((o) => isLibraryOwner(o));
   const groups: { label: string; owners: OwnerSummary[] }[] = [];
   if (watches.length > 0) groups.push({ label: watches.length === 1 ? "Watch" : "Watches", owners: watches });
-  if (phones.length > 0) groups.push({ label: phones.length === 1 ? "iPhone" : "iPhones", owners: phones });
+  // Named for the make when every phone is an iPhone, as it always was; a
+  // home with an Android phone among them says phones.
+  const allIphones = phones.every((o) => platformOf(o) === "ios");
+  if (phones.length > 0) groups.push({ label: allIphones ? (phones.length === 1 ? "iPhone" : "iPhones") : (phones.length === 1 ? "Phone" : "Phones"), owners: phones });
   if (library.length > 0) groups.push({ label: UNASSIGNED_LABEL, owners: library });
   return groups;
 }

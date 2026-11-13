@@ -34,6 +34,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { deviceColor, deviceColors } from "./device-colors.js";
+import { type DevicePlatform, nounFor, platformOf } from "./device-platform.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
 import { HOME_LIBRARY_TITLE, homeLibraryScreens } from "./home.js";
@@ -156,6 +157,8 @@ export interface DeviceOwnRowInput {
   unsaved?: readonly WatchScreen[];
   /** At the row's right end: the screen on show's own save controls. */
   end?: unknown;
+  /** What the device runs, for its noun ("iPhone", "phone", "watch"). */
+  platform?: DevicePlatform | null;
 }
 
 /**
@@ -168,7 +171,7 @@ export function renderDeviceOwnRow(input: DeviceOwnRowInput): TemplateResult | t
   const links = input.kind === "iphone" && !input.phones ? [] : watchRowLinks(input.route, input.ownerId, input.kind);
   if (links.length === 0) return nothing;
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
-  const word = input.kind === "iphone" ? "iPhone" : "watch";
+  const word = nounFor(input.kind, input.platform);
   const overview = !links.some((l) => l.on);
   const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
   const go = (path: string, on: boolean) => (e: MouseEvent) => {
@@ -259,7 +262,7 @@ export function watchRowSlot(loaded: boolean, watches: number): WatchRowSlot {
 /** Beside the pairing button in a home with no watch. */
 export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set up its pages, menus and the rest.";
 /** Beside the pairing button in a home with no iPhone. */
-export const IPHONE_ROW_NONE_NOTE = "No iPhone has connected yet. Pair one to set up its pages, menus and the rest.";
+export const IPHONE_ROW_NONE_NOTE = "No phone has connected yet. Pair one to set up its pages, menus and the rest.";
 /** Beside the pairing button in a home whose iPhones all run an app too old
  * for pages of their own (`hasPhoneAwaitingUpdate`). */
 export const IPHONE_ROW_UPDATE_NOTE = `Needs Wrist Assistant ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later on your iPhone to set up its pages, menus and the rest.`;
@@ -304,9 +307,9 @@ export interface WatchRowInput {
 }
 
 /** The Settings link's hover text, for the device on show. */
-export function watchRowSettingsTitle(kind: WatchRowChoice["kind"] | undefined): string {
+export function watchRowSettingsTitle(kind: WatchRowChoice["kind"] | undefined, platform?: DevicePlatform | null): string {
   return kind === "iphone"
-    ? "How the iPhone app behaves: gestures, pages and cameras"
+    ? `How the ${nounFor("iphone", platform)} app behaves: gestures, pages and cameras`
     : "How the watch behaves: gestures, pages, cameras and connection";
 }
 
@@ -365,7 +368,7 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
     : slot === "none" ? (kind === "iphone" ? [] : [watchRowSettingsLink(input.route, input.watch, kind)])
       : watchRowLinks(input.route, input.watch, kind);
   const board = !shared && (slot === "one" || slot === "many") ? watchRowBoardPath(input.watch) : undefined;
-  const word = kind === "iphone" ? "iPhone" : "watch";
+  const word = nounFor(kind, platformOf(input.owners.find((o) => o.owner_watch_id === input.watch) ?? { device_kind: kind }));
   const link = (l: WatchRowLink) => {
     const look = WATCH_SCREEN_LOOK[l.screen.id];
     const tip = watchRowLinkTitle(l.screen) === undefined ? undefined : `wa-wr-tip-${l.screen.id}`;
@@ -553,8 +556,8 @@ function chipWords(input: WatchRowInput, c: WatchRowChoice) {
  * pairs; for an iPhone, the panel's Pair a device. */
 function renderPairButton(input: WatchRowInput, kind: RowKind): TemplateResult {
   if (kind === "iphone") {
-    return html`<button type="button" class="wa-wr-pair" title="Pair an iPhone, by a QR code or a code"
-      @click=${() => input.onPair?.()}>${uiIcon("phone")}<span>Pair an iPhone</span></button>`;
+    return html`<button type="button" class="wa-wr-pair" title="Pair a phone, by a QR code or a code"
+      @click=${() => input.onPair?.()}>${uiIcon("phone")}<span>Pair a phone</span></button>`;
   }
   const settings = watchRowSettingsLink(input.route, undefined);
   return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
@@ -567,8 +570,9 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
   }
   if (slot === "none") return renderPairButton(input, kind);
   const current = choices.find((c) => c.on) ?? choices.find((c) => c.kind === kind)!;
+  const currentNoun = nounFor(kind, platformOf(input.owners.find((o) => o.owner_watch_id === current.id) ?? { device_kind: kind }));
   if (slot === "one") {
-    return html`<span class="wa-wr-watch" title=${kind === "iphone" ? "The iPhone you are setting up" : "The watch you are setting up"}>${chipArt(input, current.id, kind)}${chipWords(input, current)}</span>`;
+    return html`<span class="wa-wr-watch" title=${`The ${currentNoun} you are setting up`}>${chipArt(input, current.id, kind)}${chipWords(input, current)}</span>`;
   }
   const open = input.menuOpen;
   const colors = deviceColors(input.owners);
@@ -591,13 +595,13 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
   const group = (k: RowKind) => {
     const of = choices.filter((c) => c.kind === k);
     if (of.length === 0) return nothing;
-    return html`${both ? html`<div class="wa-wr-menu-sub">${k === "iphone" ? "iPhones" : "Watches"}</div>` : nothing}${of.map(row)}`;
+    return html`${both ? html`<div class="wa-wr-menu-sub">${k === "iphone" ? "Phones" : "Watches"}</div>` : nothing}${of.map(row)}`;
   };
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
       if (e.key === "Escape" && open) { e.stopPropagation(); input.onMenu(false); }
     }}>
     <button type="button" class="wa-wr-open" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-      title="Pick the device to set up" aria-label=${`${kind === "iphone" ? "iPhone" : "Watch"}: ${current.name}. Pick another device`}
+      title="Pick the device to set up" aria-label=${`${currentNoun === "iPhone" ? currentNoun : currentNoun[0]!.toUpperCase() + currentNoun.slice(1)}: ${current.name}. Pick another device`}
       @click=${() => input.onMenu(!open)}>
       ${chipArt(input, current.id, kind)}${chipWords(input, current)}${uiIcon("chevron")}
     </button>

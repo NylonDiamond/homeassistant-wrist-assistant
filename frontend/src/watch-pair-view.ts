@@ -42,6 +42,7 @@ import {
   offerPairQr,
   pairOfferStatus,
 } from "./ha-api.js";
+import { nounFor } from "./device-platform.js";
 import { SECTION_COLOR } from "./kinds.js";
 import {
   OLD_APP_PAIR_NOTE,
@@ -740,7 +741,7 @@ export class PairWatchCard {
     const admin = mayPairForOthers(this.hass?.user);
     const lines = pairFoundLines(found);
     const request = pairRequestLine(found);
-    const device = html`<h3 class="ws-pair-title">${pairFoundTitle(kind)}</h3>
+    const device = html`<h3 class="ws-pair-title">${pairFoundTitle(kind, found.platform)}</h3>
       <div class="ws-pair-found">
         <span class="ws-pair-found-art" aria-hidden="true">${uiIcon(kind === "iphone" ? "phone" : "watch")}</span>
         <div class="ws-pair-found-t">
@@ -762,14 +763,14 @@ export class PairWatchCard {
     const why = !pairPersonPicked(p.users, p.userId)
       ? "Choose a person first"
       : !ready ? "Tick the boxes above first"
-      : kind === "iphone" ? "Give this iPhone its key, so it can read from Home Assistant"
-      : "Give this watch its key, so it can read from Home Assistant without an iPhone";
+      : kind === "iphone" ? `Give this ${nounFor(kind, found.platform)} its key, so it can read from Home Assistant`
+      : "Give this watch its key, so it can read from Home Assistant without a phone";
     const box = (key: keyof PairChecks, label: string, cls: string) => html`<label class="field check ${cls}"><span>${label}</span>
         <input type="checkbox" .checked=${live(ticked[key])} ?disabled=${busy}
           @change=${(e: Event) => this.tickPair(key, (e.target as HTMLInputElement).checked)} /></label>`;
     return html`${device}
       ${pairLookupWarnings(found).map((line) => html`<div class="hint warn">${line}</div>`)}
-      ${this.renderUserMenu(p.users, p.userId, kind, busy, (id) => this.pickPairUser(id))}
+      ${this.renderUserMenu(p.users, p.userId, kind, busy, (id) => this.pickPairUser(id), found.platform)}
       ${needed.replace ? box("replace", PAIR_REPLACE_LABEL, "ws-pair-replace") : nothing}
       ${needed.remote ? box("remote", pairExpectLabel(kind), "ws-pair-expect") : nothing}
       ${p.error ? html`<div class="hint err" role="alert">${p.error}</div>` : nothing}
@@ -777,7 +778,7 @@ export class PairWatchCard {
         ${notThis}
         <span class="ws-pair-gap"></span>
         <button class="small ws-go ws-pair-go" ?disabled=${busy || !ready} title=${why}
-          @click=${() => void this.confirmPair()}>${p.busy === "confirm" ? "Pairing…" : pairGoLabel(kind)}</button>
+          @click=${() => void this.confirmPair()}>${p.busy === "confirm" ? "Pairing…" : pairGoLabel(kind, found.platform)}</button>
       </div>`;
   }
 
@@ -795,7 +796,7 @@ export class PairWatchCard {
     const picked = pairPersonPicked(o.users, o.userId);
     const why = !o.usersRead ? "Reading the people in Home Assistant…"
       : !picked ? "Choose a person first"
-      : "Make a QR code the iPhone can scan to pair";
+      : "Make a QR code the phone can scan to pair";
     const left = open === undefined ? 0 : Math.max(0, open.expiresAt - Date.now());
     const share = open?.lasts ? Math.min(1, left / open.lasts) : 1;
     const toCode = html`<button type="button" class="ghost ws-pair-switch" ?disabled=${this.busy}
@@ -805,11 +806,11 @@ export class PairWatchCard {
         <div class="ws-qr-well ${open === undefined ? "empty" : ""}">
           ${open === undefined
             ? html`<span class="ws-qr-ghost" aria-hidden="true">${uiIcon("qr")}</span>
-                <span class="ws-qr-msg">${o.expired ? "This code ran out." : !o.usersRead ? "Getting ready…" : !picked ? "Choose whose iPhone it is." : busy ? "Making a code…" : "No code showing."}</span>
+                <span class="ws-qr-msg">${o.expired ? "This code ran out." : !o.usersRead ? "Getting ready…" : !picked ? "Choose whose phone it is." : busy ? "Making a code…" : "No code showing."}</span>
                 <button class="small ws-go ws-qr-show" ?disabled=${busy || !o.usersRead || !picked} title=${why}
                   @click=${() => void this.showOffer()}>${busy ? "Making…" : PAIR_SHOW_QR_TEXT}</button>`
             : html`<div class="ws-qr">
-                  <svg viewBox=${`0 0 ${open.picture.size} ${open.picture.size}`} role="img" aria-label="QR code for pairing an iPhone"
+                  <svg viewBox=${`0 0 ${open.picture.size} ${open.picture.size}`} role="img" aria-label="QR code for pairing a phone"
                     shape-rendering="crispEdges"><rect width=${open.picture.size} height=${open.picture.size} fill="#fff"></rect><path d=${open.picture.path} fill="#000"></path></svg>
                 </div>
                 <span class="ws-qr-time" aria-hidden="true"><i style=${`width:${(share * 100).toFixed(1)}%`}></i></span>
@@ -826,7 +827,7 @@ export class PairWatchCard {
             : html`<button type="button" class="link ws-qr-more" aria-expanded="false"
                 @click=${() => { this.qrMore = true; this.update(); }}>${PAIR_MORE_TEXT}${uiIcon("chevron")}</button>`}
           ${open === undefined || !pairOnIPhone(globalThis.navigator?.userAgent) ? nothing
-            : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the iPhone itself">${PAIR_OPEN_APP_TEXT}${uiIcon("right")}</a>`}
+            : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the phone itself">${PAIR_OPEN_APP_TEXT}${uiIcon("right")}</a>`}
         </div>
       </div>
       ${o.expired ? html`<div class="hint warn" role="status">${PAIR_QR_EXPIRED_TEXT}</div>` : nothing}
@@ -840,7 +841,8 @@ export class PairWatchCard {
    * picked; the steps on the iPhone follow, faint until then, since no code
    * shows before it. Otherwise the steps on the iPhone alone. */
   private renderQrSteps(o: OfferState, picked: boolean) {
-    const menu = this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id));
+    // A QR code is for any phone, an iPhone or an Android one.
+    const menu = this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id), "any");
     if (menu === nothing) return this.steps(PAIR_QR_STEPS);
     return html`<ol class="ws-pair-steps">
         <li class="ws-qr-who ${picked ? "" : "next"}"><b aria-hidden="true">1</b><div class="ws-qr-who-menu">${menu}</div></li>
@@ -859,16 +861,17 @@ export class PairWatchCard {
     kind: PairDeviceKind,
     disabled: boolean,
     pick: (id: string) => void,
+    platform?: string | null,
   ) {
     if (users === undefined || users.length < 2) return nothing;
     const picked = userId !== undefined && users.some((u) => u.id === userId) ? userId : undefined;
-    return html`<label class="field ws-pair-user"><span>${pairUserTitle(kind)}</span>
+    return html`<label class="field ws-pair-user"><span>${pairUserTitle(kind, platform)}</span>
         <select .value=${live(picked ?? "")} ?disabled=${disabled}
           @change=${(e: Event) => pick((e.target as HTMLSelectElement).value)}>
           ${picked === undefined ? html`<option value="" disabled selected>${PAIR_USER_PLACEHOLDER}</option>` : nothing}
           ${users.map((u) => html`<option value=${u.id} ?selected=${u.id === picked}>${u.label}</option>`)}
         </select></label>
-      <div class="hint keep">${pairUserHint(kind)}</div>`;
+      <div class="hint keep">${pairUserHint(kind, platform)}</div>`;
   }
 
   /** Under the device's box: a warning when it asked from an address

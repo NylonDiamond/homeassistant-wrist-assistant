@@ -155,7 +155,7 @@ describe("the words", () => {
     const two = gettingStarted([owner(), owner({ owner_watch_id: "w2", device_name: "Other" })], new Set());
     expect(helpStepWords("pair", two).text).toBe("2 watches are paired.");
     expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Type the code the watch shows.");
-    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store.");
+    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store and Google Play.");
   });
 });
 

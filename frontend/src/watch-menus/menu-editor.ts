@@ -96,7 +96,7 @@ import { type WatchHttpLibrary, readWatchHttpLibrary, watchCatalogWithHttpLibrar
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
-  PHONE_SIZE_TEXT,
+  phoneSizeText,
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
   phoneFrameStyles,
@@ -968,7 +968,7 @@ export class WaMenuEditor extends LitElement {
   private phoneLayout(): PhonePagesLayout | undefined {
     if (this.device !== "iphone") return undefined;
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size));
+    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform));
   }
 
   private viewHost(): MenusViewHost | undefined {
@@ -1418,7 +1418,7 @@ export class WaMenuEditor extends LitElement {
         ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
           <span class="cv-watch">${watchName(owner, watches)}</span></span>` : nothing}
         <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
-          <span class="cv-shape" title=${host.phone !== undefined ? PHONE_SIZE_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
+          <span class="cv-shape" title=${host.phone !== undefined ? phoneSizeText(host.phone.model) : found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
         <span class="cv-acts">
           <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
             @click=${() => this.undo()}>${uiIcon("undo")}</button>

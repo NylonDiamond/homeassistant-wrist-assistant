@@ -44,6 +44,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md, and
 // docs/one_library_plan_2026-10.md, step 3.
 
+import { gateVersion, platformOf } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
@@ -294,7 +295,9 @@ import { WATCH_BEZEL_RATIO, WATCH_CROWN_RATIO, WATCH_RIM_RATIO, watchFrameStyles
 import {
   PHONE_BEZEL_RATIO,
   PHONE_RIM_RATIO,
+  ANDROID_PHONE_SIZE_TEXT,
   PHONE_SIZE_TEXT,
+  isAndroidPhoneModel,
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
   phoneFrameStyles,
@@ -726,6 +729,8 @@ const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
 /** What the iPhone's picture is: its pages screen, at the size every
  * iPhone is drawn at, since the phone does not report its screen. */
 export const PHONE_FRAME_TEXT = `The iPhone's pages screen. ${PHONE_SIZE_TEXT}`;
+/** The same for an Android phone's pages screen. */
+export const ANDROID_PHONE_FRAME_TEXT = `The phone's pages screen. ${ANDROID_PHONE_SIZE_TEXT}`;
 
 /** An empty page's line, beside its Add a tile button. */
 const NO_TILES_TEXT = "No tiles yet.";
@@ -2060,6 +2065,7 @@ export class WaPageEditor extends LitElement {
       icons: this.memoIcons(),
       symbols: this.symbols,
       device: this.linkKind,
+      platform: platformOf(this.ownerList.find((o) => o.owner_watch_id === this.watchId) ?? { device_kind: this.linkKind }),
       pageId,
       uiState: this.uiState,
       // A refused edit (`busy`) changes nothing, as a drag during a save
@@ -3585,8 +3591,9 @@ export class WaPageEditor extends LitElement {
     const facts = smartStageFacts(page, this.previewStates())
       ?? [plural(watchPageTiles(page).length, "tile", "tiles"), plural(watchPageExtent(page), "row", "rows")];
     facts.push(phoneLayout === undefined ? watchCase.label : phoneLayout.model.label);
-    if (isHiddenWatchPage(page)) facts.push(phone ? "hidden on the iPhone" : "hidden on the watch");
-    const title = phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ");
+    const androidPhone = phoneLayout !== undefined && isAndroidPhoneModel(phoneLayout.model);
+    if (isHiddenWatchPage(page)) facts.push(phone ? (androidPhone ? "hidden on the phone" : "hidden on the iPhone") : "hidden on the watch");
+    const title = phone ? (androidPhone ? ANDROID_PHONE_FRAME_TEXT : PHONE_FRAME_TEXT) : found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ");
     return { ...(owner === undefined ? {} : { device: watchName(owner, this.watches) }), facts, title };
   }
 
@@ -3843,7 +3850,7 @@ export class WaPageEditor extends LitElement {
   /** The app version the preview device reported, which decides whether
    * its tiles draw One Look (`previewOneLook`). */
   private previewAppVersion(owner: OwnerSummary | undefined): string | null | undefined {
-    return (owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId))?.app_version;
+    return gateVersion(owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId));
   }
 
   /**
@@ -3862,7 +3869,7 @@ export class WaPageEditor extends LitElement {
     const ref = this.libraryItem;
     const owners = ref === undefined ? undefined : libraryOwners(this.lib.library, ref);
     if (owners === undefined) return this.previewAppVersion(this.pictureOwnerOf(screen));
-    const versionOf = (ownerId: string) => this.ownerList.find((o) => sameId(o.owner_watch_id, ownerId))?.app_version;
+    const versionOf = (ownerId: string) => gateVersion(this.ownerList.find((o) => sameId(o.owner_watch_id, ownerId)));
     const ofKind = this.linkDevices.filter((d) => d.kind === screen);
     const showing = ofKind.filter((d) => owners.some((o) => sameId(o, d.ownerId)));
     if (showing.length > 0) return newestAppVersion(showing.map((d) => versionOf(d.ownerId)));
@@ -3882,7 +3889,7 @@ export class WaPageEditor extends LitElement {
     const document = this.draft?.document;
     const visible = document === undefined ? 0
       : watchPagesOf(this.contextPages(document)).filter((p) => p.isHidden !== true && p.isSystemPage !== true).length;
-    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size), {
+    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size, shown?.platform), {
       look: phonePageLookOf(this.behavior),
       // Before a draft, the phone's own defaults.
       ...(document === undefined ? {} : { dots: phonePagesDotsOf(this.behavior, visible) }),
@@ -4097,7 +4104,7 @@ export class WaPageEditor extends LitElement {
     for (const kind of kinds) {
       const owner = this.pictureOwnerOf(kind);
       if (kind === "iphone") {
-        const model = phoneModelForScreenSize(owner?.screen_size);
+        const model = phoneModelForScreenSize(owner?.screen_size, owner?.platform);
         const grow = 1 + 2 * (PHONE_BEZEL_RATIO + PHONE_RIM_RATIO);
         width += model.screen.width * grow * PHONE_STAGE_ZOOM;
         height = Math.max(height, model.screen.height * grow * PHONE_STAGE_ZOOM);
@@ -4498,7 +4505,7 @@ export class WaPageEditor extends LitElement {
     // The look of the newest device of its kind that shows the page.
     rest.appVersion = this.screenLookVersion(kind);
     if (kind === "iphone") {
-      const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) });
+      const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined) });
       return { ...rest, page, pages, behavior: undefined, phone, screen: phonePagesScreen(phone), scale: this.stageScale * PHONE_STAGE_ZOOM };
     }
     const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
@@ -5669,7 +5676,7 @@ export class WaPageEditor extends LitElement {
     for (const kind of only === undefined ? [clicked, otherWatchScreen(clicked)] : [only]) {
       const owner = this.pictureOwnerOf(kind);
       const phone = kind === this.previewKind ? this.phoneLayoutOf(undefined)
-        : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) })
+        : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined) })
         : undefined;
       const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
       const appVersion = this.screenLookVersion(kind);
@@ -5939,7 +5946,7 @@ export class WaPageEditor extends LitElement {
       .map((d) => ({
         kind: d.kind,
         name: d.name,
-        version: this.ownerList.find((o) => sameId(o.owner_watch_id, d.ownerId))?.app_version ?? null,
+        version: gateVersion(this.ownerList.find((o) => sameId(o.owner_watch_id, d.ownerId))) ?? null,
       }));
   }
 
@@ -5954,7 +5961,7 @@ export class WaPageEditor extends LitElement {
     const versions = this.pagePickers(pageId).map((p) => p.version);
     if (versions.length > 0) return oneLookForEvery(versions);
     const preview = this.watchId === undefined ? undefined : this.ownerList.find((o) => sameId(o.owner_watch_id, this.watchId!));
-    return oneLookForEvery(preview === undefined ? [] : [preview.app_version ?? null]);
+    return oneLookForEvery(preview === undefined ? [] : [gateVersion(preview) ?? null]);
   }
 
   /** On a smart page, its Rules cards (`smart-settings.ts`): the Rules card,

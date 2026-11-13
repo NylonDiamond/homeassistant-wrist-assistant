@@ -51,7 +51,8 @@ describe("the pairing QR code's web address", () => {
   });
 
   it("tells the person to use the Camera, and what happens without the app", () => {
-    expect(PAIR_QR_STEPS[0]).toBe("Point the iPhone's Camera at this code.");
+    expect(PAIR_QR_STEPS[0]).toBe("Point the phone's camera at this code.");
+    expect(PAIR_QR_STEPS.join(" ")).toContain("Google Play");
     expect(PAIR_QR_STEPS.join(" ")).toContain("App Store");
     for (const line of PAIR_QR_STEPS) expect(line).not.toMatch(/[–—]| - /);
   });
@@ -114,7 +115,7 @@ describe("the welcome's wiring", () => {
   });
 
   it("has three steps, top to bottom: install, pick one, pair", () => {
-    const order = ['step(1, "Install the app"', 'step(2, "Pick one"', "step(3, picked === \"iphone\" ? \"Pair your iPhone\" : \"Pair your watch\""];
+    const order = ['step(1, "Install the app"', 'step(2, "Pick one"', "step(3, picked === \"iphone\" ? \"Pair your phone\" : \"Pair your watch\""];
     const at = order.map((s) => welcome.indexOf(s));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);

@@ -7,6 +7,7 @@
 // `inline` object it does not support. Plan: app repo
 // docs/custom_complication_family_kinds.md, slice 4.
 
+import { gateVersion } from "./device-platform.js";
 import {
   type CustomComplicationConfig,
   type DrawableFamily,
@@ -72,7 +73,7 @@ export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKi
   // shape to a gate that was never about it.
   if (kind === "library") return ALL_FAMILIES.filter((f) => f !== "xlarge" || XLARGE_OFFERED);
   if (kind !== "iphone") return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
-  const home = watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
+  const home = watchSupportsShapes(gateVersion(owner), MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
   return ALL_FAMILIES.filter((f) => {
     if (f === "corner") return false;
     if (f === "xlarge") return home && XLARGE_OFFERED;
@@ -94,7 +95,7 @@ export function comingSoonFamilies(owner: DeviceOwnerLike | null | undefined): F
   // coming to the shelf too.
   if (kind === "library") return ["xlarge"];
   if (kind !== "iphone") return [];
-  return watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN) ? ["xlarge"] : [];
+  return watchSupportsShapes(gateVersion(owner), MIN_IPHONE_VERSION_FOR_HOME_SCREEN) ? ["xlarge"] : [];
 }
 
 export function isDrawable(family: FamilyKind): family is DrawableFamily {

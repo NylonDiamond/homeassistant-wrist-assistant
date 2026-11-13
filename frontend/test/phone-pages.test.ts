@@ -241,7 +241,7 @@ describe("the iPhone app's row", () => {
     expect(menu).toContain(`aria-label="Devices"`);
     expect(menu).toMatch(/data-watch=p2 data-kind=iphone/);
     expect(menu).toMatch(/data-watch=w1 data-kind=watch/);
-    expect(menu.indexOf(">Watches</div>")).toBeLessThan(menu.indexOf(">iPhones</div>"));
+    expect(menu.indexOf(">Watches</div>")).toBeLessThan(menu.indexOf(">Phones</div>"));
     expect(menu).not.toContain("wa-wr-menu-note");
   });
 
@@ -270,7 +270,7 @@ describe("the iPhone app's row", () => {
     };
     const tpl = renderWatchRow(input);
     const text = flat(tpl);
-    expect(text).toContain(">Pair an iPhone</span>");
+    expect(text).toContain(">Pair a phone</span>");
     expect(text).toContain(IPHONE_ROW_NONE_NOTE);
     expect(text).not.toContain("wa-wr-links");
     expect(text).not.toContain("Pair a watch");
@@ -288,7 +288,7 @@ describe("the iPhone app's row", () => {
   it("says Loading with an iPhone chip while the devices are not in", () => {
     const text = row({ owners: [], watch: undefined, loaded: false });
     expect(text).toContain(`<span class="wa-wr-wait">Loading…</span>`);
-    expect(text).not.toContain("Pair an iPhone");
+    expect(text).not.toContain("Pair a phone");
   });
 });
 

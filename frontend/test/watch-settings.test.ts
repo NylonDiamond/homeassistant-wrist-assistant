@@ -191,7 +191,9 @@ describe("the catalog", () => {
   it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 32", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
-      expect([["watch"], ["watch", "iphone"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
+      // The Android apps read the same rows: a Wear OS watch every watch row
+      // but the double pinch, an Android phone every iPhone row but the Page look.
+      expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
     expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(32);
     expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);

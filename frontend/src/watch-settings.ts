@@ -24,6 +24,7 @@
 
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
+import { type DevicePlatform, gateVersion, platformModel, platformNoun, platformNounTitle, platformOf } from "./device-platform.js";
 import { integrationStoreName } from "./integration-store.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, phoneShowsPages, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
 
@@ -48,6 +49,16 @@ export interface SettingOption {
 /** A device that reads a setting: the watch, or the iPhone for its own pages. */
 export type SettingDevice = "watch" | "iphone";
 
+/** A device as the catalog's `devices` names it: the kind for an Apple
+ * device, and `wearos` or `android` for the Android apps. */
+export type CatalogDevice = SettingDevice | "wearos" | "android";
+
+/** The catalog's word for a device of this kind on this platform. */
+export function catalogDeviceOf(device: SettingDevice, platform?: DevicePlatform | null): CatalogDevice {
+  const p = platformOf({ device_kind: device, platform: platform ?? null });
+  return p === "wearos" ? "wearos" : p === "android" ? "android" : device;
+}
+
 /**
  * One row of the form. `bool` is a switch, `enum` a choice of `options`,
  * `color` a `#RRGGBB` string, `entity` an entity id of `domain` and `number`
@@ -64,8 +75,11 @@ export interface CatalogSetting {
    * iPhone keeps too, `["iphone"]` for one only the iPhone reads (its Page
    * look). The integration keeps only `iphone` keys on a phone's
    * settings (`PHONE_BEHAVIOR_KEYS`, which a test holds to this file).
+   * The Android apps read the same rows: `wearos` beside `watch` for a row a
+   * Wear OS watch reads (every watch row but the double pinch, which Wear
+   * has no gesture for), `android` beside every `iphone`.
    * Optional for a catalog built in a test. */
-  devices?: readonly SettingDevice[];
+  devices?: readonly CatalogDevice[];
   type: "bool" | "enum" | "color" | "entity" | "number" | "domains" | "motionGestures";
   label: string;
   help?: string;
@@ -93,6 +107,12 @@ export interface CatalogSetting {
   /** On an iPhone, the help line in place of `help`, for a row that works
    * differently there. `catalogFor("iphone")` puts it in `help`. */
   phoneHelp?: string;
+  /** On a Wear OS watch, the label and help line in place of `label` and
+   * `help`, for a row that works differently there: the Digital Crown's
+   * rows are the rotary input's (the crown or the bezel).
+   * `catalogFor("watch", catalog, "wearos")` puts them in place. */
+  wearLabel?: string;
+  wearHelp?: string;
   /** A second condition the row must also meet, set only by `catalogFor`. */
   andShowIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
 }
@@ -543,13 +563,14 @@ export function waitingText(device: SettingDevice): string {
 /** An editor's title while Home Assistant holds no record of its kind:
  * "No menus from this watch yet.", or "No menus on this iPhone yet." for a
  * phone, whose records start here and never come from the phone. */
-export function noRecordTitle(what: string, device: SettingDevice): string {
-  return device === "iphone" ? `No ${what} on this iPhone yet.` : `No ${what} from this watch yet.`;
+export function noRecordTitle(what: string, device: SettingDevice, platform?: DevicePlatform | null): string {
+  return device === "iphone" ? `No ${what} on this ${deviceNoun(device, platform)} yet.` : `No ${what} from this watch yet.`;
 }
 
-/** The device in a sentence: "watch" or "iPhone". */
-export function deviceNoun(device: SettingDevice): string {
-  return device === "iphone" ? "iPhone" : "watch";
+/** The device in a sentence: "watch" or "iPhone", and "phone" for an Android
+ * phone when its `platform` is known. */
+export function deviceNoun(device: SettingDevice, platform?: DevicePlatform | null): string {
+  return platformNoun(platformOf({ device_kind: device, platform: platform ?? null }));
 }
 
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */
@@ -599,16 +620,25 @@ export function watchAppDevices(owners: readonly OwnerSummary[], phones: boolean
 }
 
 /** The Settings page's title for the device on it. */
-export function settingsTitle(device: SettingDevice): string {
-  return device === "iphone" ? "iPhone settings" : "Watch settings";
+export function settingsTitle(device: SettingDevice, platform?: DevicePlatform | null): string {
+  return device === "iphone" ? `${platformNounTitle(platformOf({ device_kind: device, platform: platform ?? null }))} settings` : "Watch settings";
 }
 
 /** The catalog's sections as one device reads them: only the settings whose
  * `devices` names it, and no section left empty. A setting that names no
  * device is the watch's alone. On an iPhone a row's `phoneShowIf` becomes
  * a second condition it must meet (`andShowIf`). */
-export function catalogFor(device: SettingDevice, catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): CatalogSection[] {
+export function catalogFor(
+  device: SettingDevice,
+  catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG,
+  platform?: DevicePlatform | null,
+): CatalogSection[] {
+  const reader = catalogDeviceOf(device, platform);
   const forDevice = (s: CatalogSetting): CatalogSetting => {
+    if (reader === "wearos") {
+      if (s.wearLabel === undefined && s.wearHelp === undefined) return s;
+      return { ...s, ...(s.wearLabel === undefined ? {} : { label: s.wearLabel }), ...(s.wearHelp === undefined ? {} : { help: s.wearHelp }) };
+    }
     if (device !== "iphone") return s;
     return {
       ...s,
@@ -619,7 +649,7 @@ export function catalogFor(device: SettingDevice, catalog: WatchSettingsCatalog 
   return catalog.sections
     .map((section) => ({
       ...section,
-      settings: section.settings.filter((s) => (s.devices ?? ["watch"]).includes(device)).map(forDevice),
+      settings: section.settings.filter((s) => (s.devices ?? ["watch"]).includes(reader)).map(forDevice),
     }))
     .filter((section) => section.settings.length > 0);
 }
@@ -677,7 +707,7 @@ export function takesSettingsFromAnotherHome(owner: Pick<OwnerSummary, "main_hou
 export type NoRecordStart = "wait" | "start";
 
 /** What the wait rules read of a watch's row. */
-export type MoveWaitFacts = Partial<Pick<OwnerSummary, "app_version" | "device_kind" | "has_iphone" | "holds_old_setup" | "owner_iphone_moves" | "another_iphone_moves">>;
+export type MoveWaitFacts = Partial<Pick<OwnerSummary, "app_version" | "device_kind" | "platform" | "has_iphone" | "holds_old_setup" | "owner_iphone_moves" | "another_iphone_moves">>;
 
 /** A watch from before the move whose app is too old to send its setup. It
  * cannot read anything here either, so it waits for that update, whatever its
@@ -686,7 +716,7 @@ export function waitsForWatchUpdate(owner: MoveWaitFacts | undefined): boolean {
   return owner !== undefined
     && deviceKindOf(owner) === "watch"
     && owner.holds_old_setup === true
-    && setupMoveNeedsUpdate(owner.app_version);
+    && setupMoveNeedsUpdate(gateVersion(owner));
 }
 
 /** The no-record state for the watch being edited. Only an explicit `true`,
@@ -776,7 +806,7 @@ export const START_FRESH_CONFIRM_TEXT =
  * move skip that kind for good once the update arrives, and the watch's own
  * setup would be lost. */
 export function offersStartFresh(owner: Pick<OwnerSummary, "app_version"> | undefined): boolean {
-  return !setupMoveNeedsUpdate(owner?.app_version);
+  return !setupMoveNeedsUpdate(gateVersion(owner));
 }
 
 /** The way out of a wait whose iPhone is gone (`move-wait-out.ts`). "Start
@@ -826,7 +856,7 @@ export function waitingWatchText(name: string): string {
 /** Whether a watch can take the way out. Not while its app is too old to send
  * its setup: its line says to update it, and then this is offered. */
 export function offersUseWatch(owner: Pick<OwnerSummary, "app_version"> | undefined): boolean {
-  return owner !== undefined && !setupMoveNeedsUpdate(owner.app_version);
+  return owner !== undefined && !setupMoveNeedsUpdate(gateVersion(owner));
 }
 
 
@@ -943,7 +973,7 @@ export function waitsForWatchSeed(owner: Partial<FirstSaveOwner> | undefined): b
     && deviceKindOf(owner) === "watch"
     && owner.has_iphone !== true
     && owner.seed_pending === true
-    && !setupMoveNeedsUpdate(owner.app_version);
+    && !setupMoveNeedsUpdate(gateVersion(owner));
 }
 
 /** Whether this watch from before the move polled so lately since its wait
@@ -954,7 +984,7 @@ export function seedMayLand(owner: Partial<FirstSaveOwner> | undefined): boolean
     && owner.has_iphone !== true
     && owner.holds_old_setup === true
     && owner.seed_may_land === true
-    && !setupMoveNeedsUpdate(owner.app_version);
+    && !setupMoveNeedsUpdate(gateVersion(owner));
 }
 
 /** What the header says of a kind with no record on this watch, in place of
@@ -1102,17 +1132,17 @@ export const PAIR_CARD_TITLE = "Pair a device";
 export type PairMode = "code" | "qr";
 
 /** The line under the title in each mode. */
-export const PAIR_CODE_HINT = "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.";
-export const PAIR_QR_HINT = "Point the iPhone's Camera at the QR code and tap the link.";
+export const PAIR_CODE_HINT = "On the watch or phone, choose Pair with Home Assistant and type the code it shows.";
+export const PAIR_QR_HINT = "Point the phone's camera at the QR code and tap the link.";
 
 /** The same, as numbered steps, the way the card draws them. */
 export const PAIR_QR_STEPS = [
-  "Point the iPhone's Camera at this code.",
-  "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
+  "Point the phone's camera at this code.",
+  "Tap the link. Wrist Assistant opens, or its App Store or Google Play page when the app is not on the phone yet.",
   "Tap Pair in Wrist Assistant.",
 ] as const;
 export const PAIR_CODE_STEPS = [
-  "Open Wrist Assistant on the watch or iPhone.",
+  "Open Wrist Assistant on the watch or phone.",
   "Choose Pair with Home Assistant.",
   "Type the code it shows here, then Look up.",
 ] as const;
@@ -1126,40 +1156,42 @@ export function pairDeviceKind(lookup: { kind?: string | null }): PairDeviceKind
   return lookup.kind === "iphone" ? "iphone" : "watch";
 }
 
-/** The kind in a sentence: "watch" or "iPhone". */
-function deviceWord(kind: PairDeviceKind): string {
-  return kind === "iphone" ? "iPhone" : "watch";
+/** The kind in a sentence: "watch" or "iPhone", and "phone" for an Android
+ * phone (`platform`, from the lookup). */
+function deviceWord(kind: PairDeviceKind, platform?: string | null): string {
+  return platformNoun(platformOf({ device_kind: kind, platform: platform ?? null }));
 }
 
-/** The kind as a name, for a device that reports none. */
-function deviceName(kind: PairDeviceKind): string {
-  return kind === "iphone" ? "iPhone" : "Apple Watch";
+/** The kind as a name, for a device that reports none: "Apple Watch",
+ * "iPhone", "Wear OS watch" or "Android phone". */
+function deviceName(kind: PairDeviceKind, platform?: string | null): string {
+  return platformModel(platformOf({ device_kind: kind, platform: platform ?? null }));
 }
 
-/** The title of the found device's row: "Watch" or "iPhone". */
-export function pairDeviceTitle(kind: PairDeviceKind): string {
-  return kind === "iphone" ? "iPhone" : "Watch";
+/** The title of the found device's row: "Watch", "iPhone" or "Phone". */
+export function pairDeviceTitle(kind: PairDeviceKind, platform?: string | null): string {
+  return platformNounTitle(platformOf({ device_kind: kind, platform: platform ?? null }));
 }
 
 /** What the card says when no device is waiting on the code typed. */
 export const PAIR_NOT_FOUND_TEXT = "No pairing with that code. Codes last 10 minutes.";
 
 /** The warning under a device that already has a key here. */
-export function pairAlreadyPairedText(kind: PairDeviceKind): string {
-  return `This ${deviceWord(kind)} is already paired. Pairing again gives it a new key.`;
+export function pairAlreadyPairedText(kind: PairDeviceKind, platform?: string | null): string {
+  return `This ${deviceWord(kind, platform)} is already paired. Pairing again gives it a new key.`;
 }
 export const PAIR_ALREADY_PAIRED_TEXT = pairAlreadyPairedText("watch");
 
 /** The warning under a device whose key another user made. */
-export function pairOtherUserText(kind: PairDeviceKind): string {
-  return `This ${deviceWord(kind)} was paired by another user.`;
+export function pairOtherUserText(kind: PairDeviceKind, platform?: string | null): string {
+  return `This ${deviceWord(kind, platform)} was paired by another user.`;
 }
 export const PAIR_OTHER_USER_TEXT = pairOtherUserText("watch");
 
 /** What a non-admin reads about a device paired to someone else: they can
  * never take it over, so no Replace is offered. */
-export function pairOtherPersonText(kind: PairDeviceKind): string {
-  return `This ${deviceWord(kind)} is paired to another person. Only an administrator can replace that pairing.`;
+export function pairOtherPersonText(kind: PairDeviceKind, platform?: string | null): string {
+  return `This ${deviceWord(kind, platform)} is paired to another person. Only an administrator can replace that pairing.`;
 }
 export const PAIR_OTHER_PERSON_TEXT = pairOtherPersonText("watch");
 
@@ -1184,6 +1216,8 @@ export function pairCodeIsComplete(code: string): boolean {
 /** The fields of a found pairing that the card describes. */
 export interface PairLookupFacts {
   kind?: string | null;
+  /** What the device runs; absent is its kind's Apple platform. */
+  platform?: string | null;
   device_name?: string | null;
   app_version?: string | null;
   app_build?: string | null;
@@ -1203,7 +1237,7 @@ function present(value: string | null | undefined): string | undefined {
  * version the app part is left out, and with no build only the version is
  * given. */
 export function pairLookupLine(lookup: PairLookupFacts): string {
-  const name = present(lookup.device_name) ?? deviceName(pairDeviceKind(lookup));
+  const name = present(lookup.device_name) ?? deviceName(pairDeviceKind(lookup), lookup.platform);
   const version = present(lookup.app_version);
   if (version === undefined) return name;
   const build = present(lookup.app_build);
@@ -1215,10 +1249,11 @@ export function pairLookupLine(lookup: PairLookupFacts): string {
  * needs an administrator (`pairNeedsAdmin`). */
 export function pairLookupWarnings(lookup: PairLookupFacts, isAdmin = true): string[] {
   const kind = pairDeviceKind(lookup);
-  if (pairNeedsAdmin(lookup, isAdmin)) return [pairOtherPersonText(kind)];
+  const platform = lookup.platform;
+  if (pairNeedsAdmin(lookup, isAdmin)) return [pairOtherPersonText(kind, platform)];
   const out: string[] = [];
-  if (lookup.already_paired === true) out.push(pairAlreadyPairedText(kind));
-  if (lookup.paired_by_other_user === true) out.push(pairOtherUserText(kind));
+  if (lookup.already_paired === true) out.push(pairAlreadyPairedText(kind, platform));
+  if (lookup.paired_by_other_user === true) out.push(pairOtherUserText(kind, platform));
   return out;
 }
 
@@ -1326,15 +1361,24 @@ export function pairedText(deviceNameText: string | null | undefined, forWhom?: 
 }
 
 /** The title of the card's user menu. */
-export function pairUserTitle(kind: PairDeviceKind): string {
-  return `Whose ${deviceWord(kind)} is this?`;
+export function pairUserTitle(kind: PairDeviceKind, platform?: string | null): string {
+  return `Whose ${pairUserWord(kind, platform)} is this?`;
+}
+
+/** The device in the user menu's words. `platform` "any" is a QR code's
+ * phone, which may be an iPhone or an Android phone: "phone". */
+function pairUserWord(kind: PairDeviceKind, platform?: string | null): string {
+  return platform === "any" ? (kind === "iphone" ? "phone" : "watch") : deviceWord(kind, platform);
 }
 export const PAIR_USER_TITLE = pairUserTitle("watch");
 
 /** The line under the user menu: what the answer decides. */
-export function pairUserHint(kind: PairDeviceKind): string {
-  return kind === "iphone"
-    ? "The iPhone runs with this person's rights."
+export function pairUserHint(kind: PairDeviceKind, platform?: string | null): string {
+  if (kind === "iphone") return `The ${pairUserWord(kind, platform)} runs with this person's rights.`;
+  // An Apple Watch's Fast alerts go to its person's iPhone, a Wear OS
+  // watch's to their Android phone.
+  return platform === "wearos"
+    ? "The watch runs with this person's rights, and their phone gets its Fast alerts."
     : "The watch runs with this person's rights, and their iPhone gets its Fast alerts.";
 }
 export const PAIR_USER_HINT = pairUserHint("watch");

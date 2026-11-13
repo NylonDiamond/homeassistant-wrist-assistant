@@ -16,6 +16,8 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import {
   APP_STORE_URL,
+  OPEN_PLAY_STORE_LABEL,
+  PLAY_STORE_URL,
   DOCS_URL,
   type GettingStarted,
   NEW_PAGE_LABEL,
@@ -156,7 +158,10 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
   const screen = helpScreen(input.route);
   const action = (id: StepId): TemplateResult | typeof nothing => {
     if (gs.next !== id) return nothing;
-    if (id === "app") return html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>`;
+    if (id === "app") {
+      return html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>
+        <a class="hs-act" href=${PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_PLAY_STORE_LABEL}</a>`;
+    }
     if (id === "pair") return html`<button type="button" class="hs-act" @click=${input.onPair}>${PAIR_DEVICE_LABEL}</button>`;
     const watch = gs.watch;
     return watch === undefined

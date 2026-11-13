@@ -75,11 +75,18 @@ function isHomeTile(family: FamilyKind): family is HomeFamily {
   return (HOME_FAMILIES as FamilyKind[]).includes(family);
 }
 
+/** A watch screen's size, and whether it is round: a Wear OS watch's screen
+ * is, and every Apple Watch's is a rounded rectangle. The flag rides on the
+ * screen itself, so every preview handed this screen draws its case round
+ * (`renderWatchFrame`) without being told twice. */
+export type WatchScreen = CanvasSize & { round?: boolean };
+
 /** A watch case the panel can preview as. Slots in points, from the design-box doc. */
 export interface WatchCase {
   label: string;
-  /** Screen size in points, as WKInterfaceDevice reports it. */
-  screen: CanvasSize;
+  /** Screen size in points, as WKInterfaceDevice reports it; a Wear OS
+   * watch's in dp, as its display metrics report it. */
+  screen: WatchScreen;
   slots: Record<WatchCanvasFamily, CanvasSize>;
   /** Only the 46 mm row was read off a real watch; the rest are scaled by screen width. */
   measured: boolean;
@@ -121,6 +128,38 @@ export const CASES: WatchCase[] = [
 ];
 
 export const REFERENCE_CASE = CASES.find((c) => c.measured)!;
+
+/** The 46 mm slots scaled to another screen width, for a case read off no
+ * real device. */
+function scaledWatchSlots(width: number): Record<WatchCanvasFamily, CanvasSize> {
+  const k = width / REFERENCE_CASE.screen.width;
+  const r = (v: number) => Math.round(v * k * 2) / 2;
+  return {
+    rectangular: { width: r(CANVAS.rectangular.width), height: r(CANVAS.rectangular.height) },
+    circular: { width: r(CANVAS.circular.width), height: r(CANVAS.circular.height) },
+    corner: { width: r(CANVAS.corner.width), height: r(CANVAS.corner.height) },
+  };
+}
+
+/** Round Wear OS watches, by screen width in dp (the size the Wear app
+ * reports as `screen_size`, its display's pixels over its density). 192 is
+ * the small round screen (Pixel Watch 41 mm, the small round emulator), 227
+ * the large one (Pixel Watch 45 mm, the large round emulator). None was read
+ * off a real watch, so the slots are the 46 mm watch's scaled by width, a
+ * guide to proportion only. Kept apart from `CASES`, the Apple Watch list,
+ * so an Apple Watch's picker never offers them. */
+export const WEAR_CASES: WatchCase[] = [
+  { label: "Wear OS small round", screen: { width: 192, height: 192, round: true }, slots: scaledWatchSlots(192), measured: false },
+  { label: "Wear OS large round", screen: { width: 227, height: 227, round: true }, slots: scaledWatchSlots(227), measured: false },
+];
+
+/** The square screens read as a round Wear OS watch, in dp. Wear watches
+ * run from about 180 to 240; anything far outside that is not a watch. */
+const WEAR_MIN_DP = 150;
+const WEAR_MAX_DP = 300;
+
+/** The Wear OS watch drawn while a Wear watch's size is not known. */
+export const REFERENCE_WEAR_CASE: WatchCase = WEAR_CASES[1]!;
 
 /** The iPhone 15 Pro's own Home Screen tiles, measured 2026-09-14 on iOS 26.6
  * with margins disabled, and the lock screen circular slot measured at the
@@ -205,7 +244,27 @@ export function caseForScreenSize(screenSize: string | null | undefined): WatchC
   if (!match) return undefined;
   const width = Number(match[1]);
   const height = Number(match[2]);
-  return CASES.find((c) => c.screen.width === width && c.screen.height === height);
+  const apple = CASES.find((c) => c.screen.width === width && c.screen.height === height);
+  if (apple !== undefined) return apple;
+  // A square screen is a round Wear OS watch: no Apple Watch is square. Wear
+  // watches come in many sizes, so the nearest round case stands in.
+  if (width === height && width >= WEAR_MIN_DP && width <= WEAR_MAX_DP) return nearestWearCase(width);
+  return undefined;
+}
+
+/** The round case nearest a Wear OS watch's screen width in dp. */
+export function nearestWearCase(width: number): WatchCase {
+  let best = WEAR_CASES[0]!;
+  for (const c of WEAR_CASES) {
+    if (Math.abs(c.screen.width - width) < Math.abs(best.screen.width - width)) best = c;
+  }
+  return best;
+}
+
+/** The watch cases offered for a watch on this platform: the Apple Watch
+ * list, or for a Wear OS watch the round ones. */
+export function watchCasesFor(platform: string | null | undefined): WatchCase[] {
+  return platform === "wearos" ? WEAR_CASES : CASES;
 }
 
 export interface Fit {

@@ -707,13 +707,14 @@ describe("Watch settings as a page under the Watch app row", () => {
     it("asks whose iPhone it is, each with its account type, and holds Show QR code until someone is picked", async () => {
       const { inside, ha, text, ws } = await qrMode();
       const shown = text();
-      expect(shown).toContain("Scan with the iPhone");
-      expect(shown).toContain("Camera at this code.");
+      expect(shown).toContain("Scan with the phone");
+      expect(shown).toContain("camera at this code.");
       // The Settings page opened on Type a code, not on the choice: no Back,
       // only the way across.
       expect(shown).toContain("No camera? Type a code");
       expect(shown).not.toContain("ws-pair-back");
-      expect(shown).toContain("Whose iPhone is this?");
+      // A QR code is for any phone, so it asks whose phone it is.
+      expect(shown).toContain("Whose phone is this?");
       expect(shown).toContain("Choose a person");
       expect(shown).toContain(">Jesse (you) · Admin</option>");
       expect(shown).toContain(">Chen · User</option>");
@@ -728,7 +729,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     it("makes the code for the person at the card, with no question, when they are not an administrator", async () => {
       const { inside, ha, text, ws } = await qrMode({ notAdmin: true });
       expect(ha.sent.filter((m) => m.type === "config/auth/list")).toEqual([]);
-      expect(text()).not.toContain("Whose iPhone is this?");
+      expect(text()).not.toContain("Whose phone is this?");
       expect(text()).toContain(`ws-qr-show" ?disabled=false`);
       // Replace on an offer is an administrator's: no box, and no More options
       // that would only hold it.
@@ -762,7 +763,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(offer.replace).toBe(true);
       expect("kind" in offer).toBe(false);
       const shown = text();
-      expect(shown).toContain(`aria-label="QR code for pairing an iPhone"`);
+      expect(shown).toContain(`aria-label="QR code for pairing a phone"`);
       expect(shown).toMatch(/<path d=M4 4h7v1h-7z/);
       // The link into the app is only for the panel open on an iPhone.
       expect(shown).not.toContain("Pair this iPhone instead");
@@ -922,12 +923,12 @@ describe("Home's Pair a device dialog card", () => {
     expect(card.offer.userId).toBeUndefined();
     expect(offers(ha.sent)).toHaveLength(0);
     const before = flatten(card.render({ bare: true }));
-    expect(before).toContain("Choose whose iPhone it is.");
+    expect(before).toContain("Choose whose phone it is.");
     // Whose iPhone it is comes first, as step 1, lit; the iPhone's steps
     // follow as 2 to 4, faint until someone is picked.
     expect(before).toContain(`<li class="ws-qr-who next"><b aria-hidden="true">1</b>`);
-    expect(before.indexOf("Whose iPhone is this?")).toBeLessThan(before.indexOf("Camera at this code."));
-    expect(before).toMatch(/<li class=later><b aria-hidden="true">2<\/b><span>Point the iPhone/);
+    expect(before.indexOf("Whose phone is this?")).toBeLessThan(before.indexOf("camera at this code."));
+    expect(before).toMatch(/<li class=later><b aria-hidden="true">2<\/b><span>Point the phone/);
     await whose(card);
     const after = flatten(card.render({ bare: true }));
     expect(after).toContain(`<li class="ws-qr-who "><b aria-hidden="true">1</b>`);
@@ -936,7 +937,7 @@ describe("Home's Pair a device dialog card", () => {
     expect("user_id" in offers(ha.sent)[0]!).toBe(false);
     expect(card.offer.userId).toBe("root");
     const shown = flatten(card.render({ bare: true }));
-    expect(shown).toContain(`aria-label="QR code for pairing an iPhone"`);
+    expect(shown).toContain(`aria-label="QR code for pairing a phone"`);
     expect(shown).not.toContain("sec-h");
     expect(shown).toContain("No camera? Type a code");
     card.close();
@@ -1000,11 +1001,11 @@ describe("Home's Pair a device dialog card", () => {
     expect(card.choosing).toBe(true);
     const shown = flatten(card.render({ bare: true }));
     expect(shown).toContain("What are you pairing?");
-    expect(shown).toContain("<b>Apple Watch</b>");
-    expect(shown).toContain("<b>iPhone</b>");
+    expect(shown).toContain("<b>Watch</b>");
+    expect(shown).toContain("<b>Phone</b>");
     expect(shown).not.toContain("ws-pair-code");
     expect(offers(ha.sent)).toHaveLength(0);
-    expect(card.subtitle).toBe("A watch or an iPhone, to this Home Assistant");
+    expect(card.subtitle).toBe("A watch or a phone, to this Home Assistant");
     card.close();
   });
 
@@ -1019,7 +1020,7 @@ describe("Home's Pair a device dialog card", () => {
     expect(shown).toContain("Type the watch's code");
     expect(shown).toContain("ws-pair-code");
     expect(shown).toContain("ws-pair-back");
-    expect(shown).toContain("Pairing an iPhone? Show a QR code");
+    expect(shown).toContain("Pairing a phone? Show a QR code");
     expect(offers(ha.sent)).toHaveLength(0);
     card.backToChoice();
     expect(card.choosing).toBe(true);
@@ -1032,7 +1033,7 @@ describe("Home's Pair a device dialog card", () => {
     card.open(ha.hass, { mode: "choose" });
     card.choose("iphone");
     await whose(card);
-    expect(card.subtitle).toBe("iPhone, by a QR code");
+    expect(card.subtitle).toBe("Phone, by a QR code");
     expect(flatten(card.render({ bare: true }))).toContain("No camera? Type a code");
     card.backToChoice();
     expect(cancels(ha.sent)).toHaveLength(1);
@@ -1050,7 +1051,7 @@ describe("Home's Pair a device dialog card", () => {
     card.choose("iphone", "code");
     expect(card.mode).toBe("code");
     expect(cancels(ha.sent)).toHaveLength(1);
-    expect(flatten(card.render({ bare: true }))).toContain("Type the iPhone's code");
+    expect(flatten(card.render({ bare: true }))).toContain("Type the phone's code");
     card.close();
   });
 

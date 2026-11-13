@@ -3,6 +3,7 @@
 // be worked out without the panel lives here, where a test can reach it.
 
 import { css } from "lit";
+import { gateVersion, platformModel, platformOf } from "./device-platform.js";
 import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
@@ -56,7 +57,7 @@ export function homeDevices(
     waitsForIphone: noRecordStart(o) === "wait",
     waitsForUpdate: waitsForWatchUpdate(o),
     seedWaits: waitsForWatchSeed(o),
-    appVersion: o.app_version,
+    appVersion: gateVersion(o),
   }));
 }
 
@@ -435,7 +436,8 @@ export function homeGroups(people: readonly Person[], rows: readonly HomeDeviceR
  * (`paired_iphone_name`) after the watch was paired again by code, when no
  * iPhone holds its key any more and `has_iphone` is false. */
 export function deviceFacts(owner: OwnerSummary | undefined, kind: "watch" | "iphone"): string[] {
-  const facts: string[] = [kind === "iphone" ? "iPhone" : "Apple Watch"];
+  // What it is: "iPhone", "Apple Watch", "Android phone" or "Wear OS watch".
+  const facts: string[] = [platformModel(platformOf(owner === undefined ? { device_kind: kind } : { ...owner, device_kind: kind }))];
   if (owner?.app_version) facts.push(`App ${owner.app_version}${owner.app_build ? ` (${owner.app_build})` : ""}`);
   if (kind === "watch" && owner?.paired_iphone_name && owner.has_iphone === true) facts.push(`Set up by ${owner.paired_iphone_name}`);
   return facts;

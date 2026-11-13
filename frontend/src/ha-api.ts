@@ -47,6 +47,7 @@ import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot,
 import { listRequests } from "./compiler.js";
 import type { HomeMapDocument, HomeMapRead } from "./home-map/model.js";
 import type { SavedPart } from "./parts.js";
+import type { DevicePlatform } from "./device-platform.js";
 import type { DeviceKind } from "./version.js";
 
 export interface OwnerSummary {
@@ -59,6 +60,11 @@ export interface OwnerSummary {
       with `screen_size` and `paired_iphone_name` null and `polling` never
       true: there is no long poll to a phone. */
   device_kind?: DeviceKind | null;
+  /** What the device runs: "ios" or "watchos" for an Apple app, "android" or
+      "wearos" for the Android apps (`device-platform.ts`). Absent from an
+      integration older than the field, null on an orphan and the Library;
+      absent reads as the kind's Apple platform. */
+  platform?: DevicePlatform | null;
   /** Name of the iPhone this watch is paired to. Both real watches report
       themselves as "Apple Watch", so this is what tells them apart. */
   paired_iphone_name: string | null;
@@ -631,6 +637,9 @@ export interface PairLookupFound {
   /** What asked: a watch, or an iPhone showing a code. Missing from an
       integration before iPhones paired by code, when only a watch could. */
   kind?: "watch" | "iphone";
+  /** What the device runs; absent from an integration older than the field,
+      and from it an Apple device of its kind. */
+  platform?: DevicePlatform | null;
   device_name?: string | null;
   screen_size?: string | null;
   app_version?: string | null;
@@ -743,6 +752,9 @@ export interface PairOfferStatus {
   /** The paired iPhone's id, which is its owner id. Absent from
       integrations older than the field. */
   device_id?: string | null;
+  /** What the phone runs: "ios" or "android". Absent from integrations older
+      than the field, which only iPhones redeemed. */
+  platform?: DevicePlatform | null;
 }
 
 /** Make a QR code an iPhone can pair with, for `userId` (the signed in

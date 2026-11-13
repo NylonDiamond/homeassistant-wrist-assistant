@@ -9,6 +9,7 @@
 // devices an item is on, and whether a device waits for its iPhone to move
 // its pages here or is on the free plan.
 
+import { gateVersion } from "../device-platform.js";
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, setupMoveNeedsUpdate, versionForCopy } from "../version.js";
 import { type PhoneMoves, WAIT_OTHER_PHONE_TEXT, noRecordStart, phoneMovesOf, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
@@ -38,7 +39,7 @@ export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean):
       ownerId: o.owner_watch_id,
       name: watchName(o, devices),
       kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch",
-      ...(o.app_version === undefined ? {} : { appVersion: o.app_version }),
+      ...(gateVersion(o) === undefined ? {} : { appVersion: gateVersion(o) }),
       ...(phoneMoves === undefined ? {} : { phoneMoves }),
     };
   });

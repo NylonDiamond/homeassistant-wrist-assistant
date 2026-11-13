@@ -6,6 +6,12 @@
 // released with the HA editor, so a watch below the minimum gets no editor at
 // all: a message to update, and the watch picker. Rule 8 of app repo
 // docs/custom_complication_family_kinds.md, tightened 2026-09-02.
+//
+// Every gate here is an Apple release number. An Android phone or a Wear OS
+// watch reads as `ANDROID_FEATURE_VERSION` instead of the version it reports
+// (`gateVersion` in device-platform.ts), so it gets the current feature set.
+
+import { gateVersion, platformNoun, platformOf } from "./device-platform.js";
 
 /** First watch app version the panel works with: the per-shape release.
  * Bump only when the app's marketing version for that release is known.
@@ -221,7 +227,7 @@ export function ownerSupportsControls(
   minimum: string | null = MIN_VERSION_FOR_CONTROL_CENTER,
 ): boolean {
   if (isLibraryOwner(owner)) return true;
-  return deviceSupportsControls(owner?.app_version, minimum);
+  return deviceSupportsControls(gateVersion(owner), minimum);
 }
 
 /** Which device owns a set of records. Absent on the wire means a watch:
@@ -241,6 +247,9 @@ export interface DeviceOwnerLike {
   app_version?: string | null;
   device_kind?: DeviceKind | null;
   phone_pages?: boolean | null;
+  /** What the device runs (`device-platform.ts`). Absent on an Apple app's
+   * row from an older integration, which reads as the kind's Apple one. */
+  platform?: string | null;
   /** The owner's id. Read only to recognise the Library, which an older
    * integration's reply would name without knowing the kind. */
   owner_watch_id?: string;
@@ -286,7 +295,7 @@ export function phoneShowsPages(owner: DeviceOwnerLike | null | undefined): bool
 export function deviceNoun(owner: DeviceOwnerLike | null | undefined): string {
   const kind = deviceKindOf(owner);
   if (kind === "library") return "Not on a device list";
-  return kind === "iphone" ? "iPhone" : "watch";
+  return platformNoun(platformOf(owner));
 }
 
 export type Version = [number, number, number];
@@ -418,8 +427,8 @@ export function deviceSupportsShapes(owner: DeviceOwnerLike | null | undefined):
   const kind = deviceKindOf(owner);
   if (kind === "library") return true;
   return kind === "iphone"
-    ? watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_LOCK_SCREEN)
-    : watchSupportsShapes(owner?.app_version);
+    ? watchSupportsShapes(gateVersion(owner), MIN_IPHONE_VERSION_FOR_LOCK_SCREEN)
+    : watchSupportsShapes(gateVersion(owner));
 }
 
 /** The gate's lead line for whichever device the owner is, and nothing at all
@@ -428,6 +437,6 @@ export function updateDeviceMessage(owner: DeviceOwnerLike | null | undefined): 
   const kind = deviceKindOf(owner);
   if (kind === "library") return "";
   return kind === "iphone"
-    ? updateIPhoneMessage(owner?.app_version)
-    : updateWatchMessage(owner?.app_version);
+    ? updateIPhoneMessage(gateVersion(owner))
+    : updateWatchMessage(gateVersion(owner));
 }

@@ -678,7 +678,7 @@ export class WaStatusPagesEditor extends LitElement {
   private phoneLayout(): PhonePagesLayout | undefined {
     if (this.previewKind !== "iphone") return undefined;
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size));
+    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform));
   }
 
   private viewHost(): StatusPagesViewHost | undefined {
@@ -1369,7 +1369,7 @@ export class WaStatusPagesEditor extends LitElement {
     const ref = this.libraryItem;
     const id = previewOwner(this.watches, other, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
     const owner = this.watches.find((w) => w.owner_watch_id === id);
-    const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size)) : undefined;
+    const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform)) : undefined;
     const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
     const shown: StatusPagesViewHost = { ...host, still: true, screen, scale: phone === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM };
     const companion: StatusPagesViewHost = phone === undefined ? (({ phone: _drop, ...rest }) => rest)(shown) : { ...shown, phone };

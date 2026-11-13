@@ -606,6 +606,8 @@ it("leaves the shared catalog's shape alone", () => {
     for (const s of section.settings) {
       expect(Object.keys(s).every((k) => [
         "key", "devices", "type", "label", "help", "default", "initial", "options", "domain", "min", "max", "step", "gestures", "sceneKey", "scriptKey", "showIf", "phoneShowIf", "phoneHelp",
+        // A Wear OS watch's own words for a crown row.
+        "wearLabel", "wearHelp",
       ].includes(k)), s.key).toBe(true);
     }
   }
