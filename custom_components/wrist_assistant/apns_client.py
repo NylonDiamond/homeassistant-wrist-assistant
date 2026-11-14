@@ -58,10 +58,12 @@ class APNsClient:
 
         ``platform`` selects which token entry (watchos / ios, or the Android
         apps' wearos / android) on the watch_id the relay_token cache is read
-        from and written back to. The relay token carries the platform it was
-        bound with (``/v1/register``), which is how the relay picks APNs or
-        FCM; an FCM send also names it in the body, so the relay never has to
-        guess. An Apple send's body is the one it always was.
+        from and written back to. The relay picks APNs or FCM from the
+        platform stored in the relay token when the device was bound
+        (``/v1/register``), never from the send. An FCM send also names its
+        platform in the body, but the relay reads only the token's, so the
+        field is a label for logs and changes nothing. An Apple send's body
+        is the one it always was.
 
         Returns (success, reason, used_environment).
         """

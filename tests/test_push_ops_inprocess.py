@@ -152,6 +152,7 @@ class _Env:
             "DELIVERY_MODE_MIRROR": self.notif.DELIVERY_MODE_MIRROR,
             "is_iphone_entry": self.notif.is_iphone_entry,
             "phone_watch_ids": self.notif.phone_watch_ids,
+            "phone_family_watch_ids": self.notif.phone_family_watch_ids,
             "watch_phone_ids": self.notif.watch_phone_ids,
             "_OPEN_PRO_PUSH_KEY": "wa_open_pro",
             "resolve_push_routes": self.notif.resolve_push_routes,
@@ -306,6 +307,21 @@ def test_a_phone_s_test_push_routes_to_its_user_s_watches(env) -> None:
     reply = env.call("send_test_notification", "p1", {})
     assert reply.body == {"ok": True, "sent": 1}
     assert env.delivered == [["w1", "w2"]]
+
+
+def test_an_apple_only_home_s_test_push_is_unchanged(env) -> None:
+    """Every watch of the iPhone's user, through the iPhone's own token for
+    the mirror watch and the watch's own for the direct one, as before."""
+    _register(env, "p1", "P1")
+    env.tokens.register("w2", "W2", platform="watchos")
+    env.tokens.set_watch_metadata("w2", "delivery_mode", "direct")
+    reply = env.call("send_test_notification", "p1", {})
+    assert reply.body == {"ok": True, "sent": 2}
+    assert env.delivered == [["w1", "w2"]]
+    assert env.pushes[-1]["routes"] == [("p1", "ios"), ("w2", "watchos")]
+    assert env.notif.phone_family_watch_ids(env.secrets.all_entries, "p1") == (
+        env.notif.phone_watch_ids(env.secrets.all_entries, "p1")
+    )
 
 
 def test_a_phone_with_no_watch_tests_itself(env) -> None:

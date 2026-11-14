@@ -427,6 +427,59 @@ def test_an_android_phone_counts_only_the_wear_watches_it_can_bridge_to(notif) -
     assert iphone.body["watches"] == 1
 
 
+def test_a_phone_s_watches_are_those_of_its_own_family(notif) -> None:
+    assert notif.phone_family_watch_ids(MIXED, "pixel") == ["wear"]
+    assert notif.phone_family_watch_ids(MIXED, "iphone") == ["aw"]
+    # phone_watch_ids itself still gives both, for the rules that read it.
+    assert notif.phone_watch_ids(MIXED, "pixel") == ["aw", "wear"]
+
+
+def _mixed_push_env(notif):
+    env = _push_env(notif, dict(MIXED))
+    for store_id, by_platform in MIXED_TOKENS.items():
+        for platform, token in by_platform.items():
+            env.tokens.register(store_id, token, platform=platform)
+    return env
+
+
+def test_an_android_phone_s_test_reaches_only_its_wear_watch(notif) -> None:
+    env = _mixed_push_env(notif)
+    reply = env.call("send_test_notification", "pixel", {})
+    assert reply.body == {"ok": True, "sent": 1}
+    assert env.delivered == [["wear"]]
+    # Mirrored through the Android phone's own token, never the iPhone's.
+    assert env.pushes[-1]["routes"] == [("pixel", "android")]
+
+
+def test_an_iphone_s_test_in_a_mixed_home_reaches_only_its_apple_watch(notif) -> None:
+    env = _mixed_push_env(notif)
+    reply = env.call("send_test_notification", "iphone", {})
+    assert reply.body == {"ok": True, "sent": 1}
+    assert env.delivered == [["aw"]]
+    assert env.pushes[-1]["routes"] == [("iphone", "ios")]
+
+
+def test_a_direct_wear_watch_gets_the_android_phone_s_test_on_its_own_token(notif) -> None:
+    env = _mixed_push_env(notif)
+    env.tokens.set_watch_metadata("wear", "delivery_mode", "direct")
+    env.tokens.set_watch_metadata("aw", "delivery_mode", "direct")
+    assert env.call("send_test_notification", "pixel", {}).body == {"ok": True, "sent": 1}
+    assert env.pushes[-1]["routes"] == [("wear", "wearos")]
+
+
+def test_an_android_phone_whose_user_has_only_apple_watches_tests_itself(notif) -> None:
+    env = _push_env(notif, {
+        "pixel": _device("iphone", "u1", "android"),
+        "aw": _device("watch", "u1"),
+    })
+    env.tokens.register("pixel", "PX", platform="android")
+    env.tokens.register("aw", "AW", platform="watchos")
+    reply = env.call("send_test_notification", "pixel", {})
+    assert reply.body == {"ok": True, "sent": 1}
+    assert env.delivered == [["pixel"]]
+    assert env.pushes[-1]["routes"] == [("pixel", "android")]
+
+
 def test_a_wear_watch_registers_wearos_and_a_mismatch_is_refused(notif) -> None:
     env = _push_env(notif, {"pixel": _device("iphone", "u1", "android"), "wear": _device("watch", "u1", "wearos")})
     ok = env.call("notifications_register", "wear", {"device_token": "WR", "platform": "wearos"})

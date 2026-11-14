@@ -641,6 +641,25 @@ def phone_watch_ids(secrets: Mapping[str, Any], phone_id: str) -> list[str]:
     return sorted(watch_ids)
 
 
+def phone_family_watch_ids(secrets: Mapping[str, Any], phone_id: str) -> list[str]:
+    """`phone_watch_ids` narrowed to the watches this phone can bring an
+    alert to, sorted: an iPhone's Apple Watches, an Android phone's Wear OS
+    watches (`mirror_platform`). In a home of Apple devices that is every
+    watch `phone_watch_ids` gives, as it always was.
+
+    For the phone's push rows and its test alert, so a test from one family
+    never lands on the other family's phone.
+    """
+    phone_platform = resolve_platform(
+        _DEVICE_KIND_IPHONE, getattr(secrets.get(phone_id), "platform", None)
+    )
+    return [
+        watch_id
+        for watch_id in phone_watch_ids(secrets, phone_id)
+        if mirror_platform(secrets.get(watch_id)) == phone_platform
+    ]
+
+
 def phones_reading_voice(secrets: Mapping[str, Any], watch_id: str) -> list[str]:
     """The iPhones that read this watch's voice, sorted: the reverse of
     `phone_watch_ids`, so a save reaches exactly the phones allowed to read it."""

@@ -189,6 +189,7 @@ from .notifications import (
     DELIVERY_MODE_MIRROR,
     PLATFORM_IOS,
     is_iphone_entry,
+    phone_family_watch_ids,
     phone_watch_ids,
     resolve_push_routes,
     watch_phone_ids,
@@ -2260,17 +2261,11 @@ def _push_status_fields(
         }
     if _caller_is_iphone(ctx):
         entries = ctx.domain_data.widget_secret_store.all_entries
-        watch_ids = phone_watch_ids(entries, ctx.watch_id)
         # Only the watches this phone can bring an alert to: an iPhone an
-        # Apple Watch's, an Android phone a Wear OS watch's
-        # (`notifications.mirror_platform`). In a home of Apple devices that
-        # is every watch of the phone's user, as it always was.
-        android_phone = getattr(entries.get(ctx.watch_id), "platform", None) == "android"
-        watch_ids = [
-            watch_id
-            for watch_id in watch_ids
-            if (getattr(entries.get(watch_id), "platform", None) == "wearos") == android_phone
-        ]
+        # Apple Watch's, an Android phone a Wear OS watch's. In a home of
+        # Apple devices that is every watch of the phone's user, as it always
+        # was (`phone_family_watch_ids`).
+        watch_ids = phone_family_watch_ids(entries, ctx.watch_id)
         modes = store.delivery_modes()
         return {
             "platforms": sorted(own),
@@ -2325,7 +2320,8 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
 
     Body: {"camera": "camera.x", "title"?, "message"?, "companion_watch_id"?}.
     An iPhone caller that names no watch is routed as a real alert to its
-    user's watches, or to itself alone when its user has no watch here. An
+    user's watches of its own family (an Android phone's Wear OS watches, an
+    iPhone's Apple Watches), or to itself alone when there is none here. An
     older app's ``companion_watch_id`` (checked as for the other push ops)
     targets that watch, and a watch caller targets itself. Mirror delivery
     lands on the iPhone and watchOS mirrors it to the wrist when the phone is
@@ -2357,10 +2353,16 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     # user's watches (so it lands wherever a real one would), or to itself
     # alone when its user has no watch here. An older app naming its
     # companion, and a watch testing itself, target that one watch as before.
+    # A phone's watches are those of its own family, as its push rows count
+    # them (`_push_status_fields`): a Wear watch's alert goes through the
+    # Android phone and an Apple Watch's through the iPhone, so without this
+    # an Android phone's test would also land on its user's iPhone, and the
+    # other way round. An Android phone whose user has only Apple Watches
+    # tests itself.
     secrets = ctx.domain_data.widget_secret_store.all_entries
     targets = [target_watch_id]
     if target_watch_id == ctx.watch_id and _caller_is_iphone(ctx):
-        targets = phone_watch_ids(secrets, ctx.watch_id) or [ctx.watch_id]
+        targets = phone_family_watch_ids(secrets, ctx.watch_id) or [ctx.watch_id]
     if not resolve_push_routes(
         secrets, store.all_entries, store.delivery_modes(), targets
     ):
