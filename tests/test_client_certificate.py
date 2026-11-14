@@ -528,6 +528,8 @@ def test_async_remove_deletes_the_file(pkg, tmp_path) -> None:
 _OP_NAMES = (
     "_client_certificate_refusal",
     "_client_certificate_gate",
+    "_client_certificate_source",
+    "_caller_runs_android",
     "_op_client_certificate_put",
     "_op_client_certificate_delete",
     "_op_client_certificate_get",
@@ -605,6 +607,9 @@ def _ops(pkg, names: tuple[str, ...] = _OP_NAMES, prefix: str = "_CLIENT_CERTIFI
         "seal": pkg.sealed.seal,
         "WatchLogsError": pkg.logs_mod.WatchLogsError,
         "WATCH_LOGS_MAX_BODY_BYTES": pkg.const.WATCH_LOGS_MAX_BODY_BYTES,
+        "FCM_PLATFORMS": frozenset({"android", "wearos"}),
+        "CLIENT_CERTIFICATE_SOURCE_ANDROID": pkg.store_mod.SOURCE_ANDROID,
+        "CLIENT_CERTIFICATE_SOURCE_IPHONE": pkg.store_mod.SOURCE_IPHONE,
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -637,6 +642,70 @@ def test_put_stores_the_sealed_certificate_for_the_bound_user(env) -> None:
     assert env.store.get(USER).certificate.pkcs12 == make_p12()
     again = call(env, "_op_client_certificate_put", sealed_put(env, cert_body()))
     assert again.body == {"ok": True, "revision": 1, "changed": False, "fingerprint": fp}
+
+
+class _Secrets:
+    """The secret store as the source check reads it: an entry's platform."""
+
+    def __init__(self, platforms: dict[str, str | None]) -> None:
+        self._entries = {
+            device_id: types.SimpleNamespace(platform=platform)
+            for device_id, platform in platforms.items()
+        }
+
+    def get(self, device_id: str) -> Any:
+        return self._entries.get(device_id)
+
+
+def test_an_apple_phone_s_put_is_filed_as_the_iphone_s_as_before(env) -> None:
+    env.domain.widget_secret_store = _Secrets({PHONE: None})
+    call(env, "_op_client_certificate_put", sealed_put(env, cert_body()))
+    assert env.store.get(USER).source == "iphone"
+
+
+def test_an_android_phone_s_put_and_delete_are_filed_as_the_android_app_s(env) -> None:
+    env.domain.widget_secret_store = _Secrets({PHONE: "android"})
+    reply = call(env, "_op_client_certificate_put", sealed_put(env, cert_body()))
+    assert reply.body["changed"] is True
+    assert env.store.get(USER).source == "android"
+    reply = call(env, "_op_client_certificate_delete", {})
+    assert reply.body == {"ok": True, "revision": 2, "changed": True}
+    assert env.store.get(USER).source == "android"
+
+
+def test_a_wear_watch_s_put_is_the_android_app_s_too(env) -> None:
+    env.domain.widget_secret_store = _Secrets({WATCH: "wearos"})
+    call(
+        env,
+        "_op_client_certificate_put",
+        sealed_put(env, cert_body(), secret=WATCH_SECRET, signer=WATCH),
+        watch_id=WATCH,
+        secret=WATCH_SECRET,
+    )
+    assert env.store.get(USER).source == "android"
+
+
+def test_an_android_put_leaves_the_panel_s_certificate_alone(env) -> None:
+    asyncio.run(
+        env.store.async_put_certificate(
+            USER, env.pkg.store_mod.parse_certificate(cert_body()), source="panel"
+        )
+    )
+    env.domain.widget_secret_store = _Secrets({PHONE: "android"})
+    other = make_p12(common_name="phone")
+    reply = call(env, "_op_client_certificate_put", sealed_put(env, cert_body(other)))
+    assert reply.body["changed"] is False
+    assert env.store.get(USER).source == "panel"
+    assert env.store.get(USER).certificate.pkcs12 == make_p12()
+    assert call(env, "_op_client_certificate_delete", {}).body["changed"] is False
+    assert env.store.get(USER).certificate is not None
+
+
+def test_a_stored_android_record_reads_back_as_android(pkg) -> None:
+    record = pkg.store_mod.ClientCertificateRecord.from_dict(
+        {"revision": 3, "updated_at": "2026-11-13T00:00:00+00:00", "certificate": None, "source": "android"}
+    )
+    assert record is not None and record.source == "android"
 
 
 def test_get_seals_the_certificate_with_the_caller_s_own_secret(env) -> None:

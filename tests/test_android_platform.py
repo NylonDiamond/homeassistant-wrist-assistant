@@ -420,6 +420,35 @@ def test_a_wear_watch_asks_its_android_phone_to_show_pro(notif) -> None:
     reply = env.call("pro_open_on_phone", "wear", {})
     assert reply.body["ok"] is True
     assert env.delivered == [["pixel"]]
+    # Over FCM to the phone's android token, with the key the Android app
+    # opens the paywall on.
+    assert env.pushes[-1]["routes"] == [("pixel", "android")]
+    assert env.pushes[-1]["extra"] == {"wa_open_pro": True}
+
+
+def test_pro_on_the_phone_stays_in_each_watch_s_own_store(notif) -> None:
+    # One person with both families: each watch asks only its own family's
+    # phones, since Pro is bought in each store.
+    env = _push_env(notif, dict(MIXED))
+    env.tokens.register("pixel", "PX", platform="android")
+    env.tokens.register("iphone", "IP", platform="ios")
+    assert env.call("pro_open_on_phone", "wear", {}).body["ok"] is True
+    assert env.call("pro_open_on_phone", "aw", {}).body["ok"] is True
+    assert env.delivered == [["pixel"], ["iphone"]]
+    assert [p["routes"] for p in env.pushes] == [[("pixel", "android")], [("iphone", "ios")]]
+
+
+def test_a_wear_watch_with_only_an_iphone_is_told_it_has_no_phone(notif) -> None:
+    env = _push_env(notif, {"iphone": _device("iphone", "u1"), "wear": _device("watch", "u1", "wearos")})
+    env.tokens.register("iphone", "IP", platform="ios")
+    assert env.call("pro_open_on_phone", "wear", {}).body == {"ok": False, "reason": "no_phone"}
+    assert env.delivered == []
+
+
+def test_an_android_phone_cannot_ask_for_pro_on_a_phone(notif) -> None:
+    env = _push_env(notif, {"pixel": _device("iphone", "u1", "android"), "wear": _device("watch", "u1", "wearos")})
+    env.tokens.register("pixel", "PX", platform="android")
+    assert env.call("pro_open_on_phone", "pixel", {}).body == {"ok": False, "reason": "not_a_watch"}
 
 
 # ── the relay and the phone's complication push ──────────────────────────

@@ -97,6 +97,8 @@ class _Env:
         self.hass = _Hass()
         self.prebound: list[tuple[str, str]] = []
         self.delivered: list[list[str]] = []
+        # Each push's extra data and the (store id, platform) of every route.
+        self.pushes: list[dict[str, Any]] = []
         self.domain_data = types.SimpleNamespace(
             notification_store=self.tokens, widget_secret_store=self.secrets
         )
@@ -127,6 +129,10 @@ class _Env:
                 env.tokens.delivery_modes(),
                 target_watch_ids,
             )
+            env.pushes.append({
+                "extra": _kwargs.get("extra_data"),
+                "routes": [(route.store_id, route.entry.platform) for route in routes],
+            })
             return {"sent": len(routes), "failed": 0, "failures": {}}
 
         # The test op imports _deliver_push lazily from its package.

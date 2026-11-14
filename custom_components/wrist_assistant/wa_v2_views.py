@@ -141,7 +141,11 @@ from .camera_webrtc import (
 )
 from .camera_webrtc import client_configuration as webrtc_client_configuration
 from .camera_webrtc import get_camera as get_webrtc_camera
-from .client_certificate_store import ClientCertificateError
+from .client_certificate_store import (
+    SOURCE_ANDROID as CLIENT_CERTIFICATE_SOURCE_ANDROID,
+    SOURCE_IPHONE as CLIENT_CERTIFICATE_SOURCE_IPHONE,
+    ClientCertificateError,
+)
 from .complication_store import (
     ComplicationConflictError,
     ComplicationStoreError,
@@ -2210,7 +2214,7 @@ def _entry_platform(entry: Any, kind: str) -> str:
 def _caller_runs_android(ctx: _OpContext) -> bool:
     """Whether the signer is an Android phone or a Wear OS watch. Only for
     the words of a refusal; every rule reads the kind."""
-    secrets = ctx.domain_data.widget_secret_store
+    secrets = getattr(ctx.domain_data, "widget_secret_store", None)
     entry = secrets.get(ctx.watch_id) if secrets is not None else None
     return entry is not None and getattr(entry, "platform", None) in FCM_PLATFORMS
 
@@ -2404,22 +2408,31 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": sent > 0, "sent": sent})
 
 
-# The key the iPhone app routes on (`RemotePushRouter.openProKey`): a tap on an
-# alert that holds it opens the app's Pro screen.
+# The key the phone apps route on (`RemotePushRouter.openProKey` on the
+# iPhone, `PushMessage.OPEN_PRO_KEY` on Android): a tap on an alert that holds
+# it opens the app's Pro screen.
 _OPEN_PRO_PUSH_KEY = "wa_open_pro"
 
 
 async def _op_pro_open_on_phone(ctx: _OpContext) -> Response:
-    """Ask the watch's iPhone to show Pro, from the watch's Pro screen.
+    """Ask the watch's phone to show Pro, from the watch's Pro screen.
 
     The phone and the watch never talk to each other, and no watch app can
-    bring an iPhone app to the front. So this sends the iPhones of the watch's
+    bring a phone app to the front. So this sends the phones of the watch's
     Home Assistant user an alert, and a tap on it opens the app's Pro screen.
     With the app open, the app shows Pro at once and no banner.
 
+    Pro is bought in each store, so the phones are those of the watch's own
+    family (`watch_phone_ids`, `mirror_platform`): an Apple Watch asks the
+    user's iPhones over APNs, a Wear OS watch the user's Android phones over
+    FCM, where `wa_open_pro` rides in the data like every other key. An
+    Android phone of an Apple Watch's user is never asked, since a Play
+    purchase does not unlock an Apple Watch, nor the other way round.
+
     Returns {"ok": bool, ...}; ``ok:false`` with ``reason:"no_phone"`` when the
-    user has no iPhone here with a push token, and ``reason:"not_a_watch"`` for
-    an iPhone caller. The watch says what to do by hand in those cases.
+    user has no phone of the watch's family here with a push token, and
+    ``reason:"not_a_watch"`` for a phone caller. The watch says what to do by
+    hand in those cases.
     """
     store = ctx.domain_data.notification_store
     if store is None:
@@ -6245,6 +6258,15 @@ def _client_certificate_gate(ctx: _OpContext) -> tuple[Any, Response | None]:
     return store, None
 
 
+def _client_certificate_source(ctx: _OpContext) -> str:
+    """The path a device's put or delete is filed under: ``android`` for an
+    Android phone or a Wear OS watch, ``iphone`` for an Apple device, as
+    before. Both are a phone's path; the panel names the app."""
+    if _caller_runs_android(ctx):
+        return CLIENT_CERTIFICATE_SOURCE_ANDROID
+    return CLIENT_CERTIFICATE_SOURCE_IPHONE
+
+
 async def _op_client_certificate_put(ctx: _OpContext) -> Response:
     """A phone hands over its client certificate for its bound user.
 
@@ -6294,7 +6316,9 @@ async def _op_client_certificate_put(ctx: _OpContext) -> Response:
             ctx, "invalid", "the sealed box does not hold a JSON object"
         )
     try:
-        record, changed = await store.async_put(ctx.user_id, inner)
+        record, changed = await store.async_put(
+            ctx.user_id, inner, source=_client_certificate_source(ctx)
+        )
     except ClientCertificateError as err:
         return _client_certificate_refusal(ctx, err.code, err.message)
     return ctx.signed_json(
@@ -6326,7 +6350,7 @@ async def _op_client_certificate_delete(ctx: _OpContext) -> Response:
     if refused is not None:
         return refused
     try:
-        revision, changed = store.delete(ctx.user_id)
+        revision, changed = store.delete(ctx.user_id, source=_client_certificate_source(ctx))
     except ClientCertificateError as err:
         return _client_certificate_refusal(ctx, err.code, err.message)
     return ctx.signed_json({"ok": True, "revision": revision, "changed": changed})
