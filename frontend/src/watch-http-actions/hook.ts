@@ -14,6 +14,7 @@ import { html, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
+import { generalCopy } from "../device-platform.js";
 
 export const WATCH_HTTP_ACTIONS_PATH = "/http-actions";
 
@@ -87,7 +88,7 @@ export function renderWatchHttpActionsView(input: WatchHttpActionsViewInput): Te
   // show them. The pickers on the other screens still list every action.
   if (input.hass.user?.is_admin === false) {
     return html`<div class="wp-loading">
-        <span>Only an administrator can change HTTP actions. Your watch and phone can still run every one, from a tile, a menu or a complication.</span>
+        <span>Only an administrator can change HTTP actions. Your watch and ${generalCopy("iPhone", "phone")} can still run every one, from a tile, a menu or a complication.</span>
       </div>`;
   }
   const ready = customElements.get("wa-http-actions-editor") !== undefined;

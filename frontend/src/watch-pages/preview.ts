@@ -140,6 +140,7 @@ import {
 import { type OneLookPreviewModel, oneLookPreviewModel, oneLookTemplateSurface, renderOneLookTile } from "./one-look/render.js";
 import { oneLookLuminance, oneLookParseHex } from "./one-look/colour.js";
 import type { OneLookPhotoLight } from "./one-look/glow.js";
+import { generalCopy } from "../device-platform.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -4432,7 +4433,7 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
  * go outside the picture (`WATCH_SCREEN_FOLD_TEXT`), where they cover no
  * tile. */
 export function renderWatchScreenFold(top: number, phone = false): TemplateResult {
-  return html`<div class="wp-fold" style=${`top:${top}px`} title=${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}></div>`;
+  return html`<div class="wp-fold" style=${`top:${top}px`} title=${phone ? phoneScreenFoldText() : WATCH_SCREEN_FOLD_TEXT}></div>`;
 }
 
 export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watch's screen. The page scrolls on below it.";
@@ -4443,7 +4444,9 @@ function phoneFrameLabel(phone: PhonePagesLayout): string {
   return isAndroidPhoneModel(phone.model) ? "Android phone" : "iPhone";
 }
 
-export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the phone's screen. The page scrolls on below it.";
+export function phoneScreenFoldText(): string {
+  return `The dashed line marks the end of the ${generalCopy("iPhone", "phone")}'s screen. The page scrolls on below it.`;
+}
 
 /** Whether the picture of a page runs past the screen, so it shows the
  * fold. A smart page never does, nor a map page on an iPhone. With

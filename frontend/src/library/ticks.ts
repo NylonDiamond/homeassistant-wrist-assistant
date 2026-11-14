@@ -27,6 +27,7 @@ import { type LinkDevice, deviceWord, joinWords } from "../watch-pages/devices.j
 import type { LibraryKind } from "./client.js";
 import { type Library, libraryItem, libraryMenu, sameId } from "./model.js";
 import { type PendingPick, pendingKey } from "./store.js";
+import { generalCopy } from "../device-platform.js";
 
 /** What a tick row is drawn from. */
 export interface TicksInput {
@@ -154,7 +155,7 @@ export function tickSkipsText(count: number): string {
  * most, then how many more. */
 export function tickSkipsTitle(name: string, tiles: readonly string[]): string {
   const shown = tiles.length <= 4 ? joinWords(tiles) : `${tiles.slice(0, 3).join(", ")} and ${tiles.length - 3} more`;
-  return `${name} skips ${shown}: only a phone shows ${tiles.length === 1 ? "it" : "them"}.`;
+  return `${name} skips ${shown}: only ${generalCopy("an iPhone", "a phone")} shows ${tiles.length === 1 ? "it" : "them"}.`;
 }
 
 /** The chips of one item's row, each ticked watch's with the tiles it skips

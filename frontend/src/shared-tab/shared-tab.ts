@@ -11,7 +11,7 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { type CameraFraming, type HassLike, type HttpActionsRecord, type OwnerSummary, fetchCameras, fetchHttpActions } from "../ha-api.js";
-import { HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, homeLibraryScreens } from "../home.js";
+import { homeLibraryLead, HOME_LIBRARY_TITLE, homeLibraryScreens } from "../home.js";
 import { homeMapRead, homeMapReadFailed } from "../home-map/store.js";
 import { isPlainClick, type WatchScreen } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
@@ -119,7 +119,7 @@ export class WaSharedTab extends LitElement {
     };
     return html`<div class="sh-page">
       <h1>${HOME_LIBRARY_TITLE}</h1>
-      <p class="sh-lead">${HOME_LIBRARY_LEAD}</p>
+      <p class="sh-lead">${homeLibraryLead()}</p>
       <div class="sh-cards">${screens.map(card)}</div>
     </div>`;
   }

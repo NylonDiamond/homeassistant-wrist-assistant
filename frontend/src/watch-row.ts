@@ -34,7 +34,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { deviceColor, deviceColors } from "./device-colors.js";
-import { type DevicePlatform, nounFor, platformOf } from "./device-platform.js";
+import { type DevicePlatform, nounFor, platformOf, generalCopy } from "./device-platform.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
 import { HOME_LIBRARY_TITLE, homeLibraryScreens } from "./home.js";
@@ -262,7 +262,9 @@ export function watchRowSlot(loaded: boolean, watches: number): WatchRowSlot {
 /** Beside the pairing button in a home with no watch. */
 export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set up its pages, menus and the rest.";
 /** Beside the pairing button in a home with no iPhone. */
-export const IPHONE_ROW_NONE_NOTE = "No phone has connected yet. Pair one to set up its pages, menus and the rest.";
+export function iphoneRowNoneNote(): string {
+  return `No ${generalCopy("iPhone", "phone")} has connected yet. Pair one to set up its pages, menus and the rest.`;
+}
 /** Beside the pairing button in a home whose iPhones all run an app too old
  * for pages of their own (`hasPhoneAwaitingUpdate`). */
 export const IPHONE_ROW_UPDATE_NOTE = `Needs Wrist Assistant ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later on your iPhone to set up its pages, menus and the rest.`;
@@ -394,7 +396,7 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
       // The way back already says Shared; only a row with no way back names it.
       ? input.onHome === undefined ? html`<span class="wa-wr-shared">${SHARED_ROW_LABEL}</span>` : nothing
       : renderWatchSlot(input, slot, choices, kind)}
-    ${slot === "none" && !shared ? html`<span class="wa-wr-note">${kind === "iphone" ? (hasPhoneAwaitingUpdate(input.owners) ? IPHONE_ROW_UPDATE_NOTE : IPHONE_ROW_NONE_NOTE) : WATCH_ROW_NONE_NOTE}</span>` : nothing}
+    ${slot === "none" && !shared ? html`<span class="wa-wr-note">${kind === "iphone" ? (hasPhoneAwaitingUpdate(input.owners) ? IPHONE_ROW_UPDATE_NOTE : iphoneRowNoneNote()) : WATCH_ROW_NONE_NOTE}</span>` : nothing}
     ${links.length === 0 ? nothing : html`<nav class="wa-wr-links" aria-label=${shared ? SHARED_ROW_LABEL : `This ${word}'s own`} @scroll=${(e: Event) => { markRowMore(e.currentTarget as HTMLElement); closeRowTip(); }}>
       ${links.map(link)}
       ${board === undefined ? nothing : html`<a class="wa-wr-link to-board" href=${href(board)} style=${`--h: ${WATCH_SCREEN_LOOK.pages.hue}`}
@@ -556,8 +558,8 @@ function chipWords(input: WatchRowInput, c: WatchRowChoice) {
  * pairs; for an iPhone, the panel's Pair a device. */
 function renderPairButton(input: WatchRowInput, kind: RowKind): TemplateResult {
   if (kind === "iphone") {
-    return html`<button type="button" class="wa-wr-pair" title="Pair a phone, by a QR code or a code"
-      @click=${() => input.onPair?.()}>${uiIcon("phone")}<span>Pair a phone</span></button>`;
+    return html`<button type="button" class="wa-wr-pair" title="${generalCopy("Pair an iPhone", "Pair a phone")}, by a QR code or a code"
+      @click=${() => input.onPair?.()}>${uiIcon("phone")}<span>${generalCopy("Pair an iPhone", "Pair a phone")}</span></button>`;
   }
   const settings = watchRowSettingsLink(input.route, undefined);
   return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
@@ -595,7 +597,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
   const group = (k: RowKind) => {
     const of = choices.filter((c) => c.kind === k);
     if (of.length === 0) return nothing;
-    return html`${both ? html`<div class="wa-wr-menu-sub">${k === "iphone" ? "Phones" : "Watches"}</div>` : nothing}${of.map(row)}`;
+    return html`${both ? html`<div class="wa-wr-menu-sub">${k === "iphone" ? generalCopy("iPhones", "Phones") : "Watches"}</div>` : nothing}${of.map(row)}`;
   };
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
       if (e.key === "Escape" && open) { e.stopPropagation(); input.onMenu(false); }

@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { html } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   ANDROID_FEATURE_VERSION,
@@ -20,6 +20,7 @@ import {
   ownerIsAndroid,
   platformModel,
   platformOf,
+  setAndroidHere,
 } from "../src/device-platform.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { deviceFacts } from "../src/home.js";
@@ -73,6 +74,12 @@ const PIXEL = owner({ owner_watch_id: "p1", device_kind: "iphone", platform: "an
 const WEAR = owner({ owner_watch_id: "w2", device_kind: "watch", platform: "wearos", device_name: "Pixel Watch 3", app_version: "0.1.0", screen_size: "227x227" });
 const IPHONE = owner({ owner_watch_id: "p2", device_kind: "iphone", device_name: "Jesse's iPhone" });
 const APPLE_WATCH = owner({ device_kind: "watch" });
+
+
+// These homes have an Android device paired, so general copy says phone and
+// watch (`generalCopy`); `general-copy.test.ts` covers an Apple only home.
+beforeEach(() => setAndroidHere(true));
+afterEach(() => setAndroidHere(false));
 
 describe("the platform of an owner row", () => {
   it("is the one it names when that fits the kind, else the kind's Apple one", () => {
@@ -143,7 +150,7 @@ describe("pairing an Android device", () => {
     expect(welcome).toContain("QR code for the Google Play page");
     const help = readFileSync(join(__dirname, "..", "src", "help-sheet.ts"), "utf8");
     expect(help).toContain("href=${PLAY_STORE_URL}");
-    expect(panel).toContain(`title="Pair a watch with a code, a phone with a QR code"`);
+    expect(panel).toContain(`"Pair a watch with a code, a phone with a QR code"`);
   });
 });
 

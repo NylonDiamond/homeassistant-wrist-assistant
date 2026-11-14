@@ -13,6 +13,7 @@ import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { type PreviewKind, rememberPreview } from "../library/item-mode.js";
 import { uiIcon } from "../ui-icons.js";
+import { generalCopy } from "../device-platform.js";
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
@@ -186,14 +187,14 @@ export function renderPreviewSeg(o: { kind: PreviewKind; duo: boolean; phones: b
   const kind = (k: PreviewKind, label: string) => {
     const on = o.kind === k && !o.duo;
     return html`<button type="button" class="pe-seg-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-      title=${k === "watch" ? "Preview on a watch" : "Preview on a phone"}
+      title=${k === "watch" ? "Preview on a watch" : generalCopy("Preview on an iPhone", "Preview on a phone")}
       @click=${() => { if (!on) { rememberPreview(k); o.onPick(k); } }}>${label}</button>`;
   };
   return html`<div class="pe-seg" role="group" aria-label="Preview on" title="What the page is drawn on. Nothing is changed on any device.">
     ${kind("watch", "Watch")}
-    ${kind("iphone", "Phone")}
+    ${kind("iphone", generalCopy("iPhone", "Phone"))}
     ${o.phones ? html`<button type="button" class="pe-seg-btn ${o.duo ? "on" : ""}" aria-pressed=${o.duo ? "true" : "false"}
-      title="Side by side: a watch and a phone" @click=${() => { if (!o.duo) o.onBoth(); }}>Both</button>` : nothing}
+      title="${generalCopy("Side by side: a watch and an iPhone", "Side by side: a watch and a phone")}" @click=${() => { if (!o.duo) o.onBoth(); }}>Both</button>` : nothing}
   </div>`;
 }
 

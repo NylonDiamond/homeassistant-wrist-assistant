@@ -12,11 +12,11 @@ import {
   PAIR_CHOICE_TITLE,
   PAIR_NEXT_OPEN,
   PAIR_NEXT_PAGE,
-  PAIR_QR_TITLE,
+  pairQrTitle,
   PAIR_SETUP_GUIDE_URL,
   PAIR_TO_CODE_TEXT,
   PAIR_TO_QR_IPHONE_TEXT,
-  PAIR_TO_QR_TEXT,
+  pairToQrText,
   pairChoiceMode,
   pairChoiceNote,
   pairCodeSteps,
@@ -30,7 +30,7 @@ import {
   pairedFactsLine,
   pairedHeadline,
 } from "../src/pair-flow.js";
-import { PAIR_CODE_STEPS } from "../src/watch-settings.js";
+import { pairCodeStepsForAny } from "../src/watch-settings.js";
 
 describe("where the Pair a device card opens", () => {
   it("opens Home's dialog on the choice, with nothing made yet", () => {
@@ -56,18 +56,18 @@ describe("where the Pair a device card opens", () => {
 
 describe("the words of each step", () => {
   it("says which step the dialog is on under its title", () => {
-    expect(pairSubtitle(true, "code", undefined)).toBe("A watch or a phone, to this Home Assistant");
-    expect(pairSubtitle(false, "code", "watch")).toBe("Watch, by its code");
-    expect(pairSubtitle(false, "code", "iphone")).toBe("Phone, by its code");
-    expect(pairSubtitle(false, "qr", "iphone")).toBe("Phone, by a QR code");
-    expect(pairSubtitle(false, "code", undefined)).toBe("A watch or a phone, by its code");
+    expect(pairSubtitle(true, "code", undefined)).toBe("A watch or an iPhone, to this Home Assistant");
+    expect(pairSubtitle(false, "code", "watch")).toBe("Apple Watch, by its code");
+    expect(pairSubtitle(false, "code", "iphone")).toBe("iPhone, by its code");
+    expect(pairSubtitle(false, "qr", "iphone")).toBe("iPhone, by a QR code");
+    expect(pairSubtitle(false, "code", undefined)).toBe("A watch or an iPhone, by its code");
   });
 
   it("gives a watch its own steps, an iPhone its own, and both the shared ones when nobody said", () => {
     expect(pairCodeTitle("watch")).toBe("Type the watch's code");
     expect(pairCodeSteps("watch")[0]).toBe("On the watch, open Wrist Assistant and choose Pair with Home Assistant.");
     expect(pairCodeSteps("iphone")[1]).toBe("Choose Show a code instead, and pick this Home Assistant.");
-    expect(pairCodeSteps(undefined)).toBe(PAIR_CODE_STEPS);
+    expect(pairCodeSteps(undefined)).toBe(pairCodeStepsForAny());
     expect(pairCodeTitle(undefined)).toBe("Type the code");
   });
 
@@ -131,7 +131,7 @@ describe("pairing from the 3.0 app", () => {
 describe("plain words", () => {
   it("never breaks a sentence with a dash", () => {
     const words = [
-      PAIR_CHOICE_TITLE, PAIR_QR_TITLE, PAIR_TO_CODE_TEXT, PAIR_TO_QR_TEXT, PAIR_TO_QR_IPHONE_TEXT,
+      PAIR_CHOICE_TITLE, pairQrTitle(), PAIR_TO_CODE_TEXT, pairToQrText(), PAIR_TO_QR_IPHONE_TEXT,
       ...PAIR_CHOICES.flatMap((c) => [c.label, c.line]),
       ...pairCodeSteps("watch"), ...pairCodeSteps("iphone"),
       pairChoiceNote(true), pairChoiceNote(false),

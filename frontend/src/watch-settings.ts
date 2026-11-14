@@ -24,7 +24,7 @@
 
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
-import { type DevicePlatform, gateVersion, platformModel, platformNoun, platformNounTitle, platformOf } from "./device-platform.js";
+import { type DevicePlatform, gateVersion, platformModel, platformNoun, platformNounTitle, platformOf, generalCopy } from "./device-platform.js";
 import { integrationStoreName } from "./integration-store.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, phoneShowsPages, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
 
@@ -1136,21 +1136,48 @@ export const PAIR_CARD_TITLE = "Pair a device";
  * iPhone. Home's dialog asks which device first (`pair-flow.ts`). */
 export type PairMode = "code" | "qr";
 
-/** The line under the title in each mode. */
-export const PAIR_CODE_HINT = "On the watch or phone, choose Pair with Home Assistant and type the code it shows.";
-export const PAIR_QR_HINT = "Point the phone's camera at the QR code and tap the link.";
+// The pairing words below are general copy (`generalCopy`): an iPhone's
+// until an Android device is paired here, then a phone's.
 
-/** The same, as numbered steps, the way the card draws them. */
-export const PAIR_QR_STEPS = [
+/** The line under the title in each mode. */
+export function pairCodeHint(): string {
+  return generalCopy(
+    "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.",
+    "On the watch or phone, choose Pair with Home Assistant and type the code it shows.",
+  );
+}
+export function pairQrHint(): string {
+  return generalCopy("Point the iPhone's Camera at the QR code and tap the link.", "Point the phone's camera at the QR code and tap the link.");
+}
+
+const PAIR_QR_STEPS_IPHONE = [
+  "Point the iPhone's Camera at this code.",
+  "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
+  "Tap Pair in Wrist Assistant.",
+] as const;
+const PAIR_QR_STEPS_PHONE = [
   "Point the phone's camera at this code.",
   "Tap the link. Wrist Assistant opens, or its App Store or Google Play page when the app is not on the phone yet.",
   "Tap Pair in Wrist Assistant.",
 ] as const;
-export const PAIR_CODE_STEPS = [
+/** The same, as numbered steps, the way the card draws them. */
+export function pairQrSteps(): readonly string[] {
+  return generalCopy(PAIR_QR_STEPS_IPHONE, PAIR_QR_STEPS_PHONE);
+}
+const PAIR_CODE_STEPS_IPHONE = [
+  "Open Wrist Assistant on the watch or iPhone.",
+  "Choose Pair with Home Assistant.",
+  "Type the code it shows here, then Look up.",
+] as const;
+const PAIR_CODE_STEPS_PHONE = [
   "Open Wrist Assistant on the watch or phone.",
   "Choose Pair with Home Assistant.",
   "Type the code it shows here, then Look up.",
 ] as const;
+/** The code steps for a device not yet named. */
+export function pairCodeStepsForAny(): readonly string[] {
+  return generalCopy(PAIR_CODE_STEPS_IPHONE, PAIR_CODE_STEPS_PHONE);
+}
 
 /** What kind of device asked for a pairing. */
 export type PairDeviceKind = "watch" | "iphone";
@@ -1374,7 +1401,7 @@ export function pairUserTitle(kind: PairDeviceKind, platform?: string | null): s
 /** The device in the user menu's words. `platform` "any" is a QR code's
  * phone, which may be an iPhone or an Android phone: "phone". */
 function pairUserWord(kind: PairDeviceKind, platform?: string | null): string {
-  return platform === "any" ? (kind === "iphone" ? "phone" : "watch") : deviceWord(kind, platform);
+  return platform === "any" ? (kind === "iphone" ? generalCopy("iPhone", "phone") : "watch") : deviceWord(kind, platform);
 }
 export const PAIR_USER_TITLE = pairUserTitle("watch");
 
@@ -1478,7 +1505,7 @@ export function pairErrorText(err: unknown, step: "lookup" | "confirm" | "offer"
   const code = errorCode(err);
   if (code === "unknown_command") {
     return step === "offer"
-      ? "Update the Wrist Assistant integration to pair a phone with a QR code."
+      ? generalCopy("Update the Wrist Assistant integration to pair an iPhone with a QR code.", "Update the Wrist Assistant integration to pair a phone with a QR code.")
       : "Update the Wrist Assistant integration to pair a watch with a code.";
   }
   if (code === "needs_replace") return `This ${deviceWord(kind, platform)} is already paired. Tick ${PAIR_REPLACE_LABEL} to pair it again.`;
@@ -1497,10 +1524,17 @@ export const PAIR_OFFER_POLL_MS = 2000;
 /** The QR mode's button, and the box that lets a QR code take over an iPhone
  * paired for someone else (`replace` on the offer). */
 export const PAIR_SHOW_QR_TEXT = "Show QR code";
-export const PAIR_QR_REPLACE_LABEL = "Replace a phone paired for someone else";
+export function pairQrReplaceLabel(): string {
+  return generalCopy("Replace an iPhone paired for someone else", "Replace a phone paired for someone else");
+}
 /** What Replace is for, under it. It is rarely needed, so the QR mode keeps
  * it folded under More options until asked for. */
-export const PAIR_QR_REPLACE_HINT = "Only for a phone already paired here for another person, such as one handed on. Without it, that phone is refused.";
+export function pairQrReplaceHint(): string {
+  return generalCopy(
+    "Only for an iPhone already paired here for another person, such as a phone handed on. Without it, that iPhone is refused.",
+    "Only for a phone already paired here for another person, such as one handed on. Without it, that phone is refused.",
+  );
+}
 export const PAIR_MORE_TEXT = "More options";
 
 /** The link beside the QR code, for the panel open on the iPhone itself,

@@ -16,6 +16,7 @@
 import type { LibraryListKind } from "../library/client.js";
 import { type Library, type LibraryItem, type LibraryPick, itemsFor, libraryItems, restFor, sameId } from "../library/model.js";
 import { type LinkDevice, deviceWord, joinWords } from "./devices.js";
+import { generalCopy } from "../device-platform.js";
 
 /** What a card is: a page, or a status page. */
 export type CardKind = LibraryListKind;
@@ -23,7 +24,9 @@ export type CardKind = LibraryListKind;
 /** The second half of the Pages tab's line under its title: what the
  * library is, so the word means something where the delete and edit lines
  * use it. */
-export const ALL_PAGES_LEAD = "Each watch and phone shows the pages ticked for it, and an edit shows everywhere.";
+export function allPagesLeadLine(): string {
+  return `Each watch and ${generalCopy("iPhone", "phone")} shows the pages ticked for it, and an edit shows everywhere.`;
+}
 
 /** The same on the Status pages tab: what a status page is. */
 export const STATUS_PAGES_LEAD = "A status page is a read-only screen of rows that a tile or a menu slot opens.";
@@ -55,14 +58,14 @@ export function cardsTitle(kind: CardKind): string {
  * only that: the empty block under it says what to do. */
 export function allPagesLead(total: number, kind: CardKind = "pages"): string {
   if (total === 0) return `No ${cardNoun(kind, 2)} yet.`;
-  return `${total} ${cardNoun(kind, total)} in your home. ${kind === "status_pages" ? STATUS_PAGES_LEAD : ALL_PAGES_LEAD}`;
+  return `${total} ${cardNoun(kind, total)} in your home. ${kind === "status_pages" ? STATUS_PAGES_LEAD : allPagesLeadLine()}`;
 }
 
 /** The All tab's block when the library holds none of the kind: how a page
  * works, for whoever may make one, or who to ask. */
 export function emptyLibraryText(kind: CardKind, admin: boolean): string {
   if (!admin) return `Ask a Home Assistant administrator to make the first ${cardNoun(kind)}.`;
-  return `Make ${aCard(kind)} once, then tick each watch or phone that should show it.`;
+  return `Make ${aCard(kind)} once, then tick each watch or ${generalCopy("iPhone", "phone")} that should show it.`;
 }
 
 /** The line in the surface's foot. On the board (`view`) a click on a
@@ -84,7 +87,7 @@ export function footText(kind: CardKind, device: LinkDevice | undefined, selecti
   }
   return kind === "status_pages"
     ? "Click a status page to edit it. Tick a device to put it there."
-    : "Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the phone each arrange them.";
+    : `Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the ${generalCopy("iPhone", "phone")} each arrange them.`;
 }
 
 /** The line under a card's name: "11 tiles", "Smart page", "1 row · starter". */
@@ -244,7 +247,7 @@ export function noPicksText(device: LinkDevice, kind: CardKind, search: string, 
 
 /** What the board says with no row to show. */
 export function emptyText(devices: readonly LinkDevice[], search: string, cardKind: CardKind = "pages"): string {
-  if (devices.length === 0) return "No watch or phone has connected yet. Pair one on the Devices tab.";
+  if (devices.length === 0) return `No watch or ${generalCopy("iPhone", "phone")} has connected yet. Pair one on the Devices tab.`;
   if (search.trim() !== "") return `No ${cardNoun(cardKind)} has that name.`;
   return cardKind === "status_pages"
     ? "Your home has no status pages yet. Use New status page to make one."

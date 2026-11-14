@@ -103,7 +103,7 @@ describe("the page editor's devices, from the library", () => {
     hall.items = [...(hall.items as JsonObject[]), { id: U(200), entityId: `map.${U(201)}`, gridCol: 0, gridRow: 9, colSpan: 12, rowSpan: 4 }];
     draft().apply(doc);
     const strip = ticks();
-    expect(strip).toContain(`Jesse's Watch</span><em class="lt-skips" title=Jesse's Watch skips Map: only a phone shows it.>skips 1</em></button>`);
+    expect(strip).toContain(`Jesse's Watch</span><em class="lt-skips" title=Jesse's Watch skips Map: only an iPhone shows it.>skips 1</em></button>`);
     expect(strip).not.toMatch(/Jesse's iPhone<\/span><em class="lt-skips"/);
     // One row, still: the count is inside the chip.
     expect(strip.match(/class="pe-bar-on[ "]/g)).toHaveLength(1);

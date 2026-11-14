@@ -36,7 +36,7 @@
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
-import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "../watch-pages/save-note.js";
+import { notForIphoneText, watchCommandError } from "../watch-pages/save-note.js";
 import { type PhoneMoves, takesSettingsFromAnotherHome, waitForIphoneText } from "../watch-settings.js";
 import {
   type PointRooms,
@@ -723,7 +723,7 @@ export function roomsSaveNote(result: RoomsSaveResult, kind: RoomsKind = "behavi
     case "no_record":
       return { kind: "warn", text: home ? "Not saved. Home Assistant no longer holds rooms for this home." : "Not saved. Home Assistant no longer holds settings for this watch." };
     case "not_for_iphone":
-      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
+      return { kind: "err", text: `Not saved. ${notForIphoneText()}` };
     case "busy":
       return { kind: "warn", text: "Already saving. Wait a moment for that save to finish." };
     case "unavailable":

@@ -22,6 +22,7 @@ import type { LibraryStore } from "../library/store.js";
 import { uiIcon } from "../ui-icons.js";
 import { type LinkDevice, joinWords } from "./devices.js";
 import type { WatchPagesNote } from "./save-note.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The sentence every copy dialog says. */
 export const COPY_WARNING_TEXT = "These become two pages. A change to one never reaches the other.";
@@ -164,7 +165,7 @@ function deviceTicks(form: CopyForm, holders: readonly LinkDevice[], h: CopyDial
       })}
     </div>`;
   };
-  return html`${group("watch", "Watches")}${group("iphone", "Phones")}`;
+  return html`${group("watch", "Watches")}${group("iphone", generalCopy("iPhones", "Phones"))}`;
 }
 
 /** The dialog: the devices, the copy's name and the warning, or once made

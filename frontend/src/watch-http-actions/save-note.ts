@@ -2,7 +2,7 @@
 // can end. Kept apart from the element so the words can be tested without a
 // browser.
 
-import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote } from "../watch-pages/save-note.js";
+import { notForIphoneText, type WatchPagesNote } from "../watch-pages/save-note.js";
 import type { HttpActionsSaveResult } from "./draft.js";
 import type { HttpActionsClash } from "./merge.js";
 
@@ -45,7 +45,7 @@ export function httpActionsSaveNote(result: HttpActionsSaveResult): WatchPagesNo
       return { kind: "err", text: `Not saved. Home Assistant refused the HTTP actions${message === "" ? "." : `: ${message}`}` };
     }
     case "not_for_iphone":
-      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
+      return { kind: "err", text: `Not saved. ${notForIphoneText()}` };
     case "busy":
       return { kind: "warn", text: "Already saving. Wait a moment for that save to finish." };
     case "unavailable":

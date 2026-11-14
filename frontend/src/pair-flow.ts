@@ -8,9 +8,9 @@
 // card on the Watch app's Settings page still opens on Type a code, with no
 // choice to go back to.
 
-import { type DevicePlatform, platformModel, platformNoun, platformOf } from "./device-platform.js";
+import { type DevicePlatform, platformModel, platformNoun, platformOf, generalCopy } from "./device-platform.js";
 import { type HomeDeviceRow, homeDeviceLabel } from "./home.js";
-import { PAIR_CODE_STEPS, type PairMode } from "./watch-settings.js";
+import { type PairMode, pairCodeStepsForAny } from "./watch-settings.js";
 
 /** The two answers to "What are you pairing?". */
 export type PairChoice = "watch" | "iphone";
@@ -43,13 +43,23 @@ export function pairChoiceMode(choice: PairChoice): PairMode {
   return choice === "iphone" ? "qr" : "code";
 }
 
-/** The question and its two answers, each with one short line. The words
- * name no make: a watch is an Apple Watch or a Wear OS watch, and a phone an
- * iPhone or an Android phone, and each pairs the same way. */
+/** The question and its two answers, each with one short line. General copy
+ * (`generalCopy`): an Apple Watch and an iPhone until an Android device is
+ * paired here, then words that name no make, since a watch is then an Apple
+ * Watch or a Wear OS watch, and a phone an iPhone or an Android phone, and
+ * each pairs the same way. */
 export const PAIR_CHOICE_TITLE = "What are you pairing?";
 export const PAIR_CHOICES: readonly { choice: PairChoice; label: string; line: string }[] = [
-  { choice: "watch", label: "Watch", line: "The watch shows a code. You type it here. No phone needed." },
-  { choice: "iphone", label: "Phone", line: "The panel shows a QR code. You scan it with the phone." },
+  {
+    choice: "watch",
+    get label() { return generalCopy("Apple Watch", "Watch"); },
+    get line() { return generalCopy("The watch shows a code. You type it here. No iPhone needed.", "The watch shows a code. You type it here. No phone needed."); },
+  },
+  {
+    choice: "iphone",
+    get label() { return generalCopy("iPhone", "Phone"); },
+    get line() { return generalCopy("The panel shows a QR code. You scan it with the iPhone.", "The panel shows a QR code. You scan it with the phone."); },
+  },
 ];
 
 /** The line under the choice: whose a paired device is. Only an
@@ -67,17 +77,17 @@ export const OLD_APP_PAIR_NOTE = "On Wrist Assistant 3.0, sign in to Home Assist
 
 /** The line under the dialog's title, for the step on screen. */
 export function pairSubtitle(choosing: boolean, mode: PairMode, device: PairChoice | undefined): string {
-  if (choosing) return "A watch or a phone, to this Home Assistant";
-  if (mode === "qr") return "Phone, by a QR code";
-  if (device === "watch") return "Watch, by its code";
-  if (device === "iphone") return "Phone, by its code";
-  return "A watch or a phone, by its code";
+  if (choosing) return generalCopy("A watch or an iPhone, to this Home Assistant", "A watch or a phone, to this Home Assistant");
+  if (mode === "qr") return generalCopy("iPhone, by a QR code", "Phone, by a QR code");
+  if (device === "watch") return generalCopy("Apple Watch, by its code", "Watch, by its code");
+  if (device === "iphone") return generalCopy("iPhone, by its code", "Phone, by its code");
+  return generalCopy("A watch or an iPhone, by its code", "A watch or a phone, by its code");
 }
 
 /** The title over the code box: whose code it is, when the person said. */
 export function pairCodeTitle(device: PairChoice | undefined): string {
   if (device === "watch") return "Type the watch's code";
-  if (device === "iphone") return "Type the phone's code";
+  if (device === "iphone") return generalCopy("Type the iPhone's code", "Type the phone's code");
   return "Type the code";
 }
 
@@ -93,13 +103,14 @@ export function pairCodeSteps(device: PairChoice | undefined): readonly string[]
     ];
   }
   if (device === "iphone") {
+    const phone = generalCopy("iPhone", "phone");
     return [
-      "On the phone, open Wrist Assistant and choose Pair with Home Assistant.",
+      `On the ${phone}, open Wrist Assistant and choose Pair with Home Assistant.`,
       "Choose Show a code instead, and pick this Home Assistant.",
-      "The phone shows a 6-character code. Type it here.",
+      `The ${phone} shows a 6-character code. Type it here.`,
     ];
   }
-  return PAIR_CODE_STEPS;
+  return pairCodeStepsForAny();
 }
 
 /** The title over a device found by its code: "Is this your iPhone?", "Is
@@ -128,7 +139,9 @@ export function pairGoLabel(kind: PairChoice, platform?: DevicePlatform | null):
 }
 
 /** The QR mode's title. */
-export const PAIR_QR_TITLE = "Scan with the phone";
+export function pairQrTitle(): string {
+  return generalCopy("Scan with the iPhone", "Scan with the phone");
+}
 
 /** The web address a pairing QR code holds, in place of the app's own link.
  * Scanned with the iPhone's Camera, it opens Wrist Assistant straight away
@@ -147,7 +160,9 @@ export function pairQrLink(appLink: string): string | undefined {
 }
 
 /** The link from one way to the other, in each step's foot. */
-export const PAIR_TO_QR_TEXT = "Pairing a phone? Show a QR code";
+export function pairToQrText(): string {
+  return generalCopy("Pairing an iPhone? Show a QR code", "Pairing a phone? Show a QR code");
+}
 export const PAIR_TO_QR_IPHONE_TEXT = "Show a QR code instead";
 export const PAIR_TO_CODE_TEXT = "No camera? Type a code";
 export const PAIR_NOT_THIS_TEXT = "Not this one";

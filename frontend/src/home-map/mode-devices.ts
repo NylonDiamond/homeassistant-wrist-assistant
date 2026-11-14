@@ -143,6 +143,7 @@ import {
 import { HOME_MAP_PIN_ICON_NAMES, homeMapAutoPinIcon, homeMapGlowHex, homeMapPinGlowRadius, homeMapPinGlyph, homeMapPinPill } from "./pin-look.js";
 import { homeMapPinAt } from "./plan-pick.js";
 import { type HomeMapRoomWaiting, homeMapMoreWords, homeMapRoomWaiting, homeMapWaitKind, homeMapWaitWords } from "./waiting.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The glow ring's handle sits at this angle, down and to the right. */
 const HANDLE_ANGLE = Math.PI / 4;
@@ -1645,7 +1646,7 @@ export class DevicesMode {
           if (v !== "") set({ tap: "page", pageId: v });
         },
       })) : nothing}
-      <p class="hme-text dim">${pin.tap === undefined && !this.pickPage ? "As the tile does: a light toggles, anything else opens its control." : "Hold on the watch or phone: its controls."}</p>`);
+      <p class="hme-text dim">${pin.tap === undefined && !this.pickPage ? "As the tile does: a light toggles, anything else opens its control." : generalCopy("Hold on the watch or iPhone: its controls.", "Hold on the watch or phone: its controls.")}</p>`);
   }
 
 }

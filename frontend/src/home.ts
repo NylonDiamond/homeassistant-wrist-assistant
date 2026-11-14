@@ -3,7 +3,7 @@
 // be worked out without the panel lives here, where a test can reach it.
 
 import { css } from "lit";
-import { type DevicePlatform, gateVersion, ownerIsAndroid, platformModel, platformOf } from "./device-platform.js";
+import { type DevicePlatform, gateVersion, ownerIsAndroid, platformModel, platformOf, generalCopy } from "./device-platform.js";
 import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
@@ -267,7 +267,9 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
 export const HOME_LIBRARY_TITLE = "Shared";
 
 /** The Shared tab's one line under its title. */
-export const HOME_LIBRARY_LEAD = "Kept once for the whole home. Every watch and phone uses them.";
+export function homeLibraryLead(): string {
+  return generalCopy("Kept once for the whole home. Every watch and iPhone uses them.", "Kept once for the whole home. Every watch and phone uses them.");
+}
 
 /** The screens the Shared tab lists, in order: every screen of the whole
  * home (`shared`) that is not retired, and of those that need a capability
@@ -516,7 +518,7 @@ export const IPHONE_SETTINGS_BLURB = "Gestures, page look and cameras.";
 /** The look of one of the device's doors (`deviceSheetTabs`). */
 export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): HomeDoorLook {
   if (tab.kind === "list") {
-    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: "Buttons in Control Center (Quick Settings on Android), from your designs." };
+    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: generalCopy("Buttons in Control Center, from your designs.", "Buttons in Control Center (Quick Settings on Android), from your designs.") };
     return kind === "watch"
       ? { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." }
       : { icon: "grid", hue: "var(--wa-hue-blue)", blurb: "On the Lock Screen and Home Screen." };

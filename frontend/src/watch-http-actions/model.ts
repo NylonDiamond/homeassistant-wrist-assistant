@@ -29,6 +29,7 @@ import { waitingLibraryText } from "../watch-pages/devices.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
+import { generalCopy } from "../device-platform.js";
 
 // ── the document ─────────────────────────────────────────────────────────
 
@@ -984,7 +985,9 @@ export function checkHttpActions(document: unknown): string[] {
 
 // ── words ────────────────────────────────────────────────────────────────
 
-export const HTTP_ACTIONS_SHARED_TEXT = "Shared by every watch and phone.";
+export function httpActionsSharedText(): string {
+  return generalCopy("Shared by every watch and iPhone.", "Shared by every watch and phone.");
+}
 
 export const HTTP_ACTIONS_EMPTY_TITLE = "No HTTP actions yet.";
 

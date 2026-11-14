@@ -32,6 +32,7 @@ import {
   watchMediaPlayersFromHass,
 } from "./tile-new.js";
 import { VIRTUAL_TILE_KINDS, tileKindPlural } from "./model.js";
+import { generalCopy } from "../device-platform.js";
 
 /** One row: the panel's search row, plus the plain name of the entity's kind
  * in plural, the panel's own (`tileKindPlural`: "Lights", "People"). */
@@ -366,18 +367,29 @@ export function watchAppAddBlockedText(
 
 // ── tiles only the iPhone draws ──────────────────────────────────────────
 
+// General copy (`generalCopy`): "iPhone" until an Android device is paired
+// here, then "phone".
+
 /** The group's title, last in the dialog. */
-export const WATCH_PHONE_GROUP_TITLE = "Phone only";
+export function watchPhoneGroupTitle(): string {
+  return generalCopy("iPhone only", "Phone only");
+}
 
 /** What each of its rows says on a watch's editor, where it is greyed. */
-export const WATCH_PHONE_GREYED_TEXT = "Shown on the phone only";
+export function watchPhoneGreyedText(): string {
+  return `Shown on the ${generalCopy("iPhone", "phone")} only`;
+}
 
 /** What the open group says under its rows: such a tile goes on the
  * iPhone's screen alone, Off on the watch's. */
-export const WATCH_PHONE_LANDS_TEXT = "Lands on the phone only. The watch cannot draw it.";
+export function watchPhoneLandsText(): string {
+  return `Lands on the ${generalCopy("iPhone", "phone")} only. The watch cannot draw it.`;
+}
 
 /** What follows the line after an add of one of them. */
-export const WATCH_PHONE_ADDED_TEXT = "It is on the phone only.";
+export function watchPhoneAddedText(): string {
+  return `It is on the ${generalCopy("iPhone", "phone")} only.`;
+}
 
 /** One button of the group: the kind, its words, the SF Symbol its new tile
  * carries, its one line and the line after an add. */
@@ -457,9 +469,9 @@ export function watchPhoneTilesGroupOf(group: WatchPhoneTilesGroup | undefined, 
   return group ?? (shown === "iphone" ? { state: "open" } : { state: "hidden" });
 }
 
-/** "Jesse's watch runs 3.1.0; phone only tiles need 3.2.0." */
+/** "Jesse's watch runs 3.1.0; iPhone only tiles need 3.2.0." */
 export function watchPhoneTilesBlockedText(watch: WatchOldWatch): string {
-  return `${watch.name} runs ${watch.version}; phone only tiles need ${MIN_WATCH_VERSION_FOR_PHONE_TILES}.`;
+  return `${watch.name} runs ${watch.version}; ${generalCopy("iPhone", "phone")} only tiles need ${MIN_WATCH_VERSION_FOR_PHONE_TILES}.`;
 }
 
 // ── words ────────────────────────────────────────────────────────────────

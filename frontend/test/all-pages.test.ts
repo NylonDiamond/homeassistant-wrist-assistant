@@ -141,22 +141,22 @@ describe("which device a card opens on", () => {
 
 describe("the tab's words", () => {
   it("count the items in the library in the line under the title, and say what the library is", () => {
-    expect(allPagesLead(12)).toBe("12 pages in your home. Each watch and phone shows the pages ticked for it, and an edit shows everywhere.");
-    expect(allPagesLead(1)).toBe("1 page in your home. Each watch and phone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(allPagesLead(12)).toBe("12 pages in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(allPagesLead(1)).toBe("1 page in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
     expect(allPagesLead(5, "status_pages")).toBe("5 status pages in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.");
     expect(allPagesLead(0)).toBe("No pages yet.");
   });
 
   it("explain an empty library, and send anyone who may not make a page to an administrator", () => {
-    expect(emptyLibraryText("pages", true)).toBe("Make a page once, then tick each watch or phone that should show it.");
-    expect(emptyLibraryText("status_pages", true)).toBe("Make a status page once, then tick each watch or phone that should show it.");
+    expect(emptyLibraryText("pages", true)).toBe("Make a page once, then tick each watch or iPhone that should show it.");
+    expect(emptyLibraryText("status_pages", true)).toBe("Make a status page once, then tick each watch or iPhone that should show it.");
     expect(emptyLibraryText("pages", false)).toBe("Ask a Home Assistant administrator to make the first page.");
   });
 
   it("say in the foot what a click and a tick do, as the mock does", () => {
     expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a box to show the page on that device. Click Focus in a device's column header to see and drag its order.");
     expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a box to put it on that device. Click Focus in a device's column header to see and drag its order.");
-    expect(footText("pages", undefined, false, "cards")).toBe("Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the phone each arrange them.");
+    expect(footText("pages", undefined, false, "cards")).toBe("Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.");
     expect(footText("status_pages", undefined, false, "cards")).toBe("Click a status page to edit it. Tick a device to put it there.");
     expect(footText("pages", JESSE_D)).toContain("Hide here");
     expect(footText("status_pages", JESSE_D)).not.toContain("Hide here");
@@ -164,7 +164,7 @@ describe("the tab's words", () => {
   });
 
   it("say why there is nothing to show", () => {
-    expect(emptyText([], "")).toBe("No watch or phone has connected yet. Pair one on the Devices tab.");
+    expect(emptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Devices tab.");
     expect(emptyText(DEVICES, "")).toBe("Your home has no pages yet. Use New page to make one.");
     expect(emptyText(DEVICES, "zz")).toBe("No page has that name.");
     expect(emptyText(DEVICES, "", "status_pages")).toBe("Your home has no status pages yet. Use New status page to make one.");

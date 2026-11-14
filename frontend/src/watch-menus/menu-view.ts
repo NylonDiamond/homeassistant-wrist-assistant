@@ -48,7 +48,7 @@ import {
 import {
   ANYWHERE,
   MENU_ACTIONS,
-  PHONE_NO_PHRASES_TEXT,
+  phoneNoPhrasesText,
   type MenuHTTPTarget,
   type MenuListRef,
   type MenuPayloadSpec,
@@ -1002,7 +1002,7 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
       ${list.map((t) => html`<option value=${t.id} ?selected=${sameId(t.id, stored)}>${label(t)}</option>`)}
     </select></label>
     ${spec.target === "ttsPhrase"
-      ? (host.device === "iphone" ? html`<div class="hint ts-under">${PHONE_NO_PHRASES_TEXT}</div>`
+      ? (host.device === "iphone" ? html`<div class="hint ts-under">${phoneNoPhrasesText()}</div>`
         : host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
       : spec.target === "statusPage"
       ? (fromWatch || host.catalogKnown ? nothing : html`<div class="hint ts-under">${noRecordTitle("status pages", host.device ?? "watch")} Add them in Status pages.</div>`)

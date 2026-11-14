@@ -25,6 +25,7 @@ import { type LibraryItemSaveReply, type LibraryKind, type LibraryObject, fetchL
 import { type Library, libraryItem, libraryMenu } from "./model.js";
 import { SAVED_FLASH_MS } from "./board.js";
 import type { LibraryStore } from "./store.js";
+import { generalCopy } from "../device-platform.js";
 
 /** One item of the library, as an editor's library mode is handed it. */
 export interface LibraryItemRef {
@@ -222,9 +223,9 @@ export function renderPreviewPicker(shown: PreviewKind, onPick: (kind: PreviewKi
   return html`<span class="lib-preview" role="group" aria-label="Preview on" title="What this is drawn on. Nothing is changed on any device.">
     <span class="lib-preview-l">Preview on</span>
     ${thumb("watch", "Preview on a watch")}
-    ${thumb("iphone", "Preview on a phone")}
+    ${thumb("iphone", generalCopy("Preview on an iPhone", "Preview on a phone"))}
     ${both === undefined ? nothing : html`<button type="button" class="lib-preview-thumb duo ${duo ? "on" : ""}"
-      aria-pressed=${duo ? "true" : "false"} title="Side by side: a watch and a phone" aria-label="Side by side: a watch and a phone"
+      aria-pressed=${duo ? "true" : "false"} title="${generalCopy("Side by side: a watch and an iPhone", "Side by side: a watch and a phone")}" aria-label="${generalCopy("Side by side: a watch and an iPhone", "Side by side: a watch and a phone")}"
       @click=${() => { if (!duo) both.pick(); }}>${sideBySideArt()}</button>`}
   </span>`;
 }
@@ -252,8 +253,8 @@ export function otherPreviewKind(kind: PreviewKind): PreviewKind {
  * of that kind that have the item ("Watch · Jesse Apple Watch"), or that
  * none of them has it. */
 export function previewLabel(kind: PreviewKind, names: readonly string[]): string {
-  const word = kind === "watch" ? "Watch" : "Phone";
-  if (names.length === 0) return `${word} · on no ${kind === "watch" ? "watch" : "phone"} yet`;
+  const word = kind === "watch" ? "Watch" : generalCopy("iPhone", "Phone");
+  if (names.length === 0) return `${word} · on no ${kind === "watch" ? "watch" : generalCopy("iPhone", "phone")} yet`;
   return `${word} · ${names.join(", ")}`;
 }
 

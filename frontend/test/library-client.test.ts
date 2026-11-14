@@ -77,7 +77,7 @@ describe("libraryErrorText", () => {
     expect(libraryErrorText({ code: "unknown_command", message: "Unknown command." })).toBe(LIBRARY_UNSUPPORTED_TEXT);
     expect(libraryErrorText({ code: "in_use", message: "menu in use" })).toBe("A device still uses this menu. Pick another menu for it first.");
     expect(libraryErrorText({ code: "awaiting_move", message: "x" })).toMatch(/^Waiting for your iPhone\..* Try again after that\.$/);
-    expect(libraryErrorText({ code: "not_for_iphone", message: "x" })).toMatch(/^A phone keeps only/);
+    expect(libraryErrorText({ code: "not_for_iphone", message: "x" })).toMatch(/^An iPhone keeps only/);
     expect(libraryErrorText({ error: { code: "invalid", message: "name is empty" } })).toBe("name is empty");
     expect(libraryErrorCode({ error: { code: "in_use", message: "" } })).toBe("in_use");
   });

@@ -12,6 +12,7 @@ import type { DeviceOwner } from "./copies.js";
 import { ALL_FAMILIES, comingSoonFamilies, familiesFor, isHomeFamily } from "./layouts.js";
 import type { FamilyKind } from "./model.js";
 import { familyTitle } from "./renderer.js";
+import { generalCopy } from "./device-platform.js";
 
 /** What step 2 asks for: a device, or Control Center, which is a complication
  * with no shape at all. */
@@ -24,7 +25,7 @@ export const NEW_KINDS: readonly NewKind[] = ["watch", "iphone", "control"];
 export function kindTitle(kind: NewKind): string {
   switch (kind) {
     case "watch": return "Watch";
-    case "iphone": return "Phone";
+    case "iphone": return generalCopy("iPhone", "Phone");
     case "control": return "Control Center";
   }
 }
@@ -152,7 +153,7 @@ export function newSummary(o: NewChoice): string {
   if (o.kind === undefined || (o.kind !== "control" && o.family === undefined)) return "Now pick one shape, or Control Center.";
   const what = o.kind === "control"
     ? "A Control Center control"
-    : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "a phone"}`;
+    : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : generalCopy("an iPhone", "a phone")}`;
   if (o.devices === 0) return `${what}, on no device yet. Tick a device any time.`;
   return `${what}, on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
 }

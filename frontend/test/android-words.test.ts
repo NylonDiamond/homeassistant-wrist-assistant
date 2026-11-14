@@ -6,7 +6,9 @@
 // the Apple line too. General copy says phone and watch, and an Apple only
 // feature (Lock Screen, Siri, Control Center) says so.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { setAndroidHere } from "../src/device-platform.js";
 
 import { addressHint, addressesHelp, addressesSavedNote } from "../src/device-addresses.js";
 import type { OwnerSummary } from "../src/ha-api.js";
@@ -19,7 +21,7 @@ import { deviceShortName } from "../src/people.js";
 import { rowWhoText } from "../src/pickerRows.js";
 import {
   ANDROID_WIDGET_STEP,
-  NOT_ON_A_DEVICE_LINE,
+  notOnADeviceLine,
   WEAR_FACE_STEP,
   afterSaveLine,
   describeSend,
@@ -36,8 +38,8 @@ import { rejectedSaveText } from "../src/watch-app-sync.js";
 import {
   PAIR_OPEN_ANDROID_APP_TEXT,
   PAIR_OPEN_APP_TEXT,
-  PAIR_QR_REPLACE_HINT,
-  PAIR_QR_REPLACE_LABEL,
+  pairQrReplaceHint,
+  pairQrReplaceLabel,
   catalogFor,
   newDeviceText,
   pairErrorText,
@@ -76,6 +78,12 @@ const APPLE_WATCH = owner({ device_kind: "watch" });
 
 const phoneSend = { token: 3, appliedToken: 3, polling: false, pending: false, deviceKind: "iphone" as const, pushAvailable: true };
 
+
+// These homes have an Android device paired, so general copy says phone and
+// watch (`generalCopy`); `general-copy.test.ts` covers an Apple only home.
+beforeEach(() => setAndroidHere(true));
+afterEach(() => setAndroidHere(false));
+
 describe("a design's sync words on an Android phone", () => {
   it("say phone and Android's widgets, and an iPhone keeps its iOS words", () => {
     const apple = describeSend(sendState(phoneSend));
@@ -111,7 +119,7 @@ describe("a design's sync words on an Android phone", () => {
     expect(onTheFaceStep("watch")).toBe("On the watch, touch and hold the face, tap Edit, then pick Wrist Assistant in a complication slot.");
     expect(howItWorksSteps("iphone", false, "android")[2]).toBe("Save, then open Wrist Assistant on your phone to get it.");
     expect(howItWorksSteps("iphone", false)[2]).toBe("Save, then open Wrist Assistant on your iPhone to get it.");
-    expect(NOT_ON_A_DEVICE_LINE).toBe("On no device yet. Tick a device over the preview to put it on a watch or a phone.");
+    expect(notOnADeviceLine()).toBe("On no device yet. Tick a device over the preview to put it on a watch or a phone.");
   });
 
   it("never count the iPhone app's presets on an Android device", () => {
@@ -232,8 +240,8 @@ describe("pairing a phone of either platform", () => {
   });
 
   it("says phone for a QR code, which any phone can scan", () => {
-    expect(PAIR_QR_REPLACE_LABEL).toBe("Replace a phone paired for someone else");
-    expect(PAIR_QR_REPLACE_HINT).not.toMatch(/iPhone/);
+    expect(pairQrReplaceLabel()).toBe("Replace a phone paired for someone else");
+    expect(pairQrReplaceHint()).not.toMatch(/iPhone/);
     expect(pairErrorText({ code: "unknown_command" }, "offer")).toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
   });
 

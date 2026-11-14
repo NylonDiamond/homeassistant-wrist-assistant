@@ -18,6 +18,8 @@ The integration and the panel know four device platforms: `ios`, `watchos`,
 - The secret store keeps `platform` only once a device said it, so an Apple
   device's entry is written exactly as before.
 - The owners reply (`wrist_assistant/complications/owners`) carries
+  `paired_platforms` beside the rows: the platforms of every paired device,
+  sorted, whoever asks. It also carries
   `platform` on every device row (the resolved one, `ios` or `watchos` for an
   Apple device) and null on the Library and orphans. `pair/lookup` and
   `pair/offer_status` carry it too. `update_metadata` echoes it only to a
@@ -40,7 +42,9 @@ The integration and the panel know four device platforms: `ios`, `watchos`,
   `no_pages_record`, the QR redeem's `not_an_iphone`, `unbound_needs_replace`
   and `bound_to_other_user`) say "phone" to an Android phone or a Wear OS
   watch and "iPhone" to an Apple device, as before. The codes are unchanged.
-  A QR code is for any phone, so its own refusals say "phone".
+  A QR code is for any phone, so its own refusals are general copy: "iPhone"
+  while every paired device is an Apple one, "phone" once an Android device
+  is paired.
 - `watch_logs_put`, `client_certificate_get`, `addresses_get`,
   `addresses_set`, `verify_identity`, `phone_pages_offer` and
   `phone_pages_link_watch` read only the signer's id, its kind and its user,
@@ -92,11 +96,50 @@ all four models.
 - `ComplicationPhonePush` sends an Android phone's background push to its own
   `android` token.
 
+## Home map and photo icons
+
+Every op reads the signer's kind and user, never its platform, so the
+Android apps use them as the Apple apps do (the in-process tests sign as an
+Android phone and a Wear OS watch in `test_home_map_ops.py`,
+`test_home_map_page_add.py` and `test_page_images_ops.py`):
+
+- `home_map_get` and `areas_get` answer any paired device alike.
+- `home_map_put` takes a phone's save (Place Devices on an Android phone),
+  with the same conflict on a stale `base_rev`; a Wear OS watch hears
+  `not_an_iphone` with "Only a phone saves the home map." Android has no room
+  scan, so its saves name no `scanned` room.
+- `home_map_page_add` adds the panel's map page to an Android phone's own
+  pages, once however often it asks, and refuses a Wear OS watch.
+- `page_image_put` with `edit`, `page_image_list`, `page_image_edit_get` and
+  `page_image_replace` take an Android phone's icon photos and edit packs
+  under the same contract (`WAED` first, at most 1 MiB), and replace moves the
+  tiles of every owner bound to the phone's user, its Wear OS watch's too.
+- `home_map_rev` rides a Wear OS watch's delta replies, lean ones too, and a
+  save wakes its parked poll, beside `stored_metadata` with its platform.
+
 ## Panel
 
 - Nouns come from the platform: "iPhone" for an iPhone, "phone" for an
-  Android phone, "watch" for either watch (`deviceNoun`, `nounFor`). Copy that
-  is about no device in particular says "phone" and "watch".
+  Android phone, "watch" for either watch (`deviceNoun`, `nounFor`).
+- **General copy follows the home.** Copy about no device in particular (the
+  pair choices, "Scan with the iPhone", "No iPhone yet", the help sheet, the
+  phone only tiles, iPhone extras, the shared screens' blurbs and the rest)
+  keeps the Apple words it always had while every device paired to this Home
+  Assistant is an Apple one, and says "phone" and "watch" once an Android
+  phone or a Wear OS watch is paired. Each line reads `generalCopy(apple,
+  phoneAndWatch)` (`device-platform.ts`), which follows one home level
+  switch: `fetchOwners` notes every owners reply (`noteHomeDevices`), whose
+  `paired_platforms` lists the platforms of every paired device whoever asks
+  (a person who is not an administrator gets only their own rows), and from
+  an integration without that field the rows say (`homeHasAndroid`). Google
+  Play beside the App Store (the welcome, Help) follows the same switch. The
+  integration's own general words do the same (`general_words` in
+  `device_platform.py`): the notification target errors and the QR code's
+  person refusals. `frontend/test/general-copy.test.ts` holds the Apple side
+  to main's words byte for byte (`test/fixtures-general-copy`). The texts
+  Home Assistant shows from files (the config flow, `services.yaml`, the
+  blueprint) cannot follow a switch and keep the Apple words; their device
+  selectors list the Android models.
 - Version gates read `gateVersion(owner)`: an Apple device's own version, and
   `ANDROID_FEATURE_VERSION` (the Apple release whose features the Android apps
   draw) for an Android device. Raise it when the Android apps catch up with a
@@ -109,15 +152,11 @@ all four models.
   watch row but the double pinch, and `android` beside `iphone` on every
   phone row but the Page look. `wearLabel` and `wearHelp` give the crown's row
   its rotary words.
-- The welcome and Help link Google Play beside the App Store.
 - A line about the device on show names it by its platform: the page editor's
   views, stage and screen lines (`phonePlatform`), a design's sync words
   (`sendState`'s `platform`), Home's lines, the lineup, the boards, the
   addresses, rooms, status pages, the new device and rejected save lines,
   and the pairing refusals. Each keeps its Apple words for an Apple device.
-- Copy about no device in particular says phone and watch: the phone only
-  tiles, Phone extras, the Phone app tab, the general help and the QR
-  pairing words.
 - Apple only features say so: Siri is "on Apple devices", a Control Center
   control is a Quick Settings tile on an Android phone, the Lock Screen and
   the iPhone app's old presets stay iPhone words, and an Android device is

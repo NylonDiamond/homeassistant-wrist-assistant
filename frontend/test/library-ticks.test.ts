@@ -271,9 +271,9 @@ describe("the tiles a watch skips", () => {
       ["Jesse Apple Watch", true, "skips 2"],
       ["iPhone 15 Pro", true, undefined],
     ]);
-    expect(chips[1]!.skips!.title).toBe("Jesse Apple Watch skips Map and Garden: only a phone shows them.");
+    expect(chips[1]!.skips!.title).toBe("Jesse Apple Watch skips Map and Garden: only an iPhone shows them.");
     // The chip's own tooltip keeps what a click does, then the tiles.
-    expect(chips[1]!.title).toBe("On Jesse Apple Watch, hidden there. Untick to take the page off it. Jesse Apple Watch skips Map and Garden: only a phone shows them.");
+    expect(chips[1]!.title).toBe("On Jesse Apple Watch, hidden there. Untick to take the page off it. Jesse Apple Watch skips Map and Garden: only an iPhone shows them.");
     // A watch without the page skips nothing.
     expect(chips[0]!.title).toBe("Not on Chen Watch. Tick to put the page there.");
     expect(chips[2]!.title).toBe("On iPhone 15 Pro. Untick to take the page off it.");
@@ -294,14 +294,14 @@ describe("the tiles a watch skips", () => {
   it("say the contract's words: skips and the count, the tiles in the tooltip, four at most", () => {
     expect(tickSkipsText(1)).toBe("skips 1");
     expect(tickSkipsText(2)).toBe("skips 2");
-    expect(tickSkipsTitle("Den Watch", ["Map"])).toBe("Den Watch skips Map: only a phone shows it.");
-    expect(tickSkipsTitle("Den Watch", ["Map", "Chart", "Notes", "Web card"])).toBe("Den Watch skips Map, Chart, Notes and Web card: only a phone shows them.");
-    expect(tickSkipsTitle("Den Watch", ["Map", "Chart", "Notes", "Web card", "Garden"])).toBe("Den Watch skips Map, Chart, Notes and 2 more: only a phone shows them.");
+    expect(tickSkipsTitle("Den Watch", ["Map"])).toBe("Den Watch skips Map: only an iPhone shows it.");
+    expect(tickSkipsTitle("Den Watch", ["Map", "Chart", "Notes", "Web card"])).toBe("Den Watch skips Map, Chart, Notes and Web card: only an iPhone shows them.");
+    expect(tickSkipsTitle("Den Watch", ["Map", "Chart", "Notes", "Web card", "Garden"])).toBe("Den Watch skips Map, Chart, Notes and 2 more: only an iPhone shows them.");
   });
 
   it("draw the count inside the chip, in the strip's line and in the fold's popover, so the fold measures the wider chip", () => {
     const text = flat(renderTicks(input({ skips: ["Map", "Garden"] }), () => undefined));
-    const em = `<em class="lt-skips" title=Jesse Apple Watch skips Map and Garden: only a phone shows them.>skips 2</em>`;
+    const em = `<em class="lt-skips" title=Jesse Apple Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
     // In the chip's button, after its name: the row measures each chip's
     // own width (chip-row.ts), so the count is part of what it adds up. A
     // hidden watch says both.

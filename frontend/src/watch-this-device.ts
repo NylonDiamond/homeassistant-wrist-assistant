@@ -8,7 +8,7 @@
 // rows live here so the tests read them without a DOM; the Settings page
 // draws them (`watch-settings-view.ts`).
 
-import { type DevicePlatform, nounFor } from "./device-platform.js";
+import { type DevicePlatform, nounFor, generalCopy } from "./device-platform.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { agoWords } from "./send-state.js";
 import type { SettingDevice } from "./watch-settings.js";
@@ -27,7 +27,12 @@ export function thisDeviceNote(device: SettingDevice, platform?: DevicePlatform 
 
 /** What the search looks through for the card. "pair" finds it, as it found
  * the pairing card before. */
-export const THIS_DEVICE_SEARCH_WORDS = "This watch, this iPhone, this phone, paired, pairing, pair again, app version, build, last seen, reached, owner, person";
+export function thisDeviceSearchWords(): string {
+  return generalCopy(
+    "This watch, this iPhone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",
+    "This watch, this iPhone, this phone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",
+  );
+}
 
 /** The Paired row's tooltip: the stamp also moves on a re-key and on an app
  * update, so it is the latest of those. */

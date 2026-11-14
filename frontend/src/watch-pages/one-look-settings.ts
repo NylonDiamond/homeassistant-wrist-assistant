@@ -18,6 +18,7 @@
 // Plan: app repo docs/one_look_2026-10/NOTES.md.
 
 import { type WatchPageTile, tileEntityId, tileKind } from "./model.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The settings sections One Look can grey as a whole. */
 export type OneLookSection = "icon" | "text" | "border" | "background";
@@ -117,7 +118,9 @@ export function oneLookFontSizeHint(min: number, max: number): string {
 export const ONE_LOOK_WEIGHT_NOTE = "Light and Regular keep the tile's own weight.";
 
 /** The line under the name's Text shadow. */
-export const ONE_LOOK_TEXT_SHADOW_NOTE = "A soft shadow under the name on a colored tile, on the phone. The watch draws none.";
+export function oneLookTextShadowNote(): string {
+  return `A soft shadow under the name on a colored tile, on the ${generalCopy("iPhone", "phone")}. The watch draws none.`;
+}
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -188,7 +191,7 @@ const BUTTON_WORDS: Readonly<Record<string, string>> = {
 export function oneLookStateRowNote(kind: string, key: string, value: unknown): string | undefined {
   switch (key) {
     case "statusTextShadow":
-      return "A soft shadow under the state on a colored tile, on the phone. The watch draws none.";
+      return `A soft shadow under the state on a colored tile, on the ${generalCopy("iPhone", "phone")}. The watch draws none.`;
     case "badgeFontSizeOverride":
       return "The state's size in points, as the old look drew it. It still shrinks to fit.";
     case "stateBarStyle":
@@ -212,8 +215,12 @@ export function oneLookValueStylesOff(kind: string): Readonly<Record<string, str
 
 /** On the iPhone, a media player showing its album art and a sensor
  * drawing its chart keep the disc layout, with no bar and no pill there. */
-export const ONE_LOOK_ARTWORK_NOTE = "On the phone, a tile showing album art draws no bar or pill.";
-export const ONE_LOOK_CHART_NOTE = "On the phone, a tile drawing a chart shows no pill.";
+export function oneLookArtworkNote(): string {
+  return `On the ${generalCopy("iPhone", "phone")}, a tile showing album art draws no bar or pill.`;
+}
+export function oneLookChartNote(): string {
+  return `On the ${generalCopy("iPhone", "phone")}, a tile drawing a chart shows no pill.`;
+}
 
 // ── Border ───────────────────────────────────────────────────────────────
 

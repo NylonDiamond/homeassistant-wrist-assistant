@@ -73,7 +73,7 @@ import {
   type MenuTargets,
   type MenusDocument,
   NO_MENU_TARGETS,
-  PHONE_NO_PHRASES_TEXT,
+  phoneNoPhrasesText,
   addWatchMenuSlot,
   removeWatchMenuSlot,
   setWatchMenuActionKey,
@@ -938,12 +938,12 @@ describe("the Speak Phrase and Show Status Page hints on an iPhone", () => {
 
   it("says a phone has no voice phrases under Speak Phrase", () => {
     const phone = inspector(SPEAK_SLOT, { device: "iphone" });
-    expect(phone).toContain(PHONE_NO_PHRASES_TEXT);
+    expect(phone).toContain(phoneNoPhrasesText());
     expect(phone).not.toContain("No voice settings from this watch yet.");
     const watch = inspector(SPEAK_SLOT);
     expect(watch).toContain("No voice settings from this watch yet. Add phrases in Voice.");
-    expect(watch).not.toContain(PHONE_NO_PHRASES_TEXT);
-    expect(PHONE_NO_PHRASES_TEXT).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
+    expect(watch).not.toContain(phoneNoPhrasesText());
+    expect(phoneNoPhrasesText()).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
   });
 
   it("names the iPhone when it has no status pages", () => {

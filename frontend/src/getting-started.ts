@@ -8,7 +8,7 @@
 // The words live here too, beside the rule, so a test can read them without
 // drawing the sheet.
 
-import { gateVersion } from "./device-platform.js";
+import { gateVersion, generalCopy } from "./device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { deviceKindOf, setupMoveNeedsUpdate } from "./version.js";
 import { PAIR_CODE_LENGTH, noRecordStart, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
@@ -132,7 +132,12 @@ export const PAIR_FIRST_TEXT = "Pair a watch first.";
 export function helpStepWords(id: StepId, gs: Pick<GettingStarted, "steps" | "watchNames">): { title: string; text: string } {
   const done = gs.steps.find((s) => s.id === id)?.done === true;
   if (id === "app") {
-    return { title: "Get the app", text: done ? "Wrist Assistant is on the App Store and Google Play." : "Install it on the watch and/or on the phone." };
+    return {
+      title: "Get the app",
+      text: done
+        ? generalCopy("Wrist Assistant is on the App Store.", "Wrist Assistant is on the App Store and Google Play.")
+        : generalCopy("Install it on the watch and/or on the iPhone.", "Install it on the watch and/or on the phone."),
+    };
   }
   if (id === "pair") {
     const names = gs.watchNames;

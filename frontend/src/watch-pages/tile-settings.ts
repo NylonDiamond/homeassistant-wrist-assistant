@@ -85,7 +85,7 @@ import { type ColorPickerView, type ColorTrial, colorPickerView } from "./color-
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, phoneWordsFor, watchLinkDocument } from "./editor-host.js";
-import { isAndroidPlatform } from "../device-platform.js";
+import { isAndroidPlatform, generalCopy } from "../device-platform.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import {
   type OneLookGlowMode,
@@ -363,14 +363,14 @@ import {
 } from "./tile-new.js";
 import {
   ONE_LOOK_ANIMATE_REASON,
-  ONE_LOOK_ARTWORK_NOTE,
-  ONE_LOOK_CHART_NOTE,
+  oneLookArtworkNote,
+  oneLookChartNote,
   ONE_LOOK_DIM_LIGHT_NOTE,
   ONE_LOOK_DIM_OFF_REASON,
   ONE_LOOK_EXTRA_THIN_REASON,
   ONE_LOOK_RAINBOW_NOTE,
   ONE_LOOK_STATE_ICONS_NOTE,
-  ONE_LOOK_TEXT_SHADOW_NOTE,
+  oneLookTextShadowNote,
   ONE_LOOK_WEIGHT_NOTE,
   oneLookCardSubtitle,
   oneLookColorNote,
@@ -889,7 +889,10 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
 
 /** The small iPhone tag on a card or group only the iPhone reads. */
 function phoneTag(): TemplateResult {
-  return html`<span class="ts-dev-tag" title="Only a phone reads this">${uiIcon("phone")}Phone</span>`;
+  return generalCopy(
+    html`<span class="ts-dev-tag" title="Only the iPhone reads this">${uiIcon("phone")}iPhone</span>`,
+    html`<span class="ts-dev-tag" title="Only a phone reads this">${uiIcon("phone")}Phone</span>`,
+  );
 }
 
 // ── the changed dot ──────────────────────────────────────────────────────
@@ -2647,7 +2650,7 @@ function renderText(host: TileSettingsHost): TemplateResult {
       ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
       : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>
     ${checkRow("Name shadow", t.textShadow, mixed((s) => s.textShadow), (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
-    ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}`;
+    ${oneLook(host) ? html`<div class="hint ts-under">${oneLookTextShadowNote()}</div>` : nothing}`;
 }
 
 /** The one line that stands where the label's own rows were. */
@@ -3540,8 +3543,8 @@ function renderState(host: TileSettingsHost): TemplateResult {
  * a chart, in the disc layout, where neither the bar nor the pill shows. */
 function stateCardNote(host: TileSettingsHost, cardId: string): TemplateResult | typeof nothing {
   const kind = tileKind(tileEntityId(host.tile));
-  const note = kind === "media_player" && watchMediaArtwork(host.tile) && cardId === "bar" ? ONE_LOOK_ARTWORK_NOTE
-    : kind === "sensor" && watchSensorChart(host.tile) !== undefined && cardId === "valueLabel" ? ONE_LOOK_CHART_NOTE
+  const note = kind === "media_player" && watchMediaArtwork(host.tile) && cardId === "bar" ? oneLookArtworkNote()
+    : kind === "sensor" && watchSensorChart(host.tile) !== undefined && cardId === "valueLabel" ? oneLookChartNote()
     : undefined;
   return note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`;
 }

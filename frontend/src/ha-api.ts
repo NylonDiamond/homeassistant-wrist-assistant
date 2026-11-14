@@ -47,7 +47,7 @@ import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot,
 import { listRequests } from "./compiler.js";
 import type { HomeMapDocument, HomeMapRead } from "./home-map/model.js";
 import type { SavedPart } from "./parts.js";
-import type { DevicePlatform } from "./device-platform.js";
+import { type DevicePlatform, noteHomeDevices } from "./device-platform.js";
 import type { DeviceKind } from "./version.js";
 
 export interface OwnerSummary {
@@ -272,7 +272,7 @@ export async function callService(
 }
 
 export async function fetchOwners(hass: HassLike) {
-  return hass.connection.sendMessagePromise<{
+  const reply = await hass.connection.sendMessagePromise<{
     owners: OwnerSummary[];
     max_schema_version: number;
     token: number;
@@ -280,7 +280,14 @@ export async function fetchOwners(hass: HassLike) {
      * integrations older than the field; `phone_pages` there is the one the
      * panel reads (`phone-pages.ts`). */
     capabilities?: string[];
+    /** The platforms of every device paired here, sorted, whoever asks
+     * (`device-platform.ts`'s general copy). Absent from integrations older
+     * than the field. */
+    paired_platforms?: DevicePlatform[];
   }>({ type: `${D}/owners` });
+  // General copy says phone and watch once an Android device is paired here.
+  noteHomeDevices(reply);
+  return reply;
 }
 
 export async function fetchList(hass: HassLike, owner: string) {

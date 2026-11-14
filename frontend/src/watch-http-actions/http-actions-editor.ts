@@ -57,7 +57,7 @@ import {
   HTTP_ACTIONS_ADD_BUTTON,
   HTTP_ACTIONS_CLIENT_CERT_TEXT,
   HTTP_ACTIONS_EMPTY_TITLE,
-  HTTP_ACTIONS_SHARED_TEXT,
+  httpActionsSharedText,
   HTTP_ACTIONS_UPDATE_TEXT,
   type HttpActionsDoc,
   asHttpActionsDoc,
@@ -592,8 +592,8 @@ export class WaHttpActionsEditor extends LitElement {
     const inHead = this.barHost !== undefined;
     return html`<div class="wa-bar ${inHead ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="HTTP actions">
       ${inHead
-        ? html`<span class="tb-note">${HTTP_ACTIONS_SHARED_TEXT}</span>`
-        : html`<span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${HTTP_ACTIONS_SHARED_TEXT}</span></span>`}
+        ? html`<span class="tb-note">${httpActionsSharedText()}</span>`
+        : html`<span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${httpActionsSharedText()}</span></span>`}
       <span class="spacer"></span>
       ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty, saved: this.renderSaved() }) : nothing}
       ${this.renderSyncPill()}
@@ -682,7 +682,7 @@ export class WaHttpActionsEditor extends LitElement {
     const host = this.viewHost();
     if (draft === undefined || host === undefined) {
       return html`<div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
-        <span>An HTTP action is a web request a watch asks Home Assistant to send. ${HTTP_ACTIONS_SHARED_TEXT}</span>
+        <span>An HTTP action is a web request a watch asks Home Assistant to send. ${httpActionsSharedText()}</span>
         <span class="ha-start"><button class="pe-btn pe-primary" @click=${() => this.startLibrary()}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button></span>
         ${homeOwesHttpActions(this.allOwners) ? html`<span class="pe-muted">${httpActionsPhoneText(homeNeedsUpdate(this.allOwners))}</span>` : nothing}
       </div></div>`;

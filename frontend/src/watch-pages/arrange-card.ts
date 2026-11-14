@@ -64,6 +64,7 @@ import type { OneLookPreviewModel } from "./one-look/render.js";
 import { pictureChoice } from "./picture-choice.js";
 import { editTile, setWatchTileArrange, watchTileArrange } from "./tile-settings-model.js";
 import { commit, moreLine, rareRow, resetButton, typed, typedNumber, typingField } from "./tile-settings.js";
+import { generalCopy } from "../device-platform.js";
 
 // ── state kept between draws ─────────────────────────────────────────────
 //
@@ -360,7 +361,7 @@ function renderCustomRows(host: TileSettingsHost, base: TileArrange | undefined,
       })}
     </div>
     ${rareRow(host, "arrange", false, html`${offset("dx")}${offset("dy")}
-      <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the phone.</div>`)}
+      <div class="hint ts-under">Moves the ${PART_WORDS[part]} from its spot by a share of the tile's width and height, so it lands in the same place on every watch size and the ${generalCopy("iPhone", "phone")}.</div>`)}
     <div class="ts-arr-foot between">
       ${moreLine(host, "arrange", [{ name: "Exact place" }])}
       <button type="button" class="ghost ts-reset-btn" title=${`Put the ${PART_WORDS[part]} back: its place, size and eye`} ?disabled=${base?.parts[part] === undefined}

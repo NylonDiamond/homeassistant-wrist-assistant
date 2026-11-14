@@ -22,7 +22,7 @@
 // own rather than a borrowed "sent", because every word of the sent chip is
 // about a device confirming, and there is no device.
 
-import { type DevicePlatform, isAndroidPlatform } from "./device-platform.js";
+import { type DevicePlatform, isAndroidPlatform, generalCopy } from "./device-platform.js";
 import type { DeviceKind } from "./version.js";
 
 export interface SendInputs {
@@ -207,12 +207,19 @@ export function agoWords(seconds: number): string {
  * ticked, and people saved there and waited for a watch that was never going
  * to get it. */
 export const NOT_ON_A_DEVICE = "On no device yet";
-export const NOT_ON_A_DEVICE_LINE = "On no device yet. Tick a device over the preview to put it on a watch or a phone.";
+// General copy (`generalCopy`): "an iPhone" until an Android device is
+// paired here, then "a phone".
+export function notOnADeviceLine(): string {
+  return `On no device yet. Tick a device over the preview to put it on a watch or ${generalCopy("an iPhone", "a phone")}.`;
+}
 /** The same line before the first save, when the device strip over the
  * preview has no ticks yet: a tick adds a copy of the saved design. */
-export const NOT_ON_A_DEVICE_UNSAVED_LINE = "On no device yet. Save it, then tick a device over the preview to put it on a watch or a phone.";
-export const NOT_ON_A_DEVICE_HELP =
-  "A design on no device is sent nowhere. Tick a device over the preview to put it on a watch or a phone.";
+export function notOnADeviceUnsavedLine(): string {
+  return `On no device yet. Save it, then tick a device over the preview to put it on a watch or ${generalCopy("an iPhone", "a phone")}.`;
+}
+export function notOnADeviceHelp(): string {
+  return `A design on no device is sent nowhere. Tick a device over the preview to put it on a watch or ${generalCopy("an iPhone", "a phone")}.`;
+}
 
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
  * only while the watch is listening (a closed watch app has no long-poll to
@@ -283,7 +290,7 @@ export function describeSend(
     case "library":
       return {
         label: NOT_ON_A_DEVICE,
-        title: NOT_ON_A_DEVICE_HELP,
+        title: notOnADeviceHelp(),
         resend: false,
         refresh: false,
       };
@@ -440,7 +447,7 @@ export function homePill(
   openOnNoDevice: boolean,
 ): { tone: "ok" | "warn"; label: string; title: string } | undefined {
   if (openOnNoDevice && s?.kind !== "waiting") {
-    return { tone: "warn", label: NOT_ON_A_DEVICE, title: `This design is on no device. ${NOT_ON_A_DEVICE_HELP}` };
+    return { tone: "warn", label: NOT_ON_A_DEVICE, title: `This design is on no device. ${notOnADeviceHelp()}` };
   }
   if (!s) return undefined;
   return { tone: s.kind === "synced" ? "ok" : "warn", ...describeHomeSync(s) };

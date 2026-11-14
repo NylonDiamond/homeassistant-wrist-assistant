@@ -56,13 +56,13 @@ describe("one box on the Complications board", () => {
     expect(watchDesign.dash).toBe("A watch complication. To have it on Jesse iPhone, open it and use Duplicate as.");
     expect(watchDesign.grey).toBe(true);
     expect(watchDesign.next).toBeUndefined();
-    expect(compCell(facts({ listed: false, designKind: "iphone" })).dash).toBe("A phone widget. To have it on Chen Watch, open it and use Duplicate as.");
+    expect(compCell(facts({ listed: false, designKind: "iphone" })).dash).toBe("An iPhone widget. To have it on Chen Watch, open it and use Duplicate as.");
   });
 
   it("says once, under a section's heading, why its columns are greyed", () => {
-    expect(compGreyNote({ watchGrey: false, iphoneGrey: true })).toBe("Watch designs cannot go on a phone.");
-    expect(compGreyNote({ watchGrey: true, iphoneGrey: false })).toBe("Phone designs cannot go on a watch.");
-    expect(compGreyNote({ watchGrey: true, iphoneGrey: true })).toBe("Watch designs cannot go on a phone, nor phone designs on a watch.");
+    expect(compGreyNote({ watchGrey: false, iphoneGrey: true })).toBe("Watch designs cannot go on an iPhone.");
+    expect(compGreyNote({ watchGrey: true, iphoneGrey: false })).toBe("iPhone designs cannot go on a watch.");
+    expect(compGreyNote({ watchGrey: true, iphoneGrey: true })).toBe("Watch designs cannot go on an iPhone, nor iPhone designs on a watch.");
     expect(compGreyNote({ watchGrey: false, iphoneGrey: false })).toBeUndefined();
   });
 
@@ -86,8 +86,8 @@ describe("a focused device on the Complications board", () => {
 
   it("says how many of the other kind it leaves out, and nothing when none", () => {
     expect(compLeftOutText("watch", 0)).toBeUndefined();
-    expect(compLeftOutText("watch", 1)).toBe("1 phone widget is not listed: a watch cannot show it.");
-    expect(compLeftOutText("iphone", 2)).toBe("2 watch complications are not listed: a phone cannot show them.");
+    expect(compLeftOutText("watch", 1)).toBe("1 iPhone widget is not listed: a watch cannot show it.");
+    expect(compLeftOutText("iphone", 2)).toBe("2 watch complications are not listed: an iPhone cannot show them.");
   });
 });
 

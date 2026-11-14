@@ -176,12 +176,12 @@ describe("a board's boxes", () => {
 
   it("draw a dash, or grey with no dash, and keep why as the tooltip", () => {
     const text = flat(renderBoard(input({ columns: [column(WATCH), column(PHONE)], sections: [{
-      key: "all", title: "Watch face", note: "Watch designs cannot go on a phone.",
+      key: "all", title: "Watch face", note: "Watch designs cannot go on an iPhone.",
       rows: [row([{ dashTitle: "Needs a newer app." }, { dashTitle: "A watch complication.", grey: true }])],
     }] })));
     expect(text).toContain(`class=bd-dash role="img" aria-label=Needs a newer app.`);
     expect(text).toContain(`class=bd-grey role="img" aria-label=A watch complication.`);
-    expect(text).toContain("Watch designs cannot go on a phone.");
+    expect(text).toContain("Watch designs cannot go on an iPhone.");
   });
 });
 

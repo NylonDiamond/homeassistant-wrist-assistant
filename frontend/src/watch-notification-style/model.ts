@@ -28,6 +28,7 @@ import table from "./notification-style-keys.json";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import type { WatchConfigRecord } from "../ha-api.js";
 import type { TileChoice } from "../watch-settings-look.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The kind Home Assistant keeps the document under. */
 export const NOTIFICATION_STYLE_KIND = "notification_style";
@@ -121,10 +122,19 @@ export const WEAR_DELIVERY_DETAILS: Readonly<Record<string, string>> = {
   reliable: "Straight to the watch · works without the phone",
 };
 
+/** The rows whose table help is about no device in particular, so it says
+ * "your phone" once an Android device is paired here (`generalCopy`). The
+ * table keeps the iPhone's words, which the Apple app reads. */
+const GENERAL_HELP_KEYS: readonly string[] = ["storedWebhookButtonSize"];
+
 /** A row as a device of this platform reads it: a Wear OS watch's delivery
  * row has its own help, every other row is the table's. */
 export function styleRowOn(row: StyleRow, platform?: string | null): StyleRow {
-  return platform === "wearos" && row.key === table.delivery.key ? { ...row, help: WEAR_DELIVERY_HELP } : row;
+  if (platform === "wearos" && row.key === table.delivery.key) return { ...row, help: WEAR_DELIVERY_HELP };
+  if (row.help !== undefined && GENERAL_HELP_KEYS.includes(row.key)) {
+    return { ...row, help: generalCopy(row.help, row.help.replaceAll("your iPhone", "your phone")) };
+  }
+  return row;
 }
 
 /** The icon beside each row's title. The phone's own where its screens draw

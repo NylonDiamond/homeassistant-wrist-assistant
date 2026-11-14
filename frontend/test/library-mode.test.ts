@@ -167,7 +167,7 @@ describe("the status pages editor in library mode", () => {
     expect(flat(renderStatusInspector(e.host()))).not.toContain("lib-on");
     // Preview on sits last in the dock at the stage's foot, by word, no device
     // named.
-    expect(stage).toMatch(/class="pe-dock-area"[\s\S]*pe-zoom-pct[\s\S]*aria-label="Preview on"[\s\S]*>Watch<\/button>[\s\S]*>Phone<\/button>/);
+    expect(stage).toMatch(/class="pe-dock-area"[\s\S]*pe-zoom-pct[\s\S]*aria-label="Preview on"[\s\S]*>Watch<\/button>[\s\S]*>iPhone<\/button>/);
     expect(stage.slice(stage.indexOf(`aria-label="Preview on"`))).not.toContain("Jesse");
     // The list is the switcher's: the open page drawn with no Add, and Delete
     // is the inspector's own.
@@ -238,7 +238,7 @@ describe("the page editor in library mode", () => {
     // Preview on (Watch, iPhone and Both) ends the dock, after the zoom and
     // Live preview. The dock has no size label.
     const preview = flat(e.call("renderPreviewOn"));
-    expect(preview).toMatch(/aria-label="Preview on"[\s\S]*class="pe-seg-btn on"[^>]*>Watch<[\s\S]*class="pe-seg-btn "[^>]*>Phone</);
+    expect(preview).toMatch(/aria-label="Preview on"[\s\S]*class="pe-seg-btn on"[^>]*>Watch<[\s\S]*class="pe-seg-btn "[^>]*>iPhone</);
     const tools = flat(e.call("renderStageTools", false, false));
     expect(tools).toMatch(/class="stage-tools pe-dock"[\s\S]*aria-label="Zoom"[\s\S]*>Fit<[\s\S]*Live preview[\s\S]*aria-label="Preview on"/);
     expect(tools).not.toContain("46 mm");

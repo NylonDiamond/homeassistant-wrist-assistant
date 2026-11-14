@@ -3,7 +3,7 @@
 // to the Draft's undo history. Controls are plain HTML inputs styled to HA
 // so the bundle stays free of HA's internal component library.
 
-import { type DevicePlatform, nounFor } from "./device-platform.js";
+import { type DevicePlatform, nounFor, generalCopy } from "./device-platform.js";
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -5889,7 +5889,10 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
     ${forcedToButton
       ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
       : nothing}
-    <div class="hint">A control is one press in Control Center, or in Quick Settings on an Android phone, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
+    <div class="hint">${generalCopy(
+      "A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.",
+      "A control is one press in Control Center, or in Quick Settings on an Android phone, so it runs the same actions a tap does minus the ones that need the app open on a page.",
+    )}</div>
     </div>
     <div class="fgroup">
     ${valueEditor(host, spec.title, (v) => set((c) => { c.title = v; }, "title"),

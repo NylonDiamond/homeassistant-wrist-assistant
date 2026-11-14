@@ -146,12 +146,12 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, refreshNowTitle, sendState, sendWaitMs } from "./send-state.js";
+import { type DeviceSync, type HowDevice, type SendState, notOnADeviceLine, notOnADeviceUnsavedLine, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, refreshNowTitle, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone, waitsOnlyForOwnSetup } from "./home.js";
 import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
 import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
-import { gateVersion, nounFor, ownerIsAndroid, platformNoun, platformOf } from "./device-platform.js";
+import { gateVersion, nounFor, ownerIsAndroid, platformNoun, platformOf, generalCopy, androidHereNow } from "./device-platform.js";
 import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
@@ -444,7 +444,7 @@ import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { MOVE_WAIT_ENDED_EVENT, firstSaveAskText, noRecordStart, phoneMovesOf, seedMayLand, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phoneAwaitsUpdate, phonePagesOn } from "./phone-pages.js";
-import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
+import { notForIphoneText, watchCommandError } from "./watch-pages/save-note.js";
 import {
   formButtonStyles,
   formEntityStyles,
@@ -819,7 +819,7 @@ function shapeGroupOrder(kind: DeviceKind): readonly string[] {
  * iPhone Lock Screen widgets both. Undefined for a box with no shape. */
 export function shapeDevicesTag(key: string): { text: string; icons: readonly ("watch" | "phone")[]; where: "watch" | "phone" | "both" } | undefined {
   if (key === "corner") return { text: "Watch", icons: ["watch"], where: "watch" };
-  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: "Phone Home Screen", icons: ["phone"], where: "phone" };
+  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: generalCopy("iPhone Home Screen", "Phone Home Screen"), icons: ["phone"], where: "phone" };
   if (key === "rectangular" || key === "circular" || key === "inline") return { text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"], where: "both" };
   return undefined;
 }
@@ -10340,7 +10340,7 @@ export class WristAssistantPanel extends LitElement {
       ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
       ["Corner", "Its Bezel row is the label or gauge on the outer edge. Under it, a toggle picks what fills the inside: big Curved text along the edge, or Layers in a small circle. The watch shows one of the two, never both."],
       ["Inline", "One line built from parts: words, live values and icons. Its one layer is that line."],
-      ["Home Screen", "On a phone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
+      ["Home Screen", `On ${generalCopy("an iPhone", "a phone")} only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile.`],
       ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
       ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on color alone reads differently there."],
@@ -10396,7 +10396,7 @@ export class WristAssistantPanel extends LitElement {
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
-      ["Synced", "The pill at the top of every screen, green. Every watch and phone that is awake has applied every change."],
+      ["Synced", `The pill at the top of every screen, green. Every watch and ${generalCopy("iPhone", "phone")} that is awake has applied every change.`],
       ["Waiting", "The same pill, amber, with how many. Press it to see each device and what it waits for. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu on the Complications tab, tries to wake the open device."],
       ["Asleep", "Grey in that list: a device not seen for a week or more. Its changes wait safely and it catches up when it next connects, so it does not count as waiting."],
     ];
@@ -11871,7 +11871,7 @@ export class WristAssistantPanel extends LitElement {
     const phone = this.sharedPhone;
     const screen = iphoneScreenOf(this.route);
     if (!this.phonePages) {
-      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep phone pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
+      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep ${generalCopy("iPhone", "phone")} pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
     }
     if (phone === undefined && hasPhoneAwaitingUpdate(this.owners)) {
       return html`<div class="wa-ip-empty">
@@ -11883,9 +11883,12 @@ export class WristAssistantPanel extends LitElement {
     if (phone === undefined || screen === undefined) {
       return html`<div class="wa-ip-empty">
         <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
-        <h2>No phone yet</h2>
-        <p>Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the phone, then scan the QR code or type its code here.</p>
-        <button type="button" class="home-btn add" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a phone</span></button>
+        <h2>${generalCopy("No iPhone yet", "No phone yet")}</h2>
+        <p>${generalCopy(
+          "Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the iPhone, then scan the QR code or type its code here.",
+          "Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the phone, then scan the QR code or type its code here.",
+        )}</p>
+        <button type="button" class="home-btn add" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>${generalCopy("Pair an iPhone", "Pair a phone")}</span></button>
       </div>`;
     }
     return this.renderWatchScreen(screen.id, phone);
@@ -15185,7 +15188,7 @@ export class WristAssistantPanel extends LitElement {
       </div></div>
       <div class="pk-body">${body}</div>
     </div>`;
-    if (devices.length === 0) return surface(html`<p class="cb-empty">No watch or phone has connected yet. Pair one on the Devices tab to put complications on it.</p>`);
+    if (devices.length === 0) return surface(html`<p class="cb-empty">No watch or ${generalCopy("iPhone", "phone")} has connected yet. Pair one on the Devices tab to put complications on it.</p>`);
     const byOrder = compItemOrder;
     const emptyText = query !== "" ? `Nothing matches "${this.pickerQuery.trim()}".` : "No complications yet.";
     const device = focus === undefined ? undefined : devices.find((d) => d.ownerId === focus);
@@ -15278,7 +15281,7 @@ export class WristAssistantPanel extends LitElement {
    * Complications tab's board focused on that device. */
   private renderCompBoardAll(query: string) {
     const devices = this.compBoardDevices();
-    if (devices.length === 0) return html`<p class="cb-empty">No watch or phone has connected yet.</p>`;
+    if (devices.length === 0) return html`<p class="cb-empty">No watch or ${generalCopy("iPhone", "phone")} has connected yet.</p>`;
     const q = query.trim().toLocaleLowerCase();
     return renderBoard({
       label: "Complications on each device",
@@ -15735,7 +15738,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="new-body">
         <section class="new-step step-name">
-          ${this.renderStepHead(1, "Name it", "This is the name the watch picker and the phone widget lists show.")}
+          ${this.renderStepHead(1, "Name it", `This is the name the watch picker and the ${generalCopy("iPhone", "phone")} widget lists show.`)}
           <input type="text" class="new-name" .value=${this.newName} placeholder="Kitchen at a glance" maxlength="60"
             autofocus aria-label="Complication name" aria-invalid=${nameProblem ? "true" : "false"}
             @input=${(e: Event) => { this.newName = (e.target as HTMLInputElement).value; }} />
@@ -15806,7 +15809,7 @@ export class WristAssistantPanel extends LitElement {
     pick: (family: FamilyKind) => void,
   ) {
     const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
-    const where = kind === "iphone" ? "a phone" : "a watch";
+    const where = kind === "iphone" ? generalCopy("an iPhone", "a phone") : "a watch";
     return html`<div class="shape-row">
       <div class="shape-row-head">
         <span class="shape-row-kinds" aria-hidden="true">${uiIcon(device === "iphone" ? "phone" : "watch")}</span>
@@ -16077,7 +16080,7 @@ export class WristAssistantPanel extends LitElement {
     const shapeStep = kind !== undefined && kind !== "control";
     const what = kind === "control"
       ? "A Control Center control"
-      : family === undefined ? "" : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : "a phone"}`;
+      : family === undefined ? "" : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : generalCopy("an iPhone", "a phone")}`;
     const ticked = this.dupTicked();
     const summary = what === ""
       ? "Pick one shape."
@@ -19023,7 +19026,7 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg || !this.openOnNoDevice) return undefined;
     const unsaved = this.draft?.baseRevision === null;
     return html`<div class="banner note link-note not-on-device">
-      <span>${unsaved ? NOT_ON_A_DEVICE_UNSAVED_LINE : NOT_ON_A_DEVICE_LINE}</span>
+      <span>${unsaved ? notOnADeviceUnsavedLine() : notOnADeviceLine()}</span>
     </div>`;
   }
 
@@ -20658,7 +20661,7 @@ export class WristAssistantPanel extends LitElement {
     // says so and offers Try again, never the Pair a device card.
     const failed = this.loadFailedEmpty && devices.length === 0;
     const error = this.loadError && !failed ? html`<div class="card error" title=${errTitle(this.loadError) ?? nothing}>${this.loadError}</div>` : nothing;
-    const lead = html`<p class="home-lead">Every watch and phone, who it belongs to, and whether it has your latest changes.</p>`;
+    const lead = html`<p class="home-lead">Every watch and ${generalCopy("iPhone", "phone")}, who it belongs to, and whether it has your latest changes.</p>`;
     const scope = this.hass?.user?.is_admin === false ? html`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>` : nothing;
     const pair = this.pairOpen ? this.renderPairDialog() : nothing;
     if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;
@@ -20678,7 +20681,7 @@ export class WristAssistantPanel extends LitElement {
         <aside class="hb-side" aria-label="Devices">
           <div class="hb-head">
             <div class="hb-head-top"><h1>Devices</h1>
-              <button type="button" class="home-btn" aria-label="Pair a device" title="Pair a watch with a code, a phone with a QR code" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair</span></button>
+              <button type="button" class="home-btn" aria-label="Pair a device" title="${generalCopy("Pair a watch with a code, an iPhone with a QR code", "Pair a watch with a code, a phone with a QR code")}" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair</span></button>
             </div>
             ${lead}${scope}
           </div>
@@ -20713,7 +20716,8 @@ export class WristAssistantPanel extends LitElement {
       if (this.appStoreQr === undefined) {
         void qrPicture(APP_STORE_URL).then((picture) => { this.appStoreQr = picture; }).catch(() => undefined);
       }
-      if (this.playStoreQr === undefined) {
+      // Google Play is offered once an Android device is paired here.
+      if (this.playStoreQr === undefined && androidHereNow()) {
         void qrPicture(PLAY_STORE_URL).then((picture) => { this.playStoreQr = picture; }).catch(() => undefined);
       }
       this.requestUpdate();
@@ -20767,34 +20771,34 @@ export class WristAssistantPanel extends LitElement {
           <a class="home-btn" href=${SETUP_GUIDE_URL} target="_blank" rel="noreferrer">Setup guide</a>
         </div>
         <ol class="hw-steps">
-          ${step(1, "Install the app", "On the phone, the watch, or both.", html`<div class="hw-install">
+          ${step(1, "Install the app", generalCopy("On the iPhone, the watch, or both.", "On the phone, the watch, or both."), html`<div class="hw-install">
               <div class="hw-install-t">
                 <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for Wrist Assistant.</p>
-                <p>On Android, install it from Google Play on the phone. A Wear OS watch gets it from Google Play on the watch.</p>
+                ${generalCopy(nothing, html`<p>On Android, install it from Google Play on the phone. A Wear OS watch gets it from Google Play on the watch.</p>`)}
                 <a class="home-btn" href=${APP_STORE_URL} target="_blank" rel="noreferrer">Open the App Store${uiIcon("right")}</a>
-                <a class="home-btn hw-play" href=${PLAY_STORE_URL} target="_blank" rel="noreferrer">Open Google Play${uiIcon("right")}</a>
+                ${generalCopy(nothing, html`<a class="home-btn hw-play" href=${PLAY_STORE_URL} target="_blank" rel="noreferrer">Open Google Play${uiIcon("right")}</a>`)}
               </div>
               <figure class="hw-qr">
                 ${qr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
                   : html`<svg viewBox=${`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for the App Store page" shape-rendering="crispEdges"><rect width=${qr.size} height=${qr.size} fill="#fff"></rect><path d=${qr.path} fill="#000"></path></svg>`}
                 <figcaption><b>Scan with your iPhone</b><span>It opens the App Store page.</span></figcaption>
               </figure>
-              <figure class="hw-qr">
+              ${generalCopy(nothing, html`<figure class="hw-qr">
                 ${playQr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
                   : html`<svg viewBox=${`0 0 ${playQr.size} ${playQr.size}`} role="img" aria-label="QR code for the Google Play page" shape-rendering="crispEdges"><rect width=${playQr.size} height=${playQr.size} fill="#fff"></rect><path d=${playQr.path} fill="#000"></path></svg>`}
                 <figcaption><b>Scan with your Android phone</b><span>It opens the Google Play page.</span></figcaption>
-              </figure>
+              </figure>`)}
             </div>`)}
           ${step(2, "Pick one", "Which device are you pairing now? You can pair the other one later.", html`<div class="hb-stage hw-stage">
               <span class="hb-floor"></span>
               <div class="hw-choices" role="group" aria-label="Pick one">
-                ${choice("watch", "Watch", "Pairs with a code")}
-                ${choice("iphone", "Phone", "Pairs with a QR code")}
+                ${choice("watch", generalCopy("Apple Watch", "Watch"), "Pairs with a code")}
+                ${choice("iphone", generalCopy("iPhone", "Phone"), "Pairs with a QR code")}
               </div>
             </div>`)}
-          ${step(3, picked === "iphone" ? "Pair your phone" : "Pair your watch",
-            picked === "iphone" ? "Scan the code with the phone's camera." : "The watch shows a code. Type it here.",
-            html`<section class="hw-pair" aria-label=${picked === "iphone" ? "Pair your phone" : "Pair your watch"}>
+          ${step(3, picked === "iphone" ? generalCopy("Pair your iPhone", "Pair your phone") : "Pair your watch",
+            picked === "iphone" ? generalCopy("Scan the code with the iPhone's Camera.", "Scan the code with the phone's camera.") : "The watch shows a code. Type it here.",
+            html`<section class="hw-pair" aria-label=${picked === "iphone" ? generalCopy("Pair your iPhone", "Pair your phone") : "Pair your watch"}>
               ${card.render({ bare: true })}
               <div class="hw-pair-foot">
                 <span>Stuck? <a href=${TROUBLESHOOTING_URL} target="_blank" rel="noreferrer">Something is not working</a></span>
@@ -21834,7 +21838,7 @@ export class WristAssistantPanel extends LitElement {
           <div class="start-hero-text">
             <div class="start-eyebrow">Wrist Assistant</div>
             <h1 class="start-title">Make your first complication.</h1>
-            <p class="start-lead">Draw what your home is doing onto a watch face or a phone screen: one shape, your entities, live.</p>
+            <p class="start-lead">Draw what your home is doing onto a watch face or ${generalCopy("an iPhone", "a phone")} screen: one shape, your entities, live.</p>
             <div class="start-facts">
               <span class="start-fact"><b>${devices}</b> ${plural(devices, "device")}</span>
             </div>
@@ -23433,7 +23437,7 @@ function saveTextFile(name: string, text: string) {
  * are kept for the line's tooltip (`errTitle`), since they are what a bug
  * report needs. */
 function errText(err: unknown): string {
-  if (watchCommandError(err).code === "not_for_iphone") return NOT_FOR_IPHONE_TEXT;
+  if (watchCommandError(err).code === "not_for_iphone") return notForIphoneText();
   const text = friendlyError(err);
   const raw = rawErrorText(err);
   if (raw !== text) {

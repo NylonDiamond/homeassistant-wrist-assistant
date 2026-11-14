@@ -63,13 +63,13 @@ import {
   pairRequestLine,
   PAIR_USER_TITLE,
   PAIR_CARD_TITLE,
-  PAIR_CODE_HINT,
+  pairCodeHint,
   pairOnIPhone,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
-  PAIR_QR_HINT,
-  PAIR_QR_REPLACE_HINT,
-  PAIR_QR_REPLACE_LABEL,
+  pairQrHint,
+  pairQrReplaceHint,
+  pairQrReplaceLabel,
   PAIR_MORE_TEXT,
   PAIR_REPLACE_LABEL,
   PAIR_SHOW_QR_TEXT,
@@ -788,7 +788,7 @@ describe("pairing a watch by its code", () => {
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
     expect(PAIR_OPEN_APP_TEXT).toBe("Pair this iPhone instead");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
-    const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_QR_REPLACE_HINT, PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
+    const words = [PAIR_CARD_TITLE, pairCodeHint(), pairQrHint(), pairQrReplaceLabel(), pairQrReplaceHint(), PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
       PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),
       pairErrorText({ code: "needs_replace" }, "confirm", "iphone"), pairErrorText({ code: "needs_allow_remote" }, "confirm")];
     for (const w of words) expect(w).not.toMatch(/ \x2d |\u2013|\u2014/);
@@ -817,7 +817,7 @@ describe("pairing a watch by its code", () => {
     expect(pairErrorText({ code: "invalid_secret", message: "secret must be 32 bytes" }, "confirm"))
       .toBe("Could not pair: secret must be 32 bytes");
     expect(pairErrorText({ code: "unknown_command", message: "Unknown command." }, "offer"))
-      .toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
+      .toBe("Update the Wrist Assistant integration to pair an iPhone with a QR code.");
     expect(pairErrorText({ code: "unavailable", message: "Integration not ready" }, "offer"))
       .toBe("Could not show a QR code: Integration not ready");
   });

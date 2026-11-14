@@ -96,3 +96,53 @@ export function nounFor(kind: "watch" | "iphone", platform?: DevicePlatform | nu
 export function storeName(platform: DevicePlatform): string {
   return isAndroidPlatform(platform) ? "Google Play" : "the App Store";
 }
+
+// ── General copy ────────────────────────────────────────────────────────
+//
+// Copy about no device in particular ("Pair a phone", "Scan with the phone",
+// the help sheet) keeps the Apple words it always had while every device
+// paired to this Home Assistant is an Apple one, and says phone and watch
+// once an Android phone or a Wear OS watch is paired here. A line about one
+// device names that device by its platform either way (`platformNoun`).
+//
+// The panel learns it from the owners reply (`fetchOwners` notes it on
+// every read): `paired_platforms` lists the platforms of every paired
+// device, whoever asks, since a person who is not an administrator gets only
+// their own rows; from an integration without that field, the rows say.
+
+/** The part of the owners reply `homeHasAndroid` reads. */
+export interface PairedPlatformsLike {
+  paired_platforms?: readonly string[] | null;
+  owners?: readonly (PlatformOwnerLike & { is_orphan?: boolean | null })[] | null;
+}
+
+/** Whether an Android phone or a Wear OS watch is paired to this home. */
+export function homeHasAndroid(reply: PairedPlatformsLike | null | undefined): boolean {
+  const listed = reply?.paired_platforms;
+  if (Array.isArray(listed)) return listed.some((p) => p === "android" || p === "wearos");
+  return (reply?.owners ?? []).some((o) => o.is_orphan !== true && ownerIsAndroid(o));
+}
+
+let androidHere = false;
+
+/** Note what the panel last heard of this home's devices. Called with every
+ * owners reply; the panel redraws with the rows it sets beside it. */
+export function noteHomeDevices(reply: PairedPlatformsLike | null | undefined): void {
+  androidHere = homeHasAndroid(reply);
+}
+
+/** Set directly, for tests and for a reply already read. */
+export function setAndroidHere(on: boolean): void {
+  androidHere = on;
+}
+
+/** Whether the panel last heard of an Android device paired here. */
+export function androidHereNow(): boolean {
+  return androidHere;
+}
+
+/** General copy: the Apple words while every paired device is an Apple one,
+ * the phone and watch words once an Android device is paired here. */
+export function generalCopy<A, B>(apple: A, phoneAndWatch: B): A | B {
+  return androidHere ? phoneAndWatch : apple;
+}

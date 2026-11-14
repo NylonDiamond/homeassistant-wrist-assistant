@@ -137,7 +137,7 @@ import {
   withMotionAction,
   withMotionTarget,
 } from "./watch-settings.js";
-import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
+import { notForIphoneText, watchCommandError } from "./watch-pages/save-note.js";
 import {
   SETTINGS_MOVED_TEXT,
   dropWatchSettingsDrafts,
@@ -181,7 +181,7 @@ import { notificationPreview, notificationPreviewStyles } from "./watch-notifica
 import { ClientCertCard, clientCertStyles } from "./watch-client-cert-view.js";
 import { PairWatchCard, pairCardStyles } from "./watch-pair-view.js";
 import { type DevicePlatform, nounFor, platformOf } from "./device-platform.js";
-import { THIS_DEVICE_SEARCH_WORDS, thisDeviceNote, thisDeviceRows, thisDeviceTitle } from "./watch-this-device.js";
+import { thisDeviceSearchWords, thisDeviceNote, thisDeviceRows, thisDeviceTitle } from "./watch-this-device.js";
 import { type HaPerson, haPeople } from "./people.js";
 import { friendlyError } from "./friendly-error.js";
 
@@ -1174,7 +1174,7 @@ export class WatchSettings implements ReactiveController {
       standIn(new Set(NOTIFICATION_STYLE_SECTIONS.map((s) => s.id)), style);
     }
     const pairing = groupOfCard("device")?.title;
-    if (matchesSearch(terms, [thisDeviceTitle(this.device, this.platform), THIS_DEVICE_SEARCH_WORDS, pairing])) cards.set("device", this.renderThisDevice(hass));
+    if (matchesSearch(terms, [thisDeviceTitle(this.device, this.platform), thisDeviceSearchWords(), pairing])) cards.set("device", this.renderThisDevice(hass));
     if (matchesSearch(terms, ["Client certificate, mTLS, proxy, passphrase", pairing])) cards.set("cert", this.cert.render(hass));
     return cards;
   }
@@ -1781,7 +1781,7 @@ export class WatchSettings implements ReactiveController {
 }
 
 function errText(err: unknown): string {
-  if (watchCommandError(err).code === "not_for_iphone") return NOT_FOR_IPHONE_TEXT;
+  if (watchCommandError(err).code === "not_for_iphone") return notForIphoneText();
   return friendlyError(err);
 }
 

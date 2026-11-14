@@ -36,7 +36,7 @@
 // (`all-pages-hook.ts`). What can be worked out without the element is in
 // `all-pages-model.ts`.
 
-import { gateVersion } from "../device-platform.js";
+import { gateVersion, generalCopy } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
@@ -134,10 +134,10 @@ import { newStatusPage, nextStatusPageName } from "../watch-status-pages/model.j
 import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage, watchSkippedTilesLayout } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
 import {
-  NO_SCREENS_DIFFER_TEXT,
+  noScreensDifferText,
   type PagesScreensFilter,
   SCREENS_DIFFER_TEXT,
-  TWO_SCREENS_CARD_TEXT,
+  twoScreensCardText,
   cardScreens,
   cardShownScreen,
   dismissTwoScreensCard,
@@ -939,7 +939,7 @@ export class WaAllPages extends LitElement {
   /** What the list says with nothing shown: Screens differ's own words when
    * it is what left nothing. */
   private emptyHere(devices: readonly LinkDevice[]): string {
-    if (this.kind === "pages" && this.screensFilter !== "all" && this.search.trim() === "") return NO_SCREENS_DIFFER_TEXT;
+    if (this.kind === "pages" && this.screensFilter !== "all" && this.search.trim() === "") return noScreensDifferText();
     if (this.view === "cards" && this.search.trim() === "") {
       const device = this.filterDevice();
       const many = cardNoun(this.kind, 2);
@@ -1158,7 +1158,7 @@ export class WaAllPages extends LitElement {
   private renderTwoScreensCard(library: Library | undefined): TemplateResult | typeof nothing {
     if (this.kind !== "pages" || library === undefined || libraryItems(library, "pages").length === 0 || twoScreensCardDismissed()) return nothing;
     return html`<div class="ap-upgrade" role="note">
-      ${uiIcon("info")}<span>${TWO_SCREENS_CARD_TEXT}</span>
+      ${uiIcon("info")}<span>${twoScreensCardText()}</span>
       <button type="button" class="ap-upgrade-x" title="Dismiss" aria-label="Dismiss"
         @click=${() => { dismissTwoScreensCard(); this.requestUpdate(); }}>${uiIcon("close")}</button>
     </div>`;
@@ -1242,7 +1242,7 @@ export class WaAllPages extends LitElement {
       role="radio" aria-checked=${this.screensFilter === filter ? "true" : "false"} data-filter=${filter} title=${title}
       @click=${() => { this.screensFilter = filter; this.pruneSelected(); }}>${label}</button>`;
     return html`<span class="ap-filter" role="radiogroup" aria-label="Show">
-      ${opt("all", "All", "Every page")}${opt("differ", SCREENS_DIFFER_TEXT, "The pages the watch and the phone arrange apart, or with a tile off on one")}
+      ${opt("all", "All", "Every page")}${opt("differ", SCREENS_DIFFER_TEXT, `The pages the watch and the ${generalCopy("iPhone", "phone")} arrange apart, or with a tile off on one`)}
     </span>`;
   }
 
@@ -1464,7 +1464,7 @@ export class WaAllPages extends LitElement {
       if (chip.on && chip.device === "watch" && skipsAll) {
         cell.note = "shows nothing";
         cell.noteWarn = true;
-        cell.noteTitle = `Every tile on ${entry.name} is phone only, so ${chip.name} shows an empty page.`;
+        cell.noteTitle = `Every tile on ${entry.name} is ${generalCopy("iPhone", "phone")} only, so ${chip.name} shows an empty page.`;
       } else if (chip.skips !== undefined) {
         cell.note = chip.skips.text;
         cell.noteTitle = chip.skips.title;
@@ -1824,9 +1824,10 @@ export class WaAllPages extends LitElement {
     const key = itemKey(entry);
     const shown = cardShownScreen(kinds, this.cardPick(entry));
     const icon = (kind: WatchScreen) => uiIcon(kind === "watch" ? "watch" : "phone");
-    const word = (kind: WatchScreen) => (kind === "watch" ? "watch" : "phone");
+    const word = (kind: WatchScreen) => (kind === "watch" ? "watch" : generalCopy("iPhone", "phone"));
     if (kinds.length < 2) {
-      return html`<span class="ap-screen-icons"><span class="ap-screen-icon on ${shown}" data-card-screen=${shown} title=${`On a ${word(shown)} only`}>${icon(shown)}</span></span>`;
+      const a = shown === "watch" ? "a" : generalCopy("an", "a");
+      return html`<span class="ap-screen-icons"><span class="ap-screen-icon on ${shown}" data-card-screen=${shown} title=${`On ${a} ${word(shown)} only`}>${icon(shown)}</span></span>`;
     }
     return html`<span class="ap-screen-icons" role="group" aria-label="Show this page on">${kinds.map((kind) => html`<button type="button"
       class="ap-screen-icon ${kind} ${kind === shown ? "on" : ""}" data-card-screen=${kind} aria-pressed=${kind === shown ? "true" : "false"}

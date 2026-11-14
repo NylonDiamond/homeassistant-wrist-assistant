@@ -227,7 +227,7 @@ describe("the row as drawn", () => {
     const { text, tpl, calls } = row({ owners: WITH_PHONE, phones: true, menuOpen: true });
     const menu = text.slice(text.indexOf(`class="wa-wr-menu"`));
     expect(menu).toContain(`aria-label="Devices"`);
-    const order = [">Watches</div>", "data-watch=w1", "data-watch=w2", ">Phones</div>", "data-watch=p1 data-kind=iphone"].map((p) => menu.indexOf(p));
+    const order = [">Watches</div>", "data-watch=w1", "data-watch=w2", ">iPhones</div>", "data-watch=p1 data-kind=iphone"].map((p) => menu.indexOf(p));
     expect(order.every((at) => at > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     // The toggle, then the three devices: an iPhone is a pick like a watch.

@@ -30,6 +30,7 @@ import { homeMapCount } from "./editor-view.js";
 import { type HomeMapFloor, type HomeMapStyle, HOME_MAP_LOOKS, homeMapLightsOn, homeMapLightsOnWords } from "./model.js";
 import { HOME_MAP_LOOK_WORDS, type HomeMapTileUse, homeMapPagesWithoutTileStyle, homeMapTileUses } from "./style-model.js";
 import { HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround, homeTileLightsColor, homeTilePlanRect, homeTileTitleColor } from "./tile-art.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The looks' pictures, in CSS pixels. */
 const THUMB = { width: 112, height: 68 };
@@ -196,7 +197,7 @@ export class HomeStylePanel {
     const pages = [...new Set(own.map((u) => u.pageId))];
     const sure = await ctx.confirm({
       title: `Use the home style on ${homeMapCount(own.length, "tile")}?`,
-      text: `Their own looks come off, so each draws the home style. ${pages.length === 1 ? "The page is" : `The ${pages.length} pages are`} saved for every watch and phone that shows ${pages.length === 1 ? "it" : "them"}.`,
+      text: `Their own looks come off, so each draws the home style. ${pages.length === 1 ? "The page is" : `The ${pages.length} pages are`} saved for every watch and ${generalCopy("iPhone", "phone")} that shows ${pages.length === 1 ? "it" : "them"}.`,
       ok: "Use the home style",
     });
     if (!sure) return;

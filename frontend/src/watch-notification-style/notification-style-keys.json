@@ -380,7 +380,7 @@
       "section": "wristWebhooks",
       "group": "Webhook alerts",
       "label": "Button size",
-      "help": "How big the buttons are on webhook alerts, on your watch and your phone."
+      "help": "How big the buttons are on webhook alerts, on your watch and your iPhone."
     }
   },
   "volume": {

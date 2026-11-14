@@ -3,7 +3,9 @@
 // extras and web card help, the certificate's source and a full device's
 // line. Each case checks the Apple line too, which stays as it was.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { setAndroidHere } from "../src/device-platform.js";
 
 import { type CompCellFacts, compCell } from "../src/complication-board.js";
 import { tapActionInfo } from "../src/model.js";
@@ -19,6 +21,12 @@ import {
 } from "../src/watch-notification-style/model.js";
 import { phoneWordsFor } from "../src/watch-pages/editor-host.js";
 import { WATCH_WEB_CARD_HELP } from "../src/watch-pages/phone-tiles-model.js";
+
+
+// These homes have an Android device paired, so general copy says phone and
+// watch (`generalCopy`); `general-copy.test.ts` covers an Apple only home.
+beforeEach(() => setAndroidHere(true));
+afterEach(() => setAndroidHere(false));
 
 describe("the tap menu's phone caveat", () => {
   it("keeps the iPhone's line for every action that needs the watch", () => {
@@ -70,8 +78,15 @@ describe("how alerts arrive on a Wear OS watch", () => {
   });
 
   it("leaves every other row as the table has it", () => {
-    const other = styleRow("storedWebhookButtonSize")!;
+    const other = styleRow("showButtonIcons")!;
     expect(styleRowOn(other, "wearos")).toBe(other);
+  });
+
+  it("says your phone for the webhook buttons in a home with an Android device", () => {
+    const webhook = styleRow("storedWebhookButtonSize")!;
+    expect(webhook.help).toBe("How big the buttons are on webhook alerts, on your watch and your iPhone.");
+    expect(styleRowOn(webhook, "wearos").help).toBe("How big the buttons are on webhook alerts, on your watch and your phone.");
+    expect(styleRowOn(webhook, "watchos").help).toBe("How big the buttons are on webhook alerts, on your watch and your phone.");
   });
 });
 
