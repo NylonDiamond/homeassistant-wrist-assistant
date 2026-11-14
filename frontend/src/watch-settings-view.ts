@@ -171,6 +171,7 @@ import {
   styleFormValues,
   styleOptionsFor,
   styleRuns,
+  styleRowOn,
   styleTileChoices,
   styleUsesTiles,
   volumeText,
@@ -1592,7 +1593,8 @@ export class WatchSettings implements ReactiveController {
   }
 
   /** One notification style row, in the same dress as the behavior rows. */
-  private renderStyleRow(row: StyleRow, values: ReadonlyMap<string, StyleValue>) {
+  private renderStyleRow(tableRow: StyleRow, values: ReadonlyMap<string, StyleValue>) {
+    const row = styleRowOn(tableRow, this.platform);
     const value = values.get(row.key) ?? row.default;
     const set = (v: StyleValue) => this.editStyle(row, v);
     const helpLine = row.help ? html`<div class="hint">${row.help}</div>` : nothing;
@@ -1602,7 +1604,7 @@ export class WatchSettings implements ReactiveController {
         key: row.key, label: row.label, icon: row.icon, help: row.help,
         value: String(value), def: String(row.resetTo),
         name: (v) => options.find((o) => o.value === v)?.label ?? v,
-        tiles: styleTileChoices(row, value),
+        tiles: styleTileChoices(row, value, this.platform),
       }, set);
     }
     const wrap = (field: TemplateResult, extra: TemplateResult | typeof nothing = nothing, hint: TemplateResult | typeof nothing = helpLine) =>

@@ -108,6 +108,25 @@ export const VOLUME = table.volume;
 /** Each delivery choice's line, the phone's own. */
 export const DELIVERY_DETAILS: Readonly<Record<string, string>> = table.delivery.details;
 
+/** The delivery row's help on a Wear OS watch. Fast (`mirror`) comes through
+ * the user's Android phone, Reliable (`direct`) to the watch's own token
+ * (`resolve_push_routes` in the integration). The table keeps the Apple
+ * words, which the Apple app reads. */
+export const WEAR_DELIVERY_HELP =
+  "Fast comes through your phone, so the phone needs to be nearby. Reliable comes straight to the watch and works without the phone, on Wi-Fi or mobile data.";
+
+/** Each delivery choice's line on a Wear OS watch. */
+export const WEAR_DELIVERY_DETAILS: Readonly<Record<string, string>> = {
+  fast: "Through the phone · needs it nearby",
+  reliable: "Straight to the watch · works without the phone",
+};
+
+/** A row as a device of this platform reads it: a Wear OS watch's delivery
+ * row has its own help, every other row is the table's. */
+export function styleRowOn(row: StyleRow, platform?: string | null): StyleRow {
+  return platform === "wearos" && row.key === table.delivery.key ? { ...row, help: WEAR_DELIVERY_HELP } : row;
+}
+
 /** The icon beside each row's title. The phone's own where its screens draw
  * one (`NotificationStyleSettingsView`, `SoundSettingsView`); the rest are the
  * panel's, in the same spirit. Every one is in the symbol file the panel
@@ -377,8 +396,8 @@ export function styleUsesTiles(row: StyleRow): boolean {
 
 /** The tiles of an enum row, in the table's order, each wearing the row's
  * icon. Delivery's tiles carry the phone's line for each choice. */
-export function styleTileChoices(row: StyleRow, value: StyleValue): TileChoice[] {
-  const details = row.key === table.delivery.key ? DELIVERY_DETAILS : {};
+export function styleTileChoices(row: StyleRow, value: StyleValue, platform?: string | null): TileChoice[] {
+  const details = row.key === table.delivery.key ? (platform === "wearos" ? WEAR_DELIVERY_DETAILS : DELIVERY_DETAILS) : {};
   return styleOptionsFor(row, value).map((o) => ({
     value: o.value,
     name: o.label,

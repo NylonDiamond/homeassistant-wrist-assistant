@@ -12,7 +12,7 @@
 // No DOM here: the scrub bookkeeping below is plain state so it can be
 // tested.
 
-import type { DevicePlatform } from "../device-platform.js";
+import { type DevicePlatform, isAndroidPlatform } from "../device-platform.js";
 import type { HassLike } from "../ha-api.js";
 import type { HomeMapDocument } from "../home-map/model.js";
 import type { IconProvider } from "../renderer.js";
@@ -226,6 +226,18 @@ export interface AddTileHost extends WatchPagesEditorHost {
  * iPhone. */
 export function hostDevice(host: Pick<WatchPagesEditorHost, "device">): SettingDevice {
   return host.device ?? "watch";
+}
+
+/** A table's iPhone words as an Android device's editor says them. The
+ * tables (tile-app.json, the phone keys) name the iPhone, which the Apple
+ * app reads and every Apple device keeps; on an Android phone's or a Wear OS
+ * watch's editor the phone these lines are about is an Android phone. */
+export function phoneWordsFor(host: Pick<WatchPagesEditorHost, "platform">, words: string): string {
+  if (!isAndroidPlatform(host.platform)) return words;
+  return words
+    .replaceAll("an iPhone", "a phone")
+    .replaceAll("The iPhone", "The phone")
+    .replaceAll("the iPhone", "the phone");
 }
 
 /** "watch" or "iPhone", for the lines that name the device showing the

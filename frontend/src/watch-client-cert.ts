@@ -128,6 +128,7 @@ export function shortFingerprint(fingerprint: string | null | undefined): string
 export function clientCertSourceText(source: unknown): string | undefined {
   if (source === "panel") return "Uploaded here";
   if (source === "iphone") return "From the iPhone app";
+  if (source === "android") return "From the Android app";
   return undefined;
 }
 

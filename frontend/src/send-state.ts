@@ -153,6 +153,15 @@ function iphoneSendState(i: SendInputs): SendState {
   return i.pending ? { kind: "sending", device: "iphone" } : { kind: "waiting", device: "iphone" };
 }
 
+/** The title of the design menu's Refresh now, which sends the phone a push.
+ * An iPhone's widget redraws when iOS allows; an Android phone's app redraws
+ * its widgets as it pulls. */
+export function refreshNowTitle(android = false): string {
+  return android
+    ? "Send the phone a push so it pulls this now and redraws its widgets."
+    : "Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once.";
+}
+
 /** `describeSend`'s "sent" for an Android phone: the same facts, with no
  * iOS in them. Android redraws a widget when the app updates it, which the
  * app does as it pulls. */

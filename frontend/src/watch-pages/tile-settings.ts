@@ -84,7 +84,8 @@ import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type ColorPickerView, type ColorTrial, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
-import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, watchLinkDocument } from "./editor-host.js";
+import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, phoneWordsFor, watchLinkDocument } from "./editor-host.js";
+import { isAndroidPlatform } from "../device-platform.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import {
   type OneLookGlowMode,
@@ -1808,18 +1809,20 @@ function renderCameraPlay(host: TileSettingsHost): TemplateResult {
     </div></div>
     ${playing === undefined ? nothing : html`<wa-camera-live class="ts-play-box" style=${`aspect-ratio:${box}`}
       .hass=${host.hass} .entity=${playing === "hd" ? hd : sd} .fit=${true} .info=${true} .wide=${wide}></wa-camera-live>`}
-    <div class="hint ts-under">Plays the stream here, in this browser, with its size, codec and frame rate. The iPhone turns a sideways HD stream the same way.</div>` : nothing}
+    <div class="hint ts-under">${isAndroidPlatform(host.platform)
+      ? "Plays the stream here, in this browser, with its size, codec and frame rate."
+      : "Plays the stream here, in this browser, with its size, codec and frame rate. The iPhone turns a sideways HD stream the same way."}</div>` : nothing}
     ${checkField("Live tiles in the editor", liveTiles, (on) => {
       setWatchEditorLiveCameras(on);
       host.requestUpdate();
     })}
-    <div class="hint ts-under">Off by default. Plays every camera tile of an iPhone page on its SD stream in the preview. Each one keeps a stream open while the editor shows the page. This browser keeps the switch.</div>`;
+    <div class="hint ts-under">Off by default. Plays every camera tile of ${isAndroidPlatform(host.platform) ? "a phone page" : "an iPhone page"} on its SD stream in the preview. Each one keeps a stream open while the editor shows the page. This browser keeps the switch.</div>`;
 }
 
 function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateResult {
   const tile = host.tile;
   const words = WATCH_PHONE_KEY_WORDS[key];
-  const help = html`<div class="hint ts-under">${words.help}</div>`;
+  const help = html`<div class="hint ts-under">${phoneWordsFor(host, words.help)}</div>`;
   switch (key) {
     case "cameraTileLive":
       return html`${checkField(words.label, watchCameraTileLive(tile), (on) =>

@@ -492,6 +492,9 @@ export interface EditorHost {
   /** Which device the document is edited for. The Control Center mock draws
    * the shapes that device has. Absent in a test host, which draws the watch. */
   deviceKind?: DeviceKind;
+  /** What that device runs, for the words that name it. Absent is its kind's
+   * Apple platform. */
+  platform?: DevicePlatform | null;
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
   endGesture(): void;
@@ -4874,6 +4877,13 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
   return { type: type as "openApp" };
 }
 
+/** Which phone's caveat the tap menu adds: false on a watch, "android" on
+ * an Android phone, true on an iPhone. */
+function tapMenuPhone(host: Pick<EditorHost, "deviceKind" | "platform">): boolean | "android" {
+  if (host.deviceKind !== "iphone") return false;
+  return host.platform === "android" ? "android" : true;
+}
+
 /**
  * The tap action picker: a button naming the current action, and a menu that
  * files every action under a heading with one line saying what it does.
@@ -4893,7 +4903,7 @@ function tapActionMenu(
   options: [TapAction["type"], string][],
   set: (v: TapAction["type"]) => void,
   key: string,
-  onPhone = false,
+  onPhone: boolean | "ios" | "android" = false,
 ): TemplateResult {
   const offered: [TapAction["type"], string][] = options.some(([t]) => t === value)
     ? options
@@ -5467,7 +5477,7 @@ function docTapFields(host: EditorHost): TemplateResult {
       // Mirrors the iPhone preset editor: the chosen page belongs to the
       // openPage type; leaving it clears the choice.
       if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
-    }), "doc-tap", host.deviceKind === "iphone")}
+    }), "doc-tap", tapMenuPhone(host))}
     ${tapNote(tap, usesPages(cfg))}
     ${tap.type === "refreshAll"
       ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
@@ -9605,7 +9615,7 @@ export function tapActionEditor(
     ${tapActionMenu(label, action.type, types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
-    }), key, host.deviceKind === "iphone")}
+    }), key, tapMenuPhone(host))}
     ${tapNote(action, usesPages(host.config))}
     ${action.type === "refreshAll"
       ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))

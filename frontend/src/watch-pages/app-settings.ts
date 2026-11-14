@@ -18,7 +18,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { checkField, entityField, rememberTemplateCaret, segField, sliderField, templateCaretOf, templateHelpers, textField } from "../editors.js";
 import type { EntityRef } from "../model.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
+import { type TileSettingsHost, hostDeviceNoun, phoneWordsFor } from "./editor-host.js";
 import { tileEntityId, tileKind } from "./model.js";
 import {
   WATCH_CHART_MAX_ENTITIES,
@@ -690,7 +690,7 @@ function renderWebCard(host: TileSettingsHost): TemplateResult {
     ${typingField(host, key, textField("Address", url, (v) => commit(host, key, (d) => setWatchWebURL(d, ...at(host), v), { typing: true }),
       { placeholder: "https://", mono: true }))}
     ${note === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${note}</div>`}
-    <div class="hint ts-under">${WATCH_WEB_CARD_HELP}</div>
+    <div class="hint ts-under">${phoneWordsFor(host, WATCH_WEB_CARD_HELP)}</div>
     ${checkField("Scroll", watchWebScroll(tile), (on) => commit(host, "webScroll", (d) => setWatchWebScroll(d, ...at(host), on)))}
     <div class="hint ts-under">The page scrolls inside the tile.</div>
     ${checkField("Interactive", watchWebInteractive(tile), (on) => commit(host, "webInteractive", (d) => setWatchWebInteractive(d, ...at(host), on)))}

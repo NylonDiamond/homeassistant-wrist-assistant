@@ -792,7 +792,7 @@ export interface ClientCertificateStatus {
   updated_at: string | null;
   revision: number;
   /** Who stored the record, or removed it. Null when the user never had one. */
-  source: "panel" | "iphone" | null;
+  source: "panel" | "iphone" | "android" | null;
 }
 
 /** The `user_id` key for a certificate command: none for the signed in user,

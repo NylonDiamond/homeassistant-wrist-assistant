@@ -92,6 +92,8 @@ export interface CompCellFacts {
   /** The kind of device the design stands on, and this one's. */
   designKind: DeviceKind;
   deviceKind: "watch" | "iphone";
+  /** The device runs one of the Android apps, which never had presets. */
+  android?: boolean;
   deviceName: string;
   /** The design's shape goes on an iPhone's Lock Screen. */
   lockShape: boolean;
@@ -139,7 +141,8 @@ export function compCell(f: CompCellFacts): CompCell {
     return { on: false, dash: `${name} does not draw this shape.`, title: "" };
   }
   if (f.full) {
-    return { on: false, title: `${name} is full for this shape. Presets made in the iPhone app count too. Delete a complication on it first.`, note: "full", noteWarn: true };
+    const presets = f.android === true ? "" : " Presets made in the iPhone app count too.";
+    return { on: false, title: `${name} is full for this shape.${presets} Delete a complication on it first.`, note: "full", noteWarn: true };
   }
   const lock = f.deviceKind === "iphone" && f.designKind === "library" && f.lockShape;
   return { on: false, next: true, title: lock ? `Put on ${name}'s Lock Screen` : `Put on ${name}` };

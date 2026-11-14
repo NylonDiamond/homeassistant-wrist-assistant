@@ -96,6 +96,7 @@ import { type WatchHttpLibrary, readWatchHttpLibrary, watchCatalogWithHttpLibrar
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
+  isAndroidPhoneModel,
   phoneSizeText,
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
@@ -1452,7 +1453,7 @@ export class WaMenuEditor extends LitElement {
         <button class="tb icon me-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
           @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
         <button class="tb pct" aria-label=${`Zoom ${shownAs(scale)}. Back to fit`}
-          title=${`The ${phone ? "iPhone" : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
+          title=${`The ${phone ? (isAndroidPhoneModel(host.phone!.model) ? "phone" : "iPhone") : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
           @click=${() => this.setZoom(undefined)}>${shownAs(scale)}</button>
         <button class="tb icon me-zoom-in" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
           @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>

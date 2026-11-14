@@ -120,6 +120,7 @@ import {
   phonePagesLayout,
   phonePagesScreen,
 } from "../phone-frame.js";
+import { nounFor } from "../device-platform.js";
 import { watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
@@ -1366,10 +1367,10 @@ export class WaStatusPagesEditor extends LitElement {
     const edited = renderStatusPageScreen(host);
     if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
     const other = otherPreviewKind(kind);
-    const word = other === "watch" ? "watch" : "iPhone";
     const ref = this.libraryItem;
     const id = previewOwner(this.watches, other, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
     const owner = this.watches.find((w) => w.owner_watch_id === id);
+    const word = other === "watch" ? "watch" : nounFor("iphone", owner?.platform === "android" ? "android" : null);
     const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform)) : undefined;
     const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
     const shown: StatusPagesViewHost = { ...host, still: true, screen, scale: phone === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM };

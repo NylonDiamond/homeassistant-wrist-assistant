@@ -41,11 +41,15 @@ The integration and the panel know four device platforms: `ios`, `watchos`,
   and `bound_to_other_user`) say "phone" to an Android phone or a Wear OS
   watch and "iPhone" to an Apple device, as before. The codes are unchanged.
   A QR code is for any phone, so its own refusals say "phone".
-- `watch_logs_put`, `client_certificate_get`, `addresses_get` and
-  `addresses_set` read only the signer's id and its user, so they work for
-  an Android device as they are. `client_certificate_put` and `_delete` are
-  the iPhone app's migration path; the panel imports the certificate, and an
-  Android app should only read it.
+- `watch_logs_put`, `client_certificate_get`, `addresses_get`,
+  `addresses_set`, `verify_identity`, `phone_pages_offer` and
+  `phone_pages_link_watch` read only the signer's id, its kind and its user,
+  so they work for an Android device as they are.
+- `client_certificate_put` and `_delete` work from an Android device too, and
+  file the record under the source `android` (the iPhone's stays `iphone`).
+  It is a phone's path like the iPhone's: once the panel has written the
+  user's record, neither changes it. The panel's status reply carries the
+  source and names it "From the Android app".
 
 ## Names
 
@@ -75,7 +79,11 @@ all four models.
   `android` token. Never across: an iPhone cannot bridge to a Wear watch.
   `direct` uses the watch's own `watchos` or `wearos` token. A background
   push goes to a watch's own token of either platform.
-- `pro_open_on_phone` from a Wear OS watch reaches the user's Android phones.
+- `pro_open_on_phone` from a Wear OS watch reaches the user's Android phones
+  over FCM, with `wa_open_pro` in the data (`PushMessage.OPEN_PRO_KEY` in the
+  Android app). Pro is bought in each store, so an Apple Watch still asks
+  only the user's iPhones, and a Wear watch whose user has only an iPhone is
+  told `no_phone`.
 - The relay token is bound with the token's platform on `/v1/register`, which
   is how the relay picks APNs or FCM. An FCM send also names `platform` in
   the `/v1/push/send` body. An Apple send's body is unchanged.
@@ -118,3 +126,20 @@ all four models.
   (`wearWords`). The hold time row has its own Android line (`androidHelp`).
 - A panel open on an Android phone offers "Pair this phone instead" beside
   the QR code, as an iPhone's offers "Pair this iPhone instead".
+- The tap menu's phone caveat on an Android phone names only the room page,
+  since its widgets open a page or an entity themselves ("On a phone this
+  only opens the app"). Refresh now on an Android phone has no iOS in it
+  (`refreshNowTitle`).
+- A Wear OS watch's "How alerts arrive" row says Fast comes through the
+  phone and Reliable straight to the watch (`WEAR_DELIVERY_HELP`,
+  `WEAR_DELIVERY_DETAILS`); the key table keeps the Apple words, which the
+  Apple app reads.
+- The phone extras' help, the web card's help and the camera play hints say
+  "the phone" on an Android device's editor (`phoneWordsFor`).
+- A full Android device is never told the iPhone app's presets count too.
+- Left as Apple words on purpose: the home map's scans (RoomPlan is Apple
+  only), the iPhone app's old presets and the one-time move from an iPhone,
+  the Lock Screen and iOS widget sizes, watchOS redraw budgets, the HTTP
+  action and status page lists only the iPhone app writes (`catalog`), and
+  the update gates, which an Android device never meets
+  (`ANDROID_FEATURE_VERSION`).

@@ -146,7 +146,7 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
+import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, refreshNowTitle, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone, waitsOnlyForOwnSetup } from "./home.js";
 import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
 import { renderSharedTabView } from "./shared-tab/hook.js";
@@ -8237,6 +8237,7 @@ export class WristAssistantPanel extends LitElement {
       documents: this.documentList(),
       watchAppVersion: gateVersion(this.selectedOwner),
       deviceKind: deviceKindOf(this.selectedOwner),
+      platform: platformOf(this.selectedOwner),
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
@@ -8745,7 +8746,8 @@ export class WristAssistantPanel extends LitElement {
       for (const row of plan) {
         if (row.slotIndex < 0) {
           failed.push(`${row.label} is full for this shape`);
-          full = true;
+          // Presets are the Apple app's; an Android device never had them.
+          if (!ownerIsAndroid(this.ownerOf(row.ownerId))) full = true;
           continue;
         }
         const copy = copyForOwner(config, {
@@ -8867,7 +8869,9 @@ export class WristAssistantPanel extends LitElement {
       if (asNew) {
         const slot = this.freeSlot(supportedFamilies(draft.config)[0]);
         if (slot < 0) {
-          this.saveError = "The watch is full (iPhone presets count too), so there is nowhere to put a copy. Delete a complication first.";
+          this.saveError = ownerIsAndroid(this.selectedOwner)
+            ? `The ${nounFor(deviceKindOf(this.selectedOwner) === "iphone" ? "iphone" : "watch", platformOf(this.selectedOwner))} is full, so there is nowhere to put a copy. Delete a complication first.`
+            : "The watch is full (iPhone presets count too), so there is nowhere to put a copy. Delete a complication first.";
           return;
         }
         const cfg = structuredClone(draft.config);
@@ -12455,7 +12459,7 @@ export class WristAssistantPanel extends LitElement {
           ${this.canEdit ? row("clock", "History", { off: never, title: never ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication" }, () => void this.openHistoryDialog()) : nothing}
           ${row("braces", "View raw configuration", {}, () => { this.rawOpen = true; })}` : nothing}
         ${info?.d.resend ? html`${sep}${row("arrow", "Resend to the watch", { title: "Wake the watch again", dialog: false }, () => void this.sendToWatch())}` : nothing}
-        ${info?.d.refresh ? html`${sep}${row("arrow", "Refresh now", { title: "Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once.", dialog: false }, () => void this.sendToWatch())}` : nothing}
+        ${info?.d.refresh ? html`${sep}${row("arrow", "Refresh now", { title: refreshNowTitle(ownerIsAndroid(this.selectedOwner)), dialog: false }, () => void this.sendToWatch())}` : nothing}
         ${d && this.canEdit ? html`${sep}
           ${row("duplicate", "Duplicate", { title: "Make this design again as another shape, or on another device" }, () => this.openDuplicateAs(d.config, this.ownerId ?? ""))}
           ${row("delete", "Delete design…", { danger: true, title: "Delete this complication. It asks first." }, () => { this.confirmDelete = true; })}` : nothing}
@@ -15354,6 +15358,7 @@ export class WristAssistantPanel extends LitElement {
       last: place?.last ?? false,
       designKind: it.kind,
       deviceKind: device.kind,
+      ...(ownerIsAndroid(owner) ? { android: true } : {}),
       deviceName: device.name,
       lockShape: it.family === "rectangular" || it.family === "circular" || it.family === "inline",
       shelfName: UNASSIGNED_LABEL,
@@ -16234,7 +16239,7 @@ export class WristAssistantPanel extends LitElement {
         );
         if (slot < 0) {
           failed.push(`${target.label} is full for this shape`);
-          full = true;
+          if (!ownerIsAndroid(this.ownerOf(target.ownerId))) full = true;
           continue;
         }
         const copy = duplicateAs(from.cfg, family, { id: newId(), slotIndex: slot });
