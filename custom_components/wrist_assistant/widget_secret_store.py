@@ -824,13 +824,21 @@ class WidgetSecretStore:
         """What this store holds of a device's own report, for its poll's reply
         (``stored_metadata``). ``app_version`` is "" when none is stored. A
         watch also gets ``standard_settings``, null until it has said. None for
-        an unknown id."""
+        an unknown id.
+
+        A device that said its platform (`device_platform.py`) also gets
+        ``platform``, the one stored. An Apple app never says one, so its
+        reply is the one it always was; an Android app that sees the
+        ``device_platforms`` capability and no ``platform`` here reports
+        again, as for a version that fell behind."""
         entry = self._secrets.get(watch_id)
         if entry is None:
             return None
         stored: dict[str, str | bool | None] = {"app_version": entry.app_version or ""}
         if entry.device_kind == DEVICE_KIND_WATCH:
             stored["standard_settings"] = entry.standard_settings
+        if entry.platform is not None:
+            stored["platform"] = entry.device_platform
         return stored
 
     def note_move_end_heard(self, watch_id: str) -> bool:

@@ -1,7 +1,7 @@
 force_resync:
   name: Force resync
   description: >-
-    Clear every device's session. On its next poll each watch and iPhone
+    Clear every device's session. On its next poll each watch and phone
     sends its list of entities again, then carries on from where it was,
     with no change missed. It does not make a device download everything
     again.
@@ -110,7 +110,7 @@ send_notification:
         dismiss after a button tap), subtitle (text below the message),
         entity_state (state text below the message), show_state (false to
         hide entity_state), live_stream and live_stream_watch (false to keep
-        a camera snapshot still instead of playing live on the iPhone or the
+        a camera snapshot still instead of playing live on the phone or the
         watch).
       selector:
         object:
@@ -193,7 +193,7 @@ send_notification:
       description: >-
         Alert (the default) shows a notification. Background is a silent
         update with nothing shown: it goes only to a watch that has
-        registered itself (never through the iPhone) and plays no sound.
+        registered itself (never through the phone) and plays no sound.
       selector:
         select:
           options:

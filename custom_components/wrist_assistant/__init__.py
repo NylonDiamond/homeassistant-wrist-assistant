@@ -48,6 +48,7 @@ from .complication_store import ComplicationStore, ComplicationStoreError
 from .complication_ws import async_register_websocket_commands
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
+    DEVICE_PLATFORMS_CAPABILITY,
     DOMAIN,
     HOME_MAP_CAPABILITY,
     HOME_MAP_PAGE_ADD_CAPABILITY,
@@ -1241,6 +1242,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # An iPhone says its move is finished (the signed `move_finished` op). It
     # sends that only when it sees this.
     coordinator.register_capability(MOVE_FINISHED_CAPABILITY)
+    # Android phones and Wear OS watches (device_platform.py): the platform
+    # field, their models and FCM push. The Android apps register a push
+    # token only when they see this.
+    coordinator.register_capability(DEVICE_PLATFORMS_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -1549,7 +1554,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             if device is None:
                 raise HomeAssistantError(
                     f"No device has the id {target_raw}. Pick the watch or "
-                    "iPhone again as the target."
+                    "phone again as the target."
                 )
             # Paired watches and iPhones are filed as "watch_<id>"; the hub
             # device (the config entry id) is not a target.
@@ -1560,7 +1565,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             if target is None:
                 name = device.name_by_user or device.name or target_raw
                 raise HomeAssistantError(
-                    f"{name} is not a watch or iPhone paired with Wrist "
+                    f"{name} is not a watch or phone paired with Wrist "
                     "Assistant. Pick one of those as the target."
                 )
 

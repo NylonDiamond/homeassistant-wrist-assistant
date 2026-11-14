@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from platform_names import platform_namespace
 from capped_body_stubs import CAPPED_BODY_NAMES
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -364,6 +365,7 @@ def env(sealed):
                 "_not_loaded_status",
             },
             {
+                **platform_namespace(),
                 "Any": Any,
                 "base64": base64,
                 "time": types.SimpleNamespace(time=lambda: 1_791_331_200.7),
@@ -596,6 +598,37 @@ def test_a_phone_bound_to_no_one_needs_replace(env) -> None:
     assert reply.status == 200, reply.body
     entry = env.penv.secret_store.get(PHONE)
     assert (base64.b64decode(entry.secret_b64), entry.user_id) == (NEW_SECRET, "chen")
+
+
+def test_the_refusals_name_an_iphone_or_a_phone_by_what_redeems(env) -> None:
+    """An iPhone reads the words it always did; an Android phone, which says
+    `platform: android`, reads "phone" in the same sentences."""
+    old = base64.b64encode(b"o" * 32).decode()
+    env.penv.secret_store.register(PHONE, old, "iphone-self-provision", user_id="root")
+    offer = _offer(env)
+    apple = _redeem(env, _redeem_body(env, offer))
+    assert apple.body["message"] == (
+        "This iPhone is paired for another person. Ask an admin to show a "
+        "QR code with Replace ticked."
+    )
+    android = _redeem(env, _redeem_body(env, offer, platform="android"))
+    assert (android.status, android.body["error"]) == (409, "bound_to_other_user")
+    assert android.body["message"] == (
+        "This phone is paired for another person. Ask an admin to show a "
+        "QR code with Replace ticked."
+    )
+
+    env.penv.secret_store.register(PHONE, old, "iphone-self-provision")
+    unbound = _redeem(env, _redeem_body(env, offer, platform="android"))
+    assert unbound.body["error"] == "unbound_needs_replace"
+    assert unbound.body["message"].startswith("This phone was paired before devices belonged")
+
+    env.penv.secret_store.register(PHONE, old, "watch-code-pair", user_id="chen")
+    watch = _redeem(env, _redeem_body(env, offer, platform="android"))
+    assert watch.body["error"] == "not_an_iphone"
+    assert "a paired watch, not a phone," in watch.body["message"]
+    watch = _redeem(env, _redeem_body(env, offer))
+    assert "a paired watch, not an iPhone," in watch.body["message"]
 
 
 @pytest.mark.parametrize("replace", [False, True], ids=["plain", "replace"])

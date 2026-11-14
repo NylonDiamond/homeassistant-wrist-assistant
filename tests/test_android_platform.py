@@ -245,6 +245,43 @@ def test_the_metadata_op_echoes_a_platform_only_for_a_device_that_said_one() -> 
         assert store.get("wear-1").platform == "wearos"
 
 
+def test_stored_metadata_carries_the_platform_only_once_one_was_said(store) -> None:
+    store.register("aw-1", SECRET, "watch-code-pair")
+    store.register("ip-1", SECRET, "iphone-self-provision")
+    store.register("wear-1", SECRET, "watch-code-pair", platform="wearos")
+    store.register("pixel-1", SECRET, "iphone-self-provision", platform="android")
+    # An Apple device's reply is the one it always was.
+    assert store.stored_metadata("aw-1") == {"app_version": "", "standard_settings": None}
+    assert store.stored_metadata("ip-1") == {"app_version": ""}
+    assert store.stored_metadata("wear-1") == {
+        "app_version": "",
+        "standard_settings": None,
+        "platform": "wearos",
+    }
+    assert store.stored_metadata("pixel-1") == {"app_version": "", "platform": "android"}
+    # A Wear watch paired before the field reports it later, and the reply
+    # then says so.
+    store.register("wear-2", SECRET, "watch-code-pair")
+    assert "platform" not in store.stored_metadata("wear-2")
+    store.update_metadata("wear-2", platform="wearos")
+    assert store.stored_metadata("wear-2")["platform"] == "wearos"
+
+
+def test_the_integration_advertises_that_it_knows_the_platforms() -> None:
+    const = (_SRC / "const.py").read_text()
+    init = (_SRC / "__init__.py").read_text()
+    assert 'DEVICE_PLATFORMS_CAPABILITY = "device_platforms"' in const
+    assert "coordinator.register_capability(DEVICE_PLATFORMS_CAPABILITY)" in init
+
+
+def test_the_general_refusals_say_phone() -> None:
+    init = (_SRC / "__init__.py").read_text()
+    assert "Pick the watch or \"\n                    \"phone again as the target." in init
+    assert "is not a watch or phone paired with Wrist" in init
+    pairing = (_SRC / "pairing_ws.py").read_text()
+    assert 'noun="phone")' in pairing and 'noun="iPhone")' not in pairing
+
+
 # ── push routing ─────────────────────────────────────────────────────────
 
 

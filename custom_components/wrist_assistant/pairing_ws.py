@@ -670,7 +670,9 @@ async def ws_pair_offer(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     user = getattr(connection, "user", None)
-    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun="iPhone")
+    # A QR code is for whichever phone scans it, an iPhone or an Android
+    # phone, so its words name no platform.
+    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun="phone")
     if refusal is not None:
         connection.send_error(msg["id"], *refusal)
         return

@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from device_lookup_loader import paired_device_name
+from platform_names import PLATFORM_HELPERS, platform_namespace
 from test_notification_tokens import _loaded_notifications
 from test_watch_config_store import _Hass, _loaded_module
 
@@ -35,6 +36,7 @@ _NAMES = (
     "_owner_shown_page_count",
     "_op_phone_pages_offer",
     "_op_phone_pages_link_watch",
+    *PLATFORM_HELPERS,
 )
 
 PHONE = "iphone:1"
@@ -140,6 +142,7 @@ def _handlers(store_mod: Any, notif_mod: Any, registry: _DeviceRegistry) -> dict
         "phone_watch_ids": notif_mod.phone_watch_ids,
         "dr": types.SimpleNamespace(async_get=lambda _hass: registry),
         "paired_device_name": paired_device_name,
+        **platform_namespace(),
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -225,6 +228,7 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
                 "app_build": "4",
                 # Home shows; Lights is hidden and Settings is a system page.
                 "shown_pages": 1,
+                "platform": "watchos",
             },
             {
                 "id": OTHER,
@@ -234,9 +238,35 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
                 "app_version": None,
                 "app_build": None,
                 "shown_pages": 0,
+                "platform": "watchos",
             },
         ],
     }
+
+
+def test_offer_names_a_wear_watch_by_its_platform(env) -> None:
+    """An Android phone's offer tells a Wear OS watch from an Apple Watch."""
+    env.secrets.entries[OTHER].platform = "wearos"
+    rows = {w["id"]: w["platform"] for w in _op(env, "_op_phone_pages_offer", {}).body["watches"]}
+    assert rows == {WATCH: "watchos", OTHER: "wearos"}
+
+
+def test_a_wear_watch_is_refused_in_a_phone_s_words(env) -> None:
+    """The refusal's words name an Android phone to an Android device; an
+    Apple Watch keeps the iPhone words it always had."""
+    apple = _op(env, "_op_phone_pages_offer", {}, signer=WATCH)
+    assert apple.status == 403
+    assert apple.body["message"] == "Only an iPhone takes a watch's pages."
+    env.secrets.entries[WATCH].platform = "wearos"
+    wear = _op(env, "_op_phone_pages_offer", {}, signer=WATCH)
+    assert wear.body == {"ok": False, "error": "not_an_iphone", "message": "Only a phone takes a watch's pages."}
+
+
+def test_an_android_phone_reads_phone_words_for_a_watch_it_cannot_link(env) -> None:
+    env.secrets.entries[PHONE].platform = "android"
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": STRANGER})
+    assert reply.status == 400
+    assert reply.body["message"] == "watch_id must be one of this phone's watches"
 
 
 def test_offer_never_names_a_watch_by_how_it_paired(env) -> None:

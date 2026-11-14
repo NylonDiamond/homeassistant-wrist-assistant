@@ -162,6 +162,7 @@ from .const import (
     WristAssistantData,
 )
 from .device_lookup import find_paired_device, paired_device_name
+from .device_platform import FCM_PLATFORMS, default_platform, resolve_platform
 from .home_areas import home_areas, home_entities, home_floors
 from .home_map_store import (
     HomeMapConflictError,
@@ -2196,6 +2197,34 @@ def _caller_is_iphone(ctx: _OpContext) -> bool:
     """Whether the signer is an iPhone entry in the widget secret store."""
     secrets = ctx.domain_data.widget_secret_store
     return secrets is not None and is_iphone_entry(secrets.get(ctx.watch_id))
+
+
+def _entry_platform(entry: Any, kind: str) -> str:
+    """A secret store entry's platform (`device_platform.resolve_platform`),
+    or the Apple one of ``kind`` for no entry."""
+    if entry is None:
+        return default_platform(kind)
+    return resolve_platform(getattr(entry, "device_kind", kind), getattr(entry, "platform", None))
+
+
+def _caller_runs_android(ctx: _OpContext) -> bool:
+    """Whether the signer is an Android phone or a Wear OS watch. Only for
+    the words of a refusal; every rule reads the kind."""
+    secrets = ctx.domain_data.widget_secret_store
+    entry = secrets.get(ctx.watch_id) if secrets is not None else None
+    return entry is not None and getattr(entry, "platform", None) in FCM_PLATFORMS
+
+
+def _phone_noun(ctx: _OpContext) -> str:
+    """The phone in a refusal's words: "iPhone" to an Apple device, as it
+    always was, and "phone" to an Android one."""
+    return "phone" if _caller_runs_android(ctx) else "iPhone"
+
+
+def _a_phone(ctx: _OpContext) -> str:
+    """`_phone_noun` with its article: "an iPhone" or "a phone"."""
+    noun = _phone_noun(ctx)
+    return f"an {noun}" if noun == "iPhone" else f"a {noun}"
 
 
 def _push_status_fields(
@@ -4250,9 +4279,13 @@ class WAPairRedeemView(HomeAssistantView):
             # phone's platform, since only a phone redeems.
             **({} if payload.get("platform") is None else {"platform": payload.get("platform")}),
         }
-        _fields, error = validate_pair_fields(claimed, secret_optional=True)
+        checked, error = validate_pair_fields(claimed, secret_optional=True)
         if error is not None:
             return self._refuse(error.status, error.code, error.message)
+        # The phone in the refusals below: "iPhone" as it always was, and
+        # "phone" to an Android phone, which says so (`device_platform.py`).
+        phone = "phone" if getattr(checked, "platform", None) in FCM_PLATFORMS else "iPhone"
+        a_phone = "a phone" if phone == "phone" else "an iPhone"
         model = payload.get("model")
         if model is not None and (not isinstance(model, str) or len(model) > REGISTER_TEXT_MAX_LEN):
             return self._refuse(400, "invalid_field", "model too long")
@@ -4298,7 +4331,7 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(
                 409,
                 "not_an_iphone",
-                "This device id belongs to a paired watch, not an iPhone, so it "
+                f"This device id belongs to a paired watch, not {a_phone}, so it "
                 "cannot be paired as one. Replace does not change that.",
             )
         if existing is not None and existing.user_id is None and not offer.replace:
@@ -4310,7 +4343,7 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(
                 409,
                 "unbound_needs_replace",
-                "This iPhone was paired before devices belonged to a person. Ask "
+                f"This {phone} was paired before devices belonged to a person. Ask "
                 "an admin to show a QR code with Replace ticked.",
             )
         if (
@@ -4325,7 +4358,7 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(
                 409,
                 "bound_to_other_user",
-                "This iPhone is paired for another person. Ask an admin to show a "
+                f"This {phone} is paired for another person. Ask an admin to show a "
                 "QR code with Replace ticked.",
             )
 
@@ -5167,7 +5200,11 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
 
 def _not_an_iphone(ctx: _OpContext) -> Response:
     return ctx.signed_json(
-        {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone takes a watch's pages."},
+        {
+            "ok": False,
+            "error": "not_an_iphone",
+            "message": f"Only {_a_phone(ctx)} takes a watch's pages.",
+        },
         status=403,
     )
 
@@ -5220,7 +5257,9 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
     watch never heard from. ``app_version`` and ``app_build`` are what the
     watch last reported (pairing, then ``update_metadata`` after each app
     update), null when it never said; ``shown_pages`` is how many pages it
-    shows (`_owner_shown_page_count`).
+    shows (`_owner_shown_page_count`). ``platform`` is what the watch runs
+    (``watchos`` or ``wearos``, ``watchos`` for one that never said), so an
+    Android phone can tell an Apple Watch from a Wear OS watch.
     Refused ``not_an_iphone`` (403) for a watch.
     """
     secrets = ctx.domain_data.widget_secret_store
@@ -5252,6 +5291,9 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
                     "app_version": getattr(entries.get(watch_id), "app_version", None),
                     "app_build": getattr(entries.get(watch_id), "app_build", None),
                     "shown_pages": _owner_shown_page_count(store, watch_id),
+                    # What the watch runs (`device_platform.py`), so the
+                    # phone names it as an Apple Watch or a Wear OS watch.
+                    "platform": _entry_platform(entries.get(watch_id), "watch"),
                 }
                 for watch_id in phone_watch_ids(entries, ctx.watch_id)
             ],
@@ -5289,7 +5331,11 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
         secrets.all_entries, ctx.watch_id
     ):
         return ctx.signed_json(
-            {"ok": False, "error": "invalid_watch", "message": "watch_id must be one of this iPhone's watches"},
+            {
+                "ok": False,
+                "error": "invalid_watch",
+                "message": f"watch_id must be one of this {_phone_noun(ctx)}'s watches",
+            },
             status=400,
         )
     first = store.holds_no_record(ctx.watch_id, "pages")
@@ -5970,7 +6016,11 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
         return _home_map_refusal(ctx, HomeMapUnavailableError("integration not ready"))
     if not _caller_is_iphone(ctx):
         return ctx.signed_json(
-            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone saves the home map."},
+            {
+                "ok": False,
+                "error": "not_an_iphone",
+                "message": f"Only {_a_phone(ctx)} saves the home map.",
+            },
             status=403,
         )
     if len(ctx.body) > _HOME_MAP_PUT_MAX_BODY_BYTES:
@@ -6047,7 +6097,7 @@ async def _op_home_map_page_add(ctx: _OpContext) -> Response:
         return _home_map_page_add_refusal(ctx, "unavailable", "integration not ready")
     if not _caller_is_iphone(ctx):
         return _home_map_page_add_refusal(
-            ctx, "not_an_iphone", "Only an iPhone adds a map page to its own pages."
+            ctx, "not_an_iphone", f"Only {_a_phone(ctx)} adds a map page to its own pages."
         )
     floor_id = ctx.payload.get("floor_id")
     if not isinstance(floor_id, str) or not floor_id:
@@ -6069,7 +6119,7 @@ async def _op_home_map_page_add(ctx: _OpContext) -> Response:
         record = pages.get(owner, "pages")
         if record is None:
             return _home_map_page_add_refusal(
-                ctx, "no_pages_record", "This iPhone holds no pages yet."
+                ctx, "no_pages_record", f"This {_phone_noun(ctx)} holds no pages yet."
             )
         held = pages.page_with_tile(owner, home_map_entity_id(floor["id"]))
         if held is not None:

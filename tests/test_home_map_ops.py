@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from platform_names import PLATFORM_HELPERS, platform_namespace
 from test_delta_coordinator_inprocess import _poll, coordinator  # noqa: F401
 from test_home_map_store import (
     KEY,
@@ -47,6 +48,7 @@ _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_as
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
 _NAMES = (
     "_caller_is_iphone",
+    *PLATFORM_HELPERS,
     "_home_map_refusal",
     "_op_home_map_get",
     "_op_home_map_put",
@@ -111,6 +113,7 @@ def _ops(store_mod: Any, areas: Any) -> dict[str, Any]:
         dont_inherit=True,
     )
     namespace: dict[str, Any] = {
+        **platform_namespace(),
         "Any": Any,
         "Response": _Response,
         "_LOGGER": types.SimpleNamespace(debug=lambda *a, **k: None),

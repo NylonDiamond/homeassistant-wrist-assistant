@@ -981,7 +981,8 @@ def test_an_offer_for_another_person_with_replace(env) -> None:
 def test_an_offer_refuses_a_missing_inactive_or_system_user(env, user_id) -> None:
     code, message = _error(env, env.ws.ws_pair_offer, user_id=user_id)
     assert code == "invalid_user"
-    assert "this iPhone" in message
+    # A QR code is for any phone that scans it, an iPhone or an Android one.
+    assert "this phone" in message
     assert len(env.offer_store) == 0
 
 

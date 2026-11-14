@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from platform_names import PLATFORM_HELPERS, platform_namespace
 from test_home_map_store import FLOOR, basic
 from test_http_actions_store import FakeStore
 from test_page_images_store import FakeHass
@@ -42,6 +43,7 @@ _VIEWS = _PKG_DIR / "wa_v2_views.py"
 _FIXTURE = json.loads((_ROOT / "tests" / "fixtures" / "home_map" / "map_page.json").read_text())
 _NAMES = (
     "_caller_is_iphone",
+    *PLATFORM_HELPERS,
     "_home_map_refusal",
     "_watch_config_refusal",
     "_home_map_page_add_refusal",
@@ -157,6 +159,7 @@ def _ops(loaded: Any) -> dict[str, Any]:
     )
     wc, maps, mp = loaded.wc, loaded.maps, loaded.map_page
     namespace: dict[str, Any] = {
+        **platform_namespace(),
         "Any": Any,
         "Response": _Response,
         "_LOGGER": types.SimpleNamespace(info=lambda *a, **k: None, debug=lambda *a, **k: None),
@@ -379,6 +382,26 @@ def test_an_iphone_with_no_pages_record_is_refused_and_nothing_is_made(env) -> N
     assert record(env, BARE_IPHONE) is None
     assert env.pages.library_summary() == library
     assert env.changes == []
+
+
+def test_the_refusals_speak_to_an_android_device_as_a_phone(env) -> None:
+    """An iPhone and an Apple Watch keep the words they had; an Android phone
+    and a Wear OS watch read "phone"."""
+    assert add(env, {"floor_id": FLOOR}, watch_id=BARE_IPHONE).body["message"] == (
+        "This iPhone holds no pages yet."
+    )
+    assert add(env, {"floor_id": FLOOR}, watch_id=WATCH).body["message"] == (
+        "Only an iPhone adds a map page to its own pages."
+    )
+    secrets = env.domain.widget_secret_store.entries
+    secrets[BARE_IPHONE].platform = "android"
+    secrets[WATCH].platform = "wearos"
+    assert add(env, {"floor_id": FLOOR}, watch_id=BARE_IPHONE).body["message"] == (
+        "This phone holds no pages yet."
+    )
+    assert add(env, {"floor_id": FLOOR}, watch_id=WATCH).body["message"] == (
+        "Only a phone adds a map page to its own pages."
+    )
 
 
 def test_the_store_never_makes_a_first_record_either(env) -> None:
