@@ -144,19 +144,21 @@ beta, install the stable version from Marketplace, or use HACS `Redownload` and 
 The easiest option is the bundled script blueprint called `Watch Notification`.
 In Home Assistant, go to `Settings` -> `Automations & Scenes` -> `Blueprints` -> `Scripts`, then create a script from `Watch Notification`.
 
-The blueprint is easier to set up in the UI and lets you choose a watch or iPhone, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
+The blueprint is easier to set up in the UI and lets you choose a watch or phone, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
 
-If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches using Apple notifications.
+If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches, through Apple's push service for an Apple Watch or iPhone and Google's (Firebase Cloud Messaging) for a Wear OS watch or Android phone.
 
-`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`), or an iPhone's to send to that phone alone. Omit `target` to broadcast to every paired watch.
+`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`), or a phone's (an iPhone or an Android phone) to send to that phone alone. Omit `target` to broadcast to every paired watch.
 
-A watch set to Fast gets its alerts through the iPhones of the same Home Assistant user, which mirror them to the wrist. A watch set to Reliable, or one whose user has no iPhone with the app, gets them directly. Each phone gets an alert once, however many of its user's watches it is for.
+A watch set to Fast gets its alerts through the phones of the same Home Assistant user, which mirror them to the wrist: an Apple Watch through the iPhones, a Wear OS watch through the Android phones, never across the two. A watch set to Reliable, or one whose user has no phone of its kind with the app, gets them directly. Each phone gets an alert once, however many of its user's watches it is for.
 
-If you see `<device> has not registered for notifications yet`, that watch or iPhone has not checked in for notifications. Open Wrist Assistant on it and let it fully sync once, then try the notification again. `No watch has registered for notifications yet` means no paired watch has: pair one first (see "Pairing a device").
+Icons in `actions` are SF Symbol names; the Android apps draw each as the matching Material icon. The named sounds play on Apple devices only: an Android phone or Wear OS watch plays its own sound for the alert's priority, so use `priority: passive` for a quiet one there.
+
+If you see `<device> has not registered for notifications yet`, that watch or phone has not checked in for notifications. Open Wrist Assistant on it and let it fully sync once, then try the notification again. `No watch has registered for notifications yet` means no paired watch has: pair one first (see "Pairing a device").
 
 If it still fails:
 
-1. On the watch, verify `Settings` -> `Notifications` -> `Wrist Assistant` is enabled.
+1. On an Apple Watch, verify `Settings` -> `Notifications` -> `Wrist Assistant` is enabled. On a Wear OS watch or an Android phone, check `Settings` -> `Apps` -> `Wrist Assistant` -> `Notifications`.
 2. Reopen Wrist Assistant on the watch and pull to refresh if needed.
 3. Retry the notification after the watch reconnects.
 4. If it still will not register, re-pair the watch or reinstall the watch app.
@@ -180,9 +182,6 @@ data:
   priority: "time-sensitive"
 
   data:
-    subtitle: "Security"
-    entity_state: "Motion detected"
-    show_state: true
     auto_dismiss: false
 
   actions:
@@ -207,7 +206,7 @@ data:
 
 **Pairing.** When the iPhone app pairs a watch, the integration stores a per-device secret and binds it to the Home Assistant user who was signed in. A device paired by code works the same way: the device makes its own secret, and the integration binds it to the Home Assistant user who typed the code in the panel (or, for an administrator, the person picked under `Whose watch is this?`). Nothing is paired until someone signed in to Home Assistant confirms the code, a code lasts 10 minutes, and the panel warns when the request came from outside your network. Every call from a paired device then runs as its user, the same way the Home Assistant Companion app works. A watch paired by a non-admin cannot call admin-only services (restart, add-on control, and so on). Only the user who paired a device, or an admin, can pair it again. If a phone or watch is lost, open it on the panel's Devices tab and choose `Remove device`; disabling the user in Home Assistant also cuts off every device they paired.
 
-**Push relay.** Apple push notifications must be signed with the app's APNs key, which cannot ship inside a public integration. Notifications are therefore sent through a relay at `push.wrist-assistant.com`, run by the developer, which signs them and hands them to Apple. The relay receives the notification title, body, action buttons and data, the device push token, and the watch id. It keeps nothing after Apple accepts the message. Camera images in notifications are never sent to the relay: the push carries a short-lived link back to your own Home Assistant, and the device fetches the image from there.
+**Push relay.** Apple push notifications must be signed with the app's APNs key, which cannot ship inside a public integration. Notifications are therefore sent through a relay at `push.wrist-assistant.com`, run by the developer, which signs them and hands them to Apple, or to Google's Firebase Cloud Messaging for an Android phone or Wear OS watch. The relay receives the notification title, body, action buttons and data, the device push token, and the watch id. It keeps nothing after Apple or Google accepts the message. Camera images in notifications are never sent to the relay: the push carries a short-lived link back to your own Home Assistant, and the device fetches the image from there.
 
 ## Need help?
 

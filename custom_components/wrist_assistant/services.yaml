@@ -1,7 +1,7 @@
 force_resync:
   name: Force resync
   description: >-
-    Clear every device's session. On its next poll each watch and iPhone
+    Clear every device's session. On its next poll each watch and phone
     sends its list of entities again, then carries on from where it was,
     with no change missed. It does not make a device download everything
     again.
@@ -10,11 +10,13 @@ force_resync:
 send_notification:
   name: Send notification
   description: >-
-    Send a notification to every paired watch, or to one watch or iPhone.
-    For the easy way, with buttons and a camera snapshot picked from lists,
-    make a script from the bundled Watch Notification blueprint (Settings,
-    Automations & scenes, Blueprints). A device can get notifications after
-    it is paired and the app on it has been opened once.
+    Send a notification to every paired watch, or to one watch or phone.
+    A watch is an Apple Watch or a Wear OS watch, a phone an iPhone or an
+    Android phone. For the easy way, with buttons and a camera snapshot
+    picked from lists, make a script from the bundled Watch Notification
+    blueprint (Settings, Automations & scenes, Blueprints). A device can get
+    notifications after it is paired and the app on it has been opened
+    once.
   fields:
     message:
       name: Message
@@ -32,7 +34,9 @@ send_notification:
     target:
       name: Target
       description: >-
-        Watch or iPhone to send to. Omit to send to all registered watches.
+        Watch or phone to send to: an Apple Watch, a Wear OS watch, an
+        iPhone or an Android phone. Omit to send to all registered
+        watches.
       selector:
         device:
           filter:
@@ -48,12 +52,14 @@ send_notification:
       name: Actions
       description: >-
         List of entity action buttons (1-4) shown on the notification.
-        Each action names an entity_id, and the watch picks the right
+        Each action names an entity_id, and the app picks the right
         action for the entity's domain and state.
         The server enriches each action with the entity's current state
         and attributes before sending. Optional keys: label (custom
-        button text, defaults to friendly_name), icon (SF Symbol name),
-        confirm (true = hold to confirm), expanded (true = open the
+        button text, defaults to friendly_name), icon (an SF Symbol name;
+        the Android apps draw it as the matching Material icon), confirm
+        (true = hold to confirm; in an Android notification the button
+        asks Confirm or Cancel instead), expanded (true = open the
         button's quick controls without a double tap).
         Example: [{entity_id: "lock.front_door", icon: "lock.fill"},
         {entity_id: "light.porch", label: "Porch", icon: "lightbulb.fill"}]
@@ -65,9 +71,10 @@ send_notification:
         Camera or image entity to snapshot and show in the notification (for
         example a doorbell camera, or a 3D printer's job snapshot). The frame is
         captured when the notification is sent. Tapping a camera snapshot opens
-        the camera's live view; an image entity shows the still only. Away from
-        home, the snapshot loads only with remote access (Home Assistant Cloud
-        or an external URL).
+        the camera's live view (on an Android phone, tapping the notification
+        opens it with a Live button); an image entity shows the still only.
+        Away from home, the snapshot loads only with remote access (Home
+        Assistant Cloud or an external URL).
       example: "camera.front_door"
       selector:
         entity:
@@ -107,19 +114,24 @@ send_notification:
       name: Data
       description: >-
         Extra keys passed to the app. Known keys: auto_dismiss (true to
-        dismiss after a button tap), subtitle (text below the message),
-        entity_state (state text below the message), show_state (false to
-        hide entity_state), live_stream and live_stream_watch (false to keep
-        a camera snapshot still instead of playing live on the iPhone or the
-        watch).
+        dismiss after a button tap; on Android the opened alert closes after
+        a button tap, and the notification itself closes a minute after it
+        arrives), live_stream and
+        live_stream_watch (false to keep a camera snapshot still instead of
+        playing live on the phone or the watch; on an Android phone it
+        leaves out the Live button).
       selector:
         object:
     sound:
       name: Sound
       description: >-
-        Sound to play. Pick one, or type a custom file name. Silent and
-        custom sounds apply only with Reliable delivery; with Fast delivery
-        the watch always plays its default alert.
+        Sound to play. Pick one, or type a custom file name. On an iPhone
+        and an Apple Watch, Silent and custom sounds apply only with
+        Reliable delivery; with Fast delivery the Apple Watch always plays
+        its default alert. An Android phone and a Wear OS watch play their
+        own notification sound for the priority, never the named sounds,
+        and Silent does not quiet them: for no sound there, pick Passive
+        priority.
       example: "default"
       selector:
         select:
@@ -193,7 +205,7 @@ send_notification:
       description: >-
         Alert (the default) shows a notification. Background is a silent
         update with nothing shown: it goes only to a watch that has
-        registered itself (never through the iPhone) and plays no sound.
+        registered itself (never through its phone) and plays no sound.
       selector:
         select:
           options:
@@ -213,7 +225,7 @@ send_notification:
       name: Group
       description: >-
         Thread identifier for grouping related notifications together
-        in the watch notification center.
+        in the notification center (on Android, under one summary).
       example: "security"
       selector:
         text:
@@ -222,7 +234,11 @@ send_notification:
       description: >-
         How strongly the alert interrupts. Passive arrives silently, Active
         (the default) is a normal alert, and Time Sensitive breaks through
-        Focus and Do Not Disturb, which suits doorbells and cameras.
+        Focus and Do Not Disturb on an iPhone and an Apple Watch, which
+        suits doorbells and cameras. On Android each priority has its own
+        notification channel: Time Sensitive pops up on the screen, and it
+        passes Do Not Disturb only when Android's Do Not Disturb settings
+        let Wrist Assistant through.
       selector:
         select:
           mode: dropdown
