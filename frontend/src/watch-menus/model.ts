@@ -1115,6 +1115,6 @@ export const WATCH_MENUS_NO_RECORD_TITLE = "No menus from this watch yet.";
 /** Under a Speak Phrase slot on an iPhone. Its phrases are the watch's
  * voice settings, which a phone does not keep, so the slot stays as it is
  * and does nothing there. */
-export const PHONE_NO_PHRASES_TEXT = "An iPhone has no voice phrases, so Speak Phrase does nothing there.";
+export const PHONE_NO_PHRASES_TEXT = "A phone has no voice phrases, so Speak Phrase does nothing there.";
 
 export const WATCH_MENUS_UPDATE_TEXT = "Update the integration to edit menus here.";

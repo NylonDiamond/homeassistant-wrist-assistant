@@ -3,6 +3,7 @@
 // first download: the one `import()` that loads it, and a line until it
 // has.
 
+import type { DevicePlatform } from "./device-platform.js";
 import { html, type TemplateResult } from "lit";
 import type { HassLike } from "./ha-api.js";
 import type { LibraryKind } from "./library/client.js";
@@ -29,6 +30,8 @@ export interface HomeLineupInput {
   /** The device's name, for what a move or a remove says. */
   deviceName: string;
   kind: "watch" | "iphone";
+  /** What the device runs, for its noun. Absent: the kind's Apple one. */
+  platform?: DevicePlatform;
   /** The app version the device reported, which decides whether its page
    * pictures draw One Look. */
   appVersion?: string | null;
@@ -57,6 +60,6 @@ export function renderHomeLineup(input: HomeLineupInput): TemplateResult {
   const ready = customElements.get("wa-home-lineup") !== undefined;
   if (!ready && !loadFailed) void loadLineup().then(input.onLoaded, input.onLoaded);
   if (!ready) return html`<p class="hl-empty">${loadFailed ? "This part of the page did not load. Reload the page to try again." : "Loading…"}</p>`;
-  return html`<wa-home-lineup .hass=${input.hass} .ownerId=${input.ownerId} .deviceName=${input.deviceName} .kind=${input.kind} .phones=${input.phones}
+  return html`<wa-home-lineup .hass=${input.hass} .ownerId=${input.ownerId} .deviceName=${input.deviceName} .kind=${input.kind} .platform=${input.platform} .phones=${input.phones}
     .waitsForIphone=${input.waitsForIphone} .phoneMoves=${input.phoneMoves} .seedWaits=${input.seedWaits} .seedMayLand=${input.seedMayLand} .asksFirst=${input.asksFirst} .appVersion=${input.appVersion} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
 }

@@ -154,7 +154,7 @@ export function tickSkipsText(count: number): string {
  * most, then how many more. */
 export function tickSkipsTitle(name: string, tiles: readonly string[]): string {
   const shown = tiles.length <= 4 ? joinWords(tiles) : `${tiles.slice(0, 3).join(", ")} and ${tiles.length - 3} more`;
-  return `${name} skips ${shown}: only an iPhone shows ${tiles.length === 1 ? "it" : "them"}.`;
+  return `${name} skips ${shown}: only a phone shows ${tiles.length === 1 ? "it" : "them"}.`;
 }
 
 /** The chips of one item's row, each ticked watch's with the tiles it skips
@@ -197,7 +197,7 @@ function plainTickChips(input: TicksInput): TickChip[] {
     const add = input.addFor !== undefined && sameId(ownerId, input.addFor) && !on;
     const hidden = on && !busy && hiddenOn(ownerId);
     const color = input.colorOf(ownerId);
-    const label = add ? `Add to this ${deviceWord(device.kind)}` : device.name;
+    const label = add ? `Add to this ${deviceWord(device.kind, device.platform)}` : device.name;
     const viewing = input.viewing !== undefined && sameId(ownerId, input.viewing);
     const base = { ownerId, name: device.name, device: device.kind, color, shape: round ? "round" as const : "square" as const, on, hidden, busy, add, label, ...(viewing ? { viewing } : {}) };
     if (busy) return { ...base, title: "Saving…", next: undefined };

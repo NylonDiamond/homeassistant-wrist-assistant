@@ -342,14 +342,16 @@ export function pickerSections<T>(
  * this module goes on knowing nothing about the websocket types. */
 export interface PickerPerson {
   label: string;
-  devices: readonly { ownerId: string; kind: DeviceKind }[];
+  /** `android` marks an Android phone, which the who-line calls "phone". */
+  devices: readonly { ownerId: string; kind: DeviceKind; android?: boolean }[];
 }
 
 /** What one device is called inside the brackets after a person's name. The
  * short word, not the device's own name: "Jesse (watch, iPhone)" says whose
  * and which in five words, where "Jesse Apple Watch, Jesse's iPhone" says the
  * name twice and the useful part once. */
-function deviceWord(kind: DeviceKind): string {
+function deviceWord(kind: DeviceKind, android = false): string {
+  if (kind === "iphone" && android) return "phone";
   return kind === "iphone" ? "iPhone" : "watch";
 }
 
@@ -379,7 +381,7 @@ export function rowWhoText(ownerIds: readonly string[], people: readonly PickerP
   for (const person of people) {
     const mine = person.devices.filter((d) => on.has(d.ownerId));
     if (mine.length === 0) continue;
-    parts.push(`${person.label} (${mine.map((d) => deviceWord(d.kind)).join(", ")})`);
+    parts.push(`${person.label} (${mine.map((d) => deviceWord(d.kind, d.android === true)).join(", ")})`);
   }
   if (parts.length > 0) return parts.join(" · ");
   return on.has(LIBRARY_OWNER_ID) ? UNASSIGNED_LABEL : "On no device yet";

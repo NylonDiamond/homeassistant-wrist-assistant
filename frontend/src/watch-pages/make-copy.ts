@@ -71,7 +71,8 @@ export function copyDevices(owners: readonly string[], devices: readonly LinkDev
  * all iPhones, "Lights (Watch)" when all watches, "Lights (copy)" else. */
 export function copyNameFor(name: string, ticked: readonly LinkDevice[]): string {
   const kinds = new Set(ticked.map((d) => d.kind));
-  const tag = kinds.size !== 1 ? "copy" : kinds.has("iphone") ? "iPhone" : "Watch";
+  const android = ticked.every((d) => d.platform === "android");
+  const tag = kinds.size !== 1 ? "copy" : kinds.has("iphone") ? (android ? "Phone" : "iPhone") : "Watch";
   return `${name} (${tag})`;
 }
 
@@ -163,7 +164,7 @@ function deviceTicks(form: CopyForm, holders: readonly LinkDevice[], h: CopyDial
       })}
     </div>`;
   };
-  return html`${group("watch", "Watches")}${group("iphone", "iPhones")}`;
+  return html`${group("watch", "Watches")}${group("iphone", "Phones")}`;
 }
 
 /** The dialog: the devices, the copy's name and the warning, or once made

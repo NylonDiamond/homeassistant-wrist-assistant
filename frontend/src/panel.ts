@@ -151,7 +151,7 @@ import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentio
 import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
 import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
-import { gateVersion, nounFor, platformNoun, platformOf } from "./device-platform.js";
+import { gateVersion, nounFor, ownerIsAndroid, platformNoun, platformOf } from "./device-platform.js";
 import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
@@ -819,7 +819,7 @@ function shapeGroupOrder(kind: DeviceKind): readonly string[] {
  * iPhone Lock Screen widgets both. Undefined for a box with no shape. */
 export function shapeDevicesTag(key: string): { text: string; icons: readonly ("watch" | "phone")[]; where: "watch" | "phone" | "both" } | undefined {
   if (key === "corner") return { text: "Watch", icons: ["watch"], where: "watch" };
-  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: "iPhone Home Screen", icons: ["phone"], where: "phone" };
+  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: "Phone Home Screen", icons: ["phone"], where: "phone" };
   if (key === "rectangular" || key === "circular" || key === "inline") return { text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"], where: "both" };
   return undefined;
 }
@@ -843,8 +843,11 @@ function capFirst(s: string): string {
  * slots too, which is why a device can be full with fewer designs on it than
  * the panel lists, so the sentence says so. `where` is a device's name, or
  * `UNASSIGNED_LIST` for the shelf. */
-export function fullForShapeText(where: string): string {
-  return `${capFirst(where)} is full for this shape. Presets made in the iPhone app count too.`;
+export function fullForShapeText(where: string, android = false): string {
+  // An Android phone or Wear watch never had the iPhone app's presets.
+  return android
+    ? `${capFirst(where)} is full for this shape.`
+    : `${capFirst(where)} is full for this shape. Presets made in the iPhone app count too.`;
 }
 
 /** The question before unsaved work is thrown away, naming the design. */
@@ -857,9 +860,9 @@ export function discardPrompt(name: string | undefined): string {
 
 /** What an empty device says, in its own words. A watch with nothing on it and
  * a shelf with nothing on it are different news. */
-function nothingOnText(kind: DeviceKind | "all"): string {
+function nothingOnText(kind: DeviceKind | "all", android = false): string {
   if (kind === "library") return "Every design is on a device.";
-  if (kind === "iphone") return "Nothing on this iPhone yet.";
+  if (kind === "iphone") return android ? "Nothing on this phone yet." : "Nothing on this iPhone yet.";
   if (kind === "watch") return "Nothing on this watch yet.";
   return "No complications yet.";
 }
@@ -10333,7 +10336,7 @@ export class WristAssistantPanel extends LitElement {
       ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
       ["Corner", "Its Bezel row is the label or gauge on the outer edge. Under it, a toggle picks what fills the inside: big Curved text along the edge, or Layers in a small circle. The watch shows one of the two, never both."],
       ["Inline", "One line built from parts: words, live values and icons. Its one layer is that line."],
-      ["Home Screen", "On an iPhone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
+      ["Home Screen", "On a phone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
       ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
       ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on color alone reads differently there."],
@@ -10389,7 +10392,7 @@ export class WristAssistantPanel extends LitElement {
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
-      ["Synced", "The pill at the top of every screen, green. Every watch and iPhone that is awake has applied every change."],
+      ["Synced", "The pill at the top of every screen, green. Every watch and phone that is awake has applied every change."],
       ["Waiting", "The same pill, amber, with how many. Press it to see each device and what it waits for. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu on the Complications tab, tries to wake the open device."],
       ["Asleep", "Grey in that list: a device not seen for a week or more. Its changes wait safely and it catches up when it next connects, so it does not count as waiting."],
     ];
@@ -11864,7 +11867,7 @@ export class WristAssistantPanel extends LitElement {
     const phone = this.sharedPhone;
     const screen = iphoneScreenOf(this.route);
     if (!this.phonePages) {
-      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep iPhone pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
+      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep phone pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
     }
     if (phone === undefined && hasPhoneAwaitingUpdate(this.owners)) {
       return html`<div class="wa-ip-empty">
@@ -12255,6 +12258,7 @@ export class WristAssistantPanel extends LitElement {
       lastSyncSeconds: this.lastSyncSeconds,
       pushAvailable: this.pushAvailable,
       pendingChanges: this.pendingChanges,
+      platform: this.selectedOwner === undefined ? undefined : platformOf(this.selectedOwner),
     });
     // Before the first reply nothing is known about this device, and the pill
     // would otherwise report the never-acked state as if it were an answer.
@@ -13217,7 +13221,7 @@ export class WristAssistantPanel extends LitElement {
   private pickerPeople(people: readonly Person[]): PickerPerson[] {
     return people.map((p) => ({
       label: p.label,
-      devices: p.owners.map((o) => ({ ownerId: o.owner_watch_id, kind: deviceKindOf(o) })),
+      devices: p.owners.map((o) => ({ ownerId: o.owner_watch_id, kind: deviceKindOf(o), ...(ownerIsAndroid(o) ? { android: true } : {}) })),
     }));
   }
 
@@ -13354,7 +13358,7 @@ export class WristAssistantPanel extends LitElement {
         ? "Nothing here has a control."
         : filter !== "all"
           ? `Nothing here has a ${familyTitle(filter)} shape.`
-          : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all");
+          : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all", ownerIsAndroid(this.ownerOf(tab)));
     const top = html`<div class="pk-head">
         ${page ? nothing : html`<h2>Your complications <span class="pk-head-count">${all.length}</span></h2>`}
         ${page ? html`${renderViewSwitch(phoneView("complications", this.compView), (v) => this.setCompView(v), "complications")}
@@ -14287,7 +14291,7 @@ export class WristAssistantPanel extends LitElement {
             ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.`
             : undefined;
     const title = tooOld ?? (full
-      ? `${fullForShapeText(target.kind === "library" ? UNASSIGNED_LIST : label)} Delete a complication on it first.`
+      ? `${fullForShapeText(target.kind === "library" ? UNASSIGNED_LIST : label, ownerIsAndroid(owner))} Delete a complication on it first.`
       : stuck ?? (place.on
         ? place.last
           ? `Take it off this device and keep it under ${UNASSIGNED_LABEL}`
@@ -14616,7 +14620,7 @@ export class WristAssistantPanel extends LitElement {
       }
       const slot = slotForDuplicate(family, seats.held, seats.blocked);
       if (slot < 0) {
-        this.saveError = `${fullForShapeText(label)} Delete a complication there first.`;
+        this.saveError = `${fullForShapeText(label, ownerIsAndroid(this.ownerOf(target.ownerId)))} Delete a complication there first.`;
         return;
       }
       let link = cfg.linkId;
@@ -15177,7 +15181,7 @@ export class WristAssistantPanel extends LitElement {
       </div></div>
       <div class="pk-body">${body}</div>
     </div>`;
-    if (devices.length === 0) return surface(html`<p class="cb-empty">No watch or iPhone has connected yet. Pair one on the Devices tab to put complications on it.</p>`);
+    if (devices.length === 0) return surface(html`<p class="cb-empty">No watch or phone has connected yet. Pair one on the Devices tab to put complications on it.</p>`);
     const byOrder = compItemOrder;
     const emptyText = query !== "" ? `Nothing matches "${this.pickerQuery.trim()}".` : "No complications yet.";
     const device = focus === undefined ? undefined : devices.find((d) => d.ownerId === focus);
@@ -15270,7 +15274,7 @@ export class WristAssistantPanel extends LitElement {
    * Complications tab's board focused on that device. */
   private renderCompBoardAll(query: string) {
     const devices = this.compBoardDevices();
-    if (devices.length === 0) return html`<p class="cb-empty">No watch or iPhone has connected yet.</p>`;
+    if (devices.length === 0) return html`<p class="cb-empty">No watch or phone has connected yet.</p>`;
     const q = query.trim().toLocaleLowerCase();
     return renderBoard({
       label: "Complications on each device",
@@ -15726,7 +15730,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="new-body">
         <section class="new-step step-name">
-          ${this.renderStepHead(1, "Name it", "This is the name the watch picker and the iPhone widget lists show.")}
+          ${this.renderStepHead(1, "Name it", "This is the name the watch picker and the phone widget lists show.")}
           <input type="text" class="new-name" .value=${this.newName} placeholder="Kitchen at a glance" maxlength="60"
             autofocus aria-label="Complication name" aria-invalid=${nameProblem ? "true" : "false"}
             @input=${(e: Event) => { this.newName = (e.target as HTMLInputElement).value; }} />
@@ -15797,7 +15801,7 @@ export class WristAssistantPanel extends LitElement {
     pick: (family: FamilyKind) => void,
   ) {
     const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
-    const where = kind === "iphone" ? "an iPhone" : "a watch";
+    const where = kind === "iphone" ? "a phone" : "a watch";
     return html`<div class="shape-row">
       <div class="shape-row-head">
         <span class="shape-row-kinds" aria-hidden="true">${uiIcon(device === "iphone" ? "phone" : "watch")}</span>
@@ -15848,7 +15852,7 @@ export class WristAssistantPanel extends LitElement {
         const label = deviceShortName(owner, row.person);
         return html`<button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}" style=${this.deviceStyle(id)}
           aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
-          title=${full ? `${fullForShapeText(label)} Delete a complication on it first.` : `Put one on ${label}`}
+          title=${full ? `${fullForShapeText(label, ownerIsAndroid(owner))} Delete a complication on it first.` : `Put one on ${label}`}
           @click=${() => toggle(id)}>
           ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
           <span class="dev-card-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
@@ -16068,7 +16072,7 @@ export class WristAssistantPanel extends LitElement {
     const shapeStep = kind !== undefined && kind !== "control";
     const what = kind === "control"
       ? "A Control Center control"
-      : family === undefined ? "" : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : "an iPhone"}`;
+      : family === undefined ? "" : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : "a phone"}`;
     const ticked = this.dupTicked();
     const summary = what === ""
       ? "Pick one shape."
@@ -19034,7 +19038,7 @@ export class WristAssistantPanel extends LitElement {
       return Array.isArray(shapes) ? (shapes.filter((f) => typeof f === "string") as FamilyKind[]) : [];
     }));
     const targets = this.owners.filter((o) => !o.is_orphan && !isLibraryOwner(o) && moveKindMatches(sourceKind, o.device_kind));
-    const deviceWord = sourceKind === "iphone" ? "iPhone" : sourceKind === "watch" ? "watch" : "device";
+    const deviceWord = sourceKind === "iphone" ? nounFor("iphone", platformOf(owner)) : sourceKind === "watch" ? "watch" : "device";
     const appWord = sourceKind === "iphone" ? "the app" : sourceKind === "watch" ? "the watch app" : "the app";
     return html`<div class="banner warn">
       <b>This ${deviceWord} is no longer registered.</b> Reinstalling ${appWord} gives the ${deviceWord} a new id, and these
@@ -20942,7 +20946,7 @@ export class WristAssistantPanel extends LitElement {
           const here = screenFor(d, id);
           if (here === undefined) {
             const why = id === "voice" ? "watch only" : "in the app";
-            return html`<em class="bd-note" title=${id === "voice" ? "Voice is the watch's alone." : `${d.name} keeps this in the iPhone app.`}>${why}</em>`;
+            return html`<em class="bd-note" title=${id === "voice" ? "Voice is the watch's alone." : `${d.name} keeps this in the ${d.platform === "android" ? "phone" : "iPhone"} app.`}>${why}</em>`;
           }
           const path = deviceScreenPath(d.kind, here, d.ownerId);
           return html`<a class="hl-edit" href=${panelUrl(this.route, path, globalThis.location?.pathname ?? "")} title=${`${screen.label} on ${d.name}`}
@@ -20969,6 +20973,7 @@ export class WristAssistantPanel extends LitElement {
       ? html`<p class="hl-empty">${PHONE_PAGES_UPDATE_TEXT}</p>`
       : row.kind === "watch" || this.phonePages ? renderHomeLineup({
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
+      ...(ownerIsAndroid(this.ownerOf(ownerId)) ? { platform: platformOf(this.ownerOf(ownerId)) } : {}),
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
       appVersion: gateVersion(this.ownerOf(ownerId)),
       phoneMoves: phoneMovesOf(this.ownerOf(ownerId)),
@@ -21395,7 +21400,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.deviceRenameError ? html`<p class="dev-err" title=${errTitle(this.deviceRenameError) ?? nothing}>${this.deviceRenameError}</p>` : nothing}
     </div>`;
     // A watch's and an iPhone's alike: Home Assistant keeps both their records.
-    const addresses = own === undefined && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind) : nothing;
+    const addresses = own === undefined && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind === "iphone" && ownerIsAndroid(this.ownerOf(ownerId)) ? "android" : row.kind) : nothing;
     // The tab on show's own save controls: the Settings page's, which the
     // panel draws, or the box an editor draws its own into.
     const ownEnd = own === undefined ? nothing
@@ -21824,7 +21829,7 @@ export class WristAssistantPanel extends LitElement {
           <div class="start-hero-text">
             <div class="start-eyebrow">Wrist Assistant</div>
             <h1 class="start-title">Make your first complication.</h1>
-            <p class="start-lead">Draw what your home is doing onto a watch face or an iPhone screen: one shape, your entities, live.</p>
+            <p class="start-lead">Draw what your home is doing onto a watch face or a phone screen: one shape, your entities, live.</p>
             <div class="start-facts">
               <span class="start-fact"><b>${devices}</b> ${plural(devices, "device")}</span>
             </div>
@@ -22755,7 +22760,7 @@ export class WristAssistantPanel extends LitElement {
         : { tag: "app too old", why: updateDeviceMessage(owner) };
     }
     if (this.freeSlotOn(place.owner.ownerId, family) < 0) {
-      return { tag: "full", why: `${fullForShapeText(place.owner.kind === "library" ? UNASSIGNED_LIST : label)} Delete a complication there first.` };
+      return { tag: "full", why: `${fullForShapeText(place.owner.kind === "library" ? UNASSIGNED_LIST : label, ownerIsAndroid(owner))} Delete a complication there first.` };
     }
     return undefined;
   }
@@ -23207,7 +23212,7 @@ export class WristAssistantPanel extends LitElement {
       const next = cfg.elements.length === 0
         ? html`<div class="how-card">
             <b>How this works</b>
-            <ol>${howItWorksSteps(this.howDevice(cfg), this.openOnNoDevice).map((step) => html`<li>${step}</li>`)}</ol>
+            <ol>${howItWorksSteps(this.howDevice(cfg), this.openOnNoDevice, isLibraryOwner(this.selectedOwner) || this.selectedOwner === undefined ? undefined : platformOf(this.selectedOwner)).map((step) => html`<li>${step}</li>`)}</ol>
             <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener">Read the two-minute guide</a>
           </div>`
         : html`<p class="insp-note">${this.touch ? "Tap" : "Click"} a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the Background row at the bottom of the list.</p>`;

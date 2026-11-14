@@ -13,6 +13,7 @@
 // Every edit goes through the setters of `page-settings-model.ts` and reads
 // the document at the moment it commits (`host.edit`).
 
+import type { DevicePlatform } from "../device-platform.js";
 import { html, nothing, type TemplateResult } from "lit";
 import { checkField, segField, symbolField, textField } from "../editors.js";
 import type { IconProvider } from "../renderer.js";
@@ -46,6 +47,8 @@ export interface SwitcherSettingsHost {
   /** The device whose switcher this is, for the lines that name it. Absent:
    * a watch. */
   readonly device?: SettingDevice;
+  /** What that device runs, for its noun. Absent: the kind's Apple one. */
+  readonly platform?: DevicePlatform;
   /** A save is out: every row is drawn off and every edit refused. */
   readonly busy: boolean;
   /** View state kept between draws (text typed and not committed yet).
@@ -223,7 +226,7 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
       <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
         title=${`The ${device} picks one from the page's first tile`} @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
     </div>
-    ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host) }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
+    ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
       { emptyText: `Picked by the ${device}`, tint: s.switcherColor }))}
     ${colorPickerView({
       label: "Color",

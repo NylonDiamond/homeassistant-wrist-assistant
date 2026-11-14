@@ -984,7 +984,7 @@ export function checkHttpActions(document: unknown): string[] {
 
 // ── words ────────────────────────────────────────────────────────────────
 
-export const HTTP_ACTIONS_SHARED_TEXT = "Shared by every watch and iPhone.";
+export const HTTP_ACTIONS_SHARED_TEXT = "Shared by every watch and phone.";
 
 export const HTTP_ACTIONS_EMPTY_TITLE = "No HTTP actions yet.";
 

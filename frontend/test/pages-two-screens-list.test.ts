@@ -32,22 +32,22 @@ describe("the line under a page's name", () => {
     expect(pageScreensDiffer(withMap)).toBe(false);
   });
 
-  it("says Watch only or iPhone only in a home with both kinds", () => {
+  it("says Watch only or Phone only in a home with both kinds", () => {
     expect(pageScreensLine(plain, [JESSE], DEVICES)).toBe("Watch only");
-    expect(pageScreensLine(plain, [PHONE], DEVICES)).toBe("iPhone only");
+    expect(pageScreensLine(plain, [PHONE], DEVICES)).toBe("Phone only");
     // A home of watches alone: no such line.
     expect(pageScreensLine(plain, [JESSE], DEVICES.filter((d) => d.kind === "watch"))).toBeUndefined();
     // A page on no device: nothing either.
     expect(pageScreensLine(plain, [], DEVICES)).toBeUndefined();
   });
 
-  it("counts tiles off on the watch, then on the iPhone, then says the iPhone is arranged differently", () => {
+  it("counts tiles off on the watch, then on the phone, then says the phone is arranged differently", () => {
     const offWatch: WatchPage = { ...plain, screens: { watch: { a: { col: 0, row: 0, colSpan: 6, rowSpan: 2 } }, iphone: { a: { col: 0, row: 0, colSpan: 6, rowSpan: 2 }, b: { col: 0, row: 2, colSpan: 6, rowSpan: 2 } } } };
     expect(pageScreensLine(offWatch, [JESSE, PHONE], DEVICES)).toBe("1 tile off on the watch");
     const offPhone: WatchPage = { ...plain, screens: { watch: { a: { col: 0, row: 0, colSpan: 6, rowSpan: 2 }, b: { col: 0, row: 2, colSpan: 6, rowSpan: 2 } }, iphone: { b: { col: 0, row: 0, colSpan: 6, rowSpan: 2 } } } };
-    expect(pageScreensLine(offPhone, [JESSE, PHONE], DEVICES)).toBe("1 tile off on the iPhone");
+    expect(pageScreensLine(offPhone, [JESSE, PHONE], DEVICES)).toBe("1 tile off on the phone");
     const apart: WatchPage = { ...plain, screens: { watch: { a: { col: 0, row: 0, colSpan: 6, rowSpan: 2 }, b: { col: 0, row: 2, colSpan: 6, rowSpan: 2 } }, iphone: { b: { col: 0, row: 0, colSpan: 6, rowSpan: 2 }, a: { col: 0, row: 2, colSpan: 6, rowSpan: 2 } } } };
-    expect(pageScreensLine(apart, [JESSE, PHONE], DEVICES)).toBe("iPhone arranged differently");
+    expect(pageScreensLine(apart, [JESSE, PHONE], DEVICES)).toBe("Phone arranged differently");
     for (const page of [offWatch, offPhone, apart]) expect(pageScreensDiffer(page)).toBe(true);
     expect(pageScreensDiffer(plain)).toBe(false);
   });

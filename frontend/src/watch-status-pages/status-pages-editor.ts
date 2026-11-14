@@ -114,6 +114,7 @@ import { watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
+  isAndroidPhoneModel,
   phoneFrameStyles,
   phoneModelForScreenSize,
   phonePagesLayout,
@@ -1304,7 +1305,7 @@ export class WaStatusPagesEditor extends LitElement {
    */
   private renderStage(host: StatusPagesViewHost): TemplateResult {
     const phone = host.phone !== undefined;
-    const device = phone ? "iPhone" : "watch";
+    const device = phone ? (isAndroidPhoneModel(host.phone!.model) ? "phone" : "iPhone") : "watch";
     // The percent is of the device's own points.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     const scale = this.stageScale;

@@ -168,7 +168,7 @@ describe("Side by side", () => {
 
   it("labels each preview with the devices of its kind that have it", () => {
     expect(previewLabel("watch", ["Jesse Apple Watch", "Chen Watch"])).toBe("Watch · Jesse Apple Watch, Chen Watch");
-    expect(previewLabel("iphone", [])).toBe("iPhone · on no iPhone yet");
+    expect(previewLabel("iphone", [])).toBe("Phone · on no phone yet");
   });
 
   it("draws a third thumbnail only when asked", () => {

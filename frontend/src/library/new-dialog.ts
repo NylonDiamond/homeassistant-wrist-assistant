@@ -109,7 +109,7 @@ export function menuUnitNote(unit: MenuUnit): string {
 
 /** What a preview choice is, under its card. */
 export function previewNote(preview: NewPreview): string {
-  return preview === "iphone" ? "Drawn on an iPhone's screen first." : "Drawn on a watch face first.";
+  return preview === "iphone" ? "Drawn on a phone's screen first." : "Drawn on a watch face first.";
 }
 
 /** A ring of dots, the menu's own picture: eight around for an Anywhere
@@ -201,7 +201,7 @@ export function renderNewItemDialog(kind: LibraryKind, form: NewItemForm, previe
         </section>` : html`<section class="new-step step-shapes ${wait}" aria-disabled=${named ? "false" : "true"}>
           ${stepHead(kinds ? 3 : 2, "Preview on", named ? "Only the picture the editor opens with. Nothing is put on a device; the ticks do that." : "Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Preview on">
-            ${previews.map((preview) => card((form.preview ?? previews[0]) === preview, preview === "iphone" ? "iPhone" : "Watch", previewNote(preview),
+            ${previews.map((preview) => card((form.preview ?? previews[0]) === preview, preview === "iphone" ? "Phone" : "Watch", previewNote(preview),
               html`<span class="lib-new-art lib-new-device">${uiIcon(preview === "iphone" ? "phone" : "watch")}</span>`, () => h.onPreview?.(preview), form.busy))}
           </div>
         </section>`}

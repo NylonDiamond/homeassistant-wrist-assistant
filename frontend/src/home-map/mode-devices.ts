@@ -1645,7 +1645,7 @@ export class DevicesMode {
           if (v !== "") set({ tap: "page", pageId: v });
         },
       })) : nothing}
-      <p class="hme-text dim">${pin.tap === undefined && !this.pickPage ? "As the tile does: a light toggles, anything else opens its control." : "Hold on the watch or iPhone: its controls."}</p>`);
+      <p class="hme-text dim">${pin.tap === undefined && !this.pickPage ? "As the tile does: a light toggles, anything else opens its control." : "Hold on the watch or phone: its controls."}</p>`);
   }
 
 }

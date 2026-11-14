@@ -137,10 +137,10 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   size: "Size",
   background: "Background",
   // Drawn under the key's own title (`WATCH_PHONE_KEY_WORDS`).
-  phone: "iPhone",
-  phoneExtras: "iPhone extras",
+  phone: "Phone",
+  phoneExtras: "Phone extras",
   // Drawn under the kind's own title (`watchPhoneTileTitle`).
-  phoneTile: "iPhone",
+  phoneTile: "Phone",
 };
 
 /** A section card's mark: the inspector color it is tinted with and the
@@ -287,7 +287,7 @@ export function watchTileSectionsFor(tile: WatchPageTile, states: WatchSpecialSt
 // ── the keys only the iPhone reads ──────────────────────────────────────
 
 /** The folded card's title on a watch's editor, and the line it shows. */
-export const WATCH_PHONE_EXTRAS_TITLE = "iPhone extras";
+export const WATCH_PHONE_EXTRAS_TITLE = "Phone extras";
 export const WATCH_PHONE_EXTRAS_HINT = "The watch ignores these";
 
 /** Each phone key's card or group title, its row's label, and the line
@@ -333,7 +333,7 @@ export function watchSensorChartShortNote(tile: WatchPageTile): string | undefin
   if (watchSensorChart(tile) === undefined) return undefined;
   const rows = Number(tile.rowSpan);
   if (!Number.isFinite(rows) || rows >= WATCH_SENSOR_CHART_MIN_ROWS) return undefined;
-  return `This tile is ${rows} ${rows === 1 ? "row" : "rows"} tall, so the iPhone shows no chart. Make it ${WATCH_SENSOR_CHART_MIN_ROWS} or taller.`;
+  return `This tile is ${rows} ${rows === 1 ? "row" : "rows"} tall, so the phone shows no chart. Make it ${WATCH_SENSOR_CHART_MIN_ROWS} or taller.`;
 }
 
 /** The Lines menu: the range, the absent value marked as the default; a stored

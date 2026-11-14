@@ -888,7 +888,7 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
 
 /** The small iPhone tag on a card or group only the iPhone reads. */
 function phoneTag(): TemplateResult {
-  return html`<span class="ts-dev-tag" title="Only the iPhone reads this">${uiIcon("phone")}iPhone</span>`;
+  return html`<span class="ts-dev-tag" title="Only a phone reads this">${uiIcon("phone")}Phone</span>`;
 }
 
 // ── the changed dot ──────────────────────────────────────────────────────
@@ -2232,7 +2232,7 @@ function renderIconGlyph(host: TileSettingsHost, compact = false): TemplateResul
     </div>`;
   return html`
     ${symbolField(
-      { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
+      { icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform },
       mixed ? "" : (s.icon ?? ""),
       setIcon,
       `pe:ts:symbol`,
@@ -3623,7 +3623,7 @@ function renderStateIconPicker(host: TileSettingsHost, state: string, icon: stri
   const setting = `stateIcon:${state}`;
   // Starts open: a click on the state's Icon button is what asked for it.
   return html`<div class="ts-nested">${symbolField(
-    { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
+    { icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform },
     icon ?? "",
     (name) => {
       const value = name.trim();

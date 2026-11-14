@@ -9,7 +9,7 @@
 // devices an item is on, and whether a device waits for its iPhone to move
 // its pages here or is on the free plan.
 
-import { gateVersion } from "../device-platform.js";
+import { type DevicePlatform, gateVersion, nounFor, ownerIsAndroid, platformOf } from "../device-platform.js";
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, setupMoveNeedsUpdate, versionForCopy } from "../version.js";
 import { type PhoneMoves, WAIT_OTHER_PHONE_TEXT, noRecordStart, phoneMovesOf, waitForIphoneText, watchAppDevices, watchName } from "../watch-settings.js";
@@ -26,6 +26,9 @@ export interface LinkDevice {
   /** What the wait lines know of this watch's iPhone (`phoneMovesOf`). Absent
    * when not known. */
   phoneMoves?: PhoneMoves;
+  /** What it runs (`device-platform.ts`), for its noun. Absent reads as the
+   * kind's Apple platform. */
+  platform?: DevicePlatform;
 }
 
 /** Every device a page can be on: the Watch app's devices (the watches
@@ -41,6 +44,9 @@ export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean):
       kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch",
       ...(gateVersion(o) === undefined ? {} : { appVersion: gateVersion(o) }),
       ...(phoneMoves === undefined ? {} : { phoneMoves }),
+      // Only an Android device carries it, so an Apple device's row is the
+      // one it always was.
+      ...(ownerIsAndroid(o) ? { platform: platformOf(o) } : {}),
     };
   });
 }
@@ -62,9 +68,10 @@ export function pictureOwnerId(devices: readonly LinkDevice[], kind: LinkDevice[
   return (shows ?? ofKind[0])?.ownerId;
 }
 
-/** "iPhone" or "watch", as the lines name the device on screen. */
-export function deviceWord(kind: LinkDevice["kind"]): string {
-  return kind === "iphone" ? "iPhone" : "watch";
+/** "iPhone", "phone" (an Android phone) or "watch", as the lines name the
+ * device on screen. */
+export function deviceWord(kind: LinkDevice["kind"], platform?: DevicePlatform | null): string {
+  return nounFor(kind, platform);
 }
 
 /** "A, B and C". */

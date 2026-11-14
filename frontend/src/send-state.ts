@@ -22,6 +22,7 @@
 // own rather than a borrowed "sent", because every word of the sent chip is
 // about a device confirming, and there is no device.
 
+import { type DevicePlatform, isAndroidPlatform } from "./device-platform.js";
 import type { DeviceKind } from "./version.js";
 
 export interface SendInputs {
@@ -53,6 +54,10 @@ export interface SendInputs {
   /** How many designs the device's next pull will bring, when the server
    * says. Undefined before the first ack and from older integrations. */
   pendingChanges?: number;
+  /** What the device runs (`device-platform.ts`), for its words only: an
+   * Android phone is a "phone" whose widgets Android redraws, not an iPhone.
+   * Absent is the kind's Apple platform. */
+  platform?: DevicePlatform | null;
 }
 
 export type SendState =
@@ -66,13 +71,13 @@ export type SendState =
    * to give. */
   /** `push` marks a phone the server can wake, which is the one that gets the
    * Refresh now button. Left off a watch, and off a phone with no token. */
-  | { kind: "sent"; awaySeconds?: number; device?: DeviceKind; push?: boolean }
-  | { kind: "sending"; device?: DeviceKind }
-  | { kind: "waiting"; device?: DeviceKind }
+  | { kind: "sent"; awaySeconds?: number; device?: DeviceKind; push?: boolean; android?: boolean }
+  | { kind: "sending"; device?: DeviceKind; android?: boolean }
+  | { kind: "waiting"; device?: DeviceKind; android?: boolean }
   /** A phone the server holds no push token for, holding something older than
    * the store. Nothing here can wake it, so the only true thing to say is what
    * makes it arrive. */
-  | { kind: "openApp" }
+  | { kind: "openApp"; android?: boolean }
   /** The home's Library, which is not waiting for anything. */
   | { kind: "library" }
   /** `pending` is how many designs are waiting for the watch, when known. */
@@ -96,7 +101,13 @@ export function sendWaitMs(deviceKind?: DeviceKind | null): number {
 
 export function sendState(i: SendInputs): SendState {
   if (i.deviceKind === "library") return { kind: "library" };
-  if (i.deviceKind === "iphone") return iphoneSendState(i);
+  if (i.deviceKind === "iphone") {
+    const s = iphoneSendState(i);
+    // An Android phone's words differ; its states are the same machine.
+    return isAndroidPlatform(i.platform) && s.kind !== "unsupported" && s.kind !== "library" && s.kind !== "offline"
+      ? { ...s, android: true }
+      : s;
+  }
   if (i.appliedToken === undefined) return { kind: "unsupported" };
   if (i.token === i.appliedToken) {
     const away = !i.polling && typeof i.lastPollSeconds === "number" ? i.lastPollSeconds : undefined;
@@ -142,6 +153,29 @@ function iphoneSendState(i: SendInputs): SendState {
   return i.pending ? { kind: "sending", device: "iphone" } : { kind: "waiting", device: "iphone" };
 }
 
+/** `describeSend`'s "sent" for an Android phone: the same facts, with no
+ * iOS in them. Android redraws a widget when the app updates it, which the
+ * app does as it pulls. */
+function androidSent(awaySeconds: number | undefined, pushable: boolean) {
+  const push = " A save sends it a push, and it syncs and redraws its widgets in the background.";
+  return awaySeconds === undefined
+    ? {
+        label: "On phone",
+        title: `This phone has applied every change here.${pushable ? push : ""}`,
+        resend: false,
+        refresh: pushable,
+      }
+    : {
+        label: "On phone",
+        note: `last sync ${agoWords(awaySeconds)}`,
+        title: pushable
+          ? `This phone has applied every change here, as of its last sync.${push}`
+          : "This phone has applied every change here, as of its last sync. A save made after this reaches its widgets when the app is opened.",
+        resend: false,
+        refresh: pushable,
+      };
+}
+
 /**
  * A gap, rounded to one unit and to how precisely anyone cares.
  *
@@ -164,12 +198,12 @@ export function agoWords(seconds: number): string {
  * ticked, and people saved there and waited for a watch that was never going
  * to get it. */
 export const NOT_ON_A_DEVICE = "On no device yet";
-export const NOT_ON_A_DEVICE_LINE = "On no device yet. Tick a device over the preview to put it on a watch or an iPhone.";
+export const NOT_ON_A_DEVICE_LINE = "On no device yet. Tick a device over the preview to put it on a watch or a phone.";
 /** The same line before the first save, when the device strip over the
  * preview has no ticks yet: a tick adds a copy of the saved design. */
-export const NOT_ON_A_DEVICE_UNSAVED_LINE = "On no device yet. Save it, then tick a device over the preview to put it on a watch or an iPhone.";
+export const NOT_ON_A_DEVICE_UNSAVED_LINE = "On no device yet. Save it, then tick a device over the preview to put it on a watch or a phone.";
 export const NOT_ON_A_DEVICE_HELP =
-  "A design on no device is sent nowhere. Tick a device over the preview to put it on a watch or an iPhone.";
+  "A design on no device is sent nowhere. Tick a device over the preview to put it on a watch or a phone.";
 
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
  * only while the watch is listening (a closed watch app has no long-poll to
@@ -190,6 +224,7 @@ export function describeSend(
         refresh: false,
       };
     case "sent":
+      if (s.device === "iphone" && s.android === true) return androidSent(s.awaySeconds, s.push === true);
       if (s.device === "iphone") {
         const pushable = s.push === true;
         return s.awaySeconds === undefined
@@ -222,6 +257,14 @@ export function describeSend(
             refresh: false,
           };
     case "openApp":
+      if (s.android === true) {
+        return {
+          label: "Open Wrist Assistant on your phone to sync",
+          title: "This phone has no push token yet. Open Wrist Assistant on it once.",
+          resend: false,
+          refresh: false,
+        };
+      }
       return {
         label: "Open Wrist Assistant on your iPhone to sync",
         title: "This iPhone has no push token yet. Open Wrist Assistant on it once.",
@@ -236,6 +279,14 @@ export function describeSend(
         refresh: false,
       };
     case "sending":
+      if (s.device === "iphone" && s.android === true) {
+        return {
+          label: "Sending to the phone",
+          title: "The push is on its way. The phone pulls in the background, confirms and redraws its widgets.",
+          resend: false,
+          refresh: false,
+        };
+      }
       if (s.device === "iphone") {
         return {
           label: "Sending to the phone",
@@ -255,7 +306,7 @@ export function describeSend(
         return {
           label: "Sent to the phone, waiting for it to sync",
           title:
-            "The push has gone out, and the iPhone has not confirmed the latest change yet. Refresh now sends it another.",
+            `The push has gone out, and the ${s.android === true ? "phone" : "iPhone"} has not confirmed the latest change yet. Refresh now sends it another.`,
           resend: false,
           refresh: true,
         };
@@ -396,14 +447,15 @@ export function homePill(
  */
 export function afterSaveLine(s: SendState): { text: string; warn: boolean } | undefined {
   const phone = "device" in s && s.device === "iphone";
-  const where = phone ? "your iPhone" : "your watch";
+  const android = "android" in s && s.android === true;
+  const where = phone ? (android ? "your phone" : "your iPhone") : "your watch";
   switch (s.kind) {
     case "library": return undefined;
     case "sent": return { text: `Saved. On ${where}.`, warn: false };
     case "sending": return { text: `Saved. Sending to ${where}.`, warn: false };
     case "waiting": return { text: `Saved. Not on ${where} yet.`, warn: false };
     case "offline": return { text: "Saved. Open Wrist Assistant on your watch to get it.", warn: true };
-    case "openApp": return { text: "Saved. Open Wrist Assistant on your iPhone to get it.", warn: true };
+    case "openApp": return { text: `Saved. Open Wrist Assistant on your ${android ? "phone" : "iPhone"} to get it.`, warn: true };
     case "unsupported": return { text: "Saved. Update Wrist Assistant on your watch to get it.", warn: true };
   }
 }
@@ -415,13 +467,21 @@ export type HowDevice = "watch" | "iphone" | undefined;
 
 /** The last step of every how-to: a saved design shows nowhere until it is
  * picked on the face or added as a widget, and nothing in the panel said so. */
-export function onTheFaceStep(device: HowDevice): string {
+export function onTheFaceStep(device: HowDevice, platform?: DevicePlatform | null): string {
   const watch = "On the watch, touch and hold the face, tap Edit, then pick Wrist Assistant in a complication slot.";
   const phone = "touch and hold the Home Screen or Lock Screen, tap Edit, then add a Wrist Assistant widget.";
+  if (device === "watch" && platform === "wearos") return WEAR_FACE_STEP;
   if (device === "watch") return watch;
+  if (device === "iphone" && platform === "android") return ANDROID_WIDGET_STEP;
   if (device === "iphone") return `On the iPhone, ${phone}`;
   return `${watch} On an iPhone, ${phone}`;
 }
+
+/** `onTheFaceStep` on a Wear OS watch, whose face takes Wrist Assistant
+ * through its own complication picker. */
+export const WEAR_FACE_STEP = "On the watch, touch and hold the face, tap Edit, pick a complication slot, then pick Wrist Assistant.";
+/** `onTheFaceStep` on an Android phone, whose designs are Home Screen widgets. */
+export const ANDROID_WIDGET_STEP = "On the phone, touch and hold the Home Screen, tap Widgets, then add a Wrist Assistant widget.";
 
 /**
  * The "How this works" card on an empty design, as its four steps.
@@ -431,14 +491,15 @@ export function onTheFaceStep(device: HowDevice): string {
  * picks it up", a word the panel uses nowhere else. Step 4 is new: picking
  * the design on the face was the step nobody was told about.
  */
-export function howItWorksSteps(device: HowDevice, onNoDevice: boolean): string[] {
+export function howItWorksSteps(device: HowDevice, onNoDevice: boolean, platform?: DevicePlatform | null): string[] {
+  const phone = platform === "android" ? "phone" : "iPhone";
   const save = onNoDevice
     ? "Save, then tick a device over the preview."
-    : `Save, then open Wrist Assistant on your ${device === "iphone" ? "iPhone" : "watch"} to get it.`;
+    : `Save, then open Wrist Assistant on your ${device === "iphone" ? phone : "watch"} to get it.`;
   return [
     "Add layers. Each one shows an entity.",
     "Drag them on the face.",
     save,
-    onTheFaceStep(device),
+    onTheFaceStep(device, platform),
   ];
 }

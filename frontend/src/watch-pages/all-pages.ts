@@ -1242,7 +1242,7 @@ export class WaAllPages extends LitElement {
       role="radio" aria-checked=${this.screensFilter === filter ? "true" : "false"} data-filter=${filter} title=${title}
       @click=${() => { this.screensFilter = filter; this.pruneSelected(); }}>${label}</button>`;
     return html`<span class="ap-filter" role="radiogroup" aria-label="Show">
-      ${opt("all", "All", "Every page")}${opt("differ", SCREENS_DIFFER_TEXT, "The pages the watch and the iPhone arrange apart, or with a tile off on one")}
+      ${opt("all", "All", "Every page")}${opt("differ", SCREENS_DIFFER_TEXT, "The pages the watch and the phone arrange apart, or with a tile off on one")}
     </span>`;
   }
 
@@ -1464,7 +1464,7 @@ export class WaAllPages extends LitElement {
       if (chip.on && chip.device === "watch" && skipsAll) {
         cell.note = "shows nothing";
         cell.noteWarn = true;
-        cell.noteTitle = `Every tile on ${entry.name} is iPhone only, so ${chip.name} shows an empty page.`;
+        cell.noteTitle = `Every tile on ${entry.name} is phone only, so ${chip.name} shows an empty page.`;
       } else if (chip.skips !== undefined) {
         cell.note = chip.skips.text;
         cell.noteTitle = chip.skips.title;
@@ -1631,7 +1631,7 @@ export class WaAllPages extends LitElement {
   /** The focused device's banner: which device comes first, its order, its
    * own screens, and the way back to every device. */
   private renderFocusHead(device: LinkDevice, total: number): TemplateResult {
-    const word = deviceWord(device.kind);
+    const word = deviceWord(device.kind, device.platform);
     const noun = cardNoun(this.kind, total);
     return renderFocusBanner({
       device, color: this.colorOf(device.ownerId),
@@ -1824,9 +1824,9 @@ export class WaAllPages extends LitElement {
     const key = itemKey(entry);
     const shown = cardShownScreen(kinds, this.cardPick(entry));
     const icon = (kind: WatchScreen) => uiIcon(kind === "watch" ? "watch" : "phone");
-    const word = (kind: WatchScreen) => (kind === "watch" ? "watch" : "iPhone");
+    const word = (kind: WatchScreen) => (kind === "watch" ? "watch" : "phone");
     if (kinds.length < 2) {
-      return html`<span class="ap-screen-icons"><span class="ap-screen-icon on ${shown}" data-card-screen=${shown} title=${`On ${shown === "watch" ? "a" : "an"} ${word(shown)} only`}>${icon(shown)}</span></span>`;
+      return html`<span class="ap-screen-icons"><span class="ap-screen-icon on ${shown}" data-card-screen=${shown} title=${`On a ${word(shown)} only`}>${icon(shown)}</span></span>`;
     }
     return html`<span class="ap-screen-icons" role="group" aria-label="Show this page on">${kinds.map((kind) => html`<button type="button"
       class="ap-screen-icon ${kind} ${kind === shown ? "on" : ""}" data-card-screen=${kind} aria-pressed=${kind === shown ? "true" : "false"}

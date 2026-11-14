@@ -3,6 +3,7 @@
 // to the Draft's undo history. Controls are plain HTML inputs styled to HA
 // so the bundle stays free of HA's internal component library.
 
+import { type DevicePlatform, nounFor } from "./device-platform.js";
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -1996,6 +1997,8 @@ export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols"> & {
   /** The device that draws the icon, for the warnings that name it: an
    * iPhone for an iPhone's page, else a watch. */
   readonly device?: "watch" | "iphone";
+  /** What that device runs, for its noun: an Android phone is "the phone". */
+  readonly platform?: DevicePlatform | null;
 };
 
 export interface SymbolFieldOptions {
@@ -2095,7 +2098,7 @@ export function symbolField(
   const offersMdi = setPath !== undefined;
   const showing: SymbolPack = offersMdi ? (browser.pack(key) ?? (isMdiName ? "mdi" : "sf")) : "sf";
   const missing = symbolIsMissing(current, known);
-  const drawer = host.device === "iphone" ? "iPhone" : "watch";
+  const drawer = nounFor(host.device ?? "watch", host.platform);
   // Asked for only when it is needed: the first ask loads the whole catalogue.
   const mdiNames = offersMdi && (isMdiName || (open && showing === "mdi")) ? host.icons.mdiNames?.() : undefined;
 
@@ -5876,7 +5879,7 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
     ${forcedToButton
       ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
       : nothing}
-    <div class="hint">A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
+    <div class="hint">A control is one press in Control Center, or in Quick Settings on an Android phone, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
     </div>
     <div class="fgroup">
     ${valueEditor(host, spec.title, (v) => set((c) => { c.title = v; }, "title"),

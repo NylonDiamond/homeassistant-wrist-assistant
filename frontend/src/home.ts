@@ -3,7 +3,7 @@
 // be worked out without the panel lives here, where a test can reach it.
 
 import { css } from "lit";
-import { gateVersion, platformModel, platformOf } from "./device-platform.js";
+import { type DevicePlatform, gateVersion, ownerIsAndroid, platformModel, platformOf } from "./device-platform.js";
 import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
@@ -32,6 +32,8 @@ export interface IdHomeDevice extends HomeDevice {
   /** The Wrist Assistant version it reported, which picks that wait's
    * words (`iphoneMoveLabel`). */
   appVersion?: string | null;
+  /** What it runs, only for an Android device (its words). */
+  platform?: DevicePlatform;
 }
 
 /**
@@ -58,6 +60,7 @@ export function homeDevices(
     waitsForUpdate: waitsForWatchUpdate(o),
     seedWaits: waitsForWatchSeed(o),
     appVersion: gateVersion(o),
+    ...(ownerIsAndroid(o) ? { platform: platformOf(o) } : {}),
   }));
 }
 
@@ -74,6 +77,8 @@ export interface HomeDeviceRow {
   /** The watch app's parts whose last save the device reported it could not
    * use. Absent when there are none. */
   rejected?: string[];
+  /** What it runs, only for an Android device (its words). */
+  platform?: DevicePlatform;
 }
 
 /** The word beside a device on Home and in its sheet: "Not synced" for a
@@ -93,9 +98,9 @@ export function needsAttention(row: Pick<HomeDeviceRow, "sync" | "rejected">): b
 
 /** A device's line under Waiting to sync: what the watch could not use, then
  * "Waiting for pages", then what its next pull brings. */
-export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "rejected"> & { kind?: HomeDeviceRow["kind"] }, pending: string | undefined): string {
+export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "rejected"> & { kind?: HomeDeviceRow["kind"]; platform?: DevicePlatform }, pending: string | undefined): string {
   return [
-    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!, row.kind) : undefined,
+    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!, row.kind, row.platform) : undefined,
     row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}` : undefined,
     pending,
   ].filter((w): w is string => w !== undefined).join(" · ");
@@ -104,9 +109,9 @@ export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "
 /** The line under a device's name on Home: what the watch could not use,
  * then what it waits for, then what its next pull brings. Empty when there
  * is nothing to say. */
-export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected"> & { kind?: HomeDeviceRow["kind"] }, pending: string | undefined): string {
+export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected"> & { kind?: HomeDeviceRow["kind"]; platform?: DevicePlatform }, pending: string | undefined): string {
   return [
-    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!, row.kind) : undefined,
+    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!, row.kind, row.platform) : undefined,
     row.waitingFor.length === 0 ? undefined : `For ${waitingForText(row.waitingFor)}`,
     pending,
   ].filter((w): w is string => w !== undefined).join(" · ");
@@ -128,7 +133,8 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
     const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id), kind === "watch" && d.waitsForIphone === true, d.appVersion, { waitsForUpdate: kind === "watch" && d.waitsForUpdate === true, seedWaits: kind === "watch" && d.seedWaits === true });
-    rows.push(rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected });
+    const row: HomeDeviceRow = rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected };
+    rows.push(d.platform === undefined ? row : { ...row, platform: d.platform });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
 }
@@ -261,7 +267,7 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
 export const HOME_LIBRARY_TITLE = "Shared";
 
 /** The Shared tab's one line under its title. */
-export const HOME_LIBRARY_LEAD = "Kept once for the whole home. Every watch and iPhone uses them.";
+export const HOME_LIBRARY_LEAD = "Kept once for the whole home. Every watch and phone uses them.";
 
 /** The screens the Shared tab lists, in order: every screen of the whole
  * home (`shared`) that is not retired, and of those that need a capability
@@ -510,7 +516,7 @@ export const IPHONE_SETTINGS_BLURB = "Gestures, page look and cameras.";
 /** The look of one of the device's doors (`deviceSheetTabs`). */
 export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): HomeDoorLook {
   if (tab.kind === "list") {
-    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: "Buttons in Control Center, from your designs." };
+    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: "Buttons in Control Center (Quick Settings on Android), from your designs." };
     return kind === "watch"
       ? { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." }
       : { icon: "grid", hue: "var(--wa-hue-blue)", blurb: "On the Lock Screen and Home Screen." };

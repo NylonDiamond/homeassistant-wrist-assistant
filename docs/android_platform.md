@@ -23,6 +23,30 @@ The integration and the panel know four device platforms: `ios`, `watchos`,
   `pair/offer_status` carry it too. `update_metadata` echoes it only to a
   device that said one.
 
+## Capability and replies
+
+- `/version` and every delta reply list the capability `device_platforms`
+  once the integration knows the four platforms. The Android apps look for
+  it before they register a push token; an Apple app never reads it.
+- `stored_metadata` on a delta reply carries `platform` for a device that
+  said one. An Android app that sees `device_platforms` and no `platform`
+  there reports again through `update_metadata`, as for a version that fell
+  behind. An Apple device's `stored_metadata` is unchanged.
+- `phone_pages_offer` gives each watch row its `platform` (`watchos` or
+  `wearos`), so an Android phone can tell an Apple Watch from a Wear OS
+  watch. The iPhone app reads the row by key and skips it.
+- A device's diagnostics download says `platform` for a device that said one.
+- Refusals that name a phone (`not_an_iphone`, `invalid_watch`,
+  `no_pages_record`, the QR redeem's `not_an_iphone`, `unbound_needs_replace`
+  and `bound_to_other_user`) say "phone" to an Android phone or a Wear OS
+  watch and "iPhone" to an Apple device, as before. The codes are unchanged.
+  A QR code is for any phone, so its own refusals say "phone".
+- `watch_logs_put`, `client_certificate_get`, `addresses_get` and
+  `addresses_set` read only the signer's id and its user, so they work for
+  an Android device as they are. `client_certificate_put` and `_delete` are
+  the iPhone app's migration path; the panel imports the certificate, and an
+  Android app should only read it.
+
 ## Names
 
 | Platform | Registry model | Name before the app reports one |
@@ -78,3 +102,19 @@ all four models.
   phone row but the Page look. `wearLabel` and `wearHelp` give the crown's row
   its rotary words.
 - The welcome and Help link Google Play beside the App Store.
+- A line about the device on show names it by its platform: the page editor's
+  views, stage and screen lines (`phonePlatform`), a design's sync words
+  (`sendState`'s `platform`), Home's lines, the lineup, the boards, the
+  addresses, rooms, status pages, the new device and rejected save lines,
+  and the pairing refusals. Each keeps its Apple words for an Apple device.
+- Copy about no device in particular says phone and watch: the phone only
+  tiles, Phone extras, the Phone app tab, the general help and the QR
+  pairing words.
+- Apple only features say so: Siri is "on Apple devices", a Control Center
+  control is a Quick Settings tile on an Android phone, the Lock Screen and
+  the iPhone app's old presets stay iPhone words, and an Android device is
+  never told about presets. A Wear OS watch's rooms leave out the double
+  pinch, and its speak and assist choices say the watch, not an Apple Watch
+  (`wearWords`). The hold time row has its own Android line (`androidHelp`).
+- A panel open on an Android phone offers "Pair this phone instead" beside
+  the QR code, as an iPhone's offers "Pair this iPhone instead".

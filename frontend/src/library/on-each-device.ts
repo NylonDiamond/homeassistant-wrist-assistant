@@ -11,6 +11,7 @@
 // reads them again on every delivery of the kind, as Home does
 // (`followDeliveries`).
 
+import { nounFor } from "../device-platform.js";
 import { css, html, nothing, type TemplateResult } from "lit";
 import { type HassLike, type WatchConfigSummary, subscribeDeliveries } from "../ha-api.js";
 import { uiIcon } from "../ui-icons.js";
@@ -32,6 +33,8 @@ export interface OnDeviceLine {
   /** Where the device's record of the kind has got to; undefined before the
    * summary is read, or on an integration older than it. */
   sync?: DeliveryState;
+  /** What the device runs, only for an Android one (`LinkDevice.platform`). */
+  platform?: LinkDevice["platform"];
 }
 
 /** The lines for an item: the devices that have it, in the strip's order. */
@@ -49,7 +52,7 @@ export function onEachDeviceLines(
     const picks = itemsFor(lib, d.ownerId, kind);
     const at = picks.findIndex((p) => sameId(p.id, id));
     if (at < 0) return [];
-    const line: OnDeviceLine = { ownerId: d.ownerId, name: d.name, kind: d.kind, place: at + 1, count: picks.length, hidden: picks[at]!.hidden };
+    const line: OnDeviceLine = { ownerId: d.ownerId, name: d.name, kind: d.kind, place: at + 1, count: picks.length, hidden: picks[at]!.hidden, ...(d.platform === undefined ? {} : { platform: d.platform }) };
     const owner = summary === undefined ? undefined : Object.entries(summary.owners).find(([o]) => sameId(o, d.ownerId))?.[1];
     if (summary !== undefined) line.sync = deliveryState(owner?.[kind]);
     return [line];
@@ -113,9 +116,9 @@ export function placeText(line: Pick<OnDeviceLine, "place" | "count">, kind: Lib
 }
 
 /** The sync word, or "" when there is nothing to say. */
-export function syncText(line: Pick<OnDeviceLine, "sync" | "kind">): string {
+export function syncText(line: Pick<OnDeviceLine, "sync" | "kind" | "platform">): string {
   if (line.sync === "delivered") return "Synced";
-  if (line.sync === "waiting") return `Waiting for the ${line.kind === "iphone" ? "iPhone" : "watch"}`;
+  if (line.sync === "waiting") return `Waiting for the ${nounFor(line.kind, line.platform)}`;
   return "";
 }
 

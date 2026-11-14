@@ -811,9 +811,13 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
 /** The one line that stands for the four main house keys, in the words
  * Watch settings uses for the gestures. */
 export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.";
+/** The same on a Wear OS watch, which has no double pinch. */
+export const HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT = "The double-tap on the page title and the point control switches come from this watch's main home.";
 /** The same place on an iPhone, which has no main house: its double-tap on
  * the page title is in its own settings, and it has no double pinch. */
 export const HOME_ROOMS_PHONE_TEXT = "The double-tap on the page title is in this iPhone's settings.";
+/** The same on an Android phone. */
+export const HOME_ROOMS_ANDROID_TEXT = "The double-tap on the page title is in this phone's settings.";
 /** Over the wait on another home while an iPhone may still move its rooms
  * here. */
 export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";

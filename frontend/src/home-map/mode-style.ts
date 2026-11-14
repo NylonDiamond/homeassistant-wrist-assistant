@@ -196,7 +196,7 @@ export class HomeStylePanel {
     const pages = [...new Set(own.map((u) => u.pageId))];
     const sure = await ctx.confirm({
       title: `Use the home style on ${homeMapCount(own.length, "tile")}?`,
-      text: `Their own looks come off, so each draws the home style. ${pages.length === 1 ? "The page is" : `The ${pages.length} pages are`} saved for every watch and iPhone that shows ${pages.length === 1 ? "it" : "them"}.`,
+      text: `Their own looks come off, so each draws the home style. ${pages.length === 1 ? "The page is" : `The ${pages.length} pages are`} saved for every watch and phone that shows ${pages.length === 1 ? "it" : "them"}.`,
       ok: "Use the home style",
     });
     if (!sure) return;

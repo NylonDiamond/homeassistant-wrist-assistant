@@ -236,14 +236,14 @@ describe("the Pages tab", () => {
     // No device's record is read to draw the cards.
     expect(t.sentOf("watch_config/get")).toEqual([]);
     const text = t.whole();
-    expect(text).toContain("5 pages in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(text).toContain("5 pages in your home. Each watch and phone shows the pages ticked for it, and an edit shows everywhere.");
     expect(text.split(`class="ap-card `).length - 1).toBe(5);
     expect(text).toContain("lt-chip on");
     expect(text).toContain("lt-chip off");
     expect(text).toContain("<em>hidden</em>");
     expect(text).toContain("Multi select");
     expect(text).toContain("Search by name");
-    expect(text).toContain("Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.");
+    expect(text).toContain("Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the phone each arrange them.");
     for (const gone of ["ap-dev-open", ">Devices<", "Link", "Not linked", "Same as", "Add to…", "Remove from…", "Add all"]) expect(text).not.toContain(gone);
   });
 
@@ -258,14 +258,14 @@ describe("the Pages tab", () => {
     // The board says it under the watch's box.
     const board = t.whole();
     const row = board.slice(board.indexOf(`data-row=${PAGE1.toUpperCase()}`));
-    expect(row.slice(0, row.indexOf("</tr>"))).toContain(`title=Jesse Apple Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`);
+    expect(row.slice(0, row.indexOf("</tr>"))).toContain(`title=Jesse Apple Watch skips Map and Garden: only a phone shows them.>skips 2</em>`);
     showCards(t);
     const text = t.whole();
     const card = text.slice(text.indexOf(`data-card=${PAGE1}`));
     const ticks = card.slice(card.indexOf("lt-ticks"), card.indexOf("</wa-chip-row>"));
     // Chen Watch does not hold the page, so it skips nothing.
     expect(ticks).toContain(`Chen Watch</span></button>`);
-    const skips = `<em class="lt-skips" title=Jesse Apple Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
+    const skips = `<em class="lt-skips" title=Jesse Apple Watch skips Map and Garden: only a phone shows them.>skips 2</em>`;
     expect(ticks).toContain(`Jesse Apple Watch</span><em>hidden</em>${skips}</button>`);
     expect(ticks).not.toMatch(/iPhone 15 Pro<\/span><em class="lt-skips"/);
     // A page a watch draws whole says nothing.
@@ -564,7 +564,7 @@ describe("the Pages tab", () => {
     await t.ready();
     let board = t.whole();
     const row = (id: string) => board.slice(board.indexOf(`data-row=${id.toUpperCase()}`)).slice(0, board.slice(board.indexOf(`data-row=${id.toUpperCase()}`)).indexOf("</th>"));
-    expect(row(PAGE1)).toContain("1 tile · iPhone arranged differently");
+    expect(row(PAGE1)).toContain("1 tile · Phone arranged differently");
     expect(row(PAGE1)).toContain(`<span class="ap-pics">`);
     expect(row(PAGE1).split("lr-pic").length - 1).toBeGreaterThanOrEqual(2);
     expect(row(LIGHTS)).toContain("Watch only");
@@ -581,7 +581,7 @@ describe("the Pages tab", () => {
       const card = cards.slice(cards.indexOf(`data-card=${id}`));
       return card.slice(0, card.indexOf("lt-ticks"));
     };
-    expect(cardOf(PAGE1)).toContain(`<small class="ap-screens">iPhone arranged differently</small>`);
+    expect(cardOf(PAGE1)).toContain(`<small class="ap-screens">Phone arranged differently</small>`);
     expect(cardOf(PAGE1)).not.toContain("ap-card-pics");
     expect(cardOf(PAGE1)).not.toContain("ap-pic-phone");
     expect(cardOf(PAGE1).match(/<button[^>]*data-card-screen=/g)).toHaveLength(2);
@@ -653,7 +653,7 @@ describe("the Pages tab", () => {
     expect(dialog).toContain("For which devices?");
     expect(dialog).toContain(COPY_WARNING_TEXT);
     expect(dialog).toContain("Watches");
-    expect(dialog).toContain("iPhones");
+    expect(dialog).toContain("Phones");
     // Every device ticked is no copy at all.
     t.el.copyForm = { ...(t.el.copyForm as object), owners: [JESSE, PHONE] };
     expect(t.whole()).toContain("Leave New Page 1 on at least one device.");

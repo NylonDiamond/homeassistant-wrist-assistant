@@ -107,6 +107,10 @@ export interface CatalogSetting {
   /** On an iPhone, the help line in place of `help`, for a row that works
    * differently there. `catalogFor("iphone")` puts it in `help`. */
   phoneHelp?: string;
+  /** On an Android phone, the help line in place of `phoneHelp`, for a row
+   * whose iPhone words name iOS. `catalogFor("iphone", catalog, "android")`
+   * puts it in `help`. */
+  androidHelp?: string;
   /** On a Wear OS watch, the label and help line in place of `label` and
    * `help`, for a row that works differently there: the Digital Crown's
    * rows are the rotary input's (the crown or the bezel).
@@ -644,6 +648,7 @@ export function catalogFor(
       ...s,
       ...(s.phoneShowIf === undefined ? {} : { andShowIf: s.phoneShowIf }),
       ...(s.phoneHelp === undefined ? {} : { help: s.phoneHelp }),
+      ...(reader === "android" && s.androidHelp !== undefined ? { help: s.androidHelp } : {}),
     };
   };
   return catalog.sections
@@ -877,8 +882,8 @@ export const NEW_WATCH_TEXT = newDeviceText("watch");
 
 /** `NEW_WATCH_TEXT` for the device on the screen: an iPhone's own records
  * start here the same way. */
-export function newDeviceText(device: SettingDevice): string {
-  const noun = deviceNoun(device);
+export function newDeviceText(device: SettingDevice, platform?: DevicePlatform | null): string {
+  const noun = deviceNoun(device, platform);
   return `New ${noun}. The ${noun} keeps what it has until you save here. Your first Save replaces it.`;
 }
 
@@ -1258,8 +1263,9 @@ export function pairLookupWarnings(lookup: PairLookupFacts, isAdmin = true): str
 }
 
 /** The warning under a request from an address outside the home network. */
-function pairRemoteWarningText(kind: PairDeviceKind): string {
-  return `The request came from outside your network. Only pair ${kind === "iphone" ? "an iPhone" : "a watch"} you expect.`;
+function pairRemoteWarningText(kind: PairDeviceKind, platform?: string | null): string {
+  const noun = deviceWord(kind, platform);
+  return `The request came from outside your network. Only pair ${noun === "iPhone" ? "an iPhone" : `a ${noun}`} you expect.`;
 }
 export const PAIR_REMOTE_WARNING_TEXT = pairRemoteWarningText("watch");
 
@@ -1298,10 +1304,10 @@ export function isPrivateAddress(address: string): boolean {
 
 /** The warning for a request from outside the home network. An unknown
  * address gets none: there is nothing to say about it. */
-export function pairRemoteWarning(remote: string | null | undefined, kind: PairDeviceKind = "watch"): string | undefined {
+export function pairRemoteWarning(remote: string | null | undefined, kind: PairDeviceKind = "watch", platform?: string | null): string | undefined {
   const address = present(remote);
   if (address === undefined || isPrivateAddress(address)) return undefined;
-  return pairRemoteWarningText(kind);
+  return pairRemoteWarningText(kind, platform);
 }
 
 /** The boxes to tick before Pair. */
@@ -1331,8 +1337,8 @@ export function pairChecksNeeded(
 export const PAIR_REPLACE_LABEL = "Replace its pairing";
 
 /** The label of the box that owns up to a request from outside. */
-export function pairExpectLabel(kind: PairDeviceKind): string {
-  return `I expect this ${deviceWord(kind)}`;
+export function pairExpectLabel(kind: PairDeviceKind, platform?: string | null): string {
+  return `I expect this ${deviceWord(kind, platform)}`;
 }
 
 /** Whether a person is picked, where the card asks for one: with more than
@@ -1468,16 +1474,16 @@ export function pairedFor(users: readonly PairUserChoice[] | undefined, userId: 
 /** The card's line for a refusal. An integration from before pairing does
  * not know the command at all, which HA reports as `unknown_command`. A
  * confirm the server wants a box ticked for says which. */
-export function pairErrorText(err: unknown, step: "lookup" | "confirm" | "offer", kind: PairDeviceKind = "watch"): string {
+export function pairErrorText(err: unknown, step: "lookup" | "confirm" | "offer", kind: PairDeviceKind = "watch", platform?: string | null): string {
   const code = errorCode(err);
   if (code === "unknown_command") {
     return step === "offer"
-      ? "Update the Wrist Assistant integration to pair an iPhone with a QR code."
+      ? "Update the Wrist Assistant integration to pair a phone with a QR code."
       : "Update the Wrist Assistant integration to pair a watch with a code.";
   }
-  if (code === "needs_replace") return `This ${deviceWord(kind)} is already paired. Tick ${PAIR_REPLACE_LABEL} to pair it again.`;
-  if (code === "paired_by_other_user") return pairOtherPersonText(kind);
-  if (code === "needs_allow_remote") return `The request came from outside your network. Tick ${pairExpectLabel(kind)} to pair it.`;
+  if (code === "needs_replace") return `This ${deviceWord(kind, platform)} is already paired. Tick ${PAIR_REPLACE_LABEL} to pair it again.`;
+  if (code === "paired_by_other_user") return pairOtherPersonText(kind, platform);
+  if (code === "needs_allow_remote") return `The request came from outside your network. Tick ${pairExpectLabel(kind, platform)} to pair it.`;
   const message = String((err as { message?: string } | null | undefined)?.message ?? err);
   if (step === "offer") return `Could not show a QR code: ${message}`;
   return step === "lookup" ? `Could not look up that code: ${message}` : `Could not pair: ${message}`;
@@ -1491,21 +1497,38 @@ export const PAIR_OFFER_POLL_MS = 2000;
 /** The QR mode's button, and the box that lets a QR code take over an iPhone
  * paired for someone else (`replace` on the offer). */
 export const PAIR_SHOW_QR_TEXT = "Show QR code";
-export const PAIR_QR_REPLACE_LABEL = "Replace an iPhone paired for someone else";
+export const PAIR_QR_REPLACE_LABEL = "Replace a phone paired for someone else";
 /** What Replace is for, under it. It is rarely needed, so the QR mode keeps
  * it folded under More options until asked for. */
-export const PAIR_QR_REPLACE_HINT = "Only for an iPhone already paired here for another person, such as a phone handed on. Without it, that iPhone is refused.";
+export const PAIR_QR_REPLACE_HINT = "Only for a phone already paired here for another person, such as one handed on. Without it, that phone is refused.";
 export const PAIR_MORE_TEXT = "More options";
 
 /** The link beside the QR code, for the panel open on the iPhone itself,
  * which cannot scan its own screen. Shown only there (`pairOnIPhone`). */
 export const PAIR_OPEN_APP_TEXT = "Pair this iPhone instead";
+/** The same link on an Android phone, whose app opens the same pair link. */
+export const PAIR_OPEN_ANDROID_APP_TEXT = "Pair this phone instead";
 
 /** The panel is open on an iPhone, in Safari or the Home Assistant app:
  * the one place the QR code cannot be scanned, so the card offers the link
  * that opens Wrist Assistant on it. */
 export function pairOnIPhone(userAgent: string | undefined): boolean {
   return userAgent !== undefined && /\biPhone\b/.test(userAgent);
+}
+
+/** The panel is open on an Android phone (Chrome or the Home Assistant app
+ * there say "Android" and "Mobile"; an Android tablet says no "Mobile").
+ * The Android app opens the same `wristassistant://pair` link. */
+export function pairOnAndroidPhone(userAgent: string | undefined): boolean {
+  return userAgent !== undefined && /\bAndroid\b/.test(userAgent) && /\bMobile\b/.test(userAgent);
+}
+
+/** The words of the link that pairs the phone the panel is open on, or
+ * undefined on any other device. */
+export function pairOpenAppText(userAgent: string | undefined): string | undefined {
+  if (pairOnIPhone(userAgent)) return PAIR_OPEN_APP_TEXT;
+  if (pairOnAndroidPhone(userAgent)) return PAIR_OPEN_ANDROID_APP_TEXT;
+  return undefined;
 }
 
 /** What the card says once an open QR code has run out. */

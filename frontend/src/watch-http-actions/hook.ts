@@ -87,7 +87,7 @@ export function renderWatchHttpActionsView(input: WatchHttpActionsViewInput): Te
   // show them. The pickers on the other screens still list every action.
   if (input.hass.user?.is_admin === false) {
     return html`<div class="wp-loading">
-        <span>Only an administrator can change HTTP actions. Your watch and iPhone can still run every one, from a tile, a menu or a complication.</span>
+        <span>Only an administrator can change HTTP actions. Your watch and phone can still run every one, from a tile, a menu or a complication.</span>
       </div>`;
   }
   const ready = customElements.get("wa-http-actions-editor") !== undefined;

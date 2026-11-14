@@ -45,7 +45,7 @@ export const MENUS_BOARD_HINT = "Each device uses one of each kind. Pick a dot t
 
 /** The foot on a device's tab. */
 export function menusDeviceFoot(device: LinkDevice): string {
-  return `Pick which menu this ${deviceWord(device.kind)} uses. Click a menu to edit it.`;
+  return `Pick which menu this ${deviceWord(device.kind, device.platform)} uses. Click a menu to edit it.`;
 }
 
 /** The heading over each section. */
@@ -135,12 +135,12 @@ export function newMenuMadeText(name: string): string {
 }
 
 /** Why New menu is not offered to someone who is not an administrator. */
-export const NEW_MENU_ADMIN_TEXT = "To make a menu, open your watch or iPhone's tab first. Only a Home Assistant administrator can make one here.";
+export const NEW_MENU_ADMIN_TEXT = "To make a menu, open your watch or phone's tab first. Only a Home Assistant administrator can make one here.";
 
 /** How someone who is no administrator makes a first menu, in plain view,
  * since a greyed button's title never reaches a touch screen. */
 export function makeFirstMenuText(focused: boolean): string {
-  return focused ? "Use New menu to make one." : "Open your watch or iPhone's tab, then use New menu to make its first one.";
+  return focused ? "Use New menu to make one." : "Open your watch or phone's tab, then use New menu to make its first one.";
 }
 
 /** Why New menu is off for someone who is no administrator, on a device
@@ -160,7 +160,7 @@ export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchM
  * Given as the set of waiting ids, a waiting watch too old for the move
  * names the release (`waitingLibraryText`). */
 export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting: boolean | ReadonlySet<string> = false, makeHint?: string): string {
-  if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Devices tab.";
+  if (devices.length === 0) return "No watch or phone has connected yet. Pair one on the Devices tab.";
   if (search.trim() !== "") return "No menu or device has that name.";
   const any = typeof waiting === "boolean" ? waiting : waiting.size > 0;
   const needsUpdate = typeof waiting !== "boolean" && anyNeedsUpdate(devices, waiting);

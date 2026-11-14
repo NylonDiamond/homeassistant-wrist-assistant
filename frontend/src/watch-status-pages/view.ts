@@ -26,7 +26,7 @@ import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
-import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
+import { type PhonePagesLayout, isAndroidPhoneModel, renderDeviceFrame } from "../phone-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import type { JsonObject } from "../watch-pages/model.js";
@@ -559,7 +559,7 @@ function divider(scale: number): TemplateResult {
  * now, then Done. Hidden rows are not drawn. A row tapped here is picked.
  */
 export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResult {
-  const label = host.phone === undefined ? "Status page on the watch" : "Status page on the iPhone";
+  const label = host.phone === undefined ? "Status page on the watch" : `Status page on the ${isAndroidPhoneModel(host.phone.model) ? "phone" : "iPhone"}`;
   return renderDeviceFrame(host.phone, host.screen, host.scale, statusScreenBox(host, label), label, host.icons);
 }
 

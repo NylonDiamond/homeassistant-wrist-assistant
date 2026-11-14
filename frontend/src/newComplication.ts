@@ -24,7 +24,7 @@ export const NEW_KINDS: readonly NewKind[] = ["watch", "iphone", "control"];
 export function kindTitle(kind: NewKind): string {
   switch (kind) {
     case "watch": return "Watch";
-    case "iphone": return "iPhone";
+    case "iphone": return "Phone";
     case "control": return "Control Center";
   }
 }
@@ -152,7 +152,7 @@ export function newSummary(o: NewChoice): string {
   if (o.kind === undefined || (o.kind !== "control" && o.family === undefined)) return "Now pick one shape, or Control Center.";
   const what = o.kind === "control"
     ? "A Control Center control"
-    : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "an iPhone"}`;
+    : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "a phone"}`;
   if (o.devices === 0) return `${what}, on no device yet. Tick a device any time.`;
   return `${what}, on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
 }

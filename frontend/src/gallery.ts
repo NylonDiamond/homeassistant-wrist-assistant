@@ -545,7 +545,7 @@ function steppedBlockers(
   // is not one, so there is nowhere to put it yet.
   if (body.families.length === 0) {
     out.push(controlOnly(cfg)
-      ? "It is a Control Center control, and the gallery files designs by shape. Add a watch or iPhone shape to share it, or send this one as text instead."
+      ? "It is a Control Center control, and the gallery files designs by shape. Add a watch or phone shape to share it, or send this one as text instead."
       : "It has no shape the gallery can show.");
   }
 

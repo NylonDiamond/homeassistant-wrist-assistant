@@ -19,6 +19,7 @@
 // editor draws its bar inline as before.
 
 import { adoptStyles, css, html, nothing, render, type LitElement, type TemplateResult } from "lit";
+import type { DevicePlatform } from "./device-platform.js";
 import { NOTHING_TO_SAVE_TEXT, type SettingDevice, newDeviceText } from "./watch-settings.js";
 
 /** The header's word for a new watch's screen, in orange, with the whole
@@ -27,6 +28,8 @@ import { NOTHING_TO_SAVE_TEXT, type SettingDevice, newDeviceText } from "./watch
 export const NEW_WATCH_STATUS = "New watch, not saved yet";
 /** The same for an iPhone's own records. */
 export const NEW_IPHONE_STATUS = "New iPhone, not saved yet";
+/** The same for an Android phone's. */
+export const NEW_ANDROID_PHONE_STATUS = "New phone, not saved yet";
 /** The same on a phone, where the header's bar is narrow. */
 export const NEW_WATCH_SHORT = "Not saved yet";
 
@@ -96,6 +99,8 @@ export interface HeadStatusInput {
   /** The device on the screen; a watch when absent. An iPhone's ready
    * screen says "New iPhone". */
   device?: SettingDevice;
+  /** What the device runs, for its noun: an Android phone is "New phone". */
+  platform?: DevicePlatform | null;
   /** In place of the new device's words, when only part of the screen is
    * new (a watch whose settings are saved but whose notification style is
    * not): `status` beside Save, `title` its tooltip. */
@@ -110,9 +115,9 @@ export interface HeadStatusInput {
 export function renderHeadStatus(input: HeadStatusInput): TemplateResult | typeof nothing {
   if (input.newWatch) {
     const device = input.device ?? "watch";
-    const text = input.newWords?.title ?? newDeviceText(device);
+    const text = input.newWords?.title ?? newDeviceText(device, input.platform);
     const title = input.dirty ? text : `${text} ${NOTHING_TO_SAVE_TEXT}`;
-    const status = input.newWords?.status ?? (device === "iphone" ? NEW_IPHONE_STATUS : NEW_WATCH_STATUS);
+    const status = input.newWords?.status ?? (device === "iphone" ? (input.platform === "android" ? NEW_ANDROID_PHONE_STATUS : NEW_IPHONE_STATUS) : NEW_WATCH_STATUS);
     // A phone's bar is narrow: there the line is the short one, so it keeps
     // to one line beside its dot. The tooltip says the whole of it.
     return html`<span class="tb-status new" role="status" title=${title}><i class="tb-status-dot" aria-hidden="true"></i><span class="tb-long">${status}</span><span class="tb-short" aria-hidden="true">${NEW_WATCH_SHORT}</span></span>`;

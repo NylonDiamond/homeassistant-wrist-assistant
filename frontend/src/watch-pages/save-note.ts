@@ -21,7 +21,7 @@ function stringField(value: unknown, key: string): string | undefined {
 
 /** What `not_for_iphone` means: Home Assistant refused to give an iPhone a
  * record or a setting only a watch keeps (phone pages, `phone-pages.ts`). */
-export const NOT_FOR_IPHONE_TEXT = "An iPhone keeps only its own pages, status pages, menus, rooms and settings, so Home Assistant did not take this.";
+export const NOT_FOR_IPHONE_TEXT = "A phone keeps only its own pages, status pages, menus, rooms and settings, so Home Assistant did not take this.";
 
 /**
  * A refused command's code and words, wherever they sit. Home Assistant's

@@ -1016,7 +1016,7 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="ws-page">
       <div class="ws-top">
         ${options.inHead === true ? nothing : this.renderBar(name, options.narrow === true, elsewhere)}
-        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.newWords?.title ?? newDeviceText(this.device)}</span></div>` : nothing}
+        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.newWords?.title ?? newDeviceText(this.device, this.platform)}</span></div>` : nothing}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
@@ -1323,11 +1323,15 @@ export class WatchSettings implements ReactiveController {
       <span class="ws-addr-t">${ADDRESSES_TITLE}</span>
       <div class="hint">${ADDRESSES_HELP}</div>
       <div class="ws-addr-body">${renderAddressBlock({
+        // An Android phone's addresses say "phone"; every other device's words
+        // are the ones they always were.
+        ...(this.platform === "android" ? { device: "android" as const } : {}),
         record: this.addresses,
         readError: this.addressesError,
         editing: draft !== undefined,
         onEdit: () => this.editAddresses(),
         form: {
+          ...(this.platform === "android" ? { device: "android" as const } : {}),
           record: this.addresses,
           draft,
           busy: this.saving,
@@ -1718,6 +1722,7 @@ export class WatchSettings implements ReactiveController {
             dirty: changes > 0,
             changes,
             device: this.device,
+            platform: this.platform,
             newWords: this.newWords,
           })}
         ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery(true) : nothing}`

@@ -39,8 +39,8 @@ export const COMP_WHERE_TITLES: Readonly<Record<CompWhere, string>> = {
 export const COMP_WHERE_HINTS: Readonly<Record<CompWhere, string>> = {
   face: "On a watch face. A design on no device can go on an iPhone's Lock Screen too.",
   lock: "On an iPhone's Lock Screen.",
-  home: "On an iPhone's Home Screen.",
-  control: "A control in Control Center, on a watch or an iPhone.",
+  home: "On a phone's Home Screen.",
+  control: "A control in Control Center on an Apple Watch or an iPhone, and a Quick Settings tile on an Android phone.",
   other: "These have no shape yet, or wait to move from the iPhone app.",
 };
 
@@ -120,7 +120,7 @@ export function compCell(f: CompCellFacts): CompCell {
     return {
       on: false, grey: true,
       dash: f.designKind === "iphone"
-        ? `An iPhone widget. To have it on ${name}, open it and use Duplicate as.`
+        ? `A phone widget. To have it on ${name}, open it and use Duplicate as.`
         : `A watch complication. To have it on ${name}, open it and use Duplicate as.`,
       title: "",
     };
@@ -149,9 +149,9 @@ export function compCell(f: CompCellFacts): CompCell {
  * rows: watch designs on the iPhones' columns, iPhone designs on the watches'.
  * The panel adds "Use Duplicate as." Undefined when no column is greyed. */
 export function compGreyNote(kinds: { watchGrey: boolean; iphoneGrey: boolean }): string | undefined {
-  if (kinds.iphoneGrey && kinds.watchGrey) return "Watch designs cannot go on an iPhone, nor iPhone designs on a watch.";
-  if (kinds.iphoneGrey) return "Watch designs cannot go on an iPhone.";
-  if (kinds.watchGrey) return "iPhone designs cannot go on a watch.";
+  if (kinds.iphoneGrey && kinds.watchGrey) return "Watch designs cannot go on a phone, nor phone designs on a watch.";
+  if (kinds.iphoneGrey) return "Watch designs cannot go on a phone.";
+  if (kinds.watchGrey) return "Phone designs cannot go on a watch.";
   return undefined;
 }
 
@@ -166,8 +166,8 @@ export function compNoun(kind: "watch" | "iphone", n: number): string {
 export function compLeftOutText(kind: "watch" | "iphone", n: number): string | undefined {
   if (n === 0) return undefined;
   return kind === "watch"
-    ? `${n} iPhone ${n === 1 ? "widget is" : "widgets are"} not listed: a watch cannot show ${n === 1 ? "it" : "them"}.`
-    : `${n} watch ${n === 1 ? "complication is" : "complications are"} not listed: an iPhone cannot show ${n === 1 ? "it" : "them"}.`;
+    ? `${n} phone ${n === 1 ? "widget is" : "widgets are"} not listed: a watch cannot show ${n === 1 ? "it" : "them"}.`
+    : `${n} watch ${n === 1 ? "complication is" : "complications are"} not listed: a phone cannot show ${n === 1 ? "it" : "them"}.`;
 }
 
 /** Where the tab remembers Board or Cards. */

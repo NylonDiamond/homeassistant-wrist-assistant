@@ -345,7 +345,7 @@ describe("the panel's wiring", () => {
   });
 
   it("shows a watch's or an iPhone's addresses under its bar all the time, with no Addresses button", () => {
-    expect(detail).toContain(`const addresses = own === undefined && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind) : nothing;`);
+    expect(detail).toContain(`const addresses = own === undefined && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind === "iphone" && ownerIsAndroid(this.ownerOf(ownerId)) ? "android" : row.kind) : nothing;`);
     expect(detail).not.toContain(`row.kind === "watch" && !this.deviceForgetAsk`);
     expect(detail).not.toContain("ADDRESSES_BUTTON");
     expect(SOURCE).not.toContain("ADDRESSES_BUTTON");
@@ -483,7 +483,7 @@ describe("an iPhone's addresses on its page on Home", () => {
     const detail = method("  private renderHomeDetail(");
     // No kind check left in front of the block: every row on Home is a
     // watch or an iPhone, and both have a record.
-    expect(detail).toContain("this.renderHomeAddresses(ownerId, row.kind)");
+    expect(detail).toContain("this.renderHomeAddresses(ownerId, row.kind === \"iphone\" && ownerIsAndroid(this.ownerOf(ownerId)) ? \"android\" : row.kind)");
     expect(detail).not.toMatch(/row\.kind === "watch" && !this\.deviceForgetAsk/);
     // The watch Settings page never names an iPhone for its addresses.
     const settings = readFileSync(join(__dirname, "..", "src", "watch-settings-view.ts"), "utf8");

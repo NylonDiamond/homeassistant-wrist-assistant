@@ -39,7 +39,7 @@
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b.
 
-import { gateVersion } from "../device-platform.js";
+import { type DevicePlatform, gateVersion, ownerIsAndroid, platformOf } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { canvasStyles, chromeTokens, inspectorStyles, leftCardStyles, topBarStyles } from "../editor-chrome.js";
@@ -145,6 +145,11 @@ import {
 } from "./model.js";
 import { type RoomsViewHost, renderRoomsBody, roomsViewStyles } from "./view.js";
 import { normalizedRoomKey } from "./rules.js";
+
+/** An owner's Android platform, or undefined for an Apple device or none. */
+function androidPlatformOf(owner: Parameters<typeof platformOf>[0]): DevicePlatform | undefined {
+  return owner !== undefined && owner !== null && ownerIsAndroid(owner) ? platformOf(owner) : undefined;
+}
 
 registerWatchRoomsDrafts({ dirty: anyRoomsDirty, drop: dropAllRooms });
 
@@ -767,6 +772,8 @@ export class WaRoomsEditor extends LitElement {
       requestUpdate: () => this.requestUpdate(),
       ...(home ? { home: true } : {}),
       ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? { phone: true } : {}),
+      ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "android" ? { android: true } : {}),
+      ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "wearos" ? { wear: true } : {}),
     };
   }
 

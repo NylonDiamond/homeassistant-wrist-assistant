@@ -163,6 +163,7 @@
           "label": "Hold time",
           "help": "How long you press a tile before its extra options open.",
           "phoneHelp": "How long you press a tile before its extra options open. With Holding a tile opens set to iOS Menu on the iPhone, iOS sets this time itself.",
+          "androidHelp": "How long you press a tile before its extra options open.",
           "default": "Super Fast",
           "options": [
             {"value": "Super Fast", "label": "Very short (75 ms)"},

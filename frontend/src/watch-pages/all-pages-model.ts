@@ -23,7 +23,7 @@ export type CardKind = LibraryListKind;
 /** The second half of the Pages tab's line under its title: what the
  * library is, so the word means something where the delete and edit lines
  * use it. */
-export const ALL_PAGES_LEAD = "Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.";
+export const ALL_PAGES_LEAD = "Each watch and phone shows the pages ticked for it, and an edit shows everywhere.";
 
 /** The same on the Status pages tab: what a status page is. */
 export const STATUS_PAGES_LEAD = "A status page is a read-only screen of rows that a tile or a menu slot opens.";
@@ -62,7 +62,7 @@ export function allPagesLead(total: number, kind: CardKind = "pages"): string {
  * works, for whoever may make one, or who to ask. */
 export function emptyLibraryText(kind: CardKind, admin: boolean): string {
   if (!admin) return `Ask a Home Assistant administrator to make the first ${cardNoun(kind)}.`;
-  return `Make ${aCard(kind)} once, then tick each watch or iPhone that should show it.`;
+  return `Make ${aCard(kind)} once, then tick each watch or phone that should show it.`;
 }
 
 /** The line in the surface's foot. On the board (`view`) a click on a
@@ -72,7 +72,7 @@ export function footText(kind: CardKind, device: LinkDevice | undefined, selecti
   const one = cardNoun(kind);
   if (selecting) return `Click ${cardNoun(kind, 2)} to pick them. Shift+click picks every ${one} between two.`;
   if (device !== undefined && view === "board") {
-    const word = deviceWord(device.kind);
+    const word = deviceWord(device.kind, device.platform);
     return kind === "status_pages"
       ? `Click a status page to edit it. Drag to order. The order is this ${word}'s own.`
       : `Click a page to edit it. Drag to order, and Hide here (the eye) keeps a page on this ${word} without showing it.`;
@@ -84,7 +84,7 @@ export function footText(kind: CardKind, device: LinkDevice | undefined, selecti
   }
   return kind === "status_pages"
     ? "Click a status page to edit it. Tick a device to put it there."
-    : "Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.";
+    : "Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the phone each arrange them.";
 }
 
 /** The line under a card's name: "11 tiles", "Smart page", "1 row · starter". */
@@ -187,7 +187,7 @@ export function onDeviceTitle(device: LinkDevice): string {
 
 /** Its line at the right: the order is the device's own. */
 export function orderHint(device: LinkDevice): string {
-  return `Drag to order. The order is this ${deviceWord(device.kind)}'s own.`;
+  return `Drag to order. The order is this ${deviceWord(device.kind, device.platform)}'s own.`;
 }
 
 /** The second heading: the rest of the library. */
@@ -244,7 +244,7 @@ export function noPicksText(device: LinkDevice, kind: CardKind, search: string, 
 
 /** What the board says with no row to show. */
 export function emptyText(devices: readonly LinkDevice[], search: string, cardKind: CardKind = "pages"): string {
-  if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Devices tab.";
+  if (devices.length === 0) return "No watch or phone has connected yet. Pair one on the Devices tab.";
   if (search.trim() !== "") return `No ${cardNoun(cardKind)} has that name.`;
   return cardKind === "status_pages"
     ? "Your home has no status pages yet. Use New status page to make one."

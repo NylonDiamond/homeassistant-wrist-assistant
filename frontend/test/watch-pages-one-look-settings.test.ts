@@ -180,7 +180,7 @@ describe("State in One Look", () => {
     expect(light).toContain("The brightness as a thin bar across the top, or the tile filled from the left.");
     expect(light).toContain("A thin bar across the top fills to the level. The tile keeps its room, so the icon does not move.");
     expect(light).toContain("The state's size in points, as the old look drew it. It still shrinks to fit.");
-    expect(light).toContain("A soft shadow under the state on a colored tile, on the iPhone. The watch draws none.");
+    expect(light).toContain("A soft shadow under the state on a colored tile, on the phone. The watch draws none.");
     expect(light).not.toContain("Auto (7)");
     expect(drawn(tile("light.desk", { stateBarStyle: "Fill" }), true)).toContain("The tile fills with its color from the left to the level; the rest is a dark shade of it.");
     // A card One Look draws as the table says keeps the table's line.

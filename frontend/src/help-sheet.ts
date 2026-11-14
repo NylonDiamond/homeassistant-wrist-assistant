@@ -52,24 +52,24 @@ export interface HelpScreen {
 }
 
 const HOME_TEXT = [
-  "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
+  "Devices lists every watch and phone, who it belongs to, and whether it has your latest changes.",
   "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
   "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.",
 ];
 
 const SHARED_TEXT = [
-  "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions, camera framing and Home map.",
+  "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions, camera framing and Home map.",
   "Open one to change it. A save reaches every device.",
 ];
 
 const COMPLICATIONS_TEXT = [
-  "Complications put live home state on the watch face, and widgets on the iPhone.",
+  "Complications put live home state on the watch face, and widgets on the phone.",
   "Pick one in the list to change it, or make a new one.",
 ];
 
 /** The Pages tab's line about the tiles only the iPhone draws, and the
  * count on a watch's chip ("skips 2", `library/ticks.ts`). */
-export const PAGES_PHONE_TILES_TEXT = "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.";
+export const PAGES_PHONE_TILES_TEXT = "A few tiles, like a map or a web card, are for the phone only. A watch skips them, and its chip on the card says how many.";
 
 const PAGES_TEXT = [
   "Pages lists every page in your home, with a column for each device. Tick a box and the page is on that device: one page, the same everywhere, so an edit shows on every device that has it.",
@@ -108,14 +108,14 @@ export const HELP_LIBRARY_TEXT = "It is on every device in this home: find it un
  * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
  * different things about one screen. */
-function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone"): string[] {
+function watchScreenText(screen: WatchScreen, device: "watch" | "phone"): string[] {
   const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
   return [sentence, screen.shared === true ? HELP_LIBRARY_TEXT : `It is for the ${device} picked at the top.`];
 }
 
 /** A device screen as the sheet shows it, with its guide when it has one. */
-function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScreen {
+function deviceScreen(screen: WatchScreen, device: "watch" | "phone"): HelpScreen {
   const more = SCREEN_GUIDES[screen.id];
   return { name: screen.label, text: watchScreenText(screen, device), ...(more === undefined ? {} : { more }) };
 }
@@ -125,7 +125,7 @@ function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScre
  * the Status pages tab, the Menus tab, else Home. */
 export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   const phone = iphoneScreenOf(route);
-  if (phone !== undefined) return deviceScreen(phone, "iPhone");
+  if (phone !== undefined) return deviceScreen(phone, "phone");
   const screen = watchScreenOf(route);
   if (screen !== undefined) return deviceScreen(screen, "watch");
   const tab = tabOfRoute(route);

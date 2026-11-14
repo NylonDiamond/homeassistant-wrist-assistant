@@ -181,7 +181,20 @@ function detailOf(choices: readonly WatchAppChoice[], value: string, host?: Tile
 /** The table's words with `{device}` as the device the editor is for
  * ("watch" or "iPhone"). */
 function onDevice(host: TileSettingsHost | undefined, words: string): string {
-  return host === undefined ? words : words.replaceAll("{device}", hostDeviceNoun(host));
+  if (host === undefined) return words;
+  const said = words.replaceAll("{device}", hostDeviceNoun(host));
+  return host.platform === "wearos" ? wearWords(said) : said;
+}
+
+/** The table's Apple Watch words as a Wear OS watch's editor says them:
+ * the watch's own speaker is the watch's, not an Apple Watch's. The table
+ * keeps its words, which the Apple app reads. */
+export function wearWords(words: string): string {
+  if (words === "Apple Watch") return "Watch";
+  return words
+    .replaceAll("the Apple Watch speaker", "the watch speaker")
+    .replaceAll("from Apple Watch", "from the watch")
+    .replaceAll("Apple Watch", "the watch");
 }
 
 // ── the section ──────────────────────────────────────────────────────────
@@ -487,8 +500,8 @@ function renderAssist(host: TileSettingsHost): TemplateResult {
       ? html`<div class="hint warn">An older reply setting decides this tile's reply on the ${hostDeviceNoun(host)}. Changing Assist mode or Reply speaker removes it.</div>`
       : nothing}
     ${speakReply
-      ? html`${segField("Reply speaker", s.replySpeaker, seg(A.assist.replySpeakers), (v) => commit(host, "replySpeaker", (d) => setWatchAssistReplySpeaker(d, ...at(host), v)))}
-        <div class="hint ts-under">${choose ? detailOf(A.assist.replySpeakers, s.replySpeaker) : A.assist.watchSpeakerNote}</div>`
+      ? html`${segField("Reply speaker", s.replySpeaker, seg(A.assist.replySpeakers, false, host), (v) => commit(host, "replySpeaker", (d) => setWatchAssistReplySpeaker(d, ...at(host), v)))}
+        <div class="hint ts-under">${choose ? detailOf(A.assist.replySpeakers, s.replySpeaker, host) : onDevice(host, A.assist.watchSpeakerNote)}</div>`
       : nothing}
     ${choose
       ? html`${speakerChecklist(host, "Choose speakers", "assistTargetSpeakerIds", s.speakers)}
@@ -508,7 +521,7 @@ function renderSpeak(host: TileSettingsHost): TemplateResult {
     ${voiceDefaultsLine(host)}
     ${segField("Speaker", s.output, seg(A.speak.outputs, false, host), (v) => commit(host, "speakOutput", (d) => setWatchSpeakOutput(d, ...at(host), v)))}
     <div class="hint ts-under">${detailOf(A.speak.outputs, s.output, host) ?? ""}</div>
-    ${s.output === "watchSpeaker" ? html`<div class="hint">${A.speak.watchSpeakerNote}</div>` : nothing}
+    ${s.output === "watchSpeaker" ? html`<div class="hint">${onDevice(host, A.speak.watchSpeakerNote)}</div>` : nothing}
     ${s.output === "configuredSpeakers"
       ? html`${speakerChecklist(host, "Choose speakers", "speakMessageTargetSpeakerIds", s.speakers)}
         <div class="hint ${s.speakers.length === 0 ? "warn" : ""}">${named(s.speakers)}</div>`

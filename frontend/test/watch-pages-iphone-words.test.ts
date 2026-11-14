@@ -195,7 +195,7 @@ describe("tile settings on an iPhone", () => {
 
 describe("the keys only the iPhone reads", () => {
   it("fold on a watch's editor under iPhone extras, and never name the watch on an iPhone's", () => {
-    expect(WATCH_PHONE_EXTRAS_TITLE).toBe("iPhone extras");
+    expect(WATCH_PHONE_EXTRAS_TITLE).toBe("Phone extras");
     expect(WATCH_PHONE_EXTRAS_HINT).toBe("The watch ignores these");
     // Every kind that has a key only the iPhone reads.
     const kinds = [...new Set(WATCH_PHONE_SETTING_KEYS.flatMap((key) => watchPhoneKeyKinds(key)))];
@@ -203,10 +203,10 @@ describe("the keys only the iPhone reads", () => {
     const ids = kinds.map((kind) => (isVirtualTileKind(kind) ? `${kind}.C3A0E000-0000-4000-8000-0000000000B7` : `${kind}.thing`));
     for (const entityId of ids) {
       const watch = text(renderTileSettings(tileHost([tile(entityId)])));
-      expect(watch, entityId).toContain("iPhone extras");
+      expect(watch, entityId).toContain("Phone extras");
       expect(watch, entityId).toContain("The watch ignores these");
       const phone = text(renderTileSettings(tileHost([tile(entityId)], "iphone")));
-      expect(phone, entityId).not.toContain("iPhone extras");
+      expect(phone, entityId).not.toContain("Phone extras");
       expect(phone.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], entityId).toEqual([]);
     }
   });
@@ -214,11 +214,11 @@ describe("the keys only the iPhone reads", () => {
 
 describe("the kinds only the iPhone draws", () => {
   it("say the contract's words in the Add tile dialog and on a watch's stage", () => {
-    expect(WATCH_PHONE_GROUP_TITLE).toBe("iPhone only");
-    expect(WATCH_PHONE_GREYED_TEXT).toBe("Shown on the iPhone only");
+    expect(WATCH_PHONE_GROUP_TITLE).toBe("Phone only");
+    expect(WATCH_PHONE_GREYED_TEXT).toBe("Shown on the phone only");
     expect(WATCH_PHONE_TILE_STAGE_TEXT).toBe("Not on a watch");
     // "iPhone only" without a hyphen, as everywhere else, and a full stop.
-    expect(watchPhoneTilesBlockedText({ name: "Den Watch", version: "3.1.0" })).toBe("Den Watch runs 3.1.0; iPhone only tiles need 3.2.0.");
+    expect(watchPhoneTilesBlockedText({ name: "Den Watch", version: "3.1.0" })).toBe("Den Watch runs 3.1.0; phone only tiles need 3.2.0.");
   });
 
   it("never name the watch in their settings, on an iPhone's editor or a watch's", () => {
@@ -234,8 +234,8 @@ describe("the kinds only the iPhone draws", () => {
 
   it("are counted on a watch's chip in the contract's words, and the tooltip names an iPhone", () => {
     expect(tickSkipsText(2)).toBe("skips 2");
-    expect(tickSkipsTitle("Den Watch", ["Map", "Web card"])).toBe("Den Watch skips Map and Web card: only an iPhone shows them.");
-    expect(PAGES_PHONE_TILES_TEXT).toBe("A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.");
+    expect(tickSkipsTitle("Den Watch", ["Map", "Web card"])).toBe("Den Watch skips Map and Web card: only a phone shows them.");
+    expect(PAGES_PHONE_TILES_TEXT).toBe("A few tiles, like a map or a web card, are for the phone only. A watch skips them, and its chip on the card says how many.");
     for (const line of [tickSkipsText(2), tickSkipsTitle("Den Watch", ["Map"]), PAGES_PHONE_TILES_TEXT]) expect(line).not.toMatch(/[–—]| - /);
   });
 });

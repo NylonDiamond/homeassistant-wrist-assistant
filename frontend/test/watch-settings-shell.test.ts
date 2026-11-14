@@ -296,7 +296,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       const shown = pairing(opened);
       expect(shown).toContain(`data-sec="ws-cert"`);
       expect(shown).toMatch(/<span>For<\/span>\s*<div class="readout-v ws-cert-for">Chen</);
-      expect(shown).toContain("It goes to the watch and iPhone paired for them.");
+      expect(shown).toContain("It goes to the watch and phone paired for them.");
       expect(shown).not.toContain("Jesse (you) · Admin");
       expect(shown).not.toContain("<select");
     });
@@ -860,7 +860,7 @@ describe("Watch settings as a page under the Watch app row", () => {
         : real(msg);
       inside.pairCard.pickOfferUser("chen");
       await inside.pairCard.showOffer();
-      expect(inside.pairCard.offer.error).toBe("Update the Wrist Assistant integration to pair an iPhone with a QR code.");
+      expect(inside.pairCard.offer.error).toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
       expect(inside.pairCard.offer.open).toBeUndefined();
       ws.leave();
     });
@@ -963,11 +963,11 @@ describe("Home's Pair a device dialog card", () => {
     await whose(card);
     let shown = flatten(card.render({ bare: true }));
     expect(shown).toContain("More options");
-    expect(shown).not.toContain("Replace an iPhone paired for someone else");
+    expect(shown).not.toContain("Replace a phone paired for someone else");
     card.qrMore = true;
     shown = flatten(card.render({ bare: true }));
-    expect(shown).toContain("Replace an iPhone paired for someone else");
-    expect(shown).toContain("such as a phone handed on");
+    expect(shown).toContain("Replace a phone paired for someone else");
+    expect(shown).toContain("such as one handed on");
     expect(shown).not.toContain("More options");
     // A new opening folds it again.
     card.close();

@@ -115,6 +115,7 @@ import {
   PHONE_VAULT_GUTTER,
   type PhonePageDots,
   type PhonePagesLayout,
+  isAndroidPhoneModel,
   phoneDrawsIphoneLook,
   phoneTileCellInset,
   phoneTileCornerRadius,
@@ -4344,10 +4345,10 @@ export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body
     const hidden = input.behavior?.pageTitleMode === "Off" || watchPageValue(input.page, "pageTitleDisplayStyle") === "none";
     const title = hidden || typeof input.page.name !== "string" ? "" : input.page.name.trim();
     const ink = watchPageHasDefaultBlackBackground(input.page);
-    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ink, grid, backdrop, ...(control === undefined ? {} : { dots: control }) });
+    return renderPhoneFrame(input.phone, s, body, { label: label ?? phoneFrameLabel(input.phone), icons: input.icons, title, ink, grid, backdrop, ...(control === undefined ? {} : { dots: control }) });
   }
   const dots = watchPageIndicatorRow(input, s);
-  return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, grid, backdrop, ...(dots === undefined ? {} : { dots }) });
+  return renderPhoneFrame(input.phone, s, body, { label: label ?? phoneFrameLabel(input.phone), icons: input.icons, grid, backdrop, ...(dots === undefined ? {} : { dots }) });
 }
 
 /** The watch's small page title in the top band (`renderWatchPageTitle`),
@@ -4437,7 +4438,12 @@ export function renderWatchScreenFold(top: number, phone = false): TemplateResul
 export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watch's screen. The page scrolls on below it.";
 
 /** The fold's words on an iPhone: its pages end at the page dots. */
-export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPhone's screen. The page scrolls on below it.";
+/** A phone frame's name for screen readers: the model it is drawn as. */
+function phoneFrameLabel(phone: PhonePagesLayout): string {
+  return isAndroidPhoneModel(phone.model) ? "Android phone" : "iPhone";
+}
+
+export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the phone's screen. The page scrolls on below it.";
 
 /** Whether the picture of a page runs past the screen, so it shows the
  * fold. A smart page never does, nor a map page on an iPhone. With

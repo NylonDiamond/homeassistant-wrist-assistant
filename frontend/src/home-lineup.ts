@@ -4,6 +4,7 @@
 // uses. Its own chunk, loaded by `home-lineup-hook.ts`, since the library
 // store and the pictures are not in the panel's first download.
 
+import { type DevicePlatform, nounFor } from "./device-platform.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { HassLike } from "./ha-api.js";
@@ -45,6 +46,8 @@ const PAGE_PICTURE_SHARE = 0.8;
 export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) ownerId = "";
   @property({ attribute: false }) kind: "watch" | "iphone" = "watch";
+  /** What the device runs, for its noun ("iPhone", "phone", "watch"). */
+  @property({ attribute: false }) platform?: DevicePlatform;
   /** The home keeps phone pages: an iPhone has pages, status pages and
    * menus. Without them an iPhone has none, and nothing is drawn. */
   @property({ attribute: false }) phones = false;
@@ -130,6 +133,7 @@ export class WaHomeLineup extends LitElement {
       ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
+      ...(this.platform === undefined ? {} : { platform: this.platform }),
       photo: this.photoUrl,
       photoSize: this.photoSize,
       photoGlow: this.photoGlow,
@@ -167,7 +171,7 @@ export class WaHomeLineup extends LitElement {
 
   /** A device's name for the words, or "this watch". */
   private get device(): string {
-    return this.deviceName || `this ${this.kind === "iphone" ? "iPhone" : "watch"}`;
+    return this.deviceName || `this ${nounFor(this.kind, this.platform)}`;
   }
 
   /** Under a group: a remove's question, or what the last change did. */
@@ -441,6 +445,8 @@ export interface LineupDraw {
   photoTick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
+  /** What the device runs, for its noun. Absent: the kind's Apple one. */
+  platform?: DevicePlatform;
   /** Called once the menu pictures' code is in, to draw again. With none, a
    * menu's card has no picture. */
   onMenuPictureReady?: () => void;
@@ -464,7 +470,7 @@ export interface LineupDraw {
 
 /** The library's three groups for one device: pages, status pages, menus. */
 export function lineupGroups(library: Library, ownerId: string, kind: "watch" | "iphone", draw: LineupDraw): LineupGroup[] {
-  const word = kind === "iphone" ? "iPhone" : "watch";
+  const word = nounFor(kind, draw.platform);
   const iphone = kind === "iphone";
   const states = draw.hass?.states;
   const watchW = draw.pageWidth ?? PAGE_PICTURE_MIN;

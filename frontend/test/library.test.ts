@@ -42,7 +42,7 @@ const OWNERS = [
 describe("Home's Library", () => {
   it("is the Shared tab's list of the whole home's screens, with its own line", () => {
     expect(HOME_LIBRARY_TITLE).toBe("Shared");
-    expect(HOME_LIBRARY_LEAD).toBe("Kept once for the whole home. Every watch and iPhone uses them.");
+    expect(HOME_LIBRARY_LEAD).toBe("Kept once for the whole home. Every watch and phone uses them.");
     // The Home map only once the integration lists `home_map`.
     expect(homeLibraryScreens().map((s) => s.id)).toEqual(["http-actions", "cameras"]);
     expect(homeLibraryScreens((c) => c === "home_map").map((s) => s.id)).toEqual(["http-actions", "cameras", "home-map"]);

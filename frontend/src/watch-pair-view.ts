@@ -84,7 +84,6 @@ import {
   PAIR_CODE_LENGTH,
   PAIR_NOT_FOUND_TEXT,
   PAIR_OFFER_POLL_MS,
-  PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
   PAIR_MORE_TEXT,
   PAIR_QR_REPLACE_HINT,
@@ -108,7 +107,7 @@ import {
   pairDefaultUser,
   pairDeviceKind,
   pairErrorText,
-  pairOnIPhone,
+  pairOpenAppText,
   pairExpectLabel,
   pairLookupWarnings,
   pairPersonPicked,
@@ -485,7 +484,7 @@ export class PairWatchCard {
                 ...(code === "needs_replace" ? { replace: true } : {}),
                 ...(code === "needs_allow_remote" ? { remote: true } : {}),
               },
-              error: pairErrorText(err, "confirm", kind),
+              error: pairErrorText(err, "confirm", kind, found.platform),
             };
       }
     } finally {
@@ -772,7 +771,7 @@ export class PairWatchCard {
       ${pairLookupWarnings(found).map((line) => html`<div class="hint warn">${line}</div>`)}
       ${this.renderUserMenu(p.users, p.userId, kind, busy, (id) => this.pickPairUser(id), found.platform)}
       ${needed.replace ? box("replace", PAIR_REPLACE_LABEL, "ws-pair-replace") : nothing}
-      ${needed.remote ? box("remote", pairExpectLabel(kind), "ws-pair-expect") : nothing}
+      ${needed.remote ? box("remote", pairExpectLabel(kind, found.platform), "ws-pair-expect") : nothing}
       ${p.error ? html`<div class="hint err" role="alert">${p.error}</div>` : nothing}
       <div class="ws-pair-foot">
         ${notThis}
@@ -792,6 +791,7 @@ export class PairWatchCard {
   private renderQr() {
     const o = this.offer;
     const open = o.open;
+    const openApp = pairOpenAppText(globalThis.navigator?.userAgent);
     const busy = o.busy !== undefined;
     const picked = pairPersonPicked(o.users, o.userId);
     const why = !o.usersRead ? "Reading the people in Home Assistant…"
@@ -826,8 +826,8 @@ export class PairWatchCard {
                 <div class="hint keep ws-qr-replace-hint">${PAIR_QR_REPLACE_HINT}</div>`
             : html`<button type="button" class="link ws-qr-more" aria-expanded="false"
                 @click=${() => { this.qrMore = true; this.update(); }}>${PAIR_MORE_TEXT}${uiIcon("chevron")}</button>`}
-          ${open === undefined || !pairOnIPhone(globalThis.navigator?.userAgent) ? nothing
-            : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the phone itself">${PAIR_OPEN_APP_TEXT}${uiIcon("right")}</a>`}
+          ${open === undefined || openApp === undefined ? nothing
+            : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the phone itself">${openApp}${uiIcon("right")}</a>`}
         </div>
       </div>
       ${o.expired ? html`<div class="hint warn" role="status">${PAIR_QR_EXPIRED_TEXT}</div>` : nothing}
@@ -877,7 +877,7 @@ export class PairWatchCard {
   /** Under the device's box: a warning when it asked from an address
    * outside the home network. */
   private renderRemoteWarning(found: PairLookupFound, kind: PairDeviceKind) {
-    const warning = pairRemoteWarning(found.remote, kind);
+    const warning = pairRemoteWarning(found.remote, kind, found.platform);
     return warning === undefined ? nothing : html`<div class="hint warn">${warning}</div>`;
   }
 }

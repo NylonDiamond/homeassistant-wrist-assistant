@@ -52,7 +52,7 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
   },
   "status-pages": {
     art: "list", label: "On your watch",
-    how: "Open one from a status page tile, from a menu slot, or by asking Siri to show a status page.",
+    how: "Open one from a status page tile, from a menu slot, or, on an Apple device, by asking Siri to show a status page.",
     use: "Checking things fast. A status page only shows things. To control something, use a tile.",
   },
   "rooms": {
@@ -77,12 +77,12 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
   },
   "cameras": {
     art: "crop", label: "In your alerts",
-    how: "When an alert has a camera picture, your watch and iPhone show only the part you frame here.",
+    how: "When an alert has a camera picture, your watch and phone show only the part you frame here.",
     use: "Doorbell and motion alerts, so the door or the person fills the small screen. The full camera view still shows the whole picture.",
   },
   "home-map": {
     art: "room", label: "On your watch",
-    how: "Open the map from a Home map tile. Turn the Digital Crown to zoom into a room, tap a pin to use its device, or tap a room for its page.",
+    how: "Open the map from a Home map tile. Turn the crown to zoom into a room, tap a pin to use its device, or tap a room for its page.",
     use: "Seeing at a glance which lights are on and where, and reaching a device by where it is in your home.",
   },
 };

@@ -44,7 +44,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md, and
 // docs/one_library_plan_2026-10.md, step 3.
 
-import { gateVersion, platformOf } from "../device-platform.js";
+import { type DevicePlatform, gateVersion, platformNoun, platformNounTitle, platformOf } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
@@ -483,7 +483,7 @@ const WATCH_BAND_RATIO = 0.1;
 /** The room the Screen 1 mark takes beside a device, px. */
 const SCREEN_END_ROOM = 56;
 const STAGE_WATCH_END_TEXT = "The mark beside the watch shows where its screen ends. The page scrolls on below it.";
-const STAGE_PHONE_END_TEXT = "The mark beside the iPhone shows where its screen ends. The page scrolls on below it.";
+const stagePhoneEndText = (phone: string) => `The mark beside the ${phone} shows where its screen ends. The page scrolls on below it.`;
 /** How long a section gone to from the head (a fact, a part of its tile,
  * Hide, Change) keeps its amber wash, ms. */
 const FIND_FLASH_MS = 1100;
@@ -2755,7 +2755,7 @@ export class WaPageEditor extends LitElement {
   /** After a drag or a resize that changed the page: the toast, the first
    * time ever (`takeScreenMoveToast`), naming the devices of the kind. */
   private toastScreenMove(screen: WatchScreen): void {
-    const text = takeScreenMoveToast(screen, this.screenNames(screen));
+    const text = takeScreenMoveToast(screen, this.screenNames(screen), undefined, this.phonePlatform);
     if (text === undefined) return;
     this.screenToast = text;
     if (this.screenToastTimer !== undefined) clearTimeout(this.screenToastTimer);
@@ -3267,7 +3267,19 @@ export class WaPageEditor extends LitElement {
 
   /** The name on the stage's view toggle, for the lines that point at it. */
   private get viewName(): string {
-    return this.onPhone ? "iPhone view" : "Watch view";
+    return this.onPhone ? `${platformNounTitle(this.phonePlatform)} view` : "Watch view";
+  }
+
+  /** The phone this editor draws and names: an Android phone when the device
+   * on show is one, else an iPhone, as every phone was drawn before. */
+  private get phonePlatform(): DevicePlatform {
+    const owner = this.ownerList.find((o) => o.owner_watch_id === this.watchId);
+    return owner !== undefined && platformOf(owner) === "android" ? "android" : "ios";
+  }
+
+  /** `phonePlatform` in a sentence: "iPhone" or "phone". */
+  private get phoneWord(): string {
+    return platformNoun(this.phonePlatform);
   }
 
   /** The shown device as the link rules name it. */
@@ -4117,7 +4129,7 @@ export class WaPageEditor extends LitElement {
       // The Screen 1 mark on the device's outer side (one device alone keeps
       // the same room on its other side, so it stays centered).
       fixedWidth += kinds.length === 1 ? SCREEN_END_ROOM * 2 : SCREEN_END_ROOM;
-      if (screenOffChips(page, kind).length > 0) chips = true;
+      if (screenOffChips(page, kind, this.phonePlatform).length > 0) chips = true;
     }
     // Under each device: the title and the status line (a line and a gap
     // each), and the chips' row when either has one.
@@ -4278,7 +4290,7 @@ export class WaPageEditor extends LitElement {
     // while Help is on (the inspector's switch, `helpOn`).
     const status = smart ? undefined
       : map ? WATCH_MAP_PAGE_WORDS.stage
-      : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
+      : asOnWatch ? `Shown as the ${phone ? this.phoneWord : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
       : undefined;
     const help = !this.helpOn || smart || map || asOnWatch || empty ? undefined
@@ -4290,7 +4302,7 @@ export class WaPageEditor extends LitElement {
         ${status !== undefined || help !== undefined || fold ? html`<div class="under pe-under">
           ${status !== undefined ? html`<span class="tail">${status}</span>` : nothing}
           ${help !== undefined ? html`<span class="tail pe-hint">${help}</span>` : nothing}
-          ${fold ? html`<span class="tail pe-fold-text">${phone ? STAGE_PHONE_END_TEXT : STAGE_WATCH_END_TEXT}</span>` : nothing}
+          ${fold ? html`<span class="tail pe-fold-text">${phone ? stagePhoneEndText(this.phoneWord) : STAGE_WATCH_END_TEXT}</span>` : nothing}
         </div>` : nothing}
         <div class="pe-stage-body">
           ${this.renderLibraryStage(page, pages, input, kind, (at, on) => smart || map || asOnWatch ? renderWatchPagePreview(at) : this.renderEditScreen(page, at, on))}
@@ -4367,7 +4379,7 @@ export class WaPageEditor extends LitElement {
       return html`<div class="lib-duo-side ${k}" data-screen-side=${k}>
         <div class="pe-device ${k}" style=${parts} @click=${(e: MouseEvent) => this.onDeviceClick(e, k)}>
           ${draw(at, k)}
-          <span class="pe-screen-end" hidden title=${k === "watch" ? STAGE_WATCH_END_TEXT : STAGE_PHONE_END_TEXT}><i></i><b>Screen 1</b></span>
+          <span class="pe-screen-end" hidden title=${k === "watch" ? STAGE_WATCH_END_TEXT : stagePhoneEndText(this.phoneWord)}><i></i><b>Screen 1</b></span>
         </div>
         ${this.renderScreenLines(page, at, k, shown.length > 1)}
         ${last ? missing.map((m) => this.renderAddKindLink(m)) : nothing}
@@ -4402,16 +4414,16 @@ export class WaPageEditor extends LitElement {
    * for a kind the screen cannot draw, a grey chip saying which draws it.
    */
   private renderScreenLines(page: WatchPage, input: WatchPagePreviewInput, screen: WatchScreen, both: boolean): TemplateResult {
-    const title = screenTitleText(screen, this.screenNames(screen));
+    const title = screenTitleText(screen, this.screenNames(screen), this.phonePlatform);
     // Said while the other kind is drawn too, or shows the page somewhere;
     // a map page's line, how this kind draws it, always.
     const sameInView = both && !isMapWatchPage(page) && watchScreensAlike(page);
-    const status = !sameInView && (both || isMapWatchPage(page) || this.screenNames(otherWatchScreen(screen)).length > 0) ? screenStatus(page, screen) : undefined;
+    const status = !sameInView && (both || isMapWatchPage(page) || this.screenNames(otherWatchScreen(screen)).length > 0) ? screenStatus(page, screen, this.phonePlatform) : undefined;
     // One button for the two pictures: "Use the iPhone's order" sits under
     // the picture last pressed or dragged on (`clickedScreen`, the watch's
     // until then); the other says "Arranged differently" alone.
     const useWords = screen === this.clickedScreen ? status?.useOther : undefined;
-    const chips = screenOffChips(page, screen);
+    const chips = screenOffChips(page, screen, this.phonePlatform);
     const off = this.busy || this.editingOff(page);
     const pageId = watchPageId(page);
     const putOn = (tileId: string) => {
@@ -4430,17 +4442,17 @@ export class WaPageEditor extends LitElement {
     return html`<div class="pe-screen-lines">
       <span class="lib-duo-l pe-screen-title" title=${title}>${uiIcon(screen === "watch" ? "watch" : "phone")}${title}</span>
       ${status === undefined ? nothing : html`<span class="pe-screen-status">${status.text}${useWords === undefined ? nothing : html` · <button type="button" class="link pe-screen-use" ?disabled=${off}
-        title=${`Arrange the ${screenWord(screen)} in the ${screenWord(otherWatchScreen(screen))}'s order. Undo takes it back.`} @click=${useOther}>${useWords}</button>`}</span>`}
+        title=${`Arrange the ${screenWord(screen, this.phonePlatform)} in the ${screenWord(otherWatchScreen(screen), this.phonePlatform)}'s order. Undo takes it back.`} @click=${useOther}>${useWords}</button>`}</span>`}
       ${this.renderFitSwitch(page, input, screen)}
       ${this.renderTileGapChoice(page, screen)}
-      ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen)}>
-        <span class="pe-screen-off-l">${screenOffLead(screen)}:</span>
+      ${chips.length === 0 ? nothing : html`<div class="pe-screen-off" role="group" aria-label=${screenOffLead(screen, this.phonePlatform)}>
+        <span class="pe-screen-off-l">${screenOffLead(screen, this.phonePlatform)}:</span>
         ${chips.map((c) => {
           const name = watchPreviewTileLabel(c.tile, input) || tileKindLabel(tileKind(tileEntityId(c.tile)));
           return c.canPutOn
-            ? html`<button type="button" class="pe-off-chip" ?disabled=${off} data-off-tile=${c.id} title=${`Put ${name} on the ${screenWord(screen)}`}
+            ? html`<button type="button" class="pe-off-chip" ?disabled=${off} data-off-tile=${c.id} title=${`Put ${name} on the ${screenWord(screen, this.phonePlatform)}`}
               @click=${() => putOn(c.id)}>${name}</button>`
-            : html`<span class="pe-off-chip grey" data-off-tile=${c.id} title=${`The ${screenWord(screen)} cannot draw this kind of tile`}>${name}<em>${c.tag}</em></span>`;
+            : html`<span class="pe-off-chip grey" data-off-tile=${c.id} title=${`The ${screenWord(screen, this.phonePlatform)} cannot draw this kind of tile`}>${name}<em>${c.tag}</em></span>`;
         })}
       </div>`}
     </div>`;
@@ -4452,7 +4464,7 @@ export class WaPageEditor extends LitElement {
    * that kind. */
   private renderAddKindLink(screen: WatchScreen): TemplateResult | typeof nothing {
     if (!this.linkDevices.some((d) => d.kind === screen)) return nothing;
-    const words = screen === "watch" ? "+ Add a watch" : "+ Add an iPhone";
+    const words = screen === "watch" ? "+ Add a watch" : this.linkDevices.some((d) => d.kind === "iphone" && d.platform !== "android") ? "+ Add an iPhone" : "+ Add a phone";
     return html`<button type="button" class="link pe-add-kind" data-add-kind=${screen} title="Show this page on another device"
       @click=${() => this.openAddDevice()}>${words}</button>`;
   }
@@ -4528,7 +4540,7 @@ export class WaPageEditor extends LitElement {
     // The percent is of the device's own points: an iPhone is drawn at
     // `PHONE_STAGE_ZOOM` of the watch's zoom.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
-    const device = phone ? "iPhone" : "watch";
+    const device = phone ? this.phoneWord : "watch";
     return html`<div class="stage-tools pe-dock" role="toolbar" aria-label="Stage tools">
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale, PAGE_ZOOM_STEPS)} aria-label="Zoom out" title="Zoom out"
@@ -4541,7 +4553,7 @@ export class WaPageEditor extends LitElement {
           @click=${() => this.setZoom(undefined)}>Fit</button>
       </span>
       ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
-          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
+          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind, this.phonePlatform)}. Editing is off while this is on.`}
           @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word keep">${this.viewName}</span></button>` : nothing}
       ${smart ? nothing : html`${sep}<label class="pe-switch pe-live pe-tip"
           data-tip=${this.liveStates
@@ -4798,7 +4810,7 @@ export class WaPageEditor extends LitElement {
     const only = screenOnlyTileIds(page, on);
     // The grid's cells show only while a tile is moved or resized.
     return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""} ${still ? "pe-fades" : ""}" tabindex="-1" role="group"
-      data-screen=${on} aria-label=${`${phone ? "iPhone" : "Watch"} layout of ${watchPageName(page)}`}
+      data-screen=${on} aria-label=${`${phone ? platformNounTitle(this.phonePlatform) : "Watch"} layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}
       @click=${() => this.selectTile(undefined)}>
       ${back.layers}
@@ -4816,7 +4828,7 @@ export class WaPageEditor extends LitElement {
             @pointerdown=${(e: PointerEvent) => this.onHandlePointerDown(e, h, on)}
             @click=${(e: Event) => e.stopPropagation()}></span>`)}
         </div>` : nothing}
-    </div>`, `${phone ? "iPhone" : "Watch"} showing ${watchPageName(page)}`);
+    </div>`, `${phone ? platformNounTitle(this.phonePlatform) : "Watch"} showing ${watchPageName(page)}`);
   }
 
   private renderStageTile(
@@ -4890,7 +4902,7 @@ export class WaPageEditor extends LitElement {
     const word = spacer ? html`<span class="pe-spacer-word" aria-hidden="true">Spacer</span>` : nothing;
     // A tile the other screen does not show: a small badge in its top-right
     // corner naming this screen, "Watch only" (`screenOnlyTileIds`).
-    const alone = id !== "" && only.has(id.toUpperCase()) ? screenOnlyText(on) : undefined;
+    const alone = id !== "" && only.has(id.toUpperCase()) ? screenOnlyText(on, this.phonePlatform) : undefined;
     const badge = alone === undefined ? nothing
       : html`<span class="pe-only" data-only=${on} title=${alone} aria-hidden="true">${uiIcon(on === "watch" ? "watch" : "phone")}</span>`;
     const names = [label, kindLabel, tileEntityId(tile), hiddenBy === undefined ? "" : stageHiddenText(hiddenBy), alone ?? ""];
@@ -5117,7 +5129,7 @@ export class WaPageEditor extends LitElement {
     return sectionCard({
       color: SECTION_COLOR.place,
       icon: uiIcon(this.onPhone ? "phone" : "watch"),
-      title: `On the ${deviceWord(this.linkKind)}`,
+      title: `On the ${deviceWord(this.linkKind, this.phonePlatform)}`,
       open,
       onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
       dot: watchPageSectionChanged(page, "page"),
@@ -5140,7 +5152,7 @@ export class WaPageEditor extends LitElement {
   private renderFitSwitch(page: WatchPage, input: WatchPagePreviewInput, screen: WatchScreen): TemplateResult | typeof nothing {
     if (isSmartWatchPage(page) || isMapWatchPage(page)) return nothing;
     const on = fitsOnScreen(page, screen);
-    const device = screen === "iphone" ? "iPhone" : "watch";
+    const device = screen === "iphone" ? this.phoneWord : "watch";
     return html`<label class="pe-switch pe-screen-fit" title="Keeps the page's width and makes its rows shorter, so every row shows without scrolling.">
       <span>Fit to screen</span>
       <input type="checkbox" role="switch" .checked=${live(on)} ?disabled=${this.busy}
@@ -5171,7 +5183,7 @@ export class WaPageEditor extends LitElement {
     const picture = this.selectedTilePicture(page, tile);
     if (picture === undefined) return nothing;
     if (!watchTileSquashed(this.selectedTileInput(page, picture, 1), picture.placed.tile)) return nothing;
-    return html`<p class="pe-fit-note" role="note">${fitTileNote(picture.kind)}</p>`;
+    return html`<p class="pe-fit-note" role="note">${fitTileNote(picture.kind, this.phoneWord)}</p>`;
   }
 
   /** Turn Fit to screen on or off, as one undo step. */
@@ -5312,6 +5324,7 @@ export class WaPageEditor extends LitElement {
       symbols: host.symbols,
       uiState: host.uiState,
       ...(host.device === undefined ? {} : { device: host.device }),
+      ...(host.platform === undefined ? {} : { platform: host.platform }),
       get busy() { return host.busy; },
       edit: (change, opts) => {
         host.apply(change(host.document), opts?.typing === true ? { coalesce: `switcher:${host.pageId.toUpperCase()}` } : undefined);
@@ -5579,8 +5592,8 @@ export class WaPageEditor extends LitElement {
     return WATCH_SCREENS.map((screen): TickChip => {
       const draws = tileDrawsOn(tile, screen);
       const on = watchScreenTileRect(page, tile, screen) !== undefined;
-      const title = tileOnChipTitle(screen, on, draws);
-      const word = screenTitleWord(screen);
+      const title = tileOnChipTitle(screen, on, draws, this.phonePlatform);
+      const word = screenTitleWord(screen, this.phonePlatform);
       const color = on ? this.screenColor(screen) : undefined;
       return {
         ownerId: screen, name: word, device: screen, color, shape: "square", on, hidden: false,

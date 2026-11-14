@@ -71,7 +71,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-export const CAMERAS_LEAD = "How each camera's picture is cut in alerts, on iPhone and Apple Watch. Tiles on the watch have their own crop.";
+export const CAMERAS_LEAD = "How each camera's picture is cut in alerts, on the phone and the watch. Tiles on the watch have their own crop.";
 export const CAMERAS_EMPTY_TEXT = "No cameras in this Home Assistant.";
 export const CAMERAS_UPDATE_TEXT = "Update the integration to frame cameras here.";
 /** What the test alert says, as the phone's test did. */
@@ -647,7 +647,7 @@ export class WaCamerasEditor extends LitElement {
         ${this.renderPicture(camera.entity_id, viewport, well, "cm-alert-pic")}
         <span class="cm-alert-done">Done</span>
       </div>
-      <figcaption>${device === "watch" ? "Apple Watch" : "iPhone"}</figcaption>
+      <figcaption>${device === "watch" ? "Watch" : "Phone"}</figcaption>
     </figure>`;
   }
 

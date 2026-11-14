@@ -257,7 +257,7 @@ export function watchWebURLLoads(url: string): boolean {
  * why; undefined for an empty or a loading address. */
 export function watchWebURLNote(url: string): string | undefined {
   if (url.trim() === "" || watchWebURLLoads(url)) return undefined;
-  return "Only http and https addresses load. The iPhone shows No address for this one.";
+  return "Only http and https addresses load. The phone shows No address for this one.";
 }
 
 /** Whether the page scrolls inside the card: stored, else on. */

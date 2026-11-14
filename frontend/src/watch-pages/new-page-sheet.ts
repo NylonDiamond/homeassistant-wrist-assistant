@@ -309,7 +309,7 @@ function renderDevices(form: NewPageForm, input: NewPageSheetInput, h: NewPageSh
       })}
     </div>`;
   };
-  return html`<div class="np-devices">${group("watch", "Watches")}${group("iphone", "iPhones")}</div>`;
+  return html`<div class="np-devices">${group("watch", "Watches")}${group("iphone", "Phones")}</div>`;
 }
 
 function renderRoom(form: NewPageForm, input: NewPageSheetInput, h: NewPageSheetHandlers): TemplateResult {

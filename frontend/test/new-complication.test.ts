@@ -139,7 +139,7 @@ describe("the footer line", () => {
   it("says what Create is about to make", () => {
     expect(newSummary(choice({ kind: "watch", family: "circular" }))).toBe("Circular on a watch, on 1 device");
     expect(newSummary(choice({ kind: "iphone", family: "medium", devices: 2 })))
-      .toBe("Medium on an iPhone, on 2 devices");
+      .toBe("Medium on a phone, on 2 devices");
     expect(newSummary(choice({ kind: "control" }))).toBe("A Control Center control, on 1 device");
   });
 
@@ -213,7 +213,7 @@ describe("newRecords", () => {
 describe("kindTitle", () => {
   it("names the three choices", () => {
     expect([kindTitle("watch"), kindTitle("iphone"), kindTitle("control")])
-      .toEqual(["Watch", "iPhone", "Control Center"]);
+      .toEqual(["Watch", "Phone", "Control Center"]);
   });
 });
 

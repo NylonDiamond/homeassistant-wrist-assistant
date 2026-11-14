@@ -166,7 +166,7 @@ export function syncPillSummary(devices: readonly SyncPillDevice[]): SyncPillSum
   if (asleep > 0) {
     return { tone: "quiet", label: `Asleep · ${asleep}`, more: "", title: `No device has been seen for a week or more.${sleepWords} Show each device.`, waiting, asleep, synced, all };
   }
-  return { tone: "quiet", label: all === 0 ? "No devices" : "Nothing waiting", more: "", title: all === 0 ? "No watch or iPhone is paired yet." : "No device has anything to pick up. Show each device.", waiting, asleep, synced, all };
+  return { tone: "quiet", label: all === 0 ? "No devices" : "Nothing waiting", more: "", title: all === 0 ? "No watch or phone is paired yet." : "No device has anything to pick up. Show each device.", waiting, asleep, synced, all };
 }
 
 /** The popover's foot under the rows, while any device is asleep. */
