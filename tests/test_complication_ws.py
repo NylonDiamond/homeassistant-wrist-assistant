@@ -754,6 +754,20 @@ def test_owners_capabilities_are_empty_without_a_coordinator_list(env) -> None:
     assert env.call(env.ws.ws_owners)["capabilities"] == []
 
 
+def test_owners_names_the_platforms_paired_here(env) -> None:
+    """The panel's general copy keeps the Apple words while every paired
+    device is an Apple one and says phone and watch once an Android device
+    is paired (`device_platform.paired_platforms`)."""
+    assert env.call(env.ws.ws_owners)["paired_platforms"] == []
+    env.add_watch("watch-1")
+    env.add_phone("phone-1")
+    assert env.call(env.ws.ws_owners)["paired_platforms"] == ["ios", "watchos"]
+    env.add_watch("watch-2", platform="wearos")
+    assert env.call(env.ws.ws_owners)["paired_platforms"] == ["ios", "watchos", "wearos"]
+    env.add_phone("phone-2", platform="android")
+    assert env.call(env.ws.ws_owners)["paired_platforms"] == ["android", "ios", "watchos", "wearos"]
+
+
 def test_every_row_carries_the_app_build_or_none(env) -> None:
     """The build number, which the panel's split migration gates on.
 

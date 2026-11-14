@@ -91,6 +91,7 @@ from .const import (
 )
 from .control_center_move import ControlCenterMover
 from .device_lookup import paired_device_name
+from .device_platform import general_words
 from .home_map_store import HomeMapStore
 from .home_map_ws import async_register_home_map_commands
 from .http_actions_runner import HTTPActionRunner
@@ -1551,10 +1552,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         if target_raw:
             dev_reg = dr.async_get(hass)
             device = dev_reg.async_get(target_raw)
+            # General copy: "iPhone" while every paired device is an Apple
+            # one, as it always was, "phone" once an Android device is paired.
+            secret_store = getattr(data, "widget_secret_store", None)
+            phone = general_words(
+                secret_store.all_entries if secret_store is not None else {}, "iPhone", "phone"
+            )
             if device is None:
                 raise HomeAssistantError(
                     f"No device has the id {target_raw}. Pick the watch or "
-                    "phone again as the target."
+                    f"{phone} again as the target."
                 )
             # Paired watches and iPhones are filed as "watch_<id>"; the hub
             # device (the config entry id) is not a target.
@@ -1565,7 +1572,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             if target is None:
                 name = device.name_by_user or device.name or target_raw
                 raise HomeAssistantError(
-                    f"{name} is not a watch or phone paired with Wrist "
+                    f"{name} is not a watch or {phone} paired with Wrist "
                     "Assistant. Pick one of those as the target."
                 )
 

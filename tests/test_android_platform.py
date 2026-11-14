@@ -274,12 +274,38 @@ def test_the_integration_advertises_that_it_knows_the_platforms() -> None:
     assert "coordinator.register_capability(DEVICE_PLATFORMS_CAPABILITY)" in init
 
 
-def test_the_general_refusals_say_phone() -> None:
+def test_the_general_refusals_say_phone_once_an_android_device_is_paired() -> None:
+    """General copy keeps the Apple words while every paired device is an
+    Apple one (`device_platform.general_words`)."""
     init = (_SRC / "__init__.py").read_text()
-    assert "Pick the watch or \"\n                    \"phone again as the target." in init
-    assert "is not a watch or phone paired with Wrist" in init
+    assert 'phone = general_words(' in init and '"iPhone", "phone"' in init
+    assert '"{phone} again as the target."' in init
+    assert "is not a watch or {phone} paired with Wrist" in init
     pairing = (_SRC / "pairing_ws.py").read_text()
-    assert 'noun="phone")' in pairing and 'noun="iPhone")' not in pairing
+    assert 'noun = general_words(entries, "iPhone", "phone")' in pairing
+
+
+def _entry(kind: str, platform: str | None = None):
+    return types.SimpleNamespace(device_kind=kind, platform=platform)
+
+
+def test_paired_platforms_lists_every_device_s_platform_once(platform_mod) -> None:
+    mod = platform_mod
+    assert mod.paired_platforms({}) == []
+    assert mod.paired_platforms(None) == []
+    apple = {"w": _entry("watch"), "p": _entry("iphone"), "w2": _entry("watch", "watchos")}
+    assert mod.paired_platforms(apple) == ["ios", "watchos"]
+    assert not mod.home_has_android(apple)
+    assert mod.general_words(apple, "iPhone", "phone") == "iPhone"
+    # A platform that does not fit the kind reads as the kind's Apple one.
+    assert mod.paired_platforms({"p": _entry("iphone", "wearos")}) == ["ios"]
+    wear = {**apple, "x": _entry("watch", "wearos")}
+    assert mod.paired_platforms(wear) == ["ios", "watchos", "wearos"]
+    assert mod.home_has_android(wear)
+    assert mod.general_words(wear, "iPhone", "phone") == "phone"
+    pixel = [_entry("iphone", "android")]
+    assert mod.paired_platforms(pixel) == ["android"]
+    assert mod.home_has_android(pixel)
 
 
 # ── push routing ─────────────────────────────────────────────────────────

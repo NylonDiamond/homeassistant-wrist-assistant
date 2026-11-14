@@ -153,3 +153,36 @@ def watch_token_entry(tokens: Any) -> Any:
 
 def has_phone_token(tokens: Any) -> bool:
     return phone_token_entry(tokens) is not None
+
+
+# ── General copy ────────────────────────────────────────────────────────
+#
+# Words about no device in particular keep the Apple words they always had
+# while every device paired here is an Apple one, and say phone and watch
+# once an Android phone or a Wear OS watch is paired (the panel's
+# `generalCopy`, `frontend/src/device-platform.ts`). The owners reply carries
+# `paired_platforms` for the panel; the integration's own general words read
+# `home_has_android`.
+
+
+def paired_platforms(entries: Any) -> list[str]:
+    """The platforms of every paired device, sorted, once each. ``entries``
+    is the secret store's entries (anything with ``device_kind`` and
+    ``platform``), as a mapping or an iterable."""
+    values = entries.values() if hasattr(entries, "values") else entries
+    found = {
+        resolve_platform(getattr(e, "device_kind", None), getattr(e, "platform", None))
+        for e in values or ()
+    }
+    return sorted(found)
+
+
+def home_has_android(entries: Any) -> bool:
+    """Whether an Android phone or a Wear OS watch is paired here."""
+    return any(p in FCM_PLATFORMS for p in paired_platforms(entries))
+
+
+def general_words(entries: Any, apple: str, phone_and_watch: str) -> str:
+    """General copy: ``apple`` while every paired device is an Apple one,
+    ``phone_and_watch`` once an Android device is paired here."""
+    return phone_and_watch if home_has_android(entries) else apple

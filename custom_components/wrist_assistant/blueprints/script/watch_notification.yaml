@@ -5,7 +5,7 @@ blueprint:
     min_version: "2024.8.0"
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
   description: >
-    Send push notifications to your watch or phone with smart entity
+    Send push notifications to your Apple Watch or iPhone with smart entity
     buttons, plus a snapshot from a camera or image entity if you want
     (e.g. a doorbell feed or a 3D-printer job snapshot). Each entity
     becomes a button that knows how to control itself:
@@ -38,9 +38,9 @@ blueprint:
   domain: script
   input:
     target:
-      name: Target watch or phone
+      name: Target watch or iPhone
       description: >
-        *(Optional)* Watch or phone to send to. Leave empty to send to
+        *(Optional)* Watch or iPhone to send to. Leave empty to send to
         **all** paired watches.
       default: ""
       selector:

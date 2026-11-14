@@ -561,3 +561,36 @@ def test_setup_advertises_the_capability_after_the_scans() -> None:
     assert lines.index("coordinator.register_capability(HOME_MAP_PAGE_ADD_CAPABILITY)") == lines.index(
         "coordinator.register_capability(HOME_MAP_SCANS_CAPABILITY)"
     ) + 1
+
+
+# ── an Android phone and a Wear OS watch ─────────────────────────────────
+
+
+def test_an_android_phone_adds_a_map_page_as_an_iphone_does(env) -> None:
+    """An Android phone pairs as the iPhone kind, so the op answers it as it
+    answers an iPhone: the panel's page, last, once however often it asks."""
+    env.domain.widget_secret_store.entries[IPHONE].platform = "android"
+    before = record(env).revision
+    reply = add(env, {"floor_id": FLOOR})
+    assert reply.status == 200
+    page_id = reply.body["page_id"]
+    assert reply.body == {
+        "ok": True, "page_id": page_id, "already": False, "revision": record(env).revision, "free_plan_note": False,
+    }
+    assert record(env).revision > before
+    page = listed(env)[-1]
+    assert page["mapPage"] is True and page["name"] == "Home map"
+    assert [t["entityId"] for t in page["items"]] == [f"home_map.{FLOOR}"]
+    assert env.changes == [(IPHONE, "pages", record(env).revision)]
+    again = add(env, {"floor_id": FLOOR})
+    assert again.body == {
+        "ok": True, "page_id": page_id, "already": True, "revision": record(env).revision, "free_plan_note": False,
+    }
+
+
+def test_a_wear_watch_may_not_add_a_map_page(env) -> None:
+    env.domain.widget_secret_store.entries[WATCH].platform = "wearos"
+    reply = add(env, {"floor_id": FLOOR}, watch_id=WATCH)
+    assert reply.status == 403
+    assert reply.body == {"ok": False, "error": "not_an_iphone", "message": "Only a phone adds a map page to its own pages."}
+    assert env.changes == []

@@ -136,6 +136,7 @@ from .complication_store import (
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN, LIBRARY_OWNER_ID
 from .device_lookup import find_paired_device
+from .device_platform import paired_platforms
 from .gallery_key_store import gallery_key_store
 from .history_series import (
     COMBINE_ALL,
@@ -759,6 +760,11 @@ async def ws_owners(
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             "token": store.token,
             "capabilities": list(getattr(coordinator, "capabilities", None) or []),
+            # The platforms of every paired device, whoever asks: a person who
+            # is not an administrator gets only their own rows, and the
+            # panel's general copy says phone and watch once any Android
+            # device is paired here (`device_platform.paired_platforms`).
+            "paired_platforms": paired_platforms(entries),
         },
     )
 

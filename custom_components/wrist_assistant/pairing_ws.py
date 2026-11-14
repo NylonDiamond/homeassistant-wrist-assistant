@@ -71,7 +71,7 @@ from homeassistant.helpers import instance_id as ha_instance_id
 
 from .const import DOMAIN
 from .device_lookup import find_paired_device
-from .device_platform import default_platform, device_noun
+from .device_platform import default_platform, device_noun, general_words
 from .logbook_events import log_secret_registered, log_secret_reprovisioned
 from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, seal_pair_secret
 from .wa_pair_requests import (
@@ -671,8 +671,13 @@ async def ws_pair_offer(
         return
     user = getattr(connection, "user", None)
     # A QR code is for whichever phone scans it, an iPhone or an Android
-    # phone, so its words name no platform.
-    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun="phone")
+    # phone, so its words are general copy: "iPhone" while every device
+    # paired here is an Apple one, as they always were, "phone" once an
+    # Android device is paired (`device_platform.general_words`).
+    secret_store = getattr(hass.data.get(DOMAIN), "widget_secret_store", None)
+    entries = secret_store.all_entries if secret_store is not None else {}
+    noun = general_words(entries, "iPhone", "phone")
+    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun=noun)
     if refusal is not None:
         connection.send_error(msg["id"], *refusal)
         return
