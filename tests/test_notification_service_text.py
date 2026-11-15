@@ -135,6 +135,9 @@ def test_what_is_apple_only_says_so_and_says_what_android_does() -> None:
     sound = fields["sound"]["description"]
     assert "Fast delivery" in sound and "Apple" in sound
     assert "Android" in sound and "Passive" in sound
+    # Silent quiets an Android device too (no sound, still a buzz); Passive is the quiet priority.
+    assert "Silent drops that sound there and keeps the buzz" in sound
+    assert "once a button tap works" in fields["data"]["description"]
     priority = fields["priority"]["description"]
     assert "Android" in priority and "Do Not Disturb" in priority
 
@@ -148,6 +151,7 @@ def test_what_is_apple_only_says_so_and_says_what_android_does() -> None:
     assert "Wear OS" in settings and "Android" in settings
     bp_sound = blueprint["input"]["section_settings"]["input"]["sound"]["description"]
     assert "Android" in bp_sound and "Passive" in bp_sound
+    assert "Silent drops" in bp_sound and "does not quiet" not in bp_sound
 
 
 # ── data keys no app reads ───────────────────────────────────────────────

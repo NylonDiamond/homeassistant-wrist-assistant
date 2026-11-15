@@ -370,10 +370,11 @@ blueprint:
 
 
             **On Android** each priority has its own notification channel, which
-            you can change in Android's settings: Passive is quiet, Active makes
-            the phone's or watch's usual sound and buzz, and Time Sensitive pops
-            up on the screen. It passes Do Not Disturb only when Android's Do Not
-            Disturb settings let Wrist Assistant through.
+            you can change in Android's settings: Passive waits quietly in the
+            notification shade, Active and Time Sensitive pop up on the screen
+            with the phone's or watch's usual sound and buzz, and Time Sensitive
+            passes Do Not Disturb only when Android's Do Not Disturb settings let
+            Wrist Assistant through.
           default: "active"
           selector:
             select:
@@ -400,9 +401,9 @@ blueprint:
 
 
             The sounds are Apple's: an Android phone and a Wear OS watch play
-            their own notification sound for the priority instead, and Silent
-            does not quiet them. For no sound there, set the priority to
-            **Passive**.
+            their own notification sound for the priority instead. Silent drops
+            that sound there and keeps the buzz, so a watch still feels the
+            alert. For no buzz either, set the priority to **Passive**.
           default: "default"
           selector:
             select:

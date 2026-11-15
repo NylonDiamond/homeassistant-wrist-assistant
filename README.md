@@ -152,7 +152,7 @@ If you want to call the service directly, use `wrist_assistant.send_notification
 
 A watch set to Fast gets its alerts through the phones of the same Home Assistant user, which mirror them to the wrist: an Apple Watch through the iPhones, a Wear OS watch through the Android phones, never across the two. A watch set to Reliable, or one whose user has no phone of its kind with the app, gets them directly. Each phone gets an alert once, however many of its user's watches it is for.
 
-Icons in `actions` are SF Symbol names; the Android apps draw each as the matching Material icon. The named sounds play on Apple devices only: an Android phone or Wear OS watch plays its own sound for the alert's priority, so use `priority: passive` for a quiet one there.
+Icons in `actions` are SF Symbol names; the Android apps draw each as the matching Material icon. The named sounds play on Apple devices only: an Android phone or Wear OS watch plays its own sound for the alert's priority. Silent drops that sound there and keeps the buzz; use `priority: passive` for an alert that waits quietly in the shade.
 
 If you see `<device> has not registered for notifications yet`, that watch or phone has not checked in for notifications. Open Wrist Assistant on it and let it fully sync once, then try the notification again. `No watch has registered for notifications yet` means no paired watch has: pair one first (see "Pairing a device").
 

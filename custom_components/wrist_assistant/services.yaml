@@ -114,9 +114,8 @@ send_notification:
       name: Data
       description: >-
         Extra keys passed to the app. Known keys: auto_dismiss (true to
-        dismiss after a button tap; on Android the opened alert closes after
-        a button tap, and the notification itself closes a minute after it
-        arrives), live_stream and
+        dismiss the notification once a button tap works, on every device),
+        live_stream and
         live_stream_watch (false to keep a camera snapshot still instead of
         playing live on the phone or the watch; on an Android phone it
         leaves out the Live button).
@@ -129,9 +128,9 @@ send_notification:
         and an Apple Watch, Silent and custom sounds apply only with
         Reliable delivery; with Fast delivery the Apple Watch always plays
         its default alert. An Android phone and a Wear OS watch play their
-        own notification sound for the priority, never the named sounds,
-        and Silent does not quiet them: for no sound there, pick Passive
-        priority.
+        own notification sound for the priority, never the named sounds.
+        Silent drops that sound there and keeps the buzz, so a watch still
+        feels the alert; for no buzz either, pick Passive priority.
       example: "default"
       selector:
         select:
@@ -236,9 +235,10 @@ send_notification:
         (the default) is a normal alert, and Time Sensitive breaks through
         Focus and Do Not Disturb on an iPhone and an Apple Watch, which
         suits doorbells and cameras. On Android each priority has its own
-        notification channel: Time Sensitive pops up on the screen, and it
-        passes Do Not Disturb only when Android's Do Not Disturb settings
-        let Wrist Assistant through.
+        notification channel: Passive waits quietly in the notification
+        shade, Active and Time Sensitive pop up on the screen, and Time
+        Sensitive passes Do Not Disturb only when Android's Do Not Disturb
+        settings let Wrist Assistant through.
       selector:
         select:
           mode: dropdown
