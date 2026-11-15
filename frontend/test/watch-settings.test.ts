@@ -817,7 +817,7 @@ describe("pairing a watch by its code", () => {
     expect(pairErrorText({ code: "invalid_secret", message: "secret must be 32 bytes" }, "confirm"))
       .toBe("Could not pair: secret must be 32 bytes");
     expect(pairErrorText({ code: "unknown_command", message: "Unknown command." }, "offer"))
-      .toBe("Update the Wrist Assistant integration to pair an iPhone with a QR code.");
+      .toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
     expect(pairErrorText({ code: "unavailable", message: "Integration not ready" }, "offer"))
       .toBe("Could not show a QR code: Integration not ready");
   });

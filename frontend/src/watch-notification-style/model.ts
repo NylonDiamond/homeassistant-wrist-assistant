@@ -123,7 +123,7 @@ export const WEAR_DELIVERY_DETAILS: Readonly<Record<string, string>> = {
 };
 
 /** The rows whose table help is about no device in particular, so it says
- * "your phone" once an Android device is paired here (`generalCopy`). The
+ * "your phone" in every home (`generalCopy`). The
  * table keeps the iPhone's words, which the Apple app reads. */
 const GENERAL_HELP_KEYS: readonly string[] = ["storedWebhookButtonSize"];
 

@@ -53,8 +53,8 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
   },
   "status-pages": {
     art: "list", label: "On your watch",
-    // General copy (`generalCopy`): Siri is said to be Apple's once an
-    // Android device is paired here.
+    // General copy (`generalCopy`): Siri is said to be Apple's, in every
+    // home.
     get how() {
       return generalCopy(
         "Open one from a status page tile, from a menu slot, or by asking Siri to show a status page.",

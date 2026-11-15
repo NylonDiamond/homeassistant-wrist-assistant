@@ -20774,20 +20774,20 @@ export class WristAssistantPanel extends LitElement {
           ${step(1, "Install the app", generalCopy("On the iPhone, the watch, or both.", "On the phone, the watch, or both."), html`<div class="hw-install">
               <div class="hw-install-t">
                 <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for Wrist Assistant.</p>
-                ${generalCopy(nothing, html`<p>On Android, install it from Google Play on the phone. A Wear OS watch gets it from Google Play on the watch.</p>`)}
+                ${androidHereNow() ? html`<p>On Android, install it from Google Play on the phone. A Wear OS watch gets it from Google Play on the watch.</p>` : nothing}
                 <a class="home-btn" href=${APP_STORE_URL} target="_blank" rel="noreferrer">Open the App Store${uiIcon("right")}</a>
-                ${generalCopy(nothing, html`<a class="home-btn hw-play" href=${PLAY_STORE_URL} target="_blank" rel="noreferrer">Open Google Play${uiIcon("right")}</a>`)}
+                ${androidHereNow() ? html`<a class="home-btn hw-play" href=${PLAY_STORE_URL} target="_blank" rel="noreferrer">Open Google Play${uiIcon("right")}</a>` : nothing}
               </div>
               <figure class="hw-qr">
                 ${qr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
                   : html`<svg viewBox=${`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for the App Store page" shape-rendering="crispEdges"><rect width=${qr.size} height=${qr.size} fill="#fff"></rect><path d=${qr.path} fill="#000"></path></svg>`}
                 <figcaption><b>Scan with your iPhone</b><span>It opens the App Store page.</span></figcaption>
               </figure>
-              ${generalCopy(nothing, html`<figure class="hw-qr">
+              ${androidHereNow() ? html`<figure class="hw-qr">
                 ${playQr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
                   : html`<svg viewBox=${`0 0 ${playQr.size} ${playQr.size}`} role="img" aria-label="QR code for the Google Play page" shape-rendering="crispEdges"><rect width=${playQr.size} height=${playQr.size} fill="#fff"></rect><path d=${playQr.path} fill="#000"></path></svg>`}
                 <figcaption><b>Scan with your Android phone</b><span>It opens the Google Play page.</span></figcaption>
-              </figure>`)}
+              </figure>` : nothing}
             </div>`)}
           ${step(2, "Pick one", "Which device are you pairing now? You can pair the other one later.", html`<div class="hb-stage hw-stage">
               <span class="hb-floor"></span>

@@ -51,7 +51,7 @@ describe("the pairing QR code's web address", () => {
   });
 
   it("tells the person to use the Camera, and what happens without the app", () => {
-    expect(pairQrSteps()[0]).toBe("Point the iPhone's Camera at this code.");
+    expect(pairQrSteps()[0]).toBe("Point the phone's camera at this code.");
     expect(pairQrSteps().join(" ")).toContain("App Store");
     for (const line of pairQrSteps()) expect(line).not.toMatch(/[–—]| - /);
   });

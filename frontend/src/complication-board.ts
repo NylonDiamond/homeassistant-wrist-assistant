@@ -40,8 +40,7 @@ export const COMP_WHERE_TITLES: Readonly<Record<CompWhere, string>> = {
 export const COMP_WHERE_HINTS: Readonly<Record<CompWhere, string>> = {
   face: "On a watch face. A design on no device can go on an iPhone's Lock Screen too.",
   lock: "On an iPhone's Lock Screen.",
-  // General copy (`generalCopy`): the Apple words until an Android device is
-  // paired here.
+  // General copy (`generalCopy`): the phone and watch words in every home.
   get home() { return generalCopy("On an iPhone's Home Screen.", "On a phone's Home Screen."); },
   get control() {
     return generalCopy(

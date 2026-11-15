@@ -56,11 +56,11 @@ describe("where the Pair a device card opens", () => {
 
 describe("the words of each step", () => {
   it("says which step the dialog is on under its title", () => {
-    expect(pairSubtitle(true, "code", undefined)).toBe("A watch or an iPhone, to this Home Assistant");
-    expect(pairSubtitle(false, "code", "watch")).toBe("Apple Watch, by its code");
-    expect(pairSubtitle(false, "code", "iphone")).toBe("iPhone, by its code");
-    expect(pairSubtitle(false, "qr", "iphone")).toBe("iPhone, by a QR code");
-    expect(pairSubtitle(false, "code", undefined)).toBe("A watch or an iPhone, by its code");
+    expect(pairSubtitle(true, "code", undefined)).toBe("A watch or a phone, to this Home Assistant");
+    expect(pairSubtitle(false, "code", "watch")).toBe("Watch, by its code");
+    expect(pairSubtitle(false, "code", "iphone")).toBe("Phone, by its code");
+    expect(pairSubtitle(false, "qr", "iphone")).toBe("Phone, by a QR code");
+    expect(pairSubtitle(false, "code", undefined)).toBe("A watch or a phone, by its code");
   });
 
   it("gives a watch its own steps, an iPhone its own, and both the shared ones when nobody said", () => {

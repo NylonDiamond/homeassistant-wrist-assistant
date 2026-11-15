@@ -23,8 +23,8 @@ import { phoneWordsFor } from "../src/watch-pages/editor-host.js";
 import { WATCH_WEB_CARD_HELP } from "../src/watch-pages/phone-tiles-model.js";
 
 
-// These homes have an Android device paired, so general copy says phone and
-// watch (`generalCopy`); `general-copy.test.ts` covers an Apple only home.
+// These homes have an Android device paired. General copy says phone and
+// watch in every home (`generalCopy`, pinned in `general-copy.test.ts`).
 beforeEach(() => setAndroidHere(true));
 afterEach(() => setAndroidHere(false));
 

@@ -155,7 +155,7 @@ describe("the words", () => {
     const two = gettingStarted([owner(), owner({ owner_watch_id: "w2", device_name: "Other" })], new Set());
     expect(helpStepWords("pair", two).text).toBe("2 watches are paired.");
     expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Type the code the watch shows.");
-    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store.");
+    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store and Google Play.");
   });
 });
 
@@ -192,7 +192,7 @@ describe("the Help sheet", () => {
     }
     expect(helpScreen(at("/http-actions")).text[1]).toBe(HELP_LIBRARY_TEXT);
     expect(helpScreen(at("/cameras")).text).toEqual([
-      "Camera framing sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+      "Camera framing sets how each camera's picture is framed in alerts, the same on the watch and the phone.",
       "It is on every device in this home: find it under the Shared tab.",
     ]);
     expect(helpScreen(at("/photos")).name).toBe("Devices");
@@ -265,7 +265,7 @@ describe("the Help sheet", () => {
     for (const screen of [...IPHONE_SCREENS, WATCH_SETTINGS_SCREEN]) {
       const h = helpScreen(at(iphoneScreenPath(screen, "p1")));
       expect(h.name).toBe(screen.label);
-      expect(h.text[1]).toBe("It is for the iPhone picked at the top.");
+      expect(h.text[1]).toBe("It is for the phone picked at the top.");
       expect(h.more).toBe(helpScreen(at(screen.path)).more);
     }
     expect(helpScreen(at("/iphone")).name).toBe("Pages");

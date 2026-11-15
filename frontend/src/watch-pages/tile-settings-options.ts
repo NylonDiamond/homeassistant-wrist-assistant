@@ -138,8 +138,7 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   size: "Size",
   background: "Background",
   // Drawn under the key's own title (`WATCH_PHONE_KEY_WORDS`).
-  // General copy (`generalCopy`): "iPhone" until an Android device is
-  // paired here.
+  // General copy (`generalCopy`): "Phone" in every home.
   get phone() { return generalCopy("iPhone", "Phone"); },
   get phoneExtras() { return generalCopy("iPhone extras", "Phone extras"); },
   // Drawn under the kind's own title (`watchPhoneTileTitle`).

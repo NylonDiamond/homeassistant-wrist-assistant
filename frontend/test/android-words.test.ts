@@ -79,8 +79,8 @@ const APPLE_WATCH = owner({ device_kind: "watch" });
 const phoneSend = { token: 3, appliedToken: 3, polling: false, pending: false, deviceKind: "iphone" as const, pushAvailable: true };
 
 
-// These homes have an Android device paired, so general copy says phone and
-// watch (`generalCopy`); `general-copy.test.ts` covers an Apple only home.
+// These homes have an Android device paired. General copy says phone and
+// watch in every home (`generalCopy`, pinned in `general-copy.test.ts`).
 beforeEach(() => setAndroidHere(true));
 afterEach(() => setAndroidHere(false));
 

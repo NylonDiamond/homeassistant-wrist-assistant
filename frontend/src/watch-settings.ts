@@ -1136,8 +1136,8 @@ export const PAIR_CARD_TITLE = "Pair a device";
  * iPhone. Home's dialog asks which device first (`pair-flow.ts`). */
 export type PairMode = "code" | "qr";
 
-// The pairing words below are general copy (`generalCopy`): an iPhone's
-// until an Android device is paired here, then a phone's.
+// The pairing words below are general copy (`generalCopy`): a phone's in
+// every home.
 
 /** The line under the title in each mode. */
 export function pairCodeHint(): string {

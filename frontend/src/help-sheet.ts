@@ -41,7 +41,7 @@ import { type PanelRoute, WATCH_PAGES_HELP_URL } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_HELP_URL } from "./watch-rooms/hook.js";
 import { WATCH_STATUS_PAGES_HELP_URL } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_HELP_URL } from "./watch-voice/hook.js";
-import { generalCopy } from "./device-platform.js";
+import { androidHereNow, generalCopy } from "./device-platform.js";
 
 /** What the sheet says about the screen in view. */
 export interface HelpScreen {
@@ -53,7 +53,7 @@ export interface HelpScreen {
 }
 
 // The lines below that name a device are general copy (`generalCopy`): the
-// Apple words until an Android device is paired here.
+// phone and watch words in every home.
 const homeText = () => [
   generalCopy(
     "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
@@ -176,12 +176,12 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
   const action = (id: StepId): TemplateResult | typeof nothing => {
     if (gs.next !== id) return nothing;
     if (id === "app") {
-      // Google Play beside the App Store once an Android device is paired.
-      return generalCopy(
-        html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>`,
-        html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>
-        <a class="hs-act" href=${PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_PLAY_STORE_LABEL}</a>`,
-      );
+      // Google Play beside the App Store once an Android device is paired
+      // here (`androidHereNow`), whatever the general copy says.
+      return androidHereNow()
+        ? html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>
+        <a class="hs-act" href=${PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_PLAY_STORE_LABEL}</a>`
+        : html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>`;
     }
     if (id === "pair") return html`<button type="button" class="hs-act" @click=${input.onPair}>${PAIR_DEVICE_LABEL}</button>`;
     const watch = gs.watch;

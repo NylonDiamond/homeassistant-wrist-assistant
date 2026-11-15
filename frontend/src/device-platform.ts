@@ -100,10 +100,10 @@ export function storeName(platform: DevicePlatform): string {
 // ── General copy ────────────────────────────────────────────────────────
 //
 // Copy about no device in particular ("Pair a phone", "Scan with the phone",
-// the help sheet) keeps the Apple words it always had while every device
-// paired to this Home Assistant is an Apple one, and says phone and watch
-// once an Android phone or a Wear OS watch is paired here. A line about one
-// device names that device by its platform either way (`platformNoun`).
+// the help sheet) says phone and watch in every home. A line about one
+// device names that device by its platform (`platformNoun`). Whether an
+// Android device is paired here (`androidHereNow`) still decides the
+// Android only extras, such as the Google Play links.
 //
 // The panel learns it from the owners reply (`fetchOwners` notes it on
 // every read): `paired_platforms` lists the platforms of every paired
@@ -141,8 +141,11 @@ export function androidHereNow(): boolean {
   return androidHere;
 }
 
-/** General copy: the Apple words while every paired device is an Apple one,
- * the phone and watch words once an Android device is paired here. */
-export function generalCopy<A, B>(apple: A, phoneAndWatch: B): A | B {
-  return androidHere ? phoneAndWatch : apple;
+/** General copy: the phone and watch words, for every home. Until
+ * 2026-11-14 a home with only Apple devices kept the Apple words here; now
+ * every home reads phone and watch, so an Android user sees the right words
+ * before the first Android device is paired. The Apple words stay as the
+ * first argument, as a record of what each line said before. */
+export function generalCopy<A, B>(_apple: A, phoneAndWatch: B): A | B {
+  return phoneAndWatch;
 }

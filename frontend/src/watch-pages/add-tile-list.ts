@@ -367,8 +367,7 @@ export function watchAppAddBlockedText(
 
 // ── tiles only the iPhone draws ──────────────────────────────────────────
 
-// General copy (`generalCopy`): "iPhone" until an Android device is paired
-// here, then "phone".
+// General copy (`generalCopy`): "phone" in every home.
 
 /** The group's title, last in the dialog. */
 export function watchPhoneGroupTitle(): string {

@@ -277,7 +277,7 @@ describe("the iPhone's pages screen", () => {
     const long: WatchPage = { ...PHONE_A, items: [...ITEMS, { id: "X", entityId: "light.x", gridCol: 0, gridRow: 30, colSpan: 4, rowSpan: 4 }] };
     const text = flat(renderWatchPagePreview({ page: long, pages: [long], screen: phonePagesScreen(layout), phone: layout, scale: 1 }));
     expect(text).toContain('class="wp-fold" style=top:690px');
-    expect(text).toContain("the end of the iPhone's screen");
+    expect(text).toContain("the end of the phone's screen");
     // The iPhone look ends its pages higher, on the dock's bar.
     const iphone = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
     const over = flat(renderWatchPagePreview({ page: long, pages: [long, { ...long, id: "P2" }], screen: phonePagesScreen(iphone), phone: iphone, scale: 1 }));

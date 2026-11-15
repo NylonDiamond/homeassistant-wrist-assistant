@@ -192,7 +192,7 @@ describe("watch screens", () => {
 
   it("lists Camera framing, then the Home map last, as shared screens with their own blurbs", () => {
     expect(WATCH_SCREENS.at(-2)).toEqual({
-      id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+      id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the phone.",
       path: WATCH_CAMERAS_PATH, shared: true,
     });
     expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[8]);
@@ -555,7 +555,8 @@ describe("renderTabBar", () => {
     expect(text).toMatch(/href=\/wrist-assistant\/all-menus [^>]*>Menus<\/a>/);
     expect(text).toMatch(/href=\/wrist-assistant\/shared [^>]*>Shared<\/a>/);
     expect(text).not.toContain("Watch app</a>");
-    expect(text).not.toContain("iPhone app</a>");
+    // "Phone app" also catches "iPhone app".
+    expect(text).not.toContain("Phone app</a>");
     expect(text).toMatch(/href=\/wrist-assistant\/devices [^>]*>Devices<\/a>/);
   });
 

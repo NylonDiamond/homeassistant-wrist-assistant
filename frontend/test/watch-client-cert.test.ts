@@ -507,7 +507,7 @@ describe("the words for another person", () => {
 
   it("keeps the old words for the administrator and names anyone else", () => {
     expect(clientCertSavedNote()).toBe(clientCertSavedNote());
-    expect(clientCertSavedNote("Anna")).toBe("Saved for Anna. Their watch and iPhone pick it up the next time they open the app.");
+    expect(clientCertSavedNote("Anna")).toBe("Saved for Anna. Their watch and phone pick it up the next time they open the app.");
     expect(clientCertRemoveAsk("Anna")).toContain("for Anna?");
     expect(clientCertUploadTitle()).toContain("your devices");
     expect(clientCertUploadTitle("Anna")).toContain("for Anna");

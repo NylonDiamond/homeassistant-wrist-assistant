@@ -1080,7 +1080,7 @@ describe("the map editor's side panel", () => {
     expect(shown).not.toContain("<b>Furniture</b>");
     expect(shown).not.toContain("Lights in lamps");
     // No watch or iPhone yet: nothing to add a page to.
-    expect(shown).toContain("Pair a watch or an iPhone first.");
+    expect(shown).toContain("Pair a watch or a phone first.");
     // Rooms, each with its devices on the map.
     expect(shown).toMatch(/<span class="hme-ly-nm">Living room<\/span>\s*<span class="hme-ly-end ">3 on the map<\/span>/);
     expect(shown).toMatch(/<span class="hme-ly-nm">Kitchen<\/span>\s*<span class="hme-ly-end ">2 on the map<\/span>/);

@@ -285,7 +285,8 @@ export async function fetchOwners(hass: HassLike) {
      * than the field. */
     paired_platforms?: DevicePlatform[];
   }>({ type: `${D}/owners` });
-  // General copy says phone and watch once an Android device is paired here.
+  // Whether an Android device is paired here decides the Android only
+  // extras, such as the Google Play links.
   noteHomeDevices(reply);
   return reply;
 }

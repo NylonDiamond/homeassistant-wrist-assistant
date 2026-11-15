@@ -207,8 +207,7 @@ export function agoWords(seconds: number): string {
  * ticked, and people saved there and waited for a watch that was never going
  * to get it. */
 export const NOT_ON_A_DEVICE = "On no device yet";
-// General copy (`generalCopy`): "an iPhone" until an Android device is
-// paired here, then "a phone".
+// General copy (`generalCopy`): "a phone" in every home.
 export function notOnADeviceLine(): string {
   return `On no device yet. Tick a device over the preview to put it on a watch or ${generalCopy("an iPhone", "a phone")}.`;
 }

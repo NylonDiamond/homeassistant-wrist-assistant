@@ -6,7 +6,7 @@ import { shapeDevicesTag } from "../src/panel.js";
 describe("shapeDevicesTag", () => {
   it("names the watch for a corner, the iPhone Home Screen for the widget sizes, and both for the rest", () => {
     expect(shapeDevicesTag("corner")?.text).toBe("Watch");
-    for (const size of ["small", "medium", "large", "xlarge"]) expect(shapeDevicesTag(size)?.text).toBe("iPhone Home Screen");
+    for (const size of ["small", "medium", "large", "xlarge"]) expect(shapeDevicesTag(size)?.text).toBe("Phone Home Screen");
     for (const shape of ["rectangular", "circular", "inline"]) {
       expect(shapeDevicesTag(shape)).toEqual({ text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"], where: "both" });
     }

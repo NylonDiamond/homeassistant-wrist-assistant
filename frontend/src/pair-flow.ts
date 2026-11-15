@@ -44,10 +44,9 @@ export function pairChoiceMode(choice: PairChoice): PairMode {
 }
 
 /** The question and its two answers, each with one short line. General copy
- * (`generalCopy`): an Apple Watch and an iPhone until an Android device is
- * paired here, then words that name no make, since a watch is then an Apple
- * Watch or a Wear OS watch, and a phone an iPhone or an Android phone, and
- * each pairs the same way. */
+ * (`generalCopy`): words that name no make, in every home, since a watch is
+ * an Apple Watch or a Wear OS watch, and a phone an iPhone or an Android
+ * phone, and each pairs the same way. */
 export const PAIR_CHOICE_TITLE = "What are you pairing?";
 export const PAIR_CHOICES: readonly { choice: PairChoice; label: string; line: string }[] = [
   {

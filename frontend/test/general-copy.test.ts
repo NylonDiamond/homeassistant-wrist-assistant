@@ -1,15 +1,18 @@
-// General copy: the lines about no device in particular. While every device
-// paired to this Home Assistant is an Apple one they read exactly as they did
-// before the Android apps (`fixtures-general-copy/apple.json`, rendered from
-// main at 141473ca), and once an Android phone or a Wear OS watch is paired
-// they say phone and watch (`fixtures-general-copy/phone.json`, rendered from
-// the branch's first Android words at 2176d1b5). Both fixtures were made by
-// calling the same functions and reading the same constants there, so a probe
-// here that differs from them by one byte fails.
+// General copy: the lines about no device in particular. Since 2026-11-14
+// they say phone and watch in every home (`fixtures-general-copy/phone.json`,
+// rendered from the branch's first Android words at 2176d1b5), whether or not
+// an Android phone or a Wear OS watch is paired. Until then a home of Apple
+// devices only kept the words main had before the Android apps
+// (`fixtures-general-copy/apple.json`, rendered from main at 141473ca); that
+// fixture stays only as a record, and to check that every probe here is a
+// line the switch changed. Both fixtures were made by calling the same
+// functions and reading the same constants, so a probe here that differs from
+// phone.json by one byte fails.
 //
-// The home level switch is `device-platform.ts`'s: `fetchOwners` notes the
-// owners reply's `paired_platforms` (every paired device, whoever asks), or
-// its rows from an integration without that field.
+// Whether an Android device is paired here still decides the Android only
+// extras (the Google Play links and QR code): `fetchOwners` notes the owners
+// reply's `paired_platforms` (every paired device, whoever asks), or its rows
+// from an integration without that field.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,9 +21,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { COMP_WHERE_HINTS, compCell, compGreyNote, compLeftOutText } from "../src/complication-board.js";
 import { androidHereNow, homeHasAndroid, noteHomeDevices, setAndroidHere } from "../src/device-platform.js";
-import { gettingStarted, helpStepWords } from "../src/getting-started.js";
+import { PLAY_STORE_URL, gettingStarted, helpStepWords } from "../src/getting-started.js";
 import { fetchOwners, type OwnerSummary } from "../src/ha-api.js";
-import { helpScreen, pagesPhoneTilesText } from "../src/help-sheet.js";
+import { helpScreen, pagesPhoneTilesText, renderHelpSheet } from "../src/help-sheet.js";
 import { deviceSheetTabs, homeDoorLook, homeLibraryLead } from "../src/home.js";
 import { previewLabel } from "../src/library/item-mode.js";
 import { previewNote } from "../src/library/new-dialog.js";
@@ -157,21 +160,21 @@ const flat = (v: unknown): string => {
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? String(v) : "";
 };
 
-describe("general copy in a home of Apple devices only", () => {
-  it("is the words main had, byte for byte", () => {
+describe("general copy with no Android device paired", () => {
+  it("is the phone and watch words, byte for byte", () => {
     setAndroidHere(false);
     const now = probes();
-    expect(Object.keys(now).sort()).toEqual(Object.keys(apple).sort());
-    for (const [id, words] of Object.entries(apple)) expect(now[id], id).toStrictEqual(words);
+    expect(Object.keys(now).sort()).toEqual(Object.keys(phone).sort());
+    for (const [id, words] of Object.entries(phone)) expect(now[id], id).toStrictEqual(words);
   });
 
-  it("names the iPhone in the dock's Preview on, as it did", () => {
+  it("says phone in the dock's Preview on", () => {
+    setAndroidHere(false);
     const seg = flat(renderPreviewSeg({ kind: "watch", duo: false, phones: true, onPick: () => undefined, onBoth: () => undefined }));
-    expect(seg).toContain("title=Preview on an iPhone");
-    expect(seg).toContain(">iPhone</button>");
-    expect(seg).toContain(`title="Side by side: a watch and an iPhone"`);
-    expect(seg).not.toContain("a phone");
-    expect(seg).not.toContain(">Phone<");
+    expect(seg).toContain("title=Preview on a phone");
+    expect(seg).toContain(">Phone</button>");
+    expect(seg).toContain(`title="Side by side: a watch and a phone"`);
+    expect(seg).not.toContain("iPhone");
   });
 });
 
@@ -190,16 +193,53 @@ describe("general copy once an Android device is paired", () => {
     expect(seg).not.toContain("iPhone");
   });
 
-  it("differs from the Apple words in every probe that names a phone", () => {
-    // The two fixtures share their ids; a probe the switch never changes
-    // would be a probe of nothing.
+  it("differs from the old Apple words in every probe that names a phone", () => {
+    // apple.json is the record of what each line said in an Apple only home
+    // before 2026-11-14. The two fixtures share their ids; a probe the
+    // switch never changed would be a probe of nothing.
+    expect(Object.keys(apple).sort()).toEqual(Object.keys(phone).sort());
     const same = Object.keys(apple).filter((id) => JSON.stringify((apple as Record<string, unknown>)[id]) === JSON.stringify((phone as Record<string, unknown>)[id]));
     expect(same).toEqual([]);
   });
 
   it("never breaks a sentence with a dash", () => {
+    for (const on of [false, true]) {
+      setAndroidHere(on);
+      for (const words of Object.values(probes())) expect(JSON.stringify(words)).not.toMatch(/[–—]| - /);
+    }
+  });
+});
+
+describe("the Google Play extras", () => {
+  const helpSheet = () => flat(renderHelpSheet({
+    gs: gettingStarted([], undefined), route: undefined, version: "3.2.0",
+    onClosed: () => undefined, onPair: () => undefined, onNewPage: () => undefined,
+  }));
+
+  it("stay off the Help sheet until an Android device is paired here", () => {
+    setAndroidHere(false);
+    const apple = helpSheet();
+    expect(apple).toContain("Open the App Store");
+    expect(apple).not.toContain(PLAY_STORE_URL);
+    expect(apple).not.toContain("Open Google Play");
     setAndroidHere(true);
-    for (const words of Object.values(probes())) expect(JSON.stringify(words)).not.toMatch(/[–—]| - /);
+    const android = helpSheet();
+    expect(android).toContain("Open the App Store");
+    expect(android).toContain(PLAY_STORE_URL);
+    expect(android).toContain("Open Google Play");
+  });
+
+  it("stay off the welcome until an Android device is paired here: the line, the link and the QR code", () => {
+    const panel = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
+    const welcome = panel.slice(panel.indexOf('step(1, "Install the app"'), panel.indexOf('step(2, "Pick one"'));
+    // Each extra is behind androidHereNow(), never behind general copy,
+    // which no longer waits for an Android device.
+    expect(welcome).not.toMatch(/generalCopy\(\s*nothing/);
+    for (const extra of ["<p>On Android, install it from Google Play", `<a class="home-btn hw-play" href=\${PLAY_STORE_URL}`, `<figure class="hw-qr">\n                \${playQr`]) {
+      expect(welcome, extra).toContain(`\${androidHereNow() ? html\`${extra}`);
+    }
+    // And the Play QR code is made only then.
+    expect(panel).toContain("if (this.playStoreQr === undefined && androidHereNow()) {");
   });
 });
 
@@ -232,7 +272,7 @@ describe("whether an Android device is paired here", () => {
     expect(homeHasAndroid({})).toBe(false);
   });
 
-  it("is noted on every owners read, so a pairing turns the words over", async () => {
+  it("is noted on every owners read, so a pairing turns the Android extras over, and the words stay", async () => {
     let platforms = ["ios", "watchos"];
     const hass = {
       connection: {
@@ -243,7 +283,8 @@ describe("whether an Android device is paired here", () => {
     } as never;
     await fetchOwners(hass);
     expect(androidHereNow()).toBe(false);
-    expect(pairQrTitle()).toBe("Scan with the iPhone");
+    // General copy says phone either way; only the Android extras turn over.
+    expect(pairQrTitle()).toBe("Scan with the phone");
     platforms = ["android", "ios", "watchos"];
     await fetchOwners(hass);
     expect(androidHereNow()).toBe(true);
@@ -251,7 +292,8 @@ describe("whether an Android device is paired here", () => {
     // Forgetting the last Android device turns them back.
     platforms = ["ios"];
     await fetchOwners(hass);
-    expect(pairQrTitle()).toBe("Scan with the iPhone");
+    expect(androidHereNow()).toBe(false);
+    expect(pairQrTitle()).toBe("Scan with the phone");
     noteHomeDevices(undefined);
     expect(androidHereNow()).toBe(false);
   });
@@ -269,23 +311,20 @@ describe("whether an Android device is paired here", () => {
 // The lines only a drawn view holds (the panel's Home, the welcome, the
 // editors' hints), which no pure function returns. `drawn.json` lists each as
 // [file, main's words, the Android words], every one read off main and off
-// 2176d1b5 as they stood. A file's source is read as each home would draw
-// it: every `generalCopy(a, b)` kept to its Apple or its Android side.
+// 2176d1b5 as they stood; main's words stay only as a record. A file's source
+// is read as every home now draws it: each `generalCopy(a, b)` kept to its
+// phone and watch side.
 describe("general copy in the drawn views", () => {
   const STR = String.raw`(?:html)?(?:"(?:[^"\\]|\\.)*"|\`(?:[^\`\\]|\\.)*\`)`;
   const call = new RegExp(String.raw`generalCopy\(\s*(${STR})\s*,\s*(${STR})\s*,?\s*\)`, "gs");
   const inTemplate = new RegExp(String.raw`\$\{generalCopy\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,?\s*\)\}`, "gs");
-  const view = (source: string, side: "apple" | "phone"): string =>
+  const view = (source: string): string =>
     source
-      .replace(inTemplate, (_m, a: string, b: string) => (side === "apple" ? a : b))
-      .replace(call, (_m, a: string, b: string) => (side === "apple" ? a : b));
+      .replace(inTemplate, (_m, _a: string, b: string) => b)
+      .replace(call, (_m, _a: string, b: string) => b);
   const read = (file: string) => readFileSync(join(__dirname, "..", "src", file), "utf8");
 
-  it("draws main's words in a home of Apple devices only", () => {
-    for (const [file, words] of drawn as [string, string, string][]) expect(view(read(file), "apple"), `${file}: ${words}`).toContain(words);
-  });
-
-  it("draws the Android words once an Android device is paired", () => {
-    for (const [file, , words] of drawn as [string, string, string][]) expect(view(read(file), "phone"), `${file}: ${words}`).toContain(words);
+  it("draws the phone and watch words in every home", () => {
+    for (const [file, , words] of drawn as [string, string, string][]) expect(view(read(file)), `${file}: ${words}`).toContain(words);
   });
 });

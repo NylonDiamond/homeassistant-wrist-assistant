@@ -43,8 +43,8 @@ export function clientCertOtherName(
   return users.find((u) => u.id === userId)?.name;
 }
 
-// The lines below name the phone in general copy (`generalCopy`): "iPhone"
-// until an Android device is paired here, then "phone".
+// The lines below name the phone in general copy (`generalCopy`): "phone"
+// in every home.
 
 /** Under the card after an upload or a removal, naming the person when it
  * was someone else's certificate. */

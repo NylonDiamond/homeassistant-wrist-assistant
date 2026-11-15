@@ -296,8 +296,8 @@ describe("the version gate", () => {
   });
 
   it("names the watch and both versions", () => {
-    expect(watchPhoneTilesBlockedText({ name: "Jesse's watch", version: "3.1.0" })).toBe("Jesse's watch runs 3.1.0; iPhone only tiles need 3.2.0.");
-    expect(watchAppAddBlockedText("map", true, { name: "Jesse's watch", version: "3.1.0" })).toBe("Jesse's watch runs 3.1.0; iPhone only tiles need 3.2.0.");
+    expect(watchPhoneTilesBlockedText({ name: "Jesse's watch", version: "3.1.0" })).toBe("Jesse's watch runs 3.1.0; phone only tiles need 3.2.0.");
+    expect(watchAppAddBlockedText("map", true, { name: "Jesse's watch", version: "3.1.0" })).toBe("Jesse's watch runs 3.1.0; phone only tiles need 3.2.0.");
     expect(watchAppAddBlockedText("web", true)).toBeUndefined();
     // The gate is the phone kinds' alone.
     expect(watchAppAddBlockedText("template", true, { name: "Jesse's watch", version: "3.1.0" })).toBeUndefined();
@@ -380,7 +380,7 @@ describe("the add dialog's iPhone only group", () => {
   it("refuses the kinds while a watch that picks the page is too old, naming it", () => {
     const { host, tiles } = addHost("iphone", { state: "open", oldWatch: { name: "Jesse's watch", version: "3.1.0" } });
     const text = flatten(renderAddTile(host));
-    expect(text).toContain("Jesse's watch runs 3.1.0; iPhone only tiles need 3.2.0.");
+    expect(text).toContain("Jesse's watch runs 3.1.0; phone only tiles need 3.2.0.");
     // Drawn as greyed as on a watch's editor, so the buttons do not look live.
     expect(text).toContain("at-phone greyed");
     handler(renderAddTile(host), '<span class="at-kind-name">Chart</span>', "@click=")();
@@ -454,7 +454,7 @@ describe("the settings of the iPhone only kinds", () => {
         const { host } = tileHost(ID(kind), {}, device);
         const text = flatten(draw(host));
         expect(text).toContain(`<h4>${title}<span class="ts-dev-tag"`);
-        expect(text).toContain("iPhone</span>");
+        expect(text).toContain("Phone</span>");
         expect(text).not.toContain("<h4>Action");
       }
     }

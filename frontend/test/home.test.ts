@@ -350,7 +350,7 @@ describe("phoneWidgetPlaces", () => {
 describe("homeDoorLook's Control Center line", () => {
   it("says the controls are buttons in Control Center, made from designs", () => {
     const tab = deviceSheetTabs("iphone").find((t) => t.kind === "list" && t.filter === "control")!;
-    expect(homeDoorLook(tab, "iphone").blurb).toBe("Buttons in Control Center, from your designs.");
+    expect(homeDoorLook(tab, "iphone").blurb).toBe("Buttons in Control Center (Quick Settings on Android), from your designs.");
   });
 });
 

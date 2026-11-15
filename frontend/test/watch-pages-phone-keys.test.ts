@@ -258,7 +258,7 @@ function sectionChecks(opts: {
   const text = flatten(drawn);
   const order = titles(drawn);
   expect(order[order.indexOf(opts.before) + 1]).toBe(`${opts.title}`);
-  expect(text).toMatch(new RegExp(`<h4>${opts.title}<span class="ts-dev-tag"[^>]*>[^]*?iPhone</span>`));
+  expect(text).toMatch(new RegExp(`<h4>${opts.title}<span class="ts-dev-tag"[^>]*>[^]*?Phone</span>`));
   expect(text).toContain(opts.label);
   expect(text).toContain(opts.help);
   expect(text).not.toContain(watchPhoneExtrasTitle());
@@ -413,7 +413,7 @@ describe("Chart", () => {
   it("offers Off and the four ranges, Off removes the key, and a short tile says why it shows none", () => {
     expect(watchSensorChartMenu({ entityId: "sensor.power" }).options.map((o) => o.label)).toEqual(["Off", "1 hour", "6 hours", "24 hours", "7 days"]);
     const { host, tile } = tileHost("binary_sensor.door", { sensorChart: "24h", rowSpan: 2 }, "iphone");
-    expect(flatten(draw(host))).toContain("This tile is 2 rows tall, so the iPhone shows no chart. Make it 4 or taller.");
+    expect(flatten(draw(host))).toContain("This tile is 2 rows tall, so the phone shows no chart. Make it 4 or taller.");
     pick(draw(host), "Chart under the value", "");
     expect(Object.hasOwn(tile(), "sensorChart")).toBe(false);
     // A range the panel does not offer is shown, not offered.

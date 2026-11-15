@@ -129,12 +129,12 @@ describe("the tab's words", () => {
     expect(MENUS_BOARD_FOOT).toBe("Click a menu to edit it. Pick a dot and that device uses this menu from now on. Press Focus on a device to see its menus first.");
     expect(MENUS_BOARD_HINT).toBe("Each device uses one of each kind. Pick a dot to switch.");
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
-    expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Devices tab.");
+    expect(menusEmptyText([], "")).toBe("No watch or phone has connected yet. Pair one on the Devices tab.");
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
     // A watch still waiting for its iPhone: its menus are on their way.
     expect(menusEmptyText(DEVICES, "")).toBe("None yet.");
     // Someone who is not an administrator reads how, with no hover to find it.
-    expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(false))).toBe("None yet. Open your watch or iPhone's tab, then use New menu to make its first one.");
+    expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(false))).toBe("None yet. Open your watch or phone's tab, then use New menu to make its first one.");
     expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(true))).toBe("None yet. Use New menu to make one.");
     expect(menusEmptyText(DEVICES, "", true)).toBe("None yet. Update Wrist Assistant on your iPhone and open it once. Its menus move here by themselves.");
     expect(noMenuText(JESSE_D, "", true)).toBe(`No menus from ${JESSE_D.name} yet. ${WAIT_FOR_IPHONE_TEXT}`);
