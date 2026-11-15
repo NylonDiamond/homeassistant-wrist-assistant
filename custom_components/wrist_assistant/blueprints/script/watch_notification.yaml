@@ -400,10 +400,10 @@ blueprint:
             sidebar, Watch app, Settings, Notifications.
 
 
-            The sounds are Apple's: an Android phone and a Wear OS watch play
-            their own notification sound for the priority instead. Silent drops
-            that sound there and keeps the buzz, so a watch still feels the
-            alert. For no buzz either, set the priority to **Passive**.
+            An Android phone and a Wear OS watch play these sounds too, at
+            Active and Time sensitive priority; Critical keeps the alarm sound
+            there. Silent drops the sound and keeps the buzz, so a watch still
+            feels the alert. For no buzz either, set the priority to **Passive**.
           default: "default"
           selector:
             select:

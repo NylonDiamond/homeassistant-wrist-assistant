@@ -127,10 +127,12 @@ send_notification:
         Sound to play. Pick one, or type a custom file name. On an iPhone
         and an Apple Watch, Silent and custom sounds apply only with
         Reliable delivery; with Fast delivery the Apple Watch always plays
-        its default alert. An Android phone and a Wear OS watch play their
-        own notification sound for the priority, never the named sounds.
-        Silent drops that sound there and keeps the buzz, so a watch still
-        feels the alert; for no buzz either, pick Passive priority.
+        its default alert. An Android phone and a Wear OS watch play the
+        named sounds too, at Active and Time sensitive priority; Critical
+        keeps the alarm sound, and a custom file name plays the priority's
+        own sound. Silent drops the sound there and keeps the buzz, so a
+        watch still feels the alert; for no buzz either, pick Passive
+        priority.
       example: "default"
       selector:
         select:

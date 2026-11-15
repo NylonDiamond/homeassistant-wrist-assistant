@@ -135,8 +135,10 @@ def test_what_is_apple_only_says_so_and_says_what_android_does() -> None:
     sound = fields["sound"]["description"]
     assert "Fast delivery" in sound and "Apple" in sound
     assert "Android" in sound and "Passive" in sound
-    # Silent quiets an Android device too (no sound, still a buzz); Passive is the quiet priority.
-    assert "Silent drops that sound there and keeps the buzz" in sound
+    # Android plays the named sounds (Critical keeps the alarm sound); Silent quiets an Android
+    # device too (no sound, still a buzz); Passive is the quiet priority.
+    assert "named sounds too" in sound and "Critical" in sound
+    assert "Silent drops the sound there and keeps the buzz" in sound
     assert "once a button tap works" in fields["data"]["description"]
     priority = fields["priority"]["description"]
     assert "Android" in priority and "Do Not Disturb" in priority
