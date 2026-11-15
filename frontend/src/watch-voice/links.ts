@@ -26,6 +26,7 @@ import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { AWAITING_MOVE_TEXT, type PhoneMoves, waitForIphoneText } from "../watch-settings.js";
 import { type VoiceDocument, asWatchVoiceDocument, watchVoiceDefaults, watchVoicePhrases, withVoiceKey, withoutVoiceKey } from "./model.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The top-level key Home Assistant writes the link ids under. */
 export const VOICE_LINK_IDS_KEY = "linkIds";
@@ -213,7 +214,7 @@ export function voiceLinkErrorText(err: unknown): string {
     case "unknown_device": return "That watch is not paired with this Home Assistant any more.";
     case "not_found": return "This watch's voice settings are not saved yet. Save first, then try again.";
     case "unit_taken": return "That watch has phrases of its own.";
-    case "not_for_iphone": return "An iPhone keeps no phrases.";
+    case "not_for_iphone": return `${generalCopy("An iPhone", "A phone")} keeps no phrases.`;
     case "awaiting_move": return AWAITING_MOVE_TEXT;
     case "unknown_command": return "This version of the integration cannot share phrases between watches. Update it first.";
     default: return message;

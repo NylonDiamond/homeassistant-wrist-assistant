@@ -236,6 +236,8 @@ def test_lookup_finds_a_code_as_typed(env) -> None:
         "found": True,
         "watch_id": WATCH,
         "kind": "watch",
+        # The watch said no platform, so it reads as an Apple Watch.
+        "platform": "watchos",
         "device_name": "Test Watch",
         "screen_size": "208x248",
         "app_version": "3.0.1",
@@ -979,16 +981,30 @@ def test_an_offer_for_another_person_with_replace(env) -> None:
 def test_an_offer_refuses_a_missing_inactive_or_system_user(env, user_id) -> None:
     code, message = _error(env, env.ws.ws_pair_offer, user_id=user_id)
     assert code == "invalid_user"
-    assert "this iPhone" in message
+    # General copy: an iPhone's words while every paired device is an Apple
+    # one, as they always were.
+    assert message == "Pick an active Home Assistant user for this iPhone."
     assert len(env.offer_store) == 0
+
+
+def test_an_offer_s_refusals_say_phone_once_an_android_device_is_paired(env) -> None:
+    """A QR code is for any phone that scans it, an iPhone or an Android one,
+    so once an Android device is paired here its refusals say phone."""
+    env.secret_store.register(WATCH, "a" * 44, "watch-code-pair", platform="wearos")
+    code, message = _error(env, env.ws.ws_pair_offer, user_id="nobody")
+    assert (code, message) == ("invalid_user", "Pick an active Home Assistant user for this phone.")
+    connection = _call(env, env.ws.ws_pair_offer, user=_User("chen"), user_id="root")
+    [(_id, code, message)] = connection.errors
+    assert (code, message) == ("unauthorized", "Only an administrator can pair a phone for another user.")
 
 
 def test_a_non_admin_cannot_offer_for_another_user(env) -> None:
     """The commands are open to every signed-in user; an offer for someone
     else is the admin-only part."""
     connection = _call(env, env.ws.ws_pair_offer, user=_User("chen"), user_id="root")
-    [(_id, code, _message)] = connection.errors
+    [(_id, code, message)] = connection.errors
     assert code == "unauthorized"
+    assert message == "Only an administrator can pair an iPhone for another user."
 
 
 def _no_url(*_args, **_kwargs) -> str:
@@ -1121,6 +1137,7 @@ def test_offer_status_follows_the_offer(env) -> None:
         "device_name": "Chen's iPhone",
         "user_id": "chen",
         "device_id": PHONE,
+        "platform": "ios",
     }
     # A redeemed offer keeps no token.
     assert offer.token == b""

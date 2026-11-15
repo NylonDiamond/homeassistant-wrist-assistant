@@ -27,8 +27,8 @@ import {
   WATCH_ADD_KIND_WORDS,
   WATCH_APP_ADD_BUTTONS,
   WATCH_PHONE_ADD_BUTTONS,
-  WATCH_PHONE_GREYED_TEXT,
-  WATCH_PHONE_GROUP_TITLE,
+  watchPhoneGreyedText,
+  watchPhoneGroupTitle,
   watchAppAddBlockedText,
   watchPhoneTilesBlockedText,
   watchPhoneTilesGroup,
@@ -341,8 +341,8 @@ describe("the add dialog's iPhone only group", () => {
     const { host, tiles } = addHost("iphone");
     const body = renderAddTile(host);
     const text = flatten(body);
-    expect(text).toContain(`<span>${WATCH_PHONE_GROUP_TITLE}</span>`);
-    expect(text.lastIndexOf(WATCH_PHONE_GROUP_TITLE)).toBeGreaterThan(text.indexOf('id="at-search"'));
+    expect(text).toContain(`<span>${watchPhoneGroupTitle()}</span>`);
+    expect(text.lastIndexOf(watchPhoneGroupTitle())).toBeGreaterThan(text.indexOf('id="at-search"'));
     for (const b of WATCH_PHONE_ADD_BUTTONS) {
       expect(text).toContain(`<span class="at-kind-name">${b.label}</span>`);
       expect(text).toContain(`<span class="at-kind-hint">${b.hint}</span>`);
@@ -350,7 +350,7 @@ describe("the add dialog's iPhone only group", () => {
     expect(WATCH_PHONE_ADD_BUTTONS.map((b) => b.icon)).toEqual(["map.fill", "chart.xyaxis.line", "character.cursor.ibeam", "globe"]);
     for (const b of WATCH_PHONE_ADD_BUTTONS) expect(b.hint).not.toMatch(/[–—]| - /);
     expect(WATCH_PHONE_ADD_BUTTONS.map((b) => b.label)).toEqual(["Map", "Chart", "Text field", "Web card"]);
-    expect(text).not.toContain(WATCH_PHONE_GREYED_TEXT);
+    expect(text).not.toContain(watchPhoneGreyedText());
     // The phone glyph's body, on the group's title; each row has its tile's icon.
     const glyph = 'x="6" y="2.5" width="12" height="19"';
     expect(text.split(glyph).length - 1).toBeGreaterThanOrEqual(1);
@@ -365,16 +365,16 @@ describe("the add dialog's iPhone only group", () => {
   it("greys the group on a watch's editor, says why, and adds nothing", () => {
     const { host, tiles } = addHost("watch", { state: "greyed" });
     const text = flatten(renderAddTile(host));
-    expect(text).toContain(WATCH_PHONE_GROUP_TITLE);
+    expect(text).toContain(watchPhoneGroupTitle());
     expect(text).toContain("at-phone greyed");
-    expect(text).toContain(WATCH_PHONE_GREYED_TEXT);
+    expect(text).toContain(watchPhoneGreyedText());
     handler(renderAddTile(host), '<span class="at-kind-name">Map</span>', "@click=")();
     expect(tiles()).toHaveLength(0);
   });
 
   it("hides the group on a page no iPhone picks", () => {
-    expect(flatten(renderAddTile(addHost("watch", { state: "hidden" }).host))).not.toContain(WATCH_PHONE_GROUP_TITLE);
-    expect(flatten(renderAddTile(addHost(undefined).host))).not.toContain(WATCH_PHONE_GROUP_TITLE);
+    expect(flatten(renderAddTile(addHost("watch", { state: "hidden" }).host))).not.toContain(watchPhoneGroupTitle());
+    expect(flatten(renderAddTile(addHost(undefined).host))).not.toContain(watchPhoneGroupTitle());
   });
 
   it("refuses the kinds while a watch that picks the page is too old, naming it", () => {
@@ -406,7 +406,7 @@ describe("the add dialog's order", () => {
       ">App tiles<",
       ...WATCH_APP_ADD_BUTTONS.map((b) => name(b.label)),
       ">Library<",
-      `<span>${WATCH_PHONE_GROUP_TITLE}</span>`,
+      `<span>${watchPhoneGroupTitle()}</span>`,
     ];
     const at = order.map((marker) => text.indexOf(marker));
     for (const [i, marker] of order.entries()) expect(at[i], marker).toBeGreaterThanOrEqual(0);

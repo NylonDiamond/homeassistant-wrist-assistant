@@ -601,6 +601,15 @@ PUSH_PAIRED_BY_USER_CAPABILITY = "push_paired_by_user"
 # move ends at once. An iPhone sends the op only when it sees this. An older
 # integration keeps the 24 hour rule (MOVE_GRACE) and the app sends nothing.
 MOVE_FINISHED_CAPABILITY = "move_finished"
+# What the integration advertises once it knows the four device platforms
+# (`device_platform.py`): it reads `platform` on pair/start, pair/redeem,
+# register_secret and update_metadata, names an Android phone and a Wear OS
+# watch by their own models, files `android` and `wearos` push tokens and
+# sends them through FCM, and gives `platform` back in `stored_metadata` to a
+# device that said one. The Android apps look for it before they register a
+# push token, and read a reply with it but no `platform` in `stored_metadata`
+# as a report that fell behind. An Apple app never reads it.
+DEVICE_PLATFORMS_CAPABILITY = "device_platforms"
 # The longest Show tile template a device sends in a delta poll, in code
 # points (Python `len`): `DELTA_MAX_TEMPLATE_CHARS` in wa_v2_views.py, and the
 # app's `TemplateCondition.subscribable`. A longer one is never sent, so the

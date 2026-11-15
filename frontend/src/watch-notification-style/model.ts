@@ -28,6 +28,7 @@ import table from "./notification-style-keys.json";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import type { WatchConfigRecord } from "../ha-api.js";
 import type { TileChoice } from "../watch-settings-look.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The kind Home Assistant keeps the document under. */
 export const NOTIFICATION_STYLE_KIND = "notification_style";
@@ -107,6 +108,34 @@ export const VOLUME = table.volume;
 
 /** Each delivery choice's line, the phone's own. */
 export const DELIVERY_DETAILS: Readonly<Record<string, string>> = table.delivery.details;
+
+/** The delivery row's help on a Wear OS watch. Fast (`mirror`) comes through
+ * the user's Android phone, Reliable (`direct`) to the watch's own token
+ * (`resolve_push_routes` in the integration). The table keeps the Apple
+ * words, which the Apple app reads. */
+export const WEAR_DELIVERY_HELP =
+  "Fast comes through your phone, so the phone needs to be nearby. Reliable comes straight to the watch and works without the phone, on Wi-Fi or mobile data.";
+
+/** Each delivery choice's line on a Wear OS watch. */
+export const WEAR_DELIVERY_DETAILS: Readonly<Record<string, string>> = {
+  fast: "Through the phone · needs it nearby",
+  reliable: "Straight to the watch · works without the phone",
+};
+
+/** The rows whose table help is about no device in particular, so it says
+ * "your phone" once an Android device is paired here (`generalCopy`). The
+ * table keeps the iPhone's words, which the Apple app reads. */
+const GENERAL_HELP_KEYS: readonly string[] = ["storedWebhookButtonSize"];
+
+/** A row as a device of this platform reads it: a Wear OS watch's delivery
+ * row has its own help, every other row is the table's. */
+export function styleRowOn(row: StyleRow, platform?: string | null): StyleRow {
+  if (platform === "wearos" && row.key === table.delivery.key) return { ...row, help: WEAR_DELIVERY_HELP };
+  if (row.help !== undefined && GENERAL_HELP_KEYS.includes(row.key)) {
+    return { ...row, help: generalCopy(row.help, row.help.replaceAll("your iPhone", "your phone")) };
+  }
+  return row;
+}
 
 /** The icon beside each row's title. The phone's own where its screens draw
  * one (`NotificationStyleSettingsView`, `SoundSettingsView`); the rest are the
@@ -377,8 +406,8 @@ export function styleUsesTiles(row: StyleRow): boolean {
 
 /** The tiles of an enum row, in the table's order, each wearing the row's
  * icon. Delivery's tiles carry the phone's line for each choice. */
-export function styleTileChoices(row: StyleRow, value: StyleValue): TileChoice[] {
-  const details = row.key === table.delivery.key ? DELIVERY_DETAILS : {};
+export function styleTileChoices(row: StyleRow, value: StyleValue, platform?: string | null): TileChoice[] {
+  const details = row.key === table.delivery.key ? (platform === "wearos" ? WEAR_DELIVERY_DETAILS : DELIVERY_DETAILS) : {};
   return styleOptionsFor(row, value).map((o) => ({
     value: o.value,
     name: o.label,

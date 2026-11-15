@@ -27,7 +27,7 @@ import { type Msg, OWNERS, fakeHome, settle, standUp } from "./library-tab-fake.
 import type { OwnerSummary } from "../src/ha-api.js";
 import { waitingEmptyText, waitingLibraryText } from "../src/watch-pages/devices.js";
 import { resetNewPageDevicesForTest } from "../src/watch-pages/new-page-sheet.js";
-import { TWO_SCREENS_CARD_TEXT, dismissTwoScreensCard, resetTwoScreensCardForTest } from "../src/watch-pages/all-pages-screens.js";
+import { twoScreensCardText, dismissTwoScreensCard, resetTwoScreensCardForTest } from "../src/watch-pages/all-pages-screens.js";
 import { COPY_WARNING_TEXT } from "../src/watch-pages/make-copy.js";
 
 function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
@@ -628,15 +628,15 @@ describe("the Pages tab", () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
-    expect(t.whole()).toContain(TWO_SCREENS_CARD_TEXT);
+    expect(t.whole()).toContain(twoScreensCardText());
     dismissTwoScreensCard();
-    expect(t.whole()).not.toContain(TWO_SCREENS_CARD_TEXT);
+    expect(t.whole()).not.toContain(twoScreensCardText());
     // The Status pages tab never shows it.
     resetTwoScreensCardForTest();
     const s = tab("status_pages");
     showTab(s, "all");
     await s.ready();
-    expect(s.whole()).not.toContain(TWO_SCREENS_CARD_TEXT);
+    expect(s.whole()).not.toContain(twoScreensCardText());
   });
 
   it("makes a copy of a page for some of its devices and lists what now opens the copy", async () => {

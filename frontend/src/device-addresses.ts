@@ -21,10 +21,12 @@ import type { AddressSource, DeviceAddresses } from "./ha-api.js";
 export type AddressSlot = "local" | "remote";
 
 /** The device the addresses belong to, for the words that name it. */
-export type AddressDevice = "watch" | "iphone";
+export type AddressDevice = "watch" | "iphone" | "android";
 
-/** The device as a sentence says it: "watch" or "iPhone". */
+/** The device as a sentence says it: "watch", "iPhone", or "phone" for an
+ * Android phone (`android`). */
 function deviceNoun(device: AddressDevice): string {
+  if (device === "android") return "phone";
   return device === "iphone" ? "iPhone" : "watch";
 }
 

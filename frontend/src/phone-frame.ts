@@ -53,6 +53,13 @@
 // dark, as the app's chrome is there (`chromeScheme`). The Watch look keeps
 // the watch's own drawing, bigger, with the watch's small title in the page
 // instead of the name in the top row.
+//
+// An Android phone (`platform` "android" on its owner row) is drawn as a
+// generic Android phone instead: no Dynamic Island but a punch hole camera
+// centred at the top, the time at the left of the status bar, and a slim
+// gesture bar at the bottom. The Android app lays its pages out with the
+// iPhone app's rules, so the pages area is worked out the same way, inside
+// the Android phone's own safe area (`ANDROID_PHONE_MODELS`).
 
 import { css, html, svg, type TemplateResult, nothing, unsafeCSS } from "lit";
 
@@ -72,6 +79,10 @@ export interface PhoneModel {
   /** The Dynamic Island, centred, `top` below the screen's top edge. None on
    * a phone with a notch or a home button. */
   island?: { width: number; height: number; top: number };
+  /** An Android phone: its front camera's punch hole, a circle `size` points
+   * across centred `top` below the screen's top edge. Set only on the
+   * Android models, which the frame draws as an Android phone. */
+  punch?: { size: number; top: number };
 }
 
 const ISLAND = { width: 126, height: 37, top: 11 };
@@ -89,14 +100,35 @@ export const PHONE_MODELS: readonly PhoneModel[] = [
 /** The iPhone every phone is drawn as while its size is not known. */
 export const DEFAULT_PHONE: PhoneModel = PHONE_MODELS[0]!;
 
+/** Android phones the frame knows, by screen size in dp. Sizes and safe
+ * areas are a typical current phone's (a Pixel's 412 by 915, its status bar
+ * and punch hole, the gesture bar's strip), not one model's measurements. */
+export const ANDROID_PHONE_MODELS: readonly PhoneModel[] = [
+  { label: "Android phone", screen: { width: 412, height: 915 }, safeTop: 48, safeBottom: 24, radius: 44, punch: { size: 24, top: 14 } },
+  { label: "Android phone (small)", screen: { width: 360, height: 800 }, safeTop: 44, safeBottom: 24, radius: 36, punch: { size: 22, top: 12 } },
+];
+
+/** The Android phone every Android phone is drawn as while its size is not
+ * known. */
+export const DEFAULT_ANDROID_PHONE: PhoneModel = ANDROID_PHONE_MODELS[0]!;
+
 /** The model for a `screen_size` string ("402x874", points), else the
- * default iPhone. The phone does not report one yet. */
-export function phoneModelForScreenSize(screenSize: string | null | undefined): PhoneModel {
+ * default iPhone. The phone does not report one yet. With `platform`
+ * "android", an Android phone of that size, else the default Android phone. */
+export function phoneModelForScreenSize(screenSize: string | null | undefined, platform?: string | null): PhoneModel {
+  const android = platform === "android";
+  const models = android ? ANDROID_PHONE_MODELS : PHONE_MODELS;
+  const fallback = android ? DEFAULT_ANDROID_PHONE : DEFAULT_PHONE;
   const match = /^(\d+)x(\d+)$/.exec((screenSize ?? "").trim());
-  if (!match) return DEFAULT_PHONE;
+  if (!match) return fallback;
   const width = Number(match[1]);
   const height = Number(match[2]);
-  return PHONE_MODELS.find((m) => m.screen.width === width && m.screen.height === height) ?? DEFAULT_PHONE;
+  return models.find((m) => m.screen.width === width && m.screen.height === height) ?? fallback;
+}
+
+/** Whether this model is drawn as an Android phone. */
+export function isAndroidPhoneModel(model: PhoneModel): boolean {
+  return model.punch !== undefined;
 }
 
 /** `PhonePagesView.sideInset`: the room each side of the pages area with
@@ -298,6 +330,14 @@ export function phonePagesScreen(layout: PhonePagesLayout): { width: number; hei
  * while the phone reports no screen size. */
 export const PHONE_SIZE_TEXT = `Drawn as an ${DEFAULT_PHONE.label}. The iPhone does not tell Home Assistant its screen size.`;
 
+/** The same for an Android phone, drawn as a generic one. */
+export const ANDROID_PHONE_SIZE_TEXT = "Drawn as a typical Android phone. Your phone's own screen may be a little taller or wider.";
+
+/** What an editor says of the phone it draws, by its model. */
+export function phoneSizeText(model: PhoneModel): string {
+  return isAndroidPhoneModel(model) ? ANDROID_PHONE_SIZE_TEXT : PHONE_SIZE_TEXT;
+}
+
 /** The editors draw an iPhone at this share of the watch's zoom, so the
  * phone fits the stage the watch fits: 150% for the watch is 75% of the
  * phone's own points. */
@@ -363,9 +403,13 @@ function symbol(icons: IconProvider | undefined, name: string, px: number, ink: 
 function statusBar(model: PhoneModel, s: number, icons: IconProvider | undefined, ios = false): TemplateResult {
   const { width } = model.screen;
   const island = model.island;
+  const punch = model.punch;
   const ear = island === undefined ? width / 2 : (width - island.width) / 2;
-  const centreY = island === undefined ? model.safeTop / 2 : island.top + island.height / 2 + 2.5;
-  const timeX = island === undefined ? 24 : ear / 2 + 5;
+  // An Android phone's status bar: the time at the left edge and the icons
+  // at the right, both on the punch hole's middle.
+  const centreY = punch !== undefined ? punch.top + punch.size / 2
+    : island === undefined ? model.safeTop / 2 : island.top + island.height / 2 + 2.5;
+  const timeX = punch !== undefined ? 34 : island === undefined ? 24 : ear / 2 + 5;
   const px = (pt: number) => `${r2(pt * s)}px`;
   const fill = ios ? "currentColor" : "#fff";
   const bars = svg`${[0, 1, 2, 3].map((i) => svg`<rect x=${i * 4.6} y=${10 - (i + 1) * 2.5} width="3" height=${(i + 1) * 2.5} rx="0.8" fill="${fill}" />`)}`;
@@ -374,8 +418,9 @@ function statusBar(model: PhoneModel, s: number, icons: IconProvider | undefined
   const wifi = symbol(ios ? undefined : icons, "wifi", 15 * s, "#FFFFFF", () => html`<svg width=${15 * s} height=${11 * s} viewBox="0 0 15 11" aria-hidden="true">${svg`<path d="M7.5 11 5.3 8.6a3.2 3.2 0 0 1 4.4 0zM2.9 6.3a6.6 6.6 0 0 1 9.2 0l1.5-1.6a8.8 8.8 0 0 0-12.2 0zM.4 3.6a10.3 10.3 0 0 1 14.2 0L15 3.2V3a12.4 12.4 0 0 0-15 0z" fill="${fill}" />`}</svg>`);
   return html`<div class="wa-phone-status" style=${`height:${px(model.safeTop)}`}>
     ${island === undefined ? nothing : html`<span class="wa-phone-island" style=${`left:${px((width - island.width) / 2)};top:${px(island.top)};width:${px(island.width)};height:${px(island.height)}`}></span>`}
-    <span class="wa-phone-time" style=${`left:${px(timeX)};top:${px(centreY)};font-size:${px(17)}`}>${STATUS_TIME}</span>
-    <span class="wa-phone-icons" style=${`right:${px(35)};top:${px(centreY)};gap:${px(6)}`}>
+    ${punch === undefined ? nothing : html`<span class="wa-phone-punch" style=${`left:${px((width - punch.size) / 2)};top:${px(punch.top)};width:${px(punch.size)};height:${px(punch.size)}`}></span>`}
+    <span class="wa-phone-time" style=${`left:${px(timeX)};top:${px(centreY)};font-size:${px(punch === undefined ? 17 : 15)}`}>${STATUS_TIME}</span>
+    <span class="wa-phone-icons" style=${`right:${px(punch === undefined ? 35 : 20)};top:${px(centreY)};gap:${px(6)}`}>
       <svg width=${r2(16.8 * s)} height=${r2(10 * s)} viewBox="0 0 16.8 10" aria-hidden="true">${bars}</svg>
       ${wifi}
       <span class="wa-phone-battery" style=${`width:${px(25)};height:${px(12)};border-radius:${px(4)};padding:${px(1.5)}`}><i style=${`border-radius:${px(2.5)}`}></i></span>
@@ -462,7 +507,8 @@ export function renderPhoneFrame(
   const switcher = layout.switcher === undefined ? nothing
     : html`<div class="wa-phone-switcher" aria-hidden="true" style=${`height:${px(layout.switcher.height)};margin:0 ${px(layout.switcher.x)} ${px(PHONE_SWITCHER_GAP)}`}></div>`;
   const title = ios ? (options?.title ?? "").trim() : "";
-  return html`<div class="wa-phone${ios ? " ios" : ""}${ios && options?.ink === true ? " ink" : ""}" aria-label=${options?.label ?? "iPhone"}
+  const android = isAndroidPhoneModel(model);
+  return html`<div class="wa-phone${ios ? " ios" : ""}${ios && options?.ink === true ? " ink" : ""}${android ? " android" : ""}" aria-label=${options?.label ?? (android ? "Android phone" : "iPhone")}
     style=${`--pf-s:${s};--pf-bezel:${bezel}px;--pf-rim:${rim}px;--pf-radius:${radius}px;--wf-radius:0px;--pf-left-top:${at(0.17)};--pf-left-h:${at(0.22)};--pf-right-top:${at(0.26)};--pf-right-h:${at(0.1)}`}>
     <div class="wa-phone-screen" style=${`width:${px(model.screen.width)};min-height:${px(model.screen.height)}`}>
       ${options?.backdrop === undefined ? nothing
@@ -477,7 +523,7 @@ export function renderPhoneFrame(
       </div>
       <div class="wa-phone-dots-bar" style=${`height:${px(layout.bottomBar.height)}`}>${dots?.top === false ? dots.row : nothing}</div>
       <div class="wa-phone-foot" style=${`height:${px(model.safeBottom)}`}>
-        ${model.safeBottom > 0 ? html`<span class="wa-phone-home" style=${`width:${px(134)};height:${px(5)};bottom:${px(8)}`}></span>` : nothing}
+        ${model.safeBottom > 0 ? html`<span class="wa-phone-home" style=${android ? `width:${px(108)};height:${px(4)};bottom:${px(8)}` : `width:${px(134)};height:${px(5)};bottom:${px(8)}`}></span>` : nothing}
       </div>
     </div>
   </div>`;
@@ -564,6 +610,14 @@ export const phoneFrameStyles = css`
   .wa-phone-backdrop { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
   .wa-phone-status { position: relative; }
   .wa-phone-island { position: absolute; border-radius: 999px; background: #000; }
+  /* An Android phone's front camera, a punch hole in the screen. */
+  .wa-phone-punch { position: absolute; border-radius: 50%; background: #000; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+  /* An Android phone's status bar time sits by its left edge, not centred in
+     an ear beside an island. */
+  .wa-phone.android .wa-phone-time { transform: translate(0, -50%); font-weight: 500; }
+  /* An Android phone carries its buttons on the right only: no Action button. */
+  .wa-phone.android::before { display: none; }
+  .wa-phone.android .wa-phone-screen { font-family: "Roboto", system-ui, sans-serif; }
   .wa-phone-time { position: absolute; transform: translate(-50%, -50%); font-weight: 600; line-height: 1; letter-spacing: -0.01em; }
   .wa-phone-icons { position: absolute; display: flex; align-items: center; transform: translateY(-50%); }
   .wa-phone-icons svg { display: block; }

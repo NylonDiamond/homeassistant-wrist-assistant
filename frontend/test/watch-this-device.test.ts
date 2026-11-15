@@ -9,7 +9,7 @@ import type { OwnerSummary } from "../src/ha-api.js";
 import { matchesSearch, searchTerms } from "../src/watch-settings-nav.js";
 import {
   THIS_DEVICE_PAIRED_HELP,
-  THIS_DEVICE_SEARCH_WORDS,
+  thisDeviceSearchWords,
   appText,
   ownerText,
   pairedDateText,
@@ -83,12 +83,12 @@ describe("the This watch card", () => {
 
   it("is found by pair, as the pairing card was", () => {
     for (const words of ["pair", "pairing", "paired", "owner", "app version"]) {
-      expect(matchesSearch(searchTerms(words), [THIS_DEVICE_SEARCH_WORDS]), words).toBe(true);
+      expect(matchesSearch(searchTerms(words), [thisDeviceSearchWords()]), words).toBe(true);
     }
   });
 
   it("keeps to plain words: no dashes between clauses", () => {
-    const all = [thisDeviceNote("watch"), thisDeviceNote("iphone"), THIS_DEVICE_PAIRED_HELP, THIS_DEVICE_SEARCH_WORDS];
+    const all = [thisDeviceNote("watch"), thisDeviceNote("iphone"), THIS_DEVICE_PAIRED_HELP, thisDeviceSearchWords()];
     for (const text of all) {
       expect(text).not.toMatch(/[–—]/);
       expect(text).not.toContain(" - ");

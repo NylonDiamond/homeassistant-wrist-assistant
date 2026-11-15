@@ -3,6 +3,7 @@
 // to the Draft's undo history. Controls are plain HTML inputs styled to HA
 // so the bundle stays free of HA's internal component library.
 
+import { type DevicePlatform, nounFor, generalCopy } from "./device-platform.js";
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -491,6 +492,9 @@ export interface EditorHost {
   /** Which device the document is edited for. The Control Center mock draws
    * the shapes that device has. Absent in a test host, which draws the watch. */
   deviceKind?: DeviceKind;
+  /** What that device runs, for the words that name it. Absent is its kind's
+   * Apple platform. */
+  platform?: DevicePlatform | null;
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
   endGesture(): void;
@@ -1996,6 +2000,8 @@ export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols"> & {
   /** The device that draws the icon, for the warnings that name it: an
    * iPhone for an iPhone's page, else a watch. */
   readonly device?: "watch" | "iphone";
+  /** What that device runs, for its noun: an Android phone is "the phone". */
+  readonly platform?: DevicePlatform | null;
 };
 
 export interface SymbolFieldOptions {
@@ -2095,7 +2101,7 @@ export function symbolField(
   const offersMdi = setPath !== undefined;
   const showing: SymbolPack = offersMdi ? (browser.pack(key) ?? (isMdiName ? "mdi" : "sf")) : "sf";
   const missing = symbolIsMissing(current, known);
-  const drawer = host.device === "iphone" ? "iPhone" : "watch";
+  const drawer = nounFor(host.device ?? "watch", host.platform);
   // Asked for only when it is needed: the first ask loads the whole catalogue.
   const mdiNames = offersMdi && (isMdiName || (open && showing === "mdi")) ? host.icons.mdiNames?.() : undefined;
 
@@ -4871,6 +4877,13 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
   return { type: type as "openApp" };
 }
 
+/** Which phone's caveat the tap menu adds: false on a watch, "android" on
+ * an Android phone, true on an iPhone. */
+function tapMenuPhone(host: Pick<EditorHost, "deviceKind" | "platform">): boolean | "android" {
+  if (host.deviceKind !== "iphone") return false;
+  return host.platform === "android" ? "android" : true;
+}
+
 /**
  * The tap action picker: a button naming the current action, and a menu that
  * files every action under a heading with one line saying what it does.
@@ -4890,7 +4903,7 @@ function tapActionMenu(
   options: [TapAction["type"], string][],
   set: (v: TapAction["type"]) => void,
   key: string,
-  onPhone = false,
+  onPhone: boolean | "ios" | "android" = false,
 ): TemplateResult {
   const offered: [TapAction["type"], string][] = options.some(([t]) => t === value)
     ? options
@@ -5464,7 +5477,7 @@ function docTapFields(host: EditorHost): TemplateResult {
       // Mirrors the iPhone preset editor: the chosen page belongs to the
       // openPage type; leaving it clears the choice.
       if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
-    }), "doc-tap", host.deviceKind === "iphone")}
+    }), "doc-tap", tapMenuPhone(host))}
     ${tapNote(tap, usesPages(cfg))}
     ${tap.type === "refreshAll"
       ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
@@ -5876,7 +5889,10 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
     ${forcedToButton
       ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
       : nothing}
-    <div class="hint">A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
+    <div class="hint">${generalCopy(
+      "A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.",
+      "A control is one press in Control Center, or in Quick Settings on an Android phone, so it runs the same actions a tap does minus the ones that need the app open on a page.",
+    )}</div>
     </div>
     <div class="fgroup">
     ${valueEditor(host, spec.title, (v) => set((c) => { c.title = v; }, "title"),
@@ -9602,7 +9618,7 @@ export function tapActionEditor(
     ${tapActionMenu(label, action.type, types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
-    }), key, host.deviceKind === "iphone")}
+    }), key, tapMenuPhone(host))}
     ${tapNote(action, usesPages(host.config))}
     ${action.type === "refreshAll"
       ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))

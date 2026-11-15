@@ -22,6 +22,7 @@ from homeassistant.helpers.event import async_call_later
 from .api import MAX_EVENTS_BUFFER, DeltaCoordinator
 from .const import DOMAIN, PANEL_CONFIGURATION_URL, WristAssistantConfigEntry
 from .device_lookup import find_paired_device
+from .device_platform import PHONE_MODELS, WATCH_MODELS
 from .notifications import NotificationTokenStore
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
@@ -288,6 +289,8 @@ class WatchCountSensor(_WristAssistantSensorBase):
     # share the `(DOMAIN, watch_<id>)` identifier prefix (legacy naming), so
     # the model field — set by build_device_info — is the reliable selector.
     _WATCH_MODEL = "Apple Watch"
+    # Every model a watch can carry: an Apple Watch's and a Wear OS watch's.
+    _WATCH_MODELS = WATCH_MODELS
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -315,7 +318,7 @@ class WatchCountSensor(_WristAssistantSensorBase):
             for device in dr.async_entries_for_config_entry(
                 dev_reg, self._entry.entry_id
             )
-            if device.model == self._WATCH_MODEL
+            if device.model in self._WATCH_MODELS
         )
 
 
@@ -338,6 +341,8 @@ class PhoneCountSensor(_WristAssistantSensorBase):
     # build_device_info is the reliable selector, since iPhones and watches
     # share the legacy `(DOMAIN, watch_<id>)` identifier prefix.
     _IPHONE_MODEL = "iPhone"
+    # Every model a phone can carry: an iPhone's and an Android phone's.
+    _PHONE_MODELS = PHONE_MODELS
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -364,7 +369,7 @@ class PhoneCountSensor(_WristAssistantSensorBase):
             for device in dr.async_entries_for_config_entry(
                 dev_reg, self._entry.entry_id
             )
-            if device.model == self._IPHONE_MODEL
+            if device.model in self._PHONE_MODELS
         )
 
 

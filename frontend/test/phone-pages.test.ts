@@ -15,10 +15,10 @@ import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, screenTakesPhone } from "../src/s
 import { IPHONE_PICK_KEY, WATCH_PICK_KEY, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick } from "../src/watch-pick.js";
 import { httpActionsSaveNote } from "../src/watch-http-actions/save-note.js";
 import { watchMenusSaveNote } from "../src/watch-menus/save-note.js";
-import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
+import { notForIphoneText, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
 import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
-import { IPHONE_ROW_NONE_NOTE, IPHONE_ROW_UPDATE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
+import { iphoneRowNoneNote, IPHONE_ROW_UPDATE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
 import { WATCH_SETTINGS_CATALOG, catalogFor, formValues, isShown, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
 import { watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
@@ -271,7 +271,7 @@ describe("the iPhone app's row", () => {
     const tpl = renderWatchRow(input);
     const text = flat(tpl);
     expect(text).toContain(">Pair an iPhone</span>");
-    expect(text).toContain(IPHONE_ROW_NONE_NOTE);
+    expect(text).toContain(iphoneRowNoneNote());
     expect(text).not.toContain("wa-wr-links");
     expect(text).not.toContain("Pair a watch");
     const click = (v: unknown): void => {
@@ -417,10 +417,10 @@ describe("a refusal as not_for_iphone", () => {
   const refused = { code: "not_for_iphone", message: "kind 'control_center' is not for an iPhone" };
 
   it("reads in plain words, at the top or inside a lost connection's result", () => {
-    expect(watchCommandError(refused)).toEqual({ code: "not_for_iphone", message: NOT_FOR_IPHONE_TEXT });
-    expect(watchCommandError({ error: refused }).message).toBe(NOT_FOR_IPHONE_TEXT);
-    expect(watchCommandError(Object.assign(new Error(refused.message), { code: refused.code })).message).toBe(NOT_FOR_IPHONE_TEXT);
-    expect(NOT_FOR_IPHONE_TEXT).not.toMatch(/not_for_iphone| - |\u2013|\u2014/);
+    expect(watchCommandError(refused)).toEqual({ code: "not_for_iphone", message: notForIphoneText() });
+    expect(watchCommandError({ error: refused }).message).toBe(notForIphoneText());
+    expect(watchCommandError(Object.assign(new Error(refused.message), { code: refused.code })).message).toBe(notForIphoneText());
+    expect(notForIphoneText()).not.toMatch(/not_for_iphone| - |\u2013|\u2014/);
   });
 
   it("leaves every other refusal in Home Assistant's own words", () => {
@@ -438,13 +438,13 @@ describe("a refusal as not_for_iphone", () => {
       roomsSaveNote({ ok: false, ...refused }, "rooms"),
       roomsSaveNote({ ok: false, ...refused }, "behavior"),
     ];
-    for (const note of notes) expect(note).toEqual({ kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` });
+    for (const note of notes) expect(note).toEqual({ kind: "err", text: `Not saved. ${notForIphoneText()}` });
   });
 
   it("is said in plain words by the panel and the Settings page too", () => {
     for (const file of ["panel.ts", "watch-settings-view.ts"]) {
       const source = readFileSync(join(__dirname, "..", "src", file), "utf8");
-      expect(source).toMatch(/function errText\(err: unknown\): string \{\n  if \(watchCommandError\(err\)\.code === "not_for_iphone"\) return NOT_FOR_IPHONE_TEXT;/);
+      expect(source).toMatch(/function errText\(err: unknown\): string \{\n  if \(watchCommandError\(err\)\.code === "not_for_iphone"\) return notForIphoneText\(\);/);
     }
   });
 });

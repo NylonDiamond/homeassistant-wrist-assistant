@@ -36,7 +36,7 @@
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
-import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "../watch-pages/save-note.js";
+import { notForIphoneText, watchCommandError } from "../watch-pages/save-note.js";
 import { type PhoneMoves, takesSettingsFromAnotherHome, waitForIphoneText } from "../watch-settings.js";
 import {
   type PointRooms,
@@ -723,7 +723,7 @@ export function roomsSaveNote(result: RoomsSaveResult, kind: RoomsKind = "behavi
     case "no_record":
       return { kind: "warn", text: home ? "Not saved. Home Assistant no longer holds rooms for this home." : "Not saved. Home Assistant no longer holds settings for this watch." };
     case "not_for_iphone":
-      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
+      return { kind: "err", text: `Not saved. ${notForIphoneText()}` };
     case "busy":
       return { kind: "warn", text: "Already saving. Wait a moment for that save to finish." };
     case "unavailable":
@@ -811,9 +811,13 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
 /** The one line that stands for the four main house keys, in the words
  * Watch settings uses for the gestures. */
 export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.";
+/** The same on a Wear OS watch, which has no double pinch. */
+export const HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT = "The double-tap on the page title and the point control switches come from this watch's main home.";
 /** The same place on an iPhone, which has no main house: its double-tap on
  * the page title is in its own settings, and it has no double pinch. */
 export const HOME_ROOMS_PHONE_TEXT = "The double-tap on the page title is in this iPhone's settings.";
+/** The same on an Android phone. */
+export const HOME_ROOMS_ANDROID_TEXT = "The double-tap on the page title is in this phone's settings.";
 /** Over the wait on another home while an iPhone may still move its rooms
  * here. */
 export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";

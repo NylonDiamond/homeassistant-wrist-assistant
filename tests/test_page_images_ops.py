@@ -837,3 +837,109 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
     assert lines[photos + 1] == "coordinator.register_capability(TILE_PHOTO_LIST_CAPABILITY)"
     assert lines[photos + 2] == "coordinator.register_capability(TILE_PHOTO_EDIT_CAPABILITY)"
     assert 'PAGE_IMAGES_STORAGE_KEY = "wrist_assistant.page_images"' in const
+
+
+# ── an Android phone and a Wear OS watch ─────────────────────────────────
+#
+# The photo ops are open to any paired device and read only the signer's
+# id and user, so the Android apps' Photo Icons maker (an Android phone)
+# stores, lists, edits again and replaces as the iPhone's does, and a Wear
+# OS watch reads the list. Replace runs with the real
+# ``panel_access.device_may_take_item`` here: it reads each owner's bound
+# user, never the platform.
+
+
+def _real_device_may_take_item() -> Any:
+    source = _PKG_DIR / "panel_access.py"
+    tree = ast.parse(source.read_text(), filename=str(source))
+    [node] = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "device_may_take_item"]
+    namespace: dict[str, Any] = {"Any": Any, "LIBRARY_OWNER_ID": "library"}
+    exec(  # noqa: S102
+        compile(ast.Module(body=[node], type_ignores=[]), str(source), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True),
+        namespace,
+    )
+    return namespace["device_may_take_item"]
+
+
+class _PlatformSecrets(dict):
+    """The secret store's entries as the ops read them: kind, platform, the
+    bound user and the old phone link."""
+
+    def add(self, device_id: str, kind: str, platform: str, user_id: str | None) -> None:
+        self[device_id] = types.SimpleNamespace(
+            device_kind=kind, platform=platform, user_id=user_id, owner_iphone_id=None
+        )
+
+
+PIXEL = "pixel-1"
+WEAR = "wear-1"
+
+
+def _android_home(env) -> None:
+    secrets = _PlatformSecrets()
+    secrets.add(PIXEL, "iphone", "android", "anna")
+    secrets.add(WEAR, "watch", "wearos", "anna")
+    secrets.add("watch-B", "watch", "watchos", "ben")
+    env.domain.widget_secret_store = secrets
+    env.ops["device_may_take_item"] = _real_device_may_take_item()
+
+
+def test_an_android_phone_puts_an_icon_with_its_edit_pack_and_reads_it_back(env) -> None:
+    _android_home(env)
+    reply = _put_icon_as(env, PIXEL, ICON_UUID, edit=b64(PACK))
+    assert (reply.status, reply.body) == (200, {"ok": True, "status": "stored"})
+    for watch_id in (PIXEL, WEAR):
+        [listed] = op(env, "_op_page_image_list", {}, watch_id=watch_id, user_id="anna").body["images"]
+        assert listed["image_id"] == ICON_UUID and listed["has_edit"] is True
+        assert listed["entity_id"] == "light.desk_lamp"
+    got = op(env, "_op_page_image_edit_get", {"image_id": ICON_UUID}, watch_id=PIXEL, user_id="anna")
+    assert (got.status, got.content_type, got.body) == (200, "application/octet-stream", PACK)
+    # The photo itself, as a Wear watch fetches it for a tile.
+    photo = op(env, "_op_page_image_get", {"image_id": ICON_UUID}, watch_id=WEAR, user_id="anna")
+    assert (photo.status, photo.content_type) == (200, "image/png")
+
+
+def test_an_android_phone_s_pack_is_held_to_the_same_contract(env) -> None:
+    """``WAED`` first and at most 1 MiB, whichever app made it."""
+    _android_home(env)
+    bad = _put_icon_as(env, PIXEL, ICON_UUID, edit=b64(b"NOPE" + bytes(8)))
+    assert (bad.status, bad.body["error"]) == (400, "invalid")
+    big = _put_icon_as(env, PIXEL, ICON_UUID, edit=b64(b"WAED" + bytes(1024 * 1024)))
+    assert (big.status, big.body["error"]) == (413, "too_large")
+    assert env.base.files() == []
+
+
+def test_an_android_phone_replaces_its_own_and_its_wear_watch_s_tiles(env) -> None:
+    _android_home(env)
+    _put_icon_as(env, PIXEL, ICON_UUID)
+    _put_icon_as(env, PIXEL, NEW_UUID)
+    env.base.put_pages(PIXEL, _pages_with(ICON_UUID))
+    env.base.put_pages(WEAR, _pages_with(ICON_UUID, FAN_UUID))
+    # Another person's watch, with pages of its own, keeps its tiles.
+    env.base.put_pages("watch-B", _own_pages("b", ICON_UUID))
+    reply = op(env, "_op_page_image_replace", {"image_id": ICON_UUID, "with": NEW_UUID}, watch_id=PIXEL, user_id="anna")
+    assert (reply.status, reply.body) == (200, {"ok": True, "tiles": 4, "owners": 2, "skipped": 1})
+    assert _icon_ids(env, PIXEL) == [NEW_UUID, NEW_UUID]
+    assert _icon_ids(env, WEAR) == [NEW_UUID, FAN_UUID, NEW_UUID]
+    assert _icon_ids(env, "watch-B") == [ICON_UUID, ICON_UUID]
+
+
+def _own_pages(prefix: str, *photo_ids: str | None) -> dict[str, Any]:
+    """`_pages_with` under page and tile ids of the owner's own, so no page
+    is one the library links to another owner's."""
+    document = _pages_with(*photo_ids)
+    for page in document["pages"]:
+        page["id"] = f"{prefix}-{page['id']}"
+        for item in page["items"]:
+            item["id"] = f"{prefix}-{item['id']}"
+    return document
+
+
+def _put_icon_as(env, watch_id: str, image_id: str, **extra: Any) -> _Response:
+    return op(
+        env,
+        "_op_page_image_put",
+        {"image_id": image_id, "data": b64(png()), "kind": "icon", "entity_id": "light.desk_lamp", **extra},
+        watch_id=watch_id,
+        user_id="anna",
+    )

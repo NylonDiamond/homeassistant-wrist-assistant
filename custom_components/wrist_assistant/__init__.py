@@ -48,6 +48,7 @@ from .complication_store import ComplicationStore, ComplicationStoreError
 from .complication_ws import async_register_websocket_commands
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
+    DEVICE_PLATFORMS_CAPABILITY,
     DOMAIN,
     HOME_MAP_CAPABILITY,
     HOME_MAP_PAGE_ADD_CAPABILITY,
@@ -90,6 +91,7 @@ from .const import (
 )
 from .control_center_move import ControlCenterMover
 from .device_lookup import paired_device_name
+from .device_platform import general_words
 from .home_map_store import HomeMapStore
 from .home_map_ws import async_register_home_map_commands
 from .http_actions_runner import HTTPActionRunner
@@ -579,6 +581,8 @@ async def _deliver_push(
         # A mirrored (iOS) push with no sound delivers to the wrist silently AND
         # without a haptic — the user never perceives it. Force at least the
         # default alert sound when the chosen token is the companion iPhone.
+        # Only there: an FCM push (android, wearos) is a data message the app
+        # draws itself, and it picks its own sound, so none is forced on it.
         # A silent background push never carries a sound: the relay would put
         # it beside content-available.
         target_sound = sound
@@ -1239,6 +1243,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # An iPhone says its move is finished (the signed `move_finished` op). It
     # sends that only when it sees this.
     coordinator.register_capability(MOVE_FINISHED_CAPABILITY)
+    # Android phones and Wear OS watches (device_platform.py): the platform
+    # field, their models and FCM push. The Android apps register a push
+    # token only when they see this.
+    coordinator.register_capability(DEVICE_PLATFORMS_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -1544,10 +1552,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         if target_raw:
             dev_reg = dr.async_get(hass)
             device = dev_reg.async_get(target_raw)
+            # General copy: "iPhone" while every paired device is an Apple
+            # one, as it always was, "phone" once an Android device is paired.
+            secret_store = getattr(data, "widget_secret_store", None)
+            phone = general_words(
+                secret_store.all_entries if secret_store is not None else {}, "iPhone", "phone"
+            )
             if device is None:
                 raise HomeAssistantError(
                     f"No device has the id {target_raw}. Pick the watch or "
-                    "iPhone again as the target."
+                    f"{phone} again as the target."
                 )
             # Paired watches and iPhones are filed as "watch_<id>"; the hub
             # device (the config entry id) is not a target.
@@ -1558,7 +1572,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             if target is None:
                 name = device.name_by_user or device.name or target_raw
                 raise HomeAssistantError(
-                    f"{name} is not a watch or iPhone paired with Wrist "
+                    f"{name} is not a watch or {phone} paired with Wrist "
                     "Assistant. Pick one of those as the target."
                 )
 

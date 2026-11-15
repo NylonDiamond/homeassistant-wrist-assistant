@@ -17,6 +17,7 @@
 import { css } from "lit";
 import type { FamilyKind } from "./model.js";
 import type { DeviceKind } from "./version.js";
+import { generalCopy } from "./device-platform.js";
 
 /** How the Complications tab shows its designs: the board, or the cards. */
 export type CompListView = "board" | "cards";
@@ -39,8 +40,15 @@ export const COMP_WHERE_TITLES: Readonly<Record<CompWhere, string>> = {
 export const COMP_WHERE_HINTS: Readonly<Record<CompWhere, string>> = {
   face: "On a watch face. A design on no device can go on an iPhone's Lock Screen too.",
   lock: "On an iPhone's Lock Screen.",
-  home: "On an iPhone's Home Screen.",
-  control: "A control in Control Center, on a watch or an iPhone.",
+  // General copy (`generalCopy`): the Apple words until an Android device is
+  // paired here.
+  get home() { return generalCopy("On an iPhone's Home Screen.", "On a phone's Home Screen."); },
+  get control() {
+    return generalCopy(
+      "A control in Control Center, on a watch or an iPhone.",
+      "A control in Control Center on an Apple Watch or an iPhone, and a Quick Settings tile on an Android phone.",
+    );
+  },
   other: "These have no shape yet, or wait to move from the iPhone app.",
 };
 
@@ -92,6 +100,8 @@ export interface CompCellFacts {
   /** The kind of device the design stands on, and this one's. */
   designKind: DeviceKind;
   deviceKind: "watch" | "iphone";
+  /** The device runs one of the Android apps, which never had presets. */
+  android?: boolean;
   deviceName: string;
   /** The design's shape goes on an iPhone's Lock Screen. */
   lockShape: boolean;
@@ -120,7 +130,7 @@ export function compCell(f: CompCellFacts): CompCell {
     return {
       on: false, grey: true,
       dash: f.designKind === "iphone"
-        ? `An iPhone widget. To have it on ${name}, open it and use Duplicate as.`
+        ? `${generalCopy("An iPhone", "A phone")} widget. To have it on ${name}, open it and use Duplicate as.`
         : `A watch complication. To have it on ${name}, open it and use Duplicate as.`,
       title: "",
     };
@@ -139,7 +149,8 @@ export function compCell(f: CompCellFacts): CompCell {
     return { on: false, dash: `${name} does not draw this shape.`, title: "" };
   }
   if (f.full) {
-    return { on: false, title: `${name} is full for this shape. Presets made in the iPhone app count too. Delete a complication on it first.`, note: "full", noteWarn: true };
+    const presets = f.android === true ? "" : " Presets made in the iPhone app count too.";
+    return { on: false, title: `${name} is full for this shape.${presets} Delete a complication on it first.`, note: "full", noteWarn: true };
   }
   const lock = f.deviceKind === "iphone" && f.designKind === "library" && f.lockShape;
   return { on: false, next: true, title: lock ? `Put on ${name}'s Lock Screen` : `Put on ${name}` };
@@ -149,9 +160,11 @@ export function compCell(f: CompCellFacts): CompCell {
  * rows: watch designs on the iPhones' columns, iPhone designs on the watches'.
  * The panel adds "Use Duplicate as." Undefined when no column is greyed. */
 export function compGreyNote(kinds: { watchGrey: boolean; iphoneGrey: boolean }): string | undefined {
-  if (kinds.iphoneGrey && kinds.watchGrey) return "Watch designs cannot go on an iPhone, nor iPhone designs on a watch.";
-  if (kinds.iphoneGrey) return "Watch designs cannot go on an iPhone.";
-  if (kinds.watchGrey) return "iPhone designs cannot go on a watch.";
+  if (kinds.iphoneGrey && kinds.watchGrey) {
+    return generalCopy("Watch designs cannot go on an iPhone, nor iPhone designs on a watch.", "Watch designs cannot go on a phone, nor phone designs on a watch.");
+  }
+  if (kinds.iphoneGrey) return generalCopy("Watch designs cannot go on an iPhone.", "Watch designs cannot go on a phone.");
+  if (kinds.watchGrey) return generalCopy("iPhone designs cannot go on a watch.", "Phone designs cannot go on a watch.");
   return undefined;
 }
 
@@ -166,8 +179,8 @@ export function compNoun(kind: "watch" | "iphone", n: number): string {
 export function compLeftOutText(kind: "watch" | "iphone", n: number): string | undefined {
   if (n === 0) return undefined;
   return kind === "watch"
-    ? `${n} iPhone ${n === 1 ? "widget is" : "widgets are"} not listed: a watch cannot show ${n === 1 ? "it" : "them"}.`
-    : `${n} watch ${n === 1 ? "complication is" : "complications are"} not listed: an iPhone cannot show ${n === 1 ? "it" : "them"}.`;
+    ? `${n} ${generalCopy("iPhone", "phone")} ${n === 1 ? "widget is" : "widgets are"} not listed: a watch cannot show ${n === 1 ? "it" : "them"}.`
+    : `${n} watch ${n === 1 ? "complication is" : "complications are"} not listed: ${generalCopy("an iPhone", "a phone")} cannot show ${n === 1 ? "it" : "them"}.`;
 }
 
 /** Where the tab remembers Board or Cards. */

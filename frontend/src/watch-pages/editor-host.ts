@@ -12,6 +12,7 @@
 // No DOM here: the scrub bookkeeping below is plain state so it can be
 // tested.
 
+import { type DevicePlatform, isAndroidPlatform } from "../device-platform.js";
 import type { HassLike } from "../ha-api.js";
 import type { HomeMapDocument } from "../home-map/model.js";
 import type { IconProvider } from "../renderer.js";
@@ -57,6 +58,9 @@ export interface WatchPagesEditorHost {
   /** The device whose pages these are, for the lines that name it ("the
    * iPhone hides the title"). Absent: a watch. */
   readonly device?: SettingDevice;
+  /** What that device runs, so an Android phone is "the phone" in those
+   * lines. Absent: its kind's Apple platform. */
+  readonly platform?: DevicePlatform;
   /** Whether every device that shows the page draws One Look
    * (`oneLookForEvery`, version.ts), so the tile settings speak for it
    * (`one-look-settings.ts`): its lines, and the controls it does not draw
@@ -224,10 +228,22 @@ export function hostDevice(host: Pick<WatchPagesEditorHost, "device">): SettingD
   return host.device ?? "watch";
 }
 
+/** A table's iPhone words as an Android device's editor says them. The
+ * tables (tile-app.json, the phone keys) name the iPhone, which the Apple
+ * app reads and every Apple device keeps; on an Android phone's or a Wear OS
+ * watch's editor the phone these lines are about is an Android phone. */
+export function phoneWordsFor(host: Pick<WatchPagesEditorHost, "platform">, words: string): string {
+  if (!isAndroidPlatform(host.platform)) return words;
+  return words
+    .replaceAll("an iPhone", "a phone")
+    .replaceAll("The iPhone", "The phone")
+    .replaceAll("the iPhone", "the phone");
+}
+
 /** "watch" or "iPhone", for the lines that name the device showing the
  * page: `The ${hostDeviceNoun(host)} picks the icon`. */
-export function hostDeviceNoun(host: Pick<WatchPagesEditorHost, "device">): string {
-  return deviceNoun(hostDevice(host));
+export function hostDeviceNoun(host: Pick<WatchPagesEditorHost, "device" | "platform">): string {
+  return deviceNoun(hostDevice(host), host.platform);
 }
 
 /** `document` (the one being edited, by default) with the host's other pages

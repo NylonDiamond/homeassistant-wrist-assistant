@@ -325,7 +325,7 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
             @click=${() => commit(host, `launcherRemove`, (d) => removeWatchRemoteLauncher(d, ...at(host), i))}>${uiIcon("delete")}</button></div>
         ${typingField(host, labelSetting, textField("Label", typed(host, labelSetting) ?? row.label, (v) =>
           commit(host, labelSetting, (d) => setWatchRemoteLauncherLabel(d, ...at(host), i, v), { typing: true })))}
-        ${typingField(host, iconSetting, symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host) }, typed(host, iconSetting) ?? row.icon, (v) =>
+        ${typingField(host, iconSetting, symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform }, typed(host, iconSetting) ?? row.icon, (v) =>
           commit(host, iconSetting, (d) => setWatchRemoteLauncherIcon(d, ...at(host), i, v.trim() === "" ? null : v)),
           `pe:sp:launcher:${host.tileId}:${i}`, { tint: row.color }))}
         ${colorPicker(host, colorSetting, {

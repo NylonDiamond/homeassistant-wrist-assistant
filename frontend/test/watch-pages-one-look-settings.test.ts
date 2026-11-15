@@ -14,14 +14,14 @@ import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
   ONE_LOOK_ANIMATE_REASON,
-  ONE_LOOK_ARTWORK_NOTE,
+  oneLookArtworkNote,
   ONE_LOOK_CAMERA_PREVIEW_HINT,
   ONE_LOOK_DIM_LIGHT_NOTE,
   ONE_LOOK_DIM_OFF_REASON,
   ONE_LOOK_EXTRA_THIN_REASON,
   ONE_LOOK_RAINBOW_NOTE,
   ONE_LOOK_STATE_ICONS_NOTE,
-  ONE_LOOK_TEXT_SHADOW_NOTE,
+  oneLookTextShadowNote,
   ONE_LOOK_WEIGHT_NOTE,
   oneLookCardSubtitle,
   oneLookColorNote,
@@ -102,7 +102,7 @@ describe("the old look stays as it was", () => {
       expect(light).toContain("An icon or color per state. A state with none uses the tile's.");
       expect(light).toContain("Show brightness percentage on tile.");
       expect(light).not.toContain("ts-off");
-      for (const line of [ONE_LOOK_RAINBOW_NOTE, ONE_LOOK_WEIGHT_NOTE, ONE_LOOK_TEXT_SHADOW_NOTE, ONE_LOOK_DIM_LIGHT_NOTE]) expect(light).not.toContain(line);
+      for (const line of [ONE_LOOK_RAINBOW_NOTE, ONE_LOOK_WEIGHT_NOTE, oneLookTextShadowNote(), ONE_LOOK_DIM_LIGHT_NOTE]) expect(light).not.toContain(line);
       expect(drawn(tile("switch.fan"), oneLook)).toContain("The tile dims while it is off, or keeps its color.");
       expect(tileInspectorSections(tileHost(tile("point_control.x"), oneLook).host)).not.toContain("state");
     }
@@ -168,7 +168,7 @@ describe("Text in One Look", () => {
     const light = drawn(tile("light.desk"), true);
     expect(light).toContain("Leave empty for Auto, sized to the tile, or pick 4 to 16 pt. The name stays on one line and shrinks if it is too long.");
     expect(light).toContain(ONE_LOOK_WEIGHT_NOTE);
-    expect(light).toContain(ONE_LOOK_TEXT_SHADOW_NOTE);
+    expect(light).toContain(oneLookTextShadowNote());
   });
 });
 
@@ -222,8 +222,8 @@ describe("State in One Look", () => {
   });
 
   it("notes the iPhone's picture and chart tiles, which draw no bar or pill", () => {
-    expect(drawn(tile("media_player.tv", { mediaArtwork: true }), true)).toContain(ONE_LOOK_ARTWORK_NOTE);
-    expect(drawn(tile("media_player.tv"), true)).not.toContain(ONE_LOOK_ARTWORK_NOTE);
+    expect(drawn(tile("media_player.tv", { mediaArtwork: true }), true)).toContain(oneLookArtworkNote());
+    expect(drawn(tile("media_player.tv"), true)).not.toContain(oneLookArtworkNote());
   });
 
   it("gives Point control and Assist no State section, as they draw no round button", () => {

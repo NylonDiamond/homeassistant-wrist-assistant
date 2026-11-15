@@ -12,27 +12,24 @@
 
 import type { ClientCertificateStatus } from "./ha-api.js";
 import { type PairUserChoice, errorCode } from "./watch-settings.js";
+import { generalCopy } from "./device-platform.js";
 
 export const CLIENT_CERT_TITLE = "Client certificate";
 
 export const CLIENT_CERT_HELP =
   "For a Home Assistant behind a reverse proxy that asks for a client certificate (mTLS). Not needed for most homes.";
 
-/** Under the card after an upload or a removal. */
-export const CLIENT_CERT_SAVED_NOTE = "Your watch and iPhone pick it up the next time they open the app.";
-
 /** In place of the card's body on an integration from before the panel kept
  * certificates, which does not know the commands at all. */
 export const CLIENT_CERT_UPDATE_TEXT = "Update the Wrist Assistant integration to add a client certificate here.";
-
-/** Asked before Remove runs. */
-export const CLIENT_CERT_REMOVE_ASK = "Remove this certificate? Your watch and iPhone stop sending it the next time they open the app.";
 
 /** The title of the menu that picks whose certificate the card shows. */
 export const CLIENT_CERT_FOR_TITLE = "For";
 
 /** The line under the menu: what the choice decides. */
-export const CLIENT_CERT_FOR_HINT = "Each person has their own. It goes to the watch and iPhone paired for them.";
+export function clientCertForHint(): string {
+  return `Each person has their own. It goes to the watch and ${generalCopy("iPhone", "phone")} paired for them.`;
+}
 
 /** The person the card is about, by name, when it is not the signed in
  * person: undefined for the signed in person, and with no menu (not an
@@ -46,19 +43,24 @@ export function clientCertOtherName(
   return users.find((u) => u.id === userId)?.name;
 }
 
+// The lines below name the phone in general copy (`generalCopy`): "iPhone"
+// until an Android device is paired here, then "phone".
+
 /** Under the card after an upload or a removal, naming the person when it
  * was someone else's certificate. */
 export function clientCertSavedNote(otherName?: string): string {
+  const phone = generalCopy("iPhone", "phone");
   return otherName === undefined
-    ? CLIENT_CERT_SAVED_NOTE
-    : `Saved for ${otherName}. Their watch and iPhone pick it up the next time they open the app.`;
+    ? `Your watch and ${phone} pick it up the next time they open the app.`
+    : `Saved for ${otherName}. Their watch and ${phone} pick it up the next time they open the app.`;
 }
 
 /** Asked before Remove runs, naming the person when it is someone else's. */
 export function clientCertRemoveAsk(otherName?: string): string {
+  const phone = generalCopy("iPhone", "phone");
   return otherName === undefined
-    ? CLIENT_CERT_REMOVE_ASK
-    : `Remove the certificate for ${otherName}? Their watch and iPhone stop sending it the next time they open the app.`;
+    ? `Remove this certificate? Your watch and ${phone} stop sending it the next time they open the app.`
+    : `Remove the certificate for ${otherName}? Their watch and ${phone} stop sending it the next time they open the app.`;
 }
 
 /** The Upload button's tooltip once a file is ready. */
@@ -128,6 +130,7 @@ export function shortFingerprint(fingerprint: string | null | undefined): string
 export function clientCertSourceText(source: unknown): string | undefined {
   if (source === "panel") return "Uploaded here";
   if (source === "iphone") return "From the iPhone app";
+  if (source === "android") return "From the Android app";
   return undefined;
 }
 

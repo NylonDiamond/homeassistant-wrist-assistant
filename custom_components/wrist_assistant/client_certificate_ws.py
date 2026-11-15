@@ -29,7 +29,7 @@ Commands:
 Every command answers the status:
 
     {"present": bool, "fingerprint": <hex> | null, "updated_at": <ISO> | null,
-     "revision": int, "source": "panel" | "iphone" | null}
+     "revision": int, "source": "panel" | "iphone" | "android" | null}
 
 ``revision`` is 0 and ``source`` null when the user never had a record.
 After a removal ``present`` is false with the record's revision and the

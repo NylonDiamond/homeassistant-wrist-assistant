@@ -29,7 +29,7 @@ import {
   menusEmptyText,
   menusWaitText,
   noMenuText,
-  NEW_MENU_ADMIN_TEXT,
+  newMenuAdminText,
   makeFirstMenuText,
   newMenuFullText,
   menuInUseText,
@@ -150,7 +150,7 @@ describe("the tab's words", () => {
     expect(noMenuText(old, "", true)).toBe(`No menus from ${old.name} yet. ${WAIT_FOR_UPDATE_TEXT}`);
     expect(menusWaitText("3.0.1")).toBe(`${WAIT_FOR_UPDATE_TEXT} Its menus can change after that.`);
     expect(menusWaitText("3.2.0")).toBe(MENUS_WAIT_TEXT);
-    for (const text of [allMenusLead(2), MENUS_FOOT, MENUS_BOARD_FOOT, MENUS_BOARD_HINT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
+    for (const text of [allMenusLead(2), MENUS_FOOT, MENUS_BOARD_FOOT, MENUS_BOARD_HINT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), newMenuAdminText()]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/[Ll]ink|Same as/);
     }
@@ -372,7 +372,7 @@ describe("the Menus tab", () => {
     const t = tab(false);
     show(t);
     await t.ready();
-    expect(t.whole()).toContain(NEW_MENU_ADMIN_TEXT);
+    expect(t.whole()).toContain(newMenuAdminText());
   });
 
   /** A device with no menus record, as a fresh watch has. */
@@ -391,7 +391,7 @@ describe("the Menus tab", () => {
     const name = DEVICES.find((d) => d.ownerId === CHEN)!.name;
     const before = t.whole();
     expect(before).toContain(`Make a menu for ${name}`);
-    expect(before).not.toContain(NEW_MENU_ADMIN_TEXT);
+    expect(before).not.toContain(newMenuAdminText());
     expect(before).toContain("Use New menu to make one.");
     t.call("toggleNew");
     expect(t.whole()).toContain(`an Anywhere menu on ${name}.`);

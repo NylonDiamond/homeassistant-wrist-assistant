@@ -25,6 +25,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 from .device_lookup import find_paired_device
+from .device_platform import default_device_name
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
@@ -46,8 +47,18 @@ def _device_name(hass: HomeAssistant, watch_id: str, *, kind: str) -> str:
     device = find_paired_device(dev_reg, watch_id)
     if device is not None and device.name:
         return device.name
-    prefix = "iPhone" if kind == DEVICE_KIND_IPHONE else "Watch"
-    return f"{prefix} {_short(watch_id)}"
+    domain_data = hass.data.get(DOMAIN)
+    secrets = getattr(domain_data, "widget_secret_store", None)
+    platform = None
+    if secrets is not None:
+        try:
+            platform = getattr(secrets.get(watch_id), "platform", None)
+        except Exception:  # noqa: BLE001 (a log line must never fail its caller)
+            platform = None
+    if platform is None:
+        prefix = "iPhone" if kind == DEVICE_KIND_IPHONE else "Watch"
+        return f"{prefix} {_short(watch_id)}"
+    return default_device_name(kind, platform, watch_id)
 
 
 def _kind_of(hass: HomeAssistant, watch_id: str) -> str:

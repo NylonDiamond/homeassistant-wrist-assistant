@@ -22,6 +22,7 @@ import {
   watchPageTiles,
   watchScreensAlike,
 } from "./model.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The tiles a screen could draw but has switched off. */
 export function userOffTiles(page: WatchPage, screen: WatchScreen): number {
@@ -64,13 +65,13 @@ const tilesText = (n: number): string => `${n} ${n === 1 ? "tile" : "tiles"}`;
 export function pageScreensLine(page: WatchPage, owners: readonly string[], devices: readonly LinkDevice[]): string | undefined {
   const kinds = new Set(devices.map((d) => d.kind));
   const on = new Set(devices.filter((d) => owners.some((o) => sameId(o, d.ownerId))).map((d) => d.kind));
-  if (kinds.size > 1 && on.size === 1) return on.has("watch") ? "Watch only" : "iPhone only";
+  if (kinds.size > 1 && on.size === 1) return on.has("watch") ? "Watch only" : generalCopy("iPhone only", "Phone only");
   if (isSmartWatchPage(page)) return undefined;
   const offWatch = userOffTiles(page, "watch");
   if (offWatch > 0) return `${tilesText(offWatch)} off on the watch`;
   const offPhone = userOffTiles(page, "iphone");
-  if (offPhone > 0) return `${tilesText(offPhone)} off on the iPhone`;
-  return watchScreensAlike(page) ? undefined : "iPhone arranged differently";
+  if (offPhone > 0) return `${tilesText(offPhone)} off on the ${generalCopy("iPhone", "phone")}`;
+  return watchScreensAlike(page) ? undefined : generalCopy("iPhone arranged differently", "Phone arranged differently");
 }
 
 /** The list's two filters: every page, or the pages whose screens differ. */
@@ -84,12 +85,16 @@ export function keepsPage(filter: PagesScreensFilter, page: WatchPage): boolean 
 }
 
 /** What the list says when Screens differ keeps no page. */
-export const NO_SCREENS_DIFFER_TEXT = "Every page is arranged the same on the watch and the iPhone.";
+export function noScreensDifferText(): string {
+  return `Every page is arranged the same on the watch and the ${generalCopy("iPhone", "phone")}.`;
+}
 
 // ── the card after the update ─────────────────────────────────────────────
 
 /** The card's words, once, on the Pages tab. */
-export const TWO_SCREENS_CARD_TEXT = "Watch and iPhone can now be arranged apart. Nothing has changed on your devices.";
+export function twoScreensCardText(): string {
+  return `Watch and ${generalCopy("iPhone", "phone")} can now be arranged apart. Nothing has changed on your devices.`;
+}
 
 /** Where this browser remembers the card was dismissed. */
 export const TWO_SCREENS_CARD_KEY = "wa-pages-two-screens-card-dismissed";

@@ -39,6 +39,7 @@
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b.
 
+import { type DevicePlatform, gateVersion, ownerIsAndroid, platformOf } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { canvasStyles, chromeTokens, inspectorStyles, leftCardStyles, topBarStyles } from "../editor-chrome.js";
@@ -144,6 +145,11 @@ import {
 } from "./model.js";
 import { type RoomsViewHost, renderRoomsBody, roomsViewStyles } from "./view.js";
 import { normalizedRoomKey } from "./rules.js";
+
+/** An owner's Android platform, or undefined for an Apple device or none. */
+function androidPlatformOf(owner: Parameters<typeof platformOf>[0]): DevicePlatform | undefined {
+  return owner !== undefined && owner !== null && ownerIsAndroid(owner) ? platformOf(owner) : undefined;
+}
 
 registerWatchRoomsDrafts({ dirty: anyRoomsDirty, drop: dropAllRooms });
 
@@ -760,12 +766,14 @@ export class WaRoomsEditor extends LitElement {
       },
       pagesDocument: asWatchPagesDocument(this.pagesRecord?.document),
       screen: this.screen(),
-      appVersion: this.watches.find((w) => w.owner_watch_id === watchId)?.app_version,
+      appVersion: gateVersion(this.watches.find((w) => w.owner_watch_id === watchId)),
       icons: this.memoIcons(),
       narrow: this.stacked,
       requestUpdate: () => this.requestUpdate(),
       ...(home ? { home: true } : {}),
       ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? { phone: true } : {}),
+      ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "android" ? { android: true } : {}),
+      ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "wearos" ? { wear: true } : {}),
     };
   }
 
@@ -1048,7 +1056,7 @@ export class WaRoomsEditor extends LitElement {
       // asks first.
       const shown = watches.find((w) => w.owner_watch_id === this.watchId);
       return html`<div class="pe-empty"><b>${this.device === "iphone" ? noRecordTitle("rooms", "iphone") : home ? HOME_ROOMS_NO_RECORD_TITLE : ROOMS_NO_RECORD_TITLE}</b>
-        <span>${home ? waitForIphoneText(shown?.app_version, phoneMovesOf(shown)) : roomsWaitText(shown?.app_version, phoneMovesOf(shown))}</span>
+        <span>${home ? waitForIphoneText(gateVersion(shown), phoneMovesOf(shown)) : roomsWaitText(gateVersion(shown), phoneMovesOf(shown))}</span>
         ${offersStartFresh(shown) ? html`<button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>` : nothing}
         ${renderMoveWaitOut(this.hass, shown)}
       </div>`;

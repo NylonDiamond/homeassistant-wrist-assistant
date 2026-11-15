@@ -79,6 +79,7 @@ import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
 import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page.js";
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
+import { generalCopy } from "./device-platform.js";
 
 /** The panel's own address, with nothing after it: the sidebar's link. It
  * shows the Devices tab, as `DEVICES_PATH` does. */
@@ -133,7 +134,7 @@ export const TAB_ICON: Record<BarTab, UiIconName> = Object.fromEntries(BAR_TABS.
 export const TAB_LABEL: Record<PanelTab, string> = {
   ...(Object.fromEntries(BAR_TABS.map((t) => [t.id, t.label])) as Record<BarTab, string>),
   watch: "Watch app",
-  iphone: "iPhone app",
+  get iphone() { return generalCopy("iPhone app", "Phone app"); },
 };
 
 /** One of the watch app's screens, as Home lists them and the watch row
@@ -167,15 +168,15 @@ export interface WatchScreen {
 export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "pages", label: "Pages", blurb: "are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.", path: WATCH_PAGES_PATH },
   { id: "menus", label: "Menus", blurb: "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.", path: WATCH_MENUS_PATH },
-  { id: "status-pages", label: "Status pages", blurb: "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.", path: WATCH_STATUS_PAGES_PATH },
+  { id: "status-pages", label: "Status pages", get blurb() { return generalCopy("are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.", "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or, on Apple devices, Siri."); }, path: WATCH_STATUS_PAGES_PATH },
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
   { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
   { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
-  { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
+  { id: "http-actions", label: "HTTP actions", get blurb() { return generalCopy("are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.", "are web requests Home Assistant sends when a watch or a phone runs one from a tile, a menu or a complication, shared by every watch and phone."); }, path: WATCH_HTTP_ACTIONS_PATH, shared: true },
   // "Camera framing", not "Cameras": Settings has a Cameras group of its
   // own, and this screen only sets how each picture is cut in alerts.
-  { id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
+  { id: "cameras", label: "Camera framing", get blurb() { return generalCopy("sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", "sets how each camera's picture is framed in alerts, the same on the watch and the phone."); }, path: WATCH_CAMERAS_PATH, shared: true },
   // One pre-release word for the Home map everywhere: ALPHA, as on the
   // iPhone, the New page sheet, the Add tile list and the editor.
   { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: HOME_MAP_CAPABILITY },

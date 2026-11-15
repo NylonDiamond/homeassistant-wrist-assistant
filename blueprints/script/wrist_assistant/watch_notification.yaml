@@ -5,14 +5,16 @@ blueprint:
     min_version: "2024.8.0"
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
   description: >
-    Send push notifications to your Apple Watch or iPhone with smart entity
+    Send push notifications to your watch or phone (an Apple Watch or a
+    Wear OS watch, an iPhone or an Android phone) with smart entity
     buttons, plus a snapshot from a camera or image entity if you want
     (e.g. a doorbell feed or a 3D-printer job snapshot). Each entity
     becomes a button that knows how to control itself:
 
     - Tap to toggle most entities (scenes, scripts, and buttons fire once)
 
-    - Hold to confirm: locks and alarms
+    - Hold to confirm: locks and alarms (in an Android notification the
+    button asks Confirm or Cancel instead)
 
     - Double-tap for presets: lights (brightness, color temp), covers &
     valves (position, stop), fans (speed), climates (temp, HVAC mode),
@@ -21,26 +23,35 @@ blueprint:
 
     - Camera snapshots go live: expanding the notification on iPhone
     plays the live stream right inside it (a toggle in the Camera
-    section turns this off); on the watch, tap the snapshot to open
-    the live stream in the watch app
+    section turns this off); on an Android phone, tap the notification
+    and then Live; on the watch, tap the snapshot to open the live
+    stream in the watch app
 
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title, message, and any snapshot).
 
 
-    On the watch, notifications expand automatically to show the snapshot
-    and buttons. On iPhone, **long press** the notification (or **slide it
-    down** when it banners in) to expand it in place. Tapping works too,
-    but it also opens the app.
+    On an Apple Watch, notifications expand automatically to show the
+    snapshot and buttons. On iPhone, **long press** the notification (or
+    **slide it down** when it banners in) to expand it in place. Tapping
+    works too, but it also opens the app.
+
+
+    Android draws no controls inside a notification, so there the
+    notification shows the snapshot and up to three buttons (on an Android
+    phone, **swipe it down** to see them), and **tapping** it opens the
+    alert with every button, its presets and the snapshot. A Wear OS watch
+    lists every button under its own notification.
 
 
     Setup help and troubleshooting are under **⚙️ Settings** below.
   domain: script
   input:
     target:
-      name: Target watch or iPhone
+      name: Target watch or phone
       description: >
-        *(Optional)* Watch or iPhone to send to. Leave empty to send to
+        *(Optional)* Watch or phone to send to: an Apple Watch, a Wear OS
+        watch, an iPhone or an Android phone. Leave empty to send to
         **all** paired watches.
       default: ""
       selector:
@@ -50,6 +61,10 @@ blueprint:
               model: Apple Watch
             - integration: wrist_assistant
               model: iPhone
+            - integration: wrist_assistant
+              model: Wear OS watch
+            - integration: wrist_assistant
+              model: Android phone
     title:
       name: Title
       description: "*(Optional)* Displayed above the message."
@@ -76,15 +91,18 @@ blueprint:
             notification is sent. The watch shows that snapshot; for a camera,
             tapping it opens the live stream in the watch app and expanding the
             notification on iPhone plays a live stream in its place (see the
-            Live stream toggle below). An image entity shows the captured
-            still (it has no live stream).
+            Live stream toggle below). On an Android phone the notification
+            shows the snapshot, and tapping it opens the alert with a Live
+            button. An image entity shows the captured still (it has no live
+            stream).
 
 
             **Requires the Wrist Assistant iOS app v2.1.0 or newer.** Older
             versions won't display the snapshot; the live stream on iPhone
             needs **v2.3.0 or newer** (older versions keep the snapshot).
-            Also requires remote Home Assistant access (Nabu Casa or an
-            external URL) to load when you're away from home.
+            Every version of the Android apps shows it. Also requires remote
+            Home Assistant access (Nabu Casa or an external URL) to load when
+            you're away from home.
 
 
             **Camera tip:** If your camera has a dedicated **snapshot** entity
@@ -123,11 +141,12 @@ blueprint:
                 - label: "Fast (smallest, fastest)"
                   value: fast
         live_stream:
-          name: Live stream on iPhone
+          name: Live stream on phone
           description: >
             When on (the default), expanding the notification on iPhone
             replaces the snapshot with a live view of the camera (requires
-            the iOS app v2.3.0 or newer). Turn off
+            the iOS app v2.3.0 or newer), and the alert an Android phone
+            opens on a tap has a Live button. Turn off
             to keep the snapshot from the moment the event happened, handy
             when that frame is the whole point (who rang the doorbell), or
             for battery and cloud cameras, which the live view keeps polling
@@ -140,11 +159,12 @@ blueprint:
         live_stream_watch:
           name: Live stream on watch
           description: >
-            When on (the default), the watch notification replaces the
+            When on (the default), the Apple Watch notification replaces the
             snapshot with a live view of the camera while the notification is
             showing (requires a recent Wrist Assistant watch app update).
             Tapping the image still opens the full-screen live stream in the
-            app. Turn off to keep the snapshot from the moment the event
+            app. A Wear OS watch shows the snapshot in the notification and
+            the live stream after a tap. Turn off to keep the snapshot from the moment the event
             happened, handy when that frame is the whole point, or for
             battery and cloud cameras, which the live view keeps polling.
             Only applies when a camera is set above (image entities have
@@ -159,8 +179,8 @@ blueprint:
         button_1_entity:
           name: Entity
           description: >
-            *(Optional)* Entity this button controls. The watch shows
-            its name and current state automatically.
+            *(Optional)* Entity this button controls. The notification
+            shows its name and current state automatically.
           default: ""
           selector:
             entity:
@@ -177,7 +197,8 @@ blueprint:
           description: >
             Show this button's quick controls (presets, media transport,
             volume) as soon as the notification opens, instead of after a
-            double tap. Only applies to entities that have them (light,
+            double tap. On Android they open in the alert a tap on the
+            notification shows. Only applies to entities that have them (light,
             cover, fan, climate, media player, alarm, vacuum, valve).
             Expanded buttons take about three times the height, so keep
             it to one or two per notification on the watch.
@@ -191,8 +212,8 @@ blueprint:
         button_2_entity:
           name: Entity
           description: >
-            *(Optional)* Entity this button controls. The watch shows
-            its name and current state automatically.
+            *(Optional)* Entity this button controls. The notification
+            shows its name and current state automatically.
           default: ""
           selector:
             entity:
@@ -209,7 +230,8 @@ blueprint:
           description: >
             Show this button's quick controls (presets, media transport,
             volume) as soon as the notification opens, instead of after a
-            double tap. Only applies to entities that have them (light,
+            double tap. On Android they open in the alert a tap on the
+            notification shows. Only applies to entities that have them (light,
             cover, fan, climate, media player, alarm, vacuum, valve).
             Expanded buttons take about three times the height, so keep
             it to one or two per notification on the watch.
@@ -223,8 +245,8 @@ blueprint:
         button_3_entity:
           name: Entity
           description: >
-            *(Optional)* Entity this button controls. The watch shows
-            its name and current state automatically.
+            *(Optional)* Entity this button controls. The notification
+            shows its name and current state automatically.
           default: ""
           selector:
             entity:
@@ -241,7 +263,8 @@ blueprint:
           description: >
             Show this button's quick controls (presets, media transport,
             volume) as soon as the notification opens, instead of after a
-            double tap. Only applies to entities that have them (light,
+            double tap. On Android they open in the alert a tap on the
+            notification shows. Only applies to entities that have them (light,
             cover, fan, climate, media player, alarm, vacuum, valve).
             Expanded buttons take about three times the height, so keep
             it to one or two per notification on the watch.
@@ -255,8 +278,8 @@ blueprint:
         button_4_entity:
           name: Entity
           description: >
-            *(Optional)* Entity this button controls. The watch shows
-            its name and current state automatically.
+            *(Optional)* Entity this button controls. The notification
+            shows its name and current state automatically.
           default: ""
           selector:
             entity:
@@ -273,7 +296,8 @@ blueprint:
           description: >
             Show this button's quick controls (presets, media transport,
             volume) as soon as the notification opens, instead of after a
-            double tap. Only applies to entities that have them (light,
+            double tap. On Android they open in the alert a tap on the
+            notification shows. Only applies to entities that have them (light,
             cover, fan, climate, media player, alarm, vacuum, valve).
             Expanded buttons take about three times the height, so keep
             it to one or two per notification on the watch.
@@ -285,21 +309,30 @@ blueprint:
       collapsed: true
       description: >
         **Not getting notifications?** The first time you open Wrist
-        Assistant on your watch it asks for notification permission: tap
-        Allow. If you declined it, watchOS won't ask again and there's no
+        Assistant on your Apple Watch it asks for notification permission:
+        tap Allow. If you declined it, watchOS won't ask again and there's no
         Settings toggle to turn it back on. Delete Wrist Assistant from
-        your watch, reinstall it, then tap Allow when it asks.
+        your watch, reinstall it, then tap Allow when it asks. An Android
+        phone and a Wear OS watch ask too; if you declined there, turn
+        notifications back on in that device's Settings, Apps, Wrist
+        Assistant, Notifications.
 
 
         Notifications default to **Fast** delivery, which mirrors from your
-        iPhone. Your watch gets nothing when you're away from your phone,
-        and the Wrist Assistant iPhone app must also have notifications
-        allowed (iPhone Settings, Notifications, Wrist Assistant). For alerts
+        phone: an Apple Watch's from your iPhone, a Wear OS watch's from
+        your Android phone (Android copies the phone's notification to the
+        watch). Your watch gets nothing when you're away from your phone,
+        and the Wrist Assistant phone app must also have notifications
+        allowed (iPhone Settings, Notifications, Wrist Assistant; on
+        Android, Settings, Apps, Wrist Assistant, Notifications). For alerts
         that reach your wrist on their own, switch to **Reliable** under
         **Wrist Assistant** in the sidebar, Watch app, Settings,
-        Notifications. Reliable arrives in about a second when your iPhone
-        isn't connected, but can take up to about 15 seconds when it is (an
-        Apple delivery quirk outside the app's control).
+        Notifications. On an Apple Watch, Reliable arrives in about a second
+        when your iPhone isn't connected, but can take up to about 15
+        seconds when it is (an Apple delivery quirk outside the app's
+        control). A Wear OS watch on Reliable gets its own push over Wi-Fi
+        or mobile data, and its phone stops copying the alert, so it shows
+        once.
 
 
         If Home Assistant says a device **has not registered for
@@ -334,6 +367,14 @@ blueprint:
             **Time Sensitive:** breaks through Focus/DND/Sleep and skips the
             low-power batch window, so it's faster and harder to miss. Use it for
             doorbells, cameras, or leak/smoke alerts.
+
+
+            **On Android** each priority has its own notification channel, which
+            you can change in Android's settings: Passive waits quietly in the
+            notification shade, Active and Time Sensitive pop up on the screen
+            with the phone's or watch's usual sound and buzz, and Time Sensitive
+            passes Do Not Disturb only when Android's Do Not Disturb settings let
+            Wrist Assistant through.
           default: "active"
           selector:
             select:
@@ -351,12 +392,18 @@ blueprint:
             Pick a preset or type a custom file name.
 
 
-            Custom sounds (and Silent) only apply in Reliable delivery
-            mode. In Fast mode, watchOS ignores the chosen sound and always
-            plays its default alert (a silent mirrored notification reaches
-            the wrist with no haptic, so it would be missed entirely). Set
-            the mode under **Wrist Assistant** in the sidebar, Watch app,
-            Settings, Notifications.
+            On an iPhone and an Apple Watch, custom sounds (and Silent) only
+            apply in Reliable delivery mode. In Fast mode, watchOS ignores the
+            chosen sound and always plays its default alert (a silent mirrored
+            notification reaches the wrist with no haptic, so it would be
+            missed entirely). Set the mode under **Wrist Assistant** in the
+            sidebar, Watch app, Settings, Notifications.
+
+
+            The sounds are Apple's: an Android phone and a Wear OS watch play
+            their own notification sound for the priority instead. Silent drops
+            that sound there and keeps the buzz, so a watch still feels the
+            alert. For no buzz either, set the priority to **Passive**.
           default: "default"
           selector:
             select:
@@ -367,7 +414,7 @@ blueprint:
                   value: "default"
                 - label: "Silent"
                   value: ""
-                # — Longer / Melodic —
+                # Longer and Melodic
                 - label: "Access Allowed"
                   value: "Access-Allowed.caf"
                 - label: "Arabian Harp"
@@ -426,7 +473,7 @@ blueprint:
                   value: "Tile-Reveal.caf"
                 - label: "Wrong Answer"
                   value: "Wrong-Answer.caf"
-                # — Clicks & Taps —
+                # Clicks and Taps
                 - label: "Click 1"
                   value: "click_001.caf"
                 - label: "Click 2"
@@ -451,7 +498,7 @@ blueprint:
                   value: "toggle_003.caf"
                 - label: "Tap Toggle 4"
                   value: "toggle_004.caf"
-                # — Switches & Selects —
+                # Switches and Selects
                 - label: "Switch 1"
                   value: "switch_001.caf"
                 - label: "Switch 2"
@@ -482,7 +529,7 @@ blueprint:
                   value: "select_007.caf"
                 - label: "Select 8"
                   value: "select_008.caf"
-                # — Open & Close —
+                # Open and Close
                 - label: "Open 1"
                   value: "open_001.caf"
                 - label: "Open 2"
@@ -499,7 +546,7 @@ blueprint:
                   value: "close_003.caf"
                 - label: "Close 4"
                   value: "close_004.caf"
-                # — Navigation —
+                # Navigation
                 - label: "Back 1"
                   value: "back_001.caf"
                 - label: "Back 2"
@@ -518,7 +565,7 @@ blueprint:
                   value: "scroll_004.caf"
                 - label: "Scroll 5"
                   value: "scroll_005.caf"
-                # — Maximize & Minimize —
+                # Maximize and Minimize
                 - label: "Maximize 1"
                   value: "maximize_001.caf"
                 - label: "Maximize 2"
@@ -555,7 +602,7 @@ blueprint:
                   value: "minimize_008.caf"
                 - label: "Minimize 9"
                   value: "minimize_009.caf"
-                # — Feedback —
+                # Feedback
                 - label: "Confirmation 1"
                   value: "confirmation_001.caf"
                 - label: "Confirmation 2"
@@ -588,7 +635,7 @@ blueprint:
                   value: "question_003.caf"
                 - label: "Question 4"
                   value: "question_004.caf"
-                # — Drops, Plucks & Glass —
+                # Drops, Plucks and Glass
                 - label: "Drop 1"
                   value: "drop_001.caf"
                 - label: "Drop 2"
@@ -646,8 +693,8 @@ blueprint:
         group:
           name: Group
           description: >
-            *(Optional)* Bundle related notifications in the watch
-            notification center. E.g. two scripts using group `motion`
+            *(Optional)* Bundle related notifications in the notification
+            center (on Android, under one summary). E.g. two scripts using group `motion`
             stack into a single expandable group.
           default: ""
           selector:

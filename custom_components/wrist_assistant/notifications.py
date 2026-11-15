@@ -16,6 +16,12 @@ from typing import TYPE_CHECKING, Any, Literal
 from homeassistant.helpers.storage import Store
 
 from .const import NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION
+from .device_platform import (
+    PLATFORM_ANDROID,
+    PLATFORM_WEAROS,
+    resolve_platform,
+    watch_token_entry,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -24,6 +30,11 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORM_IOS = "ios"
 PLATFORM_WATCHOS = "watchos"
+# The Android apps' token platforms, `android` and `wearos`, come from
+# `device_platform.py`; the relay sends those through FCM.
+# Which phone token a watch's alert is mirrored through: an iPhone mirrors to
+# an Apple Watch and an Android phone bridges to a Wear OS watch, never across.
+_MIRROR_PLATFORM = {PLATFORM_WATCHOS: PLATFORM_IOS, PLATFORM_WEAROS: PLATFORM_ANDROID}
 DELIVERY_MODE_MIRROR = "mirror"
 DELIVERY_MODE_DIRECT = "direct"
 # `widget_secret_store.DEVICE_KIND_IPHONE`, repeated so this module stays free
@@ -534,6 +545,15 @@ def is_iphone_entry(secret: Any) -> bool:
     return secret is not None and getattr(secret, "device_kind", None) == _DEVICE_KIND_IPHONE
 
 
+def mirror_platform(secret: Any) -> str:
+    """The phone token platform a watch's alert is mirrored through: ``ios``
+    for an Apple Watch (and for an id the secret store does not know, as it
+    always was), ``android`` for a Wear OS watch."""
+    kind = getattr(secret, "device_kind", None) if secret is not None else None
+    platform = getattr(secret, "platform", None) if secret is not None else None
+    return _MIRROR_PLATFORM.get(resolve_platform(kind, platform), PLATFORM_IOS)
+
+
 def owning_phone_id(secrets: Mapping[str, Any], watch_id: str) -> str | None:
     """The phone a watch's old companion ``ios`` token belongs to, for the move.
 
@@ -569,9 +589,15 @@ def watch_phone_ids(
     when that holds an ``ios`` token. Plus the watch's own id when an ``ios``
     token is still filed there (a leftover the move could not place, or an
     old app's registration).
+
+    A Wear OS watch is mirrored through an Android phone instead, so for one
+    the token looked for is ``android`` (`mirror_platform`). The same user's
+    phone of the other family is never one of them: an iPhone cannot bridge
+    an alert to a Wear watch, nor an Android phone to an Apple Watch.
     """
     secret = secrets.get(watch_id)
     user_id = getattr(secret, "user_id", None) if secret is not None else None
+    mirror = mirror_platform(secret)
     phone_ids: list[str] = []
     if user_id is not None:
         phone_ids = sorted(
@@ -580,13 +606,15 @@ def watch_phone_ids(
             if phone_id != watch_id
             and is_iphone_entry(phone)
             and getattr(phone, "user_id", None) == user_id
-            and PLATFORM_IOS in tokens.get(phone_id, {})
+            and mirror in tokens.get(phone_id, {})
         )
     elif secret is not None:
         owner = getattr(secret, "owner_iphone_id", None)
-        if owner and owner != watch_id and PLATFORM_IOS in tokens.get(owner, {}):
+        if owner and owner != watch_id and mirror in tokens.get(owner, {}):
             phone_ids = [owner]
-    if PLATFORM_IOS in tokens.get(watch_id, {}):
+    # The leftover is an Apple one only: no Android app ever filed a phone's
+    # token under a watch.
+    if mirror == PLATFORM_IOS and PLATFORM_IOS in tokens.get(watch_id, {}):
         phone_ids.append(watch_id)
     return phone_ids
 
@@ -611,6 +639,25 @@ def phone_watch_ids(secrets: Mapping[str, Any], phone_id: str) -> list[str]:
         elif getattr(secret, "owner_iphone_id", None) == phone_id:
             watch_ids.append(watch_id)
     return sorted(watch_ids)
+
+
+def phone_family_watch_ids(secrets: Mapping[str, Any], phone_id: str) -> list[str]:
+    """`phone_watch_ids` narrowed to the watches this phone can bring an
+    alert to, sorted: an iPhone's Apple Watches, an Android phone's Wear OS
+    watches (`mirror_platform`). In a home of Apple devices that is every
+    watch `phone_watch_ids` gives, as it always was.
+
+    For the phone's push rows and its test alert, so a test from one family
+    never lands on the other family's phone.
+    """
+    phone_platform = resolve_platform(
+        _DEVICE_KIND_IPHONE, getattr(secrets.get(phone_id), "platform", None)
+    )
+    return [
+        watch_id
+        for watch_id in phone_watch_ids(secrets, phone_id)
+        if mirror_platform(secrets.get(watch_id)) == phone_platform
+    ]
 
 
 def phones_reading_voice(secrets: Mapping[str, Any], watch_id: str) -> list[str]:
@@ -657,6 +704,9 @@ def resolve_push_routes(
     * "mirror": W's phones; with none, W's own ``watchos`` token.
     * "direct": W's ``watchos`` token; with none, W's phones.
 
+    A Wear OS watch reads the same with its own ``wearos`` token and its
+    user's Android phones (``android`` tokens), which bridge the alert to it.
+
     A target that is an iPhone entry is sent to that phone's own token. With
     no target, every watch is a target: each id in the secret store that is
     not an iPhone, and each id in the token store that is not one either. A
@@ -664,7 +714,7 @@ def resolve_push_routes(
     someone who installed the app for its widgets alone gets no alerts.
 
     A ``push_type`` of "background" (a silent content-available push) goes
-    only to each target watch's own ``watchos`` token, whatever its delivery
+    only to each target watch's own ``watchos`` (or ``wearos``) token, whatever its delivery
     mode, and a watch without one gets nothing. iOS shows a mirrored copy of
     an alert on the wrist but never passes a silent push on, so a phone token
     would only wake the phone, which has nothing to do with it.
@@ -698,16 +748,23 @@ def resolve_push_routes(
         own = tokens.get(target, {})
         if is_iphone_entry(secrets.get(target)):
             if not background:
-                add(target, target, own.get(PLATFORM_IOS) or next(iter(own.values()), None))
+                add(
+                    target,
+                    target,
+                    own.get(PLATFORM_IOS)
+                    or own.get(PLATFORM_ANDROID)
+                    or next(iter(own.values()), None),
+                )
             continue
         if background:
-            add(target, target, own.get(PLATFORM_WATCHOS))
+            add(target, target, watch_token_entry(own))
             continue
+        mirror = mirror_platform(secrets.get(target))
         phones = [
-            (phone_id, tokens[phone_id][PLATFORM_IOS])
+            (phone_id, tokens[phone_id][mirror])
             for phone_id in watch_phone_ids(secrets, tokens, target)
         ]
-        watch_entry = own.get(PLATFORM_WATCHOS)
+        watch_entry = watch_token_entry(own)
         if modes.get(target, DELIVERY_MODE_MIRROR) == DELIVERY_MODE_DIRECT:
             chosen = [(target, watch_entry)] if watch_entry is not None else phones
         else:

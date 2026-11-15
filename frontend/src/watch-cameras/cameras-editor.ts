@@ -60,6 +60,7 @@ import {
   resizeViewport,
   shortCameraId,
 } from "./model.js";
+import { generalCopy } from "../device-platform.js";
 
 registerWatchCamerasDrafts({ dirty: cameraDraftDirty, drop: dropCameraDraft });
 
@@ -71,7 +72,12 @@ if (typeof window !== "undefined") {
   });
 }
 
-export const CAMERAS_LEAD = "How each camera's picture is cut in alerts, on iPhone and Apple Watch. Tiles on the watch have their own crop.";
+export function camerasLead(): string {
+  return generalCopy(
+    "How each camera's picture is cut in alerts, on iPhone and Apple Watch. Tiles on the watch have their own crop.",
+    "How each camera's picture is cut in alerts, on the phone and the watch. Tiles on the watch have their own crop.",
+  );
+}
 export const CAMERAS_EMPTY_TEXT = "No cameras in this Home Assistant.";
 export const CAMERAS_UPDATE_TEXT = "Update the integration to frame cameras here.";
 /** What the test alert says, as the phone's test did. */
@@ -439,7 +445,7 @@ export class WaCamerasEditor extends LitElement {
       <div class="cm-top">
         ${this.barHost === undefined ? this.renderBar(draft, camera)
           : draft !== undefined && camera !== undefined ? html`<div class="cm-crumbline">${this.renderCrumb(camera)}</div>` : nothing}
-        <p class="cm-lead">${CAMERAS_LEAD}</p>
+        <p class="cm-lead">${camerasLead()}</p>
         ${this.note ? html`<div class="cm-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="cm-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -647,7 +653,7 @@ export class WaCamerasEditor extends LitElement {
         ${this.renderPicture(camera.entity_id, viewport, well, "cm-alert-pic")}
         <span class="cm-alert-done">Done</span>
       </div>
-      <figcaption>${device === "watch" ? "Apple Watch" : "iPhone"}</figcaption>
+      <figcaption>${device === "watch" ? generalCopy("Apple Watch", "Watch") : generalCopy("iPhone", "Phone")}</figcaption>
     </figure>`;
   }
 

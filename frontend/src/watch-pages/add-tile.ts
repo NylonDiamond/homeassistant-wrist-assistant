@@ -48,10 +48,10 @@ import {
   WATCH_ADD_ROWS,
   WATCH_APP_ADD_BUTTONS,
   WATCH_PHONE_ADD_BUTTONS,
-  WATCH_PHONE_ADDED_TEXT,
-  WATCH_PHONE_GREYED_TEXT,
-  WATCH_PHONE_LANDS_TEXT,
-  WATCH_PHONE_GROUP_TITLE,
+  watchPhoneAddedText,
+  watchPhoneGreyedText,
+  watchPhoneLandsText,
+  watchPhoneGroupTitle,
   WatchAddListCache,
   watchAppAdd,
   watchPhoneAdd,
@@ -417,7 +417,7 @@ function renderMapPageAsk(host: AddTileHost, view: AddTileView, floorId: string)
 function addPhone(host: AddTileHost, view: AddTileView, button: WatchPhoneAddButton): void {
   const group = watchPhoneTilesGroupOf(host.phoneTiles, hostDevice(host));
   if (group.state !== "open") {
-    view.note = { tone: "err", text: WATCH_PHONE_GREYED_TEXT };
+    view.note = { tone: "err", text: watchPhoneGreyedText() };
     host.requestUpdate();
     return;
   }
@@ -427,7 +427,7 @@ function addPhone(host: AddTileHost, view: AddTileView, button: WatchPhoneAddBut
     host.requestUpdate();
     return;
   }
-  commit(host, view, watchPhoneAdd(button.key), `${button.done} ${WATCH_PHONE_ADDED_TEXT}`);
+  commit(host, view, watchPhoneAdd(button.key), `${button.done} ${watchPhoneAddedText()}`);
 }
 
 /** The "iPhone only" group, last, titled with the phone glyph, its buttons
@@ -440,11 +440,11 @@ function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult 
   const greyed = group.state === "greyed";
   const blocked = greyed ? undefined : watchAppAddBlockedText(WATCH_PHONE_ADD_BUTTONS[0]!.key, host.musicAssistant, group.oldWatch);
   const off = greyed || blocked !== undefined;
-  const why = greyed ? WATCH_PHONE_GREYED_TEXT : blocked;
-  const note = why ?? WATCH_PHONE_LANDS_TEXT;
+  const why = greyed ? watchPhoneGreyedText() : blocked;
+  const note = why ?? watchPhoneLandsText();
   return html`<div class="at-phone ${off ? "greyed" : ""}">
-    <div class="at-sub at-phone-h">${uiIcon("phone")}<span>${WATCH_PHONE_GROUP_TITLE}</span></div>
-    <div class="at-kind-grid" role="group" aria-label=${WATCH_PHONE_GROUP_TITLE}>
+    <div class="at-sub at-phone-h">${uiIcon("phone")}<span>${watchPhoneGroupTitle()}</span></div>
+    <div class="at-kind-grid" role="group" aria-label=${watchPhoneGroupTitle()}>
       ${WATCH_PHONE_ADD_BUTTONS.map((b) => kindButton(host, b.key, b, {
         disabled: host.busy || off,
         why,

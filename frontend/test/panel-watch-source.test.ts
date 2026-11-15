@@ -154,7 +154,7 @@ describe("the watch screens under the row", () => {
     const iphone = method("  private renderIphoneScreen() {");
     expect(iphone.indexOf("if (!this.linkReady && this.owners.length === 0) {")).toBeLessThan(iphone.indexOf("const phone = this.sharedPhone;"));
     expect(iphone).toContain("if (phone === undefined || screen === undefined) {");
-    expect(iphone).toContain("<h2>No iPhone yet</h2>");
+    expect(iphone).toContain('<h2>${generalCopy("No iPhone yet", "No phone yet")}</h2>');
     expect(iphone).toContain("@click=${() => this.openPairDialog()}");
     expect(iphone).not.toMatch(/ - |\u2013|\u2014/);
   });

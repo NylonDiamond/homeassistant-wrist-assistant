@@ -136,6 +136,7 @@ from .complication_store import (
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN, LIBRARY_OWNER_ID
 from .device_lookup import find_paired_device
+from .device_platform import paired_platforms
 from .gallery_key_store import gallery_key_store
 from .history_series import (
     COMBINE_ALL,
@@ -612,6 +613,10 @@ async def ws_owners(
             {
                 "owner_watch_id": device_id,
                 "device_kind": entry.device_kind,
+                # What the device runs: "ios" or "watchos" for an Apple app
+                # (which never says), "android" or "wearos" for the Android
+                # apps. The panel's words, previews and version gates read it.
+                "platform": entry.device_platform,
                 "device_name": registry_name(device_id) or entry.device_name,
                 "paired_iphone_name": paired_name,
                 "paired_iphone_id": paired_id or None,
@@ -701,6 +706,7 @@ async def ws_owners(
                 # the one that went missing, and a guess here would send the
                 # panel's shape list and gate down the wrong branch.
                 "device_kind": None,
+                "platform": None,
                 "device_name": None,
                 "paired_iphone_name": None,
                 "paired_iphone_id": None,
@@ -734,6 +740,7 @@ async def ws_owners(
         {
             "owner_watch_id": LIBRARY_OWNER_ID,
             "device_kind": DEVICE_KIND_LIBRARY,
+            "platform": None,
             "device_name": "Library",
             "paired_iphone_name": None,
             "paired_iphone_id": None,
@@ -753,6 +760,11 @@ async def ws_owners(
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             "token": store.token,
             "capabilities": list(getattr(coordinator, "capabilities", None) or []),
+            # The platforms of every paired device, whoever asks: a person who
+            # is not an administrator gets only their own rows, and the
+            # panel's general copy says phone and watch once any Android
+            # device is paired here (`device_platform.paired_platforms`).
+            "paired_platforms": paired_platforms(entries),
         },
     )
 

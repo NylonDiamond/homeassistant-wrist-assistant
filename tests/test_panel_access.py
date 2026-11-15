@@ -237,6 +237,16 @@ def test_owners_lists_everything_to_an_admin(env) -> None:
     }
 
 
+def test_owners_names_every_paired_platform_to_a_member_too(env) -> None:
+    """A member's rows are their own, but the general copy is the home's: Bob's
+    Wear OS watch makes Alice's panel say phone and watch too."""
+    assert _ok(_run(env, env.ws.ws_owners, ALICE))["paired_platforms"] == ["ios", "watchos"]
+    env.base.add_watch("watch-bob-wear", device_name="Bob Wear", user_id="bob", platform="wearos")
+    reply = _ok(_run(env, env.ws.ws_owners, ALICE))
+    assert "watch-bob-wear" not in [row["owner_watch_id"] for row in reply["owners"]]
+    assert reply["paired_platforms"] == ["ios", "watchos", "wearos"]
+
+
 def test_owners_lists_only_a_member_s_own_devices_and_the_library(env) -> None:
     # Watches by name ("Alice Spare" before "Alice Watch"), then phones.
     assert _owner_ids(env, ALICE) == ["watch-alice-2", "watch-alice", "phone-alice", LIBRARY]

@@ -606,7 +606,7 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         <button type="button" class="pe-chip ${s.titleIcon === "" ? "on" : ""}" aria-pressed=${s.titleIcon === "" ? "true" : "false"}
           @click=${() => commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, ""))}>No icon</button>
       </div>
-      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols, device: hostDevice(sh) }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
+      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols, device: hostDevice(sh), platform: sh.platform }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
         { clearable: false, emptyText: "No icon", tint: s.titleColor }))}
       ${pagePalette(sh, "titleColor", {
         label: "Text color",

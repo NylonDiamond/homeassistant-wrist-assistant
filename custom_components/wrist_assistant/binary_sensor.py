@@ -171,8 +171,11 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
+        # A Wear OS watch's own token is `wearos`; an Apple Watch's `watchos`.
         return (
             self._notification_store.get_entry(self._watch_id, platform="watchos")
+            is not None
+            or self._notification_store.get_entry(self._watch_id, platform="wearos")
             is not None
         )
 
@@ -259,6 +262,9 @@ class IPhonePushTokenRegisteredSensor(BinarySensorEntity):
     def is_on(self) -> bool:
         # The phone's own entry first, then a leftover on a watch it paired.
         if self._notification_store.get_entry(self._iphone_id, platform="ios") is not None:
+            return True
+        # An Android phone's own token.
+        if self._notification_store.get_entry(self._iphone_id, platform="android") is not None:
             return True
         for watch_id, secret_entry in self._secret_store.all_entries.items():
             if (

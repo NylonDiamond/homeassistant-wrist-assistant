@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .api import DeltaCoordinator
 from .const import DOMAIN, WristAssistantConfigEntry
 from .device_lookup import find_paired_device
+from .device_platform import default_device_name
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
@@ -165,7 +166,6 @@ class DeviceNameText(TextEntity):
         self._watch_id = watch_id
         self._kind = kind
         self._short_id = watch_id[:8]
-        self._default_prefix = "iPhone" if kind == DEVICE_KIND_IPHONE else "Watch"
         self._attr_unique_id = name_unique_id(watch_id)
         self._attr_device_info = build_device_info(
             secret_store, watch_id, kind=kind, via_device=via_device, hass=hass
@@ -188,7 +188,10 @@ class DeviceNameText(TextEntity):
         entry = self._secret_store.get(self._watch_id)
         if entry is not None and entry.device_name:
             return entry.device_name
-        return f"{self._default_prefix} {self._short_id}"
+        # "Watch 1a2b3c4d" or "iPhone 1a2b3c4d", and the Android apps' own
+        # words ("Wear OS watch 1a2b3c4d") for a device that said its platform.
+        platform = entry.platform if entry is not None else None
+        return default_device_name(self._kind, platform, self._watch_id)
 
     async def async_set_value(self, value: str) -> None:
         """Update the device name in the device registry."""

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { homeChoiceArt } from "../src/home-art.js";
 import { homeStyles } from "../src/home.js";
 import { PAIR_WEB_LINK, pairQrLink } from "../src/pair-flow.js";
-import { PAIR_QR_STEPS } from "../src/watch-settings.js";
+import { pairQrSteps } from "../src/watch-settings.js";
 
 const SOURCE = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
 const PAIR_VIEW = readFileSync(join(__dirname, "..", "src", "watch-pair-view.ts"), "utf8");
@@ -51,9 +51,9 @@ describe("the pairing QR code's web address", () => {
   });
 
   it("tells the person to use the Camera, and what happens without the app", () => {
-    expect(PAIR_QR_STEPS[0]).toBe("Point the iPhone's Camera at this code.");
-    expect(PAIR_QR_STEPS.join(" ")).toContain("App Store");
-    for (const line of PAIR_QR_STEPS) expect(line).not.toMatch(/[–—]| - /);
+    expect(pairQrSteps()[0]).toBe("Point the iPhone's Camera at this code.");
+    expect(pairQrSteps().join(" ")).toContain("App Store");
+    for (const line of pairQrSteps()) expect(line).not.toMatch(/[–—]| - /);
   });
 });
 
@@ -114,7 +114,7 @@ describe("the welcome's wiring", () => {
   });
 
   it("has three steps, top to bottom: install, pick one, pair", () => {
-    const order = ['step(1, "Install the app"', 'step(2, "Pick one"', "step(3, picked === \"iphone\" ? \"Pair your iPhone\" : \"Pair your watch\""];
+    const order = ['step(1, "Install the app"', 'step(2, "Pick one"', "step(3, picked === \"iphone\" ? generalCopy(\"Pair your iPhone\", \"Pair your phone\") : \"Pair your watch\""];
     const at = order.map((s) => welcome.indexOf(s));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);

@@ -71,6 +71,7 @@ from homeassistant.helpers import instance_id as ha_instance_id
 
 from .const import DOMAIN
 from .device_lookup import find_paired_device
+from .device_platform import default_platform, device_noun, general_words
 from .logbook_events import log_secret_registered, log_secret_reprovisioned
 from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, seal_pair_secret
 from .wa_pair_requests import (
@@ -125,8 +126,9 @@ def _user_id(connection: ActiveConnection) -> str | None:
     return user.id if user is not None else None
 
 
-def _device_noun(kind: str) -> str:
-    return "iPhone" if kind == PAIR_KIND_IPHONE else "watch"
+def _device_noun(kind: str, platform: str | None = None) -> str:
+    """"iPhone" or "watch", and "phone" for an Android phone."""
+    return device_noun(kind, platform)
 
 
 def _may_see_offer(connection: ActiveConnection, offer: Any) -> bool:
@@ -202,6 +204,7 @@ def store_paired_device(
         device_name=fields.device_name,
         screen_size=fields.screen_size,
         user_id=user_id,
+        platform=fields.platform,
     )
     if result == "new":
         log_secret_registered(
@@ -345,6 +348,9 @@ def ws_pair_lookup(
             "found": True,
             "watch_id": fields.watch_id,
             "kind": pending.kind,
+            # The platform the device runs, its kind's Apple one when it
+            # said none, so the panel names an Android phone as a phone.
+            "platform": fields.platform or default_platform(pending.kind),
             "device_name": fields.device_name,
             "screen_size": fields.screen_size,
             "app_version": fields.app_version,
@@ -444,7 +450,7 @@ async def ws_pair_confirm(
     # Only the user pick awaits, ahead of every read of the stores, so the
     # rest runs in one go as the synchronous command did.
     peek = pair_store.get(msg["code"])
-    noun = _device_noun(peek.kind) if peek is not None else "watch"
+    noun = _device_noun(peek.kind, peek.fields.platform) if peek is not None else "watch"
     user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun=noun)
     if refusal is not None:
         connection.send_error(msg["id"], *refusal)
@@ -455,7 +461,7 @@ async def ws_pair_confirm(
             msg["id"], "unknown_code", "No pairing with that code. Codes last 10 minutes."
         )
         return
-    noun = _device_noun(pending.kind)
+    noun = _device_noun(pending.kind, pending.fields.platform)
     stored = pending.fields
     watch_id = stored.watch_id
 
@@ -518,7 +524,9 @@ async def ws_pair_confirm(
             "app_build": stored.app_build,
             "device_name": stored.device_name,
             "screen_size": stored.screen_size,
-        }
+            **({} if stored.platform is None else {"platform": stored.platform}),
+        },
+        kind=pending.kind,
     )
     if error is not None:
         connection.send_error(msg["id"], error.code, error.message)
@@ -662,7 +670,14 @@ async def ws_pair_offer(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     user = getattr(connection, "user", None)
-    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun="iPhone")
+    # A QR code is for whichever phone scans it, an iPhone or an Android
+    # phone, so its words are general copy: "iPhone" while every device
+    # paired here is an Apple one, as they always were, "phone" once an
+    # Android device is paired (`device_platform.general_words`).
+    secret_store = getattr(hass.data.get(DOMAIN), "widget_secret_store", None)
+    entries = secret_store.all_entries if secret_store is not None else {}
+    noun = general_words(entries, "iPhone", "phone")
+    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun=noun)
     if refusal is not None:
         connection.send_error(msg["id"], *refusal)
         return
@@ -758,6 +773,8 @@ def ws_pair_offer_status(
         result["device_name"] = offer.device_name
         result["user_id"] = offer.user_id
         result["device_id"] = offer.device_id
+        # An iPhone never says, so a phone that said nothing is an iPhone.
+        result["platform"] = offer.platform or default_platform(PAIR_KIND_IPHONE)
     connection.send_result(msg["id"], result)
 
 

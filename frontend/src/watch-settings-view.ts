@@ -137,7 +137,7 @@ import {
   withMotionAction,
   withMotionTarget,
 } from "./watch-settings.js";
-import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
+import { notForIphoneText, watchCommandError } from "./watch-pages/save-note.js";
 import {
   SETTINGS_MOVED_TEXT,
   dropWatchSettingsDrafts,
@@ -171,6 +171,7 @@ import {
   styleFormValues,
   styleOptionsFor,
   styleRuns,
+  styleRowOn,
   styleTileChoices,
   styleUsesTiles,
   volumeText,
@@ -179,7 +180,8 @@ import {
 import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
 import { ClientCertCard, clientCertStyles } from "./watch-client-cert-view.js";
 import { PairWatchCard, pairCardStyles } from "./watch-pair-view.js";
-import { THIS_DEVICE_SEARCH_WORDS, thisDeviceNote, thisDeviceRows, thisDeviceTitle } from "./watch-this-device.js";
+import { type DevicePlatform, nounFor, platformOf } from "./device-platform.js";
+import { thisDeviceSearchWords, thisDeviceNote, thisDeviceRows, thisDeviceTitle } from "./watch-this-device.js";
 import { type HaPerson, haPeople } from "./people.js";
 import { friendlyError } from "./friendly-error.js";
 
@@ -1015,7 +1017,7 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="ws-page">
       <div class="ws-top">
         ${options.inHead === true ? nothing : this.renderBar(name, options.narrow === true, elsewhere)}
-        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.newWords?.title ?? newDeviceText(this.device)}</span></div>` : nothing}
+        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.newWords?.title ?? newDeviceText(this.device, this.platform)}</span></div>` : nothing}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
@@ -1110,7 +1112,7 @@ export class WatchSettings implements ReactiveController {
     if (NOTIFICATION_STYLE_SECTIONS.some((s) => s.id === card)) return !this.styleUnsupported && this.styleStandIn() !== null;
     // A card with none of the device's settings (an iPhone keeps only some,
     // `catalogFor`) is left out.
-    if (WATCH_SETTINGS_CATALOG.sections.some((s) => s.id === card) && !catalogFor(this.device).some((s) => s.id === card)) return false;
+    if (WATCH_SETTINGS_CATALOG.sections.some((s) => s.id === card) && !catalogFor(this.device, undefined, this.platform).some((s) => s.id === card)) return false;
     return this.behaviorStandIn() !== null;
   }
 
@@ -1122,7 +1124,7 @@ export class WatchSettings implements ReactiveController {
       if (g !== undefined && n > 0) counts.set(g.id, (counts.get(g.id) ?? 0) + n);
     };
     const dirty = new Set(dirtyKeys(this.behaviorDocument, this.edits));
-    for (const s of catalogFor(this.device)) add(s.id as SettingsCardId, s.settings.filter((x) => dirty.has(x.key)).length);
+    for (const s of catalogFor(this.device, undefined, this.platform)) add(s.id as SettingsCardId, s.settings.filter((x) => dirty.has(x.key)).length);
     const styleDirty = new Set(styleDirtyKeys(this.styleDocument, this.styleEdits));
     for (const s of NOTIFICATION_STYLE_SECTIONS) add(s.id, s.groups.reduce((n, g) => n + g.rows.filter((r) => styleDirty.has(r.key)).length, 0));
     add("connection", this.addressChanges);
@@ -1147,12 +1149,12 @@ export class WatchSettings implements ReactiveController {
     const behavior = this.behaviorStandIn();
     if (behavior === undefined) {
       const values = formValues(this.behaviorDocument, this.edits);
-      for (const section of catalogFor(this.device)) {
+      for (const section of catalogFor(this.device, undefined, this.platform)) {
         const card = this.renderSection(hass, section, values, terms);
         if (card !== undefined) cards.set(section.id as SettingsCardId, card);
       }
     } else if (behavior !== null && !searching) {
-      standIn(new Set(catalogFor(this.device).map((s) => s.id)), behavior);
+      standIn(new Set(catalogFor(this.device, undefined, this.platform).map((s) => s.id)), behavior);
     }
     // Without the behavior cards the addresses keep a Connection card of
     // their own, over the note that stands in for the rest.
@@ -1172,14 +1174,21 @@ export class WatchSettings implements ReactiveController {
       standIn(new Set(NOTIFICATION_STYLE_SECTIONS.map((s) => s.id)), style);
     }
     const pairing = groupOfCard("device")?.title;
-    if (matchesSearch(terms, [thisDeviceTitle(this.device), THIS_DEVICE_SEARCH_WORDS, pairing])) cards.set("device", this.renderThisDevice(hass));
+    if (matchesSearch(terms, [thisDeviceTitle(this.device, this.platform), thisDeviceSearchWords(), pairing])) cards.set("device", this.renderThisDevice(hass));
     if (matchesSearch(terms, ["Client certificate, mTLS, proxy, passphrase", pairing])) cards.set("cert", this.cert.render(hass));
     return cards;
   }
 
-  /** The device on the page, in a sentence: "watch" or "iPhone". */
+  /** The device on the page, in a sentence: "watch" or "iPhone", and
+   * "phone" for an Android phone. */
   private get noun(): string {
-    return this.device === "iphone" ? "iPhone" : "watch";
+    return nounFor(this.device, this.platform);
+  }
+
+  /** What the device on the page runs, which picks the catalog's rows for a
+   * Wear OS watch and the words for an Android phone. */
+  private get platform(): DevicePlatform {
+    return platformOf(this.shownOwner ?? { device_kind: this.device });
   }
 
   /** The shown device's owner, the person its certificate is for, with
@@ -1206,12 +1215,12 @@ export class WatchSettings implements ReactiveController {
     return html`<section class="sec ws-device" data-sec="ws-device" data-open="true" data-help="on" style=${`--c:${SECTION_COLOR.states}`}>
       <div class="sec-h pinned">
         <span class="swatch">${uiIcon(this.device === "iphone" ? "phone" : "watch")}</span>
-        <span class="tt"><h4>${thisDeviceTitle(this.device)}</h4></span>
+        <span class="tt"><h4>${thisDeviceTitle(this.device, this.platform)}</h4></span>
       </div>
       <div class="sec-b">
         ${rows.map((r) => html`<div class="field readout"><span>${r.label}</span>
           <div class="readout-v" title=${r.title ?? nothing}>${r.value}</div></div>`)}
-        <div class="hint keep">${thisDeviceNote(this.device)}</div>
+        <div class="hint keep">${thisDeviceNote(this.device, this.platform)}</div>
       </div>
     </section>`;
   }
@@ -1315,11 +1324,15 @@ export class WatchSettings implements ReactiveController {
       <span class="ws-addr-t">${ADDRESSES_TITLE}</span>
       <div class="hint">${ADDRESSES_HELP}</div>
       <div class="ws-addr-body">${renderAddressBlock({
+        // An Android phone's addresses say "phone"; every other device's words
+        // are the ones they always were.
+        ...(this.platform === "android" ? { device: "android" as const } : {}),
         record: this.addresses,
         readError: this.addressesError,
         editing: draft !== undefined,
         onEdit: () => this.editAddresses(),
         form: {
+          ...(this.platform === "android" ? { device: "android" as const } : {}),
           record: this.addresses,
           draft,
           busy: this.saving,
@@ -1580,7 +1593,8 @@ export class WatchSettings implements ReactiveController {
   }
 
   /** One notification style row, in the same dress as the behavior rows. */
-  private renderStyleRow(row: StyleRow, values: ReadonlyMap<string, StyleValue>) {
+  private renderStyleRow(tableRow: StyleRow, values: ReadonlyMap<string, StyleValue>) {
+    const row = styleRowOn(tableRow, this.platform);
     const value = values.get(row.key) ?? row.default;
     const set = (v: StyleValue) => this.editStyle(row, v);
     const helpLine = row.help ? html`<div class="hint">${row.help}</div>` : nothing;
@@ -1590,7 +1604,7 @@ export class WatchSettings implements ReactiveController {
         key: row.key, label: row.label, icon: row.icon, help: row.help,
         value: String(value), def: String(row.resetTo),
         name: (v) => options.find((o) => o.value === v)?.label ?? v,
-        tiles: styleTileChoices(row, value),
+        tiles: styleTileChoices(row, value, this.platform),
       }, set);
     }
     const wrap = (field: TemplateResult, extra: TemplateResult | typeof nothing = nothing, hint: TemplateResult | typeof nothing = helpLine) =>
@@ -1685,7 +1699,7 @@ export class WatchSettings implements ReactiveController {
    * here is on its way to it and no sync pill shows. */
   renderBar(name = "Watch", stacked = false, elsewhere = false, inHead = false) {
     const confirm = this.confirm;
-    const title = settingsTitle(this.device);
+    const title = settingsTitle(this.device, this.platform);
     // In the Watch app's header (`head-bar.ts`) the watch and the screen
     // are named by the row itself: no title, and the words lead.
     const head = inHead ? nothing : html`<span class="ws-title">${title}</span><span class="ws-head-line" title=${this.headTitle() ?? nothing}>${this.headLine(name)}</span>
@@ -1710,6 +1724,7 @@ export class WatchSettings implements ReactiveController {
             dirty: changes > 0,
             changes,
             device: this.device,
+            platform: this.platform,
             newWords: this.newWords,
           })}
         ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery(true) : nothing}`
@@ -1766,7 +1781,7 @@ export class WatchSettings implements ReactiveController {
 }
 
 function errText(err: unknown): string {
-  if (watchCommandError(err).code === "not_for_iphone") return NOT_FOR_IPHONE_TEXT;
+  if (watchCommandError(err).code === "not_for_iphone") return notForIphoneText();
   return friendlyError(err);
 }
 

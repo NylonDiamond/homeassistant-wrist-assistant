@@ -37,6 +37,7 @@
 import type { HttpActionsDelivery, WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
 import { SETUP_MOVE_PUBLIC_VERSION, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
+import type { DevicePlatform } from "./device-platform.js";
 import { type SettingDevice, WATCH_SEED_LABEL, deliveryState, rejectedNow } from "./watch-settings.js";
 
 /** One watch app record, named the way Home's note names it. */
@@ -259,13 +260,15 @@ export function deviceVerdict(
 export const REJECTED_SAVE_TEXT = "Watch could not use the last save";
 /** The same about an iPhone's own records. */
 export const PHONE_REJECTED_SAVE_TEXT = "iPhone could not use the last save";
+/** The same about an Android phone's. */
+export const ANDROID_PHONE_REJECTED_SAVE_TEXT = "Phone could not use the last save";
 
 /** `REJECTED_SAVE_TEXT` naming the parts: "Watch could not use the last
  * save of its pages", "… of its pages and menus", "… of its pages, menus
  * and voice". The bare sentence for no parts. An iPhone's starts
  * `PHONE_REJECTED_SAVE_TEXT`. */
-export function rejectedSaveText(parts: readonly string[], device: SettingDevice = "watch"): string {
-  const head = device === "iphone" ? PHONE_REJECTED_SAVE_TEXT : REJECTED_SAVE_TEXT;
+export function rejectedSaveText(parts: readonly string[], device: SettingDevice = "watch", platform?: DevicePlatform | null): string {
+  const head = device === "iphone" ? (platform === "android" ? ANDROID_PHONE_REJECTED_SAVE_TEXT : PHONE_REJECTED_SAVE_TEXT) : REJECTED_SAVE_TEXT;
   if (parts.length === 0) return head;
   const list = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]!}`;
   return `${head} of its ${list}`;

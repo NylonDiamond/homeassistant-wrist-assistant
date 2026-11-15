@@ -84,7 +84,8 @@ import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type ColorPickerView, type ColorTrial, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
 import type { SettingDevice } from "../watch-settings.js";
-import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, watchLinkDocument } from "./editor-host.js";
+import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, phoneWordsFor, watchLinkDocument } from "./editor-host.js";
+import { isAndroidPlatform, generalCopy } from "../device-platform.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import {
   type OneLookGlowMode,
@@ -362,14 +363,14 @@ import {
 } from "./tile-new.js";
 import {
   ONE_LOOK_ANIMATE_REASON,
-  ONE_LOOK_ARTWORK_NOTE,
-  ONE_LOOK_CHART_NOTE,
+  oneLookArtworkNote,
+  oneLookChartNote,
   ONE_LOOK_DIM_LIGHT_NOTE,
   ONE_LOOK_DIM_OFF_REASON,
   ONE_LOOK_EXTRA_THIN_REASON,
   ONE_LOOK_RAINBOW_NOTE,
   ONE_LOOK_STATE_ICONS_NOTE,
-  ONE_LOOK_TEXT_SHADOW_NOTE,
+  oneLookTextShadowNote,
   ONE_LOOK_WEIGHT_NOTE,
   oneLookCardSubtitle,
   oneLookColorNote,
@@ -888,7 +889,10 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
 
 /** The small iPhone tag on a card or group only the iPhone reads. */
 function phoneTag(): TemplateResult {
-  return html`<span class="ts-dev-tag" title="Only the iPhone reads this">${uiIcon("phone")}iPhone</span>`;
+  return generalCopy(
+    html`<span class="ts-dev-tag" title="Only the iPhone reads this">${uiIcon("phone")}iPhone</span>`,
+    html`<span class="ts-dev-tag" title="Only a phone reads this">${uiIcon("phone")}Phone</span>`,
+  );
 }
 
 // ── the changed dot ──────────────────────────────────────────────────────
@@ -1808,18 +1812,20 @@ function renderCameraPlay(host: TileSettingsHost): TemplateResult {
     </div></div>
     ${playing === undefined ? nothing : html`<wa-camera-live class="ts-play-box" style=${`aspect-ratio:${box}`}
       .hass=${host.hass} .entity=${playing === "hd" ? hd : sd} .fit=${true} .info=${true} .wide=${wide}></wa-camera-live>`}
-    <div class="hint ts-under">Plays the stream here, in this browser, with its size, codec and frame rate. The iPhone turns a sideways HD stream the same way.</div>` : nothing}
+    <div class="hint ts-under">${isAndroidPlatform(host.platform)
+      ? "Plays the stream here, in this browser, with its size, codec and frame rate."
+      : "Plays the stream here, in this browser, with its size, codec and frame rate. The iPhone turns a sideways HD stream the same way."}</div>` : nothing}
     ${checkField("Live tiles in the editor", liveTiles, (on) => {
       setWatchEditorLiveCameras(on);
       host.requestUpdate();
     })}
-    <div class="hint ts-under">Off by default. Plays every camera tile of an iPhone page on its SD stream in the preview. Each one keeps a stream open while the editor shows the page. This browser keeps the switch.</div>`;
+    <div class="hint ts-under">Off by default. Plays every camera tile of ${isAndroidPlatform(host.platform) ? "a phone page" : "an iPhone page"} on its SD stream in the preview. Each one keeps a stream open while the editor shows the page. This browser keeps the switch.</div>`;
 }
 
 function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateResult {
   const tile = host.tile;
   const words = WATCH_PHONE_KEY_WORDS[key];
-  const help = html`<div class="hint ts-under">${words.help}</div>`;
+  const help = html`<div class="hint ts-under">${phoneWordsFor(host, words.help)}</div>`;
   switch (key) {
     case "cameraTileLive":
       return html`${checkField(words.label, watchCameraTileLive(tile), (on) =>
@@ -2232,7 +2238,7 @@ function renderIconGlyph(host: TileSettingsHost, compact = false): TemplateResul
     </div>`;
   return html`
     ${symbolField(
-      { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
+      { icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform },
       mixed ? "" : (s.icon ?? ""),
       setIcon,
       `pe:ts:symbol`,
@@ -2644,7 +2650,7 @@ function renderText(host: TileSettingsHost): TemplateResult {
       ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
       : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>
     ${checkRow("Name shadow", t.textShadow, mixed((s) => s.textShadow), (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
-    ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}`;
+    ${oneLook(host) ? html`<div class="hint ts-under">${oneLookTextShadowNote()}</div>` : nothing}`;
 }
 
 /** The one line that stands where the label's own rows were. */
@@ -3537,8 +3543,8 @@ function renderState(host: TileSettingsHost): TemplateResult {
  * a chart, in the disc layout, where neither the bar nor the pill shows. */
 function stateCardNote(host: TileSettingsHost, cardId: string): TemplateResult | typeof nothing {
   const kind = tileKind(tileEntityId(host.tile));
-  const note = kind === "media_player" && watchMediaArtwork(host.tile) && cardId === "bar" ? ONE_LOOK_ARTWORK_NOTE
-    : kind === "sensor" && watchSensorChart(host.tile) !== undefined && cardId === "valueLabel" ? ONE_LOOK_CHART_NOTE
+  const note = kind === "media_player" && watchMediaArtwork(host.tile) && cardId === "bar" ? oneLookArtworkNote()
+    : kind === "sensor" && watchSensorChart(host.tile) !== undefined && cardId === "valueLabel" ? oneLookChartNote()
     : undefined;
   return note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`;
 }
@@ -3623,7 +3629,7 @@ function renderStateIconPicker(host: TileSettingsHost, state: string, icon: stri
   const setting = `stateIcon:${state}`;
   // Starts open: a click on the state's Icon button is what asked for it.
   return html`<div class="ts-nested">${symbolField(
-    { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
+    { icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform },
     icon ?? "",
     (name) => {
       const value = name.trim();

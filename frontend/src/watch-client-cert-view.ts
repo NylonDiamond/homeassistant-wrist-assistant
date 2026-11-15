@@ -32,7 +32,7 @@ import { SECTION_COLOR } from "./kinds.js";
 import { uiIcon } from "./ui-icons.js";
 import {
   CLIENT_CERT_ACCEPT,
-  CLIENT_CERT_FOR_HINT,
+  clientCertForHint,
   CLIENT_CERT_FOR_TITLE,
   CLIENT_CERT_HELP,
   CLIENT_CERT_TITLE,
@@ -364,7 +364,7 @@ export class ClientCertCard {
       return html`<div class="field readout ws-cert-user"><span>${CLIENT_CERT_FOR_TITLE}</span>
           <div class="readout-v ws-cert-for">${fixedName}${you}</div>
         </div>
-        <div class="hint keep">${CLIENT_CERT_FOR_HINT}</div>`;
+        <div class="hint keep">${clientCertForHint()}</div>`;
     }
     const users = this.users;
     if (users === undefined || users.length < 2) return nothing;
@@ -375,7 +375,7 @@ export class ClientCertCard {
           ${picked === undefined ? html`<option value="" disabled selected>${PAIR_USER_PLACEHOLDER}</option>` : nothing}
           ${users.map((u) => html`<option value=${u.id} ?selected=${u.id === picked}>${u.label}</option>`)}
         </select></label>
-      <div class="hint keep">${CLIENT_CERT_FOR_HINT}</div>`;
+      <div class="hint keep">${clientCertForHint()}</div>`;
   }
 
   private renderBody() {

@@ -17,6 +17,7 @@
 // document will be recoverable from the store's save history, because a bad
 // split on first open is the worst bug this beta can have.
 
+import { gateVersion, nounFor, platformOf } from "./device-platform.js";
 import {
   type CustomComplicationConfig,
   type FamilyKind,
@@ -100,7 +101,7 @@ export interface SplitOwnerLike extends DeviceOwnerLike {
  */
 export function ownerCanSplit(owner: SplitOwnerLike | null | undefined): boolean {
   if (deviceKindOf(owner) === "library") return true;
-  const have = parseVersion(owner?.app_version);
+  const have = parseVersion(gateVersion(owner));
   const need = parseVersion(SPLIT_GATE.version);
   if (!have || !need) return false;
   const order = compareVersions(have, need);
@@ -123,7 +124,7 @@ export function editBlockedBySplitGate(
   owner: SplitOwnerLike | null | undefined,
 ): string | undefined {
   if (documentParts(cfg) < 2 || ownerCanSplit(owner)) return undefined;
-  const app = deviceKindOf(owner) === "iphone" ? "iPhone" : "watch";
+  const app = deviceKindOf(owner) === "iphone" ? nounFor("iphone", platformOf(owner)) : "watch";
   return `Update the ${app} app to edit this complication.`;
 }
 

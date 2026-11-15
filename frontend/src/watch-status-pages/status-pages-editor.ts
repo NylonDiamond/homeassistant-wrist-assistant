@@ -114,11 +114,13 @@ import { watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
+  isAndroidPhoneModel,
   phoneFrameStyles,
   phoneModelForScreenSize,
   phonePagesLayout,
   phonePagesScreen,
 } from "../phone-frame.js";
+import { nounFor } from "../device-platform.js";
 import { watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
@@ -678,7 +680,7 @@ export class WaStatusPagesEditor extends LitElement {
   private phoneLayout(): PhonePagesLayout | undefined {
     if (this.previewKind !== "iphone") return undefined;
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
-    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size));
+    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform));
   }
 
   private viewHost(): StatusPagesViewHost | undefined {
@@ -1304,7 +1306,7 @@ export class WaStatusPagesEditor extends LitElement {
    */
   private renderStage(host: StatusPagesViewHost): TemplateResult {
     const phone = host.phone !== undefined;
-    const device = phone ? "iPhone" : "watch";
+    const device = phone ? (isAndroidPhoneModel(host.phone!.model) ? "phone" : "iPhone") : "watch";
     // The percent is of the device's own points.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     const scale = this.stageScale;
@@ -1365,11 +1367,11 @@ export class WaStatusPagesEditor extends LitElement {
     const edited = renderStatusPageScreen(host);
     if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
     const other = otherPreviewKind(kind);
-    const word = other === "watch" ? "watch" : "iPhone";
     const ref = this.libraryItem;
     const id = previewOwner(this.watches, other, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
     const owner = this.watches.find((w) => w.owner_watch_id === id);
-    const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size)) : undefined;
+    const word = other === "watch" ? "watch" : nounFor("iphone", owner?.platform === "android" ? "android" : null);
+    const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform)) : undefined;
     const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
     const shown: StatusPagesViewHost = { ...host, still: true, screen, scale: phone === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM };
     const companion: StatusPagesViewHost = phone === undefined ? (({ phone: _drop, ...rest }) => rest)(shown) : { ...shown, phone };

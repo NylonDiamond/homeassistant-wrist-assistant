@@ -26,6 +26,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 4 build
 // contract", rules 10 and 11).
 
+import { gateVersion } from "../device-platform.js";
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { type ColumnWidths, beginColumnDrag, clampColumnWidth, loadColumnWidths, saveColumnWidths } from "../column-split.js";
@@ -56,7 +57,7 @@ import {
   HTTP_ACTIONS_ADD_BUTTON,
   HTTP_ACTIONS_CLIENT_CERT_TEXT,
   HTTP_ACTIONS_EMPTY_TITLE,
-  HTTP_ACTIONS_SHARED_TEXT,
+  httpActionsSharedText,
   HTTP_ACTIONS_UPDATE_TEXT,
   type HttpActionsDoc,
   asHttpActionsDoc,
@@ -164,7 +165,7 @@ export function httpActionsSavedBy(record: Pick<HttpActionsRecord, "updated_by">
  * panel cannot read what a phone holds, so that is as near as it gets. */
 export function homeOwesHttpActions(owners: readonly OwnerSummary[]): boolean {
   return owners.some((o) => !o.is_orphan && (
-    (deviceKindOf(o) === "iphone" && setupMoveNeedsUpdate(o.app_version))
+    (deviceKindOf(o) === "iphone" && setupMoveNeedsUpdate(gateVersion(o)))
     // A watch a code first paired (`holds_old_setup` false) has no old setup
     // for its iPhone to move, so a fresh install is never told to update.
     || (deviceKindOf(o) === "watch" && o.has_iphone === true && o.holds_old_setup !== false && o.owner_iphone_moves !== true && o.another_iphone_moves !== true)
@@ -174,7 +175,7 @@ export function homeOwesHttpActions(owners: readonly OwnerSummary[]): boolean {
 /** Whether a device of the home is too old for the setup move
  * (`setupMoveNeedsUpdate`), so the phone line names the release. */
 export function homeNeedsUpdate(owners: readonly OwnerSummary[]): boolean {
-  return owners.some((o) => !o.is_orphan && deviceKindOf(o) !== "library" && setupMoveNeedsUpdate(o.app_version));
+  return owners.some((o) => !o.is_orphan && deviceKindOf(o) !== "library" && setupMoveNeedsUpdate(gateVersion(o)));
 }
 
 export class WaHttpActionsEditor extends LitElement {
@@ -591,8 +592,8 @@ export class WaHttpActionsEditor extends LitElement {
     const inHead = this.barHost !== undefined;
     return html`<div class="wa-bar ${inHead ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="HTTP actions">
       ${inHead
-        ? html`<span class="tb-note">${HTTP_ACTIONS_SHARED_TEXT}</span>`
-        : html`<span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${HTTP_ACTIONS_SHARED_TEXT}</span></span>`}
+        ? html`<span class="tb-note">${httpActionsSharedText()}</span>`
+        : html`<span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${httpActionsSharedText()}</span></span>`}
       <span class="spacer"></span>
       ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty, saved: this.renderSaved() }) : nothing}
       ${this.renderSyncPill()}
@@ -681,7 +682,7 @@ export class WaHttpActionsEditor extends LitElement {
     const host = this.viewHost();
     if (draft === undefined || host === undefined) {
       return html`<div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
-        <span>An HTTP action is a web request a watch asks Home Assistant to send. ${HTTP_ACTIONS_SHARED_TEXT}</span>
+        <span>An HTTP action is a web request a watch asks Home Assistant to send. ${httpActionsSharedText()}</span>
         <span class="ha-start"><button class="pe-btn pe-primary" @click=${() => this.startLibrary()}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button></span>
         ${homeOwesHttpActions(this.allOwners) ? html`<span class="pe-muted">${httpActionsPhoneText(homeNeedsUpdate(this.allOwners))}</span>` : nothing}
       </div></div>`;

@@ -15,6 +15,7 @@
 // Everything here is pure, so the checkbox row can be read in a test without a
 // browser. Plan: app repo docs/complication_one_shape_per_document.md.
 
+import { platformNounTitle, platformOf } from "./device-platform.js";
 import type { HassEntityState, OwnerSummary } from "./ha-api.js";
 import { deviceKindOf, isLibraryOwner } from "./version.js";
 
@@ -251,5 +252,5 @@ export function deviceShortName(owner: OwnerSummary, person: Person): string {
   const name = nameOf(owner);
   if (deviceKindOf(owner) !== "iphone") return name;
   const hasWatch = person.owners.some((o) => deviceKindOf(o) !== "iphone");
-  return hasWatch && name === person.label ? "iPhone" : name;
+  return hasWatch && name === person.label ? platformNounTitle(platformOf(owner)) : name;
 }

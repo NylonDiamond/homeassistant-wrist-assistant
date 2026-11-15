@@ -345,6 +345,21 @@ def test_the_device_download_without_logs_or_user(diag) -> None:
     assert out == {"watch_id": None, "logs": None}
 
 
+def test_an_android_device_s_download_names_its_platform(diag) -> None:
+    """A Wear OS watch or an Android phone says which app sent the logs; an
+    Apple device's download has no such key, as before."""
+    diag.entry.runtime_data.widget_secret_store = types.SimpleNamespace(
+        get={WATCH: types.SimpleNamespace(user_id=USER, platform="wearos")}.get
+    )
+    out = asyncio.run(
+        diag.mod.async_get_device_diagnostics(
+            None, diag.entry, _Device(("wrist_assistant", f"watch_{WATCH}"))
+        )
+    )
+    assert out["platform"] == "wearos"
+    assert list(out) == ["watch_id", "user_bound", "platform", "client_certificate", "logs"]
+
+
 def test_a_bound_user_with_no_record_shows_absent(diag) -> None:
     out = asyncio.run(
         diag.mod.async_get_device_diagnostics(

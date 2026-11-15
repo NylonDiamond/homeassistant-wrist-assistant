@@ -28,6 +28,7 @@ import { newMapWatchPage } from "./map-page.js";
 import { type WatchPage, type WatchPagesDocument, watchPageId, watchPageName } from "./model.js";
 import type { WatchPagesNote } from "./save-note.js";
 import { type WatchHassView, addNewWatchTile, watchEntityAddFromHass } from "./tile-new.js";
+import { generalCopy } from "../device-platform.js";
 
 /** Where a new page starts. */
 export type NewPageStart = "empty" | "room" | "page" | "map";
@@ -309,7 +310,7 @@ function renderDevices(form: NewPageForm, input: NewPageSheetInput, h: NewPageSh
       })}
     </div>`;
   };
-  return html`<div class="np-devices">${group("watch", "Watches")}${group("iphone", "iPhones")}</div>`;
+  return html`<div class="np-devices">${group("watch", "Watches")}${group("iphone", generalCopy("iPhones", "Phones"))}</div>`;
 }
 
 function renderRoom(form: NewPageForm, input: NewPageSheetInput, h: NewPageSheetHandlers): TemplateResult {

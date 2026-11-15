@@ -47,6 +47,7 @@ import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot,
 import { listRequests } from "./compiler.js";
 import type { HomeMapDocument, HomeMapRead } from "./home-map/model.js";
 import type { SavedPart } from "./parts.js";
+import { type DevicePlatform, noteHomeDevices } from "./device-platform.js";
 import type { DeviceKind } from "./version.js";
 
 export interface OwnerSummary {
@@ -59,6 +60,11 @@ export interface OwnerSummary {
       with `screen_size` and `paired_iphone_name` null and `polling` never
       true: there is no long poll to a phone. */
   device_kind?: DeviceKind | null;
+  /** What the device runs: "ios" or "watchos" for an Apple app, "android" or
+      "wearos" for the Android apps (`device-platform.ts`). Absent from an
+      integration older than the field, null on an orphan and the Library;
+      absent reads as the kind's Apple platform. */
+  platform?: DevicePlatform | null;
   /** Name of the iPhone this watch is paired to. Both real watches report
       themselves as "Apple Watch", so this is what tells them apart. */
   paired_iphone_name: string | null;
@@ -266,7 +272,7 @@ export async function callService(
 }
 
 export async function fetchOwners(hass: HassLike) {
-  return hass.connection.sendMessagePromise<{
+  const reply = await hass.connection.sendMessagePromise<{
     owners: OwnerSummary[];
     max_schema_version: number;
     token: number;
@@ -274,7 +280,14 @@ export async function fetchOwners(hass: HassLike) {
      * integrations older than the field; `phone_pages` there is the one the
      * panel reads (`phone-pages.ts`). */
     capabilities?: string[];
+    /** The platforms of every device paired here, sorted, whoever asks
+     * (`device-platform.ts`'s general copy). Absent from integrations older
+     * than the field. */
+    paired_platforms?: DevicePlatform[];
   }>({ type: `${D}/owners` });
+  // General copy says phone and watch once an Android device is paired here.
+  noteHomeDevices(reply);
+  return reply;
 }
 
 export async function fetchList(hass: HassLike, owner: string) {
@@ -631,6 +644,9 @@ export interface PairLookupFound {
   /** What asked: a watch, or an iPhone showing a code. Missing from an
       integration before iPhones paired by code, when only a watch could. */
   kind?: "watch" | "iphone";
+  /** What the device runs; absent from an integration older than the field,
+      and from it an Apple device of its kind. */
+  platform?: DevicePlatform | null;
   device_name?: string | null;
   screen_size?: string | null;
   app_version?: string | null;
@@ -743,6 +759,9 @@ export interface PairOfferStatus {
   /** The paired iPhone's id, which is its owner id. Absent from
       integrations older than the field. */
   device_id?: string | null;
+  /** What the phone runs: "ios" or "android". Absent from integrations older
+      than the field, which only iPhones redeemed. */
+  platform?: DevicePlatform | null;
 }
 
 /** Make a QR code an iPhone can pair with, for `userId` (the signed in
@@ -780,7 +799,7 @@ export interface ClientCertificateStatus {
   updated_at: string | null;
   revision: number;
   /** Who stored the record, or removed it. Null when the user never had one. */
-  source: "panel" | "iphone" | null;
+  source: "panel" | "iphone" | "android" | null;
 }
 
 /** The `user_id` key for a certificate command: none for the signed in user,

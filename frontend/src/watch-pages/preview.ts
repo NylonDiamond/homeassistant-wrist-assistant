@@ -115,6 +115,7 @@ import {
   PHONE_VAULT_GUTTER,
   type PhonePageDots,
   type PhonePagesLayout,
+  isAndroidPhoneModel,
   phoneDrawsIphoneLook,
   phoneTileCellInset,
   phoneTileCornerRadius,
@@ -139,6 +140,7 @@ import {
 import { type OneLookPreviewModel, oneLookPreviewModel, oneLookTemplateSurface, renderOneLookTile } from "./one-look/render.js";
 import { oneLookLuminance, oneLookParseHex } from "./one-look/colour.js";
 import type { OneLookPhotoLight } from "./one-look/glow.js";
+import { generalCopy } from "../device-platform.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -4344,10 +4346,10 @@ export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body
     const hidden = input.behavior?.pageTitleMode === "Off" || watchPageValue(input.page, "pageTitleDisplayStyle") === "none";
     const title = hidden || typeof input.page.name !== "string" ? "" : input.page.name.trim();
     const ink = watchPageHasDefaultBlackBackground(input.page);
-    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ink, grid, backdrop, ...(control === undefined ? {} : { dots: control }) });
+    return renderPhoneFrame(input.phone, s, body, { label: label ?? phoneFrameLabel(input.phone), icons: input.icons, title, ink, grid, backdrop, ...(control === undefined ? {} : { dots: control }) });
   }
   const dots = watchPageIndicatorRow(input, s);
-  return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, grid, backdrop, ...(dots === undefined ? {} : { dots }) });
+  return renderPhoneFrame(input.phone, s, body, { label: label ?? phoneFrameLabel(input.phone), icons: input.icons, grid, backdrop, ...(dots === undefined ? {} : { dots }) });
 }
 
 /** The watch's small page title in the top band (`renderWatchPageTitle`),
@@ -4431,13 +4433,20 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
  * go outside the picture (`WATCH_SCREEN_FOLD_TEXT`), where they cover no
  * tile. */
 export function renderWatchScreenFold(top: number, phone = false): TemplateResult {
-  return html`<div class="wp-fold" style=${`top:${top}px`} title=${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}></div>`;
+  return html`<div class="wp-fold" style=${`top:${top}px`} title=${phone ? phoneScreenFoldText() : WATCH_SCREEN_FOLD_TEXT}></div>`;
 }
 
 export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watch's screen. The page scrolls on below it.";
 
 /** The fold's words on an iPhone: its pages end at the page dots. */
-export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPhone's screen. The page scrolls on below it.";
+/** A phone frame's name for screen readers: the model it is drawn as. */
+function phoneFrameLabel(phone: PhonePagesLayout): string {
+  return isAndroidPhoneModel(phone.model) ? "Android phone" : "iPhone";
+}
+
+export function phoneScreenFoldText(): string {
+  return `The dashed line marks the end of the ${generalCopy("iPhone", "phone")}'s screen. The page scrolls on below it.`;
+}
 
 /** Whether the picture of a page runs past the screen, so it shows the
  * fold. A smart page never does, nor a map page on an iPhone. With

@@ -1,7 +1,7 @@
 // What the menu editor says after a save, one line per way a save can end.
 // Kept apart from the element so the words can be tested without a browser.
 
-import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote } from "../watch-pages/save-note.js";
+import { notForIphoneText, type WatchPagesNote } from "../watch-pages/save-note.js";
 import type { WatchMenusSaveResult } from "./draft.js";
 import { type WatchMenusSection, watchMenusSectionName } from "./model.js";
 
@@ -40,7 +40,7 @@ export function watchMenusSaveNote(result: WatchMenusSaveResult): WatchPagesNote
       return { kind: "err", text: `Not saved. Home Assistant refused the menus${message === "" ? "." : `: ${message}`}` };
     }
     case "not_for_iphone":
-      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
+      return { kind: "err", text: `Not saved. ${notForIphoneText()}` };
     case "busy":
       return { kind: "warn", text: "Already saving these menus. Wait a moment for that save to finish." };
     case "unavailable":

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from platform_names import PLATFORM_HELPERS, platform_namespace
 from test_delta_coordinator_inprocess import _poll, coordinator  # noqa: F401
 from test_home_map_store import (
     KEY,
@@ -47,6 +48,7 @@ _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_as
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
 _NAMES = (
     "_caller_is_iphone",
+    *PLATFORM_HELPERS,
     "_home_map_refusal",
     "_op_home_map_get",
     "_op_home_map_put",
@@ -111,6 +113,7 @@ def _ops(store_mod: Any, areas: Any) -> dict[str, Any]:
         dont_inherit=True,
     )
     namespace: dict[str, Any] = {
+        **platform_namespace(),
         "Any": Any,
         "Response": _Response,
         "_LOGGER": types.SimpleNamespace(debug=lambda *a, **k: None),
@@ -824,6 +827,66 @@ def test_ws_subscribe_is_open_to_every_signed_in_user_and_no_one_else(env) -> No
     assert code == "unavailable"
 
 
+# ── an Android phone and a Wear OS watch ─────────────────────────────────
+#
+# An Android phone pairs as the iPhone kind and a Wear OS watch as the watch
+# kind (`device_platform.py`), so each op answers them as it answers the
+# Apple device of their kind, with only a refusal's words in the phone's.
+
+PIXEL = "pixel-1"
+WEAR = "wear-1"
+
+
+def _android(env) -> None:
+    env.domain.widget_secret_store.entries[PIXEL] = types.SimpleNamespace(device_kind="iphone", platform="android")
+    env.domain.widget_secret_store.entries[WEAR] = types.SimpleNamespace(device_kind="watch", platform="wearos")
+
+
+def test_an_android_phone_and_a_wear_watch_read_the_map_as_an_iphone_does(env) -> None:
+    _android(env)
+    assert op(env, "_op_home_map_get", {}, watch_id=WEAR).body == {"ok": True, "doc": None, "rev": 0}
+    env.store.save(basic(), 0)
+    for watch_id in (PIXEL, WEAR):
+        assert op(env, "_op_home_map_get", {}, watch_id=watch_id).body == {"ok": True, "doc": basic(), "rev": 1}
+        assert op(env, "_op_home_map_get", {"rev": 1}, watch_id=watch_id).body == {
+            "ok": True, "not_modified": True, "rev": 1,
+        }
+
+
+def test_an_android_phone_saves_the_map_and_a_wear_watch_may_not(env) -> None:
+    _android(env)
+    assert put(env, basic(), 0, watch_id=PIXEL).body == {"ok": True, "rev": 1}
+    doc = basic()
+    doc["floors"][0]["pins"].pop()
+    # Place Devices on the phone saves on top of what it read.
+    assert put(env, doc, 1, watch_id=PIXEL).body == {"ok": True, "rev": 2}
+    assert op(env, "_op_home_map_get", {"rev": 1}, watch_id=WEAR).body == {"ok": True, "doc": doc, "rev": 2}
+    # A stale save hears the stored rev, as an iPhone's does.
+    stale = put(env, basic(), 1, watch_id=PIXEL)
+    assert (stale.status, stale.body["error"], stale.body["rev"]) == (409, "conflict", 2)
+    reply = put(env, basic(), 2, watch_id=WEAR)
+    assert reply.status == 403
+    assert reply.body == {"ok": False, "error": "not_an_iphone", "message": "Only a phone saves the home map."}
+    assert env.store.get() == (doc, 2)
+
+
+def test_an_android_phone_s_scan_free_save_records_no_scanned_room(env) -> None:
+    """Android has no room scan (decision D5): its saves name no
+    ``scanned``, so no room is kept as scanned."""
+    _android(env)
+    assert put(env, basic(), 0, watch_id=PIXEL).body == {"ok": True, "rev": 1}
+    assert env.store.scans() == {}
+
+
+def test_areas_get_answers_an_android_phone_and_a_wear_watch_alike(env) -> None:
+    _android(env)
+    iphone = op(env, "_op_areas_get", {}).body
+    for watch_id in (PIXEL, WEAR):
+        reply = op(env, "_op_areas_get", {}, watch_id=watch_id)
+        assert (reply.status, reply.body) == (200, iphone)
+    assert iphone == {"ok": True, "areas": AREAS, "entities": ENTITIES, "floors": FLOORS}
+
+
 # ── home_map_rev on the delta reply ──────────────────────────────────────
 
 
@@ -923,6 +986,46 @@ def test_a_save_releases_every_parked_poll_once_with_the_new_rev(coordinator) ->
                 _poll(coord, watch_id="w1", since=c1, entities=["light.x"], timeout=10), timeout=2
             )
             assert status == 200 and body["home_map_rev"] == 3
+
+        asyncio.run(run())
+
+
+def test_a_wear_watch_hears_the_map_rev_as_an_apple_watch_does(coordinator) -> None:  # noqa: F811
+    """``home_map_rev`` rides a Wear OS watch's replies, lean ones too, and a
+    save wakes its parked poll with the new rev; its ``stored_metadata``
+    says its platform beside it."""
+    from test_widget_secret_user_binding import _loaded_store
+
+    _module, hass, coord = coordinator
+    hass.states.set("light.x", "off")
+    with _loaded_store() as secrets_mod:
+        secrets = secrets_mod.WidgetSecretStore(object())
+        secrets.register(WEAR, "a" * 44, "watch-code-pair", platform="wearos")
+    coord.attach_stored_metadata(secrets.stored_metadata)
+    with loaded_package() as loaded:
+        store = loaded.store_mod.HomeMapStore(object())
+        asyncio.run(store.async_load())
+        coord.attach_home_map_store(store)
+        store.async_add_listener(coord.home_map_changed)
+
+        async def run() -> None:
+            _s, body = await _poll(coord, watch_id=WEAR, entities=["light.x"], timeout=0)
+            assert "home_map_rev" not in body
+            assert body["stored_metadata"]["platform"] == "wearos"
+            store.save(basic(), 0)
+            _s, body = await _poll(coord, watch_id=WEAR, entities=["light.x"], timeout=0)
+            assert body["home_map_rev"] == 1
+            cursor = body["next_cursor"]
+            _s, body = await _poll(coord, watch_id=WEAR, entities=["light.x"], timeout=0, lean=True)
+            # Whole on a lean reply too.
+            assert body["home_map_rev"] == 1
+            held = asyncio.create_task(_poll(coord, watch_id=WEAR, since=cursor, entities=["light.x"], timeout=10))
+            await asyncio.sleep(0.05)
+            assert WEAR in coord._waiters
+            store.save(basic(), 1)
+            status, body = await asyncio.wait_for(held, timeout=2)
+            assert status == 200 and body["home_map_rev"] == 2
+            assert body["stored_metadata"] == {"app_version": "", "standard_settings": None, "platform": "wearos"}
 
         asyncio.run(run())
 

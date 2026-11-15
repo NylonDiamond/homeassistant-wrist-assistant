@@ -84,6 +84,7 @@ from typing import Any, NamedTuple
 from urllib.parse import quote
 
 from .const import LIBRARY_OWNER_ID
+from .device_platform import PlatformError, parse_platform, platform_fits_kind
 from .sealed_box import SealedBoxError, x25519_public_key
 from .widget_hmac import DEFAULT_HMAC_ALGO, SUPPORTED_HMAC_ALGOS
 
@@ -104,6 +105,10 @@ PAIR_SEALED_COPY_TTL_SECONDS = 600
 PAIR_KIND_WATCH = "watch"
 PAIR_KIND_IPHONE = "iphone"
 PAIR_KINDS = (PAIR_KIND_WATCH, PAIR_KIND_IPHONE)
+# `widget_secret_store.LABEL_IPHONE_SELF_PROVISION`, repeated so this module
+# stays free of that one's Home Assistant imports. The label is what makes a
+# stored entry an iPhone kind.
+_LABEL_IPHONE = "iphone-self-provision"
 
 # QR offers: a 32 byte token, five minutes, at most 16 open at once. A spent
 # or lapsed offer is remembered this long after, without its token, so the
@@ -130,6 +135,7 @@ PAIR_START_FIELDS = (
     "screen_size",
     "app_version",
     "app_build",
+    "platform",
 )
 
 
@@ -149,6 +155,9 @@ class PairFields:
     owner_iphone_id: str | None
     device_name: str | None
     screen_size: str | None
+    platform: str | None = None
+    """The platform the app said it runs (`device_platform.py`), checked
+    against the kind. None when it said nothing, which every Apple app does."""
 
 
 class PairFieldsError(NamedTuple):
@@ -167,6 +176,7 @@ def validate_pair_fields(
     payload: Mapping[str, Any],
     *,
     secret_optional: bool = False,
+    kind: str | None = None,
 ) -> tuple[PairFields, None] | tuple[None, PairFieldsError]:
     """Check a pairing's fields. Returns the fields or the first refusal.
 
@@ -174,6 +184,11 @@ def validate_pair_fields(
     sealed ``pair/start`` and a redeem before its box is opened. With it an
     absent ``secret_b64`` gives ``PairFields.secret_b64`` None; one that is
     present is still checked in full.
+
+    ``platform`` is optional (an Apple app never sends one). When present it
+    must be one of ``ios``, ``watchos``, ``android`` or ``wearos`` and fit the
+    device's kind: ``kind`` when given (a code pairing), else the label's
+    (the iPhone label is the iPhone kind, any other a watch).
     """
     watch_id = payload.get("watch_id")
     secret_b64 = payload.get("secret_b64")
@@ -250,6 +265,18 @@ def validate_pair_fields(
         return None, PairFieldsError(
             400, f"algo must be one of: {sorted(SUPPORTED_HMAC_ALGOS)}", "invalid_algo"
         )
+    try:
+        platform = parse_platform(payload.get("platform"))
+    except PlatformError as err:
+        return None, PairFieldsError(400, str(err), "invalid_platform")
+    if platform is not None:
+        device_kind = kind or (PAIR_KIND_IPHONE if label == _LABEL_IPHONE else PAIR_KIND_WATCH)
+        if not platform_fits_kind(platform, device_kind):
+            return None, PairFieldsError(
+                400,
+                f"platform {platform} is not a {'phone' if device_kind == PAIR_KIND_IPHONE else 'watch'} platform",
+                "invalid_platform",
+            )
 
     if not no_secret_yet:
         try:
@@ -276,6 +303,7 @@ def validate_pair_fields(
             owner_iphone_id=owner_iphone_id,
             device_name=device_name,
             screen_size=screen_size,
+            platform=platform,
         ),
         None,
     )
@@ -315,7 +343,7 @@ def validate_pair_start(
             return None, PairFieldsError(
                 400, "public_key_b64 required for an iPhone", "invalid_public_key"
             )
-        fields, error = validate_pair_fields(payload)
+        fields, error = validate_pair_fields(payload, kind=kind)
         if error is not None:
             return None, error
         return PairStart(fields=fields, kind=kind, public_key=None), None
@@ -324,7 +352,7 @@ def validate_pair_start(
         return None, PairFieldsError(
             400, "send public_key_b64 or secret_b64, not both", "invalid_secret"
         )
-    fields, error = validate_pair_fields(payload, secret_optional=True)
+    fields, error = validate_pair_fields(payload, secret_optional=True, kind=kind)
     if error is not None:
         return None, error
     bad_key = PairFieldsError(
@@ -916,6 +944,9 @@ class PairOffer:
     redeemed_at: float | None = None
     device_id: str | None = None
     device_name: str | None = None
+    platform: str | None = None
+    """The platform the phone said it runs, when it said (an Android phone
+    does, an iPhone never has)."""
 
 
 class PairOfferStore:
@@ -1022,12 +1053,14 @@ class PairOfferStore:
         device_id: str,
         device_name: str | None,
         now: float | None = None,
+        platform: str | None = None,
     ) -> None:
         """Mark an offer spent and forget its token."""
         current = self._clock() if now is None else now
         offer.redeemed_at = current
         offer.device_id = device_id
         offer.device_name = device_name
+        offer.platform = platform
         offer.token = b""
 
     def cancel(self, offer_id: Any) -> bool:

@@ -8,6 +8,10 @@
 // watches, whose screen runs nearly to the edge: a slim glass border and a
 // slimmer rim, the crown a fifth of the way down the case, and the 46 mm
 // watch's own corners. A fat case-coloured bezel read as an old watch.
+//
+// A Wear OS watch's screen is round (`round` on the screen, set by the round
+// cases in renderer.ts): the same glass and rim drawn as a circle, with the
+// crown at the middle of the right side, where round watches carry it.
 
 import { css, html, type TemplateResult } from "lit";
 
@@ -43,19 +47,31 @@ export function watchFrameMetrics(width: number, scale: number): { radius: numbe
  * that screen even when the box runs taller (a page that scrolls on below
  * the screen); without it they sit by the case's own height. */
 export function renderWatchFrame(
-  screen: { width: number; height?: number },
+  screen: { width: number; height?: number; round?: boolean },
   scale: number,
   body: TemplateResult,
   label?: string,
 ): TemplateResult {
+  const round = screen.round === true;
   const m = watchFrameMetrics(screen.width, scale);
-  const vars = [`--wf-radius:${m.radius}px`, `--wf-bezel:${m.bezel}px`, `--wf-rim:${m.rim}px`, `--wf-crown:${m.crown}px`];
-  if (screen.height !== undefined && screen.height > 0) {
+  // A round screen's corners are half its width: the screen is a circle.
+  const radius = round ? Math.round((screen.width * scale) / 2) : m.radius;
+  const vars = [`--wf-radius:${radius}px`, `--wf-bezel:${m.bezel}px`, `--wf-rim:${m.rim}px`, `--wf-crown:${m.crown}px`];
+  if (round) {
+    // The case is as tall as the round screen and its glass, whatever a page
+    // that scrolls on does below it; the crown sits at its middle and the
+    // button under it.
+    const caseHeight = screen.width * scale + m.bezel * 2;
+    const at = (f: number) => `${Math.round(caseHeight * f * 100) / 100}px`;
+    vars.push(`--wf-crown-top:${at(0.42)}`, `--wf-crown-h:${at(0.16)}`, `--wf-button-top:${at(0.66)}`, `--wf-button-h:${at(0.1)}`);
+  } else if (screen.height !== undefined && screen.height > 0) {
     const caseHeight = screen.height * scale + m.bezel * 2;
     const at = (f: number) => `${Math.round(caseHeight * f * 100) / 100}px`;
     vars.push(`--wf-crown-top:${at(0.19)}`, `--wf-crown-h:${at(0.16)}`, `--wf-button-top:${at(0.42)}`, `--wf-button-h:${at(0.22)}`);
   }
-  return html`<div class="wa-watch" aria-label=${label ?? "Watch"} style=${vars.join(";")}>${body}</div>`;
+  return round
+    ? html`<div class="wa-watch round" aria-label=${label ?? "Watch"} style=${vars.join(";")}>${body}</div>`
+    : html`<div class="wa-watch" aria-label=${label ?? "Watch"} style=${vars.join(";")}>${body}</div>`;
 }
 
 /** The case's own rules. Add to a component's `styles` next to the preview
@@ -111,4 +127,7 @@ export const watchFrameStyles = css`
     border-radius: var(--wf-radius, 28px);
     box-shadow: none;
   }
+  /* A round Wear OS screen: the screen is clipped to its circle, so a tile in
+     a corner shows as the watch shows it, cut by the round glass. */
+  .wa-watch.round > * { overflow: hidden; }
 `;

@@ -22,6 +22,7 @@
 // a sticky strip of their own, the two scrollers move together
 // (`WaBoardFrame`), and one set of column tracks keeps them lined up.
 
+import { nounFor } from "../device-platform.js";
 import { css, html, nothing, render, svg, unsafeCSS, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { uiIcon } from "../ui-icons.js";
 import { setupMoveNeedsUpdate } from "../version.js";
@@ -477,7 +478,7 @@ export function renderFocusBanner(banner: {
   return html`<div class="bd-focus" style=${banner.color === undefined ? nothing : `--dc:${banner.color}`}>
     <span class="bd-focus-glyph" aria-hidden="true">${uiIcon(device.kind === "iphone" ? "phone" : "watch")}</span>
     <span class="bd-focus-t"><b>Showing ${device.name} first</b><span class="bd-focus-sep" aria-hidden="true">·</span><span>${banner.text}</span></span>
-    ${onOwn === undefined ? nothing : html`<span class="bd-focus-own">Also on this ${device.kind === "iphone" ? "iPhone" : "watch"}:
+    ${onOwn === undefined ? nothing : html`<span class="bd-focus-own">Also on this ${nounFor(device.kind, device.platform)}:
       ${own.map((screen) => html`<button type="button" class="bd-link" @click=${() => onOwn(screen)}>${DEVICE_OWN_LABELS[screen]}</button>`)}</span>`}
     <button type="button" class="bd-focus-all" @click=${() => banner.onAll()}>${uiIcon("grid")}<span>Show every device</span></button>
   </div>`;

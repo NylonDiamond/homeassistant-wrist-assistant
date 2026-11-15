@@ -50,7 +50,7 @@ import {
   MENUS_BOARD_HINT,
   MENUS_FOOT,
   MENUS_FOOT_ON_DEVICE,
-  NEW_MENU_ADMIN_TEXT,
+  newMenuAdminText,
   newMenuFullText,
   makeFirstMenuText,
   allMenusLead,
@@ -530,7 +530,7 @@ export class WaAllMenus extends LitElement {
     const may = this.mayMake || room;
     const open = this.newForm !== undefined;
     const title = this.mayMake ? "Make a new menu no device uses yet"
-      : device === undefined ? NEW_MENU_ADMIN_TEXT
+      : device === undefined ? newMenuAdminText()
       : room ? `Make a menu for ${device.name}`
       : newMenuFullText(device.name);
     return html`<button type="button" class="am-new-btn ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}

@@ -7,7 +7,7 @@
       "settings": [
         {
           "key": "serverMode",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "enum",
           "label": "Where to connect",
           "help": "Auto uses your home Wi-Fi when you are home and the internet when you are out. Leave it on Auto unless something is wrong.",
@@ -20,7 +20,7 @@
         },
         {
           "key": "deltaTimeout",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "enum",
           "label": "Wait for updates",
           "help": "How long the watch keeps a request open while it waits for changes. Longer uses less battery.",
@@ -80,7 +80,7 @@
         },
         {
           "key": "topSectionDoubleTapAction",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "enum",
           "label": "Double-tap the page title",
           "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
@@ -100,7 +100,7 @@
         },
         {
           "key": "topSectionDoubleTapSceneTargetId",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
@@ -110,7 +110,7 @@
         },
         {
           "key": "topSectionDoubleTapScriptTargetId",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "entity",
           "domain": "script",
           "label": "Script",
@@ -120,7 +120,7 @@
         },
         {
           "key": "pullDownAction",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Pull down from the top",
           "help": "Drag down from the top of a page.",
@@ -138,7 +138,7 @@
         },
         {
           "key": "pullDownSceneTargetId",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
@@ -148,7 +148,7 @@
         },
         {
           "key": "pullDownScriptTargetId",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "entity",
           "domain": "script",
           "label": "Script",
@@ -158,11 +158,12 @@
         },
         {
           "key": "longPressDuration",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Hold time",
           "help": "How long you press a tile before its extra options open.",
           "phoneHelp": "How long you press a tile before its extra options open. With Holding a tile opens set to iOS Menu on the iPhone, iOS sets this time itself.",
+          "androidHelp": "How long you press a tile before its extra options open.",
           "default": "Super Fast",
           "options": [
             {"value": "Super Fast", "label": "Very short (75 ms)"},
@@ -174,7 +175,7 @@
         },
         {
           "key": "entityRadialVerticalQuickRadialGestureEnabled",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Quick menu gesture",
           "help": "Inside a control's ring menu, a fast gesture opens the quick menu.",
@@ -182,7 +183,7 @@
         },
         {
           "key": "entityRadialVerticalQuickRadialGestureTrigger",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Gesture",
           "help": "The movement that opens the quick menu.",
@@ -196,7 +197,7 @@
         },
         {
           "key": "entityRadialVerticalQuickRadialGestureSpeed",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Gesture speed",
           "help": "How fast you must finish the gesture.",
@@ -217,7 +218,7 @@
       "settings": [
         {
           "key": "motionGestureSensitivity",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "enum",
           "label": "Wrist twists",
           "help": "Twist your wrist quickly to run an action. High reacts to gentler twists.",
@@ -231,7 +232,7 @@
         },
         {
           "key": "motionGestureSensitivityLevel",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "number",
           "label": "Fine tune",
           "help": "From 1, a firm twist, to 10, a gentle one. Low, Medium and High set 4, 6 and 8.",
@@ -243,7 +244,7 @@
         },
         {
           "key": "motionGestureActionsJSON",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "motionGestures",
           "label": "What each twist does",
           "help": "A scene or script with none picked uses the one you point at.",
@@ -286,7 +287,7 @@
         },
         {
           "key": "pageTitleMode",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Page name",
           "help": "The name of the page, at the top of the screen. Auto shows it for two seconds when the page opens. A page shows its name only when its own Page title Display is not None.",
@@ -299,7 +300,7 @@
         },
         {
           "key": "showPageIndicator",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Page dots",
           "help": "Small dots that show which page you are on.",
@@ -307,7 +308,7 @@
         },
         {
           "key": "pageIndicatorStyle",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Dot shape",
           "default": "Dots",
@@ -321,7 +322,7 @@
         },
         {
           "key": "pageIndicatorOpacity",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Dot brightness",
           "help": "How easy the dots are to see.",
@@ -336,7 +337,7 @@
         },
         {
           "key": "pageIndicatorPosition",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Dot position",
           "default": "Bottom",
@@ -349,7 +350,7 @@
         },
         {
           "key": "pageIndicatorSize",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Dot size",
           "default": "Small",
@@ -363,7 +364,7 @@
         },
         {
           "key": "pageIndicatorColorHex",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "color",
           "label": "Dot color",
           "help": "White unless you pick another color.",
@@ -373,7 +374,7 @@
         },
         {
           "key": "bottomEdgePageSwipeSensitivity",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "enum",
           "label": "Swipe the bottom edge",
           "help": "Slide along the bottom of the screen to go to the next page. Higher needs a shorter swipe.",
@@ -388,7 +389,7 @@
         },
         {
           "key": "wrapPages",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Loop pages",
           "help": "After the last page, go back to the first.",
@@ -396,7 +397,7 @@
         },
         {
           "key": "pageTransitionStyle",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Page animation",
           "help": "The movement you see when the page changes.",
@@ -410,7 +411,7 @@
         },
         {
           "key": "popupBackgroundMaterial",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Popup background",
           "help": "How much you can see through the panel behind a control.",
@@ -432,7 +433,7 @@
       "settings": [
         {
           "key": "showControlEntityName",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Show the device name",
           "help": "Shows the name under the dial on lights, thermostats, fans, shades and numbers, so you know which one is open.",
@@ -440,10 +441,12 @@
         },
         {
           "key": "sliderCrownSensitivity",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "enum",
           "label": "Digital Crown speed",
           "help": "How fast brightness and other sliders move when you turn the crown.",
+          "wearLabel": "Rotary speed",
+          "wearHelp": "How fast brightness and other sliders move when you turn the crown or the bezel.",
           "default": "Normal",
           "options": [
             {"value": "Precise", "label": "Precise"},
@@ -453,7 +456,7 @@
         },
         {
           "key": "showPendingAnimation",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Bounce while waiting",
           "help": "The icon bounces until Home Assistant confirms the change.",
@@ -461,7 +464,7 @@
         },
         {
           "key": "pendingAnimationDisabledDomains",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "domains",
           "label": "Which devices bounce",
           "help": "Lit types bounce. Tap a type to turn it on or off.",
@@ -488,7 +491,7 @@
         },
         {
           "key": "dismissControlsOnClose",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Start fresh when you come back",
           "help": "When you leave the app, close open controls and peeked pages, so you come back to your main page.",
@@ -496,7 +499,7 @@
         },
         {
           "key": "pointControlShowHUD",
-          "devices": ["watch"],
+          "devices": ["watch", "wearos"],
           "type": "bool",
           "label": "Point Control label",
           "help": "While Point Control runs, show the name of the device you point at. You set up what to point at in Rooms.",
@@ -504,7 +507,7 @@
         },
         {
           "key": "automationTriggerSkipConditions",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Run automations right away",
           "help": "When you run an automation from a tile, a Shortcut or a control on this device, do its actions without checking its conditions first. Its triggers are always skipped.",
@@ -518,7 +521,7 @@
       "settings": [
         {
           "key": "cameraStreamMode",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Camera view",
           "help": "Live video changes to still pictures by itself if a camera cannot stream. Pick Still pictures only if live video has trouble on your network.",
@@ -530,7 +533,7 @@
         },
         {
           "key": "cameraRefreshRate",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "How often pictures update",
           "help": "Used when live video is not available. Faster uses more battery.",
@@ -545,7 +548,7 @@
         },
         {
           "key": "cameraHDRefreshRate",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "How often HD pictures update",
           "help": "The same, for full-screen HD pictures.",
@@ -560,7 +563,7 @@
         },
         {
           "key": "cameraSwipeSensitivity",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Swipe to the next camera",
           "help": "Slide along the bottom of the picture to change camera. On the watch, slide along the bottom edge.",
@@ -574,7 +577,7 @@
         },
         {
           "key": "cameraSwipeWrap",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Loop cameras",
           "help": "After the last camera, go back to the first.",
@@ -582,7 +585,7 @@
         },
         {
           "key": "cameraRefreshOnOpen",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "New picture when a page opens",
           "help": "Get a fresh picture each time a page with a camera opens. Each camera tile can change this under Refresh on open in Pages.",
@@ -590,7 +593,7 @@
         },
         {
           "key": "cameraRefreshOnOpenDebounce",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Skip if newer than",
           "help": "Keep the picture you have if it is newer than this.",
@@ -605,7 +608,7 @@
         },
         {
           "key": "cameraRefreshOnPageOpenDelay",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Wait before loading",
           "help": "If you swipe away before this time, nothing loads.",
@@ -620,7 +623,7 @@
         },
         {
           "key": "cameraShowLoadingDots",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Loading dots",
           "help": "Small dots at the top of the page while cameras load.",

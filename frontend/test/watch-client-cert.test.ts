@@ -7,10 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientCertificateStatus, HaUser, HassLike } from "../src/ha-api.js";
 import {
-  CLIENT_CERT_FOR_HINT,
+  clientCertForHint,
   CLIENT_CERT_FOR_TITLE,
   CLIENT_CERT_MAX_BYTES,
-  CLIENT_CERT_SAVED_NOTE,
+  clientCertSavedNote,
   CLIENT_CERT_UPDATE_TEXT,
   base64OfDataUrl,
   clientCertCanUpload,
@@ -18,7 +18,6 @@ import {
   clientCertErrorText,
   clientCertOtherName,
   clientCertRemoveAsk,
-  clientCertSavedNote,
   clientCertSizeProblem,
   clientCertSourceText,
   clientCertUploadTitle,
@@ -317,7 +316,7 @@ describe("the card", () => {
     expect(inside.passphrase).toBe("");
     const shown = text();
     expect(shown).toContain("Installed");
-    expect(shown).toContain(CLIENT_CERT_SAVED_NOTE);
+    expect(shown).toContain(clientCertSavedNote());
   });
 
   it("asks before Remove, then removes", async () => {
@@ -328,7 +327,7 @@ describe("the card", () => {
     expect(ha.sent.at(-1)).toEqual({ type: "wrist_assistant/client_certificate/delete" });
     const shown = text();
     expect(shown).not.toContain("Installed");
-    expect(shown).toContain(CLIENT_CERT_SAVED_NOTE);
+    expect(shown).toContain(clientCertSavedNote());
     expect(shown).toContain(`type="password"`);
   });
 
@@ -361,7 +360,7 @@ describe("the For menu", () => {
     const { ha, text } = await card(held(), PEOPLE);
     const shown = text();
     expect(shown).toContain(CLIENT_CERT_FOR_TITLE);
-    expect(shown).toContain(CLIENT_CERT_FOR_HINT);
+    expect(shown).toContain(clientCertForHint());
     expect(shown).toContain("Jesse (you) · Admin");
     expect(shown).toContain("Anna · User");
     expect(shown).not.toContain("Old account");
@@ -374,7 +373,7 @@ describe("the For menu", () => {
   it("shows no menu, and never reads the people, for someone who is not an administrator", async () => {
     const { ha, text } = await card(held(), PEOPLE, false);
     expect(ha.sent.filter((m) => m.type === "config/auth/list")).toEqual([]);
-    expect(text()).not.toContain(CLIENT_CERT_FOR_HINT);
+    expect(text()).not.toContain(clientCertForHint());
     expect(text()).not.toContain("Anna");
     expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
     expect(text()).toContain("Installed");
@@ -382,9 +381,9 @@ describe("the For menu", () => {
 
   it("shows no menu with one person, or when the people cannot be read", async () => {
     const one = await card(held(), [PEOPLE[0]!]);
-    expect(one.text()).not.toContain(CLIENT_CERT_FOR_HINT);
+    expect(one.text()).not.toContain(clientCertForHint());
     const unread = await card(held());
-    expect(unread.text()).not.toContain(CLIENT_CERT_FOR_HINT);
+    expect(unread.text()).not.toContain(clientCertForHint());
     expect(unread.text()).toContain("Installed");
   });
 
@@ -449,7 +448,7 @@ describe("fixed to a device's owner", () => {
     const shown = flatten(c.render());
     // The name from the people list, since the page gave none.
     expect(shown).toMatch(/<span>For<\/span>\s*<div class="readout-v ws-cert-for">Anna</);
-    expect(shown).toContain(CLIENT_CERT_FOR_HINT);
+    expect(shown).toContain(clientCertForHint());
     expect(shown).not.toContain("<select");
     await inside.pick({ files: [{ name: "anna.p12", size: 2_400 }], value: "" });
     inside.passphrase = "right";
@@ -507,7 +506,7 @@ describe("the words for another person", () => {
   });
 
   it("keeps the old words for the administrator and names anyone else", () => {
-    expect(clientCertSavedNote()).toBe(CLIENT_CERT_SAVED_NOTE);
+    expect(clientCertSavedNote()).toBe(clientCertSavedNote());
     expect(clientCertSavedNote("Anna")).toBe("Saved for Anna. Their watch and iPhone pick it up the next time they open the app.");
     expect(clientCertRemoveAsk("Anna")).toContain("for Anna?");
     expect(clientCertUploadTitle()).toContain("your devices");

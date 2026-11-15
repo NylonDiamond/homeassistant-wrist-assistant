@@ -25,6 +25,7 @@ import {
   tileLabel,
   watchPageTiles,
 } from "./model.js";
+import { generalCopy } from "../device-platform.js";
 
 /** A kind only the iPhone draws, as the entity id spells it. */
 export type WatchPhoneTileKind = "map" | "chart" | "text_field" | "web";
@@ -257,7 +258,7 @@ export function watchWebURLLoads(url: string): boolean {
  * why; undefined for an empty or a loading address. */
 export function watchWebURLNote(url: string): string | undefined {
   if (url.trim() === "" || watchWebURLLoads(url)) return undefined;
-  return "Only http and https addresses load. The iPhone shows No address for this one.";
+  return `Only http and https addresses load. The ${generalCopy("iPhone", "phone")} shows No address for this one.`;
 }
 
 /** Whether the page scrolls inside the card: stored, else on. */

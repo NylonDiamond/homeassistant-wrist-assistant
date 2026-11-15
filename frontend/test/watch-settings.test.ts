@@ -63,13 +63,13 @@ import {
   pairRequestLine,
   PAIR_USER_TITLE,
   PAIR_CARD_TITLE,
-  PAIR_CODE_HINT,
+  pairCodeHint,
   pairOnIPhone,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
-  PAIR_QR_HINT,
-  PAIR_QR_REPLACE_HINT,
-  PAIR_QR_REPLACE_LABEL,
+  pairQrHint,
+  pairQrReplaceHint,
+  pairQrReplaceLabel,
   PAIR_MORE_TEXT,
   PAIR_REPLACE_LABEL,
   PAIR_SHOW_QR_TEXT,
@@ -191,7 +191,9 @@ describe("the catalog", () => {
   it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 32", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
-      expect([["watch"], ["watch", "iphone"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
+      // The Android apps read the same rows: a Wear OS watch every watch row
+      // but the double pinch, an Android phone every iPhone row but the Page look.
+      expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
     expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(32);
     expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
@@ -786,7 +788,7 @@ describe("pairing a watch by its code", () => {
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
     expect(PAIR_OPEN_APP_TEXT).toBe("Pair this iPhone instead");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
-    const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_QR_REPLACE_HINT, PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
+    const words = [PAIR_CARD_TITLE, pairCodeHint(), pairQrHint(), pairQrReplaceLabel(), pairQrReplaceHint(), PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
       PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),
       pairErrorText({ code: "needs_replace" }, "confirm", "iphone"), pairErrorText({ code: "needs_allow_remote" }, "confirm")];
     for (const w of words) expect(w).not.toMatch(/ \x2d |\u2013|\u2014/);

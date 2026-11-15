@@ -11,6 +11,7 @@
 // and Web. Cameras show a still picture."): what a kind leaves out is now
 // the chips, and what an iPhone adds to a tile is the inspector's iPhone tag.
 
+import { type DevicePlatform, platformNoun, platformNounTitle } from "../device-platform.js";
 import type { PreviewKind } from "../library/item-mode.js";
 import { joinNames } from "../copies.js";
 import {
@@ -26,15 +27,19 @@ import {
 } from "./model.js";
 import { WATCH_MAP_PAGE_WORDS } from "./map-page.js";
 
-/** "watch" or "iPhone", as a sentence names the kind. */
-export function screenWord(screen: WatchScreen | PreviewKind): string {
-  return screen === "watch" ? "watch" : "iPhone";
+// Every function below takes the phone the editor draws (`phone`): an
+// iPhone unless the device on show is an Android phone, whose screen is
+// then "the phone". The watch is "the watch" on either platform.
+
+/** "watch", "iPhone" or "phone", as a sentence names the kind. */
+export function screenWord(screen: WatchScreen | PreviewKind, phone?: DevicePlatform | null): string {
+  return screen === "watch" ? "watch" : platformNoun(phone === "android" ? "android" : "ios");
 }
 
-/** "Watch" or "iPhone", as a title starts, and as the inspector's chip for
- * the screen is named. */
-export function screenTitleWord(screen: WatchScreen): string {
-  return screen === "watch" ? "Watch" : "iPhone";
+/** "Watch", "iPhone" or "Phone", as a title starts, and as the inspector's
+ * chip for the screen is named. */
+export function screenTitleWord(screen: WatchScreen, phone?: DevicePlatform | null): string {
+  return screen === "watch" ? "Watch" : platformNounTitle(phone === "android" ? "android" : "ios");
 }
 
 /** The words in front of the inspector's Watch and iPhone chips. */
@@ -42,8 +47,8 @@ export const TILE_ON_TEXT = "Tile on";
 
 /** "Watch only" or "iPhone only": a tile on that screen alone, as its badge
  * on the picture and a locked chip's tooltip say it. */
-export function screenOnlyText(screen: WatchScreen): string {
-  return `${screenTitleWord(screen)} only`;
+export function screenOnlyText(screen: WatchScreen, phone?: DevicePlatform | null): string {
+  return `${screenTitleWord(screen, phone)} only`;
 }
 
 /**
@@ -51,9 +56,9 @@ export function screenOnlyText(screen: WatchScreen): string {
  * there or takes it off; a kind the screen cannot draw says which kind
  * draws it ("iPhone only") and why the chip does nothing.
  */
-export function tileOnChipTitle(screen: WatchScreen, on: boolean, draws: boolean): string {
-  const word = screenWord(screen);
-  if (!draws) return `${screenOnlyText(screen === "watch" ? "iphone" : "watch")}. The ${word} cannot draw this kind of tile.`;
+export function tileOnChipTitle(screen: WatchScreen, on: boolean, draws: boolean, phone?: DevicePlatform | null): string {
+  const word = screenWord(screen, phone);
+  if (!draws) return `${screenOnlyText(screen === "watch" ? "iphone" : "watch", phone)}. The ${word} cannot draw this kind of tile.`;
   return on ? `On the ${word}. Click to take it off the ${word}.` : `Not on the ${word}. Click to put it there.`;
 }
 
@@ -76,8 +81,8 @@ export function screenOnlyTileIds(page: WatchPage | undefined, screen: WatchScre
 /** The title under a picture, after its device icon: the devices of that
  * kind that show the page ("Jesse's Watch, Chen's Watch"), or the kind while
  * none does. */
-export function screenTitleText(screen: WatchScreen, names: readonly string[]): string {
-  return names.length === 0 ? screenTitleWord(screen) : names.join(", ");
+export function screenTitleText(screen: WatchScreen, names: readonly string[], phone?: DevicePlatform | null): string {
+  return names.length === 0 ? screenTitleWord(screen, phone) : names.join(", ");
 }
 
 /** The status line under a picture: `text`, and the words of its one button
@@ -95,10 +100,10 @@ export interface ScreenStatus {
  * how each kind draws it, with no button; a smart page, which fills itself,
  * has no line.
  */
-export function screenStatus(page: WatchPage | undefined, screen: WatchScreen): ScreenStatus | undefined {
+export function screenStatus(page: WatchPage | undefined, screen: WatchScreen, phone?: DevicePlatform | null): ScreenStatus | undefined {
   if (page === undefined || isSmartWatchPage(page)) return undefined;
   if (isMapWatchPage(page)) return { text: screen === "watch" ? WATCH_MAP_PAGE_WORDS.watchDifference : WATCH_MAP_PAGE_WORDS.phoneDifference };
-  const other = screenWord(screen === "watch" ? "iphone" : "watch");
+  const other = screenWord(screen === "watch" ? "iphone" : "watch", phone);
   if (watchScreensAlike(page)) return { text: `Same order as the ${other}` };
   return { text: "Arranged differently", useOther: `Use the ${other}'s order` };
 }
@@ -115,8 +120,8 @@ export interface ScreenOffChip {
 }
 
 /** The words in front of the chips: "Not on the watch". */
-export function screenOffLead(screen: WatchScreen): string {
-  return `Not on the ${screenWord(screen)}`;
+export function screenOffLead(screen: WatchScreen, phone?: DevicePlatform | null): string {
+  return `Not on the ${screenWord(screen, phone)}`;
 }
 
 /**
@@ -126,9 +131,9 @@ export function screenOffLead(screen: WatchScreen): string {
  * field on the watch) cannot, and says which kind draws it instead. Empty
  * for a smart page and a map page.
  */
-export function screenOffChips(page: WatchPage | undefined, screen: WatchScreen): ScreenOffChip[] {
+export function screenOffChips(page: WatchPage | undefined, screen: WatchScreen, phone?: DevicePlatform | null): ScreenOffChip[] {
   if (page === undefined || isSmartWatchPage(page) || isMapWatchPage(page)) return [];
-  const otherWord = screen === "watch" ? "iPhone" : "Watch";
+  const otherWord = screenTitleWord(screen === "watch" ? "iphone" : "watch", phone);
   return watchTilesOffScreen(page, screen).flatMap((tile) => {
     const id = typeof tile.id === "string" ? tile.id : "";
     if (id === "") return [];
@@ -142,9 +147,9 @@ export function screenOffChips(page: WatchPage | undefined, screen: WatchScreen)
  * iPhone stays as it is." With several devices of the kind showing the page,
  * each is named: "Moved on Jesse's Watch and Chen's Watch only."
  */
-export function screenMoveToastText(screen: WatchScreen, names: readonly string[]): string {
-  const where = names.length >= 2 ? joinNames(names) : `the ${screenWord(screen)}`;
-  return `Moved on ${where} only. The ${screenWord(screen === "watch" ? "iphone" : "watch")} stays as it is.`;
+export function screenMoveToastText(screen: WatchScreen, names: readonly string[], phone?: DevicePlatform | null): string {
+  const where = names.length >= 2 ? joinNames(names) : `the ${screenWord(screen, phone)}`;
+  return `Moved on ${where} only. The ${screenWord(screen === "watch" ? "iphone" : "watch", phone)} stays as it is.`;
 }
 
 /** Where the toast is remembered as shown: once per user, in this browser. */
@@ -169,9 +174,10 @@ export function takeScreenMoveToast(
   screen: WatchScreen,
   names: readonly string[],
   storage: Pick<Storage, "getItem" | "setItem"> | undefined = globalThis.localStorage,
+  phone?: DevicePlatform | null,
 ): string | undefined {
   if (screenToastShown(storage)) return undefined;
-  const text = screenMoveToastText(screen, names);
+  const text = screenMoveToastText(screen, names, phone);
   try {
     if (storage !== undefined) {
       storage.setItem(SCREEN_TOAST_KEY, "1");

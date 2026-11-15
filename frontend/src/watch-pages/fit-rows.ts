@@ -203,7 +203,7 @@ export function fitStateWords(state: FitState, device = "iPhone"): string {
 }
 
 /** The line a tile's settings show when `screen` draws it squashed. */
-export function fitTileNote(screen: WatchScreen): string {
-  const [here, there] = screen === "iphone" ? ["iPhone", "watch"] : ["watch", "iPhone"];
+export function fitTileNote(screen: WatchScreen, phone = "iPhone"): string {
+  const [here, there] = screen === "iphone" ? [phone, "watch"] : ["watch", phone];
   return `This page fits the ${here}'s screen, so this tile draws short there. Custom layouts show on the ${there} and on taller tiles.`;
 }

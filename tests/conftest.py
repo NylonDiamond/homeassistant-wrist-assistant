@@ -18,19 +18,51 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.abc
+import importlib.util
 import hmac
 import json
 import os
 import secrets
+import sys
 import time
 import warnings
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 import requests
 
 WA_PROTOCOL_VERSION = 2
+
+
+class _DevicePlatformFinder(importlib.abc.MetaPathFinder):
+    """Loads the real ``device_platform.py`` for any stub package.
+
+    Many in-process tests build a package of their own (``__path__ = []``) and
+    load the integration files they need into it one by one. ``device_platform``
+    is pure and imported by most of those files, so rather than every loader
+    naming it, an import of ``<any package>.device_platform`` that nothing else
+    can find loads the real file here. It sits last on ``sys.meta_path``, so a
+    package with a real path still finds the file the usual way.
+    """
+
+    _FILE = (
+        Path(__file__).resolve().parents[1]
+        / "custom_components"
+        / "wrist_assistant"
+        / "device_platform.py"
+    )
+
+    def find_spec(self, fullname, path=None, target=None):  # noqa: ANN001, ANN201
+        if fullname.rpartition(".")[2] != "device_platform" or "." not in fullname:
+            return None
+        return importlib.util.spec_from_file_location(fullname, self._FILE)
+
+
+if not any(isinstance(f, _DevicePlatformFinder) for f in sys.meta_path):
+    sys.meta_path.append(_DevicePlatformFinder())
 
 
 @pytest.fixture(scope="session")

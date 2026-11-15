@@ -59,7 +59,31 @@ def test_every_catalog_setting_says_which_devices_read_it() -> None:
     settings = _catalog_settings()
     assert len(settings) == 46
     for setting in settings:
-        assert setting.get("devices") in (["watch"], ["watch", "iphone"], ["iphone"]), setting["key"]
+        assert setting.get("devices") in (
+            ["watch"],
+            ["watch", "iphone"],
+            ["iphone"],
+            # The same rows read by the Android apps too: a Wear OS watch reads
+            # a watch row (`wearos`), an Android phone an iPhone row (`android`).
+            ["watch", "wearos"],
+            ["watch", "iphone", "wearos", "android"],
+        ), setting["key"]
+        devices = setting["devices"]
+        # An Android phone reads every iPhone row but the Page look: it
+        # draws its pages one way only.
+        if setting["key"] != "phonePageLook":
+            assert ("android" in devices) == ("iphone" in devices), setting["key"]
+
+
+def test_a_wear_watch_reads_every_watch_row_but_the_double_pinch() -> None:
+    """Wear OS has no double pinch; every other watch row applies there, the
+    crown's to the rotary input."""
+    left_out = [
+        s["key"]
+        for s in _catalog_settings()
+        if "watch" in s["devices"] and "wearos" not in s["devices"]
+    ]
+    assert left_out == ["handGestureAction", "handGestureSceneTargetId", "handGestureScriptTargetId"]
 
 
 def test_only_the_page_look_is_an_iphone_only_setting() -> None:

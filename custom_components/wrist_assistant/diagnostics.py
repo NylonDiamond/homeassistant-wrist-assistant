@@ -217,9 +217,15 @@ async def async_get_device_diagnostics(
         users = data.client_certificate_store.diagnostics().get("users", {})
         certificate = users.get(user_id, {"present": False, "revision": 0})
 
+    # What the device runs, for an Android phone or a Wear OS watch, so a
+    # support download says which app sent the logs. Only for a device that
+    # said its platform (`device_platform.py`): an Apple device's download is
+    # the one it always was.
+    platform = getattr(secret_entry, "platform", None) if secret_entry is not None else None
     return {
         "watch_id": watch_id,
         "user_bound": user_id is not None,
+        **({"platform": platform} if platform is not None else {}),
         "client_certificate": certificate,
         "logs": logs,
     }

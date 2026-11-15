@@ -73,6 +73,7 @@ import {
   type HomeMapWaitTotals,
   homeMapWaitTotals,
 } from "./waiting.js";
+import { generalCopy } from "../device-platform.js";
 
 /** The edit page's tools, on its tool rail. */
 export type HomeMapEditTool = "pick" | "draw" | "split" | "inner" | "door" | "window" | "opening" | "stairs" | "measure";
@@ -457,7 +458,7 @@ export class HomeMapEditPage implements HomeMapPart {
     if (step === undefined) return html``;
     const rows = step.rows();
     const floor = ctx.floor.rooms.length > 0 ? ctx.floor : ctx.doc.floors.find((f) => f.rooms.length > 0);
-    if (rows.length === 0) return html`<span class="hme-step-quiet">Pair a watch or an iPhone first.</span>`;
+    if (rows.length === 0) return html`<span class="hme-step-quiet">${generalCopy("Pair a watch or an iPhone first.", "Pair a watch or a phone first.")}</span>`;
     return html`<div class="hme-pagerows">${rows.map((r) => html`<div class="hme-pagerow">
       <div class="hme-pagerow-t"><b>${r.device.name}</b><span>${r.line}</span>
         ${r.note === undefined ? nothing : html`<span class="hme-pagerow-note ${r.note.kind}" role="status">${r.note.text}</span>`}</div>

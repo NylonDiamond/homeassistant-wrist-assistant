@@ -141,7 +141,11 @@ from .camera_webrtc import (
 )
 from .camera_webrtc import client_configuration as webrtc_client_configuration
 from .camera_webrtc import get_camera as get_webrtc_camera
-from .client_certificate_store import ClientCertificateError
+from .client_certificate_store import (
+    SOURCE_ANDROID as CLIENT_CERTIFICATE_SOURCE_ANDROID,
+    SOURCE_IPHONE as CLIENT_CERTIFICATE_SOURCE_IPHONE,
+    ClientCertificateError,
+)
 from .complication_store import (
     ComplicationConflictError,
     ComplicationStoreError,
@@ -162,6 +166,7 @@ from .const import (
     WristAssistantData,
 )
 from .device_lookup import find_paired_device, paired_device_name
+from .device_platform import FCM_PLATFORMS, default_platform, resolve_platform
 from .home_areas import home_areas, home_entities, home_floors
 from .home_map_store import (
     HomeMapConflictError,
@@ -184,6 +189,7 @@ from .notifications import (
     DELIVERY_MODE_MIRROR,
     PLATFORM_IOS,
     is_iphone_entry,
+    phone_family_watch_ids,
     phone_watch_ids,
     resolve_push_routes,
     watch_phone_ids,
@@ -1081,15 +1087,21 @@ class WADeltaView(HomeAssistantView):
             apns_env = payload.get("apns_environment", "production")
             if apns_env not in ("development", "production"):
                 apns_env = "production"
+            # A watch's own token, filed under its platform: watchOS for an
+            # Apple Watch (every watch that ever sent one here), Wear OS for
+            # a Wear watch, whose token the relay then sends through FCM.
+            token_platform = (
+                "wearos" if getattr(secret_entry, "platform", None) == "wearos" else "watchos"
+            )
             token_result = notification_store.register(
-                watch_id, device_token, platform="watchos", environment=apns_env
+                watch_id, device_token, platform=token_platform, environment=apns_env
             )
             if token_result == "new":
                 log_push_token_registered(self._hass, watch_id=watch_id, is_new=True)
             elif token_result == "updated":
                 log_push_token_registered(self._hass, watch_id=watch_id, is_new=False)
             if token_result in ("new", "updated"):
-                _prebind_relay_token(self._hass, domain_data, watch_id, "watchos")
+                _prebind_relay_token(self._hass, domain_data, watch_id, token_platform)
 
         # The watch reports its per-user notification delivery mode here so
         # send_notification can route mirror (iPhone) vs direct (watch). Stored
@@ -2132,6 +2144,19 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
     if environment not in ("development", "production"):
         environment = "production"
     platform = platform if isinstance(platform, str) and platform else "watchos"
+    # Imported here so the op also runs on its own, as `_deliver_push` is.
+    from .device_platform import is_fcm_platform, platform_fits_kind
+
+    if is_fcm_platform(platform):
+        # An Android phone registers `android` and a Wear watch `wearos`, each
+        # under its own id. A token of the other device's platform would route
+        # as the wrong one (a phone's alert sent as a watch's own), so it is
+        # refused. FCM has no sandbox, so the environment is always production.
+        secrets = ctx.domain_data.widget_secret_store
+        signer = secrets.get(ctx.watch_id) if secrets is not None else None
+        if signer is not None and not platform_fits_kind(platform, signer.device_kind):
+            return Response(status=400, text=f"platform {platform} does not fit this device")
+        environment = "production"
 
     # The HMAC-validated identity is the storage key, for every platform. Since
     # step 6 an iPhone's token lives under the phone's own id, and routing
@@ -2179,6 +2204,34 @@ def _caller_is_iphone(ctx: _OpContext) -> bool:
     return secrets is not None and is_iphone_entry(secrets.get(ctx.watch_id))
 
 
+def _entry_platform(entry: Any, kind: str) -> str:
+    """A secret store entry's platform (`device_platform.resolve_platform`),
+    or the Apple one of ``kind`` for no entry."""
+    if entry is None:
+        return default_platform(kind)
+    return resolve_platform(getattr(entry, "device_kind", kind), getattr(entry, "platform", None))
+
+
+def _caller_runs_android(ctx: _OpContext) -> bool:
+    """Whether the signer is an Android phone or a Wear OS watch. Only for
+    the words of a refusal; every rule reads the kind."""
+    secrets = getattr(ctx.domain_data, "widget_secret_store", None)
+    entry = secrets.get(ctx.watch_id) if secrets is not None else None
+    return entry is not None and getattr(entry, "platform", None) in FCM_PLATFORMS
+
+
+def _phone_noun(ctx: _OpContext) -> str:
+    """The phone in a refusal's words: "iPhone" to an Apple device, as it
+    always was, and "phone" to an Android one."""
+    return "phone" if _caller_runs_android(ctx) else "iPhone"
+
+
+def _a_phone(ctx: _OpContext) -> str:
+    """`_phone_noun` with its article: "an iPhone" or "a phone"."""
+    noun = _phone_noun(ctx)
+    return f"an {noun}" if noun == "iPhone" else f"a {noun}"
+
+
 def _push_status_fields(
     ctx: _OpContext, store: Any, companion: str | None
 ) -> dict[str, Any]:
@@ -2207,9 +2260,12 @@ def _push_status_fields(
             ),
         }
     if _caller_is_iphone(ctx):
-        watch_ids = phone_watch_ids(
-            ctx.domain_data.widget_secret_store.all_entries, ctx.watch_id
-        )
+        entries = ctx.domain_data.widget_secret_store.all_entries
+        # Only the watches this phone can bring an alert to: an iPhone an
+        # Apple Watch's, an Android phone a Wear OS watch's. In a home of
+        # Apple devices that is every watch of the phone's user, as it always
+        # was (`phone_family_watch_ids`).
+        watch_ids = phone_family_watch_ids(entries, ctx.watch_id)
         modes = store.delivery_modes()
         return {
             "platforms": sorted(own),
@@ -2264,7 +2320,8 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
 
     Body: {"camera": "camera.x", "title"?, "message"?, "companion_watch_id"?}.
     An iPhone caller that names no watch is routed as a real alert to its
-    user's watches, or to itself alone when its user has no watch here. An
+    user's watches of its own family (an Android phone's Wear OS watches, an
+    iPhone's Apple Watches), or to itself alone when there is none here. An
     older app's ``companion_watch_id`` (checked as for the other push ops)
     targets that watch, and a watch caller targets itself. Mirror delivery
     lands on the iPhone and watchOS mirrors it to the wrist when the phone is
@@ -2296,10 +2353,16 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     # user's watches (so it lands wherever a real one would), or to itself
     # alone when its user has no watch here. An older app naming its
     # companion, and a watch testing itself, target that one watch as before.
+    # A phone's watches are those of its own family, as its push rows count
+    # them (`_push_status_fields`): a Wear watch's alert goes through the
+    # Android phone and an Apple Watch's through the iPhone, so without this
+    # an Android phone's test would also land on its user's iPhone, and the
+    # other way round. An Android phone whose user has only Apple Watches
+    # tests itself.
     secrets = ctx.domain_data.widget_secret_store.all_entries
     targets = [target_watch_id]
     if target_watch_id == ctx.watch_id and _caller_is_iphone(ctx):
-        targets = phone_watch_ids(secrets, ctx.watch_id) or [ctx.watch_id]
+        targets = phone_family_watch_ids(secrets, ctx.watch_id) or [ctx.watch_id]
     if not resolve_push_routes(
         secrets, store.all_entries, store.delivery_modes(), targets
     ):
@@ -2347,22 +2410,31 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": sent > 0, "sent": sent})
 
 
-# The key the iPhone app routes on (`RemotePushRouter.openProKey`): a tap on an
-# alert that holds it opens the app's Pro screen.
+# The key the phone apps route on (`RemotePushRouter.openProKey` on the
+# iPhone, `PushMessage.OPEN_PRO_KEY` on Android): a tap on an alert that holds
+# it opens the app's Pro screen.
 _OPEN_PRO_PUSH_KEY = "wa_open_pro"
 
 
 async def _op_pro_open_on_phone(ctx: _OpContext) -> Response:
-    """Ask the watch's iPhone to show Pro, from the watch's Pro screen.
+    """Ask the watch's phone to show Pro, from the watch's Pro screen.
 
     The phone and the watch never talk to each other, and no watch app can
-    bring an iPhone app to the front. So this sends the iPhones of the watch's
+    bring a phone app to the front. So this sends the phones of the watch's
     Home Assistant user an alert, and a tap on it opens the app's Pro screen.
     With the app open, the app shows Pro at once and no banner.
 
+    Pro is bought in each store, so the phones are those of the watch's own
+    family (`watch_phone_ids`, `mirror_platform`): an Apple Watch asks the
+    user's iPhones over APNs, a Wear OS watch the user's Android phones over
+    FCM, where `wa_open_pro` rides in the data like every other key. An
+    Android phone of an Apple Watch's user is never asked, since a Play
+    purchase does not unlock an Apple Watch, nor the other way round.
+
     Returns {"ok": bool, ...}; ``ok:false`` with ``reason:"no_phone"`` when the
-    user has no iPhone here with a push token, and ``reason:"not_a_watch"`` for
-    an iPhone caller. The watch says what to do by hand in those cases.
+    user has no phone of the watch's family here with a push token, and
+    ``reason:"not_a_watch"`` for a phone caller. The watch says what to do by
+    hand in those cases.
     """
     store = ctx.domain_data.notification_store
     if store is None:
@@ -3291,6 +3363,11 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
             if isinstance(ctx.payload.get("standard_settings"), bool)
             else None
         ),
+        # What the app runs (`device_platform.py`). An Apple app sends none,
+        # which leaves the stored one alone; the store ignores a word that is
+        # not one of the four or not this device's kind's, as it ignores a
+        # field over the cap, so a watch can never report itself a phone.
+        platform=ctx.payload.get("platform"),
     )
     if not ok:
         # Entry vanished between HMAC validation and dispatch (concurrent
@@ -3325,6 +3402,13 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
             "device_name": entry.device_name if entry else None,
             "screen_size": entry.screen_size if entry else None,
             "user_bound": bool(entry is not None and entry.user_id),
+            # Only for a device that said its platform, so an Apple app's
+            # reply is the one it always was.
+            **(
+                {"platform": entry.device_platform}
+                if getattr(entry, "platform", None) is not None
+                else {}
+            ),
         }
     )
 
@@ -3780,6 +3864,7 @@ class WARegisterSecretView(HomeAssistantView):
         owner_iphone_id = fields.owner_iphone_id
         device_name = fields.device_name
         screen_size = fields.screen_size
+        platform = fields.platform
 
         # HA's auth middleware put the bearer's user here (requires_auth).
         user = request.get("hass_user")
@@ -3830,6 +3915,7 @@ class WARegisterSecretView(HomeAssistantView):
             device_name=device_name,
             screen_size=screen_size,
             user_id=user_id,
+            platform=platform,
         )
         if register_result == "new":
             log_secret_registered(
@@ -4204,10 +4290,17 @@ class WAPairRedeemView(HomeAssistantView):
             "device_name": payload.get("device_name"),
             "app_version": payload.get("app_version"),
             "app_build": payload.get("app_build"),
+            # An Android phone says so; an iPhone never has. Checked to be a
+            # phone's platform, since only a phone redeems.
+            **({} if payload.get("platform") is None else {"platform": payload.get("platform")}),
         }
-        _fields, error = validate_pair_fields(claimed, secret_optional=True)
+        checked, error = validate_pair_fields(claimed, secret_optional=True)
         if error is not None:
             return self._refuse(error.status, error.code, error.message)
+        # The phone in the refusals below: "iPhone" as it always was, and
+        # "phone" to an Android phone, which says so (`device_platform.py`).
+        phone = "phone" if getattr(checked, "platform", None) in FCM_PLATFORMS else "iPhone"
+        a_phone = "a phone" if phone == "phone" else "an iPhone"
         model = payload.get("model")
         if model is not None and (not isinstance(model, str) or len(model) > REGISTER_TEXT_MAX_LEN):
             return self._refuse(400, "invalid_field", "model too long")
@@ -4253,7 +4346,7 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(
                 409,
                 "not_an_iphone",
-                "This device id belongs to a paired watch, not an iPhone, so it "
+                f"This device id belongs to a paired watch, not {a_phone}, so it "
                 "cannot be paired as one. Replace does not change that.",
             )
         if existing is not None and existing.user_id is None and not offer.replace:
@@ -4265,7 +4358,7 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(
                 409,
                 "unbound_needs_replace",
-                "This iPhone was paired before devices belonged to a person. Ask "
+                f"This {phone} was paired before devices belonged to a person. Ask "
                 "an admin to show a QR code with Replace ticked.",
             )
         if (
@@ -4280,7 +4373,7 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(
                 409,
                 "bound_to_other_user",
-                "This iPhone is paired for another person. Ask an admin to show a "
+                f"This {phone} is paired for another person. Ask an admin to show a "
                 "QR code with Replace ticked.",
             )
 
@@ -4289,7 +4382,13 @@ class WAPairRedeemView(HomeAssistantView):
         if error is not None:
             return self._refuse(error.status, error.code, error.message)
         result = store_paired_device(self._hass, secret_store, fields, user_id=offer.user_id)
-        offer_store.redeem(offer, device_id=device_id, device_name=fields.device_name, now=now)
+        offer_store.redeem(
+            offer,
+            device_id=device_id,
+            device_name=fields.device_name,
+            now=now,
+            platform=fields.platform,
+        )
         _LOGGER.info(
             "Paired iphone watch_id=%s by QR offer %s… (%s), user=%s, offered by %s",
             device_id,
@@ -5116,7 +5215,11 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
 
 def _not_an_iphone(ctx: _OpContext) -> Response:
     return ctx.signed_json(
-        {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone takes a watch's pages."},
+        {
+            "ok": False,
+            "error": "not_an_iphone",
+            "message": f"Only {_a_phone(ctx)} takes a watch's pages.",
+        },
         status=403,
     )
 
@@ -5169,7 +5272,9 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
     watch never heard from. ``app_version`` and ``app_build`` are what the
     watch last reported (pairing, then ``update_metadata`` after each app
     update), null when it never said; ``shown_pages`` is how many pages it
-    shows (`_owner_shown_page_count`).
+    shows (`_owner_shown_page_count`). ``platform`` is what the watch runs
+    (``watchos`` or ``wearos``, ``watchos`` for one that never said), so an
+    Android phone can tell an Apple Watch from a Wear OS watch.
     Refused ``not_an_iphone`` (403) for a watch.
     """
     secrets = ctx.domain_data.widget_secret_store
@@ -5201,6 +5306,9 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
                     "app_version": getattr(entries.get(watch_id), "app_version", None),
                     "app_build": getattr(entries.get(watch_id), "app_build", None),
                     "shown_pages": _owner_shown_page_count(store, watch_id),
+                    # What the watch runs (`device_platform.py`), so the
+                    # phone names it as an Apple Watch or a Wear OS watch.
+                    "platform": _entry_platform(entries.get(watch_id), "watch"),
                 }
                 for watch_id in phone_watch_ids(entries, ctx.watch_id)
             ],
@@ -5238,7 +5346,11 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
         secrets.all_entries, ctx.watch_id
     ):
         return ctx.signed_json(
-            {"ok": False, "error": "invalid_watch", "message": "watch_id must be one of this iPhone's watches"},
+            {
+                "ok": False,
+                "error": "invalid_watch",
+                "message": f"watch_id must be one of this {_phone_noun(ctx)}'s watches",
+            },
             status=400,
         )
     first = store.holds_no_record(ctx.watch_id, "pages")
@@ -5919,7 +6031,11 @@ async def _op_home_map_put(ctx: _OpContext) -> Response:
         return _home_map_refusal(ctx, HomeMapUnavailableError("integration not ready"))
     if not _caller_is_iphone(ctx):
         return ctx.signed_json(
-            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone saves the home map."},
+            {
+                "ok": False,
+                "error": "not_an_iphone",
+                "message": f"Only {_a_phone(ctx)} saves the home map.",
+            },
             status=403,
         )
     if len(ctx.body) > _HOME_MAP_PUT_MAX_BODY_BYTES:
@@ -5996,7 +6112,7 @@ async def _op_home_map_page_add(ctx: _OpContext) -> Response:
         return _home_map_page_add_refusal(ctx, "unavailable", "integration not ready")
     if not _caller_is_iphone(ctx):
         return _home_map_page_add_refusal(
-            ctx, "not_an_iphone", "Only an iPhone adds a map page to its own pages."
+            ctx, "not_an_iphone", f"Only {_a_phone(ctx)} adds a map page to its own pages."
         )
     floor_id = ctx.payload.get("floor_id")
     if not isinstance(floor_id, str) or not floor_id:
@@ -6018,7 +6134,7 @@ async def _op_home_map_page_add(ctx: _OpContext) -> Response:
         record = pages.get(owner, "pages")
         if record is None:
             return _home_map_page_add_refusal(
-                ctx, "no_pages_record", "This iPhone holds no pages yet."
+                ctx, "no_pages_record", f"This {_phone_noun(ctx)} holds no pages yet."
             )
         held = pages.page_with_tile(owner, home_map_entity_id(floor["id"]))
         if held is not None:
@@ -6144,6 +6260,15 @@ def _client_certificate_gate(ctx: _OpContext) -> tuple[Any, Response | None]:
     return store, None
 
 
+def _client_certificate_source(ctx: _OpContext) -> str:
+    """The path a device's put or delete is filed under: ``android`` for an
+    Android phone or a Wear OS watch, ``iphone`` for an Apple device, as
+    before. Both are a phone's path; the panel names the app."""
+    if _caller_runs_android(ctx):
+        return CLIENT_CERTIFICATE_SOURCE_ANDROID
+    return CLIENT_CERTIFICATE_SOURCE_IPHONE
+
+
 async def _op_client_certificate_put(ctx: _OpContext) -> Response:
     """A phone hands over its client certificate for its bound user.
 
@@ -6193,7 +6318,9 @@ async def _op_client_certificate_put(ctx: _OpContext) -> Response:
             ctx, "invalid", "the sealed box does not hold a JSON object"
         )
     try:
-        record, changed = await store.async_put(ctx.user_id, inner)
+        record, changed = await store.async_put(
+            ctx.user_id, inner, source=_client_certificate_source(ctx)
+        )
     except ClientCertificateError as err:
         return _client_certificate_refusal(ctx, err.code, err.message)
     return ctx.signed_json(
@@ -6225,7 +6352,7 @@ async def _op_client_certificate_delete(ctx: _OpContext) -> Response:
     if refused is not None:
         return refused
     try:
-        revision, changed = store.delete(ctx.user_id)
+        revision, changed = store.delete(ctx.user_id, source=_client_certificate_source(ctx))
     except ClientCertificateError as err:
         return _client_certificate_refusal(ctx, err.code, err.message)
     return ctx.signed_json({"ok": True, "revision": revision, "changed": changed})

@@ -39,7 +39,7 @@ import {
 } from "../src/watch-pages/phone-keys-model.js";
 import {
   WATCH_PHONE_EXTRAS_HINT,
-  WATCH_PHONE_EXTRAS_TITLE,
+  watchPhoneExtrasTitle,
   watchPhoneKeySummary,
   watchSensorChartMenu,
   watchTileSectionsFor,
@@ -261,13 +261,13 @@ function sectionChecks(opts: {
   expect(text).toMatch(new RegExp(`<h4>${opts.title}<span class="ts-dev-tag"[^>]*>[^]*?iPhone</span>`));
   expect(text).toContain(opts.label);
   expect(text).toContain(opts.help);
-  expect(text).not.toContain(WATCH_PHONE_EXTRAS_TITLE);
+  expect(text).not.toContain(watchPhoneExtrasTitle());
   opts.press(drawn, phone.host);
   opts.wrote(phone.tile());
 
   const watch = tileHost(opts.entityId, opts.extra ?? {}, "watch");
   const open = draw(watch.host);
-  expect(titles(open).at(-1)).toBe(WATCH_PHONE_EXTRAS_TITLE);
+  expect(titles(open).at(-1)).toBe(watchPhoneExtrasTitle());
   expect(titles(open)).not.toContain(opts.title);
   const openText = flatten(open);
   expect(openText).toContain(`<p class="hint">${WATCH_PHONE_EXTRAS_HINT}</p>`);
@@ -276,7 +276,7 @@ function sectionChecks(opts: {
   expect(openText).toContain(opts.help);
   opts.press(open, watch.host);
   opts.wrote(watch.tile());
-  fold(draw(watch.host), WATCH_PHONE_EXTRAS_TITLE);
+  fold(draw(watch.host), watchPhoneExtrasTitle());
   const folded = flatten(draw(watch.host));
   expect(folded).toContain(WATCH_PHONE_EXTRAS_HINT);
   expect(folded).not.toContain(opts.help);
@@ -455,12 +455,12 @@ describe("the iPhone extras fold", () => {
   it("stores only a fold, and drops it when opened again", () => {
     const { host } = tileHost("camera.door", {}, "watch");
     expect(flatten(draw(host))).toContain("Live video in the tile");
-    fold(draw(host), WATCH_PHONE_EXTRAS_TITLE);
+    fold(draw(host), watchPhoneExtrasTitle());
     expect(JSON.parse(data[FOLD_STORE_KEY]!)).toEqual({ "tile-settings:phoneExtras": true });
     // A reload: folded from the store.
     const again = tileHost("camera.door", {}, "watch").host;
     expect(flatten(draw(again))).not.toContain("Live video in the tile");
-    fold(draw(again), WATCH_PHONE_EXTRAS_TITLE);
+    fold(draw(again), watchPhoneExtrasTitle());
     expect(Object.hasOwn(data, FOLD_STORE_KEY)).toBe(false);
   });
 });

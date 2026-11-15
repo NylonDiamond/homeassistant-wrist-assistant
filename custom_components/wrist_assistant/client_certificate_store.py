@@ -31,7 +31,8 @@ already held (same fingerprint) changes nothing.
 
 Each record also says which path wrote it last (``source``): ``"panel"``
 for the integration panel's own import (``client_certificate_ws.py``, over
-the signed-in user's WebSocket), ``"iphone"`` for the phone's signed op. A
+the signed-in user's WebSocket), ``"iphone"`` for the phone's signed op, and
+``"android"`` for the same op from an Android phone or a Wear OS watch. A
 record saved before the field existed reads as ``"iphone"``. The panel is
 now where a certificate is imported, and the phone's put is a migration path
 only: once the panel has written a user's record (a certificate, or the
@@ -88,7 +89,11 @@ MAX_PASSPHRASE_CHARS = 1024
 # Which path wrote a record last.
 SOURCE_PANEL = "panel"
 SOURCE_IPHONE = "iphone"
-_SOURCES = frozenset({SOURCE_PANEL, SOURCE_IPHONE})
+# An Android phone's or a Wear OS watch's signed op. A phone's path like the
+# iPhone's, named apart so the panel can say which app it came from.
+SOURCE_ANDROID = "android"
+_PHONE_SOURCES = frozenset({SOURCE_IPHONE, SOURCE_ANDROID})
+_SOURCES = frozenset({SOURCE_PANEL}) | _PHONE_SOURCES
 
 
 class ClientCertificateError(Exception):
@@ -164,7 +169,8 @@ class ClientCertificate:
 @dataclass(frozen=True)
 class ClientCertificateRecord:
     """One user's record: the certificate, or None after a removal, and
-    which path wrote it last (``SOURCE_PANEL`` or ``SOURCE_IPHONE``)."""
+    which path wrote it last (``SOURCE_PANEL``, ``SOURCE_IPHONE`` or
+    ``SOURCE_ANDROID``)."""
 
     revision: int
     updated_at: str
@@ -575,7 +581,7 @@ class ClientCertificateStore:
     def _kept_for_panel(self, user_id: str, source: str, action: str) -> ClientCertificateRecord | None:
         """The panel's record when a phone's write must leave it alone.
         Logged once per user until the panel's record changes."""
-        if source != SOURCE_IPHONE:
+        if source not in _PHONE_SOURCES:
             return None
         current = self._users.get(user_id)
         if current is None or current.source != SOURCE_PANEL:

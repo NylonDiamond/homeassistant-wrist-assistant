@@ -16,6 +16,8 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import {
   APP_STORE_URL,
+  OPEN_PLAY_STORE_LABEL,
+  PLAY_STORE_URL,
   DOCS_URL,
   type GettingStarted,
   NEW_PAGE_LABEL,
@@ -39,6 +41,7 @@ import { type PanelRoute, WATCH_PAGES_HELP_URL } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_HELP_URL } from "./watch-rooms/hook.js";
 import { WATCH_STATUS_PAGES_HELP_URL } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_HELP_URL } from "./watch-voice/hook.js";
+import { generalCopy } from "./device-platform.js";
 
 /** What the sheet says about the screen in view. */
 export interface HelpScreen {
@@ -49,30 +52,46 @@ export interface HelpScreen {
   more?: string;
 }
 
-const HOME_TEXT = [
-  "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
+// The lines below that name a device are general copy (`generalCopy`): the
+// Apple words until an Android device is paired here.
+const homeText = () => [
+  generalCopy(
+    "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
+    "Devices lists every watch and phone, who it belongs to, and whether it has your latest changes.",
+  ),
   "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
   "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.",
 ];
 
-const SHARED_TEXT = [
-  "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions, camera framing and Home map.",
+const sharedText = () => [
+  generalCopy(
+    "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions, camera framing and Home map.",
+    "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions, camera framing and Home map.",
+  ),
   "Open one to change it. A save reaches every device.",
 ];
 
-const COMPLICATIONS_TEXT = [
-  "Complications put live home state on the watch face, and widgets on the iPhone.",
+const complicationsText = () => [
+  generalCopy(
+    "Complications put live home state on the watch face, and widgets on the iPhone.",
+    "Complications put live home state on the watch face, and widgets on the phone.",
+  ),
   "Pick one in the list to change it, or make a new one.",
 ];
 
 /** The Pages tab's line about the tiles only the iPhone draws, and the
  * count on a watch's chip ("skips 2", `library/ticks.ts`). */
-export const PAGES_PHONE_TILES_TEXT = "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.";
+export function pagesPhoneTilesText(): string {
+  return generalCopy(
+    "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.",
+    "A few tiles, like a map or a web card, are for the phone only. A watch skips them, and its chip on the card says how many.",
+  );
+}
 
-const PAGES_TEXT = [
+const pagesText = () => [
   "Pages lists every page in your home, with a column for each device. Tick a box and the page is on that device: one page, the same everywhere, so an edit shows on every device that has it.",
   "Pick a page to edit it, or make a new one. Press Focus on a device to set its order and what it hides.",
-  PAGES_PHONE_TILES_TEXT,
+  pagesPhoneTilesText(),
 ];
 
 const STATUS_PAGES_TEXT = [
@@ -106,14 +125,14 @@ export const HELP_LIBRARY_TEXT = "It is on every device in this home: find it un
  * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
  * different things about one screen. */
-function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone"): string[] {
+function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone" | "phone"): string[] {
   const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
   return [sentence, screen.shared === true ? HELP_LIBRARY_TEXT : `It is for the ${device} picked at the top.`];
 }
 
 /** A device screen as the sheet shows it, with its guide when it has one. */
-function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScreen {
+function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone" | "phone"): HelpScreen {
   const more = SCREEN_GUIDES[screen.id];
   return { name: screen.label, text: watchScreenText(screen, device), ...(more === undefined ? {} : { more }) };
 }
@@ -123,16 +142,16 @@ function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScre
  * the Status pages tab, the Menus tab, else Home. */
 export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   const phone = iphoneScreenOf(route);
-  if (phone !== undefined) return deviceScreen(phone, "iPhone");
+  if (phone !== undefined) return deviceScreen(phone, generalCopy("iPhone", "phone"));
   const screen = watchScreenOf(route);
   if (screen !== undefined) return deviceScreen(screen, "watch");
   const tab = tabOfRoute(route);
-  if (tab === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
-  if (tab === "pages") return { name: "Pages", text: PAGES_TEXT, more: WATCH_PAGES_HELP_URL };
+  if (tab === "complications") return { name: "Complications", text: complicationsText() };
+  if (tab === "pages") return { name: "Pages", text: pagesText(), more: WATCH_PAGES_HELP_URL };
   if (tab === "status-pages") return { name: "Status pages", text: STATUS_PAGES_TEXT, more: WATCH_STATUS_PAGES_HELP_URL };
   if (tab === "menus") return { name: "Menus", text: MENUS_TEXT, more: WATCH_MENUS_HELP_URL };
-  if (tab === "shared") return { name: "Shared", text: SHARED_TEXT, more: DOCS_URL };
-  return { name: "Devices", text: HOME_TEXT, more: DOCS_URL };
+  if (tab === "shared") return { name: "Shared", text: sharedText(), more: DOCS_URL };
+  return { name: "Devices", text: homeText(), more: DOCS_URL };
 }
 
 export interface HelpSheetInput {
@@ -156,7 +175,14 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
   const screen = helpScreen(input.route);
   const action = (id: StepId): TemplateResult | typeof nothing => {
     if (gs.next !== id) return nothing;
-    if (id === "app") return html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>`;
+    if (id === "app") {
+      // Google Play beside the App Store once an Android device is paired.
+      return generalCopy(
+        html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>`,
+        html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>
+        <a class="hs-act" href=${PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_PLAY_STORE_LABEL}</a>`,
+      );
+    }
     if (id === "pair") return html`<button type="button" class="hs-act" @click=${input.onPair}>${PAIR_DEVICE_LABEL}</button>`;
     const watch = gs.watch;
     return watch === undefined

@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from .const import DOMAIN
+from .device_platform import default_device_name
 
 
 def _has_new_lookups(dev_reg: Any) -> bool:
@@ -65,8 +66,9 @@ def paired_device_name(dev_reg: Any | None, entry: Any | None, device_id: str) -
     name = getattr(entry, "device_name", None)
     if isinstance(name, str) and name.strip():
         return name.strip()
-    kind = "iPhone" if getattr(entry, "device_kind", None) == _DEVICE_KIND_IPHONE else "Watch"
-    return f"{kind} {device_id[:8]}"
+    return default_device_name(
+        getattr(entry, "device_kind", None), getattr(entry, "platform", None), device_id
+    )
 
 
 def parent_device_fields(dev_reg: Any | None, via_device: tuple[str, str]) -> dict[str, str]:

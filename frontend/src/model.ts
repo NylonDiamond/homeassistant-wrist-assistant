@@ -3369,9 +3369,17 @@ export const TAP_ACTION_GROUPS: [string, TapAction["type"][]][] = [
  * does the same, but one that asks for nothing fires, so it is not listed. */
 const WATCH_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openEntity", "openRoomPage", "addTodo"];
 
+/** The actions an Android phone's widget cannot carry out itself. Its
+ * widgets open a page or an entity's controls in the phone app
+ * (`WidgetTapRules` in the Android app), so only the room page, which needs
+ * the watch's room finding, just opens the app. */
+const ANDROID_WIDGET_APP_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openRoomPage"];
+
 /** One line per tap action saying what a tap does, for the rows of the tap
- * menu. `onPhone` adds the iPhone caveat to the actions that need the watch. */
-export function tapActionInfo(type: TapAction["type"], onPhone = false): string {
+ * menu. `onPhone` adds the phone's caveat to the actions that need the watch:
+ * `true` (or "ios") is an iPhone, "android" an Android phone, which says
+ * "phone" and carries out more of them itself. */
+export function tapActionInfo(type: TapAction["type"], onPhone: boolean | "ios" | "android" = false): string {
   const info: Record<TapAction["type"], string> = {
     refresh: "Fetches new data and redraws this complication.",
     refreshAll: "Fetches new data for this complication and the others you pick. The other tiles redraw only when watchOS allows it.",
@@ -3394,7 +3402,8 @@ export function tapActionInfo(type: TapAction["type"], onPhone = false): string 
     none: "Does nothing. On the whole complication the watch still opens the app.",
   };
   const line = info[type];
-  return onPhone && WATCH_ONLY_TAP_TYPES.includes(type) ? `${line} On iPhone this only opens the app.` : line;
+  if (onPhone === "android") return ANDROID_WIDGET_APP_ONLY_TAP_TYPES.includes(type) ? `${line} On a phone this only opens the app.` : line;
+  return onPhone !== false && WATCH_ONLY_TAP_TYPES.includes(type) ? `${line} On iPhone this only opens the app.` : line;
 }
 
 /** The action's own name, with no target on the end: "Refresh", "Toggle an

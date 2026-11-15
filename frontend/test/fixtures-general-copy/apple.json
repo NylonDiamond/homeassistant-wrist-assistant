@@ -1,0 +1,172 @@
+{
+  "compWhereHome": "On an iPhone's Home Screen.",
+  "compWhereControl": "A control in Control Center, on a watch or an iPhone.",
+  "compCellDash": "An iPhone widget. To have it on Den Watch, open it and use Duplicate as.",
+  "compGreyBoth": "Watch designs cannot go on an iPhone, nor iPhone designs on a watch.",
+  "compGreyIphone": "Watch designs cannot go on an iPhone.",
+  "compGreyWatch": "iPhone designs cannot go on a watch.",
+  "compLeftOutWatch": "2 iPhone widgets are not listed: a watch cannot show them.",
+  "compLeftOutIphone": "1 watch complication is not listed: an iPhone cannot show it.",
+  "getAppDone": "Wrist Assistant is on the App Store.",
+  "getAppTodo": "Install it on the watch and/or on the iPhone.",
+  "helpHome": [
+    "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
+    "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
+    "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map."
+  ],
+  "helpShared": [
+    "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions, camera framing and Home map.",
+    "Open one to change it. A save reaches every device."
+  ],
+  "helpComplications": [
+    "Complications put live home state on the watch face, and widgets on the iPhone.",
+    "Pick one in the list to change it, or make a new one."
+  ],
+  "helpPages": [
+    "Pages lists every page in your home, with a column for each device. Tick a box and the page is on that device: one page, the same everywhere, so an edit shows on every device that has it.",
+    "Pick a page to edit it, or make a new one. Press Focus on a device to set its order and what it hides.",
+    "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many."
+  ],
+  "helpIphoneScreen": [
+    "Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.",
+    "It is for the iPhone picked at the top."
+  ],
+  "pagesPhoneTiles": "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.",
+  "homeLibraryLead": "Kept once for the whole home. Every watch and iPhone uses them.",
+  "homeControlBlurb": "Buttons in Control Center, from your designs.",
+  "previewLabelNone": "iPhone · on no iPhone yet",
+  "previewLabelSome": "iPhone · Den",
+  "previewNote": "Drawn on an iPhone's screen first.",
+  "tickSkips": "Den Watch skips Map and Garden: only an iPhone shows them.",
+  "kindTitle": "iPhone",
+  "newSummary": "Medium on an iPhone, on 2 devices",
+  "pairChoices": [
+    [
+      "Apple Watch",
+      "The watch shows a code. You type it here. No iPhone needed."
+    ],
+    [
+      "iPhone",
+      "The panel shows a QR code. You scan it with the iPhone."
+    ]
+  ],
+  "pairSubtitles": [
+    "A watch or an iPhone, to this Home Assistant",
+    "iPhone, by a QR code",
+    "Apple Watch, by its code",
+    "iPhone, by its code",
+    "A watch or an iPhone, by its code"
+  ],
+  "pairCodeTitle": "Type the iPhone's code",
+  "pairCodeStepsIphone": [
+    "On the iPhone, open Wrist Assistant and choose Pair with Home Assistant.",
+    "Choose Show a code instead, and pick this Home Assistant.",
+    "The iPhone shows a 6-character code. Type it here."
+  ],
+  "pairCodeStepsAny": [
+    "Open Wrist Assistant on the watch or iPhone.",
+    "Choose Pair with Home Assistant.",
+    "Type the code it shows here, then Look up."
+  ],
+  "pairQrTitle": "Scan with the iPhone",
+  "pairToQr": "Pairing an iPhone? Show a QR code",
+  "howStatusPages": "Open one from a status page tile, from a menu slot, or by asking Siri to show a status page.",
+  "howCameras": "When an alert has a camera picture, your watch and iPhone show only the part you frame here.",
+  "howHomeMap": "Open the map from a Home map tile. Turn the Digital Crown to zoom into a room, tap a pin to use its device, or tap a room for its page.",
+  "notOnLine": "On no device yet. Tick a device over the preview to put it on a watch or an iPhone.",
+  "notOnUnsaved": "On no device yet. Save it, then tick a device over the preview to put it on a watch or an iPhone.",
+  "notOnHelp": "A design on no device is sent nowhere. Tick a device over the preview to put it on a watch or an iPhone.",
+  "tabIphone": "iPhone app",
+  "screenBlurbs": [
+    "are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.",
+    "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.",
+    "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.",
+    "The list of controls",
+    "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.",
+    "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.",
+    "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.",
+    "are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.",
+    "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+    "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile."
+  ],
+  "syncPillNone": "No watch or iPhone is paired yet.",
+  "camerasLead": "How each camera's picture is cut in alerts, on iPhone and Apple Watch. Tiles on the watch have their own crop.",
+  "certFor": "Each person has their own. It goes to the watch and iPhone paired for them.",
+  "certSaved": [
+    "Your watch and iPhone pick it up the next time they open the app.",
+    "Your watch and iPhone pick it up the next time they open the app.",
+    "Saved for Anna. Their watch and iPhone pick it up the next time they open the app."
+  ],
+  "certRemove": [
+    "Remove this certificate? Your watch and iPhone stop sending it the next time they open the app.",
+    "Remove this certificate? Your watch and iPhone stop sending it the next time they open the app.",
+    "Remove the certificate for Anna? Their watch and iPhone stop sending it the next time they open the app."
+  ],
+  "httpShared": "Shared by every watch and iPhone.",
+  "menuAdmin": "To make a menu, open your watch or iPhone's tab first. Only a Home Assistant administrator can make one here.",
+  "menuFirst": "Open your watch or iPhone's tab, then use New menu to make its first one.",
+  "menusEmpty": "No watch or iPhone has connected yet. Pair one on the Devices tab.",
+  "noPhrases": "An iPhone has no voice phrases, so Speak Phrase does nothing there.",
+  "webhookHelp": "How big the buttons are on webhook alerts, on your watch and your iPhone.",
+  "phoneTiles": [
+    "iPhone only",
+    "Shown on the iPhone only",
+    "Lands on the iPhone only. The watch cannot draw it.",
+    "It is on the iPhone only.",
+    "Den Watch runs 3.1.0; iPhone only tiles need 3.2.0."
+  ],
+  "allPages": [
+    "Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.",
+    "3 pages in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.",
+    "Make a page once, then tick each watch or iPhone that should show it.",
+    "Click a page to edit it. Tick a device to show the page there. The tiles are the same everywhere; the watch and the iPhone each arrange them.",
+    "No watch or iPhone has connected yet. Pair one on the Devices tab."
+  ],
+  "screens": [
+    "Every page is arranged the same on the watch and the iPhone.",
+    "Watch and iPhone can now be arranged apart. Nothing has changed on your devices."
+  ],
+  "oneLook": [
+    "A soft shadow under the name on a colored tile, on the iPhone. The watch draws none.",
+    "On the iPhone, a tile showing album art draws no bar or pill.",
+    "On the iPhone, a tile drawing a chart shows no pill.",
+    "A soft shadow under the state on a colored tile, on the iPhone. The watch draws none."
+  ],
+  "webNote": "Only http and https addresses load. The iPhone shows No address for this one.",
+  "foldText": "The dashed line marks the end of the iPhone's screen. The page scrolls on below it.",
+  "notForIphone": [
+    "An iPhone keeps only its own pages, status pages, menus, rooms and settings, so Home Assistant did not take this.",
+    "An iPhone keeps only its own pages, status pages, menus, rooms and settings, so Home Assistant did not take this."
+  ],
+  "sectionTitles": [
+    "iPhone",
+    "iPhone extras",
+    "iPhone",
+    "iPhone extras"
+  ],
+  "chartShort": "This tile is 2 rows tall, so the iPhone shows no chart. Make it 4 or taller.",
+  "iphoneRowNone": "No iPhone has connected yet. Pair one to set up its pages, menus and the rest.",
+  "pairHints": [
+    "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.",
+    "Point the iPhone's Camera at the QR code and tap the link."
+  ],
+  "pairQrSteps": [
+    "Point the iPhone's Camera at this code.",
+    "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
+    "Tap Pair in Wrist Assistant."
+  ],
+  "pairCodeSteps": [
+    "Open Wrist Assistant on the watch or iPhone.",
+    "Choose Pair with Home Assistant.",
+    "Type the code it shows here, then Look up."
+  ],
+  "pairQrReplace": [
+    "Replace an iPhone paired for someone else",
+    "Only for an iPhone already paired here for another person, such as a phone handed on. Without it, that iPhone is refused."
+  ],
+  "pairOfferOld": "Update the Wrist Assistant integration to pair an iPhone with a QR code.",
+  "qrUserTitle": "Whose iPhone is this?",
+  "qrUserHint": "The iPhone runs with this person's rights.",
+  "searchWords": "This watch, this iPhone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",
+  "voiceNotForIphone": "An iPhone keeps no phrases."
+}

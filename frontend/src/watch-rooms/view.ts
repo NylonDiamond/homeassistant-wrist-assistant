@@ -44,6 +44,8 @@ import {
   FALLBACK_LABELS,
   HOME_AUTO_SWITCH_LABEL,
   HOME_ROOMS_MAIN_HOUSE_TEXT,
+  HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT,
+  HOME_ROOMS_ANDROID_TEXT,
   HOME_ROOMS_PHONE_TEXT,
   ZONES_UNREADABLE_TEXT,
   fallbackChoice,
@@ -101,6 +103,10 @@ export interface RoomsViewHost {
   home?: boolean;
   /** The device is an iPhone: always `home`, with no main house of its own. */
   phone?: boolean;
+  /** The phone is an Android phone, for its noun ("phone"). */
+  android?: boolean;
+  /** The watch is a Wear OS watch, which has no double pinch. */
+  wear?: boolean;
   /** Rooms added here by name, which stay listed until the page is left. */
   added?: readonly string[];
   /** Take a room added by name off the list again. */
@@ -157,8 +163,9 @@ function flip(host: RoomsViewHost, key: string, now: boolean): void {
 // ── Room sensor ──────────────────────────────────────────────────────────
 
 /** The word for the device this page is about. */
-function deviceWord(host: Pick<RoomsViewHost, "phone">): string {
-  return host.phone === true ? "iPhone" : "watch";
+function deviceWord(host: Pick<RoomsViewHost, "phone" | "android">): string {
+  if (host.phone === true) return host.android === true ? "phone" : "iPhone";
+  return "watch";
 }
 
 /** What the sensor says now, and whether the device reads it as a room. */
@@ -329,7 +336,7 @@ function renderSwitching(host: RoomsViewHost): TemplateResult {
   const triggers = ROOM_RULES.switching.triggers;
   const help = triggers.find((t) => t.value === host.view.trigger)?.help ?? "";
   return html`<div class="rm-status-switch">${checkField(label, on, set)}</div>
-    ${home ? html`<p class="rm-help rm-status-wide rm-main-house">${host.phone === true ? HOME_ROOMS_PHONE_TEXT : HOME_ROOMS_MAIN_HOUSE_TEXT}</p>`
+    ${home ? html`<p class="rm-help rm-status-wide rm-main-house">${host.phone === true ? (host.android === true ? HOME_ROOMS_ANDROID_TEXT : HOME_ROOMS_PHONE_TEXT) : host.wear === true ? HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT : HOME_ROOMS_MAIN_HOUSE_TEXT}</p>`
       : on ? html`<div class="rm-when rm-status-wide">
         <span class="rm-when-l" id="rm-when-l">Switch</span>
         <div class="seg rm-seg" role="radiogroup" aria-labelledby="rm-when-l">
