@@ -14,6 +14,7 @@ import {
   helpStepWords,
   watchesWithPages,
 } from "../src/getting-started.js";
+import { setAndroidHere } from "../src/device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
 import { HELP_LIBRARY_TEXT, pagesPhoneTilesText, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
 import { IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, iphoneScreenPath, renderTabBar } from "../src/shell.js";
@@ -155,7 +156,14 @@ describe("the words", () => {
     const two = gettingStarted([owner(), owner({ owner_watch_id: "w2", device_name: "Other" })], new Set());
     expect(helpStepWords("pair", two).text).toBe("2 watches are paired.");
     expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Type the code the watch shows.");
-    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store and Google Play.");
+    // Google Play is named only once an Android device is paired here.
+    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store.");
+    setAndroidHere(true);
+    try {
+      expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store and Google Play.");
+    } finally {
+      setAndroidHere(false);
+    }
   });
 });
 

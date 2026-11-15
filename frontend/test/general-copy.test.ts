@@ -165,7 +165,12 @@ describe("general copy with no Android device paired", () => {
     setAndroidHere(false);
     const now = probes();
     expect(Object.keys(now).sort()).toEqual(Object.keys(phone).sort());
-    for (const [id, words] of Object.entries(phone)) expect(now[id], id).toStrictEqual(words);
+    // The one exception: Help's Get the app line names Google Play only once
+    // an Android device is paired, since the Android app is not in the store
+    // before that; without one it keeps the App Store only line.
+    for (const [id, words] of Object.entries(phone)) {
+      expect(now[id], id).toStrictEqual(id === "getAppDone" ? (apple as Record<string, unknown>)[id] : words);
+    }
   });
 
   it("says phone in the dock's Preview on", () => {

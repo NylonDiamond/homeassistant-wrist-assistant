@@ -8,7 +8,7 @@
 // The words live here too, beside the rule, so a test can read them without
 // drawing the sheet.
 
-import { gateVersion, generalCopy } from "./device-platform.js";
+import { androidHereNow, gateVersion, generalCopy } from "./device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { deviceKindOf, setupMoveNeedsUpdate } from "./version.js";
 import { PAIR_CODE_LENGTH, noRecordStart, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
@@ -135,7 +135,9 @@ export function helpStepWords(id: StepId, gs: Pick<GettingStarted, "steps" | "wa
     return {
       title: "Get the app",
       text: done
-        ? generalCopy("Wrist Assistant is on the App Store.", "Wrist Assistant is on the App Store and Google Play.")
+        // Google Play is named only once an Android device is paired here: the
+        // Android app is on Play's testing tracks, not in the store, until then.
+        ? (androidHereNow() ? "Wrist Assistant is on the App Store and Google Play." : "Wrist Assistant is on the App Store.")
         : generalCopy("Install it on the watch and/or on the iPhone.", "Install it on the watch and/or on the phone."),
     };
   }
