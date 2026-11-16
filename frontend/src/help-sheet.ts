@@ -31,8 +31,9 @@ import {
   doneWords,
   helpStepWords,
 } from "./getting-started.js";
-import { type WatchScreen, iphoneScreenOf, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
+import { BAR_TABS, type WatchScreen, iphoneScreenOf, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
+import { HOME_MAP_SCAN_TEXT } from "./home-map/hook.js";
 import { WATCH_CAMERAS_HELP_URL } from "./watch-cameras/hook.js";
 import { WATCH_CONTROL_CENTER_HELP_URL } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_HELP_URL } from "./watch-http-actions/hook.js";
@@ -121,6 +122,17 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
 /** What the sheet says of whose a whole-home screen is. */
 export const HELP_LIBRARY_TEXT = "It is on every device in this home: find it under the Shared tab.";
 
+/** The same for a whole-home screen with a bar tab of its own. */
+export function helpOwnTabText(label: string): string {
+  return `It is on every device in this home: find it under the ${label} tab.`;
+}
+
+/** More to say of a screen, after whose it is: for the Home map, which
+ * devices can scan. */
+const SCREEN_MORE: Partial<Record<WatchScreen["id"], string>> = {
+  "home-map": HOME_MAP_SCAN_TEXT,
+};
+
 /** A watch screen's blurb as a sentence (its name, then the blurb, which
  * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
@@ -128,7 +140,11 @@ export const HELP_LIBRARY_TEXT = "It is on every device in this home: find it un
 function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone" | "phone"): string[] {
   const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
-  return [sentence, screen.shared === true ? HELP_LIBRARY_TEXT : `It is for the ${device} picked at the top.`];
+  const ownTab = BAR_TABS.find((t) => t.path === screen.path);
+  const whose = screen.shared !== true ? `It is for the ${device} picked at the top.`
+    : ownTab !== undefined ? helpOwnTabText(ownTab.label) : HELP_LIBRARY_TEXT;
+  const more = SCREEN_MORE[screen.id];
+  return more === undefined ? [sentence, whose] : [sentence, whose, more];
 }
 
 /** A device screen as the sheet shows it, with its guide when it has one. */

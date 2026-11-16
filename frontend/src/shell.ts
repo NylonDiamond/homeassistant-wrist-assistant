@@ -184,7 +184,7 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "cameras", label: "Camera framing", get blurb() { return generalCopy("sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", "sets how each camera's picture is framed in alerts, the same on the watch and the phone."); }, path: WATCH_CAMERAS_PATH, shared: true },
   // One pre-release word for the Home map everywhere: ALPHA, as on the
   // iPhone, the New page sheet, the Add tile list and the editor.
-  { id: "home-map", label: "Home map", blurb: "is the plan of your home from the iPhone's scan, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: HOME_MAP_CAPABILITY },
+  { id: "home-map", label: "Home map", blurb: "is the plan of your home, drawn here or scanned with an iPhone Pro or iPad Pro, with a pin for each device, shown on the iPhone, the watch and a Home map tile.", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: HOME_MAP_CAPABILITY },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the

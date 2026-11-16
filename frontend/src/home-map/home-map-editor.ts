@@ -187,7 +187,8 @@ export const HOME_MAP_UPDATE_TEXT = "Update the Wrist Assistant integration to s
 /** The first run: the title, the main button and the line under it. */
 export const HOME_MAP_EMPTY_TEXT = "No home map yet";
 export const HOME_MAP_START_TEXT = "Start a map by hand";
-export const HOME_MAP_SCAN_TEXT = "You can also scan your rooms with the Wrist Assistant app on an iPhone or iPad Pro with LiDAR.";
+import { HOME_MAP_SCAN_TEXT } from "./hook.js";
+export { HOME_MAP_SCAN_TEXT };
 
 /** A drag shorter than this, in screen pixels, is a click. */
 export const HOME_MAP_DRAG_SLOP = 4;

@@ -16,7 +16,8 @@ import {
 } from "../src/getting-started.js";
 import { setAndroidHere } from "../src/device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
-import { HELP_LIBRARY_TEXT, pagesPhoneTilesText, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
+import { HOME_MAP_SCAN_TEXT } from "../src/home-map/hook.js";
+import { HELP_LIBRARY_TEXT, helpOwnTabText, pagesPhoneTilesText, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
 import { IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, iphoneScreenPath, renderTabBar } from "../src/shell.js";
 import { WATCH_CAMERAS_HELP_URL } from "../src/watch-cameras/hook.js";
 import { WATCH_CONTROL_CENTER_HELP_URL } from "../src/watch-control-center/hook.js";
@@ -199,6 +200,8 @@ describe("the Help sheet", () => {
       expect(h.text[0]).toContain(screen.blurb.trim().replace(/[.!?]$/, ""));
     }
     expect(helpScreen(at("/http-actions")).text[1]).toBe(HELP_LIBRARY_TEXT);
+    // The Home map has its own tab, and says which devices can scan.
+    expect(helpScreen(at("/home-map")).text.slice(1)).toEqual([helpOwnTabText("Home map"), HOME_MAP_SCAN_TEXT]);
     expect(helpScreen(at("/cameras")).text).toEqual([
       "Camera framing sets how each camera's picture is framed in alerts, the same on the watch and the phone.",
       "It is on every device in this home: find it under the Shared tab.",
