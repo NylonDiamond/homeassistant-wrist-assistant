@@ -276,18 +276,16 @@ describe("the list page", () => {
     expect(method("  private pickerMatches(")).toContain("designTextMatches(this.searchTextOf(copy.item.record), query");
   });
 
-  it("folds what is on no device, and never hides a search's hits", () => {
+  it("shows what is on no device with the rest on All, and heads it only on its own chip", () => {
     const all = method("  private renderPickerAll(");
-    expect(all).toContain("foldShelf(");
-    expect(all).toContain("this.renderShelfRow(");
-    expect(method("  private shelfShownOpen(")).toContain('query !== ""');
+    expect(all).toContain("[...fold.placed, ...fold.shelved]");
+    expect(all).not.toContain("this.renderShelfRow(");
+    expect(method("  private renderPickerTabBody(")).toContain("this.renderShelfRow(");
     const shelf = method("  private renderShelfRow(");
     expect(shelf).toContain("Select all empty");
     expect(shelf).toContain("Delete empty…");
     // Through the one delete with Undo.
     expect(method("  private deleteEmpty(")).toContain("this.deleteRecordsLater(deleteEmptyDone(rows.length), records);");
-    // "All shown" picks only what a closed row leaves on screen.
-    expect(method("  private renderPickerSurface(")).toContain("rows.filter((row) => !isShelvedRow(row))");
   });
 
   it("draws an empty design as a dashed slot, with no picture work", () => {

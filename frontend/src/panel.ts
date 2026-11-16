@@ -1830,9 +1830,6 @@ export class WristAssistantPanel extends LitElement {
   @state() private deviceQueueHeld = false;
   /** Whether the one-time multi-select tip in the Layers card was put away. */
   @state() private layersTipSeen = readLayersTipSeen();
-  /** Whether the All tab's "Not on a device" row is open. It starts open, so
-   * a design on no device is seen without a click. */
-  @state() private pickerShelfOpen = true;
   /** "Delete empty…" is asking first. */
   @state() private pickerEmptyAsk = false;
   /** The open saved design as last seen by `syncDesignAddress`, to tell an
@@ -13351,10 +13348,8 @@ export class WristAssistantPanel extends LitElement {
     const unsaved = d && d.baseRevision === null ? d : undefined;
     // What the grid is about to draw, for the bar's "Pick all shown". On a
     // device tab a card is that device's record; on the All tab a card is
-    // the design, so it picks the design's record on every device. A closed
-    // "Not on a device" row draws none of its cards.
-    const drawn = tab === ALL_DEVICES && !this.shelfShownOpen(query, rows) ? rows.filter((row) => !isShelvedRow(row)) : rows;
-    this.pickerShown = drawn.flatMap((row) => this.pickKeysOf(row, tab));
+    // the design, so it picks the design's record on every device.
+    this.pickerShown = rows.flatMap((row) => this.pickKeysOf(row, tab));
     this.pickerShownAt = tab;
     // What an empty grid is empty of. The search wins when something has been
     // typed, because that is the last thing the author did; then the shape;
@@ -13420,7 +13415,9 @@ export class WristAssistantPanel extends LitElement {
    * The All tab: one card per design, however many devices it is on, in a
    * box per shape. Each card names the devices it is on under its picture,
    * a chip each as on the Pages tab, and its Devices menu changes them. A device tab
-   * is where one device's own cards are.
+   * is where one device's own cards are. A design on no device is drawn here
+   * with the rest, after the placed ones of its shape, under no heading of
+   * its own: the Not on a device chip is where those are set apart.
    */
   private renderPickerAll(
     rows: readonly PickerRow[],
@@ -13430,17 +13427,7 @@ export class WristAssistantPanel extends LitElement {
   ) {
     if (rows.length === 0 && unsaved === undefined) return html`<div class="empty">${emptyOf}</div>`;
     const fold = foldShelf(sortPickerRows(rows, devices), (row) => this.rowIsEmpty(row));
-    const open = this.shelfShownOpen(this.pickerQuery.trim(), rows);
-    return html`${fold.placed.length > 0 || unsaved !== undefined ? this.renderPickerGroups(fold.placed, ALL_DEVICES, unsaved) : nothing}
-      ${fold.shelved.length === 0 ? nothing : html`${this.renderShelfRow(fold.shelved.length, fold.empty, open, fold.placed.length > 0)}
-        ${open ? this.renderPickerGroups(fold.shelved, ALL_DEVICES, undefined) : nothing}`}`;
-  }
-
-  /** Whether the All tab draws the designs on no device: open until folded by
-   * hand, and then still when a search must not hide what it found or there
-   * is nothing else to show. */
-  private shelfShownOpen(query: string, rows: readonly PickerRow[]): boolean {
-    return this.pickerShelfOpen || query !== "" || rows.every((row) => isShelvedRow(row));
+    return this.renderPickerGroups([...fold.placed, ...fold.shelved], ALL_DEVICES, unsaved);
   }
 
   /** A record's search text, kept per revision. */
@@ -13476,22 +13463,19 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The "Not on a device" row: how many, how many of those are empty, and the
-   * one deliberate way to clear the empty ones. Real work comes first; this
-   * sits after it, open until folded, on the All tab. On the Not on a device chip's own
-   * page the designs are what was asked for, so it heads them, with no fold.
+   * one deliberate way to clear the empty ones. It heads the designs on the
+   * Not on a device chip's own page, and is drawn nowhere else: the All tab
+   * shows those designs with the rest.
    *
    * Delete empty… asks in place, and the delete waits behind its toast with
    * Undo, like every other delete here (`deleteRecordsLater`).
    */
-  private renderShelfRow(count: number, empty: readonly PickerRow[], open: boolean, folds: boolean) {
+  private renderShelfRow(count: number, empty: readonly PickerRow[]) {
     const keys = empty.flatMap((row) => this.pickKeysOf(row, ALL_DEVICES));
     const asking = this.pickerEmptyAsk && empty.length > 0;
     const words = html`<span class="pk-fold-t">${UNASSIGNED_LABEL}</span><span class="pk-fold-m">${shelfFoldCount(count, empty.length)}</span>`;
-    return html`<div class="pk-fold ${open ? "open" : ""}">
-      ${folds
-        ? html`<button type="button" class="pk-fold-head" aria-expanded=${open ? "true" : "false"} title=${open ? "Fold these away" : "Show these"}
-            @click=${() => { this.pickerShelfOpen = !this.pickerShelfOpen; }}>${uiIcon("chevron")}${words}</button>`
-        : html`<span class="pk-fold-head still">${words}</span>`}
+    return html`<div class="pk-fold open">
+      <span class="pk-fold-head still">${words}</span>
       ${empty.length === 0 ? nothing : asking
         ? html`<span class="pk-fold-acts">
             <span class="pk-fold-ask" role="status">${deleteEmptyAsk(empty.length)}</span>
@@ -13509,11 +13493,9 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** Select all empty: picking on, every empty design picked, and the row open
-   * so what was picked can be seen. */
+  /** Select all empty: picking on, and every empty design picked. */
   private pickAllEmpty(keys: readonly string[]) {
     if (!this.pickerSelecting) this.setPickerSelecting(true);
-    this.pickerShelfOpen = true;
     this.pickMany(keys, true);
   }
 
@@ -13618,7 +13600,7 @@ export class WristAssistantPanel extends LitElement {
     if (kind !== "library") return html`${note}${this.renderPickerGroups(sorted, tab, mine)}`;
     // The chip's own page: the same row as the All tab's, heading the designs.
     const fold = foldShelf(sorted, (row) => this.rowIsEmpty(row));
-    return html`${note}${this.renderShelfRow(fold.shelved.length, fold.empty, true, false)}
+    return html`${note}${this.renderShelfRow(fold.shelved.length, fold.empty)}
       ${this.renderPickerGroups(fold.shelved, tab, mine)}`;
   }
 
