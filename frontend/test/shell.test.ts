@@ -16,6 +16,7 @@ import {
   IPHONE_PATH,
   IPHONE_SCREENS,
   PANEL_TABS,
+  visibleBarTabs,
   SHARED_PATH,
   WATCH_SCREENS,
   WATCH_SETTINGS_SCREEN,
@@ -292,8 +293,16 @@ describe("addresses", () => {
     expect(tabPath("watch", "w2", "p1")).toBe("/pages/w2");
   });
 
-  it("offers six tabs to everybody: no Watch app or iPhone app tab", () => {
-    expect(PANEL_TABS).toEqual(["home", "pages", "status-pages", "menus", "complications", "shared"]);
+  it("offers seven tabs to everybody: no Watch app or iPhone app tab", () => {
+    expect(PANEL_TABS).toEqual(["home", "pages", "status-pages", "menus", "complications", "home-map", "shared"]);
+  });
+
+  it("hides the Home map tab until the integration lists home_map, unless it is the tab on screen", () => {
+    const all = ["home", "pages", "status-pages", "menus", "complications", "home-map", "shared"];
+    const without = all.filter((t) => t !== "home-map");
+    expect(visibleBarTabs("home", (c) => c === "home_map")).toEqual(all);
+    expect(visibleBarTabs("home", () => false)).toEqual(without);
+    expect(visibleBarTabs("home-map", () => false)).toEqual(all);
   });
 
   it("keeps the tabs in one table, each with its name and address", () => {
@@ -303,6 +312,7 @@ describe("addresses", () => {
       ["status-pages", "Status pages", "/all-status-pages"],
       ["menus", "Menus", "/all-menus"],
       ["complications", "Complications", COMPLICATIONS_PATH],
+      ["home-map", "Home map", "/home-map"],
       ["shared", "Shared", SHARED_PATH],
     ]);
     for (const t of BAR_TABS) {
@@ -322,8 +332,9 @@ describe("addresses", () => {
     for (const path of ["/menus", "/menus/w1", "/iphone/menus/p1", "/all-menus", "/library/menus/x"]) expect(barTabOf(at(path)), path).toBe("menus");
     // Complications, a watch's own view of them, and the retired Control Center.
     for (const path of ["/complications", "/complications/design/w1/c1", "/watch-complications/w1", "/control-center/w1"]) expect(barTabOf(at(path)), path).toBe("complications");
-    // What the whole home keeps: Shared, never Home.
-    for (const path of ["/shared", "/http-actions", "/cameras", "/home-map"]) expect(barTabOf(at(path)), path).toBe("shared");
+    // What the whole home keeps: Shared, never Home. The Home map has its own tab.
+    for (const path of ["/shared", "/http-actions", "/cameras"]) expect(barTabOf(at(path)), path).toBe("shared");
+    expect(barTabOf(at("/home-map"))).toBe("home-map");
   });
 
   it("names a tab for every screen of the Watch app", () => {
@@ -566,7 +577,7 @@ describe("renderTabBar", () => {
       ["/menus/w1", "Menus"], ["/iphone/menus/p1", "Menus"], ["/all-pages", "Pages"], ["/pages/w1", "Pages"],
       ["/all-status-pages", "Status pages"], ["/status-pages/w1", "Status pages"], ["/all-menus", "Menus"], ["/menus", "Menus"],
       ["/complications", "Complications"], ["/watch-complications/w1", "Complications"],
-      ["/shared", "Shared"], ["/http-actions", "Shared"], ["/cameras", "Shared"], ["/home-map", "Shared"]] as const) {
+      ["/shared", "Shared"], ["/http-actions", "Shared"], ["/cameras", "Shared"], ["/home-map", "Home map"]] as const) {
       const text = bar(path);
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));

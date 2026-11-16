@@ -3,7 +3,6 @@
 // drawing in it so a test can read it.
 
 import type { CameraFraming, HttpActionsRecord, OwnerSummary } from "../ha-api.js";
-import type { HomeMapDocument } from "../home-map/model.js";
 import { ASLEEP_AFTER_DAYS, seenDays } from "../sync-pill.js";
 import { HTTP_ACTIONS_LIMIT_BYTES, httpActionsSize } from "../watch-http-actions/model.js";
 import { settingsWatches } from "../watch-settings.js";
@@ -89,60 +88,4 @@ export function cameraCardFacts(cameras: readonly CameraFraming[] | undefined): 
   const thumbs = [...framed, ...cameras.filter((c) => c.viewport === null)].slice(0, CAMERA_CARD_THUMBS)
     .map((c) => ({ entityId: c.entity_id, name: c.name, framed: c.viewport !== null }));
   return { words: `${framed.length} of ${plural(cameras.length, "camera")} framed · how each picture is cut in alerts`, thumbs };
-}
-
-/** The Home map card. */
-export interface MapCardFacts {
-  /** "1 floor (Upstairs) · 1 room · 3 devices". */
-  words: string;
-  /** The first floor's rooms and pins, to draw small. */
-  plan?: MapPlan;
-}
-
-/** A floor reduced to what a small plan draws, in the map's own units. */
-export interface MapPlan {
-  viewBox: string;
-  rooms: { points: string; name?: string; x: number; y: number }[];
-  pins: { x: number; y: number }[];
-  /** How thick the rooms' outline is drawn, in the map's units. */
-  stroke: number;
-}
-
-export function mapCardFacts(doc: HomeMapDocument | null | undefined): MapCardFacts {
-  const floors = doc?.floors ?? [];
-  const rooms = floors.reduce((n, f) => n + f.rooms.length, 0);
-  if (rooms === 0) return { words: "No map yet. Start one by hand here, or scan your home with the iPhone app." };
-  const pins = floors.reduce((n, f) => n + f.pins.length, 0);
-  const floorWords = floors.length === 1 ? `1 floor (${floors[0]!.name})` : plural(floors.length, "floor");
-  const plan = floors.map(mapPlan).find((p) => p !== undefined);
-  return { words: `${floorWords} · ${plural(rooms, "room")} · ${plural(pins, "device")}`, ...(plan === undefined ? {} : { plan }) };
-}
-
-/** One floor as a small plan: each room's outline, and its pins, fitted to a
- * view box with a small margin. Undefined for a floor with no room drawn. */
-function mapPlan(floor: HomeMapDocument["floors"][number]): MapPlan | undefined {
-  const rooms = floor.rooms.filter((r) => r.outline.length >= 3);
-  if (rooms.length === 0) return undefined;
-  const all = rooms.flatMap((r) => r.outline);
-  const xs = all.map((p) => p[0]);
-  const ys = all.map((p) => p[1]);
-  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  const span = Math.max(maxX - minX, maxY - minY, 0.01);
-  const margin = span * 0.08;
-  const round = (n: number) => Number(n.toFixed(3));
-  return {
-    viewBox: [minX - margin, minY - margin, maxX - minX + margin * 2, maxY - minY + margin * 2].map(round).join(" "),
-    rooms: rooms.map((r) => {
-      const n = r.outline.length;
-      const name = r.name?.trim();
-      return {
-        points: r.outline.map((p) => `${round(p[0])},${round(p[1])}`).join(" "),
-        x: round(r.outline.reduce((sum, p) => sum + p[0], 0) / n),
-        y: round(r.outline.reduce((sum, p) => sum + p[1], 0) / n),
-        ...(name === undefined || name === "" ? {} : { name }),
-      };
-    }),
-    pins: floor.pins.map((p) => ({ x: round(p.at[0]), y: round(p.at[1]) })),
-    stroke: round(span * 0.012),
-  };
 }

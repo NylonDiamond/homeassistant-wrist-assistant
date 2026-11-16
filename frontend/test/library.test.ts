@@ -43,15 +43,15 @@ describe("Home's Library", () => {
   it("is the Shared tab's list of the whole home's screens, with its own line", () => {
     expect(HOME_LIBRARY_TITLE).toBe("Shared");
     expect(homeLibraryLead()).toBe("Kept once for the whole home. Every watch and phone uses them.");
-    // The Home map only once the integration lists `home_map`.
     expect(homeLibraryScreens().map((s) => s.id)).toEqual(["http-actions", "cameras"]);
-    expect(homeLibraryScreens((c) => c === "home_map").map((s) => s.id)).toEqual(["http-actions", "cameras", "home-map"]);
+    // The Home map has a tab of its own, so Shared never lists it.
+    expect(homeLibraryScreens((c) => c === "home_map").map((s) => s.id)).toEqual(["http-actions", "cameras"]);
     for (const screen of homeLibraryScreens(() => true)) {
       expect(HOME_SHARED_SUB[screen.id], screen.id).toBeTruthy();
       expect(screen.shared).toBe(true);
       expect(screenHowTo(screen.id), screen.id).toBeDefined();
     }
-    expect(Object.keys(HOME_SHARED_SUB)).toEqual(["http-actions", "cameras", "home-map"]);
+    expect(Object.keys(HOME_SHARED_SUB)).toEqual(["http-actions", "cameras"]);
   });
 
   it("names the row over its screens Shared, with the way back there and each screen", () => {

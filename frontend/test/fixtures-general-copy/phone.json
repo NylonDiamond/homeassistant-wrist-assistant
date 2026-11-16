@@ -15,7 +15,7 @@
     "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map."
   ],
   "helpShared": [
-    "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions, camera framing and Home map.",
+    "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions and camera framing.",
     "Open one to change it. A save reaches every device."
   ],
   "helpComplications": [

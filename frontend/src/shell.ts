@@ -1,5 +1,5 @@
 // The panel's shell: the tabs across the top (Devices, Pages, Status pages,
-// Menus, Complications, Shared; `BAR_TABS`), which address each screen lives
+// Menus, Complications, Home map, Shared; `BAR_TABS`), which address each screen lives
 // at, and the bar that moves between them. A watch's or an iPhone's own
 // screens have no tab: each lights the tab it belongs to (`barTabOfScreen`).
 //
@@ -23,8 +23,9 @@
 //                       the address never names one
 //   /cameras            how each camera is framed in alerts, the camera's
 //                       own and shared likewise
-//   /home-map           the home's map, its rooms and device pins, the
-//                       home's and shared likewise (with `home_map`)
+//   /home-map           the Home map tab: the home's map, its rooms and
+//                       device pins, the home's and shared likewise (with
+//                       `home_map`)
 //   /settings, with an optional /<owner_watch_id>
 //                       the Watch app's Settings page
 //   /iphone/pages, /iphone/menus, /iphone/status-pages, /iphone/rooms,
@@ -66,7 +67,7 @@ import { type UiIconName, uiIcon } from "./ui-icons.js";
 
 export type { LibraryItemRef };
 import { HOME_MAP_PATH, isHomeMapRoute } from "./home-map/hook.js";
-import { HOME_MAP_CAPABILITY } from "./home-map/store.js";
+import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
 import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js";
 import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-complications.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
@@ -91,8 +92,8 @@ export const DEVICES_PATH = "/devices";
 /** `/devices/all`: every device at once, in place of one. */
 export const DEVICES_ALL = "all";
 /** The Shared tab's landing page: what the whole home keeps once (HTTP
- * actions, Camera framing, the Home map), each a card that opens its
- * screen. */
+ * actions, Camera framing), each a card that opens its screen. The Home
+ * map, kept once too, has its own tab. */
 export const SHARED_PATH = "/shared";
 export const COMPLICATIONS_PATH = "/complications";
 /** One complication open in the editor: `/complications/design/<owner>/<id>`
@@ -110,7 +111,10 @@ export const IPHONE_PATH = "/iphone";
  *
  * The Devices tab keeps the id "home" it had as Home, so the panel's many
  * "on Home" checks read the same; only its name and address changed.
- * Shared sits apart after a hairline: it holds what no one device owns.
+ * Home map and Shared sit apart after a hairline: they hold what no one
+ * device owns. Home map is a screen of the whole home with a tab of its
+ * own, so its tab opens the screen itself, and hides until the integration
+ * lists `home_map` (`visibleBarTabs`).
  */
 export const BAR_TABS = [
   { id: "home", label: "Devices", path: DEVICES_PATH, icon: "watch" },
@@ -118,6 +122,7 @@ export const BAR_TABS = [
   { id: "status-pages", label: "Status pages", path: ALL_STATUS_PAGES_PATH, icon: "checklist" },
   { id: "menus", label: "Menus", path: ALL_MENUS_PATH, icon: "radial" },
   { id: "complications", label: "Complications", path: COMPLICATIONS_PATH, icon: "gauge" },
+  { id: "home-map", label: "Home map", path: HOME_MAP_PATH, icon: "home" },
   { id: "shared", label: "Shared", path: SHARED_PATH, icon: "layers" },
 ] as const satisfies readonly { id: string; label: string; path: string; icon: UiIconName }[];
 
@@ -336,7 +341,7 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
  * kept apart from the device screen of the same name: the Pages tab is
  * "all-pages", never the page editor's "pages", the Status pages tab
  * "all-status-pages" and the Menus tab "all-menus". */
-type ListScreenId = `all-${Exclude<BarTab, "home" | "complications" | "shared">}`;
+type ListScreenId = `all-${Exclude<BarTab, "home" | "complications" | "shared" | "home-map">}`;
 
 /** The screen a route shows, as the leave question counts screens: one of
  * the Watch app's screens, Home, Complications, or a tab that lists things
@@ -352,7 +357,7 @@ export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "
   const id = watchScreenOf(route)?.id ?? iphoneScreenOf(route)?.id;
   if (id !== undefined) return id;
   const tab = barTabOf(route);
-  return tab === "home" || tab === "complications" || tab === "shared" ? tab : `all-${tab}`;
+  return tab === "home" || tab === "complications" || tab === "shared" || tab === "home-map" ? tab : `all-${tab}`;
 }
 
 /** Where a click on a tab goes. The Watch app opens on Pages, on the shared
@@ -370,13 +375,20 @@ export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string 
  * of their screens lights the tab it belongs to (`barTabOfScreen`). */
 export const PANEL_TABS: readonly BarTab[] = BAR_TABS.map((t) => t.id);
 
+/** The tabs the bar draws: every one, less Home map until the integration
+ * lists `home_map`. The tab on screen is always drawn, so an old
+ * integration's `/home-map`, which says to update, still marks its tab. */
+export function visibleBarTabs(current: BarTab, capable: (capability: string) => boolean = () => homeMapCapable()): readonly BarTab[] {
+  return PANEL_TABS.filter((tab) => tab !== "home-map" || tab === current || capable(HOME_MAP_CAPABILITY));
+}
+
 /**
  * The tab a watch or iPhone screen lights, so the bar always says where you
  * are (the review found Home lit on 7 of 12 screens): a device's Pages,
  * Status pages and Menus editors light their kind's tab, its Complications
  * (and the retired Control Center, which moved there) light Complications,
- * what the whole home keeps (HTTP actions, Camera framing, the Home map)
- * lights Shared, and the device's very own screens (Settings, Rooms, Voice)
+ * what the whole home keeps (HTTP actions, Camera framing) lights Shared,
+ * the Home map its own tab, and the device's very own screens (Settings, Rooms, Voice)
  * light Devices, where the device's page opens them.
  */
 export function barTabOfScreen(id: WatchScreen["id"]): BarTab {
@@ -387,8 +399,8 @@ export function barTabOfScreen(id: WatchScreen["id"]): BarTab {
     case "watch-complications":
     case "control-center": return "complications";
     case "http-actions":
-    case "cameras":
-    case "home-map": return "shared";
+    case "cameras": return "shared";
+    case "home-map": return "home-map";
     case "rooms":
     case "voice":
     case "settings": return "home";
@@ -605,7 +617,7 @@ const HELP_ICON = html`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stro
   <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" /><path d="M12 17V17.2" /></svg>`;
 
 /** The tabs, above whatever the tab draws: one segmented group with a glyph
- * on each, Shared after a hairline, then the sync pill and Help at the
+ * on each, Home map and Shared after a hairline, then the sync pill and Help at the
  * right. Each tab is a real link, so a middle click opens it in a new
  * browser tab; a plain click moves in place. */
 export function renderTabBar(input: TabBarInput): TemplateResult {
@@ -616,7 +628,7 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
     <span class="wa-tabs-name">Wrist Assistant</span>
-    <span class="wa-tabs-list">${PANEL_TABS.map((tab) => html`${tab === "shared" ? html`<span class="wa-tabs-sep" aria-hidden="true"></span>` : nothing}<a class="wa-tab ${tab === current ? "on" : ""}"
+    <span class="wa-tabs-list">${visibleBarTabs(current).map((tab, i, tabs) => html`${i > 0 && (tab === "home-map" || tab === "shared") && tabs[i - 1] !== "home-map" ? html`<span class="wa-tabs-sep" aria-hidden="true"></span>` : nothing}<a class="wa-tab ${tab === current ? "on" : ""}"
       href=${href(tab)} aria-current=${tab === current ? "page" : "false"}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;

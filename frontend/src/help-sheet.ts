@@ -65,8 +65,8 @@ const homeText = () => [
 
 const sharedText = () => [
   generalCopy(
-    "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions, camera framing and Home map.",
-    "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions, camera framing and Home map.",
+    "Shared holds what the home keeps once: every watch and iPhone uses the same HTTP actions and camera framing.",
+    "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions and camera framing.",
   ),
   "Open one to change it. A save reaches every device.",
 ];

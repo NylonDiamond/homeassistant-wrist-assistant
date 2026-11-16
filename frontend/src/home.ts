@@ -9,7 +9,7 @@ import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { HOME_MAP_CAPABILITY, homeMapCapable } from "./home-map/store.js";
 import type { Person } from "./people.js";
 import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
-import { DEVICES_ALL, DEVICES_PATH, HOME_PATH, IPHONE_SCREENS, type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, devicePath, deviceRouteOf } from "./shell.js";
+import { BAR_TABS, DEVICES_ALL, DEVICES_PATH, HOME_PATH, IPHONE_SCREENS, type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, devicePath, deviceRouteOf } from "./shell.js";
 import type { SyncPillState } from "./sync-pill.js";
 import type { UiIconName } from "./ui-icons.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
@@ -272,10 +272,12 @@ export function homeLibraryLead(): string {
 }
 
 /** The screens the Shared tab lists, in order: every screen of the whole
- * home (`shared`) that is not retired, and of those that need a capability
- * only the ones the integration advertises (the Home map, `home_map`). */
+ * home (`shared`) that is not retired and has no bar tab of its own (the
+ * Home map has one), and of those that need a capability only the ones the
+ * integration advertises. */
 export function homeLibraryScreens(capable: (capability: string) => boolean = homeScreenCapable): WatchScreen[] {
-  return WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true && (s.capability === undefined || capable(s.capability)));
+  return WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true && !BAR_TABS.some((t) => t.path === s.path)
+    && (s.capability === undefined || capable(s.capability)));
 }
 
 /** Whether the integration advertises a screen's capability, as the panel
@@ -289,7 +291,6 @@ function homeScreenCapable(capability: string): boolean {
 export const HOME_SHARED_SUB: Partial<Record<WatchScreen["id"], string>> = {
   "http-actions": "Web requests every device can run",
   "cameras": "How each camera is framed in alerts",
-  "home-map": "Your home's plan, with a pin for each device",
 };
 
 /** What Synced and Waiting cover, on a device's sync chip as its tooltip: on a

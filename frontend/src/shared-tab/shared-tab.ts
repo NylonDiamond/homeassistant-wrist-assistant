@@ -1,6 +1,6 @@
 // The Shared tab's landing page: one card for each thing the whole home keeps
-// once, every watch and iPhone using the same (HTTP actions, Camera framing,
-// the Home map). It replaces the "On every device" block that sat under the
+// once, every watch and iPhone using the same (HTTP actions, Camera framing).
+// The Home map, kept once too, has a tab of its own. It replaces the "On every device" block that sat under the
 // device list on Home and scrolled out of sight. Each card shows its state at
 // a glance and opens its own screen, whose address stays what it was.
 //
@@ -8,14 +8,13 @@
 // question. A card whose read fails says so and still opens its screen, which
 // has its own words for the failure.
 
-import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
+import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { type CameraFraming, type HassLike, type HttpActionsRecord, type OwnerSummary, fetchCameras, fetchHttpActions } from "../ha-api.js";
 import { homeLibraryLead, HOME_LIBRARY_TITLE, homeLibraryScreens } from "../home.js";
-import { homeMapRead, homeMapReadFailed } from "../home-map/store.js";
 import { isPlainClick, type WatchScreen } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
-import { type MapPlan, cameraCardFacts, httpCardFacts, mapCardFacts } from "./model.js";
+import { cameraCardFacts, httpCardFacts } from "./model.js";
 
 /** A read that has not come back yet, or that failed. */
 type Read<T> = { state: "loading" } | { state: "failed" } | { state: "ready"; value: T };
@@ -100,22 +99,11 @@ export class WaSharedTab extends LitElement {
     </section>`;
   }
 
-  private renderMap(screen: WatchScreen): TemplateResult {
-    const read = homeMapRead(this.hass, () => this.requestUpdate());
-    const facts = read === undefined ? undefined : mapCardFacts(read.doc);
-    return html`<section class="sh-card" aria-label=${screen.label}>
-      ${this.cardHead(screen, "home")}
-      <p class="sh-m">${facts?.words ?? (homeMapReadFailed() ? NOT_READ_TEXT : "Reading…")}</p>
-      ${facts?.plan === undefined ? nothing : planArt(facts.plan)}
-    </section>`;
-  }
-
   protected override render(): TemplateResult {
     const screens = homeLibraryScreens();
     const card = (screen: WatchScreen) => {
       if (screen.id === "http-actions") return this.renderHttp(screen);
-      if (screen.id === "cameras") return this.renderCameras(screen);
-      return this.renderMap(screen);
+      return this.renderCameras(screen);
     };
     return html`<div class="sh-page">
       <h1>${HOME_LIBRARY_TITLE}</h1>
@@ -157,20 +145,7 @@ export class WaSharedTab extends LitElement {
     .sh-thumb { position: relative; height: 48px; border-radius: 6px; overflow: hidden; background: var(--wa-panel); }
     .sh-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
     .sh-framed { position: absolute; left: 5px; bottom: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--wa-green); box-shadow: 0 0 0 1px rgba(0, 0, 0, .4); }
-    svg.sh-plan { display: block; width: 100%; height: 104px; border-radius: 8px; background: var(--wa-panel); }
-    .sh-room { fill: color-mix(in srgb, var(--wa-ink) 16%, transparent); stroke: color-mix(in srgb, var(--wa-ink) 60%, transparent); }
-    .sh-pin { fill: var(--wa-hue-yellow, currentColor); }
   `;
-}
-
-/** A floor drawn small: its rooms' outlines and a dot for each pin. Only to
- * recognize the map by, so it carries no names. */
-function planArt(plan: MapPlan): TemplateResult {
-  const dot = plan.stroke * 2.4;
-  return html`<svg class="sh-plan" viewBox=${plan.viewBox} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-    ${plan.rooms.map((r) => svg`<polygon class="sh-room" points=${r.points} stroke-width=${plan.stroke}></polygon>`)}
-    ${plan.pins.map((p) => svg`<circle class="sh-pin" cx=${p.x} cy=${p.y} r=${dot}></circle>`)}
-  </svg>`;
 }
 
 declare global {

@@ -1,12 +1,11 @@
 // What the Shared tab's cards say, worked out from what Home Assistant
 // answers: the HTTP actions' count, size and whether every awake device has
-// them; how many cameras are framed; the Home map's floors, rooms and pins.
+// them; how many cameras are framed.
 
 import { describe, expect, it } from "vitest";
 
 import type { CameraFraming, HttpActionsRecord, OwnerSummary } from "../src/ha-api.js";
-import type { HomeMapDocument } from "../src/home-map/model.js";
-import { CAMERA_CARD_THUMBS, HTTP_CARD_ROWS, cameraCardFacts, httpCardFacts, mapCardFacts } from "../src/shared-tab/model.js";
+import { CAMERA_CARD_THUMBS, HTTP_CARD_ROWS, cameraCardFacts, httpCardFacts } from "../src/shared-tab/model.js";
 
 const DAY = 86_400;
 
@@ -70,32 +69,5 @@ describe("the Camera framing card", () => {
     expect(cameraCardFacts([camera("a", true)]).words).toBe("1 of 1 camera framed · how each picture is cut in alerts");
     expect(cameraCardFacts([]).words).toBe("No cameras in Home Assistant yet");
     expect(cameraCardFacts(undefined).thumbs).toEqual([]);
-  });
-});
-
-describe("the Home map card", () => {
-  const room = (id: string, x: number) => ({ id, name: `Room ${id}`, outline: [[x, 0], [x + 4, 0], [x + 4, 3], [x, 3]], height: 2.5, walls: [], openings: [], objects: [] });
-  const doc = (floors: unknown[]) => ({ v: 1, floors }) as unknown as HomeMapDocument;
-
-  it("says the floor, the rooms and the devices, and draws the floor", () => {
-    const facts = mapCardFacts(doc([{ id: "f", name: "Upstairs", story: 1, rooms: [room("a", 0)], pins: [{ id: "p", entityId: "light.a", at: [1, 1, 0] }, { id: "q", entityId: "light.b", at: [2, 2, 0] }, { id: "r", entityId: "light.c", at: [3, 2, 0] }] }]));
-    expect(facts.words).toBe("1 floor (Upstairs) · 1 room · 3 devices");
-    expect(facts.plan?.rooms).toHaveLength(1);
-    expect(facts.plan?.pins).toEqual([{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 2 }]);
-    expect(facts.plan?.viewBox.split(" ")).toHaveLength(4);
-  });
-
-  it("counts several floors, and names none of them", () => {
-    const facts = mapCardFacts(doc([
-      { id: "f", name: "Up", story: 1, rooms: [room("a", 0), room("b", 5)], pins: [] },
-      { id: "g", name: "Down", story: 0, rooms: [room("c", 0)], pins: [{ id: "p", entityId: "light.a", at: [1, 1, 0] }] },
-    ]));
-    expect(facts.words).toBe("2 floors · 3 rooms · 1 device");
-  });
-
-  it("says plainly when there is no map yet", () => {
-    for (const none of [null, undefined, doc([]), doc([{ id: "f", name: "Home", story: 0, rooms: [], pins: [] }])]) {
-      expect(mapCardFacts(none)).toEqual({ words: "No map yet. Start one by hand here, or scan your home with the iPhone app." });
-    }
   });
 });
