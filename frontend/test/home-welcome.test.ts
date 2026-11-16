@@ -33,9 +33,9 @@ const flat = (v: unknown): string => {
 describe("the pairing QR code's web address", () => {
   const app = "wristassistant://pair#v=1&i=abc&t=TOKEN&u=http%3A%2F%2F192.168.1.4%3A8123";
 
-  it("is the app's link with its # part moved onto wrist-assistant.com/pair", () => {
-    expect(PAIR_WEB_LINK).toBe("https://wrist-assistant.com/pair");
-    expect(pairQrLink(app)).toBe("https://wrist-assistant.com/pair#v=1&i=abc&t=TOKEN&u=http%3A%2F%2F192.168.1.4%3A8123");
+  it("is the app's link with its # part moved onto houselit.app/pair", () => {
+    expect(PAIR_WEB_LINK).toBe("https://houselit.app/pair");
+    expect(pairQrLink(app)).toBe("https://houselit.app/pair#v=1&i=abc&t=TOKEN&u=http%3A%2F%2F192.168.1.4%3A8123");
   });
 
   it("is nothing for any other link", () => {

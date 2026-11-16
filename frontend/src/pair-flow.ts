@@ -148,7 +148,7 @@ export function pairQrTitle(): string {
  * address, which links to the App Store, and an older app is opened from
  * there by its own link. Everything after the `#` stays on the iPhone: a
  * browser never sends it to the website. */
-export const PAIR_WEB_LINK = "https://wrist-assistant.com/pair";
+export const PAIR_WEB_LINK = "https://houselit.app/pair";
 
 /** The QR code's address for the app's link `wristassistant://pair#...`:
  * the same `#` part on `PAIR_WEB_LINK`. Undefined for any other link. */
