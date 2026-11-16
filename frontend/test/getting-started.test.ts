@@ -204,7 +204,6 @@ describe("the Help sheet", () => {
     const text = sheet("/complications", done);
     expect(text).toContain("tl-complications");
     expect(text.indexOf("On this screen: Complications")).toBeLessThan(text.indexOf("Getting started"));
-    expect(text.indexOf("Getting started")).toBeLessThan(text.indexOf("How it all fits"));
     expect(text).not.toContain("hs-steps");
     // Before then, the steps come first and the screen last.
     const first = sheet("/complications");

@@ -156,7 +156,6 @@ import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TR
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { renderTeachCard, teachStyles } from "./teach-loop.js";
-import { homeMapCapable } from "./home-map/store.js";
 import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
@@ -11458,8 +11457,6 @@ export class WristAssistantPanel extends LitElement {
       onClosed: () => this.closeHelpSheet(true),
       onPair: () => { if (home()) this.openPairDialog(); },
       onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(deviceListPath("pages", watch)!); },
-      homeMap: homeMapCapable(),
-      onGoTab: (tab) => { this.closeHelpSheet(false); this.openTab(tab); },
       ...(tabOfRoute(this.route) === "complications"
         ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
         : {}),

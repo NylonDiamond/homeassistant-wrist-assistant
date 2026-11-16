@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitsNodes, renderHowItFits, renderTeachCard, renderTeachWatch, TEACH_LOOPS, type TeachLoopId, teachStyles, teachWords } from "../src/teach-loop.js";
-import { PANEL_TABS } from "../src/shell.js";
+import { renderTeachCard, renderTeachWatch, TEACH_LOOPS, type TeachLoopId, teachStyles, teachWords } from "../src/teach-loop.js";
 
 /** A template flattened to its markup, values in place. */
 const flat = (v: unknown): string => {
@@ -50,9 +49,6 @@ describe("teach loops", () => {
         expect(text, text).toMatch(/^[A-Z]/);
       }
     }
-    for (const node of fitsNodes(true)) {
-      expect(node.text, node.text).not.toMatch(/…|\.\.\.|\s-\s|—|–/);
-    }
   });
 
   it("says a menu opens from the + in the middle, and the Anywhere menu by the crown", () => {
@@ -77,23 +73,5 @@ describe("teach loops", () => {
     const markup = flat(renderTeachWatch("pages", true));
     expect(markup).toContain("tl-mini");
     expect(markup).toContain("tl-watch");
-  });
-});
-
-describe("how it all fits", () => {
-  it("names only tabs the bar has, and the Home map only where it shows", () => {
-    for (const node of fitsNodes(true)) expect(PANEL_TABS).toContain(node.tab);
-    expect(fitsNodes(false).map((n) => n.tab)).not.toContain("home-map");
-    expect(fitsNodes(true).map((n) => n.tab)).toContain("home-map");
-    expect(fitsNodes(true)[0]!.tab).toBe("complications");
-  });
-
-  it("makes each row a button to its tab only when it can open one, and holds still", () => {
-    expect(flat(renderHowItFits(false, undefined))).not.toContain("<button");
-    const markup = flat(renderHowItFits(false, () => {}));
-    expect(markup).toContain("Open the Pages tab");
-    expect(markup.match(/class="hf-row"/g)?.length).toBe(4);
-    expect(flat(renderHowItFits(true, () => {})).match(/class="hf-row"/g)?.length).toBe(5);
-    expect(teachStyles.cssText).not.toContain("hf-walk");
   });
 });

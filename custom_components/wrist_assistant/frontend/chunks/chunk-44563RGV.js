@@ -1,40 +1,40 @@
-import{a as A}from"./chunk-7ZD6TFZU.js";import{Ee as z,ph as m}from"./chunk-7YGC62I2.js";import{B as y,l as T}from"./chunk-T3VRCIVM.js";import{a as S,b as w,f as s,g as h,i as d}from"./chunk-6ZDBXU6B.js";var P=()=>T("Digital Crown","crown"),k={pages:{seconds:8,hue:"var(--wa-hue-blue)",still:70,groups:[{title:"On your watch",steps:["**Swipe** left or right to move between pages.","**Tap** a tile to use it. The porch light turns on."]}],windows:[[0,46],[48,97]],get use(){return A("pages").use},tip:"Touch and hold a tile for its quick menu. The Menus tab sets what is in it."},menus:{seconds:16,hue:"var(--wa-hue-purple)",still:83,get groups(){return[{title:"A tile's menu",steps:["**Touch and hold** a tile. A + shows in the middle.","**Slide** to the middle, then to a slot, and **lift** your finger."]},{title:"The Anywhere menu",steps:[`**Hold** any tile, slide to the **middle**, then **turn the ${P()}**.`,"**Slide** to a slot, then **lift** your finger."]}]},windows:[[0,12],[13,46],[48,73],[74,97]],use:"Shortcuts and quick controls without leaving the page you are on.",tip:"On a page with room, you can also hold an empty spot for the Anywhere menu. Slide to the red X to cancel.",kinds:[["By type","One menu for each kind of tile. Every light gets the light menu."],["One tile","A menu for one tile only. It takes the place of its type's menu."],["Anywhere","The same shortcuts from every page."]]},"status-pages":{seconds:8,hue:"var(--wa-hue-orange)",still:70,get groups(){return[{title:"On your watch",steps:[T("**Open** one from a status page tile, a menu slot, or by asking Siri.","**Open** one from a status page tile, a menu slot, or, on an Apple device, by asking Siri."),`**Read** it. Turn the ${P()} to see more.`]}]},windows:[[0,46],[48,97]],use:"Checking things fast: lights that are on, low batteries, open windows. A status page only shows things. To change one, use a tile.",tip:"To put one on a page, add a status page tile on the Pages tab."},complications:{seconds:8,hue:"var(--wa-hue-green)",still:70,groups:[{title:"On your watch",steps:["**Touch and hold** the watch face. Tap **Edit**.","**Pick** a spot, then pick **Wrist Assistant**.","**Tap** it to run its tap action, like opening a page."]}],windows:[[0,33],[35,66],[68,97]],use:"Seeing things without opening the app, like the temperature or whether the door is locked.",tip:"You make the design here. You put it on a face on the watch."}};function Y(e){return e.split("**").map((t,n)=>n%2===1?s`<b>${t}</b>`:s`${t}`)}var G={bulb:"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z",lock:"M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",play:"M6 4l14 8-14 8z",temp:"M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z",camera:"M3 7h12v10H3zM15 10l6-3v10l-6-3",house:"M3 11l9-7 9 7v9H3z",fan:"M12 10c0-4 1-7 4-7 2 0 2 3 0 5M14 12c4 0 7 1 7 4 0 2-3 2-5 0M12 14c0 4-1 7-4 7-2 0-2-3 0-5M10 12c-4 0-7-1-7-4 0-2 3-2 5 0",list:"M9 6h11M9 12h11M9 18h8M4 6h.5M4 12h.5M4 18h.5",plus:"M12 5v14M5 12h14",minus:"M5 12h14",power:"M12 3v9M6.4 6.4a8 8 0 1 0 11.2 0",sun:"M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4",palette:"M12 3a9 9 0 1 0 0 18 3 3 0 0 0 0-6 3 3 0 0 1 0-6 3 3 0 0 0 0-6z",moon:"M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z",mic:"M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3",pages:"M3 5h7.5v7.5H3zM13.5 5H21v7.5h-7.5zM5 17h14",alert:"M12 8v5M12 16h.01"},g=(e,t="tl-ic")=>s`<svg class=${t} viewBox="0 0 24 24" aria-hidden="true"><path d=${G[e]}></path></svg>`,c=(e,t,n,o)=>s`<div class="tl-t ${e}">${g(t)}<span>${n}<small>${o}</small></span></div>`,$=(e,t)=>s`${e.map((n,o)=>{let a=(-90+o*(360/e.length))*(Math.PI/180),r=Math.round(Math.cos(a)*58),i=Math.round(Math.sin(a)*58);return s`<div class="tl-slot ${t?.index===o?t.cls:""}" style=${`left:${r}px;top:${i}px`}>${g(n,"")}</div>`})}`;function K(){return s`<div class="tl-clock">10:09</div>
+import{a as R}from"./chunk-7ZD6TFZU.js";import{Ee as S,ph as b}from"./chunk-7YGC62I2.js";import{B as w,l as v}from"./chunk-T3VRCIVM.js";import{a as M,b as x,f as l,i as d}from"./chunk-6ZDBXU6B.js";var D=()=>v("Digital Crown","crown"),k={pages:{seconds:8,hue:"var(--wa-hue-blue)",still:70,groups:[{title:"On your watch",steps:["**Swipe** left or right to move between pages.","**Tap** a tile to use it. The porch light turns on."]}],windows:[[0,46],[48,97]],get use(){return R("pages").use},tip:"Touch and hold a tile for its quick menu. The Menus tab sets what is in it."},menus:{seconds:16,hue:"var(--wa-hue-purple)",still:83,get groups(){return[{title:"A tile's menu",steps:["**Touch and hold** a tile. A + shows in the middle.","**Slide** to the middle, then to a slot, and **lift** your finger."]},{title:"The Anywhere menu",steps:[`**Hold** any tile, slide to the **middle**, then **turn the ${D()}**.`,"**Slide** to a slot, then **lift** your finger."]}]},windows:[[0,12],[13,46],[48,73],[74,97]],use:"Shortcuts and quick controls without leaving the page you are on.",tip:"On a page with room, you can also hold an empty spot for the Anywhere menu. Slide to the red X to cancel.",kinds:[["By type","One menu for each kind of tile. Every light gets the light menu."],["One tile","A menu for one tile only. It takes the place of its type's menu."],["Anywhere","The same shortcuts from every page."]]},"status-pages":{seconds:8,hue:"var(--wa-hue-orange)",still:70,get groups(){return[{title:"On your watch",steps:[v("**Open** one from a status page tile, a menu slot, or by asking Siri.","**Open** one from a status page tile, a menu slot, or, on an Apple device, by asking Siri."),`**Read** it. Turn the ${D()} to see more.`]}]},windows:[[0,46],[48,97]],use:"Checking things fast: lights that are on, low batteries, open windows. A status page only shows things. To change one, use a tile.",tip:"To put one on a page, add a status page tile on the Pages tab."},complications:{seconds:8,hue:"var(--wa-hue-green)",still:70,groups:[{title:"On your watch",steps:["**Touch and hold** the watch face. Tap **Edit**.","**Pick** a spot, then pick **Wrist Assistant**.","**Tap** it to run its tap action, like opening a page."]}],windows:[[0,33],[35,66],[68,97]],use:"Seeing things without opening the app, like the temperature or whether the door is locked.",tip:"You make the design here. You put it on a face on the watch."}};function Y(e){return e.split("**").map((t,n)=>n%2===1?l`<b>${t}</b>`:l`${t}`)}var B={bulb:"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z",lock:"M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",play:"M6 4l14 8-14 8z",temp:"M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z",camera:"M3 7h12v10H3zM15 10l6-3v10l-6-3",house:"M3 11l9-7 9 7v9H3z",fan:"M12 10c0-4 1-7 4-7 2 0 2 3 0 5M14 12c4 0 7 1 7 4 0 2-3 2-5 0M12 14c0 4-1 7-4 7-2 0-2-3 0-5M10 12c-4 0-7-1-7-4 0-2 3-2 5 0",list:"M9 6h11M9 12h11M9 18h8M4 6h.5M4 12h.5M4 18h.5",plus:"M12 5v14M5 12h14",minus:"M5 12h14",power:"M12 3v9M6.4 6.4a8 8 0 1 0 11.2 0",sun:"M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4",palette:"M12 3a9 9 0 1 0 0 18 3 3 0 0 0 0-6 3 3 0 0 1 0-6 3 3 0 0 0 0-6z",moon:"M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z",mic:"M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3",pages:"M3 5h7.5v7.5H3zM13.5 5H21v7.5h-7.5zM5 17h14",alert:"M12 8v5M12 16h.01"},m=(e,t="tl-ic")=>l`<svg class=${t} viewBox="0 0 24 24" aria-hidden="true"><path d=${B[e]}></path></svg>`,c=(e,t,n,o)=>l`<div class="tl-t ${e}">${m(t)}<span>${n}<small>${o}</small></span></div>`,T=(e,t)=>l`${e.map((n,o)=>{let a=(-90+o*(360/e.length))*(Math.PI/180),r=Math.round(Math.cos(a)*58),i=Math.round(Math.sin(a)*58);return l`<div class="tl-slot ${t?.index===o?t.cls:""}" style=${`left:${r}px;top:${i}px`}>${m(n,"")}</div>`})}`;function G(){return l`<div class="tl-clock">10:09</div>
     <div class="tl-strip">
       <div class="tl-pg"><div class="tl-grid">
         ${c("c-yellow","bulb","Living room","On")}${c("c-orange","lock","Front Door","Locked")}
         ${c("c-purple","play","Movie","Scene")}${c("c-blue","temp","Hall","21\xB0")}
       </div></div>
       <div class="tl-pg"><div class="tl-grid">
-        ${c("c-ink","camera","Driveway","Camera")}${c("tl-porch","bulb","Porch",s`<i class="tl-word"></i>`)}
+        ${c("c-ink","camera","Driveway","Camera")}${c("tl-porch","bulb","Porch",l`<i class="tl-word"></i>`)}
         ${c("c-green","house","Garage","Closed")}${c("c-pink","fan","Fan","Off")}
       </div></div>
     </div>
     <div class="tl-dots"><i class="tl-d1"></i><i class="tl-d2"></i></div>
-    <div class="tl-finger"></div>`}function W(){return s`<div class="tl-clock">10:09</div>
+    <div class="tl-finger"></div>`}function K(){return l`<div class="tl-clock">10:09</div>
     <div class="tl-grid">
-      ${c("tl-lr","bulb","Living room",s`<i class="tl-word"></i>`)}${c("c-orange","lock","Front Door","Locked")}
+      ${c("tl-lr","bulb","Living room",l`<i class="tl-word"></i>`)}${c("c-orange","lock","Front Door","Locked")}
       ${c("c-blue","temp","Hall","21\xB0")}${c("c-green","house","Garage","Closed")}
     </div>
     <div class="tl-dim"></div>
     <div class="tl-ring"></div>
     <div class="tl-radial tl-ra">
-      <div class="tl-arms">${$(["sun","palette","minus","plus","power"],{index:4,cls:"tl-hit-a"})}</div>
-      <div class="tl-mid">${g("plus","")}</div>
+      <div class="tl-arms">${T(["sun","palette","minus","plus","power"],{index:4,cls:"tl-hit-a"})}</div>
+      <div class="tl-mid">${m("plus","")}</div>
       <div class="tl-name tl-na">Turn off</div>
     </div>
     <div class="tl-radial tl-rb1">
-      <div class="tl-arms">${$(["lock","lock","alert","minus","minus"])}</div>
-      <div class="tl-mid">${g("plus","")}</div>
+      <div class="tl-arms">${T(["lock","lock","alert","minus","minus"])}</div>
+      <div class="tl-mid">${m("plus","")}</div>
     </div>
     <div class="tl-radial tl-rb2">
-      ${$(["play","moon","mic","pages","list"],{index:0,cls:"tl-hit-b"})}
-      <div class="tl-mid">${g("plus","")}</div>
+      ${T(["play","moon","mic","pages","list"],{index:0,cls:"tl-hit-b"})}
+      <div class="tl-mid">${m("plus","")}</div>
       <div class="tl-name tl-nany">Anywhere menu</div>
       <div class="tl-name tl-nb">Movie scene</div>
     </div>
     <div class="tl-toast tl-ta"><i></i>Living room is off</div>
     <div class="tl-toast tl-tb"><i></i>Movie scene is on</div>
-    <div class="tl-finger"></div>`}function V(){let e=(t,n)=>s`<div class="tl-row"><i></i>${t}<span>${n}</span></div>`;return s`<div class="tl-clock">10:09</div>
+    <div class="tl-finger"></div>`}function W(){let e=(t,n)=>l`<div class="tl-row"><i></i>${t}<span>${n}</span></div>`;return l`<div class="tl-clock">10:09</div>
     <div class="tl-grid">
       ${c("c-orange tl-stile","list","Lights on","3")}${c("c-purple","play","Movie","Scene")}
       ${c("c-blue","temp","Hall","21\xB0")}${c("c-green","house","Garage","Closed")}
@@ -42,12 +42,12 @@ import{a as A}from"./chunk-7ZD6TFZU.js";import{Ee as z,ph as m}from"./chunk-7YGC
     <div class="tl-sheet"><h5>Lights on</h5><div class="tl-rows">
       ${e("Kitchen","On")}${e("Office","80%")}${e("Porch","On")}${e("Hall lamp","40%")}${e("Garden","On")}
     </div></div>
-    <div class="tl-finger"></div>`}function q(){return s`<div class="tl-face">
+    <div class="tl-finger"></div>`}function q(){return l`<div class="tl-face">
       <div class="tl-fdate">SUN 15</div>
       <div class="tl-ftime">10:09</div>
       <div class="tl-cmp tl-ca tl-target"><span class="tl-old">+</span><span class="tl-new"><b>21°</b></span></div>
       <div class="tl-cmp tl-cc">72%</div>
-      <div class="tl-cmp tl-cb">${g("moon","")}</div>
+      <div class="tl-cmp tl-cb">${m("moon","")}</div>
     </div>
     <div class="tl-editpill">Edit</div>
     <div class="tl-picker">
@@ -58,36 +58,32 @@ import{a as A}from"./chunk-7ZD6TFZU.js";import{Ee as z,ph as m}from"./chunk-7YGC
     <div class="tl-jump"><div class="tl-clock">10:09</div><div class="tl-grid">
       ${c("c-blue","temp","Hall","21\xB0")}${c("c-orange","sun","Heat","Auto")}
     </div></div>
-    <div class="tl-finger"></div>`}var U={pages:K,menus:W,"status-pages":V,complications:q};function X(e){let t=e.currentTarget,n=t.closest(".tl");if(n===null)return;let o=n.classList.toggle("tl-paused");t.setAttribute("aria-pressed",String(o)),t.setAttribute("aria-label",o?"Play the picture":"Pause the picture"),t.title=o?"Play":"Pause"}function J(e,t=!1){let n=k[e],o=s`<div class="tl-watch" aria-hidden="true"><div class="tl-scr">${U[e]()}</div>
-    ${e==="menus"||e==="status-pages"?s`<div class="tl-crown">↻</div>`:d}</div>`;return t?s`<div class="tl tl-mini tl-${e}" style=${`--tl-t:${n.seconds}s;--tl-still:${-(n.seconds*n.still)/100}s`}><div class="tl-mini-box">${o}</div></div>`:o}function me(e,t={}){let n=k[e],o=0,a=n.groups.map(r=>{let i=o;return o+=r.steps.length,s`<div class="tl-k">${r.title}</div>
+    <div class="tl-finger"></div>`}var U={pages:G,menus:K,"status-pages":W,complications:q};function V(e){let t=e.currentTarget,n=t.closest(".tl");if(n===null)return;let o=n.classList.toggle("tl-paused");t.setAttribute("aria-pressed",String(o)),t.setAttribute("aria-label",o?"Play the picture":"Pause the picture"),t.title=o?"Play":"Pause"}function X(e,t=!1){let n=k[e],o=l`<div class="tl-watch" aria-hidden="true"><div class="tl-scr">${U[e]()}</div>
+    ${e==="menus"||e==="status-pages"?l`<div class="tl-crown">↻</div>`:d}</div>`;return t?l`<div class="tl tl-mini tl-${e}" style=${`--tl-t:${n.seconds}s;--tl-still:${-(n.seconds*n.still)/100}s`}><div class="tl-mini-box">${o}</div></div>`:o}function de(e,t={}){let n=k[e],o=0,a=n.groups.map(r=>{let i=o;return o+=r.steps.length,l`<div class="tl-k">${r.title}</div>
       <ol class="tl-steps" style=${`counter-reset: tl-s ${i}`}>
-        ${r.steps.map((p,l)=>s`<li class="tl-step tl-s${i+l+1}"><span>${Y(p)}</span></li>`)}
-      </ol>`});return s`<section class="tl tl-card tl-${e}" aria-label="How it works on your watch"
+        ${r.steps.map((p,s)=>l`<li class="tl-step tl-s${i+s+1}"><span>${Y(p)}</span></li>`)}
+      </ol>`});return l`<section class="tl tl-card tl-${e}" aria-label="How it works on your watch"
       style=${`--tl-hue:${n.hue};--tl-t:${n.seconds}s;--tl-still:${-(n.seconds*n.still)/100}s`}>
     <div class="tl-stage">
-      ${J(e)}
-      <button type="button" class="tl-pause" title="Pause" aria-label="Pause the picture" aria-pressed="false" @click=${X}>
+      ${X(e)}
+      <button type="button" class="tl-pause" title="Pause" aria-label="Pause the picture" aria-pressed="false" @click=${V}>
         <svg viewBox="0 0 24 24" aria-hidden="true" class="tl-pz"><path d="M8 5v14M16 5v14"></path></svg>
         <svg viewBox="0 0 24 24" aria-hidden="true" class="tl-pl"><path d="M7 4l13 8-13 8z"></path></svg>
       </button>
     </div>
     <div class="tl-text">
       ${a}
-      ${n.tip===void 0?d:s`<p class="tl-tip">${n.tip}</p>`}
-      ${n.kinds===void 0?d:s`<div class="tl-k">Three kinds of menu</div>
-        <div class="tl-kinds">${n.kinds.map(([r,i])=>s`<div class="tl-kind"><b>${r}</b><span>${i}</span></div>`)}</div>`}
+      ${n.tip===void 0?d:l`<p class="tl-tip">${n.tip}</p>`}
+      ${n.kinds===void 0?d:l`<div class="tl-k">Three kinds of menu</div>
+        <div class="tl-kinds">${n.kinds.map(([r,i])=>l`<div class="tl-kind"><b>${r}</b><span>${i}</span></div>`)}</div>`}
       <p class="tl-use"><span class="tl-k">Good for</span>${n.use}</p>
       ${t.note??d}
-      ${t.actions===void 0||t.actions===d?d:s`<div class="tl-acts">${t.actions}</div>`}
+      ${t.actions===void 0||t.actions===d?d:l`<div class="tl-acts">${t.actions}</div>`}
     </div>
-  </section>`}function Q(e){let t=[{tab:"complications",name:"Complications",text:"On your watch face. A tap can open a page.",hue:"var(--wa-hue-green)"},{tab:"pages",name:"Pages",text:"Screens of tiles you swipe between.",hue:"var(--wa-hue-blue)"},{tab:"menus",name:"Menus",text:`Hold a tile. Turn the ${P()} in the middle for the Anywhere menu.`,branch:!0,hue:"var(--wa-hue-purple)"},{tab:"status-pages",name:"Status pages",text:"Tap a status page tile. A list to read.",branch:!0,hue:"var(--wa-hue-orange)"}];return e&&t.push({tab:"home-map",name:"Home map",text:"Tap a Home map tile. Your plan with its devices.",branch:!0,hue:"var(--wa-hue-pink)"}),t}var Z={complications:h`<rect x="5" y="3" width="14" height="18" rx="5"></rect><path d="M8.5 9h7"></path><circle cx="9.5" cy="15" r="1.6"></circle><circle cx="14.5" cy="15" r="1.6"></circle>`,pages:h`<rect x="3" y="5" width="7.5" height="7.5" rx="2"></rect><rect x="13.5" y="5" width="7.5" height="7.5" rx="2"></rect><path d="M7 18h10M14 15l3 3-3 3"></path>`,menus:h`<circle cx="12" cy="12" r="2.2"></circle><circle cx="12" cy="4.5" r="1.8"></circle><circle cx="19.5" cy="12" r="1.8"></circle><circle cx="12" cy="19.5" r="1.8"></circle><circle cx="4.5" cy="12" r="1.8"></circle>`,"status-pages":h`<path d="M9 6h11M9 12h11M9 18h8"></path><circle cx="4.5" cy="6" r="1"></circle><circle cx="4.5" cy="12" r="1"></circle><circle cx="4.5" cy="18" r="1"></circle>`,"home-map":h`<path d="M4 11l8-6.5 8 6.5"></path><path d="M6 9.5V20h12V9.5"></path><circle cx="12" cy="14.5" r="2"></circle>`};function ge(e,t){let n=a=>{let r=s`<span class="hf-chip" style=${`--hf-h:${a.hue}`}><svg viewBox="0 0 24 24" aria-hidden="true">${Z[a.tab]}</svg></span>
-      <span class="hf-t"><b>${a.name}</b><span>${a.text}</span></span>`;return t===void 0?s`<div class="hf-row">${r}</div>`:s`<button type="button" class="hf-row" title=${`Open the ${a.name} tab`} @click=${()=>t(a.tab)}>${r}${m("right")}</button>`},o=Q(e);return s`<div class="hf">
-    ${o.filter(a=>a.branch!==!0).map(n)}
-    <div class="hf-branch">${o.filter(a=>a.branch===!0).map(n)}</div>
-  </div>`}var ee="background: var(--wa-panel, var(--wa-raise)); color: var(--wa-ink); border-color: var(--wa-line-strong);",D="background: transparent; color: var(--wa-muted); border-color: transparent;";function te(){return Object.keys(k).map(e=>k[e].windows.map(([n,o],a)=>{let r=`tl-${e}-s${a+1}`,i=n<=0?"":`0%, ${n-1}% { ${D} } `,p=o>=100?"":` ${o+1}%, 100% { ${D} }`;return`@keyframes ${r} { ${i}${Math.max(0,n)}%, ${o}% { ${ee} }${p} }
+  </section>`}var J="background: var(--wa-panel, var(--wa-raise)); color: var(--wa-ink); border-color: var(--wa-line-strong);",z="background: transparent; color: var(--wa-muted); border-color: transparent;";function Q(){return Object.keys(k).map(e=>k[e].windows.map(([n,o],a)=>{let r=`tl-${e}-s${a+1}`,i=n<=0?"":`0%, ${n-1}% { ${z} } `,p=o>=100?"":` ${o+1}%, 100% { ${z} }`;return`@keyframes ${r} { ${i}${Math.max(0,n)}%, ${o}% { ${J} }${p} }
 .tl-${e} .tl-s${a+1} { animation: ${r} var(--tl-t) infinite; }`}).join(`
 `)).join(`
-`)}var xe=w`
+`)}var ue=x`
   .tl-card {
     position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px 24px; align-items: center;
     box-sizing: border-box; width: min(760px, 100%); margin: 0 auto; padding: 20px; border-radius: 16px; text-align: left;
@@ -304,7 +300,7 @@ import{a as A}from"./chunk-7ZD6TFZU.js";import{Ee as z,ph as m}from"./chunk-7YGC
   @keyframes tl-jump { 0%, 83% { opacity: 0; transform: scale(.4); } 88%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 
   /* the steps, lit in time (made from TEACH_LOOPS) */
-  ${S(te())}
+  ${M(Q())}
 
   /* paused, and held still for less motion */
   .tl-paused *, .tl-paused *::before { animation-play-state: paused !important; }
@@ -320,43 +316,28 @@ import{a as A}from"./chunk-7ZD6TFZU.js";import{Ee as z,ph as m}from"./chunk-7YGC
   .tl-mini .tl-watch { transform: scale(.6); transform-origin: top left; box-shadow: none; }
   .tl-mini .tl-crown { display: none; }
 
-  /* How it all fits: one row a part, still */
-  .hf { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .hf-row {
-    display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px;
-    border: 0; background: none; color: var(--wa-ink); font: inherit; text-align: left;
-  }
-  button.hf-row { cursor: pointer; }
-  button.hf-row:hover { background: var(--wa-hover); }
-  button.hf-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hf-row > svg.ui-icon { flex: none; width: 13px; height: 13px; color: var(--wa-muted); }
-  .hf-chip { flex: none; width: 24px; height: 24px; box-sizing: border-box; border-radius: 7px; border: 1.5px solid var(--hf-h); display: grid; place-items: center; }
-  .hf-chip svg { width: 14px; height: 14px; stroke: var(--wa-ink); fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-  .hf-t { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.35; color: var(--wa-muted); }
-  .hf-t b { font-weight: 500; color: var(--wa-ink); margin-right: 6px; }
-  .hf-branch { margin-left: 19px; padding-left: 8px; border-left: 1.5px solid var(--wa-line-strong); display: flex; flex-direction: column; gap: 2px; }
-`;var E="all";function v(e,t){let n=e.findIndex(o=>o.ownerId===t);return n<0?e.length:n}function O(e,t){let n=e.toLocaleLowerCase(),o=t.toLocaleLowerCase();return n<o?-1:n>o?1:0}function ne(e){return e.linkId!==void 0&&e.linkId!==""?`link:${e.linkId}`:`rec:${e.ownerId}\0${e.id}`}function ye(e,t,n){let o=new Map;for(let r of e){let i=ne(r),p=o.get(i);p?p.push(r):o.set(i,[r])}let a=[];for(let[r,i]of o){let p=[...i].sort((b,R)=>v(t,b.ownerId)-v(t,R.ownerId)||b.slot-R.slot),l=p[0];if(!l)continue;let u=p.find(b=>b.ownerId===n)??l;a.push({key:r,name:u.name,copies:p,open:u})}return a}function N(e,t){return e.filter(n=>n.copies.some(o=>o.ownerId===t))}function ke(e,t,n){let o=[],a=new Set(t),r=new Set;for(let i of t){if(r.has(i))continue;let p=e.find(u=>n(u).includes(i)),l=p?[...n(p)]:[i];if(l.some(u=>!a.has(u)))return;for(let u of l)r.add(u);o.push(l)}return o}function ve(e,t){return t?{deleteAsk:e===1?"Delete 1 design from every device it is on? Faces and widgets using it lose it.":`Delete ${e} designs from every device they are on? Faces and widgets using them lose them.`,deleteTitle:"Delete these designs from every device they are on",takeOff:"Take off everywhere",takeOffTitle:`Take these designs off every device they are on. Each one is kept, under ${f}.`}:{deleteAsk:`Delete ${e}? Faces and widgets using them lose them.`,deleteTitle:"Delete these complications",takeOff:"Take off",takeOffTitle:`Take each of these off the device its card is under. The last copy of a design is kept, under ${f}.`}}function H(e){return e.copies.length>0&&e.copies.every(t=>t.ownerId===y)}function oe(e){let t;for(let n of e)for(let o of n.copies)if(t===void 0)t=o.ownerId;else if(t!==o.ownerId)return;return t}function C(e,t,n){let o=n??oe(e),a=(r,i)=>r.copies.find(p=>p.ownerId===i)?.slot??Number.MAX_SAFE_INTEGER;return o!==void 0?[...e].sort((r,i)=>a(r,o)-a(i,o)||O(r.name,i.name)):[...e].sort((r,i)=>O(r.name,i.name)||v(t,r.copies[0]?.ownerId??"")-v(t,i.copies[0]?.ownerId??"")||r.open.slot-i.open.slot)}function Te(e,t,n){return n===E?C(e,t):C(N(e,n),t,n)}var f="Not on a device",$e=`the ${f} list`;function M(e){return e.kind==="library"||e.ownerId===y}function ie(e){return[...e.filter(t=>!M(t)),...e.filter(M)]}function Pe(e,t){let n=[{key:E,label:"All",kind:"all",count:e.length}];for(let o of ie(t))n.push({key:o.ownerId,label:M(o)?f:o.label,kind:o.kind,count:N(e,o.ownerId).length});return n}function re(e,t=!1){return e==="iphone"&&t?"phone":e==="iphone"?"iPhone":"watch"}function Me(e,t){let n=new Set(e),o=[];for(let a of t){let r=a.devices.filter(i=>n.has(i.ownerId));r.length!==0&&o.push(`${a.label} (${r.map(i=>re(i.kind,i.android===!0)).join(", ")})`)}return o.length>0?o.join(" \xB7 "):n.has(y)?f:"On no device yet"}function Ie(e,t,n){let o=new Map;for(let r of e){let{key:i,label:p}=t(r),l=o.get(i);l?l.rows.push(r):o.set(i,{key:i,label:p,rows:[r]})}let a=r=>{let i=n.indexOf(r);return i<0?n.length:i};return[...o.values()].sort((r,i)=>a(r.key)-a(i.key))}var ze="Empty, no layers",Ae="Search by name, person or entity";function De(e){if(e.elements.length>0||e.control!==void 0||e.values.length>0||e.dataSources.length>0||e.notes!==void 0&&e.notes.trim()!==""||e.tapAction.type!=="refresh"&&e.tapAction.type!=="openApp")return!1;for(let t of Object.values(e.perFamily))if(t!==void 0&&(z(t)||t.backgroundColorHex!==void 0||t.backgroundFill!==void 0||t.borderColorHex!==void 0||t.rules.length>0))return!1;return!e.supportedFamilies.includes("inline")}var ae=new Set(["entityId","entity_id"]),se=new Set(["displayName"]),le=/\b[a-z_]+\.[a-z0-9_]+\b/g;function pe(e){return e.includes("{{")||e.includes("{%")}function Oe(e){let t=new Set,n=new Set,o=(a,r)=>{if(typeof a=="string"){if(a==="")return;let i=a.toLocaleLowerCase();if(r!==void 0&&ae.has(r))t.add(i);else if(r!==void 0&&se.has(r))n.add(i);else if(pe(a)){n.add(i);for(let p of i.match(le)??[])t.add(p)}return}if(Array.isArray(a)){for(let i of a)o(i,r);return}if(a!==null&&typeof a=="object")for(let[i,p]of Object.entries(a))o(p,i)};return o(e,void 0),{entities:[...t],words:[...n]}}function Ce(e,t,n){return t===""?!1:e.entities.some(o=>o.includes(t))||e.words.some(o=>o.includes(t))?!0:e.entities.some(o=>n(o)?.toLocaleLowerCase().includes(t)===!0)}function _(e,t){let n={all:void 0,shown:[],more:[],shelf:void 0};for(let o of e)o.kind==="all"?n.all=o:o.kind==="library"?n.shelf=o:o.count>0||o.key===t?n.shown.push(o):n.more.push(o);return n}function Ee(e,t){let n=[],o=[],a=[];for(let r of e)H(r)?t(r)?a.push(r):o.push(r):n.push(r);return{placed:n,shelved:[...o,...a],empty:a}}function Ne(e,t){return t>0?`(${e}) \xB7 ${t} empty`:`(${e})`}function He(e){return e===1?"Delete 1 empty design?":`Delete ${e} empty designs?`}function _e(e){return e===1?"Deleted 1 empty design.":`Deleted ${e} empty designs.`}function Fe(e,t,n,o){let a=new Map(e);return n===o?a.delete(t):a.set(t,n),a}function je(e){return[...e].sort(([,t],[,n])=>Number(n)-Number(t))}function Be(e,t){return new Map(e.slice(t))}function Ye(e){return e.queued>0?e.queued===1?"1 change waits for Save":`${e.queued} changes wait for Save`:e.on===0?"On no device yet. Changes here apply at once":"Changes here apply at once"}function F(e){return e==="all"?"grid":e==="iphone"?"phone":e==="library"?"layers":"watch"}function Ue(e){let{current:t,open:n,onToggle:o,onPick:a,styleOf:r}=e,i=_(e.tabs,t),p=(l,u="")=>s`<button type="button" role="tab" class="pk-tab ${u} ${l.key===t?"on":""}"
-      style=${r(l.key)} id=${`pk-tab-${l.key}`} aria-selected=${l.key===t?"true":"false"}
-      aria-controls="pk-tabpanel" @click=${()=>a(l.key)}>
-      <span class="pk-tab-glyph" aria-hidden="true">${m(F(l.kind))}</span>
-      <span class="pk-tab-name">${l.label}</span>
-      <span class="pk-tab-count">${l.count}</span>
-    </button>`;return s`<div class="pk-tabs" role="tablist" aria-label="Devices">
+`;var C="all";function y(e,t){let n=e.findIndex(o=>o.ownerId===t);return n<0?e.length:n}function A(e,t){let n=e.toLocaleLowerCase(),o=t.toLocaleLowerCase();return n<o?-1:n>o?1:0}function Z(e){return e.linkId!==void 0&&e.linkId!==""?`link:${e.linkId}`:`rec:${e.ownerId}\0${e.id}`}function ge(e,t,n){let o=new Map;for(let r of e){let i=Z(r),p=o.get(i);p?p.push(r):o.set(i,[r])}let a=[];for(let[r,i]of o){let p=[...i].sort((h,L)=>y(t,h.ownerId)-y(t,L.ownerId)||h.slot-L.slot),s=p[0];if(!s)continue;let u=p.find(h=>h.ownerId===n)??s;a.push({key:r,name:u.name,copies:p,open:u})}return a}function E(e,t){return e.filter(n=>n.copies.some(o=>o.ownerId===t))}function he(e,t,n){let o=[],a=new Set(t),r=new Set;for(let i of t){if(r.has(i))continue;let p=e.find(u=>n(u).includes(i)),s=p?[...n(p)]:[i];if(s.some(u=>!a.has(u)))return;for(let u of s)r.add(u);o.push(s)}return o}function xe(e,t){return t?{deleteAsk:e===1?"Delete 1 design from every device it is on? Faces and widgets using it lose it.":`Delete ${e} designs from every device they are on? Faces and widgets using them lose them.`,deleteTitle:"Delete these designs from every device they are on",takeOff:"Take off everywhere",takeOffTitle:`Take these designs off every device they are on. Each one is kept, under ${f}.`}:{deleteAsk:`Delete ${e}? Faces and widgets using them lose them.`,deleteTitle:"Delete these complications",takeOff:"Take off",takeOffTitle:`Take each of these off the device its card is under. The last copy of a design is kept, under ${f}.`}}function N(e){return e.copies.length>0&&e.copies.every(t=>t.ownerId===w)}function ee(e){let t;for(let n of e)for(let o of n.copies)if(t===void 0)t=o.ownerId;else if(t!==o.ownerId)return;return t}function O(e,t,n){let o=n??ee(e),a=(r,i)=>r.copies.find(p=>p.ownerId===i)?.slot??Number.MAX_SAFE_INTEGER;return o!==void 0?[...e].sort((r,i)=>a(r,o)-a(i,o)||A(r.name,i.name)):[...e].sort((r,i)=>A(r.name,i.name)||y(t,r.copies[0]?.ownerId??"")-y(t,i.copies[0]?.ownerId??"")||r.open.slot-i.open.slot)}function be(e,t,n){return n===C?O(e,t):O(E(e,n),t,n)}var f="Not on a device",we=`the ${f} list`;function $(e){return e.kind==="library"||e.ownerId===w}function te(e){return[...e.filter(t=>!$(t)),...e.filter($)]}function ke(e,t){let n=[{key:C,label:"All",kind:"all",count:e.length}];for(let o of te(t))n.push({key:o.ownerId,label:$(o)?f:o.label,kind:o.kind,count:E(e,o.ownerId).length});return n}function ne(e,t=!1){return e==="iphone"&&t?"phone":e==="iphone"?"iPhone":"watch"}function ye(e,t){let n=new Set(e),o=[];for(let a of t){let r=a.devices.filter(i=>n.has(i.ownerId));r.length!==0&&o.push(`${a.label} (${r.map(i=>ne(i.kind,i.android===!0)).join(", ")})`)}return o.length>0?o.join(" \xB7 "):n.has(w)?f:"On no device yet"}function ve(e,t,n){let o=new Map;for(let r of e){let{key:i,label:p}=t(r),s=o.get(i);s?s.rows.push(r):o.set(i,{key:i,label:p,rows:[r]})}let a=r=>{let i=n.indexOf(r);return i<0?n.length:i};return[...o.values()].sort((r,i)=>a(r.key)-a(i.key))}var Ie="Empty, no layers",Le="Search by name, person or entity";function Me(e){if(e.elements.length>0||e.control!==void 0||e.values.length>0||e.dataSources.length>0||e.notes!==void 0&&e.notes.trim()!==""||e.tapAction.type!=="refresh"&&e.tapAction.type!=="openApp")return!1;for(let t of Object.values(e.perFamily))if(t!==void 0&&(S(t)||t.backgroundColorHex!==void 0||t.backgroundFill!==void 0||t.borderColorHex!==void 0||t.rules.length>0))return!1;return!e.supportedFamilies.includes("inline")}var oe=new Set(["entityId","entity_id"]),ie=new Set(["displayName"]),re=/\b[a-z_]+\.[a-z0-9_]+\b/g;function ae(e){return e.includes("{{")||e.includes("{%")}function Se(e){let t=new Set,n=new Set,o=(a,r)=>{if(typeof a=="string"){if(a==="")return;let i=a.toLocaleLowerCase();if(r!==void 0&&oe.has(r))t.add(i);else if(r!==void 0&&ie.has(r))n.add(i);else if(ae(a)){n.add(i);for(let p of i.match(re)??[])t.add(p)}return}if(Array.isArray(a)){for(let i of a)o(i,r);return}if(a!==null&&typeof a=="object")for(let[i,p]of Object.entries(a))o(p,i)};return o(e,void 0),{entities:[...t],words:[...n]}}function Re(e,t,n){return t===""?!1:e.entities.some(o=>o.includes(t))||e.words.some(o=>o.includes(t))?!0:e.entities.some(o=>n(o)?.toLocaleLowerCase().includes(t)===!0)}function _(e,t){let n={all:void 0,shown:[],more:[],shelf:void 0};for(let o of e)o.kind==="all"?n.all=o:o.kind==="library"?n.shelf=o:o.count>0||o.key===t?n.shown.push(o):n.more.push(o);return n}function De(e,t){let n=[],o=[],a=[];for(let r of e)N(r)?t(r)?a.push(r):o.push(r):n.push(r);return{placed:n,shelved:[...o,...a],empty:a}}function ze(e,t){return t>0?`(${e}) \xB7 ${t} empty`:`(${e})`}function Ae(e){return e===1?"Delete 1 empty design?":`Delete ${e} empty designs?`}function Oe(e){return e===1?"Deleted 1 empty design.":`Deleted ${e} empty designs.`}function Ce(e,t,n,o){let a=new Map(e);return n===o?a.delete(t):a.set(t,n),a}function Ee(e){return[...e].sort(([,t],[,n])=>Number(n)-Number(t))}function Ne(e,t){return new Map(e.slice(t))}function _e(e){return e.queued>0?e.queued===1?"1 change waits for Save":`${e.queued} changes wait for Save`:e.on===0?"On no device yet. Changes here apply at once":"Changes here apply at once"}function H(e){return e==="all"?"grid":e==="iphone"?"phone":e==="library"?"layers":"watch"}function Ge(e){let{current:t,open:n,onToggle:o,onPick:a,styleOf:r}=e,i=_(e.tabs,t),p=(s,u="")=>l`<button type="button" role="tab" class="pk-tab ${u} ${s.key===t?"on":""}"
+      style=${r(s.key)} id=${`pk-tab-${s.key}`} aria-selected=${s.key===t?"true":"false"}
+      aria-controls="pk-tabpanel" @click=${()=>a(s.key)}>
+      <span class="pk-tab-glyph" aria-hidden="true">${b(H(s.kind))}</span>
+      <span class="pk-tab-name">${s.label}</span>
+      <span class="pk-tab-count">${s.count}</span>
+    </button>`;return l`<div class="pk-tabs" role="tablist" aria-label="Devices">
     ${i.all===void 0?d:p(i.all)}
-    ${i.shown.map(l=>p(l))}
-    ${i.more.length===0?d:s`<span class="pk-more" data-menu="tabs" role="presentation"
-      @keydown=${l=>{l.key==="Escape"&&n&&(l.preventDefault(),l.stopPropagation(),o(!1))}}>
+    ${i.shown.map(s=>p(s))}
+    ${i.more.length===0?d:l`<span class="pk-more" data-menu="tabs" role="presentation"
+      @keydown=${s=>{s.key==="Escape"&&n&&(s.preventDefault(),s.stopPropagation(),o(!1))}}>
       <button type="button" class="pk-more-btn" aria-haspopup="menu" aria-expanded=${n?"true":"false"}
-        title="The devices with nothing on them" @click=${()=>o()}>+${i.more.length} more${m("chevron")}</button>
-      ${n?s`<div class="pop-menu pk-more-menu" role="menu" aria-label="The devices with nothing on them">
-        ${i.more.map(l=>s`<button type="button" class="row" role="menuitem" style=${r(l.key)}
-          @click=${()=>{o(!1),a(l.key)}}>
-          <span class="pk-tab-glyph" aria-hidden="true">${m(F(l.kind))}</span>
-          <span class="pk-tab-name">${l.label}</span><span class="pk-tab-count">${l.count}</span></button>`)}
+        title="The devices with nothing on them" @click=${()=>o()}>+${i.more.length} more${b("chevron")}</button>
+      ${n?l`<div class="pop-menu pk-more-menu" role="menu" aria-label="The devices with nothing on them">
+        ${i.more.map(s=>l`<button type="button" class="row" role="menuitem" style=${r(s.key)}
+          @click=${()=>{o(!1),a(s.key)}}>
+          <span class="pk-tab-glyph" aria-hidden="true">${b(H(s.kind))}</span>
+          <span class="pk-tab-name">${s.label}</span><span class="pk-tab-count">${s.count}</span></button>`)}
       </div>`:d}
     </span>`}
-    ${i.shelf===void 0?d:s`<span class="pk-vsep" aria-hidden="true"></span>${p(i.shelf,"chip")}`}
-  </div>`}var j="not-on-a-device";function Xe(e){let t=[{key:"all",label:"All",kind:"all",count:e.total}];for(let n of e.devices)t.push({key:n.ownerId,label:n.name,kind:n.kind,count:e.countOf(n.ownerId)});return(e.shelved>0||e.current===j)&&t.push({key:j,label:f,kind:"library",count:e.shelved}),t}var I=new Set;function Je(e){return I.has(e)}function Qe(e,t){t?I.add(e):I.delete(e)}var L=new Map;function Ze(e,t){return t!==void 0&&L.get(e)===t}function et(e,t){t===void 0?L.delete(e):L.set(e,t)}var ce=3e4,x;function tt(e){x={ownerId:e,at:Date.now()}}function nt(){return x!==void 0&&Date.now()-x.at>ce&&(x=void 0),x?.ownerId}function ot(){x=void 0}var B=class{constructor(t){this.host=t;this.open=!1;this.toggle=(t=!this.open)=>{t!==this.open&&(this.open=t,t?window.addEventListener("pointerdown",this.outside,{capture:!0}):window.removeEventListener("pointerdown",this.outside,{capture:!0}),this.host.requestUpdate())};this.outside=t=>{t.composedPath().some(n=>n instanceof HTMLElement&&n.dataset.menu==="tabs")||this.toggle(!1)};t.addController(this)}hostDisconnected(){window.removeEventListener("pointerdown",this.outside,{capture:!0}),this.open=!1}},it=w`
+    ${i.shelf===void 0?d:l`<span class="pk-vsep" aria-hidden="true"></span>${p(i.shelf,"chip")}`}
+  </div>`}var j="not-on-a-device";function Ke(e){let t=[{key:"all",label:"All",kind:"all",count:e.total}];for(let n of e.devices)t.push({key:n.ownerId,label:n.name,kind:n.kind,count:e.countOf(n.ownerId)});return(e.shelved>0||e.current===j)&&t.push({key:j,label:f,kind:"library",count:e.shelved}),t}var P=new Set;function We(e){return P.has(e)}function qe(e,t){t?P.add(e):P.delete(e)}var I=new Map;function Ue(e,t){return t!==void 0&&I.get(e)===t}function Ve(e,t){t===void 0?I.delete(e):I.set(e,t)}var se=3e4,g;function Xe(e){g={ownerId:e,at:Date.now()}}function Je(){return g!==void 0&&Date.now()-g.at>se&&(g=void 0),g?.ownerId}function Qe(){g=void 0}var F=class{constructor(t){this.host=t;this.open=!1;this.toggle=(t=!this.open)=>{t!==this.open&&(this.open=t,t?window.addEventListener("pointerdown",this.outside,{capture:!0}):window.removeEventListener("pointerdown",this.outside,{capture:!0}),this.host.requestUpdate())};this.outside=t=>{t.composedPath().some(n=>n instanceof HTMLElement&&n.dataset.menu==="tabs")||this.toggle(!1)};t.addController(this)}hostDisconnected(){window.removeEventListener("pointerdown",this.outside,{capture:!0}),this.open=!1}},Ze=x`
   .pk-tabs {
     display: flex; align-items: stretch; flex-wrap: wrap; gap: 0 2px; flex: none;
     padding: 0 8px; border-bottom: 1px solid var(--wa-line);
@@ -410,4 +391,4 @@ import{a as A}from"./chunk-7ZD6TFZU.js";import{Ee as z,ph as m}from"./chunk-7YGC
   .pk-tab svg { width: 15px; height: 15px; }
   .pk-tab-glyph { display: inline-flex; flex: none; color: var(--dc, var(--wa-muted)); }
   .pk-tab-count { font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
-`;export{J as a,me as b,ge as c,xe as d,E as e,ne as f,ye as g,N as h,ke as i,ve as j,H as k,C as l,Te as m,f as n,$e as o,Pe as p,Me as q,Ie as r,ze as s,Ae as t,De as u,Oe as v,Ce as w,Ee as x,Ne as y,He as z,_e as A,Fe as B,je as C,Be as D,Ye as E,F,Ue as G,j as H,Xe as I,Je as J,Qe as K,Ze as L,et as M,tt as N,nt as O,ot as P,B as Q,it as R};
+`;export{X as a,de as b,ue as c,C as d,Z as e,ge as f,E as g,he as h,xe as i,N as j,O as k,be as l,f as m,we as n,ke as o,ye as p,ve as q,Ie as r,Le as s,Me as t,Se as u,Re as v,De as w,ze as x,Ae as y,Oe as z,Ce as A,Ee as B,Ne as C,_e as D,H as E,Ge as F,j as G,Ke as H,We as I,qe as J,Ue as K,Ve as L,Xe as M,Je as N,Qe as O,F as P,Ze as Q};

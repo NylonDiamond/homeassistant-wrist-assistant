@@ -1,9 +1,9 @@
 // Teach loops: a small watch that plays a screen's gesture on a loop, beside
 // the steps it shows, each step lit while the watch does it. They stand on a
 // screen while it has nothing in it yet (Pages, Status pages, Menus and the
-// Complications start page), and the bare watch plays in the tab's hover
-// card on a device's row (`watch-row.ts`). The Help sheet's "How it all fits"
-// list is here too (`renderHowItFits`), since it names the same parts.
+// Complications start page), at the top of the Help sheet for those screens,
+// and the bare watch plays in the tab's hover card on a device's row
+// (`watch-row.ts`).
 //
 // The watch is drawn, never a video: tiles, rings and fingers are boxes moved
 // by CSS keyframes, so it costs no file, matches the panel in both themes and
@@ -20,11 +20,9 @@
 // drift apart. The drawings' own keyframes follow the same windows by hand,
 // and `teach-loop.test.ts` holds the windows in order.
 
-import { css, html, nothing, svg, type SVGTemplateResult, type TemplateResult, unsafeCSS } from "lit";
+import { css, html, nothing, type TemplateResult, unsafeCSS } from "lit";
 import { generalCopy } from "./device-platform.js";
 import { screenHowTo } from "./screen-howto.js";
-import { uiIcon } from "./ui-icons.js";
-import type { BarTab } from "./shell.js";
 
 export type TeachLoopId = "pages" | "menus" | "status-pages" | "complications";
 
@@ -311,57 +309,6 @@ export function renderTeachCard(id: TeachLoopId, opts: { actions?: TemplateResul
   </section>`;
 }
 
-// ── How it all fits ──────────────────────────────────────────────────────
-
-export interface FitsNode {
-  tab: BarTab;
-  name: string;
-  /** One short line: how you reach it on the watch, and what it is. */
-  text: string;
-  /** Drawn under Pages: it opens from a page. */
-  branch?: boolean;
-  hue: string;
-}
-
-/** The parts in the order a person meets them on the watch. The Home map
- * only where its tab shows (`homeMap`). */
-export function fitsNodes(homeMap: boolean): FitsNode[] {
-  const nodes: FitsNode[] = [
-    { tab: "complications", name: "Complications", text: "On your watch face. A tap can open a page.", hue: "var(--wa-hue-green)" },
-    { tab: "pages", name: "Pages", text: "Screens of tiles you swipe between.", hue: "var(--wa-hue-blue)" },
-    { tab: "menus", name: "Menus", text: `Hold a tile. Turn the ${crown()} in the middle for the Anywhere menu.`, branch: true, hue: "var(--wa-hue-purple)" },
-    { tab: "status-pages", name: "Status pages", text: "Tap a status page tile. A list to read.", branch: true, hue: "var(--wa-hue-orange)" },
-  ];
-  if (homeMap) nodes.push({ tab: "home-map", name: "Home map", text: "Tap a Home map tile. Your plan with its devices.", branch: true, hue: "var(--wa-hue-pink)" });
-  return nodes;
-}
-
-const FITS_ART: Readonly<Record<string, SVGTemplateResult>> = {
-  "complications": svg`<rect x="5" y="3" width="14" height="18" rx="5"></rect><path d="M8.5 9h7"></path><circle cx="9.5" cy="15" r="1.6"></circle><circle cx="14.5" cy="15" r="1.6"></circle>`,
-  "pages": svg`<rect x="3" y="5" width="7.5" height="7.5" rx="2"></rect><rect x="13.5" y="5" width="7.5" height="7.5" rx="2"></rect><path d="M7 18h10M14 15l3 3-3 3"></path>`,
-  "menus": svg`<circle cx="12" cy="12" r="2.2"></circle><circle cx="12" cy="4.5" r="1.8"></circle><circle cx="19.5" cy="12" r="1.8"></circle><circle cx="12" cy="19.5" r="1.8"></circle><circle cx="4.5" cy="12" r="1.8"></circle>`,
-  "status-pages": svg`<path d="M9 6h11M9 12h11M9 18h8"></path><circle cx="4.5" cy="6" r="1"></circle><circle cx="4.5" cy="12" r="1"></circle><circle cx="4.5" cy="18" r="1"></circle>`,
-  "home-map": svg`<path d="M4 11l8-6.5 8 6.5"></path><path d="M6 9.5V20h12V9.5"></path><circle cx="12" cy="14.5" r="2"></circle>`,
-};
-
-/** The Help sheet's map of the parts, one short row each: Complications,
- * then Pages, then what opens from a page, set in under it. A row opens its
- * tab when `onGoTab` is given. It holds still: the loops are the motion. */
-export function renderHowItFits(homeMap: boolean, onGoTab: ((tab: BarTab) => void) | undefined): TemplateResult {
-  const row = (n: FitsNode) => {
-    const body = html`<span class="hf-chip" style=${`--hf-h:${n.hue}`}><svg viewBox="0 0 24 24" aria-hidden="true">${FITS_ART[n.tab]}</svg></span>
-      <span class="hf-t"><b>${n.name}</b><span>${n.text}</span></span>`;
-    return onGoTab === undefined
-      ? html`<div class="hf-row">${body}</div>`
-      : html`<button type="button" class="hf-row" title=${`Open the ${n.name} tab`} @click=${() => onGoTab(n.tab)}>${body}${uiIcon("right")}</button>`;
-  };
-  const nodes = fitsNodes(homeMap);
-  return html`<div class="hf">
-    ${nodes.filter((n) => n.branch !== true).map(row)}
-    <div class="hf-branch">${nodes.filter((n) => n.branch === true).map(row)}</div>
-  </div>`;
-}
-
 // ── styles ───────────────────────────────────────────────────────────────
 
 const LIT = "background: var(--wa-panel, var(--wa-raise)); color: var(--wa-ink); border-color: var(--wa-line-strong);";
@@ -614,19 +561,4 @@ export const teachStyles = css`
   .tl-mini .tl-watch { transform: scale(.6); transform-origin: top left; box-shadow: none; }
   .tl-mini .tl-crown { display: none; }
 
-  /* How it all fits: one row a part, still */
-  .hf { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .hf-row {
-    display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px;
-    border: 0; background: none; color: var(--wa-ink); font: inherit; text-align: left;
-  }
-  button.hf-row { cursor: pointer; }
-  button.hf-row:hover { background: var(--wa-hover); }
-  button.hf-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hf-row > svg.ui-icon { flex: none; width: 13px; height: 13px; color: var(--wa-muted); }
-  .hf-chip { flex: none; width: 24px; height: 24px; box-sizing: border-box; border-radius: 7px; border: 1.5px solid var(--hf-h); display: grid; place-items: center; }
-  .hf-chip svg { width: 14px; height: 14px; stroke: var(--wa-ink); fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-  .hf-t { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.35; color: var(--wa-muted); }
-  .hf-t b { font-weight: 500; color: var(--wa-ink); margin-right: 6px; }
-  .hf-branch { margin-left: 19px; padding-left: 8px; border-left: 1.5px solid var(--wa-line-strong); display: flex; flex-direction: column; gap: 2px; }
 `;
