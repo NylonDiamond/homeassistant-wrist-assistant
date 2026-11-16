@@ -165,7 +165,9 @@ export interface DeviceOwnRowInput {
  * Under a device's header on the Devices tab: Overview, then the device's
  * own screens, whichever is on show drawn in the device page below. It only
  * lists screens the device has, so an iPhone has no Voice. Nothing when the
- * device has none of them.
+ * device has none of them. Each tab carries a hue for its icon and for the
+ * one on show: Overview blue, Settings purple (grey elsewhere, too quiet for a
+ * tab), the rest their screen's own.
  */
 export function renderDeviceOwnRow(input: DeviceOwnRowInput): TemplateResult | typeof nothing {
   const links = input.kind === "iphone" && !input.phones ? [] : watchRowLinks(input.route, input.ownerId, input.kind);
@@ -181,9 +183,9 @@ export function renderDeviceOwnRow(input: DeviceOwnRowInput): TemplateResult | t
   };
   return html`<div class="hb-subnav">
     <nav class="wa-wr-links" aria-label=${`This ${word}'s own`}>
-      <a class="wa-wr-link ${overview ? "on" : ""}" href=${href(devicePath(input.ownerId))} aria-current=${overview ? "page" : "false"} style="--h: var(--wa-label)"
+      <a class="wa-wr-link ${overview ? "on" : ""}" href=${href(devicePath(input.ownerId))} aria-current=${overview ? "page" : "false"} style="--h: var(--wa-hue-blue)"
         @click=${go(devicePath(input.ownerId), overview)}><span class="wa-wr-ic" aria-hidden="true">${uiIcon("grid")}</span>Overview</a>
-      ${links.map((l) => html`<a class="wa-wr-link ${l.on ? "on" : ""}" href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${input.titleOf(l.screen) ?? nothing} style=${`--h: ${WATCH_SCREEN_LOOK[l.screen.id].hue}`}
+      ${links.map((l) => html`<a class="wa-wr-link ${l.on ? "on" : ""}" href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${input.titleOf(l.screen) ?? nothing} style=${`--h: ${l.screen.id === "settings" ? "var(--wa-hue-purple)" : WATCH_SCREEN_LOOK[l.screen.id].hue}`}
         @click=${go(l.path, l.on)}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(WATCH_SCREEN_LOOK[l.screen.id].icon)}</span>${l.screen.label}${unsaved.has(l.screen.id) ? unsavedDot() : nothing}</a>`)}
     </nav>
     ${input.end === undefined || input.end === nothing ? nothing : html`<div class="wa-wr-end hb-subnav-end">${input.end}</div>`}

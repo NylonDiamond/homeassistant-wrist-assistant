@@ -1830,8 +1830,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private deviceQueueHeld = false;
   /** Whether the one-time multi-select tip in the Layers card was put away. */
   @state() private layersTipSeen = readLayersTipSeen();
-  /** Whether the All tab's "Not on a device" row is open. */
-  @state() private pickerShelfOpen = false;
+  /** Whether the All tab's "Not on a device" row is open. It starts open, so
+   * a design on no device is seen without a click. */
+  @state() private pickerShelfOpen = true;
   /** "Delete empty…" is asking first. */
   @state() private pickerEmptyAsk = false;
   /** The open saved design as last seen by `syncDesignAddress`, to tell an
@@ -13435,9 +13436,9 @@ export class WristAssistantPanel extends LitElement {
         ${open ? this.renderPickerGroups(fold.shelved, ALL_DEVICES, undefined) : nothing}`}`;
   }
 
-  /** Whether the All tab draws the designs on no device: opened by hand, or
-   * because a search must not hide what it found, or because there is nothing
-   * else to show. */
+  /** Whether the All tab draws the designs on no device: open until folded by
+   * hand, and then still when a search must not hide what it found or there
+   * is nothing else to show. */
   private shelfShownOpen(query: string, rows: readonly PickerRow[]): boolean {
     return this.pickerShelfOpen || query !== "" || rows.every((row) => isShelvedRow(row));
   }
@@ -13476,7 +13477,7 @@ export class WristAssistantPanel extends LitElement {
   /**
    * The "Not on a device" row: how many, how many of those are empty, and the
    * one deliberate way to clear the empty ones. Real work comes first; this
-   * sits after it, closed, on the All tab. On the Not on a device chip's own
+   * sits after it, open until folded, on the All tab. On the Not on a device chip's own
    * page the designs are what was asked for, so it heads them, with no fold.
    *
    * Delete empty… asks in place, and the delete waits behind its toast with

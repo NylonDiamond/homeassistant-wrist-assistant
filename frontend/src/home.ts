@@ -762,7 +762,19 @@ export const homeStyles = css`
      style, as wide as its tabs, then at the right the save controls of the
      one on show. */
   .hb-subnav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-  .hb-subnav nav.wa-wr-links { flex: 0 1 auto; order: 0; }
+  .hb-subnav nav.wa-wr-links { flex: 0 1 auto; order: 0; gap: 4px; padding: 4px; border-radius: 13px; border-color: var(--wa-line-strong); }
+  /* These tabs are how a device's own screens are found, so they are larger
+     than the editors' row and each wears its screen's hue: on its icon always,
+     and on the outline and a faint fill of the one on show. */
+  .hb-subnav nav.wa-wr-links a.wa-wr-link { height: 36px; padding: 0 14px; gap: 8px; border-radius: 9px; font-size: 13.5px; font-weight: 500; color: var(--wa-soft); }
+  .hb-subnav nav.wa-wr-links a.wa-wr-link .wa-wr-ic { color: var(--h); }
+  .hb-subnav nav.wa-wr-links a.wa-wr-link .wa-wr-ic svg.ui-icon { width: 16px; height: 16px; }
+  .hb-subnav nav.wa-wr-links a.wa-wr-link:hover { color: var(--wa-ink); }
+  .hb-subnav nav.wa-wr-links a.wa-wr-link.on {
+    color: var(--wa-ink); font-weight: 600;
+    background: color-mix(in srgb, var(--h) 16%, var(--wa-card));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--h) 60%, transparent);
+  }
   .hb-subnav-end { margin-left: auto; }
   /* Settings, Rooms or Voice on show: the screen is the device's page, as wide
      as the page has room for, under the same header and tabs as Overview. */
