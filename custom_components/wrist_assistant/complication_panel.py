@@ -29,6 +29,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _STATIC_URL = f"/{DOMAIN}_static"
 _BUNDLE_NAME = "wrist-assistant-panel.js"
+_SIDEBAR_ICON_SCRIPT = "houselit-sidebar-icon.js"
+_SIDEBAR_ICON_URL_KEY = f"{DOMAIN}_sidebar_icon_url"
 _WEBCOMPONENT = "wrist-assistant-panel"
 
 
@@ -38,6 +40,22 @@ def _frontend_dir() -> Path:
 
 def _bundle_digest(bundle: Path) -> str:
     return hashlib.sha256(bundle.read_bytes()).hexdigest()[:12]
+
+
+def _set_sidebar_icon_url(hass: HomeAssistant, url: str | None) -> None:
+    previous_url = hass.data.get(_SIDEBAR_ICON_URL_KEY)
+    if previous_url == url:
+        return
+
+    if previous_url is not None:
+        frontend.remove_extra_js_url(hass, previous_url)
+        frontend.remove_extra_js_url(hass, previous_url, es5=True)
+        hass.data.pop(_SIDEBAR_ICON_URL_KEY)
+
+    if url is not None:
+        frontend.add_extra_js_url(hass, url)
+        frontend.add_extra_js_url(hass, url, es5=True)
+        hass.data[_SIDEBAR_ICON_URL_KEY] = url
 
 
 async def _async_serve_bundle_directory(hass: HomeAssistant) -> bool:
@@ -93,6 +111,20 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
     # stale copy until the next version bump.
     digest = await hass.async_add_executor_job(_bundle_digest, bundle)
 
+    # Load the icon with the Home Assistant shell so it is available on pages
+    # that have not loaded the panel bundle.
+    icon_script = _frontend_dir() / _SIDEBAR_ICON_SCRIPT
+    try:
+        icon_digest = await hass.async_add_executor_job(_bundle_digest, icon_script)
+        icon_url = f"{_STATIC_URL}/{_SIDEBAR_ICON_SCRIPT}?v={icon_digest}"
+        sidebar_icon = "houselit:eave-fold"
+    except OSError:
+        _LOGGER.warning("HouseLit sidebar icon script unavailable at %s", icon_script)
+        icon_url = None
+        sidebar_icon = "mdi:home-lightbulb"
+
+    _set_sidebar_icon_url(hass, icon_url)
+
     # `panel_custom.async_register_panel` raises ValueError when the path is
     # already registered, so drop the previous registration first. A second
     # `async_setup_entry` without an intervening unload (a reload that failed
@@ -108,7 +140,7 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
             frontend_url_path=PANEL_URL_PATH,
             module_url=f"{_STATIC_URL}/{_BUNDLE_NAME}?v={version}-{digest}",
             sidebar_title="HouseLit",
-            sidebar_icon="mdi:watch-variant",
+            sidebar_icon=sidebar_icon,
             # Every signed-in user, so each household member can look after
             # their own devices. What each command allows is decided per
             # command (see panel_access.py), not here.
@@ -116,8 +148,10 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
             config={"version": version},
         )
     except ValueError as err:
+        _set_sidebar_icon_url(hass, None)
         _LOGGER.warning("HouseLit sidebar panel not registered: %s", err)
 
 
 def async_remove_panel(hass: HomeAssistant) -> None:
     frontend.async_remove_panel(hass, PANEL_URL_PATH)
+    _set_sidebar_icon_url(hass, None)
