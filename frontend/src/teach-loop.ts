@@ -3,7 +3,7 @@
 // screen while it has nothing in it yet (Pages, Status pages, Menus and the
 // Complications start page), and the bare watch plays in the tab's hover
 // card on a device's row (`watch-row.ts`). The Help sheet's "How it all fits"
-// map is here too (`renderHowItFits`), since it names the same parts.
+// list is here too (`renderHowItFits`), since it names the same parts.
 //
 // The watch is drawn, never a video: tiles, rings and fingers are boxes moved
 // by CSS keyframes, so it costs no file, matches the panel in both themes and
@@ -23,6 +23,7 @@
 import { css, html, nothing, svg, type SVGTemplateResult, type TemplateResult, unsafeCSS } from "lit";
 import { generalCopy } from "./device-platform.js";
 import { screenHowTo } from "./screen-howto.js";
+import { uiIcon } from "./ui-icons.js";
 import type { BarTab } from "./shell.js";
 
 export type TeachLoopId = "pages" | "menus" | "status-pages" | "complications";
@@ -315,10 +316,9 @@ export function renderTeachCard(id: TeachLoopId, opts: { actions?: TemplateResul
 export interface FitsNode {
   tab: BarTab;
   name: string;
+  /** One short line: how you reach it on the watch, and what it is. */
   text: string;
-  /** How you get here from the node above it, drawn on the line between. */
-  from?: string;
-  /** Drawn on the branch under Pages. */
+  /** Drawn under Pages: it opens from a page. */
   branch?: boolean;
   hue: string;
 }
@@ -327,12 +327,12 @@ export interface FitsNode {
  * only where its tab shows (`homeMap`). */
 export function fitsNodes(homeMap: boolean): FitsNode[] {
   const nodes: FitsNode[] = [
-    { tab: "complications", name: "Complications", text: "On your watch face. A complication shows a value, and a tap can open a page.", hue: "var(--wa-hue-green)" },
-    { tab: "pages", name: "Pages", text: "Screens of tiles. Swipe between them. Tap a tile to use it.", from: "tap", hue: "var(--wa-hue-blue)" },
-    { tab: "menus", name: "Menus", text: `Hold a tile for its menu. Slide to the middle and turn the ${crown()} for the Anywhere menu.`, from: "hold a tile", branch: true, hue: "var(--wa-hue-purple)" },
-    { tab: "status-pages", name: "Status pages", text: "A list to read at a glance. It only shows things.", from: "tap a status page tile", branch: true, hue: "var(--wa-hue-orange)" },
+    { tab: "complications", name: "Complications", text: "On your watch face. A tap can open a page.", hue: "var(--wa-hue-green)" },
+    { tab: "pages", name: "Pages", text: "Screens of tiles you swipe between.", hue: "var(--wa-hue-blue)" },
+    { tab: "menus", name: "Menus", text: `Hold a tile. Turn the ${crown()} in the middle for the Anywhere menu.`, branch: true, hue: "var(--wa-hue-purple)" },
+    { tab: "status-pages", name: "Status pages", text: "Tap a status page tile. A list to read.", branch: true, hue: "var(--wa-hue-orange)" },
   ];
-  if (homeMap) nodes.push({ tab: "home-map", name: "Home map", text: `Your plan with a pin for each device. Turn the ${crown()} to zoom.`, from: "tap a Home map tile", branch: true, hue: "var(--wa-hue-pink)" });
+  if (homeMap) nodes.push({ tab: "home-map", name: "Home map", text: "Tap a Home map tile. Your plan with its devices.", branch: true, hue: "var(--wa-hue-pink)" });
   return nodes;
 }
 
@@ -344,25 +344,21 @@ const FITS_ART: Readonly<Record<string, SVGTemplateResult>> = {
   "home-map": svg`<path d="M4 11l8-6.5 8 6.5"></path><path d="M6 9.5V20h12V9.5"></path><circle cx="12" cy="14.5" r="2"></circle>`,
 };
 
-/** The Help sheet's map of the parts: each one, how you reach it from the
- * one above, and a link to the tab that makes it. A light walks down it, two
- * seconds a part, and stops while the pointer is on it. */
+/** The Help sheet's map of the parts, one short row each: Complications,
+ * then Pages, then what opens from a page, set in under it. A row opens its
+ * tab when `onGoTab` is given. It holds still: the loops are the motion. */
 export function renderHowItFits(homeMap: boolean, onGoTab: ((tab: BarTab) => void) | undefined): TemplateResult {
+  const row = (n: FitsNode) => {
+    const body = html`<span class="hf-chip" style=${`--hf-h:${n.hue}`}><svg viewBox="0 0 24 24" aria-hidden="true">${FITS_ART[n.tab]}</svg></span>
+      <span class="hf-t"><b>${n.name}</b><span>${n.text}</span></span>`;
+    return onGoTab === undefined
+      ? html`<div class="hf-row">${body}</div>`
+      : html`<button type="button" class="hf-row" title=${`Open the ${n.name} tab`} @click=${() => onGoTab(n.tab)}>${body}${uiIcon("right")}</button>`;
+  };
   const nodes = fitsNodes(homeMap);
-  const node = (n: FitsNode, i: number) => html`
-    ${n.from === undefined ? nothing : html`<div class="hf-arrow">${n.from}</div>`}
-    <div class="hf-node hf-n${i + 1}" style=${`--hf-h:${n.hue}`}>
-      <span class="hf-chip"><svg viewBox="0 0 24 24" aria-hidden="true">${FITS_ART[n.tab]}</svg></span>
-      <span class="hf-t"><b>${n.name}</b><span>${n.text}</span>
-        ${onGoTab === undefined ? nothing : html`<button type="button" class="hf-make" @click=${() => onGoTab(n.tab)}>Make it in ${n.name}</button>`}
-      </span>
-    </div>`;
-  const top = nodes.filter((n) => n.branch !== true);
-  const under = nodes.filter((n) => n.branch === true);
-  return html`<div class="hf hf-of${nodes.length}">
-    <p class="hf-lead">Every part ends up on your watch. This is the order you meet them.</p>
-    ${top.map((n) => node(n, nodes.indexOf(n)))}
-    <div class="hf-branch">${under.map((n) => node(n, nodes.indexOf(n)))}</div>
+  return html`<div class="hf">
+    ${nodes.filter((n) => n.branch !== true).map(row)}
+    <div class="hf-branch">${nodes.filter((n) => n.branch === true).map(row)}</div>
   </div>`;
 }
 
@@ -382,22 +378,6 @@ function stepCss(): string {
       return `@keyframes ${name} { ${before}${Math.max(0, from)}%, ${to}% { ${LIT} }${after} }
 .tl-${id} .tl-s${i + 1} { animation: ${name} var(--tl-t) infinite; }`;
     }).join("\n");
-  }).join("\n");
-}
-
-/** The Help map's walking light for 4 or 5 parts. */
-function walkCss(): string {
-  return [4, 5].map((count) => {
-    const span = 100 / count;
-    const rules = Array.from({ length: count }, (_, i) => {
-      const a = Math.round(i * span);
-      const b = Math.round((i + 1) * span) - 2;
-      const name = `hf-walk-${count}-${i + 1}`;
-      const before = a === 0 ? "" : `0%, ${a - 1}% { background: transparent; border-color: transparent; } `;
-      return `@keyframes ${name} { ${before}${a}%, ${b}% { background: var(--wa-hover); border-color: var(--wa-line-strong); } ${b + 1}%, 100% { background: transparent; border-color: transparent; } }
-.hf-of${count} .hf-n${i + 1} { animation: ${name} ${count * 2}s infinite; }`;
-    });
-    return rules.join("\n");
   }).join("\n");
 }
 
@@ -634,24 +614,19 @@ export const teachStyles = css`
   .tl-mini .tl-watch { transform: scale(.6); transform-origin: top left; box-shadow: none; }
   .tl-mini .tl-crown { display: none; }
 
-  /* How it all fits */
-  .hf { display: flex; flex-direction: column; min-width: 0; }
-  .hf-lead { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--wa-label); }
-  .hf-node { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px; border-radius: 11px; border: 1px solid transparent; }
-  .hf:hover .hf-node { animation-play-state: paused; }
-  .hf-chip { width: 34px; height: 34px; box-sizing: border-box; border-radius: 10px; border: 1.5px solid var(--hf-h); display: grid; place-items: center; }
-  .hf-chip svg { width: 18px; height: 18px; stroke: var(--wa-ink); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .hf-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; color: var(--wa-label); line-height: 1.45; }
-  .hf-t b { font-size: 13px; font-weight: 500; color: var(--wa-ink); }
-  button.hf-make {
-    align-self: flex-start; margin-top: 4px; padding: 1px 8px; border-radius: 6px; font: inherit; font-size: 11.5px; cursor: pointer;
-    border: 1px solid color-mix(in srgb, var(--hf-h) 45%, transparent); background: none; color: var(--wa-ink);
+  /* How it all fits: one row a part, still */
+  .hf { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hf-row {
+    display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px;
+    border: 0; background: none; color: var(--wa-ink); font: inherit; text-align: left;
   }
-  button.hf-make:hover { background: var(--wa-hover); }
-  button.hf-make:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hf-arrow { display: flex; align-items: center; gap: 8px; padding: 1px 0 1px 24px; font-size: 11px; color: var(--wa-muted); }
-  .hf-arrow::before { content: ""; width: 1.5px; height: 16px; background: var(--wa-line-strong); margin-right: 4px; }
-  .hf-branch { margin-left: 24px; padding-left: 8px; border-left: 1.5px solid var(--wa-line-strong); }
-  ${unsafeCSS(walkCss())}
-  @media (prefers-reduced-motion: reduce) { .hf .hf-node { animation: none !important; } }
+  button.hf-row { cursor: pointer; }
+  button.hf-row:hover { background: var(--wa-hover); }
+  button.hf-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hf-row > svg.ui-icon { flex: none; width: 13px; height: 13px; color: var(--wa-muted); }
+  .hf-chip { flex: none; width: 24px; height: 24px; box-sizing: border-box; border-radius: 7px; border: 1.5px solid var(--hf-h); display: grid; place-items: center; }
+  .hf-chip svg { width: 14px; height: 14px; stroke: var(--wa-ink); fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .hf-t { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.35; color: var(--wa-muted); }
+  .hf-t b { font-weight: 500; color: var(--wa-ink); margin-right: 6px; }
+  .hf-branch { margin-left: 19px; padding-left: 8px; border-left: 1.5px solid var(--wa-line-strong); display: flex; flex-direction: column; gap: 2px; }
 `;

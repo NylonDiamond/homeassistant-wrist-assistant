@@ -88,11 +88,12 @@ describe("how it all fits", () => {
     expect(fitsNodes(true)[0]!.tab).toBe("complications");
   });
 
-  it("offers a Make it in link only when it can open a tab", () => {
-    expect(flat(renderHowItFits(false, undefined))).not.toContain("hf-make");
+  it("makes each row a button to its tab only when it can open one, and holds still", () => {
+    expect(flat(renderHowItFits(false, undefined))).not.toContain("<button");
     const markup = flat(renderHowItFits(false, () => {}));
-    expect(markup).toContain("Make it in Pages");
-    expect(markup).toContain("hf-of4");
-    expect(flat(renderHowItFits(true, () => {}))).toContain("hf-of5");
+    expect(markup).toContain("Open the Pages tab");
+    expect(markup.match(/class="hf-row"/g)?.length).toBe(4);
+    expect(flat(renderHowItFits(true, () => {})).match(/class="hf-row"/g)?.length).toBe(5);
+    expect(teachStyles.cssText).not.toContain("hf-walk");
   });
 });
