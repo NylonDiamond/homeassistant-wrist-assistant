@@ -823,11 +823,6 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up HouseLit from a config entry."""
-    # The product was renamed to HouseLit. An entry made before keeps the title
-    # it was made with, so it is renamed here once. A title the person chose
-    # themselves stays as it is.
-    if entry.title == "Wrist Assistant":
-        hass.config_entries.async_update_entry(entry, title="HouseLit")
     coordinator = DeltaCoordinator(hass)
     # The coordinator listens to state changes from its constructor. Home
     # Assistant runs the on_unload callbacks of a setup that fails partway,
@@ -835,6 +830,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # that listener running. A normal unload shuts it down too, and a second
     # shutdown does nothing.
     entry.async_on_unload(coordinator.async_shutdown)
+    # The product was renamed to HouseLit. An entry made before keeps the title
+    # it was made with, so it is renamed here once. A title the person chose
+    # themselves stays as it is.
+    if entry.title == "Wrist Assistant":
+        hass.config_entries.async_update_entry(entry, title="HouseLit")
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
     await notification_store.async_load()
