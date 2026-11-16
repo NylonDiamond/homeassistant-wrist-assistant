@@ -548,7 +548,7 @@ export class PairWatchCard {
       const reply = await offerPairQr(hass, pairUserToSend(userId, hass.user?.id), replace);
       offerId = reply.offer_id;
       const url = appLink(reply.url);
-      if (url === undefined) throw new Error("the integration sent a link that is not for Wrist Assistant");
+      if (url === undefined) throw new Error("the integration sent a link that is not for HouseLit");
       // The code holds the web address, which opens the app from the
       // Camera; the Open in app link keeps the app's own link.
       const picture = await qrPicture(pairQrLink(url) ?? url);

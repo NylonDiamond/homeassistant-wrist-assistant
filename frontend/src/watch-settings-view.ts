@@ -1738,7 +1738,7 @@ export class WatchSettings implements ReactiveController {
       ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
         title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
       ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
-        title=${changes > 0 ? `Save (${SAVE_KEY}). Then open Wrist Assistant on the ${this.noun} to get these settings.` : `Nothing to save (${SAVE_KEY})`}
+        title=${changes > 0 ? `Save (${SAVE_KEY}). Then open HouseLit on the ${this.noun} to get these settings.` : `Nothing to save (${SAVE_KEY})`}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>`}
     </div>`;
   }

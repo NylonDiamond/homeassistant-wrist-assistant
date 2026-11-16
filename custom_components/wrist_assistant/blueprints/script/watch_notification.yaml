@@ -1,6 +1,6 @@
 blueprint:
   name: "Watch Notification"
-  author: "Wrist Assistant"
+  author: "HouseLit"
   homeassistant:
     min_version: "2024.8.0"
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
@@ -97,7 +97,7 @@ blueprint:
             stream).
 
 
-            **Requires the Wrist Assistant iOS app v2.1.0 or newer.** Older
+            **Requires the HouseLit iOS app v2.1.0 or newer.** Older
             versions won't display the snapshot; the live stream on iPhone
             needs **v2.3.0 or newer** (older versions keep the snapshot).
             Every version of the Android apps shows it. Also requires remote
@@ -161,7 +161,7 @@ blueprint:
           description: >
             When on (the default), the Apple Watch notification replaces the
             snapshot with a live view of the camera while the notification is
-            showing (requires a recent Wrist Assistant watch app update).
+            showing (requires a recent HouseLit watch app update).
             Tapping the image still opens the full-screen live stream in the
             app. A Wear OS watch shows the snapshot in the notification and
             the live stream after a tap. Turn off to keep the snapshot from the moment the event
@@ -308,25 +308,25 @@ blueprint:
       name: "⚙️ Settings"
       collapsed: true
       description: >
-        **Not getting notifications?** The first time you open Wrist
-        Assistant on your Apple Watch it asks for notification permission:
+        **Not getting notifications?** The first time you open HouseLit
+        on your Apple Watch it asks for notification permission:
         tap Allow. If you declined it, watchOS won't ask again and there's no
-        Settings toggle to turn it back on. Delete Wrist Assistant from
+        Settings toggle to turn it back on. Delete HouseLit from
         your watch, reinstall it, then tap Allow when it asks. An Android
         phone and a Wear OS watch ask too; if you declined there, turn
-        notifications back on in that device's Settings, Apps, Wrist
-        Assistant, Notifications.
+        notifications back on in that device's Settings, Apps, HouseLit,
+        Notifications.
 
 
         Notifications default to **Fast** delivery, which mirrors from your
         phone: an Apple Watch's from your iPhone, a Wear OS watch's from
         your Android phone (Android copies the phone's notification to the
         watch). Your watch gets nothing when you're away from your phone,
-        and the Wrist Assistant phone app must also have notifications
-        allowed (iPhone Settings, Notifications, Wrist Assistant; on
-        Android, Settings, Apps, Wrist Assistant, Notifications). For alerts
+        and the HouseLit phone app must also have notifications
+        allowed (iPhone Settings, Notifications, HouseLit; on
+        Android, Settings, Apps, HouseLit, Notifications). For alerts
         that reach your wrist on their own, switch to **Reliable** under
-        **Wrist Assistant** in the sidebar, Watch app, Settings,
+        **HouseLit** in the sidebar, Watch app, Settings,
         Notifications. On an Apple Watch, Reliable arrives in about a second
         when your iPhone isn't connected, but can take up to about 15
         seconds when it is (an Apple delivery quirk outside the app's
@@ -336,12 +336,12 @@ blueprint:
 
 
         If Home Assistant says a device **has not registered for
-        notifications yet**, open Wrist Assistant on it and let it sync
+        notifications yet**, open HouseLit on it and let it sync
         once. If needed, close and reopen the app, then try again.
 
 
-        **Tip:** Change how notifications look and behave under **Wrist
-        Assistant** in the sidebar, Watch app, Settings, Notifications.
+        **Tip:** Change how notifications look and behave under **HouseLit**
+        in the sidebar, Watch app, Settings, Notifications.
       input:
         auto_dismiss:
           name: Auto-Dismiss
@@ -374,7 +374,7 @@ blueprint:
             notification shade, Active and Time Sensitive pop up on the screen
             with the phone's or watch's usual sound and buzz, and Time Sensitive
             passes Do Not Disturb only when Android's Do Not Disturb settings let
-            Wrist Assistant through.
+            HouseLit through.
           default: "active"
           selector:
             select:
@@ -396,7 +396,7 @@ blueprint:
             apply in Reliable delivery mode. In Fast mode, watchOS ignores the
             chosen sound and always plays its default alert (a silent mirrored
             notification reaches the wrist with no haptic, so it would be
-            missed entirely). Set the mode under **Wrist Assistant** in the
+            missed entirely). Set the mode under **HouseLit** in the
             sidebar, Watch app, Settings, Notifications.
 
 

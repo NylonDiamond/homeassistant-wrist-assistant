@@ -21,7 +21,7 @@ export const CLIENT_CERT_HELP =
 
 /** In place of the card's body on an integration from before the panel kept
  * certificates, which does not know the commands at all. */
-export const CLIENT_CERT_UPDATE_TEXT = "Update the Wrist Assistant integration to add a client certificate here.";
+export const CLIENT_CERT_UPDATE_TEXT = "Update the HouseLit integration to add a client certificate here.";
 
 /** The title of the menu that picks whose certificate the card shows. */
 export const CLIENT_CERT_FOR_TITLE = "For";

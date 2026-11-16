@@ -130,7 +130,7 @@ export function homeMapRefusalText(err: unknown, doc?: HomeMapDocument): string 
     case "invalid_format":
       return "Not saved. Home Assistant could not read the map sent. Reload the page and try again.";
     case "unknown_command":
-      return "Not saved. Update the Wrist Assistant integration to save the map here.";
+      return "Not saved. Update the HouseLit integration to save the map here.";
     case "unavailable":
     case "timeout":
       return "Not saved. Home Assistant could not be reached. Try again in a moment.";
@@ -149,7 +149,7 @@ export function homeMapReadFailText(err: unknown): string {
     case "unauthorized":
       return "Home Assistant did not let this login read it. Sign in again.";
     case "unavailable":
-      return "Wrist Assistant is still starting. Try again in a moment.";
+      return "HouseLit is still starting. Try again in a moment.";
     case undefined:
       return "Home Assistant could not be reached. Check the connection and try again.";
     default:

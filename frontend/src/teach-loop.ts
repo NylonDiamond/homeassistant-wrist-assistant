@@ -110,7 +110,7 @@ export const TEACH_LOOPS: Readonly<Record<TeachLoopId, TeachLoop>> = {
     get groups() {
       return [{ title: "On your watch", steps: [
         generalCopy("**Touch and hold** the watch face. Tap **Edit**.", "**Touch and hold** the watch face. Tap **Edit** or **Customize**."),
-        "**Pick** a spot, then pick **Wrist Assistant**.",
+        "**Pick** a spot, then pick **HouseLit**.",
         "**Tap** it to run its tap action, like opening a page.",
       ] }];
     },
@@ -240,7 +240,7 @@ function drawComplications(): TemplateResult {
     <div class="tl-editpill">Edit</div>
     <div class="tl-picker">
       <div class="tl-prow"><i></i>Activity</div>
-      <div class="tl-prow tl-wa"><i></i>Wrist Assistant</div>
+      <div class="tl-prow tl-wa"><i></i>HouseLit</div>
       <div class="tl-prow"><i></i>Weather</div>
     </div>
     <div class="tl-jump"><div class="tl-clock">10:09</div><div class="tl-grid">

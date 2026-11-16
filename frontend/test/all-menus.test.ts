@@ -136,7 +136,7 @@ describe("the tab's words", () => {
     // Someone who is not an administrator reads how, with no hover to find it.
     expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(false))).toBe("None yet. Open your watch or phone's tab, then use New menu to make its first one.");
     expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(true))).toBe("None yet. Use New menu to make one.");
-    expect(menusEmptyText(DEVICES, "", true)).toBe("None yet. Update Wrist Assistant on your iPhone and open it once. Its menus move here by themselves.");
+    expect(menusEmptyText(DEVICES, "", true)).toBe("None yet. Update HouseLit on your iPhone and open it once. Its menus move here by themselves.");
     expect(noMenuText(JESSE_D, "", true)).toBe(`No menus from ${JESSE_D.name} yet. ${WAIT_FOR_IPHONE_TEXT}`);
     expect(noMenuText(JESSE_D, "", false)).toBe(`${JESSE_D.name} uses no menu yet.`);
     expect(noMenuText(JESSE_D, "zz", true)).toBe(`No menu ${JESSE_D.name} uses has that name.`);
@@ -145,7 +145,7 @@ describe("the tab's words", () => {
     const old = { ...JESSE_D, appVersion: "3.0.1" };
     const withOld = [DEVICES[0]!, old, PHONE_D];
     expect(menusEmptyText(withOld, "", new Set([old.ownerId])))
-      .toBe("None yet. Needs Wrist Assistant 3.2 or later. Once your iPhone has it, open the app once and its menus move here by themselves.");
+      .toBe("None yet. Needs HouseLit 3.2 or later. Once your iPhone has it, open the app once and its menus move here by themselves.");
     expect(menusEmptyText(withOld, "", new Set([DEVICES[0]!.ownerId]))).toBe(menusEmptyText(DEVICES, "", true));
     expect(noMenuText(old, "", true)).toBe(`No menus from ${old.name} yet. ${WAIT_FOR_UPDATE_TEXT}`);
     expect(menusWaitText("3.0.1")).toBe(`${WAIT_FOR_UPDATE_TEXT} Its menus can change after that.`);

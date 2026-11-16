@@ -1,8 +1,8 @@
-# Wrist Assistant for Home Assistant
+# HouseLit for Home Assistant
 
-Official Home Assistant integration for the [Wrist Assistant](https://apps.apple.com/us/app/wrist-assistant/id6759152098) Apple Watch app.
+Official Home Assistant integration for the [HouseLit](https://apps.apple.com/us/app/wrist-assistant/id6759152098) Apple Watch app.
 
-Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, real-time sync, native watch notifications, and tons of other features.
+HouseLit connects your Apple Watch to Home Assistant with fast setup, real-time sync, native watch notifications, and tons of other features.
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/wrist-assistant/id6759152098">
@@ -16,7 +16,7 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 ## What it does
 
 - Pairs your watch with Home Assistant, through the iPhone app or with a code shown on the watch
-- Adds the Wrist Assistant panel to the Home Assistant sidebar, where you build the watch's complications, widgets, pages, settings and menus
+- Adds the HouseLit panel to the Home Assistant sidebar, where you build the watch's complications, widgets, pages, settings and menus
 - Keeps your watch and Home Assistant in real-time sync with a delta protocol so the watch stays fast and responsive on cellular, Wi-Fi, or iPhone-relay
 - Supports 50+ Home Assistant entity types in the app, including lights, switches, locks, covers, valves, climate, fans, scenes, scripts, media players, vacuums, lawn mowers, water heaters, humidifiers, cameras, alarm panels, remotes, timers, sirens, updates, weather, calendars, todo lists, sensors, binary sensors, buttons, numbers, selects, input helpers, counters, device trackers, zones, events, images, automations, and persons
 - Shows watch-optimized camera previews, live streams, and batched multi-camera views
@@ -33,7 +33,7 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 
 The iPhone app is the easy path.
 
-1. Install the Wrist Assistant iPhone app.
+1. Install the HouseLit iPhone app.
 2. Follow the onboarding steps in the app.
 3. The iPhone app installs the Home Assistant integration through HACS for you. Home Assistant 2026.11 and later block HACS, so there install it from Marketplace (below) first.
 
@@ -41,28 +41,28 @@ A watch can also pair on its own, without the iPhone app. Install the integratio
 
 ### Marketplace (Home Assistant 2026.11 and later)
 
-Home Assistant 2026.11 replaces HACS with Marketplace, which is built in, and no longer loads HACS. Wrist Assistant is in its catalog, so you need no GitHub account.
+Home Assistant 2026.11 replaces HACS with Marketplace, which is built in, and no longer loads HACS. HouseLit is in its catalog, so you need no GitHub account.
 
 1. Go to `Settings` -> `Marketplace`. The first time, read and accept its warning.
-2. Search for `Wrist Assistant`.
-3. Install it. Marketplace offers to add the integration by itself, so go through its dialog. If it does not offer that, restart Home Assistant, go to `Settings` -> `Devices & Services`, and add the `Wrist Assistant` integration.
-4. Open `Wrist Assistant` in the sidebar, then on the Devices tab press `Pair`.
+2. Search for `HouseLit`.
+3. Install it. Marketplace offers to add the integration by itself, so go through its dialog. If it does not offer that, restart Home Assistant, go to `Settings` -> `Devices & Services`, and add the `HouseLit` integration.
+4. Open `HouseLit` in the sidebar, then on the Devices tab press `Pair`.
 
 ### HACS (Home Assistant before 2026.11)
 
 1. Open HACS.
 2. Go to `Integrations`.
-3. Search for `Wrist Assistant`.
+3. Search for `HouseLit`.
 4. Install it and restart Home Assistant.
 5. Go to `Settings` -> `Devices & Services`.
-6. Add the `Wrist Assistant` integration.
-7. Open `Wrist Assistant` in the sidebar, then on the Devices tab press `Pair`.
+6. Add the `HouseLit` integration.
+7. Open `HouseLit` in the sidebar, then on the Devices tab press `Pair`.
 
 ### Manual
 
 1. Copy `custom_components/wrist_assistant` into your Home Assistant `custom_components` folder.
 2. Restart Home Assistant.
-3. Add the `Wrist Assistant` integration from `Settings` -> `Devices & Services`.
+3. Add the `HouseLit` integration from `Settings` -> `Devices & Services`.
 
 ### Removing the integration
 
@@ -70,9 +70,9 @@ Deleting the integration in `Settings` -> `Devices & Services` keeps everything 
 
 To remove a single watch or iPhone for good, open it on the panel's Devices tab and choose `Remove device`, or delete its device in Home Assistant. To wipe everything, delete the integration, stop Home Assistant, delete every file and folder whose name starts with `wrist_assistant` in the `.storage` folder of your configuration directory, and start Home Assistant again.
 
-## The Wrist Assistant panel
+## The HouseLit panel
 
-The integration adds a `Wrist Assistant` page to the Home Assistant sidebar. Everyone who signs in to Home Assistant sees it and manages their own devices. Administrators can also pair a device for someone else.
+The integration adds a `HouseLit` page to the Home Assistant sidebar. Everyone who signs in to Home Assistant sees it and manages their own devices. Administrators can also pair a device for someone else.
 
 The panel has six tabs:
 
@@ -85,20 +85,20 @@ A watch picks up a save the next time it checks. If the watch has none yet, the 
 
 A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, the watch's `Settings` says so instead of offering them.
 
-Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
+Pro can be bought on the watch (`Settings`, `HouseLit Pro`) or on the iPhone.
 
 ### Pairing a device
 
 On the Devices tab, press `Pair`. The same card is also on a watch's `Settings`, under `Pairing and security`. It pairs two ways:
 
-1. **An iPhone: `Show a QR code`.** On the iPhone, open Wrist Assistant, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code.
+1. **An iPhone: `Show a QR code`.** On the iPhone, open HouseLit, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code.
 2. **A watch, or an iPhone, with a code: `Type a code`.** On the device, choose `Pair with Home Assistant`. It shows a six character code. Type it in the panel and choose `Look up`, check that the device named is yours, then press `Pair`. Codes last 10 minutes.
 
 A device you pair is yours. An administrator can pick someone else under `Whose watch is this?`.
 
 If your Home Assistant sits behind a proxy that asks for a client certificate (mTLS), import it once in the iPhone app. The phone hands it to Home Assistant, which keeps it for your Home Assistant user, and each of your watches gets it from there, including a watch paired with a code. You can also upload it in the panel, on a watch's `Settings`, under `Pairing and security`. A watch fetches it over a path the proxy does not guard, so pair it on your home address the first time. The certificate and its password are stored privately and never appear in a diagnostics download.
 
-A watch can send its logs to Home Assistant from `Connection Health` on the watch. To read them, open the watch's device page (`Settings` -> `Devices & Services` -> `Wrist Assistant`) and choose `Download diagnostics`. Tokens, passwords and the certificate are removed from the download.
+A watch can send its logs to Home Assistant from `Connection Health` on the watch. To read them, open the watch's device page (`Settings` -> `Devices & Services` -> `HouseLit`) and choose `Download diagnostics`. Tokens, passwords and the certificate are removed from the download.
 
 ## Beta versions
 
@@ -113,7 +113,7 @@ downloaded repository, and ships it disabled so nobody lands on a beta by accide
 Turning it on is a one-time job.
 
 1. Go to `Settings` -> `Devices & Services` -> `Marketplace` (or `HACS`) and open its devices list.
-2. Open the `Wrist Assistant` device.
+2. Open the `HouseLit` device.
 3. On the Diagnostic card, click `+1 disabled entity`, then click `Pre-release`.
 4. Open the settings gear and press `Enable`. Wait about 30 seconds.
 5. Turn the `Pre-release` switch on.
@@ -148,18 +148,18 @@ The blueprint is easier to set up in the UI and lets you choose a watch or phone
 
 If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches, through Apple's push service for an Apple Watch or iPhone and Google's (Firebase Cloud Messaging) for a Wear OS watch or Android phone.
 
-`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`), or a phone's (an iPhone or an Android phone) to send to that phone alone. Omit `target` to broadcast to every paired watch.
+`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `HouseLit`), or a phone's (an iPhone or an Android phone) to send to that phone alone. Omit `target` to broadcast to every paired watch.
 
 A watch set to Fast gets its alerts through the phones of the same Home Assistant user, which mirror them to the wrist: an Apple Watch through the iPhones, a Wear OS watch through the Android phones, never across the two. A watch set to Reliable, or one whose user has no phone of its kind with the app, gets them directly. Each phone gets an alert once, however many of its user's watches it is for.
 
 Icons in `actions` are SF Symbol names; the Android apps draw each as the matching Material icon. The named sounds play on Android phones and Wear OS watches too, at Active and Time sensitive priority; Critical keeps the alarm sound there, and a custom file name plays the priority's own sound. Silent drops the sound there and keeps the buzz; use `priority: passive` for an alert that waits quietly in the shade.
 
-If you see `<device> has not registered for notifications yet`, that watch or phone has not checked in for notifications. Open Wrist Assistant on it and let it fully sync once, then try the notification again. `No watch has registered for notifications yet` means no paired watch has: pair one first (see "Pairing a device").
+If you see `<device> has not registered for notifications yet`, that watch or phone has not checked in for notifications. Open HouseLit on it and let it fully sync once, then try the notification again. `No watch has registered for notifications yet` means no paired watch has: pair one first (see "Pairing a device").
 
 If it still fails:
 
-1. On an Apple Watch, verify `Settings` -> `Notifications` -> `Wrist Assistant` is enabled. On a Wear OS watch or an Android phone, check `Settings` -> `Apps` -> `Wrist Assistant` -> `Notifications`.
-2. Reopen Wrist Assistant on the watch and pull to refresh if needed.
+1. On an Apple Watch, verify `Settings` -> `Notifications` -> `HouseLit` is enabled. On a Wear OS watch or an Android phone, check `Settings` -> `Apps` -> `HouseLit` -> `Notifications`.
+2. Reopen HouseLit on the watch and pull to refresh if needed.
 3. Retry the notification after the watch reconnects.
 4. If it still will not register, re-pair the watch or reinstall the watch app.
 
@@ -210,8 +210,8 @@ data:
 
 ## Need help?
 
-- Wrist Assistant site: <https://wrist-assistant.com/>
-- Wrist Assistant docs: <https://docs.wrist-assistant.com/>
+- HouseLit site: <https://houselit.app/>
+- HouseLit docs: <https://docs.houselit.app/>
 - Community Discord: <https://discord.gg/6zmNK2jA5P>
 - Open an issue: <https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues>
 

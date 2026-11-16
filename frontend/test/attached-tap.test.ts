@@ -734,7 +734,7 @@ describe("refresh complications", () => {
     expect(describeTapAction({ type: "refreshAll", targets: ["A1", "B2"] })).toBe("Refresh multiple complications: 2 picked");
 
     const all = tapActionNote({ type: "refreshAll", allPlaced: true });
-    expect(all).toContain("every Wrist Assistant complication placed on the watch");
+    expect(all).toContain("every HouseLit complication placed on the watch");
     const some = tapActionNote({ type: "refreshAll", targets: ["A1", "B2"] });
     expect(some).toContain("the 2 picked below");
     const none = tapActionNote({ type: "refreshAll" });

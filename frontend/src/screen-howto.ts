@@ -85,8 +85,8 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
     art: "face", label: "On your watch",
     get how() {
       return generalCopy(
-        "Touch and hold the watch face, tap Edit, then pick Wrist Assistant for a complication spot.",
-        "Touch and hold the watch face, tap Edit or Customize, then pick Wrist Assistant for a complication spot.",
+        "Touch and hold the watch face, tap Edit, then pick HouseLit for a complication spot.",
+        "Touch and hold the watch face, tap Edit or Customize, then pick HouseLit for a complication spot.",
       );
     },
     use: "Seeing things at a glance without opening the app, like the temperature or whether the door is locked.",

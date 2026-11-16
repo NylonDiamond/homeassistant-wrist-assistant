@@ -157,18 +157,18 @@ export function waitingEmptyText(what: string, device = "this watch", appVersion
  * is up to date, or that an iPhone with nothing to send may still send it. */
 export function waitingLibraryText(what: string, needsUpdate = false, phoneMoves?: PhoneMoves): string {
   if (phoneMoves === "watch-only") {
-    return `Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`;
+    return `Your watch needs HouseLit ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`;
   }
   if (phoneMoves === "another" && !needsUpdate) return WAIT_OTHER_PHONE_TEXT;
   if (phoneMoves === true || phoneMoves === "another") {
     return needsUpdate
-      ? `Your iPhone is up to date. Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`
+      ? `Your iPhone is up to date. Your watch needs HouseLit ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its ${what} here.`
       : `Your iPhone is up to date. If its ${what} do not come here, use what is on the watch.`;
   }
   if (needsUpdate) {
-    return `Needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Once your iPhone has it, open the app once and its ${what} move here by themselves.`;
+    return `Needs HouseLit ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Once your iPhone has it, open the app once and its ${what} move here by themselves.`;
   }
-  return `Update Wrist Assistant on your iPhone and open it once. Its ${what} move here by themselves.`;
+  return `Update HouseLit on your iPhone and open it once. Its ${what} move here by themselves.`;
 }
 
 /** Whether any of these waiting devices is too old for the move, for

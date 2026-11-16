@@ -42,7 +42,7 @@ export function watchStatusPagesRouteOwner(route: PanelRoute | undefined): strin
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_STATUS_PAGES_HELP_URL = "https://docs.wrist-assistant.com/features/status-pages/";
+export const WATCH_STATUS_PAGES_HELP_URL = "https://docs.houselit.app/features/status-pages/";
 
 /** What the editor's chunk tells the entry about the drafts it keeps. */
 export interface WatchStatusPagesDraftProbe {

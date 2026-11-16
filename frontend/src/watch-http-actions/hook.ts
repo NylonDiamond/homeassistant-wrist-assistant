@@ -24,7 +24,7 @@ export function isWatchHttpActionsRoute(route: PanelRoute | undefined): boolean 
 }
 
 /** The help page the screen's "?" opens. */
-export const WATCH_HTTP_ACTIONS_HELP_URL = "https://docs.wrist-assistant.com/features/http-actions/";
+export const WATCH_HTTP_ACTIONS_HELP_URL = "https://docs.houselit.app/features/http-actions/";
 
 /** What the editor's chunk tells the entry about the draft it keeps. */
 export interface WatchHttpActionsDraftProbe {

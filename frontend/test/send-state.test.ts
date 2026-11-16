@@ -110,7 +110,7 @@ describe("sendState on an iPhone with no push token", () => {
     const s = sendState(phone({ token: 6, appliedToken: 5 }));
     expect(s).toEqual({ kind: "openApp" });
     const d = describeSend(s);
-    expect(d.label).toBe("Open Wrist Assistant on your iPhone to sync");
+    expect(d.label).toBe("Open HouseLit on your iPhone to sync");
     expect(d.resend).toBe(false);
     expect(d.note).toBeUndefined();
   });
@@ -189,8 +189,8 @@ describe("sendState on an iPhone the server can push", () => {
     const s = sendState(pushPhone({ token: 6, appliedToken: 5, pending: true, pushAvailable: false }));
     expect(s).toEqual({ kind: "openApp" });
     const d = describeSend(s);
-    expect(d.label).toBe("Open Wrist Assistant on your iPhone to sync");
-    expect(d.title).toBe("This iPhone has no push token yet. Open Wrist Assistant on it once.");
+    expect(d.label).toBe("Open HouseLit on your iPhone to sync");
+    expect(d.title).toBe("This iPhone has no push token yet. Open HouseLit on it once.");
     expect(d.refresh).toBe(false);
   });
 });
@@ -400,8 +400,8 @@ describe("the header pill over a design on no device", () => {
 
 describe("the line beside Save after a save", () => {
   it("tells a closed watch app to be opened", () => {
-    expect(afterSaveLine({ kind: "offline" })).toEqual({ text: "Saved. Open Wrist Assistant on your watch to get it.", warn: true });
-    expect(afterSaveLine({ kind: "offline", pending: 2 })?.text).toBe("Saved. Open Wrist Assistant on your watch to get it.");
+    expect(afterSaveLine({ kind: "offline" })).toEqual({ text: "Saved. Open HouseLit on your watch to get it.", warn: true });
+    expect(afterSaveLine({ kind: "offline", pending: 2 })?.text).toBe("Saved. Open HouseLit on your watch to get it.");
   });
 
   it("follows the save to the device", () => {
@@ -409,7 +409,7 @@ describe("the line beside Save after a save", () => {
     expect(afterSaveLine({ kind: "waiting" })?.text).toBe("Saved. Not on your watch yet.");
     expect(afterSaveLine({ kind: "sent", awaySeconds: 30 })).toEqual({ text: "Saved. On your watch.", warn: false });
     expect(afterSaveLine({ kind: "sending", device: "iphone" })?.text).toBe("Saved. Sending to your iPhone.");
-    expect(afterSaveLine({ kind: "openApp" })?.text).toBe("Saved. Open Wrist Assistant on your iPhone to get it.");
+    expect(afterSaveLine({ kind: "openApp" })?.text).toBe("Saved. Open HouseLit on your iPhone to get it.");
     expect(afterSaveLine({ kind: "unsupported" })?.warn).toBe(true);
   });
 
@@ -431,13 +431,13 @@ describe("How this works", () => {
   });
 
   it("names the watch app for a design on a device, and the device for one on none", () => {
-    expect(howItWorksSteps("watch", false)[2]).toBe("Save, then open Wrist Assistant on your watch to get it.");
+    expect(howItWorksSteps("watch", false)[2]).toBe("Save, then open HouseLit on your watch to get it.");
     expect(howItWorksSteps(undefined, true)[2]).toBe("Save, then tick a device over the preview.");
   });
 
   it("says where to pick it on each device", () => {
     expect(onTheFaceStep("watch")).toContain("touch and hold the face, tap Edit");
-    expect(onTheFaceStep("iphone")).toContain("add a Wrist Assistant widget");
+    expect(onTheFaceStep("iphone")).toContain("add a HouseLit widget");
     expect(onTheFaceStep(undefined)).toContain("complication slot");
     expect(onTheFaceStep(undefined)).toContain("widget");
   });

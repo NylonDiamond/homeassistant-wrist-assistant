@@ -408,7 +408,7 @@ async def _deliver_push(
     client = data.apns_client
     if client is None:
         raise HomeAssistantError(
-            "Wrist Assistant could not start sending notifications. Check the "
+            "HouseLit could not start sending notifications. Check the "
             "Home Assistant logs for details, then reload the integration."
         )
     store = data.notification_store
@@ -554,21 +554,21 @@ async def _deliver_push(
             if names:
                 raise HomeAssistantError(
                     f"{names} has not registered for background pushes. They go "
-                    "to a watch only: open Wrist Assistant on it once, then try "
+                    "to a watch only: open HouseLit on it once, then try "
                     "again."
                 )
             raise HomeAssistantError(
-                "No watch has registered for background pushes yet. Open Wrist "
-                "Assistant on the watch once, then try again."
+                "No watch has registered for background pushes yet. Open "
+                "HouseLit on the watch once, then try again."
             )
         if names:
             raise HomeAssistantError(
-                f"{names} has not registered for notifications yet. Open Wrist "
-                "Assistant on it once, then try again."
+                f"{names} has not registered for notifications yet. Open "
+                "HouseLit on it once, then try again."
             )
         raise HomeAssistantError(
             "No watch has registered for notifications yet. Pair a watch in the "
-            "Wrist Assistant panel, then open the app on it once."
+            "HouseLit panel, then open the app on it once."
         )
 
     sent = 0
@@ -648,7 +648,7 @@ async def _deliver_push(
         )
         raise HomeAssistantError(
             f"No notification could be sent ({reasons}). If a device was "
-            "reinstalled, open Wrist Assistant on it once so it registers again."
+            "reinstalled, open HouseLit on it once so it registers again."
         )
 
     if failure_map:
@@ -1475,8 +1475,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.entry_id)},
-        name="Wrist Assistant",
-        manufacturer="Wrist Assistant",
+        name="HouseLit",
+        manufacturer="HouseLit",
         model="Hub",
         entry_type=dr.DeviceEntryType.SERVICE,
         configuration_url=PANEL_CONFIGURATION_URL,
@@ -1572,8 +1572,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             if target is None:
                 name = device.name_by_user or device.name or target_raw
                 raise HomeAssistantError(
-                    f"{name} is not a watch or {phone} paired with Wrist "
-                    "Assistant. Pick one of those as the target."
+                    f"{name} is not a watch or {phone} paired with "
+                    "HouseLit. Pick one of those as the target."
                 )
 
         actions = call.data.get("actions")
@@ -1734,7 +1734,7 @@ async def async_remove_config_entry_device(
     domain_data: WristAssistantData | None = hass.data.get(DOMAIN)
     if domain_data is None or entry.state is not ConfigEntryState.LOADED:
         _LOGGER.warning(
-            "Refused to remove device %s (%s): the Wrist Assistant integration "
+            "Refused to remove device %s (%s): the HouseLit integration "
             "is not loaded (state: %s), so its pairing secret, push tokens and "
             "watch settings cannot be deleted and the device would come back "
             "with its key still valid. Enable the integration and wait for it "
@@ -1804,7 +1804,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if data is not None:
         await _async_shutdown_stores(data)
     _LOGGER.info(
-        "Wrist Assistant was removed, but its stored data was kept: device "
+        "HouseLit was removed, but its stored data was kept: device "
         "pairings and push tokens, watch pages and settings, custom "
         "complications, HTTP actions, page photos, client certificates and "
         "watch logs. Adding the integration again picks all of it up. To "
@@ -1824,7 +1824,7 @@ async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
 
     try:
         return APNsClient(
-            relay_base_url="https://push.wrist-assistant.com",
+            relay_base_url="https://push.houselit.app",
             notification_store=domain_data.notification_store,
             http_session=async_get_clientsession(hass),
         )

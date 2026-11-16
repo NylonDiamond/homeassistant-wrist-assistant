@@ -582,7 +582,7 @@ const PUBLIC_KIND_LABEL: Record<string, string> = {
 
 /** The public gallery's own page, which Share, the gallery dialog and Import
  * all link to. */
-const GALLERY_PAGE = "https://wrist-assistant.com/gallery/";
+const GALLERY_PAGE = "https://houselit.app/gallery/";
 
 /** Shapes in words, in the order given: "Rectangular and Circular". */
 function familyWords(families: readonly FamilyKind[]): string {
@@ -7364,7 +7364,7 @@ export class WristAssistantPanel extends LitElement {
     const starting = failure !== undefined && friendlyError(failure.err) === NOT_READY_TEXT;
     const line = failure === undefined
       ? this.loadError ?? ""
-      : starting ? "Wrist Assistant isn't ready yet." : `Could not load the devices. ${friendlyError(failure.err)}`;
+      : starting ? "HouseLit isn't ready yet." : `Could not load the devices. ${friendlyError(failure.err)}`;
     return html`<div class="not-ready" role="alert">
       <p title=${raw ?? nothing}>${line}</p>
       ${starting ? html`<p class="not-ready-sub">This can happen right after Home Assistant restarts.</p>` : nothing}
@@ -10355,7 +10355,7 @@ export class WristAssistantPanel extends LitElement {
       ["+ and Delete this page", "In the Pages card. + adds an empty page at the end, up to four. Delete this page, in the card's ··· menu, deletes the page showing and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap zone's, to Show next page or Show previous page. The Pages card's ··· menu adds a ready-made tap zone for either one. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
       ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. Under that tap action you set how long each page shows, or one time for every page; a tour lasts the sum of them. Every Play all pages tap shares these times. Test on canvas, under the tap action, plays it here with the same timing. A tap during a tour on the watch stops it."],
-      ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
+      ["What the watch needs", "A complication with pages needs the HouseLit app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [
       ["Text", "A value: typed words, an entity, a template, a shared value and more. It can count down to a time."],
@@ -10391,13 +10391,13 @@ export class WristAssistantPanel extends LitElement {
       ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Nothing saves by itself.`],
       [UNASSIGNED_LABEL, `A new design starts under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you tick a device in the strip over the preview.`],
       ["Saved", "Beside Save, in words: Unsaved changes in amber, Saved with a tick, or Not saved yet. Rest on Saved to see when it was and who by."],
-      ["Reaching the watch", "Open Wrist Assistant on the watch and it pulls every save by itself. There is no separate send step."],
+      ["Reaching the watch", "Open HouseLit on the watch and it pulls every save by itself. There is no separate send step."],
       ["On the face", onTheFaceStep(undefined)],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
       ["Synced", `The pill at the top of every screen, green. Every watch and ${generalCopy("iPhone", "phone")} that is awake has applied every change.`],
-      ["Waiting", "The same pill, amber, with how many. Press it to see each device and what it waits for. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu on the Complications tab, tries to wake the open device."],
+      ["Waiting", "The same pill, amber, with how many. Press it to see each device and what it waits for. Open HouseLit on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu on the Complications tab, tries to wake the open device."],
       ["Asleep", "Grey in that list: a device not seen for a week or more. Its changes wait safely and it catches up when it next connects, so it does not count as waiting."],
     ];
     const sharing: [string, string][] = [
@@ -10438,7 +10438,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="help-head">
         <h2>Help</h2>
         <span class="spacer"></span>
-        <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener noreferrer">Wrist Assistant docs</a>
+        <a href="https://docs.houselit.app/" target="_blank" rel="noopener noreferrer">HouseLit docs</a>
         <button class="pick" title="Close (Escape)" @click=${() => { this.helpOpen = false; }}>Close</button>
       </div>
       <div class="help-tabs" role="tablist" aria-label="Help topics">
@@ -11871,7 +11871,7 @@ export class WristAssistantPanel extends LitElement {
     const phone = this.sharedPhone;
     const screen = iphoneScreenOf(this.route);
     if (!this.phonePages) {
-      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep ${generalCopy("iPhone", "phone")} pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
+      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep ${generalCopy("iPhone", "phone")} pages. Update the HouseLit integration to set them up here.</p></div>`;
     }
     if (phone === undefined && hasPhoneAwaitingUpdate(this.owners)) {
       return html`<div class="wa-ip-empty">
@@ -11885,8 +11885,8 @@ export class WristAssistantPanel extends LitElement {
         <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
         <h2>${generalCopy("No iPhone yet", "No phone yet")}</h2>
         <p>${generalCopy(
-          "Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the iPhone, then scan the QR code or type its code here.",
-          "Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the phone, then scan the QR code or type its code here.",
+          "Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open HouseLit on the iPhone, then scan the QR code or type its code here.",
+          "Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open HouseLit on the phone, then scan the QR code or type its code here.",
         )}</p>
         <button type="button" class="home-btn add" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>${generalCopy("Pair an iPhone", "Pair a phone")}</span></button>
       </div>`;
@@ -12536,7 +12536,7 @@ export class WristAssistantPanel extends LitElement {
     const steps = phone
       ? html`<li>
             <span class="gate-n">1</span>
-            <div><b>Update Wrist Assistant on your iPhone</b><span>Lock Screen and Home Screen complications come with it.</span></div>
+            <div><b>Update HouseLit on your iPhone</b><span>Lock Screen and Home Screen complications come with it.</span></div>
           </li>
           <li>
             <span class="gate-n">2</span>
@@ -12548,7 +12548,7 @@ export class WristAssistantPanel extends LitElement {
           </li>`
       : html`<li>
             <span class="gate-n">1</span>
-            <div><b>Update Wrist Assistant on your iPhone</b><span>The watch app updates with it.</span></div>
+            <div><b>Update HouseLit on your iPhone</b><span>The watch app updates with it.</span></div>
           </li>
           <li>
             <span class="gate-n">2</span>
@@ -12625,15 +12625,15 @@ export class WristAssistantPanel extends LitElement {
             ? {
               kind: "locked",
               badge: o.home || "Other home",
-              title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's Wrist Assistant panel.`,
+              title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's HouseLit panel.`,
               families: o.families ?? [],
             }
             : {
               kind: "locked",
               badge: "iPhone app",
               title: deviceKindOf(this.ownerOf(ownerId)) === "iphone"
-                ? "Made in the iPhone app before Wrist Assistant 2.8. It keeps working, and moves here on its own the next time the iPhone app opens. If it cannot move, the Widgets tab in the iPhone app says why."
-                : "Made in the iPhone app before Wrist Assistant 2.8. It keeps working on this watch, and moves here on its own the next time the paired iPhone's app opens.",
+                ? "Made in the iPhone app before HouseLit 2.8. It keeps working, and moves here on its own the next time the iPhone app opens. If it cannot move, the Widgets tab in the iPhone app says why."
+                : "Made in the iPhone app before HouseLit 2.8. It keeps working on this watch, and moves here on its own the next time the paired iPhone's app opens.",
               families: [],
             },
         });
@@ -17015,7 +17015,7 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
     return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; this.pointAtRow([], undefined, () => undefined); }}>
       ${this.dialogHead("Post to online gallery",
-        html`<a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">wrist-assistant.com/gallery</a>`,
+        html`<a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">houselit.app/gallery</a>`,
         () => this.closeGalleryDialog(), tabs)}
       ${tab === "mine" ? this.renderGalleryUploads(rows) : this.gallerySent ? this.renderGallerySent() : this.renderGallerySteps(cfg)}
     </dialog>`;
@@ -17461,7 +17461,7 @@ export class WristAssistantPanel extends LitElement {
     const shelf = this.libraryOwner();
     if (!backup || this.restoring) return;
     if (!shelf) {
-      this.restoreResult = { text: `${capFirst(UNASSIGNED_LIST)} is not available. Update the Wrist Assistant integration.`, error: true };
+      this.restoreResult = { text: `${capFirst(UNASSIGNED_LIST)} is not available. Update the HouseLit integration.`, error: true };
       return;
     }
     this.restoring = true;
@@ -17561,7 +17561,7 @@ export class WristAssistantPanel extends LitElement {
       // An integration from before Unassigned. A link then goes where it
       // always went; a design this device cannot draw does not go at all.
       if (this.importFromLink && deviceSupportsShapes(owner)) return { ...here, dest: { unassigned: false } };
-      return { ...here, dest, problem: `It cannot go here: ${dest.reason}. Update the Wrist Assistant integration to import it to ${UNASSIGNED_LIST}.` };
+      return { ...here, dest, problem: `It cannot go here: ${dest.reason}. Update the HouseLit integration to import it to ${UNASSIGNED_LIST}.` };
     }
     const target = { ownerId: shelf.owner_watch_id, families: familiesFor(shelf), dest };
     const shapes = parse?.ok ? supportedFamilies(parse.config) : [];
@@ -19036,7 +19036,7 @@ export class WristAssistantPanel extends LitElement {
       <b>This ${deviceWord} is no longer registered.</b> Reinstalling ${appWord} gives the ${deviceWord} a new id, and these
       ${owner.complication_count} complication${owner.complication_count === 1 ? "" : "s"} stayed behind under the old one.
       ${targets.length === 0
-          ? html`<div class="hint">No registered ${deviceWord} to move them to. Open Wrist Assistant on the ${deviceWord} first.</div>`
+          ? html`<div class="hint">No registered ${deviceWord} to move them to. Open HouseLit on the ${deviceWord} first.</div>`
           : html`<div class="acts">
               <select @change=${(e: Event) => { this.moveTarget = (e.target as HTMLSelectElement).value || undefined; }}>
                 <option value="" ?selected=${!this.moveTarget}>Move all to…</option>
@@ -20751,13 +20751,13 @@ export class WristAssistantPanel extends LitElement {
       </li>`;
     return html`<div class="home home-pad"><div class="hw-wrap">
         <div class="home-head">
-          <div class="home-head-text"><h1>Welcome to Wrist Assistant</h1><p class="home-lead">Three steps and about two minutes.</p>${scope}</div>
+          <div class="home-head-text"><h1>Welcome to HouseLit</h1><p class="home-lead">Three steps and about two minutes.</p>${scope}</div>
           <a class="home-btn" href=${SETUP_GUIDE_URL} target="_blank" rel="noreferrer">Setup guide</a>
         </div>
         <ol class="hw-steps">
           ${step(1, "Install the app", generalCopy("On the iPhone, the watch, or both.", "On the phone, the watch, or both."), html`<div class="hw-install">
               <div class="hw-install-t">
-                <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for Wrist Assistant.</p>
+                <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for HouseLit.</p>
                 ${androidHereNow() ? html`<p>On Android, install it from Google Play on the phone. A Wear OS watch gets it from Google Play on the watch.</p>` : nothing}
                 <a class="home-btn" href=${APP_STORE_URL} target="_blank" rel="noreferrer">Open the App Store${uiIcon("right")}</a>
                 ${androidHereNow() ? html`<a class="home-btn hw-play" href=${PLAY_STORE_URL} target="_blank" rel="noreferrer">Open Google Play${uiIcon("right")}</a>` : nothing}
@@ -21820,7 +21820,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="start-wrap">
         <section class="start-hero">
           <div class="start-hero-text">
-            <div class="start-eyebrow">Wrist Assistant</div>
+            <div class="start-eyebrow">HouseLit</div>
             <h1 class="start-title">Make your first complication.</h1>
             <p class="start-lead">Draw what your home is doing onto a watch face or ${generalCopy("an iPhone", "a phone")} screen: one shape, your entities, live.</p>
             <div class="start-facts">
@@ -23207,7 +23207,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="how-card">
             <b>How this works</b>
             <ol>${howItWorksSteps(this.howDevice(cfg), this.openOnNoDevice, isLibraryOwner(this.selectedOwner) || this.selectedOwner === undefined ? undefined : platformOf(this.selectedOwner)).map((step) => html`<li>${step}</li>`)}</ol>
-            <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener">Read the two-minute guide</a>
+            <a href="https://docs.houselit.app/" target="_blank" rel="noopener">Read the two-minute guide</a>
           </div>`
         : html`<p class="insp-note">${this.touch ? "Tap" : "Click"} a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the Background row at the bottom of the list.</p>`;
       return html`
@@ -23370,7 +23370,7 @@ export class WristAssistantPanel extends LitElement {
         </dl>
         <p class="hint">Save writes to Home Assistant. ${isLibraryOwner(this.selectedOwner)
           ? "Nothing shows it until a copy of it goes on a device."
-          : `Open Wrist Assistant on the ${this.deviceWord} to pull it down.`}</p>
+          : `Open HouseLit on the ${this.deviceWord} to pull it down.`}</p>
         <button class="link" @click=${() => (this.showRaw = !this.showRaw)}>${this.showRaw ? "Hide the raw configuration" : "Show the raw configuration"}</button>
         ${this.showRaw ? html`<pre>${JSON.stringify(d.encoded(), null, 2)}</pre>` : nothing}
       </div>`;

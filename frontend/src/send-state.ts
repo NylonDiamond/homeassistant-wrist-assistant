@@ -234,7 +234,7 @@ export function describeSend(
         label: "Update the watch app",
         note: "to receive this",
         title:
-          "This watch has never reported which changes it applied, so nothing saved here can reach it. Its Wrist Assistant app is older than custom complications, or it has not been opened on this home yet.",
+          "This watch has never reported which changes it applied, so nothing saved here can reach it. Its HouseLit app is older than custom complications, or it has not been opened on this home yet.",
         resend: false,
         refresh: false,
       };
@@ -274,15 +274,15 @@ export function describeSend(
     case "openApp":
       if (s.android === true) {
         return {
-          label: "Open Wrist Assistant on your phone to sync",
-          title: "This phone has no push token yet. Open Wrist Assistant on it once.",
+          label: "Open HouseLit on your phone to sync",
+          title: "This phone has no push token yet. Open HouseLit on it once.",
           resend: false,
           refresh: false,
         };
       }
       return {
-        label: "Open Wrist Assistant on your iPhone to sync",
-        title: "This iPhone has no push token yet. Open Wrist Assistant on it once.",
+        label: "Open HouseLit on your iPhone to sync",
+        title: "This iPhone has no push token yet. Open HouseLit on it once.",
         resend: false,
         refresh: false,
       };
@@ -338,7 +338,7 @@ export function describeSend(
           label: `${s.pending} ${s.pending === 1 ? "change" : "changes"} waiting`,
           note: "open the watch app to sync",
           title:
-            "Saved here, not on the watch yet. Saves reach the watch by themselves while Wrist Assistant is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
+            "Saved here, not on the watch yet. Saves reach the watch by themselves while HouseLit is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
           resend: false,
           refresh: false,
         };
@@ -346,7 +346,7 @@ export function describeSend(
       return {
         label: "Open the watch app to sync",
         title:
-          "Saves reach the watch by themselves while Wrist Assistant is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
+          "Saves reach the watch by themselves while HouseLit is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
         resend: false,
         refresh: false,
       };
@@ -427,7 +427,7 @@ export function describeHomeSync(s: HomeSync): { label: string; title: string } 
   const names = s.waiting.join(", ");
   return {
     label: `Waiting: ${names}`,
-    title: `Not synced yet: ${names}. Open Wrist Assistant on ${s.waiting.length === 1 ? "it" : "each"} to sync.`,
+    title: `Not synced yet: ${names}. Open HouseLit on ${s.waiting.length === 1 ? "it" : "each"} to sync.`,
   };
 }
 
@@ -469,9 +469,9 @@ export function afterSaveLine(s: SendState): { text: string; warn: boolean } | u
     case "sent": return { text: `Saved. On ${where}.`, warn: false };
     case "sending": return { text: `Saved. Sending to ${where}.`, warn: false };
     case "waiting": return { text: `Saved. Not on ${where} yet.`, warn: false };
-    case "offline": return { text: "Saved. Open Wrist Assistant on your watch to get it.", warn: true };
-    case "openApp": return { text: `Saved. Open Wrist Assistant on your ${android ? "phone" : "iPhone"} to get it.`, warn: true };
-    case "unsupported": return { text: "Saved. Update Wrist Assistant on your watch to get it.", warn: true };
+    case "offline": return { text: "Saved. Open HouseLit on your watch to get it.", warn: true };
+    case "openApp": return { text: `Saved. Open HouseLit on your ${android ? "phone" : "iPhone"} to get it.`, warn: true };
+    case "unsupported": return { text: "Saved. Update HouseLit on your watch to get it.", warn: true };
   }
 }
 
@@ -483,8 +483,8 @@ export type HowDevice = "watch" | "iphone" | undefined;
 /** The last step of every how-to: a saved design shows nowhere until it is
  * picked on the face or added as a widget, and nothing in the panel said so. */
 export function onTheFaceStep(device: HowDevice, platform?: DevicePlatform | null): string {
-  const watch = "On the watch, touch and hold the face, tap Edit, then pick Wrist Assistant in a complication slot.";
-  const phone = "touch and hold the Home Screen or Lock Screen, tap Edit, then add a Wrist Assistant widget.";
+  const watch = "On the watch, touch and hold the face, tap Edit, then pick HouseLit in a complication slot.";
+  const phone = "touch and hold the Home Screen or Lock Screen, tap Edit, then add a HouseLit widget.";
   if (device === "watch" && platform === "wearos") return WEAR_FACE_STEP;
   if (device === "watch") return watch;
   if (device === "iphone" && platform === "android") return ANDROID_WIDGET_STEP;
@@ -494,9 +494,9 @@ export function onTheFaceStep(device: HowDevice, platform?: DevicePlatform | nul
 
 /** `onTheFaceStep` on a Wear OS watch, whose face takes Wrist Assistant
  * through its own complication picker. */
-export const WEAR_FACE_STEP = "On the watch, touch and hold the face, tap Edit, pick a complication slot, then pick Wrist Assistant.";
+export const WEAR_FACE_STEP = "On the watch, touch and hold the face, tap Edit, pick a complication slot, then pick HouseLit.";
 /** `onTheFaceStep` on an Android phone, whose designs are Home Screen widgets. */
-export const ANDROID_WIDGET_STEP = "On the phone, touch and hold the Home Screen, tap Widgets, then add a Wrist Assistant widget.";
+export const ANDROID_WIDGET_STEP = "On the phone, touch and hold the Home Screen, tap Widgets, then add a HouseLit widget.";
 
 /**
  * The "How this works" card on an empty design, as its four steps.
@@ -510,7 +510,7 @@ export function howItWorksSteps(device: HowDevice, onNoDevice: boolean, platform
   const phone = platform === "android" ? "phone" : "iPhone";
   const save = onNoDevice
     ? "Save, then tick a device over the preview."
-    : `Save, then open Wrist Assistant on your ${device === "iphone" ? phone : "watch"} to get it.`;
+    : `Save, then open HouseLit on your ${device === "iphone" ? phone : "watch"} to get it.`;
   return [
     "Add layers. Each one shows an entity.",
     "Drag them on the face.",

@@ -104,7 +104,7 @@ export function notificationPreview(values: ReadonlyMap<string, StyleValue>, gly
   const pill = bool(values, "stateBadgePill", true);
   const badgeFont = size.badge + (BADGE_OFFSET[str(values, "stateBadgeSize", "medium")] ?? 0);
   return html`<div class="ns-pv" data-bg=${background} data-fill=${fill} aria-label="Preview of a notification" role="img">
-    <div class="ns-pv-app">Wrist Assistant</div>
+    <div class="ns-pv-app">HouseLit</div>
     <div class="ns-pv-title">Garage</div>
     <div class="ns-pv-text">The garage door is still open.</div>
     ${SAMPLE.map((e) => {

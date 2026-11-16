@@ -5029,7 +5029,7 @@ function refreshAllBudgetHint(host: EditorHost, action: RefreshAllAction): Templ
     ${REDRAW_BUDGET} redraws a day. The one you tap always redraws, because a tap is free. Every
     other complication this tap refreshes spends one of its own. When one has none left, it gets
     the new data but keeps showing the old until watchOS allows another redraw, or until you open
-    Wrist Assistant on the watch.${timed
+    HouseLit on the watch.${timed
       ? html` An Auto refresh timer is on here or on a complication this tap reaches, and it spends the
         same budget. Every 15 minutes is 96 a day, more than the whole budget.`
       : nothing}</div>`;

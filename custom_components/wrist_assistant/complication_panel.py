@@ -57,12 +57,12 @@ async def _async_serve_bundle_directory(hass: HomeAssistant) -> bool:
         if register is None:
             _LOGGER.warning(
                 "This Home Assistant core can serve neither static path style; "
-                "the Wrist Assistant panel is not available"
+                "the HouseLit panel is not available"
             )
             return False
         _LOGGER.warning(
-            "Home Assistant core is older than 2024.7.0; serving the Wrist "
-            "Assistant panel through the deprecated blocking static path"
+            "Home Assistant core is older than 2024.7.0; serving the "
+            "HouseLit panel through the deprecated blocking static path"
         )
         register(_STATIC_URL, str(_frontend_dir()), True)
         return True
@@ -107,7 +107,7 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
             webcomponent_name=_WEBCOMPONENT,
             frontend_url_path=PANEL_URL_PATH,
             module_url=f"{_STATIC_URL}/{_BUNDLE_NAME}?v={version}-{digest}",
-            sidebar_title="Wrist Assistant",
+            sidebar_title="HouseLit",
             sidebar_icon="mdi:watch-variant",
             # Every signed-in user, so each household member can look after
             # their own devices. What each command allows is decided per
@@ -116,7 +116,7 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
             config={"version": version},
         )
     except ValueError as err:
-        _LOGGER.warning("Wrist Assistant sidebar panel not registered: %s", err)
+        _LOGGER.warning("HouseLit sidebar panel not registered: %s", err)
 
 
 def async_remove_panel(hass: HomeAssistant) -> None:

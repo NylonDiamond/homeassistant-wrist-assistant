@@ -141,7 +141,7 @@ describe("New page on a focused device", () => {
       save: async () => { throw new Error("no save"); },
     }, CHEN, "pages", { add: { id: "N1", name: "New Page 2", items: [] } });
     expect(result).toEqual({ ok: false, code: "unreadable", message: unreadablePicksText("pages") });
-    expect(unreadablePicksText("pages")).not.toContain("Open Wrist Assistant on it once");
+    expect(unreadablePicksText("pages")).not.toContain("Open HouseLit on it once");
   });
 });
 

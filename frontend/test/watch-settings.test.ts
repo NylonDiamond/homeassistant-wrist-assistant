@@ -517,12 +517,12 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(savedLine("panel", "")).toBe("Saved here");
     expect(WAITING_PILL_TEXT).toBe("Waiting for the watch");
     expect(COLLECTED_PILL_TEXT).toBe("Synced");
-    expect(WAITING_HELP_TEXT).toBe("Open Wrist Assistant on the watch to get it.");
-    expect(WAITING_TEXT).toBe("Waiting. Open Wrist Assistant on the watch to get it.");
+    expect(WAITING_HELP_TEXT).toBe("Open HouseLit on the watch to get it.");
+    expect(WAITING_TEXT).toBe("Waiting. Open HouseLit on the watch to get it.");
     // The iPhone passes nothing to the watch any more.
     expect(WAITING_HELP_TEXT).not.toMatch(/iPhone/);
     // A phone's own records wait for the phone.
-    expect(waitingHelpText("iphone")).toBe("Open Wrist Assistant on the iPhone to get it.");
+    expect(waitingHelpText("iphone")).toBe("Open HouseLit on the iPhone to get it.");
     expect(waitingHelpText("watch")).toBe(WAITING_HELP_TEXT);
     // A phone's own record is saved here or by the phone, never by a watch.
     expect(savedByWords("P1", "iphone")).toBe("from the iPhone");
@@ -811,13 +811,13 @@ describe("pairing a watch by its code", () => {
 
   it("asks for a newer integration when the command is unknown, else gives the message", () => {
     expect(pairErrorText({ code: "unknown_command", message: "Unknown command." }, "lookup"))
-      .toBe("Update the Wrist Assistant integration to pair a watch with a code.");
+      .toBe("Update the HouseLit integration to pair a watch with a code.");
     expect(pairErrorText({ code: "unavailable", message: "Integration not ready" }, "lookup"))
       .toBe("Could not look up that code: Integration not ready");
     expect(pairErrorText({ code: "invalid_secret", message: "secret must be 32 bytes" }, "confirm"))
       .toBe("Could not pair: secret must be 32 bytes");
     expect(pairErrorText({ code: "unknown_command", message: "Unknown command." }, "offer"))
-      .toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
+      .toBe("Update the HouseLit integration to pair a phone with a QR code.");
     expect(pairErrorText({ code: "unavailable", message: "Integration not ready" }, "offer"))
       .toBe("Could not show a QR code: Integration not ready");
   });

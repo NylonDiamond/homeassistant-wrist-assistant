@@ -534,7 +534,7 @@ function editor() {
 
 describe("the menus guide", () => {
   it("is linked from the panel's Help sheet", () => {
-    expect(WATCH_MENUS_HELP_URL).toBe("https://docs.wrist-assistant.com/watch-app/quick-menu/");
+    expect(WATCH_MENUS_HELP_URL).toBe("https://docs.houselit.app/watch-app/quick-menu/");
   });
 });
 

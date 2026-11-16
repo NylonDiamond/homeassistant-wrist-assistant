@@ -3391,10 +3391,10 @@ export function tapActionInfo(type: TapAction["type"], onPhone: boolean | "ios" 
     runScene: "Turns on a Home Assistant scene.",
     runScript: "Runs a Home Assistant script.",
     callService: "Calls any Home Assistant service, with your own data.",
-    runHTTPAction: "Runs an HTTP action kept in Home Assistant or the Wrist Assistant app.",
+    runHTTPAction: "Runs an HTTP action kept in Home Assistant or the HouseLit app.",
     addTodo: "Opens the watch app to add an item to a to-do list.",
-    openApp: "Opens Wrist Assistant.",
-    openPage: "Opens one page of your Wrist Assistant grid. You pick the page.",
+    openApp: "Opens HouseLit.",
+    openPage: "Opens one page of your HouseLit grid. You pick the page.",
     openEntity: "Opens the watch app on the controls of the entity you pick. The entity needs a tile on a watch app page.",
     openRoomPage: "Opens the app on the page for the room it finds you in.",
     timerStartPause: "Starts or pauses the first timer this complication shows. Three quick taps cancel it.",
@@ -3618,7 +3618,7 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
   if (action.type !== "refreshAll") return undefined;
   const older = " On a watch running an older app this tap does nothing.";
   if (action.allPlaced === true) {
-    return "Refreshes every Wrist Assistant complication placed on the watch, not just this one." + older;
+    return "Refreshes every HouseLit complication placed on the watch, not just this one." + older;
   }
   const count = action.targets?.length ?? 0;
   // One sentence for the narrowing, whether or not anything else is picked: the

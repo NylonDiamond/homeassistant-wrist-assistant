@@ -270,7 +270,7 @@ export function iphoneRowNoneNote(): string {
 }
 /** Beside the pairing button in a home whose iPhones all run an app too old
  * for pages of their own (`hasPhoneAwaitingUpdate`). */
-export const IPHONE_ROW_UPDATE_NOTE = `Needs Wrist Assistant ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later on your iPhone to set up its pages, menus and the rest.`;
+export const IPHONE_ROW_UPDATE_NOTE = `Needs HouseLit ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later on your iPhone to set up its pages, menus and the rest.`;
 
 export interface WatchRowInput {
   route: PanelRoute | undefined;

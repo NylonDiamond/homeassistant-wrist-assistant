@@ -26,7 +26,7 @@ import type { DeviceKind } from "./version.js";
 import { generalCopy } from "./device-platform.js";
 
 /** Where the gallery lives. The one place to change for testing on staging. */
-export const GALLERY_API_BASE = "https://wrist-assistant.com/api/gallery";
+export const GALLERY_API_BASE = "https://houselit.app/api/gallery";
 
 /** The shapes the gallery files a complication under: the panel's own, the
  * four watch face slots and the four iPhone Home Screen tiles. The Worker's
@@ -662,7 +662,7 @@ export function galleryErrorMessage(err: unknown): string {
     case "bad_png":
       return "A preview picture could not be read. Close this and try again.";
     case "bad_json":
-      return "The gallery could not read the upload. Update the Wrist Assistant integration and try again.";
+      return "The gallery could not read the upload. Update the HouseLit integration and try again.";
     case "not_found":
       return "That upload is not in the gallery any more.";
     case "not_updatable":

@@ -456,7 +456,7 @@ def _user_gone_response(
         _USER_GONE_LOGGED.add(validated.watch_id)
         _LOGGER.info(
             "Refused %s from %s: the Home Assistant user its key is bound to "
-            "was deleted. Remove the device in the Wrist Assistant panel, or "
+            "was deleted. Remove the device in the HouseLit panel, or "
             "pair it again",
             view,
             validated.watch_id,
@@ -2373,7 +2373,7 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
         title = "Test notification"
     message = ctx.payload.get("message")
     if not isinstance(message, str) or not message:
-        message = "Your Wrist Assistant setup is working." if image_source is None else "Camera snapshot framing test"
+        message = "Your HouseLit setup is working." if image_source is None else "Camera snapshot framing test"
 
     # Optional sample action buttons. The advanced setup check sends a few
     # self-contained demo entities (entity_id + state + friendly_name +
@@ -2466,7 +2466,7 @@ async def _op_pro_open_on_phone(ctx: _OpContext) -> Response:
             ctx.hass,
             ctx.domain_data,
             title="Get Pro",
-            message="Tap to open Wrist Assistant Pro.",
+            message="Tap to open HouseLit Pro.",
             extra_data={_OPEN_PRO_PUSH_KEY: True},
             target_watch_ids=phones,
         )
@@ -3884,7 +3884,7 @@ class WARegisterSecretView(HomeAssistantView):
             )
             return self.json_message(
                 "This device is paired by another user. Ask an admin to forget "
-                "it in the Wrist Assistant panel first.",
+                "it in the HouseLit panel first.",
                 status_code=403,
             )
         if (
@@ -3900,7 +3900,7 @@ class WARegisterSecretView(HomeAssistantView):
             )
             return self.json_message(
                 "This device was paired before devices belonged to a person. Ask "
-                "an admin to forget it in the Wrist Assistant panel first.",
+                "an admin to forget it in the HouseLit panel first.",
                 status_code=403,
             )
 

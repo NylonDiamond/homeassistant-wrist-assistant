@@ -183,7 +183,7 @@ import { type HomeMapSkyChoice, type HomeMapSunPlace, homeMapFloorNorth, homeMap
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
-export const HOME_MAP_UPDATE_TEXT = "Update the Wrist Assistant integration to see the home map here.";
+export const HOME_MAP_UPDATE_TEXT = "Update the HouseLit integration to see the home map here.";
 /** The first run: the title, the main button and the line under it. */
 export const HOME_MAP_EMPTY_TEXT = "No home map yet";
 export const HOME_MAP_START_TEXT = "Start a map by hand";

@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Wrist Assistant",
-        "description": "This turns on Wrist Assistant. Next, open **Wrist Assistant** in the sidebar and choose **Pair a device** on the Home tab. With the iPhone app, choose **Show a QR code**. On a watch without an iPhone, choose **Pair with Home Assistant** on the watch, then type the code it shows under **Type a code**. On Wrist Assistant 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.\n\n[Setup guide]({docs_url})"
+        "title": "HouseLit",
+        "description": "This turns on HouseLit. Next, open **HouseLit** in the sidebar and choose **Pair a device** on the Home tab. With the iPhone app, choose **Show a QR code**. On a watch without an iPhone, choose **Pair with Home Assistant** on the watch, then type the code it shows under **Type a code**. On HouseLit 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.\n\n[Setup guide]({docs_url})"
       }
     },
     "abort": {
-      "single_instance_allowed": "Wrist Assistant is already set up. To add a device, open Wrist Assistant in the sidebar and choose Pair a device."
+      "single_instance_allowed": "HouseLit is already set up. To add a device, open HouseLit in the sidebar and choose Pair a device."
     }
   },
   "entity": {

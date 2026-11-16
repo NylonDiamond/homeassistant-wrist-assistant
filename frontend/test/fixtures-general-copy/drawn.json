@@ -4,7 +4,7 @@
  ["panel.ts", "Every watch and iPhone that is awake has applied every change.", "Every watch and phone that is awake has applied every change."],
  ["panel.ts", "This Home Assistant does not keep iPhone pages.", "This Home Assistant does not keep phone pages."],
  ["panel.ts", "<h2>No iPhone yet</h2>", "<h2>No phone yet</h2>"],
- ["panel.ts", "Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the iPhone, then scan the QR code or type its code here.", "Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the phone, then scan the QR code or type its code here."],
+ ["panel.ts", "Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open HouseLit on the iPhone, then scan the QR code or type its code here.", "Pair a phone to give it its own pages, menus, status pages, rooms and settings. Open HouseLit on the phone, then scan the QR code or type its code here."],
  ["panel.ts", "<span>Pair an iPhone</span></button>", "<span>Pair a phone</span></button>"],
  ["panel.ts", "No watch or iPhone has connected yet. Pair one on the Devices tab to put complications on it.", "No watch or phone has connected yet. Pair one on the Devices tab to put complications on it."],
  ["panel.ts", "<p class=\"cb-empty\">No watch or iPhone has connected yet.</p>", "<p class=\"cb-empty\">No watch or phone has connected yet.</p>"],

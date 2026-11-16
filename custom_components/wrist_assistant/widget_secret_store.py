@@ -1273,7 +1273,7 @@ def build_device_info(
 
     info = DeviceInfo(
         identifiers={paired_identifier(watch_id)},
-        manufacturer="Wrist Assistant",
+        manufacturer="HouseLit",
         model=model,
         # "Visit" on the device page opens the panel, where the device is set up.
         configuration_url=PANEL_CONFIGURATION_URL,

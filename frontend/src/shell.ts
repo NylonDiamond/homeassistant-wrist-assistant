@@ -624,10 +624,10 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
   const current = barTabOf(input.route);
   const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab), globalThis.location?.pathname ?? "");
   const unsaved = (tab: BarTab) => input.unsavedTabs?.has(tab) === true || (tab === "home" && input.watchUnsaved === true);
-  return html`<nav class="wa-tabs" aria-label="Wrist Assistant">
+  return html`<nav class="wa-tabs" aria-label="HouseLit">
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
-    <span class="wa-tabs-name">Wrist Assistant</span>
+    <span class="wa-tabs-name">HouseLit</span>
     <span class="wa-tabs-list">${visibleBarTabs(current).map((tab, i, tabs) => html`${i > 0 && (tab === "home-map" || tab === "shared") && tabs[i - 1] !== "home-map" ? html`<span class="wa-tabs-sep" aria-hidden="true"></span>` : nothing}<a class="wa-tab ${tab === current ? "on" : ""}"
       href=${href(tab)} aria-current=${tab === current ? "page" : "false"}
       @click=${(e: MouseEvent) => {

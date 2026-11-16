@@ -59,7 +59,7 @@ export const PHONE_PAGES_UPDATE_TITLE = "Needs a newer iPhone app";
  * after both: an App Store update, no TestFlight, no Pages tab (the iPhone
  * app has had one screen and no tab bar since 2026-10-20). */
 export const PHONE_PAGES_UPDATE_TEXT =
-  `Your iPhone is paired, but its Wrist Assistant app is too old to show pages of its own. iPhone pages need Wrist Assistant ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later. Once the iPhone has it, open the app once and the iPhone shows up here.`;
+  `Your iPhone is paired, but its HouseLit app is too old to show pages of its own. iPhone pages need HouseLit ${versionForCopy(MIN_IPHONE_VERSION_FOR_PAGES)} or later. Once the iPhone has it, open the app once and the iPhone shows up here.`;
 
 /**
  * Where a Watch app address that names one of the home's iPhones goes now:

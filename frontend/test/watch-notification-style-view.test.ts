@@ -260,7 +260,7 @@ describe("Watch settings with the notification style", () => {
     expect(inside.styleRecord?.revision).toBe(6);
     // The pill speaks for both: neither has been collected yet.
     const shown = foot();
-    expect(shown).toContain(">Waiting. Open Wrist Assistant on the watch to get it.</span>");
+    expect(shown).toContain(">Waiting. Open HouseLit on the watch to get it.</span>");
     expect(shown).toContain("Settings saved as revision 4.");
     expect(shown).toContain("Notification style saved as revision 6.");
   });

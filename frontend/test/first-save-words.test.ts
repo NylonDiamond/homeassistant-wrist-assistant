@@ -95,7 +95,7 @@ describe("the wait lines", () => {
       waitingLibraryText("menus", true, true),
     ]) {
       expect(line).toContain("Your iPhone is up to date.");
-      expect(line).not.toContain("Update Wrist Assistant on your iPhone");
+      expect(line).not.toContain("Update HouseLit on your iPhone");
       expect(line).not.toContain("Once your iPhone has it");
     }
     expect(waitForIphoneText("3.2.0", true)).toBe(WAIT_PHONE_MOVES_TEXT);
@@ -113,7 +113,7 @@ describe("the wait lines", () => {
     expect(allPhonesMove(devices, new Set(["done", "old"]))).toBe(false);
     expect(allPhonesMove(devices, new Set())).toBe(false);
     expect(menusEmptyText(devices, "", new Set(["done"]))).toContain("up to date");
-    expect(menusEmptyText(devices, "", new Set(["old"]))).toContain("Update Wrist Assistant on your iPhone");
+    expect(menusEmptyText(devices, "", new Set(["old"]))).toContain("Update HouseLit on your iPhone");
   });
 
   it("say nothing false when a write is refused for a watch the panel cannot name", () => {
@@ -202,7 +202,7 @@ describe("a watch's own setup that may still come", () => {
       expect(firstSaveAskText(owner("w", pending), [kind])).toBe(SEED_PENDING_ASK_TEXT);
     }
     expect(firstSaveAskText(owner("w", pending), ["rooms"])).toBeUndefined();
-    expect(SEED_PENDING_ASK_TEXT).toContain("Open Wrist Assistant on the watch first.");
+    expect(SEED_PENDING_ASK_TEXT).toContain("Open HouseLit on the watch first.");
     expect(SEED_PENDING_ASK_TEXT).toContain("Saving now replaces what is on the watch.");
   });
 
@@ -454,12 +454,12 @@ describe("a default user's 3.0.1 watch after the phone finished", () => {
       expect(phoneMovesOf(owner("w", gone))).toBe("watch-only");
       const line = waitForIphoneText("3.0.1", phoneMovesOf(owner("w", gone)));
       expect(line).toBe(WAIT_WATCH_ONLY_UPDATE_TEXT);
-      expect(line).toContain("Your watch needs Wrist Assistant 3.2 or later");
+      expect(line).toContain("Your watch needs HouseLit 3.2 or later");
       expect(line).not.toContain("iPhone");
     }
     expect(linkDevicesOf([owner("w", row)], false)[0]?.phoneMoves).toBe("watch-only");
     expect(useWatchQuestion("watch-only")).toBe(NO_IPHONE_QUESTION);
-    expect(waitingLibraryText("menus", true, "watch-only")).toBe("Your watch needs Wrist Assistant 3.2 or later to send its menus here.");
+    expect(waitingLibraryText("menus", true, "watch-only")).toBe("Your watch needs HouseLit 3.2 or later to send its menus here.");
     const devices = linkDevicesOf([owner("w", row)], false);
     expect(allPhonesMove(devices, new Set(["w"]))).toBe(false);
     expect(waitingPhoneMoves(devices, new Set(["w"]))).toBe("watch-only");
@@ -474,14 +474,14 @@ describe("a default user's 3.0.1 watch after the phone finished", () => {
     const [device] = rowsOf(owner("w", row));
     expect(device?.sync).toBe("waiting");
     expect(device?.waitingFor).toEqual([IPHONE_UPDATE_LABEL]);
-    expect(syncRowWords(device!)).toBe("Waiting: Wrist Assistant 3.2 on the watch");
+    expect(syncRowWords(device!)).toBe("Waiting: HouseLit 3.2 on the watch");
     expect(homeGroupSummary(["waiting"]).text).toBe("1 waiting");
     // The phone's move counts as collected, as it signs as the watch.
     const held = homeDeviceRows(
       homeDevices([owner("w", row)], (d) => d.owner_watch_id, (d) => d.owner_watch_id),
       new Map([["w", { waiting: [], delivered: true }]]),
     );
-    expect(syncRowWords(held[0]!)).toBe("Waiting: Wrist Assistant 3.2 on the watch");
+    expect(syncRowWords(held[0]!)).toBe("Waiting: HouseLit 3.2 on the watch");
   });
 
   it("leaves a watch that is only old, and an up to date one, as they were", () => {
@@ -530,7 +530,7 @@ describe("the iPhone paired again under a new id", () => {
   it("does not say to update, nor assume the iPhone is gone", () => {
     expect(phoneMovesOf(owner("w", k2))).toBe("another");
     expect(waitForIphoneText("3.2.0", "another")).toBe(WAIT_OTHER_PHONE_TEXT);
-    expect(WAIT_OTHER_PHONE_TEXT).not.toContain("Update Wrist Assistant");
+    expect(WAIT_OTHER_PHONE_TEXT).not.toContain("Update HouseLit");
     expect(WAIT_OTHER_PHONE_TEXT).toContain("use what is on the watch");
     expect(useWatchQuestion("another")).toBe(NOTHING_MORE_QUESTION);
     expect(useWatchConfirmText("another")).toBe(USE_WATCH_PHONE_MOVES_CONFIRM_TEXT);
@@ -559,7 +559,7 @@ describe("the iPhone paired again under a new id", () => {
     expect(menusEmptyText(devices, "", waiting)).toBe(`None yet. ${WAIT_OTHER_PHONE_TEXT}`);
     expect(waitingLibraryText("pages", false, "another")).not.toContain("its pages");
     // A too old watch still names its own update.
-    expect(waitingLibraryText("pages", true, "another")).toContain("Your watch needs Wrist Assistant");
+    expect(waitingLibraryText("pages", true, "another")).toContain("Your watch needs HouseLit");
   });
 
   it("uses those words only when every waiting watch is on that route", () => {
@@ -569,7 +569,7 @@ describe("the iPhone paired again under a new id", () => {
     expect(waitingPhoneMoves(devices, new Set(["w", "old"]))).toBe(false);
     expect(waitingPhoneMoves(devices, new Set())).toBe(false);
     expect(waitingLibraryText("pages", false, true)).toBe("Your iPhone is up to date. If its pages do not come here, use what is on the watch.");
-    expect(waitingLibraryText("pages", false, false)).toBe("Update Wrist Assistant on your iPhone and open it once. Its pages move here by themselves.");
+    expect(waitingLibraryText("pages", false, false)).toBe("Update HouseLit on your iPhone and open it once. Its pages move here by themselves.");
   });
 
   it("prefers what the watch's own iPhone says", () => {
@@ -581,10 +581,10 @@ describe("the iPhone paired again under a new id", () => {
 
 describe("the ask after Use what is on the watch", () => {
   it("says to open the watch first, and promises nothing about the iPhone's copy", () => {
-    expect(USE_WATCH_CONFIRM_TEXT).toContain("Open Wrist Assistant on the watch next, before you update or open your iPhone.");
+    expect(USE_WATCH_CONFIRM_TEXT).toContain("Open HouseLit on the watch next, before you update or open your iPhone.");
     expect(USE_WATCH_CONFIRM_TEXT).toContain("Until the watch has sent it, what your iPhone sends lands first.");
     expect(USE_WATCH_CONFIRM_TEXT).not.toContain("will not move here later");
-    expect(USE_WATCH_PHONE_MOVES_CONFIRM_TEXT).toContain("Open Wrist Assistant on the watch next.");
+    expect(USE_WATCH_PHONE_MOVES_CONFIRM_TEXT).toContain("Open HouseLit on the watch next.");
   });
 });
 

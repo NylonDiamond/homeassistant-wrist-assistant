@@ -7,11 +7,11 @@
   "compGreyWatch": "iPhone designs cannot go on a watch.",
   "compLeftOutWatch": "2 iPhone widgets are not listed: a watch cannot show them.",
   "compLeftOutIphone": "1 watch complication is not listed: an iPhone cannot show it.",
-  "getAppDone": "Wrist Assistant is on the App Store.",
+  "getAppDone": "HouseLit is on the App Store.",
   "getAppTodo": "Install it on the watch and/or on the iPhone.",
   "helpHome": [
     "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
-    "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
+    "Waiting means the device gets them the next time HouseLit opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
     "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map."
   ],
   "helpShared": [
@@ -59,12 +59,12 @@
   ],
   "pairCodeTitle": "Type the iPhone's code",
   "pairCodeStepsIphone": [
-    "On the iPhone, open Wrist Assistant and choose Pair with Home Assistant.",
+    "On the iPhone, open HouseLit and choose Pair with Home Assistant.",
     "Choose Show a code instead, and pick this Home Assistant.",
     "The iPhone shows a 6-character code. Type it here."
   ],
   "pairCodeStepsAny": [
-    "Open Wrist Assistant on the watch or iPhone.",
+    "Open HouseLit on the watch or iPhone.",
     "Choose Pair with Home Assistant.",
     "Type the code it shows here, then Look up."
   ],
@@ -152,11 +152,11 @@
   ],
   "pairQrSteps": [
     "Point the iPhone's Camera at this code.",
-    "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
-    "Tap Pair in Wrist Assistant."
+    "Tap the link. HouseLit opens, or its App Store page when the app is not on the iPhone yet.",
+    "Tap Pair in HouseLit."
   ],
   "pairCodeSteps": [
-    "Open Wrist Assistant on the watch or iPhone.",
+    "Open HouseLit on the watch or iPhone.",
     "Choose Pair with Home Assistant.",
     "Type the code it shows here, then Look up."
   ],
@@ -164,7 +164,7 @@
     "Replace an iPhone paired for someone else",
     "Only for an iPhone already paired here for another person, such as a phone handed on. Without it, that iPhone is refused."
   ],
-  "pairOfferOld": "Update the Wrist Assistant integration to pair an iPhone with a QR code.",
+  "pairOfferOld": "Update the HouseLit integration to pair an iPhone with a QR code.",
   "qrUserTitle": "Whose iPhone is this?",
   "qrUserHint": "The iPhone runs with this person's rights.",
   "searchWords": "This watch, this iPhone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",

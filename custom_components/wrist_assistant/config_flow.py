@@ -8,7 +8,7 @@ from .const import DOMAIN
 
 # Linked from the setup step. Home Assistant wants URLs in placeholders, not in
 # the translation strings themselves.
-SETUP_GUIDE_URL = "https://docs.wrist-assistant.com/getting-started/setup/"
+SETUP_GUIDE_URL = "https://docs.houselit.app/getting-started/setup/"
 
 
 class WristAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -23,7 +23,7 @@ class WristAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             return self.async_create_entry(
-                title="Wrist Assistant",
+                title="HouseLit",
                 data={},
             )
 

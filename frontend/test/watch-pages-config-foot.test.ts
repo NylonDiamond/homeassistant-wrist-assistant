@@ -96,7 +96,7 @@ describe("the foot bar", () => {
 
   it("names an iPhone in its help lines when the record is a phone's", () => {
     const waiting = configFootStatus({ record: record({ delivered_revision: 6 }), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
-    expect(waiting.help).toBe("Open Wrist Assistant on the iPhone to get it.");
+    expect(waiting.help).toBe("Open HouseLit on the iPhone to get it.");
     expect(waiting.state).toBe("Waiting for the iPhone");
     const collected = configFootStatus({ record: record(), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
     expect(collected.help).toBe("The iPhone has the latest save.");

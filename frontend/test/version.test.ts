@@ -66,9 +66,9 @@ describe("watchVersionNote", () => {
   });
 
   it("names the minimum for a watch older than it", () => {
-    expect(watchVersionNote("2.8.0", "2.9.0")).toBe("Needs Wrist Assistant 2.9 or later on your watch.");
-    expect(watchVersionNote("2.8.9 (4)", "2.9")).toBe("Needs Wrist Assistant 2.9 or later on your watch.");
-    expect(watchVersionNote("2.9.0", "2.9.1")).toBe("Needs Wrist Assistant 2.9.1 or later on your watch.");
+    expect(watchVersionNote("2.8.0", "2.9.0")).toBe("Needs HouseLit 2.9 or later on your watch.");
+    expect(watchVersionNote("2.8.9 (4)", "2.9")).toBe("Needs HouseLit 2.9 or later on your watch.");
+    expect(watchVersionNote("2.9.0", "2.9.1")).toBe("Needs HouseLit 2.9.1 or later on your watch.");
   });
 
   it("says nothing for a watch that is new enough or has not reported", () => {
@@ -82,7 +82,7 @@ describe("watchVersionNote", () => {
 
 describe("watchVersionNote for an iPhone", () => {
   it("names the iPhone when asked to", () => {
-    expect(watchVersionNote("3.0.1", "3.2.0", "iPhone")).toBe("Needs Wrist Assistant 3.2 or later on your iPhone.");
+    expect(watchVersionNote("3.0.1", "3.2.0", "iPhone")).toBe("Needs HouseLit 3.2 or later on your iPhone.");
   });
 });
 
@@ -106,12 +106,12 @@ describe("setupMoveNeedsUpdate", () => {
 describe("updateWatchMessage", () => {
   it("names the reported version and the minimum", () => {
     expect(updateWatchMessage("2.7.2", "2.8.0")).toBe(
-      "This watch runs Wrist Assistant 2.7.2. The editor needs 3.0 or later. Update Wrist Assistant on your iPhone; the watch app updates with it.",
+      "This watch runs HouseLit 2.7.2. The editor needs 3.0 or later. Update HouseLit on your iPhone; the watch app updates with it.",
     );
   });
 
   it("says so when the watch never reported a version", () => {
-    expect(updateWatchMessage(null, "2.8.0")).toMatch(/^This watch has not reported its Wrist Assistant version yet\./);
+    expect(updateWatchMessage(null, "2.8.0")).toMatch(/^This watch has not reported its HouseLit version yet\./);
     expect(updateWatchMessage("beta", "2.8.0")).toMatch(/^This watch has not reported/);
   });
 });
@@ -273,12 +273,12 @@ describe("updateIPhoneMessage", () => {
   // screens it draws on are named: one release brings the two.
   it("names the reported version and the minimum", () => {
     expect(updateIPhoneMessage("2.7.2", "2.8.0")).toBe(
-      "This iPhone runs Wrist Assistant 2.7.2. Lock Screen and Home Screen complications need 3.0 or later. Update Wrist Assistant on your iPhone.",
+      "This iPhone runs HouseLit 2.7.2. Lock Screen and Home Screen complications need 3.0 or later. Update HouseLit on your iPhone.",
     );
   });
 
   it("says so when the iPhone never reported a version", () => {
-    expect(updateIPhoneMessage(null, "2.8.0")).toMatch(/^This iPhone has not reported its Wrist Assistant version yet\./);
+    expect(updateIPhoneMessage(null, "2.8.0")).toMatch(/^This iPhone has not reported its HouseLit version yet\./);
   });
 
   it("is what the gate uses for a phone owner, and never for a watch", () => {

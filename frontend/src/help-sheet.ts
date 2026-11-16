@@ -61,7 +61,7 @@ const homeText = () => [
     "Devices lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
     "Devices lists every watch and phone, who it belongs to, and whether it has your latest changes.",
   ),
-  "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
+  "Waiting means the device gets them the next time HouseLit opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
   "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.",
 ];
 
@@ -284,7 +284,7 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
         </section>
       </div>
       <div class="hs-foot">
-        <span class="hs-version">Wrist Assistant${input.version ? ` ${input.version}` : ""}</span>
+        <span class="hs-version">HouseLit${input.version ? ` ${input.version}` : ""}</span>
       </div>
     </div>
   </dialog>`;

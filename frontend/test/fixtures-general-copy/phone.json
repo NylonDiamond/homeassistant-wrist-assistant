@@ -7,11 +7,11 @@
   "compGreyWatch": "Phone designs cannot go on a watch.",
   "compLeftOutWatch": "2 phone widgets are not listed: a watch cannot show them.",
   "compLeftOutIphone": "1 watch complication is not listed: a phone cannot show it.",
-  "getAppDone": "Wrist Assistant is on the App Store and Google Play.",
+  "getAppDone": "HouseLit is on the App Store and Google Play.",
   "getAppTodo": "Install it on the watch and/or on the phone.",
   "helpHome": [
     "Devices lists every watch and phone, who it belongs to, and whether it has your latest changes.",
-    "Waiting means the device gets them the next time Wrist Assistant opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
+    "Waiting means the device gets them the next time HouseLit opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
     "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map."
   ],
   "helpShared": [
@@ -59,12 +59,12 @@
   ],
   "pairCodeTitle": "Type the phone's code",
   "pairCodeStepsIphone": [
-    "On the phone, open Wrist Assistant and choose Pair with Home Assistant.",
+    "On the phone, open HouseLit and choose Pair with Home Assistant.",
     "Choose Show a code instead, and pick this Home Assistant.",
     "The phone shows a 6-character code. Type it here."
   ],
   "pairCodeStepsAny": [
-    "Open Wrist Assistant on the watch or phone.",
+    "Open HouseLit on the watch or phone.",
     "Choose Pair with Home Assistant.",
     "Type the code it shows here, then Look up."
   ],
@@ -152,11 +152,11 @@
   ],
   "pairQrSteps": [
     "Point the phone's camera at this code.",
-    "Tap the link. Wrist Assistant opens, or its App Store or Google Play page when the app is not on the phone yet.",
-    "Tap Pair in Wrist Assistant."
+    "Tap the link. HouseLit opens, or its App Store or Google Play page when the app is not on the phone yet.",
+    "Tap Pair in HouseLit."
   ],
   "pairCodeSteps": [
-    "Open Wrist Assistant on the watch or phone.",
+    "Open HouseLit on the watch or phone.",
     "Choose Pair with Home Assistant.",
     "Type the code it shows here, then Look up."
   ],
@@ -164,7 +164,7 @@
     "Replace a phone paired for someone else",
     "Only for a phone already paired here for another person, such as one handed on. Without it, that phone is refused."
   ],
-  "pairOfferOld": "Update the Wrist Assistant integration to pair a phone with a QR code.",
+  "pairOfferOld": "Update the HouseLit integration to pair a phone with a QR code.",
   "qrUserTitle": "Whose phone is this?",
   "qrUserHint": "The phone runs with this person's rights.",
   "searchWords": "This watch, this iPhone, this phone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",

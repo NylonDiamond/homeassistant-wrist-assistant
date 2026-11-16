@@ -50,7 +50,7 @@ export function watchPagesRouteOwner(route: PanelRoute | undefined): string | un
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_PAGES_HELP_URL = "https://docs.wrist-assistant.com/watch-app/pages-in-home-assistant/";
+export const WATCH_PAGES_HELP_URL = "https://docs.houselit.app/watch-app/pages-in-home-assistant/";
 
 /** What the editor's chunk tells the entry about the page drafts it keeps. */
 export interface WatchPagesDraftProbe {

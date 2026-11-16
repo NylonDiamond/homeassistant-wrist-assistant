@@ -131,7 +131,7 @@ describe("importDestination", () => {
   it("sends anything to Unassigned from a device whose app is too old", () => {
     const dest = importDestination({ ...base, owner: oldWatch, shapes: ["rectangular"] });
     expect(dest.unassigned).toBe(true);
-    if (dest.unassigned) expect(dest.reason).toContain("newer Wrist Assistant app");
+    if (dest.unassigned) expect(dest.reason).toContain("newer HouseLit app");
   });
 
   it("sends a link to Unassigned whatever device is open", () => {

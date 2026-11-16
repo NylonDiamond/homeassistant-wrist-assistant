@@ -1,11 +1,11 @@
 {
   "domain": "wrist_assistant",
-  "name": "Wrist Assistant",
+  "name": "HouseLit",
   "after_dependencies": ["recorder", "logbook", "cloud"],
   "codeowners": ["@NylonDiamond"],
   "config_flow": true,
   "dependencies": ["http", "camera", "websocket_api", "frontend", "panel_custom"],
-  "documentation": "https://docs.wrist-assistant.com/getting-started/setup/",
+  "documentation": "https://docs.houselit.app/getting-started/setup/",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues",
   "requirements": [],

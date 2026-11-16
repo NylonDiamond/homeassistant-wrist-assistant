@@ -65,7 +65,7 @@ describe("the words of each step", () => {
 
   it("gives a watch its own steps, an iPhone its own, and both the shared ones when nobody said", () => {
     expect(pairCodeTitle("watch")).toBe("Type the watch's code");
-    expect(pairCodeSteps("watch")[0]).toBe("On the watch, open Wrist Assistant and choose Pair with Home Assistant.");
+    expect(pairCodeSteps("watch")[0]).toBe("On the watch, open HouseLit and choose Pair with Home Assistant.");
     expect(pairCodeSteps("iphone")[1]).toBe("Choose Show a code instead, and pick this Home Assistant.");
     expect(pairCodeSteps(undefined)).toBe(pairCodeStepsForAny());
     expect(pairCodeTitle(undefined)).toBe("Type the code");
@@ -103,7 +103,7 @@ describe("what next, once a watch is paired", () => {
   });
 
   it("links to the setup guide on the docs site", () => {
-    expect(PAIR_SETUP_GUIDE_URL).toBe("https://docs.wrist-assistant.com/getting-started/setup/");
+    expect(PAIR_SETUP_GUIDE_URL).toBe("https://docs.houselit.app/getting-started/setup/");
   });
 });
 
@@ -111,7 +111,7 @@ describe("pairing from the 3.0 app", () => {
   // 3.0 has neither the watch's code nor the iPhone's QR code; its iPhone
   // app signs in instead (/v2/register_secret, still served).
   it("is named under both choices: the welcome's and the dialog's", () => {
-    expect(OLD_APP_PAIR_NOTE).toBe("On Wrist Assistant 3.0, sign in to Home Assistant from the iPhone app instead.");
+    expect(OLD_APP_PAIR_NOTE).toBe("On HouseLit 3.0, sign in to Home Assistant from the iPhone app instead.");
     const panel = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
     const welcome = panel.slice(panel.indexOf("  private renderHomeWelcome("));
     expect(welcome.slice(0, welcome.indexOf("\n  }\n"))).toContain("<span>${OLD_APP_PAIR_NOTE}</span>");
@@ -123,7 +123,7 @@ describe("pairing from the 3.0 app", () => {
   it("is in the config flow's words too", () => {
     for (const file of ["strings.json", join("translations", "en.json")]) {
       const json = JSON.parse(readFileSync(join(__dirname, "..", "..", "custom_components", "wrist_assistant", file), "utf8")) as { config: { step: { user: { description: string } } } };
-      expect(json.config.step.user.description).toContain("On Wrist Assistant 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.");
+      expect(json.config.step.user.description).toContain("On HouseLit 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.");
     }
   });
 });

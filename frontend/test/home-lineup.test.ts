@@ -158,7 +158,7 @@ describe("a device's lineup on Home", () => {
 
   it("makes no flat claim about the watch while its seed may still be landing", () => {
     const draw = { seedMayLand: true, onEdit: () => undefined, onChange: () => undefined };
-    expect(SEED_MAY_LAND_EMPTY_TEXT).toBe("Nothing here from this watch yet. Open Wrist Assistant on it.");
+    expect(SEED_MAY_LAND_EMPTY_TEXT).toBe("Nothing here from this watch yet. Open HouseLit on it.");
     const landing = lineupGroups(libraryOf(summary()), "nobody", "watch", draw);
     expect(landing.map((g) => g.empty)).toEqual([SEED_MAY_LAND_EMPTY_TEXT, SEED_MAY_LAND_EMPTY_TEXT, SEED_MAY_LAND_EMPTY_TEXT]);
     // It may still start one, as nothing waits.

@@ -217,7 +217,7 @@ export async function runTapAction(action: TapAction, hooks: DemoHooks): Promise
         ? { kind: "did", text: "Playing the page tour." }
         : { kind: "none", text: "No tour to play: this complication has no page tour." };
     case "openApp":
-      return { kind: "would", text: "The watch would open the Wrist Assistant app." };
+      return { kind: "would", text: "The watch would open the HouseLit app." };
     case "openPage":
       return { kind: "would", text: "The watch would open its page." };
     case "openRoomPage":

@@ -83,7 +83,7 @@ describe("shareLinkUrl and shareLinkPayload", () => {
   it("points copied links at the site page, which every home can open", async () => {
     const payload = await encodeShareLink(sampleText());
     const url = shareLinkUrl(SHARE_LINK_SITE, payload);
-    expect(url.startsWith("https://wrist-assistant.com/import/#import=z")).toBe(true);
+    expect(url.startsWith("https://houselit.app/import/#import=z")).toBe(true);
     // A link pasted into Import still opens, whatever address it points at.
     expect(shareLinkInText(url)).toBe(payload);
   });

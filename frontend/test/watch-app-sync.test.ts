@@ -283,7 +283,7 @@ describe("Home's rows with the watch app", () => {
     expect(attentionText(rows[0]!, undefined)).toBe("Waiting for your iPhone");
   });
 
-  it("waits for Wrist Assistant 3.2 instead while the watch's app is older than the move", () => {
+  it("waits for HouseLit 3.2 instead while the watch's app is older than the move", () => {
     // The integration ships weeks before the app: a watch still on 3.0.1
     // has no iPhone that will ever move its setup until the update.
     const owners = [
@@ -299,8 +299,8 @@ describe("Home's rows with the watch app", () => {
       ["w2", [IPHONE_MOVE_LABEL]],
       ["w3", [IPHONE_MOVE_LABEL]],
     ]);
-    expect(attentionText(rows[0]!, undefined)).toBe("Waiting for Wrist Assistant 3.2 on the watch");
-    expect(iphoneMoveLabel("3.0.1")).toBe("Wrist Assistant 3.2 on the watch");
+    expect(attentionText(rows[0]!, undefined)).toBe("Waiting for HouseLit 3.2 on the watch");
+    expect(iphoneMoveLabel("3.0.1")).toBe("HouseLit 3.2 on the watch");
     expect(iphoneMoveLabel("3.2.0")).toBe("your iPhone");
     expect(deviceVerdict("synced", { waiting: [], delivered: false, noRecord: true }, true, "3.0.1").waitingFor).toEqual([IPHONE_UPDATE_LABEL]);
   });

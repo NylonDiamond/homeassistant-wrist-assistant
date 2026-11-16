@@ -158,10 +158,10 @@ describe("the words", () => {
     expect(helpStepWords("pair", two).text).toBe("2 watches are paired.");
     expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Type the code the watch shows.");
     // Google Play is named only once an Android device is paired here.
-    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store.");
+    expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("HouseLit is on the App Store.");
     setAndroidHere(true);
     try {
-      expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store and Google Play.");
+      expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("HouseLit is on the App Store and Google Play.");
     } finally {
       setAndroidHere(false);
     }
@@ -324,7 +324,7 @@ describe("the Help sheet", () => {
     const text = sheet("/menus");
     expect(text).toContain("On this screen: Menus");
     for (const url of [SETUP_GUIDE_URL, TROUBLESHOOTING_URL, REPORT_PROBLEM_URL]) expect(text).toContain(`href=${url}`);
-    expect(text).toContain("Wrist Assistant 3.1.2");
+    expect(text).toContain("HouseLit 3.1.2");
     expect(text).not.toContain("welcome card");
   });
 

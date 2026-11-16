@@ -795,7 +795,7 @@ export async function decodeShareLink(payload: string): Promise<string | undefin
  * link to this panel would only open on this home's network. The page there
  * asks the reader for their own Home Assistant address once, then forwards
  * the same hash to their panel. The hash never reaches the site's server. */
-export const SHARE_LINK_SITE = "https://wrist-assistant.com/import/";
+export const SHARE_LINK_SITE = "https://houselit.app/import/";
 
 /** A link to `base` (a panel address, or SHARE_LINK_SITE, without a hash)
  * that opens the Import dialog with the text filled in. */
@@ -881,7 +881,7 @@ export function importDestination(input: {
   const { owner, ownerName } = input;
   if (isLibraryOwner(owner)) return { unassigned: false };
   if (input.fromLink) return { unassigned: true, reason: "a link does not say which device it is for" };
-  if (!deviceSupportsShapes(owner)) return { unassigned: true, reason: `${ownerName} needs a newer Wrist Assistant app to draw it` };
+  if (!deviceSupportsShapes(owner)) return { unassigned: true, reason: `${ownerName} needs a newer HouseLit app to draw it` };
   const first = input.shapes[0];
   if (first !== undefined && importableFamilies({ supportedFamilies: [...input.shapes] }, familiesFor(owner)).length === 0) {
     const what = isHomeFamily(first) ? "Home Screen widgets" : `the ${familyTitle(first)} shape`;

@@ -178,12 +178,12 @@ describe("the iPhone app's pick", () => {
     const screen = source.slice(at, source.indexOf("\n  }\n", at));
     expect(screen).toContain("<h2>${PHONE_PAGES_UPDATE_TITLE}</h2>");
     expect(screen).toContain("<p>${PHONE_PAGES_UPDATE_TEXT}</p>");
-    expect(PHONE_PAGES_UPDATE_TEXT).toContain("iPhone pages need Wrist Assistant 3.2 or later.");
+    expect(PHONE_PAGES_UPDATE_TEXT).toContain("iPhone pages need HouseLit 3.2 or later.");
     for (const words of [PHONE_PAGES_UPDATE_TITLE, PHONE_PAGES_UPDATE_TEXT, IPHONE_ROW_UPDATE_NOTE]) {
       expect(words).not.toMatch(/TestFlight|Pages tab|latest version/);
       expect(words).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
     }
-    expect(IPHONE_ROW_UPDATE_NOTE).toBe("Needs Wrist Assistant 3.2 or later on your iPhone to set up its pages, menus and the rest.");
+    expect(IPHONE_ROW_UPDATE_NOTE).toBe("Needs HouseLit 3.2 or later on your iPhone to set up its pages, menus and the rest.");
   });
 
   it("takes the iPhone the address names, else the one remembered, else the first", () => {

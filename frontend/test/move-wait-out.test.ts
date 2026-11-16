@@ -28,7 +28,7 @@ describe("the way out of the wait", () => {
   it("says it in short words, and says to open the watch first", () => {
     expect(NO_IPHONE_QUESTION).toBe("No longer have that iPhone?");
     expect(USE_WATCH_BUTTON).toBe("Use what is on the watch");
-    expect(USE_WATCH_CONFIRM_TEXT).toContain("Open Wrist Assistant on the watch next");
+    expect(USE_WATCH_CONFIRM_TEXT).toContain("Open HouseLit on the watch next");
     expect(waitingWatchText("Kitchen Watch")).toBe("Kitchen Watch is waiting for its iPhone.");
   });
 

@@ -90,7 +90,7 @@ def _text(path: Path) -> str:
 
 
 SERVICES_SHAPE = "024d482db90c94e06c75361fc23f4290559ee182873aeaa1c6125cd673cbffec"
-BLUEPRINT_SHAPE = "b5b4f1bfdbffd1ed3d86e1a9f87dcf17df1fb30e7171fa9e7918a36ed042fac1"
+BLUEPRINT_SHAPE = "157327c1e75da75d145ab2e2763f02451f6ff8925904cf292895b49a1f43091f"
 
 
 def test_the_service_keeps_every_field_default_and_selector() -> None:

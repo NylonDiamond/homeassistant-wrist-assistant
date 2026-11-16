@@ -3364,7 +3364,7 @@ class WatchConfigStore:
             raise WatchConfigLinkError(
                 "awaiting_move",
                 "This watch is waiting for its iPhone to move its "
-                f"{kind.replace('_', ' ')} here. Open Wrist Assistant on that "
+                f"{kind.replace('_', ' ')} here. Open HouseLit on that "
                 "iPhone first.",
             )
 

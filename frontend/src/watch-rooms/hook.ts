@@ -55,7 +55,7 @@ export function navigateWatchRooms(route: PanelRoute | undefined, open: boolean)
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_ROOMS_HELP_URL = "https://docs.wrist-assistant.com/features/rooms/";
+export const WATCH_ROOMS_HELP_URL = "https://docs.houselit.app/features/rooms/";
 
 /** What the editor's chunk tells the entry about the drafts it keeps. */
 export interface WatchRoomsDraftProbe {

@@ -24,7 +24,7 @@ export const HOME_MAP_PATH = "/home-map";
  * `RoomCaptureSession.isSupported` decides. Said on the empty map and in
  * Help, so a person with an Android phone or a plain iPhone knows to draw
  * the rooms by hand. Kept here, in the first download, for Help. */
-export const HOME_MAP_SCAN_TEXT = "Scanning needs the Wrist Assistant app on an iPhone Pro (12 Pro or later) or an iPad Pro with LiDAR. Android phones and other iPhones cannot scan, so draw your rooms here.";
+export const HOME_MAP_SCAN_TEXT = "Scanning needs the HouseLit app on an iPhone Pro (12 Pro or later) or an iPad Pro with LiDAR. Android phones and other iPhones cannot scan, so draw your rooms here.";
 
 export function isHomeMapRoute(route: PanelRoute | undefined): boolean {
   const path = route?.path ?? "";

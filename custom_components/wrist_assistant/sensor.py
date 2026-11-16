@@ -197,8 +197,8 @@ class _WristAssistantSensorBase(SensorEntity):
         self._entry = entry
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Wrist Assistant",
-            manufacturer="Wrist Assistant",
+            name="HouseLit",
+            manufacturer="HouseLit",
             model="Hub",
             entry_type=DeviceEntryType.SERVICE,
             configuration_url=PANEL_CONFIGURATION_URL,

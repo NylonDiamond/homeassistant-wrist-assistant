@@ -859,7 +859,7 @@ describe("Watch settings as a page under the Watch app row", () => {
         : real(msg);
       inside.pairCard.pickOfferUser("chen");
       await inside.pairCard.showOffer();
-      expect(inside.pairCard.offer.error).toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
+      expect(inside.pairCard.offer.error).toBe("Update the HouseLit integration to pair a phone with a QR code.");
       expect(inside.pairCard.offer.open).toBeUndefined();
       ws.leave();
     });

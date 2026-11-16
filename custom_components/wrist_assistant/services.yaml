@@ -240,7 +240,7 @@ send_notification:
         notification channel: Passive waits quietly in the notification
         shade, Active and Time Sensitive pop up on the screen, and Time
         Sensitive passes Do Not Disturb only when Android's Do Not Disturb
-        settings let Wrist Assistant through.
+        settings let HouseLit through.
       selector:
         select:
           mode: dropdown

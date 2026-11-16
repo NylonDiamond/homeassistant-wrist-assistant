@@ -319,8 +319,8 @@ describe("the version note", () => {
 
   it("names the devices that draw Default", () => {
     expect(arrangementUpdateNote([], "3.2.0")).toBeUndefined();
-    expect(arrangementUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Standard layout.");
-    expect(arrangementUpdateNote(["A", "B", "C"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on A, B and C. Until then they draw the Standard layout.");
+    expect(arrangementUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs HouseLit 3.2 on Chen Watch. Until then it draws the Standard layout.");
+    expect(arrangementUpdateNote(["A", "B", "C"], "3.2.0")).toBe("Needs HouseLit 3.2 on A, B and C. Until then they draw the Standard layout.");
   });
 });
 
@@ -665,7 +665,7 @@ describe("the Arrangement card", () => {
 
   it("notes only the devices older than the 3.2.0 release", () => {
     const old = text(card(tileHost(KITCHEN, { pickers: [{ name: "Chen Watch", version: "3.1.4" }, { name: "Jesse iPhone", version: "3.2.0" }] }).host));
-    expect(old).toContain("Needs Wrist Assistant 3.2 on Chen Watch.");
+    expect(old).toContain("Needs HouseLit 3.2 on Chen Watch.");
     expect(old).not.toContain("Jesse iPhone");
   });
 

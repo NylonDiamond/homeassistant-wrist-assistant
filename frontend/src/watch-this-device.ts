@@ -21,7 +21,7 @@ export function thisDeviceTitle(device: SettingDevice, platform?: DevicePlatform
 /** The one line under the rows. */
 export function thisDeviceNote(device: SettingDevice, platform?: DevicePlatform | null): string {
   return device === "iphone"
-    ? `If this ${nounFor(device, platform)} stops connecting, open Settings in Wrist Assistant and choose Pair Again.`
+    ? `If this ${nounFor(device, platform)} stops connecting, open Settings in HouseLit and choose Pair Again.`
     : "If this watch stops connecting, open Settings on the watch and choose Pair again.";
 }
 

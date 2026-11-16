@@ -149,7 +149,7 @@
     },
     {
       "id": "wristWebhooks",
-      "label": "Wrist Webhooks",
+      "label": "HouseLit Webhooks",
       "groups": [
         {
           "label": "Webhook alerts",

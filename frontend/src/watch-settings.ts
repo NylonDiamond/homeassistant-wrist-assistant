@@ -556,7 +556,7 @@ export function waitingPillText(device: SettingDevice): string {
 
 /** The help line while a save waits, naming the device it waits for. */
 export function waitingHelpText(device: SettingDevice): string {
-  return `Open Wrist Assistant on the ${deviceNoun(device)} to get it.`;
+  return `Open HouseLit on the ${deviceNoun(device)} to get it.`;
 }
 
 /** The whole sentence while a save waits, naming the device. */
@@ -734,26 +734,26 @@ export function noRecordStart(owner: MoveWaitFacts | undefined): NoRecordStart {
 
 /** The no-record line while the iPhone's move may still come. */
 export const WAIT_FOR_IPHONE_TEXT =
-  "Waiting for your iPhone. Update Wrist Assistant on your iPhone and open it once. Your watch setup moves here by itself.";
+  "Waiting for your iPhone. Update HouseLit on your iPhone and open it once. Your watch setup moves here by itself.";
 
 /** The no-record line while the watch's app is too old for the move
  * (`setupMoveNeedsUpdate`): no iPhone below that release ever sends it, so
  * "open it once" would not help. Worded to stay true before and after the
  * release reaches the App Store. */
 export const WAIT_FOR_UPDATE_TEXT =
-  `Needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.`;
+  `Needs HouseLit ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.`;
 
 /** The no-record line while the iPhone that paired the watch already runs an
  * app that moves (`owner_iphone_moves`): telling that person to update it
  * would be false. Its move may still be on the way, or it may have nothing to
  * send, so this says neither. */
 export const WAIT_PHONE_MOVES_TEXT =
-  "Your iPhone is up to date. Open Wrist Assistant on it once if you have not. If nothing more comes here, use what is on the watch.";
+  "Your iPhone is up to date. Open HouseLit on it once if you have not. If nothing more comes here, use what is on the watch.";
 
 /** The same while the watch itself is what is too old: its iPhone is done, or
  * nearly, and the watch cannot send its own setup yet. */
 export const WAIT_WATCH_UPDATE_TEXT =
-  `Your iPhone is up to date. Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its setup here. Until then it keeps its current setup.`;
+  `Your iPhone is up to date. Your watch needs HouseLit ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its setup here. Until then it keeps its current setup.`;
 
 /** The no-record line while the iPhone the watch names does not move, and
  * another iPhone of the same person does: most often the same iPhone, paired
@@ -765,7 +765,7 @@ export const WAIT_OTHER_PHONE_TEXT =
  * may be old or gone: the wait was ended by hand, or the iPhone was forgotten.
  * It names the watch's update and makes no claim about the iPhone. */
 export const WAIT_WATCH_ONLY_UPDATE_TEXT =
-  `Your watch needs Wrist Assistant ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its setup here. Until then it keeps its current setup.`;
+  `Your watch needs HouseLit ${versionForCopy(SETUP_MOVE_PUBLIC_VERSION)} or later to send its setup here. Until then it keeps its current setup.`;
 
 /** What the wait lines know of the iPhone. `true`: the iPhone the watch names
  * runs an app that moves, or has finished. `"another"`: it does not, and
@@ -796,7 +796,7 @@ export function waitForIphoneText(appVersion: string | null | undefined, phoneMo
 /** What a refused write says, where the panel does not know which watch it
  * was about. True whatever that watch's iPhone runs. */
 export const AWAITING_MOVE_TEXT =
-  "Waiting for your iPhone. Open Wrist Assistant on it once, and update it first if it is older. Try again after that.";
+  "Waiting for your iPhone. Open HouseLit on it once, and update it first if it is older. Try again after that.";
 
 /** The small link that opens the editor anyway while the move may still
  * come. */
@@ -838,12 +838,12 @@ const USE_WATCH_SETTINGS_TEXT =
  * free plan's watch may keep one page. A kept copy is only the watch's once it
  * has sent it: an iPhone's move still lands for any kind with no record. */
 export const USE_WATCH_CONFIRM_TEXT =
-  `Use what is on the watch? Open Wrist Assistant on the watch next, before you update or open your iPhone. The watch sends its setup here when its app opens. ${USE_WATCH_SETTINGS_TEXT} Until the watch has sent it, what your iPhone sends lands first.`;
+  `Use what is on the watch? Open HouseLit on the watch next, before you update or open your iPhone. The watch sends its setup here when its app opens. ${USE_WATCH_SETTINGS_TEXT} Until the watch has sent it, what your iPhone sends lands first.`;
 
 /** The same with an iPhone that already runs an app that moves. It may have
  * nothing left to send, so this does not promise it holds a copy. */
 export const USE_WATCH_PHONE_MOVES_CONFIRM_TEXT =
-  `Use what is on the watch? Open Wrist Assistant on the watch next. It sends its setup here when its app opens. ${USE_WATCH_SETTINGS_TEXT} Anything your iPhone has not sent yet may be left out.`;
+  `Use what is on the watch? Open HouseLit on the watch next. It sends its setup here when its app opens. ${USE_WATCH_SETTINGS_TEXT} Anything your iPhone has not sent yet may be left out.`;
 
 /** What the way out asks for this watch. */
 export function useWatchConfirmText(phoneMoves: PhoneMoves | undefined): string {
@@ -932,20 +932,20 @@ export const WATCH_SEED_LABEL = "the watch to send its setup";
 export const WAITING_FOR_WATCH_STATUS = `Waiting for ${WATCH_SEED_LABEL}`;
 
 /** The line under them. */
-export const WAITING_FOR_WATCH_TEXT = "Waiting for the watch to send its setup. Open Wrist Assistant on the watch first.";
+export const WAITING_FOR_WATCH_TEXT = "Waiting for the watch to send its setup. Open HouseLit on the watch first.";
 
 /** The same, on a screen about several watches. */
 export function waitingForNamedWatchText(name: string): string {
-  return `Waiting for ${name} to send its setup. Open Wrist Assistant on that watch first.`;
+  return `Waiting for ${name} to send its setup. Open HouseLit on that watch first.`;
 }
 
 /** What a first Save or a new page asks while the watch's setup may still come. */
 export const SEED_PENDING_ASK_TEXT =
-  "Your watch has not sent its setup yet. Open Wrist Assistant on the watch first. Saving now replaces what is on the watch. Go on anyway?";
+  "Your watch has not sent its setup yet. Open HouseLit on the watch first. Saving now replaces what is on the watch. Go on anyway?";
 
 /** A kind's empty line while the watch's seed may still be landing
  * (`seedMayLand`). It holds no claim about what is on the watch. */
-export const SEED_MAY_LAND_EMPTY_TEXT = "Nothing here from this watch yet. Open Wrist Assistant on it.";
+export const SEED_MAY_LAND_EMPTY_TEXT = "Nothing here from this watch yet. Open HouseLit on it.";
 
 /** The header's words for a settings page whose watch runs its own settings. */
 export const KEEPS_OWN_SETTINGS_STATUS = "Keeps its own settings, not saved here yet";
@@ -1048,7 +1048,7 @@ export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
  * panel cannot read, such as one from a newer schema. The editor does not
  * open ready: a save over revision 0 would only meet a conflict. */
 export function pagesUnreadableText(device: SettingDevice): string {
-  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update Wrist Assistant in ${integrationStoreName()}, then reload.`;
+  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update HouseLit in ${integrationStoreName()}, then reload.`;
 }
 
 /** `pagesUnreadableText` for a watch. */
@@ -1152,25 +1152,25 @@ export function pairQrHint(): string {
 
 const PAIR_QR_STEPS_IPHONE = [
   "Point the iPhone's Camera at this code.",
-  "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
-  "Tap Pair in Wrist Assistant.",
+  "Tap the link. HouseLit opens, or its App Store page when the app is not on the iPhone yet.",
+  "Tap Pair in HouseLit.",
 ] as const;
 const PAIR_QR_STEPS_PHONE = [
   "Point the phone's camera at this code.",
-  "Tap the link. Wrist Assistant opens, or its App Store or Google Play page when the app is not on the phone yet.",
-  "Tap Pair in Wrist Assistant.",
+  "Tap the link. HouseLit opens, or its App Store or Google Play page when the app is not on the phone yet.",
+  "Tap Pair in HouseLit.",
 ] as const;
 /** The same, as numbered steps, the way the card draws them. */
 export function pairQrSteps(): readonly string[] {
   return generalCopy(PAIR_QR_STEPS_IPHONE, PAIR_QR_STEPS_PHONE);
 }
 const PAIR_CODE_STEPS_IPHONE = [
-  "Open Wrist Assistant on the watch or iPhone.",
+  "Open HouseLit on the watch or iPhone.",
   "Choose Pair with Home Assistant.",
   "Type the code it shows here, then Look up.",
 ] as const;
 const PAIR_CODE_STEPS_PHONE = [
-  "Open Wrist Assistant on the watch or phone.",
+  "Open HouseLit on the watch or phone.",
   "Choose Pair with Home Assistant.",
   "Type the code it shows here, then Look up.",
 ] as const;
@@ -1505,8 +1505,8 @@ export function pairErrorText(err: unknown, step: "lookup" | "confirm" | "offer"
   const code = errorCode(err);
   if (code === "unknown_command") {
     return step === "offer"
-      ? generalCopy("Update the Wrist Assistant integration to pair an iPhone with a QR code.", "Update the Wrist Assistant integration to pair a phone with a QR code.")
-      : "Update the Wrist Assistant integration to pair a watch with a code.";
+      ? generalCopy("Update the HouseLit integration to pair an iPhone with a QR code.", "Update the HouseLit integration to pair a phone with a QR code.")
+      : "Update the HouseLit integration to pair a watch with a code.";
   }
   if (code === "needs_replace") return `This ${deviceWord(kind, platform)} is already paired. Tick ${PAIR_REPLACE_LABEL} to pair it again.`;
   if (code === "paired_by_other_user") return pairOtherPersonText(kind, platform);

@@ -32,4 +32,4 @@ export function watchControlCenterRouteOwner(route: PanelRoute | undefined): str
 }
 
 /** The help page about controls, which the Help sheet links. */
-export const WATCH_CONTROL_CENTER_HELP_URL = "https://docs.wrist-assistant.com/watch-app/complications/#control-center";
+export const WATCH_CONTROL_CENTER_HELP_URL = "https://docs.houselit.app/watch-app/complications/#control-center";

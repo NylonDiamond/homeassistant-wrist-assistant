@@ -42,7 +42,7 @@ export function watchMenusRouteOwner(route: PanelRoute | undefined): string | un
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_MENUS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/quick-menu/";
+export const WATCH_MENUS_HELP_URL = "https://docs.houselit.app/watch-app/quick-menu/";
 
 /** What the editor's chunk tells the entry about the menu drafts it keeps. */
 export interface WatchMenusDraftProbe {

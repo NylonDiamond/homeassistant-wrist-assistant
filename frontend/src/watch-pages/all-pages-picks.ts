@@ -86,7 +86,7 @@ export interface PicksIO {
 
 /** Why New page cannot add to a record this panel cannot read. */
 export function unreadablePicksText(kind: CardKind): string {
-  return `Home Assistant holds ${kind === "status_pages" ? "status pages" : "pages"} for it that this panel cannot read. Update Wrist Assistant in ${integrationStoreName()}, then reload.`;
+  return `Home Assistant holds ${kind === "status_pages" ? "status pages" : "pages"} for it that this panel cannot read. Update HouseLit in ${integrationStoreName()}, then reload.`;
 }
 
 /** The most times one change is sent before conflicts end it. */

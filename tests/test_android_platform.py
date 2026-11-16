@@ -280,7 +280,7 @@ def test_the_general_refusals_say_phone_once_an_android_device_is_paired() -> No
     init = (_SRC / "__init__.py").read_text()
     assert 'phone = general_words(' in init and '"iPhone", "phone"' in init
     assert '"{phone} again as the target."' in init
-    assert "is not a watch or {phone} paired with Wrist" in init
+    assert "is not a watch or {phone} paired with \"" in init
     pairing = (_SRC / "pairing_ws.py").read_text()
     assert 'noun = general_words(entries, "iPhone", "phone")' in pairing
 

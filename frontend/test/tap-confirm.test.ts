@@ -128,16 +128,16 @@ describe("which actions can ask first", () => {
 
   // An app before 3.2 has no confirm on its tap and runs the action on the
   // first tap: a garage door would open with no question.
-  it("says the option needs Wrist Assistant 3.2 on a device older than that", () => {
+  it("says the option needs HouseLit 3.2 on a device older than that", () => {
     expect(MIN_VERSION_FOR_TAP_CONFIRM).toBe("3.2.0");
-    expect(tapConfirmNote({ watchAppVersion: "3.0.1" })).toBe("Needs Wrist Assistant 3.2 or later on your watch.");
-    expect(tapConfirmNote({ watchAppVersion: "3.0.1", deviceKind: "iphone" })).toBe("Needs Wrist Assistant 3.2 or later on your iPhone.");
+    expect(tapConfirmNote({ watchAppVersion: "3.0.1" })).toBe("Needs HouseLit 3.2 or later on your watch.");
+    expect(tapConfirmNote({ watchAppVersion: "3.0.1", deviceKind: "iphone" })).toBe("Needs HouseLit 3.2 or later on your iPhone.");
     expect(tapConfirmNote({ watchAppVersion: "3.2.0" })).toBeUndefined();
     expect(tapConfirmNote({ watchAppVersion: null })).toBeUndefined();
     const { tap } = withAttachedTap();
     const text = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (typeof x === "function" ? undefined : x));
-    expect(text(tapConfirmField(tap, () => {}, { watchAppVersion: "3.0.1" }))).toContain("Needs Wrist Assistant 3.2 or later on your watch.");
-    expect(text(tapConfirmField(tap, () => {}, { watchAppVersion: "3.2.0" }))).not.toContain("Needs Wrist Assistant");
+    expect(text(tapConfirmField(tap, () => {}, { watchAppVersion: "3.0.1" }))).toContain("Needs HouseLit 3.2 or later on your watch.");
+    expect(text(tapConfirmField(tap, () => {}, { watchAppVersion: "3.2.0" }))).not.toContain("Needs HouseLit");
   });
 
   // R5-056: the note alone let a person turn it on and save, and the old

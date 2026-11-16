@@ -54,7 +54,7 @@ export function navigateWatchVoice(route: PanelRoute | undefined, voice: boolean
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_VOICE_HELP_URL = "https://docs.wrist-assistant.com/watch-app/voice/";
+export const WATCH_VOICE_HELP_URL = "https://docs.houselit.app/watch-app/voice/";
 
 /** What the editor's chunk tells the entry about the voice drafts it keeps. */
 export interface WatchVoiceDraftProbe {

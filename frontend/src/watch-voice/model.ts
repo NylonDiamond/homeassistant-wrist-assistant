@@ -578,7 +578,7 @@ export const WATCH_VOICE_NO_RECORD_TITLE = "No voice settings from this watch ye
 export const WATCH_VOICE_UPDATE_TEXT = "Update the integration to edit voice settings here.";
 
 /** The Watch voice picker's line when the watch has sent no voices. */
-export const WATCH_VOICES_EMPTY_TEXT = "This watch has not sent its voices yet. Open Wrist Assistant on the watch.";
+export const WATCH_VOICES_EMPTY_TEXT = "This watch has not sent its voices yet. Open HouseLit on the watch.";
 
 /** Whether a failed read of the voice settings means this integration does
  * not keep them: one older than the kind refuses it as `invalid`, one older

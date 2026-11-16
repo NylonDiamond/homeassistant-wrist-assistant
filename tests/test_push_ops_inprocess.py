@@ -580,7 +580,7 @@ def test_a_target_with_nothing_registered_is_named_in_the_error(env) -> None:
 def test_no_target_and_nothing_registered_says_to_pair_a_watch(env) -> None:
     with pytest.raises(_HomeAssistantError) as err:
         _deliver(env, _RelayClient())
-    assert "Pair a watch in the Wrist Assistant panel" in str(err.value)
+    assert "Pair a watch in the HouseLit panel" in str(err.value)
 
 
 def test_a_failed_send_names_the_device_not_its_id(env) -> None:

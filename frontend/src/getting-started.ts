@@ -18,10 +18,10 @@ export const APP_STORE_URL = "https://apps.apple.com/us/app/wrist-assistant/id67
 /** Its Google Play page, for an Android phone and a Wear OS watch. Linked
  * beside the App Store everywhere the panel offers the app. */
 export { PLAY_STORE_URL } from "./device-platform.js";
-export const SETUP_GUIDE_URL = "https://docs.wrist-assistant.com/getting-started/setup/";
-export const TROUBLESHOOTING_URL = "https://docs.wrist-assistant.com/getting-started/troubleshooting/";
+export const SETUP_GUIDE_URL = "https://docs.houselit.app/getting-started/setup/";
+export const TROUBLESHOOTING_URL = "https://docs.houselit.app/getting-started/troubleshooting/";
 export const REPORT_PROBLEM_URL = "https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues";
-export const DOCS_URL = "https://docs.wrist-assistant.com/";
+export const DOCS_URL = "https://docs.houselit.app/";
 
 export type StepId = "app" | "pair" | "page";
 
@@ -137,7 +137,7 @@ export function helpStepWords(id: StepId, gs: Pick<GettingStarted, "steps" | "wa
       text: done
         // Google Play is named only once an Android device is paired here: the
         // Android app is on Play's testing tracks, not in the store, until then.
-        ? (androidHereNow() ? "Wrist Assistant is on the App Store and Google Play." : "Wrist Assistant is on the App Store.")
+        ? (androidHereNow() ? "HouseLit is on the App Store and Google Play." : "HouseLit is on the App Store.")
         : generalCopy("Install it on the watch and/or on the iPhone.", "Install it on the watch and/or on the phone."),
     };
   }

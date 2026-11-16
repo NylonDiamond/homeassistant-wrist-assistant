@@ -21,7 +21,7 @@ export function isWatchCamerasRoute(route: PanelRoute | undefined): boolean {
 }
 
 /** The help page the screen's "?" opens. */
-export const WATCH_CAMERAS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/cameras/#notification-snapshots";
+export const WATCH_CAMERAS_HELP_URL = "https://docs.houselit.app/watch-app/cameras/#notification-snapshots";
 
 /** What the editor's chunk tells the entry about the draft it keeps. */
 export interface WatchCamerasDraftProbe {

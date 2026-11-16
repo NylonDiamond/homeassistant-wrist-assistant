@@ -121,7 +121,7 @@ describe("the no-record state", () => {
 describe("the no-record words", () => {
   it("say the wait, the link and the question in plain words", () => {
     expect(WAIT_FOR_IPHONE_TEXT).toBe(
-      "Waiting for your iPhone. Update Wrist Assistant on your iPhone and open it once. Your watch setup moves here by itself.",
+      "Waiting for your iPhone. Update HouseLit on your iPhone and open it once. Your watch setup moves here by itself.",
     );
     expect(START_FRESH_BUTTON).toBe("Start fresh instead");
     expect(START_FRESH_CONFIRM_TEXT).toBe(
@@ -131,7 +131,7 @@ describe("the no-record words", () => {
 
   it("give the rooms and HTTP actions their own wait lines", () => {
     expect(ROOMS_WAIT_TEXT).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`);
-    expect(HTTP_ACTIONS_PHONE_TEXT).toBe("Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.");
+    expect(HTTP_ACTIONS_PHONE_TEXT).toBe("Update HouseLit on your iPhone and open it once. Its HTTP actions move here by themselves.");
   });
 
   it("never name the iPhone switch the app no longer has, nor break a sentence with a dash", () => {
@@ -322,7 +322,7 @@ describe("a watch on an app older than the move", () => {
 
   it("names the release in the wait words, and only below the move's build", () => {
     expect(WAIT_FOR_UPDATE_TEXT).toBe(
-      "Needs Wrist Assistant 3.2 or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.",
+      "Needs HouseLit 3.2 or later. Until then your watch keeps its current setup. Once your iPhone has it, open the app once and the setup moves here by itself.",
     );
     expect(waitForIphoneText("3.0.1")).toBe(WAIT_FOR_UPDATE_TEXT);
     expect(waitForIphoneText("3.0")).toBe(WAIT_FOR_UPDATE_TEXT);
@@ -333,7 +333,7 @@ describe("a watch on an app older than the move", () => {
     expect(waitForIphoneText(null)).toBe(WAIT_FOR_IPHONE_TEXT);
     expect(waitForIphoneText(undefined)).toBe(WAIT_FOR_IPHONE_TEXT);
     expect(roomsWaitText("3.0.1")).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_UPDATE_TEXT}`);
-    expect(httpActionsPhoneText(true)).toBe("Needs Wrist Assistant 3.2 or later. Once your iPhone has it, open the app once and its HTTP actions move here by themselves.");
+    expect(httpActionsPhoneText(true)).toBe("Needs HouseLit 3.2 or later. Once your iPhone has it, open the app once and its HTTP actions move here by themselves.");
     expect(httpActionsPhoneText(false)).toBe(HTTP_ACTIONS_PHONE_TEXT);
   });
 

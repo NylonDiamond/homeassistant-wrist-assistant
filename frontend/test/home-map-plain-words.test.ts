@@ -137,14 +137,14 @@ describe("a refusal from Home Assistant in plain words", () => {
     expect(homeMapRefusalText(refusal("conflict", "stored revision is 4, save was based on 3"))).toBe("The map changed again while saving, so your change was not saved. Try it once more.");
     expect(homeMapRefusalText(refusal("unauthorized", "Unauthorized"))).toMatch(/^Not saved\. Home Assistant did not let this login save the map\./);
     expect(homeMapRefusalText(refusal("invalid_format", "extra keys not allowed @ data['x']"))).toMatch(/^Not saved\. Home Assistant could not read the map sent\./);
-    expect(homeMapRefusalText(refusal("unknown_command", "Unknown command."))).toBe("Not saved. Update the Wrist Assistant integration to save the map here.");
+    expect(homeMapRefusalText(refusal("unknown_command", "Unknown command."))).toBe("Not saved. Update the HouseLit integration to save the map here.");
     expect(homeMapRefusalText(refusal("unavailable", "integration not ready"))).toMatch(/could not be reached/);
     expect(homeMapRefusalText(refusal("home_assistant_error", "Traceback"))).toBe("Not saved. Home Assistant did not take the change. Try again.");
     for (const call of warn.mock.calls) expect(String(call[0])).toMatch(/^Home map: /);
   });
 
   it("says why the map could not be read, without the socket's own words", () => {
-    expect(homeMapReadFailText(refusal("unavailable", "integration not ready"))).toBe("Wrist Assistant is still starting. Try again in a moment.");
+    expect(homeMapReadFailText(refusal("unavailable", "integration not ready"))).toBe("HouseLit is still starting. Try again in a moment.");
     expect(homeMapReadFailText(new Error("Connection lost"))).toBe("Home Assistant could not be reached. Check the connection and try again.");
     expect(homeMapReadFailText(refusal("unauthorized", "Unauthorized"))).toBe("Home Assistant did not let this login read it. Sign in again.");
   });

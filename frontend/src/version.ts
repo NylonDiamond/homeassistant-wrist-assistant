@@ -111,7 +111,7 @@ export function arrangementUpdateNote(
   if (names.length === 0 || minimum === null) return undefined;
   const version = versionForCopy(minimum);
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the Standard layout.`;
+  return `Needs HouseLit ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the Standard layout.`;
 }
 
 /** First app version, on either device, that draws a tile's icon photo
@@ -143,7 +143,7 @@ export function photoTilesUpdateNote(
   if (names.length === 0 || minimum === null) return undefined;
   const version = versionForCopy(minimum);
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `Needs Wrist Assistant ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the icon.`;
+  return `Needs HouseLit ${version} on ${list}. Until then ${names.length === 1 ? "it draws" : "they draw"} the icon.`;
 }
 
 /** Whether every one of these devices draws One Look, from the versions they
@@ -341,7 +341,7 @@ export function watchVersionNote(
   const need = parseVersion(minimum);
   if (!have || !need || compareVersions(have, need) >= 0) return undefined;
   const named = need[2] === 0 ? `${need[0]}.${need[1]}` : need.join(".");
-  return `Needs Wrist Assistant ${named} or later on your ${device}.`;
+  return `Needs HouseLit ${named} or later on your ${device}.`;
 }
 
 /** First app version that honours a tap layer's "Ask before running"
@@ -399,9 +399,9 @@ export function versionForCopy(minimum: string): string {
 export function updateWatchMessage(appVersion: string | null | undefined, minimum = MIN_WATCH_VERSION_FOR_SHAPES): string {
   const have = parseVersion(appVersion);
   const reported = have
-    ? `This watch runs Wrist Assistant ${appVersion}.`
-    : "This watch has not reported its Wrist Assistant version yet.";
-  return `${reported} The editor needs ${versionForCopy(minimum)} or later. Update Wrist Assistant on your iPhone; the watch app updates with it.`;
+    ? `This watch runs HouseLit ${appVersion}.`
+    : "This watch has not reported its HouseLit version yet.";
+  return `${reported} The editor needs ${versionForCopy(minimum)} or later. Update HouseLit on your iPhone; the watch app updates with it.`;
 }
 
 /** The same lead line for a phone owner. Its own sentence rather than a
@@ -411,9 +411,9 @@ export function updateWatchMessage(appVersion: string | null | undefined, minimu
 export function updateIPhoneMessage(appVersion: string | null | undefined, minimum = MIN_IPHONE_VERSION_FOR_LOCK_SCREEN): string {
   const have = parseVersion(appVersion);
   const reported = have
-    ? `This iPhone runs Wrist Assistant ${appVersion}.`
-    : "This iPhone has not reported its Wrist Assistant version yet.";
-  return `${reported} Lock Screen and Home Screen complications need ${versionForCopy(minimum)} or later. Update Wrist Assistant on your iPhone.`;
+    ? `This iPhone runs HouseLit ${appVersion}.`
+    : "This iPhone has not reported its HouseLit version yet.";
+  return `${reported} Lock Screen and Home Screen complications need ${versionForCopy(minimum)} or later. Update HouseLit on your iPhone.`;
 }
 
 /** Whether the panel opens for this owner, whichever device it is. A watch

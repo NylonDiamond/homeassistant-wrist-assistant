@@ -101,10 +101,10 @@ describe("a design's sync words on an Android phone", () => {
     expect(describeSend(sendState({ ...waiting, platform: "android" })).title).toContain("the phone has not confirmed");
     expect(describeSend(sendState(waiting)).title).toContain("the iPhone has not confirmed");
     const noToken = { ...waiting, pushAvailable: false };
-    expect(describeSend(sendState({ ...noToken, platform: "android" })).label).toBe("Open Wrist Assistant on your phone to sync");
-    expect(describeSend(sendState(noToken)).label).toBe("Open Wrist Assistant on your iPhone to sync");
-    expect(afterSaveLine(sendState({ ...noToken, platform: "android" }))?.text).toBe("Saved. Open Wrist Assistant on your phone to get it.");
-    expect(afterSaveLine(sendState(noToken))?.text).toBe("Saved. Open Wrist Assistant on your iPhone to get it.");
+    expect(describeSend(sendState({ ...noToken, platform: "android" })).label).toBe("Open HouseLit on your phone to sync");
+    expect(describeSend(sendState(noToken)).label).toBe("Open HouseLit on your iPhone to sync");
+    expect(afterSaveLine(sendState({ ...noToken, platform: "android" }))?.text).toBe("Saved. Open HouseLit on your phone to get it.");
+    expect(afterSaveLine(sendState(noToken))?.text).toBe("Saved. Open HouseLit on your iPhone to get it.");
   });
 
   it("leave a watch's states alone, whatever it runs", () => {
@@ -115,10 +115,10 @@ describe("a design's sync words on an Android phone", () => {
   it("tell each device how to put a design on, and a design on no device says phone", () => {
     expect(onTheFaceStep("watch", "wearos")).toBe(WEAR_FACE_STEP);
     expect(onTheFaceStep("iphone", "android")).toBe(ANDROID_WIDGET_STEP);
-    expect(onTheFaceStep("iphone")).toBe("On the iPhone, touch and hold the Home Screen or Lock Screen, tap Edit, then add a Wrist Assistant widget.");
-    expect(onTheFaceStep("watch")).toBe("On the watch, touch and hold the face, tap Edit, then pick Wrist Assistant in a complication slot.");
-    expect(howItWorksSteps("iphone", false, "android")[2]).toBe("Save, then open Wrist Assistant on your phone to get it.");
-    expect(howItWorksSteps("iphone", false)[2]).toBe("Save, then open Wrist Assistant on your iPhone to get it.");
+    expect(onTheFaceStep("iphone")).toBe("On the iPhone, touch and hold the Home Screen or Lock Screen, tap Edit, then add a HouseLit widget.");
+    expect(onTheFaceStep("watch")).toBe("On the watch, touch and hold the face, tap Edit, then pick HouseLit in a complication slot.");
+    expect(howItWorksSteps("iphone", false, "android")[2]).toBe("Save, then open HouseLit on your phone to get it.");
+    expect(howItWorksSteps("iphone", false)[2]).toBe("Save, then open HouseLit on your iPhone to get it.");
     expect(notOnADeviceLine()).toBe("On no device yet. Tick a device over the preview to put it on a watch or a phone.");
   });
 
@@ -242,7 +242,7 @@ describe("pairing a phone of either platform", () => {
   it("says phone for a QR code, which any phone can scan", () => {
     expect(pairQrReplaceLabel()).toBe("Replace a phone paired for someone else");
     expect(pairQrReplaceHint()).not.toMatch(/iPhone/);
-    expect(pairErrorText({ code: "unknown_command" }, "offer")).toBe("Update the Wrist Assistant integration to pair a phone with a QR code.");
+    expect(pairErrorText({ code: "unknown_command" }, "offer")).toBe("Update the HouseLit integration to pair a phone with a QR code.");
   });
 
   it("names a device found by its code by its platform", () => {
