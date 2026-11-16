@@ -69,6 +69,10 @@ describe("teach loops", () => {
     }
   });
 
+  it("names the face's edit button so a Wear OS watch fits too", () => {
+    expect(teachWords("complications").join(" ")).toContain("Tap Edit or Customize.");
+  });
+
   it("draws a compact card for the Help sheet, without its Good for line", () => {
     const markup = flat(renderTeachCard("menus", { compact: true }));
     expect(markup).toContain("tl-compact");

@@ -105,11 +105,15 @@ export const TEACH_LOOPS: Readonly<Record<TeachLoopId, TeachLoop>> = {
   },
   "complications": {
     seconds: 8, hue: "var(--wa-hue-green)", still: 70,
-    groups: [{ title: "On your watch", steps: [
-      "**Touch and hold** the watch face. Tap **Edit**.",
-      "**Pick** a spot, then pick **Wrist Assistant**.",
-      "**Tap** it to run its tap action, like opening a page.",
-    ] }],
+    // Wear OS names the face's edit button by the watch's maker, so a home
+    // that may hold one gets words that fit both (`generalCopy`).
+    get groups() {
+      return [{ title: "On your watch", steps: [
+        generalCopy("**Touch and hold** the watch face. Tap **Edit**.", "**Touch and hold** the watch face. Tap **Edit** or **Customize**."),
+        "**Pick** a spot, then pick **Wrist Assistant**.",
+        "**Tap** it to run its tap action, like opening a page.",
+      ] }];
+    },
     windows: [[0, 33], [35, 66], [68, 97]],
     use: "Seeing things without opening the app, like the temperature or whether the door is locked.",
     tip: "You make the design here. You put it on a face on the watch.",
