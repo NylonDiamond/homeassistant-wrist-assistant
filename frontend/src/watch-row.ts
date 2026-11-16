@@ -41,6 +41,7 @@ import { HOME_LIBRARY_TITLE, homeLibraryScreens } from "./home.js";
 import type { Person } from "./people.js";
 import { hasPhoneAwaitingUpdate, iphoneDevices } from "./phone-pages.js";
 import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
+import { type TeachLoopId, renderTeachWatch } from "./teach-loop.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import {
   WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen,
@@ -425,12 +426,23 @@ function renderRowTip(screen: WatchScreen, kind: RowKind = "watch") {
   const what = phoneSettings ? `${watchRowSettingsTitle("iphone")}.` : watchRowLinkTitle(screen);
   if (what === undefined) return nothing;
   const how = phoneSettings ? undefined : screenHowTo(screen.id);
+  const loop = kind === "watch" ? ROW_TIP_LOOP[screen.id] : undefined;
   return html`<div class="wa-wr-tip" id=${`wa-wr-tip-${screen.id}`} popover="manual" role="tooltip"
     style=${`--howto-hue: ${WATCH_SCREEN_LOOK[screen.id].hue}`}>
     <p class="wa-wr-tip-what">${what}</p>
+    ${loop === undefined ? nothing : renderTeachWatch(loop, true)}
     ${how === undefined ? nothing : renderHowTo(how)}
   </div>`;
 }
+
+/** The watch screens whose hover card plays the teach loop's watch, small:
+ * the same picture an empty tab shows (`teach-loop.ts`). */
+const ROW_TIP_LOOP: Partial<Record<WatchScreen["id"], TeachLoopId>> = {
+  "pages": "pages",
+  "menus": "menus",
+  "status-pages": "status-pages",
+  "watch-complications": "complications",
+};
 
 // One hover card open at a time. It opens after a short rest on a tab, so a
 // pointer passing over the row opens nothing; once one is open, the next tab

@@ -155,6 +155,8 @@ import { gateVersion, nounFor, ownerIsAndroid, platformNoun, platformOf, general
 import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
+import { renderTeachCard, teachStyles } from "./teach-loop.js";
+import { homeMapCapable } from "./home-map/store.js";
 import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, designAddressStep, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
@@ -4779,6 +4781,7 @@ export class WristAssistantPanel extends LitElement {
     .start-shape-sub { font-size: 11px; line-height: 1.35; text-align: center; color: var(--wa-muted); }
     /* The quiet row at the foot: three doors that are not about this home's
        own complications. */
+    .start-teach { display: block; }
     .start-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
     .start-link {
       display: flex; align-items: center; gap: 14px; min-width: 0; text-align: left; text-decoration: none;
@@ -6250,7 +6253,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, syncPillStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, addressStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, syncPillStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, addressStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, teachStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -11455,6 +11458,8 @@ export class WristAssistantPanel extends LitElement {
       onClosed: () => this.closeHelpSheet(true),
       onPair: () => { if (home()) this.openPairDialog(); },
       onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(deviceListPath("pages", watch)!); },
+      homeMap: homeMapCapable(),
+      onGoTab: (tab) => { this.closeHelpSheet(false); this.openTab(tab); },
       ...(tabOfRoute(this.route) === "complications"
         ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
         : {}),
@@ -21839,6 +21844,7 @@ export class WristAssistantPanel extends LitElement {
             <span class="start-tile t4">${deviceShapeArt("rectangular", "iphone", true)}</span>
           </div>
         </section>
+        <section class="start-teach">${renderTeachCard("complications")}</section>
         ${this.renderStartShapes(full)}
         <section class="start-links">
           <a class="start-link" href=${GALLERY_PAGE} target="_blank" rel="noopener">

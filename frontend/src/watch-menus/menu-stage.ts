@@ -30,6 +30,7 @@
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { renderHowTo } from "../screen-howto.js";
+import { generalCopy } from "../device-platform.js";
 import { uiIcon } from "../ui-icons.js";
 import { renderDeviceFrame } from "../phone-frame.js";
 import type { JsonObject } from "../watch-pages/model.js";
@@ -706,12 +707,17 @@ export function renderMenuStageFoot(host: MenusViewHost): TemplateResult | typeo
 export const MENU_HOW_TO: Readonly<Record<"anywhere" | "entity" | "switcher", { open: string; use: string; gesture: "hold" | "tile" }>> = {
   anywhere: {
     gesture: "hold",
-    open: "Touch and hold an empty spot on any page, slide to a slot, then lift your finger.",
+    get open() {
+      return generalCopy(
+        "Touch and hold a tile, slide to the middle and turn the Digital Crown. Or hold an empty spot. Then slide to a slot and lift your finger.",
+        "Touch and hold a tile, slide to the middle and turn the crown. Or hold an empty spot. Then slide to a slot and lift your finger.",
+      );
+    },
     use: "Shortcuts you want everywhere, like Assist, a status page or another page.",
   },
   entity: {
     gesture: "tile",
-    open: "Touch and hold a tile, slide to a slot, then lift your finger.",
+    open: "Touch and hold a tile, slide to the middle, then to a slot, and lift your finger.",
     use: "Quick controls for that kind of tile, like brightness for a light. Each type has its own menu.",
   },
   switcher: {

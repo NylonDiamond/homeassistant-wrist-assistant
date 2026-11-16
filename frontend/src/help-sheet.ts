@@ -31,7 +31,7 @@ import {
   doneWords,
   helpStepWords,
 } from "./getting-started.js";
-import { BAR_TABS, type WatchScreen, iphoneScreenOf, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
+import { BAR_TABS, type BarTab, type WatchScreen, iphoneScreenOf, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
 import { HOME_MAP_SCAN_TEXT } from "./home-map/hook.js";
 import { WATCH_CAMERAS_HELP_URL } from "./watch-cameras/hook.js";
@@ -43,6 +43,7 @@ import { WATCH_ROOMS_HELP_URL } from "./watch-rooms/hook.js";
 import { WATCH_STATUS_PAGES_HELP_URL } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_HELP_URL } from "./watch-voice/hook.js";
 import { androidHereNow, generalCopy } from "./device-platform.js";
+import { renderHowItFits } from "./teach-loop.js";
 
 /** What the sheet says about the screen in view. */
 export interface HelpScreen {
@@ -182,6 +183,10 @@ export interface HelpSheetInput {
   /** Open the complication editor's own Help. Given only on the
    * Complications tab, where that dialog lives. */
   onEditorHelp?: () => void;
+  /** Whether the Home map tab shows, so "How it all fits" names it. */
+  homeMap?: boolean;
+  /** Open a tab from "How it all fits". */
+  onGoTab?: (tab: BarTab) => void;
 }
 
 const close = (e: Event) => (e.currentTarget as HTMLElement).closest("dialog")?.close();
@@ -234,6 +239,10 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
             <i style=${`width:${Math.round((gs.done / 3) * 100)}%`}></i>
           </div>
           <ol class="hs-steps">${step("app")}${step("pair")}${step("page")}</ol>
+        </section>
+        <section class="hs-sec">
+          <h3 class="hs-title">How it all fits</h3>
+          ${renderHowItFits(input.homeMap === true, input.onGoTab)}
         </section>
         <section class="hs-sec">
           <h3 class="hs-title">On this screen: ${screen.name}</h3>

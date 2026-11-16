@@ -48,7 +48,15 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
   },
   "menus": {
     art: "radial", label: "On your watch",
-    how: "Touch and hold an empty spot for the Anywhere menu, or hold a tile for its quick menu. Slide to a slot, then lift your finger.",
+    // A held tile shows a + in the middle; sliding onto it opens the menu,
+    // and turning the crown there swaps to the Anywhere menu
+    // (QuickActionState's centerDeadzone).
+    get how() {
+      return generalCopy(
+        "Touch and hold a tile, slide to the middle, then to a slot, and lift your finger. Turn the Digital Crown in the middle for the Anywhere menu.",
+        "Touch and hold a tile, slide to the middle, then to a slot, and lift your finger. Turn the crown in the middle for the Anywhere menu.",
+      );
+    },
     use: "Shortcuts and quick controls without leaving the page you are on.",
   },
   "status-pages": {

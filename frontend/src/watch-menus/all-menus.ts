@@ -36,6 +36,7 @@ import { type BoardCell, type BoardMenuItem, type BoardRow, type BoardSection, C
   WideWatch, boardColumnBlock, boardDensity, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderDensitySwitch, renderFocusBanner, renderViewSwitch, setBoardDensity } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
+import { renderTeachCard, teachStyles } from "../teach-loop.js";
 import { uiIcon } from "../ui-icons.js";
 import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked } from "../library/device-tabs.js";
 import { ALL_FILTER, type PagesFilter, libraryEditTitle, onDeviceTitle, resolveFilter, restTitle } from "../watch-pages/all-pages-model.js";
@@ -473,6 +474,7 @@ export class WaAllMenus extends LitElement {
       ${this.newNote === undefined ? nothing : html`<p class="lt-line ${this.newNote.kind}" role="status">${this.newNote.text}</p>`}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       ${library === undefined ? nothing : renderLibraryWaitOuts(this.hassNow, this.owners, library, "menus")}
+      ${library !== undefined && devices.length > 0 && libraryMenus(library).length === 0 ? this.renderTeach() : nothing}
       <div class="pk-surface pk-page ${view === "board" ? "on-board" : ""}" role="region" aria-label="Your menus">
         <div class="pk-pin">
           ${this.renderHead(view)}
@@ -520,6 +522,16 @@ export class WaAllMenus extends LitElement {
       ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, waiting, this.makeHint)}</p>`
         : html`<div class="ap-grid" role="list">${menus.map((menu) => this.renderCard(library, menu, devices, waiting))}</div>`}
     </section>`)}`;
+  }
+
+  /** Before the home's first menu: a small watch playing how a tile's menu
+   * and the Anywhere menu open, with the three kinds (`teach-loop.ts`). */
+  private renderTeach(): TemplateResult {
+    return html`<div class="am-teach">${renderTeachCard("menus", {
+      note: html`<p class="am-teach-note">Until you make one, each watch uses its starting menus.</p>`,
+      actions: this.mayMake ? html`<button type="button" class="am-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
+        ${uiIcon("plus")}<span>New menu</span></button>` : nothing,
+    })}</div>`;
   }
 
   /** "+ New menu", beside the lead (mock frame 1c). Greyed for anyone who
@@ -760,7 +772,9 @@ export class WaAllMenus extends LitElement {
       ], device.ownerId)}`;
   }
 
-  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, css`
+  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, teachStyles, css`
+    .am-teach { margin: 0 0 16px; }
+    .am-teach-note { margin: 0 0 6px; font-size: 12.5px; color: var(--wa-muted); }
     :host([embedded]) { position: relative; }
     /* On the board the device heads are what stays on screen, right under
        the tab bar, so the toolbar scrolls away (\`.bd-pin\`). */

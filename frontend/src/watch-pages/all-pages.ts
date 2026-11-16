@@ -63,6 +63,7 @@ import { type BoardCell, type BoardColumn, type BoardDrag, type BoardMenuItem, t
   SAVED_FLASH_MS, WideWatch, boardBoxTitle, boardColumnBlock, boardDensity, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderDensitySwitch, renderFocusBanner, renderViewSwitch, setBoardDensity } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
+import { renderTeachCard, teachStyles } from "../teach-loop.js";
 import { uiIcon } from "../ui-icons.js";
 import { DeviceTabsMenu, SHELF_TAB, deviceTabsStyles, focusedOnBoard, libraryDeviceTabs, newPageAsked, noteBoardFocus, pickShelf, renderDeviceTabs, shelfPicked, takeNewPageAsked } from "../library/device-tabs.js";
 import { watchFrameStyles } from "../watch-frame.js";
@@ -1200,12 +1201,14 @@ export class WaAllPages extends LitElement {
     const may = this.mayMake;
     const waitingIds = this.waiting(library);
     const waiting = waitingIds.size > 0;
-    return html`<div class="ap-empty-lib">
-      <p>${emptyLibraryText(this.kind, may)}</p>
-      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds), waitingPhoneMoves(devices, waitingIds))}</p>` : nothing}
-      ${may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
-        ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing}
-    </div>`;
+    // The teach card: a small watch playing how the screen's work is used,
+    // with this tab's own words and New button inside it (`teach-loop.ts`).
+    return html`<div class="ap-empty-lib">${renderTeachCard(this.kind === "pages" ? "pages" : "status-pages", {
+      note: html`<p class="ap-empty-note">${emptyLibraryText(this.kind, may)}</p>
+        ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds), waitingPhoneMoves(devices, waitingIds))}</p>` : nothing}`,
+      actions: may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
+        ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing,
+    })}</div>`;
   }
 
   /**
@@ -1891,7 +1894,7 @@ export class WaAllPages extends LitElement {
    * this tab's own: New page, Multi select and its bar, and a page's
    * picture. */
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
-    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, copyDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, css`
+    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, copyDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, teachStyles, css`
     .ap-embed-saved { position: absolute; right: 0; top: -26px; }
     /* A page's two pictures, the watch's and the iPhone's, side by side. */
     .ap-pics { display: inline-flex; align-items: flex-start; gap: 4px; }
@@ -1965,8 +1968,8 @@ export class WaAllPages extends LitElement {
     .ap-new-btn:disabled { opacity: .45; cursor: default; }
     .ap-new-btn svg { width: 16px; height: 16px; }
     /* An empty library: how a page works, centered, with New page. */
-    .ap-empty-lib { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 16px; text-align: center; }
-    .ap-empty-lib p { margin: 0; max-width: 40ch; font-size: 14px; line-height: 1.45; color: var(--wa-muted); }
+    .ap-empty-lib { padding: 24px 16px 32px; }
+    .ap-empty-lib .ap-empty-note, .ap-empty-lib .ap-empty-wait { margin: 0 0 6px; font-size: 12.5px; line-height: 1.45; color: var(--wa-muted); }
 
     /* A status page's picture: the watch's black screen, one screen tall. */
     .ap-pic-status .sp-screen { pointer-events: none; }
