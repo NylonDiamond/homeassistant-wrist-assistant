@@ -17,7 +17,7 @@ import {
 import { setAndroidHere } from "../src/device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
 import { HOME_MAP_SCAN_TEXT } from "../src/home-map/hook.js";
-import { HELP_LIBRARY_TEXT, helpOwnTabText, pagesPhoneTilesText, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
+import { HELP_LIBRARY_TEXT, helpLoop, helpOwnTabText, pagesPhoneTilesText, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
 import { IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, iphoneScreenPath, renderTabBar } from "../src/shell.js";
 import { WATCH_CAMERAS_HELP_URL } from "../src/watch-cameras/hook.js";
 import { WATCH_CONTROL_CENTER_HELP_URL } from "../src/watch-control-center/hook.js";
@@ -186,6 +186,32 @@ describe("the Help sheet", () => {
     onClosed: () => undefined, onPair: () => undefined, onNewPage: () => undefined,
     ...(editor ? { onEditorHelp: () => undefined } : {}),
   }));
+
+  it("plays the screen's teach loop on the four tabs and a watch's own screens of that work, never an iPhone's", () => {
+    expect(helpLoop(at("/all-pages"))).toBe("pages");
+    expect(helpLoop(at("/complications"))).toBe("complications");
+    expect(helpLoop(at("/pages/w1"))).toBe("pages");
+    expect(helpLoop(at("/watch-complications"))).toBe("complications");
+    expect(helpLoop(at(""))).toBeUndefined();
+    expect(helpLoop(at("/shared"))).toBeUndefined();
+    expect(helpLoop(at("/home-map"))).toBeUndefined();
+    const phonePages = IPHONE_SCREENS.find((screen) => screen.id === "pages");
+    if (phonePages !== undefined) expect(helpLoop(at(iphoneScreenPath(phonePages)))).toBeUndefined();
+  });
+
+  it("leads with the screen in view once all three steps are done, Getting started folded under it", () => {
+    const done = gettingStarted([owner(), owner({ owner_watch_id: "w2" })], new Set(["w2"]));
+    const text = sheet("/complications", done);
+    expect(text).toContain("tl-complications");
+    expect(text.indexOf("On this screen: Complications")).toBeLessThan(text.indexOf("Getting started"));
+    expect(text.indexOf("Getting started")).toBeLessThan(text.indexOf("How it all fits"));
+    expect(text).not.toContain("hs-steps");
+    // Before then, the steps come first and the screen last.
+    const first = sheet("/complications");
+    expect(first.indexOf("Getting started")).toBeLessThan(first.indexOf("On this screen: Complications"));
+    expect(first).toContain("hs-steps");
+    expect(sheet("/shared", done)).not.toContain("tl-card");
+  });
 
   it("names the screen in view: Devices, Shared, Complications, and each watch screen by its own blurb", () => {
     expect(helpScreen(at(""))).toMatchObject({ name: "Devices" });

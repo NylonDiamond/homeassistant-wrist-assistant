@@ -43,7 +43,7 @@ import { WATCH_ROOMS_HELP_URL } from "./watch-rooms/hook.js";
 import { WATCH_STATUS_PAGES_HELP_URL } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_HELP_URL } from "./watch-voice/hook.js";
 import { androidHereNow, generalCopy } from "./device-platform.js";
-import { renderHowItFits } from "./teach-loop.js";
+import { type TeachLoopId, renderHowItFits, renderTeachCard } from "./teach-loop.js";
 
 /** What the sheet says about the screen in view. */
 export interface HelpScreen {
@@ -171,6 +171,23 @@ export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   return { name: "Devices", text: homeText(), more: DOCS_URL };
 }
 
+/** The teach loop the sheet plays for the screen in view: the Pages,
+ * Status pages, Menus and Complications tabs, and a watch's own screens of
+ * the same work. None for an iPhone's screens, which work as the iPhone app
+ * does, nor for a screen without a loop. */
+export function helpLoop(route: PanelRoute | undefined): TeachLoopId | undefined {
+  if (iphoneScreenOf(route) !== undefined) return undefined;
+  const screen = watchScreenOf(route);
+  if (screen !== undefined) {
+    const of: Partial<Record<WatchScreen["id"], TeachLoopId>> = {
+      "pages": "pages", "menus": "menus", "status-pages": "status-pages", "watch-complications": "complications",
+    };
+    return of[screen.id];
+  }
+  const tab = tabOfRoute(route);
+  return tab === "pages" || tab === "menus" || tab === "status-pages" || tab === "complications" ? tab : undefined;
+}
+
 export interface HelpSheetInput {
   gs: GettingStarted;
   route: PanelRoute | undefined;
@@ -219,6 +236,40 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
       ${action(id)}
     </li>`;
   };
+  // Once all three steps are done, the screen in view leads, with its loop,
+  // and Getting started folds to one line under it.
+  const setUp = gs.done === 3;
+  const loop = helpLoop(input.route);
+  const started = setUp
+    ? html`<section class="hs-sec">
+        <div class="hs-sec-head">
+          <h3 class="hs-title">Getting started</h3>
+          <span class="hs-n hs-done">${uiIcon("check")}${doneWords(gs.done)}</span>
+        </div>
+      </section>`
+    : html`<section class="hs-sec">
+        <div class="hs-sec-head">
+          <h3 class="hs-title">Getting started</h3>
+          <span class="hs-n">${doneWords(gs.done)}</span>
+        </div>
+        <div class="hs-bar" role="progressbar" aria-label="Getting started" aria-valuemin="0" aria-valuemax="3" aria-valuenow=${gs.done}>
+          <i style=${`width:${Math.round((gs.done / 3) * 100)}%`}></i>
+        </div>
+        <ol class="hs-steps">${step("app")}${step("pair")}${step("page")}</ol>
+      </section>`;
+  const fits = html`<section class="hs-sec">
+      <h3 class="hs-title">How it all fits</h3>
+      ${renderHowItFits(input.homeMap === true, input.onGoTab)}
+    </section>`;
+  const onScreen = html`<section class="hs-sec">
+      <h3 class="hs-title">On this screen: ${screen.name}</h3>
+      ${loop === undefined ? nothing : html`<div class="hs-loop">${renderTeachCard(loop)}</div>`}
+      <p class="hs-text">${screen.text.join(" ")}</p>
+      ${screen.more === undefined ? nothing
+        : html`<a class="hs-more" href=${screen.more} target="_blank" rel="noopener noreferrer">More about ${screen.name}</a>`}
+      ${input.onEditorHelp === undefined ? nothing
+        : html`<button type="button" class="hs-more" @click=${input.onEditorHelp}>How the editor works</button>`}
+    </section>`;
   const guide = (label: string, href: string, where: string) => html`<a class="hs-guide" href=${href} target="_blank" rel="noopener noreferrer">
       <span class="hs-guide-l">${label}</span><span class="hs-guide-w">${where}</span>${uiIcon("arrow")}</a>`;
   return html`<dialog class="wa-help-sheet" aria-labelledby="hs-title"
@@ -230,28 +281,7 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
         <button type="button" class="icon hs-x" title="Close (Escape)" aria-label="Close" @click=${close}>${uiIcon("close")}</button>
       </div>
       <div class="hs-body">
-        <section class="hs-sec">
-          <div class="hs-sec-head">
-            <h3 class="hs-title">Getting started</h3>
-            <span class="hs-n">${doneWords(gs.done)}</span>
-          </div>
-          <div class="hs-bar" role="progressbar" aria-label="Getting started" aria-valuemin="0" aria-valuemax="3" aria-valuenow=${gs.done}>
-            <i style=${`width:${Math.round((gs.done / 3) * 100)}%`}></i>
-          </div>
-          <ol class="hs-steps">${step("app")}${step("pair")}${step("page")}</ol>
-        </section>
-        <section class="hs-sec">
-          <h3 class="hs-title">How it all fits</h3>
-          ${renderHowItFits(input.homeMap === true, input.onGoTab)}
-        </section>
-        <section class="hs-sec">
-          <h3 class="hs-title">On this screen: ${screen.name}</h3>
-          <p class="hs-text">${screen.text.join(" ")}</p>
-          ${screen.more === undefined ? nothing
-            : html`<a class="hs-more" href=${screen.more} target="_blank" rel="noopener noreferrer">More about ${screen.name}</a>`}
-          ${input.onEditorHelp === undefined ? nothing
-            : html`<button type="button" class="hs-more" @click=${input.onEditorHelp}>How the editor works</button>`}
-        </section>
+        ${setUp ? html`${onScreen}${started}${fits}` : html`${started}${fits}${onScreen}`}
         <section class="hs-sec">
           <h3 class="hs-title">Guides</h3>
           <div class="hs-guides">
@@ -298,6 +328,9 @@ export const helpSheetStyles = css`
   .hs-sec-head .hs-title { flex: 1; }
   .hs-title { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); overflow-wrap: anywhere; }
   .hs-n { font-size: 12px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
+  .hs-n.hs-done { display: inline-flex; align-items: center; gap: 5px; }
+  .hs-n.hs-done svg.ui-icon { width: 12px; height: 12px; stroke-width: 2.6; color: var(--wa-green); }
+  .hs-loop .tl-card { width: 100%; padding: 16px; }
   .hs-bar { height: 4px; border-radius: 2px; background: var(--wa-line-strong); overflow: hidden; }
   .hs-bar i { display: block; height: 100%; border-radius: 2px; background: var(--wa-green); }
   .hs-steps { margin: 0; padding: 0; list-style: none; }
