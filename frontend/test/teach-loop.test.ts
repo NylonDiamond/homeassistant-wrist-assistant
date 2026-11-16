@@ -69,6 +69,14 @@ describe("teach loops", () => {
     }
   });
 
+  it("draws a compact card for the Help sheet, without its Good for line", () => {
+    const markup = flat(renderTeachCard("menus", { compact: true }));
+    expect(markup).toContain("tl-compact");
+    expect(markup).toContain("tl-shrink");
+    expect(markup).not.toContain("Good for");
+    expect(flat(renderTeachCard("menus"))).toContain("Good for");
+  });
+
   it("draws the bare watch small for a hover card", () => {
     const markup = flat(renderTeachWatch("pages", true));
     expect(markup).toContain("tl-mini");

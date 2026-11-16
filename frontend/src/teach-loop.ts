@@ -277,7 +277,7 @@ export function renderTeachWatch(id: TeachLoopId, mini = false): TemplateResult 
  * screen's own line, like who may make one). The card's words are
  * `TEACH_LOOPS`'s.
  */
-export function renderTeachCard(id: TeachLoopId, opts: { actions?: TemplateResult | typeof nothing; note?: TemplateResult | typeof nothing } = {}): TemplateResult {
+export function renderTeachCard(id: TeachLoopId, opts: { actions?: TemplateResult | typeof nothing; note?: TemplateResult | typeof nothing; compact?: boolean } = {}): TemplateResult {
   const loop = TEACH_LOOPS[id];
   let n = 0;
   const groups = loop.groups.map((g) => {
@@ -288,10 +288,14 @@ export function renderTeachCard(id: TeachLoopId, opts: { actions?: TemplateResul
         ${g.steps.map((s, i) => html`<li class="tl-step tl-s${start + i + 1}"><span>${stepWords(s)}</span></li>`)}
       </ol>`;
   });
-  return html`<section class="tl tl-card tl-${id}" aria-label="How it works on your watch"
+  // Compact, for the Help sheet: no box of its own, a smaller watch beside
+  // the steps, and no Good for line, since the sheet says what the screen
+  // is for under it.
+  const compact = opts.compact === true;
+  return html`<section class="tl tl-card tl-${id} ${compact ? "tl-compact" : ""}" aria-label="How it works on your watch"
       style=${`--tl-hue:${loop.hue};--tl-t:${loop.seconds}s;--tl-still:${-(loop.seconds * loop.still) / 100}s`}>
     <div class="tl-stage">
-      ${renderTeachWatch(id)}
+      ${compact ? html`<div class="tl-shrink">${renderTeachWatch(id)}</div>` : renderTeachWatch(id)}
       <button type="button" class="tl-pause" title="Pause" aria-label="Pause the picture" aria-pressed="false" @click=${togglePause}>
         <svg viewBox="0 0 24 24" aria-hidden="true" class="tl-pz"><path d="M8 5v14M16 5v14"></path></svg>
         <svg viewBox="0 0 24 24" aria-hidden="true" class="tl-pl"><path d="M7 4l13 8-13 8z"></path></svg>
@@ -302,7 +306,7 @@ export function renderTeachCard(id: TeachLoopId, opts: { actions?: TemplateResul
       ${loop.tip === undefined ? nothing : html`<p class="tl-tip">${loop.tip}</p>`}
       ${loop.kinds === undefined ? nothing : html`<div class="tl-k">Three kinds of menu</div>
         <div class="tl-kinds">${loop.kinds.map(([name, text]) => html`<div class="tl-kind"><b>${name}</b><span>${text}</span></div>`)}</div>`}
-      <p class="tl-use"><span class="tl-k">Good for</span>${loop.use}</p>
+      ${compact ? nothing : html`<p class="tl-use"><span class="tl-k">Good for</span>${loop.use}</p>`}
       ${opts.note ?? nothing}
       ${opts.actions === undefined || opts.actions === nothing ? nothing : html`<div class="tl-acts">${opts.actions}</div>`}
     </div>
@@ -385,9 +389,23 @@ export const teachStyles = css`
   .c-blue { background: #5e9beb; } .c-green { background: #4cc38a; } .c-pink { background: #ec7a93; } .c-ink { background: #1c1c1e; }
   .tl-dots { position: absolute; bottom: 10px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; z-index: 3; }
   .tl-dots i { width: 5px; height: 5px; border-radius: 50%; background: #555; }
+  /* The finger: a ring with a light fill, so it reads as a touch, and a
+     ripple out of it on each tap (its ::after, timed per loop below). */
   .tl-finger {
-    position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; z-index: 10; opacity: 0; pointer-events: none;
-    background: rgba(255, 255, 255, .55); box-shadow: 0 0 0 2px rgba(255, 255, 255, .25);
+    position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; box-sizing: border-box; border-radius: 50%; z-index: 10; opacity: 0; pointer-events: none;
+    border: 2.5px solid #fff; background: rgba(255, 255, 255, .34);
+    box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 14px rgba(255, 255, 255, .45);
+  }
+  .tl-finger::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid #fff; opacity: 0; }
+  .tl-pages .tl-finger::after { animation: tl-rip-pages var(--tl-t) infinite; }
+  @keyframes tl-rip-pages { 0%, 59% { opacity: 0; transform: scale(.8); } 60% { opacity: .9; transform: scale(1); } 66%, 100% { opacity: 0; transform: scale(2.2); } }
+  .tl-status-pages .tl-finger::after { animation: tl-rip-status var(--tl-t) infinite; }
+  @keyframes tl-rip-status { 0%, 15% { opacity: 0; transform: scale(.8); } 16% { opacity: .9; transform: scale(1); } 22%, 100% { opacity: 0; transform: scale(2.2); } }
+  .tl-complications .tl-finger::after { animation: tl-rip-comp var(--tl-t) infinite; }
+  @keyframes tl-rip-comp {
+    0%, 29% { opacity: 0; transform: scale(.8); } 30% { opacity: .9; transform: scale(1); } 35% { opacity: 0; transform: scale(2.2); }
+    55% { opacity: 0; transform: scale(.8); } 56% { opacity: .9; transform: scale(1); } 61% { opacity: 0; transform: scale(2.2); }
+    80% { opacity: 0; transform: scale(.8); } 81% { opacity: .9; transform: scale(1); } 86%, 100% { opacity: 0; transform: scale(2.2); }
   }
   .tl-crown { position: absolute; right: -24px; top: 62px; color: var(--wa-muted); font-size: 16px; opacity: 0; }
   .tl-watch * { animation-duration: var(--tl-t); animation-iteration-count: infinite; animation-timing-function: ease; }
@@ -548,12 +566,21 @@ export const teachStyles = css`
   ${unsafeCSS(stepCss())}
 
   /* paused, and held still for less motion */
-  .tl-paused *, .tl-paused *::before { animation-play-state: paused !important; }
+  .tl-paused *, .tl-paused *::before, .tl-paused *::after { animation-play-state: paused !important; }
   @media (prefers-reduced-motion: reduce) {
-    .tl .tl-watch *, .tl .tl-watch *::before { animation-play-state: paused !important; animation-delay: var(--tl-still) !important; }
+    .tl .tl-watch *, .tl .tl-watch *::before, .tl .tl-watch *::after { animation-play-state: paused !important; animation-delay: var(--tl-still) !important; }
     .tl .tl-step { animation: none !important; color: var(--wa-ink); }
     .tl-pause { display: none; }
   }
+
+  /* compact, in the Help sheet: no box, the watch at three quarters */
+  .tl-compact { width: 100%; padding: 0; border: 0; border-radius: 0; background: none; align-items: flex-start; gap: 16px 18px; }
+  .tl-compact .tl-stage { flex: 0 0 153px; display: block; }
+  .tl-shrink { width: 153px; height: 186px; }
+  .tl-shrink .tl-watch { transform: scale(.75); transform-origin: top left; }
+  .tl-compact .tl-text { flex: 1 1 220px; }
+  .tl-compact .tl-steps { margin-bottom: 8px; }
+  .tl-compact .tl-tip { margin-bottom: 0; }
 
   /* the bare watch in a hover card, small */
   .tl-mini { display: flex; justify-content: center; margin: 4px 0 10px; }

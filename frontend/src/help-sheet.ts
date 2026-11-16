@@ -255,7 +255,7 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
       </section>`;
   const onScreen = html`<section class="hs-sec">
       <h3 class="hs-title">On this screen: ${screen.name}</h3>
-      ${loop === undefined ? nothing : html`<div class="hs-loop">${renderTeachCard(loop)}</div>`}
+      ${loop === undefined ? nothing : renderTeachCard(loop, { compact: true })}
       <p class="hs-text">${screen.text.join(" ")}</p>
       ${screen.more === undefined ? nothing
         : html`<a class="hs-more" href=${screen.more} target="_blank" rel="noopener noreferrer">More about ${screen.name}</a>`}
@@ -322,7 +322,6 @@ export const helpSheetStyles = css`
   .hs-n { font-size: 12px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
   .hs-n.hs-done { display: inline-flex; align-items: center; gap: 5px; }
   .hs-n.hs-done svg.ui-icon { width: 12px; height: 12px; stroke-width: 2.6; color: var(--wa-green); }
-  .hs-loop .tl-card { width: 100%; padding: 16px; }
   .hs-bar { height: 4px; border-radius: 2px; background: var(--wa-line-strong); overflow: hidden; }
   .hs-bar i { display: block; height: 100%; border-radius: 2px; background: var(--wa-green); }
   .hs-steps { margin: 0; padding: 0; list-style: none; }
