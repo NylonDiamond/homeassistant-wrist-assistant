@@ -61,6 +61,7 @@ import { type HomeMapEditorContext, type HomeMapSelection, type HomeMapViewItem,
 import { hmeCard, hmeFields, hmeHint, hmeNumber, hmePic, hmeRow } from "./editor-parts.js";
 import { homeMapCount, homeMapMeters, homeMapOpeningName, homeMapShortcut, homeMapWallName, homeMapWallNames } from "./editor-view.js";
 import { homeMapPieceAt } from "./plan-pick.js";
+import { homeMapOpenEdgesCard } from "./open-edges.js";
 import { type HomeSegment, homeDistanceToSegment, homeLabelPoint, homeMainDirection, homeProject, homeRoomUnder, homeWallsOf, segmentLength } from "./geometry.js";
 import {
   type HomeMapDocument,
@@ -219,7 +220,7 @@ export class ShapeMode {
 
   /** A room's walls, what is on each, and its scan. */
   roomCards(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult {
-    return html`${this.wallsCard(ctx, room)}${this.scanCard(ctx, room)}`;
+    return html`${this.wallsCard(ctx, room)}${homeMapOpenEdgesCard(ctx, room)}${this.scanCard(ctx, room)}`;
   }
 
   /** The room's walls, each with its length and the doors and windows in

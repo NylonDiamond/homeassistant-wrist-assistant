@@ -181,6 +181,8 @@ import {
 import { homeMapPlanLook } from "./furniture.js";
 import { type HomeMapSkyChoice, type HomeMapSunPlace, homeMapFloorNorth, homeMapSkyFor, homeMapSunPlace } from "./sun.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
+import { homeMapOpenEdgeMarks } from "./open-edges.js";
+import { homeMapFloorBelowMarks } from "./floor-stack.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
 export const HOME_MAP_UPDATE_TEXT = "Update the HouseLit integration to see the home map here.";
@@ -1751,6 +1753,8 @@ export class WaHomeMapEditor extends LitElement {
     const k = view.scale / (this.artScale || view.scale);
     return svg`${this.background(view, width, height)}
       <g class="hme-art" transform=${`translate(${view.ox.toFixed(2)} ${view.oy.toFixed(2)}) scale(${k.toFixed(5)})`} pointer-events="none">${art}</g>
+      <g class="hme-floor-below" pointer-events="none">${homeMapFloorBelowMarks(ctx)}</g>
+      <g class="hme-open-edges" pointer-events="none">${homeMapOpenEdgeMarks(ctx)}</g>
       ${homeMapHoverMark(ctx.floor, this.hover, this.selection, ctx.toScreen)}
       <g class="hme-labels" pointer-events="none">${this.labels(ctx)}</g>
       <g class="hme-overlay">${this.page.overlay(ctx)}</g>

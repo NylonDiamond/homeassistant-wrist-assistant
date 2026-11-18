@@ -270,3 +270,28 @@ export function homeMapGroupToggle(entityIds: readonly string[], states: HomeMap
   if (covers) return anyOn ? { words: "Close", service: "turn_off" } : { words: "Open", service: "turn_on" };
   return anyOn ? { words: "Turn off", service: "turn_off" } : { words: "Turn on", service: "turn_on" };
 }
+
+/** A pin's room and its device in Home Assistant name different areas:
+ * the room names one, and the device's own (or its device's) is another or
+ * none. Often on purpose (a group kept in an area of its own), so the editor
+ * only says so and offers to move it. A room with no area says nothing. */
+export interface HomeMapAreaDiff {
+  /** The room's area. */
+  roomAreaId: string;
+  /** The device's area in Home Assistant, undefined for none. */
+  deviceAreaId: string | undefined;
+  /** Home Assistant keeps the entity in its registry, so its area can be
+   * set from here; else only the note shows. */
+  movable: boolean;
+}
+
+export function homeMapAreaDiff(
+  hass: Pick<HassLike, "entities" | "devices"> | undefined,
+  entityId: string,
+  roomAreaId: string | undefined,
+): HomeMapAreaDiff | undefined {
+  if (roomAreaId === undefined || roomAreaId === "") return undefined;
+  const deviceAreaId = homeMapEntityAreaId(hass, entityId);
+  if (deviceAreaId === roomAreaId) return undefined;
+  return { roomAreaId, deviceAreaId, movable: hass?.entities?.[entityId] !== undefined };
+}

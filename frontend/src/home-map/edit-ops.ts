@@ -95,6 +95,7 @@ import {
   type HomeMapDocument,
   type HomeMapFinish,
   type HomeMapFloor,
+  type HomeMapFloorPlace,
   type HomeMapLook,
   type HomeMapObject,
   type HomeMapOpening,
@@ -999,6 +1000,25 @@ export function renameFloor(doc: HomeMapDocument, floorId: string, name: string,
   if (story !== undefined && (!Number.isInteger(story) || story < -100 || story > 100)) return undefined;
   const floor = doc.floors[fi]!;
   return withFloor(doc, fi, { ...floor, name: homeMapTrimName(name), story: story ?? floor.story });
+}
+
+/** The map with the floor `floorId` sat in the house by `place` (how it
+ * lies over the floors under it, "Stacked floors" in the app's plan), or
+ * centred again with undefined. Stored at 2 decimals, the turn within -180
+ * to 180, its keys in the order id, name, story, place, rooms, pins. Undefined
+ * for a floor not in the map or a place out of the store's range. */
+export function setFloorPlace(doc: HomeMapDocument, floorId: string, place: HomeMapFloorPlace | undefined): HomeMapDocument | undefined {
+  const fi = floorIndex(doc, floorId);
+  if (fi < 0) return undefined;
+  const { id, name, story, rooms, pins } = doc.floors[fi]!;
+  if (place === undefined) return withFloor(doc, fi, { id, name, story, rooms, pins });
+  if (!finite(place.x, place.y, place.turn)) return undefined;
+  let turn = place.turn % 360;
+  if (turn > 180) turn -= 360;
+  if (turn <= -180) turn += 360;
+  const stored = { x: r(place.x), y: r(place.y), turn: r(turn) };
+  if (Math.abs(stored.x) > 500 || Math.abs(stored.y) > 500) return undefined;
+  return withFloor(doc, fi, { id, name, story, place: stored, rooms, pins });
 }
 
 /** The map without a floor, its rooms and its pins. */

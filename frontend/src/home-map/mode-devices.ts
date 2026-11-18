@@ -76,6 +76,7 @@ import {
   homeMapCanToggle,
   homeMapDevices,
   homeMapDomainWords,
+  homeMapAreaDiff,
   homeMapEntityAreaId,
   homeMapGroupToggle,
   homeMapPickOf,
@@ -279,9 +280,45 @@ export class DevicesMode {
    * unheld pin dragged on the plan, is over: lit up, and the drop puts the
    * device on it. */
   private lampOver: HomeMapThingRef | undefined;
+  /** A move of a device's area in Home Assistant from the pin's card: the
+   * entity, and whether it is out or failed. */
+  private areaMove: { entityId: string; state: "busy" | "failed" } | undefined;
 
   private states(ctx: HomeMapEditorContext): HomeMapStates | undefined {
     return ctx.toggles.live ? ctx.hass?.states : undefined;
+  }
+
+  /** Says when the pin's room and its device in Home Assistant name
+   * different areas, with a button to move the device to the room's area.
+   * Nothing changes in Home Assistant until it is pressed. */
+  private areaCard(ctx: HomeMapEditorContext, entityId: string, roomAreaId: string | undefined): TemplateResult | typeof nothing {
+    const diff = homeMapAreaDiff(ctx.hass, entityId, roomAreaId);
+    if (diff === undefined) return nothing;
+    const name = (id: string | undefined) => (id === undefined ? "No area" : ctx.areas.find((a) => a.id === id)?.name ?? id);
+    const roomArea = name(diff.roomAreaId);
+    const move = this.areaMove?.entityId === entityId ? this.areaMove.state : undefined;
+    const run = async () => {
+      const hass = ctx.hass;
+      if (hass === undefined) return;
+      this.areaMove = { entityId, state: "busy" };
+      ctx.redraw();
+      try {
+        await hass.connection.sendMessagePromise({ type: "config/entity_registry/update", entity_id: entityId, area_id: diff.roomAreaId });
+        // Home Assistant sends the new area to the panel, and the note goes.
+        this.areaMove = undefined;
+      } catch {
+        this.areaMove = { entityId, state: "failed" };
+      }
+      ctx.redraw();
+    };
+    return hmeCard("Area", html`
+      ${hmeRow("In Home Assistant", html`<span class="hme-in hme-ro">${name(diff.deviceAreaId)}</span>`)}
+      ${hmeRow("On the map", html`<span class="hme-in hme-ro">${roomArea}</span>`)}
+      ${diff.movable ? html`<div class="hme-row-end">
+        <button type="button" class="hme-tb" ?disabled=${move === "busy"} title="Set this device's area in Home Assistant to the room's"
+          @click=${run}>${move === "busy" ? "Moving…" : `Move to ${roomArea} in Home Assistant`}</button></div>` : nothing}
+      ${move === "failed" ? hmeHint("Home Assistant did not take the change. Set the area in its settings instead.", true) : nothing}
+      ${hmeHint("They can differ on purpose, for a group kept in an area of its own.", true)}`);
   }
 
   /** The one pin picked, when exactly one is. */
@@ -1291,6 +1328,8 @@ export class DevicesMode {
         ${this.iconRows(ctx, pin, set)}
         ${hmeRow("Room", html`<span class="hme-in hme-ro">${homeMapPinRoomWords(ctx.floor, pin)}</span>`)}
         ${readingRow(pin, tile, set)}`)}
+
+      ${this.areaCard(ctx, pin.entityId, room?.areaId)}
 
       ${hmeCard("Height", html`
         <div class="hme-r">

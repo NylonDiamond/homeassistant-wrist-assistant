@@ -735,3 +735,96 @@ export function homeOneWallsOf(floor: Pick<HomeMapFloor, "rooms">, room: HomeMap
 export function homeOneWallPieces(place: HomeSegment, openings: readonly HomeMapOpening[]): HomeSegment[] {
   return cutWall({ ...place, t: Math.max(place.t, 0.2) }, openings).map((s) => ({ ...s, t: place.t }));
 }
+
+// ── open edges ───────────────────────────────────────────────────────────
+
+/** A stretch of a room's edge this long or longer with no wall reads as
+ * open; a shorter one is a scan's slip at a corner. */
+export const HOME_OPEN_EDGE_MIN = 0.3;
+
+/** A stretch of a room's outline with no wall along it and no room beside
+ * it: the house is open there. Seen from the room: `side` is where it faces
+ * on screen. */
+export interface HomeOpenEdge {
+  a: HomePoint;
+  b: HomePoint;
+  length: number;
+  side: "top" | "right" | "bottom" | "left";
+}
+
+/**
+ * The stretches of `room`'s outline, each at least `HOME_OPEN_EDGE_MIN`
+ * long, that no wall runs along, of this room or another, and no other
+ * room's outline runs along either (two rooms that meet with no wall between
+ * them are one open space, not a hole). Along means within 5 degrees of
+ * parallel and nearer than `HOME_ONE_WALL_GAP` plus half the wall's
+ * thickness, as `homeOneWallPlaces` joins walls. A room drawn from its
+ * outline (no `walls`) has a wall on every edge, so none. A stairwell or a
+ * room left open on purpose comes out here too: it is a fact about the map,
+ * not a fault.
+ */
+export function homeOpenEdges(floor: Pick<HomeMapFloor, "rooms">, room: HomeMapRoom): HomeOpenEdge[] {
+  const o = room.outline;
+  if (room.walls.length === 0 || o.length < 3) return [];
+  const id = room.id.toUpperCase();
+  const along: HomeSegment[] = [];
+  for (const other of floor.rooms) {
+    along.push(...homeWallsOf(other));
+    if (other.id.toUpperCase() !== id && other.outline.length >= 3) {
+      along.push(...other.outline.map((p, i) => ({ a: p, b: other.outline[(i + 1) % other.outline.length]!, t: 0 })));
+    }
+  }
+  const parallel = Math.sin((5 * Math.PI) / 180);
+  const out: HomeOpenEdge[] = [];
+  for (let i = 0; i < o.length; i += 1) {
+    const p = o[i]!;
+    const q = o[(i + 1) % o.length]!;
+    const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (length < HOME_OPEN_EDGE_MIN) continue;
+    const ux = (q[0] - p[0]) / length;
+    const uy = (q[1] - p[1]) / length;
+    const s = (r: HomePoint) => (r[0] - p[0]) * ux + (r[1] - p[1]) * uy;
+    const off = (r: HomePoint) => Math.abs((r[0] - p[0]) * -uy + (r[1] - p[1]) * ux);
+    const covered: [number, number][] = [];
+    for (const seg of along) {
+      const sl = segmentLength(seg);
+      if (sl <= 0.05) continue;
+      const sx = (seg.b[0] - seg.a[0]) / sl;
+      const sy = (seg.b[1] - seg.a[1]) / sl;
+      if (Math.abs(ux * sy - uy * sx) > parallel) continue;
+      const reach = HOME_ONE_WALL_GAP + seg.t / 2;
+      if (off(seg.a) >= reach || off(seg.b) >= reach) continue;
+      const lo = Math.max(Math.min(s(seg.a), s(seg.b)), 0);
+      const hi = Math.min(Math.max(s(seg.a), s(seg.b)), length);
+      if (hi > lo) covered.push([lo, hi]);
+    }
+    covered.sort((x, y) => x[0] - y[0]);
+    let at = 0;
+    const open: [number, number][] = [];
+    for (const [lo, hi] of covered) {
+      if (lo - at >= HOME_OPEN_EDGE_MIN) open.push([at, lo]);
+      at = Math.max(at, hi);
+    }
+    if (length - at >= HOME_OPEN_EDGE_MIN) open.push([at, length]);
+    for (const [lo, hi] of open) {
+      const a: HomePoint = [p[0] + ux * lo, p[1] + uy * lo];
+      const b: HomePoint = [p[0] + ux * hi, p[1] + uy * hi];
+      out.push({ a, b, length: hi - lo, side: openSide(room, a, b) });
+    }
+  }
+  return out;
+}
+
+/** Which way a stretch of a room's edge faces out of the room, on screen. */
+function openSide(room: HomeMapRoom, a: HomePoint, b: HomePoint): HomeOpenEdge["side"] {
+  const length = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 1e-9);
+  let nx = -(b[1] - a[1]) / length;
+  let ny = (b[0] - a[0]) / length;
+  const mid: HomePoint = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  if (homePolygonHolds(room.outline, [mid[0] + nx * 0.1, mid[1] + ny * 0.1])) {
+    nx = -nx;
+    ny = -ny;
+  }
+  if (Math.abs(nx) > Math.abs(ny)) return nx > 0 ? "right" : "left";
+  return ny > 0 ? "bottom" : "top";
+}

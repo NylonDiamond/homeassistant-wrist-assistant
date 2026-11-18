@@ -208,6 +208,8 @@ import {
   sameHomeMapId,
 } from "./model.js";
 import { homeMapThingUnder } from "./plan-pick.js";
+import { homeMapOpenEdgesCard } from "./open-edges.js";
+import { homeMapLineUpCard } from "./floor-stack.js";
 import { homeMapLoad3D } from "./scene3d-load.js";
 
 /** A finish's name. */
@@ -1478,6 +1480,8 @@ export class ArrangeMode {
 
       ${this.roomTray?.(ctx, room) ?? nothing}
 
+      ${homeMapOpenEdgesCard(ctx, room)}
+
       ${hmeFold(key("furniture"), "Furniture", things === 0 ? undefined : homeMapCount(things, "thing"), this.furnitureList(ctx, room), "hme-inroom")}
 
       ${hmeFold(HOME_MAP_ROOM_CARD_FOLD, "Name, area and tap", areaName, html`
@@ -1793,7 +1797,7 @@ export class ArrangeMode {
 
   /** With no room picked: the floor itself, its name and what is on it. */
   floorCard(ctx: HomeMapEditorContext, floor: HomeMapFloor): TemplateResult {
-    return hmeCard("Floor", this.floorBody(ctx, floor));
+    return html`${hmeCard("Floor", this.floorBody(ctx, floor))}${homeMapLineUpCard(ctx, floor)}`;
   }
 
   /** The floor's card without its card: its name and what is on it. */
