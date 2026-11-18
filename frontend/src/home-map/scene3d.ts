@@ -88,7 +88,7 @@ export interface HomeMap3DInput {
   sky: HomeMapSky;
   /** Which way stairs with no `goes` of their own go on this floor: the
    * map's pick (`homeMapFloorStairsGoDown`), which needs the other floors.
-   * Absent: up. Stairs going down stand in a well cut in the floor. */
+   * Absent: up. Stairs going down go down through a hole cut in the floor. */
   stairsDown?: boolean;
 }
 
@@ -443,44 +443,10 @@ function objectGoesDown(object: HomeMapObject, floorDown: boolean): boolean {
   return object.goes === undefined ? floorDown : object.goes === "down";
 }
 
-/** A well's dark walls round it, from the floor down to its depth, and a
- * dark bottom: the floor below, seen down the stairs. */
-const WELL = 0x2b2825;
-const WELL_THICK = 0.04;
-
-function buildWell(well: HomeMapWell, group: THREE.Group): void {
-  const material = new THREE.MeshStandardMaterial({ color: WELL, roughness: 0.95, side: THREE.DoubleSide });
-  const [cx, cy] = well.corners.reduce(([sx, sy], [x, y]) => [sx + x / 4, sy + y / 4], [0, 0]);
-  for (let i = 0; i < 4; i += 1) {
-    const [ax, ay] = well.corners[i]!;
-    const [bx, by] = well.corners[(i + 1) % 4]!;
-    const len = Math.hypot(bx - ax, by - ay);
-    if (len < 0.01) continue;
-    const ux = (bx - ax) / len;
-    const uy = (by - ay) / len;
-    // Its outward side, away from the well's middle.
-    let nx = -uy;
-    let ny = ux;
-    const mx = (ax + bx) / 2;
-    const my = (ay + by) / 2;
-    if (nx * (mx - cx) + ny * (my - cy) < 0) { nx = -nx; ny = -ny; }
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(len + WELL_THICK * 2, well.depth, WELL_THICK), material);
-    mesh.position.set(mx + (nx * WELL_THICK) / 2, -well.depth / 2, my + (ny * WELL_THICK) / 2);
-    mesh.rotation.y = -Math.atan2(uy, ux);
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  }
-  const bottom = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(well.corners.map(([x, y]) => new THREE.Vector2(x, -y)))), material);
-  bottom.rotation.x = -Math.PI / 2;
-  bottom.position.y = -well.depth;
-  bottom.receiveShadow = true;
-  group.add(bottom);
-}
-
 /** One room's floor, walls and window glass, and its wall pieces. A wall piece
  * picks its wall, and each door and window this room recorded has an unseen box
  * in its hole that picks it. Each of `wells` (stairs going down) is cut out
- * of the floor, with its dark walls under it, when it lies inside the room. */
+ * of the floor when it lies inside the room; only the steps show under it. */
 function buildRoom(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms">, wells: readonly HomeMapWell[] = []): { group: THREE.Group; walls: WallPiece[] } {
   const group = new THREE.Group();
   const walls: WallPiece[] = [];
@@ -491,7 +457,6 @@ function buildRoom(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms">, wells:
       // A hole the floor's outline does not hold would tear the floor; a
       // well too big for its room even cut down is drawn without one.
       if (well.hole) shape.holes.push(new THREE.Path(well.corners.map(([x, y]) => new THREE.Vector2(x, -y))));
-      buildWell(well, group);
     }
     const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.95 }));
     floorMesh.rotation.x = -Math.PI / 2;
