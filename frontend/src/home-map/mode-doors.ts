@@ -15,9 +15,16 @@
 // stand (`homeMapDoorLineUps`), then the move of rooms the doors point to
 // (`homeMapFitOf`). Show me draws it live and saves nothing. Under it, what the
 // scan check still finds (`homeMapFitIssues`).
+//
+// A door whose swing runs into another door's swing or a piece of furniture
+// (`door-swing.ts`) has its swing drawn in amber on the plan, and its card
+// says what it hits, with Swing the other way when hanging it from its other
+// end clears it.
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { type HomeMapDoor, homeMapDoorChoices, homeMapDoorPairs, homeMapDoorPartner, homeMapOpenDoors } from "./door-pairs.js";
+import { homeMapSwingClashCount, homeMapSwingClashOf, homeMapSwingClashes, homeMapSwingFlipClears, homeMapSwingHitWords, homeMapSwingPolygon, swingDoorOtherWay } from "./door-swing.js";
+import { homeDoorSwingsOf } from "./geometry.js";
 import { type HomeMapDoorLineUp, type HomeMapFit, type HomeMapOp, connectDoors, fitAllIssues, fitRooms, homeMapDoorLineUps, homeMapFitIssues, homeMapFitOf, placeDoors } from "./edit-ops.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
 import { homeMapCount, homeMapMeters, homeMapShortcut } from "./editor-view.js";
@@ -27,6 +34,27 @@ const fmt = (v: number) => v.toFixed(1);
 
 /** How near a door a press must land to connect to it, in pixels. */
 const CHOICE_REACH = 18;
+
+/** A clashing swing's colour: the editor's amber, as the open edges are. */
+const CLASH_INK = "#E8A33D";
+
+/** Every swing of a door that runs into something, dashed in amber, in
+ * screen space. */
+export function homeMapSwingClashMarks(ctx: HomeMapEditorContext): SVGTemplateResult[] {
+  return homeMapSwingClashes(ctx.floor).flatMap((clash) => {
+    const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, clash.door.roomId));
+    const opening = room?.openings[clash.door.index];
+    if (room === undefined || opening === undefined) return [];
+    return homeDoorSwingsOf(opening, room).map((swing) => {
+      const d = homeMapSwingPolygon(swing).map((p, i) => {
+        const [x, y] = ctx.toScreen(p);
+        return `${i === 0 ? "M" : "L"}${fmt(x)} ${fmt(y)}`;
+      }).join("");
+      return svg`<path class="hme-swing-clash" d=${`${d}Z`} fill=${CLASH_INK} fill-opacity="0.12"
+        stroke=${CLASH_INK} stroke-width="2" stroke-dasharray="6 5" stroke-linejoin="round" pointer-events="none" />`;
+    });
+  });
+}
 
 /** The floor as saved, with no drag's preview on it. */
 function savedFloor(ctx: HomeMapEditorContext): HomeMapFloor {
@@ -239,7 +267,10 @@ export class DoorMode {
    * meets: "All 10 doors meet." */
   fitFoot(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
     const met = this.allMet(ctx);
-    return met === undefined ? nothing : html`<p class="hme-fit-foot" role="status">All ${met} doors meet.</p>`;
+    if (met === undefined) return nothing;
+    const clashes = homeMapSwingClashCount(savedFloor(ctx));
+    const swing = clashes === 0 ? "" : ` ${homeMapCount(clashes, "door")} ${clashes === 1 ? "swings" : "swing"} into something.`;
+    return html`<p class="hme-fit-foot" role="status">All ${met} doors meet.${swing}</p>`;
   }
 
   /** Fit rooms: how many doors meet, the next thing to do, and what the scan
@@ -316,7 +347,7 @@ export class DoorMode {
           <button type="button" class="hme-door-name" @click=${pick}>${to === undefined ? "No partner" : `To ${homeMapRoomName(to)}`}</button>
           <span class="mono dim">${homeMapMeters(door.width)}</span>
           ${partner === undefined ? html`<button type="button" class="hme-tb" title="Click the door it should meet, on the plan or in 3D" @click=${() => this.start(ctx, door.roomId, door.index)}>Connect</button>` : nothing}
-        </div>`;
+        </div>${this.swingLines(ctx, door.roomId, door.index).map((line) => html`<p class="hme-text dim">${line}</p>`)}`;
       })}
     </section>`;
   }
@@ -330,13 +361,48 @@ export class DoorMode {
     const to = partner === undefined ? undefined : ctx.floor.rooms.find((r) => sameHomeMapId(r.id, partner.roomId));
     if (to !== undefined) {
       return html`<section class="hme-card hme-fit good"><div class="hme-h">Opens to</div>
-        <p class="hme-text">${homeMapRoomName(to)}. One door, cutting both walls.</p></section>`;
+        <p class="hme-text">${homeMapRoomName(to)}. One door, cutting both walls.</p></section>${this.swingCard(ctx, room, opening)}`;
     }
     const on = this.connecting !== undefined && sameHomeMapId(this.connecting.roomId, room.id) && this.connecting.opening === opening;
     return html`<section class="hme-card hme-fit hot"><div class="hme-h">Opens to</div>
       ${on ? html`<p class="hme-text">Click the blue door it should meet. On one wall this door moves there and the room stays. Else <b>${homeMapRoomName(room)}</b> moves.</p>
         <button type="button" class="hme-tb hme-wide" @click=${() => { this.connecting = undefined; ctx.redraw(); }}>Cancel</button>`
         : html`<button type="button" class="hme-tb hme-blue hme-wide" @click=${() => this.start(ctx, room.id, opening)}>Connect to a door</button>`}
+    </section>${this.swingCard(ctx, room, opening)}`;
+  }
+
+  /** What a door's swing runs into, a line each: "Swings into the desk".
+   * Its partner's swing too, the same door drawn in the next room, said as
+   * "In Jesse Office, swings into the desk". */
+  private swingLines(ctx: HomeMapEditorContext, roomId: string, opening: number): string[] {
+    const floor = ctx.floor;
+    const own = homeMapSwingClashOf(floor, roomId, opening);
+    const lines = own === undefined ? [] : own.hits.map((hit) => homeMapSwingHitWords(floor, own.door, hit));
+    const partner = homeMapDoorPartner(homeMapDoorPairs(floor), roomId, opening);
+    const theirs = partner === undefined ? undefined : homeMapSwingClashOf(floor, partner.roomId, partner.index);
+    if (theirs !== undefined) {
+      const there = floor.rooms.find((r) => sameHomeMapId(r.id, theirs.door.roomId));
+      const where = there === undefined ? "In the next room" : `In ${homeMapRoomName(there)}`;
+      for (const hit of theirs.hits) {
+        const words = homeMapSwingHitWords(floor, theirs.door, hit);
+        lines.push(`${where}, ${words.charAt(0).toLowerCase()}${words.slice(1)}`);
+      }
+    }
+    return lines;
+  }
+
+  /** The picked door's swing, while it runs into something: what it hits,
+   * dashed amber on the plan, and Swing the other way when hanging the door
+   * from its other end clears it. Nothing for a door that swings free. */
+  private swingCard(ctx: HomeMapEditorContext, room: HomeMapRoom, opening: number): TemplateResult | typeof nothing {
+    const lines = this.swingLines(ctx, room.id, opening);
+    if (lines.length === 0) return nothing;
+    const own = homeMapSwingClashOf(ctx.floor, room.id, opening) !== undefined;
+    const flips = own && homeMapSwingFlipClears(ctx.doc, ctx.floor.id, room.id, opening);
+    return html`<section class="hme-card hme-fit hot"><div class="hme-h">Swing</div>
+      ${lines.map((line) => html`<p class="hme-text">${line}.</p>`)}
+      ${flips ? html`<button type="button" class="hme-tb hme-wide" title="Hang the door from its other side"
+        @click=${() => ctx.apply((d) => swingDoorOtherWay(d, room.id, opening))}>Swing the other way</button>` : nothing}
     </section>`;
   }
 }

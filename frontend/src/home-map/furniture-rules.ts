@@ -17,7 +17,8 @@ export type HomeMapLampCast = "point" | "down";
 
 /** One piece of the catalog. */
 export interface HomeMapFurniturePiece {
-  /** Its model's name, `<id>.glb`; what an object's `model` holds. */
+  /** Its model's name, `<id>.glb` (none for a `built` piece); what an
+   * object's `model` holds. */
   id: string;
   /** The kind a thing made from it takes. */
   kind: string;
@@ -51,6 +52,38 @@ export interface HomeMapFurniturePiece {
    * `fabric` and `wood` replace) and its body, the other part seen most from
    * above. The editor's plan paints the piece's top view in them. */
   paint?: HomeMapPiecePaint;
+  /** A piece with no model file, which the 3D look builds itself to the
+   * thing's own box: `flight`, a straight flight of stairs
+   * (`homeMapFlightSteps`). */
+  built?: HomeMapBuiltPiece;
+}
+
+/** The pieces the 3D look builds rather than loads. */
+export type HomeMapBuiltPiece = "flight";
+
+/** A flight's tread, about 27 cm deep. */
+export const HOME_MAP_TREAD = 0.27;
+
+/** One step of a flight, in meters in the thing's own box: from `front` to
+ * `back` along its depth, measured from the box's front (its +y, the plan's
+ * side away from its back), and its tread `top` above the bottom. */
+export interface HomeMapFlightStep {
+  front: number;
+  back: number;
+  top: number;
+}
+
+/**
+ * The steps of a flight `depth` deep and `height` high: one a tread about
+ * 27 cm deep along the depth (`HOME_MAP_TREAD`), at least two, the same
+ * count the plan draws treads for, rising from the front to the back, where
+ * the last one's tread meets the full height. Each is a solid block from the
+ * floor up to its tread.
+ */
+export function homeMapFlightSteps(depth: number, height: number): HomeMapFlightStep[] {
+  const count = Math.max(Math.round(depth / HOME_MAP_TREAD), 2);
+  const run = depth / count;
+  return Array.from({ length: count }, (_, i) => ({ front: i * run, back: (i + 1) * run, top: ((i + 1) * height) / count }));
 }
 
 /** A piece's own colours (`HomeMapFurniturePiece.paint`). */

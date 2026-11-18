@@ -22,7 +22,9 @@
 // a piece with neither holds it on the middle of its top
 // (`homeMapHoldSpot`). A piece's `paint` is its model's own fabric, wood and
 // body colours, read from the model's materials, which the editor's plan
-// draws its top view in (`homeMapPlanLook`). Nothing here draws;
+// draws its top view in (`homeMapPlanLook`). A piece with `built` has no
+// model file: the 3D view builds it to the thing's own box (a flight of
+// stairs, its steps by `homeMapFlightSteps`). Nothing here draws;
 // `scene3d.ts` and `furniture-art.ts` do.
 // This file is the editor's alone: the catalog never reaches the panel's
 // first download, and three.js never reaches this file's chunk.
@@ -33,11 +35,15 @@ import type { HomeMapFurniturePiece } from "./furniture-rules.js";
 import type { HomeMapObject } from "./model.js";
 
 export {
+  type HomeMapBuiltPiece,
+  type HomeMapFlightStep,
   type HomeMapFurniturePiece,
   type HomeMapLampCast,
   type HomeMapLampChoice,
   HOME_MAP_LAMP_CHOICES,
   HOME_MAP_LAMP_CHOICE_MODELS,
+  HOME_MAP_TREAD,
+  homeMapFlightSteps,
   homeMapHoldPiece,
   homeMapHoldSpot,
   homeMapLampPiece,

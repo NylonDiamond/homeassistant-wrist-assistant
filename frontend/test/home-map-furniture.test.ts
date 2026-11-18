@@ -20,6 +20,7 @@ import {
   HOME_MAP_FABRIC_PRESETS,
   HOME_MAP_FURNITURE,
   HOME_MAP_WOOD_PRESETS,
+  homeMapFlightSteps,
   homeMapModelFit,
   homeMapPiece,
   homeMapPieceLift,
@@ -115,7 +116,8 @@ describe("the furniture catalog", () => {
   it("has a model beside the bundle for every piece, and ids that pass the model check", () => {
     expect(HOME_MAP_FURNITURE.pieces.length).toBeGreaterThan(50);
     for (const p of HOME_MAP_FURNITURE.pieces) {
-      expect(existsSync(join(MODELS, `${p.id}.glb`)), `${p.id}.glb`).toBe(true);
+      // A built piece has none: the 3D view builds it.
+      expect(existsSync(join(MODELS, `${p.id}.glb`)), `${p.id}.glb`).toBe(p.built === undefined);
       expect(refusal((d) => { d.floors[0].rooms[0].objects[0].model = p.id; })).toBeUndefined();
     }
   });
@@ -129,6 +131,35 @@ describe("the furniture catalog", () => {
     }
     expect(new Set(HOME_MAP_FURNITURE.pieces.map((p) => p.id)).size).toBe(HOME_MAP_FURNITURE.pieces.length);
     for (const id of ["bedDouble", "bedSingle", "bookcaseClosedWide", "bookcaseClosed"]) expect(homeMapPiece(id)).toBeDefined();
+  });
+});
+
+describe("a flight of stairs", () => {
+  it("is a built piece a flight long, high and wide, and what a thing of kind stairs draws as", () => {
+    const flight = piece("stairsFlight");
+    expect(flight).toMatchObject({ kind: "stairs", name: "Flight of stairs", built: "flight", size: [0.9, 3.0, 2.6], wood: true, paint: { wood: "#F3CCA8" } });
+    // The only built piece, and the first stairs the picker shows.
+    expect(HOME_MAP_FURNITURE.pieces.filter((p) => p.built !== undefined).map((p) => p.id)).toEqual(["stairsFlight"]);
+    expect(homeMapPieceSearch("stairs")[0]?.id).toBe("stairsFlight");
+    // A scanned or drawn stairs with no model is a flight, the kit's steps
+    // only when picked.
+    expect(homeMapPieceOf({ kind: "stairs", size: [1.0, 2.6, 2.5] })?.id).toBe("stairsFlight");
+    expect(homeMapPieceOf({ kind: "stairs", size: [1.0, 0.43, 0.74], model: "stairs" })?.id).toBe("stairs");
+    expect(homeMapPieceParts(flight)).toEqual(["wood"]);
+  });
+
+  it("has a step a tread deep, rising from the front to the full height at the back", () => {
+    const steps = homeMapFlightSteps(3.0, 2.6);
+    expect(steps).toHaveLength(11);
+    expect(steps[0]!.front).toBe(0);
+    expect(steps.at(-1)!.back).toBeCloseTo(3.0, 9);
+    expect(steps.at(-1)!.top).toBeCloseTo(2.6, 9);
+    for (let i = 1; i < steps.length; i += 1) {
+      expect(steps[i]!.front).toBeCloseTo(steps[i - 1]!.back, 9);
+      expect(steps[i]!.top).toBeGreaterThan(steps[i - 1]!.top);
+    }
+    // Never fewer than two, however short.
+    expect(homeMapFlightSteps(0.2, 0.4)).toHaveLength(2);
   });
 });
 
@@ -565,6 +596,7 @@ describe("recolouring a model", () => {
   it("finds the flagged parts in the models themselves", () => {
     // Each piece's fabric and wood flags match its model's material names.
     for (const p of HOME_MAP_FURNITURE.pieces) {
+      if (p.built !== undefined) continue;
       const glb = readFileSync(join(MODELS, `${p.id}.glb`));
       const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as { materials?: { name?: string }[] };
       const names = (json.materials ?? []).map((m) => m.name ?? "");

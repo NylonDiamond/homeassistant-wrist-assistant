@@ -11,7 +11,9 @@
 // a doll's house; the things in the rooms as the furniture catalog's models
 // (`furniture.ts` says which piece and how it fits the thing's box), its
 // fabric and wood in the thing's own colours when it has them, a thing
-// with no piece as the plain box it always was, a hidden thing nowhere; the
+// with no piece as the plain box it always was, a piece with no model
+// (`built`, a flight of stairs) built here to the thing's own box, a hidden
+// thing nowhere; the
 // picked room's floor or each picked thing's box outlined in the editor's
 // blue; and each light on the floor as a real light at its pin, lit as Home
 // Assistant says it is. Drag to orbit, middle or right drag to move over the
@@ -67,7 +69,7 @@ import { CopyShader } from "three/addons/shaders/CopyShader.js";
 import { homeMapHeldPins } from "./edit-ops.js";
 import { homeMapFrameFit } from "./frame-fit.js";
 import { type HomeMapSky } from "./sun.js";
-import { type HomeMapFurniturePiece, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
+import { type HomeMapFurniturePiece, homeMapFlightSteps, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
 import { type HomeSegment, homeFloorKind, homeOneWallsOf } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
 import { type HomeMapQuality, type HomeMapQualitySettings, HOME_MAP_SLOW_FRAME_MS, homeMapMedianFrame, homeMapQualitySettings } from "./quality.js";
@@ -137,6 +139,41 @@ function fitted(model: Model, size: readonly [number, number, number]): THREE.Gr
   const s = homeMapModelFit(model.natural, size);
   fit.scale.set(s.x, s.y, s.z);
   return fit;
+}
+
+/** The Kenney models' own wood and its darker shade, linear RGB, that a
+ * built piece is made of, named as theirs are so it takes a thing's wood
+ * colour the same way (`homeMapMaterialTint`). */
+const BUILT_WOOD: readonly [number, number, number] = [0.896, 0.602, 0.393];
+const BUILT_WOOD_DARK: readonly [number, number, number] = [0.678, 0.456, 0.299];
+
+function builtWood(name: string, rgb: readonly [number, number, number]): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ name, roughness: 0.8 });
+  material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+  return material;
+}
+
+/** A piece the catalog has no model for (`built`), made to a thing's box
+ * `size` (width, depth, height) with its foot's middle at the origin and
+ * its front towards +z: a flight's steps (`homeMapFlightSteps`) rising from
+ * the front to the back, each a block from the floor up to its tread, the
+ * treads and risers in wood and the sides in the darker wood. Its geometry
+ * and materials are its own, made again when the box changes. */
+function builtBody(size: readonly [number, number, number]): THREE.Group {
+  const [w, d, h] = size;
+  const wood = builtWood("wood", BUILT_WOOD);
+  const dark = builtWood("woodDark", BUILT_WOOD_DARK);
+  // A box's faces: +x, -x, +y, -y, +z, -z.
+  const faces = [dark, dark, wood, wood, wood, wood];
+  const group = new THREE.Group();
+  for (const step of homeMapFlightSteps(d, h)) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, step.top, step.back - step.front), faces);
+    mesh.position.set(0, step.top / 2, d / 2 - (step.front + step.back) / 2);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return group;
 }
 
 // ── colours ──────────────────────────────────────────────────────────────
@@ -1420,6 +1457,7 @@ export class HomeMapScene3D {
       this.scene.remove(thing.group);
       if (thing.piece === undefined) disposeTree(thing.group);
       else untint(thing);
+      if (thing.piece?.built !== undefined) disposeTree(thing.group);
       this.things.delete(id);
       moved = true;
     }
@@ -1464,6 +1502,12 @@ export class HomeMapScene3D {
         thing.body = box;
         castFor(thing);
         group.add(box);
+      } else if (piece.built !== undefined) {
+        // Built to its box, nothing to load.
+        thing.body = builtBody(size);
+        tint(thing, colors);
+        castFor(thing);
+        group.add(thing.body);
       } else {
         const made = thing;
         void loadModel(this.base, piece.id).then((model) => {
@@ -1483,8 +1527,20 @@ export class HomeMapScene3D {
     }
     thing.group.position.set(object.c[0], lift, object.c[1]);
     thing.group.rotation.y = turn;
+    const resized = !thing.size.every((v, i) => v === size[i]);
     thing.size = size;
-    if (piece === undefined) {
+    if (piece?.built !== undefined) {
+      // Its steps follow its box: built again, never stretched.
+      if (resized && thing.body !== undefined) {
+        untint(thing);
+        thing.group.remove(thing.body);
+        disposeTree(thing.body);
+        thing.body = builtBody(size);
+        tint(thing, thing.colors);
+        castFor(thing);
+        thing.group.add(thing.body);
+      }
+    } else if (piece === undefined) {
       thing.body?.scale.set(size[0], size[2], size[1]);
       thing.body?.position.set(0, size[2] / 2, 0);
     } else if (thing.model !== undefined && thing.body !== undefined) {
@@ -1994,8 +2050,8 @@ export function homeMapPieceThumb(base: string, pieceId: string): Promise<string
 }
 
 async function drawThumb(base: string, piece: HomeMapFurniturePiece): Promise<string | undefined> {
-  const model = await loadModel(base, piece.id);
-  if (model === undefined) return undefined;
+  const model = piece.built === undefined ? await loadModel(base, piece.id) : undefined;
+  if (model === undefined && piece.built === undefined) return undefined;
   if (thumbRest !== undefined) clearTimeout(thumbRest);
   if (thumbRenderer === undefined || thumbScene === undefined) {
     thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -2015,7 +2071,7 @@ async function drawThumb(base: string, piece: HomeMapFurniturePiece): Promise<st
     key.position.set(2, 4, 3);
     thumbScene.add(key, new THREE.HemisphereLight(0xc8d2e6, 0x3a3027, 0.6));
   }
-  const body = fitted(model, piece.size);
+  const body = model === undefined ? builtBody(piece.size) : fitted(model, piece.size);
   thumbScene.add(body);
   const [w, d, h] = piece.size;
   const camera = new THREE.PerspectiveCamera(28, THUMB_W / THUMB_H, 0.01, 50);
@@ -2030,6 +2086,7 @@ async function drawThumb(base: string, piece: HomeMapFurniturePiece): Promise<st
   thumbRenderer.render(thumbScene, camera);
   const url = thumbRenderer.domElement.toDataURL("image/png");
   thumbScene.remove(body);
+  if (model === undefined) disposeTree(body);
   thumbs.set(piece.id, url);
   thumbRest = setTimeout(() => {
     thumbRest = undefined;

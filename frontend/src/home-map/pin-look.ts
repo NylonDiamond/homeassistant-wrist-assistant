@@ -14,9 +14,9 @@
 // its pins, which must show every icon even with no symbols loaded.
 
 import { type SVGTemplateResult, svg } from "lit";
-import { homePinSymbol } from "./draw.js";
+import { homePinPaint, homePinSymbol } from "./draw.js";
 import { homeGlowRadius, homePinReading } from "./geometry.js";
-import { type HomeMapPin, type HomeMapPinIcon, type HomeMapStates, homeMapPinName } from "./model.js";
+import { type HomeMapPin, type HomeMapPinIcon, type HomeMapStates, homeMapPinLook, homeMapPinName } from "./model.js";
 
 /** Each icon's SF Symbol, the apps' own (`HomeMapDocument.Pin.Icon.symbol`).
  * A lock is drawn open when its entity is unlocked. */
@@ -176,4 +176,34 @@ export function homeMapPinPill(pin: Pick<HomeMapPin, "entityId" | "name" | "read
   if (pin.reading === "none") return undefined;
   if (pin.reading === "name") return homeMapPinName(pin, { states });
   return homePinReading(pin.entityId, states);
+}
+
+/** A pin on the map editor's plan: its glass, its ring and its icon. */
+export interface HomeMapEditorPinPaint {
+  fill: string;
+  ring: string;
+  ink: string;
+  /** A light that is on, drawn with a halo. */
+  lit: boolean;
+}
+
+/** The editor's glass and a light that is on. */
+const EDITOR_GLASS = "rgba(36,36,40,0.92)";
+const EDITOR_LIT = "#ffbf55";
+
+/**
+ * How the map editor draws a pin (plan, "Drawing"): a light that is on is
+ * amber glass (or its own glow colour) with a dark icon; a lock's ring and
+ * icon green when locked and orange when not; an entity that is gone gray;
+ * every other kind, a light that is off too, dark glass with its ring and
+ * icon in its kind's tile colour (`homePinPaint`), fainter while it is off,
+ * so a fan, a shade and a thermostat differ at a glance as on their tiles.
+ */
+export function homeMapEditorPinPaint(pin: Pick<HomeMapPin, "entityId" | "glowColor">, states: HomeMapStates | undefined): HomeMapEditorPinPaint {
+  const look = homeMapPinLook(pin.entityId, states);
+  if (look.kind === "light" && look.on) return { fill: homeMapGlowHex(pin) ?? EDITOR_LIT, ring: "#fff3d6", ink: "#3a2600", lit: true };
+  if (look.kind === "gone") return { fill: EDITOR_GLASS, ring: "rgba(255,255,255,0.22)", ink: "#8e8e93", lit: false };
+  const paint = homePinPaint(pin.entityId, states);
+  const on = look.kind === "lock" || !paint.dim;
+  return { fill: EDITOR_GLASS, ring: homeMapHexAlpha(paint.fill, on ? 0.85 : 0.45), ink: on ? paint.fill : homeMapHexAlpha(paint.fill, 0.7), lit: false };
 }

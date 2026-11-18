@@ -282,6 +282,9 @@ export interface HomeMapEditorContext {
   /** The checklist's On a page step: the library's pages and Add page for
    * each device (`page-step.ts`); absent where the shell keeps none. */
   readonly pageStep?: HomeMapPageStep | undefined;
+  /** The rooms' names on the plan as last drawn, each pill's box in stage
+   * pixels, which the pins' pills stay off; absent, none. */
+  readonly roomNameBoxes?: (() => readonly { c: HomePoint; half: readonly [number, number] }[]) | undefined;
 }
 
 /** A switch of the plan's View menu: Grid, Side view, Names, the scan. */

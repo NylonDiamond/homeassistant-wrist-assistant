@@ -141,7 +141,8 @@ import {
   homeMapRoomName,
   sameHomeMapId,
 } from "./model.js";
-import { HOME_MAP_PIN_ICON_NAMES, homeMapAutoPinIcon, homeMapGlowHex, homeMapPinGlowRadius, homeMapPinGlyph, homeMapPinPill } from "./pin-look.js";
+import { HOME_MAP_PIN_ICON_NAMES, homeMapAutoPinIcon, homeMapEditorPinPaint, homeMapGlowHex, homeMapPinGlowRadius, homeMapPinGlyph, homeMapPinPill } from "./pin-look.js";
+import { HOME_MAP_PIN_PILL_H, homeMapPinPillWidth, homeMapPinPillWords, homeMapPlacePinPills } from "./pin-names.js";
 import { homeMapPinAt } from "./plan-pick.js";
 import { type HomeMapRoomWaiting, homeMapMoreWords, homeMapRoomWaiting, homeMapWaitKind, homeMapWaitWords } from "./waiting.js";
 import { generalCopy } from "../device-platform.js";
@@ -259,8 +260,8 @@ export class DevicesMode {
 
   /** The room's side view under the picked pin. */
   side = true;
-  /** Every pin's name in its pill. */
-  names = false;
+  /** Each pin's short name by it where there is room (`pin-names.ts`). */
+  names = true;
   /** The device dragged from its row, and where over the plan. */
   private dragging: string | undefined;
   private dropAt: HomePoint | undefined;
@@ -841,9 +842,22 @@ export class DevicesMode {
     else if (this.dropAt !== undefined) parts.push(this.dropMark(ctx, this.dropAt));
     const look = picked === undefined ? undefined : homeMapPinLook(picked.entityId, states);
     if (picked !== undefined && look?.kind === "light") parts.push(this.glowRing(ctx, picked, look.on ? look.brightness : undefined));
+    const isPicked = (pin: HomeMapPin) => picks.some((id) => sameHomeMapId(pin.id, id));
+    const pills = homeMapPinPillWords(ctx.floor, {
+      nameOf: (pin) => homeMapPinName(pin, ctx.hass),
+      readingOf: (pin) => homeMapPinPill(pin, states),
+      picked: isPicked,
+      names: this.names,
+    });
+    const spots = homeMapPlacePinPills(
+      ctx.floor.pins.map((pin) => ({ id: pin.id, c: ctx.toScreen(pin.at), r: isPicked(pin) ? 20 : 12, room: homeMapPinRoom(ctx.floor, pin)?.outline.map((p) => ctx.toScreen(p)) })),
+      pills,
+      ctx.roomNameBoxes?.() ?? [],
+    );
     for (const pin of ctx.floor.pins) {
-      const on = picks.some((id) => sameHomeMapId(pin.id, id));
-      parts.push(this.pinMark(ctx, pin, on, false, states));
+      const spot = spots.get(pin.id);
+      const pill = spot === undefined ? undefined : { text: pills.get(pin.id)!.text, at: spot };
+      parts.push(this.pinMark(ctx, pin, isPicked(pin), false, states, pill));
     }
     if (this.box !== undefined) parts.push(this.boxMark(ctx, this.box));
     return svg`${parts}`;
@@ -859,28 +873,31 @@ export class DevicesMode {
   }
 
   /** One pin: glass with its icon, amber (or its own colour) when a light is
-   * on, its pill under it, ringed when picked. */
-  private pinMark(ctx: HomeMapEditorContext, pin: HomeMapPin, picked: boolean, dim: boolean, states: HomeMapStates | undefined): SVGTemplateResult {
+   * on, else ringed and drawn in its kind's colour (`homeMapEditorPinPaint`),
+   * ringed in blue when picked, and its pill where `homeMapPlacePinPills`
+   * put it. */
+  private pinMark(
+    ctx: HomeMapEditorContext,
+    pin: HomeMapPin,
+    picked: boolean,
+    dim: boolean,
+    states: HomeMapStates | undefined,
+    pill?: { text: string; at: HomePoint },
+  ): SVGTemplateResult {
     const [x, y] = ctx.toScreen(pin.at);
-    const look = homeMapPinLook(pin.entityId, states);
-    const lit = look.kind === "light" && look.on;
-    const fill = lit ? homeMapGlowHex(pin) ?? LIT : "rgba(36,36,40,0.92)";
-    const ring = lit ? "#fff3d6" : look.kind === "gone" ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.4)";
-    const ink = lit ? "#3a2600"
-      : look.kind === "lock" ? (look.locked ? "#30d158" : "#ff9f0a")
-      : look.kind === "other" && look.on ? "#ffffff"
-      : look.kind === "gone" ? "#8e8e93" : "#d1d1d6";
+    const paint = homeMapEditorPinPaint(pin, states);
     const icon = pin.icon ?? homeMapAutoPinIcon(pin.entityId, this.deviceClass(ctx, pin.entityId), this.friendly(ctx, pin.entityId));
     const r = picked ? 13 : 12;
-    const words = picked || this.names ? homeMapPinName(pin, ctx.hass) : homeMapPinPill(pin, states);
-    const w = words === undefined ? 0 : words.length * 5.9 + 14;
+    const w = pill === undefined ? 0 : homeMapPinPillWidth(pill.text);
+    const px = pill === undefined ? 0 : pill.at[0] - x;
+    const py = pill === undefined ? 0 : pill.at[1] - y;
     return svg`<g class="hme-pin" data-hme="pin" data-pin=${pin.id} transform=${`translate(${fmt(x)} ${fmt(y)})`} opacity=${dim ? 0.25 : 1} style="cursor:grab">
       ${picked ? svg`<circle r="20" fill="none" stroke="#5b8def" stroke-width="2.5" />` : nothing}
-      ${lit ? svg`<circle r=${r + 7} fill=${fill} opacity="0.22" />` : nothing}
-      <circle r=${r} fill=${fill} stroke=${ring} stroke-width="1.2" />
-      <g transform="translate(-7 -7)">${homeMapPinGlyph(icon, ink, 14, 1.5)}</g>
-      ${words === undefined || words === "" ? nothing : svg`<g pointer-events="none"><rect x=${fmt(-w / 2)} y=${r + 4} width=${fmt(w)} height="16" rx="8" fill=${picked ? "#5b8def" : "rgba(0,0,0,0.7)"} />
-        <text y=${r + 15.5} fill="#fff" font-size="10" font-weight="600" text-anchor="middle">${words}</text></g>`}
+      ${paint.lit ? svg`<circle r=${r + 7} fill=${paint.fill} opacity="0.22" />` : nothing}
+      <circle r=${r} fill=${paint.fill} stroke=${paint.ring} stroke-width="1.4" />
+      <g transform="translate(-7 -7)">${homeMapPinGlyph(icon, paint.ink, 14, 1.5)}</g>
+      ${pill === undefined || pill.text === "" ? nothing : svg`<g pointer-events="none"><rect x=${fmt(px - w / 2)} y=${fmt(py - HOME_MAP_PIN_PILL_H / 2)} width=${fmt(w)} height=${HOME_MAP_PIN_PILL_H} rx="8" fill=${picked ? "#5b8def" : "rgba(0,0,0,0.7)"} />
+        <text x=${fmt(px)} y=${fmt(py + 3.5)} fill="#fff" font-size="10" font-weight="600" text-anchor="middle">${pill.text}</text></g>`}
     </g>`;
   }
 
@@ -1147,7 +1164,7 @@ export class DevicesMode {
   viewItems(ctx: HomeMapEditorContext): HomeMapViewItem[] {
     return [
       { label: "Side view", on: this.side, title: "The picked device's room from the side, to set its height", flip: () => { this.side = !this.side; ctx.redraw(); } },
-      { label: "Names", on: this.names, title: "Every device's name under its pin", flip: () => { this.names = !this.names; ctx.redraw(); } },
+      { label: "Names", on: this.names, title: "Each device's short name by its pin, where there is room", flip: () => { this.names = !this.names; ctx.redraw(); } },
     ];
   }
 

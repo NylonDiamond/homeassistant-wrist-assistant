@@ -149,8 +149,8 @@ import {
   homeMapZoomPercent,
 } from "./editor-view.js";
 import { HOME_MAP_ARRANGE_GRID, HOME_MAP_SHAPE_GRID } from "./draw-tool.js";
-import { homeBoxCorners, homeBoxOf, homeLabelPoint, homePointBounds } from "./geometry.js";
-import { homeMapFreeLabelSpot } from "./free-spot.js";
+import { homeLabelPoint, homePointBounds } from "./geometry.js";
+import { homeMapLabelObstacles, homeMapPlaceLabel } from "./free-spot.js";
 import { homeMapRoomWaiting, homeMapWaitLabel } from "./waiting.js";
 import { HomeStylePanel } from "./mode-style.js";
 import {
@@ -182,6 +182,7 @@ import { homeMapPlanLook } from "./furniture.js";
 import { type HomeMapSkyChoice, type HomeMapSunPlace, homeMapFloorNorth, homeMapSkyFor, homeMapSunPlace } from "./sun.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { homeMapOpenEdgeMarks } from "./open-edges.js";
+import { homeMapSwingClashMarks } from "./mode-doors.js";
 import { homeMapFloorBelowMarks } from "./floor-stack.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, homeTileArt, homeTileGround } from "./tile-art.js";
 
@@ -1038,6 +1039,7 @@ export class WaHomeMapEditor extends LitElement {
       openPage: this.onOpenPage,
       devices: this.homeDevices(),
       pageStep: this.pageStep,
+      roomNameBoxes: () => this.labelsHeld?.taken ?? [],
     };
   }
 
@@ -1755,6 +1757,7 @@ export class WaHomeMapEditor extends LitElement {
       <g class="hme-art" transform=${`translate(${view.ox.toFixed(2)} ${view.oy.toFixed(2)}) scale(${k.toFixed(5)})`} pointer-events="none">${art}</g>
       <g class="hme-floor-below" pointer-events="none">${homeMapFloorBelowMarks(ctx)}</g>
       <g class="hme-open-edges" pointer-events="none">${homeMapOpenEdgeMarks(ctx)}</g>
+      <g class="hme-swing-clashes" pointer-events="none">${homeMapSwingClashMarks(ctx)}</g>
       ${homeMapHoverMark(ctx.floor, this.hover, this.selection, ctx.toScreen)}
       <g class="hme-labels" pointer-events="none">${this.labels(ctx)}</g>
       <g class="hme-overlay">${this.page.overlay(ctx)}</g>
@@ -1809,9 +1812,10 @@ export class WaHomeMapEditor extends LitElement {
 
   /** Each room's name on a dark pill, with how many of its devices wait
    * ("Bedroom · 5 wait") and its size when there is room, standing in free
-   * floor: off the furniture, the pins and the names placed before it, as
-   * near the room's label point as it can (`homeMapFreeLabelSpot`). A name
-   * with no free spot is left out. Kept while nothing it reads changed. */
+   * floor: off the furniture, the pins and the names placed before it, with
+   * floor showing between them where the room has it, as near the room's
+   * label point as it can (`homeMapPlaceLabel`). A name with no free spot
+   * is left out. Kept while nothing it reads changed. */
   private labels(ctx: HomeMapEditorContext) {
     const devices = ctx.devices ?? homeMapDevices(ctx.hass);
     const key = `${floorKey(ctx.floor)}|${objectKey(ctx.doc)}|${ctx.view.scale}|${ctx.view.ox}|${ctx.view.oy}|${objectKey(devices)}`;
@@ -1832,33 +1836,29 @@ export class WaHomeMapEditor extends LitElement {
       const both = Math.max(nameW, size.length * 5.8 + 22) <= roomW * 0.95 && roomH >= 48;
       const w = both ? Math.max(nameW, size.length * 5.8 + 22) : nameW;
       const h = both ? 36 : 22;
-      const obstacles = {
-        room: room.outline.map((p) => ctx.toScreen(p)),
-        boxes: room.objects.filter((o) => o.hidden !== true && o.kind !== "rug").map((o) => homeBoxCorners(homeBoxOf(o)).map((p) => ctx.toScreen(p))),
-        circles,
-        taken,
-      };
-      const anchor = ctx.toScreen(at);
-      // With its size if it finds a spot, else the name alone.
-      let spot = homeMapFreeLabelSpot(anchor, [w / 2, h / 2], obstacles);
-      const show = both && spot !== undefined;
-      if (spot === undefined && both) spot = homeMapFreeLabelSpot(anchor, [nameW / 2, 11], obstacles);
-      if (spot === undefined) return nothing;
-      const pill = show ? ([w / 2, h / 2] as const) : ([nameW / 2, 11] as const);
-      taken.push({ c: spot, half: pill });
-      const [x, y] = spot;
+      const obstacles = homeMapLabelObstacles(room, ctx.toScreen, circles, taken);
+      // With its size if it finds a spot, else the name alone; floor
+      // showing round it before a spot that only touches the furniture.
+      const pills: (readonly [number, number])[] = both ? [[w / 2, h / 2], [nameW / 2, 11]] : [[nameW / 2, 11]];
+      const placed = homeMapPlaceLabel(ctx.toScreen(at), pills, obstacles);
+      if (placed === undefined) return nothing;
+      const show = both && placed.pill === 0;
+      const pill = pills[placed.pill]!;
+      taken.push({ c: placed.at, half: pill });
+      const [x, y] = placed.at;
       const pw = pill[0] * 2;
       const ph = pill[1] * 2;
       return svg`<g class="hme-label"><rect x=${(x - pw / 2).toFixed(1)} y=${(y - ph / 2).toFixed(1)} width=${pw.toFixed(1)} height=${ph} rx=${show ? 9 : 7} fill="rgba(0,0,0,0.6)" />
         <text x=${x.toFixed(1)} y=${(y + (show ? -3 : 4.5)).toFixed(1)} fill="#fff" font-size=${show ? 13 : 12} font-weight="600" text-anchor="middle">${name}</text>
         ${show ? svg`<text x=${x.toFixed(1)} y=${(y + 11).toFixed(1)} fill="#aeaeb2" font-size="10" text-anchor="middle">${size}</text>` : nothing}</g>`;
     });
-    this.labelsHeld = { key, art };
+    this.labelsHeld = { key, art, taken };
     return art;
   }
 
-  /** The names last drawn, and what they were drawn from. */
-  private labelsHeld: { key: string; art: unknown } | undefined;
+  /** The names last drawn, what they were drawn from, and their pills'
+   * boxes on the stage, which the pins' pills stay off (`roomNameBoxes`). */
+  private labelsHeld: { key: string; art: unknown; taken: readonly { c: HomePoint; half: readonly [number, number] }[] } | undefined;
 
   private measureMarks(ctx: HomeMapEditorContext) {
     const m = this.measure;

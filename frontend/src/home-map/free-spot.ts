@@ -6,10 +6,12 @@
 // A pin's spot is in plan meters: inside the room, a little in from its
 // walls, at least `gap` (0.4 m) from every pin of the room and off the
 // room's name. A name's spot is in stage pixels: its whole pill inside the
-// room and clear of the furniture, the pins and the names placed before it;
-// none when no spot is clear, and the name is then left out.
+// room and clear of the furniture, the pins and the names placed before it,
+// with a little floor showing between them where the room has it
+// (`homeMapPlaceLabel`); none when no spot is clear, and the name is then
+// left out.
 
-import { homeLabelPoint, homePolygonHolds } from "./geometry.js";
+import { homeBoxCorners, homeBoxOf, homeLabelPoint, homePolygonHolds } from "./geometry.js";
 import type { HomeMapRoom, HomePoint } from "./model.js";
 
 /** How far apart new pins stand at the least, in meters. */
@@ -160,5 +162,57 @@ export function homeMapFreeLabelSpot(anchor: HomePoint, half: readonly [number, 
     && o.taken.every((t) => Math.abs(t.c[0] - p[0]) >= t.half[0] + half[0] || Math.abs(t.c[1] - p[1]) >= t.half[1] + half[1]);
   const reach = reachOf(o.room, anchor);
   for (const p of spiral(anchor, step, Math.min(reach, 600))) if (clear(p)) return p;
+  return undefined;
+}
+
+/** The floor a name keeps between itself and the furniture, the walls, the
+ * pins and the other names, in stage pixels, widest first. A room's label
+ * point often sits on a piece (a desk in the middle of an office), and the
+ * nearest spot that only clears it stands flush against its edge, which
+ * reads as the name lying on the piece; so a spot with floor showing round
+ * it wins, and one that just touches is the last resort. */
+export const HOME_MAP_LABEL_CLEARANCE = [10, 4] as const;
+
+/** What a room's name stays clear of on the plan, in stage pixels: the
+ * room's outline, the box of each thing in it that stands on the plan (not
+ * a hidden one, not a rug, which lies under everything), and the pins and
+ * names given. */
+export function homeMapLabelObstacles(
+  room: Pick<HomeMapRoom, "outline" | "objects">,
+  toScreen: (p: readonly number[]) => HomePoint,
+  circles: HomeMapLabelObstacles["circles"],
+  taken: HomeMapLabelObstacles["taken"],
+): HomeMapLabelObstacles {
+  return {
+    room: room.outline.map((p) => toScreen(p)),
+    boxes: room.objects.filter((o) => o.hidden !== true && o.kind !== "rug").map((o) => homeBoxCorners(homeBoxOf(o)).map((p) => toScreen(p))),
+    circles,
+    taken,
+  };
+}
+
+/**
+ * Where a room's name stands and which of `pills` it is drawn as (each a
+ * half width and height, fullest first: the name with its size, then the
+ * name alone). Each pill is tried with each of `HOME_MAP_LABEL_CLEARANCE`
+ * round it, so the fullest pill that has floor showing round it wins; only
+ * when none has does a pill that just touches what is near it stand.
+ * Undefined when no pill has a spot at all.
+ */
+export function homeMapPlaceLabel(
+  anchor: HomePoint,
+  pills: readonly (readonly [number, number])[],
+  o: HomeMapLabelObstacles,
+): { at: HomePoint; pill: number } | undefined {
+  for (const [pill, half] of pills.entries()) {
+    for (const m of HOME_MAP_LABEL_CLEARANCE) {
+      const at = homeMapFreeLabelSpot(anchor, [half[0] + m, half[1] + m], o);
+      if (at !== undefined) return { at, pill };
+    }
+  }
+  for (const [pill, half] of pills.entries()) {
+    const at = homeMapFreeLabelSpot(anchor, half, o);
+    if (at !== undefined) return { at, pill };
+  }
   return undefined;
 }

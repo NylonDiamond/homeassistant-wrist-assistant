@@ -90,6 +90,24 @@ describe("the furniture's top views", () => {
     expect(draw("rug", [2, 1.17], { model: "rugRectangle" })).not.toContain("rgba(0,0,0,0.34)");
   });
 
+  it("draws a flight of stairs as treads across its width and an arrow up to its back", () => {
+    // 3 m deep at 50 a meter: 11 treads, so 10 lines between them, each
+    // across the full 45 unit width.
+    const text = draw("stairs", [0.9, 3.0], { model: "stairsFlight", wood: "#F3CCA8" });
+    expect(text.match(/M-22\.5 -?[\d.]+H22\.5/g)).toHaveLength(10);
+    // The arrow runs up the middle from a dot on the bottom step (the front,
+    // +y) to its head on the top one (the back, -y).
+    expect(text).toContain("<circle cx=0 cy=68.18");
+    expect(text).toMatch(/M0 68\.18V-68\.18M-9 -59\.18L0 -68\.18L9 -59\.18/);
+    expect(text).toContain("rgb(243,204,168)");
+    // Turned wide, it still rises along its depth.
+    expect(draw("stairs", [3.0, 0.9], { model: "stairsFlight" }).match(/M-75 -?[\d.]+H75/g)).toHaveLength(2);
+    // The kit's stairs and a scan's keep the treads across their long side,
+    // with no arrow.
+    expect(draw("stairs", [1.0, 0.43], { model: "stairs" })).not.toContain("<circle");
+    expect(draw("stairs", [1.0, 2.6])).not.toContain("<circle");
+  });
+
   it("tints a piece by its fabric and wood, a lamp's shade by its fabric", () => {
     const plain = draw("sofa", [2, 0.84], { model: "loungeSofa" });
     const navy = draw("sofa", [2, 0.84], { model: "loungeSofa", fabric: "#2E4A7D" });
@@ -127,6 +145,8 @@ describe("the editor's plan draws the 3D view's piece", () => {
     expect(homeMapPlanLook({ ...desk, wood: "#3B2A20" }).wood).toBe("#3B2A20");
     // A dishwasher is drawn as the cupboard the 3D view stands there.
     expect(homeMapPlanLook({ ...desk, kind: "dishwasher" })).toMatchObject({ model: "kitchenCabinet", kind: "storage" });
+    // Stairs drawn or scanned with no model are the flight.
+    expect(homeMapPlanLook({ ...desk, kind: "stairs", size: [1.0, 2.6, 2.5] })).toMatchObject({ model: "stairsFlight", kind: "stairs", wood: "#F3CCA8" });
     // A kind with no piece stays as it was.
     expect(homeMapPlanLook({ ...desk, kind: "vacuum" })).toEqual({ model: undefined, fabric: undefined, wood: undefined });
   });

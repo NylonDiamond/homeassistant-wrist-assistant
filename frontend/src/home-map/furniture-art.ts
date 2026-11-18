@@ -4,7 +4,8 @@
 // its pillows and turned-down cover, a sofa with its back, arms and cushions,
 // a chair with its back, a table's top, a cupboard's doors, a TV's thin
 // screen, a bath, a basin, a toilet, a hob's rings, a washer's drum, a
-// fireplace's glow and the treads of stairs. A kind the panel does not know
+// fireplace's glow and the treads of stairs (a flight from the catalog with
+// an arrow showing the way up). A kind the panel does not know
 // is a plain soft box.
 //
 // A thing picked from the furniture catalog draws as its piece (its
@@ -239,7 +240,7 @@ export function homeFurnitureArt(kind: string, w: number, d: number, scale: numb
   const small = Math.min(w, d);
   const paint = paintOf(look);
   if (small < 7) return rounded(b, small * 0.2, paint.fabric);
-  const own = look.model === undefined ? undefined : pieceOf(look.model, b, small, paint);
+  const own = look.model === undefined ? undefined : pieceOf(look.model, b, small, scale, paint);
   const parts = own ?? piece(kind, b, small, scale, paint);
   const shape = shapeOf(kind, look.model);
   // A plant's leaves are its edge.
@@ -528,9 +529,9 @@ function cushions(seat: Box, small: number, p: Paint): SVGTemplateResult[] {
 /** The catalog pieces whose kind alone draws them wrong: a chair that is
  * an armchair, an office chair or a stool, a table that is round, glass,
  * clothed, a desk or a corner desk, a bookcase with open shelves, an old
- * TV, a round rug, a square or wall lamp, a corner shower. Undefined for
- * any other, drawn by its kind. */
-function pieceOf(model: string, b: Box, small: number, p: Paint): SVGTemplateResult[] | undefined {
+ * TV, a round rug, a square or wall lamp, a corner shower, a flight of
+ * stairs. Undefined for any other, drawn by its kind. */
+function pieceOf(model: string, b: Box, small: number, scale: number, p: Paint): SVGTemplateResult[] | undefined {
   const maxX = b.x + b.w;
   const maxY = b.y + b.h;
   const midX = b.x + b.w / 2;
@@ -637,6 +638,8 @@ function pieceOf(model: string, b: Box, small: number, p: Paint): SVGTemplateRes
       return [svg`<path d=${`M${r2(b.x)} ${r2(b.y)}A${r2(b.w / 2)} ${r2(b.h)} 0 0 0 ${r2(maxX)} ${r2(b.y)}Z`} fill=${p.shade} stroke=${C.edge} stroke-width="1" />`,
         svg`<circle cx=${r2(midX)} cy=${r2(b.y + b.h * 0.35)} r=${r2(Math.max(small * 0.14, 0.8))} fill="rgb(255,232,180)" />`];
     }
+    case "stairsFlight":
+      return flight(b, small, scale, p);
     case "showerRound": {
       // A quarter round tray in the corner behind it on the left, its
       // curved glass at the front.
@@ -650,6 +653,37 @@ function pieceOf(model: string, b: Box, small: number, p: Paint): SVGTemplateRes
     }
   }
   return undefined;
+}
+
+/** The way up a flight's arrow is drawn in, darker than its treads. */
+const ARROW = "rgba(0,0,0,0.5)";
+
+/**
+ * A straight flight of stairs (`stairsFlight`), rising along its depth from
+ * its front up to its back as the 3D view builds it: a tread about 27
+ * centimeters deep across its width, the same count as its steps
+ * (`homeMapFlightSteps`), and an arrow up its middle from a dot on the
+ * bottom step to a head on the top one, the way a plan shows the way up.
+ */
+function flight(b: Box, small: number, scale: number, p: Paint): SVGTemplateResult[] {
+  const maxX = b.x + b.w;
+  const maxY = b.y + b.h;
+  const midX = b.x + b.w / 2;
+  const count = Math.max(Math.round(b.h / Math.max(scale * 0.27, 4)), 2);
+  const step = b.h / count;
+  let treads = "";
+  for (let i = 1; i < count; i += 1) treads += `M${r2(b.x)} ${r2(b.y + i * step)}H${r2(maxX)}`;
+  const from = maxY - step / 2;
+  const to = b.y + step / 2;
+  const head = Math.max(Math.min(b.w * 0.2, (from - to) * 0.3), 1.5);
+  const width = r2(Math.max(small * 0.025, 1));
+  return [
+    rounded(b, small * 0.04, p.wood),
+    svg`<path d=${treads} stroke=${C.line} stroke-width="1" fill="none" />`,
+    svg`<circle cx=${r2(midX)} cy=${r2(from)} r=${r2(Math.max(head * 0.3, 1))} fill=${ARROW} />`,
+    svg`<path d=${`M${r2(midX)} ${r2(from)}V${r2(to)}M${r2(midX - head)} ${r2(to + head)}L${r2(midX)} ${r2(to)}L${r2(midX + head)} ${r2(to + head)}`}
+      stroke=${ARROW} stroke-width=${width} stroke-linecap="round" stroke-linejoin="round" fill="none" />`,
+  ];
 }
 
 const BOOKS = ["rgb(160,72,60)", "rgb(60,96,140)", "rgb(200,180,120)", "rgb(90,120,84)", "rgb(120,90,130)"];

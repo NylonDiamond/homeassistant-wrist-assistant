@@ -24,7 +24,7 @@
     "sofa": "loungeSofa",
     "chair": "chair",
     "television": "televisionModern",
-    "stairs": "stairs",
+    "stairs": "stairsFlight",
     "bed": "bedDouble",
     "storage": "bookcaseClosed"
   },
@@ -1820,6 +1820,22 @@
       "paint": {
         "wood": "#F3CCA8"
       }
+    },
+    {
+      "id": "stairsFlight",
+      "kind": "stairs",
+      "name": "Flight of stairs",
+      "group": "Decor",
+      "size": [
+        0.9,
+        3.0,
+        2.6
+      ],
+      "wood": true,
+      "paint": {
+        "wood": "#F3CCA8"
+      },
+      "built": "flight"
     },
     {
       "id": "stairs",
