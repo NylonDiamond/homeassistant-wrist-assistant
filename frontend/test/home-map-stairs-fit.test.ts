@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { homeBoxCorners, homeBoxOf, homePolygonHolds } from "../src/home-map/geometry.js";
 import type { HomeMapDocument, HomeMapObject, HomeMapOpening, HomeMapRoom } from "../src/home-map/model.js";
 import { addStairsToRoom, homeMapWantsStairs } from "../src/home-map/stairs-fit.js";
+import { moveObject, resizeObject, turnObject } from "../src/home-map/edit-ops.js";
 
 type P = [number, number];
 const room = (name: string, outline: P[], openings: HomeMapOpening[] = [], objects: HomeMapObject[] = []): HomeMapRoom => ({
@@ -57,5 +58,36 @@ describe("Add stairs here", () => {
     // Along the bottom wall, which has no door.
     expect(flight.size[1]).toBeCloseTo(2.8);
     expect(flight.c[1]).toBeGreaterThan(5.5);
+  });
+});
+
+describe("stairs stay inside their room", () => {
+  // The live stairs room, and the flight Add stairs here puts in it.
+  const outline: P[] = [[7.62, 6.19], [6.83, 6.19], [4.62, 6.19], [4.62, 5.1], [4.62, 2.97], [7.62, 2.97]];
+  const flightDoc = () => addStairsToRoom(docOf(room("stairs", outline)), "R")!;
+  const thing = (d: HomeMapDocument) => d.floors[0]!.rooms[0]!.objects[0]!;
+  const inside = (o: HomeMapObject) => homeBoxCorners(homeBoxOf(o)).every((p) => homePolygonHolds(outline, p));
+
+  it("slides a flight back in when a turn would push it through a wall", () => {
+    for (const degrees of [10, 15, 30, 45, -20]) {
+      const turned = thing(turnObject(flightDoc(), "R", 0, degrees)!);
+      expect(inside(turned), `turned ${degrees}`).toBe(true);
+    }
+  });
+
+  it("stops a dragged flight at the wall", () => {
+    const moved = thing(moveObject(flightDoc(), "R", 0, [6, 7.5])!);
+    expect(inside(moved)).toBe(true);
+  });
+
+  it("leaves a flight too big for the room where it is", () => {
+    const big = thing(resizeObject(flightDoc(), "R", 0, { depth: 4 })!);
+    expect(big.size[1]).toBeCloseTo(4);
+  });
+
+  it("leaves any other thing where it is put", () => {
+    const sofa: HomeMapObject = { kind: "sofa", c: [5, 3], size: [2, 1, 0.8], turn: 0 };
+    const out = thing(moveObject(docOf(room("stairs", outline, [], [sofa])), "R", 0, [5, 2])!);
+    expect(out.c).toEqual([5, 2]);
   });
 });

@@ -71,6 +71,7 @@ import {
   homeProject,
   homeQuarterTurnRemainder,
   homeRoomDirection,
+  homeRoomHoldsNearly,
   homeRoomReach,
   homeSide,
   homeTurnPoint,
@@ -1191,9 +1192,40 @@ function editObject(doc: HomeMapDocument, roomId: string, index: number, change:
     const next = change(object);
     if (next === undefined) return undefined;
     const objects = room.objects.slice();
-    objects[index] = orderedObject(next);
+    objects[index] = orderedObject(homeMapStairsKeptInside(room, next));
     return { ...room, objects };
   });
+}
+
+/** Stairs slid back inside their room after a move, turn or resize, the
+ * least it takes along the room's own walls, so a flight going down keeps
+ * the hole cut for it in the floor. Any other thing, stairs already inside,
+ * and stairs that would not fit even slid (too big, or a room whose shape
+ * leaves no place) come back as they are. */
+export function homeMapStairsKeptInside(room: HomeMapRoom, object: HomeMapObject): HomeMapObject {
+  if (object.kind !== "stairs") return object;
+  const corners = (c: HomePoint) => homeBoxCorners({ centre: c, width: object.size[0], depth: object.size[1], angle: (-object.turn * Math.PI) / 180 });
+  const inside = (c: HomePoint) => corners(c).every((p) => homeRoomHoldsNearly(room, p));
+  if (inside(object.c)) return object;
+  const frame = homeMapRoomFrame(room);
+  if (frame === undefined) return object;
+  const box = corners(object.c);
+  // Clear of the wall's face first, then a centimeter in from the room's edge.
+  for (const inset of [HOME_WALL_THICKNESS / 2, 0.01]) {
+    const slide = (axis: HomePoint, lo: number, hi: number): number | undefined => {
+      const along = box.map((p) => p[0] * axis[0] + p[1] * axis[1]);
+      const min = Math.min(...along);
+      const max = Math.max(...along);
+      if (max - min > hi - lo - 2 * inset) return undefined;
+      return min < lo + inset ? lo + inset - min : max > hi - inset ? hi - inset - max : 0;
+    };
+    const du = slide(frame.u, frame.a0, frame.a1);
+    const dv = slide(frame.v, frame.c0, frame.c1);
+    if (du === undefined || dv === undefined) continue;
+    const c: HomePoint = roundPoint([object.c[0] + du * frame.u[0] + dv * frame.v[0], object.c[1] + du * frame.u[1] + dv * frame.v[1]]);
+    if (inside(c)) return { ...object, c };
+  }
+  return object;
 }
 
 /** A new thing at the end of the room's list: `kind` (a RoomPlan category
