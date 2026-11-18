@@ -853,6 +853,8 @@ export class DevicesMode {
       ctx.floor.pins.map((pin) => ({ id: pin.id, c: ctx.toScreen(pin.at), r: isPicked(pin) ? 20 : 12, room: homeMapPinRoom(ctx.floor, pin)?.outline.map((p) => ctx.toScreen(p)) })),
       pills,
       ctx.roomNameBoxes?.() ?? [],
+      ctx.floor.rooms.flatMap((room) => room.objects.filter((o) => o.hidden !== true && o.kind !== "rug")
+        .map((o) => homeBoxCorners(homeBoxOf(o)).map((p) => ctx.toScreen(p)))),
     );
     for (const pin of ctx.floor.pins) {
       const spot = spots.get(pin.id);

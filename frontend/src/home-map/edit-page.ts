@@ -52,12 +52,13 @@
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { homeMapPickOf, homeMapPickedPins } from "./devices-model.js";
-import { homeMapHeldPins, homeMapPinsOfRoom } from "./edit-ops.js";
+import { homeMapHeldPin, homeMapHeldPins, homeMapPinsOfRoom } from "./edit-ops.js";
 import { type HomeMapEditorContext, type HomeMapPart, type HomeMapViewItem, homeMapPiecePicked, homeMapRoomsPicked } from "./editor-mode.js";
 import { hmeCard, hmeFold, homeMapKeepFold } from "./editor-parts.js";
 import { homeMapCount, homeMapOnMac, homeMapShortcut } from "./editor-view.js";
-import { homeMapPiece } from "./furniture.js";
-import { ArrangeMode, HOME_MAP_ROOM_CARD_FOLD } from "./mode-arrange.js";
+import { homeMapFloorChecksCard } from "./floor-checks.js";
+import { homeMapLampPiece, homeMapPiece } from "./furniture.js";
+import { ArrangeMode, HOME_MAP_ROOM_CARD_FOLD, homeMapIsLamp } from "./mode-arrange.js";
 import { DevicesMode } from "./mode-devices.js";
 import { DoorMode } from "./mode-doors.js";
 import { type HomeMapShapeTool, ShapeMode, homeMapShapeToolIcon } from "./mode-shape.js";
@@ -376,9 +377,22 @@ export class HomeMapEditPage implements HomeMapPart {
         ${this.shape.inspector(ctx)}
         ${room === undefined ? nothing : this.shape.roomCards(ctx, room)}`;
     }
-    // A thing's device first (a lamp's light), then the thing's own cards.
+    // A thing's device first while it holds one, or it is a lamp; a plain
+    // piece of furniture holding none shows its own cards first, its empty
+    // Device card after them.
     const lamp = sel.kind === "object" ? this.devices.thingCards(ctx, sel.roomId, sel.object) : nothing;
-    return lamp === nothing ? this.arrange.inspector(ctx) : html`${this.trayAbove(ctx)}${lamp}${this.arrange.inspector(ctx)}`;
+    if (lamp === nothing) return this.arrange.inspector(ctx);
+    if (sel.kind === "object" && !this.deviceFirst(ctx, sel.roomId, sel.object)) return html`${this.trayAbove(ctx)}${this.arrange.inspector(ctx)}${lamp}`;
+    return html`${this.trayAbove(ctx)}${lamp}${this.arrange.inspector(ctx)}`;
+  }
+
+  /** Whether a picked thing's device card goes first: it holds a device,
+   * or it is a lamp, whose light is what it is for. */
+  private deviceFirst(ctx: HomeMapEditorContext, roomId: string, index: number): boolean {
+    const room = ctx.floor.rooms.find((r) => sameHomeMapId(r.id, roomId));
+    const object = room?.objects[index];
+    if (room === undefined || object === undefined) return true;
+    return homeMapHeldPin(ctx.floor, room.id, index) !== undefined || homeMapIsLamp(object) || homeMapLampPiece(object.model) !== undefined;
   }
 
   // ── the checklist ──────────────────────────────────────────────────────
@@ -496,6 +510,7 @@ export class HomeMapEditPage implements HomeMapPart {
     return html`
       ${this.checklistCard(ctx)}
       ${this.roomsCard(ctx)}
+      ${homeMapFloorChecksCard(ctx)}
       ${hmeFold("floor", "Floor", homeMapFloorName(floor), this.arrange.floorBody(ctx, floor))}
       <section class="hme-card hme-tips-card">
         <details class="hme-tips">

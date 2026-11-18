@@ -15,6 +15,7 @@
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { setFloorPlace } from "./edit-ops.js";
 import { hmeFields, hmeHint, hmeNumber, homeMapFoldOpen, homeMapKeepFold } from "./editor-parts.js";
+import { homePointBounds, homePolygonHolds } from "./geometry.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
 import { type HomeMapDocument, type HomeMapFloor, type HomeMapFloorPlace, type HomePoint, homeMapFloorName } from "./model.js";
 
@@ -94,6 +95,158 @@ export function homeMapFloorBelowOutlines(doc: Pick<HomeMapDocument, "floors">, 
   return below.rooms.map((room) => room.outline.map((q) => homeMapPlaceUnapply(over, homeMapPlaceApply(under, q))));
 }
 
+// ── Line up for me ─────────────────────────────────────────────────────
+
+/** Where Line up for me puts a floor, and how much of the two floors' rooms
+ * then lie over each other: 0 to 1, the shared area over the area either
+ * covers. */
+export interface HomeMapLineUp {
+  place: HomeMapFloorPlace;
+  match: number;
+}
+
+/** The grid the first, rough search reads the floors on, and steps by, in
+ * meters; then the fine one, round the best rough place. */
+const LINE_UP_ROUGH = 0.25;
+const LINE_UP_FINE = 0.05;
+
+/** The furthest a rough search moves a floor from centred, in meters. */
+const LINE_UP_REACH = 10;
+
+/** Cell middles of a `step` grid that lie in any of `outlines`. */
+function cellsIn(outlines: readonly HomePoint[][], step: number): HomePoint[] {
+  const out: HomePoint[] = [];
+  for (const outline of outlines) {
+    const b = homePointBounds(outline);
+    if (b === undefined) continue;
+    for (let y = Math.floor(b.minY / step) * step + step / 2; y < b.maxY; y += step) {
+      for (let x = Math.floor(b.minX / step) * step + step / 2; x < b.maxX; x += step) {
+        if (homePolygonHolds(outline, [x, y])) out.push([x, y]);
+      }
+    }
+  }
+  return out;
+}
+
+/** A grid of `step` cells over outlines, each cell in or out, to look a
+ * point up in. */
+function gridOf(outlines: readonly HomePoint[][], step: number) {
+  const b = homePointBounds(outlines.flat());
+  if (b === undefined) return undefined;
+  const x0 = b.minX;
+  const y0 = b.minY;
+  const nx = Math.max(1, Math.ceil((b.maxX - x0) / step));
+  const ny = Math.max(1, Math.ceil((b.maxY - y0) / step));
+  const cells = new Uint8Array(nx * ny);
+  let count = 0;
+  for (const p of cellsIn(outlines, step)) {
+    const i = Math.floor((p[0] - x0) / step);
+    const j = Math.floor((p[1] - y0) / step);
+    if (i < 0 || j < 0 || i >= nx || j >= ny || cells[j * nx + i] === 1) continue;
+    cells[j * nx + i] = 1;
+    count += 1;
+  }
+  const holds = (x: number, y: number) => {
+    const i = Math.floor((x - x0) / step);
+    const j = Math.floor((y - y0) / step);
+    return i >= 0 && j >= 0 && i < nx && j < ny && cells[j * nx + i] === 1;
+  };
+  return { holds, count, middle: [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2] as HomePoint, reach: Math.max(b.maxX - b.minX, b.maxY - b.minY) };
+}
+
+/** How much of `points` (moved by `dx`, `dy`) land in `grid`, as shared
+ * over either: points and cells being of one size. */
+function matchOf(points: readonly HomePoint[], grid: NonNullable<ReturnType<typeof gridOf>>, dx: number, dy: number): number {
+  let shared = 0;
+  for (const p of points) if (grid.holds(p[0] + dx, p[1] + dy)) shared += 1;
+  const either = points.length + grid.count - shared;
+  return either === 0 ? 0 : shared / either;
+}
+
+/** A turn kept between -180 and 180. */
+const halfTurn = (t: number) => ((((t + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * Line up for me: where the floor `floorId` best lies over the floor right
+ * below it, read from their rooms alone. Each quarter turn from the floor's
+ * own turn is tried, and for each every place on a 25 cm grid out from
+ * centred, the floors' rooms read on a 25 cm grid; then 5 cm steps round
+ * the best two, read on a 5 cm grid. The best is the one whose rooms lie
+ * most over the floor below's: their shared area over the area either
+ * covers. Undefined for the base floor, or a floor or a floor below with no
+ * rooms.
+ */
+export function homeMapLineUpFloor(doc: Pick<HomeMapDocument, "floors">, floorId: string): HomeMapLineUp | undefined {
+  const floor = doc.floors.find((f) => f.id.toUpperCase() === floorId.toUpperCase());
+  if (floor === undefined) return undefined;
+  const below = homeMapFloorBelow(doc.floors, floor.id);
+  if (below === undefined || below.rooms.length === 0 || floor.rooms.length === 0) return undefined;
+  const under = homeMapFloorPlaceOf(doc.floors, below);
+  const belowOutlines = below.rooms.map((r) => r.outline.map((q) => homeMapPlaceApply(under, q)));
+  const ownOutlines = floor.rooms.map((r) => r.outline.map((q): HomePoint => [q[0], q[1]]));
+  const roughGrid = gridOf(belowOutlines, LINE_UP_ROUGH);
+  const fineGrid = gridOf(belowOutlines, LINE_UP_FINE);
+  const pivot = homeMapFloorMiddle(floor);
+  if (roughGrid === undefined || fineGrid === undefined || pivot === undefined) return undefined;
+  const roughCells = cellsIn(ownOutlines, LINE_UP_ROUGH);
+  const fineCells = cellsIn(ownOutlines, LINE_UP_FINE);
+  const own = gridOf(ownOutlines, LINE_UP_ROUGH);
+  const reach = Math.min(LINE_UP_REACH, (roughGrid.reach + (own?.reach ?? 0)) / 2);
+  const steps = Math.ceil(reach / LINE_UP_ROUGH);
+  const start = floor.place?.turn ?? 0;
+
+  interface Try { turn: number; dx: number; dy: number; match: number; fine: HomePoint[] }
+  const tries: Try[] = [];
+  for (let k = 0; k < 4; k += 1) {
+    const turn = halfTurn(start + 90 * k);
+    const spin = { x: 0, y: 0, turn };
+    const m = homeMapPlaceApply(spin, pivot);
+    // The floor turned round its plan's 0, 0, then moved so its middle is
+    // on the middle of the floor below.
+    const ox = roughGrid.middle[0] - m[0];
+    const oy = roughGrid.middle[1] - m[1];
+    const rough = roughCells.map((q) => homeMapPlaceApply(spin, q));
+    let best = { dx: ox, dy: oy, match: -1 };
+    for (let j = -steps; j <= steps; j += 1) {
+      for (let i = -steps; i <= steps; i += 1) {
+        const dx = ox + i * LINE_UP_ROUGH;
+        const dy = oy + j * LINE_UP_ROUGH;
+        const match = matchOf(rough, roughGrid, dx, dy);
+        if (match > best.match) best = { dx, dy, match };
+      }
+    }
+    tries.push({ turn, ...best, fine: fineCells.map((q) => homeMapPlaceApply(spin, q)) });
+  }
+  tries.sort((p, q) => q.match - p.match);
+  let out: HomeMapLineUp | undefined;
+  for (const t of tries.slice(0, 2)) {
+    const reachFine = Math.round(LINE_UP_ROUGH / LINE_UP_FINE);
+    for (let j = -reachFine; j <= reachFine; j += 1) {
+      for (let i = -reachFine; i <= reachFine; i += 1) {
+        const dx = t.dx + i * LINE_UP_FINE;
+        const dy = t.dy + j * LINE_UP_FINE;
+        const match = matchOf(t.fine, fineGrid, dx, dy);
+        if (out === undefined || match > out.match + 1e-9) out = { place: { x: dx, y: dy, turn: t.turn }, match };
+      }
+    }
+  }
+  return out;
+}
+
+/** What Line up for me last did, so its card can say how well it matched
+ * while the floor still sits there. */
+let lastLineUp: { floorId: string; place: HomeMapFloorPlace; match: number } | undefined;
+
+const samePlace = (p: HomeMapFloorPlace | undefined, q: HomeMapFloorPlace) =>
+  p !== undefined && Math.abs(p.x - q.x) < 0.006 && Math.abs(p.y - q.y) < 0.006 && Math.abs(halfTurn(p.turn - q.turn)) < 0.06;
+
+/** The words after Line up for me: how much of the floor matches. */
+export function homeMapLineUpWords(match: number): string {
+  const percent = Math.round(match * 100);
+  return percent >= 60 ? `Lined up. ${percent}% of the floor matches the one below.`
+    : `Lined up as well as it goes: ${percent}% matches. Check the walls by eye.`;
+}
+
 /** The fold the Line up section opens in; the floor below shows dashed on
  * the plan while it is open. */
 export const HOME_MAP_LINE_UP_FOLD = "floor-line-up";
@@ -125,6 +278,15 @@ export function homeMapLineUpCard(ctx: HomeMapEditorContext, floor: HomeMapFloor
   });
   const quarter = (by: number) => ctx.apply(to(homeMapPlaceTurned(place, place.turn + by, pivot)));
   const open = homeMapFoldOpen(HOME_MAP_LINE_UP_FOLD);
+  const auto = () => {
+    const found = homeMapLineUpFloor(ctx.doc, id);
+    if (found === undefined) return;
+    lastLineUp = { floorId: id, place: { x: Math.round(found.place.x * 100) / 100, y: Math.round(found.place.y * 100) / 100, turn: Math.round(found.place.turn * 100) / 100 }, match: found.match };
+    homeMapKeepFold(HOME_MAP_LINE_UP_FOLD, true);
+    ctx.apply(to(found.place));
+  };
+  const note = lastLineUp !== undefined && lastLineUp.floorId.toUpperCase() === id.toUpperCase() && samePlace(floor.place, lastLineUp.place)
+    ? homeMapLineUpWords(lastLineUp.match) : undefined;
   return html`<details class="hme-card hme-fold" ?open=${open} data-fold=${HOME_MAP_LINE_UP_FOLD}
     @toggle=${(e: Event) => {
       const now = (e.currentTarget as HTMLDetailsElement).open;
@@ -134,7 +296,10 @@ export function homeMapLineUpCard(ctx: HomeMapEditorContext, floor: HomeMapFloor
     }}>
     <summary class="hme-h">Line up over ${homeMapFloorName(below)}<span class="hme-h-end">${floor.place === undefined ? "Centred" : "Placed"}<span class="hme-fold-caret" aria-hidden="true">›</span></span></summary>
     <div class="hme-fold-body">
-      ${hmeHint(`${homeMapFloorName(below)} shows dashed on the plan. Drag a number sideways to move this floor over it until the walls match.`, true)}
+      <button type="button" class="hme-tb hme-blue hme-wide" title="Find where this floor's rooms lie best over the floor below, and put it there"
+        @click=${auto}>Line up for me</button>
+      ${note === undefined ? nothing : html`<p class="hme-text" role="status">${note}</p>`}
+      ${hmeHint(`${homeMapFloorName(below)} shows dashed on the plan. Or drag a number sideways to move this floor over it until the walls match.`, true)}
       ${hmeFields(
         hmeNumber({ tag: "Across", label: "Across", value: place.x, unit: "m", min: -500, max: 500, ...edit((v) => ({ ...place, x: v })) }),
         hmeNumber({ tag: "Down", label: "Down", value: place.y, unit: "m", min: -500, max: 500, ...edit((v) => ({ ...place, y: v })) }),

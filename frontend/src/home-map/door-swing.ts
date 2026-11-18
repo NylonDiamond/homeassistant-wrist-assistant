@@ -261,3 +261,45 @@ export function homeMapSwingFlipClears(doc: HomeMapDocument, floorId: string, ro
   const floor = flipped?.floors.find((f) => sameHomeMapId(f.id, floorId));
   return floor !== undefined && homeMapSwingClashOf(floor, roomId, index) === undefined;
 }
+
+/** How badly a floor's doors swing into things: how many doors clash, and
+ * how deep all their hits go. */
+function clashScore(floor: Pick<HomeMapFloor, "rooms">): { doors: number; depth: number } {
+  const clashes = homeMapSwingClashes(floor);
+  return { doors: clashes.length, depth: clashes.reduce((t, c) => t + c.hits.reduce((s, h) => s + h.depth, 0), 0) };
+}
+
+const better = (p: { doors: number; depth: number }, q: { doors: number; depth: number }) => p.doors < q.doors;
+
+/** Fix swings: each door that swings into something is hung from its other
+ * side when that leaves fewer of the floor's doors running into something,
+ * door by door in the floor's
+ * order, twice round, so one door's new swing can free the next. A door of
+ * two leaves looks the same either way and is left. Undefined when no door
+ * is better the other way. */
+export function fixDoorSwings(doc: HomeMapDocument, floorId: string): HomeMapDocument | undefined {
+  const floorOf = (d: HomeMapDocument) => d.floors.find((f) => sameHomeMapId(f.id, floorId));
+  let current = doc;
+  let changed = false;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const start = floorOf(current);
+    if (start === undefined) return undefined;
+    const clashes = homeMapSwingClashes(start);
+    if (clashes.length === 0) break;
+    let moved = false;
+    for (const clash of clashes) {
+      const floor = floorOf(current)!;
+      if (homeMapSwingClashOf(floor, clash.door.roomId, clash.door.index) === undefined) continue;
+      const room = floor.rooms.find((r) => sameHomeMapId(r.id, clash.door.roomId));
+      const o = room?.openings[clash.door.index];
+      if (room === undefined || o === undefined || homeDoorSwingsOf(o, room).length !== 1) continue;
+      const flipped = swingDoorOtherWay(current, clash.door.roomId, clash.door.index);
+      const next = flipped === undefined ? undefined : floorOf(flipped);
+      if (next === undefined || !better(clashScore(next), clashScore(floor))) continue;
+      current = flipped!;
+      changed = moved = true;
+    }
+    if (!moved) break;
+  }
+  return changed ? current : undefined;
+}

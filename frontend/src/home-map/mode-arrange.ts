@@ -210,6 +210,7 @@ import {
 import { homeMapThingUnder } from "./plan-pick.js";
 import { homeMapOpenEdgesCard } from "./open-edges.js";
 import { homeMapLineUpCard } from "./floor-stack.js";
+import { homeMapStairsCard } from "./stairs-fit.js";
 import { homeMapLoad3D } from "./scene3d-load.js";
 
 /** A finish's name. */
@@ -293,6 +294,10 @@ function colourChoice(o: {
     </div></div>
     ${mixed ? hmeHint(`Mixed: their ${o.word.toLowerCase()} colours differ. Pick one to set them all.`, true) : nothing}`;
 }
+
+/** A small bin, for Remove on the picked thing's bar. */
+const binIcon = svg`<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2.5 4h11M6.5 4V2.6h3V4M4 4l.7 9.4h6.6L12 4M6.6 6.6v4.6M9.4 6.6v4.6" /></svg>`;
 
 /** A turn handle snaps to this many degrees unless Alt is held. */
 const TURN_STEP = 15;
@@ -726,8 +731,11 @@ export class ArrangeMode {
       const a = box[pick]!;
       const b = box[(pick + 1) % 4]!;
       const o = out(mid(pick));
-      const a2: HomePoint = [a[0] + o[0] * 20, a[1] + o[1] * 20];
-      const b2: HomePoint = [b[0] + o[0] * 20, b[1] + o[1] * 20];
+      // The tag is 52 wide and 18 high: off a side edge it stands far
+      // enough out that its near end clears the box and its handles.
+      const off = across ? 20 : 38;
+      const a2: HomePoint = [a[0] + o[0] * off, a[1] + o[1] * off];
+      const b2: HomePoint = [b[0] + o[0] * off, b[1] + o[1] * off];
       const m: HomePoint = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
       const length = pick % 2 === 0 ? size.width : size.depth;
       const t: HomePoint = [o[0] * 5, o[1] * 5];
@@ -739,11 +747,13 @@ export class ArrangeMode {
     const resizeTip = what === "room"
       ? "Drag to resize the room. Shift keeps its proportions, Alt resizes it about its middle, Cmd or Ctrl stops it snapping."
       : "Drag to resize it. Shift keeps its proportions, Alt resizes it about its middle.";
+    // The turn handle's stalk runs up through the top size tag, so it is
+    // drawn first and the tag over it: the stalk never cuts its words.
     return svg`<g class="hme-box">
       <polygon points=${box.map(pt).join(" ")} fill="none" stroke="#5b8def" stroke-width="2" stroke-dasharray=${dashed ? "5 4" : "none"} />
+      ${this.dragging ? nothing : svg`<line x1=${fmt(tm[0])} y1=${fmt(tm[1])} x2=${fmt(knob[0])} y2=${fmt(knob[1])} stroke="#5b8def" stroke-width="1.6" />`}
       ${this.resizing || !this.dragging ? dims : nothing}
       ${this.dragging ? nothing : svg`
-        <line x1=${fmt(tm[0])} y1=${fmt(tm[1])} x2=${fmt(knob[0])} y2=${fmt(knob[1])} stroke="#5b8def" stroke-width="1.6" />
         ${handles.map((h, i) => svg`<rect data-hme="resize" data-handle=${i} x=${fmt(h[0] - 5)} y=${fmt(h[1] - 5)} width="10" height="10"
           fill="#fff" stroke="#5b8def" stroke-width="1.6" style=${`cursor:${resizeCursor(h[0] - centre[0], h[1] - centre[1])}`}>
           <title>${resizeTip}</title></rect>`)}
@@ -1384,12 +1394,27 @@ export class ArrangeMode {
     const thing = this.picked(ctx);
     if (thing !== undefined) {
       const { index, object } = thing;
+      // Kept to one row on a laptop's plan: Copy and Hide in More, Remove
+      // as a bin (Delete does it too).
+      const mac = homeMapOnMac();
       return html`<span class="hme-pill-name">${homeMapThingName(object)}</span>
         <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => turnObject(d, id, index, 90))}>⟲ Turn 90°</button>
-        ${this.copyButtons(ctx)}
-        <button type="button" class="hme-tb" @click=${() => ctx.apply((d) => setObjectHidden(d, id, index, object.hidden !== true))}>${object.hidden === true ? "Show" : "Hide"}</button>
-        <button type="button" class="hme-tb" @click=${() => ctx.select({ kind: "room", roomId: id })}>${homeMapRoomName(room)} ›</button>
-        <button type="button" class="hme-tb danger" @click=${() => ctx.apply((d) => removeObject(d, id, index), { select: { kind: "room", roomId: id } })}>Remove</button>`;
+        <button type="button" class="hme-tb" title="Make a copy beside it (${mac ? "⌘D" : "Ctrl+D"})" @click=${() => this.duplicatePicked(ctx)}>Duplicate</button>
+        ${hmeMenuButton({
+          label: "More",
+          cls: "hme-tb",
+          options: [
+            { value: "copy", label: `Copy (${mac ? "⌘C" : "Ctrl+C"})` },
+            { value: "hide", label: object.hidden === true ? "Show it" : "Hide it" },
+          ],
+          pick: (what) => {
+            if (what === "copy") this.copyPicked(ctx);
+            else ctx.apply((d) => setObjectHidden(d, id, index, object.hidden !== true));
+          },
+        })}
+        <button type="button" class="hme-tb" title="Pick its room" @click=${() => ctx.select({ kind: "room", roomId: id })}>${homeMapRoomName(room)} ›</button>
+        <button type="button" class="hme-tb hme-icon danger" aria-label="Remove" title="Remove it (Delete)"
+          @click=${() => ctx.apply((d) => removeObject(d, id, index), { select: { kind: "room", roomId: id } })}>${binIcon}</button>`;
     }
     return html`<span class="hme-pill-name">${homeMapRoomName(room)}</span>
       ${this.clip === undefined ? nothing : this.pasteButton(ctx)}
@@ -1481,6 +1506,8 @@ export class ArrangeMode {
       ${this.roomTray?.(ctx, room) ?? nothing}
 
       ${homeMapOpenEdgesCard(ctx, room)}
+
+      ${homeMapStairsCard(ctx, room)}
 
       ${hmeFold(key("furniture"), "Furniture", things === 0 ? undefined : homeMapCount(things, "thing"), this.furnitureList(ctx, room), "hme-inroom")}
 

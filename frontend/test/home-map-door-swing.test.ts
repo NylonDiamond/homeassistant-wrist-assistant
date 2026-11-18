@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HOME_MAP_SWING_CLASH_DEPTH,
+  fixDoorSwings,
   homeMapOverlapDepth,
   homeMapSwingClashOf,
   homeMapSwingClashes,
@@ -178,5 +179,24 @@ describe("Jesse's Upstairs", () => {
     // The doors to Jesse Office and Chens Office stand 13 cm apart on one wall
     // and their swings never meet.
     expect(homeMapOverlapDepth(swing(1), swing(2))).toBe(0);
+  });
+});
+
+describe("Fix swings", () => {
+  it("hangs a door from its other side when that clears what it hits", () => {
+    // Hung at x 0.2 it sweeps into a chair by the wall; hung at x 1 it misses.
+    const hall = box("hall", 0, 0, 4, 3, [door([0.2, 0], [1, 0])], [thing("chair", [0.25, 0.6], [0.2, 0.2, 0.8])]);
+    const doc = docOf(floorOf([hall]));
+    expect(homeMapSwingClashes(doc.floors[0]!)).toHaveLength(1);
+    const fixed = fixDoorSwings(doc, "F");
+    expect(fixed).toBeDefined();
+    expect(homeMapSwingClashes(fixed!.floors[0]!)).toEqual([]);
+    expect(fixed!.floors[0]!.rooms[0]!.openings[0]!.a).toEqual([1, 0]);
+  });
+
+  it("leaves the doors when no side is better", () => {
+    // A cabinet right in front of the door: it hits from either side.
+    const hall = box("hall", 0, 0, 4, 3, [door([0.2, 0], [1, 0])], [thing("storage", [0.6, 0.35], [0.5, 0.4, 1])]);
+    expect(fixDoorSwings(docOf(floorOf([hall])), "F")).toBeUndefined();
   });
 });

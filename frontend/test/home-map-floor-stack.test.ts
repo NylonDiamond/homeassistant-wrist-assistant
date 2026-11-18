@@ -4,6 +4,8 @@ import {
   homeMapFloorBelow,
   homeMapFloorBelowOutlines,
   homeMapFloorPlaceOf,
+  homeMapLineUpFloor,
+  homeMapLineUpWords,
   homeMapPlaceApply,
   homeMapPlaceTurned,
   homeMapPlaceUnapply,
@@ -77,5 +79,56 @@ describe("floors stacked in the house", () => {
     expect(setFloorPlace(placed, "up", undefined)!.floors[1]!.place).toBeUndefined();
     expect(setFloorPlace(doc, "up", { x: 600, y: 0, turn: 0 })).toBeUndefined();
     expect(setFloorPlace(doc, "nope", { x: 0, y: 0, turn: 0 })).toBeUndefined();
+  });
+});
+
+// Line up for me: the place where the floor's rooms lie most over the
+// floor below's.
+describe("Line up for me", () => {
+  // An L shaped house, so only one turn and one place fit.
+  const lShape: P[] = [[0, 0], [9, 0], [9, 4], [4, 4], [4, 8], [0, 8]];
+  const groundL = floor("ground", 0, lShape);
+
+  it("brings back a floor that was turned a quarter and moved", () => {
+    // The same outline in its own plan, as a scan that started turned and
+    // somewhere else would give it: each point taken out of the house by a
+    // place the search does not know.
+    const truth = { x: 2.3, y: -1.7, turn: 90 };
+    const scanned = lShape.map((q) => homeMapPlaceUnapply(truth, q).map((v) => Math.round(v * 1000) / 1000) as P);
+    const up = floor("up", 1, scanned);
+    const t0 = performance.now();
+    const found = homeMapLineUpFloor({ floors: [groundL, up] }, "up");
+    const took = performance.now() - t0;
+    expect(found).toBeDefined();
+    expect(found!.place.turn).toBeCloseTo(90);
+    expect(found!.place.x).toBeCloseTo(truth.x, 0);
+    expect(found!.place.y).toBeCloseTo(truth.y, 0);
+    expect(Math.abs(found!.place.x - truth.x)).toBeLessThan(0.06);
+    expect(Math.abs(found!.place.y - truth.y)).toBeLessThan(0.06);
+    expect(found!.match).toBeGreaterThan(0.95);
+    expect(took).toBeLessThan(400);
+  });
+
+  it("puts a smaller floor over the part of the floor below it fits", () => {
+    const wing: P[] = [[0, 0], [4, 0], [4, 4], [0, 4]];
+    const up = floor("up", 1, wing.map(([x, y]) => [x + 20, y + 30] as P));
+    const found = homeMapLineUpFloor({ floors: [groundL, up] }, "up")!;
+    // Inside the house's outline wherever it lands.
+    const corners = wing.map(([x, y]) => homeMapPlaceApply(found.place, [x + 20, y + 30]));
+    for (const [x, y] of corners) {
+      expect(x).toBeGreaterThan(-0.1);
+      expect(y).toBeGreaterThan(-0.1);
+      expect(x).toBeLessThan(9.1);
+      expect(y).toBeLessThan(8.1);
+    }
+  });
+
+  it("has nothing to line up for the base floor", () => {
+    expect(homeMapLineUpFloor({ floors: [groundL, upstairs] }, "ground")).toBeUndefined();
+  });
+
+  it("says how much matches", () => {
+    expect(homeMapLineUpWords(0.923)).toBe("Lined up. 92% of the floor matches the one below.");
+    expect(homeMapLineUpWords(0.41)).toBe("Lined up as well as it goes: 41% matches. Check the walls by eye.");
   });
 });

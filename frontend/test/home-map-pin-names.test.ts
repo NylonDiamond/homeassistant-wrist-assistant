@@ -157,6 +157,16 @@ describe("where the pills stand", () => {
     expect(spots.get("a")).toEqual([150, 76]);
   });
 
+  it("puts a name off the furniture when a clear spot is free of it", () => {
+    // A bed fills the floor under the pin; over it is open floor.
+    const bed: [number, number][] = [[60, 110], [140, 110], [140, 200], [60, 200]];
+    const spots = homeMapPlacePinPills([{ id: "a", c: [100, 100], r: 12 }], pills([["a", "Lamps", false]]), [], [bed]);
+    expect(spots.get("a")).toEqual([100, 76]);
+    // With furniture all round, it still shows under its pin.
+    const round: [number, number][] = [[0, 0], [200, 0], [200, 200], [0, 200]];
+    expect(homeMapPlacePinPills([{ id: "a", c: [100, 100], r: 12 }], pills([["a", "Lamps", false]]), [], [round]).get("a")).toEqual([100, 124]);
+  });
+
   it("leaves a name out where the pins crowd it, but always shows a reading", () => {
     // A ring of pins round "a" closes every spot.
     const ring = [[0, 28], [0, -28], [40, 0], [-40, 0]].map(([dx, dy], i) => ({ id: `n${i}`, c: [100 + dx!, 100 + dy!] as [number, number], r: 12 }));

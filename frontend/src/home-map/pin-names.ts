@@ -17,6 +17,7 @@
 // before it and the rooms' names. A name with no clear spot is left out, so
 // a plan zoomed out far shows fewer names, and none once the pins crowd.
 
+import { boxMeetsConvex } from "./free-spot.js";
 import { homePolygonHolds } from "./geometry.js";
 import { type HomeMapFloor, type HomeMapPin, type HomePoint, homeMapPinRoom, homeMapRoomName } from "./model.js";
 
@@ -199,13 +200,16 @@ function boxMeetsPin(b: HomeMapStageBox, p: HomeMapStagePin): boolean {
  * pills that must show first, then the rest, each under its pin, else over
  * it, to its right or its left, at the first spot off every other pin, the
  * pills placed already and `avoid` (the rooms' names), inside its pin's
- * room before any spot that crosses its walls. One that must show and
- * finds no clear spot goes under its pin; any other is left out.
+ * room before any spot that crosses its walls, and off the furniture
+ * (`furniture`, each piece's box as a convex outline on the stage) before
+ * any spot that lies on a piece. One that must show and finds no clear spot
+ * goes under its pin; any other is left out.
  */
 export function homeMapPlacePinPills(
   pins: readonly HomeMapStagePin[],
   pills: ReadonlyMap<string, HomeMapPinPillWords>,
   avoid: readonly HomeMapStageBox[] = [],
+  furniture: readonly (readonly HomePoint[])[] = [],
 ): Map<string, HomePoint> {
   const placed: HomeMapStageBox[] = [];
   const out = new Map<string, HomePoint>();
@@ -226,7 +230,9 @@ export function homeMapPlacePinPills(
       [c[0] - half[0], c[1] - half[1]], [c[0] + half[0], c[1] - half[1]],
       [c[0] + half[0], c[1] + half[1]], [c[0] - half[0], c[1] + half[1]],
     ].every((q) => homePolygonHolds(room, q));
-    const spot = spots.find((c) => inside(c) && clear(c)) ?? spots.find(clear) ?? (pill.must ? spots[0] : undefined);
+    const offFurniture = (c: HomePoint) => furniture.every((f) => !boxMeetsConvex(c, half, f));
+    const spot = spots.find((c) => inside(c) && clear(c) && offFurniture(c)) ?? spots.find((c) => inside(c) && clear(c))
+      ?? spots.find(clear) ?? (pill.must ? spots[0] : undefined);
     if (spot === undefined) continue;
     placed.push({ c: spot, half });
     out.set(pin.id, spot);

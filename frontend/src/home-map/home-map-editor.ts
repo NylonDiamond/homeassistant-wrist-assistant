@@ -389,6 +389,7 @@ export class WaHomeMapEditor extends LitElement {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKey);
     window.addEventListener("keyup", this.onKeyUp);
+    this.addEventListener("pointerdown", this.onAnyDown, true);
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisible);
     if (this.askedOnce) {
       void this.load(true);
@@ -401,6 +402,7 @@ export class WaHomeMapEditor extends LitElement {
     this.pageStep.stop();
     window.removeEventListener("keydown", this.onKey);
     window.removeEventListener("keyup", this.onKeyUp);
+    this.removeEventListener("pointerdown", this.onAnyDown, true);
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisible);
     this.stopListening();
     this.endDrag?.();
@@ -1378,10 +1380,7 @@ export class WaHomeMapEditor extends LitElement {
       this.openKeys();
       return;
     }
-    if (this.dockMenu !== undefined && e.key === "Escape") {
-      this.dockMenu = undefined;
-      return;
-    }
+    if (e.key === "Escape" && this.closeMenus()) return;
     if (e.key === " " && !e.repeat) {
       this.spaceHeld = true;
       e.preventDefault?.();
@@ -1419,6 +1418,33 @@ export class WaHomeMapEditor extends LitElement {
       case "fit":
         this.fit();
         return;
+    }
+  };
+
+  /** Close every open menu (the Draw list, the dock's View, Look and Sky,
+   * the floor menu); whether one was open. */
+  private closeMenus(): boolean {
+    const any = this.dockMenu !== undefined || this.page.drawOpen || this.floorMenu;
+    this.dockMenu = undefined;
+    this.floorMenu = false;
+    if (this.page.drawOpen) {
+      this.page.drawOpen = false;
+      this.requestUpdate();
+    }
+    return any;
+  }
+
+  /** Any press in the editor, before its own handler: an open menu closes
+   * unless the press is on it or its button, so only one menu is ever open
+   * and a press anywhere else puts it away. */
+  private readonly onAnyDown = (e: PointerEvent): void => {
+    const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+    const on = (selector: string) => path.some((n) => typeof (n as Element).matches === "function" && (n as Element).matches(selector));
+    if (this.dockMenu !== undefined && !on(".hme-dock-pop, [data-hme-menu]")) this.dockMenu = undefined;
+    if (this.floorMenu && !on(".hme-floor-wrap")) this.floorMenu = false;
+    if (this.page.drawOpen && !on(".hme-drawlist, .hme-rtool-draw")) {
+      this.page.drawOpen = false;
+      this.requestUpdate();
     }
   };
 
@@ -2027,7 +2053,7 @@ export class WaHomeMapEditor extends LitElement {
   /** A dock's menu button, View or Look, opening or closing its list. */
   private dockMenuButton(which: "view" | "look" | "sky", label: string, title: string): TemplateResult {
     const open = this.dockMenu === which;
-    return html`<button type="button" class="hme-tb ${open ? "on" : ""}" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} title=${title}
+    return html`<button type="button" class="hme-tb ${open ? "on" : ""}" data-hme-menu=${which} aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} title=${title}
       @click=${() => { this.dockMenu = open ? undefined : which; }}>${label} <span class="hme-caret" aria-hidden="true">▾</span></button>`;
   }
 

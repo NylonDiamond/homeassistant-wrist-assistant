@@ -23,7 +23,7 @@
 
 import { type SVGTemplateResult, type TemplateResult, html, nothing, svg } from "lit";
 import { type HomeMapDoor, homeMapDoorChoices, homeMapDoorPairs, homeMapDoorPartner, homeMapOpenDoors } from "./door-pairs.js";
-import { homeMapSwingClashCount, homeMapSwingClashOf, homeMapSwingClashes, homeMapSwingFlipClears, homeMapSwingHitWords, homeMapSwingPolygon, swingDoorOtherWay } from "./door-swing.js";
+import { homeMapSwingClashOf, homeMapSwingClashes, homeMapSwingFlipClears, homeMapSwingHitWords, homeMapSwingPolygon, swingDoorOtherWay } from "./door-swing.js";
 import { homeDoorSwingsOf } from "./geometry.js";
 import { type HomeMapDoorLineUp, type HomeMapFit, type HomeMapOp, connectDoors, fitAllIssues, fitRooms, homeMapDoorLineUps, homeMapFitIssues, homeMapFitOf, placeDoors } from "./edit-ops.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
@@ -268,9 +268,8 @@ export class DoorMode {
   fitFoot(ctx: HomeMapEditorContext): TemplateResult | typeof nothing {
     const met = this.allMet(ctx);
     if (met === undefined) return nothing;
-    const clashes = homeMapSwingClashCount(savedFloor(ctx));
-    const swing = clashes === 0 ? "" : ` ${homeMapCount(clashes, "door")} ${clashes === 1 ? "swings" : "swing"} into something.`;
-    return html`<p class="hme-fit-foot" role="status">All ${met} doors meet.${swing}</p>`;
+    // What swings into something is the floor's Check card's (`floor-checks.ts`).
+    return html`<p class="hme-fit-foot" role="status">All ${met} doors meet.</p>`;
   }
 
   /** Fit rooms: how many doors meet, the next thing to do, and what the scan
@@ -398,11 +397,15 @@ export class DoorMode {
     const lines = this.swingLines(ctx, room.id, opening);
     if (lines.length === 0) return nothing;
     const own = homeMapSwingClashOf(ctx.floor, room.id, opening) !== undefined;
-    const flips = own && homeMapSwingFlipClears(ctx.doc, ctx.floor.id, room.id, opening);
+    const o = room.openings[opening];
+    const oneLeaf = o !== undefined && homeDoorSwingsOf(o, room).length === 1;
+    const flips = own && oneLeaf;
+    const clears = flips && homeMapSwingFlipClears(ctx.doc, ctx.floor.id, room.id, opening);
     return html`<section class="hme-card hme-fit hot"><div class="hme-h">Swing</div>
       ${lines.map((line) => html`<p class="hme-text">${line}.</p>`)}
-      ${flips ? html`<button type="button" class="hme-tb hme-wide" title="Hang the door from its other side"
-        @click=${() => ctx.apply((d) => swingDoorOtherWay(d, room.id, opening))}>Swing the other way</button>` : nothing}
+      ${flips ? html`<button type="button" class="hme-tb hme-wide ${clears ? "hme-blue" : ""}" title="Hang the door from its other side"
+        @click=${() => ctx.apply((d) => swingDoorOtherWay(d, room.id, opening))}>Swing the other way</button>
+        ${clears ? nothing : html`<p class="hme-text dim">The other way runs into something too.</p>`}` : nothing}
     </section>`;
   }
 }

@@ -12,7 +12,7 @@ import { hmeCard, hmeHint } from "./editor-parts.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
 import { homeMapMeters } from "./editor-view.js";
 import { HOME_WALL_THICKNESS, type HomeOpenEdge, homeOpenEdges } from "./geometry.js";
-import type { HomeMapRoom } from "./model.js";
+import { type HomeMapDocument, type HomeMapFloor, type HomeMapRoom, sameHomeMapId } from "./model.js";
 
 /** The dashed line's colour: the editor's amber, a fact to look at, not an
  * error. */
@@ -21,6 +21,38 @@ const OPEN_EDGE_INK = "#E8A33D";
 /** A new wall on an open edge is as thick as the room's thickest wall. */
 function wallThickness(room: HomeMapRoom): number {
   return room.walls.reduce((t, w) => Math.max(t, w.t), 0) || HOME_WALL_THICKNESS;
+}
+
+/** How many open edges the floor's rooms have. */
+export function homeMapOpenEdgeCount(floor: Pick<HomeMapFloor, "rooms">): number {
+  return floor.rooms.reduce((n, room) => n + homeOpenEdges(floor, room).length, 0);
+}
+
+/** The first room of the floor with an open edge, undefined for none. */
+export function homeMapFirstOpenRoom(floor: Pick<HomeMapFloor, "rooms">): HomeMapRoom | undefined {
+  return floor.rooms.find((room) => homeOpenEdges(floor, room).length > 0);
+}
+
+/** A wall on every open edge of the floor's rooms, or only of the room
+ * `roomId`, each as thick as its room's thickest wall: one edit, so one
+ * undo. Undefined when there is no open edge or no wall could go in. */
+export function addOpenEdgeWalls(doc: HomeMapDocument, floorId: string, roomId?: string): HomeMapDocument | undefined {
+  const floor = doc.floors.find((f) => sameHomeMapId(f.id, floorId));
+  if (floor === undefined) return undefined;
+  // Every edge is found before any wall goes in: an open edge has no room
+  // beside it, so one room's new wall never closes another room's edge.
+  const todo = floor.rooms
+    .filter((room) => roomId === undefined || sameHomeMapId(room.id, roomId))
+    .flatMap((room) => homeOpenEdges(floor, room).map((edge) => ({ room, edge })));
+  let current = doc;
+  let added = 0;
+  for (const { room, edge } of todo) {
+    const next = addInnerWall(current, room.id, edge.a, edge.b, wallThickness(room));
+    if (next === undefined) continue;
+    current = next;
+    added += 1;
+  }
+  return added === 0 ? undefined : current;
 }
 
 /** Every open edge of the floor's rooms, dashed, in screen space. */
@@ -48,5 +80,7 @@ export function homeMapOpenEdgesCard(ctx: HomeMapEditorContext, room: HomeMapRoo
     ${edges.map((edge) => html`<div class="hme-r"><span class="hme-l">${homeMapOpenEdgeText(edge)}</span>
       <button type="button" class="hme-tb" title="Put a wall along this edge"
         @click=${() => ctx.apply((d) => addInnerWall(d, room.id, edge.a, edge.b, t))}>Add wall</button></div>`)}
+    ${edges.length < 2 ? nothing : html`<button type="button" class="hme-tb hme-wide" title="Put a wall along every open edge of this room"
+      @click=${() => ctx.apply((d) => addOpenEdgeWalls(d, ctx.floor.id, room.id))}>Add all ${edges.length} walls</button>`}
     ${hmeHint("No wall here and no room beside it, so the house is open: dashed on the plan. Leave it for a stairwell or an open side.", true)}`);
 }

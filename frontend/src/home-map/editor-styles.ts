@@ -432,6 +432,9 @@ export const editorStyles = css`
   .hme-fix b { color: var(--wa-ink); font-weight: 600; }
   .hme-fix-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--hme-amber); flex: none; }
   .hme-fix-dot.gray { background: #8e8e93; }
+  .hme-fix-t { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .hme-fix-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hme-checks .hme-fix + .hme-fix { margin-top: 8px; }
 
   /* ── the stage ────────────────────────────────────────────────────── */
   .hme-stage { position: absolute; inset: 0; border-radius: 16px; border: 1px solid var(--wa-line); background: #11100f; overflow: hidden; }
@@ -459,6 +462,10 @@ export const editorStyles = css`
     /* A narrow plan (Both, or a small window) wraps the bar onto a second
      * row rather than cutting buttons off at its edge. */
     max-width: calc(100% - 28px); flex-wrap: wrap; justify-content: center;
+    /* As wide as its buttons: a bar placed from the middle of the plan is
+     * otherwise held to the half of it right of its left edge, and wraps
+     * with room to spare. */
+    width: max-content;
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
   .hme-pill { top: 14px; }

@@ -108,7 +108,7 @@ export interface HomeMapLabelObstacles {
 
 /** Whether a convex outline and the box `c` ± `half` overlap, by their
  * separating axes. */
-function boxMeetsConvex(c: HomePoint, half: readonly [number, number], poly: readonly HomePoint[]): boolean {
+export function boxMeetsConvex(c: HomePoint, half: readonly [number, number], poly: readonly HomePoint[]): boolean {
   if (poly.length === 0) return false;
   const corners: HomePoint[] = [
     [c[0] - half[0], c[1] - half[1]], [c[0] + half[0], c[1] - half[1]],
