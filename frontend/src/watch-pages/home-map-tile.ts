@@ -24,6 +24,7 @@
 // store nothing for their default.
 
 import { homeStyleOf, tileHasOwnStyle, tileOptionsResolved, withoutTileStyle } from "../home-map/edit-ops.js";
+import { homeMapFloorStairsGoDown } from "../home-map/furniture-rules.js";
 import { HOME_TILE_DEFAULT_TURN, HOME_TILE_MODEL_LOOKS, type HomeTileDevices, type HomeTileLook } from "../home-map/tile-art.js";
 import {
   type HomeMapDocument,
@@ -467,9 +468,14 @@ export const WATCH_HOME_MAP_OPTION_HINTS = {
  * home style by the tile rule, in one place for the face and the Map card's
  * pictures. */
 export function watchHomeMapArtOptions(tile: Record<string, unknown>, home?: HomeMapDocument | null) {
+  // The floor's pick for stairs with no way of their own, which needs the
+  // map's other floors; only when down, so the usual options stay as they were.
+  const floor = home === undefined || home === null ? undefined : watchHomeMapFloorOf(tile as Pick<WatchPageTile, "entityId"> & Record<string, unknown>, home);
+  const stairsDown = floor !== undefined && home !== undefined && home !== null && homeMapFloorStairsGoDown(home.floors, floor.id);
   return {
     ...tileOptionsResolved(tile, home),
     tapLights: tile[WATCH_HOME_MAP_TAP_LIGHTS_KEY] === true,
+    ...(stairsDown ? { stairsDown } : {}),
   };
 }
 

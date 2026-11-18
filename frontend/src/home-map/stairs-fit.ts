@@ -5,12 +5,12 @@
 // one undo. The devices never draw the card; they draw the stairs.
 
 import { type TemplateResult, html, nothing } from "lit";
-import { addPiece, homeMapRoomFrame, setObject } from "./edit-ops.js";
+import { addPiece, homeMapRoomFrame, setObject, setObjectGoes, setObjectPiece } from "./edit-ops.js";
 import { hmeCard, hmeHint } from "./editor-parts.js";
 import type { HomeMapEditorContext } from "./editor-mode.js";
-import { homeMapPiece } from "./furniture.js";
-import { HOME_WALL_THICKNESS } from "./geometry.js";
-import { type HomeMapDocument, type HomeMapRoom, type HomePoint, sameHomeMapId } from "./model.js";
+import { homeMapPiece, homeMapPieceOf, homeMapStairsGoDown, homeMapStairsReason } from "./furniture.js";
+import { HOME_WALL_THICKNESS, homeBoxCorners, homeBoxOf, homeRoomHoldsNearly } from "./geometry.js";
+import { type HomeMapDocument, type HomeMapObject, type HomeMapRoom, type HomePoint, sameHomeMapId } from "./model.js";
 
 /** The catalog piece the button adds. */
 const FLIGHT = "stairsFlight";
@@ -108,4 +108,55 @@ export function homeMapStairsCard(ctx: HomeMapEditorContext, room: HomeMapRoom):
     <button type="button" class="hme-tb hme-blue hme-wide" title="Put a flight of stairs in this room, sized to fit"
       @click=${() => ctx.apply((d) => addStairsToRoom(d, room.id), { select: { kind: "object", roomId: room.id, object: index } })}>Add stairs here</button>
     ${hmeHint("Drag it or its corners after, to match the real stairs.", true)}`);
+}
+
+/** Whether a stairs thing should be offered Fit to the room: it is not the
+ * built flight, or its box crosses its room's edge. */
+export function homeMapStairsNeedFit(room: Pick<HomeMapRoom, "outline">, object: HomeMapObject): boolean {
+  if (object.kind !== "stairs") return false;
+  if (homeMapPieceOf(object)?.id !== FLIGHT) return true;
+  return !homeBoxCorners(homeBoxOf(object)).every((p) => homeRoomHoldsNearly(room, p));
+}
+
+/** A stairs thing made the built flight and fitted to its room as Add
+ * stairs here fits one (`homeMapStairsFit`), its way and colours kept, off
+ * the floor; undefined for a room too small. One edit. */
+export function fitStairsToRoom(doc: HomeMapDocument, roomId: string, index: number): HomeMapDocument | undefined {
+  const piece = homeMapPiece(FLIGHT);
+  const room = doc.floors.flatMap((f) => f.rooms).find((r) => sameHomeMapId(r.id, roomId));
+  if (piece === undefined || room === undefined || room.objects[index] === undefined) return undefined;
+  const fit = homeMapStairsFit(room, piece);
+  if (fit === undefined) return undefined;
+  const made = setObjectPiece(doc, roomId, index, piece) ?? doc;
+  return setObject(made, roomId, index, { c: fit.c, size: fit.size, turn: fit.turn, lift: 0 });
+}
+
+/** The words under Goes when the map picked the way (`goes` absent). */
+const PICKED: Readonly<Record<ReturnType<typeof homeMapStairsReason>, string>> = {
+  above: "Picked for you: a floor is above this one, so they go up.",
+  top: "Picked for you: no floor is above this one, so they go down.",
+  alone: "Picked for you: no floor is above or below this one, so they go up.",
+};
+
+/** The Goes card of a picked flight of stairs: Up or Down, the way it goes
+ * lit, and why when the map picked it; nothing for anything not stairs. */
+export function homeMapStairsWayCard(ctx: HomeMapEditorContext, room: HomeMapRoom, index: number, object: HomeMapObject): TemplateResult | typeof nothing {
+  if (object.kind !== "stairs") return nothing;
+  const floors = ctx.doc.floors.map((f) => (sameHomeMapId(f.id, ctx.floor.id) ? ctx.floor : f));
+  const down = homeMapStairsGoDown(floors, ctx.floor.id, object);
+  const set = (goes: "up" | "down" | undefined) => ctx.apply((d) => setObjectGoes(d, room.id, index, goes));
+  const piece = homeMapPiece(FLIGHT);
+  const fits = homeMapStairsNeedFit(room, object) && piece !== undefined && homeMapStairsFit(room, piece) !== undefined;
+  const why = object.goes === undefined ? PICKED[homeMapStairsReason(floors, ctx.floor.id)] : down ? "They go down from this floor." : "They go up from this floor.";
+  return hmeCard("Goes", html`
+    <div class="hme-r tight"><span class="hme-grow">From this floor</span>
+      <div class="hme-seg" role="group" aria-label="Which way the stairs go">
+        <button type="button" class=${down ? "" : "on"} aria-pressed=${down ? "false" : "true"} title="The stairs go up from this floor" @click=${() => set("up")}>Up</button>
+        <button type="button" class=${down ? "on" : ""} aria-pressed=${down ? "true" : "false"} title="The stairs go down from this floor" @click=${() => set("down")}>Down</button>
+      </div></div>
+    ${hmeHint(why, true)}
+    ${fits || object.goes !== undefined ? html`<div class="hme-row-end">
+      ${fits ? html`<button type="button" class="hme-tb" title="Make it a flight of stairs that fits inside this room, clear of its doors"
+        @click=${() => ctx.apply((d) => fitStairsToRoom(d, room.id, index))}>Fit to the room</button>` : nothing}
+      ${object.goes === undefined ? nothing : html`<button type="button" class="hme-tb" title="Go by the floors of the map again" @click=${() => set(undefined)}>Let HouseLit pick</button>`}</div>` : nothing}`);
 }

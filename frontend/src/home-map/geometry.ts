@@ -305,6 +305,70 @@ export function homeBoxCorners(box: HomeBox): HomePoint[] {
   });
 }
 
+/** Whether a point stands inside a room's outline, a centimeter in from
+ * its edge counted as inside: where a stairwell's corner may stand. */
+export function homeRoomHoldsNearly(room: Pick<HomeMapRoom, "outline">, p: readonly number[]): boolean {
+  if (homePolygonHolds(room.outline, p)) return true;
+  const n = room.outline.length;
+  for (let i = 0; i < n; i += 1) {
+    const [ax, ay] = room.outline[i]!;
+    const [bx, by] = room.outline[(i + 1) % n]!;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((p[0]! - ax) * dx + (p[1]! - ay) * dy) / Math.max(dx * dx + dy * dy, 1e-9)));
+    if (Math.hypot(ax + dx * t - p[0]!, ay + dy * t - p[1]!) <= 0.01) return true;
+  }
+  return false;
+}
+
+/** How much a flight going down may be cut, in each of its width and depth,
+ * to fit its room, and the step it is cut by, in meters. */
+export const HOME_DOWN_FLIGHT_CUT = 0.3;
+export const HOME_DOWN_FLIGHT_STEP = 0.05;
+
+/**
+ * The box a flight of stairs going down is drawn in, in a well cut in its
+ * room's floor: its own box when its four corners are inside the room
+ * (`homeRoomHoldsNearly`); else its own box shrunk about its middle, the
+ * width and the depth each cut by the same 5, 10, ... up to 30 centimeters,
+ * the first whose four corners are; undefined when none is, so it is drawn
+ * in its own box with no hole in the floor. The same rule on the iPhone.
+ */
+export function homeDownFlightBox(room: Pick<HomeMapRoom, "outline">, object: Pick<HomeMapObject, "c" | "size" | "turn">): HomeDrawnBox | undefined {
+  const steps = Math.round(HOME_DOWN_FLIGHT_CUT / HOME_DOWN_FLIGHT_STEP);
+  for (let k = 0; k <= steps; k += 1) {
+    const cut = k * HOME_DOWN_FLIGHT_STEP;
+    const width = object.size[0] - cut;
+    const depth = object.size[1] - cut;
+    if (width <= 0.05 || depth <= 0.05) break;
+    const size: [number, number, number] = [Math.round(width * 1000) / 1000, Math.round(depth * 1000) / 1000, object.size[2]];
+    const box = { centre: object.c, width: size[0], depth: size[1], angle: (-object.turn * Math.PI) / 180 };
+    if (homeBoxCorners(box).every((p) => homeRoomHoldsNearly(room, p))) return { c: object.c, size, turn: object.turn };
+  }
+  return undefined;
+}
+
+/** The catalog piece every flight of stairs going down is drawn as,
+ * whatever its own `model`: the flight built to its box. */
+export const HOME_DOWN_FLIGHT_MODEL = "stairsFlight";
+
+/** Stairs going down as they are drawn: the built flight
+ * (`HOME_DOWN_FLIGHT_MODEL`) in their drawn box (`homeDownFlightBox`), with
+ * a hole in the floor, or in their own box with none when even the most cut
+ * box does not fit the room. Their colours and `goes` are kept. */
+export function homeDownStairsDrawn(room: Pick<HomeMapRoom, "outline">, object: HomeMapObject): { object: HomeMapObject; hole: boolean } {
+  const box = homeDownFlightBox(room, object);
+  const { lift: _lift, ...rest } = object;
+  return { object: { ...rest, model: HOME_DOWN_FLIGHT_MODEL, ...(box ?? {}) }, hole: box !== undefined };
+}
+
+/** A thing's box as it is drawn: its middle, size and turn. */
+export interface HomeDrawnBox {
+  c: HomePoint;
+  size: [number, number, number];
+  turn: number;
+}
+
 /** How far a table can be from a chair that faces it, centre to centre. */
 const CHAIR_REACH = 1.4;
 

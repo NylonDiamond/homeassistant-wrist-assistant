@@ -108,6 +108,7 @@ import {
   type HomeMapRoom,
   type HomeMapScan,
   type HomeMapScans,
+  type HomeMapStairsWay,
   type HomeMapStyle,
   type HomeMapWall,
   type HomePoint,
@@ -1239,6 +1240,17 @@ export function setObject(doc: HomeMapDocument, roomId: string, index: number, c
       turn: change.turn === undefined ? o.turn : r(homeNormalDegrees(change.turn)),
       ...(lift !== undefined && lift > 0 ? { lift } : {}),
     };
+  });
+}
+
+/** Which way a thing's stairs go (`goes`), or back to the map's pick when
+ * `goes` is undefined, the key then left out. Unchanged is no edit. */
+export function setObjectGoes(doc: HomeMapDocument, roomId: string, index: number, goes: HomeMapStairsWay | undefined): HomeMapDocument | undefined {
+  if (goes !== undefined && goes !== "up" && goes !== "down") return undefined;
+  return editObject(doc, roomId, index, (o) => {
+    if (o.goes === goes) return undefined;
+    const { goes: _old, ...rest } = o;
+    return goes === undefined ? rest : { ...rest, goes };
   });
 }
 

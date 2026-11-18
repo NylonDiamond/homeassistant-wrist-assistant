@@ -41,4 +41,21 @@ describe("Add stairs here", () => {
     const r = room("stairs", [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]]);
     expect(addStairsToRoom(docOf(r), "R")).toBeUndefined();
   });
+
+  it("keeps the flight wholly inside a real stairs room, off its four doors", () => {
+    // The live map's stairs room: 3 m across, 3.22 m down, a door on the
+    // left wall, two on the right and one in the top wall's right end.
+    const outline: P[] = [[7.62, 6.19], [6.83, 6.19], [4.62, 6.19], [4.62, 5.1], [4.62, 2.97], [7.62, 2.97]];
+    const r = room("stairs", outline, [
+      { kind: "door", a: [4.62, 3.87], b: [4.62, 3.15], z0: 0, z1: 2.04 },
+      { kind: "door", a: [7.62, 3.01], b: [7.62, 3.43], z0: 0, z1: 2 },
+      { kind: "door", a: [7.62, 3.56], b: [7.62, 4.32], z0: 0, z1: 2.05 },
+      { kind: "door", a: [6.94, 2.97], b: [7.56, 2.97], z0: 0, z1: 2.11 },
+    ]);
+    const flight = addStairsToRoom(docOf(r), "R")!.floors[0]!.rooms[0]!.objects[0]!;
+    for (const p of homeBoxCorners(homeBoxOf(flight))) expect(homePolygonHolds(outline, p)).toBe(true);
+    // Along the bottom wall, which has no door.
+    expect(flight.size[1]).toBeCloseTo(2.8);
+    expect(flight.c[1]).toBeGreaterThan(5.5);
+  });
 });

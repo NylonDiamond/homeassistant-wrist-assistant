@@ -48,7 +48,8 @@ so a writer that drifts from it hears so at once::
                             "objects": [{"kind", "model"?, "fabric"?,
                                          "wood"?, "device"?, "c": [x, y],
                                          "size": [w, d, h], "turn",
-                                         "lift"?, "hidden"?: true}]}],
+                                         "lift"?, "goes"?: "up" | "down",
+                                         "hidden"?: true}]}],
                  "pins": [{"id", "entityId", "roomId"?, "at": [x, y, z],
                            "name"?, "icon"?, "reading"?: "none" | "name",
                            "glow"?, "glowColor"?, "glowSpill"?: true,
@@ -242,6 +243,8 @@ _OBJECT_KIND_RE = re.compile(r"[a-z][A-Za-z0-9]{0,39}")
 _OBJECT_MODEL_RE = _OBJECT_KIND_RE
 # A pin's glow colour other than warm: six hex digits, either case.
 _HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
+# Which way a flight of stairs goes from its floor (an object's "goes").
+_STAIRS_WAYS = ("up", "down")
 # What a scan record keeps of a room, in this order, with ``at`` after.
 SCAN_KEYS = ("outline", "walls", "openings", "objects")
 
@@ -502,7 +505,7 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
             raw_object,
             where,
             ("kind", "c", "size", "turn"),
-            ("model", "fabric", "wood", "device", "light", "lift", "hidden"),
+            ("model", "fabric", "wood", "device", "light", "lift", "goes", "hidden"),
         )
         kind = item["kind"]
         if not isinstance(kind, str) or not _OBJECT_KIND_RE.fullmatch(kind):
@@ -549,6 +552,13 @@ def _room(raw: Any, path: str, ids: _Ids) -> dict[str, Any]:
             lift = _number(item["lift"], f"{where}.lift", 0, 100)
             if lift > 0:
                 checked_object["lift"] = lift
+        # Which way stairs go from the floor, kept on any object as sent; only
+        # stairs read it. Absent, the map picks by its floors.
+        if "goes" in item:
+            goes = item["goes"]
+            if goes not in _STAIRS_WAYS:
+                _fail(f"{where}.goes", 'must be "up" or "down"')
+            checked_object["goes"] = goes
         # Shown is the default, so a false hidden is left out.
         if "hidden" in item and _bool(item["hidden"], f"{where}.hidden"):
             checked_object["hidden"] = True

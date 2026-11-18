@@ -32,6 +32,7 @@
 import catalogJson from "./furniture-catalog.json";
 import type { HomeFurnitureLook } from "./furniture-art.js";
 import type { HomeMapFurniturePiece } from "./furniture-rules.js";
+import { HOME_DOWN_FLIGHT_MODEL } from "./geometry.js";
 import type { HomeMapObject } from "./model.js";
 
 export {
@@ -44,6 +45,7 @@ export {
   HOME_MAP_LAMP_CHOICE_MODELS,
   HOME_MAP_TREAD,
   homeMapFlightSteps,
+  homeMapFloorStairsGoDown,
   homeMapHoldPiece,
   homeMapHoldSpot,
   homeMapLampPiece,
@@ -51,6 +53,8 @@ export {
   homeMapPieceLift,
   homeMapPieceParts,
   homeMapPieceSizeText,
+  homeMapStairsGoDown,
+  homeMapStairsReason,
 } from "./furniture-rules.js";
 
 /** A colour the Colours card offers for a part. */
@@ -120,10 +124,15 @@ export function homeMapPieceOf(object: Pick<HomeMapObject, "kind" | "model" | "s
  * view draws it as (`homeMapPieceOf`, so a scanned thing with no `model`
  * is its kind's default piece there too), in the piece's own colours
  * (`paint`) under the thing's own fabric and wood. A thing with no piece
- * keeps its kind and draws as it always did. */
-export function homeMapPlanLook(object: HomeMapObject): HomeFurnitureLook {
-  const piece = homeMapPieceOf(object);
-  if (piece === undefined) return { model: object.model, fabric: object.fabric, wood: object.wood };
+ * keeps its kind and draws as it always did. `stairsDown` is the floor's
+ * pick for stairs with no `goes` of their own (`homeMapFloorStairsGoDown`);
+ * stairs that go down are drawn as the built flight going down, whatever
+ * their model (`HOME_DOWN_FLIGHT_MODEL`). */
+export function homeMapPlanLook(object: HomeMapObject, stairsDown = false): HomeFurnitureLook {
+  const down = object.kind === "stairs" && (object.goes === undefined ? stairsDown : object.goes === "down");
+  // Every flight going down is the built flight, whatever its model.
+  const piece = down ? homeMapPiece(HOME_DOWN_FLIGHT_MODEL) : homeMapPieceOf(object);
+  if (piece === undefined) return { model: object.model, fabric: object.fabric, wood: object.wood, ...(down ? { down } : {}) };
   const paint = piece.paint;
   return {
     model: piece.id,
@@ -131,6 +140,7 @@ export function homeMapPlanLook(object: HomeMapObject): HomeFurnitureLook {
     fabric: object.fabric ?? paint?.fabric,
     wood: object.wood ?? paint?.wood,
     body: paint?.body,
+    ...(down ? { down } : {}),
   };
 }
 

@@ -702,6 +702,27 @@ def test_an_objects_lift(env) -> None:
     assert env.refused_doc(doc) == "doc.floors[0].rooms[0].objects[1].lift must be a number"
 
 
+def test_an_objects_goes(env) -> None:
+    doc = basic()
+    # Given first and with lift and hidden, it is kept after lift, before hidden.
+    stairs = {**_object_(doc), "kind": "stairs"}
+    _living(doc)["objects"][0] = {"goes": "down", "hidden": True, "lift": 0.2, **stairs}
+    _living(doc)["objects"][1] = {**_living(doc)["objects"][1], "goes": "up"}
+    checked = env.mod.check_document(doc)
+    objects = checked["floors"][0]["rooms"][0]["objects"]
+    assert _keys(objects[0]) == ["kind", "c", "size", "turn", "lift", "goes", "hidden"]
+    assert objects[0]["goes"] == "down"
+    # Kept on any object, as sent, whatever its kind.
+    assert objects[1]["goes"] == "up"
+    for bad in ("sideways", "", "Down", 1, None):
+        _living(doc)["objects"][1]["goes"] = bad
+        assert env.refused_doc(doc) == 'doc.floors[0].rooms[0].objects[1].goes must be "up" or "down"'
+    # Absent, the map picks, and nothing is stored.
+    del _living(doc)["objects"][1]["goes"]
+    checked = env.mod.check_document(doc)
+    assert "goes" not in checked["floors"][0]["rooms"][0]["objects"][1]
+
+
 def test_an_objects_model(env) -> None:
     doc = basic()
     # Given last, it is kept right after the kind.

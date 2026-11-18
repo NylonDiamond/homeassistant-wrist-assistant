@@ -59,6 +59,11 @@ export interface HomeMapOpening {
   z1: number;
 }
 
+/** Which way a flight of stairs goes (`HomeMapObject.goes`). */
+export type HomeMapStairsWay = "up" | "down";
+
+export const HOME_MAP_STAIRS_WAYS: readonly HomeMapStairsWay[] = ["up", "down"];
+
 export interface HomeMapObject {
   /** The RoomPlan category in lower camel case (`sofa`, `television`). A
    * kind nothing knows is drawn as a plain box. */
@@ -95,6 +100,11 @@ export interface HomeMapObject {
   /** How far its bottom stands above the floor, in meters, 0 to 100: a TV
    * on the wall, a lamp on a table. Absent on the floor; 0 is never kept. */
   lift?: number;
+  /** Which way a flight of stairs goes from this floor: `up`, rising from
+   * its front to its back, or `down`, its front at this floor and its steps
+   * going down to its back. Absent, the map picks (`homeMapStairsGoDown`,
+   * `furniture-rules.ts`). Kept on any object; only `stairs` read it. */
+  goes?: HomeMapStairsWay;
   /** Drawn nowhere, but kept so an editor can show it again. Only ever
    * true; shown is the key left out. */
   hidden?: true;
@@ -513,7 +523,7 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
   });
   out.objects = list(room.objects, `${path}.objects`, MAX_OBJECTS).map((o, i) => {
     const where = `${path}.objects[${i}]`;
-    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "fabric", "wood", "device", "light", "lift", "hidden"]);
+    const item = object(o, where, ["kind", "c", "size", "turn"], ["model", "fabric", "wood", "device", "light", "lift", "goes", "hidden"]);
     if (typeof item.kind !== "string" || !OBJECT_KIND_RE.test(item.kind)) fail(`${where}.kind`, "must be a RoomPlan category in lower camel case");
     if (!Array.isArray(item.size) || item.size.length !== 3) fail(`${where}.size`, "must be a list of 3 numbers");
     const checked = { kind: item.kind } as HomeMapObject;
@@ -548,6 +558,8 @@ function checkRoom(raw: unknown, path: string, ids: Ids): HomeMapRoom {
       const lift = number(item.lift, `${where}.lift`, 0, 100);
       if (lift > 0) checked.lift = lift;
     }
+    // Kept on any object as sent; only stairs read it.
+    if (Object.hasOwn(item, "goes")) checked.goes = oneOf(item.goes, `${where}.goes`, HOME_MAP_STAIRS_WAYS);
     // Shown is the default, so a false hidden is left out.
     if (Object.hasOwn(item, "hidden") && bool(item.hidden, `${where}.hidden`)) checked.hidden = true;
     return checked;
@@ -1055,7 +1067,8 @@ export function homeMapHeldIdOf(object: Pick<HomeMapObject, "device" | "light">)
 
 /** An object with its keys in the contract's order, `model` only when it
  * names a piece, `fabric`, `wood` and `device` only when set (an old
- * `light` written as `device`) and `hidden` only when true. */
+ * `light` written as `device`), `goes` only when set and `hidden` only when
+ * true. */
 export function orderedObject(object: HomeMapObject): HomeMapObject {
   const out = { kind: object.kind } as HomeMapObject;
   if (object.model !== undefined && object.model !== "") out.model = object.model;
@@ -1067,6 +1080,7 @@ export function orderedObject(object: HomeMapObject): HomeMapObject {
   out.size = object.size;
   out.turn = object.turn;
   if (object.lift !== undefined && object.lift > 0) out.lift = object.lift;
+  if (object.goes === "up" || object.goes === "down") out.goes = object.goes;
   if (object.hidden === true) out.hidden = true;
   return out;
 }

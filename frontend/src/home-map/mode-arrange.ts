@@ -210,7 +210,7 @@ import {
 import { homeMapThingUnder } from "./plan-pick.js";
 import { homeMapOpenEdgesCard } from "./open-edges.js";
 import { homeMapLineUpCard } from "./floor-stack.js";
-import { homeMapStairsCard } from "./stairs-fit.js";
+import { homeMapStairsCard, homeMapStairsWayCard } from "./stairs-fit.js";
 import { homeMapLoad3D } from "./scene3d-load.js";
 
 /** A finish's name. */
@@ -1666,6 +1666,8 @@ export class ArrangeMode {
       </section>
 
       ${this.modelCard(ctx, thing)}
+
+      ${homeMapStairsWayCard(ctx, room, index, object)}
 
       ${this.coloursCard(ctx, thing)}
 

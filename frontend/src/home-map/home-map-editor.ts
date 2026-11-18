@@ -178,7 +178,7 @@ import {
   homeMapReadQualityChoice,
   homeMapWriteQualityChoice,
 } from "./quality.js";
-import { homeMapPlanLook } from "./furniture.js";
+import { homeMapFloorStairsGoDown, homeMapPlanLook } from "./furniture.js";
 import { type HomeMapSkyChoice, type HomeMapSunPlace, homeMapFloorNorth, homeMapSkyFor, homeMapSunPlace } from "./sun.js";
 import { keepHomeMap, readHomeMapScansFrom } from "./store.js";
 import { homeMapOpenEdgeMarks } from "./open-edges.js";
@@ -475,7 +475,7 @@ export class WaHomeMapEditor extends LitElement {
       : roomId === undefined ? undefined : { roomId };
     const place = homeMapSunPlace(this.hass?.states);
     const north = homeMapFloorNorth(this.doc === null ? null : { ...this.doc, north: this.northLive ?? this.doc.north }, floor);
-    return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, sky: homeMapSkyFor(this.skyChoiceNow(place), place, north) };
+    return { floor, states: this.toggles.live ? this.hass?.states : undefined, mark, sky: homeMapSkyFor(this.skyChoiceNow(place), place, north), stairsDown: this.stairsDown(floor) };
   }
 
   /** Which way Both splits, for the stage's size and the floor's shape. */
@@ -872,6 +872,13 @@ export class WaHomeMapEditor extends LitElement {
   private baseFloor(): HomeMapFloor | undefined {
     const floors = this.doc?.floors ?? [];
     return floors.find((f) => sameHomeMapId(f.id, this.floorId)) ?? floors[0];
+  }
+
+  /** Which way the map picks for stairs on `floor` that have no `goes` of
+   * their own (`homeMapFloorStairsGoDown`), read against the map's floors. */
+  private stairsDown(floor: HomeMapFloor): boolean {
+    const floors = (this.doc?.floors ?? []).map((f) => (sameHomeMapId(f.id, floor.id) ? floor : f));
+    return homeMapFloorStairsGoDown(floors.some((f) => sameHomeMapId(f.id, floor.id)) ? floors : [...floors, floor], floor.id);
   }
 
   /** The floor shown with a drag's preview made on it. */
@@ -1796,7 +1803,8 @@ export class WaHomeMapEditor extends LitElement {
   private planArt(floor: HomeMapFloor, width: number, height: number, devices: "all" | "none"): unknown {
     const states = this.toggles.live ? this.hass?.states : undefined;
     const scale = this.artScale || this.view!.scale;
-    const key = `${floorKey(floor)}|${objectKey(states)}|${scale}|${width}|${height}|${this.iconsTick}|${objectKey(this.icons)}|${devices}`;
+    const stairsDown = this.stairsDown(floor);
+    const key = `${floorKey(floor)}|${objectKey(states)}|${scale}|${width}|${height}|${this.iconsTick}|${objectKey(this.icons)}|${devices}|${stairsDown}`;
     if (key !== this.artKey) {
       this.artKey = key;
       this.artHeld = homeTileArt({
@@ -1807,7 +1815,8 @@ export class WaHomeMapEditor extends LitElement {
         devices,
         furniture: true,
         // Each thing as the piece the 3D view draws, in its own colours.
-        furnitureLook: homeMapPlanLook,
+        furnitureLook: (object) => homeMapPlanLook(object, stairsDown),
+        stairsDown,
         // The wall between two rooms, which each scan measures on its own.
         oneWall: true,
         glow: true,
@@ -1923,6 +1932,7 @@ export class WaHomeMapEditor extends LitElement {
       glow: true,
       width,
       height,
+      stairsDown: this.stairsDown(ctx.floor),
     });
   }
 

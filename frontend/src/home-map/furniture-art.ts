@@ -59,6 +59,9 @@ export interface HomeFurnitureLook {
   /** The colour of the rest of it seen from above (an appliance's metal, a
    * plant's leaves), `#RRGGBB`. */
   body?: string | undefined;
+  /** Stairs that go down from this floor: their treads darken towards the
+   * back, the way down, and the arrow's shaft is dashed. */
+  down?: boolean | undefined;
 }
 
 /** The paints a piece is drawn in: the furniture's own colours, or its
@@ -240,7 +243,7 @@ export function homeFurnitureArt(kind: string, w: number, d: number, scale: numb
   const small = Math.min(w, d);
   const paint = paintOf(look);
   if (small < 7) return rounded(b, small * 0.2, paint.fabric);
-  const own = look.model === undefined ? undefined : pieceOf(look.model, b, small, scale, paint);
+  const own = look.model === undefined ? undefined : pieceOf(look.model, b, small, scale, paint, look.down === true);
   const parts = own ?? piece(kind, b, small, scale, paint);
   const shape = shapeOf(kind, look.model);
   // A plant's leaves are its edge.
@@ -531,7 +534,7 @@ function cushions(seat: Box, small: number, p: Paint): SVGTemplateResult[] {
  * clothed, a desk or a corner desk, a bookcase with open shelves, an old
  * TV, a round rug, a square or wall lamp, a corner shower, a flight of
  * stairs. Undefined for any other, drawn by its kind. */
-function pieceOf(model: string, b: Box, small: number, scale: number, p: Paint): SVGTemplateResult[] | undefined {
+function pieceOf(model: string, b: Box, small: number, scale: number, p: Paint, down: boolean): SVGTemplateResult[] | undefined {
   const maxX = b.x + b.w;
   const maxY = b.y + b.h;
   const midX = b.x + b.w / 2;
@@ -639,7 +642,7 @@ function pieceOf(model: string, b: Box, small: number, scale: number, p: Paint):
         svg`<circle cx=${r2(midX)} cy=${r2(b.y + b.h * 0.35)} r=${r2(Math.max(small * 0.14, 0.8))} fill="rgb(255,232,180)" />`];
     }
     case "stairsFlight":
-      return flight(b, small, scale, p);
+      return flight(b, small, scale, p, down);
     case "showerRound": {
       // A quarter round tray in the corner behind it on the left, its
       // curved glass at the front.
@@ -658,14 +661,23 @@ function pieceOf(model: string, b: Box, small: number, scale: number, p: Paint):
 /** The way up a flight's arrow is drawn in, darker than its treads. */
 const ARROW = "rgba(0,0,0,0.5)";
 
+/** The plan's dark ground round the rooms (`PLAN.ground`, `tile-art.ts`)
+ * that the treads of stairs going down darken towards, and how far the
+ * back one goes. */
+const DOWN_FLOOR = "#12110F";
+const DOWN_DARKEST = 0.55;
+
 /**
  * A straight flight of stairs (`stairsFlight`), rising along its depth from
  * its front up to its back as the 3D view builds it: a tread about 27
  * centimeters deep across its width, the same count as its steps
  * (`homeMapFlightSteps`), and an arrow up its middle from a dot on the
  * bottom step to a head on the top one, the way a plan shows the way up.
+ * Going `down`, the front is the top: the same dot and arrow, its shaft
+ * dashed, each tread darker towards the back, from none at the front one to
+ * 55% of the way to the dark floor at the back one.
  */
-function flight(b: Box, small: number, scale: number, p: Paint): SVGTemplateResult[] {
+function flight(b: Box, small: number, scale: number, p: Paint, down = false): SVGTemplateResult[] {
   const maxX = b.x + b.w;
   const maxY = b.y + b.h;
   const midX = b.x + b.w / 2;
@@ -677,13 +689,32 @@ function flight(b: Box, small: number, scale: number, p: Paint): SVGTemplateResu
   const to = b.y + step / 2;
   const head = Math.max(Math.min(b.w * 0.2, (from - to) * 0.3), 1.5);
   const width = r2(Math.max(small * 0.025, 1));
-  return [
-    rounded(b, small * 0.04, p.wood),
+  const out = [rounded(b, small * 0.04, p.wood)];
+  if (down) {
+    // Tread k from the front (the box's +y end) darkens by k / (count - 1).
+    const shades: SVGTemplateResult[] = [];
+    for (let k = 1; k < count; k += 1) {
+      const y = maxY - (k + 1) * step;
+      shades.push(svg`<rect x=${r2(b.x)} y=${r2(y)} width=${r2(b.w)} height=${r2(step)} fill=${DOWN_FLOOR} fill-opacity=${r2((DOWN_DARKEST * k) / (count - 1))} />`);
+    }
+    out.push(...shades);
+  }
+  out.push(
     svg`<path d=${treads} stroke=${C.line} stroke-width="1" fill="none" />`,
     svg`<circle cx=${r2(midX)} cy=${r2(from)} r=${r2(Math.max(head * 0.3, 1))} fill=${ARROW} />`,
-    svg`<path d=${`M${r2(midX)} ${r2(from)}V${r2(to)}M${r2(midX - head)} ${r2(to + head)}L${r2(midX)} ${r2(to)}L${r2(midX + head)} ${r2(to + head)}`}
-      stroke=${ARROW} stroke-width=${width} stroke-linecap="round" stroke-linejoin="round" fill="none" />`,
-  ];
+  );
+  const shaft = `M${r2(midX)} ${r2(from)}V${r2(to)}`;
+  const tip = `M${r2(midX - head)} ${r2(to + head)}L${r2(midX)} ${r2(to)}L${r2(midX + head)} ${r2(to + head)}`;
+  if (down) {
+    // The shaft dashed, half a tread on and half off; the head whole.
+    out.push(
+      svg`<path d=${shaft} stroke=${ARROW} stroke-width=${width} stroke-dasharray=${`${r2(step / 2)} ${r2(step / 2)}`} fill="none" />`,
+      svg`<path d=${tip} stroke=${ARROW} stroke-width=${width} stroke-linecap="round" stroke-linejoin="round" fill="none" />`,
+    );
+  } else {
+    out.push(svg`<path d=${`${shaft}${tip}`} stroke=${ARROW} stroke-width=${width} stroke-linecap="round" stroke-linejoin="round" fill="none" />`);
+  }
+  return out;
 }
 
 const BOOKS = ["rgb(160,72,60)", "rgb(60,96,140)", "rgb(200,180,120)", "rgb(90,120,84)", "rgb(120,90,130)"];

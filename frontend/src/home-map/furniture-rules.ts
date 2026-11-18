@@ -9,7 +9,7 @@
 // `HOME_MAP_HOLD_PIECES`), with the kinds whose default piece is one of them,
 // and a test keeps the copies equal to the catalog.
 
-import { type HomeMapObject, type HomePoint, homeMapRound } from "./model.js";
+import { type HomeMapFloor, type HomeMapObject, type HomePoint, homeMapRound } from "./model.js";
 
 /** How a lamp's light shines: all round from its bulb, or down out of a
  * shade that opens downwards (a spot). */
@@ -66,7 +66,8 @@ export const HOME_MAP_TREAD = 0.27;
 
 /** One step of a flight, in meters in the thing's own box: from `front` to
  * `back` along its depth, measured from the box's front (its +y, the plan's
- * side away from its back), and its tread `top` above the bottom. */
+ * side away from its back), and its tread `top` above the floor, below it
+ * (less than 0) on a flight that goes down. */
 export interface HomeMapFlightStep {
   front: number;
   back: number;
@@ -80,10 +81,42 @@ export interface HomeMapFlightStep {
  * the last one's tread meets the full height. Each is a solid block from the
  * floor up to its tread.
  */
-export function homeMapFlightSteps(depth: number, height: number): HomeMapFlightStep[] {
+export function homeMapFlightSteps(depth: number, height: number, down = false): HomeMapFlightStep[] {
   const count = Math.max(Math.round(depth / HOME_MAP_TREAD), 2);
   const run = depth / count;
-  return Array.from({ length: count }, (_, i) => ({ front: i * run, back: (i + 1) * run, top: ((i + 1) * height) / count }));
+  const sign = down ? -1 : 1;
+  return Array.from({ length: count }, (_, i) => ({ front: i * run, back: (i + 1) * run, top: (sign * (i + 1) * height) / count }));
+}
+
+/**
+ * Which way stairs on the floor `floorId` go when the map picks
+ * (`HomeMapObject.goes` absent): up when a floor of the map is higher; else
+ * down when this floor is above the ground (its story more than 0) or a
+ * floor of the map is lower; else up. A floor not in `floors` goes by its
+ * story alone, with no others.
+ */
+export function homeMapFloorStairsGoDown(floors: readonly Pick<HomeMapFloor, "id" | "story">[], floorId: string): boolean {
+  return homeMapStairsReason(floors, floorId) === "top";
+}
+
+/** Why the map picks the way it does (`homeMapFloorStairsGoDown`): `above`
+ * a floor is higher, so up; `top` nothing is higher and this floor is above
+ * the ground or something is lower, so down; `alone` neither, so up. */
+export function homeMapStairsReason(floors: readonly Pick<HomeMapFloor, "id" | "story">[], floorId: string): "above" | "top" | "alone" {
+  const own = floors.find((f) => f.id.toUpperCase() === floorId.toUpperCase());
+  if (own === undefined) return "alone";
+  if (floors.some((f) => f.story > own.story)) return "above";
+  if (own.story > 0 || floors.some((f) => f.story < own.story)) return "top";
+  return "alone";
+}
+
+/** Whether a thing on the floor `floorId` is stairs that go down: its own
+ * `goes` when set, else the map's pick (`homeMapFloorStairsGoDown`). False
+ * for anything that is not stairs. */
+export function homeMapStairsGoDown(floors: readonly Pick<HomeMapFloor, "id" | "story">[], floorId: string, object: Pick<HomeMapObject, "kind" | "goes">): boolean {
+  if (object.kind !== "stairs") return false;
+  if (object.goes !== undefined) return object.goes === "down";
+  return homeMapFloorStairsGoDown(floors, floorId);
 }
 
 /** A piece's own colours (`HomeMapFurniturePiece.paint`). */

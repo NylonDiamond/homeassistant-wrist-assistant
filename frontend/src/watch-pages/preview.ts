@@ -4263,6 +4263,7 @@ export function renderMapPageArt(input: WatchPagePreviewInput, width: number, he
     names: true,
     devices: "all",
     furniture: options.furniture,
+    stairsDown: options.stairsDown,
     glow: true,
     width: Math.max(width - pad * 2, 0),
     height: Math.max(height - pad * 2, 0),

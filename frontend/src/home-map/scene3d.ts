@@ -70,8 +70,8 @@ import { homeMapHeldPins } from "./edit-ops.js";
 import { homeMapFrameFit } from "./frame-fit.js";
 import { type HomeMapSky } from "./sun.js";
 import { type HomeMapFurniturePiece, homeMapFlightSteps, homeMapLampPiece, homeMapModelFit, homeMapPiece, homeMapPieceOf } from "./furniture.js";
-import { type HomeSegment, homeFloorKind, homeOneWallsOf } from "./geometry.js";
-import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
+import { type HomeSegment, homeBoxCorners, homeBoxOf, homeDownStairsDrawn, homeFloorKind, homeOneWallsOf } from "./geometry.js";
+import { type HomeMapFloor, type HomeMapObject, type HomeMapPin, type HomeMapRoom, type HomeMapStates, type HomePoint, homeMapPinLook, isHomeMapPartColor, sameHomeMapId } from "./model.js";
 import { type HomeMapQuality, type HomeMapQualitySettings, HOME_MAP_SLOW_FRAME_MS, homeMapMedianFrame, homeMapQualitySettings } from "./quality.js";
 
 /** What the 3D look draws. */
@@ -86,6 +86,10 @@ export interface HomeMap3DInput {
   /** The sun and the sky (`sun.ts`). At night only the lights light the
    * rooms. */
   sky: HomeMapSky;
+  /** Which way stairs with no `goes` of their own go on this floor: the
+   * map's pick (`homeMapFloorStairsGoDown`), which needs the other floors.
+   * Absent: up. Stairs going down stand in a well cut in the floor. */
+  stairsDown?: boolean;
 }
 
 // ── models ───────────────────────────────────────────────────────────────
@@ -159,16 +163,20 @@ function builtWood(name: string, rgb: readonly [number, number, number]): THREE.
  * the front to the back, each a block from the floor up to its tread, the
  * treads and risers in wood and the sides in the darker wood. Its geometry
  * and materials are its own, made again when the box changes. */
-function builtBody(size: readonly [number, number, number]): THREE.Group {
+function builtBody(size: readonly [number, number, number], down = false): THREE.Group {
   const [w, d, h] = size;
   const wood = builtWood("wood", BUILT_WOOD);
   const dark = builtWood("woodDark", BUILT_WOOD_DARK);
   // A box's faces: +x, -x, +y, -y, +z, -z.
   const faces = [dark, dark, wood, wood, wood, wood];
   const group = new THREE.Group();
-  for (const step of homeMapFlightSteps(d, h)) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, step.top, step.back - step.front), faces);
-    mesh.position.set(0, step.top / 2, d / 2 - (step.front + step.back) / 2);
+  for (const step of homeMapFlightSteps(d, h, down)) {
+    // Up, a block from the floor up to its tread; down, from the floor
+    // below (h under this one) up to its tread.
+    const bottom = down ? -h : 0;
+    const tall = Math.max(step.top - bottom, 0.005);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, tall, step.back - step.front), faces);
+    mesh.position.set(0, bottom + tall / 2, d / 2 - (step.front + step.back) / 2);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -404,15 +412,87 @@ export function homeMapRoomWalls3D(room: HomeMapRoom, floor: Pick<HomeMapFloor, 
   return out;
 }
 
+/** A stairwell a flight going down stands in: its drawn box's corners on
+ * the plan (`homeDownStairsDrawn`), how deep it goes, the flight's height,
+ * and whether the floor has a hole over it. */
+export interface HomeMapWell {
+  corners: HomePoint[];
+  depth: number;
+  hole: boolean;
+}
+
+/** The wells of a room's stairs that go down (`homeMapStairsGoDown`), the
+ * floor's pick `floorDown` for stairs with no `goes`. */
+export function homeMapRoomWells(room: HomeMapRoom, floorDown: boolean): HomeMapWell[] {
+  return room.objects.filter((o) => o.hidden !== true && objectGoesDown(o, floorDown)).map((o) => {
+    const drawn = homeDownStairsDrawn(room, o);
+    return {
+      corners: homeBoxCorners(homeBoxOf(drawn.object)).map(([x, y]) => [round3(x), round3(y)] as HomePoint),
+      depth: round3(Math.max(o.size[2], 0.05)),
+      hole: drawn.hole,
+    };
+  });
+}
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** Whether a thing is stairs going down: its own `goes`, else the floor's
+ * pick. */
+function objectGoesDown(object: HomeMapObject, floorDown: boolean): boolean {
+  if (object.kind !== "stairs") return false;
+  return object.goes === undefined ? floorDown : object.goes === "down";
+}
+
+/** A well's dark walls round it, from the floor down to its depth, and a
+ * dark bottom: the floor below, seen down the stairs. */
+const WELL = 0x2b2825;
+const WELL_THICK = 0.04;
+
+function buildWell(well: HomeMapWell, group: THREE.Group): void {
+  const material = new THREE.MeshStandardMaterial({ color: WELL, roughness: 0.95, side: THREE.DoubleSide });
+  const [cx, cy] = well.corners.reduce(([sx, sy], [x, y]) => [sx + x / 4, sy + y / 4], [0, 0]);
+  for (let i = 0; i < 4; i += 1) {
+    const [ax, ay] = well.corners[i]!;
+    const [bx, by] = well.corners[(i + 1) % 4]!;
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len < 0.01) continue;
+    const ux = (bx - ax) / len;
+    const uy = (by - ay) / len;
+    // Its outward side, away from the well's middle.
+    let nx = -uy;
+    let ny = ux;
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+    if (nx * (mx - cx) + ny * (my - cy) < 0) { nx = -nx; ny = -ny; }
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(len + WELL_THICK * 2, well.depth, WELL_THICK), material);
+    mesh.position.set(mx + (nx * WELL_THICK) / 2, -well.depth / 2, my + (ny * WELL_THICK) / 2);
+    mesh.rotation.y = -Math.atan2(uy, ux);
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  const bottom = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(well.corners.map(([x, y]) => new THREE.Vector2(x, -y)))), material);
+  bottom.rotation.x = -Math.PI / 2;
+  bottom.position.y = -well.depth;
+  bottom.receiveShadow = true;
+  group.add(bottom);
+}
+
 /** One room's floor, walls and window glass, and its wall pieces. A wall piece
  * picks its wall, and each door and window this room recorded has an unseen box
- * in its hole that picks it. */
-function buildRoom(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms">): { group: THREE.Group; walls: WallPiece[] } {
+ * in its hole that picks it. Each of `wells` (stairs going down) is cut out
+ * of the floor, with its dark walls under it, when it lies inside the room. */
+function buildRoom(room: HomeMapRoom, floor: Pick<HomeMapFloor, "rooms">, wells: readonly HomeMapWell[] = []): { group: THREE.Group; walls: WallPiece[] } {
   const group = new THREE.Group();
   const walls: WallPiece[] = [];
   const colors = homeMapRoomColors(room);
   if (room.outline.length >= 3) {
     const shape = new THREE.Shape(room.outline.map(([x, y]) => new THREE.Vector2(x, -y)));
+    for (const well of wells) {
+      // A hole the floor's outline does not hold would tear the floor; a
+      // well too big for its room even cut down is drawn without one.
+      if (well.hole) shape.holes.push(new THREE.Path(well.corners.map(([x, y]) => new THREE.Vector2(x, -y))));
+      buildWell(well, group);
+    }
     const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.95 }));
     floorMesh.rotation.x = -Math.PI / 2;
     floorMesh.receiveShadow = true;
@@ -1305,9 +1385,9 @@ export class HomeMapScene3D {
     this.input = { ...input, turn };
     let moved = false;
     let changed = false;
-    if (seen === undefined || seen.floor !== input.floor) {
+    if (seen === undefined || seen.floor !== input.floor || seen.stairsDown !== input.stairsDown) {
       this.held = heldPinsOf(input.floor);
-      moved = this.build(input.floor);
+      moved = this.build(input.floor, input.stairsDown === true);
       changed = true;
     }
     if (seen === undefined || seen.floor !== input.floor || seen.states !== input.states) {
@@ -1413,19 +1493,20 @@ export class HomeMapScene3D {
 
   /** The rooms' structure and the things in them, each built again only
    * when it changed. True when anything moved, for the shadows. */
-  private build(floor: HomeMapFloor): boolean {
+  private build(floor: HomeMapFloor, floorDown: boolean): boolean {
     let moved = false;
     const roomIds = new Set<string>();
     for (const room of floor.rooms) {
       roomIds.add(room.id);
-      const key = homeMapRoomKey(room, floor);
+      const wells = homeMapRoomWells(room, floorDown);
+      const key = `${homeMapRoomKey(room, floor)}${wells.length === 0 ? "" : JSON.stringify(wells)}`;
       const had = this.rooms.get(room.id);
       if (had?.key === key) continue;
       if (had !== undefined) {
         this.scene.remove(had.group);
         disposeTree(had.group);
       }
-      const built = buildRoom(room, floor);
+      const built = buildRoom(room, floor, wells);
       built.group.userData.pick = { kind: "room", roomId: room.id } satisfies HomeMap3DPick;
       this.scene.add(built.group);
       this.rooms.set(room.id, { key, ...built });
@@ -1443,12 +1524,17 @@ export class HomeMapScene3D {
     for (const room of floor.rooms) {
       room.objects.forEach((object, index) => {
         if (object.hidden === true) return;
-        const piece = homeMapPieceOf(object);
-        const id = `${room.id}|${index}|${piece?.id ?? `box:${object.kind}`}`;
+        const down = objectGoesDown(object, floorDown);
+        // Stairs going down are the built flight going down, whatever their
+        // model, in the box their well fits (`homeDownStairsDrawn`).
+        const drawn = down ? homeDownStairsDrawn(room, object).object : object;
+        const piece = homeMapPieceOf(drawn);
+        // Stairs that change way are made again.
+        const id = `${room.id}|${index}|${piece?.id ?? `box:${object.kind}`}${down ? "|down" : ""}`;
         thingIds.add(id);
         const pin = holders.get(`${room.id}|${index}`);
         // The lamp rules are a held light's alone; any device lights a TV.
-        moved = this.place(id, piece, object, pin !== undefined && isLight(pin) ? pin.id : undefined, pin?.entityId) || moved;
+        moved = this.place(id, piece, drawn, pin !== undefined && isLight(pin) ? pin.id : undefined, pin?.entityId, down) || moved;
         this.things.get(id)!.group.userData.pick = { kind: "object", roomId: room.id, object: index } satisfies HomeMap3DPick;
       });
     }
@@ -1469,10 +1555,11 @@ export class HomeMapScene3D {
    * colour only recolours it. `holds` is the pin of the light it holds, if
    * it holds one, and `device` the entity of whatever device it holds. True
    * when it moved or its shadow changed. */
-  private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject, holds: string | undefined, device: string | undefined): boolean {
+  private place(id: string, piece: HomeMapFurniturePiece | undefined, object: HomeMapObject, holds: string | undefined, device: string | undefined, down = false): boolean {
     let thing = this.things.get(id);
     const size: [number, number, number] = [Math.max(object.size[0], 0.01), Math.max(object.size[1], 0.01), Math.max(object.size[2], 0.01)];
-    const lift = Math.max(object.lift ?? 0, 0);
+    // A flight going down is built going down from the floor.
+    const lift = down ? 0 : Math.max(object.lift ?? 0, 0);
     const turn = (object.turn * Math.PI) / 180;
     const colors = { fabric: object.fabric, wood: object.wood };
     let changed = false;
@@ -1504,7 +1591,7 @@ export class HomeMapScene3D {
         group.add(box);
       } else if (piece.built !== undefined) {
         // Built to its box, nothing to load.
-        thing.body = builtBody(size);
+        thing.body = builtBody(size, down);
         tint(thing, colors);
         castFor(thing);
         group.add(thing.body);
@@ -1535,7 +1622,7 @@ export class HomeMapScene3D {
         untint(thing);
         thing.group.remove(thing.body);
         disposeTree(thing.body);
-        thing.body = builtBody(size);
+        thing.body = builtBody(size, down);
         tint(thing, thing.colors);
         castFor(thing);
         thing.group.add(thing.body);
@@ -1716,7 +1803,7 @@ export class HomeMapScene3D {
     const room = mark === undefined || !("roomId" in mark) ? undefined : roomOf(mark.roomId);
     const objects = mark === undefined || !("things" in mark) ? [] : mark.things.flatMap((t) => roomOf(t.roomId)?.objects[t.object] ?? []);
     const face = mark === undefined || !("piece" in mark) ? undefined : homeMapPieceFace(floor, mark.piece);
-    const key = objects.length > 0 ? JSON.stringify(["things", objects.map((o) => [o.c, o.size, o.turn, o.lift ?? 0])])
+    const key = objects.length > 0 ? JSON.stringify(["things", objects.map((o) => [o.c, o.size, o.turn, o.lift ?? 0, objectGoesDown(o, this.input?.stairsDown === true)])])
       : face !== undefined ? JSON.stringify(["face", face])
       : room !== undefined ? JSON.stringify(["room", room.outline]) : "";
     this.markPiece = face === undefined || mark === undefined || !("piece" in mark) ? undefined : mark.piece;
@@ -1743,7 +1830,8 @@ export class HomeMapScene3D {
       const marks = new THREE.Group();
       for (const object of objects) {
         const [w, d, h] = object.size;
-        const y0 = Math.max(object.lift ?? 0, 0);
+        // Stairs going down are marked down their well.
+        const y0 = objectGoesDown(object, this.input?.stairsDown === true) ? -h : Math.max(object.lift ?? 0, 0);
         const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]] as const;
         const positions: number[] = [];
         for (let i = 0; i < 4; i += 1) {

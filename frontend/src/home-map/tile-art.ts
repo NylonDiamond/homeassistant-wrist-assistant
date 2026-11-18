@@ -76,6 +76,7 @@ import {
   homeBoxOf,
   cutWall,
   homeDoorSwings,
+  homeDownStairsDrawn,
   homeFloorKind,
   homeFloorLines,
   homeFloorSpacing,
@@ -173,6 +174,11 @@ export interface HomeTileArtOptions {
   /** The map editor's plan: walls of two rooms a few centimeters apart drawn
    * as one wall (`homeOneWallPlaces`). The plan look only. */
   oneWall?: boolean;
+  /** Which way stairs on this floor go when they have no `goes` of their
+   * own: the map's pick for the floor (`homeMapFloorStairsGoDown`), which
+   * needs the map's other floors. Absent: up. Stairs going down lie flat in
+   * the model looks, and the plan draws them going down. */
+  stairsDown?: boolean;
 }
 
 // ── colours ─────────────────────────────────────────────────────────────
@@ -630,7 +636,7 @@ export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
   // Only the glass pins draw icons, so only they depend on the provider;
   // those drawings are not kept.
   const icons = o.devices === "all" ? o.icons : undefined;
-  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark, o.furnitureLook !== undefined, o.oneWall === true]);
+  const key = JSON.stringify([o.look, o.turn, o.names, o.devices, o.furniture, o.glow, o.tapLights, r2(o.width), r2(o.height), o.tileHeight, o.metric, o.frame, o.mark, o.furnitureLook !== undefined, o.oneWall === true, o.stairsDown === true]);
   let byStates = memo.get(o.floor);
   if (byStates === undefined) memo.set(o.floor, (byStates = new WeakMap()));
   const statesKey = (o.states ?? NO_STATES) as object;
@@ -791,14 +797,16 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
     const pieces = floor.rooms.flatMap((room) => room.objects.map((object) => ({ room, object })));
     const flat = (kind: string) => (kind === "rug" ? 0 : 1);
     pieces.sort((a, b) => flat(a.object.kind) - flat(b.object.kind));
-    for (const { room, object } of pieces) {
+    for (const { room, object: own } of pieces) {
+      // Stairs going down: the built flight in the box their well fits.
+      const object = stairsDown(own, ctx.o.stairsDown) ? homeDownStairsDrawn(room, own).object : own;
       const box = homeBoxOf(object);
       const w = len(box.width);
       const d = len(box.depth);
       if (w <= 0.5 || d <= 0.5) continue;
       any = true;
       const [cx, cy] = project(P, box.centre);
-      const look = ctx.o.furnitureLook?.(object) ?? { model: object.model, fabric: object.fabric, wood: object.wood };
+      const look = ctx.o.furnitureLook?.(object) ?? { model: object.model, fabric: object.fabric, wood: object.wood, down: stairsDown(object, ctx.o.stairsDown) };
       const back = look.model !== undefined ? -1 : homeBackSign(object, room.objects, allWalls);
       // The art draws its back towards minus y.
       const place = `translate(${r2(cx)} ${r2(cy)}) rotate(${r3((box.angle * 180) / Math.PI)}) scale(1 ${back > 0 ? -1 : 1})`;
@@ -1074,25 +1082,36 @@ function styleParts(floor: HomeMapFloor, turn: number): Solid[] {
 /** The model's solids at `turn`, far to near: every stretch of wall and
  * pane of glass, what the doors' and windows' styles stand in their holes,
  * and the furniture standing on the floor. */
-function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[] {
+/** Whether a thing is stairs going down: its own `goes`, else the floor's
+ * pick (`HomeTileArtOptions.stairsDown`). */
+function stairsDown(object: HomeMapObject, floorDown: boolean | undefined): boolean {
+  if (object.kind !== "stairs") return false;
+  return object.goes === undefined ? floorDown === true : object.goes === "down";
+}
+
+function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean, floorDown?: boolean): Solid[] {
   const openings = floor.rooms.flatMap((r) => r.openings);
   const solids: Solid[] = floor.rooms.flatMap((room) => homeWallsOf(room).flatMap((w) => wallParts(w, wallHeight(w, room, floor, turn), openings, room.id)));
   solids.push(...styleParts(floor, turn));
   if (furniture) {
     const allWalls = floor.rooms.flatMap(homeWallsOf);
     for (const room of floor.rooms) {
-      for (const object of room.objects) {
+      for (const own of room.objects) {
+        // Stairs going down: the built flight in the box their well fits.
+        const object = stairsDown(own, floorDown) ? homeDownStairsDrawn(room, own).object : own;
         const box = homeBoxOf(object);
         if (box.width <= 0.02 || box.depth <= 0.02) continue;
         // A raised thing (a TV on the wall) stands off the floor, kept low
         // enough that its top stays within the walls the model is fitted to,
         // as the iPhone draws it.
-        const height = Math.min(Math.max(object.size[2], 0.05), FURNITURE_CAP);
+        // Stairs going down lie flat, a well in the floor, not a block.
+        const down = stairsDown(object, floorDown);
+        const height = down ? 0.02 : Math.min(Math.max(object.size[2], 0.05), FURNITURE_CAP);
         const lift = Math.min(Math.max(object.lift ?? 0, 0), Math.max(tallWall(room) - height, 0));
         solids.push({
           part: "piece",
           kind: object.kind,
-          look: { model: object.model, fabric: object.fabric, wood: object.wood },
+          look: { model: object.model, fabric: object.fabric, wood: object.wood, down },
           back: object.model !== undefined ? -1 : homeBackSign(object, room.objects, allWalls),
           box,
           roomId: room.id,
@@ -1111,7 +1130,7 @@ function solidsOf(floor: HomeMapFloor, turn: number, furniture: boolean): Solid[
 function drawModel(ctx: Ctx, style: ModelStyle): SVGTemplateResult[] {
   const { P, defs, floor, lit } = ctx;
   const out: SVGTemplateResult[] = [];
-  const solids = solidsOf(floor, P.turn, ctx.furniture);
+  const solids = solidsOf(floor, P.turn, ctx.furniture, ctx.o.stairsDown);
   const stroke = MODEL.stroke(style);
 
   // Floors: the blueprint's measuring grid, else each floor's own boards or
