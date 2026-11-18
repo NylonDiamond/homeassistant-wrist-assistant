@@ -4,7 +4,8 @@
 // pictures (a floor's outline, a room's, a floor finish's swatch). Styled by
 // `editor-styles.ts`; the modes build their rails and inspectors from these.
 
-import { type TemplateResult, html, nothing, svg } from "lit";
+import { type TemplateResult, html, noChange, nothing, svg } from "lit";
+import { Directive, type PartInfo, PartType, type PropertyPart, directive } from "lit/directive.js";
 import { live } from "lit/directives/live.js";
 import { homeMapNumberText, homeMapParseNumber } from "./editor-view.js";
 import type { HomeFloorKind } from "./geometry.js";
@@ -64,6 +65,51 @@ export function hmeRow(label: string, ...controls: unknown[]): TemplateResult {
 export function hmeHint(text: unknown, keep = false): TemplateResult {
   return html`<p class="hme-hint ${keep ? "keep" : ""}">${text}</p>`;
 }
+
+/**
+ * What a typed field's `.value` gets on a draw: nothing while it has the
+ * typing, else the value when the field shows something else. The panel
+ * draws again on every state change in Home Assistant (`hass` is a
+ * property), and a plain `live` value put the old number back over what was
+ * being typed, so a typed size went back at once.
+ */
+export function homeMapTypedValue(shown: string, value: string, focused: boolean): string | typeof noChange {
+  return focused || shown === value ? noChange : value;
+}
+
+/** `live` for a typed field, except that a field with the typing keeps what
+ * is typed; the value drawn meanwhile goes in when it loses the typing. */
+class KeepTyping extends Directive {
+  private latest = "";
+  private waiting = false;
+
+  constructor(part: PartInfo) {
+    super(part);
+    if (part.type !== PartType.PROPERTY) throw new Error("keepTyping is for a .value binding");
+  }
+
+  render(value: string): string {
+    return value;
+  }
+
+  override update(part: PropertyPart, [value]: [string]): string | typeof noChange {
+    const input = part.element as HTMLInputElement;
+    this.latest = value;
+    const focused = input.matches(":focus");
+    if (focused && !this.waiting) {
+      this.waiting = true;
+      // `change` comes before `blur`, so a typed edit is already applied
+      // here, and its draw puts the new value in after this one.
+      input.addEventListener("blur", () => {
+        this.waiting = false;
+        if (input.value !== this.latest) input.value = this.latest;
+      }, { once: true });
+    }
+    return homeMapTypedValue(input.value, value, focused);
+  }
+}
+
+const keepTyping = directive(KeepTyping);
 
 /** How far a dragged number field moves before it scrubs, in pixels. */
 const SCRUB_SLOP = 3;
@@ -160,7 +206,7 @@ export function hmeNumber(o: {
   const box = html`<span class="hme-in hme-num ${o.disabled === true ? "off" : ""}" style=${o.width === undefined ? nothing : `flex:0 0 ${o.width}`}
     title=${o.disabled === true ? nothing : "Drag sideways to change it, click to type"} @pointerdown=${scrub}>
     ${o.tag === undefined || named ? nothing : html`<span class="hme-ntag" aria-hidden="true">${o.tag}</span>`}
-    <input type="text" inputmode="decimal" aria-label=${o.label} .value=${live(text)} ?disabled=${o.disabled === true}
+    <input type="text" inputmode="decimal" aria-label=${o.label} .value=${keepTyping(text)} ?disabled=${o.disabled === true}
       placeholder=${o.value === undefined ? "Mixed" : ""}
       @change=${(e: Event) => commit(e.target as HTMLInputElement)}
       @keydown=${(e: KeyboardEvent) => {
@@ -240,7 +286,7 @@ export function hmeGroup(title: string, ...body: unknown[]): TemplateResult {
 /** A text field that saves on leaving it or Enter. */
 export function hmeText(o: { value: string; label: string; placeholder?: string; max?: number; set: (v: string) => void }): TemplateResult {
   return html`<span class="hme-in"><input type="text" aria-label=${o.label} maxlength=${o.max ?? 100} placeholder=${o.placeholder ?? ""}
-    .value=${live(o.value)}
+    .value=${keepTyping(o.value)}
     @change=${(e: Event) => {
       const v = (e.target as HTMLInputElement).value;
       if (v.trim() !== o.value.trim()) o.set(v);
