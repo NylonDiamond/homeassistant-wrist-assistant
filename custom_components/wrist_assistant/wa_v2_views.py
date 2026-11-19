@@ -5007,7 +5007,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ``owner_watch_id`` (capability ``phone_watch_settings``) is an iPhone
     reading the settings of one of its user's watches
     (`_phone_watch_settings_owner`). The reply is the watch's record, read as
-    an observer reads: no delivery mark, no report, no main house note.
+    an observer reads: no delivery mark, no report, no main house note. With
+    no record it also says ``may_start``: whether this iPhone may make the
+    watch's first one (`_phone_may_start_watch_settings`).
 
     ``observer: true`` is the iPhone reading, whichever key signs it: it may
     sign with its watch's pair, and that read is not the watch collecting
@@ -5087,7 +5089,15 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
             return _watch_config_refusal(ctx, err)
         if watch_record is None:
             return ctx.signed_json(
-                {"ok": True, "kind": kind, "revision": 0, "hash": None, "short_hash": None, "updated_at": None}
+                {
+                    "ok": True,
+                    "kind": kind,
+                    "revision": 0,
+                    "hash": None,
+                    "short_hash": None,
+                    "updated_at": None,
+                    "may_start": _phone_may_start_watch_settings(ctx, owner),
+                }
             )
         watch_reply: dict[str, Any] = {
             "ok": True,
@@ -5264,9 +5274,12 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
 
     ``owner_watch_id`` (capability ``phone_watch_settings``) is an iPhone
     saving the settings of one of its user's watches
-    (`_phone_watch_settings_owner`), over the record the watch already has:
-    a watch with none is a signed 400 ``no_record`` (its first record is its
-    own seed, the move or the panel's), and ``force`` is never taken. The save
+    (`_phone_watch_settings_owner`), over the record the watch already has.
+    A watch with none gets its first record from the iPhone only on base
+    revision 0 and when `_phone_may_start_watch_settings` says so (it runs
+    only the standard settings and no move may still come); any other is a
+    signed 400 ``no_record`` (its first record is then its own seed, the move
+    or the panel's). ``force`` is never taken. The save
     names the phone as its writer, is not marked delivered (the watch has not
     collected it), and wakes the watch's poll as any save does.
     """
@@ -5274,7 +5287,7 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     if refusal is not None:
         return refusal
     if owner != ctx.watch_id:
-        return _phone_put_watch_settings(ctx, owner)
+        return await _phone_put_watch_settings(ctx, owner)
     store = ctx.domain_data.watch_config_store
     first = not _caller_is_iphone(ctx) and store.holds_no_record(
         ctx.watch_id, ctx.payload.get("kind")
@@ -5306,11 +5319,36 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 
-def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
+def _phone_may_start_watch_settings(ctx: _OpContext, owner: str) -> bool:
+    """Whether an iPhone may make the first settings record of its watch
+    ``owner``, which has none: the watch said it runs only the standard
+    settings (``standard_settings``), so a first record of the defaults and
+    the iPhone's change loses nothing of its own, and no iPhone may still
+    move its setup here (`WidgetSecretStore.may_await_move`), which that
+    record would leave nothing to send. A watch with settings of its own
+    sends them first as its seed, and one that never said waits for that.
+    """
+    secrets = ctx.domain_data.widget_secret_store
+    entry = secrets.get(owner)
+    if getattr(entry, "standard_settings", None) is not True:
+        return False
+    return not secrets.may_await_move(owner)
+
+
+async def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
     """The save half of `_op_watch_config_put` for an iPhone writing its
-    watch's settings, once `_phone_watch_settings_owner` named the watch."""
+    watch's settings, once `_phone_watch_settings_owner` named the watch.
+
+    A watch with no record gets its first one from the iPhone only on base
+    revision 0 and only when `_phone_may_start_watch_settings` says so (the
+    get says it too, as ``may_start``); else it is a signed 400 ``no_record``.
+    Such a first record is on disk before the 200, as the watch's own seed
+    is (``async_save_first_record``)."""
     store = ctx.domain_data.watch_config_store
-    if store.holds_no_record(owner, "behavior"):
+    first = store.holds_no_record(owner, "behavior")
+    if first and not (
+        ctx.payload.get("base_revision") == 0 and _phone_may_start_watch_settings(ctx, owner)
+    ):
         return ctx.signed_json(
             {"ok": False, "error": "no_record", "message": "That watch has no settings in Home Assistant yet."},
             status=400,
@@ -5328,6 +5366,8 @@ def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
+    if first:
+        await store.async_save_first_record(owner)
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 

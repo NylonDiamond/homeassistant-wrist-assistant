@@ -124,6 +124,54 @@ def test_a_watch_with_no_record_is_not_given_one(env) -> None:
     assert env.store.get("watch-B", "behavior") is None
 
 
+def _standard_watch(env, *, standard: bool | None = True, awaits_move: bool = False) -> None:
+    """watch-B: no record, and what it said of its settings."""
+    watch = _device("watch", "user-1")
+    watch.standard_settings = standard
+    env.secrets.entries["watch-B"] = watch
+    env.secrets.may_await_move = lambda watch_id: awaits_move
+
+
+def test_a_watch_on_the_standard_settings_may_start_from_the_iphone(env) -> None:
+    _standard_watch(env)
+    read = _get(env, {"kind": "behavior", "owner_watch_id": "watch-B"})
+    assert (read.body["revision"], read.body["may_start"]) == (0, True)
+    change = {"wrapPages": True}
+    reply = _put(env, dict(_save(change, base=0), owner_watch_id="watch-B"))
+    assert (reply.status, reply.body["ok"]) == (200, True)
+    record = env.store.get("watch-B", "behavior")
+    assert record.document == change
+    assert record.updated_by == PHONE
+    # Waiting for the watch to collect it.
+    assert record.delivered_revision == 0
+
+
+def test_a_first_record_from_the_iphone_needs_base_zero(env) -> None:
+    _standard_watch(env)
+    reply = _put(env, dict(_save({"wrapPages": True}, base=3), owner_watch_id="watch-B"))
+    assert (reply.status, reply.body["error"]) == (400, "no_record")
+    assert env.store.get("watch-B", "behavior") is None
+
+
+@pytest.mark.parametrize(
+    ("standard", "awaits_move"),
+    [(None, False), (False, False), (True, True)],
+    ids=["never-said", "own-settings", "move-may-come"],
+)
+def test_a_watch_that_may_still_send_its_own_is_not_started(env, standard, awaits_move) -> None:
+    _standard_watch(env, standard=standard, awaits_move=awaits_move)
+    read = _get(env, {"kind": "behavior", "owner_watch_id": "watch-B"})
+    assert read.body["may_start"] is False
+    reply = _put(env, dict(_save({"wrapPages": True}, base=0), owner_watch_id="watch-B"))
+    assert (reply.status, reply.body["error"]) == (400, "no_record")
+    assert env.store.get("watch-B", "behavior") is None
+
+
+def test_a_watch_with_a_record_says_nothing_of_starting(env) -> None:
+    reply = _get(env, {"kind": "behavior", "owner_watch_id": WATCH})
+    assert "may_start" not in reply.body
+
+
 # ── refusals ─────────────────────────────────────────────────────────────
 
 
