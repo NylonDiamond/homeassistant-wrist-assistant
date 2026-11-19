@@ -742,7 +742,7 @@ export function watchAppTaskHasReset(kind: string): boolean {
 export const appSettingsStyles = css`
   .ap-faint { color: var(--wa-muted); font-size: 11.5px; font-weight: 400; }
   .ap-inbox { margin: 6px 0 2px; }
-  .ap-template-guide { width: 100%; max-width: 560px; margin: 0; }
+  .ap-template-guide { width: 100%; max-width: 820px; margin: 0; }
   .ap-template-guide > summary { width: fit-content; color: var(--wa-muted); cursor: pointer; font-size: 11.5px; line-height: 24px; list-style-position: inside; }
   .ap-template-guide > summary:hover, .ap-template-guide[open] > summary { color: var(--wa-ink); }
   .ap-template-guide > summary::marker { color: var(--wa-accent); }
@@ -751,9 +751,14 @@ export const appSettingsStyles = css`
   .ap-template-guide table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
   .ap-template-guide th { padding: 0 0 5px; color: var(--wa-muted); font-size: 11px; font-weight: 500; }
   .ap-template-guide td { padding: 6px 0; border-top: 1px solid var(--wa-line); }
-  .ap-template-guide th:last-child, .ap-template-guide td:last-child { width: 72px; text-align: center; }
+  /* The result column has room for a few words on one line, so Tap the row
+     to open Maps reads as a sentence; on a phone it may take two. */
+  .ap-template-guide th:last-child, .ap-template-guide td:last-child { width: 40%; padding-left: 12px; }
+  .ap-template-guide td { vertical-align: middle; }
+  /* A narrow editor gives the code the room, so a marker breaks less. */
+  @container (max-width: 420px) { .ap-template-guide th:last-child, .ap-template-guide td:last-child { width: 32%; } }
   .ap-template-guide code { color: var(--wa-ink); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: text; }
-  .ap-template-result { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; font-size: 11.5px; font-weight: 600; }
+  .ap-template-result { display: inline-flex; align-items: center; min-width: 18px; font-size: 11.5px; font-weight: 600; }
   .ap-template-guide p { margin: 0; color: var(--wa-muted); font-size: 11.5px; line-height: 1.45; }
   .ap-text { align-items: flex-start; }
   .ap-text textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;

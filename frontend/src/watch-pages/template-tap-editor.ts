@@ -318,28 +318,57 @@ export class TemplateTapEditor {
     return this.data().taps.words.actionLabels[action];
   }
 
-  /** The section by the picture: the areas as numbered chips, Add tap area
-   * and Edit areas, then the picked area's settings. */
+  /** What an area opens or runs, in a few words, for its row in the list:
+   * the entity's name, the page's name, the place, the URL or the service. */
+  private areaDetail(area: TemplateTapArea): string {
+    const d = this.data();
+    switch (area.action) {
+      case "page": return d.taps.pages.find((p) => p.id === area.page)?.name ?? "Missing page";
+      case "http": return d.taps.httpActions.find((a) => a.id.toUpperCase() === area.http?.toUpperCase())?.name ?? "Missing action";
+      case "maps": return area.place ?? "";
+      case "link": return area.url ?? "";
+      case "service": return area.service ?? "";
+      case "refresh": return "";
+      default: {
+        if (area.entity === undefined) return "";
+        const name = d.hass.states[area.entity]?.attributes?.["friendly_name"];
+        return typeof name === "string" && name.trim() !== "" ? name : area.entity;
+      }
+    }
+  }
+
+  /** The Tap areas section under the code: its heading with Edit areas, the
+   * areas as a numbered list with Add tap area at its foot, and beside the
+   * list (under it when narrow) the picked area's settings. */
   section(): TemplateResult {
     const d = this.data(), words = d.taps.words;
     const areas = this.areas();
     const picked = this.pickedIndex();
     const full = areas.length >= TEMPLATE_TAPS.max;
-    return html`<div class="te-taps">
-      <div class="te-sw"><span><b>${words.label}</b><small>${words.help}</small></span>
+    const editing = this.editing && areas.length > 0;
+    const form = this.inspector();
+    return html`<section class="te-taps" aria-label=${words.label}>
+      <div class="te-taps-h"><span><b>${words.label}</b><small>${editing ? "Drag a box to move it, or its corner to resize it. Drag empty space to draw a new one." : words.help}</small></span>
         ${areas.length === 0 ? nothing : html`<button type="button" class="te-chip ${this.editing ? "on" : ""}" aria-pressed=${this.editing ? "true" : "false"} ?disabled=${d.busy}
           @click=${() => this.setEditing(!this.editing)}>${this.editing ? "Done" : "Edit areas"}</button>`}</div>
-      <div class="ts-chips">
-        ${areas.map((a, i) => html`<button type="button" class="pe-chip ${this.editing && i === picked ? "on" : ""}" aria-pressed=${this.editing && i === picked ? "true" : "false"}
-          @click=${() => this.pick(i)}>${i + 1}. ${this.actionWords(a.action)}</button>`)}
-        <button type="button" class="pe-chip" ?disabled=${d.busy || full} title=${full ? `At most ${TEMPLATE_TAPS.max} areas` : ""} @click=${() => this.add()}>${words.addLabel}</button>
+      <div class="te-taps-body ${areas.length === 0 ? "empty" : ""}">
+        <div class="te-tap-list">
+          ${areas.map((a, i) => {
+            const on = this.editing && i === picked;
+            const detail = this.areaDetail(a);
+            return html`<button type="button" class="te-tap-row ${on ? "on" : ""}" data-tap-row=${i} aria-pressed=${on ? "true" : "false"} title=${detail} @click=${() => this.pick(i)}>
+              <span class="te-tap-badge">${i + 1}</span><span class="te-tap-words"><b>${this.actionWords(a.action)}</b>${detail === "" ? nothing : html`<small>${detail}</small>`}</span></button>`;
+          })}
+          <button type="button" class="te-tap-add" ?disabled=${d.busy || full} title=${full ? `At most ${TEMPLATE_TAPS.max} areas` : ""} @click=${() => this.add()}><span aria-hidden="true">+</span>${words.addLabel}</button>
+        </div>
+        ${form !== nothing ? form : editing ? html`<div class="te-tap-none">Pick an area in the list or on the tile.</div>` : nothing}
       </div>
-      ${this.editing && areas.length > 0 ? html`<div class="te-hint">Drag a box to move it, or its corner to resize it. Drag empty space to draw a new one.</div>` : nothing}
-    </div>`;
+    </section>`;
   }
 
-  /** The picked area's settings, in the place a picked item's show. */
-  inspector(): TemplateResult | typeof nothing {
+  /** The picked area's settings: a card beside the list, each title over
+   * its control. */
+  private inspector(): TemplateResult | typeof nothing {
     const d = this.data();
     const index = this.pickedIndex();
     if (!this.editing || index === undefined) return nothing;
@@ -419,11 +448,11 @@ export class TemplateTapEditor {
     };
     const missing = area.action === "page" && !pages.some((p) => p.id === area.page);
     const missingHTTP = area.action === "http" && !httpActions.some((a) => a.id.toUpperCase() === area.http?.toUpperCase());
-    return html`<section class="te-item-inspector" aria-label=${`Tap area ${index + 1}`}>
+    return html`<section class="te-item-inspector te-tap-form" aria-label=${`Tap area ${index + 1}`}>
       <div class="te-item-head"><b>Tap area ${index + 1}</b>
         <button type="button" class="te-item-link" ?disabled=${d.busy} @click=${() => this.remove(index)}>Delete</button></div>
       <label class="te-item-field"><span>Action</span>
-        <select class="te-lines" aria-label="Action" ?disabled=${d.busy} @change=${(e: Event) => setAction((e.target as HTMLSelectElement).value as TemplateTapAction)}>
+        <select class="te-select" aria-label="Action" ?disabled=${d.busy} @change=${(e: Event) => setAction((e.target as HTMLSelectElement).value as TemplateTapAction)}>
           ${ACTION_GROUPS.map(([group, actions]) => html`<optgroup label=${group}>
             ${actions.map((a) => html`<option value=${a} ?selected=${a === area.action} ?disabled=${!offered(a)}>${this.actionWords(a)}</option>`)}
           </optgroup>`)}
@@ -431,7 +460,7 @@ export class TemplateTapEditor {
       ${area.action === "maps" ? textField("place", "Place", words.placeHint, FIRST_PLACE) : nothing}
       ${area.action === "link" ? textField("url", "URL", words.urlHint, "https://example.com") : nothing}
       ${area.action === "page" ? html`<label class="te-item-field"><span>Page</span>
-        <select class="te-lines" aria-label="Page" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, page: (e.target as HTMLSelectElement).value })}>
+        <select class="te-select" aria-label="Page" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, page: (e.target as HTMLSelectElement).value })}>
           ${missing ? html`<option value=${area.page ?? ""} selected>Missing page</option>` : nothing}
           ${pages.map((p) => html`<option value=${p.id} ?selected=${p.id === area.page}>${p.name}</option>`)}
         </select></label>` : nothing}
@@ -442,7 +471,7 @@ export class TemplateTapEditor {
         ? html`${entityPicker(area.action === "script" ? "Script" : "Scene", area.entity, setEntity, { domain: area.action, clearable: false })}${hint(area.action)}` : nothing}
       ${area.action === "service" ? this.serviceFields(area, index, textField, entityPicker, hint("service")) : nothing}
       ${area.action === "http" ? html`<label class="te-item-field"><span>HTTP action</span>
-        <select class="te-lines" aria-label="HTTP action" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, http: (e.target as HTMLSelectElement).value })}>
+        <select class="te-select" aria-label="HTTP action" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, http: (e.target as HTMLSelectElement).value })}>
           ${missingHTTP ? html`<option value=${area.http ?? ""} selected>Missing action</option>` : nothing}
           ${httpActions.map((a) => html`<option value=${a.id} ?selected=${a.id.toUpperCase() === area.http?.toUpperCase()}>${a.name}</option>`)}
         </select></label>${hint("http")}` : nothing}

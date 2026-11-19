@@ -496,7 +496,13 @@ export class WaTemplateEditor extends LitElement {
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
             ${this.taps.editing ? nothing : this.items.toolbar()}
-            ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
+            ${this.taps.editing
+              ? nothing
+              : this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
+                ? this.titleInspector()
+                : this.items.inspector()}
+          </div>
+          ${!this.items.layoutDraws() ? html`<div class="te-opts"><label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
               <button type="button" class="te-switch ${this.titleOn ? "on" : ""}" role="switch" aria-checked=${this.titleOn ? "true" : "false"} aria-label=${d.title.label} ?disabled=${d.busy} @click=${() => this.toggleTitle()}></button></label>
               ${this.titleOn ? html`<div class="te-title-row"><input class="te-title" type="text" aria-label="Title" placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
                 @focus=${() => { this.titleOpenTile = d.tileId; this.pickTitle(); }}
@@ -504,14 +510,8 @@ export class WaTemplateEditor extends LitElement {
               <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
-              <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>` : nothing}
-            ${this.taps.section()}
-            ${this.taps.editing
-              ? this.taps.inspector()
-              : this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
-                ? this.titleInspector()
-                : this.items.inspector()}
-          </div>
+              <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label></div>` : nothing}
+          ${this.taps.section()}
           <div class="te-right">
             <div class="te-bar">
               <span class="te-lab">Your template</span>
@@ -567,12 +567,21 @@ export const templateEditorStyles = css`
   .te-d::backdrop { background: rgba(0, 0, 0, 0.6); }
   .te-root { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .te-large-h { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
-  .te-grid { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  /* Narrow: one column, the tile, its options, Tap areas, then the code.
+     Wide: the tile beside the code, and under them the tile's options under
+     the tile and Tap areas under the code, so the code's side has no hole
+     and the area settings get the room they need. */
+  .te-grid { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .te-left { order: 1; } .te-opts { order: 2; } .te-taps { order: 3; } .te-right { order: 4; }
   @container (min-width: 620px) {
-    .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
+    .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: "stage code" "opts taps"; gap: 14px 18px; align-items: start; }
+    .te-left { grid-area: stage; } .te-right { grid-area: code; } .te-opts { grid-area: opts; } .te-taps { grid-area: taps; }
   }
-  .te-d:popover-open .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
-  .te-left, .te-right { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .te-d:popover-open .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: "stage code" "opts taps"; gap: 14px 18px; align-items: start; }
+  .te-d:popover-open .te-left { grid-area: stage; } .te-d:popover-open .te-right { grid-area: code; } .te-d:popover-open .te-opts { grid-area: opts; } .te-d:popover-open .te-taps { grid-area: taps; }
+  .te-left, .te-right, .te-opts { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .te-opts, .te-taps { padding-top: 12px; border-top: 1px solid var(--wa-line); }
+  .te-opts { gap: 10px; }
   .te-well { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 10px 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-well, #000); }
   .te-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--wa-panel); }
   .te-well .te-seg { align-self: flex-end; }
@@ -631,8 +640,48 @@ export const templateEditorStyles = css`
   .te-guide { position: absolute; top: 6px; bottom: 6px; width: 1px; background: var(--wa-hue-orange); opacity: 0; animation: te-guide 1.1s ease-out; pointer-events: none; }
   @keyframes te-guide { 20% { opacity: .8; } 70% { opacity: .5; } 100% { opacity: 0; } }
   .te-small { font-size: 12px; color: var(--wa-hue-orange); }
-  .te-taps { display: flex; flex-direction: column; gap: 6px; }
-  .te-taps .ts-chips { padding: 0; }
+  /* Tap areas: the heading with Edit areas at its end, then the list and
+     the picked area's card, side by side once there is room. */
+  .te-taps { display: flex; flex-direction: column; gap: 10px; min-width: 0; container: te-taps / inline-size; }
+  .te-taps-h { display: flex; align-items: flex-start; gap: 12px; }
+  .te-taps-h > span { flex: 1; min-width: 0; }
+  .te-taps-h b { display: block; font-size: 13px; font-weight: 600; }
+  .te-taps-h small { display: block; margin-top: 1px; font-size: 11.5px; color: var(--wa-muted); }
+  .te-taps-h .te-chip { flex: none; }
+  /* Past this the heading's button and the card would drift apart. */
+  .te-taps > * { max-width: 852px; }
+  .te-taps-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  @container te-taps (min-width: 640px) {
+    .te-taps-body:not(.empty) { display: grid; grid-template-columns: minmax(200px, 240px) minmax(0, 1fr); gap: 12px; align-items: start; }
+    .te-taps-body .te-tap-form, .te-taps-body .te-tap-none { max-width: 600px; }
+  }
+  .te-tap-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .te-tap-row { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 36px; padding: 4px 10px 4px 6px; border: 1px solid var(--wa-line); border-radius: 8px; background: none; color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer; }
+  .te-tap-row:hover { background: var(--wa-panel); }
+  .te-tap-row:focus-visible, .te-tap-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .te-tap-row.on { background: var(--wa-pick-bg); border-color: var(--wa-pick-line); }
+  .te-tap-badge { flex: none; min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 5px; background: var(--wa-hue-blue); color: #fff; font: 700 11px/20px system-ui, sans-serif; text-align: center; }
+  .te-tap-row.on .te-tap-badge { background: var(--wa-hue-orange); }
+  .te-tap-words { display: flex; flex-direction: column; min-width: 0; }
+  .te-tap-words b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .te-tap-words small { font-size: 11px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .te-tap-add { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px dashed var(--wa-line-strong); border-radius: 8px; background: none; color: var(--wa-hue-blue); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .te-tap-add > span { font-size: 15px; font-weight: 500; line-height: 1; }
+  .te-tap-add:hover:not(:disabled) { border-color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 8%, transparent); }
+  .te-tap-add:disabled { opacity: .45; cursor: default; }
+  .te-taps-body.empty .te-tap-add { align-self: flex-start; }
+  .te-tap-none { display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 12px; border: 1px dashed var(--wa-line); border-radius: 9px; font-size: 12px; color: var(--wa-muted); text-align: center; }
+  /* The picked area's card: each title over its control, at the card's width. */
+  .te-tap-form { gap: 12px; padding: 12px; background: color-mix(in srgb, var(--wa-ink) 2%, transparent); }
+  .te-tap-form .te-item-head { font-size: 13px; }
+  .te-tap-form .te-item-field { gap: 6px; }
+  .te-tap-form .te-item-field > span { min-height: 0; font-size: 12px; color: var(--wa-muted); }
+  .te-tap-form .te-hint { margin-top: -6px; }
+  .te-tap-form .field.entity-field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; }
+  .te-tap-form .field.entity-field > span:first-child { font-size: 12px; color: var(--wa-muted); }
+  .te-tap-form .field.entity-field > :not(:first-child) { grid-column: auto; }
+  .te-tap-form .ent-chosen, .te-tap-form .ent-box input { height: 30px; min-height: 30px; }
+  .te-select { box-sizing: border-box; width: 100%; min-width: 0; height: 30px; font-size: 13px; background-color: var(--wa-field, var(--wa-input)); }
   .te-taps-layer { position: absolute; z-index: 7; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
   .te-tap { position: absolute; box-sizing: border-box; border: 1.5px solid var(--wa-hue-blue); border-radius: 3px; background: color-mix(in srgb, var(--wa-hue-blue) 16%, transparent); cursor: grab; }
   .te-tap.on { border-color: var(--wa-hue-orange); background: color-mix(in srgb, var(--wa-hue-orange) 18%, transparent); }
@@ -651,7 +700,7 @@ export const templateEditorStyles = css`
   .te-tile .wp-tpl-title-text { pointer-events: auto; cursor: pointer; }
   .te-tile .wp-tpl-title-text.te-picked { outline: 1.5px solid var(--wa-hue-blue); outline-offset: 2px; border-radius: 2px; }
   .te-title { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 6px; }
-  .te-lines { flex: none; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--divider-color, rgba(127, 127, 127, .35)); border-radius: 6px; padding: 3px 4px; }
+  .te-lines { flex: none; height: 28px; font-size: 13px; background-color: var(--wa-field, var(--wa-input)); }
   .te-switch { flex: none; position: relative; width: 36px; height: 21px; padding: 0; border: 0; border-radius: 11px; background: var(--wa-switch-off); cursor: pointer; transition: background .18s; }
   .te-switch::after { content: ""; position: absolute; left: 2px; top: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform .22s cubic-bezier(.2,.8,.2,1); }
   .te-switch.on { background: var(--wa-switch-on); }
