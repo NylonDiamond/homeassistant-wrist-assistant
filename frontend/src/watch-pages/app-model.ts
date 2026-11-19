@@ -695,7 +695,7 @@ export const WATCH_TEMPLATE_MAP_ZOOM = {
 } as const;
 
 /** Maps zoom, as both devices read it: a finite number, rounded, kept from
- * 2 to 21; anything else is Auto (undefined). */
+ * 17 to 21; anything else is Auto (undefined). */
 export function watchTemplateMapZoom(tile: WatchPageTile): number | undefined {
   const { min, max } = WATCH_TEMPLATE_MAP_ZOOM;
   const value = tile.templateMapZoom;

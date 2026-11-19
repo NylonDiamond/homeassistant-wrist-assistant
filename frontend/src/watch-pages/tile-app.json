@@ -95,12 +95,12 @@
     "mapZoom": {
       "key": "templateMapZoom",
       "kinds": ["template"],
-      "min": 2,
+      "min": 17,
       "max": 21,
-      "names": { "3": "Country", "6": "State", "10": "City", "13": "Neighborhood", "16": "Street", "19": "Close" },
+      "names": { "17": "Street", "19": "Close" },
       "label": "Maps zoom",
       "help": "How close Maps starts when a tap on this tile opens it. Higher is closer. iPhone only: Maps on Apple Watch keeps its own zoom.",
-      "write": "A whole Apple Maps zoom level from min to max (the link's z); Auto removes the key. Read: a finite number, rounded, kept from min to max; anything else is Auto. For every Maps tap on the tile, from a row's [tap:maps ...] and from a tap area, the iPhone opens an Apple Maps link at that level. The watch sends a span and a camera for it, which Maps on the watch ignores (tested 2026-11-19), so there it opens as Auto. Auto leaves the zoom to Maps. An older app ignores the key. The menu names a few levels for reference (names). Shown only while the tile has a Maps tap; a stored value stays when it has none."
+      "write": "A whole Apple Maps zoom level from min to max (the link's z); Auto removes the key. Only 17 and closer: the link drops a labelled pin, and Maps opens the pin's place card, which moves a farther view back in to its own (tested 2026-11-19). Read: a finite number, rounded, kept from min to max; anything else is Auto. For every Maps tap on the tile, from a row's [tap:maps ...] and from a tap area, the iPhone opens an Apple Maps link at that level. The watch sends a span and a camera for it, which Maps on the watch ignores (tested 2026-11-19), so there it opens as Auto. Auto leaves the zoom to Maps. An older app ignores the key. The menu names a few levels for reference (names). Shown only while the tile has a Maps tap; a stored value stays when it has none."
     },
     "columns": {
       "key": "templateColumns",
