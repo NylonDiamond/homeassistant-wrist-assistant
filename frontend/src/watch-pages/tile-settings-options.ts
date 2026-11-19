@@ -68,7 +68,7 @@ import {
   watchPhoneKeysOf,
   watchSensorChart,
 } from "./phone-keys-model.js";
-import { WATCH_APP, WATCH_TEMPLATE_LINES, WATCH_TEMPLATE_MAP_ZOOM, WATCH_TEMPLATE_REFRESH, watchTemplateLines, watchTemplateMapZoom, watchTemplateRefreshMinutes } from "./app-model.js";
+import { WATCH_TEMPLATE_LINES, WATCH_TEMPLATE_MAP_ZOOM, WATCH_TEMPLATE_REFRESH, watchTemplateLines, watchTemplateMapZoom, watchTemplateRefreshMinutes } from "./app-model.js";
 import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPage,
@@ -368,12 +368,19 @@ export function watchTemplateRefreshMenu(tile: WatchPageTile): WatchMenu {
   return watchChoiceMenu(choices, minutes === undefined ? "off" : String(minutes), (v) => watchRefreshLabel(Number(v)));
 }
 
-/** The Maps zoom menu: Auto, then the shared values. A stored value the
- * devices do not read shows as Auto, which is how they read it. */
+/** A Maps zoom level with its reference name, if it has one: "19 (Close)". */
+export function watchMapZoomLabel(level: number): string {
+  const name = WATCH_TEMPLATE_MAP_ZOOM.names[String(level)];
+  return name === undefined ? String(level) : `${level} (${name})`;
+}
+
+/** The Maps zoom menu: Auto, then every level from far to close. */
 export function watchTemplateMapZoomMenu(tile: WatchPageTile): WatchMenu {
-  const labels = WATCH_APP.template.mapZoom.labels;
-  const choices = [{ value: "auto", label: labels["auto"] ?? "Auto" }, ...WATCH_TEMPLATE_MAP_ZOOM.values.map((v) => ({ value: v, label: labels[v] ?? v }))];
-  return watchChoiceMenu(choices, watchTemplateMapZoom(tile) ?? "auto");
+  const { min, max } = WATCH_TEMPLATE_MAP_ZOOM;
+  const levels = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+  const choices = [{ value: "auto", label: "Auto" }, ...levels.map((n) => ({ value: String(n), label: watchMapZoomLabel(n) }))];
+  const level = watchTemplateMapZoom(tile);
+  return watchChoiceMenu(choices, level === undefined ? "auto" : String(level));
 }
 
 /** What a folded phone card says it holds. */

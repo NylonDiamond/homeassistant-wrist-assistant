@@ -100,7 +100,7 @@ export interface TemplateEditorData {
   setLines(value: string): void;
   /** "off" removes the key; any other value is whole minutes. */
   setRefresh(value: string): void;
-  /** "auto" removes the key; "street" or "close" sets it. */
+  /** "auto" removes the key; any other value is a whole zoom level. */
   setMapZoom(value: string): void;
   setTitle(text: string): void;
   setTitleHidden(hidden: boolean): void;

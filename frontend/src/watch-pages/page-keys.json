@@ -1764,7 +1764,7 @@
           "required": false
         },
         "templateMapZoom": {
-          "type": "string",
+          "type": "number",
           "required": false
         },
         "mapEntityIds": {

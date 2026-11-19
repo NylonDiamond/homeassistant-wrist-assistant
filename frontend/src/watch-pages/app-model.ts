@@ -332,7 +332,7 @@ interface AppTable {
       confirmLabel: string; confirmHint: string; markerHint: string;
     };
     refresh: { key: string; kinds: readonly string[]; min: number; max: number; menu: readonly number[]; label: string; help: string };
-    mapZoom: { key: string; kinds: readonly string[]; values: readonly string[]; meters: Readonly<Record<string, number>>; levels: Readonly<Record<string, number>>; labels: Readonly<Record<string, string>>; label: string; help: string };
+    mapZoom: { key: string; kinds: readonly string[]; min: number; max: number; names: Readonly<Record<string, string>>; label: string; help: string };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;
       position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
@@ -686,19 +686,21 @@ export function setWatchTemplateRefreshMinutes(document: WatchPagesDocument, pag
   });
 }
 
-/** Maps zoom's values and how many meters across each shows. */
+/** Maps zoom's range of Apple Maps zoom levels, and the levels the menu
+ * names for reference. */
 export const WATCH_TEMPLATE_MAP_ZOOM = {
-  values: A.template.mapZoom.values as readonly WatchTemplateMapZoom[],
-  meters: A.template.mapZoom.meters as Readonly<Record<string, number>>,
+  min: A.template.mapZoom.min,
+  max: A.template.mapZoom.max,
+  names: A.template.mapZoom.names,
 } as const;
 
-export type WatchTemplateMapZoom = "city" | "neighborhood" | "street" | "close";
-
-/** Maps zoom, as both devices read it: a listed value, anything else is
- * Auto (undefined). */
-export function watchTemplateMapZoom(tile: WatchPageTile): WatchTemplateMapZoom | undefined {
+/** Maps zoom, as both devices read it: a finite number, rounded, kept from
+ * 2 to 21; anything else is Auto (undefined). */
+export function watchTemplateMapZoom(tile: WatchPageTile): number | undefined {
+  const { min, max } = WATCH_TEMPLATE_MAP_ZOOM;
   const value = tile.templateMapZoom;
-  return typeof value === "string" && (WATCH_TEMPLATE_MAP_ZOOM.values as readonly string[]).includes(value) ? (value as WatchTemplateMapZoom) : undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 /** Whether a tap on the tile can open Maps: a tap area that does, or a
@@ -708,13 +710,15 @@ export function watchTemplateHasMapsTap(tile: WatchPageTile): boolean {
   return /\[tap:\s*maps\b/i.test(watchTemplateText(tile));
 }
 
-/** "Maps zoom": a listed value, or undefined (Auto) to remove the key. */
-export function setWatchTemplateMapZoom(document: WatchPagesDocument, pageId: string, tileId: string, zoom: WatchTemplateMapZoom | undefined): WatchPagesDocument {
-  if (zoom !== undefined && !WATCH_TEMPLATE_MAP_ZOOM.values.includes(zoom)) return document;
+/** "Maps zoom": a whole level in range, or undefined (Auto) to remove the
+ * key. */
+export function setWatchTemplateMapZoom(document: WatchPagesDocument, pageId: string, tileId: string, level: number | undefined): WatchPagesDocument {
+  const { min, max } = WATCH_TEMPLATE_MAP_ZOOM;
+  if (level !== undefined && (!Number.isInteger(level) || level < min || level > max)) return document;
   return setKey(document, pageId, tileId, "templateMapZoom", (tile) => {
     if (!isTemplate(tile)) return undefined;
-    if (zoom === undefined) return Object.hasOwn(tile, "templateMapZoom") ? REMOVE : undefined;
-    return tile.templateMapZoom === zoom ? undefined : zoom;
+    if (level === undefined) return Object.hasOwn(tile, "templateMapZoom") ? REMOVE : undefined;
+    return tile.templateMapZoom === level ? undefined : level;
   });
 }
 
