@@ -71,7 +71,7 @@ import { watchCatalogMark } from "./catalog.js";
 import { isWatchUUID } from "./tile-settings-model.js";
 import "./template-editor.js";
 import { commit, fieldNote, linkButton, menuField, typed, typingField } from "./tile-settings.js";
-import { watchChoiceMenu, watchTemplateLinesMenu, watchTemplateRefreshMenu, watchTileFallbackName } from "./tile-settings-options.js";
+import { watchChoiceMenu, watchTemplateLinesMenu, watchTemplateMapZoomMenu, watchTemplateRefreshMenu, watchTileFallbackName } from "./tile-settings-options.js";
 import { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT } from "../watch-voice/defaults.js";
 import {
   type WatchAppChoice,
@@ -109,6 +109,9 @@ import {
   setWatchTemplateLayout,
   setWatchTemplateLines,
   setWatchTemplateRefreshMinutes,
+  setWatchTemplateMapZoom,
+  watchTemplateHasMapsTap,
+  type WatchTemplateMapZoom,
   setWatchTemplateTaps,
   setWatchTemplateText,
   setWatchVoiceId,
@@ -307,6 +310,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     rowLimit: watchTemplateRowLimit(tile),
     lines: { label: A.template.lines.label, help: A.template.lines.help, menu: watchTemplateLinesMenu(tile) },
     refresh: { label: A.template.refresh.label, help: A.template.refresh.help, menu: watchTemplateRefreshMenu(tile) },
+    mapZoom: watchTemplateHasMapsTap(tile) ? { label: A.template.mapZoom.label, help: A.template.mapZoom.help, menu: watchTemplateMapZoomMenu(tile) } : undefined,
     title: {
       label: A.template.title.label, help: A.template.title.help, placeholder: A.template.title.placeholder, styleHint: A.template.title.styleHint,
       text: watchTemplateTitleText(tile), hidden: watchTemplateTitleHidden(tile),
@@ -337,6 +341,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     setColumns: (on) => commit(host, "templateColumns", (d) => setWatchTemplateColumns(d, ...at(host), on)),
     setLines: (value) => commit(host, "templateLines", (d) => setWatchTemplateLines(d, ...at(host), Number(value))),
     setRefresh: (value) => commit(host, "templateRefreshMinutes", (d) => setWatchTemplateRefreshMinutes(d, ...at(host), value === "off" ? undefined : Number(value))),
+    setMapZoom: (value) => commit(host, "templateMapZoom", (d) => setWatchTemplateMapZoom(d, ...at(host), value === "auto" ? undefined : (value as WatchTemplateMapZoom))),
     setTitle: (text) => commit(host, "templateTitle", (d) => setWatchTemplateTitle(d, ...at(host), text), { typing: true }),
     setTitleHidden: (hidden) => commit(host, "templateTitleHidden", (d) => setWatchTemplateTitleHidden(d, ...at(host), hidden)),
     setTitlePosition: (position, typing) => commit(host, "templateTitlePosition", (d) => setWatchTemplateTitlePosition(d, ...at(host), position), typing ? { typing: true } : {}),

@@ -332,6 +332,7 @@ interface AppTable {
       confirmLabel: string; confirmHint: string; markerHint: string;
     };
     refresh: { key: string; kinds: readonly string[]; min: number; max: number; menu: readonly number[]; label: string; help: string };
+    mapZoom: { key: string; kinds: readonly string[]; values: readonly string[]; meters: Readonly<Record<string, number>>; labels: Readonly<Record<string, string>>; label: string; help: string };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;
       position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
@@ -682,6 +683,38 @@ export function setWatchTemplateRefreshMinutes(document: WatchPagesDocument, pag
     if (!isTemplate(tile)) return undefined;
     if (minutes === undefined) return Object.hasOwn(tile, "templateRefreshMinutes") ? REMOVE : undefined;
     return tile.templateRefreshMinutes === minutes ? undefined : minutes;
+  });
+}
+
+/** Maps zoom's values and how many meters across each shows. */
+export const WATCH_TEMPLATE_MAP_ZOOM = {
+  values: A.template.mapZoom.values as readonly WatchTemplateMapZoom[],
+  meters: A.template.mapZoom.meters as Readonly<Record<string, number>>,
+} as const;
+
+export type WatchTemplateMapZoom = "street" | "close";
+
+/** Maps zoom, as both devices read it: a listed value, anything else is
+ * Auto (undefined). */
+export function watchTemplateMapZoom(tile: WatchPageTile): WatchTemplateMapZoom | undefined {
+  const value = tile.templateMapZoom;
+  return typeof value === "string" && (WATCH_TEMPLATE_MAP_ZOOM.values as readonly string[]).includes(value) ? (value as WatchTemplateMapZoom) : undefined;
+}
+
+/** Whether a tap on the tile can open Maps: a tap area that does, or a
+ * row's `[tap:maps ...]` in the template. */
+export function watchTemplateHasMapsTap(tile: WatchPageTile): boolean {
+  if (watchTemplateTaps(tile).some((area) => area.action === "maps")) return true;
+  return /\[tap:\s*maps\b/i.test(watchTemplateText(tile));
+}
+
+/** "Maps zoom": a listed value, or undefined (Auto) to remove the key. */
+export function setWatchTemplateMapZoom(document: WatchPagesDocument, pageId: string, tileId: string, zoom: WatchTemplateMapZoom | undefined): WatchPagesDocument {
+  if (zoom !== undefined && !WATCH_TEMPLATE_MAP_ZOOM.values.includes(zoom)) return document;
+  return setKey(document, pageId, tileId, "templateMapZoom", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (zoom === undefined) return Object.hasOwn(tile, "templateMapZoom") ? REMOVE : undefined;
+    return tile.templateMapZoom === zoom ? undefined : zoom;
   });
 }
 

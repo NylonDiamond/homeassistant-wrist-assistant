@@ -92,6 +92,16 @@
       "help": "The tile already updates when its data changes. Use this only for things that change with the clock, like a countdown or \"5 min ago\".",
       "write": "Whole minutes from the menu; Off removes the key. Read: a finite number, rounded, kept from min to max; anything else is off. Both devices ask for the template again on that timer while the tile is on screen. A stored value not in the menu is shown as its own choice."
     },
+    "mapZoom": {
+      "key": "templateMapZoom",
+      "kinds": ["template"],
+      "values": ["street", "close"],
+      "meters": { "street": 500, "close": 150 },
+      "labels": { "auto": "Auto", "street": "Street", "close": "Close" },
+      "label": "Maps zoom",
+      "help": "How close Maps starts when a tap on this tile opens it.",
+      "write": "One of values; Auto removes the key. Read: a value in values, anything else is Auto. Both devices open Maps showing about meters across around the place for every Maps tap on the tile, from a row's [tap:maps ...] and from a tap area. Auto leaves the zoom to Maps. An older app ignores the key. Shown only while the tile has a Maps tap; a stored value stays when it has none."
+    },
     "columns": {
       "key": "templateColumns",
       "kinds": ["template"],

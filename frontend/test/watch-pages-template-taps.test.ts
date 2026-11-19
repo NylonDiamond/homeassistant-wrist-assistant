@@ -5,8 +5,8 @@
 import { describe, expect, it } from "vitest";
 import tileApp from "../src/watch-pages/tile-app.json";
 import pageKeys from "../src/watch-pages/page-keys.json";
-import { setWatchTemplateRefreshMinutes, setWatchTemplateTaps, watchTemplateRefreshMinutes, watchTemplateTaps } from "../src/watch-pages/app-model.js";
-import { watchRefreshLabel, watchTemplateRefreshMenu } from "../src/watch-pages/tile-settings-options.js";
+import { setWatchTemplateMapZoom, setWatchTemplateRefreshMinutes, setWatchTemplateTaps, watchTemplateHasMapsTap, watchTemplateMapZoom, watchTemplateRefreshMinutes, watchTemplateTaps } from "../src/watch-pages/app-model.js";
+import { watchRefreshLabel, watchTemplateMapZoomMenu, watchTemplateRefreshMenu } from "../src/watch-pages/tile-settings-options.js";
 import { keyDevices, type WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
   TEMPLATE_TAPS,
@@ -168,6 +168,49 @@ describe("Refresh every", () => {
     expect(odd.selected).toBe(odd.options[0]!.value);
     expect(watchRefreshLabel(120)).toBe("2 hours");
     expect(watchRefreshLabel(90)).toBe("1 h 30 min");
+  });
+});
+
+describe("Maps zoom", () => {
+  const tile = (extra: Record<string, unknown>) => ({ id: TILE, entityId: TEMPLATE, ...extra }) as never;
+
+  it("takes its values from the shared table", () => {
+    const table = tileApp.template.mapZoom;
+    expect([table.key, table.values, table.meters]).toEqual(["templateMapZoom", ["street", "close"], { street: 500, close: 150 }]);
+    expect((pageKeys as unknown as { types: { tile: { keys: Record<string, unknown> } } }).types.tile.keys["templateMapZoom"]).toEqual({ type: "string", required: false });
+    expect(keyDevices("templateMapZoom")).toEqual(["watch", "iphone"]);
+  });
+
+  it("reads a listed value; anything else is Auto", () => {
+    expect(watchTemplateMapZoom(tile({ templateMapZoom: "street" }))).toBe("street");
+    expect(watchTemplateMapZoom(tile({ templateMapZoom: "close" }))).toBe("close");
+    for (const auto of [undefined, null, "auto", "Street", 5, true]) expect(watchTemplateMapZoom(tile({ templateMapZoom: auto }))).toBeUndefined();
+  });
+
+  it("writes a value, and Auto removes the key", () => {
+    const doc = setWatchTemplateMapZoom(document(), PAGE, TILE, "street");
+    expect(stored(doc)["templateMapZoom"]).toBe("street");
+    expect(setWatchTemplateMapZoom(doc, PAGE, TILE, "street")).toBe(doc);
+    expect(Object.hasOwn(stored(setWatchTemplateMapZoom(doc, PAGE, TILE, undefined)), "templateMapZoom")).toBe(false);
+    const off = document();
+    expect(setWatchTemplateMapZoom(off, PAGE, TILE, undefined)).toBe(off);
+    expect(setWatchTemplateMapZoom(off, PAGE, TILE, "far" as never)).toBe(off);
+    const light = document({}, "light.kitchen");
+    expect(setWatchTemplateMapZoom(light, PAGE, TILE, "street")).toBe(light);
+  });
+
+  it("offers Auto, Street and Close", () => {
+    const menu = watchTemplateMapZoomMenu(tile({}));
+    expect(menu.options.map((o) => [o.value, o.label])).toEqual([["auto", "Auto"], ["street", "Street"], ["close", "Close"]]);
+    expect(menu.selected).toBe("auto");
+    expect(watchTemplateMapZoomMenu(tile({ templateMapZoom: "close" })).selected).toBe("close");
+  });
+
+  it("is offered only while a tap on the tile can open Maps", () => {
+    expect(watchTemplateHasMapsTap(tile({ templateString: "{{ x }}" }))).toBe(false);
+    expect(watchTemplateHasMapsTap(tile({ templateString: "Shop [tap:maps 51.5,6.0,Shop]" }))).toBe(true);
+    expect(watchTemplateHasMapsTap(tile({ templateString: "[tap:refresh]" }))).toBe(false);
+    expect(watchTemplateHasMapsTap(tile({ templateTaps: [{ x: 0, y: 0, w: 1, h: 1, action: "maps", place: "zone.home" }] }))).toBe(true);
   });
 });
 

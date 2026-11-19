@@ -54,6 +54,9 @@ export interface TemplateEditorData {
   lines: { label: string; help: string; menu: WatchMenu };
   /** Refresh every's words and choices, for the row under Lines. */
   refresh: { label: string; help: string; menu: WatchMenu };
+  /** Maps zoom's words and choices, under Refresh every. Undefined while
+   * the tile has no Maps tap. */
+  mapZoom?: { label: string; help: string; menu: WatchMenu };
   /** Title's words and the text as typed, for the row over Line up columns,
    * and its look, for the box under the tile while the title is picked. */
   title: {
@@ -97,6 +100,8 @@ export interface TemplateEditorData {
   setLines(value: string): void;
   /** "off" removes the key; any other value is whole minutes. */
   setRefresh(value: string): void;
+  /** "auto" removes the key; "street" or "close" sets it. */
+  setMapZoom(value: string): void;
   setTitle(text: string): void;
   setTitleHidden(hidden: boolean): void;
   setTitlePosition(position: number, typing: boolean): void;
@@ -645,6 +650,8 @@ export class WaTemplateEditor extends LitElement {
                 <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>
                 <label class="te-sw"><span><b>${d.refresh.label}</b><small>${d.refresh.help}</small></span>
                 <select class="te-lines" aria-label=${d.refresh.label} ?disabled=${d.busy} @change=${(e: Event) => d.setRefresh((e.target as HTMLSelectElement).value)}>${d.refresh.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.refresh.menu.selected}>${o.label}</option>`)}</select></label>
+                ${d.mapZoom === undefined ? nothing : html`<label class="te-sw"><span><b>${d.mapZoom.label}</b><small>${d.mapZoom.help}</small></span>
+                <select class="te-lines" aria-label=${d.mapZoom.label} ?disabled=${d.busy} @change=${(e: Event) => d.setMapZoom((e.target as HTMLSelectElement).value)}>${d.mapZoom.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.mapZoom!.menu.selected}>${o.label}</option>`)}</select></label>`}
               </div>
             </section>` : nothing}
           </div>

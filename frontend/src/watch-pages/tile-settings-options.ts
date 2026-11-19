@@ -68,7 +68,7 @@ import {
   watchPhoneKeysOf,
   watchSensorChart,
 } from "./phone-keys-model.js";
-import { WATCH_TEMPLATE_LINES, WATCH_TEMPLATE_REFRESH, watchTemplateLines, watchTemplateRefreshMinutes } from "./app-model.js";
+import { WATCH_APP, WATCH_TEMPLATE_LINES, WATCH_TEMPLATE_MAP_ZOOM, WATCH_TEMPLATE_REFRESH, watchTemplateLines, watchTemplateMapZoom, watchTemplateRefreshMinutes } from "./app-model.js";
 import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPage,
@@ -366,6 +366,14 @@ export function watchTemplateRefreshMenu(tile: WatchPageTile): WatchMenu {
   const choices = [{ value: "off", label: "Off" }, ...WATCH_TEMPLATE_REFRESH.menu.map((n) => ({ value: String(n), label: watchRefreshLabel(n) }))];
   const minutes = watchTemplateRefreshMinutes(tile);
   return watchChoiceMenu(choices, minutes === undefined ? "off" : String(minutes), (v) => watchRefreshLabel(Number(v)));
+}
+
+/** The Maps zoom menu: Auto, then the shared values. A stored value the
+ * devices do not read shows as Auto, which is how they read it. */
+export function watchTemplateMapZoomMenu(tile: WatchPageTile): WatchMenu {
+  const labels = WATCH_APP.template.mapZoom.labels;
+  const choices = [{ value: "auto", label: labels["auto"] ?? "Auto" }, ...WATCH_TEMPLATE_MAP_ZOOM.values.map((v) => ({ value: v, label: labels[v] ?? v }))];
+  return watchChoiceMenu(choices, watchTemplateMapZoom(tile) ?? "auto");
 }
 
 /** What a folded phone card says it holds. */
