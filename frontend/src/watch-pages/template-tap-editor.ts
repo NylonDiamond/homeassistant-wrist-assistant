@@ -401,7 +401,7 @@ export class TemplateTapEditor {
     }
   }
 
-  /** The Tap areas section under the code: its heading with Edit areas, the
+  /** The Tap areas card under the code: its title bar with Edit areas, the
    * areas as a numbered list with Add tap area at its foot, and beside the
    * list (under it when narrow) the picked area's settings. */
   section(): TemplateResult {
@@ -411,10 +411,12 @@ export class TemplateTapEditor {
     const full = areas.length >= TEMPLATE_TAPS.max;
     const editing = this.editing && areas.length > 0;
     const form = this.inspector();
-    return html`<section class="te-taps" aria-label=${words.label}>
-      <div class="te-taps-h"><span><b>${words.label}</b><small>${editing ? "Drag a box to move it, or its corner to resize it. Drag empty space to draw a new one." : words.help}</small></span>
+    return html`<section class="te-card te-taps" data-card="taps" aria-label=${words.label}>
+      <div class="te-card-h"><h4 class="te-card-t">${words.label}</h4>
         ${areas.length === 0 ? nothing : html`<button type="button" class="te-chip ${this.editing ? "on" : ""}" aria-pressed=${this.editing ? "true" : "false"} ?disabled=${d.busy}
           @click=${() => this.setEditing(!this.editing)}>${this.editing ? "Done" : "Edit areas"}</button>`}</div>
+      <div class="te-card-b">
+      <div class="te-hint">${editing ? "Drag a box to move it, or its corner to resize it. Drag empty space to draw a new one." : words.help}</div>
       <div class="te-taps-body ${areas.length === 0 ? "empty" : ""}">
         <div class="te-tap-list">
           ${areas.map((a, i) => {
@@ -427,6 +429,7 @@ export class TemplateTapEditor {
           <div class="te-tap-marker">${this.markerHint(words.markerHint)}</div>
         </div>
         ${form !== nothing ? form : editing ? html`<div class="te-tap-none">Pick an area in the list or on the tile.</div>` : nothing}
+      </div>
       </div>
     </section>`;
   }

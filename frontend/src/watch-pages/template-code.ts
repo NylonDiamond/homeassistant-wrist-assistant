@@ -48,6 +48,8 @@ export interface TemplateCodeContext {
   httpActions(): Completion[];
   /** Home Assistant's services as `domain.service`. */
   services(): Completion[];
+  /** An entity's attributes, for `state_attr('ENTITY', '`. */
+  attributes?(entityId: string): Completion[];
   drawOption(completion: Completion): TemplateResult | undefined;
 }
 
@@ -55,6 +57,11 @@ export interface TemplateCodeContext {
  * (the caret at `pos`): the actions after `[tap:`, then each action's value
  * (entities, `script.` or `scene.` entities, services and then entities,
  * pages, HTTP actions). Null when the caret is not in one. */
+/** Domains `[tap:toggle ...]` suggests: the ones a toggle works on. */
+export const TAP_TOGGLE_DOMAINS = ["light", "switch", "fan", "input_boolean", "cover", "valve", "lock", "media_player", "climate", "humidifier", "automation", "siren", "remote", "water_heater", "group"] as const;
+/** Domains `[tap:maps ...]` suggests: entities with a place. */
+export const TAP_MAPS_DOMAINS = ["person", "device_tracker", "zone"] as const;
+
 export function templateTapCompletion(
   before: string, pos: number,
   context: Pick<TemplateCodeContext, "entities" | "rowActions" | "pages" | "httpActions" | "services">,
@@ -73,8 +80,17 @@ export function templateTapCompletion(
     validFor: /^[\w.]*$/,
   });
   const named = (options: Completion[]): CompletionResult => ({ from: pos - value.length, options, validFor: /^[^\]\n]*$/ });
+  // Only entities the action can use: things that turn on and off, and
+  // things with a place on the map.
+  const inDomains = (domains: readonly string[]): CompletionResult => ({
+    from: pos - value.length,
+    options: context.entities().filter((o) => domains.includes(o.label.split(".")[0]!)),
+    validFor: /^[\w.]*$/,
+  });
   switch (m[1]!.toLowerCase()) {
-    case "toggle": case "control": case "maps": return id ? entities() : null;
+    case "toggle": return id ? inDomains(TAP_TOGGLE_DOMAINS) : null;
+    case "maps": return id ? inDomains(TAP_MAPS_DOMAINS) : null;
+    case "control": return id ? entities() : null;
     case "script": return id ? entities("script.") : null;
     case "scene": return id ? entities("scene.") : null;
     case "service": {
@@ -86,6 +102,34 @@ export function templateTapCompletion(
     case "http": return named(context.httpActions());
     default: return null;
   }
+}
+
+/** What `state_attr('ENTITY', '` suggests: the entity's attributes. Null
+ * when the caret is not in one, or the context has none. */
+export function templateAttributeCompletion(
+  before: string, pos: number,
+  context: Pick<TemplateCodeContext, "attributes">,
+): CompletionResult | null {
+  const m = before.match(/state_attr\(\s*['"]([\w.]+)['"]\s*,\s*['"](\w*)$/);
+  if (m === null || context.attributes === undefined) return null;
+  return { from: pos - m[2]!.length, options: context.attributes(m[1]!), validFor: /^\w*$/ };
+}
+
+/** An entity picked inside `state_attr('`: its id, then, when the attribute's
+ * quotes follow (`', '`), the caret into them and the attributes asked for,
+ * as Quick add's Attribute writes it. */
+export function entityThenAttribute(option: Completion): Completion {
+  return {
+    ...option,
+    apply: (view, completion, from, to) => {
+      view.dispatch({ ...insertCompletionText(view.state, completion.label, from, to), annotations: pickedCompletion.of(completion) });
+      const end = from + completion.label.length;
+      const quotes = view.state.doc.sliceString(end, end + 8).match(/^['"]\s*,\s*['"]/);
+      if (quotes === null) return;
+      view.dispatch({ selection: { anchor: end + quotes[0].length } });
+      startCompletion(view);
+    },
+  };
 }
 
 /** A pick that types its label and a space, then asks for the value. */
@@ -119,6 +163,13 @@ export interface TemplateCode {
    * where it is. */
   highlight(from: number, to: number): void;
   change(from: number, to: number, insert: string): void;
+  /** Where the caret is, as the code box keeps it while it is out of focus. */
+  caret(): { from: number; to: number };
+  /** Quick add's edit: replaces `from`..`to` with `insert` out of the
+   * changed event (the caller writes it as its own step), selects
+   * `anchor`..`head`, focuses the box and opens its suggestions when
+   * `suggest` is set. */
+  put(edit: { from: number; to: number; insert: string; anchor: number; head: number; suggest: boolean }): void;
   destroy(): void;
 }
 
@@ -171,8 +222,10 @@ const theme = EditorView.theme({
   ".cm-gutters": { background: "transparent", border: "0", color: "var(--wa-faint)" },
   ".cm-lineNumbers .cm-gutterElement": { padding: "0 6px 0 8px" },
   ".cm-tooltip": { background: "var(--wa-raised, var(--wa-card))", border: "1px solid var(--wa-line-strong)", borderRadius: "9px", overflow: "hidden" },
-  ".cm-tooltip-autocomplete > ul": { fontFamily: "inherit", fontSize: "12.5px", maxHeight: "230px" },
-  ".cm-tooltip-autocomplete > ul > li": { padding: "4px 9px", display: "flex", alignItems: "center", gap: "7px", color: "var(--wa-ink)" },
+  // Never wider than the window, so a narrow panel shows the whole list.
+  ".cm-tooltip.cm-tooltip-autocomplete": { maxWidth: "min(420px, calc(100vw - 24px))" },
+  ".cm-tooltip-autocomplete > ul": { fontFamily: "inherit", fontSize: "12.5px", maxHeight: "230px", minWidth: "0", maxWidth: "100%" },
+  ".cm-tooltip-autocomplete > ul > li": { padding: "4px 9px", display: "flex", alignItems: "center", justifyContent: "flex-start", textAlign: "left", gap: "7px", color: "var(--wa-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   ".cm-tooltip-autocomplete > ul > li[aria-selected]": { background: "var(--wa-pick-bg)", color: "var(--wa-ink)" },
   ".cm-completionDetail": { marginLeft: "auto", paddingLeft: "12px", fontStyle: "normal", color: "var(--wa-ent)" },
   ".cm-completionMatchedText": { textDecoration: "none", color: "var(--wa-pick-ink)", fontWeight: "700" },
@@ -296,8 +349,11 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
   const complete = (ctx: CompletionContext): CompletionResult | null => {
     const before = ctx.state.doc.sliceString(Math.max(0, ctx.pos - 80), ctx.pos);
     let m: RegExpMatchArray | null;
+    const attribute = templateAttributeCompletion(before, ctx.pos, context);
+    if (attribute !== null) return attribute;
     if ((m = before.match(/(?:states\(|is_state\(|state_attr\(|states\[)['"]([\w.]*)$/)) !== null) {
-      return { from: ctx.pos - m[1]!.length, options: context.entities(), validFor: /^[\w.]*$/ };
+      const options = context.entities();
+      return { from: ctx.pos - m[1]!.length, options: /state_attr\(['"][\w.]*$/.test(before) ? options.map(entityThenAttribute) : options, validFor: /^[\w.]*$/ };
     }
     if ((m = before.match(/\[icon:([\w.]*)$/)) !== null) {
       return { from: ctx.pos - m[1]!.length, options: context.symbols(), validFor: /^[\w.]*$/ };
@@ -413,6 +469,20 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
     change(from, to, insert) {
       view.dispatch({ changes: { from, to, insert } });
       view.focus();
+    },
+    caret() {
+      const main = view.state.selection.main;
+      return { from: main.from, to: main.to };
+    },
+    put(edit) {
+      view.focus();
+      view.dispatch({
+        changes: { from: edit.from, to: edit.to, insert: edit.insert },
+        selection: { anchor: edit.anchor, head: edit.head },
+        annotations: [outside.of(true)],
+        effects: [setFocus.of(true), EditorView.scrollIntoView(edit.head, { y: "nearest" })],
+      });
+      if (edit.suggest) startCompletion(view);
     },
     destroy() {
       view.destroy();

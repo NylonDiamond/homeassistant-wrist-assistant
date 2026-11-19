@@ -26,6 +26,7 @@ import type { WatchMenu } from "./tile-settings-options.js";
 import { TemplateItemEditor } from "./template-item-editor.js";
 import { TemplateTapEditor } from "./template-tap-editor.js";
 import type { TemplateTapAction, TemplateTapArea } from "./template-taps.js";
+import { applyQuickAdd, QUICK_ADD_GROUPS, QUICK_ADDS, quickAddEdit } from "./template-quick-add.js";
 
 /** The selected tile drawn for a device, from the page editor. */
 export interface TemplateTilePicture {
@@ -104,9 +105,11 @@ export interface TemplateEditorData {
   /** Writes the tap areas; `typing` joins a drag or typing into one undo step. */
   setTaps(areas: TemplateTapArea[], typing: boolean): void;
   picture(device: "watch" | "iphone" | undefined, maxWidth: number, maxHeight: number): TemplateTilePicture | undefined;
-  /** Examples, drawn above the editor. */
+  /** The guide and the examples, drawn closed at the foot. */
   examples: TemplateResult;
-  /** Recipes and Insert entity, drawn under the code. */
+  /** The recipe buttons, Quick add's Values row. */
+  values: TemplateResult;
+  /** Insert entity and its hint, drawn under Quick add. */
   helpers: TemplateResult;
 }
 
@@ -148,6 +151,9 @@ export class WaTemplateEditor extends LitElement {
   private loading = false;
   private tileId: string | undefined;
   private selection = { from: 0, to: 0, head: 0, focused: false };
+  /** The tile whose code has had the caret put in it, so Quick add goes at
+   * the caret; before that it goes at the end. */
+  private caretTile: string | undefined;
   private cached: { text: string; scan: SourceScan } | undefined;
   private flipFrom: Map<string, DOMRect> | undefined;
   private flipGuides = false;
@@ -278,6 +284,14 @@ export class WaTemplateEditor extends LitElement {
       pages: () => this.namedOptions(this.data.taps.pages, "page"),
       httpActions: () => this.namedOptions(this.data.taps.httpActions, "http"),
       services: () => this.data.taps.services.map((label) => ({ label, type: "service" })),
+      attributes: (entityId) => {
+        const attributes = this.data.hass.states[entityId]?.attributes ?? {};
+        return Object.keys(attributes).sort().map((label) => {
+          const value = attributes[label];
+          const shown = typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
+          return { label, detail: shown.length > 24 ? `${shown.slice(0, 23)}…` : shown, type: "attribute" };
+        });
+      },
       drawOption: (completion) => {
         if (completion.type === "icon") return html`${this.glyph(completion.label, 14, "currentColor")}`;
         if (completion.type === "color") return html`<i style=${`background:${templateIconColor(completion.label)?.hex ?? "transparent"}`}></i>`;
@@ -287,6 +301,7 @@ export class WaTemplateEditor extends LitElement {
       changed: (text) => this.data.write(text, true),
       selected: (from, to, head, focused) => {
         this.selection = { from, to, head, focused };
+        if (focused) this.caretTile = this.data.tileId;
         this.data.remember(head, this.getRootNode());
         this.lightTile();
       },
@@ -497,6 +512,43 @@ export class WaTemplateEditor extends LitElement {
     this.requestUpdate();
   }
 
+  /** Puts quick add `id` in at the caret, as one undo step, and opens the
+   * code box's suggestions where it asks for them. */
+  private quickAdd(id: string): void {
+    const d = this.data;
+    if (d.busy) return;
+    const text = this.code?.text() ?? d.text;
+    const caret = this.code !== undefined && this.caretTile === d.tileId ? this.code.caret() : undefined;
+    const edit = quickAddEdit(id, text, caret);
+    if (edit === undefined) return;
+    d.ended();
+    if (this.code !== undefined) {
+      this.code.put(edit);
+      d.write(this.code.text(), false);
+    } else {
+      d.write(applyQuickAdd(text, edit), false);
+    }
+    d.ended();
+  }
+
+  /** Quick add under the code: the recipes as Values, then Style, Taps and
+   * Logic. A press keeps the caret in the code. */
+  private quickAddRows(): TemplateResult {
+    const d = this.data;
+    const row = (label: string, buttons: unknown) => html`<div class="te-quick-row"><span class="te-quick-lab">${label}</span><div class="tpl-recipes" role="group" aria-label=${label}>${buttons}</div></div>`;
+    return html`<div class="te-quick" role="group" aria-label="Quick add">
+      <div class="te-quick-h">Quick add</div>
+      ${row("Values", d.values)}
+      ${QUICK_ADD_GROUPS.map((g) => row(g.label, QUICK_ADDS.filter((q) => q.group === g.group).map((q) => html`<button type="button" class="small tpl-recipe" data-quick=${q.id} title=${q.title} ?disabled=${d.busy}
+        @mousedown=${(e: MouseEvent) => e.preventDefault()} @click=${() => this.quickAdd(q.id)}>${q.label}</button>`)))}
+    </div>`;
+  }
+
+  /** A card's title bar, with anything else at its end. */
+  private cardHead(title: string, end: unknown = nothing): TemplateResult {
+    return html`<div class="te-card-h"><h4 class="te-card-t">${title}</h4>${end}</div>`;
+  }
+
   protected override render(): TemplateResult {
     const d = this.data;
     const picture = this.currentPicture();
@@ -517,50 +569,64 @@ export class WaTemplateEditor extends LitElement {
     return html`<div class="te-d" popover="manual" @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented && large) this.closeLarge(); }}>
       <div class="te-root">
         ${large ? html`<div class="te-large-h"><b>Template</b><button type="button" class="small" @click=${() => this.closeLarge()}>Done</button></div>` : nothing}
-        ${d.examples}
         <div class="te-grid">
-          <div class="te-left">
-            ${picture === undefined ? nothing : html`<div class="te-well">
-              <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.tilePointerDown(e)} @click=${(e: MouseEvent) => { if (!this.taps.editing && !this.onTitle(e)) this.items.press(e); }} @keydown=${(e: KeyboardEvent) => { if (!this.taps.key(e)) this.items.key(e); }} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}${this.taps.overlay()}</div>
-              ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
-            </div>`}
-            ${this.taps.editing ? nothing : this.items.toolbar()}
-            ${this.taps.editing
-              ? nothing
-              : this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
-                ? this.titleInspector()
-                : this.items.inspector()}
+          <div class="te-col">
+            <section class="te-card te-tile-card" data-card="tile" aria-label="Tile">
+              ${this.cardHead("Tile")}
+              <div class="te-card-b">
+                ${picture === undefined ? nothing : html`<div class="te-well">
+                  <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.tilePointerDown(e)} @click=${(e: MouseEvent) => { if (!this.taps.editing && !this.onTitle(e)) this.items.press(e); }} @keydown=${(e: KeyboardEvent) => { if (!this.taps.key(e)) this.items.key(e); }} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}${this.taps.overlay()}</div>
+                  ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
+                </div>`}
+                ${this.taps.editing ? nothing : this.items.toolbar()}
+                ${this.taps.editing
+                  ? nothing
+                  : this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
+                    ? this.titleInspector()
+                    : this.items.inspector()}
+              </div>
+            </section>
+            ${!this.items.layoutDraws() ? html`<section class="te-card te-opts" data-card="display" aria-label="Display">
+              ${this.cardHead("Display")}
+              <div class="te-card-b">
+                <label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
+                <button type="button" class="te-switch ${this.titleOn ? "on" : ""}" role="switch" aria-checked=${this.titleOn ? "true" : "false"} aria-label=${d.title.label} ?disabled=${d.busy} @click=${() => this.toggleTitle()}></button></label>
+                ${this.titleOn ? html`<div class="te-title-row"><input class="te-title" type="text" aria-label="Title" placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
+                  @focus=${() => { this.titleOpenTile = d.tileId; this.pickTitle(); }}
+                  @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}><small>${d.title.styleHint}</small></div>` : nothing}
+                <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
+                <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
+                <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
+                <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>
+                <label class="te-sw"><span><b>${d.refresh.label}</b><small>${d.refresh.help}</small></span>
+                <select class="te-lines" aria-label=${d.refresh.label} ?disabled=${d.busy} @change=${(e: Event) => d.setRefresh((e.target as HTMLSelectElement).value)}>${d.refresh.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.refresh.menu.selected}>${o.label}</option>`)}</select></label>
+              </div>
+            </section>` : nothing}
           </div>
-          ${!this.items.layoutDraws() ? html`<div class="te-opts"><label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
-              <button type="button" class="te-switch ${this.titleOn ? "on" : ""}" role="switch" aria-checked=${this.titleOn ? "true" : "false"} aria-label=${d.title.label} ?disabled=${d.busy} @click=${() => this.toggleTitle()}></button></label>
-              ${this.titleOn ? html`<div class="te-title-row"><input class="te-title" type="text" aria-label="Title" placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
-                @focus=${() => { this.titleOpenTile = d.tileId; this.pickTitle(); }}
-                @input=${(e: Event) => d.setTitle((e.target as HTMLInputElement).value)} @blur=${() => d.ended()}><small>${d.title.styleHint}</small></div>` : nothing}
-              <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
-              <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
-              <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
-              <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>
-              <label class="te-sw"><span><b>${d.refresh.label}</b><small>${d.refresh.help}</small></span>
-              <select class="te-lines" aria-label=${d.refresh.label} ?disabled=${d.busy} @change=${(e: Event) => d.setRefresh((e.target as HTMLSelectElement).value)}>${d.refresh.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.refresh.menu.selected}>${o.label}</option>`)}</select></label></div>` : nothing}
-          ${this.taps.section()}
-          <div class="te-right">
-            <div class="te-bar">
-              <span class="te-lab">Your template</span>
-              ${p.view === "full" ? html`${chip("rows", "Rows", "Show row numbers and the lines between rows")}${chip("format", "Format", "Show each column on its own line")}${chip("wrap", "Wrap", "Wrap long lines")}` : nothing}
-              <div class="te-seg" role="group" aria-label="View">${viewButton("sections", "Sections")}${viewButton("full", "Full code")}</div>
-              ${large ? nothing : html`<button type="button" class="te-chip" title="Open a larger editor" @click=${() => this.openLarge()}>Open large</button>`}
-            </div>
-            <div class="te-cm">
-              ${this.code === undefined ? html`<textarea class="te-plain" rows="6" spellcheck="false" aria-label="Template" .value=${d.text}
-                @input=${(e: Event) => d.write((e.target as HTMLTextAreaElement).value, true)} @blur=${() => d.ended()}></textarea>` : nothing}
-            </div>
-            ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><button type="button" class="te-issue-go" title="Show it in the code" @click=${() => this.code?.select(issue.from, issue.to)}>${issue.text}</button>${issue.fix === undefined ? nothing
-              : html`<button type="button" class="te-chip" @click=${() => this.code?.change(issue.fix!.from, issue.fix!.to, issue.fix!.insert)}>${issue.fix.words}</button>`}</div>`)}</div>`}
-            ${refused === undefined ? nothing : html`<div class="te-issue" role="status"><span>${refused}</span></div>`}
-            <div class="te-hint">${d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon:, [color:, [tap: or {{ for suggestions."}</div>
-            ${d.helpers}
+          <div class="te-col">
+            <section class="te-card te-right" data-card="code" aria-label="Template code">
+              ${this.cardHead("Template code", large ? nothing : html`<button type="button" class="te-chip te-card-end" title="Open a larger editor" @click=${() => this.openLarge()}>Open large</button>`)}
+              <div class="te-card-b">
+                <div class="te-bar">
+                  ${p.view === "full" ? html`${chip("rows", "Rows", "Show row numbers and the lines between rows")}${chip("format", "Format", "Show each column on its own line")}${chip("wrap", "Wrap", "Wrap long lines")}` : nothing}
+                  <div class="te-seg" role="group" aria-label="View">${viewButton("sections", "Sections")}${viewButton("full", "Full code")}</div>
+                </div>
+                <div class="te-cm">
+                  ${this.code === undefined ? html`<textarea class="te-plain" rows="6" spellcheck="false" aria-label="Template" .value=${d.text}
+                    @input=${(e: Event) => d.write((e.target as HTMLTextAreaElement).value, true)} @blur=${() => d.ended()}></textarea>` : nothing}
+                </div>
+                ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><button type="button" class="te-issue-go" title="Show it in the code" @click=${() => this.code?.select(issue.from, issue.to)}>${issue.text}</button>${issue.fix === undefined ? nothing
+                  : html`<button type="button" class="te-chip" @click=${() => this.code?.change(issue.fix!.from, issue.fix!.to, issue.fix!.insert)}>${issue.fix.words}</button>`}</div>`)}</div>`}
+                ${refused === undefined ? nothing : html`<div class="te-issue" role="status"><span>${refused}</span></div>`}
+                <div class="te-hint">${d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon:, [color:, [tap: or {{ for suggestions."}</div>
+                ${this.quickAddRows()}
+                ${d.helpers}
+              </div>
+            </section>
+            ${this.taps.section()}
           </div>
         </div>
+        <div class="te-foot">${d.examples}</div>
       </div>
     </div>`;
   }
@@ -598,21 +664,38 @@ export const templateEditorStyles = css`
   .te-d::backdrop { background: rgba(0, 0, 0, 0.6); }
   .te-root { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .te-large-h { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
-  /* Narrow: one column, the tile, its options, Tap areas, then the code.
-     Wide: the tile beside the code, and under them the tile's options under
-     the tile and Tap areas under the code, so the code's side has no hole
-     and the area settings get the room they need. */
-  .te-grid { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  .te-left { order: 1; } .te-opts { order: 2; } .te-taps { order: 3; } .te-right { order: 4; }
+  /* Four cards: Tile, Template code, Display and Tap areas, each with the
+     inspector's card look (a border and a thin bar of its own hue in its
+     title bar). Narrow: one column in that order. Wide: Tile over Display
+     on the left, Template code over Tap areas on the right, each column
+     its own stack so neither side waits for the other's height. */
+  .te-grid { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .te-col { display: contents; }
+  .te-card[data-card="tile"] { order: 1; } .te-card[data-card="code"] { order: 2; } .te-card[data-card="display"] { order: 3; } .te-card[data-card="taps"] { order: 4; }
   @container (min-width: 620px) {
-    .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: "stage code" "opts taps"; gap: 14px 18px; align-items: start; }
-    .te-left { grid-area: stage; } .te-right { grid-area: code; } .te-opts { grid-area: opts; } .te-taps { grid-area: taps; }
+    .te-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; align-items: start; }
+    .te-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   }
-  .te-d:popover-open .te-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: "stage code" "opts taps"; gap: 14px 18px; align-items: start; }
-  .te-d:popover-open .te-left { grid-area: stage; } .te-d:popover-open .te-right { grid-area: code; } .te-d:popover-open .te-opts { grid-area: opts; } .te-d:popover-open .te-taps { grid-area: taps; }
-  .te-left, .te-right, .te-opts { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .te-opts, .te-taps { padding-top: 12px; border-top: 1px solid var(--wa-line); }
-  .te-opts { gap: 10px; }
+  .te-d:popover-open .te-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .te-d:popover-open .te-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .te-card { --te-hue: 150, 150, 160; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--wa-line); border-radius: 11px; background: color-mix(in srgb, var(--wa-ink) 1.5%, var(--wa-card)); }
+  .te-card[data-card="tile"] { --te-hue: 236, 186, 82; }
+  .te-card[data-card="code"] { --te-hue: 176, 150, 255; }
+  .te-card[data-card="display"] { --te-hue: 72, 206, 190; }
+  .te-card[data-card="taps"] { --te-hue: 120, 190, 120; }
+  .te-card-h { display: flex; align-items: center; gap: 8px; min-height: 22px; padding: 8px 12px; border-radius: 10px 10px 0 0; border-bottom: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-ink) 4%, transparent); }
+  .te-card-h::before { content: ""; display: block; flex: none; width: 3px; height: 13px; border-radius: 2px; background: rgb(var(--te-hue)); }
+  .te-card-t { margin: 0; flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--wa-ink); white-space: nowrap; text-transform: none; letter-spacing: normal; }
+  .te-card-h .te-chip { flex: none; }
+  .te-card-b { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px 12px; }
+  .te-opts .te-card-b { gap: 10px; }
+  .te-foot { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  /* Quick add: a quiet title, then each group's name beside its buttons. */
+  .te-quick { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+  .te-quick-h { font-size: 12px; font-weight: 600; color: var(--wa-label, var(--wa-muted)); }
+  .te-quick-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: start; }
+  .te-quick-lab { padding-top: 4px; font-size: 11.5px; color: var(--wa-muted); }
+  .te-quick + .tpl-box { padding-top: 4px; }
   .te-well { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 10px 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-well, #000); }
   .te-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--wa-panel); }
   .te-well .te-seg { align-self: flex-end; }
@@ -627,7 +710,7 @@ export const templateEditorStyles = css`
   .te-item-tools input { margin: 0; accent-color: var(--wa-hue-blue); }
   .te-item-link { border: 0; padding: 3px 0; font: inherit; color: var(--wa-hue-blue); background: transparent; cursor: pointer; }
   .te-item-link:disabled { opacity: .45; cursor: default; }
-  .te-item-inspector { display: flex; flex-direction: column; gap: 10px; padding: 11px; border: 1px solid var(--wa-line); border-radius: 9px; }
+  .te-item-inspector { display: flex; flex-direction: column; gap: 10px; padding: 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: color-mix(in srgb, var(--wa-ink) 3%, transparent); }
   .te-item-head, .te-item-field > span { display: flex; align-items: center; gap: 5px; min-height: 20px; font-size: 12px; }
   .te-item-head { justify-content: space-between; }
   .te-item-head b { overflow-wrap: anywhere; }
@@ -671,16 +754,12 @@ export const templateEditorStyles = css`
   .te-guide { position: absolute; top: 6px; bottom: 6px; width: 1px; background: var(--wa-hue-orange); opacity: 0; animation: te-guide 1.1s ease-out; pointer-events: none; }
   @keyframes te-guide { 20% { opacity: .8; } 70% { opacity: .5; } 100% { opacity: 0; } }
   .te-small { font-size: 12px; color: var(--wa-hue-orange); }
-  /* Tap areas: the heading with Edit areas at its end, then the list and
-     the picked area's card, side by side once there is room. */
-  .te-taps { display: flex; flex-direction: column; gap: 10px; min-width: 0; container: te-taps / inline-size; }
-  .te-taps-h { display: flex; align-items: flex-start; gap: 12px; }
-  .te-taps-h > span { flex: 1; min-width: 0; }
-  .te-taps-h b { display: block; font-size: 13px; font-weight: 600; }
-  .te-taps-h small { display: block; margin-top: 1px; font-size: 11.5px; color: var(--wa-muted); }
-  .te-taps-h .te-chip { flex: none; }
+  /* Tap areas: a card with Edit areas at the end of its title bar, then
+     the list and the picked area's card, side by side once there is room. */
+  .te-taps { container: te-taps / inline-size; }
+  .te-taps .te-card-b { gap: 10px; }
   /* Past this the heading's button and the card would drift apart. */
-  .te-taps > * { max-width: 852px; }
+  .te-taps .te-card-b > * { max-width: 852px; }
   .te-taps-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   @container te-taps (min-width: 640px) {
     .te-taps-body:not(.empty) { display: grid; grid-template-columns: minmax(200px, 240px) minmax(0, 1fr); gap: 12px; align-items: start; }
@@ -761,7 +840,6 @@ export const templateEditorStyles = css`
   .te-switch.on { background: var(--wa-switch-on); }
   .te-switch.on::after { transform: translateX(15px); }
   .te-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .te-lab { flex: 1; font-size: 12px; font-weight: 600; color: var(--wa-label); }
   .te-chip { font: inherit; font-size: 12px; font-weight: 600; min-height: 23px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 7px; background: none; color: var(--wa-ink); cursor: pointer; }
   .te-chip:hover { background: var(--wa-panel); }
   .te-chip.on { background: var(--wa-pick-bg); border-color: var(--wa-pick-line); }

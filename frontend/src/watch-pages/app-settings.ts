@@ -267,8 +267,9 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
   const write = (value: string, typing: boolean) =>
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
   const help = templateHelpers(host, text, { key, use: "text", bare: false, write });
-  const examples = html`<details class="ap-template-guide" open>
-      <summary>${uiIcon("info")}<span>How to: icons and colors</span></summary>
+  // The guide and the examples sit closed at the foot of the editor.
+  const examples = html`<details class="ap-template-guide">
+      <summary>${uiIcon("info")}<span>How to: icons, colors and taps</span></summary>
       <div class="ap-template-guide-body">
         <table>
         <thead><tr><th scope="col">Example syntax</th><th scope="col">Result</th></tr></thead>
@@ -281,17 +282,23 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
             <td><code>[color:red]Unlocked[/color]</code></td>
             <td><span class="ap-template-result" style="color:#FF3B30">Unlocked</span></td>
           </tr>
+          <tr>
+            <td><code>[tap:toggle light.desk]</code></td>
+            <td><span class="ap-template-result ap-template-words">Tap the row to toggle it</span></td>
+          </tr>
         </tbody>
         </table>
         <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
       </div>
     </details>
-    <div class="ts-sub-h"><span>Examples</span></div>
-    <div class="ts-chips">${A.template.presets.map((p) => {
-      const on = watchTemplatePresetSelected(tile, p);
-      return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-        @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
-    })}</div>`;
+    <details class="ap-template-guide ap-template-examples">
+      <summary>${uiIcon("list")}<span>Examples</span></summary>
+      <div class="ts-chips">${A.template.presets.map((p) => {
+        const on = watchTemplatePresetSelected(tile, p);
+        return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+          @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
+      })}</div>
+    </details>`;
   const data: TemplateEditorData = {
     tileId: host.tileId,
     text,
@@ -339,7 +346,8 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     setTaps: (areas, typing) => commit(host, "templateTaps", (d) => setWatchTemplateTaps(d, ...at(host), areas), typing ? { typing: true } : {}),
     picture: (device, maxWidth, maxHeight) => host.templatePicture?.(device, maxWidth, maxHeight),
     examples,
-    helpers: html`<div class="tpl-box">${help.recipes}${help.entitySearch}${help.asks}
+    values: help.recipeButtons,
+    helpers: html`<div class="tpl-box">${help.entitySearch}${help.asks}
       <div class="hint">Home Assistant renders this. Write {{ … }} around each part that reads something, like {{ states('sensor.power') }}.</div>
       </div>`,
   };
@@ -760,6 +768,8 @@ export const appSettingsStyles = css`
   .ap-template-guide code { color: var(--wa-ink); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: text; }
   .ap-template-result { display: inline-flex; align-items: center; min-width: 18px; font-size: 11.5px; font-weight: 600; }
   .ap-template-guide p { margin: 0; color: var(--wa-muted); font-size: 11.5px; line-height: 1.45; }
+  .ap-template-words { font-weight: 500; color: var(--wa-ink); }
+  .ap-template-examples > .ts-chips { margin-top: 6px; }
   .ap-text { align-items: flex-start; }
   .ap-text textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line); border-radius: 6px; padding: 6px 8px; box-sizing: border-box; }

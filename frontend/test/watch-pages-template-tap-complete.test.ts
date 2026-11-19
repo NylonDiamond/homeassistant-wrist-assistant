@@ -35,9 +35,9 @@ describe("[tap: suggestions in the code box", () => {
   });
 
   it("suggests each action's value", () => {
-    expect(at("[tap:toggle ")!.labels).toEqual(["light.desk", "scene.evening", "script.night", "sensor.power"]);
+    expect(at("[tap:toggle ")!.labels).toEqual(["light.desk"]);
     expect(at("[tap:control li")).toEqual({ from: 13, labels: ["light.desk", "scene.evening", "script.night", "sensor.power"] });
-    expect(at("[tap:maps ")!.labels.length).toBe(4);
+    expect(at("[tap:maps ")!.labels).toEqual([]);
     expect(at("[tap:script ")!.labels).toEqual(["script.night"]);
     expect(at("[TAP:Scene ")!.labels).toEqual(["scene.evening"]);
     expect(at("[tap:service li")).toEqual({ from: 13, labels: ["light.turn_on", "light.toggle"] });

@@ -3085,6 +3085,9 @@ export function starterTemplate(current: ValueKind, prefer?: EntityRef): string 
 /** The parts `templateHelpers` draws. */
 export interface TemplateHelp {
   recipes: TemplateResult;
+  /** The recipe buttons alone, for a page tile's Quick add, which titles
+   * the row itself. */
+  recipeButtons: TemplateResult;
   entitySearch: TemplateResult;
   asks: TemplateResult | typeof nothing;
   hints: TemplateResult;
@@ -3169,21 +3172,22 @@ export function templateHelpers(host: Pick<EditorHost, "hass">, text: string, op
     pendingRecipes.delete(opts.key);
     land(pending ? applyRecipe(text, cursor, pending, ref.entityId, STARTER_TEMPLATE, states) : insertEntity(text, cursor, ref.entityId));
   };
+  const recipeButtons = html`${recipesFor(opts.use).map((r) => {
+    const asks = recipeNeedsEntity(r, entity);
+    const on = recipeChosen(r, text, entity) || pending === r;
+    return html`<button type="button" class="small tpl-recipe ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
+      @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
+  })}`;
   const recipes = html`<div class="field tpl-recipes-row"><span>Recipes</span><div class="tpl-recipes" role="group" aria-label="Recipes">
-      ${recipesFor(opts.use).map((r) => {
-        const asks = recipeNeedsEntity(r, entity);
-        const on = recipeChosen(r, text, entity) || pending === r;
-        return html`<button type="button" class="small tpl-recipe ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-          title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
-          @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
-      })}
+      ${recipeButtons}
     </div></div>`;
   const entitySearch = entityField(host, pending ? "For entity" : "Insert entity", EMPTY_REF, picked, `${opts.key}-insert`,
       pending && pending.domains && pending.domains.length > 0 ? { domain: pending.domains } : {});
   const asks = pending ? html`<div class="hint tpl-asks">Pick ${recipeEntityWords(pending)} for “${pending.label}”.
       <button type="button" class="link" @click=${(e: Event) => { pendingRecipes.delete(opts.key); requestRerender(e.currentTarget); }}>Cancel</button></div>` : nothing;
   const hints = html`${templateHint(opts.use, opts.bare).map((line) => html`<div class="hint">${line}</div>`)}`;
-  return { recipes, entitySearch, asks, hints };
+  return { recipes, recipeButtons, entitySearch, asks, hints };
 }
 
 /**
