@@ -368,12 +368,10 @@ export class TemplateTapEditor {
     </section>`;
   }
 
-  /** The list's foot line, with the marker as code. */
+  /** The list's foot line, with each `[tap:...]` marker as code. */
   private markerHint(text: string): TemplateResult {
-    const marker = "[map:lat,lon]";
-    const at = text.indexOf(marker);
-    if (at < 0) return html`${text}`;
-    return html`${text.slice(0, at)}<code>${marker}</code>${text.slice(at + marker.length)}`;
+    const parts = text.split(/(\[tap:[^\]]*\])/);
+    return html`${parts.map((part, i) => (i % 2 === 1 ? html`<code>${part}</code>` : part))}`;
   }
 
   /** The picked area's settings: a card beside the list, each title over

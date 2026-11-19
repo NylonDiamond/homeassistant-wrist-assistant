@@ -381,7 +381,7 @@ export class TemplateItemEditor {
 
   private editLabel(part: TemplateLayoutPart, value: string): void {
     const source = templateItemSource(this.host.text(), part).label;
-    if (source === undefined || /\[icon:|\[color:|\[link:|\[map:|\{[{%#]/.test(value)) return;
+    if (source === undefined || /\[icon:|\[color:|\[tap:|\{[{%#]/.test(value)) return;
     this.host.write(this.host.text().slice(0, source.from) + value + this.host.text().slice(source.to));
   }
 

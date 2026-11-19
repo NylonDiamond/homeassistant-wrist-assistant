@@ -157,7 +157,7 @@
       "dataHint": "Optional. A JSON object, like {\"brightness_pct\": 40}.",
       "confirmLabel": "Ask before running",
       "confirmHint": "Tap once to see it, again to run it.",
-      "markerHint": "For a list that changes, put [map:lat,lon] on a row. A tap on that row opens Maps.",
+      "markerHint": "For a list, put an action on a row, like [tap:maps lat,lon] or [tap:toggle light.desk]. A tap on that row runs it.",
       "rule": "An array of areas: x, y (top left), w, h (size), fractions of the tile's drawn face, and an action with its text (maps: place, link: url, page: page, toggle, script, scene and control: entity, service: service, http: http; refresh has none). Each item is read on its own: not an object, or x, y, w, h not all finite numbers, is dropped; an action not in actions is dropped; the action's text is trimmed, and missing, not a string, empty or over maxText characters is dropped; other keys are left out, except that a service also keeps entity when it reads by the same text rule and data when it is a JSON object (neither drops the area), and any area keeps confirm when it is exactly true, written last. Then x and y are kept from 0 to 1 minus minSize, w from minSize to 1 minus x, h from minSize to 1 minus y, each rounded to 4 places. Then only the first max areas are kept. Not an array is none. The last area holding a tap wins, then a row's link marker, then the tile's own tap.",
       "samples": [
         {
@@ -741,7 +741,7 @@
         "black"
       ],
       "hexDigits": [3, 6, 8],
-      "links": "[map:LAT,LON], [map:LAT,LON,NAME] and [link:URL] draw nothing and take no width. A tap on the row a marker sits on opens it on the devices: a place in Maps on the watch and the iPhone, an http or https page on the iPhone only. The first marker on a line that reads is the row's link; a latitude past 90, a longitude past 180 or another scheme is none.",
+      "rowTaps": "[tap:ACTION VALUE] draws nothing and takes no width. ACTION is the first word (any case): maps, link, page, refresh, toggle, script, scene, control, service or http; VALUE is the rest, trimmed. A tap on the row it sits on runs it on the devices. The first marker on a line that reads is the row's action; an unknown ACTION or a missing VALUE is none.",
       "colorRule": "A color is one of colorNames (any case), else 3, 6 or 8 hex digits with or without #, 8 being RRGGBBAA. Anything else is no color: the icon takes the text color.",
       "samples": [
         {
@@ -820,7 +820,7 @@
           ]
         },
         {
-          "input": "[icon:cart.fill] Jumbo [map:52.1,4.3,Jumbo]0.4 km",
+          "input": "[icon:cart.fill] Jumbo [tap:maps 52.1,4.3,Jumbo]0.4 km",
           "segments": [
             {
               "icon": "cart.fill",

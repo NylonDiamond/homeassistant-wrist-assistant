@@ -90,11 +90,11 @@ export function scanTemplateSource(doc: string): SourceScan {
       i = close + 1;
       continue;
     }
-    // A colour marker (`[color:SPEC]`, `[/color]`) or a link marker
-    // (`[link:URL]`, `[map:LAT,LON]`) draws nothing and takes no room:
+    // A colour marker (`[color:SPEC]`, `[/color]`) or a row action marker
+    // (`[tap:ACTION VALUE]`) draws nothing and takes no room:
     // silent, as a `{% set %}`, so the words around it are the cells' words
     // alone.
-    const quiet = ["[color:", "[/color]", "[link:", "[map:"].find((m) => doc.startsWith(m, i));
+    const quiet = ["[color:", "[/color]", "[tap:"].find((m) => doc.startsWith(m, i));
     if (quiet !== undefined) {
       endText(i);
       const close = markerEnd(doc, i);

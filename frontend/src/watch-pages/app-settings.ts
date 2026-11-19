@@ -348,10 +348,10 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
 
 /** The HTTP actions a tap area can run: the catalog's, as Hold slide offers
  * them (an id that is a UUID, upper case, named with its mark). */
-function templateTapHTTPActions(host: TileSettingsHost): { id: string; name: string }[] {
+function templateTapHTTPActions(host: TileSettingsHost): { id: string; name: string; plain: string }[] {
   return (host.catalog?.httpActions ?? []).filter((a) => isWatchUUID(a.id)).map((a) => {
     const mark = watchCatalogMark("httpAction", a);
-    return { id: a.id.toUpperCase(), name: mark === undefined ? a.name : `${a.name} (${mark.charAt(0).toLowerCase()}${mark.slice(1)})` };
+    return { id: a.id.toUpperCase(), name: mark === undefined ? a.name : `${a.name} (${mark.charAt(0).toLowerCase()}${mark.slice(1)})`, plain: a.name };
   });
 }
 

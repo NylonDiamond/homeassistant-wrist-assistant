@@ -11,7 +11,7 @@
 // Every line break Format shows is a widget. A real line break outside `{{ }}`
 // would make a new row on the tile, so no view ever changes the saved text.
 
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, insertCompletionText, pickedCompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { Annotation, Compartment, EditorState, type Range, StateEffect, StateField, type Transaction } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType, drawSelection, keymap, lineNumbers, placeholder } from "@codemirror/view";
@@ -40,7 +40,63 @@ export interface TemplateCodeContext {
   entities(): Completion[];
   symbols(): Completion[];
   colors(): Completion[];
+  /** The `[tap:` actions, by name, each with what it does. */
+  rowActions(): Completion[];
+  /** Pages a `[tap:page` can open, by name. */
+  pages(): Completion[];
+  /** HTTP actions a `[tap:http` can run, by name. */
+  httpActions(): Completion[];
+  /** Home Assistant's services as `domain.service`. */
+  services(): Completion[];
   drawOption(completion: Completion): TemplateResult | undefined;
+}
+
+/** What `[tap:` suggests where the text before the caret is `before`
+ * (the caret at `pos`): the actions after `[tap:`, then each action's value
+ * (entities, `script.` or `scene.` entities, services and then entities,
+ * pages, HTTP actions). Null when the caret is not in one. */
+export function templateTapCompletion(
+  before: string, pos: number,
+  context: Pick<TemplateCodeContext, "entities" | "rowActions" | "pages" | "httpActions" | "services">,
+): CompletionResult | null {
+  const action = before.match(/\[tap:\s*(\w*)$/i);
+  if (action !== null) {
+    return { from: pos - action[1]!.length, options: context.rowActions().map((o) => (o.label === "refresh" ? o : thenValue(o))), validFor: /^\w*$/ };
+  }
+  const m = before.match(/\[tap:\s*(\w+)\s+([^\]\n]*)$/i);
+  if (m === null) return null;
+  const value = m[2]!;
+  const id = /^[\w.]*$/.test(value);
+  const entities = (prefix?: string): CompletionResult => ({
+    from: pos - value.length,
+    options: prefix === undefined ? context.entities() : context.entities().filter((o) => o.label.startsWith(prefix)),
+    validFor: /^[\w.]*$/,
+  });
+  const named = (options: Completion[]): CompletionResult => ({ from: pos - value.length, options, validFor: /^[^\]\n]*$/ });
+  switch (m[1]!.toLowerCase()) {
+    case "toggle": case "control": case "maps": return id ? entities() : null;
+    case "script": return id ? entities("script.") : null;
+    case "scene": return id ? entities("scene.") : null;
+    case "service": {
+      if (id) return { from: pos - value.length, options: context.services().map(thenValue), validFor: /^[\w.]*$/ };
+      const target = value.match(/^\w+\.\w+\s+([\w.]*)$/);
+      return target === null ? null : { from: pos - target[1]!.length, options: context.entities(), validFor: /^[\w.]*$/ };
+    }
+    case "page": return named(context.pages());
+    case "http": return named(context.httpActions());
+    default: return null;
+  }
+}
+
+/** A pick that types its label and a space, then asks for the value. */
+function thenValue(option: Completion): Completion {
+  return {
+    ...option,
+    apply: (view, completion, from, to) => {
+      view.dispatch({ ...insertCompletionText(view.state, `${completion.label} `, from, to), annotations: pickedCompletion.of(completion) });
+      startCompletion(view);
+    },
+  };
 }
 
 export interface TemplateCodeEvents {
@@ -249,6 +305,8 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
     if ((m = before.match(/\[icon:[\w.]+\s+color:(\w*)$/)) !== null || (m = before.match(/\[color:(\w*)$/)) !== null) {
       return { from: ctx.pos - m[1]!.length, options: context.colors(), validFor: /^\w*$/ };
     }
+    const tap = templateTapCompletion(before, ctx.pos, context);
+    if (tap !== null) return tap;
     if ((m = before.match(/\{\{\s*([\w.]*)$/)) !== null) {
       const typed = m[1]!;
       const pad = before.endsWith(`{{${typed}`) ? " " : "";

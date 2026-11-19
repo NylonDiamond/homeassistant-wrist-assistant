@@ -42,10 +42,10 @@ const WORDS = /\s+/u;
 /** A colour marker, as Swift's `/\[color:[^\]]*\]|\[\/color\]/`. */
 const COLOR_MARKER = /\[color:[^\]]*\]|\[\/color\]/g;
 
-/** A link marker, as Swift's `linkMarker`: `[link:URL]` or `[map:...]`. A
- * row's link opens on the devices when the row is tapped
- * (`TemplateTileLink`); here, as there, it draws nothing and takes no width. */
-export const TEMPLATE_LINK_MARKER = /\[(?:link|map):[^\]]*\]/g;
+/** A row action marker, as Swift's `linkMarker`: `[tap:ACTION VALUE]`. A
+ * row's action runs on the devices when the row is tapped
+ * (`TemplateRowTap`); here, as there, it draws nothing and takes no width. */
+export const TEMPLATE_LINK_MARKER = /\[tap:[^\]]*\]/g;
 
 /** Any marker, as Swift's `styledSegments` reads them: an icon, a colour, an
  * end. */

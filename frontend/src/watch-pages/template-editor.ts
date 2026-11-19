@@ -72,7 +72,8 @@ export interface TemplateEditorData {
   taps: {
     areas: TemplateTapArea[];
     pages: readonly { id: string; name: string }[];
-    httpActions: readonly { id: string; name: string }[];
+    /** `name` is shown, with its mark; `plain` is the action's own name. */
+    httpActions: readonly { id: string; name: string; plain?: string }[];
     services: readonly string[];
     words: {
       label: string; help: string; addLabel: string; placeHint: string; urlHint: string;
@@ -269,6 +270,13 @@ export class WaTemplateEditor extends LitElement {
       entities: () => this.entityOptions(),
       symbols: () => (this.data.icons.names() ?? []).map((label) => ({ label, type: "icon" })),
       colors: () => WATCH_APP.template.richText.colorNames.filter((c: string) => c !== "grey").map((label: string) => ({ label, type: "color" })),
+      rowActions: () => {
+        const labels = this.data.taps.words.actionLabels;
+        return (Object.keys(labels) as TemplateTapAction[]).map((label) => ({ label, detail: labels[label], type: "action" }));
+      },
+      pages: () => this.namedOptions(this.data.taps.pages, "page"),
+      httpActions: () => this.namedOptions(this.data.taps.httpActions, "http"),
+      services: () => this.data.taps.services.map((label) => ({ label, type: "service" })),
       drawOption: (completion) => {
         if (completion.type === "icon") return html`${this.glyph(completion.label, 14, "currentColor")}`;
         if (completion.type === "color") return html`<i style=${`background:${templateIconColor(completion.label)?.hex ?? "transparent"}`}></i>`;
@@ -285,6 +293,21 @@ export class WaTemplateEditor extends LitElement {
     });
     this.tileId = this.data.tileId;
     this.requestUpdate();
+  }
+
+  /** Pages or HTTP actions for `[tap:page` and `[tap:http`: each by its
+   * name, or by its id when another has the same name. */
+  private namedOptions(items: readonly { id: string; name: string; plain?: string }[], type: string): { label: string; apply: string; detail?: string; type: string }[] {
+    const count = new Map<string, number>();
+    for (const item of items) {
+      const key = (item.plain ?? item.name).toLowerCase();
+      count.set(key, (count.get(key) ?? 0) + 1);
+    }
+    return items.map((item) => {
+      const name = item.plain ?? item.name;
+      const unique = count.get(name.toLowerCase()) === 1 && name.trim() !== "";
+      return { label: item.name, apply: unique ? name : item.id, ...(unique ? {} : { detail: item.id }), type };
+    });
   }
 
   private entityOptions(): { label: string; detail: string; type: string; boost: number }[] {
@@ -533,7 +556,7 @@ export class WaTemplateEditor extends LitElement {
             ${issues.length === 0 ? nothing : html`<div class="te-issues">${issues.map((issue) => html`<div class="te-issue" role="status"><button type="button" class="te-issue-go" title="Show it in the code" @click=${() => this.code?.select(issue.from, issue.to)}>${issue.text}</button>${issue.fix === undefined ? nothing
               : html`<button type="button" class="te-chip" @click=${() => this.code?.change(issue.fix!.from, issue.fix!.to, issue.fix!.insert)}>${issue.fix.words}</button>`}</div>`)}</div>`}
             ${refused === undefined ? nothing : html`<div class="te-issue" role="status"><span>${refused}</span></div>`}
-            <div class="te-hint">${d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon:, [color: or {{ for suggestions."}</div>
+            <div class="te-hint">${d.text.trim() === "" ? "Empty: the tile shows its symbol." : p.view === "sections" ? "Click a row to open it. Click a part to see its code." : p.format ? "Format changes the view only. The saved template stays the same." : "Type [icon:, [color:, [tap: or {{ for suggestions."}</div>
             ${d.helpers}
           </div>
         </div>
