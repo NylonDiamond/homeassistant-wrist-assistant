@@ -582,6 +582,14 @@ PHONE_PAGES_CAPABILITY = "phone_pages"
 # asks only when it sees this. It owns no voice record, and
 # WATCH_CONFIG_PHONE_KINDS stays as it is.
 PHONE_VOICE_READ_CAPABILITY = "phone_voice_read"
+# An iPhone reads and saves the settings (`behavior`) of its user's watches,
+# signed as itself: watch_config_get and watch_config_put take an
+# `owner_watch_id` naming one of the watches phone_pages_offer lists. Only
+# `behavior`, only a watch that takes its settings from this home, and only
+# over a record the watch already has. The app shows a watch's Device Settings
+# row only when it sees this (app repo
+# docs/device_settings_edit_plan_2026-11.md, step 4).
+PHONE_WATCH_SETTINGS_CAPABILITY = "phone_watch_settings"
 # What the integration advertises once a page can sit on several devices: one
 # page in the home's library (library.py), picked by each device, so a save on
 # any of them reaches all, and the signed phone_pages_offer and

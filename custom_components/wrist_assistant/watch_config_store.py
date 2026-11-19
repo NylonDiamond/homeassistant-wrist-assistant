@@ -2516,8 +2516,14 @@ class WatchConfigStore:
         seed: bool = False,
         updated_by: str,
         may_take: ItemJudge | None = None,
+        writer_holds: bool = True,
     ) -> WatchConfigRecord:
         """Save one document, compare-and-swap on the revision.
+
+        ``writer_holds`` is false when the device that signed is not the
+        record's owner (an iPhone saving its watch's settings): the save is
+        then not marked delivered, so the panel says it waits for the watch
+        until the watch's own get collects it.
 
         Accepted when ``base_revision`` equals the stored revision (0 when
         there is no record), or when ``force`` is true.
@@ -2626,7 +2632,7 @@ class WatchConfigStore:
         # now or at an earlier first upload: then the device holds something
         # else and must pull this. A dropped link key alone does not count;
         # the app never reads it.
-        if prep is None or not prep.rewritten:
+        if writer_holds and (prep is None or not prep.rewritten):
             record.mark_delivered(record.revision)
         self._schedule_owner_save(owner_watch_id)
         # Announced even though the writer already knows: the phone's own

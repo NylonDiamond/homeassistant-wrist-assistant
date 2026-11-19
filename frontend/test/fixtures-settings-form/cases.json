@@ -1,0 +1,197 @@
+{
+  "about": "Shared by the app (SettingsFormTests) and the panel (watch-settings-form-fixtures.test.ts). values: what a form shows for a document. shown: whether a row is drawn on a device. edits: the whole document after one row changes. The app's copy is canonical (scripts/sync-complication-fixtures.sh --push).",
+  "values": [
+    {
+      "name": "an empty document shows every default",
+      "document": {},
+      "expect": {
+        "serverMode": "Auto",
+        "showPageIndicator": true,
+        "pageIndicatorColorHex": "#FFFFFF",
+        "motionGestureSensitivityLevel": 4,
+        "pageTitleMode": "On",
+        "topSectionDoubleTapAction": "Disabled",
+        "pendingAnimationDisabledDomains": [],
+        "pullDownSceneTargetId": ""
+      }
+    },
+    {
+      "name": "stored values of the right kind are shown, trimmed",
+      "document": {
+        "serverMode": " Local ",
+        "showPageIndicator": false,
+        "pageIndicatorColorHex": "ff8800aa",
+        "motionGestureSensitivityLevel": 7.5,
+        "pendingAnimationDisabledDomains": ["switch", "light", "light"]
+      },
+      "expect": {
+        "serverMode": "Local",
+        "showPageIndicator": false,
+        "pageIndicatorColorHex": "#FF8800",
+        "motionGestureSensitivityLevel": 7.5,
+        "pendingAnimationDisabledDomains": ["light", "switch"]
+      }
+    },
+    {
+      "name": "a value of the wrong kind shows the default",
+      "document": { "showPageIndicator": "yes", "pageIndicatorColorHex": "blue", "motionGestureSensitivityLevel": "6" },
+      "expect": { "showPageIndicator": true, "pageIndicatorColorHex": "#FFFFFF", "motionGestureSensitivityLevel": 4 }
+    },
+    {
+      "name": "an enum value the catalog does not list is still shown",
+      "document": { "cameraRefreshRate": "7s" },
+      "expect": { "cameraRefreshRate": "7s" }
+    },
+    {
+      "name": "the page title falls back to the older keys",
+      "document": { "showPageTitle": false },
+      "expect": { "pageTitleMode": "Off" }
+    },
+    {
+      "name": "an Auto title style is Auto",
+      "document": { "pageTitleStyle": "Auto", "pageTitleMode": "Sometimes" },
+      "expect": { "pageTitleMode": "Auto" }
+    },
+    {
+      "name": "the double-tap falls back to the room quick jump switch",
+      "document": { "roomQuickJumpEnabled": true },
+      "expect": { "topSectionDoubleTapAction": "Room Jump" }
+    },
+    {
+      "name": "the twists read their three maps, the old aimed name as the new one",
+      "document": {
+        "motionGestureActionsJSON": "{\"Twist Clockwise\":\"Point Control Toggle\",\"Twist Counter-Clockwise\":\"Activate Scene\"}",
+        "motionGestureSceneTargetsJSON": "{\"Twist Counter-Clockwise\":\"scene.movie\"}",
+        "motionGestureScriptTargetsJSON": "not json"
+      },
+      "expect": {
+        "motionGestureActionsJSON": {
+          "actions": { "Twist Clockwise": "Toggle Aimed Entity", "Twist Counter-Clockwise": "Activate Scene" },
+          "scenes": { "Twist Counter-Clockwise": "scene.movie" },
+          "scripts": {}
+        }
+      }
+    }
+  ],
+  "shown": [
+    { "name": "dot shape shows with the dots on", "device": "watch", "document": {}, "key": "pageIndicatorStyle", "shown": true },
+    { "name": "dot shape hides with the dots off", "device": "watch", "document": { "showPageIndicator": false }, "key": "pageIndicatorStyle", "shown": false },
+    { "name": "the iPhone draws dot rows only in the watch look", "device": "iphone", "document": {}, "key": "pageIndicatorStyle", "shown": false },
+    { "name": "the iPhone in the watch look draws them", "device": "iphone", "document": { "phonePageLook": "watch" }, "key": "pageIndicatorStyle", "shown": true },
+    { "name": "the watch ignores the iPhone's condition", "device": "watch", "document": { "phonePageLook": "iphone" }, "key": "popupBackgroundMaterial", "shown": true },
+    { "name": "a scene row shows for a scene action", "device": "iphone", "document": { "pullDownAction": "Activate Scene" }, "key": "pullDownSceneTargetId", "shown": true },
+    { "name": "a scene row hides for another action", "device": "iphone", "document": { "pullDownAction": "Run Script" }, "key": "pullDownSceneTargetId", "shown": false },
+    { "name": "fine tune hides while twists are off", "device": "watch", "document": {}, "key": "motionGestureSensitivityLevel", "shown": false },
+    { "name": "fine tune shows while twists are on", "device": "watch", "document": { "motionGestureSensitivity": "Low" }, "key": "motionGestureSensitivityLevel", "shown": true }
+  ],
+  "edits": [
+    {
+      "name": "a switch writes its key and keeps unknown keys",
+      "document": { "wrapPages": false, "someNewerKey": { "a": 1 } },
+      "key": "wrapPages",
+      "value": true,
+      "expect": { "wrapPages": true, "someNewerKey": { "a": 1 } }
+    },
+    {
+      "name": "setting a row to what it shows writes nothing",
+      "document": {},
+      "key": "showPageIndicator",
+      "value": true,
+      "expect": {}
+    },
+    {
+      "name": "a default picked by hand over another value is written",
+      "document": { "cameraRefreshRate": "5s" },
+      "key": "cameraRefreshRate",
+      "value": "1s",
+      "expect": { "cameraRefreshRate": "1s" }
+    },
+    {
+      "name": "an empty scene removes its key",
+      "document": { "pullDownAction": "Activate Scene", "pullDownSceneTargetId": "scene.movie" },
+      "key": "pullDownSceneTargetId",
+      "value": "",
+      "expect": { "pullDownAction": "Activate Scene" }
+    },
+    {
+      "name": "a colour is stored in capitals with a hash",
+      "document": {},
+      "key": "pageIndicatorColorHex",
+      "value": "00ff88",
+      "expect": { "pageIndicatorColorHex": "#00FF88" }
+    },
+    {
+      "name": "a domain list is stored sorted, and empty removes it",
+      "document": { "pendingAnimationDisabledDomains": ["lock"] },
+      "key": "pendingAnimationDisabledDomains",
+      "value": [],
+      "expect": {}
+    },
+    {
+      "name": "a domain list with items",
+      "document": {},
+      "key": "pendingAnimationDisabledDomains",
+      "value": ["timer", "fan", "fan"],
+      "expect": { "pendingAnimationDisabledDomains": ["fan", "timer"] }
+    },
+    {
+      "name": "Auto title writes the older title keys",
+      "document": { "pageTitleMode": "On", "showPageTitle": true, "pageTitleStyle": "Pill" },
+      "key": "pageTitleMode",
+      "value": "Auto",
+      "expect": { "pageTitleMode": "Auto", "showPageTitle": true, "pageTitleStyle": "Auto" }
+    },
+    {
+      "name": "On after Auto turns the Auto style to Pill",
+      "document": { "pageTitleMode": "Auto", "showPageTitle": true, "pageTitleStyle": "Auto" },
+      "key": "pageTitleMode",
+      "value": "On",
+      "expect": { "pageTitleMode": "On", "showPageTitle": true, "pageTitleStyle": "Pill" }
+    },
+    {
+      "name": "Off hides the title in the older key",
+      "document": {},
+      "key": "pageTitleMode",
+      "value": "Off",
+      "expect": { "pageTitleMode": "Off", "showPageTitle": false }
+    },
+    {
+      "name": "a double-tap other than Room jump turns the room quick jump switch off",
+      "document": { "roomQuickJumpEnabled": true, "topSectionDoubleTapAction": "Room Jump" },
+      "key": "topSectionDoubleTapAction",
+      "value": "Next Page",
+      "expect": { "roomQuickJumpEnabled": false, "topSectionDoubleTapAction": "Next Page" }
+    },
+    {
+      "name": "a twist strength sets the fine tune",
+      "document": { "motionGestureSensitivity": "Off", "motionGestureSensitivityLevel": 4 },
+      "key": "motionGestureSensitivity",
+      "value": "High",
+      "expect": { "motionGestureSensitivity": "High", "motionGestureSensitivityLevel": 8 }
+    },
+    {
+      "name": "the fine tune picks the strength nearest it",
+      "document": { "motionGestureSensitivity": "Low", "motionGestureSensitivityLevel": 4 },
+      "key": "motionGestureSensitivityLevel",
+      "value": 6.5,
+      "expect": { "motionGestureSensitivity": "Medium", "motionGestureSensitivityLevel": 6.5 }
+    },
+    {
+      "name": "the twists write only the maps that changed, an empty one as no key",
+      "document": {
+        "motionGestureActionsJSON": "{\"Twist Clockwise\":\"Next Page\"}",
+        "motionGestureSceneTargetsJSON": "{\"Twist Clockwise\":\"scene.a\"}"
+      },
+      "key": "motionGestureActionsJSON",
+      "value": {
+        "actions": { "Twist Clockwise": "Run Script", "Twist Counter-Clockwise": "Refresh" },
+        "scenes": {},
+        "scripts": { "Twist Clockwise": "script.lights/off" }
+      },
+      "expect": {
+        "motionGestureActionsJSON": "{\"Twist Clockwise\":\"Run Script\",\"Twist Counter-Clockwise\":\"Refresh\"}",
+        "motionGestureScriptTargetsJSON": "{\"Twist Clockwise\":\"script.lights\\/off\"}"
+      }
+    }
+  ]
+}

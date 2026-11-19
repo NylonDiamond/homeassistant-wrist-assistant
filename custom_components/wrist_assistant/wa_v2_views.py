@@ -4927,6 +4927,40 @@ def _phone_style_record(ctx: _OpContext, kind: Any) -> Any:
     )
 
 
+def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response | None]:
+    """Whose record a get or a put is about.
+
+    The signer's own, as ever: ``(signer, None)``, whatever else the body
+    names. One exception (capability ``phone_watch_settings``): an iPhone
+    signing as itself, for kind ``behavior``, with an ``owner_watch_id``,
+    reads or saves the settings of one of its user's watches, the ones
+    ``phone_pages_offer`` lists (`phone_watch_ids`): ``(watch id, None)``.
+    Such a body naming any other watch is refused and nothing is read or
+    written, ``(None, refusal)``:
+
+    - a watch that is not one of the phone's: 403 ``not_owner``;
+    - a watch that takes its settings from another home (its entry's
+      ``main_house`` is false): 400 ``not_main_house``. The watch never pulls
+      ``behavior`` from this home, so a save here would never reach it.
+
+    A watch, or any other kind, that names an owner is not refused: the name
+    is ignored, as it always was, and the signer's own record is meant.
+    """
+    raw = ctx.payload.get("owner_watch_id")
+    if raw is None or ctx.payload.get("kind") != "behavior" or not _caller_is_iphone(ctx):
+        return ctx.watch_id, None
+
+    def refuse(error: str, message: str, status: int = 400) -> tuple[None, Response]:
+        return None, ctx.signed_json({"ok": False, "error": error, "message": message}, status=status)
+
+    secrets = ctx.domain_data.widget_secret_store
+    if not isinstance(raw, str) or raw not in phone_watch_ids(secrets.all_entries, ctx.watch_id):
+        return refuse("not_owner", "That watch is not one of this iPhone's watches.", 403)
+    if getattr(secrets.get(raw), "main_house", True) is False:
+        return refuse("not_main_house", "That watch takes its settings from its main home.")
+    return raw, None
+
+
 async def _op_watch_config_get(ctx: _OpContext) -> Response:
     """The caller's stored watch config of one kind.
 
@@ -4953,6 +4987,11 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
 
     ``main_house`` changes nothing in the reply; it is kept on the watch's
     entry (`_note_main_house`).
+
+    ``owner_watch_id`` (capability ``phone_watch_settings``) is an iPhone
+    reading the settings of one of its user's watches
+    (`_phone_watch_settings_owner`). The reply is the watch's record, read as
+    an observer reads: no delivery mark, no report, no main house note.
 
     ``observer: true`` is the iPhone reading, whichever key signs it: it may
     sign with its watch's pair, and that read is not the watch collecting
@@ -5020,6 +5059,31 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         )
     kind = ctx.payload.get("kind")
     store = ctx.domain_data.watch_config_store
+    owner, refusal = _phone_watch_settings_owner(ctx)
+    if refusal is not None:
+        return refusal
+    if owner != ctx.watch_id:
+        # An iPhone reading its watch's settings: the watch has not collected
+        # anything, so nothing is marked.
+        try:
+            watch_record = store.get(owner, kind)
+        except WatchConfigStoreError as err:
+            return _watch_config_refusal(ctx, err)
+        if watch_record is None:
+            return ctx.signed_json(
+                {"ok": True, "kind": kind, "revision": 0, "hash": None, "short_hash": None, "updated_at": None}
+            )
+        watch_reply: dict[str, Any] = {
+            "ok": True,
+            "kind": kind,
+            "revision": watch_record.revision,
+            "hash": watch_record.hash,
+            "short_hash": short_hash(watch_record.hash),
+            "updated_at": watch_record.updated_at,
+        }
+        if raw_since != watch_record.revision:
+            watch_reply["document"] = watch_record.document
+        return ctx.signed_json(watch_reply)
     phone_record = _phone_style_record(ctx, kind)
     if phone_record is not None:
         # Step 6, the phone's read of its user's notification style or voice.
@@ -5181,7 +5245,20 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     it may not own is a signed 400 ``not_for_iphone``, and its ``behavior``
     keeps only the phone's settings, hashed by the server when that drops a
     key (``WatchConfigStore.put``).
+
+    ``owner_watch_id`` (capability ``phone_watch_settings``) is an iPhone
+    saving the settings of one of its user's watches
+    (`_phone_watch_settings_owner`), over the record the watch already has:
+    a watch with none is a signed 400 ``no_record`` (its first record is its
+    own seed, the move or the panel's), and ``force`` is never taken. The save
+    names the phone as its writer, is not marked delivered (the watch has not
+    collected it), and wakes the watch's poll as any save does.
     """
+    owner, refusal = _phone_watch_settings_owner(ctx)
+    if refusal is not None:
+        return refusal
+    if owner != ctx.watch_id:
+        return _phone_put_watch_settings(ctx, owner)
     store = ctx.domain_data.watch_config_store
     first = not _caller_is_iphone(ctx) and store.holds_no_record(
         ctx.watch_id, ctx.payload.get("kind")
@@ -5210,6 +5287,31 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
         return _watch_config_refusal(ctx, err)
     if first:
         await store.async_save_first_record(ctx.watch_id)
+    return ctx.signed_json({"ok": True, "revision": record.revision})
+
+
+def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
+    """The save half of `_op_watch_config_put` for an iPhone writing its
+    watch's settings, once `_phone_watch_settings_owner` named the watch."""
+    store = ctx.domain_data.watch_config_store
+    if store.holds_no_record(owner, "behavior"):
+        return ctx.signed_json(
+            {"ok": False, "error": "no_record", "message": "That watch has no settings in Home Assistant yet."},
+            status=400,
+        )
+    try:
+        record = store.put(
+            owner,
+            ctx.payload.get("kind"),
+            ctx.payload.get("document"),
+            document_hash=ctx.payload.get("hash"),
+            base_revision=ctx.payload.get("base_revision"),
+            force=False,
+            updated_by=ctx.watch_id,
+            writer_holds=False,
+        )
+    except WatchConfigStoreError as err:
+        return _watch_config_refusal(ctx, err)
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 
