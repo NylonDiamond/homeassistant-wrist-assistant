@@ -16,8 +16,12 @@ import {
   resizedTemplateTapArea,
   spannedTemplateTapArea,
   templateTapAt,
+  templateTapBoxAround,
+  templateTapMarker,
+  templateTapMarkerLoses,
   withTemplateTapAction,
   withTemplateTapConfirm,
+  withTemplateTapItem,
   withTemplateTapServiceExtras,
 } from "../src/watch-pages/template-taps.js";
 
@@ -33,6 +37,8 @@ describe("Tap areas", () => {
     const samples = tileApp.template.taps.samples as { input: unknown; areas: unknown }[];
     expect(samples.length).toBeGreaterThan(0);
     for (const sample of samples) expect(normalizeTemplateTaps(sample.input)).toEqual(sample.areas);
+    // The keys come out in the samples' order too.
+    for (const sample of samples) expect(JSON.stringify(normalizeTemplateTaps(sample.input))).toBe(JSON.stringify(sample.areas));
   });
 
   it("takes its numbers from the shared table", () => {
@@ -162,5 +168,88 @@ describe("Refresh every", () => {
     expect(odd.selected).toBe(odd.options[0]!.value);
     expect(watchRefreshLabel(120)).toBe("2 hours");
     expect(watchRefreshLabel(90)).toBe("1 h 30 min");
+  });
+});
+
+describe("Taps that follow an item", () => {
+  const area = newTemplateTapArea();
+
+  it("keeps item only as ROW.CELL, after the action's fields and before confirm", () => {
+    const [toggle] = normalizeTemplateTaps([{ confirm: true, item: "3.1", x: 0, y: 0, w: 1, h: 1, action: "toggle", entity: "light.a" }]);
+    expect(Object.keys(toggle!)).toEqual(["x", "y", "w", "h", "action", "entity", "item", "confirm"]);
+    const [service] = normalizeTemplateTaps([{ item: "0.0", x: 0, y: 0, w: 1, h: 1, action: "service", service: "a.b", entity: "light.a", data: { k: 1 } }]);
+    expect(Object.keys(service!)).toEqual(["x", "y", "w", "h", "action", "service", "entity", "data", "item"]);
+    for (const item of ["1", "1.", ".1", "1.2.3", " 1.2", "1.2 ", "a.b", "-1.0", "1.5e1", 1.2, null, true, ["1.2"]]) {
+      expect(normalizeTemplateTaps([{ ...area, item }])).toEqual([area]);
+    }
+    expect(normalizeTemplateTaps([{ ...area, item: "12.40" }])).toEqual([{ ...area, item: "12.40" }]);
+  });
+
+  it("follows and stops following, keeping the action and Ask before running", () => {
+    const toggle = withTemplateTapConfirm(withTemplateTapAction(area, "toggle", "light.a"), true);
+    const follows = withTemplateTapItem(toggle, "2.0", { x: 0.1, y: 0.2, w: 0.3, h: 0.1 });
+    expect(follows).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.1, action: "toggle", entity: "light.a", item: "2.0", confirm: true });
+    expect(Object.keys(follows).at(-1)).toBe("confirm");
+    // Another action keeps the cell it follows.
+    expect(withTemplateTapAction(follows, "refresh")).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.1, action: "refresh", item: "2.0", confirm: true });
+    expect(withTemplateTapServiceExtras(withTemplateTapAction(follows, "service", "a.b"), { data: { k: 1 } }).item).toBe("2.0");
+    const plain = withTemplateTapItem(follows, undefined);
+    expect(plain).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.1, action: "toggle", entity: "light.a", confirm: true });
+    expect(withTemplateTapItem(area, "x")).toEqual(area);
+    const doc = setWatchTemplateTaps(document(), PAGE, TILE, [follows]);
+    expect(JSON.stringify(stored(doc)["templateTaps"])).toBe(JSON.stringify([follows]));
+  });
+
+  it("boxes a cell's parts, a little bigger, inside the face", () => {
+    expect(templateTapBoxAround([])).toBeUndefined();
+    expect(templateTapBoxAround([{ x: 0, y: 0, w: 0, h: 0.1 }])).toBeUndefined();
+    expect(templateTapBoxAround([{ x: 0.2, y: 0.3, w: 0.1, h: 0.1 }, { x: 0.32, y: 0.31, w: 0.3, h: 0.08 }])).toEqual({ x: 0.18, y: 0.28, w: 0.46, h: 0.14 });
+    // At an edge it stays inside, and a tiny part gets the smallest size.
+    expect(templateTapBoxAround([{ x: 0.99, y: 0.99, w: 0.01, h: 0.01 }], 0)).toEqual({ x: 0.95, y: 0.95, w: 0.05, h: 0.05 });
+    expect(templateTapBoxAround([{ x: 0, y: 0, w: 1, h: 1 }])).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+  });
+});
+
+describe("Row action examples", () => {
+  const names = {
+    pages: [{ id: "p1", name: "Kitchen" }, { id: "p2", name: "Hall" }, { id: "p3", name: "hall" }, { id: "p4", name: "A [b]" }],
+    httpActions: [{ id: "6F9619FF-8B86-D011-B42D-00C04FC964FF", name: "Garage (shared)", plain: "Garage" }, { id: "AAAA", name: "Gate" }],
+  };
+  const at = { x: 0, y: 0, w: 1, h: 1 };
+  const marker = (area: Record<string, unknown>) => templateTapMarker({ ...at, ...area } as never, names);
+
+  it("writes each action as a row action", () => {
+    expect(marker({ action: "toggle", entity: "light.desk" })).toBe("[tap:toggle light.desk]");
+    expect(marker({ action: "script", entity: "script.a" })).toBe("[tap:script script.a]");
+    expect(marker({ action: "scene", entity: "scene.b" })).toBe("[tap:scene scene.b]");
+    expect(marker({ action: "control", entity: "climate.c" })).toBe("[tap:control climate.c]");
+    expect(marker({ action: "maps", place: "52.37,4.89,Dam" })).toBe("[tap:maps 52.37,4.89,Dam]");
+    expect(marker({ action: "maps", place: "device_tracker.phone" })).toBe("[tap:maps device_tracker.phone]");
+    expect(marker({ action: "link", url: "https://example.com" })).toBe("[tap:link https://example.com]");
+    expect(marker({ action: "refresh" })).toBe("[tap:refresh]");
+    expect(marker({ action: "service", service: "light.turn_on", entity: "light.desk", data: { a: 1 } })).toBe("[tap:service light.turn_on light.desk]");
+    expect(marker({ action: "service", service: "notify.notify" })).toBe("[tap:service notify.notify]");
+  });
+
+  it("names a page and an HTTP action, or uses the id when a name would not read", () => {
+    expect(marker({ action: "page", page: "p1" })).toBe("[tap:page Kitchen]");
+    // Two pages named alike in any case, a name with ], or a missing page.
+    expect(marker({ action: "page", page: "p2" })).toBe("[tap:page p2]");
+    expect(marker({ action: "page", page: "p4" })).toBe("[tap:page p4]");
+    expect(marker({ action: "page", page: "gone" })).toBe("[tap:page gone]");
+    expect(marker({ action: "http", http: "6f9619ff-8b86-d011-b42d-00c04fc964ff" })).toBe("[tap:http Garage]");
+    expect(marker({ action: "http", http: "AAAA" })).toBe("[tap:http Gate]");
+    expect(marker({ action: "http", http: "BBBB" })).toBe("[tap:http BBBB]");
+  });
+
+  it("keeps a marker on one line", () => {
+    expect(marker({ action: "link", url: "https://a.com/{{\n x }}" })).toBe("[tap:link https://a.com/{{ x }}]");
+  });
+
+  it("says when the area holds what a marker cannot", () => {
+    expect(templateTapMarkerLoses({ ...at, action: "toggle", entity: "light.a" })).toBe(false);
+    expect(templateTapMarkerLoses({ ...at, action: "toggle", entity: "light.a", confirm: true })).toBe(true);
+    expect(templateTapMarkerLoses({ ...at, action: "service", service: "a.b", data: { k: 1 } })).toBe(true);
+    expect(templateTapMarkerLoses({ ...at, action: "service", service: "a.b", entity: "light.a" })).toBe(false);
   });
 });

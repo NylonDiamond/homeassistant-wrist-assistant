@@ -4,7 +4,9 @@
 // `samples`. The contract is "Tap areas (2026-11-18)" in the app repo's
 // `docs/template_tile_links_2026-11.md`, with the six Home Assistant
 // actions of "Tap area actions, round 2 (2026-11-18)" and the `confirm` key
-// of "Round 3: ask first, and refresh on a timer (2026-11-18)".
+// of "Round 3: ask first, and refresh on a timer (2026-11-18)", and the
+// `item` key and row action examples of "Round 5: taps that follow an item,
+// and row action examples (2026-11-18)".
 //
 // No DOM here: the reader, and the small edits the editor makes to a list.
 
@@ -34,6 +36,11 @@ export interface TemplateTapArea {
   service?: string;
   http?: string;
   data?: Record<string, unknown>;
+  /** The cell the area follows, `ROW.CELL` (both 0-based, as a
+   * `templateLayout` item's `row` and `cell`). A tap on that cell as drawn
+   * runs the area; `x`, `y`, `w`, `h` are its box when the tap was made, for
+   * where no cell is drawn. */
+  item?: string;
   /** Ask before running: a first tap shows the tile's question, a second
    * runs the action. Only `true` is kept, always last. */
   confirm?: true;
@@ -72,6 +79,11 @@ function readText(value: unknown): string | undefined {
 /** A plain JSON object: not an array, not null. */
 export function isTemplateTapData(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `ROW.CELL`: two whole numbers joined by one dot. */
+export function isTemplateTapItem(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9]+\.[0-9]+$/.test(value);
 }
 
 function isAction(value: unknown): value is TemplateTapAction {
@@ -116,6 +128,9 @@ function readArea(raw: unknown): TemplateTapArea | undefined {
     if (entity !== undefined) area.entity = entity;
     if (isTemplateTapData(item["data"])) area.data = item["data"];
   }
+  // The cell it follows, after the action's fields; anything else is left
+  // out and the area stays a plain box.
+  if (isTemplateTapItem(item["item"])) area.item = item["item"];
   // Any action may ask first; only exactly true counts, and it goes last.
   if (item["confirm"] === true) area.confirm = true;
   return area;
@@ -145,10 +160,10 @@ export function newTemplateTapArea(): TemplateTapArea {
 export function withTemplateTapAction(area: TemplateTapArea, action: TemplateTapAction, text?: string): TemplateTapArea {
   const field = templateTapField(action);
   const { x, y, w, h } = area;
-  const ask = area.confirm === true ? { confirm: true as const } : {};
-  if (field === undefined) return { x, y, w, h, action, ...ask };
+  const keep = { ...(area.item === undefined ? {} : { item: area.item }), ...(area.confirm === true ? { confirm: true as const } : {}) };
+  if (field === undefined) return { x, y, w, h, action, ...keep };
   const value = (text ?? area[field] ?? "").trim();
-  return value === "" ? area : { x, y, w, h, action, [field]: value, ...ask };
+  return value === "" ? area : { x, y, w, h, action, [field]: value, ...keep };
 }
 
 /** The area with Ask before running on (`confirm: true`, last) or off (no
@@ -200,4 +215,73 @@ export function templateTapAt(areas: readonly TemplateTapArea[], x: number, y: n
     if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) return i;
   }
   return undefined;
+}
+
+/** The area following a cell (`item` set to `ROW.CELL`), or, with no cell,
+ * a plain box again. The box is set to `box` when given. */
+export function withTemplateTapItem(area: TemplateTapArea, item: string | undefined, box?: { x: number; y: number; w: number; h: number }): TemplateTapArea {
+  const { item: _item, confirm: _confirm, ...rest } = area;
+  const next: TemplateTapArea = { ...rest, ...(box ?? {}) };
+  if (item !== undefined && isTemplateTapItem(item)) next.item = item;
+  return withTemplateTapConfirm(next, area.confirm === true);
+}
+
+/** The box around a cell's drawn parts, each a box in fractions of the face,
+ * grown by `pad` on every side and kept inside the face at least the
+ * smallest size. Undefined with no parts. */
+export function templateTapBoxAround(parts: readonly { x: number; y: number; w: number; h: number }[], pad = 0.02): { x: number; y: number; w: number; h: number } | undefined {
+  const drawn = parts.filter((p) => [p.x, p.y, p.w, p.h].every(Number.isFinite) && p.w > 0 && p.h > 0);
+  if (drawn.length === 0) return undefined;
+  const min = TEMPLATE_TAPS.minSize;
+  const x0 = Math.min(...drawn.map((p) => p.x)) - pad, x1 = Math.max(...drawn.map((p) => p.x + p.w)) + pad;
+  const y0 = Math.min(...drawn.map((p) => p.y)) - pad, y1 = Math.max(...drawn.map((p) => p.y + p.h)) + pad;
+  const x = clamp(x0, 0, 1 - min), y = clamp(y0, 0, 1 - min);
+  return { x: round(x), y: round(y), w: round(clamp(x1 - x, min, 1 - x)), h: round(clamp(y1 - y, min, 1 - y)) };
+}
+
+/** What the row action example is built from: the pages and HTTP actions
+ * an area can name, `plain` being an HTTP action's own name. */
+export interface TemplateTapNames {
+  pages: readonly { id: string; name: string }[];
+  httpActions: readonly { id: string; name: string; plain?: string }[];
+}
+
+/** A name a marker can carry for `id`: the name, when no other one reads
+ * the same in any case and it holds no `]` or line break; else the id. */
+function markerName(id: string, named: readonly { id: string; name: string }[], same: (a: string, b: string) => boolean): string {
+  const own = named.find((n) => same(n.id, id));
+  const name = own?.name.trim();
+  if (own === undefined || name === undefined || name === "" || /[\]\n\r]/.test(name)) return id;
+  const clash = named.some((n) => n !== own && (n.name.trim().toLowerCase() === name.toLowerCase() || n.id.toLowerCase() === name.toLowerCase()));
+  return clash ? id : name;
+}
+
+/** The area's action written as a row action, `[tap:ACTION VALUE]` ("Round
+ * 4: one row action marker"): a page and an HTTP action by name, the rest
+ * by their own text. A service keeps its entity and loses its data. Line
+ * breaks become spaces, since a marker sits on one line. */
+export function templateTapMarker(area: TemplateTapArea, names: TemplateTapNames): string {
+  const one = (text: string | undefined) => (text ?? "").replace(/\s*[\r\n]+\s*/g, " ").trim();
+  const words = (...parts: (string | undefined)[]) => parts.map(one).filter((p) => p !== "").join(" ");
+  let value: string;
+  switch (area.action) {
+    case "maps": value = one(area.place); break;
+    case "link": value = one(area.url); break;
+    case "refresh": value = ""; break;
+    case "page": value = markerName(one(area.page), names.pages, (a, b) => a === b); break;
+    case "http": {
+      const plain = names.httpActions.map((a) => ({ id: a.id, name: a.plain ?? a.name }));
+      value = markerName(one(area.http), plain, (a, b) => a.toUpperCase() === b.toUpperCase());
+      break;
+    }
+    case "service": value = words(area.service, area.entity); break;
+    default: value = one(area.entity);
+  }
+  return value === "" ? `[tap:${area.action}]` : `[tap:${area.action} ${value}]`;
+}
+
+/** Whether the area holds what a marker cannot say: a service's data, or
+ * Ask before running. */
+export function templateTapMarkerLoses(area: TemplateTapArea): boolean {
+  return area.confirm === true || (area.action === "service" && area.data !== undefined);
 }

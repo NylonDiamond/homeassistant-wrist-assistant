@@ -193,6 +193,7 @@ export class WaTemplateEditor extends LitElement {
       this.requestUpdate();
     },
     showCode: (from, to) => this.code?.highlight(from, to),
+    tap: (row, cell) => this.taps.itemTap(row, cell),
   });
   private readonly taps = new TemplateTapEditor({
     data: () => this.data,
@@ -703,6 +704,25 @@ export const templateEditorStyles = css`
   .te-tap-marker { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); }
   .te-tap-marker code { font-size: 11px; padding: 0 3px; border-radius: 4px; background: var(--wa-field, var(--wa-input)); }
   .te-tap-confirm { padding-top: 8px; border-top: 1px solid var(--wa-line); }
+  .te-tap-follows-line { color: var(--wa-hue-blue) !important; }
+  .te-tap-follows { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 8px; background: color-mix(in srgb, var(--wa-hue-blue) 8%, transparent); }
+  .te-tap-follows > span { flex: 1; min-width: 0; }
+  .te-tap-follows b { display: block; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+  .te-tap-follows small { display: block; font-size: 11px; color: var(--wa-muted); }
+  .te-tap-follows .te-chip { flex: none; }
+  .te-tap-as-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11.5px; color: var(--wa-muted); }
+  .te-tap-as-row code { min-width: 0; overflow-wrap: anywhere; font-size: 11px; padding: 1px 4px; border-radius: 4px; background: var(--wa-field, var(--wa-input)); color: var(--wa-ink); }
+  .te-tap-as-row .te-chip { min-height: 21px; padding: 0 7px; font-size: 11px; }
+  .te-tap-form .te-tap-as-row + .te-hint { margin-top: -8px; }
+  /* The picked item's Tap setting: the same fields as an area's card. */
+  .te-item-tap { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+  .te-item-tap > .te-hint { margin-top: -6px; }
+  .te-item-tap .te-item-field { gap: 6px; }
+  .te-item-tap .field.entity-field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; }
+  .te-item-tap .field.entity-field > span:first-child { font-size: 12px; color: var(--wa-muted); }
+  .te-item-tap .field.entity-field > :not(:first-child) { grid-column: auto; }
+  .te-item-tap .ent-chosen, .te-item-tap .ent-box input { height: 30px; min-height: 30px; }
+  .te-item-tap .te-tap-confirm { padding-top: 0; border-top: 0; }
   .te-tap-none { display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 12px; border: 1px dashed var(--wa-line); border-radius: 9px; font-size: 12px; color: var(--wa-muted); text-align: center; }
   /* The picked area's card: each title over its control, at the card's width. */
   .te-tap-form { gap: 12px; padding: 12px; background: color-mix(in srgb, var(--wa-ink) 2%, transparent); }
@@ -723,6 +743,8 @@ export const templateEditorStyles = css`
   .te-tap-size { position: absolute; right: -5px; bottom: -5px; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid var(--wa-hue-blue); border-radius: 2px; background: #fff; cursor: nwse-resize; }
   .te-tap.on .te-tap-size { border-color: var(--wa-hue-orange); }
   .te-taps-layer:active .te-tap.on { cursor: grabbing; }
+  .te-tap.follow { border-style: dashed; cursor: pointer; }
+  .te-taps-layer:active .te-tap.follow.on { cursor: pointer; }
   .te-sw { display: flex; align-items: center; gap: 10px; }
   .te-sw > span { flex: 1; min-width: 0; }
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }

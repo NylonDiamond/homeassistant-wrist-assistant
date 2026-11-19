@@ -6,12 +6,18 @@
 // page previews. Positions are fractions of the tile's drawn face, the
 // `.wp-tpl` box, which sits inside the grid's cell inset.
 //
+// An area may follow a cell of the template (`item`, set from the picked
+// item's box by `itemTap`): it is drawn on that cell wherever the cell is,
+// and moves only with it, so it cannot be dragged.
+//
 // The rule and the small edits are in `template-taps.ts`; the contract is
-// "Tap areas (2026-11-18)" in the app repo's `docs/template_tile_links_2026-11.md`.
+// "Tap areas (2026-11-18)" and "Round 5" in the app repo's
+// `docs/template_tile_links_2026-11.md`.
 
 import { html, nothing, type TemplateResult } from "lit";
 import { entityField, entityRefFrom } from "../editors.js";
 import type { TemplateEditorData } from "./template-editor.js";
+import { templateRows } from "./template-rows.js";
 import {
   type TemplateTapAction,
   type TemplateTapArea,
@@ -21,11 +27,17 @@ import {
   newTemplateTapArea,
   resizedTemplateTapArea,
   spannedTemplateTapArea,
+  templateTapBoxAround,
   templateTapField,
+  templateTapMarker,
+  templateTapMarkerLoses,
   withTemplateTapAction,
   withTemplateTapConfirm,
+  withTemplateTapItem,
   withTemplateTapServiceExtras,
 } from "./template-taps.js";
+
+type Box = { x: number; y: number; w: number; h: number };
 
 interface TapHost {
   data(): TemplateEditorData;
@@ -79,6 +91,11 @@ export class TemplateTapEditor {
   /** The Data (JSON) box's text while it does not match the stored data: as
    * typed, for one area, with its parse error if it has one. */
   private dataDraft: { tile: string; index: number; text: string; error: string | undefined } | undefined;
+  /** Each followed cell's box on the face now, by `ROW.CELL`. */
+  private follow = new Map<string, Box>();
+  /** The row action example just copied, shown as Copied for a moment. */
+  private copied: { tile: string; marker: string; words: string } | undefined;
+  private copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly host: TapHost) {}
 
@@ -171,6 +188,11 @@ export class TemplateTapEditor {
     const target = (event.target as Element).closest<HTMLElement>("[data-tap]");
     const before = this.areas().slice();
     const base = { tile: data.tileId, pointer: event.pointerId, frame, startX: event.clientX, startY: event.clientY, before, moved: false };
+    if (target !== null && this.areas()[Number(target.dataset["tap"])]?.item !== undefined) {
+      // A followed area moves only with its item: a press picks it.
+      this.pick(Number(target.dataset["tap"]));
+      return;
+    }
     if (target !== null) {
       const index = Number(target.dataset["tap"]);
       const kind = (event.target as Element).closest("[data-tap-size]") !== null ? "size" : "move";
@@ -254,6 +276,9 @@ export class TemplateTapEditor {
   };
 
   dispose(): void {
+    if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
+    this.copiedTimer = undefined;
+    this.copied = undefined;
     this.stopListeners();
     this.drag = undefined;
     this.working = undefined;
@@ -273,7 +298,7 @@ export class TemplateTapEditor {
     }
     const moves: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const step = moves[event.key];
-    if (step === undefined) return true;
+    if (step === undefined || area.item !== undefined) return true;
     event.preventDefault();
     const by = event.shiftKey ? 0.05 : 0.01;
     this.replace(index, movedTemplateTapArea(area, area.x + step[0] * by, area.y + step[1] * by));
@@ -295,9 +320,43 @@ export class TemplateTapEditor {
     const next = { left: box.left - outer.left, top: box.top - outer.top, width: box.width, height: box.height };
     const was = this.face;
     const same = was !== undefined && (["left", "top", "width", "height"] as const).every((k) => Math.abs(was[k] - next[k]) < 0.5);
-    if (same) return;
+    const follow = new Map<string, Box>();
+    for (const area of this.areas()) {
+      if (area.item === undefined || follow.has(area.item)) continue;
+      const cell = this.cellBox(area.item);
+      if (cell !== undefined) follow.set(area.item, cell);
+    }
+    const sameFollow = JSON.stringify([...follow]) === JSON.stringify([...this.follow]);
+    if (same && sameFollow) return;
     this.face = next;
+    this.follow = follow;
     if (this.editing) this.host.update();
+  }
+
+  /** A cell's box on the face now: around all its drawn parts (an icon by
+   * its glyph), a little bigger, in fractions of the face. Undefined while
+   * the cell is not drawn. */
+  private cellBox(item: string): Box | undefined {
+    const [row, cell] = item.split(".");
+    const face = this.host.element.querySelector<HTMLElement>(".te-tile .wp-tpl");
+    const frame = face?.getBoundingClientRect();
+    if (face === null || face === undefined || frame === undefined || !(frame.width > 0 && frame.height > 0)) return undefined;
+    const parts = [...face.querySelectorAll<HTMLElement>(`[data-tr="${row}"][data-tc="${cell}"]`)].map((el) => {
+      const r = (el.dataset["tp"] === "icon" ? el.querySelector("svg") ?? el : el).getBoundingClientRect();
+      return { x: (r.left - frame.left) / frame.width, y: (r.top - frame.top) / frame.height, w: r.width / frame.width, h: r.height / frame.height };
+    });
+    return templateTapBoxAround(parts);
+  }
+
+  /** A followed cell in a few words: its text, else its icon's name. */
+  private cellLabel(item: string): string {
+    const [row, cell] = item.split(".").map(Number) as [number, number];
+    const render = this.data().render;
+    const drawn = render?.ok === true ? templateRows(render.value)[row]?.[cell] : undefined;
+    const text = drawn?.text.trim() ?? "";
+    if (text !== "") return text;
+    if (drawn?.icon !== undefined) return drawn.icon.symbol;
+    return `Row ${row + 1}, item ${cell + 1}`;
   }
 
   /** The layer over the face, while Edit areas is on. */
@@ -309,9 +368,13 @@ export class TemplateTapEditor {
     const pct = (n: number) => `${Math.round(n * 100000) / 1000}%`;
     return html`<div class="te-taps-layer" style=${`left:${face.left}px;top:${face.top}px;width:${face.width}px;height:${face.height}px`}
       @pointerdown=${(e: PointerEvent) => this.start(e)} @click=${(e: MouseEvent) => e.stopPropagation()}>
-      ${this.areas().map((a, i) => html`<div class="te-tap ${i === picked ? "on" : ""}" data-tap=${i}
-        style=${`left:${pct(a.x)};top:${pct(a.y)};width:${pct(a.w)};height:${pct(a.h)}`}>
-        <span class="te-tap-n">${i + 1}</span><span class="te-tap-size" data-tap-size aria-hidden="true"></span></div>`)}
+      ${this.areas().map((a, i) => {
+        // A followed area is drawn on its cell, wherever the cell is now.
+        const b = (a.item === undefined ? undefined : this.follow.get(a.item)) ?? a;
+        return html`<div class="te-tap ${i === picked ? "on" : ""} ${a.item === undefined ? "" : "follow"}" data-tap=${i}
+        style=${`left:${pct(b.x)};top:${pct(b.y)};width:${pct(b.w)};height:${pct(b.h)}`} title=${a.item === undefined ? "" : `Follows ${this.cellLabel(a.item)}`}>
+        <span class="te-tap-n">${i + 1}</span>${a.item === undefined ? html`<span class="te-tap-size" data-tap-size aria-hidden="true"></span>` : nothing}</div>`;
+      })}
     </div>`;
   }
 
@@ -358,7 +421,7 @@ export class TemplateTapEditor {
             const on = this.editing && i === picked;
             const detail = this.areaDetail(a);
             return html`<button type="button" class="te-tap-row ${on ? "on" : ""}" data-tap-row=${i} aria-pressed=${on ? "true" : "false"} title=${detail} @click=${() => this.pick(i)}>
-              <span class="te-tap-badge">${i + 1}</span><span class="te-tap-words"><b>${this.actionWords(a.action)}</b>${detail === "" ? nothing : html`<small>${detail}</small>`}</span></button>`;
+              <span class="te-tap-badge">${i + 1}</span><span class="te-tap-words"><b>${this.actionWords(a.action)}</b>${detail === "" ? nothing : html`<small>${detail}</small>`}${a.item === undefined ? nothing : html`<small class="te-tap-follows-line">Follows: ${this.cellLabel(a.item)}</small>`}</span></button>`;
           })}
           <button type="button" class="te-tap-add" ?disabled=${d.busy || full} title=${full ? `At most ${TEMPLATE_TAPS.max} areas` : ""} @click=${() => this.add()}><span aria-hidden="true">+</span>${words.addLabel}</button>
           <div class="te-tap-marker">${this.markerHint(words.markerHint)}</div>
@@ -381,9 +444,65 @@ export class TemplateTapEditor {
     const index = this.pickedIndex();
     if (!this.editing || index === undefined) return nothing;
     const area = this.areas()[index]!;
-    const words = d.taps.words;
-    const pages = d.taps.pages;
-    const httpActions = d.taps.httpActions;
+    return html`<section class="te-item-inspector te-tap-form" aria-label=${`Tap area ${index + 1}`}>
+      <div class="te-item-head"><b>Tap area ${index + 1}</b>
+        <button type="button" class="te-item-link" ?disabled=${d.busy} @click=${() => this.remove(index)}>Delete</button></div>
+      ${area.item === undefined ? nothing : html`<div class="te-tap-follows"><span><b>Follows: ${this.cellLabel(area.item)}</b><small>It moves with its item. Move the item to move it.</small></span>
+        <button type="button" class="te-chip" ?disabled=${d.busy} @click=${() => this.stopFollowing(index)}>Stop following</button></div>`}
+      <label class="te-item-field"><span>Action</span>${this.actionSelect(area, (action) => this.chooseAction(index, action as TemplateTapAction), false)}</label>
+      ${this.fields(area, index)}
+      ${this.rowExample(area)}
+      ${this.confirmSwitch(area, index)}
+    </section>`;
+  }
+
+  /** The Tap setting in the picked item's box: Nothing or one of the
+   * actions, with the same fields as an area's card. An action makes (or
+   * changes) the one area that follows this cell, boxed on the cell as it is
+   * drawn now; Nothing removes it. */
+  itemTap(row: number, cell: number): TemplateResult {
+    const d = this.data();
+    const key = `${row}.${cell}`;
+    const areas = this.areas();
+    const index = areas.findIndex((a) => a.item === key);
+    const area = index < 0 ? undefined : areas[index];
+    const full = area === undefined && areas.length >= TEMPLATE_TAPS.max;
+    const pick = (value: string) => {
+      if (value === "") { if (index >= 0) this.remove(index); return; }
+      const action = value as TemplateTapAction;
+      const box = this.cellBox(key);
+      if (area !== undefined) { this.chooseAction(index, action, box); return; }
+      if (full || d.busy) return;
+      const start = withTemplateTapItem(newTemplateTapArea(), key, box);
+      const field = templateTapField(action);
+      const next = withTemplateTapAction(start, action, field === undefined ? undefined : this.firstText(undefined, action));
+      if (next.action !== action) return;
+      d.ended();
+      this.write([...areas, next]);
+      d.ended();
+      this.focusText(action);
+    };
+    return html`<div class="te-item-tap">
+      <label class="te-item-field"><span>Tap</span>${this.actionSelect(area, pick, true, full)}</label>
+      <div class="te-hint">${full ? `At most ${TEMPLATE_TAPS.max} tap areas. Delete one to add this.` : "A tap on this item does this, wherever the item moves."}</div>
+      ${area === undefined ? nothing : html`${this.fields(area, index)}${this.confirmSwitch(area, index)}`}
+    </div>`;
+  }
+
+  /** The followed area as a plain box again, where its item is now. */
+  private stopFollowing(index: number): void {
+    const area = this.areas()[index];
+    if (area?.item === undefined) return;
+    const box = this.cellBox(area.item) ?? this.follow.get(area.item);
+    this.data().ended();
+    this.replace(index, withTemplateTapItem(area, undefined, box));
+    this.data().ended();
+  }
+
+  /** The text a newly picked action starts with, so the rule keeps the
+   * area: what the area held, else a first choice that exists. */
+  private firstText(area: TemplateTapArea | undefined, action: TemplateTapAction): string | undefined {
+    const d = this.data();
     const ids = Object.keys(d.hass.states).sort();
     const firstOf = (domains: readonly string[]): string | undefined => {
       for (const domain of domains) {
@@ -392,39 +511,66 @@ export class TemplateTapEditor {
       }
       return undefined;
     };
-    const held = area.entity;
+    const held = area?.entity;
     const heldIn = (domain: string) => held !== undefined && held.startsWith(`${domain}.`) ? held : undefined;
-    // The text a newly picked action starts with, so the rule keeps the area.
-    const firstText = (action: TemplateTapAction): string | undefined => {
-      switch (action) {
-        case "maps": return area.place ?? FIRST_PLACE;
-        case "link": return area.url ?? FIRST_URL;
-        case "page": return area.page ?? pages[0]?.id;
-        case "toggle": return held ?? firstOf(TOGGLE_FIRST) ?? ids[0];
-        case "control": return held ?? firstOf(CONTROL_FIRST) ?? ids[0];
-        case "script": return heldIn("script") ?? firstOf(["script"]);
-        case "scene": return heldIn("scene") ?? firstOf(["scene"]);
-        case "service": return area.service ?? FIRST_SERVICE;
-        case "http": return area.http ?? httpActions[0]?.id;
-        default: return undefined;
-      }
-    };
-    const setAction = (action: TemplateTapAction) => {
-      if (action === area.action) return;
-      const field = templateTapField(action);
-      let next = withTemplateTapAction(area, action, field === undefined ? undefined : firstText(action));
-      if (next === area) return;
-      // A service starts on the entity the area held, so it does the same.
-      if (action === "service") next = withTemplateTapServiceExtras(next, { entity: held });
-      this.dataDraft = undefined;
-      d.ended();
-      this.replace(index, next);
-      d.ended();
-      if (action === "maps" || action === "link" || action === "service") void this.host.drawn().then(() => this.host.element.querySelector<HTMLInputElement>(".te-tap-text")?.focus());
-    };
-    // An action that cannot start (nothing to pick) is offered greyed.
+    switch (action) {
+      case "maps": return area?.place ?? FIRST_PLACE;
+      case "link": return area?.url ?? FIRST_URL;
+      case "page": return area?.page ?? d.taps.pages[0]?.id;
+      case "toggle": return held ?? firstOf(TOGGLE_FIRST) ?? ids[0];
+      case "control": return held ?? firstOf(CONTROL_FIRST) ?? ids[0];
+      case "script": return heldIn("script") ?? firstOf(["script"]);
+      case "scene": return heldIn("scene") ?? firstOf(["scene"]);
+      case "service": return area?.service ?? FIRST_SERVICE;
+      case "http": return area?.http ?? d.taps.httpActions[0]?.id;
+      default: return undefined;
+    }
+  }
+
+  /** The area at `index` with another action, and its box set to `box`
+   * when given. */
+  private chooseAction(index: number, action: TemplateTapAction, box?: Box): void {
+    const d = this.data();
+    const area = this.areas()[index];
+    if (area === undefined || (action === area.action && box === undefined)) return;
+    const field = templateTapField(action);
+    let next = action === area.action ? area : withTemplateTapAction(area, action, field === undefined ? undefined : this.firstText(area, action));
+    if (next.action !== action) return;
+    // A service starts on the entity the area held, so it does the same.
+    if (action === "service" && area.action !== "service") next = withTemplateTapServiceExtras(next, { entity: area.entity });
+    if (box !== undefined) next = { ...next, ...box };
+    this.dataDraft = undefined;
+    d.ended();
+    this.replace(index, next);
+    d.ended();
+    this.focusText(action);
+  }
+
+  private focusText(action: TemplateTapAction): void {
+    if (action === "maps" || action === "link" || action === "service") void this.host.drawn().then(() => this.host.element.querySelector<HTMLInputElement>(".te-tap-text")?.focus());
+  }
+
+  /** The Action menu, by group; with `nothing`, Nothing first. An action
+   * that cannot start (nothing to pick) is offered greyed. */
+  private actionSelect(area: TemplateTapArea | undefined, pick: (value: string) => void, withNothing: boolean, full = false): TemplateResult {
+    const d = this.data();
     const offered = (action: TemplateTapAction): boolean =>
-      action === area.action || templateTapField(action) === undefined || firstText(action) !== undefined;
+      action === area?.action || templateTapField(action) === undefined || this.firstText(area, action) !== undefined;
+    return html`<select class="te-select" aria-label=${withNothing ? "Tap" : "Action"} ?disabled=${d.busy || full} @change=${(e: Event) => pick((e.target as HTMLSelectElement).value)}>
+      ${withNothing ? html`<option value="" ?selected=${area === undefined}>Nothing</option>` : nothing}
+      ${ACTION_GROUPS.map(([group, actions]) => html`<optgroup label=${group}>
+        ${actions.map((a) => html`<option value=${a} ?selected=${a === area?.action} ?disabled=${!offered(a)}>${this.actionWords(a)}</option>`)}
+      </optgroup>`)}
+    </select>`;
+  }
+
+  /** The action's own fields: the place, URL, page, entity, service or
+   * HTTP action, each with its hint. */
+  private fields(area: TemplateTapArea, index: number): TemplateResult {
+    const d = this.data();
+    const words = d.taps.words;
+    const pages = d.taps.pages;
+    const httpActions = d.taps.httpActions;
     const typed = (field: "place" | "url" | "service") => (e: Event) => {
       const value = (e.target as HTMLInputElement).value;
       if (value.trim() === "") return;
@@ -456,16 +602,7 @@ export class TemplateTapEditor {
     };
     const missing = area.action === "page" && !pages.some((p) => p.id === area.page);
     const missingHTTP = area.action === "http" && !httpActions.some((a) => a.id.toUpperCase() === area.http?.toUpperCase());
-    return html`<section class="te-item-inspector te-tap-form" aria-label=${`Tap area ${index + 1}`}>
-      <div class="te-item-head"><b>Tap area ${index + 1}</b>
-        <button type="button" class="te-item-link" ?disabled=${d.busy} @click=${() => this.remove(index)}>Delete</button></div>
-      <label class="te-item-field"><span>Action</span>
-        <select class="te-select" aria-label="Action" ?disabled=${d.busy} @change=${(e: Event) => setAction((e.target as HTMLSelectElement).value as TemplateTapAction)}>
-          ${ACTION_GROUPS.map(([group, actions]) => html`<optgroup label=${group}>
-            ${actions.map((a) => html`<option value=${a} ?selected=${a === area.action} ?disabled=${!offered(a)}>${this.actionWords(a)}</option>`)}
-          </optgroup>`)}
-        </select></label>
-      ${area.action === "maps" ? textField("place", "Place", words.placeHint, FIRST_PLACE) : nothing}
+    return html`${area.action === "maps" ? textField("place", "Place", words.placeHint, FIRST_PLACE) : nothing}
       ${area.action === "link" ? textField("url", "URL", words.urlHint, "https://example.com") : nothing}
       ${area.action === "page" ? html`<label class="te-item-field"><span>Page</span>
         <select class="te-select" aria-label="Page" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, page: (e.target as HTMLSelectElement).value })}>
@@ -482,11 +619,52 @@ export class TemplateTapEditor {
         <select class="te-select" aria-label="HTTP action" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, http: (e.target as HTMLSelectElement).value })}>
           ${missingHTTP ? html`<option value=${area.http ?? ""} selected>Missing action</option>` : nothing}
           ${httpActions.map((a) => html`<option value=${a.id} ?selected=${a.id.toUpperCase() === area.http?.toUpperCase()}>${a.name}</option>`)}
-        </select></label>${hint("http")}` : nothing}
-      <label class="te-sw te-tap-confirm"><span><b>${words.confirmLabel}</b><small>${words.confirmHint}</small></span>
-        <button type="button" class="te-switch ${area.confirm === true ? "on" : ""}" role="switch" aria-checked=${area.confirm === true ? "true" : "false"} aria-label=${words.confirmLabel} ?disabled=${d.busy}
-          @click=${() => { d.ended(); this.replace(index, withTemplateTapConfirm(area, area.confirm !== true)); d.ended(); }}></button></label>
-    </section>`;
+        </select></label>${hint("http")}` : nothing}`;
+  }
+
+  private confirmSwitch(area: TemplateTapArea, index: number): TemplateResult {
+    const d = this.data(), words = d.taps.words;
+    return html`<label class="te-sw te-tap-confirm"><span><b>${words.confirmLabel}</b><small>${words.confirmHint}</small></span>
+      <button type="button" class="te-switch ${area.confirm === true ? "on" : ""}" role="switch" aria-checked=${area.confirm === true ? "true" : "false"} aria-label=${words.confirmLabel} ?disabled=${d.busy}
+        @click=${() => { d.ended(); this.replace(index, withTemplateTapConfirm(area, area.confirm !== true)); d.ended(); }}></button></label>`;
+  }
+
+  /** The same action written as a row action, with Copy, and a note when
+   * the area holds what a marker cannot say. */
+  private rowExample(area: TemplateTapArea): TemplateResult {
+    const d = this.data();
+    const marker = templateTapMarker(area, { pages: d.taps.pages, httpActions: d.taps.httpActions });
+    const copied = this.copied !== undefined && this.copied.tile === d.tileId && this.copied.marker === marker ? this.copied.words : undefined;
+    return html`<div class="te-tap-as-row"><span>As a row action:</span><code>${marker}</code>
+        <button type="button" class="te-chip" aria-label=${`Copy ${marker}`} @click=${(e: Event) => void this.copy(marker, e.currentTarget as HTMLElement)}>${copied ?? "Copy"}</button></div>
+      ${templateTapMarkerLoses(area) ? html`<div class="te-hint">Data and Ask before running work only in tap areas.</div>` : nothing}`;
+  }
+
+  /** Copies the marker. Plain http has no clipboard, so the old copy of a
+   * selection goes second; when that fails too, the marker stays selected. */
+  private async copy(marker: string, button: HTMLElement): Promise<void> {
+    let words = "Copied";
+    try {
+      if (navigator.clipboard?.writeText === undefined) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(marker);
+    } catch {
+      const code = button.parentElement?.querySelector("code");
+      const selection = window.getSelection();
+      let done = false;
+      if (code !== null && code !== undefined && selection !== null) {
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        try { done = document.execCommand("copy"); } catch { done = false; }
+        if (done) selection.removeAllRanges();
+      }
+      if (!done) words = "Press Ctrl+C";
+    }
+    this.copied = { tile: this.data().tileId, marker, words };
+    this.host.update();
+    if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
+    this.copiedTimer = setTimeout(() => { this.copied = undefined; this.copiedTimer = undefined; this.host.update(); }, 1600);
   }
 
   /** Call service's fields: the service, with Home Assistant's services as

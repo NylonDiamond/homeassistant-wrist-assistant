@@ -14,6 +14,9 @@ interface ItemHost {
   update(): void;
   write(text: string): void;
   showCode(from: number, to: number): void;
+  /** The Tap setting for one cell of the template, `row` and `cell` as in
+   * `templateRows`. */
+  tap?(row: number, cell: number): TemplateResult;
 }
 interface ItemDrag { tile: string; startX: number; startY: number; width: number; height: number; boxes: TemplateSnapBox[]; layout: TemplateTileLayout; before?: TemplateTileLayout; moved: boolean; lead: string; modifier: boolean }
 interface MarqueeDrag { tile: string; pointer: number; frame: DOMRect; from: SelectionPoint; to: SelectionPoint; startX: number; startY: number; boxes: TemplateSnapBox[]; before: string[]; additive: boolean; moved: boolean }
@@ -431,6 +434,8 @@ export class TemplateItemEditor {
     const symbols = (this.data().icons.names() ?? []).filter(s => this.symbolSearch === "" ? ["lightbulb.fill", "lock.fill", "lock.open.fill", "person.fill", "thermometer", "door.left.hand.open", "house.fill", "checkmark"].includes(s) : s.includes(this.symbolSearch.toLowerCase())).slice(0, 40);
     const unsupported = chosen.some(p => p.source === undefined || templateItemSource(text, p).choices.length === 0);
     const sizeValue = chosen.length > 1 ? this.scale : items[0]?.size;
+    // The Tap setting, while every picked part is of one cell.
+    const cell = chosen.every(p => p.row === chosen[0]!.row && p.cell === chosen[0]!.cell) ? chosen[0]! : undefined;
     return html`<section class="te-item-inspector" aria-label="Selected template items"><div class="te-item-head"><b>${chosen.length > 1 ? `${chosen.length} items selected` : chosen[0]!.kind === "icon" ? this.glyph(chosen[0]!.symbol!) : chosen[0]!.text}</b>${this.dot(changedPlacement, "placement", () => { const layout = this.capture(); if (layout) { layout.items.filter(p => this.selected.has(p.key)).forEach(p => { p.x = p.baseX; p.y = p.baseY; }); this.writeLayout(layout); } })}</div>
       ${chosen.length < 2 ? nothing : html`<div class="te-item-field"><span>Align selected</span><div class="te-item-align">
         <button type="button" aria-label="Align vertical center" title="Line up centers in one column; keep vertical spacing" ?disabled=${this.data().busy} @click=${() => this.align("vertical", "center")}>${svg`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M8 1v14" stroke-dasharray="2 2"/><rect x="3" y="3" width="10" height="3" rx="1"/><rect x="5" y="10" width="6" height="3" rx="1"/></svg>`}<span>Vertical<br>Center</span></button>
@@ -446,6 +451,7 @@ export class TemplateItemEditor {
         return html`<label class="te-item-color"><input type="color" aria-label=${group.label === "Color" ? "Item color" : `${group.label} color`} .value=${hex} @input=${(e: Event) => this.editColors(group, (e.target as HTMLInputElement).value)} @blur=${() => this.data().ended()}><span>${group.label}<small>${values.length > 1 ? "Mixed" : first === "" ? "Inherited" : first}</small></span>${this.dot(modified, `${group.label.toLowerCase()} color`, () => this.editColors(group))}</label>`;
       })}
       <div class="te-item-field"><span>${chosen.length > 1 ? "Scale selected" : "Size"}${this.dot(changedSize, "size", () => { const layout = this.capture(); if (layout) { layout.items.filter(p => this.selected.has(p.key)).forEach(p => p.size = p.baseSize); this.sizeStart = undefined; this.scale = 100; this.writeLayout(layout); } })}</span><div class="te-item-size"><input type="number" aria-label="Selected item size" min=${chosen.length > 1 ? 25 : 2} max=${chosen.length > 1 ? 300 : 80} step="1" .value=${sizeValue === undefined ? "" : String(Math.round(sizeValue * 10) / 10)} placeholder="Auto" @input=${(e: Event) => this.size(Number((e.target as HTMLInputElement).value))} @blur=${() => this.data().ended()}><span>${chosen.length > 1 ? "%" : "pt"}</span></div><input type="range" aria-label="Selected item size slider" min=${chosen.length > 1 ? 25 : 2} max=${chosen.length > 1 ? 200 : 60} .value=${String(sizeValue ?? 15)} @input=${(e: Event) => this.size(Number((e.target as HTMLInputElement).value))} @change=${() => this.data().ended()}></div>
+      ${cell === undefined || this.host.tap === undefined ? nothing : this.host.tap(cell.row, cell.cell)}
       ${unsupported ? html`<p class="te-hint">This item comes from template logic. Edit ambiguous icons, labels, or colors in Jinja; placement and size still work.</p>` : nothing}
       ${stored !== undefined && resolveTemplateLayout(stored, this.value) === undefined ? html`<p class="te-hint">The template output changed. Automatic layout keeps all content visible. Reset layout to arrange it again.</p>` : nothing}
       ${this.note === undefined ? nothing : html`<p class="te-hint">${this.note}</p>`}
