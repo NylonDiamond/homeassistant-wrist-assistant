@@ -1234,7 +1234,7 @@ export class WatchSettings implements ReactiveController {
     if (r === undefined || r.revision <= 0) return name;
     const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
     const when = Number.isNaN(at) ? "" : agoWords(Math.max(0, (Date.now() - at) / 1000));
-    return `${name} · ${savedLine(r.updated_by, when, this.device)}`;
+    return `${name} · ${savedLine(r.updated_by, when, this.device, this.ownerId)}`;
   }
 
   /** The head line's tooltip: the revisions it leaves out. */

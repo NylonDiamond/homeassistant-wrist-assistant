@@ -521,14 +521,24 @@ export function rejectedNow(record: Pick<WatchConfigRecord, "revision" | "reject
 /** Who saved a record, for the head lines: "saved here" for the panel, else
  * "from the watch" (the writer signed as the watch's own pair, whether the
  * watch or its iPhone sent it), or "from the iPhone" for a phone's own
- * record, which only the phone writes. Lower case; the caller capitalises. */
-export function savedByWords(updatedBy: string | null | undefined, device: SettingDevice = "watch"): string {
-  return updatedBy === "panel" ? "saved here" : `from the ${deviceNoun(device)}`;
+ * record, which only the phone writes. With `ownerId`, a watch's record
+ * saved by anyone but the panel and the watch itself is "from the iPhone":
+ * an iPhone changing its watch's settings (capability
+ * `phone_watch_settings`) saves under its own id. Lower case; the caller
+ * capitalises. */
+export function savedByWords(
+  updatedBy: string | null | undefined,
+  device: SettingDevice = "watch",
+  ownerId?: string | null,
+): string {
+  if (updatedBy === "panel") return "saved here";
+  if (device === "watch" && ownerId && updatedBy && updatedBy !== ownerId) return "from the iPhone";
+  return `from the ${deviceNoun(device)}`;
 }
 
 /** The same at the start of a line: "Saved here", "From the iPhone". */
-export function savedByLine(updatedBy: string | null | undefined, device: SettingDevice = "watch"): string {
-  const words = savedByWords(updatedBy, device);
+export function savedByLine(updatedBy: string | null | undefined, device: SettingDevice = "watch", ownerId?: string | null): string {
+  const words = savedByWords(updatedBy, device, ownerId);
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -536,8 +546,13 @@ export function savedByLine(updatedBy: string | null | undefined, device: Settin
  * min ago", "Saved from the watch just now". `when` is `agoWords` output, or
  * empty for a time that will not parse. The revision number is jargon to a
  * new user, so callers keep it for a tooltip. */
-export function savedLine(updatedBy: string | null | undefined, when: string, device: SettingDevice = "watch"): string {
-  const by = updatedBy === "panel" ? "here" : `from the ${deviceNoun(device)}`;
+export function savedLine(
+  updatedBy: string | null | undefined,
+  when: string,
+  device: SettingDevice = "watch",
+  ownerId?: string | null,
+): string {
+  const by = updatedBy === "panel" ? "here" : savedByWords(updatedBy, device, ownerId);
   return `Saved ${by}${when ? ` ${when}` : ""}`;
 }
 

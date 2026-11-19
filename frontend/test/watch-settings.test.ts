@@ -528,6 +528,12 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(savedByWords("P1", "iphone")).toBe("from the iPhone");
     expect(savedByWords("panel", "iphone")).toBe("saved here");
     expect(savedByWords("W1", "watch")).toBe("from the watch");
+    // An iPhone saving its watch's settings saves under its own id.
+    expect(savedByWords("P1", "watch", "W1")).toBe("from the iPhone");
+    expect(savedByWords("W1", "watch", "W1")).toBe("from the watch");
+    expect(savedByWords("panel", "watch", "W1")).toBe("saved here");
+    expect(savedLine("P1", "just now", "watch", "W1")).toBe("Saved from the iPhone just now");
+    expect(savedByWords("P1", "iphone", "P1")).toBe("from the iPhone");
     expect(savedByLine("P1", "iphone")).toBe("From the iPhone");
     expect(savedByLine("W1")).toBe("From the watch");
     expect(savedByLine("panel", "iphone")).toBe("Saved here");
