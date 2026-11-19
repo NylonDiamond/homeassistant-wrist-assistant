@@ -914,6 +914,11 @@ export const templateEditorStyles = css`
   .cm-line.te-cutline { opacity: .42; }
   .cm-line.te-rowline { padding: 5px 0 6px; border-bottom: 1px solid var(--wa-line); }
   .cm-line.te-rowline:last-child { border-bottom: 0; }
+  /* Wrap on: a long line's wrapped part starts indented, so it reads as one
+     line, and a faint dash parts each line from the next. */
+  .cm-lineWrapping > .cm-line { padding-left: 1.6em; text-indent: -1.6em; }
+  .cm-lineWrapping > .cm-line.te-rowline { padding-left: 1.6em; }
+  .cm-lineWrapping > .cm-line:not(.te-rowline):not(.te-openrow) + .cm-line:not(.te-rowline):not(.te-openrow) { border-top: 1px dashed color-mix(in srgb, var(--wa-line) 80%, transparent); }
   .cm-line.te-openrow { padding: 0 0 0 27px; }
   .cm-line.te-openrow:has(+ .te-rh), .cm-line.te-openrow:last-child { padding-bottom: 9px; border-bottom: 1px solid var(--wa-line); }
   .te-rh { display: flex; align-items: center; gap: 8px; margin: 0 -10px; padding: 8px 12px; border-bottom: 1px solid var(--wa-line); font: 600 13.5px ${unsafeCSS(TILE_FONT_STACK)}; color: var(--wa-ink); white-space: nowrap; overflow: hidden; cursor: pointer; user-select: none; }
