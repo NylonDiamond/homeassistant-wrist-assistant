@@ -16,6 +16,7 @@ import {
   spannedTemplateTapArea,
   templateTapAt,
   withTemplateTapAction,
+  withTemplateTapServiceExtras,
 } from "../src/watch-pages/template-taps.js";
 
 const PAGE = "P";
@@ -33,7 +34,9 @@ describe("Tap areas", () => {
   });
 
   it("takes its numbers from the shared table", () => {
-    expect(TEMPLATE_TAPS).toEqual({ key: "templateTaps", max: 8, minSize: 0.05, maxText: 2000, actions: ["maps", "link", "refresh", "page"] });
+    expect(TEMPLATE_TAPS).toEqual({ key: "templateTaps", max: 8, minSize: 0.05, maxText: 2000, actions: ["maps", "link", "refresh", "page", "toggle", "script", "scene", "service", "http", "control"] });
+    // Every action has a label in the panel.
+    for (const a of TEMPLATE_TAPS.actions) expect(tileApp.template.taps.actionLabels[a]).toBeTruthy();
     expect(keyDevices("templateTaps")).toEqual(["watch", "iphone"]);
     expect((pageKeys as unknown as { types: { tile: { keys: Record<string, unknown> } } }).types.tile.keys["templateTaps"]).toEqual({ type: "json", required: false });
   });
@@ -60,6 +63,23 @@ describe("Tap areas", () => {
     // No text for an action that needs it keeps the area as it was.
     expect(withTemplateTapAction(area, "link")).toBe(area);
     expect(withTemplateTapAction({ ...area, action: "maps", place: "a.b" }, "refresh")).toEqual(area);
+  });
+
+  it("keeps an entity and data only on a service area", () => {
+    const area = newTemplateTapArea();
+    expect(withTemplateTapAction(area, "toggle", " light.porch ")).toEqual({ ...area, action: "toggle", entity: "light.porch" });
+    expect(withTemplateTapAction(area, "http", "ABC")).toEqual({ ...area, action: "http", http: "ABC" });
+    expect(withTemplateTapAction(area, "control")).toBe(area);
+    const service = withTemplateTapAction(area, "service", "light.turn_on");
+    const full = withTemplateTapServiceExtras(service, { entity: " light.desk ", data: { brightness_pct: 40 } });
+    expect(full).toEqual({ ...service, entity: "light.desk", data: { brightness_pct: 40 } });
+    expect(normalizeTemplateTaps([full])).toEqual([full]);
+    expect(withTemplateTapServiceExtras(full, { entity: "" })).toEqual({ ...service, data: { brightness_pct: 40 } });
+    expect(withTemplateTapServiceExtras(full, { data: undefined })).toEqual({ ...service, entity: "light.desk" });
+    // Another action keeps no entity or data, and is never given them.
+    expect(withTemplateTapAction(full, "refresh")).toEqual(area);
+    expect(withTemplateTapServiceExtras(area, { entity: "light.x" })).toBe(area);
+    expect(normalizeTemplateTaps([{ ...area, action: "toggle", entity: "light.a", data: { a: 1 } }])).toEqual([{ ...area, action: "toggle", entity: "light.a" }]);
   });
 
   it("finds the last area under a point, as the devices do", () => {

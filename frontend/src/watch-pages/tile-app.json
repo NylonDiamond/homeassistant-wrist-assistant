@@ -135,14 +135,17 @@
       "max": 8,
       "minSize": 0.05,
       "maxText": 2000,
-      "actions": ["maps", "link", "refresh", "page"],
+      "actions": ["maps", "link", "refresh", "page", "toggle", "script", "scene", "service", "http", "control"],
       "label": "Tap areas",
       "help": "Draw boxes on the tile. A tap in a box does its action.",
       "addLabel": "Add tap area",
-      "actionLabels": { "maps": "Open in Maps", "link": "Open web page (iPhone)", "refresh": "Refresh", "page": "Go to page" },
+      "actionLabels": { "maps": "Open in Maps", "link": "Open web page (iPhone)", "refresh": "Refresh", "page": "Go to page", "toggle": "Toggle", "script": "Run script", "scene": "Run scene", "service": "Call service", "http": "Run HTTP action", "control": "Open controls" },
       "placeHint": "An entity with a location, or 52.37,4.89,Name. Templates work.",
       "urlHint": "http or https. Templates work. Opens on iPhone only.",
-      "rule": "An array of areas: x, y (top left), w, h (size), fractions of the tile's drawn face, and an action with its text (maps: place, link: url, page: page; refresh has none). Each item is read on its own: not an object, or x, y, w, h not all finite numbers, is dropped; an action not in actions is dropped; the action's text is trimmed, and missing, not a string, empty or over maxText characters is dropped; other keys are left out. Then x and y are kept from 0 to 1 minus minSize, w from minSize to 1 minus x, h from minSize to 1 minus y, each rounded to 4 places. Then only the first max areas are kept. Not an array is none. The last area holding a tap wins, then a row's link marker, then the tile's own tap.",
+      "actionHints": { "toggle": "Turns it on or off.", "script": "Runs the script.", "scene": "Turns the scene on.", "service": "Calls the service. With an entity, it goes as entity_id.", "http": "Runs one of your HTTP actions.", "control": "Opens its controls on the device." },
+      "serviceHint": "Like light.turn_on",
+      "dataHint": "Optional. A JSON object, like {\"brightness_pct\": 40}.",
+      "rule": "An array of areas: x, y (top left), w, h (size), fractions of the tile's drawn face, and an action with its text (maps: place, link: url, page: page, toggle, script, scene and control: entity, service: service, http: http; refresh has none). Each item is read on its own: not an object, or x, y, w, h not all finite numbers, is dropped; an action not in actions is dropped; the action's text is trimmed, and missing, not a string, empty or over maxText characters is dropped; other keys are left out, except that a service also keeps entity when it reads by the same text rule and data when it is a JSON object (neither drops the area). Then x and y are kept from 0 to 1 minus minSize, w from minSize to 1 minus x, h from minSize to 1 minus y, each rounded to 4 places. Then only the first max areas are kept. Not an array is none. The last area holding a tap wins, then a row's link marker, then the tile's own tap.",
       "samples": [
         {
           "input": [
@@ -447,6 +450,186 @@
             "action": "refresh"
           },
           "areas": []
+        },
+        {
+          "input": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "toggle",
+              "entity": " light.porch "
+            },
+            {
+              "x": 0.5,
+              "y": 0,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "script",
+              "entity": "script.refresh_gps"
+            },
+            {
+              "x": 0,
+              "y": 0.5,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "scene",
+              "entity": "scene.movie"
+            },
+            {
+              "x": 0.5,
+              "y": 0.5,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "control",
+              "entity": "climate.living"
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "toggle",
+              "entity": "light.porch"
+            },
+            {
+              "x": 0.5,
+              "y": 0.0,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "script",
+              "entity": "script.refresh_gps"
+            },
+            {
+              "x": 0.0,
+              "y": 0.5,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "scene",
+              "entity": "scene.movie"
+            },
+            {
+              "x": 0.5,
+              "y": 0.5,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "control",
+              "entity": "climate.living"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "service",
+              "service": "light.turn_on",
+              "entity": "light.desk",
+              "data": {
+                "brightness_pct": 40
+              }
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "service",
+              "service": "notify.notify",
+              "entity": "  ",
+              "data": "[1]"
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "service"
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 1.0,
+              "h": 1.0,
+              "action": "service",
+              "service": "light.turn_on",
+              "entity": "light.desk",
+              "data": {
+                "brightness_pct": 40
+              }
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 1.0,
+              "h": 1.0,
+              "action": "service",
+              "service": "notify.notify"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "http",
+              "http": "6F9619FF-8B86-D011-B42D-00C04FC964FF"
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "toggle"
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "control",
+              "entity": 7
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "refresh",
+              "entity": "light.x",
+              "data": {
+                "a": 1
+              }
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 1.0,
+              "h": 1.0,
+              "action": "http",
+              "http": "6F9619FF-8B86-D011-B42D-00C04FC964FF"
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 1.0,
+              "h": 1.0,
+              "action": "refresh"
+            }
+          ]
         }
       ]
     },

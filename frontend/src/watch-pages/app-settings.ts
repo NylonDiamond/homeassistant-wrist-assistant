@@ -67,6 +67,8 @@ import {
 } from "./phone-tiles-model.js";
 import type { TemplateEditorData } from "./template-editor.js";
 import { normalizeTemplateLayout } from "./template-layout.js";
+import { watchCatalogMark } from "./catalog.js";
+import { isWatchUUID } from "./tile-settings-model.js";
 import "./template-editor.js";
 import { commit, fieldNote, linkButton, menuField, typed, typingField } from "./tile-settings.js";
 import { watchChoiceMenu, watchTemplateLinesMenu, watchTileFallbackName } from "./tile-settings-options.js";
@@ -311,9 +313,12 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     taps: {
       areas: watchTemplateTaps(tile),
       pages: watchLinkTargetPages(watchLinkDocument(host), host.pageId, "pageLink").map((p) => ({ id: watchPageId(p), name: watchPageName(p) })),
+      httpActions: templateTapHTTPActions(host),
+      services: templateTapServices(host),
       words: {
         label: A.template.taps.label, help: A.template.taps.help, addLabel: A.template.taps.addLabel,
         placeHint: A.template.taps.placeHint, urlHint: A.template.taps.urlHint, actionLabels: A.template.taps.actionLabels,
+        actionHints: A.template.taps.actionHints, serviceHint: A.template.taps.serviceHint, dataHint: A.template.taps.dataHint,
       },
     },
     busy: host.busy,
@@ -339,6 +344,21 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
       </div>`,
   };
   return html`<div class="tpl-box" data-tpl=${key}><wa-template-editor .data=${data}></wa-template-editor></div>`;
+}
+
+/** The HTTP actions a tap area can run: the catalog's, as Hold slide offers
+ * them (an id that is a UUID, upper case, named with its mark). */
+function templateTapHTTPActions(host: TileSettingsHost): { id: string; name: string }[] {
+  return (host.catalog?.httpActions ?? []).filter((a) => isWatchUUID(a.id)).map((a) => {
+    const mark = watchCatalogMark("httpAction", a);
+    return { id: a.id.toUpperCase(), name: mark === undefined ? a.name : `${a.name} (${mark.charAt(0).toLowerCase()}${mark.slice(1)})` };
+  });
+}
+
+/** Home Assistant's services as `domain.service`, sorted, for Call service. */
+function templateTapServices(host: TileSettingsHost): string[] {
+  const services = host.hass.services ?? {};
+  return Object.entries(services).flatMap(([domain, byName]) => Object.keys(byName ?? {}).map((name) => `${domain}.${name}`)).sort();
 }
 
 // ── Music ────────────────────────────────────────────────────────────────

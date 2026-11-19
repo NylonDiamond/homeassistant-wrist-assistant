@@ -2,7 +2,8 @@
 // tile's picture, each with one action. The app's `TemplateTileTaps` reads
 // the key by the same rule, and both pass `tile-app.json` `template.taps`
 // `samples`. The contract is "Tap areas (2026-11-18)" in the app repo's
-// `docs/template_tile_links_2026-11.md`.
+// `docs/template_tile_links_2026-11.md`, with the six Home Assistant
+// actions of "Tap area actions, round 2 (2026-11-18)".
 //
 // No DOM here: the reader, and the small edits the editor makes to a list.
 
@@ -10,11 +11,15 @@ import tileApp from "./tile-app.json";
 
 const T = tileApp.template.taps;
 
-/** The four actions, in the order the editor lists them. */
-export type TemplateTapAction = "maps" | "link" | "refresh" | "page";
+/** The ten actions, in the table's order. */
+export type TemplateTapAction = "maps" | "link" | "refresh" | "page" | "toggle" | "script" | "scene" | "service" | "http" | "control";
+
+/** The text field an action can need. */
+export type TemplateTapField = "place" | "url" | "page" | "entity" | "service" | "http";
 
 /** One area as stored: top left and size as fractions of the tile's drawn
- * face, and the action's one text field, if it has one. */
+ * face, and the action's one text field, if it has one. A `service` area
+ * may also hold `entity` and `data`. */
 export interface TemplateTapArea {
   x: number;
   y: number;
@@ -24,6 +29,10 @@ export interface TemplateTapArea {
   place?: string;
   url?: string;
   page?: string;
+  entity?: string;
+  service?: string;
+  http?: string;
+  data?: Record<string, unknown>;
 }
 
 /** The key, the limits and the actions, from the shared table. */
@@ -36,13 +45,29 @@ export const TEMPLATE_TAPS = {
 } as const;
 
 /** The text field an action needs, or undefined for none. */
-export function templateTapField(action: TemplateTapAction): "place" | "url" | "page" | undefined {
+export function templateTapField(action: TemplateTapAction): TemplateTapField | undefined {
   switch (action) {
     case "maps": return "place";
     case "link": return "url";
     case "page": return "page";
+    case "toggle": case "script": case "scene": case "control": return "entity";
+    case "service": return "service";
+    case "http": return "http";
     default: return undefined;
   }
+}
+
+/** A text field read by the rule: trimmed, a string, not empty, at most
+ * `maxText` UTF-16 units. Undefined when it does not read. */
+function readText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  return text === "" || text.length > TEMPLATE_TAPS.maxText ? undefined : text;
+}
+
+/** A plain JSON object: not an array, not null. */
+export function isTemplateTapData(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isAction(value: unknown): value is TemplateTapAction {
@@ -71,10 +96,8 @@ function readArea(raw: unknown): TemplateTapArea | undefined {
   const field = templateTapField(action);
   let text: string | undefined;
   if (field !== undefined) {
-    const value = item[field];
-    if (typeof value !== "string") return undefined;
-    text = value.trim();
-    if (text === "" || text.length > TEMPLATE_TAPS.maxText) return undefined;
+    text = readText(item[field]);
+    if (text === undefined) return undefined;
   }
   const min = TEMPLATE_TAPS.minSize;
   const cx = clamp(x, 0, 1 - min);
@@ -83,6 +106,12 @@ function readArea(raw: unknown): TemplateTapArea | undefined {
   const ch = clamp(h, min, 1 - cy);
   const area: TemplateTapArea = { x: round(cx), y: round(cy), w: round(cw), h: round(ch), action };
   if (field !== undefined) area[field] = text;
+  if (action === "service") {
+    // Only a service keeps an entity and data, and neither drops the area.
+    const entity = readText(item["entity"]);
+    if (entity !== undefined) area.entity = entity;
+    if (isTemplateTapData(item["data"])) area.data = item["data"];
+  }
   return area;
 }
 
@@ -113,6 +142,19 @@ export function withTemplateTapAction(area: TemplateTapArea, action: TemplateTap
   if (field === undefined) return { x, y, w, h, action };
   const value = (text ?? area[field] ?? "").trim();
   return value === "" ? area : { x, y, w, h, action, [field]: value };
+}
+
+/** A service area with its entity and data set: an empty or blank entity,
+ * or undefined data, removes the key. Any other action is returned as is. */
+export function withTemplateTapServiceExtras(area: TemplateTapArea, extras: { entity?: string | undefined; data?: Record<string, unknown> | undefined }): TemplateTapArea {
+  if (area.action !== "service") return area;
+  const { entity: _entity, data: _data, ...rest } = area;
+  const next: TemplateTapArea = { ...rest };
+  const entity = ("entity" in extras ? extras.entity : area.entity)?.trim();
+  if (entity !== undefined && entity !== "") next.entity = entity;
+  const data = "data" in extras ? extras.data : area.data;
+  if (data !== undefined) next.data = data;
+  return next;
 }
 
 /** The area moved to `x`, `y`, its size kept, inside the face. */

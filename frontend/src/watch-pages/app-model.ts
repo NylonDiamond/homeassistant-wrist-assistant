@@ -326,7 +326,9 @@ interface AppTable {
     taps: {
       key: string; max: number; minSize: number; maxText: number; actions: readonly string[];
       label: string; help: string; addLabel: string; placeHint: string; urlHint: string;
-      actionLabels: Record<"maps" | "link" | "refresh" | "page", string>;
+      actionLabels: Record<"maps" | "link" | "refresh" | "page" | "toggle" | "script" | "scene" | "service" | "http" | "control", string>;
+      actionHints: Partial<Record<"toggle" | "script" | "scene" | "service" | "http" | "control", string>>;
+      serviceHint: string; dataHint: string;
     };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;

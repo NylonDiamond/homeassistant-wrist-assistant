@@ -64,11 +64,20 @@ export interface TemplateEditorData {
   };
   layout?: TemplateTileLayout;
   /** Tap areas: the stored areas by the shared rule, the pages a Go to page
-   * area can open, and the section's words. */
+   * area can open, the HTTP actions a Run HTTP action area can run (id upper
+   * case), Home Assistant's services (`domain.service`, sorted) for Call
+   * service, and the section's words. */
   taps: {
     areas: TemplateTapArea[];
     pages: readonly { id: string; name: string }[];
-    words: { label: string; help: string; addLabel: string; placeHint: string; urlHint: string; actionLabels: Record<TemplateTapAction, string> };
+    httpActions: readonly { id: string; name: string }[];
+    services: readonly string[];
+    words: {
+      label: string; help: string; addLabel: string; placeHint: string; urlHint: string;
+      actionLabels: Record<TemplateTapAction, string>;
+      actionHints: Partial<Record<TemplateTapAction, string>>;
+      serviceHint: string; dataHint: string;
+    };
   };
   busy: boolean;
   hass: HassLike;
@@ -661,6 +670,9 @@ export const templateEditorStyles = css`
   .te-issue-go:hover { text-decoration: underline; }
   .te-issue .te-chip { flex: none; color: var(--wa-ink); }
   .te-hint { font-size: 11.5px; color: var(--wa-muted); }
+  .te-hint.warn { color: var(--wa-hue-red); }
+  .te-tap-data { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; background: var(--wa-field, var(--wa-input)); color: var(--wa-ink); border: 1px solid var(--wa-line-strong); border-radius: 6px; padding: 5px 7px; font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .te-tap-data[aria-invalid="true"] { border-color: var(--wa-hue-red); }
   /* Inside the code. */
   .te-i { color: var(--wa-hue-purple); }
   .te-e { color: var(--wa-ent); }

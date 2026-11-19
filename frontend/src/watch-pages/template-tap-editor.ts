@@ -10,17 +10,20 @@
 // "Tap areas (2026-11-18)" in the app repo's `docs/template_tile_links_2026-11.md`.
 
 import { html, nothing, type TemplateResult } from "lit";
+import { entityField, entityRefFrom } from "../editors.js";
 import type { TemplateEditorData } from "./template-editor.js";
 import {
   type TemplateTapAction,
   type TemplateTapArea,
   TEMPLATE_TAPS,
+  isTemplateTapData,
   movedTemplateTapArea,
   newTemplateTapArea,
   resizedTemplateTapArea,
   spannedTemplateTapArea,
   templateTapField,
   withTemplateTapAction,
+  withTemplateTapServiceExtras,
 } from "./template-taps.js";
 
 interface TapHost {
@@ -49,6 +52,20 @@ interface TapDrag {
  * latitude, a longitude and a name. */
 const FIRST_PLACE = "zone.home";
 const FIRST_URL = "https://";
+/** The service a new Call service area gets: it toggles the entity the area
+ * held, if any. */
+const FIRST_SERVICE = "homeassistant.toggle";
+
+/** The Action menu's groups, in order. Each action is in one. */
+const ACTION_GROUPS: readonly (readonly [string, readonly TemplateTapAction[]])[] = [
+  ["Home Assistant", ["toggle", "control", "script", "scene", "service", "http"]],
+  ["Open", ["page", "maps", "link"]],
+  ["Tile", ["refresh"]],
+];
+
+/** Where Toggle and Open controls look first for a start entity. */
+const TOGGLE_FIRST = ["light", "switch", "fan", "input_boolean"] as const;
+const CONTROL_FIRST = ["light", "climate", "cover", "fan", "media_player"] as const;
 
 export class TemplateTapEditor {
   private tile: string | undefined;
@@ -58,6 +75,9 @@ export class TemplateTapEditor {
   private working: TemplateTapArea[] | undefined;
   private drag: TapDrag | undefined;
   private face: { left: number; top: number; width: number; height: number } | undefined;
+  /** The Data (JSON) box's text while it does not match the stored data: as
+   * typed, for one area, with its parse error if it has one. */
+  private dataDraft: { tile: string; index: number; text: string; error: string | undefined } | undefined;
 
   constructor(private readonly host: TapHost) {}
 
@@ -69,6 +89,7 @@ export class TemplateTapEditor {
       this.editing = false;
       this.picked = undefined;
       this.working = undefined;
+      this.dataDraft = undefined;
     }
     return data;
   }
@@ -106,6 +127,7 @@ export class TemplateTapEditor {
   private pick(index: number | undefined): void {
     this.editing = true;
     this.picked = index;
+    this.dataDraft = undefined;
     this.host.update();
   }
 
@@ -123,6 +145,7 @@ export class TemplateTapEditor {
     this.write(this.areas().filter((_, i) => i !== index));
     this.data().ended();
     this.picked = undefined;
+    this.dataDraft = undefined;
     this.host.update();
   }
 
@@ -323,39 +346,87 @@ export class TemplateTapEditor {
     const area = this.areas()[index]!;
     const words = d.taps.words;
     const pages = d.taps.pages;
-    const firstText = (action: TemplateTapAction): string | undefined =>
-      action === "maps" ? FIRST_PLACE : action === "link" ? FIRST_URL : action === "page" ? pages[0]?.id : undefined;
+    const httpActions = d.taps.httpActions;
+    const ids = Object.keys(d.hass.states).sort();
+    const firstOf = (domains: readonly string[]): string | undefined => {
+      for (const domain of domains) {
+        const hit = ids.find((id) => id.startsWith(`${domain}.`));
+        if (hit !== undefined) return hit;
+      }
+      return undefined;
+    };
+    const held = area.entity;
+    const heldIn = (domain: string) => held !== undefined && held.startsWith(`${domain}.`) ? held : undefined;
+    // The text a newly picked action starts with, so the rule keeps the area.
+    const firstText = (action: TemplateTapAction): string | undefined => {
+      switch (action) {
+        case "maps": return area.place ?? FIRST_PLACE;
+        case "link": return area.url ?? FIRST_URL;
+        case "page": return area.page ?? pages[0]?.id;
+        case "toggle": return held ?? firstOf(TOGGLE_FIRST) ?? ids[0];
+        case "control": return held ?? firstOf(CONTROL_FIRST) ?? ids[0];
+        case "script": return heldIn("script") ?? firstOf(["script"]);
+        case "scene": return heldIn("scene") ?? firstOf(["scene"]);
+        case "service": return area.service ?? FIRST_SERVICE;
+        case "http": return area.http ?? httpActions[0]?.id;
+        default: return undefined;
+      }
+    };
     const setAction = (action: TemplateTapAction) => {
       if (action === area.action) return;
       const field = templateTapField(action);
-      const next = withTemplateTapAction(area, action, field === undefined ? undefined : area[field] ?? firstText(action));
+      let next = withTemplateTapAction(area, action, field === undefined ? undefined : firstText(action));
       if (next === area) return;
+      // A service starts on the entity the area held, so it does the same.
+      if (action === "service") next = withTemplateTapServiceExtras(next, { entity: held });
+      this.dataDraft = undefined;
       d.ended();
       this.replace(index, next);
       d.ended();
-      if (action === "maps" || action === "link") void this.host.drawn().then(() => this.host.element.querySelector<HTMLInputElement>(".te-tap-text")?.focus());
+      if (action === "maps" || action === "link" || action === "service") void this.host.drawn().then(() => this.host.element.querySelector<HTMLInputElement>(".te-tap-text")?.focus());
     };
-    const typed = (field: "place" | "url") => (e: Event) => {
+    // An action that cannot start (nothing to pick) is offered greyed.
+    const offered = (action: TemplateTapAction): boolean =>
+      action === area.action || templateTapField(action) === undefined || firstText(action) !== undefined;
+    const typed = (field: "place" | "url" | "service") => (e: Event) => {
       const value = (e.target as HTMLInputElement).value;
       if (value.trim() === "") return;
       this.replace(index, { ...area, [field]: value }, true);
     };
-    const left = (field: "place" | "url") => (e: Event) => {
+    const left = (field: "place" | "url" | "service") => (e: Event) => {
       const input = e.target as HTMLInputElement;
       if (input.value.trim() === "") input.value = area[field] ?? "";
       d.ended();
     };
-    const textField = (field: "place" | "url", label: string, hint: string, placeholder: string) => html`<label class="te-item-field"><span>${label}</span>
-      <input class="te-tap-text" type="text" spellcheck="false" maxlength=${TEMPLATE_TAPS.maxText} placeholder=${placeholder} .value=${area[field] ?? ""} ?disabled=${d.busy}
+    const textField = (field: "place" | "url" | "service", label: string, hint: string, placeholder: string, list?: string) => html`<label class="te-item-field"><span>${label}</span>
+      <input class="te-tap-text" type="text" spellcheck="false" autocomplete="off" maxlength=${TEMPLATE_TAPS.maxText} placeholder=${placeholder} list=${list ?? nothing} .value=${area[field] ?? ""} ?disabled=${d.busy}
         @input=${typed(field)} @blur=${left(field)}></label>
       <div class="te-hint">${hint}</div>`;
+    const hint = (action: TemplateTapAction) => {
+      const said = words.actionHints[action];
+      return said === undefined ? nothing : html`<div class="te-hint">${said}</div>`;
+    };
+    // The shared entity search. A needed entity has no x: clearing it would
+    // drop the area. The service's own entity can be cleared.
+    const entityPicker = (label: string, value: string | undefined, set: (id: string) => void, opts: { domain?: string; clearable: boolean }) =>
+      entityField({ hass: d.hass }, label, value === undefined ? { entityId: "", displayName: "", domain: "" } : entityRefFrom(d.hass.states, value),
+        (ref) => set(ref.entityId), `te-tap-${d.tileId}-${index}-${label}`, { domain: opts.domain, clearable: opts.clearable, compact: true });
+    const setEntity = (id: string) => {
+      if (id.trim() === "") return;
+      d.ended();
+      this.replace(index, { ...area, entity: id });
+      d.ended();
+    };
     const missing = area.action === "page" && !pages.some((p) => p.id === area.page);
+    const missingHTTP = area.action === "http" && !httpActions.some((a) => a.id.toUpperCase() === area.http?.toUpperCase());
     return html`<section class="te-item-inspector" aria-label=${`Tap area ${index + 1}`}>
       <div class="te-item-head"><b>Tap area ${index + 1}</b>
         <button type="button" class="te-item-link" ?disabled=${d.busy} @click=${() => this.remove(index)}>Delete</button></div>
       <label class="te-item-field"><span>Action</span>
         <select class="te-lines" aria-label="Action" ?disabled=${d.busy} @change=${(e: Event) => setAction((e.target as HTMLSelectElement).value as TemplateTapAction)}>
-          ${TEMPLATE_TAPS.actions.map((a) => html`<option value=${a} ?selected=${a === area.action} ?disabled=${a === "page" && pages.length === 0}>${this.actionWords(a)}</option>`)}
+          ${ACTION_GROUPS.map(([group, actions]) => html`<optgroup label=${group}>
+            ${actions.map((a) => html`<option value=${a} ?selected=${a === area.action} ?disabled=${!offered(a)}>${this.actionWords(a)}</option>`)}
+          </optgroup>`)}
         </select></label>
       ${area.action === "maps" ? textField("place", "Place", words.placeHint, FIRST_PLACE) : nothing}
       ${area.action === "link" ? textField("url", "URL", words.urlHint, "https://example.com") : nothing}
@@ -365,6 +436,68 @@ export class TemplateTapEditor {
           ${pages.map((p) => html`<option value=${p.id} ?selected=${p.id === area.page}>${p.name}</option>`)}
         </select></label>` : nothing}
       ${area.action === "refresh" ? html`<div class="te-hint">Asks Home Assistant for the template again.</div>` : nothing}
+      ${area.action === "toggle" || area.action === "control"
+        ? html`${entityPicker("Entity", area.entity, setEntity, { clearable: false })}${hint(area.action)}` : nothing}
+      ${area.action === "script" || area.action === "scene"
+        ? html`${entityPicker(area.action === "script" ? "Script" : "Scene", area.entity, setEntity, { domain: area.action, clearable: false })}${hint(area.action)}` : nothing}
+      ${area.action === "service" ? this.serviceFields(area, index, textField, entityPicker, hint("service")) : nothing}
+      ${area.action === "http" ? html`<label class="te-item-field"><span>HTTP action</span>
+        <select class="te-lines" aria-label="HTTP action" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, http: (e.target as HTMLSelectElement).value })}>
+          ${missingHTTP ? html`<option value=${area.http ?? ""} selected>Missing action</option>` : nothing}
+          ${httpActions.map((a) => html`<option value=${a.id} ?selected=${a.id.toUpperCase() === area.http?.toUpperCase()}>${a.name}</option>`)}
+        </select></label>${hint("http")}` : nothing}
     </section>`;
+  }
+
+  /** Call service's fields: the service, with Home Assistant's services as
+   * suggestions, an optional entity, and optional data as a JSON object. */
+  private serviceFields(
+    area: TemplateTapArea,
+    index: number,
+    textField: (field: "service", label: string, hint: string, placeholder: string, list?: string) => TemplateResult,
+    entityPicker: (label: string, value: string | undefined, set: (id: string) => void, opts: { domain?: string; clearable: boolean }) => TemplateResult,
+    hint: TemplateResult | typeof nothing,
+  ): TemplateResult {
+    const d = this.data(), words = d.taps.words;
+    const list = `te-tap-services-${index}`;
+    const draft = this.dataDraft !== undefined && this.dataDraft.tile === d.tileId && this.dataDraft.index === index ? this.dataDraft : undefined;
+    const shown = draft?.text ?? (area.data === undefined ? "" : JSON.stringify(area.data));
+    const setEntity = (id: string) => {
+      d.ended();
+      this.replace(index, withTemplateTapServiceExtras(area, { entity: id }));
+      d.ended();
+    };
+    const typedData = (e: Event) => {
+      const text = (e.target as HTMLTextAreaElement).value;
+      let data: Record<string, unknown> | undefined;
+      let error: string | undefined;
+      if (text.trim() !== "") {
+        try {
+          const parsed: unknown = JSON.parse(text);
+          if (isTemplateTapData(parsed)) data = parsed;
+          else error = "Data must be a JSON object, in { }.";
+        } catch {
+          error = "This is not valid JSON yet.";
+        }
+      }
+      this.dataDraft = { tile: d.tileId, index, text, error };
+      if (error === undefined) this.replace(index, withTemplateTapServiceExtras(area, { data }), true);
+      else this.host.update();
+    };
+    const leftData = () => {
+      // Valid text goes back to the stored form; text that does not parse
+      // stays, with its error, until it is fixed.
+      if (this.dataDraft?.error === undefined) this.dataDraft = undefined;
+      d.ended();
+      this.host.update();
+    };
+    return html`${textField("service", "Service", words.serviceHint, FIRST_SERVICE, d.taps.services.length > 0 ? list : undefined)}
+      ${d.taps.services.length > 0 ? html`<datalist id=${list}>${d.taps.services.map((s) => html`<option value=${s}></option>`)}</datalist>` : nothing}
+      ${entityPicker("Entity (optional)", area.entity, setEntity, { clearable: true })}
+      <label class="te-item-field"><span>Data (JSON)</span>
+        <textarea class="te-tap-data" rows="3" spellcheck="false" placeholder='{"brightness_pct": 40}' .value=${shown} ?disabled=${d.busy}
+          aria-invalid=${draft?.error === undefined ? "false" : "true"} @input=${typedData} @blur=${leftData}></textarea></label>
+      ${draft?.error === undefined ? html`<div class="te-hint">${words.dataHint}</div>` : html`<div class="te-hint warn" role="alert">${draft.error} It is not saved.</div>`}
+      ${hint}`;
   }
 }
