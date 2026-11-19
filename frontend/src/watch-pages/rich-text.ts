@@ -42,6 +42,11 @@ const WORDS = /\s+/u;
 /** A colour marker, as Swift's `/\[color:[^\]]*\]|\[\/color\]/`. */
 const COLOR_MARKER = /\[color:[^\]]*\]|\[\/color\]/g;
 
+/** A link marker, as Swift's `linkMarker`: `[link:URL]` or `[map:...]`. A
+ * row's link opens on the devices when the row is tapped
+ * (`TemplateTileLink`); here, as there, it draws nothing and takes no width. */
+export const TEMPLATE_LINK_MARKER = /\[(?:link|map):[^\]]*\]/g;
+
 /** Any marker, as Swift's `styledSegments` reads them: an icon, a colour, an
  * end. */
 const ANY_MARKER = /\[icon:([^\]]+)\]|\[color:([^\]]*)\]|\[\/color\]/g;
@@ -74,7 +79,9 @@ function iconOf(body: string): { symbol: string; color: string | undefined } | u
  * each line read from the ink, the line breaks kept as text in the ink. Next
  * to each other, words of one colour are one piece.
  */
-export function templateStyledSegments(text: string): TemplateStyledSegment[] {
+export function templateStyledSegments(given: string): TemplateStyledSegment[] {
+  // The link markers draw nothing and take no width.
+  const text = given.replace(TEMPLATE_LINK_MARKER, "");
   const out: TemplateStyledSegment[] = [];
   const add = (string: string, color: string | undefined) => {
     if (string === "") return;
@@ -116,7 +123,7 @@ export function templateStyledSegments(text: string): TemplateStyledSegment[] {
  * out.
  */
 export function templateRichTextSegments(given: string): TemplateRichTextSegment[] {
-  const text = given.replace(COLOR_MARKER, "");
+  const text = given.replace(COLOR_MARKER, "").replace(TEMPLATE_LINK_MARKER, "");
   const out: TemplateRichTextSegment[] = [];
   let at = 0;
   MARKER.lastIndex = 0;

@@ -152,6 +152,7 @@
         "black"
       ],
       "hexDigits": [3, 6, 8],
+      "links": "[map:LAT,LON], [map:LAT,LON,NAME] and [link:URL] draw nothing and take no width. A tap on the row a marker sits on opens it on the devices: a place in Maps on the watch and the iPhone, an http or https page on the iPhone only. The first marker on a line that reads is the row's link; a latitude past 90, a longitude past 180 or another scheme is none.",
       "colorRule": "A color is one of colorNames (any case), else 3, 6 or 8 hex digits with or without #, 8 being RRGGBBAA. Anything else is no color: the icon takes the text color.",
       "samples": [
         {
@@ -226,6 +227,18 @@
             },
             {
               "text": " B"
+            }
+          ]
+        },
+        {
+          "input": "[icon:cart.fill] Jumbo [map:52.1,4.3,Jumbo]0.4 km",
+          "segments": [
+            {
+              "icon": "cart.fill",
+              "color": null
+            },
+            {
+              "text": " Jumbo 0.4 km"
             }
           ]
         },

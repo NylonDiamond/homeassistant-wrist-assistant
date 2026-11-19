@@ -262,7 +262,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
   const help = templateHelpers(host, text, { key, use: "text", bare: false, write });
   const examples = html`<details class="ap-template-guide" open>
-      <summary>${uiIcon("info")}<span>How to: icons and colors</span></summary>
+      <summary>${uiIcon("info")}<span>How to: icons, colors and links</span></summary>
       <div class="ap-template-guide-body">
         <table>
         <thead><tr><th scope="col">Example syntax</th><th scope="col">Result</th></tr></thead>
@@ -275,9 +275,18 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
             <td><code>[color:red]Unlocked[/color]</code></td>
             <td><span class="ap-template-result" style="color:#FF3B30">Unlocked</span></td>
           </tr>
+          <tr>
+            <td><code>[map:52.37,4.89,Dam Square]</code></td>
+            <td><span class="ap-template-result">Tap the row to open Maps</span></td>
+          </tr>
+          <tr>
+            <td><code>[link:https://example.com]</code></td>
+            <td><span class="ap-template-result">Tap the row to open the page on iPhone</span></td>
+          </tr>
         </tbody>
         </table>
         <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
+        <p>A link marker shows nothing. Put it anywhere on a line, and a tap on that line opens it. The name after the second comma is optional. Web links open only on iPhone.</p>
       </div>
     </details>
     <div class="ts-sub-h"><span>Examples</span></div>

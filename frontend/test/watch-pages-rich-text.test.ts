@@ -93,3 +93,23 @@ describe("icon colors", () => {
     for (const spec of ["##F80", "0xF80", " F80", "F80 ", "-F8"]) expect(templateIconColor(spec), spec).toBeUndefined();
   });
 });
+
+describe("link markers, as TemplateRichTextTests.swift", () => {
+  it("draws nothing and takes no width", async () => {
+    const { templateRows } = await import("../src/watch-pages/template-rows.js");
+    const { templateStyledSegments } = await import("../src/watch-pages/rich-text.js");
+    const line = "[icon:cart.fill] Albert Heijn [map:52.3731,4.8922,Albert Heijn]0.4 km";
+    expect(templateRichTextSegments(line)).toEqual([icon("cart.fill"), text(" Albert Heijn 0.4 km")]);
+    expect(templateRows(line).map((row) => row.map((cell) => cell.text))).toEqual([["Albert Heijn 0.4 km"]]);
+    expect(templateRows("[link:https://example.com]\nA").length).toBe(1);
+    expect(templateStyledSegments("[color:red]a[link:https://example.com]b")).toEqual([{ kind: "text", text: "ab", color: "red" }]);
+  });
+
+  it("is silent in the source, so the tile still lines up with it", async () => {
+    const { scanTemplateSource } = await import("../src/watch-pages/template-source.js");
+    const scan = scanTemplateSource("[icon:cart.fill] {{ name }} [map:{{ lat }},{{ lon }}]");
+    expect(scan.open).toBeUndefined();
+    expect(scan.rows[0]!.tokens.map((t) => [t.kind, t.silent === true])).toEqual([["icon", false], ["expr", false], ["logic", true]]);
+    expect(scanTemplateSource("a [map:1,2").open?.text).toBe("This [map: has no closing ].");
+  });
+});

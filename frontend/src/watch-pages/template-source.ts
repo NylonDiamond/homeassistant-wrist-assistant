@@ -90,14 +90,17 @@ export function scanTemplateSource(doc: string): SourceScan {
       i = close + 1;
       continue;
     }
-    // A colour marker (`[color:SPEC]`, `[/color]`) draws nothing and takes
-    // no room: silent, as a `{% set %}`, so the words around it are the
-    // cells' words alone.
-    if (doc.startsWith("[color:", i) || doc.startsWith("[/color]", i)) {
+    // A colour marker (`[color:SPEC]`, `[/color]`) or a link marker
+    // (`[link:URL]`, `[map:LAT,LON]`) draws nothing and takes no room:
+    // silent, as a `{% set %}`, so the words around it are the cells' words
+    // alone.
+    const quiet = ["[color:", "[/color]", "[link:", "[map:"].find((m) => doc.startsWith(m, i));
+    if (quiet !== undefined) {
       endText(i);
       const close = markerEnd(doc, i);
       if (close < 0) {
-        open = { kind: "open", from: i, to: doc.length, text: "This [color: has no closing ].", fix: { from: doc.length, to: doc.length, insert: "]", words: "Add ]" } };
+        const name = quiet === "[/color]" ? "[color:" : quiet;
+        open = { kind: "open", from: i, to: doc.length, text: `This ${name} has no closing ].`, fix: { from: doc.length, to: doc.length, insert: "]", words: "Add ]" } };
         i = doc.length;
         break;
       }
