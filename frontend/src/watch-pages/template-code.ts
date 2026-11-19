@@ -14,9 +14,11 @@
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, insertCompletionText, pickedCompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { Annotation, Compartment, EditorState, type Range, StateEffect, StateField, type Transaction } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, WidgetType, drawSelection, keymap, lineNumbers, placeholder } from "@codemirror/view";
+import { type BlockInfo, Decoration, type DecorationSet, EditorView, GutterMarker, type Tooltip, WidgetType, drawSelection, gutter, hoverTooltip, keymap, lineNumbers, placeholder, showTooltip } from "@codemirror/view";
 import { type TemplateResult, render } from "lit";
 import { type SourceIssue, type SourceScan, scanTemplateSource, sourceRowAt } from "./template-source.js";
+import { type SourceTap, templateSourceTaps, templateTapNotes } from "./template-row-taps.js";
+import type { TemplateTapNames } from "./template-taps.js";
 
 export type TemplateCodeView = "full" | "sections";
 
@@ -46,6 +48,9 @@ export interface TemplateCodeContext {
   pages(): Completion[];
   /** HTTP actions a `[tap:http` can run, by name. */
   httpActions(): Completion[];
+  /** The pages and HTTP actions a `[tap:` marker can name, so the tap
+   * gutter can say when one does not exist. */
+  tapNames?(): TemplateTapNames;
   /** Home Assistant's services as `domain.service`. */
   services(): Completion[];
   /** An entity's attributes, for `state_attr('ENTITY', '`. */
@@ -147,6 +152,9 @@ export interface TemplateCodeEvents {
   changed(text: string): void;
   selected(from: number, to: number, head: number, focused: boolean): void;
   blurred(): void;
+  /** The scan row whose `[tap:` marker the pointer or the caret is on, or
+   * -1: the tile lights the rows it makes. */
+  tapRow?(row: number): void;
 }
 
 export interface TemplateCode {
@@ -230,7 +238,58 @@ const theme = EditorView.theme({
   ".cm-completionDetail": { marginLeft: "auto", paddingLeft: "12px", fontStyle: "normal", color: "var(--wa-ent)" },
   ".cm-completionMatchedText": { textDecoration: "none", color: "var(--wa-pick-ink)", fontWeight: "700" },
   ".cm-completionIcon": { display: "none" },
+  // The tap gutter: a small mark beside each line with a `[tap:` marker.
+  ".te-tap-gutter .cm-gutterElement": { display: "flex", alignItems: "flex-start", justifyContent: "center", width: "14px", padding: "0 0 0 4px" },
+  ".te-tapg": { display: "inline-flex", alignItems: "center", height: "1.65em", color: "var(--wa-hue-blue)", cursor: "help" },
+  ".te-tapg svg": { width: "11px", height: "11px", display: "block" },
+  ".te-tapg.bad": { color: "var(--wa-need)" },
+  ".te-tapg.later": { opacity: "0.45" },
+  ".te-tapbad": { textDecoration: "underline wavy color-mix(in srgb, var(--wa-need) 70%, transparent)", textUnderlineOffset: "3px" },
+  ".te-taptip": { maxWidth: "min(320px, calc(100vw - 40px))", display: "flex", flexDirection: "column", gap: "3px", padding: "6px 9px", fontFamily: "system-ui, sans-serif", fontSize: "12px", lineHeight: "1.4", color: "var(--wa-ink)" },
+  ".te-taptip + .te-taptip": { borderTop: "1px solid var(--wa-line)" },
+  ".te-taptip .bad": { color: "var(--wa-need)" },
+  ".te-taptip small": { fontSize: "11.5px", color: "var(--wa-muted)" },
 });
+
+const TAP_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.7" fill="currentColor"/><circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".55"/></svg>';
+const TAP_WARN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2 14.6 13.6H1.4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.4v3.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".9" fill="currentColor"/></svg>';
+
+/** The gutter's mark for a line's markers: a warning when one does not
+ * read, faint when none of them counts. */
+class TapMark extends GutterMarker {
+  constructor(readonly kind: "ok" | "bad" | "later", readonly label: string) { super(); }
+  override eq(other: TapMark): boolean { return other.kind === this.kind && other.label === this.label; }
+  override toDOM(): Node {
+    const el = document.createElement("span");
+    el.className = `te-tapg ${this.kind}`;
+    if (this.label !== "") el.setAttribute("aria-label", this.label);
+    el.innerHTML = this.kind === "bad" ? TAP_WARN : TAP_ICON;
+    return el;
+  }
+}
+
+function tapMark(taps: readonly SourceTap[]): TapMark | null {
+  if (taps.length === 0) return null;
+  const kind = taps.some((t) => !t.reading.ok) ? "bad" : taps.every((t) => t.later) ? "later" : "ok";
+  return new TapMark(kind, taps.map((t) => t.reading.text).join(" "));
+}
+
+/** A tooltip's words for some markers: each one's sentence and notes. */
+function tapTip(taps: readonly SourceTap[]): HTMLElement {
+  const dom = document.createElement("div");
+  for (const tap of taps) {
+    const box = document.createElement("div");
+    box.className = "te-taptip";
+    templateTapNotes(tap).forEach((line, i) => {
+      const el = document.createElement(i === 0 ? "span" : "small");
+      if (i === 0 && !tap.reading.ok) el.className = "bad";
+      el.textContent = line;
+      box.appendChild(el);
+    });
+    dom.appendChild(box);
+  }
+  return dom;
+}
 
 export function createTemplateCode(parent: HTMLElement, text: string, initial: TemplateCodeOptions, context: TemplateCodeContext, events: TemplateCodeEvents): TemplateCode {
   let options = initial;
@@ -258,6 +317,79 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
       return value;
     },
   });
+
+  /** Every `[tap:` marker, read again when the text or the names change. */
+  const tapsOf = (state: EditorState): SourceTap[] => templateSourceTaps(scanTemplateSource(state.doc.toString()), context.tapNames?.());
+  const tapsField = StateField.define<SourceTap[]>({
+    create: tapsOf,
+    update(value, tr) {
+      if (!tr.docChanged && !tr.effects.some((e) => e.is(redraw))) return value;
+      const next = tapsOf(tr.state);
+      // The same markers keep the same list, so an open tooltip stays.
+      return JSON.stringify(next) === JSON.stringify(value) ? value : next;
+    },
+  });
+  const tapsIn = (state: EditorState, from: number, to: number): SourceTap[] => state.field(tapsField).filter((t) => t.from >= from && t.from <= to);
+  /** The gutter mark the pointer is on, from its block; its markers'
+   * words show at `anchor`. */
+  const setPoint = StateEffect.define<{ from: number; to: number; anchor: number } | null>();
+  const pointField = StateField.define<{ from: number; to: number; anchor: number } | null>({
+    create: () => null,
+    update(value, tr) {
+      for (const e of tr.effects) if (e.is(setPoint)) return e.value;
+      return tr.docChanged ? null : value;
+    },
+    provide: (field) => showTooltip.compute([field, tapsField], (state): Tooltip | null => {
+      const point = state.field(field);
+      const taps = point === null ? [] : tapsIn(state, point.from, point.to);
+      if (point === null || taps.length === 0) return null;
+      return { pos: point.anchor, above: true, create: () => ({ dom: tapTip(taps) }) };
+    }),
+  });
+  // Which row's taps the tile lights: the one the pointer is on (in the
+  // gutter, else in the code), else the caret's.
+  let gutterRow = -1, codeRow = -1, caretRow = -1, sentRow = -1;
+  const sendTapRow = (): void => {
+    const row = gutterRow >= 0 ? gutterRow : codeRow >= 0 ? codeRow : caretRow;
+    if (row === sentRow) return;
+    sentRow = row;
+    events.tapRow?.(row);
+  };
+  const caretTapRow = (state: EditorState, focused: boolean): number => {
+    if (!focused) return -1;
+    const row = sourceRowAt(scanTemplateSource(state.doc.toString()).rows, state.selection.main.head);
+    return row >= 0 && state.field(tapsField).some((t) => t.row === row) ? row : -1;
+  };
+  const pointGutter = (view: EditorView, block: BlockInfo | null): void => {
+    const taps = block === null ? [] : tapsIn(view.state, block.from, block.to);
+    const next = block === null || taps.length === 0 ? null : { from: block.from, to: block.to, anchor: block.widget === undefined || block.widget === null ? taps[0]!.from : block.from };
+    const now = view.state.field(pointField);
+    if (now?.from !== next?.from || now?.to !== next?.to) view.dispatch({ effects: setPoint.of(next) });
+    gutterRow = taps[0]?.row ?? -1;
+    sendTapRow();
+  };
+  const tapGutter = gutter({
+    class: "te-tap-gutter",
+    lineMarker: (view, line) => tapMark(tapsIn(view.state, line.from, line.to)),
+    // A row Sections shows shut is one block: its mark is its markers'.
+    widgetMarker: (view, _widget, block) => (block.to > block.from ? tapMark(tapsIn(view.state, block.from, block.to)) : null),
+    lineMarkerChange: (update) => update.startState.field(tapsField) !== update.state.field(tapsField),
+    initialSpacer: () => new TapMark("ok", ""),
+    domEventHandlers: {
+      mousemove(view, block, event) {
+        pointGutter(view, (event.target as Element | null)?.closest?.(".te-tapg") == null ? null : block);
+        return false;
+      },
+      mouseleave(view) {
+        pointGutter(view, null);
+        return false;
+      },
+    },
+  });
+  const tapHover = hoverTooltip((view, pos) => {
+    const tap = view.state.field(tapsField).find((t) => pos >= t.from && pos <= t.to);
+    return tap === undefined ? null : { pos: tap.from, end: tap.to, above: true, create: () => ({ dom: tapTip([tap]) }) };
+  }, { hoverTime: 200 });
 
   const build = (state: EditorState): DecorationSet => {
     const scan = scanTemplateSource(state.doc.toString());
@@ -316,7 +448,8 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
         }
         const entity = /(?:states|state_attr|is_state)\s*[([]/.test(token.src);
         const cls = token.kind === "icon" ? "te-i" : entity ? "te-e" : "te-j";
-        decos.push(Decoration.mark({ class: `${cls}${on ? " te-on" : ""}` }).range(token.from, token.to));
+        const badTap = token.kind === "logic" && token.src.startsWith("[tap:") && state.field(tapsField, false)?.some((t) => t.from === token.from && !t.reading.ok) === true;
+        decos.push(Decoration.mark({ class: `${cls}${on ? " te-on" : ""}${badTap ? " te-tapbad" : ""}` }).range(token.from, token.to));
         // A long color expression reads one branch to a line.
         const brace = token.kind === "icon" ? token.src.match(COLOR_RULE) : null;
         if (stacked && brace !== null && /\selse\s/.test(token.src)) {
@@ -394,9 +527,10 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
           },
         }],
       }),
-      focusField, openField, decoField, theme, placeholder("{{ states('sensor.outside_temperature') }}°"),
+      focusField, openField, tapsField, pointField, decoField, theme, tapHover, placeholder("{{ states('sensor.outside_temperature') }}°"),
       wrapping.of(options.view === "sections" || options.wrap ? EditorView.lineWrapping : []),
       numbers.of(options.view === "full" && options.rows ? lineNumbers() : []),
+      tapGutter,
       EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off", "aria-label": "Template" }),
       EditorView.domEventHandlers({
         mousedown(event, view) {
@@ -415,6 +549,18 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
           view.dispatch({ selection: { anchor: Number(pill.dataset["from"]), head: Number(pill.dataset["to"]) }, effects: setFocus.of(true) });
           return true;
         },
+        mousemove(event, view) {
+          const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+          const tap = pos === null ? undefined : view.state.field(tapsField).find((t) => pos >= t.from && pos < t.to);
+          codeRow = tap?.row ?? -1;
+          sendTapRow();
+          return false;
+        },
+        mouseleave() {
+          codeRow = -1;
+          sendTapRow();
+          return false;
+        },
         focus(_, view) { setTimeout(() => view.dispatch({ effects: setFocus.of(true) })); return false; },
         blur(_, view) {
           setTimeout(() => { if (!view.hasFocus) view.dispatch({ effects: setFocus.of(false) }); });
@@ -427,6 +573,10 @@ export function createTemplateCode(parent: HTMLElement, text: string, initial: T
         if (update.docChanged || update.selectionSet || update.focusChanged) {
           const main = update.state.selection.main;
           events.selected(main.from, main.to, main.head, update.view.hasFocus);
+        }
+        if (update.docChanged || update.selectionSet || update.focusChanged || update.transactions.some((t) => t.effects.some((e) => e.is(setFocus)))) {
+          caretRow = caretTapRow(update.state, update.view.hasFocus);
+          sendTapRow();
         }
       }),
     ],

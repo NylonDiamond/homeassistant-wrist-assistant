@@ -27,6 +27,7 @@ import { TemplateItemEditor } from "./template-item-editor.js";
 import { TemplateTapEditor } from "./template-tap-editor.js";
 import type { TemplateTapAction, TemplateTapArea } from "./template-taps.js";
 import { applyQuickAdd, QUICK_ADD_GROUPS, QUICK_ADDS, quickAddEdit } from "./template-quick-add.js";
+import { templateTapDrawnRows } from "./template-row-taps.js";
 
 /** The selected tile drawn for a device, from the page editor. */
 export interface TemplateTilePicture {
@@ -283,6 +284,7 @@ export class WaTemplateEditor extends LitElement {
       },
       pages: () => this.namedOptions(this.data.taps.pages, "page"),
       httpActions: () => this.namedOptions(this.data.taps.httpActions, "http"),
+      tapNames: () => ({ pages: this.data.taps.pages, httpActions: this.data.taps.httpActions }),
       services: () => this.data.taps.services.map((label) => ({ label, type: "service" })),
       attributes: (entityId) => {
         const attributes = this.data.hass.states[entityId]?.attributes ?? {};
@@ -306,6 +308,10 @@ export class WaTemplateEditor extends LitElement {
         this.lightTile();
       },
       blurred: () => this.data.ended(),
+      tapRow: (row) => {
+        this.tapRow = row;
+        this.lightTapRow();
+      },
     });
     this.tileId = this.data.tileId;
     this.requestUpdate();
@@ -401,6 +407,45 @@ export class WaTemplateEditor extends LitElement {
     for (const part of tile.querySelectorAll<HTMLElement>("[data-tp]")) {
       const cell = aligned?.[Number(part.dataset["tr"])]?.cells[Number(part.dataset["tc"])];
       part.classList.toggle("on", at(part.dataset["tp"] === "icon" ? cell?.icon : cell?.text));
+    }
+  }
+
+  /** The scan row whose `[tap:` marker the pointer or caret is on, or -1. */
+  private tapRow = -1;
+
+  /** A soft band over the rows the pointed `[tap:` marker makes on the
+   * tile, as a tap area is drawn. Nothing when it cannot be told which
+   * rows those are, or the tile shows an old answer. */
+  private lightTapRow(): void {
+    const tile = this.querySelector<HTMLElement>(".te-tile");
+    if (tile === null) return;
+    tile.querySelectorAll(".te-taprow").forEach((el) => el.remove());
+    const render = this.data.render;
+    if (this.tapRow < 0 || this.taps.editing || render?.ok !== true || this.currentPicture()?.stale !== false) return;
+    const scan = this.scan();
+    const rows = templateTapDrawnRows(scan, this.tapRow, render.value, this.aligned(scan));
+    if (rows.length === 0) return;
+    const box = tile.getBoundingClientRect();
+    const free = tile.querySelector(".wp-tpl-free") !== null;
+    const face = tile.querySelector<HTMLElement>(".wp-tpl-grid, .wp-tpl-text, .wp-tpl-free")?.getBoundingClientRect();
+    const band = (r: { left: number; right: number; top: number; bottom: number }): void => {
+      const el = document.createElement("i");
+      el.className = "te-taprow";
+      el.style.left = `${r.left - box.left - 3}px`;
+      el.style.top = `${r.top - box.top - 1.5}px`;
+      el.style.width = `${r.right - r.left + 6}px`;
+      el.style.height = `${r.bottom - r.top + 3}px`;
+      tile.appendChild(el);
+    };
+    for (const row of rows) {
+      const parts = [...tile.querySelectorAll<HTMLElement>(`[data-tr="${row}"], [data-trow="${row}"]`)].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+      if (parts.length === 0) continue;
+      // An item layout puts a row's parts anywhere: each gets its own box.
+      if (free) { parts.forEach(band); continue; }
+      const top = Math.min(...parts.map((r) => r.top)), bottom = Math.max(...parts.map((r) => r.bottom));
+      const left = face === undefined ? Math.min(...parts.map((r) => r.left)) : Math.min(face.left, ...parts.map((r) => r.left));
+      const right = face === undefined ? Math.max(...parts.map((r) => r.right)) : Math.max(face.right, ...parts.map((r) => r.right));
+      band({ left, right, top, bottom });
     }
   }
 
@@ -649,6 +694,7 @@ export class WaTemplateEditor extends LitElement {
     }
     this.querySelector(".te-tile .wp-tpl-title-text")?.classList.toggle("te-picked", this.titlePicked);
     this.lightTile();
+    this.lightTapRow();
     this.runFlip();
     this.items.refresh();
     this.taps.refresh();
@@ -703,6 +749,8 @@ export const templateEditorStyles = css`
   .te-seg button.on { background: var(--wa-seg-on, var(--wa-hover)); color: var(--wa-ink); }
   .te-tile { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; position: relative; display: flex; justify-content: center; max-width: 100%; }
   .te-tile [data-tp] { pointer-events: auto; }
+  /* The rows a [tap:] marker in the code makes, while it is pointed at. */
+  .te-taprow { position: absolute; z-index: 6; box-sizing: border-box; border: 1.5px solid color-mix(in srgb, var(--wa-hue-blue) 70%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--wa-hue-blue) 18%, transparent); pointer-events: none; }
   .te-tile [data-tk] { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
   .te-free-grid .wp-tpl::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(210, 231, 255, .13) 1px, transparent 1px), linear-gradient(to bottom, rgba(210, 231, 255, .13) 1px, transparent 1px); background-size: 5% 5%; pointer-events: none; z-index: 3; }
   .te-item-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11.5px; }

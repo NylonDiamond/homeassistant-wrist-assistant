@@ -2236,7 +2236,7 @@ function templateFitLines(fit: TemplateFit, device: TemplateFitDevice, ink: stri
         const found = piece.text.trim() === "" ? -1 : rows[piece.row]?.[piece.cell]?.text.indexOf(piece.text.trim(), cursor) ?? -1;
         const start = found < 0 ? cursor : found - lead;
         cursors.set(cellKey, start + piece.text.length);
-        return html`<span style=${style}>${templateMarkedText(piece.text, own, start, piece.row, piece.cell)}</span>`;
+        return html`<span data-trow=${piece.row} style=${style}>${templateMarkedText(piece.text, own, start, piece.row, piece.cell)}</span>`;
       }
       const box = glyphBox(icons, piece.symbol) ?? [WATCH_SYMBOL_EXPORT_SIZE, WATCH_SYMBOL_EXPORT_SIZE];
       const wide = (box[0] / WATCH_SYMBOL_EXPORT_SIZE) * fit.iconSize * s;
@@ -2266,7 +2266,7 @@ function templateColumnsFace(rows: readonly (readonly TemplateCell[])[], device:
     const fit = Math.min((TEMPLATE_ICON_SLOT * px) / box[0], (TEMPLATE_ICON_TALL * px) / box[1]);
     return [box[0] * fit, box[1] * fit];
   };
-  return html`<span class="wp-tpl-grid" data-tpl-scale=${s} style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class=${spanStyle(row) === "" ? "wp-tpl-cell" : "wp-tpl-cell wp-tpl-span"} style=${[`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`, spanStyle(row)].filter(Boolean).join(";")}>${
+  return html`<span class="wp-tpl-grid" data-tpl-scale=${s} style=${style}>${rows.map((row, r) => row.map((cell, c) => html`<span class=${spanStyle(row) === "" ? "wp-tpl-cell" : "wp-tpl-cell wp-tpl-span"} data-trow=${r} style=${[`grid-row:${r + 1};grid-column:${templateRowSpans(row) ? "1 / -1" : c + 1};gap:${TEMPLATE_CELL_GAP}em`, spanStyle(row)].filter(Boolean).join(";")}>${
     cell.icon === undefined ? nothing : html`<span class="wp-tpl-slot" style=${`width:${TEMPLATE_ICON_SLOT}em`} data-tk=${templatePartKey(r, c, "icon")} data-tr=${r} data-tc=${c} data-tp="icon">${templateGlyph(cell.icon.symbol, cell.icon.color, ink, ...slot(cell.icon.symbol), icons)}</span>`}${
     cell.text === "" ? nothing : cell.runs.length === 0
       ? html`<span style=${templateRunSpacing(cell.text, device)}>${templateMarkedText(cell.text, parts.filter(p => p.row === r && p.cell === c && p.kind === "text"), 0, r, c)}</span>`
