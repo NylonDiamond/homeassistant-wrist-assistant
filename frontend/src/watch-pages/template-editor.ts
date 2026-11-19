@@ -24,6 +24,8 @@ import type { IconProvider } from "../renderer.js";
 import type { TemplateTileLayout } from "./template-layout.js";
 import type { WatchMenu } from "./tile-settings-options.js";
 import { TemplateItemEditor } from "./template-item-editor.js";
+import { TemplateTapEditor } from "./template-tap-editor.js";
+import type { TemplateTapAction, TemplateTapArea } from "./template-taps.js";
 
 /** The selected tile drawn for a device, from the page editor. */
 export interface TemplateTilePicture {
@@ -61,6 +63,13 @@ export interface TemplateEditorData {
     color: string | undefined;
   };
   layout?: TemplateTileLayout;
+  /** Tap areas: the stored areas by the shared rule, the pages a Go to page
+   * area can open, and the section's words. */
+  taps: {
+    areas: TemplateTapArea[];
+    pages: readonly { id: string; name: string }[];
+    words: { label: string; help: string; addLabel: string; placeHint: string; urlHint: string; actionLabels: Record<TemplateTapAction, string> };
+  };
   busy: boolean;
   hass: HassLike;
   icons: IconProvider;
@@ -77,6 +86,8 @@ export interface TemplateEditorData {
   setTitleSize(size: number, typing: boolean): void;
   setTitleColor(color: string | undefined, typing: boolean): void;
   setLayout(layout: TemplateTileLayout | undefined, typing?: boolean): void;
+  /** Writes the tap areas; `typing` joins a drag or typing into one undo step. */
+  setTaps(areas: TemplateTapArea[], typing: boolean): void;
   picture(device: "watch" | "iphone" | undefined, maxWidth: number, maxHeight: number): TemplateTilePicture | undefined;
   /** Examples, drawn above the editor. */
   examples: TemplateResult;
@@ -168,6 +179,12 @@ export class WaTemplateEditor extends LitElement {
     },
     showCode: (from, to) => this.code?.highlight(from, to),
   });
+  private readonly taps = new TemplateTapEditor({
+    data: () => this.data,
+    element: this,
+    update: () => this.requestUpdate(),
+    drawn: () => this.updateComplete,
+  });
 
   /** Draws into the parent's root: see the top of this file. */
   protected override createRenderRoot(): HTMLElement {
@@ -177,6 +194,7 @@ export class WaTemplateEditor extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.items.dispose();
+    this.taps.dispose();
     this.code?.destroy();
     this.code = undefined;
     this.tileId = undefined;
@@ -341,6 +359,7 @@ export class WaTemplateEditor extends LitElement {
   /** A press on the title picks it and no item; any other press leaves the
    * title and goes to the items. */
   private tilePointerDown(event: PointerEvent): void {
+    if (this.taps.editing) return;
     if (event.button === 0 && this.onTitle(event)) {
       event.preventDefault();
       this.pickTitle();
@@ -464,10 +483,10 @@ export class WaTemplateEditor extends LitElement {
         <div class="te-grid">
           <div class="te-left">
             ${picture === undefined ? nothing : html`<div class="te-well">
-              <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.tilePointerDown(e)} @click=${(e: MouseEvent) => { if (!this.onTitle(e)) this.items.press(e); }} @keydown=${(e: KeyboardEvent) => this.items.key(e)} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}</div>
+              <div class="te-tile" tabindex="0" role="group" aria-label="Template preview" @pointerdown=${(e: PointerEvent) => this.tilePointerDown(e)} @click=${(e: MouseEvent) => { if (!this.taps.editing && !this.onTitle(e)) this.items.press(e); }} @keydown=${(e: KeyboardEvent) => { if (!this.taps.key(e)) this.items.key(e); }} @contextmenu=${(e: MouseEvent) => { if (e.ctrlKey) e.preventDefault(); }}>${face}${this.taps.overlay()}</div>
               ${small ? html`<div class="te-small" role="status">Text is small.</div>` : nothing}
             </div>`}
-            ${this.items.toolbar()}
+            ${this.taps.editing ? nothing : this.items.toolbar()}
             ${!this.items.layoutDraws() ? html`<label class="te-sw"><span><b>${d.title.label}</b><small>${d.title.help}</small></span>
               <button type="button" class="te-switch ${this.titleOn ? "on" : ""}" role="switch" aria-checked=${this.titleOn ? "true" : "false"} aria-label=${d.title.label} ?disabled=${d.busy} @click=${() => this.toggleTitle()}></button></label>
               ${this.titleOn ? html`<div class="te-title-row"><input class="te-title" type="text" aria-label="Title" placeholder=${d.title.placeholder} ?disabled=${d.busy} .value=${d.title.text}
@@ -477,9 +496,12 @@ export class WaTemplateEditor extends LitElement {
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
               <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>` : nothing}
-            ${this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
-              ? this.titleInspector()
-              : this.items.inspector()}
+            ${this.taps.section()}
+            ${this.taps.editing
+              ? this.taps.inspector()
+              : this.titlePicked && this.titleOn && d.title.text.trim() !== "" && !this.items.layoutDraws()
+                ? this.titleInspector()
+                : this.items.inspector()}
           </div>
           <div class="te-right">
             <div class="te-bar">
@@ -523,6 +545,7 @@ export class WaTemplateEditor extends LitElement {
     this.lightTile();
     this.runFlip();
     this.items.refresh();
+    this.taps.refresh();
   }
 }
 
@@ -599,6 +622,16 @@ export const templateEditorStyles = css`
   .te-guide { position: absolute; top: 6px; bottom: 6px; width: 1px; background: var(--wa-hue-orange); opacity: 0; animation: te-guide 1.1s ease-out; pointer-events: none; }
   @keyframes te-guide { 20% { opacity: .8; } 70% { opacity: .5; } 100% { opacity: 0; } }
   .te-small { font-size: 12px; color: var(--wa-hue-orange); }
+  .te-taps { display: flex; flex-direction: column; gap: 6px; }
+  .te-taps .ts-chips { padding: 0; }
+  .te-taps-layer { position: absolute; z-index: 7; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .te-tap { position: absolute; box-sizing: border-box; border: 1.5px solid var(--wa-hue-blue); border-radius: 3px; background: color-mix(in srgb, var(--wa-hue-blue) 16%, transparent); cursor: grab; }
+  .te-tap.on { border-color: var(--wa-hue-orange); background: color-mix(in srgb, var(--wa-hue-orange) 18%, transparent); }
+  .te-tap-n { position: absolute; left: 2px; top: 2px; min-width: 9px; padding: 0 3px; border-radius: 3px; background: var(--wa-hue-blue); color: #fff; font: 700 10px/14px system-ui, sans-serif; text-align: center; pointer-events: none; }
+  .te-tap.on .te-tap-n { background: var(--wa-hue-orange); }
+  .te-tap-size { position: absolute; right: -5px; bottom: -5px; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid var(--wa-hue-blue); border-radius: 2px; background: #fff; cursor: nwse-resize; }
+  .te-tap.on .te-tap-size { border-color: var(--wa-hue-orange); }
+  .te-taps-layer:active .te-tap.on { cursor: grabbing; }
   .te-sw { display: flex; align-items: center; gap: 10px; }
   .te-sw > span { flex: 1; min-width: 0; }
   .te-sw b { display: block; font-size: 13px; font-weight: 600; }

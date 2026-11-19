@@ -130,6 +130,326 @@
         "write": "A #RRGGBB or #RRGGBBAA, read as a template color marker is (a color name works too). Absent, or a value that does not parse, is the surface's second ink. Switching the color off removes the key."
       }
     },
+    "taps": {
+      "key": "templateTaps",
+      "max": 8,
+      "minSize": 0.05,
+      "maxText": 2000,
+      "actions": ["maps", "link", "refresh", "page"],
+      "label": "Tap areas",
+      "help": "Draw boxes on the tile. A tap in a box does its action.",
+      "addLabel": "Add tap area",
+      "actionLabels": { "maps": "Open in Maps", "link": "Open web page (iPhone)", "refresh": "Refresh", "page": "Go to page" },
+      "placeHint": "An entity with a location, or 52.37,4.89,Name. Templates work.",
+      "urlHint": "http or https. Templates work. Opens on iPhone only.",
+      "rule": "An array of areas: x, y (top left), w, h (size), fractions of the tile's drawn face, and an action with its text (maps: place, link: url, page: page; refresh has none). Each item is read on its own: not an object, or x, y, w, h not all finite numbers, is dropped; an action not in actions is dropped; the action's text is trimmed, and missing, not a string, empty or over maxText characters is dropped; other keys are left out. Then x and y are kept from 0 to 1 minus minSize, w from minSize to 1 minus x, h from minSize to 1 minus y, each rounded to 4 places. Then only the first max areas are kept. Not an array is none. The last area holding a tap wins, then a row's link marker, then the tile's own tap.",
+      "samples": [
+        {
+          "input": [
+            {
+              "x": 0.1,
+              "y": 0.2,
+              "w": 0.5,
+              "h": 0.3,
+              "action": "maps",
+              "place": "52.37,4.89,Dam"
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.1,
+              "y": 0.2,
+              "w": 0.5,
+              "h": 0.3,
+              "action": "maps",
+              "place": "52.37,4.89,Dam"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": -0.2,
+              "y": 0.9,
+              "w": 0.5,
+              "h": 0.5,
+              "action": "refresh",
+              "extra": true
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.9,
+              "w": 0.5,
+              "h": 0.1,
+              "action": "refresh"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": 0.33333,
+              "y": 0,
+              "w": 0.7,
+              "h": 0.01,
+              "action": "link",
+              "url": "  https://example.com/{{ x }}  "
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.3333,
+              "y": 0.0,
+              "w": 0.6667,
+              "h": 0.05,
+              "action": "link",
+              "url": "https://example.com/{{ x }}"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "dance"
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "maps"
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "link",
+              "url": "   "
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "page",
+              "page": 7
+            },
+            {
+              "x": "0",
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "refresh"
+            },
+            "area",
+            null,
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "page",
+              "page": "p1"
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 1.0,
+              "h": 1.0,
+              "action": "page",
+              "page": "p1"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "maps",
+              "place": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1,
+              "action": "maps",
+              "place": "device_tracker.phone"
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 1.0,
+              "h": 1.0,
+              "action": "maps",
+              "place": "device_tracker.phone"
+            }
+          ]
+        },
+        {
+          "input": [
+            {
+              "x": 0.0,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.1,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.2,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.3,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.4,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.5,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.6,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.7,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.8,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            },
+            {
+              "x": 0.9,
+              "y": 0,
+              "w": 0.1,
+              "h": 1,
+              "action": "refresh"
+            }
+          ],
+          "areas": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.1,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.2,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.3,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.4,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.5,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.6,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            },
+            {
+              "x": 0.7,
+              "y": 0.0,
+              "w": 0.1,
+              "h": 1.0,
+              "action": "refresh"
+            }
+          ]
+        },
+        {
+          "input": {
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "action": "refresh"
+          },
+          "areas": []
+        }
+      ]
+    },
     "richText": {
       "marker": "\\[icon:([^\\]]+)\\]",
       "rule": "Every marker becomes an icon; the text between markers stays text. Inside a marker the words split on whitespace: the first word is the symbol, the first later word starting color: (any case) gives the color, an empty color is none. A marker with no word stays as literal text.",

@@ -43,6 +43,7 @@ import {
 import { watchCapitalized } from "./tile-new.js";
 import { WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS, watchShowWhenTemplateShows, watchTileShowWhenTemplate } from "./show-when.js";
 import { normalizeTemplateLayout, type TemplateTileLayout } from "./template-layout.js";
+import { normalizeTemplateTaps, type TemplateTapArea } from "./template-taps.js";
 
 // ── the home ─────────────────────────────────────────────────────────────
 
@@ -322,6 +323,11 @@ interface AppTable {
   version: number;
   template: {
     lines: { key: string; kinds: readonly string[]; min: number; max: number; absent: number; label: string; help: string };
+    taps: {
+      key: string; max: number; minSize: number; maxText: number; actions: readonly string[];
+      label: string; help: string; addLabel: string; placeHint: string; urlHint: string;
+      actionLabels: Record<"maps" | "link" | "refresh" | "page", string>;
+    };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;
       position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
@@ -657,6 +663,23 @@ export function setWatchTemplateLayout(document: WatchPagesDocument, pageId: str
     if (!isTemplate(tile)) return undefined;
     if (next === undefined) return Object.hasOwn(tile, "templateLayout") ? REMOVE : undefined;
     return JSON.stringify(tile.templateLayout) === JSON.stringify(next) ? undefined : next;
+  });
+}
+
+/** Tap areas as the devices read them (`template-taps.ts`): the stored
+ * list by the shared rule, `[]` for none. */
+export function watchTemplateTaps(tile: WatchPageTile): TemplateTapArea[] {
+  return normalizeTemplateTaps(tile.templateTaps);
+}
+
+/** Tap areas: only the areas the shared rule keeps are written, at most
+ * eight, each with only its own keys. An empty list removes the key. */
+export function setWatchTemplateTaps(document: WatchPagesDocument, pageId: string, tileId: string, areas: readonly unknown[]): WatchPagesDocument {
+  const next = normalizeTemplateTaps(areas);
+  return setKey(document, pageId, tileId, "templateTaps", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (next.length === 0) return Object.hasOwn(tile, "templateTaps") ? REMOVE : undefined;
+    return JSON.stringify(tile.templateTaps) === JSON.stringify(next) ? undefined : next;
   });
 }
 

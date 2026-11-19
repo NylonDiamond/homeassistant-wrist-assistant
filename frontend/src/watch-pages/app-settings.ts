@@ -18,8 +18,9 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { checkField, entityField, rememberTemplateCaret, segField, sliderField, templateCaretOf, templateHelpers, textField } from "../editors.js";
 import type { EntityRef } from "../model.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, hostDeviceNoun, phoneWordsFor } from "./editor-host.js";
-import { tileEntityId, tileKind } from "./model.js";
+import { type TileSettingsHost, hostDeviceNoun, phoneWordsFor, watchLinkDocument } from "./editor-host.js";
+import { tileEntityId, tileKind, watchPageId, watchPageName } from "./model.js";
+import { watchLinkTargetPages } from "./tile-new.js";
 import {
   WATCH_CHART_MAX_ENTITIES,
   WATCH_CHART_RANGES,
@@ -105,6 +106,7 @@ import {
   watchTemplateTitleFontSize,
   setWatchTemplateLayout,
   setWatchTemplateLines,
+  setWatchTemplateTaps,
   setWatchTemplateText,
   setWatchVoiceId,
   setWatchVoiceSpeakers,
@@ -128,6 +130,7 @@ import {
   watchTTSEngines,
   watchTemplateColumns,
   watchTemplateTitleText,
+  watchTemplateTaps,
   watchTemplatePresetSelected,
   watchTemplateRowLimit,
   watchTemplateRender,
@@ -276,17 +279,12 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
             <td><span class="ap-template-result" style="color:#FF3B30">Unlocked</span></td>
           </tr>
           <tr>
-            <td><code>[map:52.37,4.89,Dam Square]</code></td>
+            <td><code>[map:52.37,4.89]</code></td>
             <td><span class="ap-template-result">Tap the row to open Maps</span></td>
-          </tr>
-          <tr>
-            <td><code>[link:https://example.com]</code></td>
-            <td><span class="ap-template-result">Tap the row to open the page on iPhone</span></td>
           </tr>
         </tbody>
         </table>
         <p>Use a color name or hex code. Icons follow the text color unless set separately. A new line resets text color.</p>
-        <p>A link marker shows nothing. Put it anywhere on a line, and a tap on that line opens it. The name after the second comma is optional. Web links open only on iPhone.</p>
       </div>
     </details>
     <div class="ts-sub-h"><span>Examples</span></div>
@@ -310,6 +308,14 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
       color: watchTemplateTitleColor(tile),
     },
     layout: normalizeTemplateLayout(tile.templateLayout),
+    taps: {
+      areas: watchTemplateTaps(tile),
+      pages: watchLinkTargetPages(watchLinkDocument(host), host.pageId, "pageLink").map((p) => ({ id: watchPageId(p), name: watchPageName(p) })),
+      words: {
+        label: A.template.taps.label, help: A.template.taps.help, addLabel: A.template.taps.addLabel,
+        placeHint: A.template.taps.placeHint, urlHint: A.template.taps.urlHint, actionLabels: A.template.taps.actionLabels,
+      },
+    },
     busy: host.busy,
     hass: host.hass,
     icons: host.icons,
@@ -325,6 +331,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     setTitleSize: (size, typing) => commit(host, "templateTitleFontSize", (d) => setWatchTemplateTitleFontSize(d, ...at(host), size), typing ? { typing: true } : {}),
     setTitleColor: (color, typing) => commit(host, "templateTitleColor", (d) => setWatchTemplateTitleColor(d, ...at(host), color), typing ? { typing: true } : {}),
     setLayout: (layout, typing = false) => commit(host, "templateLayout", d => setWatchTemplateLayout(d, ...at(host), layout), typing ? { typing: true } : {}),
+    setTaps: (areas, typing) => commit(host, "templateTaps", (d) => setWatchTemplateTaps(d, ...at(host), areas), typing ? { typing: true } : {}),
     picture: (device, maxWidth, maxHeight) => host.templatePicture?.(device, maxWidth, maxHeight),
     examples,
     helpers: html`<div class="tpl-box">${help.recipes}${help.entitySearch}${help.asks}
