@@ -329,7 +329,9 @@ interface AppTable {
       actionLabels: Record<"maps" | "link" | "refresh" | "page" | "toggle" | "script" | "scene" | "service" | "http" | "control", string>;
       actionHints: Partial<Record<"toggle" | "script" | "scene" | "service" | "http" | "control", string>>;
       serviceHint: string; dataHint: string;
+      confirmLabel: string; confirmHint: string; markerHint: string;
     };
+    refresh: { key: string; kinds: readonly string[]; min: number; max: number; menu: readonly number[]; label: string; help: string };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;
       position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
@@ -657,6 +659,30 @@ export function setWatchTemplateLines(document: WatchPagesDocument, pageId: stri
   const { min, max, absent } = WATCH_TEMPLATE_LINES;
   if (!Number.isInteger(lines) || lines < min || lines > max) return document;
   return setKey(document, pageId, tileId, "templateLines", (tile) => (isTemplate(tile) ? (lines === absent ? REMOVE : lines) : undefined));
+}
+
+/** Refresh every's range and the minutes its menu offers. */
+export const WATCH_TEMPLATE_REFRESH = { min: A.template.refresh.min, max: A.template.refresh.max, menu: A.template.refresh.menu as readonly number[] } as const;
+
+/** Refresh every, as both devices read it: a finite number, rounded, kept
+ * from 1 to 1440 minutes; anything else is off (undefined). */
+export function watchTemplateRefreshMinutes(tile: WatchPageTile): number | undefined {
+  const { min, max } = WATCH_TEMPLATE_REFRESH;
+  const value = tile.templateRefreshMinutes;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/** "Refresh every": whole minutes in range, or undefined (Off) to remove
+ * the key. */
+export function setWatchTemplateRefreshMinutes(document: WatchPagesDocument, pageId: string, tileId: string, minutes: number | undefined): WatchPagesDocument {
+  const { min, max } = WATCH_TEMPLATE_REFRESH;
+  if (minutes !== undefined && (!Number.isInteger(minutes) || minutes < min || minutes > max)) return document;
+  return setKey(document, pageId, tileId, "templateRefreshMinutes", (tile) => {
+    if (!isTemplate(tile)) return undefined;
+    if (minutes === undefined) return Object.hasOwn(tile, "templateRefreshMinutes") ? REMOVE : undefined;
+    return tile.templateRefreshMinutes === minutes ? undefined : minutes;
+  });
 }
 
 export function setWatchTemplateLayout(document: WatchPagesDocument, pageId: string, tileId: string, layout: TemplateTileLayout | undefined): WatchPagesDocument {

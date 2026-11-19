@@ -68,7 +68,7 @@ import {
   watchPhoneKeysOf,
   watchSensorChart,
 } from "./phone-keys-model.js";
-import { WATCH_TEMPLATE_LINES, watchTemplateLines } from "./app-model.js";
+import { WATCH_TEMPLATE_LINES, WATCH_TEMPLATE_REFRESH, watchTemplateLines, watchTemplateRefreshMinutes } from "./app-model.js";
 import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPage,
@@ -350,6 +350,22 @@ export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
   });
   const stored = watchTemplateLines(tile);
   return watchChoiceMenu(choices, stored === undefined ? String(absent) : String(stored));
+}
+
+/** Minutes in a few words: "5 min", "1 hour", "1 h 30 min". */
+export function watchRefreshLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60), rest = minutes % 60;
+  const h = hours === 1 ? "1 hour" : `${hours} hours`;
+  return rest === 0 ? h : `${hours} h ${rest} min`;
+}
+
+/** The Refresh every menu: Off, then the shared minutes. A stored value not
+ * in the menu is shown first as its own choice, so it is not lost. */
+export function watchTemplateRefreshMenu(tile: WatchPageTile): WatchMenu {
+  const choices = [{ value: "off", label: "Off" }, ...WATCH_TEMPLATE_REFRESH.menu.map((n) => ({ value: String(n), label: watchRefreshLabel(n) }))];
+  const minutes = watchTemplateRefreshMinutes(tile);
+  return watchChoiceMenu(choices, minutes === undefined ? "off" : String(minutes), (v) => watchRefreshLabel(Number(v)));
 }
 
 /** What a folded phone card says it holds. */

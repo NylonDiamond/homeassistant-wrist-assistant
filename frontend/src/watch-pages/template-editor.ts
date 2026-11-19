@@ -50,6 +50,8 @@ export interface TemplateEditorData {
   rowLimit: number;
   /** Lines' words and choices, for the row under Line up columns. */
   lines: { label: string; help: string; menu: WatchMenu };
+  /** Refresh every's words and choices, for the row under Lines. */
+  refresh: { label: string; help: string; menu: WatchMenu };
   /** Title's words and the text as typed, for the row over Line up columns,
    * and its look, for the box under the tile while the title is picked. */
   title: {
@@ -77,6 +79,7 @@ export interface TemplateEditorData {
       actionLabels: Record<TemplateTapAction, string>;
       actionHints: Partial<Record<TemplateTapAction, string>>;
       serviceHint: string; dataHint: string;
+      confirmLabel: string; confirmHint: string; markerHint: string;
     };
   };
   busy: boolean;
@@ -89,6 +92,8 @@ export interface TemplateEditorData {
   ended(): void;
   setColumns(on: boolean): void;
   setLines(value: string): void;
+  /** "off" removes the key; any other value is whole minutes. */
+  setRefresh(value: string): void;
   setTitle(text: string): void;
   setTitleHidden(hidden: boolean): void;
   setTitlePosition(position: number, typing: boolean): void;
@@ -510,7 +515,9 @@ export class WaTemplateEditor extends LitElement {
               <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
               <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
               <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
-              <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label></div>` : nothing}
+              <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>
+              <label class="te-sw"><span><b>${d.refresh.label}</b><small>${d.refresh.help}</small></span>
+              <select class="te-lines" aria-label=${d.refresh.label} ?disabled=${d.busy} @change=${(e: Event) => d.setRefresh((e.target as HTMLSelectElement).value)}>${d.refresh.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.refresh.menu.selected}>${o.label}</option>`)}</select></label></div>` : nothing}
           ${this.taps.section()}
           <div class="te-right">
             <div class="te-bar">
@@ -670,6 +677,9 @@ export const templateEditorStyles = css`
   .te-tap-add:hover:not(:disabled) { border-color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 8%, transparent); }
   .te-tap-add:disabled { opacity: .45; cursor: default; }
   .te-taps-body.empty .te-tap-add { align-self: flex-start; }
+  .te-tap-marker { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); }
+  .te-tap-marker code { font-size: 11px; padding: 0 3px; border-radius: 4px; background: var(--wa-field, var(--wa-input)); }
+  .te-tap-confirm { padding-top: 8px; border-top: 1px solid var(--wa-line); }
   .te-tap-none { display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 12px; border: 1px dashed var(--wa-line); border-radius: 9px; font-size: 12px; color: var(--wa-muted); text-align: center; }
   /* The picked area's card: each title over its control, at the card's width. */
   .te-tap-form { gap: 12px; padding: 12px; background: color-mix(in srgb, var(--wa-ink) 2%, transparent); }

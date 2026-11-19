@@ -3,7 +3,8 @@
 // the key by the same rule, and both pass `tile-app.json` `template.taps`
 // `samples`. The contract is "Tap areas (2026-11-18)" in the app repo's
 // `docs/template_tile_links_2026-11.md`, with the six Home Assistant
-// actions of "Tap area actions, round 2 (2026-11-18)".
+// actions of "Tap area actions, round 2 (2026-11-18)" and the `confirm` key
+// of "Round 3: ask first, and refresh on a timer (2026-11-18)".
 //
 // No DOM here: the reader, and the small edits the editor makes to a list.
 
@@ -33,6 +34,9 @@ export interface TemplateTapArea {
   service?: string;
   http?: string;
   data?: Record<string, unknown>;
+  /** Ask before running: a first tap shows the tile's question, a second
+   * runs the action. Only `true` is kept, always last. */
+  confirm?: true;
 }
 
 /** The key, the limits and the actions, from the shared table. */
@@ -112,6 +116,8 @@ function readArea(raw: unknown): TemplateTapArea | undefined {
     if (entity !== undefined) area.entity = entity;
     if (isTemplateTapData(item["data"])) area.data = item["data"];
   }
+  // Any action may ask first; only exactly true counts, and it goes last.
+  if (item["confirm"] === true) area.confirm = true;
   return area;
 }
 
@@ -139,9 +145,17 @@ export function newTemplateTapArea(): TemplateTapArea {
 export function withTemplateTapAction(area: TemplateTapArea, action: TemplateTapAction, text?: string): TemplateTapArea {
   const field = templateTapField(action);
   const { x, y, w, h } = area;
-  if (field === undefined) return { x, y, w, h, action };
+  const ask = area.confirm === true ? { confirm: true as const } : {};
+  if (field === undefined) return { x, y, w, h, action, ...ask };
   const value = (text ?? area[field] ?? "").trim();
-  return value === "" ? area : { x, y, w, h, action, [field]: value };
+  return value === "" ? area : { x, y, w, h, action, [field]: value, ...ask };
+}
+
+/** The area with Ask before running on (`confirm: true`, last) or off (no
+ * key). */
+export function withTemplateTapConfirm(area: TemplateTapArea, on: boolean): TemplateTapArea {
+  const { confirm: _confirm, ...rest } = area;
+  return on ? { ...rest, confirm: true } : rest;
 }
 
 /** A service area with its entity and data set: an empty or blank entity,
@@ -154,7 +168,7 @@ export function withTemplateTapServiceExtras(area: TemplateTapArea, extras: { en
   if (entity !== undefined && entity !== "") next.entity = entity;
   const data = "data" in extras ? extras.data : area.data;
   if (data !== undefined) next.data = data;
-  return next;
+  return withTemplateTapConfirm(next, area.confirm === true);
 }
 
 /** The area moved to `x`, `y`, its size kept, inside the face. */

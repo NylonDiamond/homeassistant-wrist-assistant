@@ -23,6 +23,7 @@ import {
   spannedTemplateTapArea,
   templateTapField,
   withTemplateTapAction,
+  withTemplateTapConfirm,
   withTemplateTapServiceExtras,
 } from "./template-taps.js";
 
@@ -360,10 +361,19 @@ export class TemplateTapEditor {
               <span class="te-tap-badge">${i + 1}</span><span class="te-tap-words"><b>${this.actionWords(a.action)}</b>${detail === "" ? nothing : html`<small>${detail}</small>`}</span></button>`;
           })}
           <button type="button" class="te-tap-add" ?disabled=${d.busy || full} title=${full ? `At most ${TEMPLATE_TAPS.max} areas` : ""} @click=${() => this.add()}><span aria-hidden="true">+</span>${words.addLabel}</button>
+          <div class="te-tap-marker">${this.markerHint(words.markerHint)}</div>
         </div>
         ${form !== nothing ? form : editing ? html`<div class="te-tap-none">Pick an area in the list or on the tile.</div>` : nothing}
       </div>
     </section>`;
+  }
+
+  /** The list's foot line, with the marker as code. */
+  private markerHint(text: string): TemplateResult {
+    const marker = "[map:lat,lon]";
+    const at = text.indexOf(marker);
+    if (at < 0) return html`${text}`;
+    return html`${text.slice(0, at)}<code>${marker}</code>${text.slice(at + marker.length)}`;
   }
 
   /** The picked area's settings: a card beside the list, each title over
@@ -475,6 +485,9 @@ export class TemplateTapEditor {
           ${missingHTTP ? html`<option value=${area.http ?? ""} selected>Missing action</option>` : nothing}
           ${httpActions.map((a) => html`<option value=${a.id} ?selected=${a.id.toUpperCase() === area.http?.toUpperCase()}>${a.name}</option>`)}
         </select></label>${hint("http")}` : nothing}
+      <label class="te-sw te-tap-confirm"><span><b>${words.confirmLabel}</b><small>${words.confirmHint}</small></span>
+        <button type="button" class="te-switch ${area.confirm === true ? "on" : ""}" role="switch" aria-checked=${area.confirm === true ? "true" : "false"} aria-label=${words.confirmLabel} ?disabled=${d.busy}
+          @click=${() => { d.ended(); this.replace(index, withTemplateTapConfirm(area, area.confirm !== true)); d.ended(); }}></button></label>
     </section>`;
   }
 

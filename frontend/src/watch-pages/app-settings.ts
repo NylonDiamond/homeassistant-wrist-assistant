@@ -71,7 +71,7 @@ import { watchCatalogMark } from "./catalog.js";
 import { isWatchUUID } from "./tile-settings-model.js";
 import "./template-editor.js";
 import { commit, fieldNote, linkButton, menuField, typed, typingField } from "./tile-settings.js";
-import { watchChoiceMenu, watchTemplateLinesMenu, watchTileFallbackName } from "./tile-settings-options.js";
+import { watchChoiceMenu, watchTemplateLinesMenu, watchTemplateRefreshMenu, watchTileFallbackName } from "./tile-settings-options.js";
 import { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT } from "../watch-voice/defaults.js";
 import {
   type WatchAppChoice,
@@ -108,6 +108,7 @@ import {
   watchTemplateTitleFontSize,
   setWatchTemplateLayout,
   setWatchTemplateLines,
+  setWatchTemplateRefreshMinutes,
   setWatchTemplateTaps,
   setWatchTemplateText,
   setWatchVoiceId,
@@ -267,7 +268,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
   const help = templateHelpers(host, text, { key, use: "text", bare: false, write });
   const examples = html`<details class="ap-template-guide" open>
-      <summary>${uiIcon("info")}<span>How to: icons, colors and links</span></summary>
+      <summary>${uiIcon("info")}<span>How to: icons and colors</span></summary>
       <div class="ap-template-guide-body">
         <table>
         <thead><tr><th scope="col">Example syntax</th><th scope="col">Result</th></tr></thead>
@@ -279,10 +280,6 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
           <tr>
             <td><code>[color:red]Unlocked[/color]</code></td>
             <td><span class="ap-template-result" style="color:#FF3B30">Unlocked</span></td>
-          </tr>
-          <tr>
-            <td><code>[map:52.37,4.89]</code></td>
-            <td><span class="ap-template-result">Tap the row to open Maps</span></td>
           </tr>
         </tbody>
         </table>
@@ -302,6 +299,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     columns: watchTemplateColumns(tile),
     rowLimit: watchTemplateRowLimit(tile),
     lines: { label: A.template.lines.label, help: A.template.lines.help, menu: watchTemplateLinesMenu(tile) },
+    refresh: { label: A.template.refresh.label, help: A.template.refresh.help, menu: watchTemplateRefreshMenu(tile) },
     title: {
       label: A.template.title.label, help: A.template.title.help, placeholder: A.template.title.placeholder, styleHint: A.template.title.styleHint,
       text: watchTemplateTitleText(tile), hidden: watchTemplateTitleHidden(tile),
@@ -319,6 +317,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
         label: A.template.taps.label, help: A.template.taps.help, addLabel: A.template.taps.addLabel,
         placeHint: A.template.taps.placeHint, urlHint: A.template.taps.urlHint, actionLabels: A.template.taps.actionLabels,
         actionHints: A.template.taps.actionHints, serviceHint: A.template.taps.serviceHint, dataHint: A.template.taps.dataHint,
+        confirmLabel: A.template.taps.confirmLabel, confirmHint: A.template.taps.confirmHint, markerHint: A.template.taps.markerHint,
       },
     },
     busy: host.busy,
@@ -330,6 +329,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     ended: () => host.endCoalesce(),
     setColumns: (on) => commit(host, "templateColumns", (d) => setWatchTemplateColumns(d, ...at(host), on)),
     setLines: (value) => commit(host, "templateLines", (d) => setWatchTemplateLines(d, ...at(host), Number(value))),
+    setRefresh: (value) => commit(host, "templateRefreshMinutes", (d) => setWatchTemplateRefreshMinutes(d, ...at(host), value === "off" ? undefined : Number(value))),
     setTitle: (text) => commit(host, "templateTitle", (d) => setWatchTemplateTitle(d, ...at(host), text), { typing: true }),
     setTitleHidden: (hidden) => commit(host, "templateTitleHidden", (d) => setWatchTemplateTitleHidden(d, ...at(host), hidden)),
     setTitlePosition: (position, typing) => commit(host, "templateTitlePosition", (d) => setWatchTemplateTitlePosition(d, ...at(host), position), typing ? { typing: true } : {}),
