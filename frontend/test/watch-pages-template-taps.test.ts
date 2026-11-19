@@ -178,7 +178,7 @@ describe("Maps zoom", () => {
   it("takes its range and names from the shared table", () => {
     const table = tileApp.template.mapZoom;
     expect([table.key, table.min, table.max]).toEqual(["templateMapZoom", 17, 21]);
-    expect(table.names).toEqual({ "17": "Street", "19": "Close" });
+    expect(table.names).toEqual({ "17": "furthest", "21": "closest" });
     expect((pageKeys as unknown as { types: { tile: { keys: Record<string, unknown> } } }).types.tile.keys["templateMapZoom"]).toEqual({ type: "number", required: false });
     expect(keyDevices("templateMapZoom")).toEqual(["watch", "iphone"]);
   });
@@ -203,15 +203,15 @@ describe("Maps zoom", () => {
     expect(setWatchTemplateMapZoom(light, PAGE, TILE, 18)).toBe(light);
   });
 
-  it("offers Auto, then every level from far to close, naming a few", () => {
+  it("offers Auto, then steps 1 (furthest) to 5 (closest), each storing its level", () => {
     const menu = watchTemplateMapZoomMenu(tile({}));
     expect(menu.options.map((o) => [o.value, o.label])).toEqual([
-      ["auto", "Auto"], ["17", "17 (Street)"], ["18", "18"], ["19", "19 (Close)"], ["20", "20"], ["21", "21"],
+      ["auto", "Auto"], ["17", "1 (furthest)"], ["18", "2"], ["19", "3"], ["20", "4"], ["21", "5 (closest)"],
     ]);
     expect(menu.selected).toBe("auto");
     expect(watchTemplateMapZoomMenu(tile({ templateMapZoom: 19 })).selected).toBe("19");
     expect(watchTemplateMapZoomMenu(tile({ templateMapZoom: 10 })).selected).toBe("17");
-    expect(watchMapZoomLabel(18)).toBe("18");
+    expect(watchMapZoomLabel(18)).toBe("2");
   });
 
   it("is offered only while a tap on the tile can open Maps", () => {

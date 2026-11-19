@@ -368,13 +368,15 @@ export function watchTemplateRefreshMenu(tile: WatchPageTile): WatchMenu {
   return watchChoiceMenu(choices, minutes === undefined ? "off" : String(minutes), (v) => watchRefreshLabel(Number(v)));
 }
 
-/** A Maps zoom level with its reference name, if it has one: "19 (Close)". */
+/** A Maps zoom level as the menu shows it: a step from 1, the furthest
+ * level, with the name of an end: 17 is "1 (furthest)", 21 "5 (closest)". */
 export function watchMapZoomLabel(level: number): string {
+  const step = String(level - WATCH_TEMPLATE_MAP_ZOOM.min + 1);
   const name = WATCH_TEMPLATE_MAP_ZOOM.names[String(level)];
-  return name === undefined ? String(level) : `${level} (${name})`;
+  return name === undefined ? step : `${step} (${name})`;
 }
 
-/** The Maps zoom menu: Auto, then every level from far to close. */
+/** The Maps zoom menu: Auto, then the steps from furthest to closest. */
 export function watchTemplateMapZoomMenu(tile: WatchPageTile): WatchMenu {
   const { min, max } = WATCH_TEMPLATE_MAP_ZOOM;
   const levels = Array.from({ length: max - min + 1 }, (_, i) => min + i);
