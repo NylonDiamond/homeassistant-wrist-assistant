@@ -89,7 +89,7 @@
       "max": 1440,
       "menu": [1, 5, 15, 30, 60],
       "label": "Refresh every",
-      "help": "Asks again on a timer. For templates that change only with the time.",
+      "help": "The tile already updates when its data changes. Use this only for things that change with the clock, like a countdown or \"5 min ago\".",
       "write": "Whole minutes from the menu; Off removes the key. Read: a finite number, rounded, kept from min to max; anything else is off. Both devices ask for the template again on that timer while the tile is on screen. A stored value not in the menu is shown as its own choice."
     },
     "columns": {
