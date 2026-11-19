@@ -116,6 +116,25 @@ class HeldConfig:
         return any(kind in held and held[kind] != rev for kind, rev in current.items())
 
 
+# Template tiles' keys (``tile_<hash>``), beside the Show tile ``show_`` keys.
+# Their events carry the whole render as ``text`` (capability
+# ``template_tile_text``), so the tile draws it and never asks again.
+TILE_TEMPLATE_PREFIX = "tile_"
+# A longer render goes without ``text``, and its tile asks for itself.
+TILE_TEXT_MAX_CHARS = 32 * 1024
+
+
+def tile_text_hash(text: str) -> str:
+    """FNV-1a 64 of the text's UTF-8, in lowercase hex with no padding: the
+    digest a device sends in ``template_have`` for the text it holds. The
+    app's ``TemplateLiveResults.textHash`` is the same function."""
+    value = 0xCBF29CE484222325
+    for byte in text.encode("utf-8"):
+        value ^= byte
+        value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return format(value, "x")
+
+
 @dataclass(slots=True)
 class _TemplateDeps:
     """Tracked dependencies for a rendered template."""
@@ -137,6 +156,10 @@ class WatchSession:
     # The last value sent per template, None for a render that raised.
     template_values: dict[str, str | None] = field(default_factory=dict)
     template_deps: dict[str, _TemplateDeps] = field(default_factory=dict)
+    # Template tiles (``tile_`` keys) whose last render was plain text, so
+    # their event carries ``text``. A number, a list or a bool is read by
+    # the app's own rule, not Python's, and its tile asks for itself.
+    template_plain: set[str] = field(default_factory=set)
     # Who this session's renders count against (`template_guard.caller_for`).
     template_caller: str | None = None
     # Template sources stopped by a limit, each with the loop time it may run
@@ -175,6 +198,37 @@ class WatchSession:
     def clear_template_values(self) -> None:
         self.template_values.clear()
         self.template_deps.clear()
+        self.template_plain.clear()
+
+    def replace_templates(
+        self, templates: dict[str, str], have: dict[str, str] | None
+    ) -> None:
+        """Take a poll's template list. Every value goes, as a reply marks
+        its values sent when it is built and a stopped poll may have lost one,
+        except a template tile's the device says it holds: ``have`` names, by
+        key, the hash (`tile_text_hash`) of the text it last got. A key in
+        the new list whose kept text has that hash keeps its value and
+        dependencies, so a page change does not render it again."""
+        kept: dict[str, tuple[str, _TemplateDeps]] = {}
+        for key, digest in (have or {}).items():
+            value = self.template_values.get(key)
+            deps = self.template_deps.get(key)
+            if (
+                key.startswith(TILE_TEMPLATE_PREFIX)
+                and key in templates
+                and self.templates.get(key) == templates[key]
+                and key in self.template_plain
+                and value is not None
+                and deps is not None
+                and tile_text_hash(value) == digest
+            ):
+                kept[key] = (value, deps)
+        self.templates = templates
+        self.clear_template_values()
+        for key, (value, deps) in kept.items():
+            self.template_values[key] = value
+            self.template_deps[key] = deps
+            self.template_plain.add(key)
 
 
 @dataclass(slots=True)
@@ -411,7 +465,7 @@ class DeltaCoordinator:
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
         self._poll_callbacks: list[Callable[[str], None]] = []
-        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs", "instant_poll"}
+        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs", "instant_poll", "template_tile_text"}
         self._sorted_capabilities: list[str] = sorted(self._capabilities)
         self._caps_hash = capabilities_hash(self._capabilities)
         # Devices whose first sync since this server started is logged, so a
@@ -1442,6 +1496,7 @@ class DeltaCoordinator:
         attribute_diffs: bool = False,
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
+        template_have: dict[str, str] | None = None,
         template_caller: str | None = None,
         custom_entity_ids: list[str] | None = None,
         complications_token: int | None = None,
@@ -1578,6 +1633,7 @@ class DeltaCoordinator:
             attribute_diffs=attribute_diffs,
             include_summary=include_summary,
             templates=templates,
+            template_have=template_have,
             template_caller=template_caller,
             custom_entity_ids=custom_entity_ids,
             applied_complications_token=complications_token,
@@ -1813,6 +1869,7 @@ class DeltaCoordinator:
         attribute_diffs: bool = False,
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
+        template_have: dict[str, str] | None = None,
         template_caller: str | None = None,
         custom_entity_ids: list[str] | None = None,
         applied_complications_token: int | None = None,
@@ -1895,10 +1952,13 @@ class DeltaCoordinator:
                 session.clear_baselines()
                 session.clear_template_values()
 
-        # Store template subscriptions (sent alongside entities)
+        # Store template subscriptions (sent alongside entities). A template
+        # tile's text the device says it holds is kept (``template_have``).
         if templates is not None:
-            session.templates = {k: v for k, v in templates.items() if isinstance(k, str) and isinstance(v, str)}
-            session.clear_template_values()
+            session.replace_templates(
+                {k: v for k, v in templates.items() if isinstance(k, str) and isinstance(v, str)},
+                template_have,
+            )
 
         if sessions_changed:
             self._fire_session_callbacks()
@@ -2451,13 +2511,15 @@ class DeltaCoordinator:
 
     def _render_template_tracked(
         self, template_str: str,
-    ) -> tuple[str | None, _TemplateDeps]:
+    ) -> tuple[str | None, _TemplateDeps, bool]:
         """Render a template and return (value, dependencies). Runs in the
         guard's worker thread (`_async_render_session`).
 
         The value is None when the render raised, so the event can say so
         (`_template_event`): a tile's "Show only when" template shows the
-        tile on an error, and an empty render is a different answer.
+        tile on an error, and an empty render is a different answer. The
+        third is whether the render was plain text, the one kind whose words
+        read the same here and in the app (``template_plain``).
         """
         tpl = Template(template_str, self.hass)
         tpl.hass = self.hass
@@ -2478,9 +2540,9 @@ class DeltaCoordinator:
             rendered = info.result()
         except Exception:  # noqa: BLE001 (a template error is reported, not raised)
             _LOGGER.debug("Template render failed: %.120s", template_str, exc_info=True)
-            return None, deps
+            return None, deps, False
         value = str(rendered).strip() if rendered is not None else ""
-        return value, deps
+        return value, deps, isinstance(rendered, str)
 
     async def _async_outcomes(
         self, caller: str, sources: list[str]
@@ -2526,7 +2588,8 @@ class DeltaCoordinator:
     ) -> dict[str, tuple[str | None, _TemplateDeps | None]] | None:
         """Render ``due`` ({tile id: source}) for a session, off the loop.
 
-        Answers {tile id: (value, deps)}, leaving out a tile the guard refused
+        Answers {tile id: (value, deps)}, notes in ``template_plain`` which
+        renders were plain text, leaving out a tile the guard refused
         for now, which says nothing about the template. A tile stopped by a
         limit has the value None and no deps, and its source is held back for
         ``_TEMPLATE_HOLD_BACK_SECONDS``, so one slow template does not spend a
@@ -2547,7 +2610,11 @@ class DeltaCoordinator:
             if outcome.refused:
                 continue
             if outcome.ok:
-                value, deps = outcome.value
+                value, deps, plain = outcome.value
+                if plain:
+                    session.template_plain.add(tile)
+                else:
+                    session.template_plain.discard(tile)
                 if outcome.seconds > _SLOW_RENDER_SECONDS:
                     _LOGGER.warning(
                         "Slow template render (%.0fms): %.120s",
@@ -2557,8 +2624,10 @@ class DeltaCoordinator:
                 rendered[tile] = (value, deps)
             elif outcome.status == template_guard.ERROR:
                 _LOGGER.debug("Template render failed: %s: %.120s", outcome.error, source)
+                session.template_plain.discard(tile)
                 rendered[tile] = (None, _TemplateDeps(frozenset(), frozenset(), False))
             else:
+                session.template_plain.discard(tile)
                 _LOGGER.warning("Template stopped: %s: %.120s", outcome.error, source)
                 self._hold_back(session, source, now)
                 rendered[tile] = (None, None)
@@ -2585,7 +2654,9 @@ class DeltaCoordinator:
         return True
 
     @staticmethod
-    def _template_event(tile_id: str, value: str | None, now_ts: float) -> dict[str, Any]:
+    def _template_event(
+        tile_id: str, value: str | None, now_ts: float, plain: bool = False
+    ) -> dict[str, Any]:
         """Build a delta event dict for a template value.
 
         If the rendered value contains newlines, each line is sent as an
@@ -2593,6 +2664,11 @@ class DeltaCoordinator:
         render that raised (``value`` None) has no lines and ``error: true``,
         so the watch can tell it from a template that rendered empty. Older
         apps read only ``lines`` and see the empty value they always did.
+
+        A template tile's (``tile_`` key) plain text render also goes whole
+        as ``text``, blank lines kept, so the tile draws it as its own ask
+        would have (capability ``template_tile_text``). Not for a render that
+        was not text (``plain``), nor one over ``TILE_TEXT_MAX_CHARS``.
         """
         lines = [l for l in value.split("\n") if l] if value else []
         entity_id = f"template.{tile_id}"
@@ -2603,6 +2679,12 @@ class DeltaCoordinator:
         }
         if value is None:
             event["error"] = True
+        elif (
+            plain
+            and tile_id.startswith(TILE_TEMPLATE_PREFIX)
+            and len(value) <= TILE_TEXT_MAX_CHARS
+        ):
+            event["text"] = value
         return event
 
     async def _evaluate_templates(
@@ -2659,7 +2741,9 @@ class DeltaCoordinator:
                 session.template_deps[tile_id] = deps
             if tile_id not in session.template_values or session.template_values[tile_id] != value:
                 session.template_values[tile_id] = value
-                changed.append(self._template_event(tile_id, value, now_ts))
+                changed.append(
+                    self._template_event(tile_id, value, now_ts, tile_id in session.template_plain)
+                )
 
         return changed
 
@@ -2691,7 +2775,9 @@ class DeltaCoordinator:
             else:
                 session.template_deps[tile_id] = deps
             session.template_values[tile_id] = value
-            results.append(self._template_event(tile_id, value, now_ts))
+            results.append(
+                self._template_event(tile_id, value, now_ts, tile_id in session.template_plain)
+            )
 
         return results
 

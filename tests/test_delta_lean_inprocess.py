@@ -1351,3 +1351,143 @@ def test_a_watch_config_revision_lost_in_a_hard_kill_is_never_handed_out_again()
         ).revision
         assert again > lost and voice > created
 
+
+
+# ── a template tile's whole text rides the delta ─────────────────────────
+
+
+def _counting_template(hass: Any, sensor: str, counts: dict[str, int], value=None):
+    class _Template:
+        def __init__(self, source: str, _hass: Any) -> None:
+            self.source = source
+
+        def async_render_to_info(self) -> _RenderInfo:
+            counts[self.source] = counts.get(self.source, 0) + 1
+            state = hass.states.get(sensor).state
+            return _RenderInfo(value(state) if value else f"top {state}\n\nbottom", {sensor})
+
+    return _Template
+
+
+def test_the_text_hash_is_the_apps(coordinator) -> None:
+    """The same vectors as the app's `TemplateLiveResultsTests`."""
+    module, _hass, _coord = coordinator
+    assert module.tile_text_hash("") == "cbf29ce484222325"
+    assert module.tile_text_hash("a") == "af63dc4c8601ec8c"
+    assert module.tile_text_hash("top 1\n\nbottom") == module.tile_text_hash("top 1\n\nbottom")
+
+
+def test_the_capability_is_listed(coordinator) -> None:
+    _module, _hass, coord = coordinator
+    assert "template_tile_text" in coord._capabilities
+
+
+def test_a_template_tile_s_event_carries_its_whole_text(coordinator) -> None:
+    """Blank lines kept, for `tile_` keys only, and only for a text render."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    counts: dict[str, int] = {}
+    module.Template = _counting_template(hass, sensor, counts)
+
+    async def run() -> None:
+        _, body = await _poll(
+            coord, entities=[sensor], templates={"tile_a": "a", "show_b": "b"}
+        )
+        by_id = {e["entity_id"]: e for e in body["events"] if e["entity_id"].startswith("template.")}
+        assert by_id["template.tile_a"]["text"] == "top 1\n\nbottom"
+        assert by_id["template.tile_a"]["lines"] == ["top 1", "bottom"]
+        assert "text" not in by_id["template.show_b"]
+
+        _change(hass, coord, sensor, "2")
+        _, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        by_id = {e["entity_id"]: e for e in body["events"]}
+        assert by_id["template.tile_a"]["text"] == "top 2\n\nbottom"
+
+    asyncio.run(run())
+
+
+def test_a_render_that_is_not_text_goes_without_it(coordinator) -> None:
+    """A number reads by the app's rule, not Python's: the tile asks itself."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    module.Template = _counting_template(hass, sensor, {}, value=lambda state: int(state))
+
+    async def run() -> None:
+        _, body = await _poll(coord, entities=[sensor], templates={"tile_a": "a"})
+        (event,) = [e for e in body["events"] if e["entity_id"] == "template.tile_a"]
+        assert event["lines"] == ["1"]
+        assert "text" not in event
+
+    asyncio.run(run())
+
+
+def test_a_held_text_is_not_rendered_again_when_the_list_changes(coordinator) -> None:
+    """A page change sends a new list. A tile whose text the device holds
+    keeps it: no render, no event. A new tile renders; a wrong hash renders."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    counts: dict[str, int] = {}
+    module.Template = _counting_template(hass, sensor, counts)
+    held = module.tile_text_hash("top 1\n\nbottom")
+
+    async def run() -> None:
+        _, body = await _poll(coord, entities=[sensor], templates={"tile_a": "a"})
+        assert counts == {"a": 1}
+
+        _, body = await _poll(
+            coord,
+            since=body["next_cursor"],
+            entities=[sensor],
+            templates={"tile_a": "a", "tile_c": "c"},
+            template_have={"tile_a": held},
+            timeout=0,
+        )
+        assert counts == {"a": 1, "c": 1}
+        assert [e["entity_id"] for e in body["events"] if e["entity_id"].startswith("template.")] == [
+            "template.tile_c"
+        ]
+
+        # A hash that is not the kept text's: sent again.
+        _, body = await _poll(
+            coord,
+            since=body["next_cursor"],
+            entities=[sensor],
+            templates={"tile_a": "a", "tile_c": "c"},
+            template_have={"tile_a": "0", "tile_c": module.tile_text_hash("top 1\n\nbottom")},
+            timeout=0,
+        )
+        assert counts == {"a": 2, "c": 1}
+        assert [e["entity_id"] for e in body["events"] if e["entity_id"].startswith("template.")] == [
+            "template.tile_a"
+        ]
+
+        # A kept tile still follows its entity.
+        _change(hass, coord, sensor, "2")
+        _, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert sorted(e["text"] for e in body["events"] if e["entity_id"].startswith("template.")) == [
+            "top 2\n\nbottom", "top 2\n\nbottom"
+        ]
+
+    asyncio.run(run())
+
+
+def test_without_have_a_new_list_sends_every_value_again(coordinator) -> None:
+    """A stopped poll may have lost a reply, so a list alone keeps nothing."""
+    module, hass, coord = coordinator
+    sensor = "sensor.source"
+    hass.states.set(sensor, "1")
+    counts: dict[str, int] = {}
+    module.Template = _counting_template(hass, sensor, counts)
+
+    async def run() -> None:
+        _, body = await _poll(coord, entities=[sensor], templates={"tile_a": "a"})
+        _, body = await _poll(
+            coord, since=body["next_cursor"], entities=[sensor], templates={"tile_a": "a"}, timeout=0
+        )
+        assert counts == {"a": 2}
+        assert [e["entity_id"] for e in body["events"]] == ["template.tile_a"]
+
+    asyncio.run(run())

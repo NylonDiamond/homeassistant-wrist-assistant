@@ -805,6 +805,9 @@ def _delta_over_caps(payload: dict[str, Any]) -> str | None:
             for v in templates.values()
         ):
             return f"a template is limited to {DELTA_MAX_TEMPLATE_CHARS} characters"
+    have = payload.get("template_have")
+    if isinstance(have, dict) and len(have) > DELTA_MAX_TEMPLATES:
+        return f"template_have is limited to {DELTA_MAX_TEMPLATES} entries"
     summary = payload.get("summary_entities")
     if isinstance(summary, dict):
         total = sum(len(ids) for ids in summary.values() if isinstance(ids, list))
@@ -1017,6 +1020,18 @@ class WADeltaView(HomeAssistantView):
                 if isinstance(k, str) and isinstance(v, str) and k and v
             }
 
+        # The template tiles' texts the device holds, by key, each as its
+        # hash (`tile_text_hash`), read only beside a template list. Junk
+        # entries are dropped.
+        raw_have = payload.get("template_have")
+        template_have: dict[str, str] | None = None
+        if templates is not None and isinstance(raw_have, dict):
+            template_have = {
+                k: v
+                for k, v in raw_have.items()
+                if isinstance(k, str) and isinstance(v, str) and k and 0 < len(v) <= 16
+            }
+
         # The custom-complication store token the watch last applied. Its
         # ack for the panel's "Send to watch", and what the coordinator
         # compares against to hand out the current token. Absent from apps
@@ -1133,6 +1148,7 @@ class WADeltaView(HomeAssistantView):
                 or custom_entity_ids is not None
             ),
             templates=templates,
+            template_have=template_have,
             template_caller=caller_for(secret_entry.user_id, validated.watch_id),
             custom_entity_ids=custom_entity_ids,
             complications_token=complications_token,
