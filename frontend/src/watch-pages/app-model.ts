@@ -332,7 +332,7 @@ interface AppTable {
       confirmLabel: string; confirmHint: string; markerHint: string;
     };
     refresh: { key: string; kinds: readonly string[]; min: number; max: number; menu: readonly number[]; label: string; help: string };
-    mapZoom: { key: string; kinds: readonly string[]; values: readonly string[]; meters: Readonly<Record<string, number>>; labels: Readonly<Record<string, string>>; label: string; help: string };
+    mapZoom: { key: string; kinds: readonly string[]; values: readonly string[]; meters: Readonly<Record<string, number>>; levels: Readonly<Record<string, number>>; labels: Readonly<Record<string, string>>; label: string; help: string };
     title: {
       key: string; kinds: readonly string[]; label: string; help: string; placeholder: string; styleHint: string; top: number; gap: number; inset: number;
       position: { key: string; label: string; absent: number; min: number; max: number; step: number; presets: readonly (readonly [number, string])[] };
@@ -692,7 +692,7 @@ export const WATCH_TEMPLATE_MAP_ZOOM = {
   meters: A.template.mapZoom.meters as Readonly<Record<string, number>>,
 } as const;
 
-export type WatchTemplateMapZoom = "street" | "close";
+export type WatchTemplateMapZoom = "city" | "neighborhood" | "street" | "close";
 
 /** Maps zoom, as both devices read it: a listed value, anything else is
  * Auto (undefined). */

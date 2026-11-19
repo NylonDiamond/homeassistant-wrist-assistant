@@ -176,7 +176,12 @@ describe("Maps zoom", () => {
 
   it("takes its values from the shared table", () => {
     const table = tileApp.template.mapZoom;
-    expect([table.key, table.values, table.meters]).toEqual(["templateMapZoom", ["street", "close"], { street: 500, close: 150 }]);
+    expect([table.key, table.values, table.meters, table.levels]).toEqual([
+      "templateMapZoom",
+      ["city", "neighborhood", "street", "close"],
+      { city: 10000, neighborhood: 2500, street: 500, close: 150 },
+      { city: 12, neighborhood: 14, street: 17, close: 19 },
+    ]);
     expect((pageKeys as unknown as { types: { tile: { keys: Record<string, unknown> } } }).types.tile.keys["templateMapZoom"]).toEqual({ type: "string", required: false });
     expect(keyDevices("templateMapZoom")).toEqual(["watch", "iphone"]);
   });
@@ -184,6 +189,7 @@ describe("Maps zoom", () => {
   it("reads a listed value; anything else is Auto", () => {
     expect(watchTemplateMapZoom(tile({ templateMapZoom: "street" }))).toBe("street");
     expect(watchTemplateMapZoom(tile({ templateMapZoom: "close" }))).toBe("close");
+    expect(watchTemplateMapZoom(tile({ templateMapZoom: "neighborhood" }))).toBe("neighborhood");
     for (const auto of [undefined, null, "auto", "Street", 5, true]) expect(watchTemplateMapZoom(tile({ templateMapZoom: auto }))).toBeUndefined();
   });
 
@@ -199,9 +205,9 @@ describe("Maps zoom", () => {
     expect(setWatchTemplateMapZoom(light, PAGE, TILE, "street")).toBe(light);
   });
 
-  it("offers Auto, Street and Close", () => {
+  it("offers Auto, then from far to close", () => {
     const menu = watchTemplateMapZoomMenu(tile({}));
-    expect(menu.options.map((o) => [o.value, o.label])).toEqual([["auto", "Auto"], ["street", "Street"], ["close", "Close"]]);
+    expect(menu.options.map((o) => [o.value, o.label])).toEqual([["auto", "Auto"], ["city", "City"], ["neighborhood", "Neighborhood"], ["street", "Street"], ["close", "Close"]]);
     expect(menu.selected).toBe("auto");
     expect(watchTemplateMapZoomMenu(tile({ templateMapZoom: "close" })).selected).toBe("close");
   });

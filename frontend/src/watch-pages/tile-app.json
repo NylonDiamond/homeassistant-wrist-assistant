@@ -95,12 +95,13 @@
     "mapZoom": {
       "key": "templateMapZoom",
       "kinds": ["template"],
-      "values": ["street", "close"],
-      "meters": { "street": 500, "close": 150 },
-      "labels": { "auto": "Auto", "street": "Street", "close": "Close" },
+      "values": ["city", "neighborhood", "street", "close"],
+      "meters": { "city": 10000, "neighborhood": 2500, "street": 500, "close": 150 },
+      "levels": { "city": 12, "neighborhood": 14, "street": 17, "close": 19 },
+      "labels": { "auto": "Auto", "city": "City", "neighborhood": "Neighborhood", "street": "Street", "close": "Close" },
       "label": "Maps zoom",
-      "help": "How close Maps starts when a tap on this tile opens it.",
-      "write": "One of values; Auto removes the key. Read: a value in values, anything else is Auto. Both devices open Maps showing about meters across around the place for every Maps tap on the tile, from a row's [tap:maps ...] and from a tap area. Auto leaves the zoom to Maps. An older app ignores the key. Shown only while the tile has a Maps tap; a stored value stays when it has none."
+      "help": "How close Maps starts when a tap on this tile opens it. iPhone only: Maps on Apple Watch keeps its own zoom.",
+      "write": "One of values; Auto removes the key. Read: a value in values, anything else is Auto. For every Maps tap on the tile, from a row's [tap:maps ...] and from a tap area, the iPhone opens an Apple Maps link at the value's zoom level (levels, about meters across). The watch sends the same span and a camera, which Maps on the watch ignores (tested 2026-11-19), so there it opens as Auto. Auto leaves the zoom to Maps. An older app ignores the key. Shown only while the tile has a Maps tap; a stored value stays when it has none."
     },
     "columns": {
       "key": "templateColumns",
