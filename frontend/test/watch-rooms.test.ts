@@ -220,20 +220,20 @@ describe("a load and a save with no edit", () => {
     expect(ROOM_KEYS.aim).toBe("pointControlAim");
     expect(ROOM_RULES.pointControl.aim.key).toBe(ROOM_KEYS.aim);
     expect(ROOM_RULES.pointControl.aim.absent).toBe("face");
-    expect(ROOM_RULES.pointControl.aim.options.map((o) => [o.value, o.label])).toEqual([["face", "Face It"], ["point", "Point at It"]]);
+    expect(ROOM_RULES.pointControl.aim.options.map((o) => [o.value, o.label])).toEqual([["face", "Raise Wrist"], ["point", "Point Finger"]]);
     expect(readRooms(behavior()).aim).toBe("face");
     expect(readRooms(behavior({ pointControlAim: "point" })).aim).toBe("point");
     for (const odd of ["face", "Point", "arm", "", 1, true, null]) expect(readRooms(behavior({ pointControlAim: odd })).aim).toBe("face");
   });
 
-  it("writes Point at It and removes the key for Face It", () => {
+  it("writes Point Finger and removes the key for Raise Wrist", () => {
     expect([...aimWrites("point")]).toEqual([["pointControlAim", "point"]]);
     expect([...aimWrites("face")]).toEqual([["pointControlAim", undefined]]);
     const doc = behavior();
     const pointed = after(doc, aimWrites("point"));
     expect(pointed.pointControlAim).toBe("point");
     expect(Object.hasOwn(after(pointed, aimWrites("face")), "pointControlAim")).toBe(false);
-    // Face It on a document without the key is no edit.
+    // Raise Wrist on a document without the key is no edit.
     expect(withRoomWrites(doc, new Map(), aimWrites("face")).size).toBe(0);
     let edits = withRoomWrites(doc, new Map(), aimWrites("point"));
     expect(roomDirtyKeys(doc, edits)).toEqual(["pointControlAim"]);
@@ -803,7 +803,7 @@ describe("the list, the stage and the inspector", () => {
     expect(flat(renderRoomsBody(h))).not.toContain(AIM_LABEL);
     h.uiState.set("pointOpen", true);
     const text = flat(renderRoomsBody(h));
-    for (const s of [AIM_LABEL, "Face It", "Point at It", face!.detail]) expect(text).toContain(s);
+    for (const s of [AIM_LABEL, "Raise Wrist", "Point Finger", face!.detail]) expect(text).toContain(s);
     expect(text).not.toContain(point!.detail);
     expect(text.indexOf(AIM_LABEL)).toBeLessThan(text.indexOf("Tap to Toggle"));
     const pointed = host(behavior({ pointControlAim: "point" }));

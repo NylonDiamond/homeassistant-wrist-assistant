@@ -671,7 +671,7 @@ function switchRow(label: string, on: boolean, line: string, set: (v: boolean) =
 /** The label over the aim choice. */
 export const AIM_LABEL = "How you aim";
 
-/** Face It or Point at It, with the picked one's detail under it. */
+/** Raise Wrist or Point Finger, with the picked one's detail under it. */
 function renderAim(host: RoomsViewHost): TemplateResult {
   const { options } = ROOM_RULES.pointControl.aim;
   const detail = options.find((o) => o.value === host.view.aim)?.detail ?? "";

@@ -309,7 +309,7 @@ describe("the cards on a home that is not the main house", () => {
     expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
     // Point control stays (its targets are this home's own); its two
     // switches, the gestures and When are the main house's.
-    for (const gone of ["Every room<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "rm-when", AIM_LABEL, "Face It", "Point at It"]) expect(text).not.toContain(gone);
+    for (const gone of ["Every room<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "rm-when", AIM_LABEL, "Raise Wrist", "Point Finger"]) expect(text).not.toContain(gone);
     for (const shown of ["Room sensor", "Switch pages by room", HOME_AUTO_SWITCH_LABEL, "Anywhere else", "When I walk into", "Kitchen page", "Things to point at"]) expect(text).toContain(shown);
   });
 
@@ -323,7 +323,7 @@ describe("the cards on a home that is not the main house", () => {
   it("leave the main house's four cards as they were", () => {
     const text = flatten(renderRoomsBody(host(homeRooms(), false)));
     expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
-    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", AIM_LABEL, "Face It", "Point at It", "When I walk into"]) expect(text).toContain(title);
+    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", AIM_LABEL, "Raise Wrist", "Point Finger", "When I walk into"]) expect(text).toContain(title);
     expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
   });
 
@@ -331,7 +331,7 @@ describe("the cards on a home that is not the main house", () => {
     for (const extra of [{ phone: true }, { phone: true, android: true }]) {
       const text = flatten(renderRoomsBody({ ...host(homeRooms(), true), ...extra }));
       expect(text).toContain("Things to point at");
-      for (const gone of [AIM_LABEL, "Face It", "Point at It", "Tap to Toggle"]) expect(text).not.toContain(gone);
+      for (const gone of [AIM_LABEL, "Raise Wrist", "Point Finger", "Tap to Toggle"]) expect(text).not.toContain(gone);
     }
   });
 

@@ -265,10 +265,10 @@ describe("the Pointer switches", () => {
     expect(on[1]!.on).toBe(false);
   });
 
-  it("read how point control aims, Face It when absent or anything else, as the Rooms table says", () => {
-    expect(watchPointControlAim(undefined)).toEqual({ key: "pointControlAim", label: AIM_LABEL, value: "Face It", detail: ROOM_RULES.pointControl.aim.options[0]!.detail });
-    expect(watchPointControlAim({ pointControlAim: "point" })).toMatchObject({ value: "Point at It", detail: ROOM_RULES.pointControl.aim.options[1]!.detail });
-    for (const odd of ["arm", "Point", 1, null]) expect(watchPointControlAim({ pointControlAim: odd }).value).toBe("Face It");
+  it("read how point control aims, Raise Wrist when absent or anything else, as the Rooms table says", () => {
+    expect(watchPointControlAim(undefined)).toEqual({ key: "pointControlAim", label: AIM_LABEL, value: "Raise Wrist", detail: ROOM_RULES.pointControl.aim.options[0]!.detail });
+    expect(watchPointControlAim({ pointControlAim: "point" })).toMatchObject({ value: "Point Finger", detail: ROOM_RULES.pointControl.aim.options[1]!.detail });
+    for (const odd of ["arm", "Point", 1, null]) expect(watchPointControlAim({ pointControlAim: odd }).value).toBe("Raise Wrist");
     const { aim } = WATCH_APP.pointControl;
     const rooms = ROOM_RULES.pointControl.aim;
     expect([aim.key, aim.absent, aim.options]).toEqual([rooms.key, rooms.absent, rooms.options]);

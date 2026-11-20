@@ -1326,7 +1326,7 @@ export function watchPointControlSwitches(behavior: unknown): WatchPointControlS
 export interface WatchPointControlAim {
   key: string;
   label: string;
-  /** The picked option's label: Face It when absent or anything else. */
+  /** The picked option's label: Raise Wrist when absent or anything else. */
   value: string;
   detail: string;
 }

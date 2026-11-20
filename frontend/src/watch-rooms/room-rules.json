@@ -928,12 +928,12 @@
       "options": [
         {
           "value": "face",
-          "label": "Face It",
+          "label": "Raise Wrist",
           "detail": "Raise your wrist as if to read the time and face the device."
         },
         {
           "value": "point",
-          "label": "Point at It",
+          "label": "Point Finger",
           "detail": "Point your arm at the device, as with a finger. The watch turns its reading for the wrist it is on."
         }
       ],

@@ -369,8 +369,8 @@ export function pointSwitchWrites(key: string, on: boolean): Map<string, unknown
   return new Map([[key, on]]);
 }
 
-/** How Point Control aims: Face It removes the key, since absent is face;
- * Point at It stores "point". */
+/** How Point Control aims: Raise Wrist removes the key, since absent is face;
+ * Point Finger stores "point". */
 export function aimWrites(value: PointAim): Map<string, unknown> {
   return new Map([[ROOM_KEYS.aim, value === ROOM_RULES.pointControl.aim.absent ? undefined : value]]);
 }
