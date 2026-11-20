@@ -4951,19 +4951,24 @@ def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response |
     signing as itself, for kind ``behavior``, with an ``owner_watch_id``,
     reads or saves the settings of one of its user's watches, the ones
     ``phone_pages_offer`` lists (`phone_watch_ids`): ``(watch id, None)``.
-    Such a body naming any other watch is refused and nothing is read or
-    written, ``(None, refusal)``:
+    Kinds ``notification_style`` and ``voice`` take it the same way
+    (capability ``phone_watch_look``). Such a body
+    naming any other watch is refused and nothing is read or written,
+    ``(None, refusal)``:
 
     - a watch that is not one of the phone's: 403 ``not_owner``;
-    - a watch that takes its settings from another home (its entry's
-      ``main_house`` is false): 400 ``not_main_house``. The watch never pulls
-      ``behavior`` from this home, so a save here would never reach it.
+    - for ``behavior`` and ``notification_style``, a watch that takes them
+      from another home (its entry's ``main_house`` is false): 400
+      ``not_main_house``. The watch never pulls those from this home, so a
+      save here would never reach it. A voice record is each home's own, so
+      ``voice`` is never refused for it.
 
     A watch, or any other kind, that names an owner is not refused: the name
     is ignored, as it always was, and the signer's own record is meant.
     """
     raw = ctx.payload.get("owner_watch_id")
-    if raw is None or ctx.payload.get("kind") != "behavior" or not _caller_is_iphone(ctx):
+    kind = ctx.payload.get("kind")
+    if raw is None or kind not in ("behavior", "notification_style", "voice") or not _caller_is_iphone(ctx):
         return ctx.watch_id, None
 
     def refuse(error: str, message: str, status: int = 400) -> tuple[None, Response]:
@@ -4972,7 +4977,7 @@ def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response |
     secrets = ctx.domain_data.widget_secret_store
     if not isinstance(raw, str) or raw not in phone_watch_ids(secrets.all_entries, ctx.watch_id):
         return refuse("not_owner", "That watch is not one of this iPhone's watches.", 403)
-    if getattr(secrets.get(raw), "main_house", True) is False:
+    if kind != "voice" and getattr(secrets.get(raw), "main_house", True) is False:
         return refuse("not_main_house", "That watch takes its settings from its main home.")
     return raw, None
 
@@ -5096,7 +5101,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
                     "hash": None,
                     "short_hash": None,
                     "updated_at": None,
-                    "may_start": _phone_may_start_watch_settings(ctx, owner),
+                    "may_start": kind == "behavior" and _phone_may_start_watch_settings(ctx, owner),
                 }
             )
         watch_reply: dict[str, Any] = {
@@ -5339,15 +5344,21 @@ async def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
     """The save half of `_op_watch_config_put` for an iPhone writing its
     watch's settings, once `_phone_watch_settings_owner` named the watch.
 
-    A watch with no record gets its first one from the iPhone only on base
-    revision 0 and only when `_phone_may_start_watch_settings` says so (the
-    get says it too, as ``may_start``); else it is a signed 400 ``no_record``.
-    Such a first record is on disk before the 200, as the watch's own seed
-    is (``async_save_first_record``)."""
+    A watch with no settings record gets its first one from the iPhone only
+    on base revision 0 and only when `_phone_may_start_watch_settings` says
+    so (the get says it too, as ``may_start``); else it is a signed 400
+    ``no_record``. Such a first record is on disk before the 200, as the
+    watch's own seed is (``async_save_first_record``). A watch with no
+    notification look or voice record never gets its first one from the
+    iPhone (``no_record``): the watch seeds both itself, and the get's
+    ``may_start`` is false for them."""
     store = ctx.domain_data.watch_config_store
-    first = store.holds_no_record(owner, "behavior")
+    kind = ctx.payload.get("kind")
+    first = store.holds_no_record(owner, kind)
     if first and not (
-        ctx.payload.get("base_revision") == 0 and _phone_may_start_watch_settings(ctx, owner)
+        kind == "behavior"
+        and ctx.payload.get("base_revision") == 0
+        and _phone_may_start_watch_settings(ctx, owner)
     ):
         return ctx.signed_json(
             {"ok": False, "error": "no_record", "message": "That watch has no settings in Home Assistant yet."},
@@ -5563,6 +5574,44 @@ async def _op_watch_voices_put(ctx: _OpContext) -> Response:
         )
     return ctx.signed_json({"ok": True, "hash": entry.hash, "count": len(entry.voices)})
 
+
+async def _op_watch_voices_get(ctx: _OpContext) -> Response:
+    """The speech voices one of the iPhone's watches reported (capability
+    ``phone_watch_look``), for the iPhone's Watch Voice picker.
+
+    Body:  {"owner_watch_id": <str>}
+    Reply: {"ok": true, "voices": [{"id", "name", "language", "quality"}, ...],
+            "updated_at": <iso str> | null}
+    Refusal: signed 403 ``not_an_iphone`` for any signer but an iPhone,
+             signed 403 ``not_owner`` for a watch that is not one of its
+             user's watches (`phone_watch_ids`), signed 503 when the store is
+             not there.
+
+    A watch that has not reported yet answers an empty list with a null
+    ``updated_at``, as the panel's ``watch_voices/get`` does.
+    """
+    if not _caller_is_iphone(ctx):
+        return ctx.signed_json(
+            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone reads a watch's voices."},
+            status=403,
+        )
+    raw = ctx.payload.get("owner_watch_id")
+    secrets = ctx.domain_data.widget_secret_store
+    if not isinstance(raw, str) or raw not in phone_watch_ids(secrets.all_entries, ctx.watch_id):
+        return ctx.signed_json(
+            {"ok": False, "error": "not_owner", "message": "That watch is not one of this iPhone's watches."},
+            status=403,
+        )
+    store = getattr(ctx.domain_data, "watch_voices_store", None)
+    if store is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "unavailable", "message": "integration not ready"},
+            status=503,
+        )
+    entry = store.get(raw)
+    if entry is None:
+        return ctx.signed_json({"ok": True, "voices": [], "updated_at": None})
+    return ctx.signed_json({"ok": True, "voices": list(entry.voices), "updated_at": entry.updated_at})
 
 # ── HTTP actions (step 4d batch 4) ────────────────────────────────────────
 #
@@ -6600,6 +6649,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "watch_config_get": _op_watch_config_get,
     "watch_config_put": _op_watch_config_put,
     "watch_voices_put": _op_watch_voices_put,
+    # An iPhone reads the voices of one of its watches (phone_watch_look).
+    "watch_voices_get": _op_watch_voices_get,
     "phone_pages_offer": _op_phone_pages_offer,
     "phone_pages_link_watch": _op_phone_pages_link_watch,
     "http_actions_hand_over": _op_http_actions_hand_over,

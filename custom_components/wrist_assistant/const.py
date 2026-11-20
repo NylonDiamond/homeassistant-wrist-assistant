@@ -590,6 +590,15 @@ PHONE_VOICE_READ_CAPABILITY = "phone_voice_read"
 # row only when it sees this (app repo
 # docs/device_settings_edit_plan_2026-11.md, step 4).
 PHONE_WATCH_SETTINGS_CAPABILITY = "phone_watch_settings"
+# The same for a watch's notification look (`notification_style`) and voice
+# defaults (`voice`): watch_config_get and watch_config_put take an
+# `owner_watch_id` for those two kinds too, over a record the watch already
+# has (never a first one), and the signed watch_voices_get reads the speech
+# voices that watch reported. A notification look, like the settings, only for
+# a watch that takes it from this home; a voice record is each home's own.
+# The app shows a watch's Notification Look and Voice rows only when it sees
+# this (app repo docs/device_look_voice_plan_2026-11.md).
+PHONE_WATCH_LOOK_CAPABILITY = "phone_watch_look"
 # What the integration advertises once a page can sit on several devices: one
 # page in the home's library (library.py), picked by each device, so a save on
 # any of them reaches all, and the signed phone_pages_offer and

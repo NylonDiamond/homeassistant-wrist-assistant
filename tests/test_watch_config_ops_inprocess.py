@@ -56,6 +56,7 @@ _NAMES = (
     "_phone_watch_settings_owner",
     "_phone_put_watch_settings",
     "_phone_may_start_watch_settings",
+    "_op_watch_voices_get",
 )
 
 WATCH = "watch-A"
