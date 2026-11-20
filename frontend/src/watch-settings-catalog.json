@@ -162,7 +162,7 @@
           "type": "enum",
           "label": "Hold time",
           "help": "How long you press a tile before its extra options open.",
-          "phoneHelp": "How long you press a tile before its extra options open. With Holding a tile opens set to iOS Menu on the iPhone, iOS sets this time itself.",
+          "phoneHelp": "How long you press a tile before its menu opens. With the iOS Menu, iOS sets this time itself.",
           "androidHelp": "How long you press a tile before its extra options open.",
           "default": "Super Fast",
           "options": [
@@ -290,7 +290,7 @@
           "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Page name",
-          "help": "The name of the page, at the top of the screen. Auto shows it for two seconds when the page opens. A page shows its name only when its own Page title Display is not None.",
+          "help": "The page's name at the top of the screen. Auto shows it for two seconds when a page opens. A page whose title is turned off in the panel never shows it.",
           "default": "On",
           "options": [
             {"value": "Off", "label": "Hide"},
@@ -467,7 +467,7 @@
           "devices": ["watch", "iphone", "wearos", "android"],
           "type": "domains",
           "label": "Which devices bounce",
-          "help": "Lit types bounce. Tap a type to turn it on or off.",
+          "help": "Pick which kinds of devices bounce.",
           "default": [],
           "initial": ["automation", "fan", "input_boolean", "input_number", "input_select", "light", "media_player", "switch", "timer"],
           "options": [
@@ -510,7 +510,7 @@
           "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Run automations right away",
-          "help": "When you run an automation from a tile, a Shortcut or a control on this device, do its actions without checking its conditions first. Its triggers are always skipped.",
+          "help": "Runs an automation's actions at once when you start it from a tile, a Shortcut or a control, without checking its conditions first.",
           "default": true
         }
       ]
@@ -567,6 +567,7 @@
           "type": "enum",
           "label": "Swipe to the next camera",
           "help": "Slide along the bottom of the picture to change camera. On the watch, slide along the bottom edge.",
+          "phoneHelp": "Slide along the bottom of the picture to change camera.",
           "default": "Medium",
           "options": [
             {"value": "Off", "label": "Off"},
@@ -588,7 +589,7 @@
           "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "New picture when a page opens",
-          "help": "Get a fresh picture each time a page with a camera opens. Each camera tile can change this under Refresh on open in Pages.",
+          "help": "Gets a fresh picture each time a page with a camera opens. A camera tile can change this for itself in the panel.",
           "default": true
         },
         {
