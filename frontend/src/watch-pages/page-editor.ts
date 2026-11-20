@@ -159,6 +159,8 @@ import {
 } from "../watch-settings.js";
 import { mayAddFirst, renderLibraryWaitOuts } from "../move-wait-out.js";
 import { type LinkDevice, deviceWord, linkDevicesOf, pictureOwnerId } from "./devices.js";
+import { pageEntityIds, pageShareFileName, pageShareText } from "./page-share.js";
+import { type SharePageForm, openSharePageDialog, renderSharePageDialog, sharePageDialogStyles } from "./share-page-dialog.js";
 import { COPY_NEEDS_TWO_TEXT, type CopyForm, copyDevices, copyDialogStyles, newCopyForm, openCopyDialog, renderCopyDialog, runCopy, tickCopyForm } from "./make-copy.js";
 import { newItemDialogStyles } from "../library/new-dialog.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
@@ -981,6 +983,8 @@ export class WaPageEditor extends LitElement {
   @state() private topMenuOpen = false;
   /** Make a copy's dialog, open on the page (`make-copy.ts`). */
   @state() private copyForm?: CopyForm;
+  /** Share page's dialog, on the page as shown (`share-page-dialog.ts`). */
+  @state() private shareForm?: SharePageForm;
   /** The note a refused drag or resize on the stage put in the line under
    * the bar, so the next edit can take it away again. */
   private stageRefusal?: Note;
@@ -3423,6 +3427,10 @@ export class WaPageEditor extends LitElement {
       ${this.saveAsk && draft ? this.renderSaveAsk(draft.document, draft.base) : nothing}
       ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
       ${this.copyForm === undefined ? nothing : this.renderCopy(this.copyForm)}
+      ${this.shareForm === undefined ? nothing : renderSharePageDialog(this.shareForm, {
+        onSaid: (said) => { if (this.shareForm !== undefined && said !== undefined) this.shareForm = { ...this.shareForm, said }; },
+        onClose: () => { this.shareForm = undefined; },
+      })}
     `;
   }
 
@@ -3434,6 +3442,21 @@ export class WaPageEditor extends LitElement {
     const lib = this.lib.library;
     if (lib === undefined || isSystemWatchPage(page)) return undefined;
     return libraryItem(lib, "pages", watchPageId(page));
+  }
+
+  /** Share page's dialog for the page as it is shown, unsaved edits
+   * included. */
+  private openShare(): void {
+    const page = this.currentPage();
+    if (page === undefined || isSystemWatchPage(page)) return;
+    const states = this.hass?.states ?? {};
+    this.shareForm = {
+      name: watchPageName(page),
+      text: pageShareText(page, states),
+      fileName: pageShareFileName(page),
+      entities: pageEntityIds(page, (id) => Object.hasOwn(states, id)).length,
+    };
+    void this.updateComplete.then(() => openSharePageDialog(this.renderRoot));
   }
 
   /** Make a copy's dialog for the open page, with `ticked` ticked (a
@@ -3581,6 +3604,9 @@ export class WaPageEditor extends LitElement {
           ?disabled=${(this.copyEntry(page)?.owners.length ?? 0) < 2}
           title=${(this.copyEntry(page)?.owners.length ?? 0) < 2 ? COPY_NEEDS_TWO_TEXT : "Make a copy of this page for some of its devices, to change on its own"}
           @click=${run(() => this.openCopy())}>Make a copy…</button>`}
+        ${page === undefined || isSystemWatchPage(page) ? nothing : html`<button class="row pe-menu-share" role="menuitem"
+          title="This page as text, to send to someone else"
+          @click=${run(() => this.openShare())}>Share page…</button>`}
         <button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>
@@ -6027,7 +6053,7 @@ export class WaPageEditor extends LitElement {
   // after and win the ties. The two modules' rules come last, so a module can
   // size its own parts of this element (its dialog, say) without outranking
   // anything.
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, libraryTicksStyles, pageFrameStyles, newItemDialogStyles, copyDialogStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, libraryTicksStyles, pageFrameStyles, newItemDialogStyles, copyDialogStyles, sharePageDialogStyles, css`
     /* A column; --cf-pad is the padding the sticky top reaches through to
        sit edge to edge. */
     :host {
