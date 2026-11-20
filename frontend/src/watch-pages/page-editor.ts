@@ -6101,7 +6101,10 @@ export class WaPageEditor extends LitElement {
        draw's width: once the stage is measured, --pe-insp-col on the layout
        gives the stage the device's own width and the settings all the rest
        (stageWidthFor), and a dragged width wins over both. */
-    .layout.pe-layout { padding: 0; align-items: stretch; }
+    /* Its own layer under the sticky top (.pe-top, z-index 7): the stage's
+       dock (z-index 8) and the stage's floating bits scrolled over the top
+       bar on a phone, where the editor scrolls as one page. */
+    .layout.pe-layout { padding: 0; align-items: stretch; isolation: isolate; }
     .layout.pe-layout.pe-wide {
       grid-template-columns: minmax(0, 1fr) 8px var(--pe-insp-col, clamp(340px, max(38%, min(62%, 100% - 640px)), 2200px)); column-gap: 0;
       flex: 1 1 0; min-height: 0; overflow: hidden;
