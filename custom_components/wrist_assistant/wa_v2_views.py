@@ -4943,7 +4943,7 @@ def _phone_style_record(ctx: _OpContext, kind: Any) -> Any:
     )
 
 
-def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response | None]:
+def _phone_watch_settings_owner(ctx: _OpContext, reading: bool = False) -> tuple[str | None, Response | None]:
     """Whose record a get or a put is about.
 
     The signer's own, as ever: ``(signer, None)``, whatever else the body
@@ -4952,7 +4952,9 @@ def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response |
     reads or saves the settings of one of its user's watches, the ones
     ``phone_pages_offer`` lists (`phone_watch_ids`): ``(watch id, None)``.
     Kinds ``notification_style`` and ``voice`` take it the same way
-    (capability ``phone_watch_look``). Such a body
+    (capability ``phone_watch_look``), and so do ``rooms`` and, when
+    ``reading`` (a get), ``pages`` (capability ``phone_watch_rooms``): a put
+    of pages that names a watch still saves the iPhone's own. Such a body
     naming any other watch is refused and nothing is read or written,
     ``(None, refusal)``:
 
@@ -4962,13 +4964,17 @@ def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response |
       ``not_main_house``. The watch never pulls those from this home, so a
       save here would never reach it. A voice record is each home's own, so
       ``voice`` is never refused for it.
+    - for ``rooms``, a watch that takes its settings from this home: 400
+      ``main_house``. Its rooms ride in its ``behavior`` record here, and a
+      ``rooms`` record would never reach it.
 
     A watch, or any other kind, that names an owner is not refused: the name
     is ignored, as it always was, and the signer's own record is meant.
     """
     raw = ctx.payload.get("owner_watch_id")
     kind = ctx.payload.get("kind")
-    if raw is None or kind not in ("behavior", "notification_style", "voice") or not _caller_is_iphone(ctx):
+    kinds = ("behavior", "notification_style", "voice", "rooms") + (("pages",) if reading else ())
+    if raw is None or kind not in kinds or not _caller_is_iphone(ctx):
         return ctx.watch_id, None
 
     def refuse(error: str, message: str, status: int = 400) -> tuple[None, Response]:
@@ -4977,8 +4983,11 @@ def _phone_watch_settings_owner(ctx: _OpContext) -> tuple[str | None, Response |
     secrets = ctx.domain_data.widget_secret_store
     if not isinstance(raw, str) or raw not in phone_watch_ids(secrets.all_entries, ctx.watch_id):
         return refuse("not_owner", "That watch is not one of this iPhone's watches.", 403)
-    if kind != "voice" and getattr(secrets.get(raw), "main_house", True) is False:
+    main_house = getattr(secrets.get(raw), "main_house", True) is not False
+    if kind in ("behavior", "notification_style") and not main_house:
         return refuse("not_main_house", "That watch takes its settings from its main home.")
+    if kind == "rooms" and main_house:
+        return refuse("main_house", "That watch keeps its rooms with its settings in this home.")
     return raw, None
 
 
@@ -5082,7 +5091,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         )
     kind = ctx.payload.get("kind")
     store = ctx.domain_data.watch_config_store
-    owner, refusal = _phone_watch_settings_owner(ctx)
+    owner, refusal = _phone_watch_settings_owner(ctx, reading=True)
     if refusal is not None:
         return refusal
     if owner != ctx.watch_id:
@@ -5101,7 +5110,10 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
                     "hash": None,
                     "short_hash": None,
                     "updated_at": None,
-                    "may_start": kind == "behavior" and _phone_may_start_watch_settings(ctx, owner),
+                    # A home's rooms record the iPhone may start, as the
+                    # panel may; the settings only by the rule below.
+                    "may_start": kind == "rooms"
+                    or (kind == "behavior" and _phone_may_start_watch_settings(ctx, owner)),
                 }
             )
         watch_reply: dict[str, Any] = {
@@ -5351,14 +5363,15 @@ async def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
     watch's own seed is (``async_save_first_record``). A watch with no
     notification look or voice record never gets its first one from the
     iPhone (``no_record``): the watch seeds both itself, and the get's
-    ``may_start`` is false for them."""
+    ``may_start`` is false for them. A home's ``rooms`` record the iPhone may
+    start on base revision 0, as the panel may. Pages never come here: the
+    iPhone only reads a watch's pages."""
     store = ctx.domain_data.watch_config_store
     kind = ctx.payload.get("kind")
     first = store.holds_no_record(owner, kind)
     if first and not (
-        kind == "behavior"
-        and ctx.payload.get("base_revision") == 0
-        and _phone_may_start_watch_settings(ctx, owner)
+        ctx.payload.get("base_revision") == 0
+        and (kind == "rooms" or (kind == "behavior" and _phone_may_start_watch_settings(ctx, owner)))
     ):
         return ctx.signed_json(
             {"ok": False, "error": "no_record", "message": "That watch has no settings in Home Assistant yet."},

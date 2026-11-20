@@ -599,6 +599,16 @@ PHONE_WATCH_SETTINGS_CAPABILITY = "phone_watch_settings"
 # The app shows a watch's Notification Look and Voice rows only when it sees
 # this (app repo docs/device_look_voice_plan_2026-11.md).
 PHONE_WATCH_LOOK_CAPABILITY = "phone_watch_look"
+
+# The iPhone's Rooms page for a watch. `watch_config_get` takes
+# `owner_watch_id` for kind `pages`, read only (the page picker; a put of
+# pages naming a watch still saves the iPhone's own), and
+# `watch_config_get` and `watch_config_put` take it for kind `rooms`: the rooms
+# record of a watch that takes its settings from another home (on its main
+# home the rooms ride in `behavior`, which `phone_watch_settings` covers). The
+# iPhone may start that record, as the panel may. App repo
+# docs/rooms_on_iphone_2026-11.md.
+PHONE_WATCH_ROOMS_CAPABILITY = "phone_watch_rooms"
 # What the integration advertises once a page can sit on several devices: one
 # page in the home's library (library.py), picked by each device, so a save on
 # any of them reaches all, and the signed phone_pages_offer and

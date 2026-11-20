@@ -61,6 +61,7 @@ from .const import (
     PHONE_PAGES_CAPABILITY,
     PHONE_VOICE_READ_CAPABILITY,
     PHONE_WATCH_LOOK_CAPABILITY,
+    PHONE_WATCH_ROOMS_CAPABILITY,
     PHONE_WATCH_SETTINGS_CAPABILITY,
     PHONE_PAGES_LINK_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
@@ -1199,6 +1200,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # And a watch's notification look and voice defaults, with the voices it
     # reported (`_phone_watch_settings_owner`, `_op_watch_voices_get`).
     coordinator.register_capability(PHONE_WATCH_LOOK_CAPABILITY)
+    coordinator.register_capability(PHONE_WATCH_ROOMS_CAPABILITY)
     # Pages on several devices (library.py): one library page each device
     # picks, and the signed phone_pages_offer and phone_pages_link_watch
     # ops. The phone offers a watch's pages only when it sees this.
