@@ -346,7 +346,7 @@ function readableParseFailure(message: string): string {
  * somebody else's document gets here, so it is stopped at this door. A color is
  * a `#` and digits, so nothing real is turned away.
  */
-function hasCssInAColor(value: unknown, depth = 0): boolean {
+export function hasCssInAColor(value: unknown, depth = 0): boolean {
   if (depth > 64 || typeof value !== "object" || value === null) return false;
   if (Array.isArray(value)) return value.some((item) => hasCssInAColor(item, depth + 1));
   return Object.entries(value).some(([key, item]) =>

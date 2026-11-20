@@ -29,9 +29,10 @@ import { type WatchPage, type WatchPagesDocument, watchPageId, watchPageName } f
 import type { WatchPagesNote } from "./save-note.js";
 import { type WatchHassView, addNewWatchTile, watchEntityAddFromHass } from "./tile-new.js";
 import { generalCopy } from "../device-platform.js";
+import { type MissingEntity, missingEntities, pageFromShare, pageShareFacts, pageShareFactsText, parsePageShare } from "./page-share.js";
 
 /** Where a new page starts. */
-export type NewPageStart = "empty" | "room" | "page" | "map";
+export type NewPageStart = "empty" | "room" | "page" | "map" | "shared";
 
 /** What the sheet holds while it is open. The tab owns it. */
 export interface NewPageForm {
@@ -51,6 +52,11 @@ export interface NewPageForm {
   picked?: readonly string[];
   /** From a page: the library page it copies. */
   fromPage?: string;
+  /** Paste a page: the text pasted (`page-share.ts`). */
+  shared?: string;
+  /** Paste a page: each missing entity to the one picked here, "" to leave
+   * it. */
+  sharedPicks?: Readonly<Record<string, string>>;
 }
 
 /** The selector the tab opens the sheet by (`openNewPageSheet`). */
@@ -216,6 +222,10 @@ export function newPageRefusal(form: NewPageForm, ctx: NewPageContext): string |
   }
   if (form.start === "page" && (form.fromPage === undefined || !ctx.pages.some((p) => sameId(watchPageId(p), form.fromPage!)))) return "Pick a page to start from.";
   if (form.start === "map" && ctx.mapFloorId === undefined) return ctx.mapRefusal ?? "Scan a room in the iPhone app first.";
+  if (form.start === "shared") {
+    const parsed = parsePageShare(form.shared ?? "");
+    if (!parsed.ok) return parsed.error;
+  }
   return undefined;
 }
 
@@ -226,6 +236,11 @@ export function newPageDocument(form: NewPageForm, ctx: NewPageContext, id: stri
   const name = form.name.trim();
   const pageId = id.toUpperCase();
   if (form.start === "map") return { schemaVersion: 1, pages: [newMapWatchPage(pageId, name, ctx.mapFloorId!)] };
+  if (form.start === "shared") {
+    const parsed = parsePageShare(form.shared ?? "");
+    if (!parsed.ok) return undefined;
+    return { schemaVersion: 1, pages: [watchPageCopy(pageFromShare(parsed.share, form.sharedPicks ?? {}), pageId, name)] };
+  }
   if (form.start === "page") {
     const from = ctx.pages.find((p) => sameId(watchPageId(p), form.fromPage!))!;
     return { schemaVersion: 1, pages: [watchPageCopy(from, pageId, name)] };
@@ -250,6 +265,11 @@ export function newPageSummary(form: NewPageForm, ctx: NewPageContext, devices: 
     const n = roomPicked(form, roomEntities(ctx.hass, form.areaId)).length;
     return `${name}, ${n} ${n === 1 ? "tile" : "tiles"}, ${where}`;
   }
+  if (form.start === "shared") {
+    const parsed = parsePageShare(form.shared ?? "");
+    const n = parsed.ok ? pageShareFacts(parsed.share, ctx.hass?.states ?? {}).tiles : 0;
+    return `${name}, ${n} ${n === 1 ? "tile" : "tiles"}, ${where}`;
+  }
   return `${name}, ${form.start === "map" ? "a map page" : "a page"} ${where}`;
 }
 
@@ -262,6 +282,10 @@ export interface NewPageSheetHandlers {
   onArea: (areaId: string) => void;
   onEntity: (entityId: string, on: boolean) => void;
   onFromPage: (pageId: string) => void;
+  /** Paste a page: new text in the box, or a file read into it. */
+  onShared: (text: string) => void;
+  /** Paste a page: a missing entity picked, "" to leave it. */
+  onSharedPick: (entityId: string, picked: string) => void;
   onMake: () => void;
   onClose: () => void;
 }
@@ -276,7 +300,7 @@ export interface NewPageSheetInput extends NewPageContext {
   waitOuts?: TemplateResult | typeof nothing;
 }
 
-const START_TITLES: Record<NewPageStart, string> = { empty: "Empty", room: "From a room", page: "From a page", map: "Home map" };
+const START_TITLES: Record<NewPageStart, string> = { empty: "Empty", room: "From a room", page: "From a page", map: "Home map", shared: "Paste a page" };
 
 function startNote(start: NewPageStart, mapRefusal: string | undefined): string {
   switch (start) {
@@ -284,11 +308,12 @@ function startNote(start: NewPageStart, mapRefusal: string | undefined): string 
     case "room": return "A tile for each thing in a room you tick.";
     case "page": return "A copy of a page's tiles, to change on its own.";
     case "map": return mapRefusal ?? "On the iPhone the whole page is your home's live map. The watch shows it as one tile.";
+    case "shared": return "A page someone shared with you.";
   }
 }
 
 function startIcon(start: NewPageStart): UiIconName {
-  return start === "room" ? "home" : start === "page" ? "duplicate" : start === "map" ? "place" : "grid";
+  return start === "room" ? "home" : start === "page" ? "duplicate" : start === "map" ? "place" : start === "shared" ? "paste" : "grid";
 }
 
 function checkRow(on: boolean, name: string, disabled: boolean, onChange: (on: boolean) => void, title?: string): TemplateResult {
@@ -339,11 +364,46 @@ function renderFromPage(form: NewPageForm, input: NewPageSheetInput, h: NewPageS
     </select></label>`;
 }
 
+function renderMissing(row: MissingEntity, picked: string, form: NewPageForm, h: NewPageSheetHandlers): TemplateResult {
+  const title = row.name === "" ? row.entityId : `${row.name} (${row.entityId})`;
+  return html`<label class="np-miss" title=${row.entityId}>
+    <span class="np-miss-n">${title}</span>
+    <select ?disabled=${form.busy} aria-label=${`Use for ${title}`} @change=${(e: Event) => h.onSharedPick(row.entityId, (e.target as HTMLSelectElement).value)}>
+      <option value="" ?selected=${picked === ""}>Leave it (shows as missing)</option>
+      ${row.choices.map((c) => html`<option value=${c.entityId} ?selected=${c.entityId === picked}>${c.name}</option>`)}
+    </select>
+  </label>`;
+}
+
+function renderShared(form: NewPageForm, input: NewPageSheetInput, h: NewPageSheetHandlers): TemplateResult {
+  const text = form.shared ?? "";
+  const parsed = text.trim() === "" ? undefined : parsePageShare(text);
+  const states = input.hass?.states ?? {};
+  const missing = parsed?.ok === true ? missingEntities(parsed.share, states) : [];
+  const readFile = (e: Event) => {
+    const box = e.target as HTMLInputElement;
+    const file = box.files?.[0];
+    box.value = "";
+    if (file !== undefined) void file.text().then((t) => h.onShared(t));
+  };
+  return html`<textarea class="np-paste" spellcheck="false" placeholder="Paste the shared page here" aria-label="Shared page text"
+      .value=${live(text)} ?disabled=${form.busy} @input=${(e: Event) => h.onShared((e.target as HTMLTextAreaElement).value)}></textarea>
+    <div class="np-paste-row">
+      <label class="lib-new-btn np-file">Open a file…<input type="file" accept=".json,application/json,text/plain" hidden ?disabled=${form.busy} @change=${readFile} /></label>
+      ${parsed === undefined ? html`<span class="np-none">In Pages, a page's ··· has Share page.</span>`
+        : parsed.ok ? html`<span class="np-none">${pageShareFactsText(pageShareFacts(parsed.share, states))}</span>`
+        : html`<span class="np-none np-bad">${parsed.error}</span>`}
+    </div>
+    ${missing.length === 0 ? nothing : html`<div class="np-room np-misses">
+      ${missing.map((row) => renderMissing(row, form.sharedPicks?.[row.entityId] ?? "", form, h))}
+    </div>`}`;
+}
+
 /** The sheet. Rendered only while the tab holds a form; the tab calls
  * `openNewPageSheet` once it is in the tree. */
 export function renderNewPageSheet(form: NewPageForm, input: NewPageSheetInput, h: NewPageSheetHandlers): TemplateResult {
   const refusal = newPageRefusal(form, input);
-  const starts: NewPageStart[] = ["empty", "room", "page", "map"];
+  const starts: NewPageStart[] = ["empty", "room", "page", "shared", "map"];
   return html`<dialog class="new-dialog lib-new lib-new-page" aria-label="New page" @close=${() => h.onClose()}
     @cancel=${(e: Event) => { e.preventDefault(); if (!form.busy) h.onClose(); }}>
     <form class="lib-new-form" @submit=${(e: Event) => { e.preventDefault(); if (refusal === undefined && !form.busy) h.onMake(); }}>
@@ -376,7 +436,7 @@ export function renderNewPageSheet(form: NewPageForm, input: NewPageSheetInput, 
               </button>`;
             })}
           </div>
-          ${form.start === "room" ? renderRoom(form, input, h) : form.start === "page" ? renderFromPage(form, input, h) : nothing}
+          ${form.start === "room" ? renderRoom(form, input, h) : form.start === "page" ? renderFromPage(form, input, h) : form.start === "shared" ? renderShared(form, input, h) : nothing}
         </section>
         ${form.note === undefined ? nothing : html`<p class="lt-line ${form.note.kind}" role="status">${form.note.text}</p>`}
       </div>
@@ -426,4 +486,19 @@ export const newPageSheetStyles = css`
   .np-room { display: flex; flex-direction: column; gap: 1px; max-height: 240px; overflow-y: auto; padding-right: 4px; }
   .np-more { margin: 8px 0 2px; font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
   .np-none { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); }
+  .np-bad { color: var(--wa-danger, #d33); }
+  .np-paste {
+    width: 100%; box-sizing: border-box; min-height: 96px; max-height: 200px; resize: vertical; padding: 8px; border-radius: 7px;
+    border: 1px solid var(--wa-line-strong); font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--wa-ink);
+    background: var(--wa-input, var(--wa-field));
+  }
+  .np-paste-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .np-file { cursor: pointer; display: inline-flex; align-items: center; }
+  .np-misses { gap: 6px; }
+  .np-miss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12.5px; }
+  .np-miss-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .np-miss select {
+    min-width: 0; height: 28px; padding: 0 6px; border-radius: 7px; border: 1px solid var(--wa-line-strong);
+    font: inherit; font-size: 12.5px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
+  }
 `;

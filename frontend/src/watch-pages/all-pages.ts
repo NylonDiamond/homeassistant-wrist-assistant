@@ -122,7 +122,7 @@ import { type LinkDevice, type PagesRecordFacts, anyNeedsUpdate, awaitingMove, d
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
-import { type WatchPage, type WatchScreen, isSmartWatchPage, watchPageTiles, watchPagesOf, watchScreenPage } from "./model.js";
+import { type WatchPage, type WatchScreen, isSmartWatchPage, watchPageName, watchPageTiles, watchPagesOf, watchScreenPage } from "./model.js";
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
 import { newMapWatchPage, watchMapPageFloorId, watchMapPageRefusal } from "./map-page.js";
@@ -164,6 +164,8 @@ import {
   tickRoomEntity,
   roomEntities,
 } from "./new-page-sheet.js";
+import { autoPicks, missingEntities, pageEntityIds, pageShareFileName, pageShareText, parsePageShare } from "./page-share.js";
+import { type SharePageForm, openSharePageDialog, renderSharePageDialog, sharePageDialogStyles } from "./share-page-dialog.js";
 
 /** How wide a card's picture of its page is, in CSS pixels. */
 const PIC_W = 200;
@@ -304,6 +306,8 @@ export class WaAllPages extends LitElement {
   @state() private pageForm?: NewPageForm;
   /** Make a copy's dialog, open on one page (`make-copy.ts`). */
   @state() private copyForm?: CopyForm;
+  /** Share page's dialog, open on one page (`share-page-dialog.ts`). */
+  @state() private shareForm?: SharePageForm;
   /** The Pages tab's filter: every page, or Screens differ. */
   @state() private screensFilter: PagesScreensFilter = "all";
   /** The screen each card was switched to with its icons, by `itemKey`. */
@@ -681,6 +685,31 @@ export class WaAllPages extends LitElement {
     void this.updateComplete.then(() => openCopyDialog(this.renderRoot));
   }
 
+  /** Share page's dialog for a page: the page as text with its entities. */
+  private openShare(entry: LibraryItem): void {
+    if (entry.kind !== "pages") return;
+    const page = entry.item as WatchPage;
+    const states = this.hassNow?.states ?? {};
+    this.shareForm = {
+      name: entry.name,
+      text: pageShareText(page, states),
+      fileName: pageShareFileName(page),
+      entities: pageEntityIds(page, (id) => Object.hasOwn(states, id)).length,
+    };
+    void this.updateComplete.then(() => openSharePageDialog(this.renderRoot));
+  }
+
+  /** Paste a page's text changed: the picks this home can make itself, and
+   * the shared page's name while the name is still the one made up. */
+  private pastedPage(form: NewPageForm, text: string): NewPageForm {
+    const parsed = parsePageShare(text);
+    if (!parsed.ok) return { ...form, shared: text };
+    const states = this.hassNow?.states ?? {};
+    const picks = { ...autoPicks(missingEntities(parsed.share, states)), ...(form.sharedPicks ?? {}) };
+    const name = form.name.trim() === "" || form.name === this.nextCardName() ? watchPageName(parsed.share.page) : form.name;
+    return { ...form, shared: text, sharedPicks: picks, name };
+  }
+
   /** The devices the open copy dialog offers: those that show the page. */
   private copyHolders(form: CopyForm): LinkDevice[] {
     const library = this.lib.library;
@@ -733,6 +762,8 @@ export class WaAllPages extends LitElement {
       },
       onEntity: (entityId, on) => set(tickRoomEntity(form, roomEntities(ctx.hass, form.areaId), entityId, on)),
       onFromPage: (pageId) => set({ ...form, fromPage: pageId }),
+      onShared: (text) => set(this.pastedPage(form, text)),
+      onSharedPick: (entityId, picked) => set({ ...form, sharedPicks: { ...(form.sharedPicks ?? {}), [entityId]: picked } }),
       onMake: () => void this.makePage(),
       onClose: () => { if (!form.busy) this.pageForm = undefined; },
     });
@@ -1133,6 +1164,10 @@ export class WaAllPages extends LitElement {
       ${this.newForm === undefined ? nothing : this.renderNewDialog(this.newForm, devices)}
       ${this.pageForm === undefined ? nothing : this.renderPageSheet(this.pageForm, devices)}
       ${this.copyForm === undefined ? nothing : this.renderCopy(this.copyForm)}
+      ${this.shareForm === undefined ? nothing : renderSharePageDialog(this.shareForm, {
+        onSaid: (said) => { if (this.shareForm !== undefined) this.shareForm = { ...this.shareForm, ...(said === undefined ? {} : { said }) }; },
+        onClose: () => { this.shareForm = undefined; },
+      })}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       ${this.renderTwoScreensCard(library)}
       ${library === undefined ? nothing : renderLibraryWaitOuts(this.hassNow, this.owners, library, what)}
@@ -1527,6 +1562,7 @@ export class WaAllPages extends LitElement {
         title: entry.owners.length < 2 ? COPY_NEEDS_TWO_TEXT : `Make a copy of ${entry.name} for some of its devices`,
         onPick: () => this.openCopy(entry, focus === undefined ? [] : [focus.device.ownerId]),
       });
+      items.push({ label: "Share page…", title: `${entry.name} as text, to send to someone else`, onPick: () => this.openShare(entry) });
     }
     const order = focus?.order;
     if (focus !== undefined && order !== undefined) {
@@ -1894,7 +1930,7 @@ export class WaAllPages extends LitElement {
    * this tab's own: New page, Multi select and its bar, and a page's
    * picture. */
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
-    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, copyDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, teachStyles, css`
+    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, newPageSheetStyles, sharePageDialogStyles, copyDialogStyles, boardStyles, boardStackStyles, deviceTabsStyles, teachStyles, css`
     .ap-embed-saved { position: absolute; right: 0; top: -26px; }
     /* A page's two pictures, the watch's and the iPhone's, side by side. */
     .ap-pics { display: inline-flex; align-items: flex-start; gap: 4px; }
