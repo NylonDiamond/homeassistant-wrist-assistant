@@ -285,6 +285,7 @@
       "group": "Sound",
       "label": "Button press",
       "help": "Plays with the tap you feel when an action works.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "tileTapSound": {
@@ -296,6 +297,7 @@
       "group": "Sounds",
       "label": "Tile tap",
       "help": "When you tap a tile on a page.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "menuOpenSound": {
@@ -307,6 +309,7 @@
       "group": "Sounds",
       "label": "Menu opens",
       "help": "When the quick menu or the page switcher opens.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "slideToIconSound": {
@@ -318,6 +321,7 @@
       "group": "Sounds",
       "label": "Slide across icons",
       "help": "When you slide over icons in quick menus, the page switcher and sub-menus.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "arcSlideTickSound": {
@@ -329,6 +333,7 @@
       "group": "Sounds",
       "label": "Slider tick",
       "help": "Every 5% while you drag brightness, temperature and other sliders.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "successSound": {
@@ -340,6 +345,7 @@
       "group": "Sounds",
       "label": "Confirm",
       "help": "When you let go of a slider, pick a page or confirm an action.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "cancelSound": {
@@ -351,6 +357,7 @@
       "group": "Sounds",
       "label": "Cancel",
       "help": "When you cancel with the red X, or close without picking.",
+      "shownWhen": "soundVolume above 0.0001",
       "sound": true
     },
     "soundVolume": {

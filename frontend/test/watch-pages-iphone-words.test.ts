@@ -275,8 +275,12 @@ describe("the page switcher rows on an iPhone", () => {
       endCoalesce: () => draft.endCoalesce(),
       requestUpdate: () => undefined,
     };
-    const drawn = text(renderSwitcherSettings(h));
+    let drawn = text(renderSwitcherSettings(h));
     expect(drawn).toContain("The page stays on the iPhone. Only the switcher leaves it out.");
+    expect(drawn).not.toMatch(/the watch\b/i);
+    // Shown as an icon, the icon and color rows say the iPhone too.
+    draft.apply({ schemaVersion: 1, pages: [{ id: PAGE_ID, items: [], name: "Living", hideFromSwitcher: false, switcherDisplayMode: "icon" }] });
+    drawn = text(renderSwitcherSettings(h));
     expect(drawn).toContain("Picked by the iPhone");
     expect(drawn).toContain("Left empty, the iPhone picks the icon and color itself.");
     expect(drawn).not.toMatch(/the watch\b/i);

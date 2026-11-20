@@ -214,20 +214,25 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
   const setColor = (value: string | undefined, typing = false) => write(host, (d) => setWatchPageSwitcherColor(d, host.pageId, value), typing);
   const device = hostDeviceNoun(host);
   const theme = watchPageSwatchTheme(page);
+  // A page the switcher leaves out shows nothing there, so only its label
+  // stays (it is the page's header title too); Name draws no icon. What the
+  // hidden rows hold stays stored.
+  const hidden = s.hideFromSwitcher;
+  const drawsIcon = mode === "icon";
   return html`
     ${checkField("Hidden", s.hideFromSwitcher, (v) => write(host, (d) => setWatchPageHideFromSwitcher(d, host.pageId, v)), false)}
     ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the ${device}. Only the switcher leaves it out.</div>` : nothing}
-    ${segField("Show as", modes.some(([m]) => m === mode) ? mode : "text", modes, (v) =>
+    ${hidden ? nothing : segField("Show as", modes.some(([m]) => m === mode) ? mode : "text", modes, (v) =>
       write(host, (d) => setWatchPageSwitcherDisplayMode(d, host.pageId, v)))}
     ${typingRow(host, "switcherText", textField(SWITCHER_LABEL_TITLE, typed(host, "switcherText") ?? s.switcherText ?? "", (v) =>
       write(host, (d) => setWatchPageSwitcherText(d, host.pageId, v), true), { placeholder: name }))}
     <div class="hint keep ts-under">${SWITCHER_LABEL_HINT}</div>
-    <div class="ts-chips" role="group" aria-label="Switcher icon">
+    ${hidden ? nothing : html`${!drawsIcon ? nothing : html`<div class="ts-chips" role="group" aria-label="Switcher icon">
       <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
         title=${`The ${device} picks one from the page's first tile`} @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
     </div>
     ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host), platform: host.platform }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
-      { emptyText: `Picked by the ${device}`, tint: s.switcherColor }))}
+      { emptyText: `Picked by the ${device}`, tint: s.switcherColor }))}`}
     ${colorPickerView({
       label: "Color",
       color: s.switcherColor,
@@ -238,5 +243,5 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
       custom: { shown: typed(host, "switcherColor") ?? watchCustomBoxColor(s.switcherColor), pick: (v) => { if (v !== undefined) setColor(v, true); } },
       wrap: (body) => typingRow(host, "switcherColor", body),
     })}
-    <div class="hint ts-under">Left empty, the ${device} picks the icon and color itself.</div>`;
+    <div class="hint ts-under">Left empty, the ${device} picks the ${drawsIcon ? "icon and color" : "color"} itself.</div>`}`;
 }

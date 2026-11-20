@@ -540,7 +540,7 @@ describe("the settings of the iPhone only kinds", () => {
     expect(tile().textPlaceholder).toBe("Write a note");
   });
 
-  it("web card: the address with its note, Scroll, Interactive and the sign in line", () => {
+  it("web card: the address with its note, Interactive, Scroll under it and the sign in line", () => {
     const { host, tile } = tileHost(ID("web"), {}, "iphone");
     openAll(host);
     expect(WATCH_WEB_CARD_HELP).toBe("An HA dashboard address works after you sign in once inside the card on the iPhone.");
@@ -562,8 +562,17 @@ describe("the settings of the iPhone only kinds", () => {
     expect(tile().webScroll).toBe(false);
     check(draw(host), ">Scroll<", true);
     expect(Object.hasOwn(tile(), "webScroll")).toBe(false);
+    // Scroll waits under Interactive: a page that takes no taps never
+    // scrolls in the tile. What it holds stays.
+    check(draw(host), ">Scroll<", false);
     check(draw(host), ">Interactive<", false);
     expect(tile().webInteractive).toBe(false);
+    text = flatten(draw(host));
+    expect(text).not.toContain(">Scroll<");
+    expect(text).toContain(">Interactive<");
+    expect(tile().webScroll).toBe(false);
+    check(draw(host), ">Interactive<", true);
+    expect(flatten(draw(host))).toContain(">Scroll<");
     expect(watchWebScroll({ entityId: ID("web") })).toBe(true);
     expect(setWatchWebScroll(host.document, PAGE, TILE, "no" as unknown as boolean)).toBe(host.document);
   });

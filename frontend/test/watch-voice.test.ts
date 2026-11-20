@@ -485,6 +485,25 @@ describe("the views", () => {
     expect(text).toContain(">Look<");
   });
 
+  it("hide a phrase's icon in its Look card unless it shows as an icon, keeping Color and the stored icon", () => {
+    const look = (id: string) => {
+      const h = host(CONFIGURED);
+      pickVoicePhrase(h, id);
+      const text = flat(renderVoiceInspector(h));
+      return text.slice(text.indexOf(`aria-label="Look"`));
+    };
+    // Bedtime shows by its label; Dinner by its icon.
+    const bedtime = look(BEDTIME);
+    expect(bedtime).toContain(">Color<");
+    expect(bedtime).not.toContain(">Icon<");
+    expect(bedtime).not.toContain("moon.stars.fill");
+    const dinner = look("7E1CE000-0000-4000-8000-000000000001");
+    expect(dinner).toContain(">Icon<");
+    expect(dinner).toContain(">Color<");
+    const phrases = CONFIGURED.phrases as { id: string; icon?: string }[];
+    expect(phrases.find((p) => p.id === BEDTIME)!.icon).toBe("moon.stars.fill");
+  });
+
   it("say the watch has sent no voices yet", () => {
     const h = host(CONFIGURED, [], "ready");
     h.uiState.set("vo:pick", "watch");

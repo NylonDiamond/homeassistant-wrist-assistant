@@ -12,8 +12,9 @@ import settingsCatalog from "../src/watch-settings-catalog.json";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, VIRTUAL_TILE_KINDS } from "../src/watch-pages/model.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
+import { SymbolBrowser } from "../src/symbols.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
-import { forgetTileSettingsNotes } from "../src/watch-pages/tile-settings.js";
+import { forgetTileSettingsNotes, renderTileSettings } from "../src/watch-pages/tile-settings.js";
 import { detectCameraRatio, groupWithCameras, specialSummary, watchSpecialSectionTitle } from "../src/watch-pages/special-settings.js";
 import {
   WATCH_SPECIAL,
@@ -583,5 +584,60 @@ describe("the camera flows", () => {
     const { host } = draftHost(pageOf(camera("C1", "camera.front", 0, 0)), "C1", pictures, states);
     expect(watchSpecialSectionTitle(host)).toBe("Camera");
     expect(specialSummary(host)).toBe("Preview");
+  });
+});
+
+// ── rows that wait for another setting ───────────────────────────────────
+
+/** A template as text: each part's strings with its values in place. */
+function drawn(node: unknown): string {
+  if (node === undefined || node === null || typeof node === "symbol") return "";
+  if (Array.isArray(node)) return node.map(drawn).join("");
+  if (typeof node === "object" && "strings" in node && "values" in node) {
+    const t = node as { strings: readonly string[]; values: unknown[] };
+    return t.strings.map((x, i) => x + (i < t.values.length ? drawn(t.values[i]) : "")).join("");
+  }
+  return typeof node === "function" || typeof node === "object" ? "" : String(node);
+}
+
+describe("rows that wait for another setting", () => {
+  (globalThis as { document?: unknown }).document ??= { activeElement: null };
+  (globalThis as { HTMLElement?: unknown }).HTMLElement ??= class {};
+  (globalThis as { HTMLInputElement?: unknown }).HTMLInputElement ??= class {};
+  const special = (item: Json, device?: "iphone") => {
+    const { host, page } = draftHost(pageOf(item), String(item.id), {});
+    const extra: PropertyDescriptorMap = { symbols: { value: new SymbolBrowser(() => undefined) } };
+    if (device !== undefined) extra.device = { value: device };
+    const h = Object.create(host, extra) as TileSettingsHost;
+    return { text: drawn(renderTileSettings(h, { sections: ["special"] })), page };
+  };
+
+  it("hides a camera's Content and Crop position while it shows an icon, keeping what is stored", () => {
+    const preview = special({ ...camera("C1", "camera.front", 0, 0), cameraFillMode: "fill" }).text;
+    expect(preview).toContain(">Content<");
+    expect(preview).toContain("Crop position");
+    const icon = special({ ...camera("C1", "camera.front", 0, 0), cameraDisplayMode: "icon", cameraFillMode: "fill" });
+    expect(icon.text).toContain(">Display<");
+    expect(icon.text).not.toContain(">Content<");
+    expect(icon.text).not.toContain("Crop position");
+    expect(icon.text).not.toContain("Fit shows the whole picture");
+    expect((icon.page().items as Json[])[0]).toMatchObject({ cameraFillMode: "fill", cameraFillOffsetX: 0 });
+  });
+
+  it("keeps them on an iPhone tile that plays live video, which draws the picture whatever Display says", () => {
+    const live = { ...camera("C1", "camera.front", 0, 0), cameraDisplayMode: "icon", cameraTileLive: true };
+    expect(special(live, "iphone").text).toContain(">Content<");
+    expect(special(live).text).not.toContain(">Content<");
+    expect(special({ ...live, cameraTileLive: false }, "iphone").text).not.toContain(">Content<");
+  });
+
+  it("hides the remote's Require confirmation until it has a quick action", () => {
+    const remote = { id: "R1", entityId: "remote.tv", gridCol: 0, gridRow: 0, colSpan: 12, rowSpan: 6 };
+    const none = special({ ...remote, remoteQuickActionConfirm: false });
+    expect(none.text).toContain("Add quick action");
+    expect(none.text).not.toContain("Require confirmation");
+    expect((none.page().items as Json[])[0]!.remoteQuickActionConfirm).toBe(false);
+    const one = special({ ...remote, remoteLauncherScriptIds: ["script.netflix"], remoteLauncherLabels: ["Netflix"] }).text;
+    expect(one).toContain("Require confirmation");
   });
 });

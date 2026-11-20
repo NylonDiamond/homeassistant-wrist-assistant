@@ -598,6 +598,14 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
     // A pick from the list is a step of its own.
     commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, value));
   };
+  // Full screen draws no title, so its rows wait until it is off; what they
+  // hold stays stored.
+  if (s.fullScreen) {
+    return html`
+    <div class="hint warn">Full screen is on: the ${hostDeviceNoun(sh)} hides the title.</div>
+    ${checkField("Full screen", s.fullScreen, (on) => commit(sh, "fullScreen", (d) => setWatchPageFullScreen(d, sh.pageId, on)), false)}
+    <div class="hint ts-under">The tiles run up behind the clock, with no title.</div>`;
+  }
   return html`
     ${stylingEnumField("Display", "pageTitleDisplayStyle", s.titleStyle, (v) => commit(sh, "titleStyle", (d) => setWatchPageTitleStyle(d, sh.pageId, v)))}
     ${s.titleStyle === "none" ? html`<div class="hint ts-under">The page's name above its tiles, hidden while this is None.</div>` : html`
@@ -615,8 +623,7 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         write: (d, v) => setWatchPageTitleColor(d, sh.pageId, v),
         modeKey: "pageTitleTextColor",
       })}
-      ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}
-      ${s.fullScreen ? html`<div class="hint warn">Full screen is on: the ${hostDeviceNoun(sh)} hides the title.</div>` : nothing}`}
+      ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}`}
     ${checkField("Full screen", s.fullScreen, (on) => commit(sh, "fullScreen", (d) => setWatchPageFullScreen(d, sh.pageId, on)), false)}
     <div class="hint ts-under">The tiles run up behind the clock, with no title.</div>`;
 }

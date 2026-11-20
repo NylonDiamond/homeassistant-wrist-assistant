@@ -245,7 +245,7 @@ function tilesOf(tree: unknown, key: string): Tpl[] {
 
 describe("the dialog", () => {
   it("draws every enum of up to five as a row of tile buttons, the rest as menus", () => {
-    const { tree, text } = dialog({ ...watchBehaviorDefaults(), cameraRefreshOnOpen: true, showPageIndicator: true });
+    const { tree, text } = dialog({ ...watchBehaviorDefaults(), cameraRefreshOnOpen: true, showPageIndicator: true, cameraStreamMode: "Polling" });
     const shown = text();
     // A watch's dialog: the iPhone's own Page look is not on it.
     const tiled = settings.filter(usesTiles).filter((s) => s.devices?.includes("watch") !== false).map((s) => s.key);

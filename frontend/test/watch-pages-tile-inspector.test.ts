@@ -351,6 +351,45 @@ describe("rows that cannot do anything", () => {
     expect(watchTileLabelDrawn(tile("http_action.x", { showLabel: false, httpResponseDisplay: "tileValue" }))).toBe(true);
     expect(watchTileLabelDrawn(tile("http_action.x", { showLabel: false }))).toBe(false);
   });
+
+  it("hides Show name on an HTTP action showing its reply, whose own Show name the tile reads, keeping the name's look", () => {
+    const value = tile("http_action.x", { showLabel: false, httpResponseDisplay: "tileValue" });
+    const text = part(flat(renderTileInspector(tileHost(value).host)), "text");
+    expect(text).not.toContain("Show name");
+    for (const row of ["Font size", "aria-label=Weight", "Name shadow", "Name color"]) expect(text, row).toContain(row);
+    const { host } = tileHost(value);
+    expect(host.tile.showLabel).toBe(false);
+    // Showing its reply elsewhere, the tile's own Show name is back.
+    expect(part(flat(renderTileInspector(tileHost(tile("http_action.x")).host)), "text")).toContain("Show name");
+  });
+
+  it("drops Tap animation from a tile that draws no icon, keeping what it holds", () => {
+    const parts = (t: WatchPageTile) => tileInspectorParts(tileHost(t).host).flatMap((g) => g.parts);
+    const none = tile("light.desk", { icon: "", iconTapAnimation: "replace" });
+    expect(parts(none)).not.toContain("tapAnimation");
+    expect(flat(renderTileInspector(tileHost(none).host))).not.toContain("Tap animation");
+    expect(tileHost(none).host.tile.iconTapAnimation).toBe("replace");
+    // The same in a card.
+    expect(flat(renderTileSettings(tileHost(none).host, { sections: ["icon"] }))).not.toContain("Tap animation");
+    expect(flat(renderTileSettings(tileHost(tile("light.desk")).host, { sections: ["icon"] }))).toContain("Tap animation");
+    // An icon of its own, or a state's, brings it back.
+    expect(parts(tile("light.desk", { iconTapAnimation: "replace" }))).toContain("tapAnimation");
+    expect(parts(tile("light.desk", { icon: "", stateIcons: { on: "lightbulb.fill" } }))).toContain("tapAnimation");
+  });
+
+  it("shows the border's Thickness and Glow for Animate as for Line, the app drawing both on a moving border", () => {
+    const border = (extra: Record<string, unknown>) => part(flat(renderTileInspector(tileHost(tile("light.desk", extra)).host)), "border");
+    for (const extra of [{ borderStyle: "line" }, { borderStyle: "animate", borderAnimation: "chase" }, { borderStyle: "animate", borderAnimation: "none" }]) {
+      const text = border(extra);
+      expect(text, JSON.stringify(extra)).toContain("aria-label=Thickness");
+      expect(text, JSON.stringify(extra)).toMatch(/>Glow</);
+    }
+    // Line style stays the Line's.
+    expect(border({ borderStyle: "animate", borderAnimation: "chase" })).not.toContain("Line style");
+    const off = border({ borderStyle: "none", borderGlow: 0.4 });
+    expect(off).not.toContain("aria-label=Thickness");
+    expect(off).not.toMatch(/>Glow</);
+  });
 });
 
 // ── light pictures ───────────────────────────────────────────────────────

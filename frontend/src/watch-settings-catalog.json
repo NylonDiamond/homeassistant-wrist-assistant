@@ -536,7 +536,7 @@
           "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "How often pictures update",
-          "help": "Used when live video is not available. Faster uses more battery.",
+          "help": "How often a camera gets a new picture. Faster uses more battery.",
           "default": "1s",
           "options": [
             {"value": "0.5s", "label": "0.5s"},
@@ -544,7 +544,8 @@
             {"value": "2s", "label": "2s"},
             {"value": "3s", "label": "3s"},
             {"value": "5s", "label": "5s"}
-          ]
+          ],
+          "showIf": {"key": "cameraStreamMode", "equals": "Polling"}
         },
         {
           "key": "cameraHDRefreshRate",
@@ -559,7 +560,8 @@
             {"value": "2s", "label": "2s"},
             {"value": "3s", "label": "3s"},
             {"value": "5s", "label": "5s"}
-          ]
+          ],
+          "showIf": {"key": "cameraStreamMode", "equals": "Polling"}
         },
         {
           "key": "cameraSwipeSensitivity",
@@ -582,7 +584,8 @@
           "type": "bool",
           "label": "Loop cameras",
           "help": "After the last camera, go back to the first.",
-          "default": false
+          "default": false,
+          "showIf": {"key": "cameraSwipeSensitivity", "notEquals": "Off"}
         },
         {
           "key": "cameraRefreshOnOpen",

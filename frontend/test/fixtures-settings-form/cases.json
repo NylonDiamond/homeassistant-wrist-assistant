@@ -82,7 +82,11 @@
     { "name": "a scene row shows for a scene action", "device": "iphone", "document": { "pullDownAction": "Activate Scene" }, "key": "pullDownSceneTargetId", "shown": true },
     { "name": "a scene row hides for another action", "device": "iphone", "document": { "pullDownAction": "Run Script" }, "key": "pullDownSceneTargetId", "shown": false },
     { "name": "fine tune hides while twists are off", "device": "watch", "document": {}, "key": "motionGestureSensitivityLevel", "shown": false },
-    { "name": "fine tune shows while twists are on", "device": "watch", "document": { "motionGestureSensitivity": "Low" }, "key": "motionGestureSensitivityLevel", "shown": true }
+    { "name": "fine tune shows while twists are on", "device": "watch", "document": { "motionGestureSensitivity": "Low" }, "key": "motionGestureSensitivityLevel", "shown": true },
+    { "name": "picture rates hide with live video", "device": "watch", "document": {}, "key": "cameraRefreshRate", "shown": false },
+    { "name": "picture rates show with still pictures", "device": "iphone", "document": { "cameraStreamMode": "Polling" }, "key": "cameraHDRefreshRate", "shown": true },
+    { "name": "loop cameras shows while the swipe is on", "device": "watch", "document": {}, "key": "cameraSwipeWrap", "shown": true },
+    { "name": "loop cameras hides while the swipe is off", "device": "iphone", "document": { "cameraSwipeSensitivity": "Off" }, "key": "cameraSwipeWrap", "shown": false }
   ],
   "edits": [
     {

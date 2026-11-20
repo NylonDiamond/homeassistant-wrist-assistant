@@ -110,7 +110,7 @@ const page = (extra: Record<string, unknown> = {}): WatchPage => findWatchPage(d
 
 describe("the switcher rows", () => {
   it("draw Hidden, Show as, the switcher label, Automatic icon, Icon and Color, then the hint", () => {
-    const text = flat(renderSwitcherSettings(host().h));
+    const text = flat(renderSwitcherSettings(host({ switcherDisplayMode: "icon" }).h));
     const order = [">Hidden<", ">Show as<", ">Switcher label (optional)<", "Defaults to the page name", ">Automatic icon</button>", ">Icon<", ">Color<",
       "Left empty, the watch picks the icon and color itself."];
     // Each after the one before ("Icon" is also a Show as choice).
@@ -155,14 +155,38 @@ describe("the switcher rows", () => {
   });
 
   it("Automatic icon writes the empty icon, which removes the page's own", () => {
-    const { h, page: now, edits } = host({ switcherIcon: "sofa" });
+    const { h, page: now, edits } = host({ switcherIcon: "sofa", switcherDisplayMode: "icon" });
     const text = flat(renderSwitcherSettings(h));
     expect(text).toMatch(/class="pe-chip "\s+aria-pressed=false/);
     handler(renderSwitcherSettings(h), "Automatic icon", "click")({});
     expect(Object.hasOwn(now(), "switcherIcon")).toBe(false);
     expect(edits).toEqual([undefined]);
-    expect(now()).toEqual(findWatchPage(setWatchPageSwitcherIcon(doc({ switcherIcon: "sofa" }), PAGE, ""), PAGE));
+    expect(now()).toEqual(findWatchPage(setWatchPageSwitcherIcon(doc({ switcherIcon: "sofa", switcherDisplayMode: "icon" }), PAGE, ""), PAGE));
     expect(flat(renderSwitcherSettings(h))).toMatch(/class="pe-chip on"\s+aria-pressed=true/);
+  });
+
+  it("hide Show as, the icon and Color while the page is Hidden, keeping the label and what is stored", () => {
+    const stored = { hideFromSwitcher: true, switcherDisplayMode: "icon", switcherIcon: "sofa", switcherColor: "#FF9F0A", switcherText: "Den" };
+    const { h, page: now } = host(stored);
+    const text = flat(renderSwitcherSettings(h));
+    expect(text).toContain(">Switcher label (optional)<");
+    for (const gone of [">Show as<", "Automatic icon", ">Icon<", ">Color<", "Left empty"]) expect(text, gone).not.toContain(gone);
+    expect(now()).toMatchObject(stored);
+    // Shown again, every row is back.
+    handler(renderSwitcherSettings(h), ">Hidden<", "change")({ target: { checked: false } });
+    const back = flat(renderSwitcherSettings(h));
+    for (const row of [">Show as<", "Automatic icon", ">Icon<", ">Color<"]) expect(back, row).toContain(row);
+  });
+
+  it("hide the icon's rows while the page shows by name, keeping Color", () => {
+    const { h } = host({ switcherDisplayMode: "text", switcherIcon: "sofa" });
+    const text = flat(renderSwitcherSettings(h));
+    expect(text).not.toContain("Automatic icon");
+    expect(text).not.toContain(`aria-label="Switcher icon"`);
+    expect(text).toContain(">Color<");
+    expect(text).toContain("Left empty, the watch picks the color itself.");
+    handler(renderSwitcherSettings(h), ">Icon</button>", "click")({ currentTarget: null });
+    expect(flat(renderSwitcherSettings(h))).toContain("Automatic icon");
   });
 
   it("refuses every edit while busy", () => {

@@ -66,8 +66,9 @@ export interface StyleRow {
   resetTo: StyleValue;
   /** An enum's choices with the phone's labels, in the Swift order. */
   options?: StyleOption[];
-  /** Hide the row unless another key, after defaults, holds this value. */
-  showIf?: { key: string; equals: StyleValue };
+  /** Hide the row unless another key, after defaults, holds this value
+   * (`equals`), or is a number over this one (`above`). */
+  showIf?: { key: string; equals: StyleValue } | { key: string; above: number };
   /** The SF Symbol beside the title, the phone's where it has one. */
   icon: string;
 }
@@ -166,10 +167,14 @@ export const NOTIFICATION_STYLE_ICONS: Readonly<Record<string, string>> = {
   cancelSound: "speaker.wave.2.fill",
 };
 
-/** `"useEntityTintColor is false"` as a condition on another key. */
+/** `"useEntityTintColor is false"` or `"soundVolume above 0.0001"` as a
+ * condition on another key. */
 function parseShownWhen(text: string | undefined): StyleRow["showIf"] {
-  const m = text === undefined ? null : /^(\w+) is (true|false)$/.exec(text.trim());
-  return m ? { key: m[1]!, equals: m[2] === "true" } : undefined;
+  if (text === undefined) return undefined;
+  const is = /^(\w+) is (true|false)$/.exec(text.trim());
+  if (is) return { key: is[1]!, equals: is[2] === "true" };
+  const above = /^(\w+) above (-?\d+(?:\.\d+)?)$/.exec(text.trim());
+  return above ? { key: above[1]!, above: Number(above[2]) } : undefined;
 }
 
 /** What the form shows for an absent key: the table's default, an optional
@@ -308,9 +313,14 @@ export function styleFormValues(document: StyleDocument | undefined, edits: Styl
   return out;
 }
 
-/** Whether a row is drawn, given the form's values after defaults. */
+/** Whether a row is drawn, given the form's values after defaults. The key
+ * it reads may sit in another group: `values` holds every row. */
 export function styleRowShown(row: StyleRow, values: ReadonlyMap<string, StyleValue>): boolean {
-  return row.showIf === undefined || values.get(row.showIf.key) === row.showIf.equals;
+  const showIf = row.showIf;
+  if (showIf === undefined) return true;
+  const value = values.get(showIf.key);
+  if ("above" in showIf) return typeof value === "number" && value > showIf.above;
+  return value === showIf.equals;
 }
 
 /** The visible rows of one group cut into runs: a row, and the rows that

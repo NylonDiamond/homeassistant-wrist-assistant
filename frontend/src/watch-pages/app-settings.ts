@@ -739,10 +739,11 @@ function renderWebCard(host: TileSettingsHost): TemplateResult {
       { placeholder: "https://", mono: true }))}
     ${note === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${note}</div>`}
     <div class="hint ts-under">${phoneWordsFor(host, WATCH_WEB_CARD_HELP)}</div>
-    ${checkField("Scroll", watchWebScroll(tile), (on) => commit(host, "webScroll", (d) => setWatchWebScroll(d, ...at(host), on)))}
-    <div class="hint ts-under">The page scrolls inside the tile.</div>
     ${checkField("Interactive", watchWebInteractive(tile), (on) => commit(host, "webInteractive", (d) => setWatchWebInteractive(d, ...at(host), on)))}
-    <div class="hint ts-under">The page takes taps inside the tile. Off: a tap opens it full screen.</div>`;
+    <div class="hint ts-under">The page takes taps inside the tile. Off: a tap opens it full screen.</div>
+    ${!watchWebInteractive(tile) ? nothing : html`
+    ${checkField("Scroll", watchWebScroll(tile), (on) => commit(host, "webScroll", (d) => setWatchWebScroll(d, ...at(host), on)))}
+    <div class="hint ts-under">The page scrolls inside the tile.</div>`}`;
 }
 
 /** The kinds whose task has no reset in this module's tasks: template,

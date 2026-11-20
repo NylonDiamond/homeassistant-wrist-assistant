@@ -169,6 +169,23 @@ describe("the rows", () => {
     expect(styleRuns(color, configured)).toEqual([{ row: row("useEntityTintColor"), dependents: [row("accentColor")] }]);
     expect(styleRuns(content, configured)[1]!.dependents.map((r) => r.key)).toEqual(["stateBadgePosition", "stateBadgeSize", "stateBadgePill"]);
   });
+
+  it("hides every sound picker while the volume is Silent, Button press included though it reads Volume from another group", () => {
+    const sounds = ["buttonPressSound", "tileTapSound", "menuOpenSound", "slideToIconSound", "arcSlideTickSound", "successSound", "cancelSound"];
+    for (const key of sounds) expect(row(key).showIf, key).toEqual({ key: "soundVolume", above: table.volume.silentBelow });
+    const group = NOTIFICATION_STYLE_SECTIONS[1]!.groups.find((g) => g.label === "Sounds")!;
+    expect(group.rows[0]!.key).toBe("buttonPressSound");
+    const base = notificationStyleDefaults();
+    const shown = (volume: number) => styleRuns(group, styleFormValues(base, new Map([["soundVolume", volume]]))).map((r) => r.row.key);
+    expect(shown(0)).toEqual([]);
+    expect(shown(table.volume.silentBelow)).toEqual([]);
+    expect(shown(0.05)).toEqual(sounds);
+    // Hidden, never cleared: a stored sound stays in the save.
+    const stored = { ...base, soundVolume: 0, menuOpenSound: "click_001" };
+    expect(buildStyleSaveDocument(stored, new Map())).toEqual(stored);
+    // The old form still reads as before.
+    expect(row("accentColor").showIf).toEqual({ key: "useEntityTintColor", equals: false });
+  });
 });
 
 // ── enums ────────────────────────────────────────────────────────────────

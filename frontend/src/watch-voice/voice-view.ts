@@ -560,10 +560,12 @@ function renderPhraseInspector(host: VoiceViewHost, phrase: JsonObject): Templat
   </fieldset>`;
   const color = phrase.color;
   const special = voiceColorWords(color);
+  // A phrase shown by its label draws no icon: the icon field waits, its
+  // value kept, until Display mode is Icon again.
   const lookBody = html`<fieldset class="vo-body" ?disabled=${host.busy} aria-label="Look">
-    <div class="vo-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, typeof phrase.icon === "string" ? phrase.icon : "",
+    ${String(phrase.displayMode ?? "icon") !== "icon" ? nothing : html`<div class="vo-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, typeof phrase.icon === "string" ? phrase.icon : "",
       (v) => set("icon", v, true), `vo:icon:${id}`,
-      { tint: color })}</div>
+      { tint: color })}</div>`}
     <div class="vo-no-alpha">${colorField("Color", isPlainVoiceColor(color) ? color : undefined,
       (v) => { if (v !== undefined) set("color", v, true); }, false, VOICE_KEYS.newPhrase.color)}</div>
     ${special === undefined ? nothing : html`<div class="hint">${special}, which the panel does not offer. Picking a color here replaces it.</div>`}

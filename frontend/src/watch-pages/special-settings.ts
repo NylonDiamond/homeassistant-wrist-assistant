@@ -22,6 +22,7 @@ import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from ".
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from "./model.js";
 import { colorPicker, commit, fieldNote, linkButton, menuField, resetButton, typed, typingField } from "./tile-settings.js";
 import { ONE_LOOK_CAMERA_PREVIEW_HINT } from "./one-look-settings.js";
+import { watchCameraTileLive } from "./phone-keys-model.js";
 import { appSummary, isWatchAppTaskKind, renderAppTask, watchAppTaskHasReset } from "./app-settings.js";
 import {
   type WatchSpecialResize,
@@ -310,7 +311,7 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
   };
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>Quick actions</span></div>
-    ${checkField("Require confirmation", s.quickConfirm, (on) => commit(host, "quickConfirm", (d) => setWatchRemoteQuickConfirm(d, ...at(host), on)))}
+    ${rows.length === 0 ? nothing : checkField("Require confirmation", s.quickConfirm, (on) => commit(host, "quickConfirm", (d) => setWatchRemoteQuickConfirm(d, ...at(host), on)))}
     ${rows.map((row, i) => {
       // Keyed by the row's script and place, so text typed in a row never
       // shows on another script's row after a remove moves the rows up.
@@ -564,6 +565,14 @@ function refreshMenu(host: TileSettingsHost, refresh: boolean | undefined): Temp
     <div class="hint ts-under">Takes a new snapshot each time the page opens. Default follows the ${hostDeviceNoun(host)}'s camera setting.</div>`;
 }
 
+/** Whether the camera tile draws its picture, so Content and Crop position
+ * do something: Display is Snapshot, or the iPhone's tile plays live video,
+ * which it draws whatever Display says. */
+export function watchCameraTileDrawsPicture(host: TileSettingsHost): boolean {
+  if (watchCameraSettings(host.tile).displayMode === "preview") return true;
+  return hostDevice(host) === "iphone" && watchCameraTileLive(host.tile);
+}
+
 function renderCamera(host: TileSettingsHost): TemplateResult {
   const c = watchCameraSettings(host.tile);
   const suggestions = c.ratio === undefined ? [] : watchSuggestedTileSizes(c.ratio);
@@ -572,12 +581,13 @@ function renderCamera(host: TileSettingsHost): TemplateResult {
     ${segField("Display", c.displayMode, T.camera.displayModes.map((m) => [m.value, m.label] as [string, string]), (v) =>
       commit(host, "displayMode", (d) => setWatchCameraDisplayMode(d, ...at(host), v)))}
     <div class="hint ts-under">${(host.oneLook === true && c.displayMode === "preview" ? ONE_LOOK_CAMERA_PREVIEW_HINT : CAMERA_HINTS[c.displayMode]) ?? ""}</div>
+    ${!watchCameraTileDrawsPicture(host) ? nothing : html`
     ${segField("Content", c.fillMode, T.camera.fillModes.map((m) => [m.value, m.label] as [string, string]), (v) =>
       commit(host, "fill", (d) => setWatchCameraFill(d, ...at(host), v)))}
     ${c.fillMode === "fill"
       ? dpad("Crop position", c.offsetX, c.offsetY, (dx, dy) => commit(host, "offset", (d) => nudgeWatchCameraOffset(d, ...at(host), dx, dy)),
           () => commit(host, "offset", (d) => centerWatchCameraOffset(d, ...at(host))))
-      : html`<div class="hint ts-under">Fit shows the whole picture with bars; Fill crops it to the tile.</div>`}
+      : html`<div class="hint ts-under">Fit shows the whole picture with bars; Fill crops it to the tile.</div>`}`}
     <div class="ts-sub-h"><span>Tile size</span></div>
     ${renderDetect(host, c.ratio)}
     ${suggestions.length === 0

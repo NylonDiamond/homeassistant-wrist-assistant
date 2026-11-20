@@ -876,7 +876,9 @@ describe("the inspector for a picked page", () => {
     expect(text).toContain("<h4>In the page switcher</h4>");
     expect(text).toContain(`<span class="sum">Shown</span>`);
     expect(text).toContain(`<fieldset class="ts-body me-body" ?disabled=false`);
-    for (const label of [">Hidden<", ">Show as<", ">Name<", "Automatic icon", ">Color<"]) expect(text, label).toContain(label);
+    // Shown by name, so the icon's rows wait for Icon.
+    for (const label of [">Hidden<", ">Show as<", ">Name<", ">Color<"]) expect(text, label).toContain(label);
+    expect(text).not.toContain("Automatic icon");
     expect(text).not.toContain("style-switcher");
     // Its rows edit the page draft, and the card and the list follow.
     handler(renderMenuInspector(h), ">Hidden<", "change")({ target: { checked: true } });

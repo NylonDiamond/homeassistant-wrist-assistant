@@ -1118,8 +1118,11 @@ export function tileInspectorParts(host: TileSettingsHost): { group: TileInspect
       case "color":
       case "icon":
       case "iconLook":
-      case "tapAnimation":
         return sections.includes("icon");
+      case "tapAnimation":
+        // The app moves only the icon on a tap: a tile that draws none has
+        // nothing to animate (the Icon look line says so).
+        return sections.includes("icon") && !watchTileDrawsNoIcon(host.tile);
       case "tap":
         return sections.includes("action") && host.domainStyle !== true && watchSingleTapMenu(host.tile) !== undefined;
       case "glow":
@@ -2345,7 +2348,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     ${domain ? nothing : html`<div class="ts-group">${renderStateIcons(host)}</div>`}
     <div class="ts-group">${renderIconLook(host)}</div>
     ${glowOffered(host) ? html`<div class="ts-group">${renderGlowPart(host)}</div>` : nothing}
-    <div class="ts-group">${whenOffShown(host) ? renderWhenOff(host) : nothing}${renderTapAnimation(host)}</div>`;
+    <div class="ts-group">${whenOffShown(host) ? renderWhenOff(host) : nothing}${everyPicked(host, () => watchTileDrawsNoIcon(host.tile)) ? nothing : renderTapAnimation(host)}</div>`;
 }
 
 /** The Glow switch's words. */
@@ -2621,7 +2624,10 @@ function renderText(host: TileSettingsHost): TemplateResult {
   };
   // The label itself is the head's Name; a rule's tiles each carry their
   // entity's own name and have none.
-  const show = checkRow("Show name", t.showLabel, mixed((s) => s.showLabel), (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)));
+  // An HTTP action showing its reply on the tile names itself by its own
+  // Show name (`httpTileValueShowName`) and the renderer ignores this one.
+  const ownShowName = everyPicked(host, () => watchTileNamesItself(host.tile));
+  const show = ownShowName ? nothing : checkRow("Show name", t.showLabel, mixed((s) => s.showLabel), (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)));
   if (everyPicked(host, () => !watchTileLabelDrawn(host.tile))) return html`${show}<div class="hint keep ts-gone">${LABEL_HIDDEN_NOTE}</div>`;
   return html`
     ${show}
@@ -2663,8 +2669,14 @@ export const LABEL_HIDDEN_NOTE = "The label is hidden, so its size, weight, desi
  * (`one-look/render.ts`).
  */
 export function watchTileLabelDrawn(tile: WatchPageTile): boolean {
-  if (tileKind(tileEntityId(tile)) === "http_action" && tile.httpResponseDisplay === "tileValue") return true;
+  if (watchTileNamesItself(tile)) return true;
   return watchTileTextSettings(tile).showLabel;
+}
+
+/** Whether the tile is an HTTP action showing its reply on the tile, which
+ * has a Show name of its own and draws no label from Show name. */
+export function watchTileNamesItself(tile: WatchPageTile): boolean {
+  return tileKind(tileEntityId(tile)) === "http_action" && tile.httpResponseDisplay === "tileValue";
 }
 
 /** The short words a Weight or Design button carries where the full name
@@ -3697,6 +3709,13 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
       <div class="hint ts-under">A spacer draws a plain line in its own color at this thickness. The other border settings do nothing on it.</div>
       ${resetRow(host, "border", "Border")}`;
   }
+  // The app draws an Animate border at this thickness and glows it while
+  // the tile is on, as it does a Line, and with no animation it draws a
+  // still line the same way. In One Look Extra Thin still draws on it
+  // (`TileStyleModifier.borderWidth`).
+  const animatedLine = html`
+      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, { ...SMALL_THICKNESS, read: BORDER_READ.thickness, tryName: "Border thickness" })}
+      ${sliderRow(host, "borderGlow", "Glow", "borderGlow", b.glow, setWatchTileBorderGlow, { reset: reset("borderGlow"), percent: true, read: BORDER_READ.glow })}`;
   return html`
     ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle, {
       picture: neutralPicture(host, setWatchTileBorderStyle, BORDER_PICTURE), size: "mini", read: BORDER_READ.style, tryName: "Border style",
@@ -3710,7 +3729,8 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
       ${b.animation === "none" ? nothing : html`
         ${sliderRow(host, "borderSpeed", "Speed", "borderAnimationSpeed", b.speed, setWatchTileBorderSpeed, { reset: reset("borderAnimationSpeed"), read: BORDER_READ.speed })}
         ${sliderRow(host, "borderIntensity", "Intensity", "borderAnimationIntensity", b.intensity, setWatchTileBorderIntensity, { reset: reset("borderAnimationIntensity"), read: BORDER_READ.intensity })}
-        ${sliderRow(host, "borderSize", "Size", "borderAnimationSize", b.size, setWatchTileBorderSize, { reset: reset("borderAnimationSize"), read: BORDER_READ.size })}`}` : nothing}
+        ${sliderRow(host, "borderSize", "Size", "borderAnimationSize", b.size, setWatchTileBorderSize, { reset: reset("borderAnimationSize"), read: BORDER_READ.size })}`}
+      ${animatedLine}` : nothing}
     ${b.style === "none" ? nothing : html`
       ${boolRow(host, "borderActiveOnly", "Only when on", b.activeOnly, setWatchTileBorderActiveOnly, BORDER_READ.activeOnly)}
       ${colorPicker(host, "borderColor", {
