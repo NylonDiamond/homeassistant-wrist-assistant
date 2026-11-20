@@ -42,8 +42,31 @@ export function downloadText(text: string, fileName: string): boolean {
 }
 
 export function renderSharePageDialog(form: SharePageForm, h: SharePageHandlers): TemplateResult {
-  const copy = async () => {
-    const ok = await copyPlainText(form.text);
+  const copy = async (e: Event) => {
+    // The dialog's own box first: Home Assistant over plain http has no
+    // `navigator.clipboard`, and `copyPlainText`'s hidden box sits outside
+    // this modal dialog, where the page is inert and nothing copies.
+    const box = (e.currentTarget as HTMLElement).closest("dialog")?.querySelector<HTMLTextAreaElement>("textarea.sp-text");
+    let ok = false;
+    if (navigator.clipboard?.writeText !== undefined) {
+      try {
+        await navigator.clipboard.writeText(form.text);
+        ok = true;
+      } catch {
+        // Refused: select and copy below.
+      }
+    }
+    if (!ok && box) {
+      box.focus();
+      box.select();
+      box.setSelectionRange(0, box.value.length);
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+        ok = false;
+      }
+    }
+    if (!ok) ok = await copyPlainText(form.text);
     h.onSaid(ok ? { kind: "ok", text: "Copied. Send it to them." } : { kind: "err", text: "The browser did not copy it. Use Download instead." });
   };
   const download = () => {
@@ -69,7 +92,7 @@ export function renderSharePageDialog(form: SharePageForm, h: SharePageHandlers)
       <div class="new-foot">
         <span class="new-count"></span>
         <button type="button" class="lib-new-btn" @click=${download}>${uiIcon("download")} Download</button>
-        <button type="button" class="lib-new-btn primary" @click=${() => void copy()}>Copy text</button>
+        <button type="button" class="lib-new-btn primary" @click=${(e: Event) => void copy(e)}>Copy text</button>
       </div>
     </div>
   </dialog>`;
