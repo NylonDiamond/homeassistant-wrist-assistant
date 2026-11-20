@@ -22,7 +22,7 @@
 //   it goes under the rules, in the one column.
 //
 // On a home that is not the watch's main house (`home`), the gestures and the
-// point control switches are the main house's: one line says so in place of
+// point control switches and aim are the main house's: one line says so in place of
 // them, and the switch is Switch automatically, which is this home's own.
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
@@ -48,6 +48,7 @@ import {
   HOME_ROOMS_ANDROID_TEXT,
   HOME_ROOMS_PHONE_TEXT,
   ZONES_UNREADABLE_TEXT,
+  aimWrites,
   fallbackChoice,
   fallbackWrites,
   findPageChoice,
@@ -634,7 +635,7 @@ function renderTarget(host: RoomsViewHost, roomKey: string, zones: readonly Poin
 }
 
 /** How to read a heading, kept out of the card and in the tooltip. */
-export const HEADING_HELP_DETAIL = "To read a heading, stand where you point from, face the target and open Heading on the watch (in Connection Health, or on the point control of a room with no targets). Type the number it shows.";
+export const HEADING_HELP_DETAIL = "To read a heading, stand where you point from, face the target and open Heading on the watch (in Connection Health, or on the point control of a room with no targets). Type the number it shows. The number is the device's direction. On an iPhone, Rooms in HouseLit can measure it by pointing the iPhone's top edge at the device.";
 
 function renderTargets(host: RoomsViewHost, room: RoomListEntry): TemplateResult {
   const { view } = host;
@@ -667,11 +668,32 @@ function switchRow(label: string, on: boolean, line: string, set: (v: boolean) =
   return html`<div class="rm-switch">${checkField(label, on, set)}<p class="rm-help">${line}</p></div>`;
 }
 
+/** The label over the aim choice. */
+export const AIM_LABEL = "How you aim";
+
+/** Face It or Point at It, with the picked one's detail under it. */
+function renderAim(host: RoomsViewHost): TemplateResult {
+  const { options } = ROOM_RULES.pointControl.aim;
+  const detail = options.find((o) => o.value === host.view.aim)?.detail ?? "";
+  return html`<div class="rm-when rm-aim">
+    <span class="rm-when-l" id="rm-aim-l">${AIM_LABEL}</span>
+    <div class="seg rm-seg" role="radiogroup" aria-labelledby="rm-aim-l">
+      ${options.map((o) => {
+        const picked = o.value === host.view.aim;
+        return html`<button type="button" role="radio" aria-checked=${picked ? "true" : "false"} class=${picked ? "on" : ""} ?disabled=${host.busy}
+          @click=${() => { if (!host.busy && !picked) host.write(aimWrites(o.value)); }}>${o.label}</button>`;
+      })}
+    </div>
+    <span class="rm-when-help">${detail}</span>
+  </div>`;
+}
+
 function renderPointSwitches(host: RoomsViewHost): TemplateResult {
   const { view } = host;
   const values: Record<string, boolean> = { [ROOM_KEYS.tapToToggle]: view.tapToToggle, [ROOM_KEYS.liveTile]: view.liveTile };
   return html`<div class="rm-point-switches" title="One value for every point control tile on this watch.">
     <div class="rm-sub-h"><span>Every room</span></div>
+    ${renderAim(host)}
     ${ROOM_RULES.pointControl.switches.map((s) => {
       const on = values[s.key] ?? s.absent;
       return switchRow(s.label, on, on ? s.onDetail : s.offDetail, (v) => { if (!host.busy) host.write(pointSwitchWrites(s.key, v)); });
@@ -691,7 +713,7 @@ export function pointSummary(view: Pick<RoomsView, "zones">): string {
 function renderPointCard(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
   const open = isOpen(host, "pointOpen");
   const home = host.home === true;
-  const keys = home ? [ROOM_KEYS.zones] : [ROOM_KEYS.zones, ROOM_KEYS.tapToToggle, ROOM_KEYS.liveTile];
+  const keys = home ? [ROOM_KEYS.zones] : [ROOM_KEYS.zones, ROOM_KEYS.aim, ROOM_KEYS.tapToToggle, ROOM_KEYS.liveTile];
   return html`<section class="rm-card rm-point" aria-label="Point control">
     <button type="button" class="rm-point-head" aria-expanded=${open ? "true" : "false"} @click=${() => flip(host, "pointOpen", open)}>
       <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span>
@@ -1011,6 +1033,7 @@ export const roomsViewStyles = css`
   .rm-switch { margin-top: 6px; }
   .rm-switch .rm-help { margin: 0 0 4px; }
   .rm-point-switches { margin-top: 8px; padding-top: 2px; border-top: 1px solid var(--wa-line); }
+  .rm-when.rm-aim { padding-top: 4px; border-top: 0; }
   .rm-target {
     display: grid; grid-template-columns: 64px minmax(0, 1fr) 28px; gap: 10px; align-items: start;
     margin: 8px 0; padding: 10px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-md, 12px); background: var(--wa-field);

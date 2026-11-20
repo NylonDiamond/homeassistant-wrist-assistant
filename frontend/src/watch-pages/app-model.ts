@@ -415,7 +415,11 @@ interface AppTable {
     messages: Record<"speakOne" | "speakMany" | "assistOne" | "assistMany", string>;
     samples: { name: string; tile: WatchPageTile; speakMissing: boolean; assistMissing: boolean }[];
   };
-  pointControl: { switches: BehaviorSwitchSpec[]; readOnlyLine: string };
+  pointControl: {
+    switches: BehaviorSwitchSpec[];
+    aim: { key: string; label: string; absent: string; options: { value: string; label: string; detail: string }[] };
+    readOnlyLine: string;
+  };
   webhookInbox: {
     setUpLine: string;
     samples: { entityId: string; customLabel: string | null; topic: string; label: string }[];
@@ -1316,6 +1320,23 @@ export function watchPointControlSwitches(behavior: unknown): WatchPointControlS
     const on = isBool(doc[s.key]) ? (doc[s.key] as boolean) : s.absent;
     return { key: s.key, label: s.label, on, detail: on ? s.onDetail : s.offDetail };
   });
+}
+
+/** How point control aims, as the `behavior` document holds it. */
+export interface WatchPointControlAim {
+  key: string;
+  label: string;
+  /** The picked option's label: Face It when absent or anything else. */
+  value: string;
+  detail: string;
+}
+
+/** The Pointer section's aim line, read only like the switches. */
+export function watchPointControlAim(behavior: unknown): WatchPointControlAim {
+  const doc = isJsonObject(behavior) ? behavior : {};
+  const { key, label, absent, options } = A.pointControl.aim;
+  const picked = options.find((o) => o.value === doc[key]) ?? options.find((o) => o.value === absent)!;
+  return { key, label, value: picked.label, detail: picked.detail };
 }
 
 // ── Webhook inbox ────────────────────────────────────────────────────────

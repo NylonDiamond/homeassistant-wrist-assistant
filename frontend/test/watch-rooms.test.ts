@@ -16,6 +16,7 @@ import {
 import {
   type BehaviorDocument,
   HOME_ROOMS_MAIN_HOUSE_TEXT,
+  aimWrites,
   applyRoomEdits,
   areasFromHass,
   areasFromReply,
@@ -60,7 +61,7 @@ import {
   roomFromState,
   wrapHeading,
 } from "../src/watch-rooms/rules.js";
-import { type RoomsViewHost, BERMUDA_PITCH, BERMUDA_URL, HEADING_HELP_DETAIL, NO_SENSOR_TEXT, headingAt, isBermudaSensor, listedRooms, offeredAreas, pickedRoom, pointSummary, renderRoomsBody, roomGroups, roomPointLine, roomsViewStyles, sensorReading } from "../src/watch-rooms/view.js";
+import { type RoomsViewHost, AIM_LABEL, BERMUDA_PITCH, BERMUDA_URL, HEADING_HELP_DETAIL, NO_SENSOR_TEXT, headingAt, isBermudaSensor, listedRooms, offeredAreas, pickedRoom, pointSummary, renderRoomsBody, roomGroups, roomPointLine, roomsViewStyles, sensorReading } from "../src/watch-rooms/view.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -213,6 +214,31 @@ describe("a load and a save with no edit", () => {
     const cleared = after(doc, sensorWrites(doc, ""));
     expect(JSON.stringify(cleared)).not.toContain("null");
     expect(Object.hasOwn(cleared, "roomQuickJumpSourceEntityId")).toBe(false);
+  });
+
+  it("reads how point control aims, face when absent or anything else", () => {
+    expect(ROOM_KEYS.aim).toBe("pointControlAim");
+    expect(ROOM_RULES.pointControl.aim.key).toBe(ROOM_KEYS.aim);
+    expect(ROOM_RULES.pointControl.aim.absent).toBe("face");
+    expect(ROOM_RULES.pointControl.aim.options.map((o) => [o.value, o.label])).toEqual([["face", "Face It"], ["point", "Point at It"]]);
+    expect(readRooms(behavior()).aim).toBe("face");
+    expect(readRooms(behavior({ pointControlAim: "point" })).aim).toBe("point");
+    for (const odd of ["face", "Point", "arm", "", 1, true, null]) expect(readRooms(behavior({ pointControlAim: odd })).aim).toBe("face");
+  });
+
+  it("writes Point at It and removes the key for Face It", () => {
+    expect([...aimWrites("point")]).toEqual([["pointControlAim", "point"]]);
+    expect([...aimWrites("face")]).toEqual([["pointControlAim", undefined]]);
+    const doc = behavior();
+    const pointed = after(doc, aimWrites("point"));
+    expect(pointed.pointControlAim).toBe("point");
+    expect(Object.hasOwn(after(pointed, aimWrites("face")), "pointControlAim")).toBe(false);
+    // Face It on a document without the key is no edit.
+    expect(withRoomWrites(doc, new Map(), aimWrites("face")).size).toBe(0);
+    let edits = withRoomWrites(doc, new Map(), aimWrites("point"));
+    expect(roomDirtyKeys(doc, edits)).toEqual(["pointControlAim"]);
+    edits = withRoomWrites(doc, edits, aimWrites("face"));
+    expect(edits.size).toBe(0);
   });
 
   it("keeps a key it does not know through an edit", () => {
@@ -764,10 +790,27 @@ describe("the list, the stage and the inspector", () => {
     const text = flat(renderRoomsBody(h));
     for (const s of ["Room for point control", "Pendant / Bar", "° E", "+ Add a thing", "Tap to Toggle", "Live Point Control Tile"]) expect(text).toContain(s);
     expect(text).toContain(`title=${HEADING_HELP_DETAIL}`);
+    expect(HEADING_HELP_DETAIL).toContain("The number is the device's direction. On an iPhone, Rooms in HouseLit can measure it by pointing the iPhone's top edge at the device.");
     h.uiState.set("pick", "living room");
     const den = flat(renderRoomsBody(h));
     expect(den).toContain("What the watch opens in Living Room");
     expect(den).not.toContain("Pendant / Bar");
+  });
+
+  it("offer How you aim beside the switches on the main home, with the picked one's detail", () => {
+    const [face, point] = ROOM_RULES.pointControl.aim.options;
+    const h = host(behavior());
+    expect(flat(renderRoomsBody(h))).not.toContain(AIM_LABEL);
+    h.uiState.set("pointOpen", true);
+    const text = flat(renderRoomsBody(h));
+    for (const s of [AIM_LABEL, "Face It", "Point at It", face!.detail]) expect(text).toContain(s);
+    expect(text).not.toContain(point!.detail);
+    expect(text.indexOf(AIM_LABEL)).toBeLessThan(text.indexOf("Tap to Toggle"));
+    const pointed = host(behavior({ pointControlAim: "point" }));
+    pointed.uiState.set("pointOpen", true);
+    const ptext = flat(renderRoomsBody(pointed));
+    expect(ptext).toContain(point!.detail);
+    expect(ptext).not.toContain(face!.detail);
   });
 
   it("show Anywhere else's page on the watch for a room with none", () => {

@@ -11,7 +11,8 @@
     "topSectionDoubleTap": "topSectionDoubleTapAction",
     "handGesture": "handGestureAction",
     "tapToToggle": "pointControlTapToToggle",
-    "liveTile": "pointControlLiveTile"
+    "liveTile": "pointControlLiveTile",
+    "aim": "pointControlAim"
   },
   "normalize": {
     "rule": "Lower case; _ and - as spaces; anything but a-z, 0-9 and space as a space; runs of spaces as one, none at either end.",
@@ -920,7 +921,24 @@
         "offDetail": "Show live needle and aimed entity on grid tile",
         "absent": false
       }
-    ]
+    ],
+    "aim": {
+      "key": "pointControlAim",
+      "absent": "face",
+      "options": [
+        {
+          "value": "face",
+          "label": "Face It",
+          "detail": "Raise your wrist as if to read the time and face the device."
+        },
+        {
+          "value": "point",
+          "label": "Point at It",
+          "detail": "Point your arm at the device, as with a finger. The watch turns its reading for the wrist it is on."
+        }
+      ],
+      "rule": "A target's direction is the device's direction from where you stand, degrees clockwise from magnetic north, whichever way you aim. Face: the watch's 12 o'clock is the pointer. Point: the arm is the pointer: the watch adds 90 degrees on the left wrist and takes 90 away on the right."
+    }
   },
   "zones": {
     "cleanCases": [

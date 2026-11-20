@@ -11,6 +11,9 @@ import rulesJson from "./room-rules.json";
 
 export type RoomTrigger = "Automatic" | "Double-Tap Top" | "Double Pinch";
 
+/** How Point Control aims (`pointControlAim`): the watch's 12 o'clock, or the arm. */
+export type PointAim = "face" | "point";
+
 export interface RoomRules {
   version: number;
   keys: {
@@ -24,6 +27,7 @@ export interface RoomRules {
     handGesture: string;
     tapToToggle: string;
     liveTile: string;
+    aim: string;
   };
   normalize: { rule: string; cases: { input: string; key: string }[] };
   roomValue: { notRoom: string[]; rule: string; source: string; attribute: string; cases: { input: string; room: boolean }[] };
@@ -42,6 +46,7 @@ export interface RoomRules {
     heading: { min: number; max: number; rule: string };
     newTarget: string;
     switches: { key: string; label: string; onDetail: string; offDetail: string; absent: boolean }[];
+    aim: { key: string; absent: PointAim; options: { value: PointAim; label: string; detail: string }[]; rule: string };
   };
   zones: {
     cleanCases: { input: Record<string, PointZone[]>; output: Record<string, PointZone[]> | null }[];

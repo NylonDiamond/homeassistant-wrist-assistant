@@ -25,6 +25,7 @@ import {
   HOME_ROOMS_UPDATE_TEXT,
   HOME_ROOM_KEYS,
   MAIN_HOUSE_ROOM_KEYS,
+  aimWrites,
   ROOMS_NO_RECORD_TITLE,
   ROOMS_WAIT_TEXT,
   clearSensorWrites,
@@ -42,7 +43,7 @@ import {
 } from "../src/watch-rooms/model.js";
 import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
 import { ROOM_KEYS } from "../src/watch-rooms/rules.js";
-import { type RoomsViewHost, renderRoomsBody } from "../src/watch-rooms/view.js";
+import { type RoomsViewHost, AIM_LABEL, renderRoomsBody } from "../src/watch-rooms/view.js";
 import { WATCH_CONFIG_LIMIT_BYTES } from "../src/watch-pages/model.js";
 import {
   NEW_WATCH_TEXT,
@@ -231,6 +232,7 @@ describe("the record a watch's rooms live in", () => {
     ]);
     expect([...MAIN_HOUSE_ROOM_KEYS].sort()).toEqual([
       "handGestureAction",
+      "pointControlAim",
       "pointControlLiveTile",
       "pointControlTapToToggle",
       "topSectionDoubleTapAction",
@@ -262,6 +264,8 @@ describe("the writes on a home that is not the main house", () => {
       for (const [key, value] of writes) if (!MAIN_HOUSE_ROOM_KEYS.includes(key)) expect(kept.get(key)).toEqual(value);
     }
     expect(homeRoomWrites(new Map([[ROOM_KEYS.tapToToggle, true], [ROOM_KEYS.liveTile, true]])).size).toBe(0);
+    expect(homeRoomWrites(aimWrites("point")).size).toBe(0);
+    expect(homeRoomWrites(aimWrites("face")).size).toBe(0);
   });
 
   it("turn the automatic switch on as the phone's Automatic, and off alone", () => {
@@ -305,12 +309,12 @@ describe("the cards on a home that is not the main house", () => {
     expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
     // Point control stays (its targets are this home's own); its two
     // switches, the gestures and When are the main house's.
-    for (const gone of ["Every room<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "rm-when"]) expect(text).not.toContain(gone);
+    for (const gone of ["Every room<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "rm-when", AIM_LABEL, "Face It", "Point at It"]) expect(text).not.toContain(gone);
     for (const shown of ["Room sensor", "Switch pages by room", HOME_AUTO_SWITCH_LABEL, "Anywhere else", "When I walk into", "Kitchen page", "Things to point at"]) expect(text).toContain(shown);
   });
 
   it("say it in plain words, with no dash", () => {
-    expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toBe("The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.");
+    expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toBe("The double-tap on the page title, the double pinch and the point control settings come from this watch's main home.");
     for (const t of [HOME_ROOMS_MAIN_HOUSE_TEXT, HOME_ROOMS_NO_RECORD_TITLE, HOME_ROOMS_UPDATE_TEXT, HOME_AUTO_SWITCH_LABEL]) {
       expect(t).not.toMatch(DASH);
     }
@@ -319,8 +323,16 @@ describe("the cards on a home that is not the main house", () => {
   it("leave the main house's four cards as they were", () => {
     const text = flatten(renderRoomsBody(host(homeRooms(), false)));
     expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
-    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", "When I walk into"]) expect(text).toContain(title);
+    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", AIM_LABEL, "Face It", "Point at It", "When I walk into"]) expect(text).toContain(title);
     expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
+  });
+
+  it("never offer How you aim on an iPhone or an Android phone", () => {
+    for (const extra of [{ phone: true }, { phone: true, android: true }]) {
+      const text = flatten(renderRoomsBody({ ...host(homeRooms(), true), ...extra }));
+      expect(text).toContain("Things to point at");
+      for (const gone of [AIM_LABEL, "Face It", "Point at It", "Tap to Toggle"]) expect(text).not.toContain(gone);
+    }
   });
 
   it("word a save in rooms, and the main house's as before", () => {

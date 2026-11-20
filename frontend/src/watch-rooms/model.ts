@@ -3,7 +3,8 @@
 // The room settings of a watch are keys of its `behavior` record, the app's
 // `BehaviorPreferences`: the room sensor, the page per room, how and when
 // pages switch, the fallback page, the point control targets per room (one
-// JSON string) and two point control switches. The Watch settings page
+// JSON string), two point control switches and how point control aims
+// (`pointControlAim`). The Watch settings page
 // leaves them out; this editor writes them, the way the phone's Rooms screen
 // does (`rules.ts`, `room-rules.json`).
 //
@@ -24,9 +25,9 @@
 //
 // A home that is not the watch's main house (`main_house: false` on the
 // owner row) keeps its rooms in a `rooms` record of their own instead: the
-// six room keys under their `behavior` names and a `schemaVersion`. The four
+// six room keys under their `behavior` names and a `schemaVersion`. The
 // keys that stay with the main house's settings (Double-Tap Top, Double
-// Pinch and the two point control switches) are neither shown nor written
+// Pinch, the two point control switches and the aim) are neither shown nor written
 // there, and the editor can start that record itself. An iPhone keeps its
 // rooms the same way, on every home: its `behavior` record holds only the
 // phone's own settings, so its room keys live in `rooms`.
@@ -39,6 +40,7 @@ import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, i
 import { notForIphoneText, watchCommandError } from "../watch-pages/save-note.js";
 import { type PhoneMoves, takesSettingsFromAnotherHome, waitForIphoneText } from "../watch-settings.js";
 import {
+  type PointAim,
   type PointRooms,
   type PointZone,
   type RoomTrigger,
@@ -205,6 +207,8 @@ export interface RoomsView {
   zones: ZonesRead;
   tapToToggle: boolean;
   liveTile: boolean;
+  /** How Point Control aims: "face" when absent or anything else. */
+  aim: PointAim;
 }
 
 /** The five keys the switching writes read and change, each read only when
@@ -264,6 +268,7 @@ export function readRooms(doc: BehaviorDocument): RoomsView {
     zones: decodeZones(doc[ROOM_KEYS.zones]),
     tapToToggle: switch_(ROOM_KEYS.tapToToggle),
     liveTile: switch_(ROOM_KEYS.liveTile),
+    aim: doc[ROOM_KEYS.aim] === "point" ? "point" : "face",
   };
 }
 
@@ -362,6 +367,12 @@ export function fallbackWrites(value: string): Map<string, unknown> {
 /** One point control switch. */
 export function pointSwitchWrites(key: string, on: boolean): Map<string, unknown> {
   return new Map([[key, on]]);
+}
+
+/** How Point Control aims: Face It removes the key, since absent is face;
+ * Point at It stores "point". */
+export function aimWrites(value: PointAim): Map<string, unknown> {
+  return new Map([[ROOM_KEYS.aim, value === ROOM_RULES.pointControl.aim.absent ? undefined : value]]);
 }
 
 /** The page a room switches to, as the watch finds it: any stored key that
@@ -767,17 +778,19 @@ export const HOME_ROOM_KEYS: readonly string[] = [
   ROOM_KEYS.zones,
 ];
 
-/** The four room keys that stay with the main house's settings. A `rooms`
- * record never shows or writes them. */
+/** The room keys that stay with the main house's settings: the gestures,
+ * the point control switches and how it aims. A `rooms` record never shows
+ * or writes them. */
 export const MAIN_HOUSE_ROOM_KEYS: readonly string[] = [
   ROOM_KEYS.topSectionDoubleTap,
   ROOM_KEYS.handGesture,
   ROOM_KEYS.tapToToggle,
   ROOM_KEYS.liveTile,
+  ROOM_KEYS.aim,
 ];
 
-/** Key writes for a `rooms` record: the same writes with the four main house
- * keys left out. */
+/** Key writes for a `rooms` record: the same writes with the main house keys
+ * left out. */
 export function homeRoomWrites(writes: RoomEdits): Map<string, unknown> {
   return new Map([...writes].filter(([key]) => !MAIN_HOUSE_ROOM_KEYS.includes(key)));
 }
@@ -808,11 +821,11 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
   return code === "invalid" || code === "unknown_command";
 }
 
-/** The one line that stands for the four main house keys, in the words
+/** The one line that stands for the main house keys, in the words
  * Watch settings uses for the gestures. */
-export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.";
+export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control settings come from this watch's main home.";
 /** The same on a Wear OS watch, which has no double pinch. */
-export const HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT = "The double-tap on the page title and the point control switches come from this watch's main home.";
+export const HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT = "The double-tap on the page title and the point control settings come from this watch's main home.";
 /** The same place on an iPhone, which has no main house: its double-tap on
  * the page title is in its own settings, and it has no double pinch. */
 export const HOME_ROOMS_PHONE_TEXT = "The double-tap on the page title is in this iPhone's settings.";

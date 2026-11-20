@@ -2385,8 +2385,25 @@
         "absent": false
       }
     ],
+    "aim": {
+      "key": "pointControlAim",
+      "label": "How you aim",
+      "absent": "face",
+      "options": [
+        {
+          "value": "face",
+          "label": "Face It",
+          "detail": "Raise your wrist as if to read the time and face the device."
+        },
+        {
+          "value": "point",
+          "label": "Point at It",
+          "detail": "Point your arm at the device, as with a finger. The watch turns its reading for the wrist it is on."
+        }
+      ]
+    },
     "where": "behavior",
-    "rule": "Both switches are keys of the behavior document, not tile keys: one value for every point control tile, outside the page's Save and undo. The page editor shows them read only (absent reads Off) with \"Change in Rooms\": the panel's Rooms editor and the phone change them, with the rooms and their targets. Capturing a heading with the watch compass stays on the phone.",
+    "rule": "Both switches and the aim (pointControlAim, absent or any other value reads face) are keys of the behavior document, not tile keys: one value for every point control tile, outside the page's Save and undo. The page editor shows them read only (absent reads Off) with \"Change in Rooms\": the panel's Rooms editor and the phone change them, with the rooms and their targets. Capturing a heading with the watch compass stays on the phone.",
     "readOnlyLine": "Change in Rooms",
     "reset": "The Pointer task writes no tile key and has no reset."
   },

@@ -258,7 +258,7 @@ describe("the catalog", () => {
   it("leaves out what Rooms edits and the debug flags", () => {
     const keys = settings.map((s) => s.key);
     for (const key of keys) {
-      expect(key, key).not.toMatch(/^(roomQuickJump|roomAutoSwitch)|^pointControl(RoomMappingsJSON|TapToToggle|LiveTile)$/);
+      expect(key, key).not.toMatch(/^(roomQuickJump|roomAutoSwitch)|^pointControl(RoomMappingsJSON|TapToToggle|LiveTile|Aim)$/);
       expect(key, key).not.toMatch(/Debug|^showHTTP|^cameraDebugFlash$|^showCameraFPSOverlay$|^showServerModeBadge$|^showDebugTargets$/);
     }
     // The twists' targets are written by the twists' row, not rows of their own.

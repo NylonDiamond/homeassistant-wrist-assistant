@@ -127,6 +127,7 @@ import {
   watchMusicHubPresets,
   watchMusicHubSpeakerChoices,
   watchMusicHubSpeakerIds,
+  watchPointControlAim,
   watchPointControlSwitches,
   watchSpeakSettings,
   watchSpeakerChoices,
@@ -590,7 +591,10 @@ function renderSpeak(host: TileSettingsHost): TemplateResult {
 // ── Pointer ──────────────────────────────────────────────────────────────
 
 function renderPointer(host: TileSettingsHost): TemplateResult {
+  const aim = watchPointControlAim(host.behavior);
   return html`
+    <div class="field ap-read"><span>${aim.label}</span><b>${aim.value}</b></div>
+    <div class="hint ts-under">${aim.detail}</div>
     ${watchPointControlSwitches(host.behavior).map((s) => html`<div class="field ap-read"><span>${s.label}</span><b>${s.on ? "On" : "Off"}</b></div>
       <div class="hint ts-under">${s.detail}</div>`)}
     <div class="hint">${A.pointControl.readOnlyLine}</div>`;

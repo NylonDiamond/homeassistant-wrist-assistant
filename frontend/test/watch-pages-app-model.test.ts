@@ -11,6 +11,8 @@ import tileAppTable from "../src/watch-pages/tile-app.json";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { templateIconColor, templateRichTextSegments } from "../src/watch-pages/rich-text.js";
 import { watchTileKeyAccepts, watchTileKeySpec } from "../src/watch-pages/special-model.js";
+import { ROOM_RULES } from "../src/watch-rooms/rules.js";
+import { AIM_LABEL } from "../src/watch-rooms/view.js";
 import {
   WATCH_APP,
   WATCH_APP_SETTING_KEYS,
@@ -34,6 +36,7 @@ import {
   watchMusicHubCanAddPreset,
   watchMusicHubGroupingSpeakers,
   watchMusicHubPresetName,
+  watchPointControlAim,
   watchPointControlSwitches,
   watchSaveSpeakerWarning,
   watchShownVolumePercent,
@@ -260,6 +263,15 @@ describe("the Pointer switches", () => {
     const on = watchPointControlSwitches({ pointControlTapToToggle: true, pointControlLiveTile: "yes" });
     expect(on[0]).toEqual({ key: "pointControlTapToToggle", label: "Tap to Toggle", on: true, detail: "Tap immediately toggles the aimed entity" });
     expect(on[1]!.on).toBe(false);
+  });
+
+  it("read how point control aims, Face It when absent or anything else, as the Rooms table says", () => {
+    expect(watchPointControlAim(undefined)).toEqual({ key: "pointControlAim", label: AIM_LABEL, value: "Face It", detail: ROOM_RULES.pointControl.aim.options[0]!.detail });
+    expect(watchPointControlAim({ pointControlAim: "point" })).toMatchObject({ value: "Point at It", detail: ROOM_RULES.pointControl.aim.options[1]!.detail });
+    for (const odd of ["arm", "Point", 1, null]) expect(watchPointControlAim({ pointControlAim: odd }).value).toBe("Face It");
+    const { aim } = WATCH_APP.pointControl;
+    const rooms = ROOM_RULES.pointControl.aim;
+    expect([aim.key, aim.absent, aim.options]).toEqual([rooms.key, rooms.absent, rooms.options]);
   });
 });
 
