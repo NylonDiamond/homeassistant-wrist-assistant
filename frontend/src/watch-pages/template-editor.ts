@@ -12,6 +12,7 @@
 // the text can be read and changed from the first draw.
 
 import { css, html, LitElement, nothing, type TemplateResult, unsafeCSS } from "lit";
+import { live } from "lit/directives/live.js";
 import { TILE_FONT_STACK } from "../font.js";
 import { WATCH_APP } from "./app-model.js";
 import type { RenderResult } from "../ha-api.js";
@@ -647,11 +648,11 @@ export class WaTemplateEditor extends LitElement {
                 <label class="te-sw"><span><b>Line up columns</b><small>Each icon starts a column.</small></span>
                 <button type="button" class="te-switch ${d.columns ? "on" : ""}" role="switch" aria-checked=${d.columns ? "true" : "false"} aria-label="Line up columns" ?disabled=${d.busy} @click=${() => this.toggleColumns()}></button></label>
                 <label class="te-sw"><span><b>${d.lines.label}</b><small>${d.lines.help}</small></span>
-                <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.lines.menu.selected}>${o.label}</option>`)}</select></label>
+                <select class="te-lines" aria-label=${d.lines.label} ?disabled=${d.busy} @change=${(e: Event) => d.setLines((e.target as HTMLSelectElement).value)}>${d.lines.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} .selected=${live(o.value === d.lines.menu.selected)}>${o.label}</option>`)}</select></label>
                 <label class="te-sw"><span><b>${d.refresh.label}</b><small>${d.refresh.help}</small></span>
-                <select class="te-lines" aria-label=${d.refresh.label} ?disabled=${d.busy} @change=${(e: Event) => d.setRefresh((e.target as HTMLSelectElement).value)}>${d.refresh.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.refresh.menu.selected}>${o.label}</option>`)}</select></label>
+                <select class="te-lines" aria-label=${d.refresh.label} ?disabled=${d.busy} @change=${(e: Event) => d.setRefresh((e.target as HTMLSelectElement).value)}>${d.refresh.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} .selected=${live(o.value === d.refresh.menu.selected)}>${o.label}</option>`)}</select></label>
                 ${d.mapZoom === undefined ? nothing : html`<label class="te-sw"><span><b>${d.mapZoom.label}</b><small>${d.mapZoom.help}</small></span>
-                <select class="te-lines" aria-label=${d.mapZoom.label} ?disabled=${d.busy} @change=${(e: Event) => d.setMapZoom((e.target as HTMLSelectElement).value)}>${d.mapZoom.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} ?selected=${o.value === d.mapZoom!.menu.selected}>${o.label}</option>`)}</select></label>`}
+                <select class="te-lines" aria-label=${d.mapZoom.label} ?disabled=${d.busy} @change=${(e: Event) => d.setMapZoom((e.target as HTMLSelectElement).value)}>${d.mapZoom.menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true} .selected=${live(o.value === d.mapZoom!.menu.selected)}>${o.label}</option>`)}</select></label>`}
               </div>
             </section>` : nothing}
           </div>

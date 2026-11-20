@@ -15,6 +15,7 @@
 // `docs/template_tile_links_2026-11.md`.
 
 import { html, nothing, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 import { entityField, entityRefFrom } from "../editors.js";
 import type { TemplateEditorData } from "./template-editor.js";
 import { templateRows } from "./template-rows.js";
@@ -560,9 +561,9 @@ export class TemplateTapEditor {
     const offered = (action: TemplateTapAction): boolean =>
       action === area?.action || templateTapField(action) === undefined || this.firstText(area, action) !== undefined;
     return html`<select class="te-select" aria-label=${withNothing ? "Tap" : "Action"} ?disabled=${d.busy || full} @change=${(e: Event) => pick((e.target as HTMLSelectElement).value)}>
-      ${withNothing ? html`<option value="" ?selected=${area === undefined}>Nothing</option>` : nothing}
+      ${withNothing ? html`<option value="" .selected=${live(area === undefined)}>Nothing</option>` : nothing}
       ${ACTION_GROUPS.map(([group, actions]) => html`<optgroup label=${group}>
-        ${actions.map((a) => html`<option value=${a} ?selected=${a === area?.action} ?disabled=${!offered(a)}>${this.actionWords(a)}</option>`)}
+        ${actions.map((a) => html`<option value=${a} .selected=${live(a === area?.action)} ?disabled=${!offered(a)}>${this.actionWords(a)}</option>`)}
       </optgroup>`)}
     </select>`;
   }
@@ -610,7 +611,7 @@ export class TemplateTapEditor {
       ${area.action === "page" ? html`<label class="te-item-field"><span>Page</span>
         <select class="te-select" aria-label="Page" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, page: (e.target as HTMLSelectElement).value })}>
           ${missing ? html`<option value=${area.page ?? ""} selected>Missing page</option>` : nothing}
-          ${pages.map((p) => html`<option value=${p.id} ?selected=${p.id === area.page}>${p.name}</option>`)}
+          ${pages.map((p) => html`<option value=${p.id} .selected=${live(p.id === area.page)}>${p.name}</option>`)}
         </select></label>` : nothing}
       ${area.action === "refresh" ? html`<div class="te-hint">Asks Home Assistant for the template again.</div>` : nothing}
       ${area.action === "toggle" || area.action === "control"
@@ -621,7 +622,7 @@ export class TemplateTapEditor {
       ${area.action === "http" ? html`<label class="te-item-field"><span>HTTP action</span>
         <select class="te-select" aria-label="HTTP action" ?disabled=${d.busy} @change=${(e: Event) => this.replace(index, { ...area, http: (e.target as HTMLSelectElement).value })}>
           ${missingHTTP ? html`<option value=${area.http ?? ""} selected>Missing action</option>` : nothing}
-          ${httpActions.map((a) => html`<option value=${a.id} ?selected=${a.id.toUpperCase() === area.http?.toUpperCase()}>${a.name}</option>`)}
+          ${httpActions.map((a) => html`<option value=${a.id} .selected=${live(a.id.toUpperCase() === area.http?.toUpperCase())}>${a.name}</option>`)}
         </select></label>${hint("http")}` : nothing}`;
   }
 
