@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { newPageDocument, newPageForm, newPageRefusal } from "../src/watch-pages/new-page-sheet.js";
+import { newPageDocument, newPageForm, newPageRefusal, startNewPage } from "../src/watch-pages/new-page-sheet.js";
 import {
   PAGE_SHARE_KEY,
   autoPicks,
@@ -128,5 +128,22 @@ describe("pasting on another home", () => {
     expect(items.map((t) => t.id)).not.toContain("T1");
     expect(items[3]!.entityId).toBe("lock.back");
     expect(newPageRefusal({ ...form, shared: "nope" }, ctx)).toBeTypeOf("string");
+  });
+});
+
+describe("Paste a page's devices", () => {
+  it("starts on no device and puts the ticks back on leaving", () => {
+    const form = { ...newPageForm("New Page 3", ["W1", "P1"], "Ticked like your last new page.") };
+    const pasted = startNewPage(form, "shared");
+    expect(pasted.owners).toEqual([]);
+    expect(pasted.ticksHint).toBeUndefined();
+    const back = startNewPage(pasted, "empty");
+    expect(back.owners).toEqual(["W1", "P1"]);
+    expect(back.ticksHint).toBe("Ticked like your last new page.");
+  });
+
+  it("keeps ticks made while pasting", () => {
+    const pasted = { ...startNewPage(newPageForm("N", ["W1"]), "shared"), owners: ["W2"] };
+    expect(startNewPage(pasted, "room").owners).toEqual(["W2"]);
   });
 });

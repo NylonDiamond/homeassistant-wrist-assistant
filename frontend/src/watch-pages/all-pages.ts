@@ -163,6 +163,7 @@ import {
   tickNewPageDevice,
   tickRoomEntity,
   roomEntities,
+  startNewPage,
 } from "./new-page-sheet.js";
 import { autoPicks, missingEntities, pageEntityIds, pageShareFileName, pageShareText, parsePageShare } from "./page-share.js";
 import { type SharePageForm, openSharePageDialog, renderSharePageDialog, sharePageDialogStyles } from "./share-page-dialog.js";
@@ -669,7 +670,8 @@ export class WaAllPages extends LitElement {
       this.pageForm = { ...form, busy: false, note: { kind: "err", text: `Not made. ${made.text}` } };
       return;
     }
-    keepNewPageDevices(form.owners);
+    // A pasted page's ticks are not the usual ones: keep those for next time.
+    if (form.start !== "shared") keepNewPageDevices(form.owners);
     for (const ownerId of form.owners) await store.pick(ownerId, "pages", made.reply.id, true);
     this.pageForm = undefined;
     const first = this.devices.find((d) => form.owners.some((o) => sameId(o, d.ownerId)));
@@ -755,7 +757,7 @@ export class WaAllPages extends LitElement {
     }, {
       onName: (name) => set({ ...form, name }),
       onDevice: (ownerId, on) => set(tickNewPageDevice(form, devices, ownerId, on)),
-      onStart: (start) => set({ ...form, start }),
+      onStart: (start) => set(startNewPage(form, start)),
       onArea: (areaId) => {
         const { picked: _picked, ...rest } = form;
         set({ ...rest, areaId });

@@ -57,6 +57,24 @@ export interface NewPageForm {
   /** Paste a page: each missing entity to the one picked here, "" to leave
    * it. */
   sharedPicks?: Readonly<Record<string, string>>;
+  /** The ticks and their hint from before Paste a page cleared them, put
+   * back when another start is picked. */
+  ticksBeforePaste?: { owners: readonly string[]; hint?: string };
+}
+
+/** A start picked. Paste a page starts on no device, since a page from
+ * someone else is tried before it goes on a watch; leaving it puts the
+ * ticks back as they were. */
+export function startNewPage(form: NewPageForm, start: NewPageStart): NewPageForm {
+  if (start === form.start) return form;
+  const { ticksBeforePaste, ticksHint, ...rest } = form;
+  if (start === "shared") {
+    return { ...rest, start, owners: [], ticksBeforePaste: { owners: form.owners, ...(ticksHint === undefined ? {} : { hint: ticksHint }) } };
+  }
+  if (form.start === "shared" && ticksBeforePaste !== undefined && form.owners.length === 0) {
+    return { ...rest, start, owners: ticksBeforePaste.owners, ...(ticksBeforePaste.hint === undefined ? {} : { ticksHint: ticksBeforePaste.hint }) };
+  }
+  return { ...rest, start, ...(ticksHint === undefined ? {} : { ticksHint }) };
 }
 
 /** The selector the tab opens the sheet by (`openNewPageSheet`). */
