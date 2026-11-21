@@ -22,7 +22,7 @@ export function watchMenusReplacedText(sections: readonly WatchMenusSection[]): 
 export function watchMenusSaveNote(result: WatchMenusSaveResult): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
-      return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
+      return { kind: "ok", text: "Nothing left to save. The same changes were already saved somewhere else." };
     }
     const replaced = result.replaced ?? [];
     if (replaced.length > 0) return { kind: "warn", text: `Saved. ${watchMenusReplacedText(replaced)}` };

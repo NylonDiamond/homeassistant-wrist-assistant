@@ -179,7 +179,7 @@ describe("the inspector", () => {
     const h = host(CONFIGURED);
     const text = flat(renderStatusInspector(h));
     expect(text).toContain("Page");
-    for (const title of ["Rows", "Text", "More", "Reset to Defaults"]) expect(text).toContain(title);
+    for (const title of ["Rows", "Text", "More", "Reset to defaults"]) expect(text).toContain(title);
     // Row style, layout, icon, size and font as picture buttons, weight as
     // a segmented control: every choice named and marked when picked.
     for (const label of ["Style: Pill Outline", "Layout: Two Column", "Icon: Hidden", "Size: Large", "Font: Serif", "Weight: Bold"]) expect(text).toContain(label);

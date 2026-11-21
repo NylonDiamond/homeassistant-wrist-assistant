@@ -150,7 +150,8 @@ describe("the tab's words", () => {
   it("explain an empty library, and send anyone who may not make a page to an administrator", () => {
     expect(emptyLibraryText("pages", true)).toBe("Make a page once, then tick each watch or phone that should show it.");
     expect(emptyLibraryText("status_pages", true)).toBe("Make a status page once, then tick each watch or phone that should show it.");
-    expect(emptyLibraryText("pages", false)).toBe("Ask a Home Assistant administrator to make the first page.");
+    expect(emptyLibraryText("pages", false)).toBe("Pick your own watch or phone to make its first page, or ask a Home Assistant administrator to make one.");
+    expect(emptyLibraryText("pages", false, "Chen Watch")).toBe("Make a page on Chen Watch. You can tick your other devices on it later.");
   });
 
   it("say in the foot what a click and a tick do, as the mock does", () => {

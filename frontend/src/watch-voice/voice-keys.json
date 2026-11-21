@@ -34,7 +34,7 @@
           },
           "required": true,
           "default": [],
-          "section": "Pick from List - TTS",
+          "section": "Speak from List",
           "label": "Manage Phrase Library"
         },
         "defaultTTSEngine": {
@@ -458,7 +458,7 @@
       },
       {
         "action": "speakMessage",
-        "label": "Speak Message - TTS",
+        "label": "Speak Message",
         "keys": [
           "speakMessageOutputMode",
           "speakMessageTargetSpeakerIds",
@@ -481,7 +481,7 @@
       },
       {
         "action": "ttsMenu",
-        "label": "Pick from List - TTS",
+        "label": "Speak from List",
         "keys": [],
         "slotKeys": ["hiddenPhraseIds", "knownPhraseIds"],
         "slotLabel": "Phrase List",

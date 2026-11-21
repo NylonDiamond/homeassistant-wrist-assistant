@@ -42,7 +42,7 @@ describe("backupText", () => {
   });
 
   it("names the file by day", () => {
-    expect(backupFileName(when)).toBe("Wrist-Assistant-complications-2026-09-22.json");
+    expect(backupFileName(when)).toBe("HouseLit-complications-2026-09-22.json");
   });
 });
 

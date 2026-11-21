@@ -111,7 +111,7 @@ describe("pairing from the 3.0 app", () => {
   // 3.0 has neither the watch's code nor the iPhone's QR code; its iPhone
   // app signs in instead (/v2/register_secret, still served).
   it("is named under both choices: the welcome's and the dialog's", () => {
-    expect(OLD_APP_PAIR_NOTE).toBe("On HouseLit 3.0, sign in to Home Assistant from the iPhone app instead.");
+    expect(OLD_APP_PAIR_NOTE).toBe("On the old 3.0 app (then called Wrist Assistant), sign in to Home Assistant from the iPhone app instead.");
     const panel = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
     const welcome = panel.slice(panel.indexOf("  private renderHomeWelcome("));
     expect(welcome.slice(0, welcome.indexOf("\n  }\n"))).toContain("<span>${OLD_APP_PAIR_NOTE}</span>");
@@ -123,7 +123,7 @@ describe("pairing from the 3.0 app", () => {
   it("is in the config flow's words too", () => {
     for (const file of ["strings.json", join("translations", "en.json")]) {
       const json = JSON.parse(readFileSync(join(__dirname, "..", "..", "custom_components", "wrist_assistant", file), "utf8")) as { config: { step: { user: { description: string } } } };
-      expect(json.config.step.user.description).toContain("On HouseLit 3.0, which has no pairing, sign in to Home Assistant from the iPhone app instead.");
+      expect(json.config.step.user.description).toContain(OLD_APP_PAIR_NOTE);
     }
   });
 });

@@ -24,6 +24,7 @@ import { colorField, numberField, segField, selectField, symbolField, textField 
 import type { HassLike, HttpActionTestReply } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import { generalCopy } from "../device-platform.js";
 import { uiIcon } from "../ui-icons.js";
 import { colorBody, formatJsonBody, piecesText, prettyJson, sizeText } from "./pretty.js";
 import { type JsonObject } from "../watch-pages/model.js";
@@ -142,8 +143,10 @@ const DEFAULT_TINT = "#CCD8E6";
 
 // ── words ────────────────────────────────────────────────────────────────
 
-export const HTTP_ACTIONS_CARD_LINE =
-  "Web requests Home Assistant sends when a watch runs one, from a tile, a menu, a complication or a control. A save reaches every watch the next time it checks.";
+export const HTTP_ACTIONS_CARD_LINE = generalCopy(
+  "Web requests Home Assistant sends when a watch or an iPhone runs one, from a tile, a menu, a complication or a control. A save reaches every device the next time it checks.",
+  "Web requests Home Assistant sends when a watch or a phone runs one, from a tile, a menu, a complication or a control. A save reaches every device the next time it checks.",
+);
 
 export const HTTP_GLOBALS_CARD_LINE =
   "Fixed values any action can use as {{key}}, such as a server address or a token. Change one here and every action that uses it follows.";
@@ -1087,7 +1090,7 @@ export function renderHttpMain(host: HttpActionsViewHost): TemplateResult {
   if (s?.kind === "action") return renderActionMain(host, readHttpAction(findHttpAction(host.document, s.id)!));
   return html`<div class="ha-empty-main">
     <b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
-    <span>An HTTP action is a web request a watch asks Home Assistant to send. Add one to start, or a global for a value several actions share.</span>
+    <span>${generalCopy("An HTTP action is a web request a watch or an iPhone asks Home Assistant to send.", "An HTTP action is a web request a watch or a phone asks Home Assistant to send.")} Add one to start, or a global for a value several actions share.</span>
     <button type="button" class="pe-btn pe-primary" ?disabled=${host.busy} @click=${() => addHttpActionTo(host)}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button>
   </div>`;
 }

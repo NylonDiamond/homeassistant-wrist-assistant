@@ -2715,6 +2715,9 @@ export class WristAssistantPanel extends LitElement {
       /* The glyph on a filled title chip: white on the light skin's deep
          hues, black on the dark skin's bright ones. */
       --wa-chip-ink: #ffffff;
+      /* The words on a filled --wa-need button: white on the light skin's
+         deep red, a near black on the dark skin's bright one. */
+      --wa-need-ink: #ffffff;
       /* The skin: neutral greys, the same names in both themes. The dark
          block below sets the dark values. The rest of the sheet only ever
          reads these names, so the two skins can never drift apart in
@@ -2898,6 +2901,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-hue-purple: #a78bfa;
       --wa-hue-grey: #8a8a8f;
       --wa-chip-ink: #000000;
+      --wa-need-ink: #2a0707;
       --wa-bg: #000000;
       --wa-card: #161617;
       --wa-panel: #222224;
@@ -4199,7 +4203,7 @@ export class WristAssistantPanel extends LitElement {
     .slots-note .slots-pick {
       flex: none; display: inline-flex; align-items: center; gap: 6px;
       padding: 7px 14px; border: 0; border-radius: 999px; cursor: pointer;
-      background: var(--wa-need); color: #fff; font: inherit; font-weight: 600; white-space: nowrap;
+      background: var(--wa-need); color: var(--wa-need-ink); font: inherit; font-weight: 600; white-space: nowrap;
       box-shadow: 0 1px 2px color-mix(in srgb, var(--wa-need) 40%, transparent);
       transition: filter 120ms ease, transform 120ms ease;
     }
@@ -4207,7 +4211,6 @@ export class WristAssistantPanel extends LitElement {
     .slots-note .slots-pick:active { transform: translateY(1px); }
     .slots-note .slots-pick:focus-visible { outline: 2px solid var(--wa-need); outline-offset: 2px; }
     .slots-note .slots-pick svg { width: 14px; height: 14px; }
-    :host([dark]) .slots-note .slots-pick { color: #2a0707; }
   `, chromeRuns.rowsTail, css`
     .group-cta {
       display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
@@ -12632,8 +12635,8 @@ export class WristAssistantPanel extends LitElement {
               kind: "locked",
               badge: "iPhone app",
               title: deviceKindOf(this.ownerOf(ownerId)) === "iphone"
-                ? "Made in the iPhone app before HouseLit 2.8. It keeps working, and moves here on its own the next time the iPhone app opens. If it cannot move, the Widgets tab in the iPhone app says why."
-                : "Made in the iPhone app before HouseLit 2.8. It keeps working on this watch, and moves here on its own the next time the paired iPhone's app opens.",
+                ? "Made in the iPhone app before version 2.8. It keeps working, and moves here on its own the next time the iPhone app opens. If it cannot move, Settings, Widgets & Complications in the iPhone app says why."
+                : "Made in the iPhone app before version 2.8. It keeps working on this watch, and moves here on its own the next time the paired iPhone's app opens.",
               families: [],
             },
         });

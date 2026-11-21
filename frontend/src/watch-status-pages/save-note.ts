@@ -35,7 +35,7 @@ function savedNote(result: StatusPagesSaveResult): WatchPagesNote | undefined {
   const kept = result.kept ?? [];
   if (result.alreadySaved === true) {
     const tail = kept.length > 0 ? ` ${statusPagesKeptText(kept)}` : "";
-    return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.${tail}` };
+    return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The same changes were already saved somewhere else.${tail}` };
   }
   if (kept.length > 0) return { kind: "warn", text: `Saved. ${statusPagesKeptText(kept)}` };
   return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;

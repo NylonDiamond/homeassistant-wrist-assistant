@@ -45,7 +45,7 @@ export function aCard(kind: CardKind): string {
 /** Why New page is greyed for anyone who is not an administrator: a page no
  * device has is an administrator's. */
 export function newCardAdminText(kind: CardKind): string {
-  return `Only a Home Assistant administrator can make a new ${cardNoun(kind)}.`;
+  return `To make ${aCard(kind)}, pick your own watch or ${generalCopy("iPhone", "phone")} first. Only a Home Assistant administrator can make a new ${cardNoun(kind)} no device has.`;
 }
 
 /** The tab's title: Pages, or Status pages. */
@@ -62,9 +62,12 @@ export function allPagesLead(total: number, kind: CardKind = "pages"): string {
 }
 
 /** The All tab's block when the library holds none of the kind: how a page
- * works, for whoever may make one, or who to ask. */
-export function emptyLibraryText(kind: CardKind, admin: boolean): string {
-  if (!admin) return `Ask a Home Assistant administrator to make the first ${cardNoun(kind)}.`;
+ * works, for whoever may make one, or who to ask. Someone who is not an
+ * administrator may still make one on a device they manage: `onDevice`
+ * names the picked one. */
+export function emptyLibraryText(kind: CardKind, admin: boolean, onDevice?: string): string {
+  if (!admin && onDevice !== undefined) return `Make ${aCard(kind)} on ${onDevice}. You can tick your other devices on it later.`;
+  if (!admin) return `Pick your own watch or ${generalCopy("iPhone", "phone")} to make its first ${cardNoun(kind)}, or ask a Home Assistant administrator to make one.`;
   return `Make ${aCard(kind)} once, then tick each watch or ${generalCopy("iPhone", "phone")} that should show it.`;
 }
 

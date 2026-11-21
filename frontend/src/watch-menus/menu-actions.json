@@ -454,7 +454,7 @@
     },
     {
       "raw": "settings",
-      "label": "Entity Settings",
+      "label": "Details",
       "category": "entityControl",
       "icon": "slider.horizontal.3",
       "color": "#88B6C9",
@@ -602,7 +602,7 @@
     },
     {
       "raw": "switchInstance",
-      "label": "Switch Instance",
+      "label": "Switch Home",
       "category": "navigation",
       "icon": "rectangle.2.swap",
       "color": "#2F79B6",
@@ -638,7 +638,7 @@
     },
     {
       "raw": "ttsMenu",
-      "label": "Pick from List - TTS",
+      "label": "Speak from List",
       "category": "quickAction",
       "icon": "speaker.wave.2.bubble.fill",
       "color": "#F08D62",
@@ -663,7 +663,7 @@
     },
     {
       "raw": "speakMessage",
-      "label": "Speak Message - TTS",
+      "label": "Speak Message",
       "category": "quickAction",
       "icon": "waveform.badge.mic",
       "color": "#F08D62",

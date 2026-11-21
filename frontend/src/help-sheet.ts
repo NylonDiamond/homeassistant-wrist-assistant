@@ -62,7 +62,7 @@ const homeText = () => [
     "Devices lists every watch and phone, who it belongs to, and whether it has your latest changes.",
   ),
   "Waiting means the device gets them the next time HouseLit opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
-  "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.",
+  "The Shared tab holds what the whole home shares: HTTP actions and camera framing. The Home map has its own tab.",
 ];
 
 const sharedText = () => [
@@ -139,7 +139,7 @@ const SCREEN_MORE: Partial<Record<WatchScreen["id"], string>> = {
  * shell.ts's, which Home and the watch row show too, so the three never say
  * different things about one screen. */
 function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone" | "phone"): string[] {
-  const blurb = watchScreenSentence(screen).trim();
+  const blurb = watchScreenSentence(screen, device === "watch" ? "watch" : "iphone").trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
   const ownTab = BAR_TABS.find((t) => t.path === screen.path);
   const whose = screen.shared !== true ? `It is for the ${device} picked at the top.`

@@ -241,9 +241,9 @@ export const pageFrameStyles = css`
   .pe-unsaved-dot { display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .wa-bar.pe-bar button.primary.save.pe-save {
     height: 32px; min-height: 32px; padding: 0 16px; border-radius: 9px; border: 0; box-shadow: none;
-    background: var(--wa-hue-blue); color: #fff; font-size: 13px; font-weight: 600; opacity: 1;
+    background: var(--wa-hue-blue); color: var(--wa-chip-ink); font-size: 13px; font-weight: 600; opacity: 1;
   }
-  .wa-bar.pe-bar button.primary.save.pe-save:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 86%, #fff); }
+  .wa-bar.pe-bar button.primary.save.pe-save:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 88%, #000); }
   .wa-bar.pe-bar button.primary.save.pe-save:focus-visible { box-shadow: var(--wa-ring); }
   .wa-bar.pe-bar button.primary.save.pe-save:disabled { opacity: .7; cursor: progress; }
   /* The right cluster: always together at the bar's end, after its divider,
@@ -375,10 +375,10 @@ export const pageFrameStyles = css`
   .pe-stage-add {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: none;
     margin: 0; padding: 9px 20px 9px 16px; border: 0; border-radius: 10px;
-    background: var(--wa-hue-blue); color: #fff; font: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer;
+    background: var(--wa-hue-blue); color: var(--wa-chip-ink); font: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer;
     box-shadow: 0 4px 18px color-mix(in srgb, var(--wa-hue-blue) 40%, transparent);
   }
-  .pe-stage-add:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 86%, #fff); }
+  .pe-stage-add:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 88%, #000); }
   .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring), 0 4px 18px color-mix(in srgb, var(--wa-hue-blue) 40%, transparent); }
   .pe-stage-add:disabled { opacity: .5; cursor: default; box-shadow: none; }
   .pe-stage-add svg.ui-icon { width: 16px; height: 16px; }

@@ -288,7 +288,7 @@ describe("a slot's Where", () => {
     const cells = menuWhereCells(h, ANYWHERE, slotOf(DEFAULTS, ANYWHERE, INFO));
     expect(cells.map(whereCellLabel)).toEqual([
       "Top left, swap with Refresh",
-      "Top center, swap with Entity Settings",
+      "Top center, swap with Details",
       "Top right, swap with Server Mode",
       "Left center, swap with Page Switcher",
       "Right center, here now",

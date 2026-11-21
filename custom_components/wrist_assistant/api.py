@@ -40,6 +40,20 @@ SESSION_TTL = timedelta(minutes=5)
 # How long a parked poll waits after a wake before it collects, so a burst
 # (a scene setting a dozen lights) goes out as one reply, not a dozen.
 WAKE_COALESCE_SECONDS = 0.15
+# The least time between two renders of one template for one device, by what
+# it reads. A template over a whole domain (``states.sensor``) or every state
+# (``states``) is woken by every change there, which in a house of chatty
+# sensors is several times a second. Home Assistant's own template tracking
+# holds the same two cases back (DOMAIN_STATES_RATE_LIMIT and
+# ALL_STATES_RATE_LIMIT in homeassistant.helpers.template). A template that
+# reads only named entities has no limit. A change inside the limit is kept
+# (``WatchSession.template_dirty``) and rendered once the limit is up, by a
+# timed wake of the held poll, so the last value still goes out.
+DOMAIN_RENDER_INTERVAL_SECONDS = 1.0
+ALL_STATES_RENDER_INTERVAL_SECONDS = 5.0
+# A render the guard refused (busy, or over budget) has no dependencies, so
+# no change wakes the held poll for it: it is tried again this much later.
+REFUSED_RENDER_RETRY_SECONDS = 2.0
 # A watch told about a new complication token polls again at once while its
 # pull runs, still reporting the old one. That poll is not a lost hint, so a
 # lagging report is told again only once the first telling is this old.
@@ -169,6 +183,17 @@ class WatchSession:
     # Counts polls, so a render that finishes after a newer poll came in knows
     # its answer has no reader and leaves the kept values alone.
     poll_serial: int = 0
+    # The loop time of each template's last render, for the rate limit of a
+    # template over a domain or every state (`DOMAIN_RENDER_INTERVAL_SECONDS`).
+    template_last_render: dict[str, float] = field(default_factory=dict)
+    # Templates a change was due for but held back by that limit: rendered by
+    # the next collect once the limit is up, whatever the cursor says.
+    template_dirty: set[str] = field(default_factory=set)
+    # The one timed wake of this device's held poll for the earliest of them.
+    template_wake: asyncio.TimerHandle | None = None
+    # A render changed what some template reads, so the wake index
+    # (`DeltaCoordinator._rebuild_watcher_index`) is out of date.
+    template_deps_moved: bool = False
     last_seen: datetime = field(default_factory=dt_util.utcnow)
     first_seen: datetime = field(default_factory=dt_util.utcnow)
     last_poll_interval: timedelta | None = None
@@ -199,6 +224,9 @@ class WatchSession:
         self.template_values.clear()
         self.template_deps.clear()
         self.template_plain.clear()
+        self.template_last_render.clear()
+        self.template_dirty.clear()
+        self.template_deps_moved = True
 
     def replace_templates(
         self, templates: dict[str, str], have: dict[str, str] | None
@@ -1308,6 +1336,7 @@ class DeltaCoordinator:
         session = self._sessions.get(watch_id)
         if session is None:
             return
+        session.template_deps_moved = False
 
         # Index direct entity subscriptions
         for entity_id in session.entities:
@@ -2174,6 +2203,10 @@ class DeltaCoordinator:
                     return 204, None
                 if events:
                     return 200, reply(events, next_cursor)
+                # A render read other entities than before (a branch moved,
+                # or a refusal dropped what it read): wake on the new ones.
+                if session.template_deps_moved:
+                    self._rebuild_watcher_index(watch_id)
                 # Woken by a complication commit (or a panel nudge) or a
                 # watch config save, an HTTP action library change or a home
                 # map save rather than an entity: nothing to deliver but the
@@ -2708,11 +2741,24 @@ class DeltaCoordinator:
         now_ts = dt_util.utcnow().timestamp()
         loop_now = self.hass.loop.time()
         due: dict[str, str] = {}
+        wake_at: float | None = None
         for tile_id, template_str in session.templates.items():
             # Skip render if deps are cached and no relevant entity changed
             cached_deps = session.template_deps.get(tile_id)
             if cached_deps is not None and changed_ids is not None:
-                if not self._template_needs_render(cached_deps, changed_ids, changed_domains):
+                if tile_id not in session.template_dirty and not self._template_needs_render(
+                    cached_deps, changed_ids, changed_domains
+                ):
+                    continue
+                # A template over a domain or every state renders at most
+                # once per its interval. The change is kept, and the held
+                # poll is woken when the interval is up.
+                interval = self._render_interval(cached_deps)
+                last = session.template_last_render.get(tile_id)
+                if interval > 0 and last is not None and loop_now - last < interval:
+                    session.template_dirty.add(tile_id)
+                    due_at = last + interval
+                    wake_at = due_at if wake_at is None else min(wake_at, due_at)
                     continue
             if self._is_held_back(session, template_str, loop_now):
                 # A poll that sent its templates again cleared the value. It
@@ -2722,6 +2768,8 @@ class DeltaCoordinator:
                     changed.append(self._template_event(tile_id, None, now_ts))
                 continue
             due[tile_id] = template_str
+        if wake_at is not None:
+            self._schedule_template_wake(session, wake_at)
         if not due:
             return changed
 
@@ -2729,23 +2777,69 @@ class DeltaCoordinator:
         if rendered is None:
             return []
 
+        refused = False
         for tile_id in due:
+            session.template_dirty.discard(tile_id)
             if tile_id not in rendered:
                 # Refused for now: what it read is unknown, so it is due again.
-                session.template_deps.pop(tile_id, None)
+                if session.template_deps.pop(tile_id, None) is not None:
+                    session.template_deps_moved = True
+                refused = True
                 continue
+            session.template_last_render[tile_id] = loop_now
             value, deps = rendered[tile_id]
             if deps is None:
-                session.template_deps.pop(tile_id, None)
+                if session.template_deps.pop(tile_id, None) is not None:
+                    session.template_deps_moved = True
             else:
+                if session.template_deps.get(tile_id) != deps:
+                    session.template_deps_moved = True
                 session.template_deps[tile_id] = deps
             if tile_id not in session.template_values or session.template_values[tile_id] != value:
                 session.template_values[tile_id] = value
                 changed.append(
                     self._template_event(tile_id, value, now_ts, tile_id in session.template_plain)
                 )
+        if refused:
+            # No dependency wakes the held poll for these now.
+            self._schedule_template_wake(session, loop_now + REFUSED_RENDER_RETRY_SECONDS)
 
         return changed
+
+    @staticmethod
+    def _render_interval(deps: _TemplateDeps) -> float:
+        """The least time between two renders of a template reading ``deps``:
+        none for named entities only."""
+        if deps.all_states:
+            return ALL_STATES_RENDER_INTERVAL_SECONDS
+        if deps.domains:
+            return DOMAIN_RENDER_INTERVAL_SECONDS
+        return 0.0
+
+    def _schedule_template_wake(self, session: WatchSession, when: float) -> None:
+        """Wake ``session``'s held poll at loop time ``when``, unless a wake
+        at or before it is already set. One handle per session."""
+        handle = session.template_wake
+        if handle is not None and not handle.cancelled() and handle.when() <= when:
+            return
+        if handle is not None:
+            handle.cancel()
+        # The running loop, which is Home Assistant's; its clock is the one
+        # ``hass.loop.time()`` reads.
+        session.template_wake = asyncio.get_running_loop().call_at(
+            when, self._template_wake_fired, session.watch_id
+        )
+
+    @callback
+    def _template_wake_fired(self, watch_id: str) -> None:
+        """A held back template is due: wake the device's held poll, whose
+        collect renders it. With no poll held, the next poll does."""
+        session = self._sessions.get(watch_id)
+        if session is not None:
+            session.template_wake = None
+        waiter = self._waiters.get(watch_id)
+        if waiter is not None:
+            waiter.set()
 
     async def _snapshot_templates(
         self, session: WatchSession
@@ -2774,6 +2868,8 @@ class DeltaCoordinator:
                 session.template_deps.pop(tile_id, None)
             else:
                 session.template_deps[tile_id] = deps
+                session.template_last_render[tile_id] = loop_now
+            session.template_dirty.discard(tile_id)
             session.template_values[tile_id] = value
             results.append(
                 self._template_event(tile_id, value, now_ts, tile_id in session.template_plain)
@@ -2797,7 +2893,9 @@ class DeltaCoordinator:
         ]
         stale_poll = self.hass.loop.time() - SESSION_TTL.total_seconds()
         for watch_id in expired:
-            self._sessions.pop(watch_id, None)
+            dropped = self._sessions.pop(watch_id, None)
+            if dropped is not None and dropped.template_wake is not None:
+                dropped.template_wake.cancel()
             # Forgetting this only costs the watch one extra "you are behind"
             # reply, which is what a watch back after five idle minutes wants.
             self._token_notified.pop(watch_id, None)

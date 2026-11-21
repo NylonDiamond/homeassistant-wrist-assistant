@@ -609,7 +609,7 @@ export class WaHttpActionsEditor extends LitElement {
         <button class="cv-act icon undo" ?disabled=${!draft.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo" @click=${() => this.undo()}>${uiIcon("undo")}</button>
         <button class="cv-act icon undo" ?disabled=${!draft.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo" @click=${() => this.redo()}>${uiIcon("redo")}</button>
         <button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches every watch the next time it checks.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches every device the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         ${inHead ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${this.renderSaved()}</span>`}` : nothing}
     </div>`;

@@ -455,7 +455,7 @@ describe("the Pages tab", () => {
     const other = tab("pages", false);
     showTab(other, "all");
     await other.ready();
-    expect(other.whole()).toContain("Only a Home Assistant administrator can make a new page.");
+    expect(other.whole()).toContain("Only a Home Assistant administrator can make a new page no device has.");
   });
 
   it("New page starts from the home's map, refused until the home has a map, which makes a map page on the map's first floor", async () => {
@@ -472,13 +472,13 @@ describe("the Pages tab", () => {
     let dialog = dialogOf();
     expect(dialog).toContain("Home map");
     expect(dialog).toContain("ALPHA");
-    expect(dialog).toContain("Scan a room in the iPhone app first.");
+    expect(dialog).toContain("No rooms on the map yet. Draw them on the Home map tab, or scan them with HouseLit on an iPhone Pro or iPad Pro.");
     expect(dialog).toMatch(/data-start=map \?disabled=true/);
     try {
       setHomeMapCapable(true);
       keepHomeMap(t.home.hass as never, { doc: JSON.parse(readFileSync(join(__dirname, "..", "..", "tests", "fixtures", "home_map", "basic.json"), "utf8")) as HomeMapDocument, rev: 1 });
       dialog = dialogOf();
-      expect(dialog).not.toContain("Scan a room in the iPhone app first.");
+      expect(dialog).not.toContain("No rooms on the map yet. Draw them on the Home map tab, or scan them with HouseLit on an iPhone Pro or iPad Pro.");
       expect(dialog).toContain("On the iPhone the whole page is your home's live map.");
       t.el.pageForm = { ...form, name: "House", start: "map", owners: [] };
       expect(t.whole()).toContain("House, a map page on no device yet.");

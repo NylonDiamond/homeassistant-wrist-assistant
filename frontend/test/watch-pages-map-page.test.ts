@@ -131,7 +131,7 @@ describe("a new map page", () => {
     expect(watchMapPageFloorId(undefined)).toBeUndefined();
     expect(watchMapPageRefusal(null)).toBe(WATCH_MAP_PAGE_WORDS.noMap);
     const empty: HomeMapDocument = { v: 1, floors: [{ id: "F", name: "Attic", story: 0, rooms: [], pins: [] }] };
-    expect(watchMapPageRefusal(empty)).toBe("Scan a room in the iPhone app first.");
+    expect(watchMapPageRefusal(empty)).toBe("No rooms on the map yet. Draw them on the Home map tab, or scan them with HouseLit on an iPhone Pro or iPad Pro.");
   });
 });
 

@@ -10575,7 +10575,7 @@ function inlinePartsEditor(
       </div>
       ${iconPart
         ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`)}
-          <div class="hint">${index === 0 ? "First in the line, so it draws ahead of the words with a gap, and stays while the line counts down." : "Drawn inside the line, where the part sits. Needs the watch app from 2.8.0."}</div>`
+          <div class="hint">${index === 0 ? "First in the line, so it draws ahead of the words with a gap, and stays while the line counts down." : "Drawn inside the line, where the part sits."}</div>`
         : html`${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
           ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
     </div>

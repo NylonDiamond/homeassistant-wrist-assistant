@@ -215,7 +215,7 @@ describe("the Help sheet", () => {
   it("names the screen in view: Devices, Shared, Complications, and each watch screen by its own blurb", () => {
     expect(helpScreen(at(""))).toMatchObject({ name: "Devices" });
     expect(helpScreen(at("/devices/w1"))).toMatchObject({ name: "Devices" });
-    expect(helpScreen(at("")).text).toContain("The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map.");
+    expect(helpScreen(at("")).text).toContain("The Shared tab holds what the whole home shares: HTTP actions and camera framing. The Home map has its own tab.");
     expect(helpScreen(at("/shared")).name).toBe("Shared");
     expect(helpScreen(undefined).name).toBe("Devices");
     expect(helpScreen(at("/complications")).name).toBe("Complications");

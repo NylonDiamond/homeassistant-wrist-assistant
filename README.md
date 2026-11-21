@@ -74,12 +74,13 @@ To remove a single watch or iPhone for good, open it on the panel's Devices tab 
 
 The integration adds a `HouseLit` page to the Home Assistant sidebar. Everyone who signs in to Home Assistant sees it and manages their own devices. Administrators can also pair a device for someone else.
 
-The panel has six tabs:
+The panel has seven tabs:
 
 - **Devices** lists your paired watches and iPhones. `Pair` adds one. Open a device to see how it is doing, or to remove it with `Remove device`. Open a watch to set it up: its `Pages`, `Menus`, `Status pages`, `Rooms` (switching pages by room, and point control), `Voice`, `Complications` and `Settings`. Notification style and delivery are under `Settings`, `Notifications`.
 - **Pages**, **Status pages** and **Menus** show every watch's and iPhone's pages, status pages and menus (the Anywhere menu, the Entity quick menu and the page switcher) in one place.
 - **Complications** builds complications for the watch face, and widgets for the iPhone Lock Screen, Home Screen and Control Center. The watch's old Control Center lists live here now: each tile is a complication control.
-- **Shared** holds what no one device owns: `HTTP actions`, `Camera framing` (how each camera is framed in alerts) and the Home map.
+- **Home map** is the plan of your home, drawn here or scanned with HouseLit on an iPhone Pro or iPad Pro, with a pin for each device. The iPhone, the watch and a Home map tile show it.
+- **Shared** holds what no one device owns: `HTTP actions` and `Camera framing` (how each camera is framed in alerts).
 
 A watch picks up a save the next time it checks. If the watch has none yet, the panel offers a start: an empty page, or the default settings and menus.
 
@@ -89,10 +90,10 @@ Pro can be bought on the watch (`Settings`, `HouseLit Pro`) or on the iPhone.
 
 ### Pairing a device
 
-On the Devices tab, press `Pair`. The same card is also on a watch's `Settings`, under `Pairing and security`. It pairs two ways:
+On the Devices tab, press `Pair`. The same card is also on a watch's `Settings`, under `Pairing and security`. It asks what you are pairing:
 
-1. **An iPhone: `Show a QR code`.** On the iPhone, open HouseLit, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code.
-2. **A watch, or an iPhone, with a code: `Type a code`.** On the device, choose `Pair with Home Assistant`. It shows a six character code. Type it in the panel and choose `Look up`, check that the device named is yours, then press `Pair`. Codes last 10 minutes.
+1. **`iPhone`: a QR code.** The panel shows a QR code. On the iPhone, open HouseLit, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code. An iPhone with no camera can use `No camera? Type a code` instead.
+2. **`Apple Watch`: a code.** On the watch, open HouseLit and choose `Pair with Home Assistant`. It shows a six character code. Type it in the panel and choose `Look up`, check that the device named is yours, then press `Pair`. Codes last 10 minutes.
 
 A device you pair is yours. An administrator can pick someone else under `Whose watch is this?`.
 

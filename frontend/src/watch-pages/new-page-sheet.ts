@@ -239,7 +239,7 @@ export function newPageRefusal(form: NewPageForm, ctx: NewPageContext): string |
     if (roomPicked(form, roomEntities(ctx.hass, form.areaId)).length === 0) return "Tick something in the room.";
   }
   if (form.start === "page" && (form.fromPage === undefined || !ctx.pages.some((p) => sameId(watchPageId(p), form.fromPage!)))) return "Pick a page to start from.";
-  if (form.start === "map" && ctx.mapFloorId === undefined) return ctx.mapRefusal ?? "Scan a room in the iPhone app first.";
+  if (form.start === "map" && ctx.mapFloorId === undefined) return ctx.mapRefusal ?? "No rooms on the map yet. Draw them on the Home map tab, or scan them with HouseLit on an iPhone Pro or iPad Pro.";
   if (form.start === "shared") {
     const parsed = parsePageShare(form.shared ?? "");
     if (!parsed.ok) return parsed.error;

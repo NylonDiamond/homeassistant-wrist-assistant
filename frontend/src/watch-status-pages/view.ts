@@ -1010,7 +1010,7 @@ function renderLookCards(host: StatusPagesViewHost, page: JsonObject): TemplateR
   return html`${rows}${text}${more}
     <div class="sp-acts">
       <button type="button" class="pe-btn" ?disabled=${host.busy || !changed} title="Put the page's whole look back to the app's defaults"
-        @click=${() => host.edit((d) => resetStatusPageStyle(d, pageId))}>${uiIcon("reset")}<span>Reset to Defaults</span></button>
+        @click=${() => host.edit((d) => resetStatusPageStyle(d, pageId))}>${uiIcon("reset")}<span>Reset to defaults</span></button>
     </div>`;
 }
 

@@ -635,7 +635,7 @@ function renderTarget(host: RoomsViewHost, roomKey: string, zones: readonly Poin
 }
 
 /** How to read a heading, kept out of the card and in the tooltip. */
-export const HEADING_HELP_DETAIL = "To read a heading, stand where you point from, face the target and open Heading on the watch (in Connection Health, or on the point control of a room with no targets). Type the number it shows. The number is the device's direction. On an iPhone, Rooms in HouseLit can measure it by pointing the iPhone's top edge at the device.";
+export const HEADING_HELP_DETAIL = "The easy way to measure a heading is with an iPhone: in HouseLit, open the watch's Rooms page, pick the room and the device, stand where you point from, hold the iPhone flat with its top edge toward the device and choose Set Direction. On the watch, stand in the same place, open Heading from the point control of a room with no targets, face the target and type the number it shows. The number is the device's direction.";
 
 function renderTargets(host: RoomsViewHost, room: RoomListEntry): TemplateResult {
   const { view } = host;

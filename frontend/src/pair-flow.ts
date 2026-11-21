@@ -72,7 +72,7 @@ export function pairChoiceNote(isAdmin: boolean): string {
 /** Under the choice, for a device still on the 3.0 app: it has neither the
  * watch's code nor the iPhone's QR code, only the iPhone app's own sign in
  * (`/v2/register_secret`, still served). True before and after 3.2 ships. */
-export const OLD_APP_PAIR_NOTE = "On HouseLit 3.0, sign in to Home Assistant from the iPhone app instead.";
+export const OLD_APP_PAIR_NOTE = "On the old 3.0 app (then called Wrist Assistant), sign in to Home Assistant from the iPhone app instead.";
 
 /** The line under the dialog's title, for the step on screen. */
 export function pairSubtitle(choosing: boolean, mode: PairMode, device: PairChoice | undefined): string {

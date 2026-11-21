@@ -8,11 +8,11 @@
   "compLeftOutWatch": "2 phone widgets are not listed: a watch cannot show them.",
   "compLeftOutIphone": "1 watch complication is not listed: a phone cannot show it.",
   "getAppDone": "HouseLit is on the App Store and Google Play.",
-  "getAppTodo": "Install it on the watch and/or on the phone.",
+  "getAppTodo": "Install it on the watch, the phone or both.",
   "helpHome": [
     "Devices lists every watch and phone, who it belongs to, and whether it has your latest changes.",
     "Waiting means the device gets them the next time HouseLit opens on it. Asleep means it has not been seen for a week or more: it catches up when it next connects.",
-    "The Shared tab holds what the whole home shares: HTTP actions, camera framing and the Home map."
+    "The Shared tab holds what the whole home shares: HTTP actions and camera framing. The Home map has its own tab."
   ],
   "helpShared": [
     "Shared holds what the home keeps once: every watch and phone uses the same HTTP actions and camera framing.",
@@ -28,7 +28,7 @@
     "A few tiles, like a map or a web card, are for the phone only. A watch skips them, and its chip on the card says how many."
   ],
   "helpIphoneScreen": [
-    "Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.",
+    "Pages are the screens you swipe between on the phone: tiles for lights, scenes, cameras and more.",
     "It is for the phone picked at the top."
   ],
   "pagesPhoneTiles": "A few tiles, like a map or a web card, are for the phone only. A watch skips them, and its chip on the card says how many.",
@@ -103,8 +103,8 @@
     "Remove the certificate for Anna? Their watch and phone stop sending it the next time they open the app."
   ],
   "httpShared": "Shared by every watch and phone.",
-  "menuAdmin": "To make a menu, open your watch or phone's tab first. Only a Home Assistant administrator can make one here.",
-  "menuFirst": "Open your watch or phone's tab, then use New menu to make its first one.",
+  "menuAdmin": "To make a menu, press Focus on your watch or phone first. Only a Home Assistant administrator can make one with no device picked.",
+  "menuFirst": "Press Focus on your watch or phone, then use New menu to make its first one.",
   "menusEmpty": "No watch or phone has connected yet. Pair one on the Devices tab.",
   "noPhrases": "A phone has no voice phrases, so Speak Phrase does nothing there.",
   "webhookHelp": "How big the buttons are on webhook alerts, on your watch and your phone.",

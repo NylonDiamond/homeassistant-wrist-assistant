@@ -152,6 +152,10 @@ export interface WatchScreen {
    * between…" (`watchScreenSentence`). Plain words, as the Help sheet reads
    * them too. */
   blurb: string;
+  /** The same for an iPhone's or a phone's own screen, where the watch's
+   * words would name the wrong device (`watchScreenSentence` with a phone
+   * kind). Only screens a phone has; none where the blurb names no device. */
+  phoneBlurb?: string;
   path: string;
   /** Shared by every watch: the address never names one, and the screen
    * follows none. These are Home's Library. */
@@ -171,11 +175,11 @@ export interface WatchScreen {
 
 /** In the order Home and the watch row show them. */
 export const WATCH_SCREENS: readonly WatchScreen[] = [
-  { id: "pages", label: "Pages", blurb: "are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.", path: WATCH_PAGES_PATH },
-  { id: "menus", label: "Menus", blurb: "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.", path: WATCH_MENUS_PATH },
+  { id: "pages", label: "Pages", blurb: "are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.", get phoneBlurb() { return generalCopy("are the screens you swipe between on the iPhone: tiles for lights, scenes, cameras and more.", "are the screens you swipe between on the phone: tiles for lights, scenes, cameras and more."); }, path: WATCH_PAGES_PATH },
+  { id: "menus", label: "Menus", blurb: "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.", get phoneBlurb() { return generalCopy("are the quick menus on the iPhone: the Anywhere menu, a menu for each kind of entity and the page switcher.", "are the quick menus on the phone: the Anywhere menu, a menu for each kind of entity and the page switcher."); }, path: WATCH_MENUS_PATH },
   { id: "status-pages", label: "Status pages", get blurb() { return generalCopy("are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.", "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or, on Apple devices, Siri."); }, path: WATCH_STATUS_PAGES_PATH },
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
-  { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", path: WATCH_ROOMS_PATH },
+  { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", get phoneBlurb() { return generalCopy("let the iPhone open a room's page when you are in that room.", "let the phone open a room's page when you are in that room."); }, path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
   { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
   { id: "http-actions", label: "HTTP actions", get blurb() { return generalCopy("are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.", "are web requests Home Assistant sends when a watch or a phone runs one from a tile, a menu or a complication, shared by every watch and phone."); }, path: WATCH_HTTP_ACTIONS_PATH, shared: true },
@@ -192,12 +196,13 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
  * Devices card, and the pairing card in a home with no watch) and the row
  * draws it last, apart from the others. */
 export const WATCH_SETTINGS_SCREEN: WatchScreen = {
-  id: "settings", label: "Settings", blurb: "sets how the watch behaves: gestures, wrist twists, pages, cameras and how it connects.", path: WATCH_SETTINGS_PATH,
+  id: "settings", label: "Settings", blurb: "sets how the watch behaves: gestures, wrist twists, pages, cameras and how it connects.", get phoneBlurb() { return generalCopy("sets how the iPhone app behaves: gestures, pages and cameras.", "sets how the phone app behaves: gestures, pages and cameras."); }, path: WATCH_SETTINGS_PATH,
 };
 
-/** A screen's name and what it is, as one sentence. */
-export function watchScreenSentence(screen: WatchScreen): string {
-  return `${screen.label} ${screen.blurb}`;
+/** A screen's name and what it is, as one sentence: on a phone, its phone
+ * words when it has them. */
+export function watchScreenSentence(screen: WatchScreen, kind: "watch" | "iphone" = "watch"): string {
+  return `${screen.label} ${kind === "iphone" ? screen.phoneBlurb ?? screen.blurb : screen.blurb}`;
 }
 
 /** A watch screen's address, on one watch when one is named. The owner is

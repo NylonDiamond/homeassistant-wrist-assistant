@@ -21,6 +21,7 @@ import {
   phonePagesScreen,
   phoneTileCellInset,
   phoneTileCornerRadius,
+  phoneTopRowTakesRoom,
   renderPhoneDock,
 } from "../src/phone-frame.js";
 import type { WatchPage, WatchPagesDocument, WatchPageTile } from "../src/watch-pages/model.js";
@@ -121,7 +122,7 @@ describe("the iPhone look", () => {
     expect(one.area).toEqual({ ...iphone.area, height: old.area.height });
   });
 
-  it("names the page in the top row between the grid and the gear, on the graphite ground, with no watch title", () => {
+  it("names the page in the top row, with no buttons, on the graphite ground, with no watch title", () => {
     const text = phonePicture(LIVING);
     // A page with no color of its own sits on the graphite ground: `ink`.
     expect(text).toContain('class="wa-phone ios ink"');
@@ -130,14 +131,11 @@ describe("the iPhone look", () => {
     expect(text).toContain("<span>Living Room</span>");
     expect(text).toContain("font-size:16px");
     expect(text).toContain("left:68px;right:68px");
-    // Grid, then the name, then the gear, each button 40 points round.
-    const grid = text.indexOf("wa-phone-glass wa-phone-grid");
-    const name = text.indexOf("<span>Living Room</span>");
-    const gear = text.indexOf("wa-phone-glass wa-phone-gear");
-    expect(grid).toBeGreaterThan(0);
-    expect(name).toBeGreaterThan(grid);
-    expect(gear).toBeGreaterThan(name);
-    expect(text).toContain("width:40px;height:40px");
+    // App 6d7f8c80: the iPhone look's row has no grid and no gear; All
+    // Pages, Edit and Settings are in the dots' menu.
+    expect(text).not.toContain("wa-phone-glass");
+    expect(text).not.toContain("wa-phone-grid");
+    expect(text).not.toContain("wa-phone-gear");
     expect(text).toContain("background:var(--wa-phone-grouped, #f1f2f5)");
     // No large title, no tab bar.
     expect(text).not.toContain("font-size:34px");
@@ -147,14 +145,31 @@ describe("the iPhone look", () => {
     expect(text).not.toContain("wp-clock");
   });
 
-  it("shows the grid only with two or more pages to show", () => {
+  it("draws no buttons in the top row, and the dock with one page too", () => {
     const one = flat(renderWatchPagePreview({ page: LIVING, pages: [LIVING], screen: phonePagesScreen(iphone), phone: iphone, scale: 1 }));
     expect(one).not.toContain("wa-phone-grid");
-    expect(one).toContain("wa-phone-gear");
-    // A hidden page does not count.
-    const hidden = flat(renderWatchPagePreview({ page: LIVING, pages: [LIVING, { ...KITCHEN, isHidden: true }], screen: phonePagesScreen(iphone), phone: iphone, scale: 1 }));
-    expect(hidden).not.toContain("wa-phone-grid");
-    expect(phonePicture(LIVING)).toContain("wa-phone-grid");
+    expect(one).not.toContain("wa-phone-gear");
+    // One page still has its dock: the only way to the dots' menu.
+    expect([...one.matchAll(/class=wa-phone-dock-dot on/g)]).toHaveLength(1);
+    expect(phonePicture(LIVING)).not.toContain("wa-phone-grid");
+  });
+
+  it("takes room for the top row only for the page's name on Show (topRowTakesRoom)", () => {
+    expect(phoneTopRowTakesRoom(undefined, true)).toBe(true);
+    expect(phoneTopRowTakesRoom({ pageTitleMode: "On" }, true)).toBe(true);
+    expect(phoneTopRowTakesRoom({ pageTitleMode: "Auto" }, true)).toBe(false);
+    expect(phoneTopRowTakesRoom({ pageTitleMode: "Off" }, true)).toBe(false);
+    expect(phoneTopRowTakesRoom(undefined, false)).toBe(false);
+    const bare = phonePagesLayout(DEFAULT_PHONE, { look: "iphone", titleRow: false });
+    expect(bare.topRow.height).toBe(0);
+    expect(bare.area.y).toBe(iphone.area.y - PHONE_TOP_ROW_HEIGHT);
+    expect(bare.area.height).toBe(iphone.area.height + PHONE_TOP_ROW_HEIGHT);
+    // The Watch look keeps its row and its buttons.
+    const watchLook = phonePagesLayout(DEFAULT_PHONE, { look: "watch", titleRow: false });
+    expect(watchLook.topRow.height).toBe(PHONE_TOP_ROW_HEIGHT);
+    const drawn = phonePicture(LIVING, bare);
+    expect(drawn).not.toContain('class="wa-phone-top"');
+    expect(drawn).not.toContain("<span>Living Room</span>");
   });
 
   it("follows the panel's light and dark skins for the graphite ground", () => {
@@ -228,8 +243,9 @@ describe("the iPhone look", () => {
     // In the dock's bar under the pages, never over the top of them.
     expect(text).toContain('class="wa-phone-dots-bar" style=height:46px><span class="wa-phone-dock"');
     expect(text).not.toContain('class="wa-phone-dots"');
-    // Page dots off hides it.
-    expect(phonePicture(KITCHEN, iphone, { showPageIndicator: false })).not.toContain("wa-phone-dock");
+    // Page dots off draws one bar in its place (`PhonePagesDock.showsBar`).
+    const off = phonePicture(KITCHEN, iphone, { showPageIndicator: false });
+    expect([...off.matchAll(/class=(wa-phone-dock-dot(?: on)?) style=([^>]*)>/g)].map((m) => m[2])).toEqual(["width:28px;height:6px"]);
   });
 
   it("shows at most 9 dots, the end ones small where more pages lie past them", () => {

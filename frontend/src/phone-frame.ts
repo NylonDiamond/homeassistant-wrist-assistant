@@ -170,6 +170,9 @@ export const PHONE_DOCK_CURRENT_WIDTH = 16;
 export const PHONE_DOCK_DOT_GAP = 5;
 export const PHONE_DOCK_PADDING = 15;
 export const PHONE_DOCK_MAX_DOTS = 9;
+/** The dock's one bar in place of its dots with Page dots off
+ * (`PhonePagesDock.barWidth`). */
+export const PHONE_DOCK_BAR_WIDTH = 28;
 /** `PhonePagesView.phoneDockBarHeight`: the dock and a little air round it. */
 export const PHONE_PAGES_DOCK_BAR = PHONE_PAGES_DOCK_HEIGHT + 8;
 /** How far the page dots sit below the top of the pages area when they are
@@ -246,7 +249,8 @@ export interface PhonePagesLayout {
   /** Set only for the iPhone look; absent is the Watch look. */
   look?: "iphone";
   /** The top row, from the grid button's left edge to the gear's right
-   * edge: the buttons line up with the tiles' edges. */
+   * edge: the buttons line up with the tiles' edges. With the iPhone look
+   * and no room for it (`titleRow` false) it is 0 tall. */
   topRow: PhoneRect;
   /** The pages area: the screen the page code lays a page out on. */
   area: PhoneRect;
@@ -256,7 +260,8 @@ export interface PhonePagesLayout {
 }
 
 /** What the bar under the pages is sized for: whether the page dots show
- * (`showPageIndicator` on, and two or more pages to show), and whether the
+ * (the Watch look: `showPageIndicator` on, and two or more pages to show;
+ * the iPhone look: its dock, with one page or more), and whether the
  * phone's settings put them at the top (`pageIndicatorPosition`, which the
  * iPhone look does not read). */
 export interface PhonePagesDotsPlace {
@@ -265,9 +270,24 @@ export interface PhonePagesDotsPlace {
 }
 
 /** The dots' place from a phone's behavior document and how many pages it
- * shows (`PhonePagesRules.visiblePages`: none hidden, no system page). */
-export function phonePagesDotsOf(behavior: Readonly<Record<string, unknown>> | undefined, visiblePages: number): PhonePagesDotsPlace {
+ * shows (`PhonePagesRules.visiblePages`: none hidden, no system page). The
+ * iPhone look's dock shows with one page too, and with Page dots off as a
+ * bar, since it is the only way to the dots' menu (`PhonePagesView.hasDock`,
+ * since app 6d7f8c80); its look comes from `phonePageLookOf`. */
+export function phonePagesDotsOf(behavior: Readonly<Record<string, unknown>> | undefined, visiblePages: number, look?: PhonePageLook): PhonePagesDotsPlace {
+  if (look === "iphone") return { shown: visiblePages >= 1, top: false };
   return { shown: behavior?.showPageIndicator !== false && visiblePages > 1, top: behavior?.pageIndicatorPosition === "Top" };
+}
+
+/** Whether the iPhone look's top row takes room (`PhonePagesView.topRowTakesRoom`):
+ * it has no buttons, so only while it holds the page's name with Page name
+ * on Show (`pageTitleMode` "On", the default) on a page that shows its name
+ * (`showsTitle`: a name, and a title style that is not none). A pushed
+ * page's way back, the Home status line and a problem make room on the
+ * phone too, but the panel draws none of them. Auto's name never makes
+ * room: the phone shows it over the dots. */
+export function phoneTopRowTakesRoom(behavior: Readonly<Record<string, unknown>> | undefined, showsTitle: boolean): boolean {
+  return (behavior?.pageTitleMode ?? "On") === "On" && showsTitle;
 }
 
 /** `PhonePagesView.bottomBarHeight`: the dock's bar with the iPhone look
@@ -289,7 +309,7 @@ export function phonePagesBottomBarHeight(iphone: boolean, dots: PhonePagesDotsP
  * dots on, at the bottom, two or more pages. */
 export function phonePagesLayout(
   model: PhoneModel = DEFAULT_PHONE,
-  options?: { switcher?: boolean; look?: PhonePageLook; dots?: PhonePagesDotsPlace },
+  options?: { switcher?: boolean; look?: PhonePageLook; dots?: PhonePagesDotsPlace; titleRow?: boolean },
 ): PhonePagesLayout {
   const { width, height } = model.screen;
   const iphone = options?.look === "iphone";
@@ -302,8 +322,11 @@ export function phonePagesLayout(
     top += PHONE_SWITCHER_HEIGHT + PHONE_SWITCHER_GAP;
   }
   const edge = iphone ? PHONE_VAULT_GUTTER : PHONE_PAGES_SIDE_INSET;
-  const topRow = { x: left + edge, y: top, width: column - edge * 2, height: PHONE_TOP_ROW_HEIGHT };
-  top += PHONE_TOP_ROW_HEIGHT + PHONE_PAGES_TOP_BAR;
+  // The iPhone look's row has no buttons: with nothing in it, the pages
+  // start under the status bar (`phoneTopRowTakesRoom`).
+  const rowHeight = iphone && options?.titleRow === false ? 0 : PHONE_TOP_ROW_HEIGHT;
+  const topRow = { x: left + edge, y: top, width: column - edge * 2, height: rowHeight };
+  top += rowHeight + PHONE_PAGES_TOP_BAR;
   const bar = phonePagesBottomBarHeight(iphone, options?.dots ?? { shown: true, top: false });
   const bottomBar = { x: 0, y: height - model.safeBottom - bar, width, height: bar };
   const side = iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET;
@@ -375,8 +398,13 @@ export function phoneDockWindow(count: number, current: number): number[] {
  * 15 points in from its ends, the current page a 16 point pill in the ink
  * and the others in the dock's fainter dot color. What the frame centres in
  * the bar under the pages. */
-export function renderPhoneDock(count: number, current: number, s: number): TemplateResult {
+export function renderPhoneDock(count: number, current: number, s: number, bar = false): TemplateResult {
   const px = (pt: number) => `${r2(pt * s)}px`;
+  // Page dots off: one short bar, still the dots' menu's handle
+  // (`PhonePagesDock.showsBar`).
+  if (bar) {
+    return html`<span class="wa-phone-dock" style=${`height:${px(PHONE_PAGES_DOCK_HEIGHT)};padding:0 ${px(PHONE_DOCK_PADDING)}`}><span class=${"wa-phone-dock-dot on"} style=${`width:${px(PHONE_DOCK_BAR_WIDTH)};height:${px(PHONE_DOCK_DOT)}`}></span></span>`;
+  }
   const shown = phoneDockWindow(count, current);
   const first = shown[0];
   const last = shown[shown.length - 1];
@@ -431,9 +459,11 @@ function statusBar(model: PhoneModel, s: number, icons: IconProvider | undefined
 /** The top row: at the left the grid (`square.grid.2x2`) that opens all
  * pages, only with `grid` (two or more pages to show), at the right the
  * gear (`gearshape.fill`) for Settings, each a round glass button, and
- * `title`, the page's name, centred between them. The glyphs are drawn here
- * in the screen's ink, as the status bar's Wi-Fi mark is, since the symbol
- * provider takes a hex ink only. */
+ * `title`, the page's name, centred between them. The iPhone look draws no
+ * buttons (app 6d7f8c80: All Pages, Edit and Settings are in the dots'
+ * menu), only the title, and nothing at all when the row takes no room.
+ * The glyphs are drawn here in the screen's ink, as the status bar's Wi-Fi
+ * mark is, since the symbol provider takes a hex ink only. */
 function topRow(layout: PhonePagesLayout, s: number, ios: boolean, grid: boolean, title: string): TemplateResult {
   const px = (pt: number) => `${r2(pt * s)}px`;
   const row = layout.topRow;
@@ -446,10 +476,12 @@ function topRow(layout: PhonePagesLayout, s: number, ios: boolean, grid: boolean
   // Eight teeth round a ring with a hole in the middle.
   const gearMark = svg`<circle cx="8" cy="8" r="6.3" fill="none" stroke="${fill}" stroke-width="2.6" stroke-dasharray="2.47 2.48" stroke-dashoffset="1.24" />
     <circle cx="8" cy="8" r="4.3" fill="none" stroke="${fill}" stroke-width="3.2" />`;
+  if (row.height === 0) return html``;
+  const iphone = phoneDrawsIphoneLook(layout);
   return html`<div class="wa-phone-top" style=${`height:${px(row.height)};padding:0 ${px(row.x)}`}>
-    ${grid ? button("wa-phone-grid", PHONE_TOP_GRID_GLYPH, gridMark) : nothing}
+    ${grid && !iphone ? button("wa-phone-grid", PHONE_TOP_GRID_GLYPH, gridMark) : nothing}
     ${title === "" ? nothing : html`<span class="wa-phone-title" style=${`left:${px(PHONE_TOP_TITLE_INSET)};right:${px(PHONE_TOP_TITLE_INSET)};font-size:${px(PHONE_TOP_TITLE_SIZE)}`}><span>${title}</span></span>`}
-    ${button("wa-phone-gear", PHONE_TOP_GEAR_GLYPH, gearMark)}
+    ${iphone ? nothing : button("wa-phone-gear", PHONE_TOP_GEAR_GLYPH, gearMark)}
   </div>`;
 }
 

@@ -959,7 +959,7 @@ export function backupText(sources: readonly BackupSource[], createdAt: Date): s
 export function backupFileName(createdAt: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const day = `${createdAt.getFullYear()}-${pad(createdAt.getMonth() + 1)}-${pad(createdAt.getDate())}`;
-  return `Wrist-Assistant-complications-${day}.json`;
+  return `HouseLit-complications-${day}.json`;
 }
 
 /** One design read back out of a backup. */

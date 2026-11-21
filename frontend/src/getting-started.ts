@@ -138,7 +138,7 @@ export function helpStepWords(id: StepId, gs: Pick<GettingStarted, "steps" | "wa
         // Google Play is named only once an Android device is paired here: the
         // Android app is on Play's testing tracks, not in the store, until then.
         ? (androidHereNow() ? "HouseLit is on the App Store and Google Play." : "HouseLit is on the App Store.")
-        : generalCopy("Install it on the watch and/or on the iPhone.", "Install it on the watch and/or on the phone."),
+        : generalCopy("Install it on the watch, the iPhone or both.", "Install it on the watch, the phone or both."),
     };
   }
   if (id === "pair") {

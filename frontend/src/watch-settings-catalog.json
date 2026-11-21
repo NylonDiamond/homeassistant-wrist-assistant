@@ -501,8 +501,8 @@
           "key": "pointControlShowHUD",
           "devices": ["watch", "wearos"],
           "type": "bool",
-          "label": "Point Control label",
-          "help": "While Point Control runs, show the name of the device you point at. You set up what to point at in Rooms.",
+          "label": "Point control label",
+          "help": "While point control runs, show the name of the device you point at. You set up what to point at in Rooms.",
           "default": false
         },
         {

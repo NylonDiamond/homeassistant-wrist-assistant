@@ -314,11 +314,22 @@ function indicatorPages(input: WatchPagePreviewInput): { visible: WatchPage[]; c
 /** The iPhone look's dock in the strip under the pages (`PhonePagesDock`,
  * `renderPhoneDock`): a dot per page in a glass capsule, the shown page's a
  * short pill. The watch's dot shape, size, brightness, color and place
- * settings do not apply; Page dots off still hides it, as does one page. */
+ * settings do not apply. Since app 6d7f8c80 it shows with one page too, and
+ * Page dots off draws one bar in place of the dots, since the dock is the
+ * only way to the dots' menu. */
 export function phonePageControlRow(input: WatchPagePreviewInput, s: number): PhonePageDots | undefined {
-  const shown = indicatorPages(input);
-  if (shown === undefined) return undefined;
-  return { row: renderPhoneDock(shown.visible.length, shown.current, s), height: PHONE_PAGES_DOCK_HEIGHT, top: false };
+  const visible = input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true);
+  if (visible.length === 0) return undefined;
+  const current = Math.max(0, visible.findIndex((p) => p.id === input.page.id));
+  const bar = input.behavior?.showPageIndicator === false;
+  return { row: renderPhoneDock(visible.length, current, s, bar), height: PHONE_PAGES_DOCK_HEIGHT, top: false };
+}
+
+/** Whether `page` shows its name at the top on a phone
+ * (`PhonePagesRules.showsPageTitle`): a name, and a title style that is not
+ * none. */
+export function phonePageShowsTitle(page: WatchPage): boolean {
+  return typeof page.name === "string" && page.name.trim() !== "" && watchPageValue(page, "pageTitleDisplayStyle") !== "none";
 }
 
 /** `WatchScreenMetrics.uniformScale`: the screen's width and height against
@@ -4343,8 +4354,10 @@ export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body
     // under the pages. The phone's Page name setting (devices watch and
     // iPhone) hides it, as it hides the watch's title, and so does a page
     // whose title style is none (`PhonePagesRules.showsPageTitle`).
+    // With no room in the top row (Page name on Hide or Auto, or a page with
+    // no title) the phone draws no name there either.
     const control = phonePageControlRow(input, s);
-    const hidden = input.behavior?.pageTitleMode === "Off" || watchPageValue(input.page, "pageTitleDisplayStyle") === "none";
+    const hidden = input.phone.topRow.height === 0 || input.behavior?.pageTitleMode === "Off" || !phonePageShowsTitle(input.page);
     const title = hidden || typeof input.page.name !== "string" ? "" : input.page.name.trim();
     const ink = watchPageHasDefaultBlackBackground(input.page);
     return renderPhoneFrame(input.phone, s, body, { label: label ?? phoneFrameLabel(input.phone), icons: input.icons, title, ink, grid, backdrop, ...(control === undefined ? {} : { dots: control }) });

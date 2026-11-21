@@ -110,7 +110,7 @@ export function withLinkFailures(
 export function watchPagesSaveNote(result: WatchPagesSaveResult, device: SettingDevice = "watch"): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
-      return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
+      return { kind: "ok", text: "Nothing left to save. The same changes were already saved somewhere else." };
     }
     const note: WatchPagesNote | undefined = result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
     const linked = withLinkFailures(note, result.linkFailures, "pages");

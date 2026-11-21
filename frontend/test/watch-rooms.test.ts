@@ -790,7 +790,8 @@ describe("the list, the stage and the inspector", () => {
     const text = flat(renderRoomsBody(h));
     for (const s of ["Room for point control", "Pendant / Bar", "° E", "+ Add a thing", "Tap to Toggle", "Live Point Control Tile"]) expect(text).toContain(s);
     expect(text).toContain(`title=${HEADING_HELP_DETAIL}`);
-    expect(HEADING_HELP_DETAIL).toContain("The number is the device's direction. On an iPhone, Rooms in HouseLit can measure it by pointing the iPhone's top edge at the device.");
+    expect(HEADING_HELP_DETAIL).toContain("hold the iPhone flat with its top edge toward the device and choose Set Direction.");
+    expect(HEADING_HELP_DETAIL).not.toContain("Connection Health");
     h.uiState.set("pick", "living room");
     const den = flat(renderRoomsBody(h));
     expect(den).toContain("What the watch opens in Living Room");

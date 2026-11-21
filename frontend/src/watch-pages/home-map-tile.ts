@@ -92,7 +92,7 @@ export const WATCH_HOME_MAP_MISSING_TEXT = "Not on the map";
 export const WATCH_HOME_MAP_FLOOR_HINT = "The tile draws this floor's plan, with the lights that are on. A tap opens the full map.";
 
 /** The line in place of the menu while there is no map to pick from. */
-export const WATCH_HOME_MAP_NO_MAP_TEXT = "No home map yet. Scan your rooms in the iPhone app, then pick a floor here.";
+export const WATCH_HOME_MAP_NO_MAP_TEXT = "No rooms on the map yet. Draw them on the Home map tab, or scan them with HouseLit on an iPhone Pro or iPad Pro, then pick a floor here.";
 
 /**
  * The Floor menu: every floor with a room, by name, the tile's own picked.

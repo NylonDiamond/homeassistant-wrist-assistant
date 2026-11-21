@@ -337,8 +337,8 @@ export const WATCH_SCREEN_LOOK: Record<WatchScreenId, { icon: UiIconName; hue: s
 
 /** A tab's tooltip: what the screen is, as one sentence. A retired screen
  * has its own note on the screen, so it has none. */
-export function watchRowLinkTitle(screen: WatchScreen): string | undefined {
-  return screen.retired === true ? undefined : watchScreenSentence(screen);
+export function watchRowLinkTitle(screen: WatchScreen, kind: RowKind = "watch"): string | undefined {
+  return screen.retired === true ? undefined : watchScreenSentence(screen, kind === "iphone" ? "iphone" : "watch");
 }
 
 /** The line under the watch's name on its chip: whose it is, then its
@@ -423,7 +423,7 @@ function renderRowTip(screen: WatchScreen, kind: RowKind = "watch") {
   // The iPhone's Settings are its own, and work as the iPhone app does, so
   // its card says so and leaves out how the watch uses them.
   const phoneSettings = kind === "iphone" && screen.id === "settings";
-  const what = phoneSettings ? `${watchRowSettingsTitle("iphone")}.` : watchRowLinkTitle(screen);
+  const what = phoneSettings ? `${watchRowSettingsTitle("iphone")}.` : watchRowLinkTitle(screen, kind);
   if (what === undefined) return nothing;
   const how = phoneSettings ? undefined : screenHowTo(screen.id);
   const loop = kind === "watch" ? ROW_TIP_LOOP[screen.id] : undefined;

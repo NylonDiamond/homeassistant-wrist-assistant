@@ -826,7 +826,7 @@ export const templateEditorStyles = css`
   .te-tap-row:hover { background: var(--wa-panel); }
   .te-tap-row:focus-visible, .te-tap-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .te-tap-row.on { background: var(--wa-pick-bg); border-color: var(--wa-pick-line); }
-  .te-tap-badge { flex: none; min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 5px; background: var(--wa-hue-blue); color: #fff; font: 700 11px/20px system-ui, sans-serif; text-align: center; }
+  .te-tap-badge { flex: none; min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 5px; background: var(--wa-hue-blue); color: var(--wa-chip-ink); font: 700 11px/20px system-ui, sans-serif; text-align: center; }
   .te-tap-row.on .te-tap-badge { background: var(--wa-hue-orange); }
   .te-tap-words { display: flex; flex-direction: column; min-width: 0; }
   .te-tap-words b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -873,7 +873,7 @@ export const templateEditorStyles = css`
   .te-taps-layer { position: absolute; z-index: 7; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
   .te-tap { position: absolute; box-sizing: border-box; border: 1.5px solid var(--wa-hue-blue); border-radius: 3px; background: color-mix(in srgb, var(--wa-hue-blue) 16%, transparent); cursor: grab; }
   .te-tap.on { border-color: var(--wa-hue-orange); background: color-mix(in srgb, var(--wa-hue-orange) 18%, transparent); }
-  .te-tap-n { position: absolute; left: 2px; top: 2px; min-width: 9px; padding: 0 3px; border-radius: 3px; background: var(--wa-hue-blue); color: #fff; font: 700 10px/14px system-ui, sans-serif; text-align: center; pointer-events: none; }
+  .te-tap-n { position: absolute; left: 2px; top: 2px; min-width: 9px; padding: 0 3px; border-radius: 3px; background: var(--wa-hue-blue); color: var(--wa-chip-ink); font: 700 10px/14px system-ui, sans-serif; text-align: center; pointer-events: none; }
   .te-tap.on .te-tap-n { background: var(--wa-hue-orange); }
   .te-tap-size { position: absolute; right: -5px; bottom: -5px; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid var(--wa-hue-blue); border-radius: 2px; background: #fff; cursor: nwse-resize; }
   .te-tap.on .te-tap-size { border-color: var(--wa-hue-orange); }

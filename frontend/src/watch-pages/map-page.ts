@@ -40,7 +40,7 @@ export const WATCH_MAP_PAGE_WORDS = {
   newNote: "The whole page is your home's live map on the iPhone.",
   plainNote: "Tiles you place yourself.",
   /** Why the New page dialog's card, and the switch, cannot be picked. */
-  noMap: "Scan a room in the iPhone app first.",
+  noMap: "No rooms on the map yet. Draw them on the Home map tab, or scan them with HouseLit on an iPhone Pro or iPad Pro.",
   /** The line under the Map page switch. */
   switchDetail: "On the iPhone the whole page is your home's live 3D map. The watch shows the Home map tile.",
   /** The switch's question on a page with other tiles. */

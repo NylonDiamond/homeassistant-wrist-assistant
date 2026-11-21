@@ -292,7 +292,7 @@ import {
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
 import { WATCH_TILE_DEFAULTS, addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
-import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
+import { phonePageShowsTitle, renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
 import { WATCH_BEZEL_RATIO, WATCH_CROWN_RATIO, WATCH_RIM_RATIO, watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_BEZEL_RATIO,
@@ -307,6 +307,7 @@ import {
   phonePageLookOf,
   phonePagesDotsOf,
   phonePagesLayout,
+  phoneTopRowTakesRoom,
   phonePagesScreen,
 } from "../phone-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
@@ -3622,7 +3623,7 @@ export class WaPageEditor extends LitElement {
    * longer words for its tooltip where the size needs saying.
    */
   private pageFacts(page: WatchPage, owner: OwnerSummary | undefined): { device?: string; facts: string[]; title: string } {
-    const phoneLayout = this.phoneLayoutOf(owner);
+    const phoneLayout = this.phoneLayoutOf(owner, page);
     const phone = phoneLayout !== undefined;
     const found = phone ? undefined : caseForScreenSize(owner?.screen_size);
     const watchCase = found ?? REFERENCE_CASE;
@@ -3921,23 +3922,26 @@ export class WaPageEditor extends LitElement {
    * its dots settings and its shown pages size; undefined on a watch. The
    * model is `owner`'s, else the one the iPhone picture is drawn for
    * (`pictureOwnerOf`). */
-  private phoneLayoutOf(owner: OwnerSummary | undefined): PhonePagesLayout | undefined {
+  private phoneLayoutOf(owner: OwnerSummary | undefined, page: WatchPage | undefined = this.currentPage()): PhonePagesLayout | undefined {
     if (!this.onPhone) return undefined;
     const shown = owner ?? this.pictureOwnerOf("iphone") ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId);
     const document = this.draft?.document;
     const visible = document === undefined ? 0
       : watchPagesOf(this.contextPages(document)).filter((p) => p.isHidden !== true && p.isSystemPage !== true).length;
+    const look = phonePageLookOf(this.behavior);
     return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size, shown?.platform), {
-      look: phonePageLookOf(this.behavior),
+      look,
       // Before a draft, the phone's own defaults.
-      ...(document === undefined ? {} : { dots: phonePagesDotsOf(this.behavior, visible) }),
+      ...(document === undefined ? {} : { dots: phonePagesDotsOf(this.behavior, visible, look) }),
+      // The iPhone look's top row takes room only for the page's name.
+      ...(page === undefined ? {} : { titleRow: phoneTopRowTakesRoom(this.behavior, phonePageShowsTitle(page)) }),
     });
   }
 
   /** What a picture of `page` is drawn with at `scale`, the stage's own
    * states, symbols and renders. */
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
-    const phone = this.phoneLayoutOf(undefined);
+    const phone = this.phoneLayoutOf(undefined, page);
     const homeMap = this.homeMapDoc();
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
@@ -4254,7 +4258,7 @@ export class WaPageEditor extends LitElement {
     // An iPhone is drawn as an iPhone, its page laid out in the pages screen's
     // pages area (`phone-frame.ts`), at half the watch's zoom so the taller
     // phone fits the same stage.
-    const phoneLayout = this.phoneLayoutOf(owner);
+    const phoneLayout = this.phoneLayoutOf(owner, page);
     const phone = phoneLayout !== undefined;
     const screen = phoneLayout === undefined ? (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen : phonePagesScreen(phoneLayout);
     const smart = isSmartWatchPage(page);
@@ -5714,7 +5718,7 @@ export class WaPageEditor extends LitElement {
     const clicked = this.clickedScreen;
     for (const kind of only === undefined ? [clicked, otherWatchScreen(clicked)] : [only]) {
       const owner = this.pictureOwnerOf(kind);
-      const phone = kind === this.previewKind ? this.phoneLayoutOf(undefined)
+      const phone = kind === this.previewKind ? this.phoneLayoutOf(undefined, raw)
         : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined) })
         : undefined;
       const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
@@ -6263,7 +6267,7 @@ export class WaPageEditor extends LitElement {
     .pe-try-pill {
       position: absolute; top: calc(100% + 8px); left: 50%; z-index: 9; transform: translateX(-50%);
       display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; max-width: calc(100% - 16px);
-      border-radius: 14px; background: var(--wa-accent); color: #fff; box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+      border-radius: 14px; background: var(--wa-accent); color: var(--wa-accent-ink); box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
       font-size: 12px; font-weight: 500; white-space: nowrap; pointer-events: none;
     }
     .pe-try-pill > span { overflow: hidden; text-overflow: ellipsis; }

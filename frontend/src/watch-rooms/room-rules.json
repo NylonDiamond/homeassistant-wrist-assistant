@@ -272,8 +272,8 @@
       },
       {
         "value": "Double Pinch",
-        "label": "Double Pinch",
-        "help": "Double pinch gesture to switch rooms"
+        "label": "Double pinch",
+        "help": "Switches rooms when you double pinch."
       }
     ],
     "absent": {

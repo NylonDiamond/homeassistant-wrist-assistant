@@ -97,12 +97,8 @@ blueprint:
             stream).
 
 
-            **Requires the HouseLit iOS app v2.1.0 or newer.** Older
-            versions won't display the snapshot; the live stream on iPhone
-            needs **v2.3.0 or newer** (older versions keep the snapshot).
-            Every version of the Android apps shows it. Also requires remote
-            Home Assistant access (Nabu Casa or an external URL) to load when
-            you're away from home.
+            It needs remote Home Assistant access (Nabu Casa or an external
+            URL) to load when you're away from home.
 
 
             **Camera tip:** If your camera has a dedicated **snapshot** entity
@@ -144,8 +140,7 @@ blueprint:
           name: Live stream on phone
           description: >
             When on (the default), expanding the notification on iPhone
-            replaces the snapshot with a live view of the camera (requires
-            the iOS app v2.3.0 or newer), and the alert an Android phone
+            replaces the snapshot with a live view of the camera, and the alert an Android phone
             opens on a tap has a Live button. Turn off
             to keep the snapshot from the moment the event happened, handy
             when that frame is the whole point (who rang the doorbell), or

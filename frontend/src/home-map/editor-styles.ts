@@ -89,7 +89,7 @@ export const editorStyles = css`
   .hme-tb:disabled { opacity: 0.42; cursor: default; }
   .hme-tb.danger { color: var(--wa-need); }
   .hme-tb.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
-  .hme-tb.primary.danger-fill { background: var(--wa-need); color: #fff; }
+  .hme-tb.primary.danger-fill { background: var(--wa-need); color: var(--wa-need-ink, #fff); }
   /* The Add button, the editor's one way in for devices and furniture,
    * floating in the plan's top left corner in the picked blue so it is the
    * first thing a new user finds. */
@@ -168,9 +168,18 @@ export const editorStyles = css`
   .hme-status.error { color: var(--wa-need); }
   .hme-status.error .hme-status-dot { background: var(--wa-need); }
   .hme-pop {
-    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 320px; padding: 6px;
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; padding: 6px;
+    /* Never wider than the editor: the host is an inline-size container. */
+    min-width: min(320px, calc(100cqw - 32px)); max-width: calc(100cqw - 32px); box-sizing: border-box;
     display: flex; flex-direction: column; gap: 2px;
     background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+  /* On a phone the floor button sits well in from the left, so the menu
+     hangs from the whole bar instead, 16 px in from each side. */
+  @container (max-width: 560px) {
+    .hme-bar { position: relative; }
+    .hme-floor-wrap { position: static; }
+    .hme-pop { left: 16px; right: 16px; min-width: 0; max-width: none; }
   }
   .hme-pop-row { display: flex; align-items: center; gap: 4px; border-radius: 9px; }
   .hme-pop-row.on { background: var(--hme-sel-bg); }

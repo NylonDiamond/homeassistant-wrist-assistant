@@ -1236,14 +1236,19 @@ export class WaAllPages extends LitElement {
   private renderEmptyLibrary(library: Library, devices: readonly LinkDevice[]): TemplateResult | undefined {
     if (devices.length === 0 || libraryItems(library, this.kind).length > 0) return undefined;
     const may = this.mayMake;
+    // Not an administrator, but a device is picked: a page made there is
+    // theirs to make (`may_take_item`), as the head's New page says.
+    const mine = may ? undefined : this.filterDevice();
     const waitingIds = this.waiting(library);
     const waiting = waitingIds.size > 0;
     // The teach card: a small watch playing how the screen's work is used,
     // with this tab's own words and New button inside it (`teach-loop.ts`).
     return html`<div class="ap-empty-lib">${renderTeachCard(this.kind === "pages" ? "pages" : "status-pages", {
-      note: html`<p class="ap-empty-note">${emptyLibraryText(this.kind, may)}</p>
+      note: html`<p class="ap-empty-note">${emptyLibraryText(this.kind, may, mine?.name)}</p>
         ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2), anyNeedsUpdate(devices, waitingIds), waitingPhoneMoves(devices, waitingIds))}</p>` : nothing}`,
       actions: may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
+        ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>`
+        : mine !== undefined ? html`<button type="button" class="ap-new-btn" ?disabled=${this.picksBusy || this.lib.library === undefined} @click=${() => void this.newPage(mine)}>
         ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing,
     })}</div>`;
   }

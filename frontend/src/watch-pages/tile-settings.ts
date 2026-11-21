@@ -83,7 +83,7 @@ import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
 import { type ColorPickerView, type ColorTrial, colorPickerView } from "./color-picker.js";
 import { MIXED_WORD, acrossPicked, everyPicked, firstPicked, pickedMixed, somePicked } from "./multi-pick.js";
-import type { SettingDevice } from "../watch-settings.js";
+import { type SettingDevice, settingPointer } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun, phoneWordsFor, watchLinkDocument } from "./editor-host.js";
 import { isAndroidPlatform, generalCopy } from "../device-platform.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
@@ -2734,7 +2734,7 @@ function renderAction(host: TileSettingsHost, withTap = true): TemplateResult {
     ${a.skipConditions.shown
       ? html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(a.skipConditions.value), WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) =>
           commit(host, "skipConditions", (d) => setWatchTileSkipConditions(d, host.pageId, host.tileId, watchSkipValue(v))))}</div>
-          <div class="hint">Whether running the automation from the ${hostDeviceNoun(host)} skips its conditions. Default follows "Skip conditions by default" in the ${hostDeviceNoun(host)}'s Settings.</div>`
+          <div class="hint">Whether running the automation from the ${hostDeviceNoun(host)} skips its conditions. Default follows ${settingPointer("automationTriggerSkipConditions", hostDeviceNoun(host))}.</div>`
       : nothing}`;
 }
 

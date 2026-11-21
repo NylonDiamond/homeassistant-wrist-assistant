@@ -480,7 +480,7 @@ describe("the save notes", () => {
   it("say nothing for a plain save, and name what happened otherwise", () => {
     expect(statusPagesSaveNote({ ok: true, revision: 2, merged: false })).toBeUndefined();
     expect(statusPagesSaveNote({ ok: true, revision: 2, merged: true })!.text).toBe("Saved. Changes made somewhere else were merged in.");
-    expect(statusPagesSaveNote({ ok: true, revision: 7, merged: true, alreadySaved: true })!.text).toBe("Nothing left to save. The same changes were saved somewhere else, as revision 7.");
+    expect(statusPagesSaveNote({ ok: true, revision: 7, merged: true, alreadySaved: true })!.text).toBe("Nothing left to save. The same changes were already saved somewhere else.");
     expect(statusPagesSaveNote({ ok: false, revision: 2, merged: false, code: "no_record" })!.kind).toBe("warn");
     expect(statusPagesSaveNote({ ok: false, revision: 2, merged: false, code: "boom", message: "it broke" })).toEqual({ kind: "err", text: "Not saved: it broke" });
   });

@@ -208,7 +208,7 @@ describe("the words after a save", () => {
 
   it("says when the iPhone had saved the same changes, so nothing was sent", () => {
     expect(watchPagesSaveNote({ ...base, ok: true, merged: true, alreadySaved: true })?.text).toBe(
-      "Nothing left to save. The same changes were saved somewhere else, as revision 5.",
+      "Nothing left to save. The same changes were already saved somewhere else.",
     );
   });
 

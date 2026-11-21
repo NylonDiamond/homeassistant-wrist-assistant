@@ -95,7 +95,7 @@ const NUDGE = 0.01;
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
-type Note = { kind: "ok" | "warn" | "err"; text: string };
+type Note = { kind: "ok" | "warn" | "err"; text: string; undo?: () => void };
 
 interface HassConnectionEvents {
   addEventListener?(type: "ready", listener: () => void): void;
@@ -290,10 +290,25 @@ export class WaCamerasEditor extends LitElement {
     this.requestUpdate();
   }
 
+  /** Back to what Home Assistant holds, with an Undo that puts the thrown
+   * edit back while the same camera is still open, as the other editors
+   * say "Edits discarded. Undo brings them back." */
   private discard(): void {
     if (this.saving || !cameraDraftDirty()) return;
+    const thrown = openCameraDraft();
     discardCameraEdit();
-    this.note = undefined;
+    this.note = {
+      kind: "ok",
+      text: "Framing discarded. Undo brings it back.",
+      ...(thrown === undefined ? {} : {
+        undo: () => {
+          if (this.saving || openCameraDraft()?.entityId !== thrown.entityId) return;
+          editCameraDraft(thrown.edit);
+          this.note = undefined;
+          this.requestUpdate();
+        },
+      }),
+    };
     this.requestUpdate();
   }
 
@@ -447,6 +462,7 @@ export class WaCamerasEditor extends LitElement {
           : draft !== undefined && camera !== undefined ? html`<div class="cm-crumbline">${this.renderCrumb(camera)}</div>` : nothing}
         <p class="cm-lead">${camerasLead()}</p>
         ${this.note ? html`<div class="cm-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
+          ${this.note.undo === undefined ? nothing : html`<button class="cm-link" @click=${this.note.undo}>Undo</button>`}
           <button class="cm-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
       ${draft !== undefined && camera !== undefined ? this.renderEditor(camera, draft) : this.renderBody()}
@@ -457,13 +473,13 @@ export class WaCamerasEditor extends LitElement {
     const editing = draft !== undefined && camera !== undefined;
     const dirty = editing && cameraDraftDirty();
     const inHead = this.barHost !== undefined;
-    return html`<div class="wa-bar ${inHead ? "in-head" : this.narrow ? "stacked" : ""}" role="toolbar" aria-label="Cameras">
-      ${inHead ? nothing : html`<span class="cm-title"><b>Cameras</b>${editing ? this.renderCrumb(camera) : nothing}</span>`}
+    return html`<div class="wa-bar ${inHead ? "in-head" : this.narrow ? "stacked" : ""}" role="toolbar" aria-label="Camera framing">
+      ${inHead ? nothing : html`<span class="cm-title"><b>Camera framing</b>${editing ? this.renderCrumb(camera) : nothing}</span>`}
       <span class="spacer"></span>
       ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty }) : nothing}
       ${editing ? html`
         <button class="cm-btn" ?disabled=${!dirty || this.saving} title="Go back to the framing Home Assistant holds"
-          @click=${() => this.discard()}>Discard</button>
+          @click=${() => this.discard()}>Discard edits</button>
         <button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>

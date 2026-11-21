@@ -1047,7 +1047,7 @@ export class WatchSettings implements ReactiveController {
           ? html`<div class="empty">Loading…</div>`
           : searching
           ? this.renderFound(cards)
-          : html`<p class="ws-blurb">${group.blurb}</p>${group.cards.map((c) => cards.get(c) ?? nothing)}`}
+          : html`<p class="ws-blurb">${this.device === "iphone" ? group.phoneBlurb ?? group.blurb : group.blurb}</p>${group.cards.map((c) => cards.get(c) ?? nothing)}`}
       </div>
     </div>`;
   }

@@ -137,13 +137,13 @@ export function newMenuMadeText(name: string): string {
 
 /** Why New menu is not offered to someone who is not an administrator. */
 export function newMenuAdminText(): string {
-  return `To make a menu, open your watch or ${generalCopy("iPhone", "phone")}'s tab first. Only a Home Assistant administrator can make one here.`;
+  return `To make a menu, press Focus on your watch or ${generalCopy("iPhone", "phone")} first. Only a Home Assistant administrator can make one with no device picked.`;
 }
 
 /** How someone who is no administrator makes a first menu, in plain view,
  * since a greyed button's title never reaches a touch screen. */
 export function makeFirstMenuText(focused: boolean): string {
-  return focused ? "Use New menu to make one." : `Open your watch or ${generalCopy("iPhone", "phone")}'s tab, then use New menu to make its first one.`;
+  return focused ? "Use New menu to make one." : `Press Focus on your watch or ${generalCopy("iPhone", "phone")}, then use New menu to make its first one.`;
 }
 
 /** Why New menu is off for someone who is no administrator, on a device

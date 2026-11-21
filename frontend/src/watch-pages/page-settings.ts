@@ -543,7 +543,7 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
   return html`
     ${photos === undefined || photos.listState === "none" ? html`<p class="hint warn">Photos need a newer version of the integration. A photo set before still shows here.</p>` : nothing}
     ${photos?.listState === "failed" ? html`<p class="hint warn">Home Assistant did not list its photos. ${linkButton("Try again", "Read the photo list again", () => void photos.refreshList())}</p>` : nothing}
-    ${photos?.listState === "loading" ? html`<p class="hint keep">Loading photos...</p>` : nothing}
+    ${photos?.listState === "loading" ? html`<p class="hint keep">Loading photos…</p>` : nothing}
     ${photos !== undefined && list !== undefined ? html`
       <div class="ts-sub-h"><span>Built-in</span></div>
       <div class="ps-photos" role="radiogroup" aria-label="Built-in photos">

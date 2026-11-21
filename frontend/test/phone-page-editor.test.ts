@@ -149,11 +149,11 @@ describe("the stage on an iPhone", () => {
     el.topMenuOpen = false;
     // In the iPhone look, the default while the phone's settings say nothing.
     expect(text).toContain('class="wa-phone ios"');
-    // The one-screen app's top row: no tab bar, no large title. "Mine" sets
-    // no title style, so the phone names it nowhere, and with one page there
-    // is no grid.
-    expect(text).toContain('class="wa-phone-top"');
-    expect(text).toContain("wa-phone-gear");
+    // The one-screen app's top row: no tab bar, no large title, and since
+    // app 6d7f8c80 no buttons. "Mine" sets no title style, so the phone
+    // names it nowhere and the row takes no room at all.
+    expect(text).not.toContain('class="wa-phone-top"');
+    expect(text).not.toContain("wa-phone-gear");
     expect(text).not.toContain("wa-phone-grid");
     expect(text).not.toContain("wa-phone-tab");
     expect(text).not.toContain("wa-phone-title");

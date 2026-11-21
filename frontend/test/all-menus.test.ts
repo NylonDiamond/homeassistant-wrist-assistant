@@ -134,7 +134,7 @@ describe("the tab's words", () => {
     // A watch still waiting for its iPhone: its menus are on their way.
     expect(menusEmptyText(DEVICES, "")).toBe("None yet.");
     // Someone who is not an administrator reads how, with no hover to find it.
-    expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(false))).toBe("None yet. Open your watch or phone's tab, then use New menu to make its first one.");
+    expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(false))).toBe("None yet. Press Focus on your watch or phone, then use New menu to make its first one.");
     expect(menusEmptyText(DEVICES, "", false, makeFirstMenuText(true))).toBe("None yet. Use New menu to make one.");
     expect(menusEmptyText(DEVICES, "", true)).toBe("None yet. Update HouseLit on your iPhone and open it once. Its menus move here by themselves.");
     expect(noMenuText(JESSE_D, "", true)).toBe(`No menus from ${JESSE_D.name} yet. ${WAIT_FOR_IPHONE_TEXT}`);

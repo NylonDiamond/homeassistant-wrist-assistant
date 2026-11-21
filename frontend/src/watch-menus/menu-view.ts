@@ -37,7 +37,7 @@ import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
 import { WATCH_NOT_IN_LIST_TEXT, WATCH_NOT_ON_IPHONE_TEXT, WATCH_NO_HTTP_ACTIONS_TEXT } from "../watch-pages/catalog.js";
 import { type WatchSkipChoice, WATCH_SKIP_CHOICES, watchSkipChoice, watchSkipValue } from "../watch-pages/tile-settings-options.js";
 import { goToWatchHttpActions } from "../shell.js";
-import { type SettingDevice, deviceNoun, noRecordTitle } from "../watch-settings.js";
+import { type SettingDevice, deviceNoun, noRecordTitle, settingPointer } from "../watch-settings.js";
 import {
   SWITCHER_SECTION_TITLE,
   type SwitcherSettingsHost,
@@ -914,12 +914,6 @@ const CATEGORY_HEADINGS: Readonly<Record<string, string>> = {
   remote: "Remote control",
 };
 
-/** An action's name as the inspector prints it: the table's "Speak Message
- * - TTS" reads "Speak Message (TTS)", with no dash breaking it. */
-export function menuActionWords(raw: string): string {
-  return watchMenuActionLabel(raw).replace(/ - (.+)$/, " ($1)");
-}
-
 function categoryHeading(ref: MenuListRef, category: string): string {
   if (category === "entityControl") {
     const domain = menuListDomain(ref) ?? "all";
@@ -939,7 +933,7 @@ export function menuActionTileGroups(host: Pick<MenusViewHost, "targets">, ref: 
     const spec = watchMenuAction(raw);
     const look = spec === undefined ? { icon: MENU_ACTIONS.unknownActionIcon, color: MENU_ACTIONS.unknownActionColor } : spec;
     const why = raw === current ? undefined : watchMenuActionUnavailable(raw, host.targets);
-    return { raw, label: menuActionWords(raw), icon: look.icon, color: look.color, ...(why === undefined ? {} : { why }) };
+    return { raw, label: watchMenuActionLabel(raw), icon: look.icon, color: look.color, ...(why === undefined ? {} : { why }) };
   };
   const offered = groups.some((g) => g.actions.includes(current));
   return [
@@ -1068,7 +1062,7 @@ function renderSkipConditions(host: MenusViewHost, ref: MenuListRef, slot: JsonO
   const id = watchMenuSlotId(slot);
   return html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(watchMenuSlotSkipConditions(slot)),
       WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) => host.edit((d) => setWatchMenuSlotSkipConditions(d, ref, id, watchSkipValue(v))))}</div>
-    <div class="hint ts-under">Whether running the automation from this menu skips its conditions. Default follows the tile, then "Skip conditions by default" in the watch's Settings.</div>`;
+    <div class="hint ts-under">Whether running the automation from this menu skips its conditions. Default follows the tile, then ${settingPointer("automationTriggerSkipConditions", "watch")}.</div>`;
 }
 
 /** The Shows on card's summary: every screen, or the types it shows over. */
@@ -1198,7 +1192,7 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
   </fieldset>`;
   const voiceBody = renderSlotVoiceBody(host, ref, slot);
   return html`${renderNameCard(host, slot)}
-    ${card(host, "slot", "slot", "What it does", whatBody, { summary: menuActionWords(raw), dot: menuSlotActionChanged(slot, ref) })}
+    ${card(host, "slot", "slot", "What it does", whatBody, { summary: watchMenuActionLabel(raw), dot: menuSlotActionChanged(slot, ref) })}
     ${card(host, "where", "where", "Where", whereBody, {
       summary: `${watchMenuPositionLabel(position)}${slot.isVisible === false ? ", hidden" : ""}`, dot: menuSlotWhereChanged(slot) })}
     ${voiceBody === undefined ? nothing : card(host, "slot", "voice", "Voice",
@@ -1389,7 +1383,7 @@ export const menuViewStyles = css`
   .me-dot.two { width: calc(23px * var(--me-s, 1)); height: calc(23px * var(--me-s, 1)); border-width: 1px; z-index: 1; }
   .me-count {
     position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
-    background: var(--wa-accent); color: #000; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+    background: var(--wa-accent); color: var(--wa-accent-ink); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
   }
   .me-dot.inh { opacity: .45; border-style: dashed; cursor: default; width: calc(28px * var(--me-s, 1)); height: calc(28px * var(--me-s, 1)); }
   .me-dot.free {

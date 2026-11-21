@@ -1491,3 +1491,134 @@ def test_without_have_a_new_list_sends_every_value_again(coordinator) -> None:
         assert [e["entity_id"] for e in body["events"]] == ["template.tile_a"]
 
     asyncio.run(run())
+
+
+# ── a template over a domain or every state is rate limited ──────────────
+
+
+def _domain_template(hass: Any, sensor: str, counts: dict[str, int], *, all_states: bool = False):
+    """A template that reads the whole ``sensor`` domain (or every state)."""
+
+    class _Template:
+        def __init__(self, source: str, _hass: Any) -> None:
+            self.source = source
+
+        def async_render_to_info(self) -> _RenderInfo:
+            counts[self.source] = counts.get(self.source, 0) + 1
+            info = _RenderInfo(hass.states.get(sensor).state, set())
+            if all_states:
+                info.all_states = True
+            else:
+                info.domains = {"sensor"}
+            return info
+
+    return _Template
+
+
+def test_a_domain_template_renders_at_most_once_a_second_and_the_last_value_lands(coordinator) -> None:
+    """50 changes in 2 s to a sensor a domain template reads: a device that
+    polls again after each reply sees a handful of renders, not one per
+    wake, and the last value still reaches it."""
+    module, hass, coord = coordinator
+    sensor = "sensor.power"
+    hass.states.set(sensor, "0")
+    counts: dict[str, int] = {}
+    module.Template = _domain_template(hass, sensor, counts)
+
+    async def run() -> None:
+        hass.loop = asyncio.get_running_loop()
+        _, body = await _poll(coord, entities=[], templates={"tile_sum": "{{ states.sensor }}"})
+        assert body["events"][0]["lines"] == ["0"]
+        cursor = body["next_cursor"]
+        first = counts["{{ states.sensor }}"]
+
+        async def burst() -> None:
+            for i in range(1, 51):
+                _change(hass, coord, sensor, str(i))
+                await asyncio.sleep(0.04)
+
+        changes = asyncio.create_task(burst())
+        seen: list[str] = []
+        started = hass.loop.time()
+        while hass.loop.time() - started < 4.5:
+            _, body = await _poll(coord, since=cursor, timeout=3)
+            if body is None:
+                continue
+            cursor = body.get("next_cursor", cursor)
+            seen.extend(e["lines"][0] for e in body.get("events", []) if e["entity_id"] == "template.tile_sum")
+            if changes.done() and seen and seen[-1] == "50":
+                break
+        await changes
+        renders = counts["{{ states.sensor }}"] - first
+        assert seen[-1] == "50"
+        assert renders <= 4, renders
+
+    asyncio.run(run())
+
+
+def test_an_all_states_template_waits_its_longer_interval(coordinator, monkeypatch) -> None:
+    module, hass, coord = coordinator
+    sensor = "sensor.any"
+    hass.states.set(sensor, "a")
+    counts: dict[str, int] = {}
+    module.Template = _domain_template(hass, sensor, counts, all_states=True)
+    monkeypatch.setattr(module, "ALL_STATES_RENDER_INTERVAL_SECONDS", 0.6)
+
+    async def run() -> None:
+        hass.loop = asyncio.get_running_loop()
+        _, body = await _poll(coord, entities=[], templates={"tile_all": "{{ states }}"})
+        cursor = body["next_cursor"]
+        _change(hass, coord, sensor, "b")
+        started = hass.loop.time()
+        _, body = await _poll(coord, since=cursor, timeout=3)
+        waited = hass.loop.time() - started
+        assert [e["lines"] for e in body["events"]] == [["b"]]
+        assert 0.4 < waited < 1.5
+        assert counts["{{ states }}"] == 2
+        # Named entities only: no limit, as before.
+        assert module.DeltaCoordinator._render_interval(
+            module._TemplateDeps(entities=frozenset({sensor}), domains=frozenset(), all_states=False)
+        ) == 0.0
+
+    asyncio.run(run())
+
+
+def test_a_template_that_reads_a_new_entity_wakes_the_held_poll_for_it(coordinator) -> None:
+    """A branch that moves to another entity while the value stays the same
+    must still wake the held poll when that entity changes (PS-03)."""
+    module, hass, coord = coordinator
+    mode, inside, outside = "input_select.mode", "sensor.inside", "sensor.outside"
+    hass.states.set(mode, "home")
+    hass.states.set(inside, "20")
+    hass.states.set(outside, "20")
+
+    class _Template:
+        def __init__(self, source: str, _hass: Any) -> None:
+            self.source = source
+
+        def async_render_to_info(self) -> _RenderInfo:
+            read = outside if hass.states.get(mode).state == "away" else inside
+            return _RenderInfo(hass.states.get(read).state, {mode, read})
+
+    module.Template = _Template
+
+    async def run() -> None:
+        hass.loop = asyncio.get_running_loop()
+        _, body = await _poll(coord, entities=[], templates={"tile_t": "branch"})
+        cursor = body["next_cursor"]
+
+        async def later() -> None:
+            await asyncio.sleep(0.3)
+            # The branch flips; the value stays 20, so the poll keeps waiting.
+            _change(hass, coord, mode, "away")
+            await asyncio.sleep(0.4)
+            _change(hass, coord, outside, "5")
+
+        task = asyncio.create_task(later())
+        started = hass.loop.time()
+        _, body = await _poll(coord, since=cursor, timeout=5)
+        await task
+        assert [e["lines"] for e in body["events"]] == [["5"]]
+        assert hass.loop.time() - started < 2.0
+
+    asyncio.run(run())

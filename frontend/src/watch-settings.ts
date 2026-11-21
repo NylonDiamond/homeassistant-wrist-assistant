@@ -26,6 +26,7 @@ import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
 import { type DevicePlatform, gateVersion, platformModel, platformNoun, platformNounTitle, platformOf, generalCopy } from "./device-platform.js";
 import { integrationStoreName } from "./integration-store.js";
+import { type SettingsCardId, groupOfCard } from "./watch-settings-nav.js";
 import { SETUP_MOVE_PUBLIC_VERSION, deviceKindOf, phoneShowsPages, setupMoveNeedsUpdate, versionForCopy } from "./version.js";
 
 /**
@@ -142,6 +143,18 @@ export type SettingEdits = ReadonlyMap<string, SettingValue>;
 
 export function catalogSettings(catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): CatalogSetting[] {
   return catalog.sections.flatMap((s) => s.settings);
+}
+
+/** A pointer to a setting, built from the catalog so it never names an old
+ * label: its label in quotes, then the Settings group it is under
+ * (`SETTINGS_GROUPS`), as `"Run automations right away" in the watch's
+ * Settings, under Controls`. */
+export function settingPointer(key: string, device: string, catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): string {
+  const section = catalog.sections.find((sec) => sec.settings.some((set) => set.key === key));
+  const setting = section?.settings.find((set) => set.key === key);
+  const label = setting?.label ?? key;
+  const group = section === undefined ? undefined : groupOfCard(section.id as SettingsCardId);
+  return `"${label}" in the ${device}'s Settings${group === undefined ? "" : `, under ${group.title}`}`;
 }
 
 const HEX_COLOR = /^#?[0-9a-fA-F]{6}$/;
