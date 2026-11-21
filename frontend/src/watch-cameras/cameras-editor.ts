@@ -287,6 +287,8 @@ export class WaCamerasEditor extends LitElement {
   private setEdit(edit: CameraEdit): void {
     if (this.saving) return;
     editCameraDraft(edit);
+    // A new edit makes the Discard's Undo stale: it would throw this away.
+    if (this.note?.undo !== undefined) this.note = undefined;
     this.requestUpdate();
   }
 

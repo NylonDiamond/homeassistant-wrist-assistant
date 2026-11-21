@@ -147,7 +147,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type DeviceSync, type HowDevice, type SendState, notOnADeviceLine, notOnADeviceUnsavedLine, afterSaveLine, agoWords, describeSend, howItWorksSteps, onTheFaceStep, refreshNowTitle, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone, waitsOnlyForOwnSetup } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, copyPlainText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeAddress, homeDeviceRows, homeGroupSummary, homeGroups, homePickOf, homeRowSub, homeStep, ownScreenBlurb, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, pickablePages, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone, waitsOnlyForOwnSetup } from "./home.js";
 import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices, syncPillStyles, syncRowWords, syncStateOf } from "./sync-pill.js";
 import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
@@ -7468,6 +7468,19 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /** The page picker's list for a device that reports none, from the pages
+   * record the panel keeps for it. Only the newest read for the same device
+   * lands; a device with no record keeps the empty list. */
+  private async loadOwnPages(ownerId: string, run: number) {
+    try {
+      const record = await fetchWatchConfig(this.hass, ownerId, "pages");
+      if (this.ownerId !== ownerId || run !== this.recordsLoadRun) return;
+      this.pages = pickablePages(record.document);
+    } catch {
+      // No record, or no read: the picker says how to add a page.
+    }
+  }
+
   private async loadRecords() {
     if (!this.ownerId) return;
     const ownerId = this.ownerId;
@@ -7488,6 +7501,10 @@ export class WristAssistantPanel extends LitElement {
       this.occupied = reply.occupied
         ?? this.presets.map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" }));
       this.pages = reply.pages ?? [];
+      // An iPhone reports no page list: its pages are the ones built here.
+      if (this.pages.length === 0 && this.phonePages && deviceKindOf(this.ownerOf(ownerId)) === "iphone") {
+        void this.loadOwnPages(ownerId, run);
+      }
       void this.loadHttpLibrary();
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
@@ -16366,10 +16383,11 @@ export class WristAssistantPanel extends LitElement {
     const send = this.shareSection(++n, "s-send", "Send it", html`
       ${this.renderGalleryStanding(posted)}
       <div class="xf-acts">
-        <button class="xf-act" ?disabled=${!share || !mayPost || !ready} aria-haspopup="dialog"
+        <button class="xf-act" ?disabled=${!share || !mayPost || !ready || shared.length === 0} aria-haspopup="dialog"
           @click=${() => this.openGalleryDialog()}>
           <span class="ic">${uiIcon("globe")}</span><b>${posted?.kind === "live" ? "Update in online gallery" : posted?.kind === "pending" ? "Send to gallery again" : "Post to online gallery"}</b>
           <span>${!share ? "Only shares can go"
+            : shared.length === 0 ? "The gallery files designs by shape. Send this control as a link or a file"
             : !mayPost ? "Only an administrator can post to the online gallery"
             : posted?.kind === "live" ? "A new version. The link and votes stay"
             : posted?.kind === "pending" ? "Takes the place of the copy in review"
@@ -17272,8 +17290,9 @@ export class WristAssistantPanel extends LitElement {
         <div class="xf-checks">
           <div>${uiIcon("check")}<span>${tags === 0 ? "Title, no tags" : `Title and ${tags === 1 ? "1 tag" : `${tags} tags`}`}</span></div>
           <div>${uiIcon("check")}<span>${slots.length > 0 ? "Your entities are removed" : "It reads none of your entities"}</span></div>
-          <div>${uiIcon("check")}<span>${pictures ? "Pictures show as a stand-in, never your photo" : "The preview shows your current values"}</span></div>
+          ${pictures ? html`<div>${uiIcon("check")}<span>Pictures show as a stand-in, never your photo</span></div>` : nothing}
         </div>
+        <div class="xf-lead">${uiIcon("info")}<span>The picture shows what your entities read right now, list rows and calendar events too. Look at it before you send.</span></div>
         ${problems.length > 0 ? html`<ul class="xf-blockers" role="alert">${problems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
         ${this.galleryError !== "" ? html`<div class="xf-blockers" role="alert">${this.galleryError}</div>` : nothing}
       </div>

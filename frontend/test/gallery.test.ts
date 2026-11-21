@@ -503,7 +503,10 @@ describe("galleryBlockers", () => {
   it("refuses a slot id the gallery's pattern does not take", () => {
     const cfg = livingRoom();
     const slots = shareSlots(cfg, domainsOf(cfg)).map((s) => ({ ...s, placeholderId: "Hue.shared_1" }));
-    expect(galleryBlockers(cfg, slots, META).some((s) => s.includes("Hue.shared_1"))).toBe(true);
+    const out = galleryBlockers(cfg, slots, META);
+    // Once, in plain words, with no id.
+    expect(out.filter((s) => s === "The gallery cannot take one of its entities yet. Share it as text instead.")).toHaveLength(1);
+    expect(out.some((s) => s.includes("Hue.shared_1"))).toBe(false);
   });
 
   it("takes a slot id with digits in the domain", () => {

@@ -322,5 +322,7 @@ describe("the scan as it was", () => {
     expect(cards({ doc: changed, scans })).toMatch(/\?disabled=false[^>]*>Back to the scan/);
     // None from an integration that keeps no scans.
     expect(cards({})).not.toContain("Show scan as it was");
+    // None for a room drawn here, on a home that keeps scans of other rooms.
+    expect(cards({ scans: {} })).not.toContain("Show scan as it was");
   });
 });

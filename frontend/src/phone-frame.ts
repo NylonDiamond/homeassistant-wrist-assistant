@@ -65,6 +65,7 @@ import { css, html, svg, type TemplateResult, nothing, unsafeCSS } from "lit";
 
 import type { IconProvider } from "./renderer.js";
 import { renderWatchFrame } from "./watch-frame.js";
+import { pageTitleModeFallback } from "./watch-settings.js";
 
 /** One iPhone screen: its size, the safe area the app's chrome keeps clear
  * of, the corner radius of its display, and its Dynamic Island, all in
@@ -285,13 +286,14 @@ export function phonePagesDotsOf(behavior: Readonly<Record<string, unknown>> | u
 
 /** Whether the iPhone look's top row takes room (`PhonePagesView.topRowTakesRoom`):
  * it has no buttons, so only while it holds the page's name with Page name
- * on Show (`pageTitleMode` "On", the default) on a page that shows its name
+ * on Show (`pageTitleMode` "On", the default; a record with only the older
+ * keys reads them as the app does) on a page that shows its name
  * (`showsTitle`: a name, and a title style that is not none). A pushed
  * page's way back, the Home status line and a problem make room on the
  * phone too, but the panel draws none of them. Auto's name never makes
  * room: the phone shows it over the dots. */
 export function phoneTopRowTakesRoom(behavior: Readonly<Record<string, unknown>> | undefined, showsTitle: boolean): boolean {
-  return (behavior?.pageTitleMode ?? "On") === "On" && showsTitle;
+  return (behavior?.pageTitleMode ?? pageTitleModeFallback(behavior ?? {})) === "On" && showsTitle;
 }
 
 /** `PhonePagesView.bottomBarHeight`: the dock's bar with the iPhone look

@@ -79,7 +79,7 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
   "voice": {
     art: "voice", label: "On your watch",
     how: "Tap an Assist tile or an Ask Assist menu slot, then talk. A Speak tile or slot plays your words on your speakers.",
-    use: "Asking Home Assistant things hands free, and one tap phrases like \"Dinner is ready\" from Pick from List.",
+    use: "Asking Home Assistant things hands free, and one tap phrases like \"Dinner is ready\" from Speak from List.",
   },
   "watch-complications": {
     art: "face", label: "On your watch",

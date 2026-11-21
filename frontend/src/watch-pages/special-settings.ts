@@ -951,7 +951,7 @@ function renderPerson(host: TileSettingsHost): TemplateResult {
 function renderAlarm(host: TileSettingsHost): TemplateResult {
   return html`
     ${checkField("Auto-submit", watchAlarmAutoSubmit(host.tile), (on) => commit(host, "autoSubmit", (d) => setWatchAlarmAutoSubmit(d, ...at(host), on)))}
-    <div class="hint ts-under">Submits the PIN once the code's digits are in, with no Submit tap.</div>`;
+    <div class="hint ts-under">Sends the code by itself once all its digits are in, when the alarm tells the code's length. Otherwise the pad waits for Submit.</div>`;
 }
 
 export const specialSettingsStyles = css`

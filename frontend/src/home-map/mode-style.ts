@@ -197,8 +197,9 @@ export class HomeStylePanel {
     const pages = [...new Set(own.map((u) => u.pageId))];
     const sure = await ctx.confirm({
       title: `Use the home style on ${homeMapCount(own.length, "tile")}?`,
-      text: `Their own looks come off, so each draws the home style. ${pages.length === 1 ? "The page is" : `The ${pages.length} pages are`} saved for every watch and ${generalCopy("iPhone", "phone")} that shows ${pages.length === 1 ? "it" : "them"}.`,
+      text: `Their own looks come off, so each draws the home style. ${pages.length === 1 ? "The page is" : `The ${pages.length} pages are`} saved for every watch and ${generalCopy("iPhone", "phone")} that shows ${pages.length === 1 ? "it" : "them"}. This cannot be undone here.`,
       ok: "Use the home style",
+      danger: true,
     });
     if (!sure) return;
     this.busy = true;

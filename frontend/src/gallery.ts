@@ -565,12 +565,12 @@ function steppedBlockers(
   if (body.slots.length > GALLERY_LIMITS.slots) {
     out.push(`It reads ${body.slots.length} entities. The gallery takes at most ${GALLERY_LIMITS.slots}.`);
   }
+  if (body.slots.some((slot) => !GALLERY_SLOT_ID_RE.test(slot.id))) {
+    out.push("The gallery cannot take one of its entities yet. Share it as text instead.");
+  }
   for (const slot of body.slots) {
-    if (!GALLERY_SLOT_ID_RE.test(slot.id)) {
-      out.push(`The gallery cannot take the slot ${slot.id}, because its domain has characters other than letters and underscores.`);
-    }
     if (slot.label.length > GALLERY_LIMITS.slotLabel) {
-      out.push(`The label for ${slot.id} is longer than ${GALLERY_LIMITS.slotLabel} characters.`);
+      out.push(`The public name ${slot.label} is longer than ${GALLERY_LIMITS.slotLabel} characters. Shorten it under Public names.`);
     }
   }
 

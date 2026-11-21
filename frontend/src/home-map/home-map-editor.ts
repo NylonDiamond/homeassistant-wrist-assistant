@@ -161,6 +161,7 @@ import {
   type HomeMapScans,
   type HomePoint,
   homeMapAreaChoices,
+  homeMapFloorDeviceCount,
   homeMapFloorName,
   homeMapRoomName,
   readHomeMap,
@@ -1596,7 +1597,7 @@ export class WaHomeMapEditor extends LitElement {
         <button type="button" class="hme-tb hme-floor-btn" aria-label="Switch floor" aria-haspopup="menu" aria-expanded=${this.floorMenu ? "true" : "false"}
           @click=${() => { this.floorMenu = !this.floorMenu; }}>
           ${hmeFloorThumb(floor)}
-          <span class="hme-floor-t"><span>${homeMapFloorName(floor)}</span><small>${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(new Set(floor.pins.map((p) => p.entityId)).size, "device")}</small></span>
+          <span class="hme-floor-t"><span>${homeMapFloorName(floor)}</span><small>${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(homeMapFloorDeviceCount(floor), "device")}</small></span>
           <span class="hme-caret" aria-hidden="true">▾</span>
         </button>
         ${this.floorMenu ? this.renderFloorMenu(doc, floor) : nothing}
@@ -1636,7 +1637,7 @@ export class WaHomeMapEditor extends LitElement {
     return html`<div class="hme-pop" role="menu" aria-label="Floors">
       ${doc.floors.map((f) => html`<div class="hme-pop-row ${sameHomeMapId(f.id, on.id) ? "on" : ""}">
         <button type="button" role="menuitem" class="hme-pop-main" @click=${() => this.setFloor(f.id)}>
-          ${hmeFloorThumb(f)}<span class="hme-floor-t"><span>${homeMapFloorName(f)}</span><small>${homeMapCount(f.rooms.length, "room")} · ${homeMapCount(new Set(f.pins.map((p) => p.entityId)).size, "device")}</small></span></button>
+          ${hmeFloorThumb(f)}<span class="hme-floor-t"><span>${homeMapFloorName(f)}</span><small>${homeMapCount(f.rooms.length, "room")} · ${homeMapCount(homeMapFloorDeviceCount(f), "device")}</small></span></button>
         <button type="button" class="hme-pop-act" title="Rename" aria-label=${`Rename ${homeMapFloorName(f)}`} @click=${() => void this.renameFloorAsk(f)}>Rename</button>
         <button type="button" class="hme-pop-act danger" title=${doc.floors.length === 1 ? "The map keeps at least one floor" : "Delete"} aria-label=${`Delete ${homeMapFloorName(f)}`}
           ?disabled=${doc.floors.length === 1} @click=${() => void this.deleteFloorAsk(f)}>Delete</button>
@@ -1666,7 +1667,7 @@ export class WaHomeMapEditor extends LitElement {
     this.floorMenu = false;
     const sure = await this.confirm({
       title: `Delete ${homeMapFloorName(floor)}?`,
-      text: `Its ${homeMapCount(floor.rooms.length, "room")} and ${homeMapCount(floor.pins.length, "device")} come off the map. Undo brings them back while this page is open.`,
+      text: `Its ${homeMapCount(floor.rooms.length, "room")} and ${homeMapCount(homeMapFloorDeviceCount(floor), "device")} come off the map. Undo brings them back while this page is open.`,
       ok: "Delete floor",
       danger: true,
     });

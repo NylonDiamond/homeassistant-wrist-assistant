@@ -251,12 +251,13 @@ export class ShapeMode {
   }
 
   /** Show scan as it was, and Back to the scan for a room whose shape has
-   * changed since; none from an integration that keeps no scans. */
+   * changed since; none for a room with no scan (drawn here), or from an
+   * integration that keeps no scans. */
   scanCard(ctx: HomeMapEditorContext, room: HomeMapRoom): TemplateResult | typeof nothing {
-    if (ctx.scans === undefined) return nothing;
     const roomId = room.id;
     const scan = homeMapScanOf(ctx.scans, roomId);
-    const back = scan !== undefined && homeMapScanDiffers(room, scan) ? scan : undefined;
+    if (scan === undefined) return nothing;
+    const back = homeMapScanDiffers(room, scan) ? scan : undefined;
     return hmeCard("Show scan as it was", html`<div class="hme-row-end">
       <button type="button" class="hme-tb ${ctx.toggles.scan ? "on" : ""}" aria-pressed=${ctx.toggles.scan ? "true" : "false"} title=${SCAN_TOGGLE_TITLE}
         @click=${() => ctx.setToggle("scan", !ctx.toggles.scan)}>${ctx.toggles.scan ? "On" : "Off"}</button>

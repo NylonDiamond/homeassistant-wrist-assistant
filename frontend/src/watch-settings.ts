@@ -215,8 +215,14 @@ export function settingValue(setting: CatalogSetting, document: BehaviorDocument
  * - `topSectionDoubleTapAction`: `ConnectionManager.topSectionDoubleTapAction`.
  *   The older room quick jump switch, on, is Room jump; else Disabled.
  */
+/** `pageTitleMode` of a behavior record with no such key, from the older
+ * keys (`BehaviorPreferences.resolvedPageTitleMode`). */
+export function pageTitleModeFallback(doc: Readonly<BehaviorDocument>): string {
+  return doc.showPageTitle === false ? "Off" : doc.pageTitleStyle === "Auto" ? "Auto" : "On";
+}
+
 const FALLBACKS: Readonly<Record<string, (doc: BehaviorDocument) => string>> = {
-  pageTitleMode: (doc) => (doc.showPageTitle === false ? "Off" : doc.pageTitleStyle === "Auto" ? "Auto" : "On"),
+  pageTitleMode: pageTitleModeFallback,
   topSectionDoubleTapAction: (doc) => (doc.roomQuickJumpEnabled === true ? "Room Jump" : "Disabled"),
 };
 

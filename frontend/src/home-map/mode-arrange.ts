@@ -197,6 +197,7 @@ import {
   type HomeMapStates,
   type HomePoint,
   HOME_MAP_FINISHES,
+  homeMapFloorDeviceCount,
   homeMapFloorName,
   homeMapLightsOn,
   homeMapLightsOnWords,
@@ -1835,6 +1836,6 @@ export class ArrangeMode {
     const things = floor.rooms.reduce((n, r) => n + r.objects.length, 0);
     return html`
       ${hmeRow("Name", hmeText({ value: floor.name, label: "Floor name", placeholder: homeMapFloorName(floor), set: (v) => ctx.apply((d) => renameFloor(d, floor.id, v)) }))}
-      ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(things, "thing")} · ${homeMapCount(floor.pins.length, "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`;
+      ${hmeRow("On it", html`<span class="hme-val">${homeMapCount(floor.rooms.length, "room")} · ${homeMapCount(things, "thing")} · ${homeMapCount(homeMapFloorDeviceCount(floor), "device")} · ${homeMapLightsOnWords(lights)}</span>`)}`;
   }
 }

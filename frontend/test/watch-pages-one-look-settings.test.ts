@@ -153,7 +153,7 @@ describe("Icon and color in One Look", () => {
     const fan = drawn(tile("fan.ceiling", { activeIconAnimationEnabled: true }), true);
     expect(greyedBefore(fan, ONE_LOOK_ANIMATE_REASON)).toContain("Animate while on");
     expect(fan).not.toContain("Spins the icon while the fan runs.");
-    expect(fan).not.toContain("Use the default");
+    expect(fan).not.toContain("Remove this tile's own setting");
   });
 
   it("words the icon size and the state icons for One Look", () => {

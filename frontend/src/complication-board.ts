@@ -48,7 +48,7 @@ export const COMP_WHERE_HINTS: Readonly<Record<CompWhere, string>> = {
       "A control in Control Center on an Apple Watch or an iPhone, and a Quick Settings tile on an Android phone.",
     );
   },
-  other: "These have no shape yet, or wait to move from the iPhone app.",
+  other: "These have no shape yet, or were made in the old iPhone app and have not moved to Home Assistant yet.",
 };
 
 const HOME_SHAPES: readonly string[] = ["small", "medium", "large", "xlarge"];

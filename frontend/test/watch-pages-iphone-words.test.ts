@@ -122,7 +122,7 @@ describe("tile settings on an iPhone", () => {
 
   it("never name the watch for a kind's own rows", () => {
     const own: Record<string, string> = {
-      "automation.night": "Whether running the automation from the iPhone skips its conditions.",
+      "automation.night": "in the iPhone's Settings, under Controls, which skips them unless it is turned off.",
       "camera.door": "Default follows the iPhone's camera setting.",
       "remote.tv": "Scripts the remote runs from its quick action list on the iPhone.",
       "calendar.home": "The iPhone's calendar sheet colors each one's events.",

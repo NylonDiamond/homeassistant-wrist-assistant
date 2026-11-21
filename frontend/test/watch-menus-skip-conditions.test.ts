@@ -147,8 +147,16 @@ describe("the Slot card", () => {
     expect(text).toContain(">Default<");
     expect(text).toContain(">Skip<");
     expect(text).toContain(">Don't skip<");
-    const hint = text.slice(text.indexOf("Whether running the automation from this menu"));
+    const hint = text.slice(text.indexOf("Skip runs the automation"));
     expect(hint.slice(0, hint.indexOf("</div>"))).not.toMatch(/[\u2013\u2014]| - /);
+  });
+
+  it("points an iPhone's menu at the iPhone's Settings", () => {
+    const { h } = host(DEFAULTS);
+    (h as { device?: string }).device = "iphone";
+    const text = flat(renderMenuInspector(h));
+    expect(text).toContain("in the iPhone's Settings");
+    expect(text).not.toContain("in the watch's Settings");
   });
 
   it("not for another action, nor in the Anywhere menu", () => {

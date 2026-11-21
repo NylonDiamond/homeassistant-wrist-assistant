@@ -842,6 +842,12 @@ export function homeMapFloorName(floor: Pick<HomeMapFloor, "name" | "story">): s
   return name !== "" ? name : `Floor ${floor.story + 1}`;
 }
 
+/** How many devices a floor shows: one per entity, so a light pinned in
+ * two lamps counts once. */
+export function homeMapFloorDeviceCount(floor: Pick<HomeMapFloor, "pins">): number {
+  return new Set(floor.pins.map((p) => p.entityId)).size;
+}
+
 /** A room's name, or "Room" for one with none. */
 export function homeMapRoomName(room: Pick<HomeMapRoom, "name">): string {
   const name = room.name?.trim() ?? "";

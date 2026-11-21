@@ -1062,7 +1062,7 @@ function renderSkipConditions(host: MenusViewHost, ref: MenuListRef, slot: JsonO
   const id = watchMenuSlotId(slot);
   return html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(watchMenuSlotSkipConditions(slot)),
       WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) => host.edit((d) => setWatchMenuSlotSkipConditions(d, ref, id, watchSkipValue(v))))}</div>
-    <div class="hint ts-under">Whether running the automation from this menu skips its conditions. Default follows the tile, then ${settingPointer("automationTriggerSkipConditions", "watch")}.</div>`;
+    <div class="hint ts-under">Skip runs the automation's actions without checking its conditions first. Default follows the tile, then ${settingPointer("automationTriggerSkipConditions", deviceNoun(host.device ?? "watch"))}, which skips them unless it is turned off.</div>`;
 }
 
 /** The Shows on card's summary: every screen, or the types it shows over. */
@@ -1172,7 +1172,7 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
   const def = menuSlotDefaultLook(slot);
   const position = typeof slot.position === "string" ? slot.position : "";
   const whatBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="What it does">
-    ${spec === undefined ? html`<div class="hint warn">A newer app wrote this action. A watch with an older app shows Sync Needed for it until the app is updated. Pick another action to replace it.</div>` : nothing}
+    ${spec === undefined ? html`<div class="hint warn">A newer app wrote this action. A watch with an older app cannot run it until the app is updated. Pick another action to replace it.</div>` : nothing}
     ${actionTiles(host.icons, raw, menuActionTileGroups(host, ref, slot), (next) => host.edit((d) => setWatchMenuSlotAction(d, ref, id, next, host.targets)))}
     ${spec?.description ? html`<div class="mi-desc">${spec.description}</div>` : nothing}
     ${watchMenuActionNeedsInstances(raw) ? html`<div class="hint keep">Only for a watch with more than one Home Assistant.</div>` : nothing}

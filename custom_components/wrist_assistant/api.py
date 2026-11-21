@@ -236,7 +236,10 @@ class WatchSession:
         except a template tile's the device says it holds: ``have`` names, by
         key, the hash (`tile_text_hash`) of the text it last got. A key in
         the new list whose kept text has that hash keeps its value and
-        dependencies, so a page change does not render it again."""
+        dependencies, so a page change does not render it again. A key the
+        rate limit held a change back for (``template_dirty``) is not kept:
+        the device holds the old text, and the cursor of this poll is past
+        the change, so only a render now brings it the new one."""
         kept: dict[str, tuple[str, _TemplateDeps]] = {}
         for key, digest in (have or {}).items():
             value = self.template_values.get(key)
@@ -249,6 +252,7 @@ class WatchSession:
                 and value is not None
                 and deps is not None
                 and tile_text_hash(value) == digest
+                and key not in self.template_dirty
             ):
                 kept[key] = (value, deps)
         self.templates = templates
@@ -1414,6 +1418,10 @@ class DeltaCoordinator:
         if self._unsub_state_changed is not None:
             self._unsub_state_changed()
             self._unsub_state_changed = None
+        for session in self._sessions.values():
+            if session.template_wake is not None:
+                session.template_wake.cancel()
+                session.template_wake = None
         self._wake_all_waiters()
 
     @property
@@ -1487,7 +1495,13 @@ class DeltaCoordinator:
         Returns whether a session existed. Session listeners fire when one
         did, so the counts on the diagnostic sensors drop at once.
         """
-        had_session = self._sessions.pop(watch_id, None) is not None
+        dropped = self._sessions.pop(watch_id, None)
+        had_session = dropped is not None
+        if dropped is not None and dropped.template_wake is not None:
+            # Its timer would otherwise wake, and clear the handle of, a
+            # session paired again under the same id.
+            dropped.template_wake.cancel()
+            dropped.template_wake = None
         waiter = self._waiters.pop(watch_id, None)
         if waiter is not None:
             waiter.set()  # parked poll re-checks ownership and exits with a 204
@@ -2838,15 +2852,17 @@ class DeltaCoordinator:
         # The running loop, which is Home Assistant's; its clock is the one
         # ``hass.loop.time()`` reads.
         session.template_wake = asyncio.get_running_loop().call_at(
-            when, self._template_wake_fired, session.watch_id
+            when, self._template_wake_fired, session.watch_id, when
         )
 
     @callback
-    def _template_wake_fired(self, watch_id: str) -> None:
+    def _template_wake_fired(self, watch_id: str, when: float) -> None:
         """A held back template is due: wake the device's held poll, whose
-        collect renders it. With no poll held, the next poll does."""
+        collect renders it. With no poll held, the next poll does. The
+        session's handle is cleared only when it is the one that fired, so a
+        session that has a newer handle keeps it."""
         session = self._sessions.get(watch_id)
-        if session is not None:
+        if session is not None and session.template_wake is not None and session.template_wake.when() == when:
             session.template_wake = None
         waiter = self._waiters.get(watch_id)
         if waiter is not None:

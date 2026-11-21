@@ -154,6 +154,21 @@ export function watchConfigCount(kind: DeviceCountKind, document: unknown): numb
   return list.filter((item) => isObject(item) && !(kind === "pages" && item.isSystemPage === true)).length;
 }
 
+/** The pages a page picker offers from a stored pages record: id and name,
+ * in the record's order, system pages and pages without an id left out. For
+ * a device that reports no page list of its own, an iPhone, whose pages are
+ * the ones the panel built. */
+export function pickablePages(document: unknown): { id: string; name: string }[] {
+  if (!isObject(document) || !Array.isArray(document.pages)) return [];
+  return document.pages.flatMap((page) => {
+    if (!isObject(page) || page.isSystemPage === true) return [];
+    const id = typeof page.id === "string" ? page.id : "";
+    if (id === "") return [];
+    const name = typeof page.name === "string" ? page.name.trim() : "";
+    return [{ id, name }];
+  });
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

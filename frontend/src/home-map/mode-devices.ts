@@ -253,6 +253,12 @@ interface LampChooser {
   choice: HomeMapLampChoice;
 }
 
+/** Where the Area card's move to the room's area has got to. A finished
+ * move keeps the entity's own area from before, for its Undo. */
+type AreaMove =
+  | { entityId: string; state: "busy" | "failed" }
+  | { entityId: string; state: "moved"; to: string; undo: string | null };
+
 export class DevicesMode {
   /** `picture` draws a furniture piece's small 3D picture by its id, for
    * the lamp chooser (the edit page hands it the furniture picker's). */
@@ -283,7 +289,7 @@ export class DevicesMode {
   private lampOver: HomeMapThingRef | undefined;
   /** A move of a device's area in Home Assistant from the pin's card: the
    * entity, and whether it is out or failed. */
-  private areaMove: { entityId: string; state: "busy" | "failed" } | undefined;
+  private areaMove: AreaMove | undefined;
 
   private states(ctx: HomeMapEditorContext): HomeMapStates | undefined {
     return ctx.toggles.live ? ctx.hass?.states : undefined;
@@ -291,34 +297,47 @@ export class DevicesMode {
 
   /** Says when the pin's room and its device in Home Assistant name
    * different areas, with a button to move the device to the room's area.
-   * Nothing changes in Home Assistant until it is pressed. */
+   * Nothing changes in Home Assistant until it is pressed. The move sets
+   * the area of this one entity, and then offers an Undo that puts back
+   * its own area, or none when it took its device's. */
   private areaCard(ctx: HomeMapEditorContext, entityId: string, roomAreaId: string | undefined): TemplateResult | typeof nothing {
     const diff = homeMapAreaDiff(ctx.hass, entityId, roomAreaId);
-    if (diff === undefined) return nothing;
     const name = (id: string | undefined) => (id === undefined ? "No area" : ctx.areas.find((a) => a.id === id)?.name ?? id);
-    const roomArea = name(diff.roomAreaId);
-    const move = this.areaMove?.entityId === entityId ? this.areaMove.state : undefined;
-    const run = async () => {
+    const move = this.areaMove?.entityId === entityId ? this.areaMove : undefined;
+    const write = async (areaId: string | null, after: AreaMove | undefined) => {
       const hass = ctx.hass;
       if (hass === undefined) return;
       this.areaMove = { entityId, state: "busy" };
       ctx.redraw();
       try {
-        await hass.connection.sendMessagePromise({ type: "config/entity_registry/update", entity_id: entityId, area_id: diff.roomAreaId });
-        // Home Assistant sends the new area to the panel, and the note goes.
-        this.areaMove = undefined;
+        await hass.connection.sendMessagePromise({ type: "config/entity_registry/update", entity_id: entityId, area_id: areaId });
+        // Home Assistant sends the new area to the panel.
+        this.areaMove = after;
       } catch {
         this.areaMove = { entityId, state: "failed" };
       }
       ctx.redraw();
     };
+    if (diff === undefined) {
+      if (move?.state !== "moved") return nothing;
+      return hmeCard("Area", html`
+        ${hmeHint(`Moved to ${move.to} in Home Assistant.`, true)}
+        <div class="hme-row-end"><button type="button" class="hme-tb" title="Put back the area it had before"
+          @click=${() => void write(move.undo, undefined)}>Undo</button></div>`);
+    }
+    const roomArea = name(diff.roomAreaId);
+    const entry = ctx.hass?.entities?.[entityId];
+    const own = typeof entry?.area_id === "string" && entry.area_id !== "" ? entry.area_id : null;
+    const fromDevice = own === null && typeof entry?.device_id === "string" && entry.device_id !== "";
+    const busy = move?.state === "busy";
     return hmeCard("Area", html`
       ${hmeRow("In Home Assistant", html`<span class="hme-in hme-ro">${name(diff.deviceAreaId)}</span>`)}
       ${hmeRow("On the map", html`<span class="hme-in hme-ro">${roomArea}</span>`)}
       ${diff.movable ? html`<div class="hme-row-end">
-        <button type="button" class="hme-tb" ?disabled=${move === "busy"} title="Set this device's area in Home Assistant to the room's"
-          @click=${run}>${move === "busy" ? "Moving…" : `Move to ${roomArea} in Home Assistant`}</button></div>` : nothing}
-      ${move === "failed" ? hmeHint("Home Assistant did not take the change. Set the area in its settings instead.", true) : nothing}
+        <button type="button" class="hme-tb" ?disabled=${busy} title="Set this entity's area in Home Assistant to the room's"
+          @click=${() => void write(diff.roomAreaId, { entityId, state: "moved", to: roomArea, undo: own })}>${busy ? "Moving…" : `Move to ${roomArea} in Home Assistant`}</button></div>` : nothing}
+      ${diff.movable && fromDevice ? hmeHint(`Only this entity moves. Its device stays in ${name(diff.deviceAreaId)}, with its other entities.`, true) : nothing}
+      ${move?.state === "failed" ? hmeHint("Home Assistant did not take the change. Set the area in its settings instead.", true) : nothing}
       ${hmeHint("They can differ on purpose, for a group kept in an area of its own.", true)}`);
   }
 

@@ -1583,6 +1583,80 @@ def test_an_all_states_template_waits_its_longer_interval(coordinator, monkeypat
     asyncio.run(run())
 
 
+def test_a_held_back_change_survives_a_resent_list_with_have(coordinator) -> None:
+    """R2P-1: a domain template's change inside its interval is held back,
+    and a reply for another entity moves the cursor past it. The device then
+    sends its list again with ``template_have`` for the old text (a stopped
+    poll). The held back change must still reach it, at once."""
+    module, hass, coord = coordinator
+    sensor, light = "sensor.locks", "light.desk"
+    hass.states.set(sensor, "1 unlocked")
+    hass.states.set(light, "off")
+    counts: dict[str, int] = {}
+    module.Template = _domain_template(hass, sensor, counts)
+    templates = {"tile_locks": "{{ states.sensor }}"}
+
+    async def run() -> None:
+        hass.loop = asyncio.get_running_loop()
+        _, body = await _poll(coord, entities=[light], templates=templates)
+        assert [e["lines"] for e in body["events"] if e["entity_id"] == "template.tile_locks"] == [["1 unlocked"]]
+
+        # Inside the 1 s limit: the template change is held back, the light's
+        # goes out, and the cursor moves past both.
+        _change(hass, coord, sensor, "2 unlocked")
+        _change(hass, coord, light, "on")
+        _, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert [e["entity_id"] for e in body["events"]] == [light]
+        assert "tile_locks" in coord._sessions["w1"].template_dirty
+
+        # The stopped poll's resend: the device still holds the old text.
+        started = hass.loop.time()
+        _, body = await _poll(
+            coord,
+            since=body["next_cursor"],
+            entities=[light],
+            templates=templates,
+            template_have={"tile_locks": module.tile_text_hash("1 unlocked")},
+            timeout=3,
+        )
+        assert [e["lines"] for e in body["events"] if e["entity_id"] == "template.tile_locks"] == [["2 unlocked"]]
+        assert hass.loop.time() - started < 0.5
+
+    asyncio.run(run())
+
+
+def test_a_removed_device_s_template_wake_is_cancelled(coordinator) -> None:
+    """R2P-4: drop_session and shutdown cancel the timed wake, and an old
+    handle that fires never clears a newer one."""
+    module, hass, coord = coordinator
+    sensor = "sensor.power"
+    hass.states.set(sensor, "0")
+    module.Template = _domain_template(hass, sensor, {})
+
+    async def run() -> None:
+        hass.loop = asyncio.get_running_loop()
+        _, body = await _poll(coord, entities=[], templates={"tile_sum": "{{ states.sensor }}"})
+        _change(hass, coord, sensor, "1")
+        _, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        handle = coord._sessions["w1"].template_wake
+        assert handle is not None and not handle.cancelled()
+        coord.drop_session("w1")
+        assert handle.cancelled()
+
+        _, body = await _poll(coord, entities=[], templates={"tile_sum": "{{ states.sensor }}"})
+        _change(hass, coord, sensor, "2")
+        await _poll(coord, since=body["next_cursor"], timeout=0)
+        session = coord._sessions["w1"]
+        newer = session.template_wake
+        assert newer is not None
+        coord._template_wake_fired("w1", newer.when() - 10)
+        assert session.template_wake is newer
+        coord.async_shutdown()
+        assert newer.cancelled() and session.template_wake is None
+
+    asyncio.run(run())
+
+
 def test_a_template_that_reads_a_new_entity_wakes_the_held_poll_for_it(coordinator) -> None:
     """A branch that moves to another entity while the value stays the same
     must still wake the held poll when that entity changes (PS-03)."""

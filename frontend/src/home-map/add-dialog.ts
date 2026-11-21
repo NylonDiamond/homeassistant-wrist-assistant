@@ -446,7 +446,7 @@ export class HomeMapAddDialog {
     const tag = homeMapAddTag(ctx.doc, d.entityId);
     const choice = this.choice;
     const title = choice !== undefined ? choice.rowTitle(d.name)
-      : light ? "Add it in a lamp, the kind Lights go in names. A light can be on the map many times."
+      : light ? "Adds it inside a lamp, of the kind picked under Lights go in. One light can be in several lamps."
       : tag === undefined ? "Put it on the map" : "On the map: click to pick it";
     const icon = homeMapAutoPinIcon(d.entityId, d.deviceClass, d.name);
     return html`<button type="button" class="hma-row ${choice === undefined && !light && tag !== undefined ? "placed" : ""}" title=${title}

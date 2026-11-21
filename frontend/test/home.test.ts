@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import catalog from "../src/watch-settings-catalog.json";
-import { IPHONE_SETTINGS_BLURB, countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { IPHONE_SETTINGS_BLURB, countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, pickablePages, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
@@ -78,6 +78,15 @@ describe("homeDeviceRows", () => {
     const list = rows(owners);
     expect(list.map((r) => [r.id, r.sync])).toEqual([["ok", "synced"], ["behind", "waiting"], ["new", "waiting"], ["empty", "idle"]]);
     expect(homeSync(homeDevices(owners, short, long))).toEqual({ kind: "waiting", waiting: ["Behind", "New"] });
+  });
+});
+
+describe("pickablePages", () => {
+  it("offers an iPhone's own pages, system pages and pages with no id left out", () => {
+    expect(pickablePages({ pages: [{ id: "A", name: " Living " }, { id: "S", isSystemPage: true }, { name: "no id" }, { id: "B" }, "junk"] }))
+      .toEqual([{ id: "A", name: "Living" }, { id: "B", name: "" }]);
+    expect(pickablePages(undefined)).toEqual([]);
+    expect(pickablePages({ pages: "x" })).toEqual([]);
   });
 });
 

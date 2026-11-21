@@ -160,6 +160,10 @@ describe("the iPhone look", () => {
     expect(phoneTopRowTakesRoom({ pageTitleMode: "Auto" }, true)).toBe(false);
     expect(phoneTopRowTakesRoom({ pageTitleMode: "Off" }, true)).toBe(false);
     expect(phoneTopRowTakesRoom(undefined, false)).toBe(false);
+    // A record with only the older keys reads them as the app does.
+    expect(phoneTopRowTakesRoom({ showPageTitle: false }, true)).toBe(false);
+    expect(phoneTopRowTakesRoom({ pageTitleStyle: "Auto" }, true)).toBe(false);
+    expect(phoneTopRowTakesRoom({ pageTitleStyle: "Large" }, true)).toBe(true);
     const bare = phonePagesLayout(DEFAULT_PHONE, { look: "iphone", titleRow: false });
     expect(bare.topRow.height).toBe(0);
     expect(bare.area.y).toBe(iphone.area.y - PHONE_TOP_ROW_HEIGHT);

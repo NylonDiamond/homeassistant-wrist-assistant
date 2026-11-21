@@ -878,17 +878,17 @@ describe("Animate while on in the Icon section", () => {
     }
   });
 
-  it("the switch writes true or false, and Use the default removes the key, each one undo step", () => {
+  it("the switch writes true or false, and Reset removes the key, each one undo step", () => {
     const t = tileHost("light.den", { zzFuture: 1 });
     check(t.view(), "Animate while on", true);
     expect(t.tile().activeIconAnimationEnabled).toBe(true);
     expect(t.tile().zzFuture).toBe(1);
-    expect(flatten(t.view())).toContain("Use the default");
+    expect(flatten(t.view())).toContain("Remove this tile's own setting");
     check(t.view(), "Animate while on", false);
     expect(t.tile().activeIconAnimationEnabled).toBe(false);
-    click(t.view(), "Use the default");
+    click(t.view(), "Remove this tile's own setting");
     expect(Object.hasOwn(t.tile(), "activeIconAnimationEnabled")).toBe(false);
-    expect(flatten(t.view())).not.toContain("Use the default");
+    expect(flatten(t.view())).not.toContain("Remove this tile's own setting");
     t.s.draft.undo();
     expect(t.tile().activeIconAnimationEnabled).toBe(false);
   });
@@ -901,7 +901,7 @@ describe("Animate while on in the Icon section", () => {
     expect(switchOn(view())).toBe("true");
     check(view(), "Animate while on", false);
     expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00", activeIconAnimationEnabled: false });
-    click(view(), "Use the default");
+    click(view(), "Remove this tile's own setting");
     expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00" });
     expect(flatten(renderTileSettings(smartStyleHost(s.host, R2), { sections: ["icon"] }))).not.toContain("Animate while on");
   });

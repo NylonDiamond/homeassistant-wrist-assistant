@@ -2458,7 +2458,7 @@ function renderActiveAnimation(host: TileSettingsHost, stored: boolean | undefin
   const own = stored !== undefined || somePicked(host, () => watchTileIconSettings(host.tile).activeAnimation.stored !== undefined);
   return html`${checkRow("Animate while on", watchTileIconSettings(host.tile).activeAnimation.value, pickedMixed(host, (t) => watchTileIconSettings(t).activeAnimation.value), (on) => set(on))}
     <div class="hint ts-under">${watchActiveAnimationNote(host.tile)}
-      ${!own ? nothing : linkButton("Use the default", "Remove this tile's own setting", () => set(null))}</div>`;
+      ${!own ? nothing : linkButton("Reset", "Remove this tile's own setting", () => set(null))}</div>`;
 }
 
 /** The tile's color. */
@@ -2722,7 +2722,7 @@ function renderAction(host: TileSettingsHost, withTap = true): TemplateResult {
     <div class="hint ts-under">${watchAskBeforeRunningNote(tile)}
       ${a.askBeforeRunning.stored === undefined
         ? nothing
-        : linkButton("Use the default", "Remove this tile's own setting", () =>
+        : linkButton("Reset", "Remove this tile's own setting", () =>
             commit(host, "askBeforeRunning", (d) => setWatchTileAskBeforeRunning(d, host.pageId, host.tileId, null)))}</div>`;
   // A rule's style holds the confirmation and no other action key.
   if (host.domainStyle === true) return ask;
@@ -2734,7 +2734,7 @@ function renderAction(host: TileSettingsHost, withTap = true): TemplateResult {
     ${a.skipConditions.shown
       ? html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(a.skipConditions.value), WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) =>
           commit(host, "skipConditions", (d) => setWatchTileSkipConditions(d, host.pageId, host.tileId, watchSkipValue(v))))}</div>
-          <div class="hint">Whether running the automation from the ${hostDeviceNoun(host)} skips its conditions. Default follows ${settingPointer("automationTriggerSkipConditions", hostDeviceNoun(host))}.</div>`
+          <div class="hint">Skip runs the automation's actions without checking its conditions first. Default follows ${settingPointer("automationTriggerSkipConditions", hostDeviceNoun(host))}, which skips them unless it is turned off.</div>`
       : nothing}`;
 }
 
@@ -2905,7 +2905,7 @@ function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateRes
     ${fieldNote(host, "showWhen")}
     ${alsoWhileOn && stored !== undefined
       ? html`<div class="hint warn ts-under">This tile also hides while it is off.
-          ${linkButton("Stop that", "Show it while off too, when the condition holds", () =>
+          ${linkButton("Show it while off too", "Show it while off too, when the condition holds", () =>
             commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, false)))}</div>`
       : nothing}
     ${c === undefined
@@ -2951,7 +2951,7 @@ function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<
     <div class="ts-sub-h">
       <span></span>
       ${slides.anyStored && slides.readable
-        ? linkButton("Reset all", "Every direction back to its default", () => commit(host, "slide", (d) => clearWatchTileHoldSlide(d, host.pageId, host.tileId)))
+        ? linkButton("Reset all directions", "Every direction back to its default", () => commit(host, "slide", (d) => clearWatchTileHoldSlide(d, host.pageId, host.tileId)))
         : nothing}
     </div>
     ${slides.readable
@@ -3622,7 +3622,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
         ${open === "color" ? renderStateColorPicker(host, row.key, row.color) : nothing}`;
     })}
     ${card.any
-      ? html`<div class="ts-after">${linkButton("Clear state overrides", "Every state back to the tile's icon and color", () => {
+      ? html`<div class="ts-after">${linkButton("Reset every state", "Every state back to the tile's icon and color", () => {
           host.uiState.delete(stateEditKey(host));
           commit(host, "stateClear", (d) => clearWatchTileStateOverrides(d, host.pageId, host.tileId));
         })}</div>`

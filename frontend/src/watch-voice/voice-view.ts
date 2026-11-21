@@ -110,7 +110,7 @@ export const VOICE_SECTION_LINES: Readonly<Record<VoiceSection, string>> = {
 
 export const VOICE_CARD_LINE = "The voice defaults, the phrase library and the watch's own speech. A save reaches the watch the next time it checks.";
 
-export const VOICE_STAGE_HINT = "Pick from List shows these phrases on the watch. Tap one to edit it.";
+export const VOICE_STAGE_HINT = "Speak from List shows these phrases on the watch. Tap one to edit it.";
 
 /** The inspector's cards. */
 export type VoiceInspectorSection = "defaults" | "watch" | "phrase" | "look" | "speech";
@@ -364,7 +364,7 @@ export function renderPhrasesCard(host: VoiceViewHost, links?: PhrasesCardLinks)
     </div>
     ${links?.open === true ? links.menu : nothing}
     ${phrases.length === 0
-      ? html`<div class="lc-note">No phrases yet. A phrase is a message Pick from List and Speak Phrase can say on your speakers.</div>`
+      ? html`<div class="lc-note">No phrases yet. A phrase is a message Speak from List and Speak Phrase can say on your speakers.</div>`
       : html`<div class="layers vo-phrase-list" role="list">${phrases.map((p, i) => phraseRow(host, p, i, phrases.length, picked))}</div>`}
   </section>`;
 }
@@ -393,12 +393,12 @@ export function renderVoiceScreen(host: VoiceViewHost): TemplateResult {
         <span class="vo-say-label">${name}</span>`}
     </button>`;
   });
-  const box = html`<div class="vo-screen" role="group" aria-label="Pick from List on the watch"
+  const box = html`<div class="vo-screen" role="group" aria-label="Speak from List on the watch"
     style=${`width:${Math.round(width * scale)}px;height:${Math.round(height * scale)}px;--vo-s:${scale}`}>
     <div class="vo-screen-title">Phrases</div>
     ${phrases.length === 0 ? html`<p class="vo-screen-note">No phrases yet.</p>` : html`<div class="vo-say-list">${rows}</div>`}
   </div>`;
-  return renderWatchFrame({ width, height }, scale, box, "Pick from List on the watch");
+  return renderWatchFrame({ width, height }, scale, box, "Speak from List on the watch");
 }
 
 /** What the canvas head says: "3 phrases". */
@@ -556,7 +556,7 @@ function renderPhraseInspector(host: VoiceViewHost, phrase: JsonObject): Templat
     ${missing.length > 0 ? html`<div class="hint warn">The phrase needs a ${missing.join(" and a ")} before it can be saved.</div>` : nothing}
     ${segField("Display mode", String(phrase.displayMode ?? "icon"), watchVoiceEnumChoices("TTSPhraseDisplayMode"), (v) => set("displayMode", v),
       { def: VOICE_KEYS.newPhrase.displayMode })}
-    <div class="hint">How Pick from List shows it: its icon, or its label.</div>
+    <div class="hint">How Speak from List shows it: its icon, or its label.</div>
   </fieldset>`;
   const color = phrase.color;
   const special = voiceColorWords(color);

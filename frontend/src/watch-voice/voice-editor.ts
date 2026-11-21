@@ -1469,9 +1469,9 @@ export class WaVoiceEditor extends LitElement {
     const draft = this.draft;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
-    return html`<div class="card canvas-card lit ve-canvas" aria-label="Pick from List">
+    return html`<div class="card canvas-card lit ve-canvas" aria-label="Speak from List">
       <div class="cv-head">
-        <span class="cv-title">Pick from List</span>
+        <span class="cv-title">Speak from List</span>
         ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
           <span class="cv-watch">${watchName(owner, watches)}</span></span>` : nothing}
         <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>

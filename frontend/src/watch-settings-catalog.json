@@ -15,7 +15,7 @@
           "options": [
             {"value": "Auto", "label": "Auto"},
             {"value": "Local", "label": "Home only"},
-            {"value": "Remote", "label": "Away only"}
+            {"value": "Remote", "label": "Internet only"}
           ]
         },
         {

@@ -5567,13 +5567,20 @@ function openPageField(host: EditorHost): TemplateResult {
  * id and its name when the watch reported one. */
 function pageChoiceField(host: EditorHost, pageId: string | undefined, pageName: string | undefined, set: (id: string | undefined, name: string | undefined) => void): TemplateResult {
   const current = pageId ?? "";
+  const kind = host.deviceKind ?? "watch";
+  const noun = kind === "library" ? "device" : nounFor(kind, host.platform);
   const options: [string, string][] = host.pages.map((p) => [p.id, p.name || "Unnamed page"]);
   if (current && !host.pages.some((p) => p.id.toUpperCase() === current.toUpperCase())) {
-    options.unshift([current, `${pageName || "Unknown page"} (not on the watch)`]);
+    options.unshift([current, `${pageName || "Unknown page"} (not on this ${noun})`]);
   }
   if (!current) options.unshift(["", "Choose a page…"]);
   if (options.length <= 1 && !current) {
-    return html`<div class="hint keep">No pages reported yet. Open the watch app once so it can send its page list.</div>`;
+    const empty = kind === "library"
+      ? "This design is on no device, so it has no pages to pick. Put it on a device, then pick one of its pages."
+      : kind === "iphone"
+        ? `No pages on this ${noun} yet. Add one on the Pages tab.`
+        : `No pages reported yet. Open the ${noun} app once so it can send its page list.`;
+    return html`<div class="hint keep">${empty}</div>`;
   }
   return html`${selectField("Page", current, options, (v) => {
     if (!v) { set(undefined, undefined); return; }
