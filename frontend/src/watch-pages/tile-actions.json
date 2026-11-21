@@ -115,7 +115,7 @@
       "label": "Macro (Removed)"
     }
   ],
-  "unknownActionLabel": "Sync Needed",
+  "unknownActionLabel": "Update App",
   "libraryActions": ["httpAction"],
   "libraryActionsMeaning": "As a hold and slide value, httpAction needs an entry of the catalog's httpActions: the direction's holdSlideHTTPActionTargets value is that entry's id. As the single tap of its own tile kind (http_action) it needs nothing: the target is the tile's entityId. runMacro is no library action: it is in actions only so a value stored before macros were removed still reads, and no kind offers it.",
   "directions": ["up", "down", "left", "right"],

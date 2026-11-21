@@ -604,7 +604,7 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog,
         selected = STORED + "httpAction";
         options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : missing.charAt(0).toLowerCase() + missing.slice(1)})`, disabled: true });
         note = targetId === ""
-          ? `No action is picked, so ${shows} shows Sync Needed. Pick one.`
+          ? `No action is picked, so ${shows} shows Update App. Pick one.`
           : inList
             ? `This action is no longer in the list. Pick another, or ${shows} fails the slide.`
             : `The iPhone no longer lists this action. Pick another, or ${shows} fails the slide.`;

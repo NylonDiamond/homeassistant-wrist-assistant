@@ -380,7 +380,7 @@ function glyph(host: Pick<MenusViewHost, "icons">, icon: string, size: number, c
 }
 
 /** The icon and color a slot is drawn with: a type this table does not know
- * draws the phone's "Sync Needed" look. */
+ * draws the phone's "Update App" look. */
 function slotLook(slot: JsonObject): { icon: string; color: string } {
   if (watchMenuAction(slotActionType(slot)) === undefined) {
     return { icon: MENU_ACTIONS.unknownActionIcon, color: MENU_ACTIONS.unknownActionColor };

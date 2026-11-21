@@ -992,7 +992,7 @@ describe("readers follow the table", () => {
     const stale = watchSingleTapSettings(reader("light.desk_lamp", { singleTapAction: "nextTrack" }));
     expect(stale).toMatchObject({ stored: "nextTrack", storedNotOffered: true, resolved: "toggle", storedLabel: "Next track" });
     const unknown = watchSingleTapSettings(reader("light.desk_lamp", { singleTapAction: "teleport" }));
-    expect(unknown).toMatchObject({ storedNotOffered: true, resolved: "toggle", storedLabel: "Sync needed" });
+    expect(unknown).toMatchObject({ storedNotOffered: true, resolved: "toggle", storedLabel: "Update app" });
     // Run HTTP Action on its own kind is offered: the tile is the target.
     const http = watchSingleTapSettings(reader("http_action.C3A0E000-0000-4000-8000-000000000070", { singleTapAction: "httpAction" }));
     expect(http).toMatchObject({ storedNotOffered: false, resolved: "httpAction", absent: "httpAction" });
@@ -1001,13 +1001,13 @@ describe("readers follow the table", () => {
     // never offered.
     const slides = watchHoldSlideSettings(reader("light.desk_lamp", { holdSlideActions: ["right", "runMacro", "up", "teleport"] }));
     expect(slides.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none", storedLabel: "Macro (removed)" });
-    expect(slides.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Sync needed" });
+    expect(slides.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Update app" });
     expect(slides.anyStored).toBe(true);
   });
 
-  it("a trigger direction without its target reads as Sync needed", () => {
+  it("a trigger direction without its target reads as Update app", () => {
     const tile = reader("light.desk_lamp", { holdSlideActions: ["left", "triggerEntity"] });
-    expect(watchHoldSlideSettings(tile).directions[2]).toMatchObject({ resolved: "triggerEntity", resolvedLabel: "Sync needed" });
+    expect(watchHoldSlideSettings(tile).directions[2]).toMatchObject({ resolved: "triggerEntity", resolvedLabel: "Update app" });
     const set = reader("light.desk_lamp", fixture("hold-slide-trigger-mode"));
     const left = watchHoldSlideSettings(set).directions[2]!;
     // The panel's own name for Trigger Entity, the phone's.
@@ -1097,7 +1097,7 @@ describe("readers follow the table", () => {
     expect(WATCH_ICON_TAP_ANIMATIONS[0]).toEqual({ value: "replace", label: "Morph" });
     expect(WATCH_ICON_TAP_ANIMATIONS).toHaveLength(10);
     expect(watchTapActionLabel(KINDS.template as never, "toggle")).toBe("Refresh");
-    expect(watchTapActionLabel(KINDS["*"] as never, "teleport")).toBe("Sync needed");
+    expect(watchTapActionLabel(KINDS["*"] as never, "teleport")).toBe("Update app");
     expect(watchTapActionLabel(KINDS["*"] as never, "httpAction")).toBe("Run HTTP action");
     expect(watchTapActionLabel(KINDS["*"] as never, "triggerEntity")).toBe("Control another entity");
     expect(watchTriggerModes("light").map((m) => m.label)).toEqual(["Toggle", "Turn on", "Turn off", "Refresh"]);

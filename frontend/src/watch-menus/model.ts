@@ -254,7 +254,7 @@ export function watchMenuAction(raw: string): MenuActionSpec | undefined {
   return ACTIONS_BY_RAW.get(raw);
 }
 
-/** The action's name, or the phone's "Sync Needed" for a type this table
+/** The action's name, or the phone's "Update App" for a type this table
  * does not know (a newer app wrote it). */
 export function watchMenuActionLabel(raw: string): string {
   return ACTIONS_BY_RAW.get(raw)?.label ?? MENU_ACTIONS.unknownActionLabel;

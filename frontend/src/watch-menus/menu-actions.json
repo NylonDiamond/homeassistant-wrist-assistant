@@ -992,7 +992,7 @@
       ]
     }
   ],
-  "unknownActionLabel": "Sync Needed",
+  "unknownActionLabel": "Update App",
   "unknownActionIcon": "arrow.triangle.2.circlepath",
   "unknownActionColor": "#E8A855",
   "anywhereActions": [

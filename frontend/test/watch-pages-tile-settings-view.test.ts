@@ -83,7 +83,7 @@ describe("single tap menu", () => {
 
   it("shows a stored value it does not offer or an unknown string as the current entry, disabled", () => {
     // runMacro: a value stored before macros were removed.
-    for (const [stored, label] of [["runMacro", "Macro (removed)"], ["nextTrack", "Next track"], ["dance", "Sync needed"]] as const) {
+    for (const [stored, label] of [["runMacro", "Macro (removed)"], ["nextTrack", "Next track"], ["dance", "Update app"]] as const) {
       const menu = watchSingleTapMenu(tile("light.desk", { singleTapAction: stored }))!;
       const current = menu.options.find((o) => o.value === menu.selected)!;
       expect(isWatchStoredChoice(menu.selected)).toBe(true);
