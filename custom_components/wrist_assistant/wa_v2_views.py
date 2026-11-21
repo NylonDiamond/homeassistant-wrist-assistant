@@ -5506,11 +5506,17 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
                     "name": paired_device_name(
                         device_registry, entries.get(watch_id), watch_id
                     ),
-                    "has_pages": _owner_has_pages(store, watch_id),
+                    # A watch whose record the disk refused offers nothing
+                    # yet: the link would be refused (`async_ensure_saved`),
+                    # and the phone says the move is still running instead.
+                    "has_pages": not store.holds_unsaved(watch_id)
+                    and _owner_has_pages(store, watch_id),
                     "last_seen_seconds": seen_seconds(watch_id),
                     "app_version": getattr(entries.get(watch_id), "app_version", None),
                     "app_build": getattr(entries.get(watch_id), "app_build", None),
-                    "shown_pages": _owner_shown_page_count(store, watch_id),
+                    "shown_pages": 0
+                    if store.holds_unsaved(watch_id)
+                    else _owner_shown_page_count(store, watch_id),
                     # What the watch runs (`device_platform.py`), so the
                     # phone names it as an Apple Watch or a Wear OS watch.
                     "platform": _entry_platform(entries.get(watch_id), "watch"),
@@ -5560,6 +5566,14 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
                 "message": f"watch_id must be one of this {_phone_noun(ctx)}'s watches",
             },
             status=400,
+        )
+    if not await store.async_ensure_saved(watch_id):
+        # The watch's pages are held in memory only (the disk refused its
+        # first record): a link would copy them onto the phone's own record,
+        # and a restart would leave the phone with pages the watch lost.
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigUnavailableError("Home Assistant could not save to its disk. Try again in a moment."),
         )
     if _owner_shown_page_count(store, watch_id) == 0:
         # Every page hidden, or the watch's pages gone since the offer: a

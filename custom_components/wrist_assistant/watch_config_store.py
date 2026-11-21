@@ -2296,6 +2296,18 @@ class WatchConfigStore:
             )
         return landed
 
+    def holds_unsaved(self, owner_watch_id: str) -> bool:
+        """Whether a file this owner's records need (its own, the index or
+        the library) failed its last write, so what memory holds may not
+        survive a restart. No I/O: :meth:`async_ensure_saved` is what writes
+        it again. False after shutdown."""
+        if self._closed:
+            return False
+        stores: list[Store] = [self._index, self._library_file]
+        if owner_watch_id in self._records:
+            stores.append(self._file(owner_watch_id))
+        return any(getattr(store, "write_failed", False) for store in stores)
+
     async def async_save_before_reply(self, owner_watch_id: str) -> bool:
         """:meth:`async_save_first_record` for a reply that goes out anyway.
 

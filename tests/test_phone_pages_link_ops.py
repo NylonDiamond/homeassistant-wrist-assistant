@@ -400,6 +400,34 @@ def test_a_first_link_the_disk_refused_is_a_signed_503_not_a_link(env) -> None:
     assert reply.body["error"] == "unavailable"
 
 
+def test_a_watch_record_the_disk_refused_is_not_linked(env) -> None:
+    """While the watch's own file cannot be written, its pages live in memory
+    only: a link would copy them onto the phone's record, and a restart would
+    leave the phone with pages the watch lost."""
+    watch_file = env.store._file(WATCH)
+
+    async def refused(_data: Any) -> None:
+        watch_file.write_failed = True
+
+    watch_file.write_failed = True
+    watch_file.async_save = refused
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert reply.status == 503
+    assert reply.body["error"] == "unavailable"
+    assert env.store.get(PHONE, "pages") is None
+
+
+def test_a_watch_record_the_disk_refused_offers_no_pages(env) -> None:
+    """The phone then says the move is still running, not a link error."""
+    env.store._file(WATCH).write_failed = True
+    row = next(w for w in _op(env, "_op_phone_pages_offer", {}).body["watches"] if w["id"] == WATCH)
+    assert row["has_pages"] is False
+    assert row["shown_pages"] == 0
+    env.store._file(WATCH).write_failed = False
+    row = next(w for w in _op(env, "_op_phone_pages_offer", {}).body["watches"] if w["id"] == WATCH)
+    assert row["has_pages"] is True
+
+
 def _hide_every_page(env) -> None:
     record = env.store.get(WATCH, "pages")
     document = copy.deepcopy(record.document)
