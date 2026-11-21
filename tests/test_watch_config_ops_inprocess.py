@@ -397,6 +397,84 @@ def test_an_iphone_s_own_first_record_keeps_the_usual_debounce(env) -> None:
     assert saved == []
 
 
+def _full_disk(env, owner: str = WATCH) -> types.SimpleNamespace:
+    """The owner's file, the index and the library refused the way Home
+    Assistant refuses a write: logged, no exception, the flag of
+    ``_CheckedStore`` set. ``disk.full = False`` gives the room back."""
+    disk = types.SimpleNamespace(full=True, writes=[])
+
+    def refusing(store: Any, label: str) -> None:
+        async def async_save(_data: Any) -> None:
+            disk.writes.append(label)
+            store.write_failed = disk.full
+
+        def async_delay_save(*_a: object, **_k: object) -> None:
+            store.write_failed = disk.full
+
+        store.async_save = async_save
+        store.async_delay_save = async_delay_save
+
+    refusing(env.store._index, "index")
+    refusing(env.store._library_file, "library")
+    refusing(env.store._file(owner), "owner")
+    return disk
+
+
+def test_a_first_record_the_disk_refused_is_a_signed_503(env) -> None:
+    """A 200 here lets the phone delete its key over a record a restart
+    loses. The record stays in memory, and the phone tries again."""
+    _full_disk(env)
+    reply = _put(env, _put_body())
+    assert reply.status == 503
+    assert reply.body["error"] == "unavailable"
+
+
+def test_the_get_waits_for_the_disk_then_answers_the_record_held(env) -> None:
+    """The phone's retry reads the kind first. While the disk refuses, the
+    record in memory is not answered as held, or the phone would take its
+    move as done. With room again, the get writes it and answers it."""
+    disk = _full_disk(env)
+    assert _put(env, _put_body()).status == 503
+    assert _get(env, {"kind": "pages"}).status == 503
+    assert "owner" in disk.writes
+
+    disk.full = False
+    reply = _get(env, {"kind": "pages"})
+    assert reply.status == 200
+    assert reply.body["revision"] > 0
+    assert reply.body["hash"] == HASH_1
+    assert env.store._file(WATCH).write_failed is False
+
+
+def test_a_get_writes_nothing_while_every_file_landed(env) -> None:
+    assert _put(env, _put_body()).status == 200
+    disk = _full_disk(env)
+    disk.full = False
+    assert _get(env, {"kind": "pages"}).status == 200
+    assert disk.writes == []
+
+
+def test_the_checked_store_keeps_whether_its_last_write_landed(env, monkeypatch) -> None:
+    """The flag follows Home Assistant's own write, whatever arguments it
+    takes, and the failure still reaches Home Assistant's handler."""
+    store = env.store._file(WATCH)
+    base = type(store).__mro__[1]
+
+    async def refused(self, *_a: object, **_k: object) -> None:
+        raise OSError("No space left on device")
+
+    async def landed(self, *_a: object, **_k: object) -> None:
+        return None
+
+    monkeypatch.setattr(base, "_async_write_data", refused, raising=False)
+    with pytest.raises(OSError):
+        asyncio.run(store._async_write_data({"data": 1}))
+    assert store.write_failed is True
+    monkeypatch.setattr(base, "_async_write_data", landed, raising=False)
+    asyncio.run(store._async_write_data({"data": 1}))
+    assert store.write_failed is False
+
+
 def test_put_on_the_stored_revision_is_accepted(env) -> None:
     _put(env, _put_body())
     reply = _put(env, _put_body(_doc("v2"), base=1, digest=HASH_2))

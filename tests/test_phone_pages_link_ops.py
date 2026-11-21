@@ -14,6 +14,7 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import copy
 import types
 from pathlib import Path
 from typing import Any
@@ -349,9 +350,9 @@ def test_a_first_link_is_on_disk_before_the_reply_and_a_later_one_keeps_the_debo
     written: list[str] = []
     real = env.store.async_save_first_record
 
-    async def spy(owner: str) -> None:
+    async def spy(owner: str) -> bool:
         written.append(owner)
-        await real(owner)
+        return await real(owner)
 
     env.store.async_save_first_record = spy
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
@@ -385,6 +386,47 @@ def test_a_slow_first_link_write_changes_no_reply(env, monkeypatch) -> None:
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
     assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
     assert PHONE in env.store._pending_owners
+
+
+def test_a_first_link_the_disk_refused_is_a_signed_503_not_a_link(env) -> None:
+    """Home Assistant logs a write it could not make and returns. The phone
+    takes a 200 as its choice made, so the refusal must reach it."""
+    async def refused(_owner: str) -> bool:
+        return False
+
+    env.store.async_save_first_record = refused
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert reply.status == 503
+    assert reply.body["error"] == "unavailable"
+
+
+def _hide_every_page(env) -> None:
+    record = env.store.get(WATCH, "pages")
+    document = copy.deepcopy(record.document)
+    for page in document["pages"]:
+        page["isHidden"] = True
+    env.store.panel_save(WATCH, "pages", document, base_revision=record.revision)
+
+
+def test_a_watch_that_shows_no_page_is_not_linked(env) -> None:
+    """Every page hidden: a link would leave the phone with nothing to show,
+    taken as its choice made."""
+    _hide_every_page(env)
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert reply.status == 400
+    assert reply.body["error"] == "no_pages"
+    assert env.store.get(PHONE, "pages") is None
+
+
+def test_a_watch_whose_pages_went_since_the_offer_is_not_linked(env) -> None:
+    record = env.store.get(WATCH, "pages")
+    env.store.panel_save(
+        WATCH, "pages", {"schemaVersion": 1, "pages": []}, base_revision=record.revision
+    )
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert reply.status == 400
+    assert reply.body["error"] == "no_pages"
+    assert env.store.get(PHONE, "pages") is None
 
 
 # ── static: dispatch table, capability ───────────────────────────────────

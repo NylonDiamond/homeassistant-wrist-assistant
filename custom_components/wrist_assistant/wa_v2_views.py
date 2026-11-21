@@ -5101,6 +5101,13 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     owner, refusal = _phone_watch_settings_owner(ctx, reading=True)
     if refusal is not None:
         return refusal
+    if isinstance(owner, str) and not await store.async_ensure_saved(owner):
+        # A record Home Assistant could not write is not answered as held:
+        # the phone would take it as its move done and delete its key.
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigUnavailableError("Home Assistant could not save to its disk. Try again in a moment."),
+        )
     if owner != ctx.watch_id:
         # An iPhone reading its watch's settings: the watch has not collected
         # anything, so nothing is marked.
@@ -5338,8 +5345,14 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    if first:
-        await store.async_save_first_record(ctx.watch_id)
+    if first and not await store.async_save_first_record(ctx.watch_id):
+        # The record stays in memory and is written again by the next get
+        # (`async_ensure_saved`), but a 200 here would let the phone delete
+        # its key over a record a restart may lose.
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigUnavailableError("Home Assistant could not save to its disk. Try again in a moment."),
+        )
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 
@@ -5397,8 +5410,11 @@ async def _phone_put_watch_settings(ctx: _OpContext, owner: str) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    if first:
-        await store.async_save_first_record(owner)
+    if first and not await store.async_save_first_record(owner):
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigUnavailableError("Home Assistant could not save to its disk. Try again in a moment."),
+        )
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 
@@ -5518,13 +5534,16 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
     watch's menus (the same menus from then on) and its rooms, given once.
     The phone's parked poll wakes with the new revisions. Refused
     ``not_an_iphone`` (403) for a watch, ``invalid_watch`` (400) for a watch
-    that is not one of the phone's user's; nothing is written then. The 409
+    that is not one of the phone's user's, and ``no_pages`` (400) for a watch
+    that shows no page (all hidden, or gone since the offer); nothing is
+    written then. The 409
     for ``id_taken`` stays below but no longer happens: one id is one
     library page.
 
     A first link, for a phone with no pages record yet, is on disk before the
     reply, as the phone does not offer it again after a 200. A later link
-    keeps the debounce. A failed or slow write changes no reply.
+    keeps the debounce. A slow write changes no reply; one the disk refused
+    is a signed 503 ``unavailable`` (``async_save_before_reply``).
     """
     secrets = ctx.domain_data.widget_secret_store
     store = ctx.domain_data.watch_config_store
@@ -5542,6 +5561,18 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
             },
             status=400,
         )
+    if _owner_shown_page_count(store, watch_id) == 0:
+        # Every page hidden, or the watch's pages gone since the offer: a
+        # link would leave the phone with nothing to show, and the phone
+        # would take the 200 as its choice made and never ask again.
+        return ctx.signed_json(
+            {
+                "ok": False,
+                "error": "no_pages",
+                "message": "That watch shows no pages yet.",
+            },
+            status=400,
+        )
     first = store.holds_no_record(ctx.watch_id, "pages")
     try:
         result = store.link_device(watch_id, ctx.watch_id, updated_by=ctx.watch_id)
@@ -5556,8 +5587,13 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    if first:
-        await store.async_save_before_reply(ctx.watch_id)
+    if first and not await store.async_save_before_reply(ctx.watch_id):
+        # The phone takes a 200 as its choice made and never offers the link
+        # again, so a record the disk refused must not be answered as linked.
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigUnavailableError("Home Assistant could not save to its disk. Try again in a moment."),
+        )
     return ctx.signed_json({"ok": True, "pages": len(result["page_ids"])})
 
 

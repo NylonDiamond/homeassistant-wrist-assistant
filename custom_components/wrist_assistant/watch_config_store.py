@@ -351,6 +351,30 @@ def short_hash(document_hash: str | None) -> str | None:
     return document_hash[:SHORT_HASH_LENGTH]
 
 
+class _CheckedStore(Store):
+    """A ``Store`` that knows whether its last write reached the disk.
+
+    Home Assistant's ``Store`` logs a write it could not make (a full or
+    read-only disk) and returns as if it had saved. A first record must not
+    be answered 200 then: the phone stamps the kind and deletes its key on
+    that reply, and a restart would bring back revision 0 with the watch's
+    setup gone (:meth:`WatchConfigStore.async_ensure_saved`). The flag is set
+    by every write, delayed or not. If a later Home Assistant renames the
+    method, the flag simply stays false, which is how this store behaved
+    before it had one.
+    """
+
+    write_failed = False
+
+    async def _async_write_data(self, *args: Any, **kwargs: Any) -> None:
+        try:
+            await super()._async_write_data(*args, **kwargs)
+        except BaseException:
+            self.write_failed = True
+            raise
+        self.write_failed = False
+
+
 class WatchConfigStoreError(Exception):
     """Base class; ``code`` is the stable machine-readable reason."""
 
@@ -1581,7 +1605,7 @@ class WatchConfigStore:
         # The library (library.py) and its file. Loaded after the records;
         # unreadable refuses every write of a library kind until a restart.
         self._library: dict[str, Any] = empty_library()
-        self._library_file: Store = Store(
+        self._library_file: Store = _CheckedStore(
             hass, WATCH_LIBRARY_STORAGE_VERSION, WATCH_LIBRARY_STORAGE_KEY
         )
         self._library_failed = False
@@ -1603,7 +1627,7 @@ class WatchConfigStore:
         # Set when the index could not be read. Every owner is then unknown,
         # so everything is refused until a restart.
         self._load_failed = False
-        self._index: Store = Store(
+        self._index: Store = _CheckedStore(
             hass, WATCH_CONFIG_STORAGE_VERSION, WATCH_CONFIG_STORAGE_KEY
         )
         # Debounced saves still waiting (see async_shutdown), and whether the
@@ -1625,7 +1649,7 @@ class WatchConfigStore:
     def _file(self, owner_watch_id: str) -> Store:
         store = self._files.get(owner_watch_id)
         if store is None:
-            store = Store(
+            store = _CheckedStore(
                 self._hass, WATCH_CONFIG_STORAGE_VERSION, _owner_key(owner_watch_id)
             )
             self._files[owner_watch_id] = store
@@ -2205,7 +2229,7 @@ class WatchConfigStore:
             and self._records.get(owner_watch_id, {}).get(kind) is None
         )
 
-    async def async_save_first_record(self, owner_watch_id: str) -> None:
+    async def async_save_first_record(self, owner_watch_id: str) -> bool:
         """Write a device's first record of a kind now, not after the debounce.
 
         The caller answers only after this, because a phone that hears 200
@@ -2214,9 +2238,13 @@ class WatchConfigStore:
         the library when they wait too, since a new owner is found through the
         index and a page's content lives in the library. Each of these cancels
         its delayed save. Nothing after shutdown, which wrote the last state.
+
+        False when Home Assistant could not write one of them
+        (:meth:`async_ensure_saved`): the caller then answers ``unavailable``
+        instead of 200, so the phone keeps its key and tries again.
         """
         if self._closed:
-            return
+            return True
         if owner_watch_id in self._pending_owners:
             self._pending_owners.discard(owner_watch_id)
             await self._file(owner_watch_id).async_save(self._serialize_owner(owner_watch_id))
@@ -2226,17 +2254,61 @@ class WatchConfigStore:
         if self._library_save_pending:
             self._library_save_pending = False
             await self._library_file.async_save(self._serialize_library())
+        return await self.async_ensure_saved(owner_watch_id)
 
-    async def async_save_before_reply(self, owner_watch_id: str) -> None:
+    async def async_ensure_saved(self, owner_watch_id: str) -> bool:
+        """Whether the owner's file, the index and the library are on disk as
+        Home Assistant last wrote them.
+
+        A file whose last write failed (:class:`_CheckedStore`) is written
+        again now, so a disk that has room again ends the refusals by itself.
+        False while any of the three still fails. The signed get answers
+        ``unavailable`` then, as for an unreadable file: without that, a phone
+        whose first save was refused would read the record held in memory on
+        its retry, take it as saved, and delete its key, and a restart would
+        bring back revision 0. True after shutdown and for a file that was
+        never written. The owner's file is written again only while the owner
+        has records, so a forgotten owner's file is not made again.
+        """
+        if self._closed:
+            return True
+        landed = True
+        files: list[tuple[Store, Callable[[], dict[str, Any]]]] = []
+        if owner_watch_id in self._records:
+            files.append(
+                (self._file(owner_watch_id), lambda: self._serialize_owner(owner_watch_id))
+            )
+        if not self._load_failed:
+            files.append((self._index, self._serialize_index))
+            if not self._library_failed:
+                files.append((self._library_file, self._serialize_library))
+        for store, serialize in files:
+            if not getattr(store, "write_failed", False):
+                continue
+            await store.async_save(serialize())
+            if getattr(store, "write_failed", False):
+                landed = False
+        if not landed:
+            _LOGGER.warning(
+                "Home Assistant could not write %s's watch config to its disk; "
+                "the device is told to try again",
+                owner_watch_id,
+            )
+        return landed
+
+    async def async_save_before_reply(self, owner_watch_id: str) -> bool:
         """:meth:`async_save_first_record` for a reply that goes out anyway.
 
-        A failed or slow write never changes what the caller answers. It is
-        logged, and the delayed saves are set going again, so the next one
-        retries what this one did not finish.
+        A slow write, or one that raised, never changes what the caller
+        answers. It is logged, and the delayed saves are set going again, so
+        the next one retries what this one did not finish. False only when
+        Home Assistant wrote and said the disk refused it
+        (:meth:`async_ensure_saved`), which the caller answers as
+        ``unavailable``.
         """
         try:
             async with asyncio.timeout(_SAVE_BEFORE_REPLY_SECONDS):
-                await self.async_save_first_record(owner_watch_id)
+                return await self.async_save_first_record(owner_watch_id)
         except asyncio.CancelledError:
             self._schedule_every_save(owner_watch_id)
             raise
@@ -2245,6 +2317,7 @@ class WatchConfigStore:
                 "Could not write %s's records before replying", owner_watch_id, exc_info=True
             )
             self._schedule_every_save(owner_watch_id)
+            return True
 
     def _schedule_every_save(self, owner_watch_id: str) -> None:
         """Set the owner's file, the index and the library saving again."""
