@@ -58,6 +58,7 @@ from .const import (
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
     PANEL_CONFIGURATION_URL,
+    PHONE_COMPLICATIONS_WAKE_CAPABILITY,
     PHONE_PAGES_CAPABILITY,
     PHONE_VOICE_READ_CAPABILITY,
     PHONE_WATCH_LOOK_CAPABILITY,
@@ -1192,6 +1193,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # that poll, and the panel lists phones in the Pages editor, only when
     # they see this.
     coordinator.register_capability(PHONE_PAGES_CAPABILITY)
+    # The phone's poll carries the complication token it holds, compared but
+    # never filed as its ack, so a commit wakes it with the new token.
+    coordinator.register_capability(PHONE_COMPLICATIONS_WAKE_CAPABILITY)
     # An iPhone reads the voice of its user's watches (`_phone_style_record`,
     # `DeltaCoordinator.attach_phone_voice`). The phone asks only when it sees
     # this.

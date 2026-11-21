@@ -850,7 +850,7 @@ describe("the Control Center card", () => {
     const markup = flatten(controlCard(host(cfg)));
     expect(markup).toContain("Toggle an entity");
     expect(markup).toContain("Run a scene");
-    expect(markup).not.toContain("Open a watch app page");
+    expect(markup).not.toContain("Open a page");
     expect(markup).not.toContain("Add a to-do");
   });
 });

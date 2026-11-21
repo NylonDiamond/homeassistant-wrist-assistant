@@ -699,6 +699,67 @@ def test_commit_wakes_the_parked_poll_with_an_empty_reply(coordinator) -> None:
     asyncio.run(run())
 
 
+def test_a_phone_s_seen_token_wakes_its_poll_and_is_never_its_ack(coordinator) -> None:
+    """``complications_seen`` (an iPhone with phone_complications_wake) is
+    compared as a watch's report: a commit wakes the parked poll with the
+    new token, and a poll reporting it parks again. It is never filed as the
+    phone's ack, which only its complication sync makes."""
+    _module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.p1"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, watch_id="p1", entities=[ent], complications_seen=0)
+        assert status == 200 and body["complications_token"] == 0
+        c0 = body["next_cursor"]
+        held = asyncio.create_task(
+            _poll(coord, watch_id="p1", since=c0, entities=[ent], timeout=10, complications_seen=0)
+        )
+        await asyncio.sleep(0.05)
+        new_token = store.commit("p1")
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200 and body["events"] == []
+        assert body["complications_token"] == new_token
+        assert store.applied_token("p1") is None
+
+        # Having pulled it, the phone parks normally.
+        status, body = await asyncio.wait_for(
+            _poll(coord, watch_id="p1", since=c0, entities=[ent], timeout=1, complications_seen=new_token),
+            timeout=3,
+        )
+        assert status == 204 and body is None
+        assert store.applied_token("p1") is None
+
+        # A lean reply leaves the token out while it matches the report.
+        status, body = await _poll(coord, watch_id="p1", entities=[ent], complications_seen=new_token, lean=True)
+        assert status == 200 and "complications_token" not in body
+
+    asyncio.run(run())
+
+
+def test_a_phone_without_a_seen_token_is_never_woken_for_one(coordinator) -> None:
+    """An older iPhone app sends no token: a commit does not answer its
+    parked poll, as before."""
+    _module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.p2"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, watch_id="p2", entities=[ent])
+        c0 = body["next_cursor"]
+        held = asyncio.create_task(_poll(coord, watch_id="p2", since=c0, entities=[ent], timeout=1))
+        await asyncio.sleep(0.05)
+        store.commit("p2")
+        status, body = await asyncio.wait_for(held, timeout=3)
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
 def test_behind_watch_is_told_once_per_token_then_waits(coordinator) -> None:
     """A watch whose pull keeps failing re-polls with the old applied token.
     It gets the "you are behind" reply once per token change, then parks like

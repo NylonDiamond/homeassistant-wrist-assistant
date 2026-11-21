@@ -18,7 +18,7 @@
 //     (`PhonePagesView.sideInset`), 12 with the iPhone look
 //     (`phoneSideInset`: `PhoneVault.gutter` 16 less `PhoneTileGlass.cellInset` 4)
 //   bottom bar (`PhonePagesView.bottomBarHeight`): 46 for the iPhone look's
-//     dock (`PhonePagesDock.height` 38, and 8) when its dots show, 14 under
+//     dock (`PhonePagesDock`, 30 tall at rest, and air) when it shows, 14 under
 //     the Watch look's dots at the top, else 32 (`pageBarHeight`)
 //   safe area bottom
 //
@@ -159,22 +159,26 @@ export const PHONE_PAGES_TOP_BAR = 12;
 export const PHONE_PAGES_BOTTOM_BAR = 32;
 /** The bar under the pages with the Watch look's dots at the top of them. */
 export const PHONE_PAGES_BOTTOM_BAR_TOP_DOTS = 14;
-/** `PhonePagesDock.height`: the iPhone look's glass capsule for its dots. */
-export const PHONE_PAGES_DOCK_HEIGHT = 38;
-/** The dock's dots (`PhonePagesDock`): each 6 round, 5 apart, the current
- * page's a 16 point pill, 15 points of glass each side of the row, and at
- * most 9 at once, the end ones 4 round where more pages lie past them. */
-export const PHONE_DOCK_DOT = 6;
-export const PHONE_DOCK_EDGE_DOT = 4;
-export const PHONE_DOCK_CURRENT_WIDTH = 16;
-export const PHONE_DOCK_DOT_GAP = 5;
-export const PHONE_DOCK_PADDING = 15;
+/** `PhonePagesDock.height` at rest: the iPhone look's glass capsule for its
+ * dots. A finger sliding along it grows it to 38 on the phone; the panel
+ * draws it at rest. */
+export const PHONE_PAGES_DOCK_HEIGHT = 30;
+/** The dock's dots at rest (`PhonePagesDock`): each 5 round, 6 apart, the
+ * current page's an 18 point pill, 12 points of glass each side of the row,
+ * and at most 9 at once, the end ones 3.5 round where more pages lie past
+ * them. */
+export const PHONE_DOCK_DOT = 5;
+export const PHONE_DOCK_EDGE_DOT = 3.5;
+export const PHONE_DOCK_CURRENT_WIDTH = 18;
+export const PHONE_DOCK_DOT_GAP = 6;
+export const PHONE_DOCK_PADDING = 12;
 export const PHONE_DOCK_MAX_DOTS = 9;
 /** The dock's one bar in place of its dots with Page dots off
  * (`PhonePagesDock.barWidth`). */
 export const PHONE_DOCK_BAR_WIDTH = 28;
-/** `PhonePagesView.phoneDockBarHeight`: the dock and a little air round it. */
-export const PHONE_PAGES_DOCK_BAR = PHONE_PAGES_DOCK_HEIGHT + 8;
+/** `PhonePagesView.phoneDockBarHeight`: the dock and air round it. Fixed,
+ * so the tiles keep their room whatever size the dock is drawn at. */
+export const PHONE_PAGES_DOCK_BAR = 46;
 /** How far the page dots sit below the top of the pages area when they are
  * at the top. */
 export const PHONE_PAGE_DOTS_TOP = 3;
@@ -394,8 +398,8 @@ export function phoneDockWindow(count: number, current: number): number[] {
 }
 
 /** The iPhone look's dock (`PhonePagesDock`) for `count` pages with the
- * `current` one on screen: a glass capsule 38 points tall, its dots in a row
- * 15 points in from its ends, the current page a 16 point pill in the ink
+ * `current` one on screen: a glass capsule 30 points tall, its dots in a row
+ * 12 points in from its ends, the current page an 18 point pill in the ink
  * and the others in the dock's fainter dot color. What the frame centres in
  * the bar under the pages. */
 export function renderPhoneDock(count: number, current: number, s: number, bar = false): TemplateResult {

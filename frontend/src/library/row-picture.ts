@@ -16,7 +16,7 @@
 
 import { css, html, type TemplateResult } from "lit";
 import type { HassEntityState, HassLike } from "../ha-api.js";
-import { type PhonePageLook, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
+import { type PhonePageLook, phonePagesLayout, phonePagesScreen, phoneTopRowTakesRoom } from "../phone-frame.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS } from "../watch-pages/editor-host.js";
@@ -25,6 +25,7 @@ import { type WatchPage, isMapWatchPage, isSmartWatchPage, watchScreenPage } fro
 import type { OneLookPhotoLight } from "../watch-pages/one-look/glow.js";
 import {
   type WatchPagePreviewInput,
+  phonePageShowsTitle,
   previewOneLook,
   renderMapPageArt,
   renderWatchTileFace,
@@ -142,7 +143,9 @@ export function renderPageRowPicture(input: PageRowPictureInput): TemplateResult
 
 function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, look: PhonePageLook): TemplateResult {
   const { page } = input;
-  const phone = iphone ? phonePagesLayout(undefined, { look }) : undefined;
+  // The iPhone look's top row takes room only for the page's name, as on
+  // the big picture (`phoneTopRowTakesRoom`, the phone's defaults).
+  const phone = iphone ? phonePagesLayout(undefined, { look, titleRow: phoneTopRowTakesRoom(undefined, phonePageShowsTitle(page)) }) : undefined;
   const screen = phone === undefined ? WATCH_SCREEN : phonePagesScreen(phone);
   const s = width / screen.width;
   const height = Math.min(Math.round(screen.height * s), input.maxHeight ?? heightFor(Math.max(width, ROW_PICTURE_W)));

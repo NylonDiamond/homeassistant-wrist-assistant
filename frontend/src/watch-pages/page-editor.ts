@@ -4547,7 +4547,7 @@ export class WaPageEditor extends LitElement {
     // The look of the newest device of its kind that shows the page.
     rest.appVersion = this.screenLookVersion(kind);
     if (kind === "iphone") {
-      const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined) });
+      const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined), titleRow: phoneTopRowTakesRoom(undefined, phonePageShowsTitle(page)) });
       return { ...rest, page, pages, behavior: undefined, phone, screen: phonePagesScreen(phone), scale: this.stageScale * PHONE_STAGE_ZOOM };
     }
     const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
@@ -5719,7 +5719,7 @@ export class WaPageEditor extends LitElement {
     for (const kind of only === undefined ? [clicked, otherWatchScreen(clicked)] : [only]) {
       const owner = this.pictureOwnerOf(kind);
       const phone = kind === this.previewKind ? this.phoneLayoutOf(undefined, raw)
-        : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined) })
+        : kind === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined), titleRow: phoneTopRowTakesRoom(undefined, phonePageShowsTitle(raw)) })
         : undefined;
       const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
       const appVersion = this.screenLookVersion(kind);

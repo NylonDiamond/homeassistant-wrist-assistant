@@ -1080,13 +1080,19 @@ class WADeltaView(HomeAssistantView):
         # Four fields of the poll are the watch's, never the phone's: a
         # `device_token` would be filed as a watchOS token under the phone's
         # id, and a `delivery_mode` under it would mean nothing. A
-        # `complications_token` would ack the phone's complication store
-        # token, which only its complication sync acks (`applied_token`; its
-        # designs come by push, never on this poll), and a `voices_hash` would ask the phone to send a voice
-        # list under its id. All four are ignored for a phone, not refused,
-        # so the poll still answers.
+        # `complications_token` is never the phone's ack: only its
+        # complication sync acks (`applied_token`). An iPhone that sees
+        # `phone_complications_wake` sends the store token it holds there,
+        # and it reaches the coordinator as `complications_seen`: what the
+        # poll compares with to answer at once with a newer token, once per
+        # change, as a watch is told, so the phone pulls only then. A
+        # `voices_hash` would ask the phone to send a voice list under its id.
+        # The other three are ignored for a phone, not refused, so the poll
+        # still answers.
         signer_is_iphone = is_iphone_entry(secret_entry)
+        complications_seen: int | None = None
         if signer_is_iphone:
+            complications_seen = complications_token
             complications_token = None
             voices_hash = None
 
@@ -1152,6 +1158,7 @@ class WADeltaView(HomeAssistantView):
             template_caller=caller_for(secret_entry.user_id, validated.watch_id),
             custom_entity_ids=custom_entity_ids,
             complications_token=complications_token,
+            complications_seen=complications_seen,
             voices_hash=voices_hash,
             held=held,
             lean=lean,

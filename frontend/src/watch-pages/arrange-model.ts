@@ -8,7 +8,7 @@
 import type { HassEntityState } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import { REFERENCE_CASE } from "../renderer.js";
-import { phoneModelForScreenSize, phonePageLookOf, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
+import { phoneModelForScreenSize, phonePageLookOf, phonePagesLayout, phonePagesScreen, phoneTopRowTakesRoom } from "../phone-frame.js";
 import type { SettingDevice } from "../watch-settings.js";
 import type { WatchCatalog } from "./catalog.js";
 import { sameWatchId } from "./edit.js";
@@ -16,6 +16,7 @@ import { type WatchPage, type WatchPageTile, isWatchRemovedTileKind, tileEntityI
 import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
+  phonePageShowsTitle,
   previewTileCellInset,
   watchPreviewLayout,
   watchPreviewSideInset,
@@ -67,7 +68,9 @@ export interface ArrangeFrame {
  * when the page does not hold the tile.
  */
 export function arrangeFrame(source: ArrangeFrameSource, tile: WatchPageTile): ArrangeFrame | undefined {
-  const phone = source.device === "iphone" ? phonePagesLayout(phoneModelForScreenSize(undefined), { look: phonePageLookOf(source.behavior) }) : undefined;
+  const phone = source.device === "iphone"
+    ? phonePagesLayout(phoneModelForScreenSize(undefined), { look: phonePageLookOf(source.behavior), titleRow: phoneTopRowTakesRoom(source.behavior, phonePageShowsTitle(source.page)) })
+    : undefined;
   const screen = phone === undefined ? REFERENCE_CASE.screen : phonePagesScreen(phone);
   // The device's own screen of the page: the tile's cell there, or none when
   // it is Off on that screen.

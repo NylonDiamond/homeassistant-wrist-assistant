@@ -3342,7 +3342,7 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["playTour", "Play all pages"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"],
   ["callService", "Call a service"], ["runHTTPAction", "Run an HTTP action"], ["addTodo", "Add a to-do"],
-  ["openApp", "Open the app"], ["openPage", "Open a watch app page"], ["openEntity", "Open an entity"],
+  ["openApp", "Open the app"], ["openPage", "Open a page"], ["openEntity", "Open an entity"],
   ["openRoomPage", "Open the room I'm in"],
   ["timerStartPause", "Start or pause a timer"],
   // Offered nowhere, kept so a document that stores one still has a name for
@@ -3363,11 +3363,13 @@ export const TAP_ACTION_GROUPS: [string, TapAction["type"][]][] = [
   ["Timer", ["timerStartPause", "timerCancel"]],
 ];
 
-/** The actions an iPhone widget cannot carry out itself: each one is a link
- * into the watch app, and on iOS every such link just opens the iPhone app
- * (`complicationTapLinkURL` in the app). An HTTP action that asks for input
- * does the same, but one that asks for nothing fires, so it is not listed. */
-const WATCH_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openEntity", "openRoomPage", "addTodo"];
+/** The actions an iPhone widget carries out as a link into the app. Since
+ * HouseLit 3.2.0 the iPhone app opens each one's target as the watch does
+ * (`iOSRoutedTapURLPrefixes` in the app); an older iPhone app only opens
+ * itself, so these carry a caveat for an iPhone that reported a version below
+ * 3.2.0 (`onPhone` "ios-old"). An HTTP action that asks for input is a link
+ * too, but one that asks for nothing fires, so it is not listed. */
+const IPHONE_LINK_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openEntity", "openRoomPage", "addTodo"];
 
 /** The actions an Android phone's widget cannot carry out itself. Its
  * widgets open a page or an entity's controls in the phone app
@@ -3376,10 +3378,11 @@ const WATCH_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openEnt
 const ANDROID_WIDGET_APP_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openRoomPage"];
 
 /** One line per tap action saying what a tap does, for the rows of the tap
- * menu. `onPhone` adds the phone's caveat to the actions that need the watch:
- * `true` (or "ios") is an iPhone, "android" an Android phone, which says
- * "phone" and carries out more of them itself. */
-export function tapActionInfo(type: TapAction["type"], onPhone: boolean | "ios" | "android" = false): string {
+ * menu. `onPhone` adds a phone's caveat to the actions it cannot carry out:
+ * `true` (or "ios") is an iPhone on 3.2.0 or later, or one that has not said,
+ * which opens every target itself; "ios-old" an iPhone that reported an older
+ * version; "android" an Android phone, which says "phone". */
+export function tapActionInfo(type: TapAction["type"], onPhone: TapMenuPhone = false): string {
   const info: Record<TapAction["type"], string> = {
     refresh: "Fetches new data and redraws this complication.",
     refreshAll: "Fetches new data for this complication and the others you pick. The other tiles redraw only when watchOS allows it.",
@@ -3392,10 +3395,10 @@ export function tapActionInfo(type: TapAction["type"], onPhone: boolean | "ios" 
     runScript: "Runs a Home Assistant script.",
     callService: "Calls any Home Assistant service, with your own data.",
     runHTTPAction: "Runs an HTTP action kept in Home Assistant or the HouseLit app.",
-    addTodo: "Opens the watch app to add an item to a to-do list.",
+    addTodo: "Opens the app to add an item to a to-do list.",
     openApp: "Opens HouseLit.",
-    openPage: "Opens one page of your HouseLit grid. You pick the page.",
-    openEntity: "Opens the watch app on the controls of the entity you pick. The entity needs a tile on a watch app page.",
+    openPage: "Opens one page of your HouseLit pages. You pick the page.",
+    openEntity: "Opens the app on the controls of the entity you pick.",
     openRoomPage: "Opens the app on the page for the room it finds you in.",
     timerStartPause: "Starts or pauses the first timer this complication shows. Three quick taps cancel it.",
     timerCancel: "Works the same as Start or pause a timer: three quick taps cancel it.",
@@ -3403,8 +3406,15 @@ export function tapActionInfo(type: TapAction["type"], onPhone: boolean | "ios" 
   };
   const line = info[type];
   if (onPhone === "android") return ANDROID_WIDGET_APP_ONLY_TAP_TYPES.includes(type) ? `${line} On a phone this only opens the app.` : line;
-  return onPhone !== false && WATCH_ONLY_TAP_TYPES.includes(type) ? `${line} On iPhone this only opens the app.` : line;
+  return onPhone === "ios-old" && IPHONE_LINK_TAP_TYPES.includes(type) ? `${line} On iPhone, HouseLit before 3.2 only opens the app.` : line;
 }
+
+/** Which phone a tap menu is drawn for, for `tapActionInfo`'s caveats. */
+export type TapMenuPhone = boolean | "ios" | "ios-old" | "android";
+
+/** First iPhone app version whose widgets open a page, an entity's controls,
+ * Room Jump and the to-do entry in the app, not only the app. */
+export const MIN_IPHONE_VERSION_FOR_WIDGET_LINKS = "3.2.0";
 
 /** The action's own name, with no target on the end: "Refresh", "Toggle an
  * entity". For the places that have room for a word and not a sentence, such as

@@ -1794,7 +1794,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private sendPending = false;
   private sendTimer?: number;
   /** Watch-app pages (id + name) from the watch's last sync report; feeds the
-   * "Open a watch app page" tap-action picker. */
+   * "Open a page" tap-action picker. */
   @state() private pages: { id: string; name: string }[] = [];
   /** The home's HTTP action library (`watch-pages/http-library.ts`), for the
    * "Run an HTTP action" pick list. Read with the complication list;

@@ -233,19 +233,19 @@ describe("the iPhone look", () => {
 
   it("draws the dots in the dock's glass capsule under the pages, the shown page a pill", () => {
     const text = phonePicture(KITCHEN);
-    // `PhonePagesDock`: 38 tall, 15 of glass each side, dots 6 round and 5
-    // apart, the current page a 16 point pill.
-    expect(text).toContain('<span class="wa-phone-dock" style=height:38px;padding:0 15px;gap:5px>');
+    // `PhonePagesDock` at rest: 30 tall, 12 of glass each side, dots 5
+    // round and 6 apart, the current page an 18 point pill.
+    expect(text).toContain('<span class="wa-phone-dock" style=height:30px;padding:0 12px;gap:6px>');
     const dots = [...text.matchAll(/class=(wa-phone-dock-dot(?: on)?) style=([^>]*)>/g)].map((m) => ({ on: m[1]!.endsWith(" on"), style: m[2]! }));
     expect(dots.map((d) => d.on)).toEqual([false, true, false]);
-    expect(dots[0]!.style).toBe("width:6px;height:6px");
-    expect(dots[1]!.style).toBe("width:16px;height:6px");
+    expect(dots[0]!.style).toBe("width:5px;height:5px");
+    expect(dots[1]!.style).toBe("width:18px;height:5px");
     // In the dock's bar under the pages, never over the top of them.
     expect(text).toContain('class="wa-phone-dots-bar" style=height:46px><span class="wa-phone-dock"');
     expect(text).not.toContain('class="wa-phone-dots"');
     // Page dots off draws one bar in its place (`PhonePagesDock.showsBar`).
     const off = phonePicture(KITCHEN, iphone, { showPageIndicator: false });
-    expect([...off.matchAll(/class=(wa-phone-dock-dot(?: on)?) style=([^>]*)>/g)].map((m) => m[2])).toEqual(["width:28px;height:6px"]);
+    expect([...off.matchAll(/class=(wa-phone-dock-dot(?: on)?) style=([^>]*)>/g)].map((m) => m[2])).toEqual(["width:28px;height:5px"]);
   });
 
   it("shows at most 9 dots, the end ones small where more pages lie past them", () => {
@@ -256,11 +256,11 @@ describe("the iPhone look", () => {
     expect(phoneDockWindow(12, 11)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11]);
     const flatDock = flat(renderPhoneDock(12, 6, 1));
     const sizes = [...flatDock.matchAll(/style=width:([\d.]+)px;height:([\d.]+)px/g)].map((m) => `${m[1]}x${m[2]}`);
-    expect(sizes).toEqual(["4x4", "6x6", "6x6", "6x6", "16x6", "6x6", "6x6", "6x6", "4x4"]);
+    expect(sizes).toEqual(["3.5x3.5", "5x5", "5x5", "5x5", "18x5", "5x5", "5x5", "5x5", "3.5x3.5"]);
     // At the first page only the far end is cut.
     const start = [...flat(renderPhoneDock(12, 0, 1)).matchAll(/style=width:([\d.]+)px;height:([\d.]+)px/g)].map((m) => `${m[1]}x${m[2]}`);
-    expect(start[0]).toBe("16x6");
-    expect(start[8]).toBe("4x4");
+    expect(start[0]).toBe("18x5");
+    expect(start[8]).toBe("3.5x3.5");
   });
 
   it("draws the top row and the dock dark over a page with its own background, as the app's chrome is", () => {

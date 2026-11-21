@@ -140,6 +140,8 @@ import {
   TAP_ACTION_LABELS,
   TAP_ACTION_GROUPS,
   tapActionInfo,
+  type TapMenuPhone,
+  MIN_IPHONE_VERSION_FOR_WIDGET_LINKS,
   tapActionLabel,
   describeTapAction,
   refreshTargetsWith,
@@ -426,7 +428,7 @@ import {
 import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext, type ResolvedControl } from "./resolver.js";
 import { familyNote, isHomeFamily } from "./layouts.js";
 import { isPlaceholderId } from "./transfer.js";
-import { type DeviceKind, MIN_VERSION_FOR_TAP_CONFIRM, deviceSupportsControls, watchVersionNote } from "./version.js";
+import { type DeviceKind, MIN_VERSION_FOR_TAP_CONFIRM, compareVersions, deviceSupportsControls, parseVersion, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { goToWatchHttpActions } from "./shell.js";
 import type { WatchCatalogHTTPAction } from "./watch-pages/catalog.js";
@@ -467,7 +469,7 @@ export interface EditorHost {
   /** Search text, category and recents for the symbol picker. */
   symbols: SymbolBrowser;
   /** Watch-app pages (id + name, watch order) from the watch's last sync
-   * report; feeds the "Open a watch app page" tap-action picker. */
+   * report; feeds the "Open a page" tap-action picker. */
   pages: { id: string; name: string }[];
   /** Every complication this watch has on this server, id and name, for the
    * "Refresh multiple complications" tap's picker. Ids are uppercase, the way a document
@@ -4883,9 +4885,14 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
 
 /** Which phone's caveat the tap menu adds: false on a watch, "android" on
  * an Android phone, true on an iPhone. */
-function tapMenuPhone(host: Pick<EditorHost, "deviceKind" | "platform">): boolean | "android" {
+export function tapMenuPhone(host: Pick<EditorHost, "deviceKind" | "platform" | "watchAppVersion">): TapMenuPhone {
   if (host.deviceKind !== "iphone") return false;
-  return host.platform === "android" ? "android" : true;
+  if (host.platform === "android") return "android";
+  // Only a reported older version gets the caveat: an iPhone that has not
+  // said is most likely current, and a guess would nag every one of them.
+  const have = parseVersion(host.watchAppVersion);
+  const need = parseVersion(MIN_IPHONE_VERSION_FOR_WIDGET_LINKS);
+  return have && need && compareVersions(have, need) < 0 ? "ios-old" : true;
 }
 
 /**
@@ -4907,7 +4914,7 @@ function tapActionMenu(
   options: [TapAction["type"], string][],
   set: (v: TapAction["type"]) => void,
   key: string,
-  onPhone: boolean | "ios" | "android" = false,
+  onPhone: TapMenuPhone = false,
 ): TemplateResult {
   const offered: [TapAction["type"], string][] = options.some(([t]) => t === value)
     ? options
@@ -9596,7 +9603,7 @@ export type TapActionHolder = Pick<TapElement, "action" | "openPageId" | "openPa
 
 /**
  * The action form behind a tap: what it does, the entity it does it to, and
- * the page picker for Open a watch app page. Shared by a free-standing tap layer's own
+ * the page picker for Open a page. Shared by a free-standing tap layer's own
  * editor, by the Tappable section below and by the Control Center card, so
  * they can never drift apart.
  *

@@ -576,6 +576,13 @@ WATCH_ADDRESSES_CAPABILITY = "watch_addresses"
 # delivery mode or main house filed under it. The phone polls for its pages,
 # and the panel offers them, only when it sees this.
 PHONE_PAGES_CAPABILITY = "phone_pages"
+# An iPhone's /v2/delta poll may carry the custom-complication store token
+# the phone holds as `complications_token`. For a phone it is never an ack
+# (its complication sync acks); the poll compares it as a watch's report, so
+# a commit, or the panel's "Send to watch", wakes the phone's parked poll with
+# the new token once. The phone sends it, and pulls its complications only
+# when the token moves, with a slow fallback, only when it sees this.
+PHONE_COMPLICATIONS_WAKE_CAPABILITY = "phone_complications_wake"
 # An iPhone reads the voice defaults of its user's watches, read only: the
 # signed watch_config_get of `voice`, signed as itself, answers from those
 # watches, and the delta reply names that record's revision and hash. The phone

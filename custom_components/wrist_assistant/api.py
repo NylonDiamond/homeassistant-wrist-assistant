@@ -1529,6 +1529,7 @@ class DeltaCoordinator:
         template_caller: str | None = None,
         custom_entity_ids: list[str] | None = None,
         complications_token: int | None = None,
+        complications_seen: int | None = None,
         voices_hash: str | None = None,
         held: HeldConfig | None = None,
         lean: bool = False,
@@ -1543,6 +1544,13 @@ class DeltaCoordinator:
         as the watch's ack, and every reply with a body carries the owner's
         current token as ``complications_token`` so the watch can pull only
         when the two differ.
+
+        ``complications_seen`` is the same number from an iPhone
+        (``phone_complications_wake``): the token it holds, never recorded as
+        an ack, since only the phone's complication sync acks. It is compared
+        as a watch's report is, so a commit wakes the phone's parked poll
+        with the new token once, and a phone whose report lags is told at
+        once, and the phone pulls only then.
 
         Every reply with a body also carries ``watch_config``: the signer's
         revision of every kind in DELTA_WATCH_CONFIG_KINDS (0 for a kind with
@@ -1646,6 +1654,9 @@ class DeltaCoordinator:
         store = self._complication_store
         if store is not None and complications_token is not None:
             store.set_applied_token(watch_id, complications_token)
+        # What the device says it holds: the watch's ack, else the phone's
+        # token, which is no ack.
+        held_token = complications_token if complications_token is not None else complications_seen
         reported = held or HeldConfig()
         self._confirm_held_watch_config(watch_id, reported)
         status, body = await self._handle_poll_inner(
@@ -1665,16 +1676,16 @@ class DeltaCoordinator:
             template_have=template_have,
             template_caller=template_caller,
             custom_entity_ids=custom_entity_ids,
-            applied_complications_token=complications_token,
+            applied_complications_token=held_token,
             held=held,
             lean=lean,
             epoch=epoch,
             attrs_reset=attrs_reset,
         )
         if body is not None:
-            self._stamp_reply(watch_id, body, reported, complications_token, voices_hash)
+            self._stamp_reply(watch_id, body, reported, held_token, voices_hash)
             if lean:
-                self._lean_reply(body, reported, complications_token, caps_hash, epoch)
+                self._lean_reply(body, reported, held_token, caps_hash, epoch)
             else:
                 # A new watch's first poll of a connection is not lean yet
                 # (it has not seen `delta_lean`), and its next one names

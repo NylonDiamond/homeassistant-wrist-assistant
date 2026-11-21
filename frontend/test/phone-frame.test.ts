@@ -123,7 +123,7 @@ describe("the iPhone's pages screen", () => {
 
   it("sizes the bar under the pages as the app's bottomBarHeight does", () => {
     const bar = (look: "iphone" | "watch", shown: boolean, top: boolean) => phonePagesLayout(DEFAULT_PHONE, { look, dots: { shown, top } }).bottomBar.height;
-    // The iPhone look's dock, 38 points of glass and 8 of air, while its
+    // The iPhone look's dock bar, fixed at 46 round a 30 point dock, while its
     // dots show; the dots' place setting is the watch's and it ignores it.
     expect(PHONE_PAGES_DOCK_BAR).toBe(46);
     expect(bar("iphone", true, false)).toBe(46);

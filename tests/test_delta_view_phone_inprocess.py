@@ -5,8 +5,9 @@ holds the /v2/delta long poll for its own pages, signed with its own key. Four
 fields on the poll belong to a watch and must never be acted on for a phone:
 ``device_token`` (it would land as a watchOS push token under the phone's id),
 ``delivery_mode``, ``complications_token`` (it would ack the phone's
-complication store token) and ``voices_hash`` (it would ask the phone for a
-voice list). From a phone all four are ignored, not refused: the poll still
+complication store token; it reaches the coordinator as
+``complications_seen`` instead) and ``voices_hash`` (it would ask the phone
+for a voice list). From a phone they are ignored, not refused: the poll still
 reaches the coordinator and answers. From a watch nothing changes.
 
 The view is pulled out of ``wa_v2_views.py`` by name, the way
@@ -292,14 +293,17 @@ def test_a_phone_s_poll_is_served_as_its_own(delta) -> None:
     assert poll["held"].watch_config == {"pages": 2, "behavior": 1}
 
 
-def test_a_phone_s_poll_hands_on_no_complications_token_and_no_voices_hash(delta) -> None:
-    """The coordinator would file the token as the phone's complication ack
-    and answer the hash with ``voices_wanted``; both reach it as absent."""
+def test_a_phone_s_poll_hands_on_its_token_as_seen_and_no_voices_hash(delta) -> None:
+    """The coordinator would file a ``complications_token`` as the phone's
+    complication ack and answer the hash with ``voices_wanted``. The token
+    reaches it as ``complications_seen`` (phone_complications_wake), never
+    as the ack, and the hash as absent."""
     reply = _poll(delta, PHONE, complications_token=7, voices_hash=VOICES_HASH)
     assert reply.status == 200
     [poll] = delta.coordinator.polls
     assert poll["watch_id"] == PHONE
     assert poll["complications_token"] is None
+    assert poll["complications_seen"] == 7
     assert poll["voices_hash"] is None
 
 
@@ -308,6 +312,7 @@ def test_a_watch_s_poll_still_hands_on_both(delta) -> None:
     [poll] = delta.coordinator.polls
     assert poll["watch_id"] == WATCH
     assert poll["complications_token"] == 7
+    assert poll["complications_seen"] is None
     assert poll["voices_hash"] == VOICES_HASH
 
 

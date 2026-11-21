@@ -29,12 +29,12 @@ beforeEach(() => setAndroidHere(true));
 afterEach(() => setAndroidHere(false));
 
 describe("the tap menu's phone caveat", () => {
-  it("keeps the iPhone's line for every action that needs the watch", () => {
+  it("keeps the older iPhone's line for every action it only opens the app for", () => {
     for (const type of ["openPage", "openEntity", "openRoomPage", "addTodo"] as const) {
-      expect(tapActionInfo(type, true)).toContain("On iPhone this only opens the app.");
+      expect(tapActionInfo(type, "ios-old")).toContain("On iPhone, HouseLit before 3.2 only opens the app.");
       expect(tapActionInfo(type, "ios")).toBe(tapActionInfo(type, true));
     }
-    expect(tapActionInfo("toggleEntity", true)).not.toContain("iPhone");
+    expect(tapActionInfo("toggleEntity", "ios-old")).not.toContain("iPhone");
   });
 
   it("says phone on an Android phone, whose widgets open a page or an entity themselves", () => {
