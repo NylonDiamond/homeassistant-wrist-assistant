@@ -1634,6 +1634,15 @@ class WatchConfigStore:
         # entry has unloaded, after which this instance saves nothing.
         self._index_save_pending = False
         self._pending_owners: set[str] = set()
+        # Owners whose first record is being written now
+        # (`async_save_first_record`): a get waits for it before it answers.
+        self._first_saves: dict[str, asyncio.Event] = {}
+        # Owners whose first record was answered "try again" (the disk
+        # refused it, the write raised, or it took too long): every later
+        # check writes their files again until one lands
+        # (`async_ensure_saved`), as a retry finds the record in memory and
+        # is no longer a first record.
+        self._unconfirmed: set[str] = set()
         self._closed = False
         # Every new revision is above this (see _revision_floor). 0 until a
         # load finds an index: a fresh install has handed nothing out.
@@ -2245,18 +2254,32 @@ class WatchConfigStore:
         """
         if self._closed:
             return True
-        if owner_watch_id in self._pending_owners:
-            self._pending_owners.discard(owner_watch_id)
-            await self._file(owner_watch_id).async_save(self._serialize_owner(owner_watch_id))
-        if self._index_save_pending:
-            self._index_save_pending = False
-            await self._index.async_save(self._serialize_index())
-        if self._library_save_pending:
-            self._library_save_pending = False
-            await self._library_file.async_save(self._serialize_library())
-        return await self.async_ensure_saved(owner_watch_id)
+        done = asyncio.Event()
+        earlier = self._first_saves.get(owner_watch_id)
+        self._first_saves[owner_watch_id] = done
+        try:
+            if owner_watch_id in self._pending_owners:
+                self._pending_owners.discard(owner_watch_id)
+                await self._file(owner_watch_id).async_save(self._serialize_owner(owner_watch_id))
+            if self._index_save_pending:
+                self._index_save_pending = False
+                await self._index.async_save(self._serialize_index())
+            if self._library_save_pending:
+                self._library_save_pending = False
+                await self._library_file.async_save(self._serialize_library())
+            landed = await self.async_ensure_saved(owner_watch_id, wait=False)
+            if not landed:
+                self._unconfirmed.add(owner_watch_id)
+            return landed
+        finally:
+            done.set()
+            if self._first_saves.get(owner_watch_id) is done:
+                if earlier is not None and not earlier.is_set():
+                    self._first_saves[owner_watch_id] = earlier
+                else:
+                    self._first_saves.pop(owner_watch_id, None)
 
-    async def async_ensure_saved(self, owner_watch_id: str) -> bool:
+    async def async_ensure_saved(self, owner_watch_id: str, *, wait: bool = True) -> bool:
         """Whether the owner's file, the index and the library are on disk as
         Home Assistant last wrote them.
 
@@ -2269,10 +2292,24 @@ class WatchConfigStore:
         bring back revision 0. True after shutdown and for a file that was
         never written. The owner's file is written again only while the owner
         has records, so a forgotten owner's file is not made again.
+
+        With ``wait`` (the get's call), a first record of this owner still
+        being written is waited for, up to ``_SAVE_BEFORE_REPLY_SECONDS``:
+        until it lands, memory holds a revision a restart may not, and a get
+        that answered it would let the phone count its move as done. Still
+        writing after that is False, a retryable ``unavailable``.
         """
         if self._closed:
             return True
+        writing = self._first_saves.get(owner_watch_id) if wait else None
+        if writing is not None:
+            try:
+                async with asyncio.timeout(_SAVE_BEFORE_REPLY_SECONDS):
+                    await writing.wait()
+            except TimeoutError:
+                return False
         landed = True
+        unconfirmed = owner_watch_id in self._unconfirmed
         files: list[tuple[Store, Callable[[], dict[str, Any]]]] = []
         if owner_watch_id in self._records:
             files.append(
@@ -2283,11 +2320,18 @@ class WatchConfigStore:
             if not self._library_failed:
                 files.append((self._library_file, self._serialize_library))
         for store, serialize in files:
-            if not getattr(store, "write_failed", False):
+            if not unconfirmed and not getattr(store, "write_failed", False):
                 continue
-            await store.async_save(serialize())
+            try:
+                await store.async_save(serialize())
+            except Exception:  # noqa: BLE001 (answered as not landed)
+                _LOGGER.warning("Could not write %s's watch config", owner_watch_id, exc_info=True)
+                landed = False
+                continue
             if getattr(store, "write_failed", False):
                 landed = False
+        if unconfirmed and landed:
+            self._unconfirmed.discard(owner_watch_id)
         if not landed:
             _LOGGER.warning(
                 "Home Assistant could not write %s's watch config to its disk; "
@@ -2298,11 +2342,14 @@ class WatchConfigStore:
 
     def holds_unsaved(self, owner_watch_id: str) -> bool:
         """Whether a file this owner's records need (its own, the index or
-        the library) failed its last write, so what memory holds may not
+        the library) failed its last write, or its first record was answered
+        "try again" and has not landed since, so what memory holds may not
         survive a restart. No I/O: :meth:`async_ensure_saved` is what writes
         it again. False after shutdown."""
         if self._closed:
             return False
+        if owner_watch_id in self._unconfirmed:
+            return True
         stores: list[Store] = [self._index, self._library_file]
         if owner_watch_id in self._records:
             stores.append(self._file(owner_watch_id))
@@ -2311,12 +2358,14 @@ class WatchConfigStore:
     async def async_save_before_reply(self, owner_watch_id: str) -> bool:
         """:meth:`async_save_first_record` for a reply that goes out anyway.
 
-        A slow write, or one that raised, never changes what the caller
-        answers. It is logged, and the delayed saves are set going again, so
-        the next one retries what this one did not finish. False only when
-        Home Assistant wrote and said the disk refused it
-        (:meth:`async_ensure_saved`), which the caller answers as
-        ``unavailable``.
+        A write that raised is logged, and the delayed saves are set going
+        again, so the next one retries what this one did not finish. False
+        when Home Assistant said the disk refused it
+        (:meth:`async_ensure_saved`), when the write raised, and when it did
+        not finish in time:
+        the record is not on disk yet, so the caller answers ``unavailable``
+        and the phone asks again rather than count a link a crash would
+        lose.
         """
         try:
             async with asyncio.timeout(_SAVE_BEFORE_REPLY_SECONDS):
@@ -2324,12 +2373,18 @@ class WatchConfigStore:
         except asyncio.CancelledError:
             self._schedule_every_save(owner_watch_id)
             raise
-        except Exception:  # noqa: BLE001 (the delayed save retries it)
+        except TimeoutError:
+            _LOGGER.warning("Writing %s's records took too long; the device is told to try again", owner_watch_id)
+            self._unconfirmed.add(owner_watch_id)
+            self._schedule_every_save(owner_watch_id)
+            return False
+        except Exception:  # noqa: BLE001 (answered as "try again")
             _LOGGER.warning(
                 "Could not write %s's records before replying", owner_watch_id, exc_info=True
             )
+            self._unconfirmed.add(owner_watch_id)
             self._schedule_every_save(owner_watch_id)
-            return True
+            return False
 
     def _schedule_every_save(self, owner_watch_id: str) -> None:
         """Set the owner's file, the index and the library saving again."""

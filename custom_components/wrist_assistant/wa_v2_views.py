@@ -5499,7 +5499,11 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
     return ctx.signed_json(
         {
             "ok": True,
-            "has_pages": _owner_has_pages(store, ctx.watch_id),
+            # A first link the disk refused is held in memory only: the phone
+            # keeps offering the watch's pages, with its error line, until
+            # the record lands (`holds_unsaved`).
+            "has_pages": not store.holds_unsaved(ctx.watch_id)
+            and _owner_has_pages(store, ctx.watch_id),
             "watches": [
                 {
                     "id": watch_id,
@@ -5601,7 +5605,14 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    if first and not await store.async_save_before_reply(ctx.watch_id):
+    saved = (
+        await store.async_save_before_reply(ctx.watch_id)
+        if first
+        # A retry finds the first attempt's record in memory: it is answered
+        # as linked only once that record is on disk.
+        else await store.async_ensure_saved(ctx.watch_id)
+    )
+    if not saved:
         # The phone takes a 200 as its choice made and never offers the link
         # again, so a record the disk refused must not be answered as linked.
         return _watch_config_refusal(

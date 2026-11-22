@@ -446,6 +446,77 @@ def test_the_get_waits_for_the_disk_then_answers_the_record_held(env) -> None:
     assert env.store._file(WATCH).write_failed is False
 
 
+def _paused_disk(env, owner: str = WATCH) -> types.SimpleNamespace:
+    """The owner's first write waits on ``disk.go`` and then lands, or is
+    refused the way Home Assistant refuses one when ``disk.full``."""
+    disk = types.SimpleNamespace(full=False, go=None)
+    store = env.store._file(owner)
+
+    async def async_save(_data: Any) -> None:
+        await disk.go.wait()
+        store.write_failed = disk.full
+
+    store.async_save = async_save
+    store.async_delay_save = lambda *_a, **_k: None
+    return disk
+
+
+def _put_and_get_while_the_first_write_waits(env, disk) -> tuple[_Response, _Response]:
+    async def run() -> tuple[_Response, _Response]:
+        disk.go = asyncio.Event()
+        put = asyncio.create_task(
+            env.views["_op_watch_config_put"](_Ctx(env.store, WATCH, _put_body()))
+        )
+        await asyncio.sleep(0)
+        get = asyncio.create_task(
+            env.views["_op_watch_config_get"](_Ctx(env.store, WATCH, {"kind": "pages"}, env.secrets))
+        )
+        await asyncio.sleep(0.05)
+        assert not get.done(), "the get answered while the first write was still going"
+        disk.go.set()
+        return await put, await get
+
+    return asyncio.run(run())
+
+
+def test_a_get_during_the_first_write_waits_and_answers_the_saved_record(env) -> None:
+    disk = _paused_disk(env)
+    put, get = _put_and_get_while_the_first_write_waits(env, disk)
+    assert put.status == 200
+    assert get.status == 200
+    assert get.body["revision"] == put.body["revision"]
+
+
+def test_a_get_during_a_first_write_that_fails_is_a_signed_503(env) -> None:
+    """Answered 200 with the revision in memory, the phone would count its
+    move done over a record the restart then loses."""
+    disk = _paused_disk(env)
+    disk.full = True
+    put, get = _put_and_get_while_the_first_write_waits(env, disk)
+    assert put.status == 503
+    assert get.status == 503
+    assert get.body["error"] == "unavailable"
+
+
+def test_a_get_while_the_first_write_outlasts_the_wait_is_a_signed_503(env, monkeypatch) -> None:
+    monkeypatch.setitem(type(env.store).async_ensure_saved.__globals__, "_SAVE_BEFORE_REPLY_SECONDS", 0.01)
+    disk = _paused_disk(env)
+
+    async def run() -> _Response:
+        disk.go = asyncio.Event()
+        put = asyncio.create_task(
+            env.views["_op_watch_config_put"](_Ctx(env.store, WATCH, _put_body()))
+        )
+        await asyncio.sleep(0)
+        reply = await env.views["_op_watch_config_get"](_Ctx(env.store, WATCH, {"kind": "pages"}, env.secrets))
+        disk.go.set()
+        await put
+        return reply
+
+    reply = asyncio.run(run())
+    assert reply.status == 503
+
+
 def test_a_get_writes_nothing_while_every_file_landed(env) -> None:
     assert _put(env, _put_body()).status == 200
     disk = _full_disk(env)

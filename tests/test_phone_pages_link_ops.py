@@ -366,25 +366,28 @@ def test_a_first_link_is_on_disk_before_the_reply_and_a_later_one_keeps_the_debo
     assert written == [PHONE]
 
 
-def test_a_failed_first_link_write_changes_no_reply_and_is_tried_again(env) -> None:
+def test_a_first_link_write_that_raised_is_a_signed_503_and_is_tried_again(env) -> None:
     async def boom(_owner: str) -> None:
         raise OSError("disk full")
 
     env.store.async_save_first_record = boom
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
-    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    assert reply.status == 503
     assert PHONE in env.store._pending_owners
     assert env.store._library_save_pending is True
 
 
-def test_a_slow_first_link_write_changes_no_reply(env, monkeypatch) -> None:
+def test_a_slow_first_link_write_is_a_signed_503_and_is_tried_again(env, monkeypatch) -> None:
+    """The phone takes a 200 as its choice made and never offers the link
+    again, so a link not yet on disk is answered as one to ask again."""
     async def slow(_owner: str) -> None:
         await asyncio.sleep(30)
 
     monkeypatch.setitem(type(env.store).async_save_before_reply.__globals__, "_SAVE_BEFORE_REPLY_SECONDS", 0.01)
     env.store.async_save_first_record = slow
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
-    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    assert reply.status == 503
+    assert reply.body["error"] == "unavailable"
     assert PHONE in env.store._pending_owners
 
 
@@ -398,6 +401,71 @@ def test_a_first_link_the_disk_refused_is_a_signed_503_not_a_link(env) -> None:
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
     assert reply.status == 503
     assert reply.body["error"] == "unavailable"
+
+
+def test_every_link_is_a_signed_503_until_the_phone_s_record_is_on_disk(env) -> None:
+    """The retry finds the first attempt's record in memory and is no longer
+    a first link: it must still wait for the disk, or a restart leaves the
+    phone with no pages and a choice it never makes again."""
+    phone_file = env.store._file(PHONE)
+    disk = {"full": True, "writes": 0}
+
+    async def async_save(_data: Any) -> None:
+        disk["writes"] += 1
+        phone_file.write_failed = disk["full"]
+
+    phone_file.async_save = async_save
+    phone_file.async_delay_save = lambda *_a, **_k: None
+    assert _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH}).status == 503
+    assert _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH}).status == 503
+    assert disk["writes"] >= 2, "the retry wrote the file again"
+    disk["full"] = False
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert reply.status == 200
+    assert PHONE not in env.store._unconfirmed
+    # Landed: later links write nothing more at once.
+    writes = disk["writes"]
+    assert _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH}).status == 200
+    assert disk["writes"] == writes
+
+
+def test_a_phone_whose_first_link_the_disk_refused_is_offered_the_watch_again(env) -> None:
+    """Its pages are in memory only, so the offer says it has none: the phone
+    keeps the question and its error line, not "No pages yet"."""
+    phone_file = env.store._file(PHONE)
+
+    async def refused(_data: Any) -> None:
+        phone_file.write_failed = True
+
+    phone_file.async_save = refused
+    phone_file.async_delay_save = lambda *_a, **_k: None
+    assert _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH}).status == 503
+    offer = _op(env, "_op_phone_pages_offer", {}).body
+    assert offer["has_pages"] is False
+    assert any(w["id"] == WATCH and w["has_pages"] for w in offer["watches"])
+
+
+def test_a_link_retried_after_a_slow_first_write_waits_for_the_disk(env, monkeypatch) -> None:
+    """A first write that outlasted the wait is still unconfirmed: the retry
+    writes the file itself before it answers linked."""
+    async def slow(_owner: str) -> None:
+        await asyncio.sleep(30)
+
+    monkeypatch.setitem(type(env.store).async_save_before_reply.__globals__, "_SAVE_BEFORE_REPLY_SECONDS", 0.01)
+    real = env.store.async_save_first_record
+    env.store.async_save_first_record = slow
+    assert _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH}).status == 503
+    env.store.async_save_first_record = real
+    phone_file = env.store._file(PHONE)
+    written: list[Any] = []
+
+    async def async_save(data: Any) -> None:
+        written.append(data)
+
+    phone_file.async_save = async_save
+    reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
+    assert reply.status == 200
+    assert written, "the retry wrote the phone's file before answering"
 
 
 def test_a_watch_record_the_disk_refused_is_not_linked(env) -> None:
