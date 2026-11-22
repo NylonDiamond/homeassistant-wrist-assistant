@@ -632,6 +632,17 @@ const NO_STATES = {};
  * Kept per floor, states and options, so a page that draws again with
  * nothing changed reuses the picture.
  */
+/** The order the plan draws things in, from the bottom up: rugs first, flat
+ * under everything, then by the height of each thing's top (its `lift` plus
+ * its height), the lowest first, since from above the higher top hides the
+ * lower one. Things as high keep the map's order. The app's Flat plan draws
+ * in the same order (`HomeMapGeometry.planOrder`). */
+export function homeMapPlanOrder<T extends { object: Pick<HomeMapObject, "kind" | "size" | "lift"> }>(things: readonly T[]): T[] {
+  const flat = (o: T["object"]) => (o.kind === "rug" ? 0 : 1);
+  const top = (o: T["object"]) => Math.max(o.lift ?? 0, 0) + o.size[2];
+  return [...things].sort((a, b) => flat(a.object) - flat(b.object) || top(a.object) - top(b.object));
+}
+
 export function homeTileArt(o: HomeTileArtOptions): SVGTemplateResult {
   // Only the glass pins draw icons, so only they depend on the provider;
   // those drawings are not kept.
@@ -788,15 +799,15 @@ function drawPlan(ctx: Ctx): SVGTemplateResult[] {
   }
 
   // Furniture, each piece drawn as itself with a soft shadow under it, the
-  // rugs first, flat under everything else and casting none. A piece from
+  // rugs first, flat under everything else and casting none, then the rest
+  // lowest top first, so a lamp hung from the ceiling is seen over the bed
+  // under it, as from above (`homeMapPlanOrder`). A piece from
   // the furniture catalog (its `model`) is drawn as that piece in its own
   // colours, its back where its turn puts it, as the 3D view stands it.
   if (ctx.furniture) {
     const allWalls = floor.rooms.flatMap(homeWallsOf);
     let any = false;
-    const pieces = floor.rooms.flatMap((room) => room.objects.map((object) => ({ room, object })));
-    const flat = (kind: string) => (kind === "rug" ? 0 : 1);
-    pieces.sort((a, b) => flat(a.object.kind) - flat(b.object.kind));
+    const pieces = homeMapPlanOrder(floor.rooms.flatMap((room) => room.objects.map((object) => ({ room, object }))));
     for (const { room, object: own } of pieces) {
       // Stairs going down: the built flight in the box their well fits.
       const object = stairsDown(own, ctx.o.stairsDown) ? homeDownStairsDrawn(room, own).object : own;

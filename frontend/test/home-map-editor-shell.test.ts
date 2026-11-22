@@ -517,9 +517,10 @@ describe("door and window styles in the model looks", () => {
     const looks = Object.fromEntries((["plan", ...HOME_TILE_MODEL_LOOKS] as HomeTileLook[]).map((look) => [look, hash(draw(floor, look))]));
     // Taken before the styles were drawn in the model looks; a change to how
     // the looks draw an unstyled map changes these on purpose (the TV's
-    // bezel changed night, warm and clay).
+    // bezel changed night, warm and clay; the plan's things drawn lowest
+    // top first changed plan).
     expect(looks).toEqual({
-      plan: "81582888e9b19721",
+      plan: "fc575fc76ce01129",
       night: "cd5d02d131dd61e0",
       warm: "903a42ccc98b041c",
       lines: "f8f39d5c61ea580f",
