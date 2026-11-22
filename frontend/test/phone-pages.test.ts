@@ -19,7 +19,7 @@ import { notForIphoneText, watchCommandError, watchPagesSaveNote } from "../src/
 import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
 import { iphoneRowNoneNote, IPHONE_ROW_UPDATE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
-import { WATCH_SETTINGS_CATALOG, catalogFor, formValues, isShown, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
+import { type CatalogSetting, WATCH_SETTINGS_CATALOG, catalogFor, formValues, isShown, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
 import { watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
 import "../src/watch-voice/voice-editor.js";
@@ -101,8 +101,10 @@ describe("iPhone settings", () => {
     expect(sections.find((s) => s.id === "navigation")!.settings[0]!.key).toBe("phonePageLook");
   });
 
-  it("leave a watch's page as it was, without the iPhone's Page look", () => {
-    const withoutLook = WATCH_SETTINGS_CATALOG.sections.map((s) => ({ ...s, settings: s.settings.filter((x) => x.key !== "phonePageLook") }));
+  it("leave a watch's page as it was, without the iPhone's Page look and choices", () => {
+    const watchOnly = (x: CatalogSetting): CatalogSetting =>
+      x.options?.some((o) => o.devices !== undefined) ? { ...x, options: x.options.filter((o) => o.devices?.includes("watch") ?? true) } : x;
+    const withoutLook = WATCH_SETTINGS_CATALOG.sections.map((s) => ({ ...s, settings: s.settings.filter((x) => x.key !== "phonePageLook").map(watchOnly) }));
     expect(catalogFor("watch")).toEqual(withoutLook);
   });
 

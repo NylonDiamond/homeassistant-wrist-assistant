@@ -133,7 +133,8 @@
             {"value": "Room Jump", "label": "Jump to a room"},
             {"value": "Activate Scene", "label": "Turn on a scene"},
             {"value": "Run Script", "label": "Run a script"},
-            {"value": "Toggle First Tile", "label": "Toggle the first tile"}
+            {"value": "Toggle First Tile", "label": "Toggle the first tile"},
+            {"value": "Quick Actions", "label": "Open Quick Actions", "devices": ["iphone"]}
           ]
         },
         {

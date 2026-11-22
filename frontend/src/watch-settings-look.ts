@@ -75,6 +75,7 @@ const ACTION_ICONS: Readonly<Record<string, string>> = {
   "Next Page": "arrow.right",
   "Previous Page": "arrow.left",
   "Toggle First Tile": "power",
+  "Quick Actions": "square.grid.2x2.fill",
 };
 
 function actions(values: readonly string[]): Record<string, OptionLook> {
@@ -245,7 +246,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   pullDownAction: {
     icon: "arrow.down.circle.fill",
     demo: "pullDown",
-    options: actions(["Disabled", "Refresh", "Next Page", "Previous Page", "Room Jump", "Activate Scene", "Run Script", "Toggle First Tile"]),
+    options: actions(["Disabled", "Refresh", "Next Page", "Previous Page", "Room Jump", "Activate Scene", "Run Script", "Toggle First Tile", "Quick Actions"]),
   },
   pullDownSceneTargetId: { icon: "theatermasks" },
   pullDownScriptTargetId: { icon: "scroll.fill" },

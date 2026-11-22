@@ -45,6 +45,10 @@ export type SettingValue = string | boolean | number | readonly string[] | Motio
 export interface SettingOption {
   value: string;
   label: string;
+  /** The devices offered this choice, as `devices` on a setting names
+   * them. Absent is every device the setting is for. `catalogFor` keeps
+   * only the choices of the device it draws. */
+  devices?: CatalogDevice[];
 }
 
 /** A device that reads a setting: the watch, or the iPhone for its own pages. */
@@ -664,15 +668,21 @@ export function settingsTitle(device: SettingDevice, platform?: DevicePlatform |
 
 /** The catalog's sections as one device reads them: only the settings whose
  * `devices` names it, and no section left empty. A setting that names no
- * device is the watch's alone. On an iPhone a row's `phoneShowIf` becomes
- * a second condition it must meet (`andShowIf`). */
+ * device is the watch's alone. A choice with its own `devices` stays only
+ * for those. On an iPhone a row's `phoneShowIf` becomes a second condition
+ * it must meet (`andShowIf`). */
 export function catalogFor(
   device: SettingDevice,
   catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG,
   platform?: DevicePlatform | null,
 ): CatalogSection[] {
   const reader = catalogDeviceOf(device, platform);
-  const forDevice = (s: CatalogSetting): CatalogSetting => {
+  const withOptions = (s: CatalogSetting): CatalogSetting =>
+    s.options?.some((o) => o.devices !== undefined)
+      ? { ...s, options: s.options.filter((o) => o.devices === undefined || o.devices.includes(reader)) }
+      : s;
+  const forDevice = (setting: CatalogSetting): CatalogSetting => {
+    const s = withOptions(setting);
     if (reader === "wearos") {
       if (s.wearLabel === undefined && s.wearHelp === undefined) return s;
       return { ...s, ...(s.wearLabel === undefined ? {} : { label: s.wearLabel }), ...(s.wearHelp === undefined ? {} : { help: s.wearHelp }) };

@@ -242,6 +242,21 @@ describe("the catalog", () => {
     for (const s of settings.filter((x) => x.phoneHelp !== undefined)) expect(s.devices, s.key).toContain("iphone");
   });
 
+  // Quick Actions is the iPhone's own card, so only the iPhone is offered
+  // it as a pull down; an Android phone and the watches are not.
+  it("offers a choice only to the devices it names", () => {
+    const pull = (device: "watch" | "iphone", platform?: "android" | "wearos") =>
+      catalogFor(device, WATCH_SETTINGS_CATALOG, platform).flatMap((sec) => sec.settings).find((x) => x.key === "pullDownAction")!.options!.map((o) => o.value);
+    expect(pull("iphone")).toContain("Quick Actions");
+    expect(pull("iphone", "android")).not.toContain("Quick Actions");
+    expect(pull("watch")).not.toContain("Quick Actions");
+    expect(pull("watch", "wearos")).not.toContain("Quick Actions");
+    expect(pull("watch")).toContain("Refresh");
+    for (const s of settings) {
+      for (const o of s.options ?? []) for (const d of o.devices ?? []) expect(s.devices ?? ["watch"], `${s.key} ${o.value}`).toContain(d);
+    }
+  });
+
   it("puts every dependent row after the row it depends on", () => {
     for (const section of WATCH_SETTINGS_CATALOG.sections) {
       const order = section.settings.map((s) => s.key);
