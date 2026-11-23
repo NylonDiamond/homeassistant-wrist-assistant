@@ -112,6 +112,10 @@ export interface CatalogSetting {
   /** On an iPhone, the help line in place of `help`, for a row that works
    * differently there. `catalogFor("iphone")` puts it in `help`. */
   phoneHelp?: string;
+  /** On an iPhone, the default in place of `default`, where it differs
+   * from the watch's. `catalogFor("iphone")` puts it in `default`; an
+   * Android phone keeps `default`. */
+  iphoneDefault?: SettingValue;
   /** On an Android phone, the help line in place of `phoneHelp`, for a row
    * whose iPhone words name iOS. `catalogFor("iphone", catalog, "android")`
    * puts it in `help`. */
@@ -693,6 +697,7 @@ export function catalogFor(
       ...(s.phoneShowIf === undefined ? {} : { andShowIf: s.phoneShowIf }),
       ...(s.phoneHelp === undefined ? {} : { help: s.phoneHelp }),
       ...(reader === "android" && s.androidHelp !== undefined ? { help: s.androidHelp } : {}),
+      ...(reader === "iphone" && s.iphoneDefault !== undefined ? { default: s.iphoneDefault } : {}),
     };
   };
   return catalog.sections

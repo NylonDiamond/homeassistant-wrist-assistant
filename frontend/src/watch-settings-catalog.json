@@ -125,6 +125,7 @@
           "label": "Pull down from the top",
           "help": "Drag down from the top of a page.",
           "default": "Refresh",
+          "iphoneDefault": "Pull Menu",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
             {"value": "Refresh", "label": "Refresh the page"},
@@ -134,7 +135,7 @@
             {"value": "Activate Scene", "label": "Turn on a scene"},
             {"value": "Run Script", "label": "Run a script"},
             {"value": "Toggle First Tile", "label": "Toggle the first tile"},
-            {"value": "Quick Actions", "label": "Open Quick Actions", "devices": ["iphone"]}
+            {"value": "Pull Menu", "label": "Show a menu of icons", "devices": ["iphone"]}
           ]
         },
         {
