@@ -226,6 +226,7 @@ from .sealed_box import (
     open_offer_secret,
     seal,
 )
+from .starter_page import new_starter_page, starter_entities, tile_entity_ids, tile_state
 from .wa_pair_requests import (
     OFFER_STATE_EXPIRED,
     OFFER_STATE_OPEN,
@@ -6655,6 +6656,222 @@ async def _op_home_map_page_add(ctx: _OpContext) -> Response:
     )
 
 
+# ── a new iPhone's starter page (starter_page) ───────────────────────────
+#
+# Magic setup (app repo ``docs/magic_setup_2026-11.md``): right after a new
+# iPhone pairs, it asks for one page of the home's main devices, and then for
+# the same page on its watch. The page is built here (``starter_page.py``).
+
+_STARTER_PAGE_STATUS = {
+    "not_an_iphone": 403,
+    "not_your_watch": 403,
+    "invalid": 400,
+    "unknown_device": 409,
+    "awaiting_move": 409,
+    "unknown_page": 409,
+    "unavailable": 503,
+}
+
+
+def _starter_page_refusal(ctx: _OpContext, code: str, message: str) -> Response:
+    return ctx.signed_json(
+        {"ok": False, "error": code, "message": message},
+        status=_STARTER_PAGE_STATUS.get(code, 400),
+    )
+
+
+def _starter_page_unsaved(ctx: _OpContext) -> Response:
+    return _starter_page_refusal(
+        ctx, "unavailable", "Home Assistant could not save to its disk. Try again in a moment."
+    )
+
+
+def _starter_page_store_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Response:
+    """A refusal of the store: its own code when the op names one, else as
+    for ``watch_config_put``."""
+    if err.code in _STARTER_PAGE_STATUS:
+        return _starter_page_refusal(ctx, err.code, err.message)
+    return _watch_config_refusal(ctx, err)
+
+
+def _held_page(store: Any, owner: str, page_id: str) -> dict[str, Any] | None:
+    """The page of ``owner``'s pages record whose id is ``page_id``, case
+    aside, or None. An unreadable record holds none."""
+    try:
+        record = store.get(owner, "pages")
+    except WatchConfigStoreError:
+        return None
+    pages = record.document.get("pages") if record is not None else None
+    want = page_id.upper()
+    for page in pages if isinstance(pages, list) else []:
+        if isinstance(page, dict) and str(page.get("id", "")).upper() == want:
+            return page
+    return None
+
+
+def _starter_page_states(ctx: _OpContext, page: dict[str, Any]) -> dict[str, Any]:
+    """Each tile's entity with a state: ``{"state", "attributes"}``, the
+    attributes cut to the ones a tile reads (``starter_page.tile_state``)."""
+    out: dict[str, Any] = {}
+    for entity_id in tile_entity_ids(page):
+        state = ctx.hass.states.get(entity_id)
+        if state is not None:
+            out[entity_id] = tile_state(state.state, state.attributes)
+    return out
+
+
+def _starter_page_made(ctx: _OpContext, store: Any, owner: str, page: dict[str, Any]) -> Response:
+    """The iPhone's reply for its starter page, as its record holds it."""
+    record = store.get(owner, "pages")
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "made": True,
+            "page_id": page["id"],
+            "revision": record.revision,
+            "page": page,
+            "states": _starter_page_states(ctx, page),
+        }
+    )
+
+
+async def _op_starter_page_make(ctx: _OpContext) -> Response:
+    """A new iPhone's starter page (capability ``starter_page``), on the
+    iPhone, or the same page on one of its user's watches.
+
+    Body:  {} for the iPhone itself, or {"watch_id": <id>, "page_id": <the
+           page id the iPhone got>} for a watch.
+    Reply, the iPhone: {"ok": true, "made": false, "reason": "has_pages" |
+           "nothing_to_show"}, or {"ok": true, "made": true, "page_id",
+           "revision": <the iPhone's pages record revision>, "page": <the
+           page as the iPhone's record holds it>, "states": {<entity id>:
+           {"state", "attributes"}}}.
+    Reply, a watch: {"ok": true, "made": false, "reason": "has_pages"}, or
+           {"ok": true, "made": true, "revision": <the watch's pages record
+           revision>}.
+    Refusal: signed {"ok": false, "error", "message"}: ``not_an_iphone`` 403
+             (any signer but an iPhone entry, a watch's pair too),
+             ``invalid`` 400 (``watch_id`` or ``page_id`` without the other,
+             or either not text), ``unknown_device`` 409 (no such paired
+             watch: one confirmed with ``result: "waiting"`` lands on its next
+             status poll, so the iPhone asks again), ``not_your_watch`` 403
+             (a watch not bound to the signer's Home Assistant user, or an
+             iPhone's id), ``unknown_page`` 409 (the iPhone holds no library
+             page with that id), ``awaiting_move`` 409 (the watch waits for an
+             iPhone to move its setup here), ``unavailable`` 503 (the first
+             record the disk refused, or no store); any other refusal of the
+             store as for ``watch_config_put`` (``_watch_config_refusal``).
+
+    The iPhone: one holding a pages record is answered ``has_pages`` and
+    nothing changes. Else the page (``starter_page.py``) is made in the
+    library and picked onto the iPhone, which makes its first pages record,
+    on disk before the 200. A home with nothing to show is answered
+    ``nothing_to_show``. Asked again (a lost reply, or a 503), the page this
+    op made for the iPhone in this run is answered as made once its record
+    is on disk.
+
+    A watch: the library page the iPhone got is picked onto the watch (one
+    page both devices share), its first pages record on disk before the 200.
+    A watch holding a pages record is answered ``has_pages``, or as made
+    when that record holds the page already (asked again).
+    """
+    store = getattr(ctx.domain_data, "watch_config_store", None)
+    secrets = getattr(ctx.domain_data, "widget_secret_store", None)
+    if store is None or secrets is None:
+        return _starter_page_refusal(ctx, "unavailable", "integration not ready")
+    if not _caller_is_iphone(ctx):
+        return _starter_page_refusal(
+            ctx, "not_an_iphone", f"Only {_a_phone(ctx)} asks for a starter page."
+        )
+    if "watch_id" in ctx.payload or "page_id" in ctx.payload:
+        return await _starter_page_on_watch(ctx, store, secrets)
+    owner = ctx.watch_id
+    made = ctx.domain_data.starter_pages.get(owner)
+    if not store.holds_no_record(owner, "pages"):
+        page = _held_page(store, owner, made) if made is not None else None
+        if page is None:
+            return ctx.signed_json({"ok": True, "made": False, "reason": "has_pages"})
+        if not await store.async_ensure_saved(owner):
+            return _starter_page_unsaved(ctx)
+        return _starter_page_made(ctx, store, owner, page)
+    rows = starter_entities(home_floors(ctx.hass), home_areas(ctx.hass), home_entities(ctx.hass))
+    if not rows:
+        return ctx.signed_json({"ok": True, "made": False, "reason": "nothing_to_show"})
+    page = new_starter_page(
+        new_item_id(),
+        rows,
+        [new_item_id() for _ in rows],
+        set(ctx.hass.states.async_entity_ids()),
+    )
+    try:
+        added = store.library_first_page(
+            owner, {"schemaVersion": 1, "pages": [page]}, updated_by=owner
+        )
+    except WatchConfigStoreError as err:
+        if err.code == "has_pages":
+            return ctx.signed_json({"ok": True, "made": False, "reason": "has_pages"})
+        return _starter_page_store_refusal(ctx, err)
+    ctx.domain_data.starter_pages[owner] = added["id"]
+    _LOGGER.info("Made starter page %s of %d tiles for %s", added["id"], len(rows), owner)
+    if not await store.async_save_before_reply(owner):
+        # The record stays in memory and is written again on the next ask
+        # (`async_ensure_saved`), which then answers it as made.
+        return _starter_page_unsaved(ctx)
+    held = _held_page(store, owner, added["id"])
+    if held is None:
+        return _starter_page_unsaved(ctx)
+    return _starter_page_made(ctx, store, owner, held)
+
+
+async def _starter_page_on_watch(ctx: _OpContext, store: Any, secrets: Any) -> Response:
+    """The watch half of ``starter_page_make``."""
+    watch_id = ctx.payload.get("watch_id")
+    page_id = ctx.payload.get("page_id")
+    if not isinstance(watch_id, str) or not watch_id or not isinstance(page_id, str) or not page_id:
+        return _starter_page_refusal(ctx, "invalid", "watch_id and page_id are required")
+    entry = secrets.get(watch_id)
+    if entry is None:
+        return _starter_page_refusal(
+            ctx, "unknown_device", "That watch is not paired with Home Assistant yet."
+        )
+    if (
+        is_iphone_entry(entry)
+        or ctx.user_id is None
+        or getattr(entry, "user_id", None) != ctx.user_id
+    ):
+        return _starter_page_refusal(
+            ctx, "not_your_watch", f"That watch is not one of this {_phone_noun(ctx)}'s watches."
+        )
+    owners = store.library_item_owners("pages", page_id)
+    if owners is None or ctx.watch_id not in owners:
+        return _starter_page_refusal(
+            ctx, "unknown_page", f"This {_phone_noun(ctx)} holds no page {page_id}."
+        )
+    if not store.holds_no_record(watch_id, "pages"):
+        if _held_page(store, watch_id, page_id) is None:
+            return ctx.signed_json({"ok": True, "made": False, "reason": "has_pages"})
+        # Asked again: the page is on the watch already.
+        if not await store.async_ensure_saved(watch_id):
+            return _starter_page_unsaved(ctx)
+        record = store.get(watch_id, "pages")
+        return ctx.signed_json({"ok": True, "made": True, "revision": record.revision})
+    if secrets.may_await_move(watch_id):
+        return _starter_page_refusal(
+            ctx,
+            "awaiting_move",
+            "This watch is waiting for its iPhone to move its pages here.",
+        )
+    try:
+        store.library_pick(watch_id, "pages", page_id, on=True, updated_by=ctx.watch_id)
+    except WatchConfigStoreError as err:
+        return _starter_page_store_refusal(ctx, err)
+    _LOGGER.info("Put starter page %s on %s for %s", page_id, watch_id, ctx.watch_id)
+    if not await store.async_save_before_reply(watch_id):
+        return _starter_page_unsaved(ctx)
+    record = store.get(watch_id, "pages")
+    return ctx.signed_json({"ok": True, "made": True, "revision": record.revision})
+
+
 async def _op_areas_get(ctx: _OpContext) -> Response:
     """The home's floors, its areas with the entities in each, and every
     entity.
@@ -6939,6 +7156,9 @@ _OP_HANDLERS: dict[str, Any] = {
     "home_map_get": _op_home_map_get,
     "home_map_put": _op_home_map_put,
     "home_map_page_add": _op_home_map_page_add,
+    # A new iPhone's starter page, and the same page on its watch
+    # (starter_page.py).
+    "starter_page_make": _op_starter_page_make,
     "areas_get": _op_areas_get,
     "client_certificate_put": _op_client_certificate_put,
     "client_certificate_get": _op_client_certificate_get,

@@ -107,6 +107,10 @@ class WristAssistantData:
     # The iPhone's WebRTC camera signaling sessions (camera_webrtc.py). None on
     # a Home Assistant older than the async WebRTC camera API (2024.11).
     webrtc_sessions: CameraWebRTCSessions | None = field(default=None)
+    # The starter page `starter_page_make` made for each iPhone in this run,
+    # iPhone id to page id, so an ask again (a reply lost, or a write the disk
+    # refused) answers with that page instead of "has pages". Memory only.
+    starter_pages: dict[str, str] = field(default_factory=dict)
 
 
 type WristAssistantConfigEntry = ConfigEntry[WristAssistantData]
@@ -650,6 +654,11 @@ MOVE_FINISHED_CAPABILITY = "move_finished"
 # push token, and read a reply with it but no `platform` in `stored_metadata`
 # as a report that fell behind. An Apple app never reads it.
 DEVICE_PLATFORMS_CAPABILITY = "device_platforms"
+# A new iPhone's starter page (app repo docs/magic_setup_2026-11.md): the
+# signed `starter_page_make` makes one page of the home's main devices in the
+# library, picks it onto the iPhone as its first pages record, and onto one
+# of its user's watches when asked. The iPhone asks only when it sees this.
+STARTER_PAGE_CAPABILITY = "starter_page"
 # The longest Show tile template a device sends in a delta poll, in code
 # points (Python `len`): `DELTA_MAX_TEMPLATE_CHARS` in wa_v2_views.py, and the
 # app's `TemplateCondition.subscribable`. A longer one is never sent, so the

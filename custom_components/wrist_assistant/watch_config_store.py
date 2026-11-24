@@ -4265,6 +4265,45 @@ class WatchConfigStore:
             raise
         return {"id": created["id"], "revisions": picked["revisions"]}
 
+    def library_first_page(
+        self,
+        owner_watch_id: Any,
+        document: Any,
+        *,
+        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+    ) -> dict[str, Any]:
+        """A new page made in the library and put on one device that holds
+        no pages yet, which makes its first pages record of that page alone.
+        The signed ``starter_page_make`` calls it for a new iPhone's starter
+        page. The other side of :meth:`library_add_page`, which never makes
+        a first record.
+
+        An owner that already holds a pages record is refused
+        ``has_pages`` and nothing changes. A pick that is refused takes the
+        new page out of the library again. The caller writes the first
+        record to disk before it answers
+        (:meth:`async_save_before_reply`).
+
+        Refused as :meth:`library_create_item` and :meth:`library_pick` are,
+        and ``has_pages``. Returns ``{"id": <the page's id>, "revisions":
+        {owner: {kind: revision}}}``."""
+        self._check_library()
+        owner_watch_id = self._check_link_owner(owner_watch_id)
+        if self._document(owner_watch_id, "pages") is not None:
+            raise WatchConfigLinkError(
+                "has_pages", f"{owner_watch_id} holds pages already"
+            )
+        before = self._library
+        created = self.library_create_item("pages", document)
+        try:
+            picked = self.library_pick(
+                owner_watch_id, "pages", created["id"], on=True, updated_by=updated_by
+            )
+        except WatchConfigStoreError:
+            self._set_library(before)
+            raise
+        return {"id": created["id"], "revisions": picked["revisions"]}
+
     def page_with_tile(self, owner_watch_id: str, entity_id: str) -> str | None:
         """The id of the first page in the owner's pages record (system pages
         aside, hidden ones counted) holding a tile whose ``entityId`` is

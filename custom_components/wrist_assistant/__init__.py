@@ -70,6 +70,7 @@ from .const import (
     PLATFORMS,
     PUSH_PAIRED_BY_USER_CAPABILITY,
     SEALED_CODE_PAIRING_CAPABILITY,
+    STARTER_PAGE_CAPABILITY,
     TILE_PHOTO_EDIT_CAPABILITY,
     TILE_PHOTO_LIST_CAPABILITY,
     TILE_PHOTOS_CAPABILITY,
@@ -1268,6 +1269,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # field, their models and FCM push. The Android apps register a push
     # token only when they see this.
     coordinator.register_capability(DEVICE_PLATFORMS_CAPABILITY)
+    # A new iPhone's starter page (the signed `starter_page_make`): one page
+    # of the home's main devices, made in the library and picked onto the
+    # iPhone, and onto one of its user's watches when asked. The iPhone asks
+    # only when it sees this.
+    coordinator.register_capability(STARTER_PAGE_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
