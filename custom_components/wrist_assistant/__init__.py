@@ -65,6 +65,7 @@ from .const import (
     PHONE_WATCH_ROOMS_CAPABILITY,
     PHONE_WATCH_SETTINGS_CAPABILITY,
     PHONE_PAGES_LINK_CAPABILITY,
+    PHONE_CONFIRMS_PAIR_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
     PLATFORMS,
     PUSH_PAIRED_BY_USER_CAPABILITY,
@@ -1181,6 +1182,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # iPhone pairing with no Home Assistant token: the panel's QR offer,
     # WAPairRedeemView, an iPhone by code, and the signed rekey op.
     coordinator.register_capability(PHONE_PAIRING_CAPABILITY)
+    # An iPhone confirms its watch's code with the signed pair_lookup and
+    # pair_confirm ops, for its own user (wa_v2_views.py).
+    coordinator.register_capability(PHONE_CONFIRMS_PAIR_CAPABILITY)
     # Each paired watch's and iPhone's home network and internet address
     # (watch_addresses.py): the signed addresses_get and addresses_set ops,
     # and `addresses` on the device's delta reply (attached above). The

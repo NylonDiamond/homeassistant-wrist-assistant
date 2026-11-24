@@ -3,11 +3,11 @@
     "step": {
       "user": {
         "title": "HouseLit",
-        "description": "This turns on HouseLit. Next, open **HouseLit** in the sidebar. On the **Devices** tab, choose **Pair a device** (the **Pair** button). For an iPhone, choose **iPhone** and scan the QR code with it. For a watch, choose **Apple Watch**, then on the watch choose **Pair with Home Assistant** and type the code it shows. On the old 3.0 app (then called Wrist Assistant), sign in to Home Assistant from the iPhone app instead.\n\n[Setup guide]({docs_url})"
+        "description": "This turns on HouseLit. Next, open the **HouseLit** app on your iPhone and sign in. Or open **HouseLit** in the sidebar and follow the steps there. On the old 3.0 app (then called Wrist Assistant), sign in to Home Assistant from the iPhone app instead.\n\n[Setup guide]({docs_url})"
       }
     },
     "abort": {
-      "single_instance_allowed": "HouseLit is already set up. To add a device, open HouseLit in the sidebar and choose Pair a device on the Devices tab."
+      "single_instance_allowed": "HouseLit is already set up. To add a device, open the HouseLit app on your iPhone and sign in. Or open HouseLit in the sidebar and follow the steps there."
     }
   },
   "entity": {

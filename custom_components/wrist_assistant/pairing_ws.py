@@ -41,14 +41,21 @@ Commands:
     wrist_assistant/pair/offer_status  {offer_id}
     wrist_assistant/pair/offer_cancel  {offer_id}
 
+The iPhone runs the same lookup and confirm of a watch's code as signed ops
+(``pair_lookup``, ``pair_confirm`` in ``wa_v2_views.py``, capability
+``phone_confirms_pair``), through ``lookup_code`` and ``async_confirm_code``
+here, always for its own user and never as an administrator.
+
 Codes are compared upper-cased with spaces and hyphens dropped. Refusals are
 WebSocket errors: ``unavailable`` (the integration is not ready),
 ``unknown_code`` (no such code, or it expired, or it was already confirmed),
 ``needs_replace`` (the device is paired already and ``replace`` was not
 set), ``needs_allow_remote`` (the request came from outside the home network
-and ``allow_remote`` was not set), ``paired_by_other_user``, ``unauthorized``
-(a non-admin naming another user), ``invalid_user`` (no such user, a
-deactivated one, or one Home Assistant made for itself),
+and ``allow_remote`` was not set), ``paired_by_other_user``,
+``paired_by_no_one`` (a non-admin re-keying a device bound to no one),
+``not_a_watch_code`` (the iPhone's ops only: a code of an iPhone),
+``unauthorized`` (a non-admin naming another user), ``invalid_user`` (no
+such user, a deactivated one, or one Home Assistant made for itself),
 ``too_many_offers``, and the field checks' own codes (``invalid_watch_id``,
 ``invalid_field``, ``invalid_secret``, ``invalid_algo``) with
 ``register_secret``'s texts.
@@ -293,6 +300,259 @@ async def _wait_for_delivery(parked: ParkedPairing | None) -> str:
 
 # ── by code ──────────────────────────────────────────────────────────────
 
+# A refusal of the shared code bodies below, as (error code, message). The
+# panel's commands send it as a WebSocket error, the iPhone's signed ops
+# (``wa_v2_views._op_pair_lookup``, ``_op_pair_confirm``) as a signed body.
+PairRefusal = tuple[str, str]
+
+
+def _wrong_kind_refusal(kind: str, platform: str | None, only_kind: str | None) -> PairRefusal | None:
+    """The refusal of a code whose device is not of ``only_kind``, or None.
+
+    The iPhone's ops take a watch's code only: an iPhone's code stays a job
+    for the panel, so the words say where to type it.
+    """
+    if only_kind is None or kind == only_kind:
+        return None
+    noun = _device_noun(kind, platform)
+    article = "an" if noun.lower().startswith("i") else "a"
+    return (
+        f"not_a_{only_kind}_code",
+        (
+            f"This code is for {article} {noun}, not a {_device_noun(only_kind)}. Type it "
+            "in Home Assistant: HouseLit, Devices, Pair."
+        ),
+    )
+
+
+def wrong_entry_refusal(existing: Any, only_kind: str | None) -> PairRefusal | None:
+    """The refusal of a code whose id belongs to a paired device of another
+    kind than ``only_kind``, or None.
+
+    A device names its own id when it asks for a code, so a watch's code can
+    carry the id of a paired iPhone. Confirmed with Replace it would re-key
+    that iPhone and turn it into a watch, and the iPhone would lose its pair.
+    Replace never changes this, as for the QR redeem's ``not_an_iphone``.
+    """
+    if only_kind is None or existing is None or existing.device_kind == only_kind:
+        return None
+    noun = _device_noun(existing.device_kind, getattr(existing, "platform", None))
+    return (
+        f"not_a_{only_kind}",
+        (
+            f"This code uses the id of a paired {noun}, so it cannot pair a "
+            f"{_device_noun(only_kind)}. Replace does not change that."
+        ),
+    )
+
+
+def takeover_refusal(
+    existing: Any, user_id: str | None, *, caller_is_admin: bool, noun: str
+) -> PairRefusal | None:
+    """Why the caller may not give a paired device a new key, or None.
+
+    A non-admin may re-key only a device that is theirs; a device bound to
+    someone else or to no one needs an administrator, as in register_secret,
+    where a non-admin binds an unbound device only with its own key. A
+    confirm always brings a new key. Checked before Replace, which they could
+    tick and still never get past this. The iPhone's signed confirm is never
+    an administrator's, whoever its user is.
+    """
+    if existing is None or caller_is_admin:
+        return None
+    if existing.user_id is not None and existing.user_id != user_id:
+        return (
+            "paired_by_other_user",
+            (
+                f"This {noun} is paired to another person. Only an administrator "
+                "can replace that pairing."
+            ),
+        )
+    if existing.user_id is None:
+        return (
+            "paired_by_no_one",
+            (
+                f"This {noun} was paired before devices belonged to a person. Only "
+                "an administrator can replace that pairing."
+            ),
+        )
+    return None
+
+
+def lookup_code(
+    pair_store: PairRequestStore,
+    secret_store: WidgetSecretStore,
+    code: str,
+    *,
+    user_id: str | None,
+    only_kind: str | None = None,
+) -> tuple[dict[str, Any] | None, PairRefusal | None]:
+    """What a code stands for, seen by ``user_id``: the answer of the
+    panel's ``pair/lookup`` and the iPhone's ``pair_lookup``, or a refusal.
+
+    The only refusal is a code of another kind than ``only_kind``; an
+    unknown or expired code is ``{"found": false}``. Looking up changes
+    nothing.
+    """
+    now = pair_store.now()
+    pending = pair_store.get(code, now=now)
+    if pending is None:
+        return {"found": False}, None
+    fields = pending.fields
+    refusal = _wrong_kind_refusal(pending.kind, fields.platform, only_kind)
+    if refusal is not None:
+        return None, refusal
+    existing = secret_store.get(fields.watch_id)
+    return {
+        "found": True,
+        "watch_id": fields.watch_id,
+        "kind": pending.kind,
+        # The platform the device runs, its kind's Apple one when it
+        # said none, so the panel names an Android phone as a phone.
+        "platform": fields.platform or default_platform(pending.kind),
+        "device_name": fields.device_name,
+        "screen_size": fields.screen_size,
+        "app_version": fields.app_version,
+        "app_build": fields.app_build,
+        "expires_in": pair_store.expires_in(pending, now=now),
+        "remote": pending.remote,
+        "age_seconds": pair_store.age_seconds(pending, now=now),
+        "already_paired": existing is not None,
+        "paired_by_other_user": bool(
+            existing is not None
+            and existing.user_id is not None
+            and existing.user_id != user_id
+        ),
+        "bound_user_id": existing.user_id if existing is not None else None,
+        "needs_replace": existing is not None,
+        "needs_allow_remote": pending.remote_public,
+    }, None
+
+
+async def async_confirm_code(
+    hass: HomeAssistant,
+    pair_store: PairRequestStore,
+    secret_store: WidgetSecretStore,
+    code: str,
+    *,
+    user_id: str | None,
+    caller_is_admin: bool,
+    replace: bool,
+    allow_remote: bool,
+    only_kind: str | None = None,
+    confirmed_by: str | None = None,
+) -> tuple[dict[str, Any] | None, PairRefusal | None]:
+    """Pair the device behind a code, bound to ``user_id``: the body of the
+    panel's ``pair/confirm`` and the iPhone's ``pair_confirm``.
+
+    ``user_id`` is already picked (``_pick_user`` for the panel, the
+    signer's own user for the iPhone). Answers the reply
+    {"ok": true, "watch_id", "kind", "device_name", "result", "user_id"},
+    or a refusal that leaves the code waiting. ``confirmed_by`` is only for
+    the log line. Every rule is in ``ws_pair_confirm``'s note.
+    """
+    pending = pair_store.get(code)
+    if pending is None:
+        return None, ("unknown_code", "No pairing with that code. Codes last 10 minutes.")
+    noun = _device_noun(pending.kind, pending.fields.platform)
+    stored = pending.fields
+    watch_id = stored.watch_id
+    refusal = _wrong_kind_refusal(pending.kind, stored.platform, only_kind)
+    if refusal is not None:
+        return None, refusal
+    existing = secret_store.get(watch_id)
+    refusal = wrong_entry_refusal(existing, only_kind)
+    if refusal is not None:
+        _LOGGER.warning(
+            "Refused pair confirm for watch_id=%s: the id belongs to a paired %s",
+            watch_id,
+            existing.device_kind,
+        )
+        return None, refusal
+
+    if pending.remote_public and not allow_remote:
+        return None, (
+            "needs_allow_remote",
+            (
+                f"This code came from outside your network. Tick \"I expect this {noun}\" "
+                "to pair it anyway."
+            ),
+        )
+    refusal = takeover_refusal(existing, user_id, caller_is_admin=caller_is_admin, noun=noun)
+    if refusal is not None:
+        _LOGGER.warning(
+            "Refused pair confirm for watch_id=%s: %s",
+            watch_id,
+            "bound to another user" if refusal[0] == "paired_by_other_user" else "bound to no one",
+        )
+        return None, refusal
+    if existing is not None and not replace:
+        return None, (
+            "needs_replace",
+            f"This {noun} is paired already. Tick Replace to give it a new key.",
+        )
+
+    secret_b64 = stored.secret_b64
+    if pending.sealed:
+        secret_b64 = base64.b64encode(secrets.token_bytes(PAIRED_SECRET_BYTES)).decode("ascii")
+    fields, error = validate_pair_fields(
+        {
+            "watch_id": watch_id,
+            "secret_b64": secret_b64,
+            "label": _LABEL_FOR_KIND.get(pending.kind, LABEL_WATCH_CODE_PAIR),
+            "algo": stored.algo,
+            "app_version": stored.app_version,
+            "app_build": stored.app_build,
+            "device_name": stored.device_name,
+            "screen_size": stored.screen_size,
+            **({} if stored.platform is None else {"platform": stored.platform}),
+        },
+        kind=pending.kind,
+    )
+    if error is not None:
+        return None, (error.code, error.message)
+
+    sealed_reply: dict[str, str] | None = None
+    if pending.sealed:
+        # Sealed before anything is written, so a key that cannot take a box
+        # (checked at start already) leaves the store untouched.
+        try:
+            sealed_reply = seal_pair_secret(
+                pending.public_key, watch_id, base64.b64decode(fields.secret_b64)
+            )
+        except SealedBoxError as err:
+            return None, ("invalid_public_key", err.message)
+
+    if sealed_reply is not None:
+        # Nothing is stored until the device fetches its box: see
+        # `async_pair_status`. The box lives only in memory, so a key stored
+        # now could outlive it and leave a pairing nobody holds the key to.
+        parked = pair_store.confirm_sealed(
+            pending, sealed_reply, fields=fields, user_id=user_id
+        )
+        result = await _wait_for_delivery(parked)
+    else:
+        # The old form: the device made this secret and holds it already.
+        result = store_paired_device(hass, secret_store, fields, user_id=user_id)
+        pair_store.remove(pending.code)
+    _LOGGER.info(
+        "Paired %s watch_id=%s by code (%s%s), user=%s, confirmed by %s",
+        pending.kind,
+        watch_id,
+        result,
+        ", sealed" if sealed_reply is not None else "",
+        user_id,
+        confirmed_by,
+    )
+    return {
+        "ok": True,
+        "watch_id": watch_id,
+        "kind": pending.kind,
+        "device_name": fields.device_name,
+        "result": result,
+        "user_id": user_id,
+    }, None
+
 
 @websocket_api.websocket_command(
     {
@@ -327,48 +587,18 @@ def ws_pair_lookup(
     box and the "I expect this watch" box exactly when the confirm would
     refuse without them. ``needs_allow_remote`` also covers a request that
     came in through Home Assistant Cloud, whose address can look local.
-    Looking up changes nothing.
+    Looking up changes nothing. The body is ``lookup_code``, shared with the
+    iPhone's signed ``pair_lookup``.
     """
     stores = _stores(hass)
     if stores is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     pair_store, secret_store = stores
-    now = pair_store.now()
-    pending = pair_store.get(msg["code"], now=now)
-    if pending is None:
-        connection.send_result(msg["id"], {"found": False})
-        return
-    fields = pending.fields
-    existing = secret_store.get(fields.watch_id)
-    user_id = _user_id(connection)
-    connection.send_result(
-        msg["id"],
-        {
-            "found": True,
-            "watch_id": fields.watch_id,
-            "kind": pending.kind,
-            # The platform the device runs, its kind's Apple one when it
-            # said none, so the panel names an Android phone as a phone.
-            "platform": fields.platform or default_platform(pending.kind),
-            "device_name": fields.device_name,
-            "screen_size": fields.screen_size,
-            "app_version": fields.app_version,
-            "app_build": fields.app_build,
-            "expires_in": pair_store.expires_in(pending, now=now),
-            "remote": pending.remote,
-            "age_seconds": pair_store.age_seconds(pending, now=now),
-            "already_paired": existing is not None,
-            "paired_by_other_user": bool(
-                existing is not None
-                and existing.user_id is not None
-                and existing.user_id != user_id
-            ),
-            "bound_user_id": existing.user_id if existing is not None else None,
-            "needs_replace": existing is not None,
-            "needs_allow_remote": pending.remote_public,
-        },
+    answer, _refusal = lookup_code(
+        pair_store, secret_store, msg["code"], user_id=_user_id(connection)
     )
+    connection.send_result(msg["id"], answer)
 
 
 async def _pick_user(
@@ -427,7 +657,8 @@ async def ws_pair_confirm(
     ``allow_remote: true`` is required when the request came from outside
     the home network, so a stranger's code typed by mistake pairs nothing.
     Either refusal leaves the code waiting, so the user can tick the box
-    and confirm again.
+    and confirm again. A non-admin may never re-key a device bound to
+    someone else or to no one (``takeover_refusal``).
 
     A sealed request gets its secret here: 32 random bytes, sealed to the
     device's public key for ``/v2/pair/status``. It is not stored yet: the
@@ -440,6 +671,9 @@ async def ws_pair_confirm(
     same write (``store_paired_device``). The label comes from the kind, so
     a confirmed iPhone is an iPhone. Either way the request goes, so a
     second confirm of the same code is ``unknown_code``.
+
+    The body after the user pick is ``async_confirm_code``, shared with the
+    iPhone's signed ``pair_confirm``.
     """
     stores = _stores(hass)
     if stores is None:
@@ -447,135 +681,30 @@ async def ws_pair_confirm(
         return
     pair_store, secret_store = stores
     user = getattr(connection, "user", None)
-    # Only the user pick awaits, ahead of every read of the stores, so the
-    # rest runs in one go as the synchronous command did.
+    # Only the user pick awaits ahead of every read of the stores, so the
+    # checks and the write run in one go as the synchronous command did. The
+    # sealed wait comes after the write's decision.
     peek = pair_store.get(msg["code"])
     noun = _device_noun(peek.kind, peek.fields.platform) if peek is not None else "watch"
     user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun=noun)
     if refusal is not None:
         connection.send_error(msg["id"], *refusal)
         return
-    pending = pair_store.get(msg["code"])
-    if pending is None:
-        connection.send_error(
-            msg["id"], "unknown_code", "No pairing with that code. Codes last 10 minutes."
-        )
-        return
-    noun = _device_noun(pending.kind, pending.fields.platform)
-    stored = pending.fields
-    watch_id = stored.watch_id
-
-    if pending.remote_public and msg.get("allow_remote") is not True:
-        connection.send_error(
-            msg["id"],
-            "needs_allow_remote",
-            f"This code came from outside your network. Tick \"I expect this {noun}\" "
-            "to pair it anyway.",
-        )
-        return
-    existing = secret_store.get(watch_id)
-    is_admin = bool(user is not None and user.is_admin)
-    # A non-admin may re-key only a device that is theirs; a device bound to
-    # someone else or to no one needs an administrator, as in register_secret,
-    # where a non-admin binds an unbound device only with its own key. A
-    # confirm always brings a new key. Checked before Replace, which they could
-    # tick and still never get past this.
-    if (
-        existing is not None
-        and existing.user_id is not None
-        and existing.user_id != user_id
-        and not is_admin
-    ):
-        _LOGGER.warning("Refused pair confirm for watch_id=%s: bound to another user", watch_id)
-        connection.send_error(
-            msg["id"],
-            "paired_by_other_user",
-            f"This {noun} is paired to another person. Only an administrator "
-            "can replace that pairing.",
-        )
-        return
-    if existing is not None and existing.user_id is None and not is_admin:
-        _LOGGER.warning("Refused pair confirm for watch_id=%s: bound to no one", watch_id)
-        connection.send_error(
-            msg["id"],
-            "paired_by_no_one",
-            f"This {noun} was paired before devices belonged to a person. Only "
-            "an administrator can replace that pairing.",
-        )
-        return
-    if existing is not None and msg.get("replace") is not True:
-        connection.send_error(
-            msg["id"],
-            "needs_replace",
-            f"This {noun} is paired already. Tick Replace to give it a new key.",
-        )
-        return
-
-    secret_b64 = stored.secret_b64
-    if pending.sealed:
-        secret_b64 = base64.b64encode(secrets.token_bytes(PAIRED_SECRET_BYTES)).decode("ascii")
-    fields, error = validate_pair_fields(
-        {
-            "watch_id": watch_id,
-            "secret_b64": secret_b64,
-            "label": _LABEL_FOR_KIND.get(pending.kind, LABEL_WATCH_CODE_PAIR),
-            "algo": stored.algo,
-            "app_version": stored.app_version,
-            "app_build": stored.app_build,
-            "device_name": stored.device_name,
-            "screen_size": stored.screen_size,
-            **({} if stored.platform is None else {"platform": stored.platform}),
-        },
-        kind=pending.kind,
+    reply, refusal = await async_confirm_code(
+        hass,
+        pair_store,
+        secret_store,
+        msg["code"],
+        user_id=user_id,
+        caller_is_admin=bool(user is not None and user.is_admin),
+        replace=msg.get("replace") is True,
+        allow_remote=msg.get("allow_remote") is True,
+        confirmed_by=user.id if user is not None else None,
     )
-    if error is not None:
-        connection.send_error(msg["id"], error.code, error.message)
+    if refusal is not None:
+        connection.send_error(msg["id"], *refusal)
         return
-
-    sealed_reply: dict[str, str] | None = None
-    if pending.sealed:
-        # Sealed before anything is written, so a key that cannot take a box
-        # (checked at start already) leaves the store untouched.
-        try:
-            sealed_reply = seal_pair_secret(
-                pending.public_key, watch_id, base64.b64decode(fields.secret_b64)
-            )
-        except SealedBoxError as err:
-            connection.send_error(msg["id"], "invalid_public_key", err.message)
-            return
-
-    if sealed_reply is not None:
-        # Nothing is stored until the device fetches its box: see
-        # `async_pair_status`. The box lives only in memory, so a key stored
-        # now could outlive it and leave a pairing nobody holds the key to.
-        parked = pair_store.confirm_sealed(
-            pending, sealed_reply, fields=fields, user_id=user_id
-        )
-        result = await _wait_for_delivery(parked)
-    else:
-        # The old form: the device made this secret and holds it already.
-        result = store_paired_device(hass, secret_store, fields, user_id=user_id)
-        pair_store.remove(pending.code)
-    _LOGGER.info(
-        "Paired %s watch_id=%s by code (%s%s), user=%s, confirmed by %s",
-        pending.kind,
-        watch_id,
-        result,
-        ", sealed" if sealed_reply is not None else "",
-        user_id,
-        user.id if user is not None else None,
-    )
-    connection.send_result(
-        msg["id"],
-        {
-            "ok": True,
-            "watch_id": watch_id,
-            "kind": pending.kind,
-            "device_name": fields.device_name,
-            "result": result,
-            "user_id": user_id,
-        },
-    )
+    connection.send_result(msg["id"], reply)
 
 
 # ── by QR code ───────────────────────────────────────────────────────────

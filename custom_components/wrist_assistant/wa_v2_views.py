@@ -210,7 +210,14 @@ from .page_images_store import (
     decode_edit as decode_page_image_edit,
 )
 from .page_links import listed_page_ids
-from .pairing_ws import async_pair_status, store_paired_device
+from .pairing_ws import (
+    async_confirm_code,
+    async_pair_status,
+    lookup_code,
+    store_paired_device,
+    takeover_refusal,
+    wrong_entry_refusal,
+)
 from .panel_access import device_may_take_item
 from .sealed_box import (
     PAIRED_SECRET_BYTES,
@@ -222,6 +229,7 @@ from .sealed_box import (
 from .wa_pair_requests import (
     OFFER_STATE_EXPIRED,
     OFFER_STATE_OPEN,
+    PAIR_KIND_WATCH,
     PAIR_POLL_AFTER_SECONDS,
     PAIR_START_FIELDS,
     REGISTER_ID_MAX_LEN,
@@ -3555,6 +3563,191 @@ async def _op_rekey(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True})
 
 
+# ── an iPhone confirms its watch's code (phone_confirms_pair) ─────────────
+#
+# The iPhone's way to do what the panel's pair/lookup and pair/confirm do for
+# a watch's code: the user types the code the watch shows, or the watch hands
+# it over the setup link. The bodies are the panel's (`pairing_ws.lookup_code`,
+# `pairing_ws.async_confirm_code`), run for a caller who names no user and is
+# never an administrator: the watch is always bound to the iPhone's own user,
+# and a watch bound to someone else or to no one stays a panel job.
+
+# The longest code text read. A code is six characters; room for the spaces
+# and hyphens a person may type, and nothing near this is a code.
+_PAIR_CODE_MAX_CHARS = 32
+
+# The status of each refusal. None is a 404, which an app reads as an
+# integration that is missing or still starting.
+_PAIR_CODE_REFUSAL_STATUS = {
+    "not_an_iphone": 403,
+    "no_user": 403,
+    USER_GONE_ERROR: 403,
+    NOT_ALLOWED_ERROR: 403,
+    "paired_by_other_user": 403,
+    "paired_by_no_one": 403,
+    "needs_replace": 409,
+    "needs_allow_remote": 409,
+    "not_a_watch_code": 409,
+    "not_a_watch": 409,
+    "unavailable": 503,
+}
+
+
+def _pair_code_refusal(ctx: _OpContext, code: str, message: str) -> Response:
+    return ctx.signed_json(
+        {"ok": False, "error": code, "message": message},
+        status=_PAIR_CODE_REFUSAL_STATUS.get(code, 400),
+    )
+
+
+async def _pair_code_caller(ctx: _OpContext) -> Response | None:
+    """The refusal for a signer that may not look up or confirm a code, or
+    None. Only an iPhone entry, bound to a Home Assistant user who still
+    exists, is active and is not one Home Assistant made for itself."""
+    if not _caller_is_iphone(ctx):
+        return _pair_code_refusal(
+            ctx, "not_an_iphone", f"Only {_a_phone(ctx)} confirms a watch's code."
+        )
+    if ctx.user_id is None:
+        return _pair_code_refusal(
+            ctx,
+            "no_user",
+            f"This {_phone_noun(ctx)} belongs to no Home Assistant user. Pair it again "
+            "to confirm a watch's code.",
+        )
+    user = await ctx.hass.auth.async_get_user(ctx.user_id)
+    if user is None:
+        return _pair_code_refusal(ctx, USER_GONE_ERROR, USER_GONE_MESSAGE)
+    if not user.is_active or getattr(user, "system_generated", False):
+        return _pair_code_refusal(ctx, NOT_ALLOWED_ERROR, NOT_ALLOWED_MESSAGE)
+    return None
+
+
+def _pair_code_payload(ctx: _OpContext) -> tuple[str | None, Response | None]:
+    """The typed code, or the refusal of a body without one. ``replace`` and
+    ``allow_remote``, when sent, must be true or false."""
+    code = ctx.payload.get("code")
+    if not isinstance(code, str) or not code.strip() or len(code) > _PAIR_CODE_MAX_CHARS:
+        return None, _pair_code_refusal(ctx, "invalid", "code is required")
+    for key in ("replace", "allow_remote"):
+        if key in ctx.payload and not isinstance(ctx.payload[key], bool):
+            return None, _pair_code_refusal(ctx, "invalid", f"{key} must be true or false")
+    return code, None
+
+
+async def _op_pair_lookup(ctx: _OpContext) -> Response:
+    """What a watch's code stands for, so the iPhone can show it before the
+    user confirms (capability ``phone_confirms_pair``).
+
+    Body:  {"code": <text, as typed>}
+    Reply: {"ok": true, "found": false}, for a code unknown, expired or
+           already confirmed; or {"ok": true, "found": true, "watch_id",
+           "kind": "watch", "platform", "device_name", "screen_size",
+           "app_version", "app_build", "expires_in", "remote",
+           "age_seconds", "already_paired", "paired_by_other_user",
+           "bound_user_id", "needs_replace", "needs_allow_remote",
+           "blocked"}: the panel's pair/lookup, seen by the iPhone's user,
+           and ``blocked``, the refusal the confirm would make whatever the
+           ticks (``not_a_watch``, ``paired_by_other_user``,
+           ``paired_by_no_one``), or null.
+    Refusal: signed {"ok": false, "error", "message"}: ``not_an_iphone`` 403
+             (any signer but an iPhone entry), ``no_user`` 403 (an entry
+             bound to no user), ``user_gone`` and ``not_allowed`` 403 (its
+             user was deleted, or is turned off), ``invalid`` 400 (no code
+             text, or one over 32 characters), ``not_a_watch_code`` 409 (the
+             code is a phone's, which the panel pairs), ``unavailable`` 503.
+
+    Looking up changes nothing, and a lookup is never needed before a
+    confirm.
+    """
+    denied = await _pair_code_caller(ctx)
+    if denied is not None:
+        return denied
+    code, denied = _pair_code_payload(ctx)
+    if denied is not None:
+        return denied
+    pair_store = getattr(ctx.domain_data, "pair_request_store", None)
+    secret_store = ctx.domain_data.widget_secret_store
+    if pair_store is None or secret_store is None:
+        return _pair_code_refusal(ctx, "unavailable", "integration not ready")
+    answer, refusal = lookup_code(
+        pair_store, secret_store, code, user_id=ctx.user_id, only_kind=PAIR_KIND_WATCH
+    )
+    if refusal is not None:
+        return _pair_code_refusal(ctx, *refusal)
+    blocked = None
+    if answer.get("found"):
+        existing = secret_store.get(answer["watch_id"])
+        held = wrong_entry_refusal(existing, PAIR_KIND_WATCH) or takeover_refusal(
+            existing,
+            ctx.user_id,
+            caller_is_admin=False,
+            noun="watch",
+        )
+        blocked = held[0] if held is not None else None
+        answer = {**answer, "blocked": blocked}
+    return ctx.signed_json({"ok": True, **answer})
+
+
+async def _op_pair_confirm(ctx: _OpContext) -> Response:
+    """Pair the watch behind a code to the iPhone's own Home Assistant user
+    (capability ``phone_confirms_pair``).
+
+    Body:  {"code": <text, as typed>, "replace"?: <bool>, "allow_remote"?: <bool>}
+    Reply: {"ok": true, "watch_id", "kind": "watch", "device_name",
+            "result", "user_id"}, as the panel's pair/confirm. ``result``
+           is ``new``, ``rekey`` or ``idempotent``, or ``waiting`` for a
+           sealed pairing whose watch has not fetched its box within about
+           10 seconds; the pairing is stored when the watch's next status
+           poll fetches it, so ``waiting`` is a success. ``user_id`` is
+           always the signer's own user.
+    Refusal: signed {"ok": false, "error", "message"}: the caller and body
+             refusals of ``pair_lookup``; ``unknown_code`` 400 (no such
+             code, expired, or confirmed already); ``not_a_watch_code`` 409;
+             ``not_a_watch`` 409 (the code carries the id of a paired
+             iPhone, which a watch's pairing would take over; Replace does
+             not change that);
+             ``needs_allow_remote`` 409 (the watch asked from outside the
+             home network and ``allow_remote`` was not true);
+             ``paired_by_other_user`` and ``paired_by_no_one`` 403 (the
+             watch is paired to another user, or to no one: only an
+             administrator in the panel may replace that); ``needs_replace``
+             409 (the watch is paired to this user already and ``replace``
+             was not true); the field checks' own codes 400, as for
+             ``register_secret``; ``unavailable`` 503. A refusal leaves the
+             code waiting, so the same code may be confirmed again with the
+             tick it asked for.
+
+    The reply may take up to about 10 seconds: a sealed confirm waits for
+    the watch's status poll before it answers, as the panel's does.
+    """
+    denied = await _pair_code_caller(ctx)
+    if denied is not None:
+        return denied
+    code, denied = _pair_code_payload(ctx)
+    if denied is not None:
+        return denied
+    pair_store = getattr(ctx.domain_data, "pair_request_store", None)
+    secret_store = ctx.domain_data.widget_secret_store
+    if pair_store is None or secret_store is None:
+        return _pair_code_refusal(ctx, "unavailable", "integration not ready")
+    reply, refusal = await async_confirm_code(
+        ctx.hass,
+        pair_store,
+        secret_store,
+        code,
+        user_id=ctx.user_id,
+        caller_is_admin=False,
+        replace=ctx.payload.get("replace") is True,
+        allow_remote=ctx.payload.get("allow_remote") is True,
+        only_kind=PAIR_KIND_WATCH,
+        confirmed_by=f"iPhone {ctx.watch_id}",
+    )
+    if refusal is not None:
+        return _pair_code_refusal(ctx, *refusal)
+    return ctx.signed_json(reply)
+
+
 # ── /v2/stream/{token} view ──────────────────────────────────────────────
 
 
@@ -6817,4 +7010,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "addresses_get": _op_addresses_get,
     "addresses_set": _op_addresses_set,
     "rekey": _op_rekey,
+    # An iPhone looks up and confirms its watch's code (phone_confirms_pair).
+    "pair_lookup": _op_pair_lookup,
+    "pair_confirm": _op_pair_confirm,
 }

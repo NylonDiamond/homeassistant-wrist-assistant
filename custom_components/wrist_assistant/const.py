@@ -559,6 +559,12 @@ SEALED_CODE_PAIRING_CAPABILITY = "sealed_code_pairing"
 # offer_cancel) and /v2/pair/redeem, a code confirm that stores an iPhone,
 # and the signed `rekey` op. The app requires it.
 PHONE_PAIRING_CAPABILITY = "phone_pairing"
+# What the integration advertises once an iPhone may look up and confirm a
+# watch's pairing code itself, the panel's pair/lookup and pair/confirm as
+# the signed `pair_lookup` and `pair_confirm` ops (wa_v2_views.py), bound to
+# the iPhone's own user. The iPhone offers "Type your watch's code" and
+# answers its watch's setup link only when /version lists this.
+PHONE_CONFIRMS_PAIR_CAPABILITY = "phone_confirms_pair"
 # What the integration advertises once each paired watch and iPhone has a
 # home network and an internet address kept here (watch_addresses.py): the
 # signed addresses_get and addresses_set ops, and the record's hash as
