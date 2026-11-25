@@ -714,10 +714,8 @@ export const homeStyles = css`
   button.hb-row:hover { background-color: var(--wa-hover); }
   button.hb-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.hb-row.on {
-    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
-    ${litOutline}
-    border-width: 1px;
-    box-shadow: var(--home-lift);
+    background: var(--wa-card); border: 1px solid var(--wa-primary-bg);
+    box-shadow: 0 0 0 .5px var(--wa-primary-bg), var(--home-lift);
   }
   .hb-icon {
     width: 38px; height: 38px; flex: none; box-sizing: border-box; border-radius: 12px;
@@ -781,24 +779,25 @@ export const homeStyles = css`
      style, as wide as its tabs, then at the right the save controls of the
      one on show. */
   .hb-subnav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-  .hb-subnav nav.wa-wr-links { flex: 0 1 auto; order: 0; gap: 4px; padding: 4px; border-radius: 13px; border-color: var(--wa-line-strong); }
+  .hb-subnav nav.wa-wr-links { flex: 0 1 auto; order: 0; gap: 4px; padding: 4px; border-radius: 999px; border-color: var(--wa-line); background: var(--wa-field); }
   /* These tabs are how a device's own screens are found, so they are larger
-     than the editors' row and each wears its screen's hue: on its icon always,
-     and on the outline and a faint fill of the one on show. */
+     than the editors' row and each wears its screen's hue on its icon. The one
+     on show is raised in white on the track, as every switch is. */
   .hb-subnav nav.wa-wr-links a.wa-wr-link { height: 36px; padding: 0 14px; gap: 8px; border-radius: 999px; font-size: 13.5px; font-weight: 500; color: var(--wa-soft); }
   .hb-subnav nav.wa-wr-links a.wa-wr-link .wa-wr-ic { color: var(--h); }
   .hb-subnav nav.wa-wr-links a.wa-wr-link .wa-wr-ic svg.ui-icon { width: 16px; height: 16px; }
   .hb-subnav nav.wa-wr-links a.wa-wr-link:hover { color: var(--wa-ink); }
   .hb-subnav nav.wa-wr-links a.wa-wr-link.on {
     color: var(--wa-ink); font-weight: 600;
-    background: color-mix(in srgb, var(--h) 16%, var(--wa-card));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--h) 60%, transparent);
+    background: var(--wa-seg-on); box-shadow: var(--wa-shadow-ctl, none);
   }
   .hb-subnav-end { margin-left: auto; }
   /* Settings, Rooms or Voice on show: the screen is the device's page, as wide
      as the page has room for, under the same header and tabs as Overview. */
   .hb-detail.own { max-width: none; }
-  .hb-own { min-width: 0; }
+  /* The foot bar of a device's own screen is a card as wide as the cards
+     over it, not a strip past them. */
+  .hb-own { min-width: 0; --cf-out: 0px; --cf-r: var(--wa-r-md); --cf-lift: 0 0 0 1px var(--wa-line), var(--wa-shadow-card, 0 0 transparent); }
   /* Settings here scrolls with the device page, not in a box of its own, and
      starts at the tabs' left edge. Its side list sticks under the device's
      header, and only once the page has scrolled that far: measured from its

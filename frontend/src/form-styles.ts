@@ -214,7 +214,7 @@ export const formSegStyles = css`
        second line. The lit choice is a raised grey, never a hue. */
     .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 999px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     .seg.wide button {
-      flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 999px;
+      flex: 1 1 auto; min-width: 0; padding: 0 6px; border-radius: 999px;
       font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 24px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: center;
       color: var(--wa-ink);

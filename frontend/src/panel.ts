@@ -2742,9 +2742,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-go-mid: #cfd2d9;
       --wa-ink: #14161a;
       --wa-soft: #3d424b;
-      --wa-muted: #636a75;
+      --wa-muted: #5f6671;
       --wa-label: #535963;
-      --wa-faint: #8e949e;
+      --wa-faint: #7f858f;
       /* The top bar and the status bar under the columns. */
       --wa-top: #ffffff;
       /* The canvas well and its dot grid. */
@@ -2769,10 +2769,10 @@ export class WristAssistantPanel extends LitElement {
       --wa-range-outline: #a9aeb8;
       --wa-seg-shadow: 0 1px 2px rgba(0,0,0,.14);
       /* The picked layer row, and anything else that says "you are here":
-         one quiet blue, the same as the selection on the face. */
-      --wa-pick-bg: #e3ecfa;
-      --wa-pick-line: #3f6fb5;
-      --wa-pick-ink: #2c5592;
+         one quiet green, the main colour made soft. */
+      --wa-pick-bg: #e0efe9;
+      --wa-pick-line: #2f8069;
+      --wa-pick-ink: #17594a;
       --wa-sel-bg: var(--wa-pick-bg);
       --wa-sel-ring: color-mix(in srgb, var(--wa-pick-line) 45%, transparent);
       /* Inspector rows: a fixed title column, so every control starts at the
@@ -2864,7 +2864,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-lc-r: 14px;
       /* Two states the top bar's sync pill and the Pages card's note say in
          color: on the device, and not there yet. */
-      --wa-green: #1f8a4c;
+      --wa-green: #197a42;
       --wa-amber: #9a5b00;
       /* The Advanced rules editor gives each kind of part its own color: the
          tests of If, the ready-made tests, the changes of Then, and Otherwise. */
@@ -2924,9 +2924,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-go-mid: #3a3e46;
       --wa-ink: #f2f4f7;
       --wa-soft: #c5c9d1;
-      --wa-muted: #8a909b;
+      --wa-muted: #9096a1;
       --wa-label: #a5aab4;
-      --wa-faint: #6b717c;
+      --wa-faint: #757b87;
       --wa-top: #121316;
       --wa-well: #0a0b0d;
       --wa-well-dot: #24272c;
@@ -2943,9 +2943,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-range-track: #2a2d33;
       --wa-range-outline: #aab0ba;
       --wa-seg-shadow: none;
-      --wa-pick-bg: #17243a;
-      --wa-pick-line: #3f6fb5;
-      --wa-pick-ink: #bfd6f7;
+      --wa-pick-bg: #132a23;
+      --wa-pick-line: #3a9a80;
+      --wa-pick-ink: #b4e4d5;
       --wa-seg-on: #474b53;
       --wa-ent: #5fd4c4;
       --wa-val: #e8c547;
@@ -3068,7 +3068,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-card-crop svg svg.complication { width: auto; height: auto; max-width: none; max-height: none; border-radius: 0; overflow: visible; }
     .pk-search {
       display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
-      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
+      height: 28px; box-sizing: border-box; padding: 0 12px; border-radius: 999px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
     .pk-search:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .pk-search:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
@@ -3336,7 +3336,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
       height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 999px; border: 1px solid var(--wa-line-strong);
-      background: var(--wa-field); color: var(--wa-ink); cursor: pointer; font-weight: 600;
+      background: var(--wa-card); color: var(--wa-ink); cursor: pointer; font-weight: 600;
     }
     .pk-pick-btn:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .pk-pick-btn svg { width: 14px; height: 14px; }
@@ -4627,6 +4627,8 @@ export class WristAssistantPanel extends LitElement {
     .banner { padding: 10px 14px; border-radius: 10px; font-size: 13px; background: var(--wa-panel); flex: none; }
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
+    /* The bar carries the colour; the words stay ink, so they can be read. */
+    .banner.warn, .banner.err { color: var(--wa-ink); }
     /* Where a copy that was not the open document landed. Not a warning: every
        record it names is in the store, and a device that has not synced yet is
        on its way. */
@@ -21047,6 +21049,7 @@ export class WristAssistantPanel extends LitElement {
         // Whatever the board's density: here the picture is the point. All
         // stand as tall, and a wide shape fills its card.
         picture: this.compBoardPicture(it, copy, Math.round(HOME_COMP_PICTURE_H * Math.min(shapeWell(it.family, this.cardDevice(deviceKindOf(this.ownerOf(copy.ownerId)), it.family)) ?? 1, COMPACT_WIDEST))),
+        ...(it.family === "inline" || it.control ? { ink: true as const } : {}),
         ...(record !== undefined && this.rowHidden(record) ? { hidden: true } : {}),
         ...(record === undefined ? {} : { action: { label: "Edit", title: `Edit ${r.name}`, onClick: () => void this.openFromHome(r, copy) } }),
       };

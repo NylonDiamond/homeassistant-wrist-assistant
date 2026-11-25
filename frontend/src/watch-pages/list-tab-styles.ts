@@ -57,7 +57,7 @@ export const listTabStyles = css`
   .pk-shape select:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
   .pk-search {
     display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
-    height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
+    height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
   }
   .pk-search:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
   .pk-search:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }

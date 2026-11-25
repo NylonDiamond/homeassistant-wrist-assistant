@@ -114,7 +114,7 @@ export class WaSharedTab extends LitElement {
 
   static override styles = css`
     :host { display: block; flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--wa-bg); color: var(--wa-ink); }
-    .sh-page { box-sizing: border-box; padding: 28px clamp(16px, 3vw, 40px) 40px; }
+    .sh-page { box-sizing: border-box; padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 40px; }
     h1 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 30px; font-weight: 500; letter-spacing: -.012em; }
     .sh-lead { margin: 6px 0 0; font-size: 13.5px; color: var(--wa-label, var(--wa-muted)); }
     .sh-cards { margin-top: 22px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; }

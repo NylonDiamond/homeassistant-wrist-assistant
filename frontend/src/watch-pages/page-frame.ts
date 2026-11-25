@@ -415,7 +415,7 @@ export const pageFrameStyles = css`
   }
   .pe-name::after {
     content: attr(data-size); grid-area: 1 / 1; visibility: hidden; height: 0; overflow: hidden; white-space: pre;
-    padding: 0 21px 0 10px; border-inline: 1px solid transparent; font: inherit;
+    padding: 0 27px 0 10px; border-inline: 1px solid transparent; font: inherit;
   }
   .wa-bar.pe-bar .pe-name > input.pe-name-in {
     grid-area: 1 / 1; width: 100%; min-width: 0; height: 32px; min-height: 32px; margin: 0; padding: 0 20px 0 9px;

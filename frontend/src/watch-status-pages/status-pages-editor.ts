@@ -1519,7 +1519,7 @@ export class WaStatusPagesEditor extends LitElement {
     }
     .pe-btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-      flex: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-sm, 8px);
+      flex: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
       background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 13px; cursor: pointer;
     }
     .pe-btn:hover:not(:disabled) { background: var(--wa-panel); }

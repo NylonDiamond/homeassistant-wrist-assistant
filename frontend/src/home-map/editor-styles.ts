@@ -68,7 +68,7 @@ export const editorStyles = css`
   .hme-tb, .hme-menu {
     height: 30px;
     padding: 0 12px;
-    border-radius: 10px;
+    border-radius: 999px;
     border: 1px solid var(--wa-line-strong);
     background: var(--wa-card);
     color: var(--wa-soft);

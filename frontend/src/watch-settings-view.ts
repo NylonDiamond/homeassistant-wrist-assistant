@@ -1963,12 +1963,11 @@ export const watchSettingsStyles = css`
      goes onto its own line under it. */
   .ws-head { flex-wrap: wrap; row-gap: 2px; }
   .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 220px; min-width: 0; }
-  /* The choices are one strip: a single outline with hairlines between the
-     choices, the picked one a raised grey with the brighter line. Neutral, no
-     hue. Five at most to a line, three on a narrow column. */
+  /* The choices are a row of soft tiles: each a quiet grey box, the picked
+     one raised to white with the brighter line. Neutral, no hue. Five at most
+     to a line, three on a narrow column. */
   .ws-tiles {
-    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 8px 0 0 36px;
-    border: 1px solid var(--wa-line-strong); border-radius: 12px; overflow: hidden; background: var(--wa-line-strong);
+    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 6px; margin: 8px 0 0 36px;
   }
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
@@ -1984,13 +1983,13 @@ export const watchSettingsStyles = css`
     --ws-tile-bg: var(--wa-field);
     font: inherit; min-width: 0; min-height: 40px; margin: 0; padding: 6px 8px; cursor: pointer;
     display: grid; grid-template-columns: auto minmax(0, auto); align-items: center; justify-content: center; column-gap: 8px; row-gap: 0;
-    border: 0; border-radius: 0; background: var(--ws-tile-bg); color: var(--wa-label);
+    border: 0; border-radius: 10px; background: var(--ws-tile-bg); color: var(--wa-label);
     transition: background-color .12s ease-out, color .12s ease-out;
   }
   button.ws-tile:hover:not(:disabled) { --ws-tile-bg: color-mix(in srgb, var(--wa-ink) 6%, var(--wa-field)); color: var(--wa-ink); }
   button.ws-tile.on {
     --ws-tile-bg: var(--wa-seg-on);
-    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on));
+    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on)), var(--wa-shadow-ctl, 0 0 transparent);
   }
   button.ws-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }

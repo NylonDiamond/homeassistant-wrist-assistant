@@ -927,7 +927,7 @@ export const boardStyles = css`
   .bd-focus-pill.on:hover { filter: brightness(1.08); }
   .bd-upd {
     display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; box-sizing: border-box; flex: none;
-    border-radius: 5px; font: inherit; font-size: 10.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
+    border-radius: 999px; font: inherit; font-size: 10.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
     color: var(--wa-amber); background: color-mix(in srgb, var(--wa-amber) 12%, transparent);
     border: 1px solid color-mix(in srgb, var(--wa-amber) 40%, transparent);
   }

@@ -23,6 +23,9 @@ export interface LineupLine {
   /** The line under the name ("11 tiles", "Rectangular"). */
   detail?: string;
   picture?: TemplateResult;
+  /** The picture is white words or a pale control drawn for a black face
+   * (an Inline complication, a control): it stands on a black pill. */
+  ink?: true;
   /** Hidden on this device (Hide here): drawn faded, with a tag. */
   hidden?: boolean;
   /** A small tag after the name ("Not shared"). */
@@ -124,7 +127,7 @@ function renderLine(line: LineupLine, index: number, numbered: boolean): Templat
       @keydown=${(e: KeyboardEvent) => d.onKey(e)}>${uiIcon("grip")}</span>`}
     ${r === undefined ? nothing : html`<button type="button" class="hl-rm" title=${r.title} aria-label=${r.title} ?disabled=${r.busy === true}
       @click=${(e: Event) => { e.stopPropagation(); r.onClick(); }}>${uiIcon("close")}</button>`}
-    ${line.picture === undefined ? nothing : html`<span class="hl-pic">${line.picture}</span>`}
+    ${line.picture === undefined ? nothing : html`<span class="hl-pic">${line.ink === true ? html`<span class="hl-ink">${line.picture}</span>` : line.picture}</span>`}
     <span class="hl-t">
       <b class="hl-name">${line.name}</b>
       ${line.detail === undefined && line.hidden !== true && line.tag === undefined ? nothing : html`<small class="hl-detail">
@@ -194,6 +197,7 @@ export const homeLineupStyles = css`
   .hl-group[data-group="complications"] .hl-lines.strip .hl-pic {
     align-self: stretch; box-sizing: content-box; padding: 8px 6px; border-radius: 10px; background: var(--wa-well);
   }
+  .hl-ink { display: inline-flex; align-items: center; justify-content: center; max-width: 100%; box-sizing: border-box; padding: 7px 14px; border-radius: 999px; background: #0c0d0f; overflow: hidden; }
   .hl-line.hid .hl-pic, .hl-line.hid .hl-name { opacity: 0.5; }
   .hl-i { position: absolute; top: 6px; left: 8px; font-size: 11px; font-weight: 600; color: var(--wa-muted); }
   .hl-pic { display: inline-flex; flex: none; align-items: center; justify-content: center; }

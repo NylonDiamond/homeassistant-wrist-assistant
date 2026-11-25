@@ -370,7 +370,7 @@ export const addressStyles = css`
     flex: none; padding: 1px 7px; border-radius: 999px; font-size: 11px; line-height: 16px; color: var(--wa-muted);
     background: color-mix(in srgb, var(--wa-ink) 7%, transparent);
   }
-  .addr-sum-edit { flex: none; }
+  .addr-sum-edit { flex: none; background: var(--wa-card); }
   /* Very narrow: each address goes under its name. */
   @container (max-width: 360px) {
     .addr-sum-list { grid-template-columns: minmax(0, 1fr); row-gap: 0; }

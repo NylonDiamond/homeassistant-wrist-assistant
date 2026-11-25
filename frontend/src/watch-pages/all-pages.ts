@@ -1976,10 +1976,9 @@ export class WaAllPages extends LitElement {
     .ap-filter-opt:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The one card after the update, over the list until dismissed. */
     .ap-upgrade {
-      display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px;
+      display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 14px; border-radius: var(--wa-r-md);
       font-size: 13px; line-height: 1.4; color: var(--wa-ink);
-      background: color-mix(in srgb, var(--wa-accent) 12%, var(--wa-card));
-      border: 1px solid color-mix(in srgb, var(--wa-accent) 32%, var(--wa-line));
+      background: var(--wa-card); border: 1px solid var(--wa-line); box-shadow: var(--wa-shadow-card, none);
     }
     .ap-upgrade > svg { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
     .ap-upgrade > span { flex: 1; min-width: 0; }
@@ -2019,7 +2018,7 @@ export class WaAllPages extends LitElement {
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
       height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--wa-line-strong);
-      background: var(--wa-field); color: var(--wa-ink); cursor: pointer; font-weight: 600;
+      background: var(--wa-card); color: var(--wa-ink); cursor: pointer; font-weight: 600;
     }
     .pk-pick-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .pk-pick-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }

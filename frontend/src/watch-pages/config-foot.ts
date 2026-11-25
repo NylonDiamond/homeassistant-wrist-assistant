@@ -400,11 +400,12 @@ export async function copyConfigText(text: string): Promise<boolean> {
  * editor and sticks to the bottom edge of a long one, edge to edge. */
 export const configFootStyles = css`
   .cf-bar {
-    flex: none; position: sticky; bottom: calc(-1 * var(--cf-pad, 16px)); z-index: 6;
+    flex: none; position: sticky; bottom: calc(-1 * var(--cf-out, var(--cf-pad, 16px))); z-index: 6;
     display: flex; align-items: center; gap: 8px; min-height: 36px;
-    margin: auto calc(-1 * var(--cf-pad, 16px)) calc(-1 * var(--cf-pad, 16px));
+    margin: auto calc(-1 * var(--cf-out, var(--cf-pad, 16px))) calc(-1 * var(--cf-out, var(--cf-pad, 16px)));
     padding: 0 calc(var(--cf-pad, 16px) - 8px) 0 var(--cf-pad, 16px);
     background: var(--wa-top, var(--wa-card)); border-top: 1px solid var(--wa-line);
+    border-radius: var(--cf-r, 0); box-shadow: var(--cf-lift, none);
     font-size: 12px; color: var(--wa-muted);
   }
   .cf-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

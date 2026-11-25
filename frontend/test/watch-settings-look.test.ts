@@ -578,12 +578,13 @@ describe("the tiles' look", () => {
     }
   });
 
-  it("outlines the strip of choices and lifts the picked one to a raised grey with the brighter line", () => {
+  it("draws the choices as soft tiles apart and lifts the picked one to a raised grey with the brighter line", () => {
     const strip = tileRules.find((r) => r.selector === ".ws-tiles")!.body;
-    expect(strip).toContain("border: 1px solid var(--wa-line-strong)");
-    expect(strip).toContain("border-radius: 12px");
+    expect(strip).toContain("gap: 6px");
+    expect(strip).not.toContain("border:");
     const tile = tileRules.find((r) => r.selector === "button.ws-tile")!.body;
     expect(tile).toContain("--ws-tile-bg: var(--wa-field)");
+    expect(tile).toContain("border-radius: 10px");
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
     expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");
     expect(on).toContain("color: var(--wa-ink)");

@@ -839,6 +839,7 @@ export const roomsViewStyles = css`
     height: 30px; min-height: 30px; padding: 0 9px; font-size: 13px; border-radius: 9px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
+  .rm-card .field .ent-box input[type=text] { padding-left: 32px; padding-right: 30px; }
   .rm-card .field.check { grid-template-columns: minmax(0, 1fr) auto; min-height: 30px; padding: 0; font-size: 13px; gap: 10px; }
   .rm-card .field.check > span { color: var(--wa-ink); font-size: 13px; }
   /* A picked entity wraps its name, id and state rather than cutting them

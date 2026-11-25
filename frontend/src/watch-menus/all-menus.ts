@@ -788,16 +788,16 @@ export class WaAllMenus extends LitElement {
     .am-section { display: flex; flex-direction: column; gap: 10px; }
     .am-section + .am-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--wa-line); }
     .am-section-head { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
-    .am-section-title { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--wa-text); }
+    .am-section-title { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--wa-ink); }
     .am-section-n { margin-left: 4px; font-weight: 500; color: var(--wa-muted); }
     /* "+ New menu", at the right of the tab's head, beside the lead. */
     .am-new-btn {
       display: inline-flex; align-items: center; gap: 5px; margin-left: auto; height: 30px; padding: 0 11px; border-radius: 999px;
-      border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
+      border: 1px solid transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
       font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none;
     }
     .am-new-btn svg { width: 13px; height: 13px; }
-    .am-new-btn:hover:not(:disabled), .am-new-btn.on { background: var(--wa-hover); }
+    .am-new-btn:hover:not(:disabled), .am-new-btn.on { filter: brightness(1.1); }
     .am-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .am-new-btn:disabled { opacity: .45; cursor: default; }
     .am-new-acts { display: inline-flex; gap: 6px; flex: none; }
