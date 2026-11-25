@@ -174,6 +174,10 @@ export const deviceTabsStyles = css`
     border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-card); color: var(--wa-soft, var(--wa-ink));
   }
   .pk-tab.chip.on { border-color: var(--wa-ink); color: var(--wa-ink); }
+  /* In the row of tabs the chip stands apart by a gap, with no hairline: a
+     row that wraps never leaves a hairline alone at the end of a line. */
+  .pk-tabs > .pk-vsep { display: none; }
+  .pk-tabs > .pk-tab.chip { margin-left: 10px; }
   .pk-tab.chip:focus-visible { border-radius: 999px; }
   /* "+2 more": the devices holding nothing, a click away. */
   .pk-more { position: relative; display: inline-flex; align-items: center; flex: none; margin: 0 2px; }

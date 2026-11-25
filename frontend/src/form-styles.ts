@@ -294,6 +294,8 @@ export const formFieldStyles = css`
     .field:has(> textarea) { align-items: start; }
     .field:has(> textarea) > span { padding-top: 6px; }
     .field .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    /* What to type is said in the panel's own font; only what was typed is code. */
+    .field input.mono::placeholder { font-family: var(--wa-font, inherit); font-size: 13px; }
     /* A unit drawn faint inside the number box, after the number. */
     .num-box { position: relative; display: flex; align-items: center; min-width: 0; }
     .num-box input[type=number] { flex: 1; font-variant-numeric: tabular-nums; }
