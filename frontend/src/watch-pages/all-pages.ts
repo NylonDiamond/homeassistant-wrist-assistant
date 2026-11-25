@@ -1967,9 +1967,9 @@ export class WaAllPages extends LitElement {
     /* The one line about a page's two screens, under its name. */
     .ap-screens { display: block; margin: -2px 0 6px; font-size: 11.5px; color: var(--wa-muted); }
     /* All, or Screens differ. */
-    .ap-filter { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 8px; background: var(--wa-field); border: 1px solid var(--wa-line); }
+    .ap-filter { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 999px; background: var(--wa-field); border: 1px solid var(--wa-line); }
     .ap-filter-opt {
-      font: inherit; font-size: 12px; font-weight: 600; height: 24px; padding: 0 9px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 600; height: 24px; padding: 0 9px; border-radius: 999px; cursor: pointer;
       border: 0; background: transparent; color: var(--wa-muted);
     }
     .ap-filter-opt.on { background: var(--wa-seg-on); color: var(--wa-ink); }

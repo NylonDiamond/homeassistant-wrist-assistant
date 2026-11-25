@@ -2859,7 +2859,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-xlarge: #4338ca;
       --wa-r-sm: 7px;
       --wa-r-md: 10px;
-      --wa-r-lg: 14px;
+      --wa-r-lg: 18px;
       /* The left column's cards and the Add sheet. */
       --wa-lc-r: 10px;
       /* Two states the top bar's sync pill and the Pages card's note say in
@@ -3233,7 +3233,8 @@ export class WristAssistantPanel extends LitElement {
     .pk-surface.bare .pk-band-body { gap: 8px; }
     .pk-card {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
-      padding: 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
+      padding: 10px; border-radius: 14px; border: 1px solid var(--wa-line); background: var(--wa-card);
+      box-shadow: var(--wa-shadow-card, none);
       transition: border-color .12s ease-out;
     }
     .pk-card:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -3376,7 +3377,7 @@ export class WristAssistantPanel extends LitElement {
        what keeps it from disappearing into the dark skin. */
     .pk-card-crop {
       display: flex; align-items: center; justify-content: center; overflow: hidden;
-      aspect-ratio: 86 / 48; border-radius: 6px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+      aspect-ratio: 86 / 48; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
     /* In the Shape view the well is the shape rather than a window onto a
        device, so each card sets its own aspect ratio inline. The one here

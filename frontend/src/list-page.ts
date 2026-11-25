@@ -213,7 +213,7 @@ export const listPageStyles = css`
   .pk-surface.pk-page {
     display: flex; flex-direction: column; min-width: 0;
     border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-lg);
-    background: var(--wa-card); color: var(--wa-ink);
+    background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-card, none);
   }
   .pk-page > .pk-body { flex: none; overflow: visible; min-height: 160px; }
   .pk-page > :first-child { border-top-left-radius: calc(var(--wa-r-lg) - 1px); border-top-right-radius: calc(var(--wa-r-lg) - 1px); }

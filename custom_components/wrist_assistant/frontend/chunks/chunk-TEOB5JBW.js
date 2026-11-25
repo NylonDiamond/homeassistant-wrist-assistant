@@ -1,4 +1,4 @@
-import{c as h}from"./chunk-S3L4X42X.js";import{mh as l}from"./chunk-WT56CXTV.js";import{b as p,f as n,i as t}from"./chunk-6ZDBXU6B.js";var g="Hidden here",v="Not shared";function w(e){return n`<section class="hl-group" data-group=${e.key} aria-label=${e.title} style=${`--h:${e.hue}`}>
+import{c as h}from"./chunk-F5QPMGCO.js";import{mh as l}from"./chunk-WT56CXTV.js";import{b as p,f as n,i as t}from"./chunk-6ZDBXU6B.js";var g="Hidden here",v="Not shared";function w(e){return n`<section class="hl-group" data-group=${e.key} aria-label=${e.title} style=${`--h:${e.hue}`}>
     <div class="hl-head">
       <span class="hl-chip" aria-hidden="true">${l(e.icon)}</span>
       <h3 class="hl-title">${e.title}</h3>

@@ -86,7 +86,7 @@ import{b as a}from"./chunk-6ZDBXU6B.js";var r=a`
   .pk-surface.pk-page {
     display: flex; flex-direction: column; min-width: 0;
     border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-lg);
-    background: var(--wa-card); color: var(--wa-ink);
+    background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-card, none);
   }
   .pk-page > :first-child { border-top-left-radius: calc(var(--wa-r-lg) - 1px); border-top-right-radius: calc(var(--wa-r-lg) - 1px); }
   .pk-page > :last-child { border-bottom-left-radius: calc(var(--wa-r-lg) - 1px); border-bottom-right-radius: calc(var(--wa-r-lg) - 1px); }
@@ -146,7 +146,7 @@ import{b as a}from"./chunk-6ZDBXU6B.js";var r=a`
   .ap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; align-items: start; }
   .ap-card {
     position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 9px 10px 10px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);
+    border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card); box-shadow: var(--wa-shadow-card, none);
     transition: border-color .12s ease-out;
   }
   .ap-card:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
