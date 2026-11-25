@@ -1236,7 +1236,7 @@ const litStageRun = css`
     /* The watch's size is a fact, not a button. */
     .canvas-card.lit .stage-tools button.tb[aria-disabled="true"] { cursor: default; }
     .canvas-card.lit .stage-tools button.tb[aria-disabled="true"]:hover { background: transparent; color: var(--wa-label, var(--wa-ink)); }
-    .canvas-card.lit .stage-tools button.tb.lit { color: var(--wa-ink); border-color: var(--wa-ink); }
+    .canvas-card.lit .stage-tools button.tb.lit { color: var(--wa-ink); border-color: var(--wa-pick-line); }
     .canvas-card.lit .stage-tools .tb-zoom { gap: 4px; }
     .canvas-card.lit .stage-tools .tb-sep { height: 18px; margin: 0 2px; background: var(--wa-line-strong); }
 `;

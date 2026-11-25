@@ -1875,11 +1875,11 @@ export const watchSettingsStyles = css`
     border: 0; border-radius: 8px; background: transparent; color: var(--wa-label); text-align: left; cursor: pointer;
   }
   button.ws-nav-item:hover { background: color-mix(in srgb, var(--wa-ink) 6%, transparent); color: var(--wa-ink); }
-  /* The open group: a raised grey with the brighter line. Its hue stays in
+  /* The open group: raised to white with the green line of a picked thing. Its hue stays in
      its icon chip. */
   button.ws-nav-item.on {
     background: var(--wa-seg-on); color: var(--wa-ink);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on));
+    box-shadow: inset 0 0 0 1.5px var(--wa-pick-line);
   }
   button.ws-nav-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   .ws-nav-ic {
@@ -1964,7 +1964,7 @@ export const watchSettingsStyles = css`
   .ws-head { flex-wrap: wrap; row-gap: 2px; }
   .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 220px; min-width: 0; }
   /* The choices are a row of soft tiles: each a quiet grey box, the picked
-     one raised to white with the brighter line. Neutral, no hue. Five at most
+     one raised to white with the green line of a picked thing. Five at most
      to a line, three on a narrow column. */
   .ws-tiles {
     display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 6px; margin: 8px 0 0 36px;
@@ -1989,7 +1989,7 @@ export const watchSettingsStyles = css`
   button.ws-tile:hover:not(:disabled) { --ws-tile-bg: color-mix(in srgb, var(--wa-ink) 6%, var(--wa-field)); color: var(--wa-ink); }
   button.ws-tile.on {
     --ws-tile-bg: var(--wa-seg-on);
-    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on)), var(--wa-shadow-ctl, 0 0 transparent);
+    color: var(--wa-ink); box-shadow: inset 0 0 0 1.5px var(--wa-pick-line), var(--wa-shadow-ctl, 0 0 transparent);
   }
   button.ws-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }

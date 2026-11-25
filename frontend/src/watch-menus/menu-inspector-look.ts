@@ -444,7 +444,7 @@ export const menuInspectorLookStyles = css`
     transition: background-color .12s ease-out, border-color .12s ease-out;
   }
   .mi-pic:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--wa-ink) 4%, transparent); color: var(--wa-ink); }
-  .mi-pic.on { background: var(--wa-panel); border-color: var(--wa-accent); color: var(--wa-ink); }
+  .mi-pic.on { background: var(--wa-pick-bg); border-color: var(--wa-pick-line); color: var(--wa-ink); }
   .mi-pic:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .mi-pic:disabled { opacity: .45; cursor: default; }
   .mi-pic-name { text-align: center; overflow-wrap: anywhere; }

@@ -2761,10 +2761,11 @@ export class WristAssistantPanel extends LitElement {
       /* A choice that is on in a tool strip: ink on paper, like Snap. */
       --wa-on-bg: var(--wa-ink);
       --wa-on-ink: #ffffff;
-      /* Switches, sliders and segmented controls: grey, never a hue. */
-      --wa-switch-on: #5f6570;
+      /* A switch that is on and a slider's fill are the main green.
+         Segmented controls stay grey. */
+      --wa-switch-on: var(--wa-primary-bg);
       --wa-switch-off: #cfd2d9;
-      --wa-range-fill: #5f6570;
+      --wa-range-fill: var(--wa-primary-bg);
       --wa-range-track: #dbdde3;
       --wa-range-outline: #a9aeb8;
       --wa-seg-shadow: 0 1px 2px rgba(0,0,0,.14);
@@ -2937,9 +2938,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-primary-ink: #ffffff;
       --wa-on-bg: #ffffff;
       --wa-on-ink: #000000;
-      --wa-switch-on: #aab0ba;
+      --wa-switch-on: var(--wa-primary-bg);
       --wa-switch-off: #33363d;
-      --wa-range-fill: #cdd1d8;
+      --wa-range-fill: #2f9a80;
       --wa-range-track: #2a2d33;
       --wa-range-outline: #aab0ba;
       --wa-seg-shadow: none;

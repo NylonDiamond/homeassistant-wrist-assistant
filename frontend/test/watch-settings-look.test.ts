@@ -578,7 +578,7 @@ describe("the tiles' look", () => {
     }
   });
 
-  it("draws the choices as soft tiles apart and lifts the picked one to a raised grey with the brighter line", () => {
+  it("draws the choices as soft tiles apart and lifts the picked one to white with the green line of a picked thing", () => {
     const strip = tileRules.find((r) => r.selector === ".ws-tiles")!.body;
     expect(strip).toContain("gap: 6px");
     expect(strip).not.toContain("border:");
@@ -588,7 +588,7 @@ describe("the tiles' look", () => {
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
     expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");
     expect(on).toContain("color: var(--wa-ink)");
-    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on))");
+    expect(on).toContain("box-shadow: inset 0 0 0 1.5px var(--wa-pick-line)");
   });
 
   it("keeps the card's hue off the controls: the tiles, the row icons and the open group are grey", () => {
