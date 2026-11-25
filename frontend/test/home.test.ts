@@ -401,13 +401,15 @@ describe("the shell's and Home's look", () => {
     }
   });
 
-  it("draws the tabs as one segmented group, and marks the open one with weight, the switch's fill and a rim", () => {
+  it("draws the tabs bare on the bar, and marks the open one with weight and a filled pill in the main colour", () => {
     const text = shellStyles.cssText;
     const list = text.slice(text.indexOf(".wa-tabs-list {"), text.indexOf("}", text.indexOf(".wa-tabs-list {")));
-    expect(list).toContain("box-shadow: inset 0 0 0 1px var(--wa-line-strong)");
-    const on = text.slice(text.indexOf("a.wa-tab.on {"), text.indexOf("}", text.indexOf("a.wa-tab.on {")));
+    expect(list).not.toContain("box-shadow");
+    const sel = "a.wa-tab.on, a.wa-tab.on:hover {";
+    const on = text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
     expect(on).toContain("font-weight: 600");
-    expect(on).toContain("background: var(--wa-seg-on)");
+    expect(on).toContain("background: var(--wa-primary-bg)");
+    expect(on).toContain("color: var(--wa-primary-ink)");
     expect(on).not.toContain("--wa-hue");
     expect(text).toContain("flex-wrap: wrap");
   });

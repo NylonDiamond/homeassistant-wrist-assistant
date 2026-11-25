@@ -17,6 +17,9 @@
 // integration's own static path and never from another host. Only the two
 // Latin files are copied: src/font.ts names exactly these and declares them.
 //
+// The heads' serif, Newsreader, is copied the same way out of
+// @fontsource-variable/newsreader, for a device with no New York of its own.
+//
 // The tile font, Inter, is copied out of `fonts/` here, with its licence.
 // Those four files are woff2 copies of the exact cuts the apps bundle
 // (Regular, Medium, SemiBold and Bold at the 14 pt optical size), so the
@@ -33,12 +36,16 @@ const entryName = "wrist-assistant-panel";
 const fontPackage = "node_modules/@fontsource-variable/geist";
 const fontDir = join(outdir, "fonts");
 const fontFiles = ["geist-latin-wght-normal.woff2", "geist-latin-ext-wght-normal.woff2"];
+const headFontPackage = "node_modules/@fontsource-variable/newsreader";
+const headFontFiles = ["newsreader-latin-wght-normal.woff2", "newsreader-latin-ext-wght-normal.woff2"];
 const tileFontFiles = ["inter-regular.woff2", "inter-medium.woff2", "inter-semibold.woff2", "inter-bold.woff2", "LICENSE-inter.txt"];
 
 function copyFont() {
   mkdirSync(fontDir, { recursive: true });
   for (const name of fontFiles) copyFileSync(join(fontPackage, "files", name), join(fontDir, name));
   copyFileSync(join(fontPackage, "LICENSE"), join(fontDir, "LICENSE-geist.txt"));
+  for (const name of headFontFiles) copyFileSync(join(headFontPackage, "files", name), join(fontDir, name));
+  copyFileSync(join(headFontPackage, "LICENSE"), join(fontDir, "LICENSE-newsreader.txt"));
   for (const name of tileFontFiles) copyFileSync(join("fonts", name), join(fontDir, name));
 }
 

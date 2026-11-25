@@ -1,54 +1,54 @@
-import{c as h}from"./chunk-O26IRVBD.js";import{mh as l}from"./chunk-54RY7ELG.js";import{b as p,f as n,i as t}from"./chunk-6ZDBXU6B.js";var g="Hidden here",v="Not shared";function w(e){return n`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
+import{c as h}from"./chunk-OXL6CRTD.js";import{mh as l}from"./chunk-54RY7ELG.js";import{b as p,f as i,i as t}from"./chunk-6ZDBXU6B.js";var g="Hidden here",v="Not shared";function w(e){return i`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
     <div class="hl-head">
       <span class="hl-chip" aria-hidden="true">${l(e.icon)}</span>
       <h3 class="hl-title">${e.title}</h3>
-      ${e.noCount===!0?t:n`<span class="hl-n">${e.lines.length}</span>`}
-      ${e.sub===void 0?t:n`<span class="hl-sub">${e.sub}</span>`}
-      ${e.change===void 0?t:n`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>${e.change.label}${l("right")}</button>`}
+      ${e.noCount===!0?t:i`<span class="hl-n">${e.lines.length}</span>`}
+      ${e.sub===void 0?t:i`<span class="hl-sub">${e.sub}</span>`}
+      ${e.change===void 0?t:i`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>${e.change.label}${l("right")}</button>`}
     </div>
     ${e.under??t}
-    ${e.lines.length===0?n`<div class="hl-empty hl-box"><p>${e.empty}</p>${e.add===void 0?t:n`<button type="button" class="hl-add" title=${e.add.title} @click=${e.add.onClick}>${l("plus")}${e.add.label}</button>`}</div>`:n`<ol class="hl-lines ${e.strip===!0?"strip":""}" style=${`${e.cell===void 0?"":`--hl-cell:${e.cell}px;`}${e.pictureBox===void 0?"":`--hl-pic-h:${e.pictureBox}px;`}`}
+    ${e.lines.length===0?i`<div class="hl-empty hl-box"><p>${e.empty}</p>${e.add===void 0?t:i`<button type="button" class="hl-add" title=${e.add.title} @click=${e.add.onClick}>${l("plus")}${e.add.label}</button>`}</div>`:i`<ol class="hl-lines ${e.strip===!0?"strip":""}" style=${`${e.cell===void 0?"":`--hl-cell:${e.cell}px;`}${e.pictureBox===void 0?"":`--hl-pic-h:${e.pictureBox}px;`}`}
           @dragover=${a=>e.zone?.onOver(a)} @drop=${a=>e.zone?.onDrop(a)}
           >${h(e.lines,a=>a.key,(a,s)=>u(a,s,e.strip===!0&&e.numbered!==!1))}</ol>`}
-  </section>`}function u(e,a,s){let o=e.action,r=e.drag,d=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(i=>i!=="").join(" ");return n`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
-    @dragstart=${i=>r?.onStart(i)} @dragover=${i=>r?.onOver(i)}
-    @drop=${i=>r?.onDrop(i)} @dragend=${()=>r?.onEnd()}>
-    ${s?n`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
-    ${r===void 0?t:n`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
+  </section>`}function u(e,a,s){let o=e.action,r=e.drag,d=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
+    @dragstart=${n=>r?.onStart(n)} @dragover=${n=>r?.onOver(n)}
+    @drop=${n=>r?.onDrop(n)} @dragend=${()=>r?.onEnd()}>
+    ${s?i`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
+    ${r===void 0?t:i`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
       aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${r.on?"Drag to change the order":""}
-      @keydown=${i=>r.onKey(i)}>${l("grip")}</span>`}
-    ${d===void 0?t:n`<button type="button" class="hl-rm" title=${d.title} aria-label=${d.title} ?disabled=${d.busy===!0}
-      @click=${i=>{i.stopPropagation(),d.onClick()}}>${l("close")}</button>`}
-    ${e.picture===void 0?t:n`<span class="hl-pic">${e.picture}</span>`}
+      @keydown=${n=>r.onKey(n)}>${l("grip")}</span>`}
+    ${d===void 0?t:i`<button type="button" class="hl-rm" title=${d.title} aria-label=${d.title} ?disabled=${d.busy===!0}
+      @click=${n=>{n.stopPropagation(),d.onClick()}}>${l("close")}</button>`}
+    ${e.picture===void 0?t:i`<span class="hl-pic">${e.picture}</span>`}
     <span class="hl-t">
       <b class="hl-name">${e.name}</b>
-      ${e.detail===void 0&&e.hidden!==!0&&e.tag===void 0?t:n`<small class="hl-detail">
-        ${e.hidden===!0?n`<em class="hl-tag">${g}</em>`:t}
-        ${e.tag===void 0?t:n`<em class="hl-tag own">${e.tag}</em>`}
+      ${e.detail===void 0&&e.hidden!==!0&&e.tag===void 0?t:i`<small class="hl-detail">
+        ${e.hidden===!0?i`<em class="hl-tag">${g}</em>`:t}
+        ${e.tag===void 0?t:i`<em class="hl-tag own">${e.tag}</em>`}
         ${e.detail??t}</small>`}
     </span>
-    ${o===void 0?t:o.href!==void 0?n`<a class="hl-edit" href=${o.href} title=${o.title}
-          @click=${i=>{i.button!==0||i.metaKey||i.ctrlKey||i.shiftKey||i.altKey||(i.preventDefault(),o.onClick())}}>${o.label}</a>`:n`<button type="button" class="hl-edit" title=${o.title} @click=${o.onClick}>${o.label}</button>`}
+    ${o===void 0?t:o.href!==void 0?i`<a class="hl-edit" href=${o.href} title=${o.title}
+          @click=${n=>{n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey||(n.preventDefault(),o.onClick())}}>${o.label}</a>`:i`<button type="button" class="hl-edit" title=${o.title} @click=${o.onClick}>${o.label}</button>`}
   </li>`}var b=p`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .hl-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .hl-chip {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 7px;
-    border: 1px solid var(--h, var(--wa-line)); color: var(--wa-ink); background: var(--wa-card);
+    border: 0; color: var(--h, var(--wa-ink)); background: color-mix(in srgb, var(--h, var(--wa-muted)) 14%, transparent);
   }
   .hl-chip svg { width: 14px; height: 14px; }
   .hl-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--wa-ink); }
   .hl-n { font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
   .hl-sub { font-size: 12px; color: var(--wa-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hl-change {
-    display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; height: 28px; padding: 0 8px 0 11px;
-    border-radius: 7px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; height: 28px; padding: 0 9px 0 13px;
+    border-radius: 999px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
   .hl-change svg { width: 13px; height: 13px; }
   .hl-change:hover { background: var(--wa-hover); }
   .hl-change:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hl-empty { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
+  .hl-empty { margin: 0; padding: 10px 12px; border-radius: 14px; border: 1px dashed var(--wa-line-strong); font-size: 12.5px; color: var(--wa-muted); }
   /* The line over the groups, as far from them as they are from each other. */
   .hl-seed-wait { margin-bottom: 18px; }
   /* An empty box: what is missing and, centered under it, the one button that
@@ -56,7 +56,7 @@ import{c as h}from"./chunk-O26IRVBD.js";import{mh as l}from"./chunk-54RY7ELG.js"
   .hl-box { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 14px; text-align: center; }
   .hl-box p { margin: 0; }
   .hl-add {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 13px; border-radius: 999px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
   .hl-add svg { width: 13px; height: 13px; }
@@ -65,8 +65,8 @@ import{c as h}from"./chunk-O26IRVBD.js";import{mh as l}from"./chunk-54RY7ELG.js"
   .hl-lines { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
   .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(var(--hl-cell, 150px), 1fr)); gap: 8px; }
   .hl-line {
-    display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px 7px 10px; border-radius: 10px;
-    border: 1px solid var(--wa-line); background: var(--wa-card);
+    display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px 7px 10px; border-radius: 14px;
+    border: 1px solid var(--wa-line); background: var(--wa-card); box-shadow: var(--wa-shadow-card, none);
   }
   .hl-lines.strip .hl-line { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; position: relative; }
   /* --hl-pic-h: every picture in the strip stands in a box this tall, so the
@@ -80,8 +80,8 @@ import{c as h}from"./chunk-O26IRVBD.js";import{mh as l}from"./chunk-54RY7ELG.js"
   .hl-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11.5px; color: var(--wa-muted); }
   .hl-tag { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 5px; border: 1px solid var(--wa-line); color: var(--wa-muted); }
   .hl-edit {
-    flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: 7px;
-    border: 1px solid var(--wa-line); background: none; color: var(--wa-ink); font: inherit; font-size: 12px; font-weight: 600;
+    flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: 999px;
+    border: 1px solid var(--wa-line-strong); background: none; color: var(--wa-ink); font: inherit; font-size: 12px; font-weight: 600;
     text-decoration: none; cursor: pointer;
   }
   .hl-lines.strip .hl-edit { align-self: stretch; }
@@ -133,7 +133,7 @@ import{c as h}from"./chunk-O26IRVBD.js";import{mh as l}from"./chunk-54RY7ELG.js"
   .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
   .ha-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .ha-head-t { flex: 1 1 320px; min-width: 0; }
-  .ha-head-t h2 { margin: 0; font-size: 20px; font-weight: 600; color: var(--wa-ink); }
+  .ha-head-t h2 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 24px; font-weight: 500; letter-spacing: -.012em; color: var(--wa-ink); }
   .ha-head-t p { margin: 4px 0 0; font-size: 13px; color: var(--wa-muted); }
   .ha-search { flex: 0 1 320px; }
   .ha-part { display: flex; flex-direction: column; gap: 8px; min-width: 0; position: relative; }

@@ -29,6 +29,31 @@ export const UI_FONT_FILES: readonly { file: string; range: string }[] = [
   },
 ];
 
+/** The family the heads' `--wa-head-font` falls back to where the device
+ * has no New York of its own: Newsreader, copied by build.mjs out of
+ * @fontsource-variable/newsreader, one file each for every weight. */
+export const HEAD_FONT_FAMILY = "WA Newsreader";
+
+/** The files build.mjs writes for the heads, with the ranges they cover. */
+export const HEAD_FONT_FILES: readonly { file: string; range: string }[] = [
+  { file: "fonts/newsreader-latin-ext-wght-normal.woff2", range: UI_FONT_FILES[0]!.range },
+  { file: "fonts/newsreader-latin-wght-normal.woff2", range: UI_FONT_FILES[1]!.range },
+];
+
+/** The heads' @font-face rules, resolved against `base`. A browser fetches
+ * a file only when a head asks for the family, so an Apple device, which
+ * draws New York first, never loads it. */
+export function headFontFaces(base: string): string {
+  return HEAD_FONT_FILES.map(({ file, range }) => `@font-face {
+  font-family: "${HEAD_FONT_FAMILY}";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("${new URL(file, base).href}") format("woff2");
+  unicode-range: ${range};
+}`).join("\n");
+}
+
 const STYLE_ID = "wa-ui-font";
 
 /** The @font-face rules, with each file resolved against `base` (the URL the
@@ -116,6 +141,6 @@ export function installUiFont(doc: Document | undefined, base: string): void {
   if (doc === undefined || doc.getElementById(STYLE_ID) !== null) return;
   const style = doc.createElement("style");
   style.id = STYLE_ID;
-  style.textContent = `${uiFontFaces(base)}\n${tileFontFaces(base)}`;
+  style.textContent = `${uiFontFaces(base)}\n${headFontFaces(base)}\n${tileFontFaces(base)}`;
   doc.head.append(style);
 }

@@ -143,28 +143,28 @@ function renderLine(line: LineupLine, index: number, numbered: boolean): Templat
   </li>`;
 }
 
-/** The lineup's look, in the panel's tokens. The hue is on the chip's
- * outline only, never on text. */
+/** The lineup's look, in the panel's tokens. The hue is on the chip only:
+ * its glyph, over a faint wash of the same hue. Never on text. */
 export const homeLineupStyles = css`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .hl-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .hl-chip {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 7px;
-    border: 1px solid var(--h, var(--wa-line)); color: var(--wa-ink); background: var(--wa-card);
+    border: 0; color: var(--h, var(--wa-ink)); background: color-mix(in srgb, var(--h, var(--wa-muted)) 14%, transparent);
   }
   .hl-chip svg { width: 14px; height: 14px; }
   .hl-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--wa-ink); }
   .hl-n { font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
   .hl-sub { font-size: 12px; color: var(--wa-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hl-change {
-    display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; height: 28px; padding: 0 8px 0 11px;
-    border-radius: 7px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; height: 28px; padding: 0 9px 0 13px;
+    border-radius: 999px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
   .hl-change svg { width: 13px; height: 13px; }
   .hl-change:hover { background: var(--wa-hover); }
   .hl-change:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hl-empty { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
+  .hl-empty { margin: 0; padding: 10px 12px; border-radius: 14px; border: 1px dashed var(--wa-line-strong); font-size: 12.5px; color: var(--wa-muted); }
   /* The line over the groups, as far from them as they are from each other. */
   .hl-seed-wait { margin-bottom: 18px; }
   /* An empty box: what is missing and, centered under it, the one button that
@@ -172,7 +172,7 @@ export const homeLineupStyles = css`
   .hl-box { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 14px; text-align: center; }
   .hl-box p { margin: 0; }
   .hl-add {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 13px; border-radius: 999px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
   .hl-add svg { width: 13px; height: 13px; }
@@ -181,8 +181,8 @@ export const homeLineupStyles = css`
   .hl-lines { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
   .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(var(--hl-cell, 150px), 1fr)); gap: 8px; }
   .hl-line {
-    display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px 7px 10px; border-radius: 10px;
-    border: 1px solid var(--wa-line); background: var(--wa-card);
+    display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px 7px 10px; border-radius: 14px;
+    border: 1px solid var(--wa-line); background: var(--wa-card); box-shadow: var(--wa-shadow-card, none);
   }
   .hl-lines.strip .hl-line { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; position: relative; }
   /* --hl-pic-h: every picture in the strip stands in a box this tall, so the
@@ -196,8 +196,8 @@ export const homeLineupStyles = css`
   .hl-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11.5px; color: var(--wa-muted); }
   .hl-tag { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 5px; border: 1px solid var(--wa-line); color: var(--wa-muted); }
   .hl-edit {
-    flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: 7px;
-    border: 1px solid var(--wa-line); background: none; color: var(--wa-ink); font: inherit; font-size: 12px; font-weight: 600;
+    flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: 999px;
+    border: 1px solid var(--wa-line-strong); background: none; color: var(--wa-ink); font: inherit; font-size: 12px; font-weight: 600;
     text-decoration: none; cursor: pointer;
   }
   .hl-lines.strip .hl-edit { align-self: stretch; }
@@ -254,7 +254,7 @@ export const homeAllStyles = css`
   .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
   .ha-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .ha-head-t { flex: 1 1 320px; min-width: 0; }
-  .ha-head-t h2 { margin: 0; font-size: 20px; font-weight: 600; color: var(--wa-ink); }
+  .ha-head-t h2 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 24px; font-weight: 500; letter-spacing: -.012em; color: var(--wa-ink); }
   .ha-head-t p { margin: 4px 0 0; font-size: 13px; color: var(--wa-muted); }
   .ha-search { flex: 0 1 320px; }
   .ha-part { display: flex; flex-direction: column; gap: 8px; min-width: 0; position: relative; }

@@ -194,7 +194,7 @@ export const listPageStyles = css`
   .cl-wrap { width: min(2200px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
   .cl-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 0 2px; }
   .cl-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .cl-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .cl-head h1 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 30px; font-weight: 500; letter-spacing: -.012em; }
   .cl-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
   .cl-acts { display: flex; flex-wrap: wrap; gap: 8px; }
   a.cl-btn, button.cl-btn {

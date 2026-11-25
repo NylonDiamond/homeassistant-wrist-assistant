@@ -581,16 +581,15 @@ export const homeStyles = css`
   }
   .home-pad { padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px; }
   .home-wrap { width: min(1240px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
-  /* The sheen every Home card shares: a fill a shade lighter at the top, and
-     a hairline of light along the top edge, so a card reads as a surface
-     the light falls on rather than a flat box. */
+  /* What every Home card shares: a plain card fill on the paper. A card
+     rests on a soft shadow (--wa-shadow-card) and a button on a faint one. */
   .home {
-    --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
-    --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    --home-card: var(--wa-card);
+    --home-lift: var(--wa-shadow-ctl, none);
   }
   .home-head { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; padding: 0 2px; }
   .home-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .home-head h1 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
+  .home-head h1 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 32px; font-weight: 500; letter-spacing: -.012em; }
   .home-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
   /* A person who is not an administrator sees only their own devices: one
      quiet line under the lead says so. */
@@ -599,7 +598,7 @@ export const homeStyles = css`
   .home-title { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   a.home-btn, button.home-btn {
     display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 32px; padding: 0 13px;
-    border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none;
+    border-radius: 999px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none;
     color: var(--wa-ink); background: var(--home-card, var(--wa-card)); border: 1px solid var(--wa-line-strong);
     box-shadow: var(--home-lift, none);
   }
@@ -657,15 +656,20 @@ export const homeStyles = css`
   .hb-side {
     flex: 1 1 280px; max-width: 340px; min-width: 0; box-sizing: border-box;
     display: flex; flex-direction: column; gap: 16px; padding: 20px 12px 18px;
-    background: color-mix(in srgb, var(--wa-card) 45%, var(--wa-bg)); border-right: 1px solid var(--wa-line);
+    background: var(--wa-bg); border-right: 1px solid var(--wa-line);
   }
   .hb-head { display: flex; flex-direction: column; gap: 4px; padding: 0 8px; }
-  .hb-head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
+  .hb-head h1 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 26px; font-weight: 500; letter-spacing: -.012em; line-height: 1.15; }
   .hb-head .home-lead { font-size: 12px; line-height: 1.45; }
   .hb-head .home-scope { font-size: 11.5px; }
   /* The title with + Pair beside it, where a new device will appear. */
   .hb-head-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .hb-head-top .home-btn { height: 28px; padding: 0 11px; font-weight: 600; }
+  /* + Pair is the screen's one filled button, in the main colour. */
+  .hb-head-top .home-btn, .hb-head-top .home-btn:hover:not(:disabled) {
+    height: 30px; padding: 0 13px; font-weight: 600;
+    color: var(--wa-primary-ink); background: var(--wa-primary-bg); border-color: transparent;
+  }
+  .hb-head-top .home-btn:hover:not(:disabled) { filter: brightness(1.1); }
   .hb-head-top .home-btn svg.ui-icon { width: 13px; height: 13px; }
   /* One person: their picture (or initial) ringed in grey (the colors are
      the devices'), their
@@ -673,8 +677,8 @@ export const homeStyles = css`
      in one box. */
   .hb-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .hb-group:not(.hb-shared) {
-    padding: 4px 4px 6px; border-radius: 14px; border: 1px solid var(--wa-line);
-    background: var(--home-card); box-shadow: var(--home-lift);
+    padding: 4px 4px 6px; border-radius: 16px; border: 1px solid var(--wa-line);
+    background: var(--home-card); box-shadow: var(--wa-shadow-card, none);
   }
   .hb-person { display: flex; align-items: center; gap: 9px; padding: 8px 8px 6px; min-width: 0; }
   .hb-avatar {
@@ -883,7 +887,7 @@ export const homeStyles = css`
   .hw-step-head span { font-size: 12.5px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
   .hw-install {
     display: flex; flex-wrap: wrap; align-items: center; gap: 20px 24px; padding: 16px; border-radius: 16px;
-    background: var(--home-card); border: 1px solid var(--wa-line); box-shadow: var(--home-lift);
+    background: var(--home-card); border: 1px solid var(--wa-line); box-shadow: var(--wa-shadow-card, none);
   }
   .hw-install-t { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .hw-install-t p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--wa-ink); overflow-wrap: anywhere; }
@@ -929,7 +933,7 @@ export const homeStyles = css`
   .hw-pair {
     --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
     ${litOutline}
-    display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border-radius: 18px; box-shadow: var(--home-lift);
+    display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border-radius: 18px; box-shadow: var(--wa-shadow-card, none);
   }
   .hw-pair-foot {
     display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 14px; border-top: 1px solid var(--wa-line);
@@ -958,7 +962,7 @@ export const homeStyles = css`
     padding: 9px 10px 9px 14px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--home-card, var(--wa-card));
   }
   .hb-name { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; min-width: 0; }
-  .hb-name h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+  .hb-name h2 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 26px; font-weight: 500; letter-spacing: -.012em; line-height: 1.15; overflow-wrap: anywhere; }
   .hb-facts i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--c); vertical-align: 1px; }
   .hb-facts { font-size: 12px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The sync state in a well lit in its color: a chip, its word and what it
@@ -1070,8 +1074,8 @@ export const homeStyles = css`
   /* Pair a device: the transfer dialogs' frame with Home's sheen, a head
      with the link glyph in an outlined chip. */
   dialog.pair-dialog {
-    --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
-    --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    --home-card: var(--wa-card);
+    --home-lift: var(--wa-shadow-ctl, none);
     width: min(580px, calc(100vw - 32px)); border-radius: 16px; border-color: var(--wa-line-strong);
     background: var(--home-card); box-shadow: var(--home-lift), var(--wa-shadow-pop);
   }

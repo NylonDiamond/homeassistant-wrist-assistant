@@ -2722,50 +2722,51 @@ export class WristAssistantPanel extends LitElement {
          block below sets the dark values. The rest of the sheet only ever
          reads these names, so the two skins can never drift apart in
          anything but color. */
-      --wa-bg: #f2f2f4;
+      --wa-bg: #f1f2f5;
       --wa-card: #ffffff;
       /* Fields, rows and chips: one step off the card. */
-      --wa-panel: #efeff1;
-      --wa-raised: #fafafb;
-      --wa-input: #efeff1;
+      --wa-panel: #eceef2;
+      --wa-raised: #f8f9fb;
+      --wa-input: #eceef2;
       /* One step further, under the pointer. */
-      --wa-hover: #e6e6e9;
+      --wa-hover: #e4e6eb;
       /* A picked neutral: a page tile that is showing, a lit menu row. */
-      --wa-raise: #dedee2;
-      --wa-line: #e2e2e6;
-      --wa-line-strong: #cacacf;
+      --wa-raise: #dadde3;
+      --wa-line: #e1e3e8;
+      --wa-line-strong: #c9ccd3;
       /* The quiet frame round the inspector's head and the Name card. */
-      --wa-frame: #d8d8dc;
+      --wa-frame: #d6d9df;
       /* The hairline between the two lit ends of a card's outline, and of an
          outlined button's. */
-      --wa-card-mid: #e2e2e6;
-      --wa-go-mid: #d1d1d6;
-      --wa-ink: #1c1c1e;
-      --wa-soft: #3a3a3c;
-      --wa-muted: #6c6c70;
-      --wa-label: #55555a;
-      --wa-faint: #8e8e93;
+      --wa-card-mid: #e1e3e8;
+      --wa-go-mid: #cfd2d9;
+      --wa-ink: #14161a;
+      --wa-soft: #3d424b;
+      --wa-muted: #636a75;
+      --wa-label: #535963;
+      --wa-faint: #8e949e;
       /* The top bar and the status bar under the columns. */
       --wa-top: #ffffff;
       /* The canvas well and its dot grid. */
-      --wa-well: #e9e9ec;
-      --wa-well-dot: #d0d0d5;
-      --wa-well-line: #dcdce0;
+      --wa-well: #e8e9ee;
+      --wa-well-dot: #cfd2d9;
+      --wa-well-line: #dbdde3;
       /* Neutral where the old skin had a hue: focus, a lit choice, a link. */
-      --wa-accent: #48484a;
+      --wa-accent: #454a53;
       --wa-accent-ink: #ffffff;
-      /* The one filled button on screen: ink on paper, in both skins. */
-      --wa-primary-bg: var(--wa-ink);
+      /* The one filled button on screen and the tab on screen: the roof's
+         green, in both skins. */
+      --wa-primary-bg: #17594a;
       --wa-primary-ink: #ffffff;
       /* A choice that is on in a tool strip: ink on paper, like Snap. */
       --wa-on-bg: var(--wa-ink);
       --wa-on-ink: #ffffff;
       /* Switches, sliders and segmented controls: grey, never a hue. */
-      --wa-switch-on: #636366;
-      --wa-switch-off: #d1d1d6;
-      --wa-range-fill: #636366;
-      --wa-range-track: #dcdce0;
-      --wa-range-outline: #aeaeb2;
+      --wa-switch-on: #5f6570;
+      --wa-switch-off: #cfd2d9;
+      --wa-range-fill: #5f6570;
+      --wa-range-track: #dbdde3;
+      --wa-range-outline: #a9aeb8;
       --wa-seg-shadow: 0 1px 2px rgba(0,0,0,.14);
       /* The picked layer row, and anything else that says "you are here":
          one quiet blue, the same as the selection on the face. */
@@ -2877,16 +2878,23 @@ export class WristAssistantPanel extends LitElement {
       /* Home's stage: the light falling on the picked device from above,
          the floor it stands on, and how strongly the floor gives it back. */
       --wa-stage-light: #ffffff;
-      --wa-stage-top: #fbfbfc;
-      --wa-stage-bottom: #e6e6ea;
+      --wa-stage-top: #fbfcfd;
+      --wa-stage-bottom: #e4e6eb;
       --wa-stage-reflect: rgba(0,0,0,.10);
       /* A control floating over a stage (the watch editors' tool pill). */
       --wa-shadow-float: 0 10px 30px rgba(20,20,40,.10);
       --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 30%, transparent);
+      /* Page heads and the panel's name: the app's serif. An Apple device
+         draws its own New York, any other draws the Newsreader served
+         beside the bundle (font.ts). */
+      --wa-head-font: ui-serif, "New York", "WA Newsreader", Georgia, "Times New Roman", serif;
+      /* A card resting on the paper, and the faint lift under a button. */
+      --wa-shadow-card: 0 1px 1px rgba(20,22,26,.03), 0 10px 26px -16px rgba(28,34,48,.22);
+      --wa-shadow-ctl: 0 1px 2px rgba(20,22,26,.05);
       color: var(--wa-ink);
       background: var(--wa-bg);
     }
-    /* The dark skin, the watch's own: a black ground, cards one step up,
+    /* The dark skin: the app's cool graphite ground, cards one step up,
        fields one step more, neutral greys for every control, and a hue only
        on a card's outline, its title chip and its changed dot. Only colors
        change here. */
@@ -2902,43 +2910,43 @@ export class WristAssistantPanel extends LitElement {
       --wa-hue-grey: #8a8a8f;
       --wa-chip-ink: #000000;
       --wa-need-ink: #2a0707;
-      --wa-bg: #000000;
-      --wa-card: #161617;
-      --wa-panel: #222224;
-      --wa-raised: #1c1c1e;
-      --wa-input: #222224;
-      --wa-hover: #2a2a2d;
-      --wa-raise: #3a3a3d;
-      --wa-line: #2a2a2d;
-      --wa-line-strong: #3a3a3d;
-      --wa-frame: #333336;
-      --wa-card-mid: #2a2a2d;
-      --wa-go-mid: #3a3a3d;
-      --wa-ink: #ffffff;
-      --wa-soft: #c7c7cc;
-      --wa-muted: #8a8a8f;
-      --wa-label: #a6a6ab;
-      --wa-faint: #6e6e73;
-      --wa-top: #0e0e0f;
-      --wa-well: #0b0b0c;
-      --wa-well-dot: #242427;
-      --wa-well-line: #1e1e20;
-      --wa-accent: #aeaeb2;
+      --wa-bg: #0e0f11;
+      --wa-card: #17191d;
+      --wa-panel: #22252a;
+      --wa-raised: #1c1e22;
+      --wa-input: #22252a;
+      --wa-hover: #2a2d33;
+      --wa-raise: #393d45;
+      --wa-line: #2a2d33;
+      --wa-line-strong: #3a3e46;
+      --wa-frame: #33363d;
+      --wa-card-mid: #2a2d33;
+      --wa-go-mid: #3a3e46;
+      --wa-ink: #f2f4f7;
+      --wa-soft: #c5c9d1;
+      --wa-muted: #8a909b;
+      --wa-label: #a5aab4;
+      --wa-faint: #6b717c;
+      --wa-top: #121316;
+      --wa-well: #0a0b0d;
+      --wa-well-dot: #24272c;
+      --wa-well-line: #1d1f23;
+      --wa-accent: #aab0ba;
       --wa-accent-ink: #000000;
-      --wa-primary-bg: #ffffff;
-      --wa-primary-ink: #000000;
+      --wa-primary-bg: #23806a;
+      --wa-primary-ink: #ffffff;
       --wa-on-bg: #ffffff;
       --wa-on-ink: #000000;
-      --wa-switch-on: #aeaeb2;
-      --wa-switch-off: #333336;
-      --wa-range-fill: #d0d0d4;
-      --wa-range-track: #2a2a2d;
-      --wa-range-outline: #aeaeb2;
+      --wa-switch-on: #aab0ba;
+      --wa-switch-off: #33363d;
+      --wa-range-fill: #cdd1d8;
+      --wa-range-track: #2a2d33;
+      --wa-range-outline: #aab0ba;
       --wa-seg-shadow: none;
       --wa-pick-bg: #17243a;
       --wa-pick-line: #3f6fb5;
       --wa-pick-ink: #bfd6f7;
-      --wa-seg-on: #4a4a4e;
+      --wa-seg-on: #474b53;
       --wa-ent: #5fd4c4;
       --wa-val: #e8c547;
       --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
@@ -2982,11 +2990,13 @@ export class WristAssistantPanel extends LitElement {
       --wa-rule-else: #a78bfa;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.7);
       --wa-stage-light: rgba(255,255,255,.11);
-      --wa-stage-top: #131315;
-      --wa-stage-bottom: #060607;
+      --wa-stage-top: #15171a;
+      --wa-stage-bottom: #08090a;
       --wa-stage-reflect: rgba(255,255,255,.14);
       --wa-shadow-float: 0 10px 30px rgba(0,0,0,.45);
       --wa-ring: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 55%, transparent);
+      --wa-shadow-card: inset 0 1px 0 rgba(255,255,255,.04), 0 14px 30px -18px rgba(0,0,0,.9);
+      --wa-shadow-ctl: inset 0 1px 0 rgba(255,255,255,.05);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.16) transparent;
       /* The chrome's dark values under private names, for the shared rules

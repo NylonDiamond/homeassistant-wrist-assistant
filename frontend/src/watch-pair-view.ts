@@ -985,7 +985,7 @@ const pairNextStyles = css`
   .pair-next-hero > button.icon.pair-next-close { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; }
   .pair-next-hero > button.icon.pair-next-close svg.ui-icon { width: 16px; height: 16px; }
   .pair-next-body { display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 16px; }
-  .pair-next-head h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+  .pair-next-head h2 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 24px; font-weight: 500; letter-spacing: -.012em; line-height: 1.2; overflow-wrap: anywhere; }
   .pair-next-head p { margin: 4px 0 0; font-size: 13px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
   .pair-next-title { margin: 4px 0 -4px; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   .pair-next-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }

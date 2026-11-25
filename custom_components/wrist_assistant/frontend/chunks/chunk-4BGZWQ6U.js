@@ -75,7 +75,7 @@ import{b as a}from"./chunk-6ZDBXU6B.js";var r=a`
   .ap-wrap { width: min(2200px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
   .ap-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 0 2px; }
   .ap-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .ap-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .ap-head h1 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 30px; font-weight: 500; letter-spacing: -.012em; }
   .ap-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
   .ap-warn { margin: 0; font-size: 12.5px; color: var(--wa-need); }
   .ap-empty { margin: 0; padding: 18px 4px; font-size: 13px; color: var(--wa-muted); }

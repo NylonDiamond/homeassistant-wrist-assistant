@@ -651,42 +651,36 @@ export function unsavedDot(): TemplateResult {
   return html`<i class="wa-unsaved" role="img" aria-label="unsaved changes"></i>`;
 }
 
-/** The tab bar's look, added to the panel's sheet. Neutral: the tab on
- * screen is marked by weight and a grey fill, never by a hue. Every tab is a
- * box with a one pixel outline, so it reads as something to press. The bar
- * wraps on a narrow screen rather than scroll sideways. */
+/** The tab bar's look, added to the panel's sheet. The panel's name is in
+ * the heads' serif, and the tab on screen is a filled pill in the main
+ * colour. The bar wraps on a narrow screen rather than scroll sideways. */
 export const shellStyles = css`
   nav.wa-tabs {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; flex: none;
-    min-height: 44px; box-sizing: border-box; padding: 6px 12px;
+    min-height: 50px; box-sizing: border-box; padding: 6px 16px;
     background: var(--wa-top); color: var(--wa-ink); border-bottom: 1px solid var(--wa-line);
     position: relative; z-index: 21;
   }
-  .wa-tabs-name { font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
-  /* One segmented group, the panel's own switch look: a field with a one
-     pixel inset outline, and the tab on screen raised in the switch's "on"
-     fill with a light rim, so it reads at a glance. */
+  .wa-tabs-name { font-family: var(--wa-head-font, inherit); font-size: 19px; font-weight: 500; letter-spacing: -.01em; white-space: nowrap; }
+  /* The tabs sit bare on the bar, and the one on screen is a filled pill. */
   .wa-tabs-list {
     display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; padding: 2px;
-    border-radius: 8px; background: var(--wa-field, var(--wa-panel)); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+    border-radius: 999px;
   }
   a.wa-tab {
-    display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 6px;
+    display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px;
     font-size: 13px; font-weight: 500; color: var(--wa-muted); text-decoration: none; white-space: nowrap;
     background: transparent;
   }
   a.wa-tab svg.ui-icon { width: 13px; height: 13px; flex: none; }
   a.wa-tab:hover { color: var(--wa-ink); background: var(--wa-hover); }
   a.wa-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  a.wa-tab.on {
-    color: var(--wa-ink); font-weight: 600; background: var(--wa-seg-on);
-    outline: 1px solid color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); outline-offset: -1px;
-  }
+  a.wa-tab.on, a.wa-tab.on:hover { color: var(--wa-primary-ink); font-weight: 600; background: var(--wa-primary-bg); }
   .wa-tabs-sep { width: 1px; height: 16px; margin: 0 4px; background: var(--wa-line-strong); flex: none; }
   /* The sync pill and Help, together at the bar's right end. */
   .wa-tabs-end { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
   button.wa-tabs-menu {
-    display: grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-left: -4px; border-radius: 6px; cursor: pointer;
+    display: grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-left: -4px; border-radius: 999px; cursor: pointer;
     color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
   }
   button.wa-tabs-menu:hover { background: var(--wa-hover); }
@@ -694,7 +688,7 @@ export const shellStyles = css`
   button.wa-tabs-menu svg.ui-icon { width: 16px; height: 16px; }
   /* Help, neutral and outlined like a tab, pushed to the bar's right end. */
   button.wa-tabs-help {
-    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 9px; border-radius: 6px;
+    display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px 0 11px; border-radius: 999px;
     font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
     color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
   }
