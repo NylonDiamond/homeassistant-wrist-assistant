@@ -3334,7 +3334,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-bar-done svg { width: 14px; height: 14px; }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
-      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 999px; border: 1px solid var(--wa-line-strong);
       background: var(--wa-field); color: var(--wa-ink); cursor: pointer; font-weight: 600;
     }
     .pk-pick-btn:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -3346,11 +3346,11 @@ export class WristAssistantPanel extends LitElement {
        it is on and what the other one would be, and is one press either way. */
     .pk-seg {
       display: inline-flex; flex: none; gap: 2px; padding: 2px; height: 28px; box-sizing: border-box;
-      border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-field);
+      border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-field);
     }
     .pk-seg-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px;
-      padding: 0 9px; border: 0; border-radius: 4px; font-weight: 600;
+      padding: 0 9px; border: 0; border-radius: 999px; font-weight: 600;
       background: transparent; color: var(--wa-muted); cursor: pointer;
       transition: background .12s ease, color .12s ease;
     }
@@ -3540,7 +3540,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-foot .new-btn {
       --c: var(--wa-line-strong); --lo-fill: var(--wa-card);
-      height: 28px; min-height: 28px; padding: 0 11px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--wa-ink);
+      height: 28px; min-height: 28px; padding: 0 11px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--wa-ink);
       background: var(--lo-fill); border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card)); filter: none;
     }
     .pk-foot .new-btn.pk-backup { border-color: var(--wa-line-strong); }
@@ -3589,7 +3589,7 @@ export class WristAssistantPanel extends LitElement {
        a row buried under every complication that already existed. */
     .new-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 600;
-      height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer;
+      height: 30px; padding: 0 11px; border-radius: 999px; cursor: pointer;
       border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink);
       transition: border-color .12s ease-out, background-color .12s ease-out;
     }
@@ -3887,8 +3887,8 @@ export class WristAssistantPanel extends LitElement {
     .xf-prev .inline-line { line-height: 1.4; }
     .xf-prev-cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--wa-muted); }
     .xf-prev-cap b { color: var(--wa-ink); font-weight: 600; }
-    .seg.wide.xf-modes { height: 34px; padding: 3px; border-radius: 10px; }
-    .seg.wide.xf-modes button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; font-size: 12.5px; font-weight: 600; border-radius: 7px; }
+    .seg.wide.xf-modes { height: 34px; padding: 3px; border-radius: 999px; }
+    .seg.wide.xf-modes button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; font-size: 12.5px; font-weight: 600; border-radius: 999px; }
     .seg.wide.xf-modes button svg.ui-icon { width: 14px; height: 14px; flex: none; }
     .seg.xf-tabs { height: 30px; }
     .seg.xf-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12px; }
@@ -4311,7 +4311,7 @@ export class WristAssistantPanel extends LitElement {
     button.nt-btn {
       font: inherit; font-size: 12px; line-height: 1; cursor: pointer; flex: none;
       display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-      min-width: 28px; height: 28px; padding: 0 7px; border-radius: 7px;
+      min-width: 28px; height: 28px; padding: 0 7px; border-radius: 999px;
       border: 1px solid var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
     }
     button.nt-btn.wide { padding: 0 10px; font-weight: 600; font-size: 11.5px; }
@@ -4390,7 +4390,7 @@ export class WristAssistantPanel extends LitElement {
     .tb-crumb { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
     .tb-crumb-dot { color: var(--wa-muted); }
     .tb-crumb-page { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
-    .tb-crumb .shape-seg { padding: 2px; gap: 2px; border-radius: 9px; flex-wrap: nowrap; }
+    .tb-crumb .shape-seg { padding: 2px; gap: 2px; border-radius: 999px; flex-wrap: nowrap; }
     .tb-crumb .shape-seg button.tab { height: 24px; padding: 0 10px; font-size: 12px; }
     .tb-shape {
       display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; flex: none;
@@ -4459,7 +4459,7 @@ export class WristAssistantPanel extends LitElement {
     .as-tabs { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--wa-line); flex: none; }
     .as-tabs .spacer { flex: 1; }
     button.as-tab {
-      font: inherit; font-size: 12px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 7px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 999px; cursor: pointer;
       border: 1px solid transparent; background: transparent; color: var(--wa-muted);
     }
     button.as-tab:hover { color: var(--wa-ink); }
@@ -4864,7 +4864,7 @@ export class WristAssistantPanel extends LitElement {
        Drawn only by a document that still holds both; one shape alone is
        named instead. */
     .shape-seg {
-      display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px; border-radius: 11px;
+      display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px; border-radius: 999px;
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     /* Every tab used to be transparent until it was pressed, and the pressed
@@ -4873,7 +4873,7 @@ export class WristAssistantPanel extends LitElement {
        tab now carries its own plate at rest, and the open one is filled with
        the accent and ringed in it. */
     .shape-seg button.tab {
-      height: 34px; padding: 0 10px; border-radius: 8px;
+      height: 34px; padding: 0 10px; border-radius: 999px;
       background: var(--wa-card); border-color: var(--wa-line);
       color: color-mix(in srgb, var(--wa-ink) 72%, var(--wa-muted));
     }
@@ -4886,7 +4886,7 @@ export class WristAssistantPanel extends LitElement {
     .canvas-bar .hint { margin: 0; }
     .tab-wrap { position: relative; display: inline-flex; align-items: center; }
     button.tab {
-      display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 9px;
+      display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 999px;
       font: inherit; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); cursor: pointer;
       background: transparent; border: 1px solid transparent; white-space: nowrap;
       transition: background-color .12s ease-out, color .12s ease-out, box-shadow .12s ease-out;
@@ -4950,7 +4950,7 @@ export class WristAssistantPanel extends LitElement {
     .row-strip .row-strip-text { flex: 1 1 200px; min-width: 0; }
     .row-strip button {
       font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
-      height: 28px; padding: 0 14px; border-radius: 6px; border: 0;
+      height: 28px; padding: 0 14px; border-radius: 999px; border: 0;
       background: var(--wa-primary-bg); color: var(--wa-primary-ink);
     }
     .row-strip button:hover { filter: brightness(.92); }
@@ -5307,7 +5307,7 @@ export class WristAssistantPanel extends LitElement {
   `, chromeRuns.inspectorHead, css`
     /* The whole-complication actions, at the right of the document row. */
     .comp-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
-    .comp-acts button.ghost { font-size: 12px; padding: 0 6px; min-height: 24px; border-radius: 6px; }
+    .comp-acts button.ghost { font-size: 12px; padding: 0 6px; min-height: 24px; border-radius: 999px; }
     .insp-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
   `, chromeRuns.sectionCard, formResetDotStyles, chromeRuns.sectionCardTail, css`
     /* Size and alignment on one row: the number box, then Left, Center, Right. */
@@ -5365,7 +5365,7 @@ export class WristAssistantPanel extends LitElement {
     .xprev-t { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--wa-muted); min-width: 0; }
     .xprev-t b { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); }
     .xprev-t .xprev-why { color: var(--warning-color, #e0a100); }
-    .xprev button.xprev-hide { width: 24px; height: 24px; border-radius: 6px; }
+    .xprev button.xprev-hide { width: 24px; height: 24px; border-radius: 999px; }
     .xprev button.xprev-hide svg { width: 15px; height: 15px; }
     button.link.xprev-show { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
     button.link.xprev-show svg { width: 14px; height: 14px; }
@@ -5420,7 +5420,7 @@ export class WristAssistantPanel extends LitElement {
     .xr-head .xr-name { font-size: 10.5px; }
     .xr-v { display: block; max-width: 52px; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button.xtog {
-      display: inline-grid; place-items: center; width: 48px; height: 22px; padding: 0; border-radius: 6px; cursor: pointer;
+      display: inline-grid; place-items: center; width: 48px; height: 22px; padding: 0; border-radius: 999px; cursor: pointer;
       font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
       border: 1px dashed var(--wa-line-strong); background: transparent; color: var(--wa-muted);
     }
@@ -5708,7 +5708,7 @@ export class WristAssistantPanel extends LitElement {
     }
     /* The Simple or Advanced switch at the top of the card, on its own line. */
     .editor-switch { margin: 0 0 10px; }
-    .editor-switch > .seg.wide { height: 28px; border-radius: 8px; }
+    .editor-switch > .seg.wide { height: 28px; border-radius: 999px; }
     .editor-switch > .hint { margin-top: 4px; }
     .case {
       border: 1.5px solid var(--wa-rl-edge); border-radius: 10px; padding: 4px 10px 8px; margin-top: 8px;
@@ -5781,7 +5781,7 @@ export class WristAssistantPanel extends LitElement {
     .states, .rules { --wa-rule-tone: color-mix(in srgb, var(--wa-states) 55%, var(--wa-muted)); --pill-tint: var(--wa-rule-tone); }
     button.small.pill {
       --c: var(--pill-tint, var(--wa-hue-green)); --lo-fill: var(--wa-field); --lo-mid: var(--wa-go-mid);
-      height: 28px; min-height: 28px; padding: 0 12px 0 9px; border-radius: 6px; font-weight: 600; color: var(--wa-ink);
+      height: 28px; min-height: 28px; padding: 0 12px 0 9px; border-radius: 999px; font-weight: 600; color: var(--wa-ink);
       ${plainOutline}
     }
     button.small.pill:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${plainOutline} }
@@ -6147,10 +6147,10 @@ export class WristAssistantPanel extends LitElement {
     /* A value in its own card: Text, Entity, Clock and More as one row of
        buttons with a glyph each, and the rows that source needs under it. The
        More button names the source picked behind it. */
-    .seg.wide.src-tabs { height: 30px; padding: 2px; gap: 2px; border-radius: 8px; }
+    .seg.wide.src-tabs { height: 30px; padding: 2px; gap: 2px; border-radius: 999px; }
     .seg.wide.src-tabs button {
       display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0;
-      border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1; color: var(--wa-muted);
+      border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1; color: var(--wa-muted);
     }
     .seg.wide.src-tabs button:hover { color: var(--wa-ink); }
     .seg.wide.src-tabs button.on { color: var(--wa-ink); }
@@ -6197,7 +6197,7 @@ export class WristAssistantPanel extends LitElement {
     button.part-chip {
       display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; margin: 1px 0; padding: 0 7px 0 6px;
       font: inherit; font-size: 12px; color: var(--wa-ink); cursor: pointer;
-      border: 1px solid var(--wa-line); border-radius: 5px; background: var(--wa-card);
+      border: 1px solid var(--wa-line); border-radius: 999px; background: var(--wa-card);
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
     button.part-chip:hover { border-color: var(--wa-line-strong); }

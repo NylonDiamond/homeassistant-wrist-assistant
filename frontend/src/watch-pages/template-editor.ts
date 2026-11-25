@@ -751,9 +751,9 @@ export const templateEditorStyles = css`
   .te-quick-lab { padding-top: 4px; font-size: 11.5px; color: var(--wa-muted); }
   .te-quick + .tpl-box { padding-top: 4px; }
   .te-well { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 10px 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-well, #000); }
-  .te-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--wa-panel); }
+  .te-seg { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--wa-panel); }
   .te-well .te-seg { align-self: flex-end; }
-  .te-seg button { font: inherit; font-size: 11.5px; font-weight: 600; min-height: 22px; padding: 2px 9px; border: 0; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer; }
+  .te-seg button { font: inherit; font-size: 11.5px; font-weight: 600; min-height: 22px; padding: 2px 9px; border: 0; border-radius: 999px; background: none; color: var(--wa-muted); cursor: pointer; }
   .te-seg button.on { background: var(--wa-seg-on, var(--wa-hover)); color: var(--wa-ink); }
   .te-tile { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; position: relative; display: flex; justify-content: center; max-width: 100%; }
   .te-tile [data-tp] { pointer-events: auto; }

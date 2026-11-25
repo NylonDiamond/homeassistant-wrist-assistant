@@ -146,7 +146,7 @@ export const headBarStyles = css`
   .wa-bar.in-head > .spacer { display: none; }
   .wa-bar.in-head > * { margin-block: 0; }
   .wa-bar.in-head :is(button.tb-btn, button.help, button.cv-act, button.cm-btn, button.primary.save, button.primary) {
-    height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 9px; flex: none;
+    height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 999px; flex: none;
     font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;
     border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); box-shadow: none;
   }

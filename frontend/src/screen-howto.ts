@@ -142,7 +142,7 @@ export const howToStyles = css`
   .howto {
     position: relative; z-index: 1; display: flex; align-items: flex-start; gap: 12px;
     width: min(560px, calc(100% - 24px)); box-sizing: border-box; margin: 4px auto 10px; padding: 12px 14px;
-    border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-card); color: var(--wa-ink);
+    border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-card, none); border-radius: 16px; background: var(--wa-card); color: var(--wa-ink);
   }
   .howto-chip {
     flex: none; width: 38px; height: 38px; box-sizing: border-box; display: grid; place-items: center;

@@ -4049,7 +4049,7 @@ export const tileSettingsStyles = css`
   .ts-insp { gap: 12px; min-width: 0; }
   .ts-top {
     display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 14px 16px;
-    border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-card);
+    border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-card, none); border-radius: 16px; background: var(--wa-card);
     --ts-top-lab: 104px; --ts-blue: var(--wa-hue-blue, #4c8dff); --wa-lab: 0px;
   }
   .ts-top-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 20px; min-width: 0; }
@@ -4145,7 +4145,7 @@ export const tileSettingsStyles = css`
   }
   /* Each group has a mark of its own hue, kept clear of the blue that marks
      what changed: amber, green, violet, coral and teal. */
-  .ts-grp { --ts-hue: 150, 150, 160; display: block; min-width: 0; margin: 0 0 12px; break-inside: avoid; border: 1px solid var(--wa-line); border-radius: 11px; background: var(--wa-card); }
+  .ts-grp { --ts-hue: 150, 150, 160; display: block; min-width: 0; margin: 0 0 12px; break-inside: avoid; border: 1px solid var(--wa-line); box-shadow: var(--wa-shadow-card, none); border-radius: 16px; background: var(--wa-card); }
   .ts-grp[data-group="color"] { --ts-hue: 236, 186, 82; }
   .ts-grp[data-group="surface"] { --ts-hue: 120, 190, 120; }
   .ts-grp[data-group="text"] { --ts-hue: 176, 150, 255; }

@@ -307,7 +307,7 @@ export const newItemDialogStyles = css`
   .lib-new .new-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px 14px; border-top: 1px solid var(--wa-line); flex: none; }
   .lib-new .new-count { flex: 1; font-size: 12.5px; color: var(--wa-muted); }
   .lib-new-btn {
-    display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
+    display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
     font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }

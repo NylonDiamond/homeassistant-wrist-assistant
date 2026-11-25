@@ -128,9 +128,9 @@ export const editorStyles = css`
   .hme-x { border: 0; background: none; color: var(--wa-faint); font-size: 16px; line-height: 1; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; flex: none; }
   .hme-x:hover { background: var(--wa-hover); color: var(--wa-need); }
 
-  .hme-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--wa-card); border: 1px solid var(--wa-line); flex: none; }
+  .hme-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--wa-card); border: 1px solid var(--wa-line); flex: none; }
   .hme-seg button {
-    height: 28px; padding: 0 14px; border: 0; border-radius: 7px; background: transparent; color: var(--wa-muted);
+    height: 28px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: var(--wa-muted);
     font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
   }
   .hme-seg button:hover { color: var(--wa-ink); }
@@ -202,7 +202,7 @@ export const editorStyles = css`
   .hme-note.err { border-color: color-mix(in srgb, var(--wa-need) 45%, transparent); }
 
   /* ── cards ────────────────────────────────────────────────────────── */
-  .hme-card { background: var(--wa-card); border: 1px solid var(--wa-line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+  .hme-card { background: var(--wa-card); border: 1px solid var(--wa-line); box-shadow: var(--wa-shadow-card, none); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; flex: none; }
   .hme-h { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--wa-muted); display: flex; align-items: center; gap: 8px; }
   .hme-h-end { margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 500; color: var(--wa-faint); }
   .hme-amber { color: var(--hme-amber); font-weight: 600; }

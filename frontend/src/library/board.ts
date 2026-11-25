@@ -1111,9 +1111,9 @@ export const boardStyles = css`
   .bd-note.warn { color: var(--wa-need); }
 
   /* Board | Cards, in the head: the panel's segmented switch. */
-  .bd-view { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 8px; background: var(--wa-seg, var(--wa-field)); border: 1px solid var(--wa-line); }
+  .bd-view { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 999px; background: var(--wa-seg, var(--wa-field)); border: 1px solid var(--wa-line); }
   .bd-view-opt {
-    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 0; border-radius: 6px;
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 0; border-radius: 999px;
     background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-muted); cursor: pointer;
   }
   .bd-view-opt svg { width: 13px; height: 13px; }

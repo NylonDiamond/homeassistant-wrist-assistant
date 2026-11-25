@@ -381,7 +381,7 @@ export const addressStyles = css`
   .dev-addr { display: flex; flex-direction: column; gap: 10px; }
   .dev-addr-slot {
     margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 7px; padding: 10px 12px 11px;
-    border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-card);
+    border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-card, none); border-radius: 16px; background: var(--wa-card);
   }
   .dev-addr-slot legend { padding: 0 4px; margin-left: -4px; font-size: 13px; font-weight: 500; color: var(--wa-ink); }
   .dev-addr-modes { display: inline-flex; align-self: flex-start; border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; }

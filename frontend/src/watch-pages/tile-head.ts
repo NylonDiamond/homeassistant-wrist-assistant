@@ -291,7 +291,7 @@ export const tileHeadStyles = css`
   .ts-head-on { flex: none; max-width: 100%; min-width: 0; }
   .ts-head-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; margin-left: auto; }
   .ts-head-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 28px; padding: 0 10px; font-size: 12.5px; border: 1px solid var(--wa-line-strong); border-radius: 7px; }
+  .ts-head-acts > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 28px; padding: 0 10px; font-size: 12.5px; border: 1px solid var(--wa-line-strong); border-radius: 999px; }
   .ts-head-acts > button svg.ui-icon { width: 15px; height: 15px; }
   .ts-head-acts > button:disabled { opacity: .45; }
   .ts-head-changed { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wa-muted); white-space: nowrap; }

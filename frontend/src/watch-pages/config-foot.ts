@@ -413,7 +413,7 @@ export const configFootStyles = css`
   .cf-size.over { color: var(--error-color, #db4437); font-weight: 600; }
   .cf-btn {
     flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft, var(--wa-muted)); cursor: pointer;
-    background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 6px;
+    background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 999px;
   }
   .cf-btn:hover, .cf-btn[aria-expanded="true"] { background: var(--wa-panel); color: var(--wa-ink); }
   .cf-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }

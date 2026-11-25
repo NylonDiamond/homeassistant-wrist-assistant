@@ -677,14 +677,14 @@ export const watchRowStyles = css`
   button.wa-wr-open > svg.ui-icon { width: 12px; height: 12px; flex: none; color: var(--wa-muted); }
   button.wa-wr-pair {
     display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; max-width: 100%;
-    border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--wa-ink);
+    border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--wa-ink);
     background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
   button.wa-wr-pair:hover { background: var(--wa-hover); }
   /* Back to Home, at the row's left: a quiet link with a chevron. */
   button.wa-wr-home {
     flex: none; display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px 0 6px;
-    border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; color: var(--wa-muted);
+    border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; color: var(--wa-muted);
     background: transparent; border: 0;
   }
   button.wa-wr-home:hover { color: var(--wa-ink); background: var(--wa-hover); }
@@ -741,7 +741,7 @@ export const watchRowStyles = css`
      show every tab, and fades at an edge while more is hidden past it. */
   nav.wa-wr-links {
     flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; gap: 2px; padding: 3px; box-sizing: border-box;
-    border-radius: 11px; background: var(--wa-card); border: 1px solid var(--wa-line);
+    border-radius: 999px; background: var(--wa-card); border: 1px solid var(--wa-line);
     overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-padding-inline: 12px;
   }
   .wa-watchrow.no-watch nav.wa-wr-links { flex: 0 1 auto; }
@@ -760,7 +760,7 @@ export const watchRowStyles = css`
   }
   a.wa-wr-link {
     flex: none; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; box-sizing: border-box;
-    border-radius: 8px; font-size: 12.5px; font-weight: 400; color: var(--wa-muted); text-decoration: none; white-space: nowrap;
+    border-radius: 999px; font-size: 12.5px; font-weight: 400; color: var(--wa-muted); text-decoration: none; white-space: nowrap;
     background: transparent; border: 0;
   }
   a.wa-wr-link .wa-wr-ic { display: inline-flex; flex: none; color: var(--wa-faint); }

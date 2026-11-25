@@ -963,7 +963,7 @@ export const specialSettingsStyles = css`
   .sp-card-h { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .sp-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sp-card-h .sp-faint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sp-icon-btn { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;
+  .sp-icon-btn { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 999px;
     background: none; color: var(--wa-muted); cursor: pointer; }
   .sp-icon-btn:hover:not(:disabled) { background: var(--wa-field); color: var(--wa-ink); }
   .sp-icon-btn:disabled { opacity: .35; cursor: default; }

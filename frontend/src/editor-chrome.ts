@@ -91,7 +91,7 @@ const topBarRun = css`
     .picker > button.tb-browse {
       --c: var(--wa-hue-blue); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
       min-width: 0; max-width: none; height: 28px; gap: 7px; padding: 0 9px 0 10px; font-size: 13px; font-weight: 600;
-      border-radius: 6px; box-shadow: none;
+      border-radius: 999px; box-shadow: none;
       ${plainOutline}
     }
     .picker > button.tb-browse:hover { --lo-fill: var(--wa-hover); box-shadow: none; }
@@ -139,7 +139,7 @@ const topBarRun = css`
     @keyframes wa-pulse { 50% { opacity: .3; } }
     @media (prefers-reduced-motion: reduce) { .tb-sync.sending .tb-dot { animation: none; } }
     button.tb-btn {
-      font: inherit; font-size: 13px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 6px; cursor: pointer; flex: none;
+      font: inherit; font-size: 13px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 999px; cursor: pointer; flex: none;
       border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); white-space: nowrap;
     }
     button.tb-btn:hover:not(:disabled) { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -212,7 +212,7 @@ const pickerRun = css`
     .picker { position: relative; }
     .picker > button {
       display: inline-flex; align-items: center; gap: 10px; font: inherit; font-size: 13px; font-weight: 700;
-      height: 34px; padding: 0 10px 0 8px; border-radius: 9px; cursor: pointer; color: var(--wa-ink);
+      height: 34px; padding: 0 10px 0 8px; border-radius: 999px; cursor: pointer; color: var(--wa-ink);
       border: 0; box-shadow: 0 0 0 1px var(--wa-line-strong); background: var(--wa-card); min-width: 250px; max-width: 380px;
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
     }
@@ -656,7 +656,7 @@ const leftCardsRun = css`
     .pages-card .lc-head .spacer { min-width: 0; }
     button.lc-btn, button.lc-ghost {
       font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; flex: none; white-space: nowrap;
-      display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 6px;
+      display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 999px;
       border: 1px solid var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
     }
     button.lc-btn svg.ui-icon, button.lc-ghost svg.ui-icon { width: 13px; height: 13px; }
@@ -975,7 +975,7 @@ const canvasHeadRun = css`
     /* The whole-document actions: quiet buttons that read as one set. Delete
        goes red, and while it is armed the choices stand in its place. */
     button.cv-act {
-      display: inline-flex; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 10px; border-radius: 999px; cursor: pointer;
       font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap;
       border: 0; background: var(--wa-card); color: var(--wa-ink);
     }
@@ -1006,7 +1006,7 @@ const canvasHeadTailRun = css`
     .cv-shape small { font-size: 11px; }
     .cv-shape .warn { display: inline-flex; color: var(--wa-val); }
     .cv-shape .warn svg { width: 14px; height: 14px; }
-    .cv-head .shape-seg { padding: 2px; gap: 2px; border-radius: 9px; flex-wrap: nowrap; }
+    .cv-head .shape-seg { padding: 2px; gap: 2px; border-radius: 999px; flex-wrap: nowrap; }
     .cv-head .shape-seg button.tab { height: 26px; padding: 0 10px; font-size: 12px; }
     /* A narrow canvas (a phone, or a column dragged in) cannot hold the head
        on one line: the parts were drawn over the shape's name and the
@@ -1100,7 +1100,7 @@ const stageRun = css`
       border-radius: 8px; background: var(--wa-float-bg); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-float-shadow);
     }
     button.tb {
-      display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 10px; border-radius: 6px;
+      display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 10px; border-radius: 999px;
       border: 1px solid transparent; background: transparent; color: var(--wa-ink); cursor: pointer;
       font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap;
     }
@@ -1225,7 +1225,7 @@ const litStageRun = css`
     }
     /* Neutral 30px controls, each with its own one pixel outline. */
     .canvas-card.lit .stage-tools button.tb {
-      height: 30px; gap: 7px; padding: 0 10px; border-radius: 8px; font-size: 12px;
+      height: 30px; gap: 7px; padding: 0 10px; border-radius: 999px; font-size: 12px;
       color: var(--wa-label, var(--wa-ink)); background: transparent; border: 1px solid var(--wa-line-strong);
     }
     .canvas-card.lit .stage-tools button.tb.icon { width: 30px; padding: 0; justify-content: center; font-size: 15px; }
@@ -1308,7 +1308,7 @@ const valuesFootRun = css`
     .vpill button.live-reset svg { width: 13px; height: 13px; }
     .vpill .live-reset-slot { flex: none; width: 13px; }
     button.vb-live {
-      flex: none; height: 22px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 6px; cursor: pointer;
+      flex: none; height: 22px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 999px; cursor: pointer;
       font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--wa-field); color: var(--wa-ink);
     }
     button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }
@@ -1519,7 +1519,7 @@ const sectionCardTailRun = css`
     .sec.menu-open { overflow: visible; }
     .sec-menu { position: relative; flex: none; display: inline-flex; }
     button.sec-more {
-      height: 20px; padding: 0 5px; border-radius: 6px; cursor: pointer;
+      height: 20px; padding: 0 5px; border-radius: 999px; cursor: pointer;
       font: inherit; font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: .04em;
       border: 1px solid transparent; background: transparent; color: var(--wa-muted);
     }
@@ -1544,7 +1544,7 @@ const sectionCardTailRun = css`
        green lit outline every Add button does. */
     .sec-h button.sec-act {
       --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
-      flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 12px; gap: 3px; border-radius: 6px;
+      flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 12px; gap: 3px; border-radius: 999px;
       ${plainOutline}
     }
     .sec-h button.sec-act:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${plainOutline} }
@@ -1563,7 +1563,7 @@ const sectionCardTailRun = css`
     .align-head .align-to { white-space: nowrap; }
     .align-row { display: flex; align-items: stretch; gap: 4px; min-width: 0; margin-left: var(--wa-col); }
     .align-row button.align {
-      flex: 0 1 34px; min-width: 0; height: 28px; padding: 0; border: 1px solid var(--wa-line-strong); border-radius: 6px; cursor: pointer;
+      flex: 0 1 34px; min-width: 0; height: 28px; padding: 0; border: 1px solid var(--wa-line-strong); border-radius: 999px; cursor: pointer;
       display: grid; place-items: center; background: var(--wa-field); color: var(--wa-ink);
       transition: background-color .12s ease-out, border-color .12s ease-out;
     }

@@ -199,7 +199,7 @@ export const listPageStyles = css`
   .cl-acts { display: flex; flex-wrap: wrap; gap: 8px; }
   a.cl-btn, button.cl-btn {
     display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 30px; padding: 0 12px;
-    border-radius: 6px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none;
+    border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none;
     color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
   a.cl-btn:hover, button.cl-btn:hover:not(:disabled) { background: var(--wa-hover); }

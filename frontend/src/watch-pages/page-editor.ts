@@ -6224,7 +6224,7 @@ export class WaPageEditor extends LitElement {
     .layer .thumb.pe-tile-thumb:not(.empty) { background: none; border-radius: 0; overflow: visible; }
     .pe-icon-btn {
       display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0;
-      border: 0; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer;
+      border: 0; border-radius: 999px; background: none; color: var(--wa-muted); cursor: pointer;
     }
     .pe-icon-btn:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .pe-icon-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -6640,7 +6640,7 @@ export class WaPageEditor extends LitElement {
     .insp-head button.pe-back {
       flex: none; display: inline-flex; align-items: center; gap: 2px; min-height: 24px; padding: 0 8px 0 4px;
       font: inherit; font-size: 12px; color: var(--wa-soft); cursor: pointer;
-      background: transparent; border: 1px solid var(--wa-line-strong); border-radius: 6px;
+      background: transparent; border: 1px solid var(--wa-line-strong); border-radius: 999px;
     }
     .insp-head button.pe-back:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .insp-head button.pe-back:focus-visible { outline: none; box-shadow: var(--wa-ring); }

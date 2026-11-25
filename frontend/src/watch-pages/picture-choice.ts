@@ -621,11 +621,11 @@ export const pictureChoiceStyles = css`
      wraps, each one's words cut short rather than pushed to a second line. */
   .pc-seg {
     display: flex; flex-wrap: nowrap; gap: 2px; min-width: 0; padding: 2px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field, transparent);
+    border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-field, transparent);
   }
   .pc-opt.pc-seg-opt {
     flex: 1 1 0; flex-direction: row; justify-content: center; min-width: 0; min-height: 26px; padding: 3px 6px;
-    border: 0; border-radius: 6px; font-size: 12px;
+    border: 0; border-radius: 999px; font-size: 12px;
   }
   .pc-opt.pc-seg-opt.on { background: var(--wa-sel-bg, var(--wa-panel)); box-shadow: inset 0 0 0 1px var(--wa-sel-ring, var(--wa-accent)); }
   .pc-seg-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -643,7 +643,7 @@ export const pictureChoiceStyles = css`
   .pc-menu { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .pc-menu-btn {
     display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 0 8px 0 10px;
-    border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-field); color: var(--wa-ink);
+    border: 1px solid var(--wa-line-strong); border-radius: 999px; background: var(--wa-field); color: var(--wa-ink);
     font: inherit; font-size: 12.5px; cursor: pointer;
   }
   .pc-menu-btn:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }

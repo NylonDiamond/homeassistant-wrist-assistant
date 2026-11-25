@@ -792,7 +792,7 @@ export class WaAllMenus extends LitElement {
     .am-section-n { margin-left: 4px; font-weight: 500; color: var(--wa-muted); }
     /* "+ New menu", at the right of the tab's head, beside the lead. */
     .am-new-btn {
-      display: inline-flex; align-items: center; gap: 5px; margin-left: auto; height: 30px; padding: 0 11px; border-radius: 8px;
+      display: inline-flex; align-items: center; gap: 5px; margin-left: auto; height: 30px; padding: 0 11px; border-radius: 999px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
       font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none;
     }
@@ -802,7 +802,7 @@ export class WaAllMenus extends LitElement {
     .am-new-btn:disabled { opacity: .45; cursor: default; }
     .am-new-acts { display: inline-flex; gap: 6px; flex: none; }
     .am-btn {
-      display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
+      display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
       font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
     }

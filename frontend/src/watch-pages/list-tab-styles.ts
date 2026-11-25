@@ -143,7 +143,7 @@ export const listTabStyles = css`
   .ap-ask b { font-weight: 600; }
   .ap-ask-acts { display: flex; flex-wrap: wrap; gap: 6px; }
   .ap-ask-btn {
-    display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px;
+    display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
     font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
   }

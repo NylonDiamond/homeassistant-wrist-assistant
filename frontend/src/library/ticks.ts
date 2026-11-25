@@ -462,7 +462,7 @@ export const libraryTicksStyles = css`
   .lt-ask-q { flex: 1 1 220px; min-width: 0; }
   .lt-ask-acts { display: inline-flex; gap: 6px; flex: none; }
   .lt-ask .lt-ask-btn {
-    font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 9px; min-height: 26px; border-radius: 6px; cursor: pointer;
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 9px; min-height: 26px; border-radius: 999px; cursor: pointer;
     border: 1px solid var(--wa-line-strong); background: var(--wa-field, var(--wa-input)); color: var(--wa-ink);
   }
   .lt-ask .lt-ask-btn:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); background: var(--wa-hover); }

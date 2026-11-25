@@ -45,7 +45,7 @@ export const formButtonStyles = css`
        single action that matters, and a soft ring on focus instead of a hard
        outline. No button is filled with a hue. */
     .toolbar button, button.primary, button.small, button.danger {
-      font: inherit; font-size: 13px; font-weight: 600; padding: 0 11px; min-height: 28px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600; padding: 0 11px; min-height: 28px; border-radius: 999px; cursor: pointer;
       border: 1px solid transparent; background: var(--wa-field); color: var(--wa-ink);
       transition: background-color .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
     }
@@ -59,7 +59,7 @@ export const formButtonStyles = css`
     /* The quiet third button: no fill, no ring, just muted words. */
     button.ghost {
       font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; min-height: 26px; border-radius: 8px;
+      display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; min-height: 26px; border-radius: 999px;
       background: transparent; border: 1px solid transparent; color: var(--wa-muted);
     }
     button.ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }
@@ -90,7 +90,7 @@ export const formButtonStyles = css`
     }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
-    button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }
+    button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 999px; }
     button.small.lined { border-color: var(--wa-line-strong); }
     button.small.lined:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     /* An icon and its words on one line. Without this the icon, drawn as a
@@ -104,7 +104,7 @@ export const formButtonStyles = css`
     button.icon {
       font: inherit; border: none; background: none; cursor: pointer; color: var(--wa-muted);
       display: inline-flex; align-items: center; justify-content: center;
-      width: 24px; height: 24px; padding: 0; border-radius: 6px; opacity: .8;
+      width: 24px; height: 24px; padding: 0; border-radius: 999px; opacity: .8;
       transition: background-color .12s ease-out, opacity .12s ease-out;
     }
     button.icon:hover:not(:disabled) { opacity: 1; background: color-mix(in srgb, var(--wa-ink) 10%, transparent); }
@@ -196,11 +196,11 @@ export const formSegStyles = css`
        pictures are, and how much each row says. */
     .seg {
       display: inline-flex; flex: none; height: 24px; padding: 2px; gap: 2px; border: 0;
-      border-radius: 6px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+      border-radius: 999px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     }
     .seg button {
       font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1;
-      padding: 0 6px; min-width: 22px; border: 0; border-radius: 5px; background: transparent; color: var(--wa-muted);
+      padding: 0 6px; min-width: 22px; border: 0; border-radius: 999px; background: transparent; color: var(--wa-muted);
       cursor: pointer; display: grid; place-items: center;
       transition: color .12s ease-out, background-color .12s ease-out, box-shadow .12s ease-out;
     }
@@ -212,9 +212,9 @@ export const formSegStyles = css`
        shows them all, the way a dropdown never can. Buttons share the width
        evenly and clip a label rather than wrap it, so a row never grows a
        second line. The lit choice is a raised grey, never a hue. */
-    .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 6px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 999px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     .seg.wide button {
-      flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 5px;
+      flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 999px;
       font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 24px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: center;
       color: var(--wa-ink);
@@ -429,7 +429,7 @@ export const formRowStyles = css`
     .budget-why > summary:focus-visible > .why-btn { box-shadow: var(--wa-ring); }
     .why-btn {
       display: inline-flex; align-items: center; flex: none; box-sizing: border-box; min-height: 20px; padding: 0 7px;
-      border-radius: 5px; font-size: 11.5px; font-weight: 600; line-height: 1;
+      border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 1;
       color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
     }
     .budget-why > summary:hover > .why-btn, .budget-why[open] > summary > .why-btn { background: var(--wa-hover); }
@@ -537,7 +537,7 @@ export const formEntityStyles = css`
     .ent-pick .ent-state { flex: none; max-width: 35%; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     button.ent-clear {
       flex: none; width: 24px; height: 24px; margin-right: 1px; display: grid; place-items: center;
-      padding: 0; border: none; border-radius: 5px; background: none; color: var(--wa-muted); cursor: pointer;
+      padding: 0; border: none; border-radius: 999px; background: none; color: var(--wa-muted); cursor: pointer;
     }
     button.ent-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
     button.ent-clear svg { width: 12px; height: 12px; display: block; }
@@ -653,7 +653,7 @@ export const formEntityStyles = css`
     .sym-box.open .sym-caret { transform: rotate(180deg); color: var(--wa-accent); }
     button.sym-clear {
       flex: none; width: 24px; height: 24px; margin-right: 3px; display: grid; place-items: center;
-      padding: 0; border: none; border-radius: 5px; background: none; color: var(--wa-muted); cursor: pointer;
+      padding: 0; border: none; border-radius: 999px; background: none; color: var(--wa-muted); cursor: pointer;
     }
     button.small.sym-source { flex: none; height: 30px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
     button.sym-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }

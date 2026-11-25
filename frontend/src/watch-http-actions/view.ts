@@ -1163,7 +1163,7 @@ export const httpActionsViewStyles = css`
   .pe-btn.ha-sm svg.ui-icon { width: 13px; height: 13px; }
   .ha-look { position: relative; flex: none; }
   button.ha-look-btn {
-    display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 8px; cursor: pointer;
+    display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 999px; cursor: pointer;
     border: 1px solid var(--wa-line-strong); background: color-mix(in srgb, var(--c, #888) 22%, #000);
   }
   button.ha-look-btn:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -1253,7 +1253,7 @@ export const httpActionsViewStyles = css`
   .ha-secret > input[type=text] { height: 28px; min-height: 28px; padding: 0 9px; font-size: 12px; }
   .ha-secret > input[type=password] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   button.ha-show {
-    flex: none; height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--wa-line);
+    flex: none; height: 24px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--wa-line);
     background: transparent; color: var(--wa-muted); font: inherit; font-size: 11.5px; cursor: pointer;
   }
   button.ha-show:hover { color: var(--wa-ink); background: var(--wa-hover); }
@@ -1280,7 +1280,7 @@ export const httpActionsViewStyles = css`
   .ha-td.ha-users { padding: 0 10px; font-size: 12px; white-space: nowrap; }
   .ha-rowwarn { grid-column: 1 / -1; padding: 0 10px 6px; }
   button.ha-from-auth {
-    height: 20px; padding: 0 7px; border-radius: 5px; border: 1px solid var(--wa-line-strong); background: transparent;
+    height: 20px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--wa-line-strong); background: transparent;
     font: inherit; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); cursor: pointer;
   }
   button.ha-from-auth:hover { color: var(--wa-ink); }
@@ -1372,7 +1372,7 @@ export const httpActionsViewStyles = css`
   .ha-bseg button.ha-bopt { border-radius: 0; margin-left: -1px; }
   .ha-bseg button.ha-bopt:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
   .ha-bseg button.ha-bopt:last-child { border-radius: 0 5px 5px 0; }
-  button.ha-bopt { font: inherit; font-size: 11.5px; height: 24px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--wa-line); background: transparent; color: var(--wa-muted); cursor: pointer; }
+  button.ha-bopt { font: inherit; font-size: 11.5px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--wa-line); background: transparent; color: var(--wa-muted); cursor: pointer; }
   button.ha-bopt:hover:not(:disabled) { color: var(--wa-ink); border-color: var(--wa-line-strong); }
   button.ha-bopt.on { color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-hover); font-weight: 600; position: relative; }
   button.ha-bopt:disabled { opacity: 0.45; cursor: default; }
@@ -1391,7 +1391,7 @@ export const httpActionsViewStyles = css`
   .ha-rrow code { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ha-rval { font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ha-use-word, button.ha-use { font-size: 11.5px; color: var(--wa-muted); justify-self: end; white-space: nowrap; }
-  button.ha-use { font: inherit; font-size: 11.5px; height: 22px; padding: 0 8px; border-radius: 5px; border: 1px solid var(--wa-line); background: transparent; cursor: pointer; }
+  button.ha-use { font: inherit; font-size: 11.5px; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--wa-line); background: transparent; cursor: pointer; }
   button.ha-use:hover:not(:disabled) { color: var(--wa-ink); border-color: var(--wa-line-strong); }
   .ha-rrow.on .ha-use-word, .ha-rrow.on button.ha-use { color: var(--wa-green); font-weight: 600; }
 

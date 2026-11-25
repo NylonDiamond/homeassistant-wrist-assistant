@@ -1012,7 +1012,7 @@ const pairNextStyles = css`
   .pair-next-state.rejected { color: var(--error-color); }
   .pair-next-state.rejected i { background: var(--error-color); }
   a.pair-next-btn, button.pair-next-btn {
-    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 32px; padding: 0 13px; border-radius: 8px;
+    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 32px; padding: 0 13px; border-radius: 999px;
     font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none;
     color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
@@ -1067,7 +1067,7 @@ export const pairCardStyles = css`
   .ws-pair-foot button.ghost svg.ui-icon { width: 14px; height: 14px; flex: none; }
   .ws-pair button.small.ws-go { border: 1px solid var(--wa-green); background: var(--wa-card); color: var(--wa-ink); font-weight: 500; }
   .ws-pair button.small.ws-go:hover:not(:disabled) { border-color: var(--wa-green); background: var(--wa-hover); }
-  .ws-pair-foot button.small.ws-go { min-height: 32px; padding: 0 14px; border-radius: 8px; }
+  .ws-pair-foot button.small.ws-go { min-height: 32px; padding: 0 14px; border-radius: 999px; }
   .ws-pair-found {
     display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 8px; border-radius: 12px;
     border: 1px solid var(--wa-line-strong); background: color-mix(in srgb, var(--wa-bg) 45%, var(--wa-card));

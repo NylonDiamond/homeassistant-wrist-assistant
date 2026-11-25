@@ -746,7 +746,7 @@ export class WaHttpActionsEditor extends LitElement {
     .wa-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
     .wa-bar .pop-menu .row:disabled:hover { background: transparent; }
     .wa-bar button.cv-act {
-      display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 6px;
+      display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 999px;
       border: 1px solid var(--wa-line-strong); background: transparent; color: var(--wa-ink); cursor: pointer;
     }
     .wa-bar button.cv-act:disabled { opacity: .4; cursor: default; }

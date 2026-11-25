@@ -2003,7 +2003,7 @@ export class WaAllPages extends LitElement {
     .ap-new { position: relative; flex: none; }
     .ap-new-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 600;
-      height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer;
+      height: 30px; padding: 0 11px; border-radius: 999px; cursor: pointer;
       border: 1px solid transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
     }
     .ap-new-btn:hover:not(:disabled) { filter: brightness(1.1); }
@@ -2018,7 +2018,7 @@ export class WaAllPages extends LitElement {
     .ap-pic-status .sp-screen { pointer-events: none; }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
-      height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+      height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--wa-line-strong);
       background: var(--wa-field); color: var(--wa-ink); cursor: pointer; font-weight: 600;
     }
     .pk-pick-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -2030,7 +2030,7 @@ export class WaAllPages extends LitElement {
     /* The panel's small buttons (form-styles.ts), for the bar. */
     button.small {
       display: inline-flex; align-items: center; gap: 5px;
-      font: inherit; font-size: 13px; font-weight: 600; padding: 0 9px; min-height: 26px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600; padding: 0 9px; min-height: 26px; border-radius: 999px; cursor: pointer;
       border: 1px solid transparent; background: var(--wa-field); color: var(--wa-ink);
       transition: background-color .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
     }
@@ -2054,7 +2054,7 @@ export class WaAllPages extends LitElement {
     .pk-bar-ask b { font-weight: 600; }
     .pk-bar-gap { flex: 1; min-width: 0; }
     .pk-bar button.ghost {
-      font-size: 12.5px; min-height: 28px; padding: 0 10px; border-radius: 8px;
+      font-size: 12.5px; min-height: 28px; padding: 0 10px; border-radius: 999px;
       border-color: var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
     }
     .pk-bar button.ghost:hover:not(:disabled), .pk-bar button.ghost.on { border-color: var(--wa-line-strong); background: var(--wa-card); }

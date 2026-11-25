@@ -765,7 +765,7 @@ export const homeStyles = css`
   .hb-crumb svg.ui-icon { width: 12px; height: 12px; color: var(--wa-faint); }
   .hb-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   button.hb-step {
-    width: 32px; height: 32px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center; cursor: pointer;
+    width: 32px; height: 32px; box-sizing: border-box; border-radius: 999px; display: grid; place-items: center; cursor: pointer;
     color: var(--wa-label); background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
   }
   button.hb-step:hover { background: var(--wa-hover); }
@@ -785,7 +785,7 @@ export const homeStyles = css`
   /* These tabs are how a device's own screens are found, so they are larger
      than the editors' row and each wears its screen's hue: on its icon always,
      and on the outline and a faint fill of the one on show. */
-  .hb-subnav nav.wa-wr-links a.wa-wr-link { height: 36px; padding: 0 14px; gap: 8px; border-radius: 9px; font-size: 13.5px; font-weight: 500; color: var(--wa-soft); }
+  .hb-subnav nav.wa-wr-links a.wa-wr-link { height: 36px; padding: 0 14px; gap: 8px; border-radius: 999px; font-size: 13.5px; font-weight: 500; color: var(--wa-soft); }
   .hb-subnav nav.wa-wr-links a.wa-wr-link .wa-wr-ic { color: var(--h); }
   .hb-subnav nav.wa-wr-links a.wa-wr-link .wa-wr-ic svg.ui-icon { width: 16px; height: 16px; }
   .hb-subnav nav.wa-wr-links a.wa-wr-link:hover { color: var(--wa-ink); }
@@ -849,7 +849,7 @@ export const homeStyles = css`
   .hb-calls { display: flex; flex-wrap: wrap; gap: 6px; }
   button.hb-call {
     display: inline-flex; align-items: baseline; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 10px;
-    border-radius: 9px; font: inherit; color: var(--wa-ink); cursor: pointer;
+    border-radius: 999px; font: inherit; color: var(--wa-ink); cursor: pointer;
     background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
   }
   button.hb-call:hover { background: var(--wa-hover); }
@@ -1063,7 +1063,7 @@ export const homeStyles = css`
   .hb-ask p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--wa-ink); }
   .hb-ask p.quiet { color: var(--wa-muted); }
   .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .dev-acts button { height: 32px; padding: 0 14px; border-radius: 8px; }
+  .dev-acts button { height: 32px; padding: 0 14px; border-radius: 999px; }
   .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
   .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
   .dev-rename { display: flex; align-items: center; gap: 8px; }

@@ -863,10 +863,10 @@ export const roomsViewStyles = css`
   /* Every button and link button: a visible one pixel outline, neutral. */
   .rm-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none;
-    height: 32px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+    height: 32px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
     text-decoration: none; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
   }
-  .rm-btn.rm-small { height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12px; font-weight: 400; color: var(--wa-soft); }
+  .rm-btn.rm-small { height: 24px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 400; color: var(--wa-soft); }
   .rm-btn:hover:not(:disabled) { background: var(--wa-hover); }
   .rm-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .rm-btn:disabled { opacity: .45; cursor: default; }
@@ -955,7 +955,7 @@ export const roomsViewStyles = css`
   .rm-row-page > select.rm-select { flex: 1 1 auto; }
   .rm-row-end { flex: 0 0 26px; display: flex; justify-content: flex-end; }
   button.rm-row-x {
-    width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border-radius: 6px; cursor: pointer;
+    width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border-radius: 999px; cursor: pointer;
     color: var(--wa-muted); background: transparent; border: 1px solid var(--wa-line-strong); opacity: 0;
   }
   li.rm-row:hover button.rm-row-x, li.rm-row:focus-within button.rm-row-x, li.rm-row.on button.rm-row-x { opacity: 1; }

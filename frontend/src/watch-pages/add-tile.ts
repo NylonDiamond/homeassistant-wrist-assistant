@@ -906,7 +906,7 @@ export const addTileStyles = css`
   .at-map-ask-foot { display: flex; justify-content: flex-end; gap: 8px; }
   button.at-page {
     display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px;
-    border: 0; border-radius: 7px; background: none; color: var(--wa-ink); font: inherit; font-size: 13px;
+    border: 0; border-radius: 999px; background: none; color: var(--wa-ink); font: inherit; font-size: 13px;
     text-align: left; cursor: pointer;
   }
   button.at-page:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-accent) 14%, var(--wa-card)); }

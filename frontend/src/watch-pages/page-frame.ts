@@ -209,7 +209,7 @@ export const pageFrameStyles = css`
   /* The right cluster pushes itself to the end: a spacer would only add a gap,
      and this bar needs every pixel to stay on one line at 1184. */
   .wa-bar.pe-bar > .spacer { display: none; }
-  .pe-bar button.tb-btn { height: 32px; border-radius: 8px; }
+  .pe-bar button.tb-btn { height: 32px; border-radius: 999px; }
   .pe-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
   .pe-bar button.tb-btn.pe-bar-back:has(> svg.ui-icon) { padding: 0 6px 0 2px; }
   .pe-bar button.tb-btn.pe-bar-help { padding: 0 9px; }
@@ -240,7 +240,7 @@ export const pageFrameStyles = css`
   .pe-unsaved { display: inline-flex; align-items: center; gap: 7px; flex: none; font-size: 12.5px; font-weight: 500; color: var(--wa-hue-orange); white-space: nowrap; }
   .pe-unsaved-dot { display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .wa-bar.pe-bar button.primary.save.pe-save {
-    height: 32px; min-height: 32px; padding: 0 16px; border-radius: 9px; border: 0; box-shadow: none;
+    height: 32px; min-height: 32px; padding: 0 16px; border-radius: 999px; border: 0; box-shadow: none;
     background: var(--wa-hue-blue); color: var(--wa-chip-ink); font-size: 13px; font-weight: 600; opacity: 1;
   }
   .wa-bar.pe-bar button.primary.save.pe-save:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 88%, #000); }
@@ -340,11 +340,11 @@ export const pageFrameStyles = css`
   .pe-pp-board { margin-left: auto; }
 
   .pe-seg {
-    display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px;
+    display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px;
     background: var(--wa-field, var(--wa-panel)); border: 1px solid var(--wa-line);
   }
   .pe-seg-btn {
-    margin: 0; padding: 5px 14px; border: 0; border-radius: 7px; background: none; color: var(--wa-muted);
+    margin: 0; padding: 5px 14px; border: 0; border-radius: 999px; background: none; color: var(--wa-muted);
     font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer;
   }
   .pe-seg-btn:hover { color: var(--wa-ink); }

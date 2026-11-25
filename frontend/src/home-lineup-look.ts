@@ -90,7 +90,7 @@ export const LINEUP_HIDDEN_TAG = "Hidden here";
 export const LINEUP_OWN_TAG = "Not shared";
 
 export function renderLineupGroup(g: LineupGroup): TemplateResult {
-  return html`<section class="hl-group" aria-label=${g.title} style=${`--h:${g.hue}`}>
+  return html`<section class="hl-group" data-group=${g.key} aria-label=${g.title} style=${`--h:${g.hue}`}>
     <div class="hl-head">
       <span class="hl-chip" aria-hidden="true">${uiIcon(g.icon)}</span>
       <h3 class="hl-title">${g.title}</h3>
@@ -188,6 +188,12 @@ export const homeLineupStyles = css`
   /* --hl-pic-h: every picture in the strip stands in a box this tall, so the
      names under them line up whatever each shape's proportions. */
   .hl-lines.strip .hl-pic { align-self: center; min-height: var(--hl-pic-h, 0); }
+  /* A complication's picture stands in a paper well the card's width, so
+     the cards line up whatever each shape's size, and a shape with a small
+     or empty picture still has a place. */
+  .hl-group[data-group="complications"] .hl-lines.strip .hl-pic {
+    align-self: stretch; box-sizing: content-box; padding: 8px 6px; border-radius: 10px; background: var(--wa-well);
+  }
   .hl-line.hid .hl-pic, .hl-line.hid .hl-name { opacity: 0.5; }
   .hl-i { position: absolute; top: 6px; left: 8px; font-size: 11px; font-weight: 600; color: var(--wa-muted); }
   .hl-pic { display: inline-flex; flex: none; align-items: center; justify-content: center; }

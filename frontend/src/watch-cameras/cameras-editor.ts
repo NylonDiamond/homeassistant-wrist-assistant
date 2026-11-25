@@ -703,7 +703,7 @@ export class WaCamerasEditor extends LitElement {
     .cm-title > b { font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); white-space: nowrap; }
     .cm-crumb { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
     button.cm-back {
-      display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px 0 4px; border-radius: 6px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px 0 4px; border-radius: 999px; cursor: pointer;
       font: inherit; font-size: 13px; color: var(--wa-muted); background: transparent; border: 1px solid var(--wa-line-strong);
     }
     button.cm-back:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }

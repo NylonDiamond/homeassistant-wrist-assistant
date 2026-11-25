@@ -120,7 +120,7 @@ export class WaSharedTab extends LitElement {
     .sh-cards { margin-top: 22px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; }
     .sh-card {
       display: flex; flex-direction: column; gap: 10px; min-width: 0; box-sizing: border-box; padding: 14px 16px 16px;
-      background: var(--wa-card); border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); border: 1px solid var(--wa-line); box-shadow: var(--wa-shadow-card, none); border-radius: 16px;
     }
     .sh-hd { display: flex; align-items: center; gap: 10px; }
     .sh-box { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 7px; background: var(--wa-panel); color: var(--wa-label, var(--wa-muted)); }
