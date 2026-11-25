@@ -273,6 +273,8 @@ const columnsRun = css`
     .layout.cols-2 > .column.inspector { grid-column: 1 / -1; }
     .layout.cols-2 > .gutter.right { display: none; }
     .layout.bare { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+    /* The Complications list starts where Pages, Status pages and Menus do. */
+    .layout.bare:has(.cl-page) { padding-left: 0; padding-right: 0; }
     .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }

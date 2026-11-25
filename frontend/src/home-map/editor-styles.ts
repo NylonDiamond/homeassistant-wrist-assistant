@@ -123,7 +123,7 @@ export const editorStyles = css`
     outline: none;
   }
   .hme-menu-caret { position: absolute; right: 10px; pointer-events: none; color: var(--wa-faint); font-size: 11px; }
-  .hme-link { border: 0; background: none; padding: 0; color: var(--hme-sel); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .hme-link { border: 0; background: none; padding: 0; color: var(--wa-pick-ink, var(--hme-sel)); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
   .hme-link:hover { text-decoration: underline; }
   .hme-x { border: 0; background: none; color: var(--wa-faint); font-size: 16px; line-height: 1; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; flex: none; }
   .hme-x:hover { background: var(--wa-hover); color: var(--wa-need); }
@@ -345,7 +345,7 @@ export const editorStyles = css`
   .hme-strip-cell.now { background: var(--hme-sel-bg); }
   .hme-strip-cell.now b { color: var(--wa-ink); }
   .hme-strip-cell small { color: var(--wa-muted); font-size: 11px; line-height: 1.3; }
-  .hme-rooms .hme-ly-end.wait { color: var(--hme-sel); }
+  .hme-rooms .hme-ly-end.wait { color: var(--wa-pick-ink, var(--hme-sel)); }
   .hme-fit-foot { color: var(--wa-faint); font-size: 12px; padding: 2px 6px; }
   /* A folded card: its title and a short value, opened by a click. */
   .hme-fold > summary { cursor: pointer; list-style: none; }
