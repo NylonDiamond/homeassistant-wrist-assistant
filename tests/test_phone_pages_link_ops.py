@@ -35,6 +35,7 @@ _NAMES = (
     "_not_an_iphone",
     "_owner_has_pages",
     "_owner_shown_page_count",
+    "_home_name",
     "_op_phone_pages_offer",
     "_op_phone_pages_link_watch",
     *PLATFORM_HELPERS,
@@ -219,6 +220,7 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
     assert reply.body == {
         "ok": True,
         "has_pages": False,
+        "home_name": None,
         "watches": [
             {
                 "id": WATCH,
@@ -243,6 +245,18 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
             },
         ],
     }
+
+
+@pytest.mark.parametrize(
+    ("location_name", "expected"),
+    [("Skelton Home", "Skelton Home"), ("  Cabin \n", "Cabin"), ("", None), ("   ", None), (None, None), (7, None)],
+)
+def test_offer_gives_the_home_s_own_name(env, location_name, expected) -> None:
+    """The iPhone's Settings names the home by what Home Assistant calls itself."""
+    ctx = _Ctx(env.store, env.secrets, PHONE, {})
+    ctx.hass = types.SimpleNamespace(config=types.SimpleNamespace(location_name=location_name))
+    reply = asyncio.run(env.views["_op_phone_pages_offer"](ctx))
+    assert reply.body["home_name"] == expected
 
 
 def test_offer_names_a_wear_watch_by_its_platform(env) -> None:

@@ -5653,14 +5653,27 @@ def _owner_shown_page_count(store: Any, owner_id: str) -> int:
     )
 
 
+def _home_name(hass: Any) -> str | None:
+    """What Home Assistant calls itself, trimmed; None when it has no name."""
+    name = getattr(getattr(hass, "config", None), "location_name", None)
+    if not isinstance(name, str):
+        return None
+    return name.strip() or None
+
+
 async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
     """What the iPhone's ask-once pages screen offers (linked pages, app repo
     ``docs/linked_pages_plan_2026-10.md``).
 
     Body:  {}
-    Reply: {"ok": true, "has_pages": <bool>,
+    Reply: {"ok": true, "has_pages": <bool>, "home_name": <str or null>,
             "watches": [{"id", "name", "has_pages", "last_seen_seconds",
                          "app_version", "app_build", "shown_pages"}]}
+
+    ``home_name`` is what Home Assistant calls itself (its
+    ``location_name``, as a pairing reply gives it), null when it has none.
+    The iPhone shows it on the top card of its Settings, since an iPhone
+    paired before the name was sent holds only the home's address.
 
     ``has_pages`` is whether the phone's own pages record lists a page;
     ``watches`` are its user's watches (`phone_watch_ids`), each with its
@@ -5698,6 +5711,7 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
             # the record lands (`holds_unsaved`).
             "has_pages": not store.holds_unsaved(ctx.watch_id)
             and _owner_has_pages(store, ctx.watch_id),
+            "home_name": _home_name(ctx.hass),
             "watches": [
                 {
                     "id": watch_id,
