@@ -109,7 +109,7 @@ const topBarRun = css`
     .tb-name > input.tb-name-input[type=text],
     .tb-name > input.tb-name-input[type=text]:hover,
     .tb-name > input.tb-name-input[type=text]:focus-visible {
-      font: inherit; font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--wa-ink); min-height: 0; padding: 0;
+      font: inherit; font-family: var(--wa-head-font, inherit); font-size: 17px; font-weight: 500; letter-spacing: -.01em; color: var(--wa-ink); min-height: 0; padding: 0;
       border: 0; background: transparent; box-shadow: none; outline: none;
       field-sizing: content; min-width: 7ch; max-width: 280px;
     }

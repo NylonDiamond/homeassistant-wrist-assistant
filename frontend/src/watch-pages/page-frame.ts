@@ -410,7 +410,8 @@ export const pageFrameStyles = css`
      of the words sizes the box, with the pencil's room kept at its end so
      the words beside it do not move when it shows. */
   .pe-name {
-    position: relative; display: inline-grid; flex: 0 1 auto; min-width: 72px; max-width: 320px; font-size: 15px; font-weight: 650;
+    position: relative; display: inline-grid; flex: 0 1 auto; min-width: 72px; max-width: 320px;
+    font-family: var(--wa-head-font, inherit); font-size: 18px; font-weight: 500; letter-spacing: -.01em;
   }
   .pe-name::after {
     content: attr(data-size); grid-area: 1 / 1; visibility: hidden; height: 0; overflow: hidden; white-space: pre;

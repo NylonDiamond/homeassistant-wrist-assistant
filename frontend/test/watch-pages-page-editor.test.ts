@@ -516,7 +516,7 @@ describe("the page picker", () => {
 
   it("reads clearly at 4K and 100%: a name a size up from the bar's words, the popover on the editor's tokens", () => {
     const css = sheet();
-    expect(rule(css, ".pe-name")).toContain("font-size: 15px");
+    expect(rule(css, ".pe-name")).toContain("font-size: 18px");
     expect(rule(css, ".pe-pp-pop")).toContain("var(--wa-shadow-pop)");
     expect(rule(css, ".pe-pp-card.on")).toContain("var(--wa-sel-ring)");
   });

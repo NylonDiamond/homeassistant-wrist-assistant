@@ -91,12 +91,12 @@ export const editorStyles = css`
   .hme-tb.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
   .hme-tb.primary.danger-fill { background: var(--wa-need); color: var(--wa-need-ink, #fff); }
   /* The Add button, the editor's one way in for devices and furniture,
-   * floating in the plan's top left corner in the picked blue so it is the
-   * first thing a new user finds. */
+   * floating in the plan's top left corner as a pill in the main colour so
+   * it is the first thing a new user finds. */
   .hme-add-btn {
     position: absolute; left: 14px; top: 14px; z-index: 4;
-    height: 40px; padding: 0 16px 0 12px; border: 0; border-radius: 12px;
-    background: var(--hme-sel); color: #fff; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+    height: 40px; padding: 0 18px 0 14px; border: 0; border-radius: 999px;
+    background: var(--wa-primary-bg, var(--hme-sel)); color: var(--wa-primary-ink, #fff); font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1;
     display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   }
@@ -104,7 +104,7 @@ export const editorStyles = css`
   /* With something picked its bar takes the top of the plan: Add draws small
    * and the bar starts after it, so neither covers the other. */
   .hme-add-btn.compact { padding: 0 12px 0 9px; gap: 5px; }
-  .hme-add-btn:hover { background: color-mix(in srgb, var(--hme-sel) 86%, #fff); }
+  .hme-add-btn:hover { background: color-mix(in srgb, var(--wa-primary-bg, var(--hme-sel)) 86%, #fff); }
   .hme-add-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .hme-tb.hme-icon { width: 30px; padding: 0; font-size: 15px; }
   .hme-tb.hme-wide { width: 100%; height: 36px; }
@@ -145,7 +145,7 @@ export const editorStyles = css`
   .hme-back { border: 0; background: none; color: var(--wa-muted); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
   .hme-back:hover { color: var(--wa-ink); }
   .hme-vsep { width: 1px; height: 22px; background: var(--wa-line-strong); flex: none; }
-  .hme-title { font-size: 15px; }
+  .hme-title { font-family: var(--wa-head-font, inherit); font-size: 19px; font-weight: 500; letter-spacing: -.01em; }
   .hme-beta { font-size: 10px; border: 1px solid var(--wa-line-strong); border-radius: 8px; padding: 1px 6px; color: var(--wa-muted); letter-spacing: 0.06em; }
   .hme-flex { flex: 1 1 0; min-width: 0; }
   .hme-floor-wrap { position: relative; }
@@ -480,7 +480,7 @@ export const editorStyles = css`
   .hme-pill { top: 14px; }
   .hme-pill.beside { left: 100px; transform: none; max-width: calc(100% - 114px); }
   .hme-dock { bottom: 14px; gap: 6px; padding: 6px; }
-  .hme-tb.hme-blue { background: var(--hme-sel); border-color: var(--hme-sel); color: #fff; }
+  .hme-tb.hme-blue { background: var(--wa-primary-bg, var(--hme-sel)); border-color: transparent; color: var(--wa-primary-ink, #fff); }
   .hme-tb.hme-blue:hover:not(:disabled) { background: #6f9cf2; color: #fff; }
   .hme-tb.hme-blue kbd { font: 500 11px var(--hme-mono); opacity: 0.75; }
   /* The tools, in a column of their own on the left of the plan, so they never
